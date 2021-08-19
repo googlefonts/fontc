@@ -1,21 +1,37 @@
-use text_unit::TextUnit;
+//! Scan a FEA file, producing a sequence of tokens.
+//!
+//! This is the first step in our parsing process. The tokens produced here
+//! have no semantic information; for instance we do not try to distinguish a
+//! keyword from a glyph name. Instead we are just describing the most basic
+//! structure of the document.
+
+//use text_unit::TextUnit;
 
 const EOF: u8 = 0x0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Token {
-    len: TextUnit,
-    kind: Kind,
+    pub(crate) len: usize,
+    pub(crate) kind: Kind,
+}
+
+impl Token {
+    pub const EMPTY: Token = Token {
+        len: 0,
+        kind: Kind::Tombstone,
+    };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Kind {
+pub(crate) enum Kind {
     // a name or a keyword or any other block of non-whitespace.
     // we will frequently have to disambiguate this based on context.
     Ident,
-    String { terminated: bool },
+    String,
+    StringUnterminated,
     NumberDec, // also octal; we disambiguate based on context
-    NumberHex { empty: bool },
+    NumberHex,
+    NumberHexEmpty, // naked 0x
     NumberFloat,
     Whitespace,
     Semi,
@@ -36,16 +52,17 @@ enum Kind {
     Comment,
     //Anonymous,
     Eof,
+    Tombstone,
 }
 
-struct Cursor<'a> {
+pub(crate) struct Lexer<'a> {
     input: &'a str,
     pos: usize,
 }
 
-impl<'a> Cursor<'a> {
-    fn new(input: &'a str) -> Self {
-        Cursor { input, pos: 0 }
+impl<'a> Lexer<'a> {
+    pub(crate) fn new(input: &'a str) -> Self {
+        Lexer { input, pos: 0 }
     }
 
     fn nth(&self, index: usize) -> u8 {
@@ -58,11 +75,12 @@ impl<'a> Cursor<'a> {
 
     fn bump(&mut self) -> Option<u8> {
         let pos = self.pos;
-        self.pos += 1;
-        self.input.as_bytes().get(pos).copied()
+        let next = self.input.as_bytes().get(pos).copied();
+        self.pos += if next.is_some() { 1 } else { 0 };
+        next
     }
 
-    fn next_token(&mut self) -> Token {
+    pub(crate) fn next_token(&mut self) -> Token {
         let start_pos = self.pos;
         let first = self.bump().unwrap_or(EOF);
         let kind = match first {
@@ -90,7 +108,7 @@ impl<'a> Cursor<'a> {
             _ => self.ident(),
         };
 
-        let len = TextUnit::from_usize(self.pos - start_pos);
+        let len = self.pos - start_pos;
         Token { len, kind }
     }
 
@@ -109,33 +127,29 @@ impl<'a> Cursor<'a> {
     }
 
     fn string(&mut self) -> Kind {
-        let terminated = loop {
+        loop {
             match self.nth(0) {
                 b'"' => {
                     self.bump();
-                    break true;
+                    break Kind::String;
                 }
-                EOF => break false,
+                EOF => break Kind::StringUnterminated,
                 _ => {
                     self.bump();
                 }
             }
-        };
-        Kind::String { terminated }
+        }
     }
 
     fn number(&mut self, leading_zero: bool) -> Kind {
         if leading_zero && [b'x', b'X'].contains(&self.nth(0)) {
             self.bump();
-            let empty = !self.nth(0).is_ascii_hexdigit();
-            self.eat_hex_digits();
-            Kind::NumberHex { empty }
-            //if !self.nth(0).is_ascii_hexdigit() {
-            //Kind::NumberHex { empty: true }
-            //} else {
-            //self.eat_hex_digits();
-            //Kind::NumberHex { empty: false }
-            //}
+            if self.nth(0).is_ascii_hexdigit() {
+                self.eat_hex_digits();
+                Kind::NumberHex
+            } else {
+                Kind::NumberHexEmpty
+            }
         } else {
             self.eat_decimal_digits();
             if self.nth(0) == b'.' {
@@ -176,8 +190,8 @@ impl<'a> Cursor<'a> {
     }
 }
 
-pub(crate) fn iter_tokens<'a>(text: &'a str) -> impl Iterator<Item = Token> + 'a {
-    let mut cursor = Cursor::new(text);
+pub(crate) fn iter_tokens(text: &str) -> impl Iterator<Item = Token> + '_ {
+    let mut cursor = Lexer::new(text);
     std::iter::from_fn(move || {
         let next = cursor.next_token();
         match next.kind {
@@ -204,15 +218,32 @@ fn is_ascii_whitespace(byte: u8) -> bool {
     byte == b' ' || (0x9..=0xD).contains(&byte)
 }
 
+impl Kind {
+    pub(crate) fn has_contents(&self) -> bool {
+        matches!(
+            self,
+            Self::Ident
+                | Self::String
+                | Self::StringUnterminated
+                | Self::NumberFloat
+                | Self::NumberHex
+                | Self::NumberHexEmpty
+                | Self::NumberDec
+                | Self::Comment
+                | Self::Whitespace
+        )
+    }
+}
+
 impl std::fmt::Display for Kind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Ident => write!(f, "ID"),
-            Self::String { terminated: false } => write!(f, "STR OPEN"),
-            Self::String { .. } => write!(f, "STR"),
+            Self::StringUnterminated => write!(f, "STR OPEN"),
+            Self::String => write!(f, "STR"),
             Self::NumberDec => write!(f, "DEC"),
-            Self::NumberHex { empty: true } => write!(f, "HEX EMPTY"),
-            Self::NumberHex { .. } => write!(f, "HEX"),
+            Self::NumberHexEmpty => write!(f, "HEX EMPTY"),
+            Self::NumberHex => write!(f, "HEX"),
             Self::NumberFloat => write!(f, "FLOAT"),
             Self::Whitespace => write!(f, "WS"),
             Self::Semi => write!(f, ";"),
@@ -233,13 +264,14 @@ impl std::fmt::Display for Kind {
             Self::Comment => write!(f, "#"),
             //Self::Anonymous(_) => write!(f, ""),
             Self::Eof => write!(f, "EOF"),
+            Self::Tombstone => write!(f, "X_X"),
         }
     }
 }
 
 pub(crate) fn debug_tokens(tokens: &[Token]) -> Vec<String> {
     let mut result = Vec::new();
-    let mut pos = TextUnit::default();
+    let mut pos = 0;
     for token in tokens {
         result.push(format!("{}..{} {}", pos, pos + token.len, token.kind));
         pos += token.len;
@@ -247,7 +279,22 @@ pub(crate) fn debug_tokens(tokens: &[Token]) -> Vec<String> {
     result
 }
 
-// microbenchmarks to do, one day
+pub(crate) fn debug_tokens2(tokens: &[Token], src: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut pos = 0;
+    for token in tokens {
+        let text = if token.kind.has_contents() {
+            format!("{}({})", token.kind, &src[pos..pos + token.len])
+        } else {
+            format!("{}", token.kind)
+        };
+        result.push(text);
+        pos += token.len;
+    }
+    result
+}
+
+// microbenchmarks to do, one day. Who do you think will win??
 
 //fn is_special_match(byte: u8) -> bool {
 //match byte {
@@ -291,5 +338,19 @@ mod tests {
         assert_eq!(token_strs[3], "7..8 WS");
         assert_eq!(token_strs[4], "8..10 HEX EMPTY");
         assert_eq!(token_strs[5], "10..12 ID");
+    }
+
+    #[test]
+    fn languagesystem() {
+        let fea = "languagesystem dflt cool;";
+        let tokens = tokenize(fea);
+        assert_eq!(tokens[0].len, 14);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "ID(languagesystem)");
+        assert_eq!(token_strs[1], "WS( )");
+        assert_eq!(token_strs[2], "ID(dflt)");
+        assert_eq!(token_strs[3], "WS( )");
+        assert_eq!(token_strs[4], "ID(cool)");
+        assert_eq!(token_strs[5], ";");
     }
 }

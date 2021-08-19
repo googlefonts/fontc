@@ -1,21 +1,23 @@
 use std::{env, ffi::OsStr, fs, path::PathBuf};
 
+mod grammar;
 mod lexer;
+mod parse;
+
+use parse::{DebugSink, Parser};
 
 fn main() {
     let args = Args::get_from_env_or_exit();
     let contents = fs::read_to_string(&args.path).expect("file read failed");
-    let tokens = lexer::tokenize(&contents);
-    for repr in lexer::debug_tokens(&tokens) {
-        println!("{}", repr);
-    }
-    //eprintln!("{}", lexer::debug_tokens(&tokens));
+    let mut sink = DebugSink::default();
+    let mut parser = Parser::new(&contents, &mut sink);
+    grammar::root(&mut parser);
+    println!("{}", sink);
 }
 
 macro_rules! exit_err {
     ($($arg:tt)*) => ({
         eprintln!($($arg)*);
-        //eprintln!("{}", HELP);
         std::process::exit(1);
     })
 }
