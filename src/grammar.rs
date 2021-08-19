@@ -1,5 +1,3 @@
-//sfdhhmm {}
-
 use crate::lexer::Kind as RawKind;
 use crate::parse::{Kind, Parser};
 
@@ -17,6 +15,8 @@ fn top_level_element(parser: &mut Parser) {
 
     if parser.at_eof() {
         ()
+    } else if parser.current_match(keywords::INCLUDE) {
+        include(parser)
     } else if parser.current_match(keywords::TABLE) {
         table(parser)
     } else if parser.current_match(keywords::LOOKUP) {
@@ -53,8 +53,49 @@ fn advance_to_top_level(parser: &mut Parser) {
 }
 
 fn language_system(parser: &mut Parser) {
+    fn language_system_body(parser: &mut Parser) {
+        assert!(
+            parser.current_match(keywords::LANGUAGESYSTEM),
+            "{}",
+            parser.current_token_text()
+        );
+        parser.eat_remap(Kind::LanguagesystemKw);
+        if !parser.expect(RawKind::Whitespace)
+            || !parser.expect_tag()
+            || !parser.expect(RawKind::Whitespace)
+            || !parser.expect_tag()
+        {
+            return advance_to_top_level(parser);
+        }
+        expect_semi_or_ws_semi(parser);
+    }
+
     parser.start_node(Kind::LanguagesystemKw);
     language_system_body(parser);
+    parser.finish_node();
+}
+
+fn include(parser: &mut Parser) {
+    fn include_body(parser: &mut Parser) {
+        assert!(parser.current_match(keywords::INCLUDE));
+        parser.eat_remap(Kind::IncludeKw);
+        if !parser.expect(RawKind::LParen) {
+            advance_to_top_level(parser);
+        }
+        if parser.current_match(RawKind::Ident) {
+            parser.eat_remap(Kind::Path);
+        } else {
+            parser.err("Include statement missing path");
+            return advance_to_top_level(parser);
+        }
+        if !parser.expect(RawKind::RParen) {
+            return advance_to_top_level(parser);
+        }
+        expect_semi_or_ws_semi(parser);
+    }
+
+    parser.start_node(Kind::IncludeKw);
+    include_body(parser);
     parser.finish_node();
 }
 
@@ -62,23 +103,6 @@ fn language_system(parser: &mut Parser) {
 // languagesystem 'okay
 // languagesystem ;
 // languagesystem[]
-fn language_system_body(parser: &mut Parser) {
-    assert!(
-        parser.current_match(keywords::LANGUAGESYSTEM),
-        "{}",
-        parser.current_token_text()
-    );
-    parser.eat_remap(Kind::LanguagesystemKw);
-    if !parser.expect(RawKind::Whitespace)
-        || !parser.expect_tag()
-        || !parser.expect(RawKind::Whitespace)
-        || !parser.expect_tag()
-    {
-        return advance_to_top_level(parser);
-    }
-    expect_semi_or_ws_semi(parser);
-}
-
 fn expect_semi_or_ws_semi(parser: &mut Parser) {
     if parser.current_match(RawKind::Whitespace) && parser.next_match(RawKind::Semi) {
         parser.eat_raw();
@@ -121,6 +145,7 @@ mod keywords {
 
     pub const TOPLEVEL: &[&[u8]] = &[
         TABLE,
+        INCLUDE,
         LOOKUP,
         LANGUAGESYSTEM,
         ANCHOR_DEF,
@@ -216,6 +241,7 @@ END LanguagesystemKw
         let input = "\
 languagesystem dflt DFTL;
 languagesystem okay cool;
+include(fun.fea);
 ";
         let out = debug_parse_output(input, root);
         let exp = "\
@@ -238,6 +264,14 @@ START FILE
     50..51 Semi
   END LanguagesystemKw
   51..52 WS
+  START IncludeKw
+    52..59 IncludeKw
+    59..60 LParen
+    60..67 Path
+    67..68 RParen
+    68..69 Semi
+  END IncludeKw
+  69..70 WS
 END FILE
 ";
 

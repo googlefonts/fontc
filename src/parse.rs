@@ -370,6 +370,7 @@ pub(crate) enum Kind {
 
     // <http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#2h-tags>
     Tag,
+    Path,
 
     // keywords:
     // top-level keywords
@@ -528,6 +529,7 @@ impl std::fmt::Display for Kind {
             Self::String => write!(f, "String"),
             Self::Ident => write!(f, "Ident"),
             Self::Tag => write!(f, "Tag"),
+            Self::Path => write!(f, "Path"),
             Self::TableKw => write!(f, "TableKw"),
             Self::LookupKw => write!(f, "LookupKw"),
             Self::LanguagesystemKw => write!(f, "LanguagesystemKw"),
