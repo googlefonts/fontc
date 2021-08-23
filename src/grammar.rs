@@ -16,23 +16,23 @@ fn top_level_element(parser: &mut Parser) {
 
     if parser.at_eof() {
         ()
-    } else if parser.current_match(Kind::IncludeKw) {
+    } else if parser.matches(0, Kind::IncludeKw) {
         include(parser)
-    } else if parser.current_match(Kind::TableKw) {
+    } else if parser.matches(0, Kind::TableKw) {
         table(parser)
-    } else if parser.current_match(Kind::LookupKw) {
+    } else if parser.matches(0, Kind::LookupKw) {
         lookup(parser)
-    } else if parser.current_match(Kind::LanguagesystemKw) {
+    } else if parser.matches(0, Kind::LanguagesystemKw) {
         language_system(parser)
-    } else if parser.current_match(Kind::FeatureKw) {
+    } else if parser.matches(0, Kind::FeatureKw) {
         feature(parser)
-    } else if parser.current_match(Kind::MarkClassKw) {
+    } else if parser.matches(0, Kind::MarkClassKw) {
         mark_class(parser)
-    } else if parser.current_match(Kind::AnchorDefKw) {
+    } else if parser.matches(0, Kind::AnchorDefKw) {
         anchor_def(parser)
-    } else if parser.current_match(Kind::AnonKw) {
+    } else if parser.matches(0, Kind::AnonKw) {
         anonymous(parser)
-    } else if parser.current_match(Kind::GlyphClass) {
+    } else if parser.matches(0, Kind::GlyphClass) {
         glyph_class(parser)
     } else {
         parser.err_and_bump(format!(
@@ -46,7 +46,7 @@ fn top_level_element(parser: &mut Parser) {
 fn advance_to_top_level(parser: &mut Parser) {
     loop {
         parser.eat_trivia();
-        if parser.at_eof() || parser.current_match(TOP_LEVEL) {
+        if parser.at_eof() || parser.matches(0, TOP_LEVEL) {
             break;
         }
         parser.eat_raw();
@@ -56,7 +56,7 @@ fn advance_to_top_level(parser: &mut Parser) {
 fn language_system(parser: &mut Parser) {
     fn language_system_body(parser: &mut Parser) {
         assert!(
-            parser.current_match(Kind::LanguagesystemKw),
+            parser.matches(0, Kind::LanguagesystemKw),
             "{}",
             parser.current_token_text()
         );
@@ -78,12 +78,12 @@ fn language_system(parser: &mut Parser) {
 
 fn include(parser: &mut Parser) {
     fn include_body(parser: &mut Parser) {
-        assert!(parser.current_match(Kind::IncludeKw));
+        assert!(parser.matches(0, Kind::IncludeKw));
         parser.eat_remap(Kind::IncludeKw);
         if !parser.expect(Kind::LParen) {
             advance_to_top_level(parser);
         }
-        if parser.current_match(Kind::Ident) {
+        if parser.matches(0, Kind::Ident) {
             parser.eat_remap(Kind::Path);
         } else {
             parser.err("Include statement missing path");
@@ -105,7 +105,7 @@ fn include(parser: &mut Parser) {
 // languagesystem ;
 // languagesystem[]
 fn expect_semi_or_ws_semi(parser: &mut Parser) {
-    if parser.current_match(Kind::Whitespace) && parser.next_match(Kind::Semi) {
+    if parser.matches(0, Kind::Whitespace) && parser.matches(1, Kind::Semi) {
         parser.eat_raw();
     }
     parser.expect(Kind::Semi);

@@ -6,14 +6,16 @@ use crate::lexer::Lexer;
 use crate::token::{Kind, Token};
 use crate::token_set::TokenSet;
 
+const LOOKAHEAD: usize = 4;
+const LOOKAHEAD_MAX: usize = LOOKAHEAD - 1;
+
 pub(crate) struct Parser<'a> {
     lexer: Lexer<'a>,
     sink: &'a mut dyn TreeSink,
     text: &'a str,
     pos: usize,
     errors: Vec<SyntaxError>,
-    current: Token,
-    next: Token,
+    buf: [Token; LOOKAHEAD],
 }
 
 #[derive(Debug, Clone)]
@@ -28,20 +30,32 @@ impl<'a> Parser<'a> {
             lexer: Lexer::new(text),
             sink,
             text,
-            current: Token::EMPTY,
-            next: Token::EMPTY,
+            buf: [Token::EMPTY; LOOKAHEAD],
             errors: Default::default(),
             pos: Default::default(),
         };
 
-        // preload the first two tokens; this accumulates any errors
-        this.advance();
-        this.advance();
+        // preload the buffer; this accumulates any errors
+        for _ in 0..LOOKAHEAD {
+            this.advance();
+        }
         this
     }
 
-    fn current_range(&self) -> Range<usize> {
-        self.pos..self.pos + self.current.len
+    fn nth_range(&self, n: usize) -> Range<usize> {
+        let start = match n {
+            0 => self.pos,
+            idx @ 1..=LOOKAHEAD_MAX => self.pos + self.buf[idx - 1].len,
+            _ => panic!("invalid range_n val"),
+        };
+
+        let len = self.buf[n].len;
+        start..start + len
+    }
+
+    fn nth(&self, n: usize) -> Token {
+        assert!(n <= LOOKAHEAD_MAX);
+        self.buf[n]
     }
 
     pub(crate) fn start_node(&mut self, kind: Kind) {
@@ -53,29 +67,28 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn current_token_text(&self) -> &str {
-        &self.text[self.current_range()]
+        &self.text[self.nth_range(0)]
     }
 
     fn do_bump<const N: usize>(&mut self, kind: Kind) {
         let mut len = 0;
         for _ in 0..N {
-            len += self.current.len;
+            len += self.buf[0].len;
             self.advance();
         }
         self.sink.token(kind, len);
     }
 
     fn advance(&mut self) {
-        self.pos += self.current.len;
-        self.current = self.next;
-        self.next = self.lexer.next_token();
-
+        self.pos += self.buf[0].len;
+        self.buf.rotate_left(1);
+        self.buf[LOOKAHEAD_MAX] = self.lexer.next_token();
         // replace sentinal tokens.
         //
         // There are several tokens we receive from the lexer that communicate
         // an error condition. We don't use these directly, but record the error
         // and replace them with a different token type.
-        if let Some((replace_kind, error)) = match self.next.kind {
+        if let Some((replace_kind, error)) = match self.buf[LOOKAHEAD_MAX].kind {
             Kind::StringUnterminated => Some((
                 Kind::String,
                 "Missing trailing `\"` character to terminate string.",
@@ -85,9 +98,8 @@ impl<'a> Parser<'a> {
             }
             _ => None,
         } {
-            self.next.kind = replace_kind;
-            let next_pos = self.pos + self.current.len;
-            let range = next_pos..next_pos + self.next.len;
+            self.nth(LOOKAHEAD_MAX).kind = replace_kind;
+            let range = self.nth_range(LOOKAHEAD_MAX);
             self.errors.push(SyntaxError {
                 range,
                 message: error.into(),
@@ -97,7 +109,7 @@ impl<'a> Parser<'a> {
 
     /// Eat if we're at this raw token. Return `true` if we eat.
     pub(crate) fn eat(&mut self, raw: Kind) -> bool {
-        if self.current.kind == raw {
+        if self.nth(0).kind == raw {
             self.eat_raw();
             return true;
         }
@@ -106,7 +118,7 @@ impl<'a> Parser<'a> {
 
     /// Eat the next token, regardless of what it is.
     pub(crate) fn eat_raw(&mut self) {
-        self.do_bump::<1>(self.current.kind);
+        self.do_bump::<1>(self.nth(0).kind);
     }
 
     /// Eat the next token, giving it an explicit kind.
@@ -122,11 +134,11 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn at_eof(&self) -> bool {
-        self.current.kind == Kind::Eof
+        self.nth(0).kind == Kind::Eof
     }
 
     pub(crate) fn eat_trivia(&mut self) {
-        while let Kind::Whitespace | Kind::Comment = self.current.kind {
+        while let Kind::Whitespace | Kind::Comment = self.nth(0).kind {
             self.eat_raw()
         }
     }
@@ -143,8 +155,8 @@ impl<'a> Parser<'a> {
         predicate: impl TokenComparable,
     ) {
         self.err(error);
-        let range = self.current_range();
-        if !predicate.matches(self.current.kind, &self.text.as_bytes()[range]) {
+        let range = self.nth_range(0);
+        if !predicate.matches(self.nth(0).kind, &self.text.as_bytes()[range]) {
             self.eat_raw();
         }
     }
@@ -152,7 +164,7 @@ impl<'a> Parser<'a> {
     /// write an error, do not advance
     pub(crate) fn err(&mut self, error: impl Into<String>) {
         let err = SyntaxError {
-            range: self.current_range(),
+            range: self.nth_range(0),
             message: error.into(),
         };
         self.sink.error(err);
@@ -160,18 +172,18 @@ impl<'a> Parser<'a> {
 
     /// consume if the token matches, otherwise error without advancing
     pub(crate) fn expect(&mut self, kind: Kind) -> bool {
-        if self.current.kind == kind {
+        if self.nth(0).kind == kind {
             self.eat_raw();
             true
         } else {
-            self.err(format!("Expected {}, found {}", kind, self.current.kind));
+            self.err(format!("Expected {}, found {}", kind, self.nth(0).kind));
             false
         }
     }
 
     pub(crate) fn expect_tag(&mut self) -> bool {
-        if self.current.kind == Kind::Ident {
-            if self.current_range().len() <= 4 {
+        if self.nth(0).kind == Kind::Ident {
+            if self.nth_range(0).len() <= 4 {
                 self.eat_remap(Kind::Tag);
             } else {
                 // this is an error, but we continue parsing
@@ -180,26 +192,20 @@ impl<'a> Parser<'a> {
             }
             true
         } else {
-            self.err(format!("expected tag, found {}", self.current.kind));
+            self.err(format!("expected tag, found {}", self.nth(0).kind));
             false
         }
     }
 
-    pub(crate) fn current_match(&self, token: impl TokenComparable) -> bool {
-        let range = self.current_range();
-        token.matches(self.current.kind, &self.text.as_bytes()[range])
-    }
-
-    pub(crate) fn next_match(&self, token: impl TokenComparable) -> bool {
-        let next_pos = self.pos + self.current.len;
-        let next_range = next_pos..next_pos + self.next.len;
-        token.matches(self.next.kind, &self.text.as_bytes()[next_range])
+    pub(crate) fn matches(&self, nth: usize, token: impl TokenComparable) -> bool {
+        let range = self.nth_range(nth);
+        token.matches(self.nth(nth).kind, &self.text.as_bytes()[range])
     }
 
     /// If current token is ident, return underlying bytes
     pub(crate) fn ident(&self) -> Option<&[u8]> {
-        if self.current.kind == Kind::Ident {
-            Some(&self.text.as_bytes()[self.current_range()])
+        if self.nth(0).kind == Kind::Ident {
+            Some(&self.text.as_bytes()[self.nth_range(0)])
         } else {
             None
         }
@@ -219,12 +225,6 @@ impl TokenComparable for &[u8] {
 impl TokenComparable for Kind {
     fn matches(&self, kind: Kind, _bytes: &[u8]) -> bool {
         self == &kind
-    }
-}
-
-impl TokenComparable for &[&[u8]] {
-    fn matches(&self, kind: Kind, bytes: &[u8]) -> bool {
-        self.contains(&bytes)
     }
 }
 

@@ -1,10 +1,10 @@
 //! A bitset of token kinds
+//!
+//! This is taken directly from rust-analzyer
 
 use super::token::Kind;
 
 /// A bit-set of `Kind`s
-///
-/// This impl taken from rust_analyzer
 #[derive(Clone, Copy)]
 pub(crate) struct TokenSet(u128);
 
@@ -21,7 +21,7 @@ pub(crate) const TOP_LEVEL: TokenSet = TokenSet::new(&[
 ]);
 
 impl TokenSet {
-    pub(crate) const EMPTY: TokenSet = TokenSet(0);
+    //pub(crate) const EMPTY: TokenSet = TokenSet(0);
 
     pub(crate) const fn new(kinds: &[Kind]) -> TokenSet {
         let mut res = 0u128;
@@ -33,9 +33,9 @@ impl TokenSet {
         TokenSet(res)
     }
 
-    pub(crate) const fn union(self, other: TokenSet) -> TokenSet {
-        TokenSet(self.0 | other.0)
-    }
+    //pub(crate) const fn union(self, other: TokenSet) -> TokenSet {
+    //TokenSet(self.0 | other.0)
+    //}
 
     pub(crate) const fn contains(&self, kind: Kind) -> bool {
         self.0 & mask(kind) != 0
