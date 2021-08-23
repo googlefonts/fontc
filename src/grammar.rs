@@ -8,6 +8,7 @@ pub(crate) fn root(parser: &mut Parser) {
         top_level_element(parser);
     }
 
+    parser.eat_trivia();
     parser.finish_node();
 }
 
@@ -61,11 +62,7 @@ fn language_system(parser: &mut Parser) {
             parser.current_token_text()
         );
         parser.eat_remap(Kind::LanguagesystemKw);
-        if !parser.expect(Kind::Whitespace)
-            || !parser.expect_tag()
-            || !parser.expect(Kind::Whitespace)
-            || !parser.expect_tag()
-        {
+        if !parser.expect_tag() || !parser.expect_tag() {
             return advance_to_top_level(parser);
         }
         expect_semi_or_ws_semi(parser);

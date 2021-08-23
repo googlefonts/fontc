@@ -121,7 +121,7 @@ impl Kind {
     }
 
     pub(crate) fn from_keyword(word: &[u8]) -> Option<Kind> {
-        eprintln!("{}", std::str::from_utf8(word).unwrap());
+        //eprintln!("{}", std::str::from_utf8(word).unwrap());
         match word {
             b"anchor" => Some(Kind::AnchorKw),
             b"anchorDef" => Some(Kind::AnchorDefKw),

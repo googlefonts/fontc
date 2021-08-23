@@ -1,6 +1,7 @@
 //! Convert raw tokens into semantic events
 
 use std::ops::Range;
+use std::rc::Rc;
 
 use crate::lexer::Lexer;
 use crate::token::{Kind, Token};
@@ -13,9 +14,23 @@ pub(crate) struct Parser<'a> {
     lexer: Lexer<'a>,
     sink: &'a mut dyn TreeSink,
     text: &'a str,
-    pos: usize,
     errors: Vec<SyntaxError>,
-    buf: [Token; LOOKAHEAD],
+    buf: [PendingToken; LOOKAHEAD],
+}
+
+/// A non-trivia token, as well as any trivia preceding that token.
+///
+/// We don't want to worry about trivia for the purposes of most parsing,
+/// but we do need to track it in the tree. To achieve this, we collect trivia
+/// and store it attached to the subsequent non-trivia token, and then add it
+/// to the tree when that token is consumed.
+struct PendingToken {
+    preceding_trivia: Vec<Token>,
+    // the position of the first token, including trivia
+    start_pos: usize,
+    // total length of trivia
+    trivia_len: usize,
+    token: Token,
 }
 
 #[derive(Debug, Clone)]
@@ -24,15 +39,23 @@ pub(crate) struct SyntaxError {
     range: Range<usize>,
 }
 
+impl PendingToken {
+    const EMPTY: PendingToken = PendingToken {
+        preceding_trivia: Vec::new(),
+        start_pos: 0,
+        trivia_len: 0,
+        token: Token::EMPTY,
+    };
+}
+
 impl<'a> Parser<'a> {
     pub(crate) fn new(text: &'a str, sink: &'a mut dyn TreeSink) -> Self {
         let mut this = Parser {
             lexer: Lexer::new(text),
             sink,
             text,
-            buf: [Token::EMPTY; LOOKAHEAD],
+            buf: [PendingToken::EMPTY; LOOKAHEAD],
             errors: Default::default(),
-            pos: Default::default(),
         };
 
         // preload the buffer; this accumulates any errors
@@ -43,19 +66,14 @@ impl<'a> Parser<'a> {
     }
 
     fn nth_range(&self, n: usize) -> Range<usize> {
-        let start = match n {
-            0 => self.pos,
-            idx @ 1..=LOOKAHEAD_MAX => self.pos + self.buf[idx - 1].len,
-            _ => panic!("invalid range_n val"),
-        };
-
-        let len = self.buf[n].len;
-        start..start + len
+        assert!(n < LOOKAHEAD);
+        let start = self.buf[n].start_pos + self.buf[n].trivia_len;
+        start..start + self.buf[n].token.len
     }
 
     fn nth(&self, n: usize) -> Token {
         assert!(n <= LOOKAHEAD_MAX);
-        self.buf[n]
+        self.buf[n].token
     }
 
     pub(crate) fn start_node(&mut self, kind: Kind) {
@@ -73,22 +91,37 @@ impl<'a> Parser<'a> {
     fn do_bump<const N: usize>(&mut self, kind: Kind) {
         let mut len = 0;
         for _ in 0..N {
-            len += self.buf[0].len;
+            len += self.nth(0).len;
             self.advance();
         }
         self.sink.token(kind, len);
     }
 
     fn advance(&mut self) {
-        self.pos += self.buf[0].len;
+        self.eat_trivia();
+
+        let prev_token = &self.buf[LOOKAHEAD_MAX];
+        let new_start = prev_token.start_pos + prev_token.trivia_len + prev_token.token.len;
         self.buf.rotate_left(1);
-        self.buf[LOOKAHEAD_MAX] = self.lexer.next_token();
-        // replace sentinal tokens.
-        //
-        // There are several tokens we receive from the lexer that communicate
-        // an error condition. We don't use these directly, but record the error
-        // and replace them with a different token type.
-        if let Some((replace_kind, error)) = match self.buf[LOOKAHEAD_MAX].kind {
+
+        let mut pending = &mut self.buf[LOOKAHEAD_MAX];
+        pending.start_pos = new_start;
+        pending.trivia_len = 0;
+        pending.token = loop {
+            let token = self.lexer.next_token();
+            if matches!(token.kind, Kind::Whitespace | Kind::Comment) {
+                pending.trivia_len += token.len;
+                pending.preceding_trivia.push(token);
+            } else {
+                break token;
+            }
+        };
+
+        self.validate_new_token();
+    }
+
+    fn validate_new_token(&mut self) {
+        if let Some((replace_kind, error)) = match self.nth(LOOKAHEAD_MAX).kind {
             Kind::StringUnterminated => Some((
                 Kind::String,
                 "Missing trailing `\"` character to terminate string.",
@@ -98,12 +131,12 @@ impl<'a> Parser<'a> {
             }
             _ => None,
         } {
-            self.nth(LOOKAHEAD_MAX).kind = replace_kind;
             let range = self.nth_range(LOOKAHEAD_MAX);
             self.errors.push(SyntaxError {
                 range,
                 message: error.into(),
-            })
+            });
+            self.buf[LOOKAHEAD_MAX].token.kind = replace_kind;
         }
     }
 
@@ -137,10 +170,16 @@ impl<'a> Parser<'a> {
         self.nth(0).kind == Kind::Eof
     }
 
+    /// Eat any trivia preceding the current token.
+    ///
+    /// This is normally not necessary, because trivia is consumed when eating
+    /// other tokens. It is useful only when trivia should or should not be
+    /// associated with a particular node.
     pub(crate) fn eat_trivia(&mut self) {
-        while let Kind::Whitespace | Kind::Comment = self.nth(0).kind {
-            self.eat_raw()
+        for token in self.buf[0].preceding_trivia.drain(..) {
+            self.sink.token(token.kind, token.len);
         }
+        self.buf[0].start_pos += self.buf[0].trivia_len;
     }
 
     pub(crate) fn err_and_bump(&mut self, error: impl Into<String>) {
