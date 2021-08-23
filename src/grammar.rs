@@ -1,5 +1,6 @@
-use crate::lexer::Kind;
-use crate::parse::{Parser, TOP_LEVEL};
+use crate::parse::Parser;
+use crate::token::Kind;
+use crate::token_set::TOP_LEVEL;
 
 pub(crate) fn root(parser: &mut Parser) {
     parser.start_node(Kind::SourceFile);

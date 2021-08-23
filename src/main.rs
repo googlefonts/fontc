@@ -3,6 +3,8 @@ use std::{env, ffi::OsStr, fs, path::PathBuf};
 mod grammar;
 mod lexer;
 mod parse;
+mod token;
+mod token_set;
 
 use parse::{DebugSink, Parser};
 
