@@ -8,4 +8,5 @@ edition = "2018"
 [dependencies]
 
 [dev-dependencies]
-pretty_assertions = "0.7.2"
+ansi_term = "0.12.1"
+diff = "0.1.12"

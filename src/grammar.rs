@@ -219,7 +219,7 @@ mod tests {
     fn languagesystem() {
         let input = "languagesystem dflt cool;";
         let out = debug_parse_output(input, |parser| language_system(parser));
-        pretty_assertions::assert_eq!(
+        crate::assert_eq_str!(
             out,
             "\
 START LanguagesystemKw
@@ -273,6 +273,6 @@ START FILE
 END FILE
 ";
 
-        pretty_assertions::assert_eq!(out, exp);
+        crate::assert_eq_str!(out, exp);
     }
 }

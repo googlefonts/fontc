@@ -3,6 +3,7 @@ use std::{env, ffi::OsStr, fs, path::PathBuf};
 mod grammar;
 mod lexer;
 mod parse;
+mod pretty_diff;
 mod token;
 mod token_set;
 
