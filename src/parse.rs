@@ -48,9 +48,13 @@ impl<'a> Parser<'a> {
         &self.text[self.current_range()]
     }
 
-    fn do_bump(&mut self, kind: Kind) {
-        self.sink.token(kind, self.current.len);
-        self.advance();
+    fn do_bump<const N: usize>(&mut self, kind: Kind) {
+        let mut len = 0;
+        for _ in 0..N {
+            len += self.current.len;
+            self.advance();
+        }
+        self.sink.token(kind, len);
     }
 
     fn advance(&mut self) {
@@ -95,14 +99,19 @@ impl<'a> Parser<'a> {
 
     /// Eat the next token, regardless of what it is.
     pub(crate) fn eat_raw(&mut self) {
-        self.do_bump(Kind::from_raw_kind(self.current.kind));
+        self.do_bump::<1>(Kind::from_raw_kind(self.current.kind));
     }
 
     /// Eat the next token, giving it an explicit kind.
     ///
     /// Necessary for handling keywords, which are not known to the lexer.
     pub(crate) fn eat_remap(&mut self, kind: Kind) {
-        self.do_bump(kind);
+        self.do_bump::<1>(kind);
+    }
+
+    /// combine two tokens into one
+    pub(crate) fn eat_remap2(&mut self, kind: Kind) {
+        self.do_bump::<2>(kind);
     }
 
     pub(crate) fn at_eof(&self) -> bool {
@@ -118,6 +127,19 @@ impl<'a> Parser<'a> {
     pub(crate) fn err_and_bump(&mut self, error: impl Into<String>) {
         self.err(error);
         self.eat_raw();
+    }
+
+    /// Error, and advance unless the current token matches a predicate.
+    pub(crate) fn err_recover(
+        &mut self,
+        error: impl Into<String>,
+        predicate: impl TokenComparable,
+    ) {
+        self.err(error);
+        let range = self.current_range();
+        if !predicate.matches(self.current.kind, &self.text.as_bytes()[range]) {
+            self.eat_raw();
+        }
     }
 
     /// write an error, do not advance
@@ -371,6 +393,9 @@ pub(crate) enum Kind {
     // <http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#2h-tags>
     Tag,
     Path,
+    GlyphName,
+    GlyphClass,
+    Cid,
 
     // keywords:
     // top-level keywords
@@ -530,6 +555,9 @@ impl std::fmt::Display for Kind {
             Self::Ident => write!(f, "Ident"),
             Self::Tag => write!(f, "Tag"),
             Self::Path => write!(f, "Path"),
+            Self::GlyphClass => write!(f, "GlyphClass"),
+            Self::GlyphName => write!(f, "GlyphName"),
+            Self::Cid => write!(f, "GlyphName"),
             Self::TableKw => write!(f, "TableKw"),
             Self::LookupKw => write!(f, "LookupKw"),
             Self::LanguagesystemKw => write!(f, "LanguagesystemKw"),
