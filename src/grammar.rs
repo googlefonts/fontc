@@ -1,5 +1,5 @@
-use crate::lexer::Kind as RawKind;
-use crate::parse::{Kind, Parser};
+use crate::lexer::Kind;
+use crate::parse::{Parser, TOP_LEVEL};
 
 pub(crate) fn root(parser: &mut Parser) {
     parser.start_node(Kind::SourceFile);
@@ -15,23 +15,23 @@ fn top_level_element(parser: &mut Parser) {
 
     if parser.at_eof() {
         ()
-    } else if parser.current_match(keywords::INCLUDE) {
+    } else if parser.current_match(Kind::IncludeKw) {
         include(parser)
-    } else if parser.current_match(keywords::TABLE) {
+    } else if parser.current_match(Kind::TableKw) {
         table(parser)
-    } else if parser.current_match(keywords::LOOKUP) {
+    } else if parser.current_match(Kind::LookupKw) {
         lookup(parser)
-    } else if parser.current_match(keywords::LANGUAGESYSTEM) {
+    } else if parser.current_match(Kind::LanguagesystemKw) {
         language_system(parser)
-    } else if parser.current_match(keywords::FEATURE) {
+    } else if parser.current_match(Kind::FeatureKw) {
         feature(parser)
-    } else if parser.current_match(keywords::MARK_CLASS) {
+    } else if parser.current_match(Kind::MarkClassKw) {
         mark_class(parser)
-    } else if parser.current_match(keywords::ANCHOR_DEF) {
+    } else if parser.current_match(Kind::AnchorDefKw) {
         anchor_def(parser)
-    } else if parser.current_match(keywords::ANON) || parser.current_match(keywords::ANONYMOUS) {
+    } else if parser.current_match(Kind::AnonKw) {
         anonymous(parser)
-    } else if parser.current_match(RawKind::At) {
+    } else if parser.current_match(Kind::GlyphClass) {
         glyph_class(parser)
     } else {
         parser.err_and_bump(format!(
@@ -45,7 +45,7 @@ fn top_level_element(parser: &mut Parser) {
 fn advance_to_top_level(parser: &mut Parser) {
     loop {
         parser.eat_trivia();
-        if parser.at_eof() || parser.current_match(keywords::TOPLEVEL) {
+        if parser.at_eof() || parser.current_match(TOP_LEVEL) {
             break;
         }
         parser.eat_raw();
@@ -55,14 +55,14 @@ fn advance_to_top_level(parser: &mut Parser) {
 fn language_system(parser: &mut Parser) {
     fn language_system_body(parser: &mut Parser) {
         assert!(
-            parser.current_match(keywords::LANGUAGESYSTEM),
+            parser.current_match(Kind::LanguagesystemKw),
             "{}",
             parser.current_token_text()
         );
         parser.eat_remap(Kind::LanguagesystemKw);
-        if !parser.expect(RawKind::Whitespace)
+        if !parser.expect(Kind::Whitespace)
             || !parser.expect_tag()
-            || !parser.expect(RawKind::Whitespace)
+            || !parser.expect(Kind::Whitespace)
             || !parser.expect_tag()
         {
             return advance_to_top_level(parser);
@@ -77,18 +77,18 @@ fn language_system(parser: &mut Parser) {
 
 fn include(parser: &mut Parser) {
     fn include_body(parser: &mut Parser) {
-        assert!(parser.current_match(keywords::INCLUDE));
+        assert!(parser.current_match(Kind::IncludeKw));
         parser.eat_remap(Kind::IncludeKw);
-        if !parser.expect(RawKind::LParen) {
+        if !parser.expect(Kind::LParen) {
             advance_to_top_level(parser);
         }
-        if parser.current_match(RawKind::Ident) {
+        if parser.current_match(Kind::Ident) {
             parser.eat_remap(Kind::Path);
         } else {
             parser.err("Include statement missing path");
             return advance_to_top_level(parser);
         }
-        if !parser.expect(RawKind::RParen) {
+        if !parser.expect(Kind::RParen) {
             return advance_to_top_level(parser);
         }
         expect_semi_or_ws_semi(parser);
@@ -104,10 +104,10 @@ fn include(parser: &mut Parser) {
 // languagesystem ;
 // languagesystem[]
 fn expect_semi_or_ws_semi(parser: &mut Parser) {
-    if parser.current_match(RawKind::Whitespace) && parser.next_match(RawKind::Semi) {
+    if parser.current_match(Kind::Whitespace) && parser.next_match(Kind::Semi) {
         parser.eat_raw();
     }
-    parser.expect(RawKind::Semi);
+    parser.expect(Kind::Semi);
 }
 
 fn table(parser: &mut Parser) {
@@ -139,71 +139,71 @@ fn glyph_class(parser: &mut Parser) {
 }
 //;
 
-mod keywords {
-    pub struct Whitespace;
-    pub const WHITESPACE: Whitespace = Whitespace;
+//mod keywords {
+//pub struct Whitespace;
+//pub const WHITESPACE: Whitespace = Whitespace;
 
-    pub const TOPLEVEL: &[&[u8]] = &[
-        TABLE,
-        INCLUDE,
-        LOOKUP,
-        LANGUAGESYSTEM,
-        ANCHOR_DEF,
-        FEATURE,
-        MARK_CLASS,
-        ANON,
-        ANONYMOUS,
-        AT,
-    ];
+//pub const TOPLEVEL: &[&[u8]] = &[
+//TABLE,
+//INCLUDE,
+//LOOKUP,
+//LANGUAGESYSTEM,
+//ANCHOR_DEF,
+//FEATURE,
+//MARK_CLASS,
+//ANON,
+//ANONYMOUS,
+//AT,
+//];
 
-    pub const AT: &[u8] = b"@";
+//pub const AT: &[u8] = b"@";
 
-    pub const ANCHOR: &[u8] = b"anchor";
-    pub const ANCHOR_DEF: &[u8] = b"anchorDef";
-    pub const ANON: &[u8] = b"anon";
-    pub const ANONYMOUS: &[u8] = b"anonymous";
-    pub const BY: &[u8] = b"by";
-    pub const CONTOURPOINT: &[u8] = b"contourpoint";
-    pub const CURSIVE: &[u8] = b"cursive";
-    pub const DEVICE: &[u8] = b"device"; //[ Not implemented ];
-    pub const ENUM: &[u8] = b"enum";
-    pub const ENUMERATE: &[u8] = b"enumerate";
-    pub const EXCLUDE_DFLT: &[u8] = b"exclude_dflt";
-    pub const FEATURE: &[u8] = b"feature"; //(used as a block and as a statement);
-    pub const FROM: &[u8] = b"from";
-    pub const IGNORE: &[u8] = b"ignore"; //(used with substitute and position);
-    pub const IGNORE_BASE_GLYPHS: &[u8] = b"IgnoreBaseGlyphs";
-    pub const IGNORE_LIGATURES: &[u8] = b"IgnoreLigatures";
-    pub const IGNORE_MARKS: &[u8] = b"IgnoreMarks";
-    pub const INCLUDE: &[u8] = b"include";
-    pub const INCLUDE_DFLT: &[u8] = b"include_dflt";
-    pub const LANGUAGE: &[u8] = b"language";
-    pub const LANGUAGESYSTEM: &[u8] = b"languagesystem";
-    pub const LOOKUP: &[u8] = b"lookup";
-    pub const LOOKUPFLAG: &[u8] = b"lookupflag";
-    pub const MARK: &[u8] = b"mark";
-    pub const MARK_ATTACHMENT_TYPE: &[u8] = b"MarkAttachmentType";
-    pub const MARK_CLASS: &[u8] = b"markClass";
-    pub const NAMEID: &[u8] = b"nameid";
-    pub const NULL: &[u8] = b"NULL"; //(used in substitute, device, value record, anchor);
-    pub const PARAMETERS: &[u8] = b"parameters";
-    pub const POS: &[u8] = b"pos";
-    pub const POSITION: &[u8] = b"position";
-    pub const REQUIRED: &[u8] = b"required"; //[ Not implemented ];
-    pub const REVERSESUB: &[u8] = b"reversesub";
-    pub const RIGHT_TO_LEFT: &[u8] = b"RightToLeft";
-    pub const RSUB: &[u8] = b"rsub";
-    pub const SCRIPT: &[u8] = b"script";
-    pub const SUB: &[u8] = b"sub";
-    pub const SUBSTITUTE: &[u8] = b"substitute";
-    pub const SUBTABLE: &[u8] = b"subtable";
-    pub const TABLE: &[u8] = b"table";
-    pub const USE_EXTENSION: &[u8] = b"useExtension";
-    pub const USE_MARK_FILTERING_SET: &[u8] = b"UseMarkFilteringSet";
-    pub const VALUE_RECORD_DEF: &[u8] = b"valueRecordDef";
-    pub const EXCLUDE_DFLT2: &[u8] = b"excludeDFLT"; //(deprecated);
-    pub const INCLUDE_DFLT2: &[u8] = b"includeDFLT"; //(deprecated);
-}
+//pub const ANCHOR: &[u8] = b"anchor";
+//pub const ANCHOR_DEF: &[u8] = b"anchorDef";
+//pub const ANON: &[u8] = b"anon";
+//pub const ANONYMOUS: &[u8] = b"anonymous";
+//pub const BY: &[u8] = b"by";
+//pub const CONTOURPOINT: &[u8] = b"contourpoint";
+//pub const CURSIVE: &[u8] = b"cursive";
+//pub const DEVICE: &[u8] = b"device"; //[ Not implemented ];
+//pub const ENUM: &[u8] = b"enum";
+//pub const ENUMERATE: &[u8] = b"enumerate";
+//pub const EXCLUDE_DFLT: &[u8] = b"exclude_dflt";
+//pub const FEATURE: &[u8] = b"feature"; //(used as a block and as a statement);
+//pub const FROM: &[u8] = b"from";
+//pub const IGNORE: &[u8] = b"ignore"; //(used with substitute and position);
+//pub const IGNORE_BASE_GLYPHS: &[u8] = b"IgnoreBaseGlyphs";
+//pub const IGNORE_LIGATURES: &[u8] = b"IgnoreLigatures";
+//pub const IGNORE_MARKS: &[u8] = b"IgnoreMarks";
+//pub const INCLUDE: &[u8] = b"include";
+//pub const INCLUDE_DFLT: &[u8] = b"include_dflt";
+//pub const LANGUAGE: &[u8] = b"language";
+//pub const LANGUAGESYSTEM: &[u8] = b"languagesystem";
+//pub const LOOKUP: &[u8] = b"lookup";
+//pub const LOOKUPFLAG: &[u8] = b"lookupflag";
+//pub const MARK: &[u8] = b"mark";
+//pub const MARK_ATTACHMENT_TYPE: &[u8] = b"MarkAttachmentType";
+//pub const MARK_CLASS: &[u8] = b"markClass";
+//pub const NAMEID: &[u8] = b"nameid";
+//pub const NULL: &[u8] = b"NULL"; //(used in substitute, device, value record, anchor);
+//pub const PARAMETERS: &[u8] = b"parameters";
+//pub const POS: &[u8] = b"pos";
+//pub const POSITION: &[u8] = b"position";
+//pub const REQUIRED: &[u8] = b"required"; //[ Not implemented ];
+//pub const REVERSESUB: &[u8] = b"reversesub";
+//pub const RIGHT_TO_LEFT: &[u8] = b"RightToLeft";
+//pub const RSUB: &[u8] = b"rsub";
+//pub const SCRIPT: &[u8] = b"script";
+//pub const SUB: &[u8] = b"sub";
+//pub const SUBSTITUTE: &[u8] = b"substitute";
+//pub const SUBTABLE: &[u8] = b"subtable";
+//pub const TABLE: &[u8] = b"table";
+//pub const USE_EXTENSION: &[u8] = b"useExtension";
+//pub const USE_MARK_FILTERING_SET: &[u8] = b"UseMarkFilteringSet";
+//pub const VALUE_RECORD_DEF: &[u8] = b"valueRecordDef";
+//pub const EXCLUDE_DFLT2: &[u8] = b"excludeDFLT"; //(deprecated);
+//pub const INCLUDE_DFLT2: &[u8] = b"includeDFLT"; //(deprecated);
+//}
 
 #[cfg(test)]
 mod tests {
@@ -230,7 +230,7 @@ START LanguagesystemKw
   15..19 Tag
   19..20 WS
   20..24 Tag
-  24..25 Semi
+  24..25 ;
 END LanguagesystemKw
 "
         )
@@ -252,7 +252,7 @@ START FILE
     15..19 Tag
     19..20 WS
     20..24 Tag
-    24..25 Semi
+    24..25 ;
   END LanguagesystemKw
   25..26 WS
   START LanguagesystemKw
@@ -261,15 +261,15 @@ START FILE
     41..45 Tag
     45..46 WS
     46..50 Tag
-    50..51 Semi
+    50..51 ;
   END LanguagesystemKw
   51..52 WS
   START IncludeKw
     52..59 IncludeKw
-    59..60 LParen
+    59..60 (
     60..67 Path
-    67..68 RParen
-    68..69 Semi
+    67..68 )
+    68..69 ;
   END IncludeKw
   69..70 WS
 END FILE

@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use super::lexer::{Kind as RawKind, Lexer, Token as RawToken};
+use super::lexer::{Kind, Lexer, Token};
 
 pub(crate) struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -10,8 +10,14 @@ pub(crate) struct Parser<'a> {
     text: &'a str,
     pos: usize,
     errors: Vec<SyntaxError>,
-    current: RawToken,
-    next: RawToken,
+    current: Token,
+    next: Token,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SyntaxError {
+    message: String,
+    range: Range<usize>,
 }
 
 impl<'a> Parser<'a> {
@@ -20,8 +26,8 @@ impl<'a> Parser<'a> {
             lexer: Lexer::new(text),
             sink,
             text,
-            current: RawToken::EMPTY,
-            next: RawToken::EMPTY,
+            current: Token::EMPTY,
+            next: Token::EMPTY,
             errors: Default::default(),
             pos: Default::default(),
         };
@@ -68,14 +74,13 @@ impl<'a> Parser<'a> {
         // an error condition. We don't use these directly, but record the error
         // and replace them with a different token type.
         if let Some((replace_kind, error)) = match self.next.kind {
-            RawKind::StringUnterminated => Some((
-                RawKind::String,
+            Kind::StringUnterminated => Some((
+                Kind::String,
                 "Missing trailing `\"` character to terminate string.",
             )),
-            RawKind::NumberHexEmpty => Some((
-                RawKind::NumberHex,
-                "Missing digits after hexidecimal prefix.",
-            )),
+            Kind::NumberHexEmpty => {
+                Some((Kind::NumberHex, "Missing digits after hexidecimal prefix."))
+            }
             _ => None,
         } {
             self.next.kind = replace_kind;
@@ -89,7 +94,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Eat if we're at this raw token. Return `true` if we eat.
-    pub(crate) fn eat(&mut self, raw: RawKind) -> bool {
+    pub(crate) fn eat(&mut self, raw: Kind) -> bool {
         if self.current.kind == raw {
             self.eat_raw();
             return true;
@@ -99,7 +104,7 @@ impl<'a> Parser<'a> {
 
     /// Eat the next token, regardless of what it is.
     pub(crate) fn eat_raw(&mut self) {
-        self.do_bump::<1>(Kind::from_raw_kind(self.current.kind));
+        self.do_bump::<1>(self.current.kind);
     }
 
     /// Eat the next token, giving it an explicit kind.
@@ -115,11 +120,11 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn at_eof(&self) -> bool {
-        self.current.kind == RawKind::Eof
+        self.current.kind == Kind::Eof
     }
 
     pub(crate) fn eat_trivia(&mut self) {
-        while let RawKind::Whitespace | RawKind::Comment = self.current.kind {
+        while let Kind::Whitespace | Kind::Comment = self.current.kind {
             self.eat_raw()
         }
     }
@@ -152,7 +157,7 @@ impl<'a> Parser<'a> {
     }
 
     /// consume if the token matches, otherwise error without advancing
-    pub(crate) fn expect(&mut self, kind: RawKind) -> bool {
+    pub(crate) fn expect(&mut self, kind: Kind) -> bool {
         if self.current.kind == kind {
             self.eat_raw();
             true
@@ -163,7 +168,7 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn expect_tag(&mut self) -> bool {
-        if self.current.kind == RawKind::Ident {
+        if self.current.kind == Kind::Ident {
             if self.current_range().len() <= 4 {
                 self.eat_remap(Kind::Tag);
             } else {
@@ -191,7 +196,7 @@ impl<'a> Parser<'a> {
 
     /// If current token is ident, return underlying bytes
     pub(crate) fn ident(&self) -> Option<&[u8]> {
-        if self.current.kind == RawKind::Ident {
+        if self.current.kind == Kind::Ident {
             Some(&self.text.as_bytes()[self.current_range()])
         } else {
             None
@@ -200,47 +205,30 @@ impl<'a> Parser<'a> {
 }
 
 pub(crate) trait TokenComparable {
-    fn matches(&self, kind: RawKind, bytes: &[u8]) -> bool;
+    fn matches(&self, kind: Kind, bytes: &[u8]) -> bool;
 }
 
 impl TokenComparable for &[u8] {
-    fn matches(&self, _: RawKind, bytes: &[u8]) -> bool {
+    fn matches(&self, _: Kind, bytes: &[u8]) -> bool {
         self == &bytes
     }
 }
 
-impl TokenComparable for RawKind {
-    fn matches(&self, kind: RawKind, _bytes: &[u8]) -> bool {
+impl TokenComparable for Kind {
+    fn matches(&self, kind: Kind, _bytes: &[u8]) -> bool {
         self == &kind
     }
 }
 
-//impl TokenComparable for char {
-//fn matches(&self, kind: RawKind, bytes: &[u8]) -> bool {
-//match (self, kind) {
-//(';', RawKind::Semi) => true,
-//(',', RawKind::Comma) => true,
-//('@', RawKind::At) => true,
-//('\\', RawKind::Backslash) => true,
-//('-', RawKind::Hyphen) => true,
-//('=', RawKind::Eq) => true,
-//('{', RawKind::LBrace) => true,
-//('}', RawKind::RBrace) => true,
-//('[', RawKind::LSquare) => true,
-//(']', RawKind::RSquare) => true,
-//('(', RawKind::LParen) => true,
-//(')', RawKind::RParen) => true,
-//('<', RawKind::LAngle) => true,
-//('>', RawKind::RAngle) => true,
-//('\'', RawKind::SingleQuote) => true,
-//_ => false,
-//}
-//}
-//}
-
 impl TokenComparable for &[&[u8]] {
-    fn matches(&self, kind: RawKind, bytes: &[u8]) -> bool {
+    fn matches(&self, kind: Kind, bytes: &[u8]) -> bool {
         self.contains(&bytes)
+    }
+}
+
+impl TokenComparable for TokenSet {
+    fn matches(&self, kind: Kind, _bytes: &[u8]) -> bool {
+        self.contains(kind)
     }
 }
 
@@ -325,293 +313,54 @@ impl std::fmt::Display for DebugSink {
     }
 }
 
-//fn kind_for_raw_kind(raw: &RawKind) -> (Kind, Option<String>) {
-//let kind = match raw {
-//RawKind::String { terminated: false } => return (Kind::String, Some("Missing closing \".".into())),
-//RawKind::String { terminated: true } => Kind::String,
+/// A bit-set of `Kind`s
+///
+/// This impl taken from rust_analyzer
+#[derive(Clone, Copy)]
+pub(crate) struct TokenSet(u128);
 
-//RawKind::At => Kind::At,
-//RawKind::Semi => Kind::Semi,
-//RawKind::Comma => Kind::Comma,
-//RawKind::At => Kind::At,
-//RawKind::Backslash => Kind::Backslash,
-//RawKind::Hyphen => Kind::Hyphen, // also minus
-//RawKind::Eq => Kind::Eq,
-//RawKind::LBrace => Kind::LBrace,
-//RawKind::RBrace => Kind::RBrace,
-//RawKind::LSquare => Kind::LSquare,
-//RawKind::RSquare => Kind::RSquare,
-//RawKind::LParen => Kind::LParen,
-//RawKind::RParen => Kind::RParen,
-//RawKind::LAngle => Kind::LAngle,
-//RawKind::RAngle => Kind::RAngle,
-//RawKind::SingleQuote => Kind::SingleQuote,
-//}
+pub(crate) const TOP_LEVEL: TokenSet = TokenSet::new(&[
+    Kind::TableKw,
+    Kind::IncludeKw,
+    Kind::LookupKw,
+    Kind::LanguagesystemKw,
+    Kind::AnchorDefKw,
+    Kind::FeatureKw,
+    Kind::MarkClassKw,
+    Kind::AnonKw,
+    Kind::GlyphClass,
+]);
 
-//}
+impl TokenSet {
+    pub(crate) const EMPTY: TokenSet = TokenSet(0);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Token {
-    pub(crate) len: usize,
-    pub(crate) kind: Kind,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Kind {
-    Tombstone, // a placeholder value, should never be seen
-    Eof,
-
-    SourceFile,
-    Whitespace,
-    Comment,
-
-    NumberHex,
-    NumberFloat,
-    NumberDec,
-
-    // symbols
-    Semi,
-    Comma,
-    At,
-    Backslash,
-    Hyphen, // also minus
-    Eq,
-    LBrace,
-    RBrace,
-    LSquare,
-    RSquare,
-    LParen,
-    RParen,
-    LAngle,
-    RAngle,
-    SingleQuote,
-
-    String,
-    // including unresolved symbols for which we need more context
-    Ident,
-
-    // <http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#2h-tags>
-    Tag,
-    Path,
-    GlyphName,
-    GlyphClass,
-    Cid,
-
-    // keywords:
-    // top-level keywords
-    TableKw,
-    LookupKw,
-    LanguagesystemKw,
-    AnchorDefKw,
-    FeatureKw,
-    MarkClassKw,
-    AnonKw,
-    //AnonymousKw,
-
-    // other keywords
-    AnchorKw,
-    ByKw,
-    ContourpointKw,
-    CursiveKw,
-    DeviceKw,
-    EnumKw,
-    //EnumerateKw,
-    ExcludeDfltKw,
-    FromKw,
-    IgnoreKw,
-    IgnoreBaseGlyphsKw,
-    IgnoreLigaturesKw,
-    IgnoreMarksKw,
-    IncludeKw,
-    IncludeDfltKw,
-    LanguageKw,
-    LookupflagKw,
-    MarkKw,
-    MarkAttachmentTypeKw,
-    NameIdKw,
-    NullKw,
-    ParametersKw,
-    PosKw,
-    //PositionKw,
-    RequiredKw,
-    ReversesubKw,
-    RightToLeftKw,
-    RsubKw,
-    ScriptKw,
-    SubKw,
-    //SubstituteKw,
-    SubtableKw,
-    UseExtensionKw,
-    UseMarkFilteringSetKw,
-    ValueRecordDefKw,
-}
-
-impl Kind {
-    // nothing fancy, idents are still idents etc
-    pub(crate) fn from_raw_kind(raw: RawKind) -> Kind {
-        match raw {
-            RawKind::Ident => Kind::Ident,
-            RawKind::String => Kind::String,
-            RawKind::NumberDec => Kind::NumberDec, // also octal; we disambiguate based on context
-            RawKind::NumberHex => Kind::NumberHex,
-            RawKind::NumberFloat => Kind::NumberFloat,
-            RawKind::Whitespace => Kind::Whitespace,
-            RawKind::Semi => Kind::Semi,
-            RawKind::Comma => Kind::Comma,
-            RawKind::At => Kind::At,
-            RawKind::Backslash => Kind::Backslash,
-            RawKind::Hyphen => Kind::Hyphen, // also minus
-            RawKind::Eq => Kind::Eq,
-            RawKind::LBrace => Kind::LBrace,
-            RawKind::RBrace => Kind::RBrace,
-            RawKind::LSquare => Kind::LSquare,
-            RawKind::RSquare => Kind::RSquare,
-            RawKind::LParen => Kind::LParen,
-            RawKind::RParen => Kind::RParen,
-            RawKind::LAngle => Kind::LAngle,
-            RawKind::RAngle => Kind::RAngle,
-            RawKind::SingleQuote => Kind::SingleQuote,
-            RawKind::Comment => Kind::Comment,
-            RawKind::Eof => Kind::Eof,
-            RawKind::Tombstone => Kind::Tombstone,
-            RawKind::StringUnterminated | RawKind::NumberHexEmpty => {
-                panic!("invalid raw token kind")
-            }
+    pub(crate) const fn new(kinds: &[Kind]) -> TokenSet {
+        let mut res = 0u128;
+        let mut i = 0;
+        while i < kinds.len() {
+            res |= mask(kinds[i]);
+            i += 1
         }
+        TokenSet(res)
     }
 
-    pub(crate) fn from_keyword(word: &str) -> Option<Kind> {
-        match word {
-            "anchor" => Some(Kind::AnchorKw),
-            "anchorDef" => Some(Kind::AnchorDefKw),
-            "anon" | "anonymous" => Some(Kind::AnonKw),
-            "by" => Some(Kind::ByKw),
-            "contourpoint" => Some(Kind::ContourpointKw),
-            "cursive" => Some(Kind::CursiveKw),
-            "device" => Some(Kind::DeviceKw), //[ Not implemented ];
-            "enum" | "enumerate" => Some(Kind::EnumKw),
-            "exclude_dflt" | "excludeDFLT" => Some(Kind::ExcludeDfltKw),
-            "feature" => Some(Kind::FeatureKw), //(used as a block and as a statement);
-            "from" => Some(Kind::FromKw),
-            "ignore" => Some(Kind::IgnoreKw), //(used with substitute and position);
-            "IgnoreBaseGlyphs" => Some(Kind::IgnoreBaseGlyphsKw),
-            "IgnoreLigatures" => Some(Kind::IgnoreLigaturesKw),
-            "IgnoreMarks" => Some(Kind::IgnoreMarksKw),
-            "include" => Some(Kind::IncludeKw),
-            "include_dflt" | "includeDFLT" => Some(Kind::IncludeDfltKw),
-            "language" => Some(Kind::LanguageKw),
-            "languagesystem" => Some(Kind::LanguagesystemKw),
-            "lookup" => Some(Kind::LookupKw),
-            "lookupflag" => Some(Kind::LookupflagKw),
-            "mark" => Some(Kind::MarkKw),
-            "MarkAttachmentType" => Some(Kind::MarkAttachmentTypeKw),
-            "markClass" => Some(Kind::MarkClassKw),
-            "nameid" => Some(Kind::NameIdKw),
-            "NULL" => Some(Kind::NullKw), //(used in substitute, device, value record, anchor);
-            "parameters" => Some(Kind::ParametersKw),
-            "pos" | "position" => Some(Kind::PosKw),
-            "required" => Some(Kind::RequiredKw), //[ Not implemented ];
-            "reversesub" | "rsub" => Some(Kind::RsubKw),
-            "RightToLeft" => Some(Kind::RightToLeftKw),
-            "script" => Some(Kind::ScriptKw),
-            "substitute" | "sub" => Some(Kind::SubKw),
-            "subtable" => Some(Kind::SubtableKw),
-            "table" => Some(Kind::TableKw),
-            "useExtension" => Some(Kind::UseExtensionKw),
-            "UseMarkFilteringSet" => Some(Kind::UseMarkFilteringSetKw),
-            "valueRecordDef" => Some(Kind::ValueRecordDefKw),
-            _ => None,
-        }
+    pub(crate) const fn union(self, other: TokenSet) -> TokenSet {
+        TokenSet(self.0 | other.0)
+    }
+
+    pub(crate) const fn contains(&self, kind: Kind) -> bool {
+        self.0 & mask(kind) != 0
     }
 }
 
-impl std::fmt::Display for Kind {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::Tombstone => write!(f, "Tombstone"), // a placeholder value, should never be seen
-            Self::Eof => write!(f, "Eof"),
-            Self::SourceFile => write!(f, "FILE"),
-            Self::Whitespace => write!(f, "WS"),
-            Self::Comment => write!(f, "Comment"),
-            Self::NumberHex => write!(f, "NumberHex"),
-            Self::NumberFloat => write!(f, "NumberFloat"),
-            Self::NumberDec => write!(f, "NumberDec"),
-            Self::Semi => write!(f, "Semi"),
-            Self::Comma => write!(f, "Comma"),
-            Self::At => write!(f, "At"),
-            Self::Backslash => write!(f, "Backslash"),
-            Self::Hyphen => write!(f, "Hyphen"), // also minus
-            Self::Eq => write!(f, "Eq"),
-            Self::LBrace => write!(f, "LBrace"),
-            Self::RBrace => write!(f, "RBrace"),
-            Self::LSquare => write!(f, "LSquare"),
-            Self::RSquare => write!(f, "RSquare"),
-            Self::LParen => write!(f, "LParen"),
-            Self::RParen => write!(f, "RParen"),
-            Self::LAngle => write!(f, "LAngle"),
-            Self::RAngle => write!(f, "RAngle"),
-            Self::SingleQuote => write!(f, "SingleQuote"),
-            Self::String => write!(f, "String"),
-            Self::Ident => write!(f, "Ident"),
-            Self::Tag => write!(f, "Tag"),
-            Self::Path => write!(f, "Path"),
-            Self::GlyphClass => write!(f, "GlyphClass"),
-            Self::GlyphName => write!(f, "GlyphName"),
-            Self::Cid => write!(f, "GlyphName"),
-            Self::TableKw => write!(f, "TableKw"),
-            Self::LookupKw => write!(f, "LookupKw"),
-            Self::LanguagesystemKw => write!(f, "LanguagesystemKw"),
-            Self::AnchorDefKw => write!(f, "AnchorDefKw"),
-            Self::FeatureKw => write!(f, "FeatureKw"),
-            Self::MarkClassKw => write!(f, "MarkClassKw"),
-            Self::AnonKw => write!(f, "AnonKw"),
-            Self::AnchorKw => write!(f, "AnchorKw"),
-            Self::ByKw => write!(f, "ByKw"),
-            Self::ContourpointKw => write!(f, "ContourpointKw"),
-            Self::CursiveKw => write!(f, "CursiveKw"),
-            Self::DeviceKw => write!(f, "DeviceKw"),
-            Self::EnumKw => write!(f, "EnumKw"),
-            Self::ExcludeDfltKw => write!(f, "ExcludeDfltKw"),
-            Self::FromKw => write!(f, "FromKw"),
-            Self::IgnoreKw => write!(f, "IgnoreKw"),
-            Self::IgnoreBaseGlyphsKw => write!(f, "IgnoreBaseGlyphsKw"),
-            Self::IgnoreLigaturesKw => write!(f, "IgnoreLigaturesKw"),
-            Self::IgnoreMarksKw => write!(f, "IgnoreMarksKw"),
-            Self::IncludeKw => write!(f, "IncludeKw"),
-            Self::IncludeDfltKw => write!(f, "IncludeDfltKw"),
-            Self::LanguageKw => write!(f, "LanguageKw"),
-            Self::LookupflagKw => write!(f, "LookupflagKw"),
-            Self::MarkKw => write!(f, "MarkKw"),
-            Self::MarkAttachmentTypeKw => write!(f, "MarkAttachmentTypeKw"),
-            Self::NameIdKw => write!(f, "NameIdKw"),
-            Self::NullKw => write!(f, "NullKw"),
-            Self::ParametersKw => write!(f, "ParametersKw"),
-            Self::PosKw => write!(f, "PosKw"),
-            Self::RequiredKw => write!(f, "RequiredKw"),
-            Self::ReversesubKw => write!(f, "ReversesubKw"),
-            Self::RightToLeftKw => write!(f, "RightToLeftKw"),
-            Self::RsubKw => write!(f, "RsubKw"),
-            Self::ScriptKw => write!(f, "ScriptKw"),
-            Self::SubKw => write!(f, "SubKw"),
-            Self::SubtableKw => write!(f, "SubtableKw"),
-            Self::UseExtensionKw => write!(f, "UseExtensionKw"),
-            Self::UseMarkFilteringSetKw => write!(f, "UseMarkFilteringSetKw"),
-            Self::ValueRecordDefKw => write!(f, "ValueRecordDefKw"),
-        }
-    }
+const fn mask(kind: Kind) -> u128 {
+    1u128 << (kind as usize)
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct SyntaxError {
-    message: String,
-    range: Range<usize>,
+#[test]
+fn token_set_works_for_tokens() {
+    let ts = TokenSet::new(&[Kind::Eof, Kind::Whitespace]);
+    assert!(ts.contains(Kind::Eof));
+    assert!(ts.contains(Kind::Whitespace));
+    assert!(!ts.contains(Kind::Eq));
 }
-
-//fn root(parser: &mut Parser, sink: &mut dyn TreeSink) {
-//sink.start_node(Kind::SourceFile);
-//parser.eat_trivia(sink);
-
-//sink.finish_node();
-//}
-
-//const HI: () = b"hi";

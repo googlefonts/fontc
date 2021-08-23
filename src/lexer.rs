@@ -9,6 +9,12 @@
 
 const EOF: u8 = 0x0;
 
+pub(crate) struct Lexer<'a> {
+    input: &'a str,
+    pos: usize,
+    after_backslash: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Token {
     pub(crate) len: usize,
@@ -24,16 +30,25 @@ impl Token {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Kind {
+    Tombstone,  // a placeholder value
+    Eof,        // the end of the input stream
+    SourceFile, // scope of a file
+
     // a name or a keyword or any other block of non-whitespace.
     // we will frequently have to disambiguate this based on context.
     Ident,
+
     String,
-    StringUnterminated,
-    NumberDec, // also octal; we disambiguate based on context
-    NumberHex,
-    NumberHexEmpty, // naked 0x
+    StringUnterminated, // an error handled at a higher level
+    NumberDec,          // also octal; we disambiguate based on context
+    NumberHex,          // an error handled at a higher level
+    NumberHexEmpty,     // naked 0x
     NumberFloat,
+
     Whitespace,
+    Comment,
+
+    // special symbols
     Semi,
     Comma,
     At,
@@ -49,20 +64,70 @@ pub(crate) enum Kind {
     LAngle,
     RAngle,
     SingleQuote,
-    Comment,
-    //Anonymous,
-    Eof,
-    Tombstone,
-}
 
-pub(crate) struct Lexer<'a> {
-    input: &'a str,
-    pos: usize,
+    Tag,
+    Path,
+    GlyphName,
+    GlyphClass,
+    Cid,
+
+    // keywords:
+    // top-level keywords
+    TableKw,
+    LookupKw,
+    LanguagesystemKw,
+    AnchorDefKw,
+    FeatureKw,
+    MarkClassKw,
+    AnonKw,
+    //AnonymousKw,
+
+    // other keywords
+    AnchorKw,
+    ByKw,
+    ContourpointKw,
+    CursiveKw,
+    DeviceKw,
+    EnumKw,
+    //EnumerateKw,
+    ExcludeDfltKw,
+    FromKw,
+    IgnoreKw,
+    IgnoreBaseGlyphsKw,
+    IgnoreLigaturesKw,
+    IgnoreMarksKw,
+    IncludeKw,
+    IncludeDfltKw,
+    LanguageKw,
+    LookupflagKw,
+    MarkKw,
+    MarkAttachmentTypeKw,
+    NameIdKw,
+    NullKw,
+    ParametersKw,
+    PosKw,
+    //PositionKw,
+    RequiredKw,
+    RightToLeftKw,
+    RsubKw,
+    //ReversesubKw,
+    ScriptKw,
+    SubKw,
+    //SubstituteKw,
+    SubtableKw,
+    UseExtensionKw,
+    UseMarkFilteringSetKw,
+    ValueRecordDefKw,
+    //Anonymous,
 }
 
 impl<'a> Lexer<'a> {
     pub(crate) fn new(input: &'a str) -> Self {
-        Lexer { input, pos: 0 }
+        Lexer {
+            input,
+            pos: 0,
+            after_backslash: false,
+        }
     }
 
     fn nth(&self, index: usize) -> u8 {
@@ -92,8 +157,9 @@ impl<'a> Lexer<'a> {
             b'1'..=b'9' => self.number(false),
             b';' => Kind::Semi,
             b',' => Kind::Comma,
-            b'@' => Kind::At,
+            b'@' => self.glyph_class_name(),
             b'\\' => Kind::Backslash,
+            //b'\\' => self.backslash(),
             b'-' => Kind::Hyphen,
             b'=' => Kind::Eq,
             b'{' => Kind::LBrace,
@@ -107,6 +173,8 @@ impl<'a> Lexer<'a> {
             b'\'' => Kind::SingleQuote,
             _ => self.ident(),
         };
+
+        self.after_backslash = matches!(kind, Kind::Backslash);
 
         let len = self.pos - start_pos;
         Token { len, kind }
@@ -174,8 +242,12 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// super dumb for now; we eat anything that isn't whitespace or special char.
-    fn ident(&mut self) -> Kind {
+    fn glyph_class_name(&mut self) -> Kind {
+        self.eat_ident();
+        Kind::GlyphClass
+    }
+
+    fn eat_ident(&mut self) {
         loop {
             match self.nth(0) {
                 EOF => break,
@@ -186,7 +258,19 @@ impl<'a> Lexer<'a> {
             }
             self.bump();
         }
-        Kind::Ident
+    }
+
+    /// super dumb for now; we eat anything that isn't whitespace or special char.
+    fn ident(&mut self) -> Kind {
+        let start_pos = self.pos.saturating_sub(1);
+        self.eat_ident();
+
+        if self.after_backslash {
+            return Kind::Ident;
+        }
+
+        let raw_token = &self.input.as_bytes()[start_pos..self.pos];
+        Kind::from_keyword(raw_token).unwrap_or(Kind::Ident)
     }
 }
 
@@ -233,11 +317,59 @@ impl Kind {
                 | Self::Whitespace
         )
     }
+
+    pub(crate) fn from_keyword(word: &[u8]) -> Option<Kind> {
+        eprintln!("{}", std::str::from_utf8(word).unwrap());
+        match word {
+            b"anchor" => Some(Kind::AnchorKw),
+            b"anchorDef" => Some(Kind::AnchorDefKw),
+            b"anon" | b"anonymous" => Some(Kind::AnonKw),
+            b"by" => Some(Kind::ByKw),
+            b"contourpoint" => Some(Kind::ContourpointKw),
+            b"cursive" => Some(Kind::CursiveKw),
+            b"device" => Some(Kind::DeviceKw), //[ Not implemented ];
+            b"enum" | b"enumerate" => Some(Kind::EnumKw),
+            b"exclude_dflt" | b"excludeDFLT" => Some(Kind::ExcludeDfltKw),
+            b"feature" => Some(Kind::FeatureKw), //(used as a block and as a statement);
+            b"from" => Some(Kind::FromKw),
+            b"ignore" => Some(Kind::IgnoreKw), //(used with substitute and position);
+            b"IgnoreBaseGlyphs" => Some(Kind::IgnoreBaseGlyphsKw),
+            b"IgnoreLigatures" => Some(Kind::IgnoreLigaturesKw),
+            b"IgnoreMarks" => Some(Kind::IgnoreMarksKw),
+            b"include" => Some(Kind::IncludeKw),
+            b"include_dflt" | b"includeDFLT" => Some(Kind::IncludeDfltKw),
+            b"language" => Some(Kind::LanguageKw),
+            b"languagesystem" => Some(Kind::LanguagesystemKw),
+            b"lookup" => Some(Kind::LookupKw),
+            b"lookupflag" => Some(Kind::LookupflagKw),
+            b"mark" => Some(Kind::MarkKw),
+            b"MarkAttachmentType" => Some(Kind::MarkAttachmentTypeKw),
+            b"markClass" => Some(Kind::MarkClassKw),
+            b"nameid" => Some(Kind::NameIdKw),
+            b"NULL" => Some(Kind::NullKw), //(used in substitute, device, value record, anchor);
+            b"parameters" => Some(Kind::ParametersKw),
+            b"pos" | b"position" => Some(Kind::PosKw),
+            b"required" => Some(Kind::RequiredKw), //[ Not implemented ];
+            b"reversesub" | b"rsub" => Some(Kind::RsubKw),
+            b"RightToLeft" => Some(Kind::RightToLeftKw),
+            b"script" => Some(Kind::ScriptKw),
+            b"substitute" | b"sub" => Some(Kind::SubKw),
+            b"subtable" => Some(Kind::SubtableKw),
+            b"table" => Some(Kind::TableKw),
+            b"useExtension" => Some(Kind::UseExtensionKw),
+            b"UseMarkFilteringSet" => Some(Kind::UseMarkFilteringSetKw),
+            b"valueRecordDef" => Some(Kind::ValueRecordDefKw),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for Kind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Self::Eof => write!(f, "EOF"),
+            Self::Tombstone => write!(f, "X_X"),
+            Self::SourceFile => write!(f, "FILE"),
             Self::Ident => write!(f, "ID"),
             Self::StringUnterminated => write!(f, "STR OPEN"),
             Self::String => write!(f, "STR"),
@@ -262,9 +394,52 @@ impl std::fmt::Display for Kind {
             Self::RAngle => write!(f, ">"),
             Self::SingleQuote => write!(f, "'"),
             Self::Comment => write!(f, "#"),
-            //Self::Anonymous(_) => write!(f, ""),
-            Self::Eof => write!(f, "EOF"),
-            Self::Tombstone => write!(f, "X_X"),
+
+            Self::Tag => write!(f, "Tag"),
+            Self::Path => write!(f, "Path"),
+            Self::GlyphClass => write!(f, "GlyphClass"),
+            Self::GlyphName => write!(f, "GlyphName"),
+            Self::Cid => write!(f, "GlyphName"),
+
+            Self::TableKw => write!(f, "TableKw"),
+            Self::LookupKw => write!(f, "LookupKw"),
+            Self::LanguagesystemKw => write!(f, "LanguagesystemKw"),
+            Self::AnchorDefKw => write!(f, "AnchorDefKw"),
+            Self::FeatureKw => write!(f, "FeatureKw"),
+            Self::MarkClassKw => write!(f, "MarkClassKw"),
+            Self::AnonKw => write!(f, "AnonKw"),
+            Self::AnchorKw => write!(f, "AnchorKw"),
+            Self::ByKw => write!(f, "ByKw"),
+            Self::ContourpointKw => write!(f, "ContourpointKw"),
+            Self::CursiveKw => write!(f, "CursiveKw"),
+            Self::DeviceKw => write!(f, "DeviceKw"),
+            Self::EnumKw => write!(f, "EnumKw"),
+            Self::ExcludeDfltKw => write!(f, "ExcludeDfltKw"),
+            Self::FromKw => write!(f, "FromKw"),
+            Self::IgnoreKw => write!(f, "IgnoreKw"),
+            Self::IgnoreBaseGlyphsKw => write!(f, "IgnoreBaseGlyphsKw"),
+            Self::IgnoreLigaturesKw => write!(f, "IgnoreLigaturesKw"),
+            Self::IgnoreMarksKw => write!(f, "IgnoreMarksKw"),
+            Self::IncludeKw => write!(f, "IncludeKw"),
+            Self::IncludeDfltKw => write!(f, "IncludeDfltKw"),
+            Self::LanguageKw => write!(f, "LanguageKw"),
+            Self::LookupflagKw => write!(f, "LookupflagKw"),
+            Self::MarkKw => write!(f, "MarkKw"),
+            Self::MarkAttachmentTypeKw => write!(f, "MarkAttachmentTypeKw"),
+            Self::NameIdKw => write!(f, "NameIdKw"),
+            Self::NullKw => write!(f, "NullKw"),
+            Self::ParametersKw => write!(f, "ParametersKw"),
+            Self::PosKw => write!(f, "PosKw"),
+            Self::RequiredKw => write!(f, "RequiredKw"),
+            Self::RightToLeftKw => write!(f, "RightToLeftKw"),
+            Self::RsubKw => write!(f, "RsubKw"),
+            //Self::ReversesubKw => write!(f, "ReversesubKw"),
+            Self::ScriptKw => write!(f, "ScriptKw"),
+            Self::SubKw => write!(f, "SubKw"),
+            Self::SubtableKw => write!(f, "SubtableKw"),
+            Self::UseExtensionKw => write!(f, "UseExtensionKw"),
+            Self::UseMarkFilteringSetKw => write!(f, "UseMarkFilteringSetKw"),
+            Self::ValueRecordDefKw => write!(f, "ValueRecordDefKw"),
         }
     }
 }
@@ -346,11 +521,25 @@ mod tests {
         let tokens = tokenize(fea);
         assert_eq!(tokens[0].len, 14);
         let token_strs = debug_tokens2(&tokens, fea);
-        assert_eq!(token_strs[0], "ID(languagesystem)");
+        assert_eq!(token_strs[0], "LanguagesystemKw");
         assert_eq!(token_strs[1], "WS( )");
         assert_eq!(token_strs[2], "ID(dflt)");
         assert_eq!(token_strs[3], "WS( )");
         assert_eq!(token_strs[4], "ID(cool)");
         assert_eq!(token_strs[5], ";");
+    }
+
+    #[test]
+    fn escaping_keywords() {
+        let fea = "sub \\sub \\rsub";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "SubKw");
+        assert_eq!(token_strs[1], "WS( )");
+        assert_eq!(token_strs[2], "\\");
+        assert_eq!(token_strs[3], "ID(sub)");
+        assert_eq!(token_strs[4], "WS( )");
+        assert_eq!(token_strs[5], "\\");
+        assert_eq!(token_strs[6], "ID(rsub)");
     }
 }
