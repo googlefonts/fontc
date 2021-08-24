@@ -138,7 +138,7 @@ impl<'a> Lexer<'a> {
 
     fn glyph_class_name(&mut self) -> Kind {
         self.eat_ident();
-        Kind::GlyphClass
+        Kind::NamedGlyphClass
     }
 
     fn eat_ident(&mut self) {
@@ -168,16 +168,16 @@ impl<'a> Lexer<'a> {
     }
 }
 
-pub(crate) fn iter_tokens(text: &str) -> impl Iterator<Item = Token> + '_ {
-    let mut cursor = Lexer::new(text);
-    std::iter::from_fn(move || {
-        let next = cursor.next_token();
-        match next.kind {
-            Kind::Eof => None,
-            _ => Some(next),
-        }
-    })
-}
+//pub(crate) fn iter_tokens(text: &str) -> impl Iterator<Item = Token> + '_ {
+//let mut cursor = Lexer::new(text);
+//std::iter::from_fn(move || {
+//let next = cursor.next_token();
+//match next.kind {
+//Kind::Eof => None,
+//_ => Some(next),
+//}
+//})
+//}
 
 // [\ , ' - ; < = > @ \ ( ) [ ] { }]
 fn is_special(byte: u8) -> bool {
@@ -188,14 +188,15 @@ fn is_special(byte: u8) -> bool {
         || byte == 125
 }
 
-pub(crate) fn tokenize(text: &str) -> Vec<Token> {
-    iter_tokens(text).collect()
-}
+//pub(crate) fn tokenize(text: &str) -> Vec<Token> {
+//iter_tokens(text).collect()
+//}
 
 fn is_ascii_whitespace(byte: u8) -> bool {
     byte == b' ' || (0x9..=0xD).contains(&byte)
 }
 
+#[cfg(test)]
 pub(crate) fn debug_tokens(tokens: &[Token]) -> Vec<String> {
     let mut result = Vec::new();
     let mut pos = 0;
@@ -206,6 +207,7 @@ pub(crate) fn debug_tokens(tokens: &[Token]) -> Vec<String> {
     result
 }
 
+#[cfg(test)]
 pub(crate) fn debug_tokens2(tokens: &[Token], src: &str) -> Vec<String> {
     let mut result = Vec::new();
     let mut pos = 0;
@@ -293,5 +295,29 @@ mod tests {
         assert_eq!(token_strs[4], "WS( )");
         assert_eq!(token_strs[5], "\\");
         assert_eq!(token_strs[6], "ID(rsub)");
+    }
+
+    #[test]
+    fn cid_versus_ident() {
+        let fea = "@hi =[\\1-\\2 a - b];";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "@GlyphClass(@hi)");
+        assert_eq!(token_strs[1], "WS( )");
+        assert_eq!(token_strs[2], "=");
+        assert_eq!(token_strs[3], "[");
+        assert_eq!(token_strs[4], "\\");
+        assert_eq!(token_strs[5], "DEC(1)");
+        assert_eq!(token_strs[6], "-");
+        assert_eq!(token_strs[7], "\\");
+        assert_eq!(token_strs[8], "DEC(2)");
+        assert_eq!(token_strs[9], "WS( )");
+        assert_eq!(token_strs[10], "ID(a)");
+        assert_eq!(token_strs[11], "WS( )");
+        assert_eq!(token_strs[12], "-");
+        assert_eq!(token_strs[13], "WS( )");
+        assert_eq!(token_strs[14], "ID(b)");
+        assert_eq!(token_strs[15], "]");
+        assert_eq!(token_strs[16], ";");
     }
 }

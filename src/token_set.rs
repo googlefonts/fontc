@@ -8,20 +8,23 @@ use super::token::Kind;
 #[derive(Clone, Copy)]
 pub(crate) struct TokenSet(u128);
 
-pub(crate) const TOP_LEVEL: TokenSet = TokenSet::new(&[
-    Kind::TableKw,
-    Kind::IncludeKw,
-    Kind::LookupKw,
-    Kind::LanguagesystemKw,
-    Kind::AnchorDefKw,
-    Kind::FeatureKw,
-    Kind::MarkClassKw,
-    Kind::AnonKw,
-    Kind::GlyphClass,
-]);
-
 impl TokenSet {
-    //pub(crate) const EMPTY: TokenSet = TokenSet(0);
+    pub(crate) const EMPTY: TokenSet = TokenSet(0);
+
+    pub(crate) const TOP_LEVEL: TokenSet = TokenSet::new(&[
+        Kind::TableKw,
+        Kind::IncludeKw,
+        Kind::LookupKw,
+        Kind::LanguagesystemKw,
+        Kind::AnchorDefKw,
+        Kind::FeatureKw,
+        Kind::MarkClassKw,
+        Kind::AnonKw,
+        Kind::GlyphClass,
+    ]);
+
+    pub(crate) const RSQUARE: TokenSet = TokenSet::new(&[Kind::RSquare]);
+    pub(crate) const SEMI: TokenSet = TokenSet::new(&[Kind::Semi]);
 
     pub(crate) const fn new(kinds: &[Kind]) -> TokenSet {
         let mut res = 0u128;
@@ -33,9 +36,9 @@ impl TokenSet {
         TokenSet(res)
     }
 
-    //pub(crate) const fn union(self, other: TokenSet) -> TokenSet {
-    //TokenSet(self.0 | other.0)
-    //}
+    pub(crate) const fn union(self, other: TokenSet) -> TokenSet {
+        TokenSet(self.0 | other.0)
+    }
 
     pub(crate) const fn contains(&self, kind: Kind) -> bool {
         self.0 & mask(kind) != 0

@@ -1,6 +1,6 @@
 use crate::parse::Parser;
 use crate::token::Kind;
-use crate::token_set::TOP_LEVEL;
+use crate::token_set::TokenSet;
 
 pub(crate) fn root(parser: &mut Parser) {
     parser.start_node(Kind::SourceFile);
@@ -16,7 +16,7 @@ fn top_level_element(parser: &mut Parser) {
     parser.eat_trivia();
 
     if parser.at_eof() {
-        ()
+        // noop
     } else if parser.matches(0, Kind::IncludeKw) {
         include(parser)
     } else if parser.matches(0, Kind::TableKw) {
@@ -33,8 +33,8 @@ fn top_level_element(parser: &mut Parser) {
         anchor_def(parser)
     } else if parser.matches(0, Kind::AnonKw) {
         anonymous(parser)
-    } else if parser.matches(0, Kind::GlyphClass) {
-        glyph_class(parser)
+    } else if parser.matches(0, Kind::NamedGlyphClass) {
+        named_glyph_class_decl(parser)
     } else {
         parser.err_and_bump(format!(
             "Unexpected token '{}', expected global keyword.",
@@ -47,7 +47,7 @@ fn top_level_element(parser: &mut Parser) {
 fn advance_to_top_level(parser: &mut Parser) {
     loop {
         parser.eat_trivia();
-        if parser.at_eof() || parser.matches(0, TOP_LEVEL) {
+        if parser.at_eof() || parser.matches(0, TokenSet::TOP_LEVEL) {
             break;
         }
         parser.eat_raw();
@@ -97,111 +97,143 @@ fn include(parser: &mut Parser) {
     parser.finish_node();
 }
 
-// languagesystem $ hi;
-// languagesystem 'okay
-// languagesystem ;
-// languagesystem[]
+// @class = @class;
+// @class = [a b c];
+// @class = [a-z A - Z];
+// @class = [\1-\40 \45 - \50]
+fn named_glyph_class_decl(parser: &mut Parser) {
+    fn glyph_class_body(parser: &mut Parser) {
+        assert!(parser.expect(Kind::NamedGlyphClass));
+        if !parser.eat(Kind::Eq) {
+            return advance_to_top_level(parser);
+        }
+
+        if parser.eat(Kind::NamedGlyphClass) {
+            return expect_semi_or_ws_semi(parser);
+        } else if !parser.matches(0, Kind::LSquare) {
+            parser.err_recover("Expected named glyph class or '['.", TokenSet::TOP_LEVEL);
+            return;
+        }
+        glyph_class_list(parser);
+    }
+
+    parser.start_node(Kind::NamedGlyphClass);
+    glyph_class_body(parser);
+    parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
+    parser.finish_node();
+}
+
+// [ a b a-z @hi \0-\40 ]
+fn glyph_class_list(parser: &mut Parser) {
+    const LIST_RECOVERY: TokenSet = TokenSet::TOP_LEVEL
+        .union(TokenSet::RSQUARE)
+        .union(TokenSet::SEMI);
+
+    parser.eat_trivia();
+    parser.start_node(Kind::GlyphClass);
+    parser.expect(Kind::LSquare);
+    while !parser.matches(0, LIST_RECOVERY) {
+        glyph_class_list_member(parser);
+    }
+
+    parser.expect(Kind::RSquare);
+    parser.finish_node();
+}
+
+fn glyph_class_list_member(parser: &mut Parser) {
+    if parser.eat(Kind::NamedGlyphClass) {
+        return;
+    }
+    // a glyphname
+    // a glyph development name
+    // an escaped glyph name
+    // an escaped CID
+
+    let looks_like_range = parser.matches(1, Kind::Hyphen)
+        || (parser.matches(0, Kind::Backslash) && parser.matches(2, Kind::Hyphen));
+    if looks_like_range {
+        parser.eat_trivia();
+        parser.start_node(Kind::GlyphRange);
+        glyph_range(parser, true);
+        parser.finish_node();
+    } else {
+        glyph_name_like(parser, TokenSet::RSQUARE);
+    }
+}
+
+fn glyph_range(parser: &mut Parser, in_list: bool) -> bool {
+    const HYPHEN: TokenSet = TokenSet::new(&[Kind::Hyphen]);
+    const HYPHEN_RSQUARE: TokenSet = HYPHEN.union(TokenSet::RSQUARE);
+
+    let first_recovery = if in_list { HYPHEN_RSQUARE } else { HYPHEN };
+    let last_recovery = if in_list {
+        TokenSet::RSQUARE
+    } else {
+        TokenSet::EMPTY
+    };
+
+    glyph_name_like(parser, first_recovery)
+        & parser.expect_recover(Kind::Hyphen, last_recovery)
+        & glyph_name_like(parser, last_recovery)
+}
+
+fn glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if parser.matches(0, Kind::Backslash) {
+        if parser.matches(1, Kind::Ident) {
+            parser.eat_remap2(Kind::GlyphName);
+            return true;
+        } else if parser.matches(1, Kind::NumberDec) {
+            parser.eat_remap2(Kind::Cid);
+            return true;
+        } else {
+            parser.eat_raw();
+            let kind = parser.nth(0).kind;
+            parser.err(format!("Expected glyph name or CID, found {}", kind));
+            if !parser.matches(0, recovery) {
+                parser.eat_raw();
+            }
+        }
+    } else if parser.matches(0, Kind::Ident) {
+        parser.eat_remap(Kind::GlyphName);
+        return true;
+    } else {
+        parser.expect_recover(Kind::Ident, recovery);
+    }
+    false
+}
+
 fn expect_semi_or_ws_semi(parser: &mut Parser) {
     if parser.matches(0, Kind::Whitespace) && parser.matches(1, Kind::Semi) {
         parser.eat_raw();
     }
-    parser.expect(Kind::Semi);
+    if !parser.eat(Kind::Semi) {
+        parser.err_recover("Missing closing ';'.", TokenSet::TOP_LEVEL);
+    }
 }
 
-fn table(parser: &mut Parser) {
+fn table(_parser: &mut Parser) {
     unimplemented!()
 }
 
-fn lookup(parser: &mut Parser) {
+fn lookup(_parser: &mut Parser) {
     unimplemented!()
 }
 
-fn feature(parser: &mut Parser) {
+fn feature(_parser: &mut Parser) {
     unimplemented!()
 }
 
-fn mark_class(parser: &mut Parser) {
+fn mark_class(_parser: &mut Parser) {
     unimplemented!()
 }
 
-fn anchor_def(parser: &mut Parser) {
+fn anchor_def(_parser: &mut Parser) {
     unimplemented!()
 }
 
-fn anonymous(parser: &mut Parser) {
+fn anonymous(_parser: &mut Parser) {
     unimplemented!()
 }
-
-fn glyph_class(parser: &mut Parser) {
-    unimplemented!()
-}
-//;
-
-//mod keywords {
-//pub struct Whitespace;
-//pub const WHITESPACE: Whitespace = Whitespace;
-
-//pub const TOPLEVEL: &[&[u8]] = &[
-//TABLE,
-//INCLUDE,
-//LOOKUP,
-//LANGUAGESYSTEM,
-//ANCHOR_DEF,
-//FEATURE,
-//MARK_CLASS,
-//ANON,
-//ANONYMOUS,
-//AT,
-//];
-
-//pub const AT: &[u8] = b"@";
-
-//pub const ANCHOR: &[u8] = b"anchor";
-//pub const ANCHOR_DEF: &[u8] = b"anchorDef";
-//pub const ANON: &[u8] = b"anon";
-//pub const ANONYMOUS: &[u8] = b"anonymous";
-//pub const BY: &[u8] = b"by";
-//pub const CONTOURPOINT: &[u8] = b"contourpoint";
-//pub const CURSIVE: &[u8] = b"cursive";
-//pub const DEVICE: &[u8] = b"device"; //[ Not implemented ];
-//pub const ENUM: &[u8] = b"enum";
-//pub const ENUMERATE: &[u8] = b"enumerate";
-//pub const EXCLUDE_DFLT: &[u8] = b"exclude_dflt";
-//pub const FEATURE: &[u8] = b"feature"; //(used as a block and as a statement);
-//pub const FROM: &[u8] = b"from";
-//pub const IGNORE: &[u8] = b"ignore"; //(used with substitute and position);
-//pub const IGNORE_BASE_GLYPHS: &[u8] = b"IgnoreBaseGlyphs";
-//pub const IGNORE_LIGATURES: &[u8] = b"IgnoreLigatures";
-//pub const IGNORE_MARKS: &[u8] = b"IgnoreMarks";
-//pub const INCLUDE: &[u8] = b"include";
-//pub const INCLUDE_DFLT: &[u8] = b"include_dflt";
-//pub const LANGUAGE: &[u8] = b"language";
-//pub const LANGUAGESYSTEM: &[u8] = b"languagesystem";
-//pub const LOOKUP: &[u8] = b"lookup";
-//pub const LOOKUPFLAG: &[u8] = b"lookupflag";
-//pub const MARK: &[u8] = b"mark";
-//pub const MARK_ATTACHMENT_TYPE: &[u8] = b"MarkAttachmentType";
-//pub const MARK_CLASS: &[u8] = b"markClass";
-//pub const NAMEID: &[u8] = b"nameid";
-//pub const NULL: &[u8] = b"NULL"; //(used in substitute, device, value record, anchor);
-//pub const PARAMETERS: &[u8] = b"parameters";
-//pub const POS: &[u8] = b"pos";
-//pub const POSITION: &[u8] = b"position";
-//pub const REQUIRED: &[u8] = b"required"; //[ Not implemented ];
-//pub const REVERSESUB: &[u8] = b"reversesub";
-//pub const RIGHT_TO_LEFT: &[u8] = b"RightToLeft";
-//pub const RSUB: &[u8] = b"rsub";
-//pub const SCRIPT: &[u8] = b"script";
-//pub const SUB: &[u8] = b"sub";
-//pub const SUBSTITUTE: &[u8] = b"substitute";
-//pub const SUBTABLE: &[u8] = b"subtable";
-//pub const TABLE: &[u8] = b"table";
-//pub const USE_EXTENSION: &[u8] = b"useExtension";
-//pub const USE_MARK_FILTERING_SET: &[u8] = b"UseMarkFilteringSet";
-//pub const VALUE_RECORD_DEF: &[u8] = b"valueRecordDef";
-//pub const EXCLUDE_DFLT2: &[u8] = b"excludeDFLT"; //(deprecated);
-//pub const INCLUDE_DFLT2: &[u8] = b"includeDFLT"; //(deprecated);
-//}
 
 #[cfg(test)]
 mod tests {
@@ -274,5 +306,44 @@ END FILE
 ";
 
         crate::assert_eq_str!(out, exp);
+    }
+
+    #[test]
+    fn glyph_class_alias() {
+        let input = "@name = [a b d - z \\1-\\5];";
+        let out = debug_parse_output(input, |parser| named_glyph_class_decl(parser));
+        crate::assert_eq_str!(
+            out,
+            "\
+START @GlyphClass
+  0..5 @GlyphClass
+  5..6 WS
+  6..7 =
+  7..8 WS
+  START GlyphClass
+    8..9 [
+    9..10 GlyphName
+    10..11 WS
+    11..12 GlyphName
+    12..13 WS
+    START GlyphRange
+      13..14 GlyphName
+      14..15 WS
+      15..16 -
+      16..17 WS
+      17..18 GlyphName
+    END GlyphRange
+    18..19 WS
+    START GlyphRange
+      19..21 CID
+      21..22 -
+      22..24 CID
+    END GlyphRange
+    24..25 ]
+  END GlyphClass
+  25..26 ;
+END @GlyphClass
+"
+        )
     }
 }

@@ -1,7 +1,6 @@
 //! Convert raw tokens into semantic events
 
 use std::ops::Range;
-use std::rc::Rc;
 
 use crate::lexer::Lexer;
 use crate::token::{Kind, Token};
@@ -71,7 +70,7 @@ impl<'a> Parser<'a> {
         start..start + self.buf[n].token.len
     }
 
-    fn nth(&self, n: usize) -> Token {
+    pub(crate) fn nth(&self, n: usize) -> Token {
         assert!(n <= LOOKAHEAD_MAX);
         self.buf[n].token
     }
@@ -211,13 +210,22 @@ impl<'a> Parser<'a> {
 
     /// consume if the token matches, otherwise error without advancing
     pub(crate) fn expect(&mut self, kind: Kind) -> bool {
-        if self.nth(0).kind == kind {
-            self.eat_raw();
-            true
-        } else {
-            self.err(format!("Expected {}, found {}", kind, self.nth(0).kind));
-            false
+        if self.eat(kind) {
+            return true;
         }
+        self.err(format!("Expected {}, found {}", kind, self.nth(0).kind));
+        false
+    }
+
+    pub(crate) fn expect_recover(&mut self, kind: Kind, recover: impl TokenComparable) -> bool {
+        if self.eat(kind) {
+            return true;
+        }
+        self.err(format!("Expected {}, found {}", kind, self.nth(0).kind));
+        if !self.matches(0, recover) {
+            self.eat_raw();
+        }
+        false
     }
 
     pub(crate) fn expect_tag(&mut self) -> bool {
@@ -241,14 +249,14 @@ impl<'a> Parser<'a> {
         token.matches(self.nth(nth).kind, &self.text.as_bytes()[range])
     }
 
-    /// If current token is ident, return underlying bytes
-    pub(crate) fn ident(&self) -> Option<&[u8]> {
-        if self.nth(0).kind == Kind::Ident {
-            Some(&self.text.as_bytes()[self.nth_range(0)])
-        } else {
-            None
-        }
-    }
+    // If current token is ident, return underlying bytes
+    //pub(crate) fn ident(&self) -> Option<&[u8]> {
+    //if self.nth(0).kind == Kind::Ident {
+    //Some(&self.text.as_bytes()[self.nth_range(0)])
+    //} else {
+    //None
+    //}
+    //}
 }
 
 pub(crate) trait TokenComparable {
@@ -317,12 +325,6 @@ impl TreeSink for DebugSink {
 
     fn error(&mut self, error: SyntaxError) {
         self.0.push(Event::Error(error))
-    }
-}
-
-impl DebugSink {
-    pub(crate) fn token_tree(&self) -> String {
-        self.to_string()
     }
 }
 

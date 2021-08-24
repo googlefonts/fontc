@@ -34,7 +34,7 @@ pub(crate) enum Kind {
     // special symbols
     Semi,
     Comma,
-    At,
+    //At,
     Backslash,
     Hyphen, // also minus
     Eq,
@@ -52,6 +52,8 @@ pub(crate) enum Kind {
     Path,
     GlyphName,
     GlyphClass,
+    NamedGlyphClass,
+    GlyphRange,
     Cid,
 
     // keywords:
@@ -105,6 +107,8 @@ pub(crate) enum Kind {
 }
 
 impl Kind {
+    // only used for debugging
+    #[cfg(test)]
     pub(crate) fn has_contents(&self) -> bool {
         matches!(
             self,
@@ -117,6 +121,8 @@ impl Kind {
                 | Self::NumberDec
                 | Self::Comment
                 | Self::Whitespace
+                | Self::NamedGlyphClass
+                | Self::GlyphName
         )
     }
 
@@ -182,7 +188,7 @@ impl std::fmt::Display for Kind {
             Self::Whitespace => write!(f, "WS"),
             Self::Semi => write!(f, ";"),
             Self::Comma => write!(f, ","),
-            Self::At => write!(f, "@"),
+            //Self::At => write!(f, "@"),
             Self::Backslash => write!(f, "\\"),
             Self::Hyphen => write!(f, "-"), // also minus
             Self::Eq => write!(f, "="),
@@ -200,8 +206,10 @@ impl std::fmt::Display for Kind {
             Self::Tag => write!(f, "Tag"),
             Self::Path => write!(f, "Path"),
             Self::GlyphClass => write!(f, "GlyphClass"),
+            Self::NamedGlyphClass => write!(f, "@GlyphClass"),
+            Self::GlyphRange => write!(f, "GlyphRange"),
             Self::GlyphName => write!(f, "GlyphName"),
-            Self::Cid => write!(f, "GlyphName"),
+            Self::Cid => write!(f, "CID"),
 
             Self::TableKw => write!(f, "TableKw"),
             Self::LookupKw => write!(f, "LookupKw"),
