@@ -83,6 +83,11 @@ impl<'a> Parser<'a> {
         self.sink.finish_node();
     }
 
+    pub(crate) fn nth_raw(&self, n: usize) -> &[u8] {
+        let range = self.nth_range(n);
+        &self.text.as_bytes()[range]
+    }
+
     pub(crate) fn current_token_text(&self) -> &str {
         &self.text[self.nth_range(0)]
     }
@@ -125,9 +130,7 @@ impl<'a> Parser<'a> {
                 Kind::String,
                 "Missing trailing `\"` character to terminate string.",
             )),
-            Kind::NumberHexEmpty => {
-                Some((Kind::NumberHex, "Missing digits after hexidecimal prefix."))
-            }
+            Kind::HexEmpty => Some((Kind::Hex, "Missing digits after hexidecimal prefix.")),
             _ => None,
         } {
             let range = self.nth_range(LOOKAHEAD_MAX);
@@ -309,6 +312,69 @@ enum Event {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DebugSink(Vec<Event>);
+
+impl DebugSink {
+    #[cfg(test)]
+    pub(crate) fn errors(&self) -> Vec<SyntaxError> {
+        self.0
+            .iter()
+            .filter_map(|event| match event {
+                Event::Error(err) => Some(err.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn print_errs(&self, input: &str) -> String {
+        use std::fmt::Write;
+
+        fn decimal_digits(n: usize) -> usize {
+            (n as f64).log10().floor() as usize + 1
+        }
+
+        static SPACES: &str = "                                                                                                                                                                                    ";
+
+        static CARETS: &str = "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
+        let total_lines = input.lines().count();
+        let max_line_digit_width = decimal_digits(total_lines);
+        let mut result = String::new();
+        let mut pos = 0;
+        let mut line_n = 0;
+        let mut lines = input.lines();
+        let mut current_line = lines.next().unwrap_or("");
+        let mut errors = self.errors().into_iter();
+        while let Some(err) = errors.next() {
+            while err.range.start >= pos + current_line.len() {
+                pos += current_line.len();
+                current_line = lines.next().unwrap();
+                line_n += 1;
+            }
+            //let line_num_digits = decimal_digits(line_n);
+            let padding = max_line_digit_width - decimal_digits(line_n);
+            writeln!(
+                &mut result,
+                "\n{}{} | {}",
+                &SPACES[..padding],
+                line_n,
+                current_line
+            )
+            .unwrap();
+            let n_spaces = err.range.start - pos;
+            let n_carets = err.range.end - err.range.start;
+            writeln!(
+                &mut result,
+                "{} | {}{} {}",
+                &SPACES[..max_line_digit_width],
+                &SPACES[..n_spaces],
+                &CARETS[..n_carets],
+                err.message
+            )
+            .unwrap();
+        }
+        result
+    }
+}
 
 impl TreeSink for DebugSink {
     fn token(&mut self, kind: Kind, len: usize) {

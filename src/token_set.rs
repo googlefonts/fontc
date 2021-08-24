@@ -49,6 +49,12 @@ const fn mask(kind: Kind) -> u128 {
     1u128 << (kind as usize)
 }
 
+impl From<Kind> for TokenSet {
+    fn from(src: Kind) -> TokenSet {
+        TokenSet::new(&[src])
+    }
+}
+
 #[test]
 fn token_set_works_for_tokens() {
     let ts = TokenSet::new(&[Kind::Eof, Kind::Whitespace]);

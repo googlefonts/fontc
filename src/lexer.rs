@@ -108,18 +108,18 @@ impl<'a> Lexer<'a> {
             self.bump();
             if self.nth(0).is_ascii_hexdigit() {
                 self.eat_hex_digits();
-                Kind::NumberHex
+                Kind::Hex
             } else {
-                Kind::NumberHexEmpty
+                Kind::HexEmpty
             }
         } else {
             self.eat_decimal_digits();
             if self.nth(0) == b'.' {
                 self.bump();
                 self.eat_decimal_digits();
-                Kind::NumberFloat
+                Kind::Float
             } else {
-                Kind::NumberDec
+                Kind::DecimalLike
             }
         }
     }
@@ -269,6 +269,24 @@ mod tests {
         assert_eq!(token_strs[3], "7..8 WS");
         assert_eq!(token_strs[4], "8..10 HEX EMPTY");
         assert_eq!(token_strs[5], "10..12 ID");
+    }
+
+    #[test]
+    fn numbers() {
+        let fea = "0 001 10 1. 1.0 -1 -1. -1.5";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "DEC(0)");
+        assert_eq!(token_strs[2], "DEC(001)");
+        assert_eq!(token_strs[4], "DEC(10)");
+        assert_eq!(token_strs[6], "FLOAT(1.)");
+        assert_eq!(token_strs[8], "FLOAT(1.0)");
+        assert_eq!(token_strs[10], "-");
+        assert_eq!(token_strs[11], "DEC(1)");
+        assert_eq!(token_strs[13], "-");
+        assert_eq!(token_strs[14], "FLOAT(1.)");
+        assert_eq!(token_strs[16], "-");
+        assert_eq!(token_strs[17], "FLOAT(1.5)");
     }
 
     #[test]

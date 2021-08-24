@@ -23,10 +23,10 @@ pub(crate) enum Kind {
 
     String,
     StringUnterminated, // an error handled at a higher level
-    NumberDec,          // also octal; we disambiguate based on context
-    NumberHex,          // an error handled at a higher level
-    NumberHexEmpty,     // naked 0x
-    NumberFloat,
+    DecimalLike,        // also octal; we disambiguate based on context
+    Hex,                // an error handled at a higher level
+    HexEmpty,           // naked 0x
+    Float,
 
     Whitespace,
     Comment,
@@ -55,6 +55,8 @@ pub(crate) enum Kind {
     NamedGlyphClass,
     GlyphRange,
     Cid,
+    Metric,
+    Number,
 
     // keywords:
     // top-level keywords
@@ -115,14 +117,16 @@ impl Kind {
             Self::Ident
                 | Self::String
                 | Self::StringUnterminated
-                | Self::NumberFloat
-                | Self::NumberHex
-                | Self::NumberHexEmpty
-                | Self::NumberDec
+                | Self::Float
+                | Self::Hex
+                | Self::HexEmpty
+                | Self::DecimalLike
                 | Self::Comment
                 | Self::Whitespace
                 | Self::NamedGlyphClass
                 | Self::GlyphName
+                | Self::Metric
+                | Self::Number
         )
     }
 
@@ -181,10 +185,10 @@ impl std::fmt::Display for Kind {
             Self::Ident => write!(f, "ID"),
             Self::StringUnterminated => write!(f, "STR OPEN"),
             Self::String => write!(f, "STR"),
-            Self::NumberDec => write!(f, "DEC"),
-            Self::NumberHexEmpty => write!(f, "HEX EMPTY"),
-            Self::NumberHex => write!(f, "HEX"),
-            Self::NumberFloat => write!(f, "FLOAT"),
+            Self::DecimalLike => write!(f, "DEC"),
+            Self::HexEmpty => write!(f, "HEX EMPTY"),
+            Self::Hex => write!(f, "HEX"),
+            Self::Float => write!(f, "FLOAT"),
             Self::Whitespace => write!(f, "WS"),
             Self::Semi => write!(f, ";"),
             Self::Comma => write!(f, ","),
@@ -210,6 +214,8 @@ impl std::fmt::Display for Kind {
             Self::GlyphRange => write!(f, "GlyphRange"),
             Self::GlyphName => write!(f, "GlyphName"),
             Self::Cid => write!(f, "CID"),
+            Self::Metric => write!(f, "METRIC"),
+            Self::Number => write!(f, "NUM"),
 
             Self::TableKw => write!(f, "TableKw"),
             Self::LookupKw => write!(f, "LookupKw"),
