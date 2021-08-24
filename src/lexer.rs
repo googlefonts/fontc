@@ -168,16 +168,22 @@ impl<'a> Lexer<'a> {
     }
 }
 
-//pub(crate) fn iter_tokens(text: &str) -> impl Iterator<Item = Token> + '_ {
-//let mut cursor = Lexer::new(text);
-//std::iter::from_fn(move || {
-//let next = cursor.next_token();
-//match next.kind {
-//Kind::Eof => None,
-//_ => Some(next),
-//}
-//})
-//}
+#[cfg(test)]
+pub(crate) fn tokenize(text: &str) -> Vec<Token> {
+    iter_tokens(text).collect()
+}
+
+#[cfg(test)]
+pub(crate) fn iter_tokens(text: &str) -> impl Iterator<Item = Token> + '_ {
+    let mut cursor = Lexer::new(text);
+    std::iter::from_fn(move || {
+        let next = cursor.next_token();
+        match next.kind {
+            Kind::Eof => None,
+            _ => Some(next),
+        }
+    })
+}
 
 // [\ , ' - ; < = > @ \ ( ) [ ] { }]
 fn is_special(byte: u8) -> bool {
@@ -187,10 +193,6 @@ fn is_special(byte: u8) -> bool {
         || byte == 123
         || byte == 125
 }
-
-//pub(crate) fn tokenize(text: &str) -> Vec<Token> {
-//iter_tokens(text).collect()
-//}
 
 fn is_ascii_whitespace(byte: u8) -> bool {
     byte == b' ' || (0x9..=0xD).contains(&byte)

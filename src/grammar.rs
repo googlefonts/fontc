@@ -65,7 +65,7 @@ fn language_system(parser: &mut Parser) {
         if !parser.expect_tag() || !parser.expect_tag() {
             return advance_to_top_level(parser);
         }
-        expect_semi_or_ws_semi(parser);
+        parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
     }
 
     parser.start_node(Kind::LanguagesystemKw);
@@ -89,7 +89,8 @@ fn include(parser: &mut Parser) {
         if !parser.expect(Kind::RParen) {
             return advance_to_top_level(parser);
         }
-        expect_semi_or_ws_semi(parser);
+        parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
+        //expect_semi_or_ws_semi(parser);
     }
 
     parser.start_node(Kind::IncludeKw);
@@ -109,12 +110,13 @@ fn named_glyph_class_decl(parser: &mut Parser) {
         }
 
         if parser.eat(Kind::NamedGlyphClass) {
-            return expect_semi_or_ws_semi(parser);
+            parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
         } else if !parser.matches(0, Kind::LSquare) {
             parser.err_recover("Expected named glyph class or '['.", TokenSet::TOP_LEVEL);
             return;
+        } else {
+            glyph_class_list(parser);
         }
-        glyph_class_list(parser);
     }
 
     parser.start_node(Kind::NamedGlyphClass);
@@ -200,15 +202,6 @@ fn glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
         parser.expect_recover(Kind::Ident, recovery);
     }
     false
-}
-
-fn expect_semi_or_ws_semi(parser: &mut Parser) {
-    if parser.matches(0, Kind::Whitespace) && parser.matches(1, Kind::Semi) {
-        parser.eat_raw();
-    }
-    if !parser.eat(Kind::Semi) {
-        parser.err_recover("Missing closing ';'.", TokenSet::TOP_LEVEL);
-    }
 }
 
 fn table(_parser: &mut Parser) {
