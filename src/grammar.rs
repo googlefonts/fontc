@@ -236,6 +236,7 @@ fn mark_class(parser: &mut Parser) {
         }
         anchor(parser, TokenSet::new(&[Kind::Semi, Kind::NamedGlyphClass]));
         parser.expect_recover(Kind::NamedGlyphClass, TokenSet::SEMI);
+        parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
     }
 
     parser.start_node(Kind::MarkClassKw);
@@ -304,6 +305,7 @@ fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
         parser.expect_recover(Kind::RAngle, recovery)
     }
 
+    parser.eat_trivia();
     parser.start_node(Kind::AnchorKw);
     let r = anchor_body(parser, recovery);
     parser.finish_node();
@@ -353,10 +355,12 @@ fn expect_device(parser: &mut Parser, recovery: TokenSet) -> bool {
     parser.expect(Kind::LAngle);
     parser.expect(Kind::DeviceKw);
     if expect_number(parser, Kind::Number, recovery)
-        && expect_number(parser, Kind::Number, recovery) &&
-        parser.eat(Kind::Comma) && expect_number(parser, Kind::Number, recovery) {
-            expect_number(parser, Kind::Number, recovery);
-        }
+        && expect_number(parser, Kind::Number, recovery)
+        && parser.eat(Kind::Comma)
+        && expect_number(parser, Kind::Number, recovery)
+    {
+        expect_number(parser, Kind::Number, recovery);
+    }
     //}
     // FIXME: this should handle an arbitary number of pairs? but also isn't
     // supported yet?
@@ -506,9 +510,35 @@ END @GlyphClass
 
     #[test]
     fn mark_class_() {
-        let fea = "markClass [acute] <anchor 350 0> @TOP_MARKS";
+        let fea = "markClass [acute] <anchor 350 0> @TOP_MARKS;";
         let out = debug_parse_output(fea, |parser| mark_class(parser));
         assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
-        //crate::assert_eq_str!(
+        crate::assert_eq_str!(
+            "\
+START MarkClassKw
+  0..9 MarkClassKw
+  9..10 WS
+  START GlyphClass
+    10..11 [
+    11..16 GlyphName
+    16..17 ]
+  END GlyphClass
+  17..18 WS
+  START AnchorKw
+    18..19 <
+    19..25 AnchorKw
+    25..26 WS
+    26..29 METRIC
+    29..30 WS
+    30..31 METRIC
+    31..32 >
+  END AnchorKw
+  32..33 WS
+  33..43 @GlyphClass
+  43..44 ;
+END MarkClassKw
+",
+            out.to_string(),
+        );
     }
 }
