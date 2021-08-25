@@ -82,7 +82,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn comment(&mut self) -> Kind {
-        while [b'\n', EOF].contains(&self.nth(0)) {
+        while ![b'\n', EOF].contains(&self.nth(0)) {
             self.bump();
         }
         Kind::Comment
@@ -339,5 +339,22 @@ mod tests {
         assert_eq!(token_strs[14], "ID(b)");
         assert_eq!(token_strs[15], "]");
         assert_eq!(token_strs[16], ";");
+    }
+
+    #[test]
+    fn trivia() {
+        let fea = "# OpenType 4.h\n# -@,\nlanguagesystem DFLT cool;";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "#(# OpenType 4.h)");
+        assert_eq!(token_strs[1], "WS(\n)");
+        assert_eq!(token_strs[2], "#(# -@,)");
+        assert_eq!(token_strs[3], "WS(\n)");
+        assert_eq!(token_strs[4], "LanguagesystemKw");
+        assert_eq!(token_strs[5], "WS( )");
+        assert_eq!(token_strs[6], "ID(DFLT)");
+        assert_eq!(token_strs[7], "WS( )");
+        assert_eq!(token_strs[8], "ID(cool)");
+        assert_eq!(token_strs[9], ";");
     }
 }

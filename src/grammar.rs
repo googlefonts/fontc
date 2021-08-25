@@ -397,6 +397,30 @@ END LanguagesystemKw
     }
 
     #[test]
+    fn languagesystem_trivia() {
+        let input = "# hi\nlanguagesystem dflt cool;";
+        let out = debug_parse_output(input, |parser| root(parser));
+        assert!(out.errors().is_empty());
+        crate::assert_eq_str!(
+            out.to_string(),
+            "\
+START FILE
+  0..4 #
+  4..5 WS
+  START LanguagesystemKw
+    5..19 LanguagesystemKw
+    19..20 WS
+    20..24 Tag
+    24..25 WS
+    25..29 Tag
+    29..30 ;
+  END LanguagesystemKw
+END FILE
+"
+        )
+    }
+
+    #[test]
     fn top_level() {
         let input = "\
 languagesystem dflt DFTL;
