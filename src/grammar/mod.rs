@@ -3,6 +3,7 @@ use crate::token::Kind;
 use crate::token_set::TokenSet;
 
 mod glyph;
+mod gsub;
 mod metrics;
 
 pub(crate) fn root(parser: &mut Parser) {
@@ -108,7 +109,7 @@ fn named_glyph_class_decl(parser: &mut Parser) {
         } else if !parser.matches(0, Kind::LSquare) {
             parser.err_recover("Expected named glyph class or '['.", TokenSet::TOP_LEVEL);
         } else {
-            glyph::glyph_class_list(parser, TokenSet::EMPTY);
+            glyph::eat_glyph_class_list(parser, TokenSet::EMPTY);
         }
     }
 
@@ -146,12 +147,13 @@ fn feature(_parser: &mut Parser) {
 // e.g. markClass [acute grave dieresis] <anchor 350 0> @MARK_TOP_ACCENTS;
 fn mark_class(parser: &mut Parser) {
     const ANCHOR_START: TokenSet = TokenSet::new(&[Kind::LAngle]);
-    // true on success
+
+    // true on progress
     fn glyph_or_class(parser: &mut Parser) -> bool {
         if parser.eat(Kind::NamedGlyphClass) {
             true
         } else if parser.matches(0, Kind::LSquare) {
-            glyph::glyph_class_list(parser, ANCHOR_START)
+            glyph::eat_glyph_class_list(parser, ANCHOR_START)
         } else {
             parser.eat_remap(Kind::Ident, Kind::GlyphName)
         }

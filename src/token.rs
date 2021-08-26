@@ -107,6 +107,15 @@ pub(crate) enum Kind {
     UseMarkFilteringSetKw,
     ValueRecordDefKw,
     //Anonymous,
+
+    // not technically keywords and not lexed, but assigned during parsing
+    // in gsub/gpos:
+    LigatureKw,
+    BaseKw,
+
+    // node-only tokens, assigned during parsing
+    AnchorMarkNode,
+    ValueRecordNode,
 }
 
 impl Kind {
@@ -258,6 +267,12 @@ impl std::fmt::Display for Kind {
             Self::UseExtensionKw => write!(f, "UseExtensionKw"),
             Self::UseMarkFilteringSetKw => write!(f, "UseMarkFilteringSetKw"),
             Self::ValueRecordDefKw => write!(f, "ValueRecordDefKw"),
+
+            Self::LigatureKw => write!(f, "LigatureKw"),
+            Self::BaseKw => write!(f, "BaseKw"),
+
+            Self::AnchorMarkNode => write!(f, "AnchorMarkNode"),
+            Self::ValueRecordNode => write!(f, "ValueRecordNode"),
         }
     }
 }

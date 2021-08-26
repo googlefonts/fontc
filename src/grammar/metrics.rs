@@ -43,6 +43,38 @@ pub(crate) fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
     r
 }
 
+// A: <metric> (-5)
+// B: <<metric> <metric> <metric> <metric>> (<1 2 -5 242>)
+// return 'true' if we make any progress (this looks like a value record)
+pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool {
+    fn value_record_body(parser: &mut Parser, recovery: TokenSet) {
+        if parser.eat(Kind::Number) {
+            return;
+        }
+
+        let recovery = recovery.union(TokenSet::new(&[Kind::RAngle]));
+        parser.expect_recover(Kind::LAngle, recovery);
+        parser.expect_recover(Kind::Number, recovery);
+        parser.expect_recover(Kind::Number, recovery);
+        parser.expect_recover(Kind::Number, recovery);
+        parser.expect_recover(Kind::Number, recovery);
+        parser.expect_recover(Kind::RAngle, recovery);
+    }
+
+    let looks_like_record = parser.matches(0, Kind::Number)
+        || (parser.matches(0, Kind::LAngle) && parser.matches(0, Kind::Number));
+
+    if !looks_like_record {
+        return false;
+    }
+
+    parser.eat_trivia();
+    parser.start_node(Kind::ValueRecordNode);
+    value_record_body(parser, recovery);
+    parser.finish_node();
+    true
+}
+
 fn expect_number(parser: &mut Parser, kind: Kind, recovery: TokenSet) {
     parser.expect_remap_recover(Kind::Number, kind, recovery);
 }

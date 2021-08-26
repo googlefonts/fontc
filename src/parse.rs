@@ -83,10 +83,10 @@ impl<'a> Parser<'a> {
         self.sink.finish_node();
     }
 
-    //pub(crate) fn nth_raw(&self, n: usize) -> &[u8] {
-    //let range = self.nth_range(n);
-    //&self.text.as_bytes()[range]
-    //}
+    pub(crate) fn nth_raw(&self, n: usize) -> &[u8] {
+        let range = self.nth_range(n);
+        &self.text.as_bytes()[range]
+    }
 
     pub(crate) fn current_token_text(&self) -> &str {
         &self.text[self.nth_range(0)]

@@ -2,23 +2,35 @@ use crate::parse::Parser;
 use crate::token::Kind;
 use crate::token_set::TokenSet;
 
+// B @class [a b]
+pub(crate) fn eat_glyph_or_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if parser.eat(Kind::NamedGlyphClass) || parser.eat_remap(Kind::Ident, Kind::GlyphName) {
+        return true;
+    }
+    eat_glyph_class_list(parser, recovery)
+}
+
 // [ a b a-z @hi \0-\40 ]
-/// returns `true` if the list has a closing ']'
-pub(crate) fn glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> bool {
+pub(crate) fn eat_glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> bool {
+    //FIXME: most of this should come from above?
     const LIST_RECOVERY: TokenSet = TokenSet::TOP_LEVEL
         .union(TokenSet::RSQUARE)
         .union(TokenSet::SEMI);
 
+    if !parser.matches(0, Kind::LSquare) {
+        return false;
+    }
+
     parser.eat_trivia();
     parser.start_node(Kind::GlyphClass);
-    parser.expect(Kind::LSquare);
+    assert!(parser.eat(Kind::LSquare));
     while !parser.matches(0, LIST_RECOVERY.union(recovery)) {
         glyph_class_list_member(parser, recovery);
     }
 
-    let r = parser.expect(Kind::RSquare);
+    parser.expect_recover(Kind::RSquare, recovery);
     parser.finish_node();
-    r
+    true
 }
 
 fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) {
