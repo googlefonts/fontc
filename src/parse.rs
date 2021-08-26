@@ -144,11 +144,7 @@ impl<'a> Parser<'a> {
 
     /// Eat if we're at this raw token. Return `true` if we eat.
     pub(crate) fn eat(&mut self, raw: Kind) -> bool {
-        if self.nth(0).kind == raw {
-            self.eat_raw();
-            return true;
-        }
-        false
+        self.eat_remap(raw, raw)
     }
 
     /// Eat the next token, regardless of what it is.
@@ -156,11 +152,15 @@ impl<'a> Parser<'a> {
         self.do_bump::<1>(self.nth(0).kind);
     }
 
-    /// Eat the next token, giving it an explicit kind.
+    /// Eat the next token if it matches `expect`, replacing it with `remap`.
     ///
     /// Necessary for handling keywords, which are not known to the lexer.
-    pub(crate) fn eat_remap(&mut self, kind: Kind) {
-        self.do_bump::<1>(kind);
+    pub(crate) fn eat_remap(&mut self, expect: Kind, remap: Kind) -> bool {
+        if self.nth(0).kind == expect {
+            self.do_bump::<1>(remap);
+            return true;
+        }
+        false
     }
 
     /// combine two tokens into one
@@ -221,10 +221,19 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn expect_recover(&mut self, kind: Kind, recover: impl TokenComparable) -> bool {
-        if self.eat(kind) {
+        self.expect_remap_recover(kind, kind, recover)
+    }
+
+    pub(crate) fn expect_remap_recover(
+        &mut self,
+        expect: Kind,
+        remap: Kind,
+        recover: impl TokenComparable,
+    ) -> bool {
+        if self.eat_remap(expect, remap) {
             return true;
         }
-        self.err(format!("Expected {}, found {}", kind, self.nth(0).kind));
+        self.err(format!("Expected {}, found {}", remap, self.nth(0).kind));
         if !self.matches(0, recover) {
             self.eat_raw();
         }
@@ -234,7 +243,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn expect_tag(&mut self) -> bool {
         if self.nth(0).kind == Kind::Ident {
             if self.nth_range(0).len() <= 4 {
-                self.eat_remap(Kind::Tag);
+                self.eat_remap(Kind::Ident, Kind::Tag);
             } else {
                 // this is an error, but we continue parsing
                 self.eat_raw();

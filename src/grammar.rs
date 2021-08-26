@@ -56,12 +56,7 @@ fn advance_to_top_level(parser: &mut Parser) {
 
 fn language_system(parser: &mut Parser) {
     fn language_system_body(parser: &mut Parser) {
-        assert!(
-            parser.matches(0, Kind::LanguagesystemKw),
-            "{}",
-            parser.current_token_text()
-        );
-        parser.eat_remap(Kind::LanguagesystemKw);
+        assert!(parser.eat(Kind::LanguagesystemKw));
         if !parser.expect_tag() || !parser.expect_tag() {
             return advance_to_top_level(parser);
         }
@@ -75,14 +70,11 @@ fn language_system(parser: &mut Parser) {
 
 fn include(parser: &mut Parser) {
     fn include_body(parser: &mut Parser) {
-        assert!(parser.matches(0, Kind::IncludeKw));
-        parser.eat_remap(Kind::IncludeKw);
+        assert!(parser.eat(Kind::IncludeKw));
         if !parser.expect(Kind::LParen) {
             advance_to_top_level(parser);
         }
-        if parser.matches(0, Kind::Ident) {
-            parser.eat_remap(Kind::Path);
-        } else {
+        if !parser.eat_remap(Kind::Ident, Kind::Path) {
             parser.err("Include statement missing path");
             return advance_to_top_level(parser);
         }
@@ -90,7 +82,6 @@ fn include(parser: &mut Parser) {
             return advance_to_top_level(parser);
         }
         parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
-        //expect_semi_or_ws_semi(parser);
     }
 
     parser.start_node(Kind::IncludeKw);
@@ -189,14 +180,11 @@ fn glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
             if !parser.matches(0, recovery) {
                 parser.eat_raw();
             }
+            return false;
         }
-    } else if parser.matches(0, Kind::Ident) {
-        parser.eat_remap(Kind::GlyphName);
-        return true;
     } else {
-        parser.expect_recover(Kind::Ident, recovery);
+        parser.expect_remap_recover(Kind::Ident, Kind::GlyphName, recovery)
     }
-    false
 }
 
 fn table(_parser: &mut Parser) {
@@ -221,11 +209,8 @@ fn mark_class(parser: &mut Parser) {
             true
         } else if parser.matches(0, Kind::LSquare) {
             glyph_class_list(parser, ANCHOR_START)
-        } else if parser.matches(0, Kind::Ident) {
-            parser.eat_remap(Kind::GlyphName);
-            true
         } else {
-            false
+            parser.eat_remap(Kind::Ident, Kind::GlyphName)
         }
     }
 
@@ -282,14 +267,7 @@ fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
             return true;
         }
         if parser.eat(Kind::ContourpointKw) {
-            if parser.matches(0, Kind::DecimalLike) {
-                parser.eat_remap(Kind::Number);
-            } else {
-                parser.err("countourpoint should be a positive decimal number");
-                if !parser.matches(0, recovery) {
-                    parser.eat_raw();
-                }
-            }
+            parser.expect_remap_recover(Kind::DecimalLike, Kind::Number, recovery);
         } else if parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw) {
             if expect_device(parser, recovery) {
                 expect_device(parser, recovery);
@@ -334,7 +312,7 @@ fn expect_number(parser: &mut Parser, kind: Kind, recovery: TokenSet) -> bool {
         } else if has_neg {
             parser.eat_remap2(kind);
         } else {
-            parser.eat_remap(kind);
+            parser.eat_remap(Kind::DecimalLike, kind);
         }
         true
     } else {
@@ -371,7 +349,7 @@ fn expect_device(parser: &mut Parser, recovery: TokenSet) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse::{DebugSink, SyntaxError};
+    use crate::parse::DebugSink;
 
     fn debug_parse_output(text: &str, f: impl FnOnce(&mut Parser)) -> DebugSink {
         let mut sink = DebugSink::default();
