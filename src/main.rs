@@ -15,7 +15,12 @@ fn main() {
     let mut sink = DebugSink::default();
     let mut parser = Parser::new(&contents, &mut sink);
     grammar::root(&mut parser);
-    println!("{}", sink);
+    let errs = sink.print_errs(&contents);
+    if errs.is_empty() {
+        println!("{}", sink);
+    } else {
+        eprintln!("{}", errs);
+    }
 }
 
 macro_rules! exit_err {

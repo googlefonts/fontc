@@ -314,7 +314,6 @@ enum Event {
 pub(crate) struct DebugSink(Vec<Event>);
 
 impl DebugSink {
-    #[cfg(test)]
     pub(crate) fn errors(&self) -> Vec<SyntaxError> {
         self.0
             .iter()
@@ -325,7 +324,6 @@ impl DebugSink {
             .collect()
     }
 
-    #[cfg(test)]
     pub(crate) fn print_errs(&self, input: &str) -> String {
         use std::fmt::Write;
 
