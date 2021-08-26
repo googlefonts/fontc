@@ -44,14 +44,7 @@ pub(crate) fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
 }
 
 fn expect_number(parser: &mut Parser, kind: Kind, recovery: TokenSet) {
-    if parser.eat_remap(Kind::Number, kind) {
-        return;
-    }
-    if parser.matches(0, Kind::Hyphen) && parser.matches(1, Kind::Number) {
-        parser.eat_remap2(kind);
-        return;
-    }
-    parser.expect_recover(kind, recovery);
+    parser.expect_remap_recover(Kind::Number, kind, recovery);
 }
 
 fn expect_device(parser: &mut Parser, recovery: TokenSet) -> bool {

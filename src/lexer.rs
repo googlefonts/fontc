@@ -53,8 +53,7 @@ impl<'a> Lexer<'a> {
             b',' => Kind::Comma,
             b'@' => self.glyph_class_name(),
             b'\\' => Kind::Backslash,
-            //b'\\' => self.backslash(),
-            b'-' => Kind::Hyphen,
+            b'-' => self.hyphen_or_minus(),
             b'=' => Kind::Eq,
             b'{' => Kind::LBrace,
             b'}' => Kind::RBrace,
@@ -101,6 +100,24 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
+    }
+
+    fn hyphen_or_minus(&mut self) -> Kind {
+        if self.nth(0) == b'0' {
+            // octal, so this is a hyphen (and an error)
+            if self.nth(1).is_ascii_digit() {
+                return Kind::Hyphen;
+            }
+            // hex: ditto
+            if [b'x', b'X'].contains(&self.nth(1)) {
+                return Kind::Hyphen;
+            }
+        }
+        if self.nth(0).is_ascii_digit() {
+            return self.number(false);
+        }
+
+        Kind::Hyphen
     }
 
     fn number(&mut self, leading_zero: bool) -> Kind {
@@ -294,12 +311,23 @@ mod tests {
         assert_eq!(token_strs[4], "NUM(10)");
         assert_eq!(token_strs[6], "FLOAT(1.)");
         assert_eq!(token_strs[8], "FLOAT(1.0)");
-        assert_eq!(token_strs[10], "-");
-        assert_eq!(token_strs[11], "NUM(1)");
-        assert_eq!(token_strs[13], "-");
-        assert_eq!(token_strs[14], "FLOAT(1.)");
-        assert_eq!(token_strs[16], "-");
-        assert_eq!(token_strs[17], "FLOAT(1.5)");
+        assert_eq!(token_strs[10], "NUM(-1)");
+        assert_eq!(token_strs[12], "FLOAT(-1.)");
+    }
+
+    #[test]
+    fn bad_numbers() {
+        let fea = "-00 -0x1 -0x -ff";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "-");
+        assert_eq!(token_strs[1], "OCT(00)");
+        assert_eq!(token_strs[3], "-");
+        assert_eq!(token_strs[4], "HEX(0x1)");
+        assert_eq!(token_strs[6], "-");
+        assert_eq!(token_strs[7], "HEX EMPTY(0x)");
+        assert_eq!(token_strs[9], "-");
+        assert_eq!(token_strs[10], "ID(ff)");
     }
 
     #[test]
