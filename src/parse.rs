@@ -64,7 +64,7 @@ impl<'a> Parser<'a> {
         this
     }
 
-    fn nth_range(&self, n: usize) -> Range<usize> {
+    pub(crate) fn nth_range(&self, n: usize) -> Range<usize> {
         assert!(n < LOOKAHEAD);
         let start = self.buf[n].start_pos + self.buf[n].trivia_len;
         start..start + self.buf[n].token.len

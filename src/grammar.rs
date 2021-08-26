@@ -191,8 +191,20 @@ fn table(_parser: &mut Parser) {
     unimplemented!()
 }
 
-fn lookup(_parser: &mut Parser) {
-    unimplemented!()
+fn lookup(parser: &mut Parser) {
+    fn lookup_body(parser: &mut Parser) {
+        const LABEL_RECOVERY: TokenSet = TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]);
+        assert!(parser.eat(Kind::LookupKw));
+        let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
+        parser.expect_remap_recover(Kind::Ident, Kind::Label, LABEL_RECOVERY);
+        parser.eat(Kind::UseExtensionKw);
+        parser.expect(Kind::LBrace);
+    }
+
+    parser.eat_trivia();
+    parser.start_node(Kind::LookupKw);
+    lookup_body(parser);
+    parser.finish_node();
 }
 
 fn feature(_parser: &mut Parser) {

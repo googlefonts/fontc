@@ -57,6 +57,7 @@ pub(crate) enum Kind {
     Cid,
     Metric,
     Number,
+    Label,
 
     // keywords:
     // top-level keywords
@@ -216,6 +217,7 @@ impl std::fmt::Display for Kind {
             Self::Cid => write!(f, "CID"),
             Self::Metric => write!(f, "METRIC"),
             Self::Number => write!(f, "NUM"),
+            Self::Label => write!(f, "LABEL"),
 
             Self::TableKw => write!(f, "TableKw"),
             Self::LookupKw => write!(f, "LookupKw"),
