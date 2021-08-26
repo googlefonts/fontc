@@ -23,9 +23,10 @@ pub(crate) enum Kind {
 
     String,
     StringUnterminated, // an error handled at a higher level
-    DecimalLike,        // also octal; we disambiguate based on context
-    Hex,                // an error handled at a higher level
-    HexEmpty,           // naked 0x
+    Number,
+    Octal,
+    Hex,      // an error handled at a higher level
+    HexEmpty, // naked 0x
     Float,
 
     Whitespace,
@@ -56,7 +57,6 @@ pub(crate) enum Kind {
     GlyphRange,
     Cid,
     Metric,
-    Number,
     Label,
 
     // keywords:
@@ -121,7 +121,7 @@ impl Kind {
                 | Self::Float
                 | Self::Hex
                 | Self::HexEmpty
-                | Self::DecimalLike
+                | Self::Octal
                 | Self::Comment
                 | Self::Whitespace
                 | Self::NamedGlyphClass
@@ -186,9 +186,10 @@ impl std::fmt::Display for Kind {
             Self::Ident => write!(f, "ID"),
             Self::StringUnterminated => write!(f, "STR OPEN"),
             Self::String => write!(f, "STR"),
-            Self::DecimalLike => write!(f, "DEC"),
-            Self::HexEmpty => write!(f, "HEX EMPTY"),
+            Self::Number => write!(f, "NUM"),
+            Self::Octal => write!(f, "OCT"),
             Self::Hex => write!(f, "HEX"),
+            Self::HexEmpty => write!(f, "HEX EMPTY"),
             Self::Float => write!(f, "FLOAT"),
             Self::Whitespace => write!(f, "WS"),
             Self::Semi => write!(f, ";"),
@@ -216,7 +217,6 @@ impl std::fmt::Display for Kind {
             Self::GlyphName => write!(f, "GlyphName"),
             Self::Cid => write!(f, "CID"),
             Self::Metric => write!(f, "METRIC"),
-            Self::Number => write!(f, "NUM"),
             Self::Label => write!(f, "LABEL"),
 
             Self::TableKw => write!(f, "TableKw"),

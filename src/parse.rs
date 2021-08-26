@@ -34,7 +34,7 @@ struct PendingToken {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SyntaxError {
-    message: String,
+    pub(crate) message: String,
     range: Range<usize>,
 }
 
@@ -83,10 +83,10 @@ impl<'a> Parser<'a> {
         self.sink.finish_node();
     }
 
-    pub(crate) fn nth_raw(&self, n: usize) -> &[u8] {
-        let range = self.nth_range(n);
-        &self.text.as_bytes()[range]
-    }
+    //pub(crate) fn nth_raw(&self, n: usize) -> &[u8] {
+    //let range = self.nth_range(n);
+    //&self.text.as_bytes()[range]
+    //}
 
     pub(crate) fn current_token_text(&self) -> &str {
         &self.text[self.nth_range(0)]
@@ -380,6 +380,47 @@ impl DebugSink {
             .unwrap();
         }
         result
+    }
+
+    #[cfg(test)]
+    pub(crate) fn simple_parse_tree(&self, input: &str) -> String {
+        use std::fmt::Write;
+
+        let mut f = String::new();
+        let mut pos = 0;
+        let mut indent = 0;
+        let mut node_stack = Vec::new();
+        static WS: &str = "                                                                                                                        ";
+        for event in &self.0 {
+            match event {
+                Event::Start(kind) => {
+                    writeln!(&mut f, "{}START {}", &WS[..indent], kind).unwrap();
+                    node_stack.push(kind);
+                    indent += 2;
+                }
+                Event::Token(kind, len) => {
+                    if kind.has_contents() {
+                        writeln!(
+                            &mut f,
+                            "{}{}({})",
+                            &WS[..indent],
+                            kind,
+                            &input[pos..pos + len]
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(&mut f, "{}{}", &WS[..indent], kind).unwrap();
+                    }
+                    pos += len;
+                }
+                Event::Finish => {
+                    indent -= 2;
+                    writeln!(&mut f, "{}END {}", &WS[..indent], node_stack.pop().unwrap()).unwrap();
+                }
+                Event::Error(_) => (),
+            }
+        }
+        f
     }
 }
 

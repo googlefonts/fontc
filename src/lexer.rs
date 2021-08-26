@@ -104,13 +104,21 @@ impl<'a> Lexer<'a> {
     }
 
     fn number(&mut self, leading_zero: bool) -> Kind {
-        if leading_zero && [b'x', b'X'].contains(&self.nth(0)) {
-            self.bump();
-            if self.nth(0).is_ascii_hexdigit() {
-                self.eat_hex_digits();
-                Kind::Hex
+        if leading_zero {
+            if [b'x', b'X'].contains(&self.nth(0)) {
+                self.bump();
+                if self.nth(0).is_ascii_hexdigit() {
+                    self.eat_hex_digits();
+                    Kind::Hex
+                } else {
+                    Kind::HexEmpty
+                }
+            } else if self.nth(0).is_ascii_digit() {
+                self.eat_octal_digits();
+                Kind::Octal
             } else {
-                Kind::HexEmpty
+                // just '0'
+                Kind::Number
             }
         } else {
             self.eat_decimal_digits();
@@ -119,11 +127,16 @@ impl<'a> Lexer<'a> {
                 self.eat_decimal_digits();
                 Kind::Float
             } else {
-                Kind::DecimalLike
+                Kind::Number
             }
         }
     }
 
+    fn eat_octal_digits(&mut self) {
+        while matches!(self.nth(0), b'0'..=b'7') {
+            self.bump();
+        }
+    }
     fn eat_hex_digits(&mut self) {
         while self.nth(0).is_ascii_hexdigit() {
             self.bump();
@@ -276,13 +289,13 @@ mod tests {
         let fea = "0 001 10 1. 1.0 -1 -1. -1.5";
         let tokens = tokenize(fea);
         let token_strs = debug_tokens2(&tokens, fea);
-        assert_eq!(token_strs[0], "DEC(0)");
-        assert_eq!(token_strs[2], "DEC(001)");
-        assert_eq!(token_strs[4], "DEC(10)");
+        assert_eq!(token_strs[0], "NUM(0)");
+        assert_eq!(token_strs[2], "OCT(001)");
+        assert_eq!(token_strs[4], "NUM(10)");
         assert_eq!(token_strs[6], "FLOAT(1.)");
         assert_eq!(token_strs[8], "FLOAT(1.0)");
         assert_eq!(token_strs[10], "-");
-        assert_eq!(token_strs[11], "DEC(1)");
+        assert_eq!(token_strs[11], "NUM(1)");
         assert_eq!(token_strs[13], "-");
         assert_eq!(token_strs[14], "FLOAT(1.)");
         assert_eq!(token_strs[16], "-");
@@ -327,10 +340,10 @@ mod tests {
         assert_eq!(token_strs[2], "=");
         assert_eq!(token_strs[3], "[");
         assert_eq!(token_strs[4], "\\");
-        assert_eq!(token_strs[5], "DEC(1)");
+        assert_eq!(token_strs[5], "NUM(1)");
         assert_eq!(token_strs[6], "-");
         assert_eq!(token_strs[7], "\\");
-        assert_eq!(token_strs[8], "DEC(2)");
+        assert_eq!(token_strs[8], "NUM(2)");
         assert_eq!(token_strs[9], "WS( )");
         assert_eq!(token_strs[10], "ID(a)");
         assert_eq!(token_strs[11], "WS( )");

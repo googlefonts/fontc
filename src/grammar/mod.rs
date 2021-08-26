@@ -181,16 +181,16 @@ fn anonymous(_parser: &mut Parser) {
 }
 
 #[cfg(test)]
+fn debug_parse_output(text: &str, f: impl FnOnce(&mut Parser)) -> super::parse::DebugSink {
+    let mut sink = super::parse::DebugSink::default();
+    let mut parser = Parser::new(text, &mut sink);
+    f(&mut parser);
+    sink
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse::DebugSink;
-
-    fn debug_parse_output(text: &str, f: impl FnOnce(&mut Parser)) -> DebugSink {
-        let mut sink = DebugSink::default();
-        let mut parser = Parser::new(text, &mut sink);
-        f(&mut parser);
-        sink
-    }
 
     #[test]
     fn languagesystem() {

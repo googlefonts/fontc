@@ -57,7 +57,7 @@ fn glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
         if parser.matches(1, Kind::Ident) {
             parser.eat_remap2(Kind::GlyphName);
             return true;
-        } else if parser.matches(1, Kind::DecimalLike) {
+        } else if parser.matches(1, Kind::Number) {
             parser.eat_remap2(Kind::Cid);
             return true;
         } else {
