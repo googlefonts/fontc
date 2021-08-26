@@ -2,6 +2,9 @@ use crate::parse::Parser;
 use crate::token::Kind;
 use crate::token_set::TokenSet;
 
+mod glyph;
+mod metrics;
+
 pub(crate) fn root(parser: &mut Parser) {
     parser.start_node(Kind::SourceFile);
     while !parser.at_eof() {
@@ -105,7 +108,7 @@ fn named_glyph_class_decl(parser: &mut Parser) {
         } else if !parser.matches(0, Kind::LSquare) {
             parser.err_recover("Expected named glyph class or '['.", TokenSet::TOP_LEVEL);
         } else {
-            glyph_class_list(parser, TokenSet::EMPTY);
+            glyph::glyph_class_list(parser, TokenSet::EMPTY);
         }
     }
 
@@ -113,78 +116,6 @@ fn named_glyph_class_decl(parser: &mut Parser) {
     glyph_class_body(parser);
     parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
     parser.finish_node();
-}
-
-// [ a b a-z @hi \0-\40 ]
-/// returns `true` if the list has a closing ']'
-fn glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> bool {
-    const LIST_RECOVERY: TokenSet = TokenSet::TOP_LEVEL
-        .union(TokenSet::RSQUARE)
-        .union(TokenSet::SEMI);
-
-    parser.eat_trivia();
-    parser.start_node(Kind::GlyphClass);
-    parser.expect(Kind::LSquare);
-    while !parser.matches(0, LIST_RECOVERY.union(recovery)) {
-        glyph_class_list_member(parser, recovery);
-    }
-
-    let r = parser.expect(Kind::RSquare);
-    parser.finish_node();
-    r
-}
-
-fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) {
-    if parser.eat(Kind::NamedGlyphClass) {
-        return;
-    }
-    // a glyphname
-    // a glyph development name
-    // an escaped glyph name
-    // an escaped CID
-
-    let looks_like_range = parser.matches(1, Kind::Hyphen)
-        || (parser.matches(0, Kind::Backslash) && parser.matches(2, Kind::Hyphen));
-    if looks_like_range {
-        parser.eat_trivia();
-        parser.start_node(Kind::GlyphRange);
-        glyph_range(parser, TokenSet::RSQUARE.union(recovery));
-        parser.finish_node();
-    } else {
-        glyph_name_like(parser, TokenSet::RSQUARE.union(recovery));
-    }
-}
-
-fn glyph_range(parser: &mut Parser, recovery: TokenSet) -> bool {
-    const HYPHEN: TokenSet = TokenSet::new(&[Kind::Hyphen]);
-
-    let first_recovery = recovery.union(HYPHEN);
-
-    glyph_name_like(parser, first_recovery)
-        & parser.expect_recover(Kind::Hyphen, recovery)
-        & glyph_name_like(parser, recovery)
-}
-
-fn glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
-    if parser.matches(0, Kind::Backslash) {
-        if parser.matches(1, Kind::Ident) {
-            parser.eat_remap2(Kind::GlyphName);
-            return true;
-        } else if parser.matches(1, Kind::DecimalLike) {
-            parser.eat_remap2(Kind::Cid);
-            return true;
-        } else {
-            parser.eat_raw();
-            let kind = parser.nth(0).kind;
-            parser.err(format!("Expected glyph name or CID, found {}", kind));
-            if !parser.matches(0, recovery) {
-                parser.eat_raw();
-            }
-            return false;
-        }
-    } else {
-        parser.expect_remap_recover(Kind::Ident, Kind::GlyphName, recovery)
-    }
 }
 
 fn table(_parser: &mut Parser) {
@@ -220,7 +151,7 @@ fn mark_class(parser: &mut Parser) {
         if parser.eat(Kind::NamedGlyphClass) {
             true
         } else if parser.matches(0, Kind::LSquare) {
-            glyph_class_list(parser, ANCHOR_START)
+            glyph::glyph_class_list(parser, ANCHOR_START)
         } else {
             parser.eat_remap(Kind::Ident, Kind::GlyphName)
         }
@@ -231,7 +162,7 @@ fn mark_class(parser: &mut Parser) {
         if !glyph_or_class(parser) {
             parser.err("Expected glyph name or class");
         }
-        anchor(parser, TokenSet::new(&[Kind::Semi, Kind::NamedGlyphClass]));
+        metrics::anchor(parser, TokenSet::new(&[Kind::Semi, Kind::NamedGlyphClass]));
         parser.expect_recover(Kind::NamedGlyphClass, TokenSet::SEMI);
         parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
     }
@@ -247,115 +178,6 @@ fn anchor_def(_parser: &mut Parser) {
 
 fn anonymous(_parser: &mut Parser) {
     unimplemented!()
-}
-
-// A: <anchor <metric> <metric>> (<anchor 120 -20>)
-// B: <anchor <metric> <metric>  # x coordinate, y coordinate
-//    <contour point>> (<anchor 120 -20 contourpoint 5>)
-// C: <anchor <metric> <metric>   # x coordinate, y coordinate
-//    <device> <device>>  # x coordinate device, y coordinate device
-//    (<anchor 120 -20 <device 11 1> <device NULL>>)
-// D: <anchor NULL>
-// E: <anchor <name>> (<anchor TOP_ANCHOR_1>)
-fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
-    fn anchor_body(parser: &mut Parser, recovery: TokenSet) -> bool {
-        parser.expect(Kind::LAngle);
-        parser.expect(Kind::AnchorKw);
-        if parser.eat(Kind::NullKw) || parser.eat(Kind::Ident) {
-            return parser.expect_recover(Kind::RAngle, recovery);
-        }
-
-        const RANGLE: TokenSet = TokenSet::new(&[Kind::RAngle]);
-        let recovery = recovery.union(RANGLE);
-        // now either:
-        // <metric> metric>
-        // <metric> <metric> <contour point>
-        // <metric> <metric> <device> <device>
-        if expect_number(parser, Kind::Metric, recovery) {
-            expect_number(parser, Kind::Metric, recovery);
-        }
-        // either done or contour | device
-        if parser.eat(Kind::RAngle) {
-            return true;
-        }
-        if parser.eat(Kind::ContourpointKw) {
-            parser.expect_remap_recover(Kind::DecimalLike, Kind::Number, recovery);
-        } else if parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw) {
-            if expect_device(parser, recovery) {
-                expect_device(parser, recovery);
-            }
-        } else {
-            // something else unexpected in our anchor?
-            assert!(!parser.matches(0, Kind::RAngle));
-            parser.err("Invalid anchor element.");
-            if !parser.matches(0, recovery) {
-                parser.eat_raw();
-            }
-        }
-        parser.expect_recover(Kind::RAngle, recovery)
-    }
-
-    parser.eat_trivia();
-    parser.start_node(Kind::AnchorKw);
-    let r = anchor_body(parser, recovery);
-    parser.finish_node();
-    r
-}
-
-// A <number> is a signed decimal integer (without leading zeros)
-// returns true if we advance.
-fn expect_number(parser: &mut Parser, kind: Kind, recovery: TokenSet) -> bool {
-    fn leading_zeros(bytes: &[u8]) -> bool {
-        match bytes {
-            [_b] => false, // one leading zero is just a 0
-            [b'0', ..] => true,
-            _ => false,
-        }
-    }
-
-    let has_neg = parser.matches(0, Kind::Hyphen);
-    let num_pos = if has_neg { 1 } else { 0 };
-    if parser.matches(num_pos, Kind::DecimalLike) {
-        if leading_zeros(parser.nth_raw(num_pos)) {
-            if has_neg {
-                assert!(parser.eat(Kind::Hyphen));
-            }
-            parser.err_and_bump("Number cannot have leading zeros.");
-        } else if has_neg {
-            parser.eat_remap2(kind);
-        } else {
-            parser.eat_remap(Kind::DecimalLike, kind);
-        }
-        true
-    } else {
-        if has_neg {
-            parser.eat_raw();
-        }
-        // always fails, but generates our error message
-        parser.expect_recover(kind, recovery);
-        // if we ate a '-' we can still advance
-        has_neg
-    }
-}
-
-fn expect_device(parser: &mut Parser, recovery: TokenSet) -> bool {
-    debug_assert!(parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw));
-    parser.eat_trivia();
-    parser.start_node(Kind::DeviceKw);
-    parser.expect(Kind::LAngle);
-    parser.expect(Kind::DeviceKw);
-    if expect_number(parser, Kind::Number, recovery)
-        && expect_number(parser, Kind::Number, recovery)
-        && parser.eat(Kind::Comma)
-        && expect_number(parser, Kind::Number, recovery)
-    {
-        expect_number(parser, Kind::Number, recovery);
-    }
-    //}
-    // FIXME: this should handle an arbitary number of pairs? but also isn't
-    // supported yet?
-    // I don't know what's going on tbh
-    parser.expect(Kind::RAngle)
 }
 
 #[cfg(test)]
