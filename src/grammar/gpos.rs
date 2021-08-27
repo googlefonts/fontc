@@ -34,7 +34,7 @@ pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
         //parser.expect_recover(Kind::Semi, recovery);
     }
 
-    parser.start_node(Kind::PosKw);
+    parser.start_node(Kind::GposNode);
     gpos_body(parser, recovery);
     parser.finish_node();
 }
@@ -171,7 +171,7 @@ mod tests {
         assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
         crate::assert_eq_str!(
             "\
-START PosKw
+START GposNode
   PosKw
   WS( )
   GlyphName(one)
@@ -188,7 +188,7 @@ START PosKw
     >
   END ValueRecordNode
   ;
-END PosKw
+END GposNode
 ",
             out.simple_parse_tree(fea),
         );
@@ -201,7 +201,7 @@ END PosKw
         assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
         crate::assert_eq_str!(
             "\
-START PosKw
+START GposNode
   PosKw
   WS( )
   GlyphName(T)
@@ -212,7 +212,7 @@ START PosKw
     NUM(-100)
   END ValueRecordNode
   ;
-END PosKw
+END GposNode
 ",
             out.simple_parse_tree(fea),
         );
@@ -225,7 +225,7 @@ END PosKw
         assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
         crate::assert_eq_str!(
             "\
-START PosKw
+START GposNode
   PosKw
   WS( )
   START GlyphClass
@@ -240,7 +240,7 @@ START PosKw
     NUM(-100)
   END ValueRecordNode
   ;
-END PosKw
+END GposNode
 ",
             out.simple_parse_tree(fea),
         );
@@ -253,7 +253,7 @@ END PosKw
         assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
         crate::assert_eq_str!(
             "\
-START PosKw
+START GposNode
   PosKw
   WS( )
   START GlyphClass
@@ -268,7 +268,7 @@ START PosKw
     NUM(-100)
   END ValueRecordNode
   ;
-END PosKw
+END GposNode
 ",
             out.simple_parse_tree(fea),
         );
@@ -281,7 +281,7 @@ END PosKw
         assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
         crate::assert_eq_str!(
             "\
-START PosKw
+START GposNode
   PosKw
   WS( )
   @GlyphClass(@T)
@@ -300,7 +300,7 @@ START PosKw
     NUM(-100)
   END ValueRecordNode
   ;
-END PosKw
+END GposNode
 ",
             out.simple_parse_tree(fea),
         );

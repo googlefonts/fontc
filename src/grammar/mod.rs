@@ -4,6 +4,7 @@ use crate::token_set::TokenSet;
 
 mod glyph;
 mod gpos;
+mod gsub;
 mod metrics;
 
 pub(crate) fn root(parser: &mut Parser) {

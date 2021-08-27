@@ -114,6 +114,8 @@ pub(crate) enum Kind {
     BaseKw,
 
     // node-only tokens, assigned during parsing
+    GposNode,
+    GsubNode,
     AnchorMarkNode,
     ValueRecordNode,
 }
@@ -273,6 +275,8 @@ impl std::fmt::Display for Kind {
 
             Self::AnchorMarkNode => write!(f, "AnchorMarkNode"),
             Self::ValueRecordNode => write!(f, "ValueRecordNode"),
+            Self::GsubNode => write!(f, "GsubNode"),
+            Self::GposNode => write!(f, "GposNode"),
         }
     }
 }
