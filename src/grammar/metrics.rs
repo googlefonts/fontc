@@ -62,7 +62,7 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
     }
 
     let looks_like_record = parser.matches(0, Kind::Number)
-        || (parser.matches(0, Kind::LAngle) && parser.matches(0, Kind::Number));
+        || (parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::Number));
 
     if !looks_like_record {
         return false;
@@ -176,6 +176,31 @@ START AnchorKw
   NUM(14)
   >
 END AnchorKw
+",
+            out.simple_parse_tree(fea),
+        );
+    }
+
+    #[test]
+    fn value_record_b() {
+        let fea = "<-80 0 -160 0>";
+        let out = debug_parse_output(fea, |parser| {
+            eat_value_record(parser, TokenSet::EMPTY);
+        });
+        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        crate::assert_eq_str!(
+            "\
+START ValueRecordNode
+  <
+  NUM(-80)
+  WS( )
+  NUM(0)
+  WS( )
+  NUM(-160)
+  WS( )
+  NUM(0)
+  >
+END ValueRecordNode
 ",
             out.simple_parse_tree(fea),
         );

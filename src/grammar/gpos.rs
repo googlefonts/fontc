@@ -31,7 +31,7 @@ pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
         } else {
             gpos_single_pair_or_chain(parser, recovery);
         }
-        parser.expect_recover(Kind::Semi, recovery);
+        //parser.expect_recover(Kind::Semi, recovery);
     }
 
     parser.start_node(Kind::PosKw);
@@ -109,6 +109,7 @@ fn gpos_single_pair_or_chain(parser: &mut Parser, recovery: TokenSet) {
     ]);
     glyph::eat_glyph_or_glyph_class(parser, recovery.union(RECOVERY));
     if metrics::eat_value_record(parser, recovery) {
+        parser.current_token_text();
         if parser.eat(Kind::Semi) {
             // singleton
             return;
@@ -157,3 +158,153 @@ fn anchor_mark(parser: &mut Parser, recovery: TokenSet) -> bool {
     parser.finish_node();
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::debug_parse_output;
+    use super::*;
+
+    #[test]
+    fn single() {
+        let fea = "position one <-80 0 -160 0>;";
+        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        crate::assert_eq_str!(
+            "\
+START PosKw
+  PosKw
+  WS( )
+  GlyphName(one)
+  WS( )
+  START ValueRecordNode
+    <
+    NUM(-80)
+    WS( )
+    NUM(0)
+    WS( )
+    NUM(-160)
+    WS( )
+    NUM(0)
+    >
+  END ValueRecordNode
+  ;
+END PosKw
+",
+            out.simple_parse_tree(fea),
+        );
+    }
+
+    #[test]
+    fn pair_1() {
+        let fea = "pos T a -100;";
+        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        crate::assert_eq_str!(
+            "\
+START PosKw
+  PosKw
+  WS( )
+  GlyphName(T)
+  WS( )
+  GlyphName(a)
+  WS( )
+  START ValueRecordNode
+    NUM(-100)
+  END ValueRecordNode
+  ;
+END PosKw
+",
+            out.simple_parse_tree(fea),
+        );
+    }
+
+    #[test]
+    fn pair_2() {
+        let fea = "pos [T] a -100;";
+        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        crate::assert_eq_str!(
+            "\
+START PosKw
+  PosKw
+  WS( )
+  START GlyphClass
+    [
+    GlyphName(T)
+    ]
+  END GlyphClass
+  WS( )
+  GlyphName(a)
+  WS( )
+  START ValueRecordNode
+    NUM(-100)
+  END ValueRecordNode
+  ;
+END PosKw
+",
+            out.simple_parse_tree(fea),
+        );
+    }
+
+    #[test]
+    fn pair_3() {
+        let fea = "pos [T] @a -100;";
+        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        crate::assert_eq_str!(
+            "\
+START PosKw
+  PosKw
+  WS( )
+  START GlyphClass
+    [
+    GlyphName(T)
+    ]
+  END GlyphClass
+  WS( )
+  @GlyphClass(@a)
+  WS( )
+  START ValueRecordNode
+    NUM(-100)
+  END ValueRecordNode
+  ;
+END PosKw
+",
+            out.simple_parse_tree(fea),
+        );
+    }
+
+    #[test]
+    fn pair_4() {
+        let fea = "pos @T [a o u] -100;";
+        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        crate::assert_eq_str!(
+            "\
+START PosKw
+  PosKw
+  WS( )
+  @GlyphClass(@T)
+  WS( )
+  START GlyphClass
+    [
+    GlyphName(a)
+    WS( )
+    GlyphName(o)
+    WS( )
+    GlyphName(u)
+    ]
+  END GlyphClass
+  WS( )
+  START ValueRecordNode
+    NUM(-100)
+  END ValueRecordNode
+  ;
+END PosKw
+",
+            out.simple_parse_tree(fea),
+        );
+    }
+}
+//pos T @a -100;       # class pair (glyph class present, even if singleton)
+//pos @T [a o u] -80;

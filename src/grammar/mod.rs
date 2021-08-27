@@ -3,7 +3,7 @@ use crate::token::Kind;
 use crate::token_set::TokenSet;
 
 mod glyph;
-mod gsub;
+mod gpos;
 mod metrics;
 
 pub(crate) fn root(parser: &mut Parser) {
