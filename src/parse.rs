@@ -240,7 +240,7 @@ impl<'a> Parser<'a> {
         false
     }
 
-    pub(crate) fn expect_tag(&mut self) -> bool {
+    pub(crate) fn expect_tag(&mut self, recover: impl TokenComparable) -> bool {
         if self.nth(0).kind == Kind::Ident {
             if self.nth_range(0).len() <= 4 {
                 self.eat_remap(Kind::Ident, Kind::Tag);
@@ -252,6 +252,9 @@ impl<'a> Parser<'a> {
             true
         } else {
             self.err(format!("expected tag, found {}", self.nth(0).kind));
+            if !self.matches(0, recover) {
+                self.eat_raw();
+            }
             false
         }
     }
@@ -382,7 +385,6 @@ impl DebugSink {
         result
     }
 
-    #[cfg(test)]
     pub(crate) fn simple_parse_tree(&self, input: &str) -> String {
         use std::fmt::Write;
 
@@ -402,7 +404,7 @@ impl DebugSink {
                     if kind.has_contents() {
                         writeln!(
                             &mut f,
-                            "{}{}({})",
+                            "{}{}({:?})",
                             &WS[..indent],
                             kind,
                             &input[pos..pos + len]

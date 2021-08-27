@@ -23,6 +23,17 @@ impl TokenSet {
         Kind::GlyphClass,
     ]);
 
+    /// keywords expected to start items in a feature block
+    pub(crate) const FEATURE_BODY_ITEM: TokenSet = TokenSet::TOP_LEVEL.union(TokenSet::new(&[
+        Kind::PosKw,
+        Kind::EnumKw,
+        Kind::IgnoreKw,
+        Kind::SubKw,
+        Kind::RsubKw,
+    ]));
+
+    //pub(crate) const GSUB: TokenSet = TokenSet::new(&[])
+
     pub(crate) const RSQUARE: TokenSet = TokenSet::new(&[Kind::RSquare]);
     pub(crate) const SEMI: TokenSet = TokenSet::new(&[Kind::Semi]);
 

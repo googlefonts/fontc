@@ -27,7 +27,7 @@ fn top_level_element(parser: &mut Parser) {
     } else if parser.matches(0, Kind::TableKw) {
         table(parser)
     } else if parser.matches(0, Kind::LookupKw) {
-        lookup(parser)
+        lookup_block(parser, TokenSet::TOP_LEVEL)
     } else if parser.matches(0, Kind::LanguagesystemKw) {
         language_system(parser)
     } else if parser.matches(0, Kind::FeatureKw) {
@@ -62,7 +62,7 @@ fn advance_to_top_level(parser: &mut Parser) {
 fn language_system(parser: &mut Parser) {
     fn language_system_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::LanguagesystemKw));
-        if !parser.expect_tag() || !parser.expect_tag() {
+        if !parser.expect_tag(Kind::Semi) || !parser.expect_tag(Kind::Semi) {
             return advance_to_top_level(parser);
         }
         parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
@@ -124,24 +124,193 @@ fn table(_parser: &mut Parser) {
     unimplemented!()
 }
 
-fn lookup(parser: &mut Parser) {
-    fn lookup_body(parser: &mut Parser) {
-        const LABEL_RECOVERY: TokenSet = TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]);
-        assert!(parser.eat(Kind::LookupKw));
-        let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
-        parser.expect_remap_recover(Kind::Ident, Kind::Label, LABEL_RECOVERY);
-        parser.eat(Kind::UseExtensionKw);
-        parser.expect(Kind::LBrace);
+fn lookupflag(parser: &mut Parser, recovery: TokenSet) {
+    fn eat_named_lookup_value(parser: &mut Parser, recovery: TokenSet) -> bool {
+        match parser.nth(0).kind {
+            Kind::RightToLeftKw
+            | Kind::IgnoreBaseGlyphsKw
+            | Kind::IgnoreMarksKw
+            | Kind::IgnoreLigaturesKw => {
+                parser.eat_raw();
+                true
+            }
+            Kind::MarkAttachmentTypeKw | Kind::UseMarkFilteringSetKw => {
+                parser.eat_raw();
+                if !parser.eat(Kind::NamedGlyphClass)
+                    && !glyph::eat_glyph_class_list(parser, recovery)
+                {
+                    parser.err("lookupflag '{}' must be followed by a glyph class.");
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn lookupflag_body(parser: &mut Parser, recovery: TokenSet) {
+        assert!(parser.eat(Kind::LookupflagKw));
+        if !parser.eat(Kind::Number) {
+            while eat_named_lookup_value(parser, recovery) {
+                continue;
+            }
+        }
+        parser.expect_recover(Kind::Semi, recovery);
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::LookupKw);
-    lookup_body(parser);
+    parser.start_node(Kind::LookupflagKw);
+    lookupflag_body(parser, recovery);
     parser.finish_node();
 }
 
-fn feature(_parser: &mut Parser) {
-    unimplemented!()
+fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
+    fn eat_lookup_item(parser: &mut Parser, recovery: TokenSet) -> bool {
+        let start_pos = parser.nth_range(0).start;
+        match parser.nth(0).kind {
+            Kind::LookupflagKw => lookupflag(parser, recovery),
+            Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
+                pos_or_sub_rule(parser, recovery)
+            }
+            _ => (),
+        }
+        parser.nth_range(0).start != start_pos
+    }
+
+    fn lookup_body(parser: &mut Parser, recovery: TokenSet) {
+        const LABEL_RECOVERY: TokenSet = TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]);
+        assert!(parser.eat(Kind::LookupKw));
+        //let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
+        parser.expect_remap_recover(Kind::Ident, Kind::Label, LABEL_RECOVERY);
+        parser.eat(Kind::UseExtensionKw);
+        parser.expect(Kind::LBrace);
+        while eat_lookup_item(parser, recovery) {
+            continue;
+        }
+        parser.expect_recover(
+            Kind::RBrace,
+            recovery.union(TokenSet::new(&[Kind::Ident, Kind::Semi])),
+        );
+        parser.expect_remap_recover(Kind::Ident, Kind::Label, recovery.union(Kind::Semi.into()));
+        parser.expect_recover(Kind::Semi, recovery);
+    }
+
+    parser.eat_trivia();
+    parser.start_node(Kind::LookupBlockNode);
+    lookup_body(parser, recovery);
+    parser.finish_node();
+}
+
+//either lookup <label> { ... } <label>;
+//or     lookup <label>;
+fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
+    assert!(parser.matches(0, Kind::LookupKw));
+    let kind1 = parser.nth(1).kind;
+    let kind2 = parser.nth(2).kind;
+    let (ref_like, block_like) = match (kind1, kind2) {
+        (Kind::Ident, Kind::Semi) => (true, false),
+        (Kind::Ident, Kind::LBrace) => (false, true),
+        (Kind::Semi, _) => (true, false),   // ref without ident
+        (Kind::LBrace, _) => (false, true), // block without ident
+        _ => (false, false),
+    };
+    if block_like {
+        lookup_block(parser, recovery);
+    } else if ref_like {
+        parser.eat_trivia();
+        parser.start_node(Kind::LookupRefNode);
+        parser.eat(Kind::LookupKw);
+        parser.expect_recover(Kind::Ident, recovery.union(TokenSet::SEMI));
+        parser.expect_recover(Kind::Semi, recovery);
+    } else {
+        parser.eat(Kind::LookupKw);
+        if parser.eat(Kind::Ident) {
+            parser.err_recover("Expected ';' or '{', found '{}'", parser.nth(0).kind);
+        } else {
+            parser.expect_recover(Kind::Ident, recovery);
+        }
+    }
+}
+
+fn feature(parser: &mut Parser) {
+    fn feature_body_item(parser: &mut Parser) -> bool {
+        let start_pos = parser.nth_range(0).start;
+        match parser.nth(0).kind {
+            Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
+                pos_or_sub_rule(parser, TokenSet::FEATURE_BODY_ITEM)
+            }
+            Kind::NamedGlyphClass => named_glyph_class_decl(parser),
+            Kind::MarkClassKw => mark_class(parser),
+            Kind::SubtableKw => parser.eat_raw(),
+            Kind::LookupKw => lookup_block_or_reference(parser, TokenSet::FEATURE_BODY_ITEM),
+            Kind::ScriptKw => {
+                parser.eat_trivia();
+                parser.start_node(Kind::ScriptKw);
+                parser.eat_raw();
+                parser.expect_tag(TokenSet::FEATURE_BODY_ITEM.union(Kind::Semi.into()));
+                parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
+                parser.finish_node();
+            }
+            Kind::LanguageKw => {
+                parser.eat_trivia();
+                parser.start_node(Kind::LanguageKw);
+                parser.eat_raw();
+                parser.expect_tag(TokenSet::FEATURE_BODY_ITEM.union(Kind::Semi.into()));
+                parser.eat(Kind::ExcludeDfltKw);
+                parser.eat(Kind::IncludeDfltKw);
+                parser.eat(Kind::RequiredKw);
+                parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
+            }
+            Kind::FeatureKw => {
+                // aalt only
+                if parser.matches(1, Kind::Ident) && !parser.matches(2, Kind::Semi) {
+                    assert!(parser.eat(Kind::FeatureKw));
+                    parser.expect_tag(TokenSet::EMPTY);
+                    assert!(parser.eat(Kind::Semi));
+                }
+            }
+            _ => (),
+        }
+        parser.nth_range(0).start != start_pos
+    }
+
+    fn feature_body(parser: &mut Parser) {
+        assert!(parser.eat(Kind::FeatureKw));
+        // if there's a tag, stash the range
+        //let raw_tag_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
+        parser.expect_recover(
+            Kind::Ident,
+            TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]),
+        );
+        parser.eat(Kind::UseExtensionKw);
+        parser.expect(Kind::LBrace);
+        while feature_body_item(parser) {
+            continue;
+        }
+        parser.expect_recover(Kind::RBrace, TokenSet::TOP_LEVEL.union(TokenSet::SEMI));
+        parser.expect_tag(TokenSet::TOP_LEVEL);
+        parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
+    }
+
+    parser.eat_trivia();
+    parser.start_node(Kind::FeatureKw);
+    feature_body(parser);
+    parser.finish_node();
+}
+
+fn pos_or_sub_rule(parser: &mut Parser, recovery: TokenSet) {
+    match parser.nth(0).kind {
+        Kind::PosKw => gpos::gpos(parser, recovery),
+        Kind::EnumKw if parser.nth(1).kind == Kind::PosKw => gpos::gpos(parser, recovery),
+        Kind::EnumKw => parser.err_and_bump("'enum' keyword must be followed by position rule"),
+        Kind::IgnoreKw => match parser.nth(1).kind {
+            Kind::PosKw => gpos::gpos(parser, recovery),
+            Kind::SubKw => gsub::gsub(parser, recovery),
+            _ => parser
+                .err_and_bump("'ignore' keyword must be followed by position or substitution rule"),
+        },
+        Kind::SubKw | Kind::RsubKw => gsub::gsub(parser, recovery),
+        other => panic!("'{}' is not a valid gpos or gsub token", other),
+    }
 }
 
 // markClass <glyph|glyphclass> <anchor> <mark glyph class name>;

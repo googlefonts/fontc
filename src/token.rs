@@ -118,11 +118,12 @@ pub(crate) enum Kind {
     GsubNode,
     AnchorMarkNode,
     ValueRecordNode,
+    LookupRefNode,
+    LookupBlockNode,
 }
 
 impl Kind {
     // only used for debugging
-    #[cfg(test)]
     pub(crate) fn has_contents(&self) -> bool {
         matches!(
             self,
@@ -139,6 +140,7 @@ impl Kind {
                 | Self::GlyphName
                 | Self::Metric
                 | Self::Number
+                | Self::Label
         )
     }
 
@@ -277,6 +279,8 @@ impl std::fmt::Display for Kind {
             Self::ValueRecordNode => write!(f, "ValueRecordNode"),
             Self::GsubNode => write!(f, "GsubNode"),
             Self::GposNode => write!(f, "GposNode"),
+            Self::LookupRefNode => write!(f, "LookupRefNode"),
+            Self::LookupBlockNode => write!(f, "LookupBlockNode"),
         }
     }
 }

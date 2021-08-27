@@ -16,10 +16,10 @@ fn main() {
     let mut parser = Parser::new(&contents, &mut sink);
     grammar::root(&mut parser);
     let errs = sink.print_errs(&contents);
-    if errs.is_empty() {
-        println!("{}", sink);
-    } else {
+    if !errs.is_empty() {
         eprintln!("{}", errs);
+    } else {
+        println!("{}", sink.simple_parse_tree(&contents));
     }
 }
 
@@ -32,6 +32,7 @@ macro_rules! exit_err {
 
 struct Args {
     path: PathBuf,
+    //err
 }
 
 impl Args {
