@@ -24,8 +24,8 @@ pub(crate) fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
         // <metric> metric>
         // <metric> <metric> <contour point>
         // <metric> <metric> <device> <device>
-        expect_number(parser, Kind::Metric, recovery);
-        expect_number(parser, Kind::Metric, recovery);
+        parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
+        parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
         if parser.eat(Kind::ContourpointKw) {
             parser.expect_recover(Kind::Number, recovery);
         } else if parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw) {
@@ -75,21 +75,17 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
     true
 }
 
-fn expect_number(parser: &mut Parser, kind: Kind, recovery: TokenSet) {
-    parser.expect_remap_recover(Kind::Number, kind, recovery);
-}
-
 fn expect_device(parser: &mut Parser, recovery: TokenSet) -> bool {
     debug_assert!(parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw));
     parser.eat_trivia();
     parser.start_node(Kind::DeviceKw);
     parser.expect(Kind::LAngle);
     parser.expect(Kind::DeviceKw);
-    expect_number(parser, Kind::Number, recovery);
-    expect_number(parser, Kind::Number, recovery);
+    parser.expect_recover(Kind::Number, recovery);
+    parser.expect_recover(Kind::Number, recovery);
     if parser.eat(Kind::Comma) {
-        expect_number(parser, Kind::Number, recovery);
-        expect_number(parser, Kind::Number, recovery);
+        parser.expect_recover(Kind::Number, recovery);
+        parser.expect_recover(Kind::Number, recovery);
     }
     // FIXME: this should handle an arbitary number of pairs? but also isn't
     // supported yet?

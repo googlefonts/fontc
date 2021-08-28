@@ -264,6 +264,10 @@ impl<'a> Parser<'a> {
         token.matches(self.nth(nth).kind, &self.text.as_bytes()[range])
     }
 
+    pub(crate) fn raw_range(&self, range: Range<usize>) -> &[u8] {
+        &self.text.as_bytes()[range]
+    }
+
     // If current token is ident, return underlying bytes
     //pub(crate) fn ident(&self) -> Option<&[u8]> {
     //if self.nth(0).kind == Kind::Ident {
@@ -278,11 +282,11 @@ pub(crate) trait TokenComparable {
     fn matches(&self, kind: Kind, bytes: &[u8]) -> bool;
 }
 
-impl TokenComparable for &[u8] {
-    fn matches(&self, _: Kind, bytes: &[u8]) -> bool {
-        self == &bytes
-    }
-}
+//impl TokenComparable for &[u8] {
+//fn matches(&self, _: Kind, bytes: &[u8]) -> bool {
+//self == &bytes
+//}
+//}
 
 impl TokenComparable for Kind {
     fn matches(&self, kind: Kind, _bytes: &[u8]) -> bool {
@@ -351,23 +355,23 @@ impl DebugSink {
         let mut result = String::new();
         let mut pos = 0;
         let mut line_n = 0;
-        let mut lines = input.lines();
+        let mut lines = iter_lines_including_breaks(input);
         let mut current_line = lines.next().unwrap_or("");
         let mut errors = self.errors().into_iter();
         while let Some(err) = errors.next() {
-            while err.range.start >= pos + current_line.len() {
+            //eprintln!("{}: '{}' ({})", pos, current_line, current_line.len());
+            while err.range.start > pos + current_line.len() {
                 pos += current_line.len();
                 current_line = lines.next().unwrap();
                 line_n += 1;
             }
-            //let line_num_digits = decimal_digits(line_n);
             let padding = max_line_digit_width - decimal_digits(line_n);
             writeln!(
                 &mut result,
                 "\n{}{} | {}",
                 &SPACES[..padding],
                 line_n,
-                current_line
+                current_line.trim()
             )
             .unwrap();
             let n_spaces = err.range.start - pos;
@@ -404,10 +408,10 @@ impl DebugSink {
                     if kind.has_contents() {
                         writeln!(
                             &mut f,
-                            "{}{}({:?})",
+                            "{}{}({})",
                             &WS[..indent],
                             kind,
-                            &input[pos..pos + len]
+                            &input[pos..pos + len].escape_debug()
                         )
                         .unwrap();
                     } else {
@@ -424,6 +428,25 @@ impl DebugSink {
         }
         f
     }
+}
+
+// we can't use str::lines because it strips newline chars and we need them
+// to calculate error positions
+fn iter_lines_including_breaks(s: &str) -> impl Iterator<Item = &str> {
+    let mut slice = s;
+    std::iter::from_fn(move || {
+        if slice.is_empty() {
+            return None;
+        }
+        let next_cr = match slice.bytes().position(|b| b == b'\n') {
+            Some(idx) if slice.as_bytes().get(idx + 1) == Some(&b'\r') => idx + 2,
+            Some(idx) => idx + 1,
+            None => slice.len(),
+        };
+        let result = &slice[..next_cr];
+        slice = &slice[next_cr..];
+        Some(result)
+    })
 }
 
 impl TreeSink for DebugSink {
@@ -469,5 +492,17 @@ impl std::fmt::Display for DebugSink {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iter_lines() {
+        let text = "hi\nfriends\n\r\nhow u?\n";
+        let lines = iter_lines_including_breaks(text).collect::<Vec<_>>();
+        assert_eq!(lines, vec!["hi\n", "friends\n\r", "\n", "how u?\n"]);
     }
 }

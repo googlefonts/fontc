@@ -219,7 +219,7 @@ fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
         parser.eat_trivia();
         parser.start_node(Kind::LookupRefNode);
         parser.eat(Kind::LookupKw);
-        parser.expect_recover(Kind::Ident, recovery.union(TokenSet::SEMI));
+        parser.expect_recover(Kind::Ident, recovery.union(Kind::Semi.into()));
         parser.expect_recover(Kind::Semi, recovery);
     } else {
         parser.eat(Kind::LookupKw);
@@ -286,7 +286,7 @@ fn feature(parser: &mut Parser) {
         while feature_body_item(parser) {
             continue;
         }
-        parser.expect_recover(Kind::RBrace, TokenSet::TOP_LEVEL.union(TokenSet::SEMI));
+        parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
         parser.expect_tag(TokenSet::TOP_LEVEL);
         parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
     }
@@ -335,7 +335,7 @@ fn mark_class(parser: &mut Parser) {
             parser.err("Expected glyph name or class");
         }
         metrics::anchor(parser, TokenSet::new(&[Kind::Semi, Kind::NamedGlyphClass]));
-        parser.expect_recover(Kind::NamedGlyphClass, TokenSet::SEMI);
+        parser.expect_recover(Kind::NamedGlyphClass, Kind::Semi);
         parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
     }
 
@@ -344,12 +344,66 @@ fn mark_class(parser: &mut Parser) {
     parser.finish_node();
 }
 
-fn anchor_def(_parser: &mut Parser) {
-    unimplemented!()
+fn anchor_def(parser: &mut Parser) {
+    fn anchor_def_body(parser: &mut Parser) {
+        assert!(parser.eat(Kind::AnchorDefKw));
+        let recovery = TokenSet::TOP_LEVEL.union(TokenSet::new(&[
+            Kind::ContourpointKw,
+            Kind::Ident,
+            Kind::Semi,
+        ]));
+        parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
+        parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
+        if parser.eat(Kind::ContourpointKw) {
+            parser.expect_recover(Kind::Number, TokenSet::TOP_LEVEL.union(Kind::Semi.into()));
+        } 
+        parser.expect_recover(Kind::Ident, TokenSet::TOP_SEMI);
+        parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
+    }
+
+    parser.eat_trivia();
+    parser.start_node(Kind::AnchorDefKw);
+    anchor_def_body(parser);
+    parser.finish_node();
 }
 
-fn anonymous(_parser: &mut Parser) {
-    unimplemented!()
+fn anonymous(parser: &mut Parser) {
+    fn anon_body(parser: &mut Parser) {
+        assert!(parser.eat(Kind::AnonKw));
+        let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
+        if !(parser.expect_recover(Kind::Ident, TokenSet::new(&[Kind::LBrace]))
+            & parser.expect(Kind::LBrace))
+        {
+            return;
+        }
+        loop {
+            match parser.nth(0).kind {
+                Kind::RBrace
+                    if parser.nth_raw(1) == parser.raw_range(raw_label_range.clone().unwrap())
+                        && parser.matches(2, Kind::Semi) =>
+                {
+                    assert!(
+                        parser.eat(Kind::RBrace)
+                            && parser.eat(Kind::Ident)
+                            && parser.eat(Kind::Semi)
+                    );
+                    break;
+                }
+                _ => {
+                    if parser.nth(1).kind == Kind::Eof {
+                        parser.err_and_bump("unterminated anonymous block");
+                        break;
+                    }
+                    parser.eat_raw();
+                }
+            }
+        }
+    }
+
+    parser.eat_trivia();
+    parser.start_node(Kind::AnonKw);
+    anon_body(parser);
+    parser.finish_node();
 }
 
 #[cfg(test)]

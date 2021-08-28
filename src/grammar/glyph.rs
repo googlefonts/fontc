@@ -13,9 +13,7 @@ pub(crate) fn eat_glyph_or_glyph_class(parser: &mut Parser, recovery: TokenSet) 
 // [ a b a-z @hi \0-\40 ]
 pub(crate) fn eat_glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> bool {
     //FIXME: most of this should come from above?
-    const LIST_RECOVERY: TokenSet = TokenSet::TOP_LEVEL
-        .union(TokenSet::RSQUARE)
-        .union(TokenSet::SEMI);
+    const LIST_RECOVERY: TokenSet = TokenSet::TOP_SEMI.union(TokenSet::new(&[Kind::RSquare]));
 
     if !parser.matches(0, Kind::LSquare) {
         return false;
