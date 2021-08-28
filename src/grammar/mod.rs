@@ -356,7 +356,7 @@ fn anchor_def(parser: &mut Parser) {
         parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
         if parser.eat(Kind::ContourpointKw) {
             parser.expect_recover(Kind::Number, TokenSet::TOP_LEVEL.union(Kind::Semi.into()));
-        } 
+        }
         parser.expect_recover(Kind::Ident, TokenSet::TOP_SEMI);
         parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
     }

@@ -19,6 +19,8 @@ use crate::token_set::TokenSet;
 //      <anchor> mark <named mark class> + ;
 pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
     fn gpos_body(parser: &mut Parser, recovery: TokenSet) {
+        parser.eat(Kind::IgnoreKw);
+        parser.eat(Kind::EnumKw);
         assert!(parser.eat(Kind::PosKw));
         if parser.matches(0, Kind::CursiveKw) {
             gpos_cursive(parser, recovery);
@@ -132,6 +134,10 @@ fn gpos_single_pair_or_chain(parser: &mut Parser, recovery: TokenSet) {
     // of it in the AST
     while eat_chain_element(parser, recovery) {
         continue;
+    }
+    // in-line single pos rule (6.h.iii)
+    if metrics::eat_value_record(parser, recovery.union(Kind::Semi.into())) {
+        eat_chain_element(parser, recovery.union(Kind::Semi.into()));
     }
     parser.expect_recover(Kind::Semi, recovery);
 }

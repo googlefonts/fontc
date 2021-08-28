@@ -182,6 +182,7 @@ impl<'a> Parser<'a> {
             self.sink.token(token.kind, token.len);
         }
         self.buf[0].start_pos += self.buf[0].trivia_len;
+        self.buf[0].trivia_len = 0;
     }
 
     pub(crate) fn err_and_bump(&mut self, error: impl Into<String>) {
@@ -371,7 +372,7 @@ impl DebugSink {
                 "\n{}{} | {}",
                 &SPACES[..padding],
                 line_n,
-                current_line.trim()
+                current_line.trim_end()
             )
             .unwrap();
             let n_spaces = err.range.start - pos;

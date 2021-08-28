@@ -1,5 +1,4 @@
 use super::glyph;
-use super::metrics;
 use crate::parse::Parser;
 use crate::token::Kind;
 use crate::token_set::TokenSet;
@@ -20,7 +19,6 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
             continue;
         }
         if parser.eat(Kind::ByKw) || parser.eat(Kind::FromKw) {
-            eprintln!("ate by/form");
             expect_glyph_sequence_and_marks(parser, recovery.union(RECOVERY), || {
                 "Expected glyph, glyph class, or glyph sequence.".into()
             });
