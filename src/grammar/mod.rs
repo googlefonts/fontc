@@ -6,6 +6,7 @@ mod glyph;
 mod gpos;
 mod gsub;
 mod metrics;
+mod table;
 
 pub(crate) fn root(parser: &mut Parser) {
     parser.start_node(Kind::SourceFile);
@@ -120,8 +121,8 @@ fn named_glyph_class_decl(parser: &mut Parser) {
     parser.finish_node();
 }
 
-fn table(_parser: &mut Parser) {
-    unimplemented!()
+fn table(parser: &mut Parser) {
+    table::table(parser)
 }
 
 fn lookupflag(parser: &mut Parser, recovery: TokenSet) {
