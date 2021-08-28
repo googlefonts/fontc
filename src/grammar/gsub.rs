@@ -19,9 +19,11 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
             continue;
         }
         if parser.eat(Kind::ByKw) || parser.eat(Kind::FromKw) {
-            expect_glyph_sequence_and_marks(parser, recovery.union(RECOVERY), || {
-                "Expected glyph, glyph class, or glyph sequence.".into()
-            });
+            if !parser.eat(Kind::NullKw) {
+                expect_glyph_sequence_and_marks(parser, recovery.union(RECOVERY), || {
+                    "Expected glyph, glyph class, or glyph sequence.".into()
+                });
+            }
             // is this an ignore sequence?
         } else if parser.matches(0, Kind::Comma) {
             while parser.eat(Kind::Comma) {
