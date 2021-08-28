@@ -28,11 +28,9 @@ pub(crate) fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
         parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
         if parser.eat(Kind::ContourpointKw) {
             parser.expect_recover(Kind::Number, recovery);
-        } else if parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw) {
-            if expect_device(parser, recovery) {
+        } else if parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw) && expect_device(parser, recovery){
                 expect_device(parser, recovery);
             }
-        }
         parser.expect_recover(Kind::RAngle, recovery)
     }
 
@@ -45,6 +43,8 @@ pub(crate) fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
 
 // A: <metric> (-5)
 // B: <<metric> <metric> <metric> <metric>> (<1 2 -5 242>)
+// C: <<metric> <metric> <metric> <metric> <device> <device> <device> <device>>
+// (<1 2 -5 242 <device 1 2, 3 4> <device NULL> <device 1 1, 2 2> <device NULL>>)
 // return 'true' if we make any progress (this looks like a value record)
 pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool {
     fn value_record_body(parser: &mut Parser, recovery: TokenSet) {
@@ -58,6 +58,14 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
         parser.expect_recover(Kind::Number, recovery);
         parser.expect_recover(Kind::Number, recovery);
         parser.expect_recover(Kind::Number, recovery);
+        if parser.eat(Kind::RAngle) {
+            return;
+        }
+        // type C:
+        expect_device(parser, recovery);
+        expect_device(parser, recovery);
+        expect_device(parser, recovery);
+        expect_device(parser, recovery);
         parser.expect_recover(Kind::RAngle, recovery);
     }
 
@@ -76,21 +84,42 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
 }
 
 fn expect_device(parser: &mut Parser, recovery: TokenSet) -> bool {
-    debug_assert!(parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw));
-    parser.eat_trivia();
-    parser.start_node(Kind::DeviceKw);
-    parser.expect(Kind::LAngle);
-    parser.expect(Kind::DeviceKw);
-    parser.expect_recover(Kind::Number, recovery);
-    parser.expect_recover(Kind::Number, recovery);
-    if parser.eat(Kind::Comma) {
+    fn device_body(parser: &mut Parser, recovery: TokenSet) {
+        let recovery = recovery.union(TokenSet::new(&[Kind::LAngle, Kind::RAngle, Kind::Comma]));
+        parser.expect_recover(Kind::LAngle, recovery);
+        parser.expect_recover(Kind::DeviceKw, recovery);
+        if parser.eat(Kind::NullKw) {
+            parser.expect_recover(Kind::RAngle, recovery);
+            return;
+        }
+
         parser.expect_recover(Kind::Number, recovery);
         parser.expect_recover(Kind::Number, recovery);
+
+        while parser.eat(Kind::Comma) {
+            // according to the spec <1 2,> should be legal?
+            if parser.eat(Kind::RAngle) {
+                return;
+            }
+            parser.expect_recover(Kind::Number, recovery);
+            parser.expect_recover(Kind::Number, recovery);
+        }
+
+        // FIXME: this should handle an arbitary number of pairs? but also isn't
+        // supported yet?
+        // I don't know what's going on tbh
+        parser.expect(Kind::RAngle);
     }
-    // FIXME: this should handle an arbitary number of pairs? but also isn't
-    // supported yet?
-    // I don't know what's going on tbh
-    parser.expect(Kind::RAngle)
+
+    if parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw) {
+        parser.eat_trivia();
+        parser.start_node(Kind::DeviceKw);
+        device_body(parser, recovery);
+        parser.finish_node();
+        true
+    } else {
+        false
+    }
 }
 
 pub(crate) fn parameters(parser: &mut Parser, recovery: TokenSet) {
@@ -219,5 +248,19 @@ END ValueRecordNode
 ",
             out.simple_parse_tree(fea),
         );
+    }
+
+    #[test]
+    fn device_record_smoke_test() {
+        let fea = "\
+<device NULL>
+<device 1 2>
+<device 1 2,>
+<device 1 2, 3 4, 5 6, 7 8>
+";
+        let out = debug_parse_output(fea, |parser| {
+            expect_device(parser, TokenSet::EMPTY);
+        });
+        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
     }
 }
