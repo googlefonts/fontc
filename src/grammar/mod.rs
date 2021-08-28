@@ -170,6 +170,9 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
         match parser.nth(0).kind {
             Kind::LookupflagKw => lookupflag(parser, recovery),
             Kind::MarkClassKw => mark_class(parser),
+            Kind::ScriptKw => {
+                eat_script(parser, recovery);
+            }
             Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
                 pos_or_sub_rule(parser, recovery)
             }
@@ -249,13 +252,9 @@ fn feature(parser: &mut Parser) {
                 parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
             }
             Kind::LookupKw => lookup_block_or_reference(parser, TokenSet::FEATURE_BODY_ITEM),
+            Kind::LookupflagKw => lookupflag(parser, TokenSet::FEATURE_BODY_ITEM),
             Kind::ScriptKw => {
-                parser.eat_trivia();
-                parser.start_node(Kind::ScriptKw);
-                parser.eat_raw();
-                parser.expect_tag(TokenSet::FEATURE_BODY_ITEM.union(Kind::Semi.into()));
-                parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
-                parser.finish_node();
+                eat_script(parser, TokenSet::FEATURE_BODY_ITEM);
             }
             Kind::LanguageKw => {
                 parser.eat_trivia();
@@ -317,6 +316,19 @@ fn feature(parser: &mut Parser) {
     parser.start_node(Kind::FeatureKw);
     feature_body(parser);
     parser.finish_node();
+}
+
+fn eat_script(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if !parser.matches(0, Kind::ScriptKw) {
+        return false;
+    }
+    parser.eat_trivia();
+    parser.start_node(Kind::ScriptKw);
+    parser.eat_raw();
+    parser.expect_tag(recovery.union(Kind::Semi.into()));
+    parser.expect_recover(Kind::Semi, recovery);
+    parser.finish_node();
+    true
 }
 
 fn pos_or_sub_rule(parser: &mut Parser, recovery: TokenSet) {
