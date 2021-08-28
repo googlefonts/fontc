@@ -1,5 +1,3 @@
-//! given a path to a fea file or a directory containing fea files,
-//! attempt to parse them.
 use std::{
     env,
     ffi::OsStr,
@@ -16,12 +14,19 @@ mod token_set;
 
 use parse::{DebugSink, Parser};
 
+/// Attempt to parse fea files.
+///
+/// usage: PATH [-t|--tree]
+///
+/// PATH may be a single fea file or a directory containing fea files.
+/// if --tree is present, and path is a single file, prints tree even when
+/// encountering errors, otherwise only prints errors.
 fn main() {
     let args = Args::get_from_env_or_exit();
     if args.path.is_dir() {
         directory_arg(&args.path).unwrap();
     } else {
-        single_file_arg(&args.path)
+        single_file_arg(&args.path, args.print_tree)
     }
 }
 
@@ -54,12 +59,13 @@ fn directory_arg(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn single_file_arg(path: &Path) {
+fn single_file_arg(path: &Path, print_tree: bool) {
     let (tree, errors) = try_parse_file(path);
+    if errors.is_empty() || print_tree {
+        println!("{}", tree);
+    }
     if !errors.is_empty() {
         eprintln!("{}", errors);
-    } else {
-        println!("{}", tree);
     }
 }
 
@@ -84,7 +90,7 @@ macro_rules! exit_err {
 
 struct Args {
     path: PathBuf,
-    //err
+    print_tree: bool,
 }
 
 impl Args {
@@ -96,6 +102,11 @@ impl Args {
             None => exit_err!("Please supply a path to a .fea file"),
         };
 
-        Args { path }
+        let print_tree = match args.next().as_deref() {
+            Some("--tree" | "-t") => true,
+            _ => false,
+        };
+
+        Args { path, print_tree }
     }
 }
