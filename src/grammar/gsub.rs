@@ -40,9 +40,11 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
                 if parser.matches(0, Kind::Semi) {
                     break;
                 }
-                expect_glyph_sequence_and_marks(parser, recovery, || {
-                    "Expected glyph or glyph sequence.".into()
-                });
+                if !parser.matches(0, Kind::LookupKw) {
+                    expect_glyph_sequence_and_marks(parser, recovery, || {
+                        "Expected glyph or glyph sequence.".into()
+                    });
+                }
             }
         }
         parser.expect_recover(Kind::Semi, recovery);

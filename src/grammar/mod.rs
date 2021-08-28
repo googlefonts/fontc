@@ -173,6 +173,10 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
             Kind::ScriptKw => {
                 eat_script(parser, recovery);
             }
+            Kind::SubtableKw => {
+                parser.eat_raw();
+                parser.expect_recover(Kind::Semi, recovery);
+            }
             Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
                 pos_or_sub_rule(parser, recovery)
             }

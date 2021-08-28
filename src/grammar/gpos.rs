@@ -146,6 +146,7 @@ fn eat_chain_element(parser: &mut Parser, recovery: TokenSet) -> bool {
     parser.eat(Kind::SingleQuote)
         || parser.eat(Kind::LookupKw)
         || parser.eat(Kind::Ident)
+        || metrics::eat_value_record(parser, recovery)
         || glyph::eat_glyph_or_glyph_class(parser, recovery)
 }
 

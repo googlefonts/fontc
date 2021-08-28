@@ -366,6 +366,11 @@ impl DebugSink {
                 current_line = lines.next().unwrap();
                 line_n += 1;
             }
+
+            let line_ws = current_line
+                .bytes()
+                .take_while(u8::is_ascii_whitespace)
+                .count();
             let padding = max_line_digit_width - decimal_digits(line_n);
             writeln!(
                 &mut result,
@@ -376,12 +381,17 @@ impl DebugSink {
             )
             .unwrap();
             let n_spaces = err.range.start - pos;
+            // use the whitespace at the front of the line first, so that
+            // we don't replace tabs with spaces
+            let reuse_ws = n_spaces.min(line_ws);
+            let extra_ws = n_spaces - reuse_ws;
             let n_carets = err.range.end - err.range.start;
             writeln!(
                 &mut result,
-                "{} | {}{} {}",
+                "{} | {}{}{} {}",
                 &SPACES[..max_line_digit_width],
-                &SPACES[..n_spaces],
+                &current_line[..reuse_ws],
+                &SPACES[..extra_ws],
                 &CARETS[..n_carets],
                 err.message
             )

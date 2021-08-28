@@ -28,9 +28,12 @@ pub(crate) fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
         parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
         if parser.eat(Kind::ContourpointKw) {
             parser.expect_recover(Kind::Number, recovery);
-        } else if parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw) && expect_device(parser, recovery){
-                expect_device(parser, recovery);
-            }
+        } else if parser.matches(0, Kind::LAngle)
+            && parser.matches(1, Kind::DeviceKw)
+            && expect_device(parser, recovery)
+        {
+            expect_device(parser, recovery);
+        }
         parser.expect_recover(Kind::RAngle, recovery)
     }
 
@@ -54,6 +57,11 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
 
         let recovery = recovery.union(TokenSet::new(&[Kind::RAngle]));
         parser.expect_recover(Kind::LAngle, recovery);
+        if parser.eat(Kind::NullKw) {
+            parser.expect_recover(Kind::RAngle, recovery);
+            return;
+        }
+
         parser.expect_recover(Kind::Number, recovery);
         parser.expect_recover(Kind::Number, recovery);
         parser.expect_recover(Kind::Number, recovery);
@@ -70,7 +78,8 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
     }
 
     let looks_like_record = parser.matches(0, Kind::Number)
-        || (parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::Number));
+        || (parser.matches(0, Kind::LAngle)
+            && parser.matches(1, TokenSet::new(&[Kind::Number, Kind::NullKw])));
 
     if !looks_like_record {
         return false;

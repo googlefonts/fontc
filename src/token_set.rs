@@ -36,8 +36,6 @@ impl TokenSet {
         Kind::ParametersKw,
     ]));
 
-    //pub(crate) const GSUB: TokenSet = TokenSet::new(&[])
-
     pub(crate) const RSQUARE: TokenSet = TokenSet::new(&[Kind::RSquare]);
     //pub(crate) const SEMI: TokenSet = TokenSet::new(&[Kind::Semi]);
 
