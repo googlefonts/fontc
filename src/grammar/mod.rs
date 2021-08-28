@@ -169,6 +169,7 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
         let start_pos = parser.nth_range(0).start;
         match parser.nth(0).kind {
             Kind::LookupflagKw => lookupflag(parser, recovery),
+            Kind::MarkClassKw => mark_class(parser),
             Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
                 pos_or_sub_rule(parser, recovery)
             }
@@ -222,6 +223,7 @@ fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
         parser.eat(Kind::LookupKw);
         parser.expect_recover(Kind::Ident, recovery.union(Kind::Semi.into()));
         parser.expect_recover(Kind::Semi, recovery);
+        parser.finish_node();
     } else {
         parser.eat(Kind::LookupKw);
         if parser.eat(Kind::Ident) {
@@ -241,7 +243,10 @@ fn feature(parser: &mut Parser) {
             }
             Kind::NamedGlyphClass => named_glyph_class_decl(parser),
             Kind::MarkClassKw => mark_class(parser),
-            Kind::SubtableKw => parser.eat_raw(),
+            Kind::SubtableKw => {
+                parser.eat_raw();
+                parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
+            }
             Kind::LookupKw => lookup_block_or_reference(parser, TokenSet::FEATURE_BODY_ITEM),
             Kind::ScriptKw => {
                 parser.eat_trivia();
@@ -263,7 +268,7 @@ fn feature(parser: &mut Parser) {
             }
             Kind::FeatureKw => {
                 // aalt only
-                if parser.matches(1, Kind::Ident) && !parser.matches(2, Kind::Semi) {
+                if parser.matches(1, Kind::Ident) && parser.matches(2, Kind::Semi) {
                     assert!(parser.eat(Kind::FeatureKw));
                     parser.expect_tag(TokenSet::EMPTY);
                     assert!(parser.eat(Kind::Semi));
@@ -277,8 +282,23 @@ fn feature(parser: &mut Parser) {
     fn feature_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::FeatureKw));
         // if there's a tag, stash the range
-        //let raw_tag_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
-        parser.expect_recover(
+        // keywords that could be valid tags
+        const KEYWORD_TAGS: TokenSet = TokenSet::new(&[
+            Kind::MarkKw,
+            Kind::AnonKw,
+            Kind::ByKw,
+            Kind::FromKw,
+            Kind::PosKw,
+            Kind::RsubKw,
+        ]);
+        let tag_kind = if parser.matches(0, KEYWORD_TAGS) && parser.nth_raw(0).len() <= 4 {
+            parser.nth(0).kind
+        } else {
+            Kind::Ident
+        };
+
+        parser.expect_remap_recover(
+            tag_kind,
             Kind::Ident,
             TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]),
         );
@@ -288,7 +308,7 @@ fn feature(parser: &mut Parser) {
             continue;
         }
         parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
-        parser.expect_tag(TokenSet::TOP_LEVEL);
+        parser.expect_remap_recover(tag_kind, Kind::Ident, TokenSet::TOP_LEVEL);
         parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
     }
 
