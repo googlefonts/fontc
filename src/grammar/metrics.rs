@@ -93,6 +93,25 @@ fn expect_device(parser: &mut Parser, recovery: TokenSet) -> bool {
     parser.expect(Kind::RAngle)
 }
 
+pub(crate) fn parameters(parser: &mut Parser, recovery: TokenSet) {
+    fn expect_param_item(parser: &mut Parser, recovery: TokenSet) {
+        if !parser.eat(Kind::Float) {
+            parser.expect_recover(Kind::Number, recovery);
+        }
+    }
+
+    parser.eat_trivia();
+    parser.start_node(Kind::ParametersKw);
+    assert!(parser.eat(Kind::ParametersKw));
+    expect_param_item(parser, recovery.union(Kind::Semi.into()));
+    expect_param_item(parser, recovery.union(Kind::Semi.into()));
+    if !parser.matches(0, Kind::Semi) {
+        expect_param_item(parser, recovery.union(Kind::Semi.into()));
+        expect_param_item(parser, recovery.union(Kind::Semi.into()));
+    }
+    parser.expect_recover(Kind::Semi, recovery);
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::debug_parse_output;

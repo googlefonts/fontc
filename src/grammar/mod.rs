@@ -243,6 +243,7 @@ fn feature(parser: &mut Parser) {
             }
             Kind::NamedGlyphClass => named_glyph_class_decl(parser),
             Kind::MarkClassKw => mark_class(parser),
+            Kind::ParametersKw => metrics::parameters(parser, TokenSet::FEATURE_BODY_ITEM),
             Kind::SubtableKw => {
                 parser.eat_raw();
                 parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);

@@ -33,6 +33,7 @@ impl TokenSet {
         Kind::IgnoreKw,
         Kind::SubKw,
         Kind::RsubKw,
+        Kind::ParametersKw,
     ]));
 
     //pub(crate) const GSUB: TokenSet = TokenSet::new(&[])
