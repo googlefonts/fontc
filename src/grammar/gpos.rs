@@ -81,6 +81,7 @@ fn gpos_ligature(parser: &mut Parser, recovery: TokenSet) {
         continue;
     }
     while parser.nth_raw(0) == b"ligComponent" {
+        parser.eat_raw();
         while anchor_mark(parser, recovery) {
             continue;
         }
@@ -153,8 +154,11 @@ fn anchor_mark(parser: &mut Parser, recovery: TokenSet) -> bool {
     parser.eat_trivia();
     parser.start_node(Kind::AnchorMarkNode);
     metrics::anchor(parser, recovery.union(RECOVERY));
-    parser.expect_recover(Kind::MarkKw, recovery.union(RECOVERY));
-    parser.expect_recover(Kind::Semi, recovery);
+    // we will verify later that the anchor was NULL
+    if !parser.matches(0, Kind::Semi) {
+        parser.expect_recover(Kind::MarkKw, recovery.union(RECOVERY));
+        parser.expect_recover(Kind::NamedGlyphClass, recovery.union(RECOVERY));
+    }
     parser.finish_node();
     true
 }
@@ -305,6 +309,80 @@ END GposNode
             out.simple_parse_tree(fea),
         );
     }
+
+    #[test]
+    fn mark_ligature() {
+        let fea = r#"position ligature lam_meem_jeem
+    <anchor 625 1800> mark @TOP_MARKS     # mark above lam
+    ligComponent                          # start specifying marks for meem
+    <anchor 376 -368> mark @BOTTOM_MARKS
+    ligComponent
+    <anchor NULL>;"#;
+
+        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        crate::assert_eq_str!(
+            "\
+START GposNode
+  PosKw
+  WS( )
+  LigatureKw
+  WS( )
+  GlyphName(lam_meem_jeem)
+  WS(\\n    )
+  START AnchorMarkNode
+    START AnchorKw
+      <
+      AnchorKw
+      WS( )
+      METRIC(625)
+      WS( )
+      METRIC(1800)
+      >
+    END AnchorKw
+    WS( )
+    MarkKw
+    WS( )
+    @GlyphClass(@TOP_MARKS)
+  END AnchorMarkNode
+  WS(     )
+  #(# mark above lam)
+  WS(\\n    )
+  ID(ligComponent)
+  WS(                          )
+  #(# start specifying marks for meem)
+  WS(\\n    )
+  START AnchorMarkNode
+    START AnchorKw
+      <
+      AnchorKw
+      WS( )
+      METRIC(376)
+      WS( )
+      METRIC(-368)
+      >
+    END AnchorKw
+    WS( )
+    MarkKw
+    WS( )
+    @GlyphClass(@BOTTOM_MARKS)
+  END AnchorMarkNode
+  WS(\\n    )
+  ID(ligComponent)
+  WS(\\n    )
+  START AnchorMarkNode
+    START AnchorKw
+      <
+      AnchorKw
+      WS( )
+      NullKw
+      >
+    END AnchorKw
+  END AnchorMarkNode
+  ;
+END GposNode
+",
+            out.simple_parse_tree(fea),
+        );
+    }
 }
-//pos T @a -100;       # class pair (glyph class present, even if singleton)
-//pos @T [a o u] -80;
