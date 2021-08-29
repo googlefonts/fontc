@@ -113,6 +113,16 @@ pub(crate) enum Kind {
     LigatureKw,
     BaseKw,
 
+    // keywords only in special context, not lexed
+    HorizAxisBaseScriptList,
+    HorizAxisBaseTagList,
+    HorizAxisMinMax,
+    VertAxisBaseScriptList,
+    VertAxisBaseTagList,
+    VertAxisMinMax,
+
+    // general purpose table node
+    TableEntryNode,
     // node-only tokens, assigned during parsing
     GposNode,
     GsubNode,
@@ -120,6 +130,7 @@ pub(crate) enum Kind {
     ValueRecordNode,
     LookupRefNode,
     LookupBlockNode,
+    ScriptRecordNode,
 }
 
 impl Kind {
@@ -281,6 +292,15 @@ impl std::fmt::Display for Kind {
             Self::GposNode => write!(f, "GposNode"),
             Self::LookupRefNode => write!(f, "LookupRefNode"),
             Self::LookupBlockNode => write!(f, "LookupBlockNode"),
+            Self::ScriptRecordNode => write!(f, "ScriptRecoordNode"),
+            Self::TableEntryNode => write!(f, "TableEntryNode"),
+
+            Self::HorizAxisBaseScriptList => write!(f, "HorizAxisBaseScriptList"),
+            Self::HorizAxisBaseTagList => write!(f, "HorizAxisBaseTagList"),
+            Self::HorizAxisMinMax => write!(f, "HorizAxisMinMax"),
+            Self::VertAxisBaseScriptList => write!(f, "VertAxisBaseScriptList"),
+            Self::VertAxisBaseTagList => write!(f, "VertAxisBaseTagList"),
+            Self::VertAxisMinMax => write!(f, "VertAxisMinMax"),
         }
     }
 }
