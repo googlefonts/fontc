@@ -16,6 +16,8 @@ pub(crate) fn table(parser: &mut Parser) {
         b"hhea" => table_impl(parser, b"hhea", hhea::table_entry),
         b"name" => table_impl(parser, b"name", name::table_entry),
         b"os/2" => table_impl(parser, b"os/2", os_2::table_entry),
+        b"vhea" => table_impl(parser, b"vhea", vhea::table_entry),
+        b"vmtx" => table_impl(parser, b"vmtx", vmtx::table_entry),
         _ => {
             parser.expect_recover(Kind::Ident, TokenSet::TOP_LEVEL.union(Kind::LBrace.into()));
             if parser.expect_recover(Kind::LBrace, TokenSet::TOP_LEVEL) {
@@ -362,6 +364,54 @@ mod os_2 {
             })
         } else {
             parser.err_recover("Expected OS/2 table keyword", recovery_semi);
+            parser.eat_until(recovery);
+        }
+    }
+}
+
+mod vhea {
+    use super::*;
+
+    const VHEA_KEYWORDS: TokenSet = TokenSet::new(&[
+        Kind::VertTypoAscenderKw,
+        Kind::VertTypoDescenderKw,
+        Kind::VertTypoLineGapKw,
+    ]);
+
+    pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
+        let recovery = recovery.union(VHEA_KEYWORDS).union(Kind::RBrace.into());
+        let recovery_semi = recovery.union(Kind::Semi.into());
+        if parser.matches(0, VHEA_KEYWORDS) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(VHEA_KEYWORDS));
+                parser.expect_recover(Kind::Number, recovery_semi);
+                parser.expect_recover(Kind::Semi, recovery);
+            })
+        } else {
+            parser.expect_recover(VHEA_KEYWORDS, recovery_semi);
+            parser.eat_until(recovery);
+        }
+    }
+}
+
+mod vmtx {
+    use super::*;
+    use crate::grammar::glyph;
+
+    const VMTX_KEYWORDS: TokenSet = TokenSet::new(&[Kind::VertOriginYKw, Kind::VertAdvanceYKw]);
+
+    pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
+        let recovery = recovery.union(VMTX_KEYWORDS).union(Kind::RBrace.into());
+        let recovery_semi = recovery.union(Kind::Semi.into());
+        if parser.matches(0, Kind::NameIdKw) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(VMTX_KEYWORDS));
+                glyph::expect_glyph_name_like(parser, recovery_semi.union(Kind::Number.into()));
+                parser.expect_recover(Kind::Number, recovery_semi);
+                parser.expect_recover(Kind::Semi, recovery);
+            })
+        } else {
+            parser.expect_recover(VMTX_KEYWORDS, recovery_semi);
             parser.eat_until(recovery);
         }
     }

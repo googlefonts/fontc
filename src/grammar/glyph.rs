@@ -50,7 +50,7 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) {
         glyph_range(parser, TokenSet::RSQUARE.union(recovery));
         parser.finish_node();
     } else {
-        glyph_name_like(parser, TokenSet::RSQUARE.union(recovery));
+        expect_glyph_name_like(parser, TokenSet::RSQUARE.union(recovery));
     }
 }
 
@@ -59,12 +59,12 @@ fn glyph_range(parser: &mut Parser, recovery: TokenSet) -> bool {
 
     let first_recovery = recovery.union(HYPHEN);
 
-    glyph_name_like(parser, first_recovery)
+    expect_glyph_name_like(parser, first_recovery)
         & parser.expect_recover(Kind::Hyphen, recovery)
-        & glyph_name_like(parser, recovery)
+        & expect_glyph_name_like(parser, recovery)
 }
 
-fn glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
+pub(crate) fn expect_glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
     if parser.matches(0, Kind::Backslash) {
         if parser.matches(1, Kind::Ident) {
             parser.eat_remap2(Kind::GlyphName);
