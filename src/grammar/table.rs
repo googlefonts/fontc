@@ -14,6 +14,7 @@ pub(crate) fn table(parser: &mut Parser) {
         b"GDEF" => table_impl(parser, b"GDEF", gdef::table_entry),
         b"head" => table_impl(parser, b"head", head::table_entry),
         b"hhea" => table_impl(parser, b"hhea", hhea::table_entry),
+        b"name" => table_impl(parser, b"name", name::table_entry),
         _ => {
             parser.expect_recover(Kind::Ident, TokenSet::TOP_LEVEL.union(Kind::LBrace.into()));
             if parser.expect_recover(Kind::LBrace, TokenSet::TOP_LEVEL) {
@@ -268,6 +269,34 @@ mod hhea {
                 recovery.union(TokenSet::new(&[Kind::Semi, Kind::RBrace])),
             );
             parser.eat_until(recovery.union(Kind::RBrace.into()));
+        }
+    }
+}
+
+mod name {
+    use super::*;
+
+    const NUM_TYPES: TokenSet = TokenSet::new(&[Kind::Number, Kind::Octal, Kind::Hex]);
+
+    fn expect_name_record(parser: &mut Parser, recovery: TokenSet) -> bool {
+        parser.expect_recover(Kind::Number, recovery.union(Kind::Semi.into()));
+        parser.eat(NUM_TYPES);
+        parser.eat(NUM_TYPES);
+        parser.eat(NUM_TYPES);
+        parser.expect_recover(Kind::String, recovery.union(Kind::Semi.into()))
+    }
+
+    pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
+        let recovery = recovery.union(TokenSet::new(&[Kind::NameIdKw, Kind::RBrace]));
+        if parser.matches(0, Kind::NameIdKw) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(Kind::NameIdKw));
+                expect_name_record(parser, recovery);
+                parser.expect_recover(Kind::Semi, recovery);
+            })
+        } else {
+            parser.expect_recover(Kind::NameIdKw, recovery.union(Kind::Semi.into()));
+            parser.eat_until(recovery);
         }
     }
 }
