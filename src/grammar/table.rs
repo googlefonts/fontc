@@ -12,6 +12,7 @@ pub(crate) fn table(parser: &mut Parser) {
     match parser.nth_raw(0) {
         b"BASE" => table_impl(parser, b"BASE", base::table_entry),
         b"GDEF" => table_impl(parser, b"GDEF", gdef::table_entry),
+        b"head" => table_impl(parser, b"head", head::table_entry),
         _ => {
             parser.expect_recover(Kind::Ident, TokenSet::TOP_LEVEL.union(Kind::LBrace.into()));
             if parser.expect_recover(Kind::LBrace, TokenSet::TOP_LEVEL) {
@@ -211,6 +212,29 @@ mod gdef {
             // any unrecognized token
             parser.expect_recover(GDEF_KEYWORDS, eat_until);
             parser.eat_until(eat_until);
+        }
+    }
+}
+
+mod head {
+    use super::*;
+
+    pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
+        if parser.matches(0, Kind::FontRevisionKw) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(Kind::FontRevisionKw));
+                parser.expect_recover(
+                    Kind::Float,
+                    recovery.union(TokenSet::new(&[Kind::Semi, Kind::RBrace])),
+                );
+                parser.expect_recover(Kind::Semi, recovery.union(Kind::RBrace.into()));
+            })
+        } else {
+            parser.expect_recover(
+                Kind::FontRevisionKw,
+                recovery.union(TokenSet::new(&[Kind::Semi, Kind::RBrace])),
+            );
+            parser.eat_until(recovery.union(TokenSet::new(&[Kind::FontRevisionKw, Kind::RBrace])));
         }
     }
 }
