@@ -152,6 +152,13 @@ impl<'a> Parser<'a> {
         false
     }
 
+    /// Consumes all tokens until hitting a recovery item.
+    pub(crate) fn eat_until(&mut self, recovery: impl TokenComparable) {
+        while !self.matches(0, recovery) {
+            self.eat_raw();
+        }
+    }
+
     /// Eat the next token, regardless of what it is.
     pub(crate) fn eat_raw(&mut self) {
         self.do_bump::<1>(self.nth(0).kind);
