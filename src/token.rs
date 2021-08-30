@@ -35,9 +35,8 @@ pub(crate) enum Kind {
     // special symbols
     Semi,
     Comma,
-    //At,
     Backslash,
-    Hyphen, // also minus
+    Hyphen,
     Eq,
     LBrace,
     RBrace,
@@ -49,15 +48,17 @@ pub(crate) enum Kind {
     RAngle,
     SingleQuote,
 
+    NamedGlyphClass,
+    Cid,
+
+    // not lexed
+    GlyphRange,
+    Metric,
+    Label,
     Tag,
     Path,
     GlyphName,
     GlyphClass,
-    NamedGlyphClass,
-    GlyphRange,
-    Cid,
-    Metric,
-    Label,
 
     // keywords:
     // top-level keywords
@@ -67,8 +68,7 @@ pub(crate) enum Kind {
     AnchorDefKw,
     FeatureKw,
     MarkClassKw,
-    AnonKw,
-    //AnonymousKw,
+    AnonKw, // 'anon' and 'anonymous'
 
     // other keywords
     AnchorKw,
@@ -76,8 +76,7 @@ pub(crate) enum Kind {
     ContourpointKw,
     CursiveKw,
     DeviceKw,
-    EnumKw,
-    //EnumerateKw,
+    EnumKw, // 'enum' and 'enumerate'
     ExcludeDfltKw,
     FromKw,
     IgnoreKw,
@@ -93,20 +92,16 @@ pub(crate) enum Kind {
     NameIdKw,
     NullKw,
     ParametersKw,
-    PosKw,
-    //PositionKw,
+    PosKw, // 'pos' and 'position'
     RequiredKw,
     RightToLeftKw,
-    RsubKw,
-    //ReversesubKw,
+    RsubKw, // 'rsub' and 'reversesub'
     ScriptKw,
-    SubKw,
-    //SubstituteKw,
+    SubKw, // 'sub' and 'substitute'
     SubtableKw,
     UseExtensionKw,
     UseMarkFilteringSetKw,
     ValueRecordDefKw,
-    //Anonymous,
 
     // not technically keywords and not lexed, but assigned during parsing
     // in gsub/gpos:
