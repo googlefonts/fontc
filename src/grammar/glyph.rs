@@ -67,10 +67,10 @@ fn glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
     if parser.matches(0, Kind::Backslash) {
         if parser.matches(1, Kind::Ident) {
             parser.eat_remap2(Kind::GlyphName);
-            return true;
+            true
         } else if parser.matches(1, Kind::Number) {
             parser.eat_remap2(Kind::Cid);
-            return true;
+            true
         } else {
             parser.eat_raw();
             let kind = parser.nth(0).kind;
@@ -78,7 +78,7 @@ fn glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
             if !parser.matches(0, recovery) {
                 parser.eat_raw();
             }
-            return false;
+            false
         }
     } else {
         parser.expect_remap_recover(TokenSet::IDENT_LIKE, Kind::GlyphName, recovery)

@@ -366,8 +366,7 @@ impl DebugSink {
         let mut line_n = 0;
         let mut lines = iter_lines_including_breaks(input);
         let mut current_line = lines.next().unwrap_or("");
-        let mut errors = self.errors().into_iter();
-        while let Some(err) = errors.next() {
+        for err in self.errors() {
             //eprintln!("{}: '{}' ({})", pos, current_line, current_line.len());
             while err.range.start > pos + current_line.len() {
                 pos += current_line.len();

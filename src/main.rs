@@ -102,10 +102,7 @@ impl Args {
             None => exit_err!("Please supply a path to a .fea file"),
         };
 
-        let print_tree = match args.next().as_deref() {
-            Some("--tree" | "-t") => true,
-            _ => false,
-        };
+        let print_tree = matches!(args.next().as_deref(), Some("--tree" | "-t"));
 
         Args { path, print_tree }
     }
