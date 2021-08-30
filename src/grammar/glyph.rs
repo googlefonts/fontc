@@ -4,11 +4,12 @@ use crate::token_set::TokenSet;
 
 // B @class [a b]
 pub(crate) fn eat_glyph_or_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
-    if parser.eat(Kind::NamedGlyphClass) || parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName)
-    {
-        return true;
-    }
-    eat_glyph_class_list(parser, recovery)
+    parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName)
+        || eat_named_or_unnamed_glyph_class(parser, recovery)
+}
+
+pub(crate) fn eat_named_or_unnamed_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
+    parser.eat(Kind::NamedGlyphClass) || eat_glyph_class_list(parser, recovery)
 }
 
 // [ a b a-z @hi \0-\40 ]

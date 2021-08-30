@@ -159,6 +159,12 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub(crate) fn eat_while(&mut self, token: impl TokenComparable) {
+        while self.eat(token) {
+            continue;
+        }
+    }
+
     /// Eat the next token, regardless of what it is.
     pub(crate) fn eat_raw(&mut self) {
         self.do_bump::<1>(self.nth(0).kind);
@@ -237,7 +243,14 @@ impl<'a> Parser<'a> {
         kind: impl TokenComparable,
         recover: impl TokenComparable,
     ) -> bool {
-        self.expect_remap_recover(kind, self.nth(0).kind, recover)
+        if self.eat(kind) {
+            return true;
+        }
+        self.err(format!("Expected {} found {}", kind, self.nth(0).kind));
+        if !self.matches(0, recover) {
+            self.eat_raw();
+        }
+        false
     }
 
     pub(crate) fn expect_remap_recover(
@@ -249,7 +262,7 @@ impl<'a> Parser<'a> {
         if self.eat_remap(expect, remap) {
             return true;
         }
-        self.err(format!("Expected {}, found {}", remap, self.nth(0).kind));
+        self.err(format!("Expected {} found {}", remap, self.nth(0).kind));
         if !self.matches(0, recover) {
             self.eat_raw();
         }

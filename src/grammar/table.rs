@@ -11,6 +11,7 @@ pub(crate) fn table(parser: &mut Parser) {
     let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
     match parser.nth_raw(0) {
         b"BASE" => table_impl(parser, b"BASE", base::table_entry),
+        b"GDEF" => table_impl(parser, b"GDEF", gdef::table_entry),
         _ => {
             parser.expect_recover(Kind::Ident, TokenSet::TOP_LEVEL.union(Kind::LBrace.into()));
             if parser.expect_recover(Kind::LBrace, TokenSet::TOP_LEVEL) {
@@ -20,8 +21,10 @@ pub(crate) fn table(parser: &mut Parser) {
             }
         }
     }
+    parser.finish_node();
 }
 
+// build any table, given a function that parses items from that table.
 fn table_impl(parser: &mut Parser, tag: &[u8], table_fn: impl Fn(&mut Parser, TokenSet)) {
     assert_eq!(parser.nth_raw(0), tag);
     parser.eat_raw();
@@ -58,6 +61,13 @@ fn unknown_table(parser: &mut Parser, open_tag: Range<usize>) {
     }
 }
 
+fn table_node(parser: &mut Parser, f: impl FnOnce(&mut Parser)) {
+    parser.eat_trivia();
+    parser.start_node(Kind::TableEntryNode);
+    f(parser);
+    parser.finish_node();
+}
+
 mod base {
     use super::*;
     const MINMAX: TokenSet = TokenSet::new(&[Kind::HorizAxisMinMaxKw, Kind::VertAxisMinMaxKw]);
@@ -76,13 +86,6 @@ mod base {
 
     pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
         let recovery = recovery.union(BASE_KEYWORDS);
-
-        fn table_node(parser: &mut Parser, f: impl FnOnce(&mut Parser)) {
-            parser.eat_trivia();
-            parser.start_node(Kind::TableEntryNode);
-            f(parser);
-            parser.finish_node();
-        }
 
         if parser.matches(0, TAG_LIST) {
             table_node(parser, |parser| {
@@ -137,4 +140,77 @@ mod base {
     }
 }
 
-mod gdef {}
+mod gdef {
+    use super::*;
+    use crate::grammar::glyph;
+
+    const GDEF_KEYWORDS: TokenSet = TokenSet::new(&[
+        Kind::GlyphClassDefKw,
+        Kind::AttachKw,
+        Kind::LigatureCaretByDevKw,
+        Kind::LigatureCaretByIndexKw,
+        Kind::LigatureCaretByPosKw,
+    ]);
+
+    const CARET_POS_OR_IDX: TokenSet =
+        TokenSet::new(&[Kind::LigatureCaretByPosKw, Kind::LigatureCaretByIndexKw]);
+
+    pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
+        let eat_until = recovery.union(GDEF_KEYWORDS).union(Kind::RBrace.into());
+        let recovery = recovery.union(GDEF_KEYWORDS).union(Kind::Semi.into());
+
+        if parser.matches(0, Kind::GlyphClassDefKw) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(Kind::GlyphClassDefKw));
+                let class_recovery = recovery.union(TokenSet::new(&[
+                    Kind::Comma,
+                    Kind::NamedGlyphClass,
+                    Kind::LSquare,
+                ]));
+                glyph::eat_named_or_unnamed_glyph_class(parser, class_recovery);
+                parser.expect_recover(Kind::Comma, class_recovery);
+                glyph::eat_named_or_unnamed_glyph_class(parser, class_recovery);
+                parser.expect_recover(Kind::Comma, class_recovery);
+                glyph::eat_named_or_unnamed_glyph_class(parser, class_recovery);
+                parser.expect_recover(Kind::Comma, class_recovery);
+                glyph::eat_named_or_unnamed_glyph_class(parser, class_recovery);
+                parser.expect_recover(Kind::Semi, recovery);
+            })
+        } else if parser.matches(0, Kind::AttachKw) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(Kind::AttachKw));
+                if !glyph::eat_glyph_or_glyph_class(parser, recovery) {
+                    parser.err_recover(
+                        "'Attach' should be followed by glyph or glyph class",
+                        recovery,
+                    );
+                }
+                if parser.expect_recover(Kind::Number, recovery) {
+                    parser.eat_while(Kind::Number);
+                }
+                parser.expect_recover(Kind::Semi, recovery);
+            })
+            // unimplemented
+        } else if parser.matches(0, Kind::LigatureCaretByDevKw) {
+            table_node(parser, |parser| parser.eat_until(eat_until))
+        } else if parser.matches(0, CARET_POS_OR_IDX) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(CARET_POS_OR_IDX));
+                if !glyph::eat_glyph_or_glyph_class(parser, recovery) {
+                    parser.err_recover(
+                        "'LigatureCaretByPos' should be followed by glyph or glyph class",
+                        recovery,
+                    );
+                }
+                if parser.expect_recover(Kind::Number, recovery) {
+                    parser.eat_while(Kind::Number);
+                }
+                parser.expect_recover(Kind::Semi, recovery);
+            })
+        } else {
+            // any unrecognized token
+            parser.expect_recover(GDEF_KEYWORDS, eat_until);
+            parser.eat_until(eat_until);
+        }
+    }
+}
