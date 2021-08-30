@@ -23,6 +23,55 @@ impl TokenSet {
         Kind::GlyphClass,
     ]);
 
+    /// Tokens that may be identifiers.
+    ///
+    /// This includes tokens that have special meaning only in certain contexts.
+    pub(crate) const IDENT_LIKE: TokenSet = TokenSet::new(&[
+        Kind::Ident,
+        Kind::HorizAxisBaseScriptListKw,
+        Kind::HorizAxisBaseTagListKw,
+        Kind::HorizAxisMinMaxKw,
+        Kind::VertAxisBaseScriptListKw,
+        Kind::VertAxisBaseTagListKw,
+        Kind::VertAxisMinMaxKw,
+        Kind::AttachKw,
+        Kind::GlyphClassDefKw,
+        Kind::LigatureCaretByDevKw,
+        Kind::LigatureCaretByIndexKw,
+        Kind::LigatureCaretByPosKw,
+        Kind::MarkAttachClassKw,
+        Kind::FontRevisionKw,
+        Kind::AscenderKw,
+        Kind::CaretOffsetKw,
+        Kind::DescenderKw,
+        Kind::LineGapKw,
+        Kind::CapHeightKw,
+        Kind::CodePageRangeKw,
+        Kind::PanoseKw,
+        Kind::TypoAscenderKw,
+        Kind::TypoDescenderKw,
+        Kind::TypoLineGapKw,
+        Kind::UnicodeRangeKw,
+        Kind::VendorKw,
+        Kind::WinAscentKw,
+        Kind::WinDescentKw,
+        Kind::XHeightKw,
+        Kind::SizemenunameKw,
+        Kind::VertTypoAscenderKw,
+        Kind::VertTypoDescenderKw,
+        Kind::VertTypoLineGapKw,
+        Kind::VertAdvanceYKw,
+        Kind::VertOriginYKw,
+        Kind::ElidedFallbackNameKw,
+        Kind::ElidedFallbackNameIDKw,
+        Kind::DesignAxisKw,
+        Kind::AxisValueKw,
+        Kind::FlagKw,
+        Kind::LocationKw,
+        Kind::ElidableAxisValueNameKw,
+        Kind::OlderSiblingFontAttributeKw,
+    ]);
+
     /// Top level items + semi
     pub(crate) const TOP_SEMI: TokenSet = TokenSet::TOP_LEVEL.union(TokenSet::new(&[Kind::Semi]));
 
@@ -68,10 +117,85 @@ impl From<Kind> for TokenSet {
     }
 }
 
-#[test]
-fn token_set_works_for_tokens() {
-    let ts = TokenSet::new(&[Kind::Eof, Kind::Whitespace]);
-    assert!(ts.contains(Kind::Eof));
-    assert!(ts.contains(Kind::Whitespace));
-    assert!(!ts.contains(Kind::Eq));
+impl std::fmt::Display for TokenSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if self.0.count_ones() == 0 {
+            return write!(f, "no tokens");
+        }
+
+        let mut first = true;
+        for kind in iter_tokens(*self) {
+            if !first {
+                write!(f, ", ")?;
+            }
+            first = false;
+            write!(f, "{}", kind)?;
+        }
+        Ok(())
+    }
+}
+
+fn iter_tokens(set: TokenSet) -> impl Iterator<Item = Kind> {
+    let mut raw = set.0;
+    std::iter::from_fn(move || {
+        let idx = raw.trailing_zeros();
+        if idx == u128::BITS {
+            return None;
+        }
+        let raw_next = idx as u16;
+        // safety: Kind is repr(u16), and has more than 128 members, so this
+        // will at least generate a valid Kind (not UB)
+        let next: Kind = unsafe { std::mem::transmute(raw_next) };
+        raw ^= 1u128 << idx;
+        Some(next)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_set_works_for_tokens() {
+        let ts = TokenSet::new(&[Kind::Eof, Kind::Whitespace]);
+        assert!(ts.contains(Kind::Eof));
+        assert!(ts.contains(Kind::Whitespace));
+        assert!(!ts.contains(Kind::Eq));
+    }
+
+    #[test]
+    fn iter_tokens_smoke_test() {
+        let set = TokenSet::new(&[
+            Kind::Ident,
+            Kind::LAngle,
+            Kind::Cid,
+            Kind::OlderSiblingFontAttributeKw,
+        ]);
+
+        assert_eq!(iter_tokens(set).count(), 4);
+        for token in iter_tokens(set) {
+            assert!(set.contains(token));
+        }
+        for token in &[
+            Kind::String,
+            Kind::RAngle,
+            Kind::RParen,
+            Kind::NamedGlyphClass,
+            Kind::TableKw,
+            Kind::ElidableAxisValueNameKw,
+            Kind::LigatureKw,
+        ] {
+            assert!(!set.contains(*token));
+        }
+    }
+
+    #[test]
+    fn display() {
+        let empty = TokenSet::EMPTY;
+        assert_eq!(empty.to_string(), "no tokens");
+        let solo = TokenSet::from(Kind::LParen);
+        assert_eq!(solo.to_string(), "(");
+        let multi = TokenSet::new(&[Kind::TableKw, Kind::Comma, Kind::Hex]);
+        assert_eq!(multi.to_string(), "HEX, ,, TableKw");
+    }
 }

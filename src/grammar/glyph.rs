@@ -4,7 +4,8 @@ use crate::token_set::TokenSet;
 
 // B @class [a b]
 pub(crate) fn eat_glyph_or_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
-    if parser.eat(Kind::NamedGlyphClass) || parser.eat_remap(Kind::Ident, Kind::GlyphName) {
+    if parser.eat(Kind::NamedGlyphClass) || parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName)
+    {
         return true;
     }
     eat_glyph_class_list(parser, recovery)
@@ -80,6 +81,36 @@ fn glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
             return false;
         }
     } else {
-        parser.expect_remap_recover(Kind::Ident, Kind::GlyphName, recovery)
+        parser.expect_remap_recover(TokenSet::IDENT_LIKE, Kind::GlyphName, recovery)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::debug_parse_output;
+    use super::*;
+
+    #[test]
+    fn glyph_name_smoke_test() {
+        // normal name, an escaped glyph name, and a contextual keyword
+        let fea = "[A \\mark Ascender]";
+        let out = debug_parse_output(fea, |parser| {
+            eat_glyph_class_list(parser, TokenSet::EMPTY);
+        });
+        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        crate::assert_eq_str!(
+            "\
+START GlyphClass
+  [
+  GlyphName(A)
+  WS( )
+  GlyphName(\\\\mark)
+  WS( )
+  GlyphName(Ascender)
+  ]
+END GlyphClass
+",
+            out.simple_parse_tree(fea),
+        );
     }
 }

@@ -80,7 +80,8 @@ fn include(parser: &mut Parser) {
         if !parser.expect(Kind::LParen) {
             advance_to_top_level(parser);
         }
-        if !parser.eat_remap(Kind::Ident, Kind::Path) {
+        //FIXME: really anything can be a path?
+        if !parser.eat_remap(TokenSet::IDENT_LIKE, Kind::Path) {
             parser.err("Include statement missing path");
             return advance_to_top_level(parser);
         }
@@ -189,7 +190,7 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
         const LABEL_RECOVERY: TokenSet = TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]);
         assert!(parser.eat(Kind::LookupKw));
         //let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
-        parser.expect_remap_recover(Kind::Ident, Kind::Label, LABEL_RECOVERY);
+        parser.expect_remap_recover(TokenSet::IDENT_LIKE, Kind::Label, LABEL_RECOVERY);
         parser.eat(Kind::UseExtensionKw);
         parser.expect(Kind::LBrace);
         while eat_lookup_item(parser, recovery) {
@@ -197,9 +198,13 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
         }
         parser.expect_recover(
             Kind::RBrace,
-            recovery.union(TokenSet::new(&[Kind::Ident, Kind::Semi])),
+            recovery.union(TokenSet::IDENT_LIKE.union(Kind::Semi.into())),
         );
-        parser.expect_remap_recover(Kind::Ident, Kind::Label, recovery.union(Kind::Semi.into()));
+        parser.expect_remap_recover(
+            TokenSet::IDENT_LIKE,
+            Kind::Label,
+            recovery.union(Kind::Semi.into()),
+        );
         parser.expect_recover(Kind::Semi, recovery);
     }
 
@@ -211,6 +216,7 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
 
 //either lookup <label> { ... } <label>;
 //or     lookup <label>;
+//FIXME: doesn't handle IDENT_LIKE
 fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
     assert!(parser.matches(0, Kind::LookupKw));
     let kind1 = parser.nth(1).kind;
@@ -272,7 +278,7 @@ fn feature(parser: &mut Parser) {
             }
             Kind::FeatureKw => {
                 // aalt only
-                if parser.matches(1, Kind::Ident) && parser.matches(2, Kind::Semi) {
+                if parser.matches(1, TokenSet::IDENT_LIKE) && parser.matches(2, Kind::Semi) {
                     assert!(parser.eat(Kind::FeatureKw));
                     parser.expect_tag(TokenSet::EMPTY);
                     assert!(parser.eat(Kind::Semi));
@@ -363,7 +369,7 @@ fn mark_class(parser: &mut Parser) {
         } else if parser.matches(0, Kind::LSquare) {
             glyph::eat_glyph_class_list(parser, ANCHOR_START)
         } else {
-            parser.eat_remap(Kind::Ident, Kind::GlyphName)
+            parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName)
         }
     }
 
@@ -385,17 +391,15 @@ fn mark_class(parser: &mut Parser) {
 fn anchor_def(parser: &mut Parser) {
     fn anchor_def_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::AnchorDefKw));
-        let recovery = TokenSet::TOP_LEVEL.union(TokenSet::new(&[
-            Kind::ContourpointKw,
-            Kind::Ident,
-            Kind::Semi,
-        ]));
+        let recovery = TokenSet::TOP_LEVEL
+            .union(TokenSet::IDENT_LIKE)
+            .union(TokenSet::new(&[Kind::ContourpointKw, Kind::Semi]));
         parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
         parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
         if parser.eat(Kind::ContourpointKw) {
             parser.expect_recover(Kind::Number, TokenSet::TOP_LEVEL.union(Kind::Semi.into()));
         }
-        parser.expect_recover(Kind::Ident, TokenSet::TOP_SEMI);
+        parser.expect_recover(TokenSet::IDENT_LIKE, TokenSet::TOP_SEMI);
         parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
     }
 
@@ -408,8 +412,10 @@ fn anchor_def(parser: &mut Parser) {
 fn anonymous(parser: &mut Parser) {
     fn anon_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::AnonKw));
-        let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
-        if !(parser.expect_recover(Kind::Ident, TokenSet::new(&[Kind::LBrace]))
+        let raw_label_range = parser
+            .matches(0, TokenSet::IDENT_LIKE)
+            .then(|| parser.nth_range(0));
+        if !(parser.expect_recover(TokenSet::IDENT_LIKE, TokenSet::new(&[Kind::LBrace]))
             & parser.expect(Kind::LBrace))
         {
             return;
@@ -422,7 +428,7 @@ fn anonymous(parser: &mut Parser) {
                 {
                     assert!(
                         parser.eat(Kind::RBrace)
-                            && parser.eat(Kind::Ident)
+                            && parser.eat(TokenSet::IDENT_LIKE)
                             && parser.eat(Kind::Semi)
                     );
                     break;

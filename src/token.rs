@@ -12,6 +12,7 @@ impl Token {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u16)]
 pub(crate) enum Kind {
     Tombstone,  // a placeholder value
     Eof,        // the end of the input stream
@@ -51,16 +52,6 @@ pub(crate) enum Kind {
     NamedGlyphClass,
     Cid,
 
-    // not lexed
-    GlyphRange,
-    Metric,
-    Label,
-    Tag,
-    Path,
-    GlyphName,
-    GlyphClass,
-
-    // keywords:
     // top-level keywords
     TableKw,
     LookupKw,
@@ -103,18 +94,72 @@ pub(crate) enum Kind {
     UseMarkFilteringSetKw,
     ValueRecordDefKw,
 
+    // keywords only in specific table contexts:
+    HorizAxisBaseScriptListKw,   //BASE table
+    HorizAxisBaseTagListKw,      //BASE table
+    HorizAxisMinMaxKw,           //BASE table
+    VertAxisBaseScriptListKw,    //BASE table
+    VertAxisBaseTagListKw,       //BASE table
+    VertAxisMinMaxKw,            //BASE table
+    AttachKw,                    //GDEF table
+    GlyphClassDefKw,             //GDEF table
+    LigatureCaretByDevKw,        //GDEF table
+    LigatureCaretByIndexKw,      //GDEF table
+    LigatureCaretByPosKw,        //GDEF table
+    MarkAttachClassKw,           //GDEF table
+    FontRevisionKw,              //head table
+    AscenderKw,                  //hhea table
+    CaretOffsetKw,               //hhea table
+    DescenderKw,                 //hhea table
+    LineGapKw,                   //hhea table
+    CapHeightKw,                 //OS/2 table
+    CodePageRangeKw,             //OS/2 table
+    PanoseKw,                    //OS/2 table
+    TypoAscenderKw,              //OS/2 table
+    TypoDescenderKw,             //OS/2 table
+    TypoLineGapKw,               //OS/2 table
+    UnicodeRangeKw,              //OS/2 table
+    VendorKw,                    //OS/2 table
+    WinAscentKw,                 //OS/2 table
+    WinDescentKw,                //OS/2 table
+    XHeightKw,                   //OS/2 table
+    SizemenunameKw,              //size feature
+    VertTypoAscenderKw,          //vhea table
+    VertTypoDescenderKw,         //vhea table
+    VertTypoLineGapKw,           //vhea table
+    VertAdvanceYKw,              //vmtx table
+    VertOriginYKw,               //vmtx table
+    ElidedFallbackNameKw,        //STAT table
+    ElidedFallbackNameIDKw,      //STAT table
+    DesignAxisKw,                //STAT table
+    AxisValueKw,                 //STAT table
+    FlagKw,                      //STAT table
+    LocationKw,                  //STAT table
+    ElidableAxisValueNameKw,     //STAT table
+    OlderSiblingFontAttributeKw, //STAT table
+
     // not technically keywords and not lexed, but assigned during parsing
     // in gsub/gpos:
     LigatureKw,
     BaseKw,
 
+    // not lexed
+    GlyphRange,
+    Metric,
+    Label,
+    Tag,
+    Path,
+    GlyphName,
+    GlyphClass,
+
+    // keywords:
     // keywords only in special context, not lexed
-    HorizAxisBaseScriptList,
-    HorizAxisBaseTagList,
-    HorizAxisMinMax,
-    VertAxisBaseScriptList,
-    VertAxisBaseTagList,
-    VertAxisMinMax,
+    //HorizAxisBaseScriptList,
+    //HorizAxisBaseTagList,
+    //HorizAxisMinMax,
+    //VertAxisBaseScriptList,
+    //VertAxisBaseTagList,
+    //VertAxisMinMax,
 
     // general purpose table node
     TableEntryNode,
@@ -191,6 +236,48 @@ impl Kind {
             b"useExtension" => Some(Kind::UseExtensionKw),
             b"UseMarkFilteringSet" => Some(Kind::UseMarkFilteringSetKw),
             b"valueRecordDef" => Some(Kind::ValueRecordDefKw),
+            b"HorizAxis.BaseScriptList" => Some(Kind::HorizAxisBaseScriptListKw),
+            b"HorizAxis.BaseTagList" => Some(Kind::HorizAxisBaseTagListKw),
+            b"HorizAxis.MinMax" => Some(Kind::HorizAxisMinMaxKw),
+            b"VertAxis.BaseScriptList" => Some(Kind::VertAxisBaseScriptListKw),
+            b"VertAxis.BaseTagList" => Some(Kind::VertAxisBaseTagListKw),
+            b"VertAxis.MinMax" => Some(Kind::VertAxisMinMaxKw),
+            b"Attach" => Some(Kind::AttachKw),
+            b"GlyphClassDef" => Some(Kind::GlyphClassDefKw),
+            b"LigatureCaretByDev" => Some(Kind::LigatureCaretByDevKw),
+            b"LigatureCaretByIndex" => Some(Kind::LigatureCaretByIndexKw),
+            b"LigatureCaretByPos" => Some(Kind::LigatureCaretByPosKw),
+            b"MarkAttachClass" => Some(Kind::MarkAttachClassKw),
+            b"FontRevision" => Some(Kind::FontRevisionKw),
+            b"Ascender" => Some(Kind::AscenderKw),
+            b"CaretOffset" => Some(Kind::CaretOffsetKw),
+            b"Descender" => Some(Kind::DescenderKw),
+            b"LineGap" => Some(Kind::LineGapKw),
+            b"CapHeight" => Some(Kind::CapHeightKw),
+            b"CodePageRange" => Some(Kind::CodePageRangeKw),
+            b"Panose" => Some(Kind::PanoseKw),
+            b"TypoAscender" => Some(Kind::TypoAscenderKw),
+            b"TypoDescender" => Some(Kind::TypoDescenderKw),
+            b"TypoLineGap" => Some(Kind::TypoLineGapKw),
+            b"UnicodeRange" => Some(Kind::UnicodeRangeKw),
+            b"Vendor" => Some(Kind::VendorKw),
+            b"winAscent" => Some(Kind::WinAscentKw),
+            b"winDescent" => Some(Kind::WinDescentKw),
+            b"XHeight" => Some(Kind::XHeightKw),
+            b"sizemenuname" => Some(Kind::SizemenunameKw),
+            b"VertTypoAscender" => Some(Kind::VertTypoAscenderKw),
+            b"VertTypoDescender" => Some(Kind::VertTypoDescenderKw),
+            b"VertTypoLineGap" => Some(Kind::VertTypoLineGapKw),
+            b"VertAdvanceY" => Some(Kind::VertAdvanceYKw),
+            b"VertOriginY" => Some(Kind::VertOriginYKw),
+            b"ElidedFallbackName" => Some(Kind::ElidedFallbackNameKw),
+            b"ElidedFallbackNameID" => Some(Kind::ElidedFallbackNameIDKw),
+            b"DesignAxis" => Some(Kind::DesignAxisKw),
+            b"AxisValue" => Some(Kind::AxisValueKw),
+            b"flag" => Some(Kind::FlagKw),
+            b"location" => Some(Kind::LocationKw),
+            b"ElidableAxisValueName" => Some(Kind::ElidableAxisValueNameKw),
+            b"OlderSiblingFontAttribute" => Some(Kind::OlderSiblingFontAttributeKw),
             _ => None,
         }
     }
@@ -277,6 +364,48 @@ impl std::fmt::Display for Kind {
             Self::UseExtensionKw => write!(f, "UseExtensionKw"),
             Self::UseMarkFilteringSetKw => write!(f, "UseMarkFilteringSetKw"),
             Self::ValueRecordDefKw => write!(f, "ValueRecordDefKw"),
+            Self::HorizAxisBaseScriptListKw => write!(f, "HorizAxis.BaseScriptList"),
+            Self::HorizAxisBaseTagListKw => write!(f, "HorizAxis.BaseTagList"),
+            Self::HorizAxisMinMaxKw => write!(f, "HorizAxis.MinMax"),
+            Self::VertAxisBaseScriptListKw => write!(f, "VertAxis.BaseScriptList"),
+            Self::VertAxisBaseTagListKw => write!(f, "VertAxis.BaseTagList"),
+            Self::VertAxisMinMaxKw => write!(f, "VertAxis.MinMax"),
+            Self::AttachKw => write!(f, "Attach"),
+            Self::GlyphClassDefKw => write!(f, "GlyphClassDef"),
+            Self::LigatureCaretByDevKw => write!(f, "LigatureCaretByDev"),
+            Self::LigatureCaretByIndexKw => write!(f, "LigatureCaretByIndex"),
+            Self::LigatureCaretByPosKw => write!(f, "LigatureCaretByPos"),
+            Self::MarkAttachClassKw => write!(f, "MarkAttachClass"),
+            Self::FontRevisionKw => write!(f, "FontRevision"),
+            Self::AscenderKw => write!(f, "Ascender"),
+            Self::CaretOffsetKw => write!(f, "CaretOffset"),
+            Self::DescenderKw => write!(f, "Descender"),
+            Self::LineGapKw => write!(f, "LineGap"),
+            Self::CapHeightKw => write!(f, "CapHeight"),
+            Self::CodePageRangeKw => write!(f, "CodePageRange"),
+            Self::PanoseKw => write!(f, "Panose"),
+            Self::TypoAscenderKw => write!(f, "TypoAscender"),
+            Self::TypoDescenderKw => write!(f, "TypoDescender"),
+            Self::TypoLineGapKw => write!(f, "TypoLineGap"),
+            Self::UnicodeRangeKw => write!(f, "UnicodeRange"),
+            Self::VendorKw => write!(f, "Vendor"),
+            Self::WinAscentKw => write!(f, "winAscent"),
+            Self::WinDescentKw => write!(f, "winDescent"),
+            Self::XHeightKw => write!(f, "XHeight"),
+            Self::SizemenunameKw => write!(f, "sizemenuname"),
+            Self::VertTypoAscenderKw => write!(f, "VertTypoAscender"),
+            Self::VertTypoDescenderKw => write!(f, "VertTypoDescender"),
+            Self::VertTypoLineGapKw => write!(f, "VertTypoLineGap"),
+            Self::VertAdvanceYKw => write!(f, "VertAdvanceY"),
+            Self::VertOriginYKw => write!(f, "VertOriginY"),
+            Self::ElidedFallbackNameKw => write!(f, "ElidedFallbackName"),
+            Self::ElidedFallbackNameIDKw => write!(f, "ElidedFallbackNameID"),
+            Self::DesignAxisKw => write!(f, "DesignAxis"),
+            Self::AxisValueKw => write!(f, "AxisValue"),
+            Self::FlagKw => write!(f, "flag"),
+            Self::LocationKw => write!(f, "location"),
+            Self::ElidableAxisValueNameKw => write!(f, "ElidableAxisValueName"),
+            Self::OlderSiblingFontAttributeKw => write!(f, "OlderSiblingFontAttribute"),
 
             Self::LigatureKw => write!(f, "LigatureKw"),
             Self::BaseKw => write!(f, "BaseKw"),
@@ -289,13 +418,21 @@ impl std::fmt::Display for Kind {
             Self::LookupBlockNode => write!(f, "LookupBlockNode"),
             Self::ScriptRecordNode => write!(f, "ScriptRecoordNode"),
             Self::TableEntryNode => write!(f, "TableEntryNode"),
-
-            Self::HorizAxisBaseScriptList => write!(f, "HorizAxisBaseScriptList"),
-            Self::HorizAxisBaseTagList => write!(f, "HorizAxisBaseTagList"),
-            Self::HorizAxisMinMax => write!(f, "HorizAxisMinMax"),
-            Self::VertAxisBaseScriptList => write!(f, "VertAxisBaseScriptList"),
-            Self::VertAxisBaseTagList => write!(f, "VertAxisBaseTagList"),
-            Self::VertAxisMinMax => write!(f, "VertAxisMinMax"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 128 is the max size of our TokenSet.
+    #[test]
+    fn max_lexed_token_discriminent() {
+        assert!(
+            (Kind::OlderSiblingFontAttributeKw as u16) < 127,
+            "{}",
+            Kind::OlderSiblingFontAttributeKw as u16
+        );
     }
 }

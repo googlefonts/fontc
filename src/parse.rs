@@ -1,5 +1,6 @@
 //! Convert raw tokens into semantic events
 
+use std::fmt::Display;
 use std::ops::Range;
 
 use crate::lexer::Lexer;
@@ -142,9 +143,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Eat if we're at this raw token. Return `true` if we eat.
-    pub(crate) fn eat(&mut self, raw: Kind) -> bool {
-        self.eat_remap(raw, raw)
+    /// Eat if the current token matches.
+    pub(crate) fn eat(&mut self, raw: impl TokenComparable) -> bool {
+        if self.matches(0, raw) {
+            self.eat_raw();
+            return true;
+        }
+        false
     }
 
     /// Eat the next token, regardless of what it is.
@@ -155,8 +160,8 @@ impl<'a> Parser<'a> {
     /// Eat the next token if it matches `expect`, replacing it with `remap`.
     ///
     /// Necessary for handling keywords, which are not known to the lexer.
-    pub(crate) fn eat_remap(&mut self, expect: Kind, remap: Kind) -> bool {
-        if self.nth(0).kind == expect {
+    pub(crate) fn eat_remap(&mut self, expect: impl TokenComparable, remap: Kind) -> bool {
+        if self.matches(0, expect) {
             self.do_bump::<1>(remap);
             return true;
         }
@@ -197,8 +202,7 @@ impl<'a> Parser<'a> {
         predicate: impl TokenComparable,
     ) {
         self.err(error);
-        let range = self.nth_range(0);
-        if !predicate.matches(self.nth(0).kind, &self.text.as_bytes()[range]) {
+        if !self.matches(0, predicate) {
             self.eat_raw();
         }
     }
@@ -213,7 +217,7 @@ impl<'a> Parser<'a> {
     }
 
     /// consume if the token matches, otherwise error without advancing
-    pub(crate) fn expect(&mut self, kind: Kind) -> bool {
+    pub(crate) fn expect(&mut self, kind: impl TokenComparable) -> bool {
         if self.eat(kind) {
             return true;
         }
@@ -221,13 +225,17 @@ impl<'a> Parser<'a> {
         false
     }
 
-    pub(crate) fn expect_recover(&mut self, kind: Kind, recover: impl TokenComparable) -> bool {
-        self.expect_remap_recover(kind, kind, recover)
+    pub(crate) fn expect_recover(
+        &mut self,
+        kind: impl TokenComparable,
+        recover: impl TokenComparable,
+    ) -> bool {
+        self.expect_remap_recover(kind, self.nth(0).kind, recover)
     }
 
     pub(crate) fn expect_remap_recover(
         &mut self,
-        expect: Kind,
+        expect: impl TokenComparable,
         remap: Kind,
         recover: impl TokenComparable,
     ) -> bool {
@@ -261,8 +269,7 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn matches(&self, nth: usize, token: impl TokenComparable) -> bool {
-        let range = self.nth_range(nth);
-        token.matches(self.nth(nth).kind, &self.text.as_bytes()[range])
+        token.matches(self.nth(nth).kind)
     }
 
     pub(crate) fn raw_range(&self, range: Range<usize>) -> &[u8] {
@@ -279,24 +286,18 @@ impl<'a> Parser<'a> {
     //}
 }
 
-pub(crate) trait TokenComparable {
-    fn matches(&self, kind: Kind, bytes: &[u8]) -> bool;
+pub(crate) trait TokenComparable: Copy + Display {
+    fn matches(&self, kind: Kind) -> bool;
 }
 
-//impl TokenComparable for &[u8] {
-//fn matches(&self, _: Kind, bytes: &[u8]) -> bool {
-//self == &bytes
-//}
-//}
-
 impl TokenComparable for Kind {
-    fn matches(&self, kind: Kind, _bytes: &[u8]) -> bool {
+    fn matches(&self, kind: Kind) -> bool {
         self == &kind
     }
 }
 
 impl TokenComparable for TokenSet {
-    fn matches(&self, kind: Kind, _bytes: &[u8]) -> bool {
+    fn matches(&self, kind: Kind) -> bool {
         self.contains(kind)
     }
 }
