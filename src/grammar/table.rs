@@ -15,6 +15,7 @@ pub(crate) fn table(parser: &mut Parser) {
         b"head" => table_impl(parser, b"head", head::table_entry),
         b"hhea" => table_impl(parser, b"hhea", hhea::table_entry),
         b"name" => table_impl(parser, b"name", name::table_entry),
+        b"os/2" => table_impl(parser, b"os/2", os_2::table_entry),
         _ => {
             parser.expect_recover(Kind::Ident, TokenSet::TOP_LEVEL.union(Kind::LBrace.into()));
             if parser.expect_recover(Kind::LBrace, TokenSet::TOP_LEVEL) {
@@ -296,6 +297,71 @@ mod name {
             })
         } else {
             parser.expect_recover(Kind::NameIdKw, recovery.union(Kind::Semi.into()));
+            parser.eat_until(recovery);
+        }
+    }
+}
+
+mod os_2 {
+    use super::*;
+
+    const METRICS: TokenSet = TokenSet::new(&[
+        Kind::TypoAscenderKw,
+        Kind::TypoDescenderKw,
+        Kind::TypoLineGapKw,
+        Kind::WinAscentKw,
+        Kind::WinDescentKw,
+        Kind::XHeightKw,
+        Kind::CapHeightKw,
+    ]);
+
+    const NUM_LISTS: TokenSet =
+        TokenSet::new(&[Kind::PanoseKw, Kind::UnicodeRangeKw, Kind::CodePageRangeKw]);
+
+    const OS2_KEYWORDS: TokenSet = METRICS
+        .union(NUM_LISTS)
+        .union(TokenSet::new(&[Kind::VendorKw]));
+
+    // these are not keywords per the spec, so we have to handle them specially??
+    static RAW_KEYWORDS: &[&[u8]] = &[
+        b"FamilyClass",
+        b"FSType",
+        b"LowerOpSize",
+        b"WeightClass",
+        b"WidthClass",
+        b"UpperOpSize",
+    ];
+
+    pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
+        let recovery = recovery.union(OS2_KEYWORDS);
+        let recovery_semi = recovery.union(Kind::Semi.into());
+
+        if parser.matches(0, METRICS) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(METRICS));
+                parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery_semi);
+                parser.expect_recover(Kind::Semi, recovery);
+            })
+        } else if parser.matches(0, NUM_LISTS) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(NUM_LISTS));
+                parser.eat_while(Kind::Number);
+                parser.expect_recover(Kind::Semi, recovery);
+            })
+        } else if parser.matches(0, Kind::VendorKw) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(Kind::VendorKw));
+                parser.expect_recover(Kind::String, recovery_semi);
+                parser.expect_recover(Kind::Semi, recovery);
+            })
+        } else if RAW_KEYWORDS.contains(&parser.nth_raw(0)) {
+            table_node(parser, |parser| {
+                parser.eat_raw();
+                parser.expect_recover(Kind::Number, recovery_semi);
+                parser.expect_recover(Kind::Semi, recovery);
+            })
+        } else {
+            parser.err_recover("Expected OS/2 table keyword", recovery_semi);
             parser.eat_until(recovery);
         }
     }
