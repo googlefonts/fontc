@@ -13,6 +13,7 @@ pub(crate) fn table(parser: &mut Parser) {
         b"BASE" => table_impl(parser, b"BASE", base::table_entry),
         b"GDEF" => table_impl(parser, b"GDEF", gdef::table_entry),
         b"head" => table_impl(parser, b"head", head::table_entry),
+        b"hhea" => table_impl(parser, b"hhea", hhea::table_entry),
         _ => {
             parser.expect_recover(Kind::Ident, TokenSet::TOP_LEVEL.union(Kind::LBrace.into()));
             if parser.expect_recover(Kind::LBrace, TokenSet::TOP_LEVEL) {
@@ -235,6 +236,38 @@ mod head {
                 recovery.union(TokenSet::new(&[Kind::Semi, Kind::RBrace])),
             );
             parser.eat_until(recovery.union(TokenSet::new(&[Kind::FontRevisionKw, Kind::RBrace])));
+        }
+    }
+}
+
+mod hhea {
+    use super::*;
+
+    const HHEA_KEYWORDS: TokenSet = TokenSet::new(&[
+        Kind::CaretOffsetKw,
+        Kind::AscenderKw,
+        Kind::DescenderKw,
+        Kind::LineGapKw,
+    ]);
+
+    pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
+        let recovery = recovery.union(HHEA_KEYWORDS);
+        if parser.matches(0, HHEA_KEYWORDS) {
+            table_node(parser, |parser| {
+                assert!(parser.eat(HHEA_KEYWORDS));
+                parser.expect_remap_recover(
+                    Kind::Number,
+                    Kind::Metric,
+                    recovery.union(TokenSet::new(&[Kind::Semi, Kind::RBrace])),
+                );
+                parser.expect_recover(Kind::Semi, recovery.union(Kind::RBrace.into()));
+            })
+        } else {
+            parser.expect_recover(
+                HHEA_KEYWORDS,
+                recovery.union(TokenSet::new(&[Kind::Semi, Kind::RBrace])),
+            );
+            parser.eat_until(recovery.union(Kind::RBrace.into()));
         }
     }
 }
