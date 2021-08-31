@@ -352,6 +352,13 @@ enum Event {
 pub struct DebugSink(Vec<Event>);
 
 impl DebugSink {
+    pub fn iter_tokens(&self) -> impl Iterator<Item = (Kind, usize)> + '_ {
+        self.0.iter().filter_map(|item| match item {
+            Event::Token(kind, len) => Some((*kind, *len)),
+            _ => None,
+        })
+    }
+
     pub(crate) fn errors(&self) -> Vec<SyntaxError> {
         self.0
             .iter()
