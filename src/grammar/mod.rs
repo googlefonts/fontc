@@ -276,6 +276,7 @@ fn feature(parser: &mut Parser) {
                 parser.eat(Kind::IncludeDfltKw);
                 parser.eat(Kind::RequiredKw);
                 parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
+                parser.finish_node();
             }
             Kind::FeatureKw => {
                 // aalt only

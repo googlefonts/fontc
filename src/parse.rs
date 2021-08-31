@@ -360,13 +360,30 @@ impl DebugSink {
     }
 
     pub(crate) fn errors(&self) -> Vec<SyntaxError> {
-        self.0
-            .iter()
-            .filter_map(|event| match event {
-                Event::Error(err) => Some(err.clone()),
-                _ => None,
-            })
-            .collect()
+        let mut errors = Vec::new();
+        let mut node_stack = Vec::new();
+        let mut pos = 0;
+        for event in &self.0 {
+            match event {
+                Event::Start(kind) => node_stack.push((kind, pos)),
+                &Event::Token(_, len) => pos += len,
+                Event::Finish => {
+                    node_stack.pop().expect("unbalanced node");
+                }
+                Event::Error(err) => errors.push(err.to_owned()),
+            }
+        }
+
+        for (kind, pos) in node_stack {
+            let err = SyntaxError {
+                message: format!("Unterminated node '{}'", kind),
+                range: pos..pos + 1,
+            };
+            errors.push(err);
+        }
+
+        errors.sort_by_key(|err| (err.range.start, err.range.end));
+        errors
     }
 
     pub fn print_errs(&self, input: &str) -> String {

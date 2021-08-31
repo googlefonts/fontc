@@ -2,9 +2,11 @@
 name = "feature-parsing"
 version = "0.1.0"
 edition = "2018"
+default-run = "parse_test"
 
 [dependencies]
 ansi_term = "0.12.1"
 
 [dev-dependencies]
 diff = "0.1.12"
+
