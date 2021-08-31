@@ -1,7 +1,7 @@
 use ansi_term::{Colour, Style};
 use std::{env, ffi::OsStr, path::PathBuf};
 
-use feature_parsing::{DebugSink, Kind, Parser};
+use feature_parsing::{DebugSink, Parser};
 
 fn main() {
     let args = Args::get_from_env_or_exit();
@@ -16,7 +16,7 @@ fn main() {
 
     let mut results = Vec::new();
     for (kind, len) in sink.iter_tokens() {
-        let style = style_for_kind(kind);
+        let style = feature_parsing::util::style_for_kind(kind);
         // if the style has changed, draw the previous range.
         if style != current_style {
             // we've drawn, so we reset.
@@ -35,36 +35,6 @@ fn main() {
     let slice = &contents[pos..pos + cur_len];
     print!("{}", current_style.paint(slice));
     results.push((current_style, slice));
-}
-
-fn style_for_kind(kind: Kind) -> Style {
-    match kind {
-        Kind::Comment => Style::new().fg(Colour::Yellow).dimmed(),
-        Kind::Number | Kind::Metric | Kind::Octal | Kind::Hex | Kind::Float | Kind::String => {
-            Style::new().fg(Colour::Green)
-        }
-        Kind::Ident | Kind::Tag | Kind::Label => Style::new().fg(Colour::Purple),
-        Kind::TableKw
-        | Kind::IncludeKw
-        | Kind::LookupKw
-        | Kind::LanguagesystemKw
-        | Kind::AnchorDefKw
-        | Kind::FeatureKw
-        | Kind::MarkClassKw
-        | Kind::ScriptKw
-        | Kind::LanguageKw
-        | Kind::AnonKw => Style::new().fg(Colour::Cyan),
-        Kind::GlyphName | Kind::Cid => Style::new().fg(Colour::Blue),
-        Kind::NamedGlyphClass => Style::new().fg(Colour::Blue).italic(),
-        Kind::SubKw
-        | Kind::PosKw
-        | Kind::IgnoreKw
-        | Kind::EnumKw
-        | Kind::RsubKw
-        | Kind::ByKw
-        | Kind::FromKw => Style::new().fg(Colour::Cyan).italic(),
-        _ => Style::new().fg(Colour::White),
-    }
 }
 
 macro_rules! exit_err {

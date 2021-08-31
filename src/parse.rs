@@ -35,7 +35,7 @@ struct PendingToken {
 #[derive(Debug, Clone)]
 pub struct SyntaxError {
     pub(crate) message: String,
-    range: Range<usize>,
+    pub(crate) range: Range<usize>,
 }
 
 impl PendingToken {
@@ -407,22 +407,43 @@ impl DebugSink {
 
     pub fn print_errs(&self, input: &str) -> String {
         let total_lines = input.lines().count();
-        let max_line_digit_width = decimal_digits(total_lines);
+        let max_line_digit_width = crate::util::decimal_digits(total_lines);
         let mut result = String::new();
         let mut pos = 0;
         let mut line_n = 0;
         let mut lines = iter_lines_including_breaks(input);
         let mut current_line = lines.next().unwrap_or("");
+
+        let tokens = {
+            let mut toke_pos = 0;
+            self.0
+                .iter()
+                .filter_map(move |item| match item {
+                    Event::Token(kind, len) => {
+                        let range = toke_pos..toke_pos + len;
+                        toke_pos += len;
+                        Some((*kind, range))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut cur_tokens = tokens.as_slice();
         for err in self.errors() {
             while err.range.start >= pos + current_line.len() {
                 pos += current_line.len();
                 current_line = lines.next().unwrap();
                 line_n += 1;
             }
-            write_line_error(
+
+            let n_skip = cur_tokens.iter().take_while(|t| t.1.end < pos).count();
+            cur_tokens = &cur_tokens[n_skip..];
+
+            crate::util::write_line_error(
                 &mut result,
                 pos,
                 current_line,
+                cur_tokens,
                 line_n,
                 MAX_PRINT_WIDTH,
                 &err,
@@ -433,6 +454,7 @@ impl DebugSink {
     }
 
     pub fn simple_parse_tree(&self, input: &str) -> String {
+        use crate::util::SPACES;
         let mut f = String::new();
         let mut pos = 0;
         let mut indent = 0;
@@ -476,70 +498,8 @@ impl DebugSink {
     }
 }
 
-static SPACES: &str = "                                                                                                                                                                                    ";
-
-static CARETS: &str = "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
-
 //FIXME: get from terminal?
 const MAX_PRINT_WIDTH: usize = 100;
-fn decimal_digits(n: usize) -> usize {
-    (n as f64).log10().floor() as usize + 1
-}
-
-fn write_line_error(
-    writer: &mut impl Write,
-    line_start: usize, // relative to the start of the document
-    text: &str,
-    line_n: usize,
-    line_width: usize,
-    err: &SyntaxError,
-    max_digits: usize,
-) {
-    let err_start = err.range.start - line_start;
-
-    // if a line is really long, we clip it
-    let trim_start = if text.len() > line_width {
-        const SLOP: usize = 10; // buffer before start of error when clipping
-        let max_trim = (text.len()) - line_width;
-        err_start.saturating_sub(SLOP).min(max_trim)
-    } else {
-        0
-    };
-
-    let trim_end = (text.len() - trim_start).saturating_sub(line_width);
-    let text = &text[trim_start..text.len() - trim_end];
-    let ellipsis = if trim_start == 0 { "" } else { "..." };
-
-    let line_ws = text.bytes().take_while(u8::is_ascii_whitespace).count();
-    let padding = max_digits - decimal_digits(line_n);
-    writeln!(
-        writer,
-        "\n{}{} | {}{}",
-        &SPACES[..padding],
-        line_n,
-        ellipsis,
-        text.trim_end()
-    )
-    .unwrap();
-    let n_spaces = (err.range.start - line_start) - trim_start;
-    // use the whitespace at the front of the line first, so that
-    // we don't replace tabs with spaces
-    let reuse_ws = n_spaces.min(line_ws);
-    let extra_ws = n_spaces - reuse_ws;
-    //let ellipsis = if
-    let n_carets = err.range.end - err.range.start;
-    writeln!(
-        writer,
-        "{} | {}{}{}{} {}",
-        &SPACES[..max_digits],
-        &text[..reuse_ws],
-        &SPACES[..extra_ws],
-        &SPACES[..ellipsis.len()],
-        &CARETS[..n_carets],
-        err.message
-    )
-    .unwrap();
-}
 
 // we can't use str::lines because it strips newline chars and we need them
 // to calculate error positions

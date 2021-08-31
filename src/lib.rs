@@ -6,6 +6,7 @@ mod parse;
 mod pretty_diff;
 mod token;
 mod token_set;
+pub mod util;
 
 pub use grammar::root;
 pub use parse::{DebugSink, Parser};

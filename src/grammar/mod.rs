@@ -347,10 +347,7 @@ fn anonymous(parser: &mut Parser) {
                 }
                 _ => {
                     if parser.nth(1).kind == Kind::Eof {
-                        parser.raw_error(
-                            raw_label_range.clone().unwrap(),
-                            "unterminated anonymous block",
-                        );
+                        parser.raw_error(raw_label_range.unwrap(), "unterminated anonymous block");
                         parser.eat_raw();
                         break;
                     }
