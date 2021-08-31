@@ -142,7 +142,7 @@ fn lookupflag(parser: &mut Parser, recovery: TokenSet) {
 }
 
 fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
-    fn eat_lookup_item(parser: &mut Parser, recovery: TokenSet) -> bool {
+    fn lookup_item(parser: &mut Parser, recovery: TokenSet) -> bool {
         let start_pos = parser.nth_range(0).start;
         match parser.nth(0).kind {
             Kind::LookupflagKw => lookupflag(parser, recovery),
@@ -150,6 +150,7 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
             Kind::ScriptKw => {
                 eat_script(parser, recovery);
             }
+            Kind::NamedGlyphClass => glyph::named_glyph_class_decl(parser, recovery),
             Kind::SubtableKw => {
                 parser.eat_raw();
                 parser.expect_recover(Kind::Semi, recovery);
@@ -157,7 +158,10 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
             Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
                 feature::pos_or_sub_rule(parser, recovery)
             }
-            _ => (),
+            other => {
+                parser.err(format!("'{}' Not valid in a lookup block", other));
+                parser.eat_until(TokenSet::TOP_AND_FEATURE.add(Kind::RBrace));
+            }
         }
         parser.nth_range(0).start != start_pos
     }
@@ -166,11 +170,15 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
         const LABEL_RECOVERY: TokenSet = TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]);
         assert!(parser.eat(Kind::LookupKw));
         //let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
-        parser.expect_remap_recover(TokenSet::IDENT_LIKE, Kind::Label, LABEL_RECOVERY);
+        parser.expect_remap_recover(
+            TokenSet::IDENT_LIKE,
+            Kind::Label,
+            LABEL_RECOVERY.union(recovery),
+        );
         parser.eat(Kind::UseExtensionKw);
         parser.expect(Kind::LBrace);
-        while eat_lookup_item(parser, recovery) {
-            continue;
+        while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
+            lookup_item(parser, recovery);
         }
         parser.expect_recover(
             Kind::RBrace,

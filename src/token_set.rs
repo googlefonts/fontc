@@ -77,18 +77,39 @@ impl TokenSet {
     /// Top level items + semi
     pub(crate) const TOP_SEMI: TokenSet = TokenSet::TOP_LEVEL.union(TokenSet::new(&[Kind::Semi]));
 
-    /// keywords expected to start items in a feature block
-    pub(crate) const FEATURE_BODY_ITEM: TokenSet = TokenSet::TOP_LEVEL.union(TokenSet::new(&[
+    /// keywords that start a gsub or gpos rule
+    pub(crate) const RULES: TokenSet = TokenSet::new(&[
         Kind::PosKw,
         Kind::EnumKw,
         Kind::IgnoreKw,
         Kind::SubKw,
         Kind::RsubKw,
-        Kind::ParametersKw,
-    ]));
+    ]);
 
-    //pub(crate) const RSQUARE: TokenSet = TokenSet::new(&[Kind::RSquare]);
-    //pub(crate) const SEMI: TokenSet = TokenSet::new(&[Kind::Semi]);
+    /// top level items in a feature or lookup block
+    pub(crate) const FEATURE_KEYWORDS: TokenSet = TokenSet::new(&[
+        Kind::NamedGlyphClass,
+        Kind::MarkClassKw,
+        Kind::ParametersKw,
+        Kind::SubtableKw,
+        Kind::LookupKw,
+        Kind::LookupflagKw,
+        Kind::ScriptKw,
+        Kind::LanguageKw,
+        Kind::FeatureKw,      //aalt only
+        Kind::SizemenunameKw, // size only
+        Kind::CvParametersKw, //cv01 - cv99 only
+        Kind::FeatureNamesKw, //ss01 - ss20 only
+    ])
+    .union(TokenSet::RULES);
+
+    pub(crate) const TOP_AND_FEATURE: TokenSet =
+        TokenSet::TOP_LEVEL.union(TokenSet::FEATURE_KEYWORDS);
+
+    //FIXME: this seems bad? why include top level? why not other feature keywords?
+    pub(crate) const FEATURE_BODY_ITEM: TokenSet = TokenSet::RULES
+        .union(TokenSet::TOP_LEVEL)
+        .union(TokenSet::new(&[Kind::ParametersKw]));
 
     pub(crate) const fn new(kinds: &[Kind]) -> TokenSet {
         let mut res = 0u128;
