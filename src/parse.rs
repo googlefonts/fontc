@@ -208,6 +208,13 @@ impl<'a> Parser<'a> {
         self.eat_raw();
     }
 
+    pub(crate) fn raw_error(&mut self, range: Range<usize>, message: impl Into<String>) {
+        self.sink.error(SyntaxError {
+            range,
+            message: message.into(),
+        });
+    }
+
     /// Error, and advance unless the current token matches a predicate.
     pub(crate) fn err_recover(
         &mut self,

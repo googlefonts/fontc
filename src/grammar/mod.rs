@@ -169,16 +169,22 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
     fn lookup_body(parser: &mut Parser, recovery: TokenSet) {
         const LABEL_RECOVERY: TokenSet = TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]);
         assert!(parser.eat(Kind::LookupKw));
-        //let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
+        let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
         parser.expect_remap_recover(
             TokenSet::IDENT_LIKE,
             Kind::Label,
             LABEL_RECOVERY.union(recovery),
         );
+
         parser.eat(Kind::UseExtensionKw);
         parser.expect(Kind::LBrace);
         while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
-            lookup_item(parser, recovery);
+            if !lookup_item(parser, recovery) {
+                if let Some(range) = raw_label_range {
+                    parser.raw_error(range, "Table is never closed");
+                }
+                break;
+            }
         }
         parser.expect_recover(
             Kind::RBrace,
