@@ -1,6 +1,6 @@
 //! Convert raw tokens into semantic events
 
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 use std::ops::Range;
 
 use crate::lexer::Lexer;
@@ -14,7 +14,6 @@ pub struct Parser<'a> {
     lexer: Lexer<'a>,
     sink: &'a mut dyn TreeSink,
     text: &'a str,
-    errors: Vec<SyntaxError>,
     buf: [PendingToken; LOOKAHEAD],
 }
 
@@ -55,7 +54,6 @@ impl<'a> Parser<'a> {
             sink,
             text,
             buf: [PendingToken::EMPTY; LOOKAHEAD],
-            errors: Default::default(),
         };
 
         // preload the buffer; this accumulates any errors
@@ -127,15 +125,18 @@ impl<'a> Parser<'a> {
 
     fn validate_new_token(&mut self) {
         if let Some((replace_kind, error)) = match self.nth(LOOKAHEAD_MAX).kind {
-            Kind::StringUnterminated => Some((
-                Kind::String,
-                "Missing trailing `\"` character to terminate string.",
-            )),
+            Kind::StringUnterminated => {
+                Some((Kind::String, "Unterminated string (missing trailing '\"')"))
+            }
             Kind::HexEmpty => Some((Kind::Hex, "Missing digits after hexidecimal prefix.")),
             _ => None,
         } {
-            let range = self.nth_range(LOOKAHEAD_MAX);
-            self.errors.push(SyntaxError {
+            let mut range = self.nth_range(LOOKAHEAD_MAX);
+            // for unterminated string, error only points to opening "
+            if replace_kind == Kind::String {
+                range.end = range.start + 1;
+            }
+            self.sink.error(SyntaxError {
                 range,
                 message: error.into(),
             });
@@ -394,15 +395,6 @@ impl DebugSink {
     }
 
     pub fn print_errs(&self, input: &str) -> String {
-        use std::fmt::Write;
-
-        fn decimal_digits(n: usize) -> usize {
-            (n as f64).log10().floor() as usize + 1
-        }
-
-        static SPACES: &str = "                                                                                                                                                                                    ";
-
-        static CARETS: &str = "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
         let total_lines = input.lines().count();
         let max_line_digit_width = decimal_digits(total_lines);
         let mut result = String::new();
@@ -411,58 +403,33 @@ impl DebugSink {
         let mut lines = iter_lines_including_breaks(input);
         let mut current_line = lines.next().unwrap_or("");
         for err in self.errors() {
-            //eprintln!("{}: '{}' ({})", pos, current_line, current_line.len());
-            while err.range.start > pos + current_line.len() {
+            while err.range.start >= pos + current_line.len() {
                 pos += current_line.len();
                 current_line = lines.next().unwrap();
                 line_n += 1;
             }
-
-            let line_ws = current_line
-                .bytes()
-                .take_while(u8::is_ascii_whitespace)
-                .count();
-            let padding = max_line_digit_width - decimal_digits(line_n);
-            writeln!(
+            write_line_error(
                 &mut result,
-                "\n{}{} | {}",
-                &SPACES[..padding],
+                pos,
+                current_line,
                 line_n,
-                current_line.trim_end()
-            )
-            .unwrap();
-            let n_spaces = err.range.start - pos;
-            // use the whitespace at the front of the line first, so that
-            // we don't replace tabs with spaces
-            let reuse_ws = n_spaces.min(line_ws);
-            let extra_ws = n_spaces - reuse_ws;
-            let n_carets = err.range.end - err.range.start;
-            writeln!(
-                &mut result,
-                "{} | {}{}{} {}",
-                &SPACES[..max_line_digit_width],
-                &current_line[..reuse_ws],
-                &SPACES[..extra_ws],
-                &CARETS[..n_carets],
-                err.message
-            )
-            .unwrap();
+                MAX_PRINT_WIDTH,
+                &err,
+                max_line_digit_width,
+            );
         }
         result
     }
 
     pub fn simple_parse_tree(&self, input: &str) -> String {
-        use std::fmt::Write;
-
         let mut f = String::new();
         let mut pos = 0;
         let mut indent = 0;
         let mut node_stack = Vec::new();
-        static WS: &str = "                                                                                                                        ";
         for event in &self.0 {
             match event {
                 Event::Start(kind) => {
-                    writeln!(&mut f, "{}START {}", &WS[..indent], kind).unwrap();
+                    writeln!(&mut f, "{}START {}", &SPACES[..indent], kind).unwrap();
                     node_stack.push(kind);
                     indent += 2;
                 }
@@ -471,25 +438,96 @@ impl DebugSink {
                         writeln!(
                             &mut f,
                             "{}{}({})",
-                            &WS[..indent],
+                            &SPACES[..indent],
                             kind,
                             &input[pos..pos + len].escape_debug()
                         )
                         .unwrap();
                     } else {
-                        writeln!(&mut f, "{}{}", &WS[..indent], kind).unwrap();
+                        writeln!(&mut f, "{}{}", &SPACES[..indent], kind).unwrap();
                     }
                     pos += len;
                 }
                 Event::Finish => {
                     indent -= 2;
-                    writeln!(&mut f, "{}END {}", &WS[..indent], node_stack.pop().unwrap()).unwrap();
+                    writeln!(
+                        &mut f,
+                        "{}END {}",
+                        &SPACES[..indent],
+                        node_stack.pop().unwrap()
+                    )
+                    .unwrap();
                 }
                 Event::Error(_) => (),
             }
         }
         f
     }
+}
+
+static SPACES: &str = "                                                                                                                                                                                    ";
+
+static CARETS: &str = "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
+
+//FIXME: get from terminal?
+const MAX_PRINT_WIDTH: usize = 100;
+fn decimal_digits(n: usize) -> usize {
+    (n as f64).log10().floor() as usize + 1
+}
+
+fn write_line_error(
+    writer: &mut impl Write,
+    line_start: usize, // relative to the start of the document
+    text: &str,
+    line_n: usize,
+    line_width: usize,
+    err: &SyntaxError,
+    max_digits: usize,
+) {
+    let err_start = err.range.start - line_start;
+
+    // if a line is really long, we clip it
+    let trim_start = if text.len() > line_width {
+        const SLOP: usize = 10; // buffer before start of error when clipping
+        let max_trim = (text.len()) - line_width;
+        err_start.saturating_sub(SLOP).min(max_trim)
+    } else {
+        0
+    };
+
+    let trim_end = (text.len() - trim_start).saturating_sub(line_width);
+    let text = &text[trim_start..text.len() - trim_end];
+    let ellipsis = if trim_start == 0 { "" } else { "..." };
+
+    let line_ws = text.bytes().take_while(u8::is_ascii_whitespace).count();
+    let padding = max_digits - decimal_digits(line_n);
+    writeln!(
+        writer,
+        "\n{}{} | {}{}",
+        &SPACES[..padding],
+        line_n,
+        ellipsis,
+        text.trim_end()
+    )
+    .unwrap();
+    let n_spaces = (err.range.start - line_start) - trim_start;
+    // use the whitespace at the front of the line first, so that
+    // we don't replace tabs with spaces
+    let reuse_ws = n_spaces.min(line_ws);
+    let extra_ws = n_spaces - reuse_ws;
+    //let ellipsis = if
+    let n_carets = err.range.end - err.range.start;
+    writeln!(
+        writer,
+        "{} | {}{}{}{} {}",
+        &SPACES[..max_digits],
+        &text[..reuse_ws],
+        &SPACES[..extra_ws],
+        &SPACES[..ellipsis.len()],
+        &CARETS[..n_carets],
+        err.message
+    )
+    .unwrap();
 }
 
 // we can't use str::lines because it strips newline chars and we need them
