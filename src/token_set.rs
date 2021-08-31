@@ -85,7 +85,7 @@ impl TokenSet {
         Kind::ParametersKw,
     ]));
 
-    pub(crate) const RSQUARE: TokenSet = TokenSet::new(&[Kind::RSquare]);
+    //pub(crate) const RSQUARE: TokenSet = TokenSet::new(&[Kind::RSquare]);
     //pub(crate) const SEMI: TokenSet = TokenSet::new(&[Kind::Semi]);
 
     pub(crate) const fn new(kinds: &[Kind]) -> TokenSet {
@@ -100,6 +100,11 @@ impl TokenSet {
 
     pub(crate) const fn union(self, other: TokenSet) -> TokenSet {
         TokenSet(self.0 | other.0)
+    }
+
+    pub(crate) fn add(self, token: Kind) -> TokenSet {
+        assert!((token as u16) < 128);
+        TokenSet(self.0 | mask(token))
     }
 
     pub(crate) const fn contains(&self, kind: Kind) -> bool {

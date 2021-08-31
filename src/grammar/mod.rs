@@ -2,6 +2,7 @@ use crate::parse::Parser;
 use crate::token::Kind;
 use crate::token_set::TokenSet;
 
+mod feature;
 mod glyph;
 mod gpos;
 mod gsub;
@@ -33,7 +34,7 @@ fn top_level_element(parser: &mut Parser) {
     } else if parser.matches(0, Kind::LanguagesystemKw) {
         language_system(parser)
     } else if parser.matches(0, Kind::FeatureKw) {
-        feature(parser)
+        feature::feature(parser)
     } else if parser.matches(0, Kind::MarkClassKw) {
         mark_class(parser)
     } else if parser.matches(0, Kind::AnchorDefKw) {
@@ -41,7 +42,7 @@ fn top_level_element(parser: &mut Parser) {
     } else if parser.matches(0, Kind::AnonKw) {
         anonymous(parser)
     } else if parser.matches(0, Kind::NamedGlyphClass) {
-        named_glyph_class_decl(parser)
+        glyph::named_glyph_class_decl(parser, TokenSet::TOP_LEVEL)
     } else {
         parser.err_and_bump(format!(
             "Unexpected token '{}', expected global keyword.",
@@ -94,32 +95,6 @@ fn include(parser: &mut Parser) {
 
     parser.start_node(Kind::IncludeKw);
     include_body(parser);
-    parser.finish_node();
-}
-
-// @class = @class;
-// @class = [a b c];
-// @class = [a-z A - Z];
-// @class = [\1-\40 \45 - \50]
-fn named_glyph_class_decl(parser: &mut Parser) {
-    fn glyph_class_body(parser: &mut Parser) {
-        assert!(parser.expect(Kind::NamedGlyphClass));
-        if !parser.eat(Kind::Eq) {
-            return advance_to_top_level(parser);
-        }
-
-        if parser.eat(Kind::NamedGlyphClass) {
-            parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
-        } else if !parser.matches(0, Kind::LSquare) {
-            parser.err_recover("Expected named glyph class or '['.", TokenSet::TOP_LEVEL);
-        } else {
-            glyph::eat_glyph_class_list(parser, TokenSet::EMPTY);
-        }
-    }
-
-    parser.start_node(Kind::NamedGlyphClass);
-    glyph_class_body(parser);
-    parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
     parser.finish_node();
 }
 
@@ -180,7 +155,7 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
                 parser.expect_recover(Kind::Semi, recovery);
             }
             Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
-                pos_or_sub_rule(parser, recovery)
+                feature::pos_or_sub_rule(parser, recovery)
             }
             _ => (),
         }
@@ -248,88 +223,6 @@ fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
     }
 }
 
-fn feature(parser: &mut Parser) {
-    fn feature_body_item(parser: &mut Parser) -> bool {
-        let start_pos = parser.nth_range(0).start;
-        match parser.nth(0).kind {
-            Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
-                pos_or_sub_rule(parser, TokenSet::FEATURE_BODY_ITEM)
-            }
-            Kind::NamedGlyphClass => named_glyph_class_decl(parser),
-            Kind::MarkClassKw => mark_class(parser),
-            Kind::ParametersKw => metrics::parameters(parser, TokenSet::FEATURE_BODY_ITEM),
-            Kind::SubtableKw => {
-                parser.eat_raw();
-                parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
-            }
-            Kind::LookupKw => lookup_block_or_reference(parser, TokenSet::FEATURE_BODY_ITEM),
-            Kind::LookupflagKw => lookupflag(parser, TokenSet::FEATURE_BODY_ITEM),
-            Kind::ScriptKw => {
-                eat_script(parser, TokenSet::FEATURE_BODY_ITEM);
-            }
-            Kind::LanguageKw => {
-                parser.eat_trivia();
-                parser.start_node(Kind::LanguageKw);
-                parser.eat_raw();
-                parser.expect_tag(TokenSet::FEATURE_BODY_ITEM.union(Kind::Semi.into()));
-                parser.eat(Kind::ExcludeDfltKw);
-                parser.eat(Kind::IncludeDfltKw);
-                parser.eat(Kind::RequiredKw);
-                parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
-                parser.finish_node();
-            }
-            Kind::FeatureKw => {
-                // aalt only
-                if parser.matches(1, TokenSet::IDENT_LIKE) && parser.matches(2, Kind::Semi) {
-                    assert!(parser.eat(Kind::FeatureKw));
-                    parser.expect_tag(TokenSet::EMPTY);
-                    assert!(parser.eat(Kind::Semi));
-                }
-            }
-            _ => (),
-        }
-        parser.nth_range(0).start != start_pos
-    }
-
-    fn feature_body(parser: &mut Parser) {
-        assert!(parser.eat(Kind::FeatureKw));
-        // if there's a tag, stash the range
-        // keywords that could be valid tags
-        const KEYWORD_TAGS: TokenSet = TokenSet::new(&[
-            Kind::MarkKw,
-            Kind::AnonKw,
-            Kind::ByKw,
-            Kind::FromKw,
-            Kind::PosKw,
-            Kind::RsubKw,
-        ]);
-        let tag_kind = if parser.matches(0, KEYWORD_TAGS) && parser.nth_raw(0).len() <= 4 {
-            parser.nth(0).kind
-        } else {
-            Kind::Ident
-        };
-
-        parser.expect_remap_recover(
-            tag_kind,
-            Kind::Ident,
-            TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]),
-        );
-        parser.eat(Kind::UseExtensionKw);
-        parser.expect(Kind::LBrace);
-        while feature_body_item(parser) {
-            continue;
-        }
-        parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
-        parser.expect_remap_recover(tag_kind, Kind::Ident, TokenSet::TOP_LEVEL);
-        parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
-    }
-
-    parser.eat_trivia();
-    parser.start_node(Kind::FeatureKw);
-    feature_body(parser);
-    parser.finish_node();
-}
-
 fn eat_script(parser: &mut Parser, recovery: TokenSet) -> bool {
     if !parser.matches(0, Kind::ScriptKw) {
         return false;
@@ -343,20 +236,20 @@ fn eat_script(parser: &mut Parser, recovery: TokenSet) -> bool {
     true
 }
 
-fn pos_or_sub_rule(parser: &mut Parser, recovery: TokenSet) {
-    match parser.nth(0).kind {
-        Kind::PosKw => gpos::gpos(parser, recovery),
-        Kind::EnumKw if parser.nth(1).kind == Kind::PosKw => gpos::gpos(parser, recovery),
-        Kind::EnumKw => parser.err_and_bump("'enum' keyword must be followed by position rule"),
-        Kind::IgnoreKw => match parser.nth(1).kind {
-            Kind::PosKw => gpos::gpos(parser, recovery),
-            Kind::SubKw => gsub::gsub(parser, recovery),
-            _ => parser
-                .err_and_bump("'ignore' keyword must be followed by position or substitution rule"),
-        },
-        Kind::SubKw | Kind::RsubKw => gsub::gsub(parser, recovery),
-        other => panic!("'{}' is not a valid gpos or gsub token", other),
+fn eat_language(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if !parser.matches(0, Kind::LanguageKw) {
+        return false;
     }
+    parser.eat_trivia();
+    parser.start_node(Kind::LanguageKw);
+    parser.eat_raw();
+    parser.expect_tag(recovery.union(Kind::Semi.into()));
+    parser.eat(Kind::ExcludeDfltKw);
+    parser.eat(Kind::IncludeDfltKw);
+    parser.eat(Kind::RequiredKw);
+    parser.expect_recover(Kind::Semi, recovery);
+    parser.finish_node();
+    true
 }
 
 // markClass <glyph|glyphclass> <anchor> <mark glyph class name>;
@@ -548,48 +441,6 @@ END FILE
 ";
 
         crate::assert_eq_str!(out.to_string(), exp);
-    }
-
-    #[test]
-    fn glyph_class_alias() {
-        let input = "@name = [a b d - z \\1-\\5 @hi];";
-        let out = debug_parse_output(input, |parser| named_glyph_class_decl(parser));
-        crate::assert_eq_str!(
-            out.to_string(),
-            "\
-START @GlyphClass
-  0..5 @GlyphClass
-  5..6 WS
-  6..7 =
-  7..8 WS
-  START GlyphClass
-    8..9 [
-    9..10 GlyphName
-    10..11 WS
-    11..12 GlyphName
-    12..13 WS
-    START GlyphRange
-      13..14 GlyphName
-      14..15 WS
-      15..16 -
-      16..17 WS
-      17..18 GlyphName
-    END GlyphRange
-    18..19 WS
-    START GlyphRange
-      19..21 CID
-      21..22 -
-      22..24 CID
-    END GlyphRange
-    24..25 WS
-    25..28 @GlyphClass
-    28..29 ]
-  END GlyphClass
-  29..30 ;
-END @GlyphClass
-"
-        );
-        assert!(out.errors().is_empty());
     }
 
     #[test]

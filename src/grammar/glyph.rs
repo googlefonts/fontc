@@ -2,6 +2,40 @@ use crate::parse::Parser;
 use crate::token::Kind;
 use crate::token_set::TokenSet;
 
+// @class = @class;
+// @class = [a b c];
+// @class = [a-z A - Z];
+// @class = [\1-\40 \45 - \50];
+pub(crate) fn named_glyph_class_decl(parser: &mut Parser, recovery: TokenSet) {
+    fn glyph_class_body(parser: &mut Parser, recovery: TokenSet) {
+        assert!(parser.expect(Kind::NamedGlyphClass));
+        parser.expect_recover(
+            Kind::Eq,
+            recovery.union(TokenSet::new(&[
+                Kind::NamedGlyphClass,
+                Kind::LBrace,
+                Kind::Semi,
+            ])),
+        );
+
+        if parser.eat(Kind::NamedGlyphClass) {
+            // noop
+        } else if !parser.matches(0, Kind::LSquare) {
+            parser.err_recover(
+                "Expected named glyph class or '['.",
+                recovery.add(Kind::Semi),
+            );
+        } else {
+            eat_glyph_class_list(parser, recovery);
+        }
+    }
+
+    parser.start_node(Kind::NamedGlyphClass);
+    glyph_class_body(parser, recovery);
+    parser.expect_recover(Kind::Semi, recovery);
+    parser.finish_node();
+}
+
 // B @class [a b]
 pub(crate) fn eat_glyph_or_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
     parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName)
@@ -47,10 +81,10 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) {
     if looks_like_range {
         parser.eat_trivia();
         parser.start_node(Kind::GlyphRange);
-        glyph_range(parser, TokenSet::RSQUARE.union(recovery));
+        glyph_range(parser, recovery.add(Kind::RSquare));
         parser.finish_node();
     } else {
-        expect_glyph_name_like(parser, TokenSet::RSQUARE.union(recovery));
+        expect_glyph_name_like(parser, recovery.add(Kind::RSquare));
     }
 }
 
@@ -113,5 +147,49 @@ END GlyphClass
 ",
             out.simple_parse_tree(fea),
         );
+    }
+
+    #[test]
+    fn glyph_class_alias() {
+        let input = "@name = [a b d - z \\1-\\5 @hi];";
+        let out = debug_parse_output(input, |parser| {
+            named_glyph_class_decl(parser, TokenSet::EMPTY)
+        });
+        crate::assert_eq_str!(
+            out.to_string(),
+            "\
+START @GlyphClass
+  0..5 @GlyphClass
+  5..6 WS
+  6..7 =
+  7..8 WS
+  START GlyphClass
+    8..9 [
+    9..10 GlyphName
+    10..11 WS
+    11..12 GlyphName
+    12..13 WS
+    START GlyphRange
+      13..14 GlyphName
+      14..15 WS
+      15..16 -
+      16..17 WS
+      17..18 GlyphName
+    END GlyphRange
+    18..19 WS
+    START GlyphRange
+      19..21 CID
+      21..22 -
+      22..24 CID
+    END GlyphRange
+    24..25 WS
+    25..28 @GlyphClass
+    28..29 ]
+  END GlyphClass
+  29..30 ;
+END @GlyphClass
+"
+        );
+        assert!(out.errors().is_empty());
     }
 }
