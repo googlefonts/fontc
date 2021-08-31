@@ -8,7 +8,8 @@ mod gsub;
 mod metrics;
 mod table;
 
-pub(crate) fn root(parser: &mut Parser) {
+/// Entry point for parsing a FEA file.
+pub fn root(parser: &mut Parser) {
     parser.start_node(Kind::SourceFile);
     while !parser.at_eof() {
         top_level_element(parser);

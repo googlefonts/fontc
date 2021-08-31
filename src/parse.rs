@@ -10,7 +10,7 @@ use crate::token_set::TokenSet;
 const LOOKAHEAD: usize = 4;
 const LOOKAHEAD_MAX: usize = LOOKAHEAD - 1;
 
-pub(crate) struct Parser<'a> {
+pub struct Parser<'a> {
     lexer: Lexer<'a>,
     sink: &'a mut dyn TreeSink,
     text: &'a str,
@@ -34,7 +34,7 @@ struct PendingToken {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SyntaxError {
+pub struct SyntaxError {
     pub(crate) message: String,
     range: Range<usize>,
 }
@@ -49,7 +49,7 @@ impl PendingToken {
 }
 
 impl<'a> Parser<'a> {
-    pub(crate) fn new(text: &'a str, sink: &'a mut dyn TreeSink) -> Self {
+    pub fn new(text: &'a str, sink: &'a mut dyn TreeSink) -> Self {
         let mut this = Parser {
             lexer: Lexer::new(text),
             sink,
@@ -324,7 +324,7 @@ impl TokenComparable for TokenSet {
 
 // taken from rust-analzyer
 /// `TreeSink` abstracts details of a particular syntax tree implementation.
-pub(crate) trait TreeSink {
+pub trait TreeSink {
     /// Adds new token to the current branch.
     fn token(&mut self, kind: Kind, len: usize);
 
@@ -349,7 +349,7 @@ enum Event {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct DebugSink(Vec<Event>);
+pub struct DebugSink(Vec<Event>);
 
 impl DebugSink {
     pub(crate) fn errors(&self) -> Vec<SyntaxError> {
@@ -362,7 +362,7 @@ impl DebugSink {
             .collect()
     }
 
-    pub(crate) fn print_errs(&self, input: &str) -> String {
+    pub fn print_errs(&self, input: &str) -> String {
         use std::fmt::Write;
 
         fn decimal_digits(n: usize) -> usize {
@@ -420,7 +420,7 @@ impl DebugSink {
         result
     }
 
-    pub(crate) fn simple_parse_tree(&self, input: &str) -> String {
+    pub fn simple_parse_tree(&self, input: &str) -> String {
         use std::fmt::Write;
 
         let mut f = String::new();

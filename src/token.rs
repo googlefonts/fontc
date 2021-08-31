@@ -11,9 +11,10 @@ impl Token {
     };
 }
 
+/// Kinds of tokens assigned during lexing and parsing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u16)]
-pub(crate) enum Kind {
+pub enum Kind {
     Tombstone,  // a placeholder value
     Eof,        // the end of the input stream
     SourceFile, // scope of a file

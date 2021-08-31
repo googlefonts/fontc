@@ -1,3 +1,5 @@
+//! Attempt to parse input, reporting errors.
+
 use std::{
     env,
     ffi::OsStr,
@@ -5,14 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-mod grammar;
-mod lexer;
-mod parse;
-mod pretty_diff;
-mod token;
-mod token_set;
-
-use parse::{DebugSink, Parser};
+use feature_parsing::{DebugSink, Parser};
 
 /// Attempt to parse fea files.
 ///
@@ -74,7 +69,7 @@ fn try_parse_file(path: &Path) -> (String, String) {
     let contents = fs::read_to_string(path).expect("file read failed");
     let mut sink = DebugSink::default();
     let mut parser = Parser::new(&contents, &mut sink);
-    grammar::root(&mut parser);
+    feature_parsing::root(&mut parser);
     (
         sink.simple_parse_tree(&contents),
         sink.print_errs(&contents),
