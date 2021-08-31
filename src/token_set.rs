@@ -70,6 +70,8 @@ impl TokenSet {
         Kind::LocationKw,
         Kind::ElidableAxisValueNameKw,
         Kind::OlderSiblingFontAttributeKw,
+        Kind::FeatureNamesKw,
+        Kind::NameKw,
     ]);
 
     /// Top level items + semi

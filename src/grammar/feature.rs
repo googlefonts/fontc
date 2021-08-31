@@ -43,6 +43,8 @@ pub(crate) fn feature(parser: &mut Parser) {
                 parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
                 parser.finish_node();
             }
+            Kind::FeatureNamesKw => feature_names(parser, TokenSet::FEATURE_BODY_ITEM),
+
             _ => (),
         }
         parser.nth_range(0).start != start_pos
@@ -101,4 +103,27 @@ pub(crate) fn pos_or_sub_rule(parser: &mut Parser, recovery: TokenSet) {
         Kind::SubKw | Kind::RsubKw => gsub::gsub(parser, recovery),
         other => panic!("'{}' is not a valid gpos or gsub token", other),
     }
+}
+
+fn feature_names(parser: &mut Parser, recovery: TokenSet) {
+    let name_recovery = recovery.union(TokenSet::new(&[Kind::NameKw, Kind::RBrace, Kind::Semi]));
+
+    fn name_entry(parser: &mut Parser, recovery: TokenSet) {
+        if parser.expect(Kind::NameKw) {
+            metrics::expect_name_record(parser, recovery);
+        } else {
+            parser.eat_until(recovery);
+        }
+        parser.expect_recover(Kind::Semi, recovery);
+    }
+
+    parser.start_node(Kind::FeatureNamesKw);
+    assert!(parser.eat(Kind::FeatureNamesKw));
+    parser.expect_recover(Kind::LBrace, name_recovery);
+    while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
+        name_entry(parser, name_recovery);
+    }
+    parser.expect_recover(Kind::RBrace, name_recovery);
+    parser.expect_recover(Kind::Semi, name_recovery);
+    parser.finish_node();
 }

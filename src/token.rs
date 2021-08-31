@@ -15,10 +15,7 @@ impl Token {
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u16)]
 pub enum Kind {
-    Tombstone,  // a placeholder value
-    Eof,        // the end of the input stream
-    SourceFile, // scope of a file
-
+    Eof, // the end of the input stream
     // a name or a keyword or any other block of non-whitespace.
     // we will frequently have to disambiguate this based on context.
     Ident,
@@ -139,6 +136,24 @@ pub enum Kind {
     ElidableAxisValueNameKw,     //STAT table
     OlderSiblingFontAttributeKw, //STAT table
 
+    // not technically a keyword but we lex and treat contextually:
+    FeatureNamesKw, // ss01-ss20
+    NameKw,         // ss01-ss20
+
+    // ### IMPORTANT ###
+    //
+    // ALL LEXED TOKENS MUST BE ABOVE THIS MARK
+    //
+    // TokenSet uses a u128 bitmask to represent tokens. This means we
+    // can only represent 128 discrete tokens during lexing.
+    //
+    // As a sanity check, we keep a test that ensures Tombstone's raw value is
+    // <= 128. as values are assigned in order, this ensures (assuming Tombstone
+    // is ordered after all lexed tokens) that lexed tokens are in the
+    // allowed range.
+    Tombstone,  // a placeholder value
+    SourceFile, // scope of a file
+
     // not technically keywords and not lexed, but assigned during parsing
     // in gsub/gpos:
     LigatureKw,
@@ -152,15 +167,6 @@ pub enum Kind {
     Path,
     GlyphName,
     GlyphClass,
-
-    // keywords:
-    // keywords only in special context, not lexed
-    //HorizAxisBaseScriptList,
-    //HorizAxisBaseTagList,
-    //HorizAxisMinMax,
-    //VertAxisBaseScriptList,
-    //VertAxisBaseTagList,
-    //VertAxisMinMax,
 
     // general purpose table node
     TableEntryNode,
@@ -279,6 +285,8 @@ impl Kind {
             b"location" => Some(Kind::LocationKw),
             b"ElidableAxisValueName" => Some(Kind::ElidableAxisValueNameKw),
             b"OlderSiblingFontAttribute" => Some(Kind::OlderSiblingFontAttributeKw),
+            b"featureNames" => Some(Kind::FeatureNamesKw),
+            b"name" => Some(Kind::NameKw),
             _ => None,
         }
     }
@@ -408,6 +416,9 @@ impl std::fmt::Display for Kind {
             Self::ElidableAxisValueNameKw => write!(f, "ElidableAxisValueName"),
             Self::OlderSiblingFontAttributeKw => write!(f, "OlderSiblingFontAttribute"),
 
+            Self::FeatureNamesKw => write!(f, "FeatureNamesKw"),
+            Self::NameKw => write!(f, "NameKw"),
+
             Self::LigatureKw => write!(f, "LigatureKw"),
             Self::BaseKw => write!(f, "BaseKw"),
 
@@ -430,10 +441,6 @@ mod tests {
     /// 128 is the max size of our TokenSet.
     #[test]
     fn max_lexed_token_discriminent() {
-        assert!(
-            (Kind::OlderSiblingFontAttributeKw as u16) < 127,
-            "{}",
-            Kind::OlderSiblingFontAttributeKw as u16
-        );
+        assert!((Kind::Tombstone as u16) < 128, "{}", Kind::Tombstone as u16);
     }
 }
