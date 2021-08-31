@@ -136,9 +136,19 @@ pub enum Kind {
     ElidableAxisValueNameKw,     //STAT table
     OlderSiblingFontAttributeKw, //STAT table
 
+    //FIXME: we could assign multiple keywords to a single kind, like 'CvKeyword',
+    //and then just check the raw values? this would still let us use bitsets
+    //but without needing a distinct member for each keyword...
+    //
     // not technically a keyword but we lex and treat contextually:
-    FeatureNamesKw, // ss01-ss20
-    NameKw,         // ss01-ss20
+    FeatureNamesKw,            // ss01-ss20
+    NameKw,                    // ss01-ss20
+    CvParametersKw,            // cv01-cv99
+    FeatUiLabelNameIdKw,       // cv01-cv99
+    FeatUiTooltipTextNameIdKw, // cv01-cv99
+    SampleTextNameIdKw,        // cv01-cv99
+    ParamUiLabelNameIdKw,      // cv01-cv99
+    CharacterKw,               // cv01-cv99
 
     // ### IMPORTANT ###
     //
@@ -287,6 +297,12 @@ impl Kind {
             b"OlderSiblingFontAttribute" => Some(Kind::OlderSiblingFontAttributeKw),
             b"featureNames" => Some(Kind::FeatureNamesKw),
             b"name" => Some(Kind::NameKw),
+            b"cvParameters" => Some(Kind::CvParametersKw),
+            b"Character" => Some(Kind::CharacterKw),
+            b"FeatUILabelNameID" => Some(Kind::FeatUiLabelNameIdKw),
+            b"FeatUITooltipTextNameID" => Some(Kind::FeatUiTooltipTextNameIdKw),
+            b"SampleTextNameID" => Some(Kind::SampleTextNameIdKw),
+            b"ParamUILabelNameID" => Some(Kind::ParamUiLabelNameIdKw),
             _ => None,
         }
     }
@@ -309,7 +325,6 @@ impl std::fmt::Display for Kind {
             Self::Whitespace => write!(f, "WS"),
             Self::Semi => write!(f, ";"),
             Self::Comma => write!(f, ","),
-            //Self::At => write!(f, "@"),
             Self::Backslash => write!(f, "\\"),
             Self::Hyphen => write!(f, "-"), // also minus
             Self::Eq => write!(f, "="),
@@ -366,7 +381,6 @@ impl std::fmt::Display for Kind {
             Self::RequiredKw => write!(f, "RequiredKw"),
             Self::RightToLeftKw => write!(f, "RightToLeftKw"),
             Self::RsubKw => write!(f, "RsubKw"),
-            //Self::ReversesubKw => write!(f, "ReversesubKw"),
             Self::ScriptKw => write!(f, "ScriptKw"),
             Self::SubKw => write!(f, "SubKw"),
             Self::SubtableKw => write!(f, "SubtableKw"),
@@ -418,6 +432,12 @@ impl std::fmt::Display for Kind {
 
             Self::FeatureNamesKw => write!(f, "FeatureNamesKw"),
             Self::NameKw => write!(f, "NameKw"),
+            Self::CvParametersKw => write!(f, "CvParametersKw"),
+            Self::FeatUiLabelNameIdKw => write!(f, "FeatUiLabelNameIdKw"),
+            Self::FeatUiTooltipTextNameIdKw => write!(f, "FeatUiTooltipTextNameIdKw"),
+            Self::SampleTextNameIdKw => write!(f, "SampleTextNameId"),
+            Self::ParamUiLabelNameIdKw => write!(f, "ParamUiLabelNameId"),
+            Self::CharacterKw => write!(f, "CharacterKw"),
 
             Self::LigatureKw => write!(f, "LigatureKw"),
             Self::BaseKw => write!(f, "BaseKw"),

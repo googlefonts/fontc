@@ -43,6 +43,7 @@ pub(crate) fn feature(parser: &mut Parser) {
                 parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
                 parser.finish_node();
             }
+            Kind::CvParametersKw => cv_parameters(parser, TokenSet::FEATURE_BODY_ITEM),
             Kind::FeatureNamesKw => feature_names(parser, TokenSet::FEATURE_BODY_ITEM),
 
             _ => (),
@@ -104,26 +105,67 @@ pub(crate) fn pos_or_sub_rule(parser: &mut Parser, recovery: TokenSet) {
         other => panic!("'{}' is not a valid gpos or gsub token", other),
     }
 }
+fn name_entry(parser: &mut Parser, recovery: TokenSet) {
+    if parser.expect(Kind::NameKw) {
+        metrics::expect_name_record(parser, recovery);
+    } else {
+        parser.eat_until(recovery);
+    }
+    parser.expect_recover(Kind::Semi, recovery);
+}
 
 fn feature_names(parser: &mut Parser, recovery: TokenSet) {
     let name_recovery = recovery.union(TokenSet::new(&[Kind::NameKw, Kind::RBrace, Kind::Semi]));
 
-    fn name_entry(parser: &mut Parser, recovery: TokenSet) {
-        if parser.expect(Kind::NameKw) {
-            metrics::expect_name_record(parser, recovery);
-        } else {
-            parser.eat_until(recovery);
-        }
-        parser.expect_recover(Kind::Semi, recovery);
-    }
-
     parser.start_node(Kind::FeatureNamesKw);
     assert!(parser.eat(Kind::FeatureNamesKw));
     parser.expect_recover(Kind::LBrace, name_recovery);
-    while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
+    while !parser.at_eof() && !parser.matches(0, recovery.add(Kind::RBrace)) {
         name_entry(parser, name_recovery);
     }
     parser.expect_recover(Kind::RBrace, name_recovery);
     parser.expect_recover(Kind::Semi, name_recovery);
+    parser.finish_node();
+}
+
+fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
+    const UNICODE_VALUE: TokenSet = TokenSet::new(&[Kind::Number, Kind::Hex]);
+    const PARAM_KEYWORDS: TokenSet = TokenSet::new(&[
+        Kind::FeatUiLabelNameIdKw,
+        Kind::FeatUiTooltipTextNameIdKw,
+        Kind::SampleTextNameIdKw,
+        Kind::ParamUiLabelNameIdKw,
+        Kind::CharacterKw,
+    ]);
+
+    fn entry(parser: &mut Parser, recovery: TokenSet) {
+        if parser.eat(Kind::CharacterKw) {
+            parser.expect_recover(UNICODE_VALUE, recovery);
+            parser.expect_recover(Kind::Semi, recovery);
+        } else if parser.matches(0, PARAM_KEYWORDS) {
+            parser.start_node(parser.nth(0).kind);
+            assert!(parser.eat(PARAM_KEYWORDS));
+            parser.expect_recover(Kind::LBrace, recovery.add(Kind::NameKw));
+            while !parser.at_eof() && !parser.matches(0, recovery) {
+                name_entry(parser, recovery.add(Kind::NameKw));
+            }
+            parser.expect_recover(Kind::RBrace, recovery);
+            parser.expect_recover(Kind::Semi, recovery);
+            parser.finish_node();
+        }
+    }
+
+    let entry_recovery = recovery
+        .union(PARAM_KEYWORDS)
+        .union(TokenSet::new(&[Kind::RBrace, Kind::Semi]));
+
+    parser.start_node(Kind::CvParametersKw);
+    assert!(parser.eat(Kind::CvParametersKw));
+    parser.expect_recover(Kind::LBrace, entry_recovery);
+    while !parser.at_eof() && !parser.matches(0, recovery.add(Kind::RBrace)) {
+        entry(parser, entry_recovery);
+    }
+    parser.expect_recover(Kind::RBrace, entry_recovery);
+    parser.expect_recover(Kind::Semi, entry_recovery);
     parser.finish_node();
 }
