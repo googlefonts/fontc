@@ -36,6 +36,13 @@ pub(crate) fn feature(parser: &mut Parser) {
                     assert!(parser.eat(Kind::Semi));
                 }
             }
+            Kind::SizemenunameKw => {
+                parser.start_node(Kind::SizemenunameKw);
+                assert!(parser.eat(Kind::SizemenunameKw));
+                metrics::expect_name_record(parser, TokenSet::FEATURE_BODY_ITEM);
+                parser.expect_recover(Kind::Semi, TokenSet::FEATURE_BODY_ITEM);
+                parser.finish_node();
+            }
             _ => (),
         }
         parser.nth_range(0).start != start_pos
