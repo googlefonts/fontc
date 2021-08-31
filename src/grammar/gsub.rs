@@ -47,7 +47,7 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
                 }
             }
         }
-        parser.expect_recover(Kind::Semi, recovery);
+        parser.expect_semi();
 
         // else this should be a chain rule?
     }

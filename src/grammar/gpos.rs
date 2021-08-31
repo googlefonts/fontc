@@ -33,7 +33,6 @@ pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
         } else {
             gpos_single_pair_or_chain(parser, recovery);
         }
-        //parser.expect_recover(Kind::Semi, recovery);
     }
 
     parser.start_node(Kind::GposNode);
@@ -46,7 +45,7 @@ fn gpos_cursive(parser: &mut Parser, recovery: TokenSet) {
     glyph::eat_glyph_or_glyph_class(parser, recovery.union(Kind::LAngle.into()));
     metrics::anchor(parser, recovery.union(Kind::LAngle.into()));
     metrics::anchor(parser, recovery);
-    parser.expect_recover(Kind::Semi, recovery);
+    parser.expect_semi();
 }
 
 fn gpos_mark_to_mark(parser: &mut Parser, recovery: TokenSet) {
@@ -69,7 +68,7 @@ fn gpos_mark_to_(parser: &mut Parser, recovery: TokenSet) {
     while anchor_mark(parser, recovery) {
         continue;
     }
-    parser.expect_recover(Kind::Semi, recovery);
+    parser.expect_semi();
 }
 
 fn gpos_ligature(parser: &mut Parser, recovery: TokenSet) {
@@ -88,7 +87,7 @@ fn gpos_ligature(parser: &mut Parser, recovery: TokenSet) {
             continue;
         }
     }
-    parser.expect_recover(Kind::Semi, recovery);
+    parser.expect_semi();
 }
 
 // single:
@@ -120,13 +119,13 @@ fn gpos_single_pair_or_chain(parser: &mut Parser, recovery: TokenSet) {
         // pair type A
         glyph::eat_glyph_or_glyph_class(parser, recovery);
         metrics::eat_value_record(parser, recovery);
-        parser.expect_recover(Kind::Semi, recovery);
+        parser.expect_semi();
         return;
     }
     if glyph::eat_glyph_or_glyph_class(parser, recovery.union(RECOVERY)) {
         // pair type B
         if metrics::eat_value_record(parser, recovery) {
-            parser.expect_recover(Kind::Semi, recovery);
+            parser.expect_semi();
             return;
         }
     }
@@ -139,7 +138,7 @@ fn gpos_single_pair_or_chain(parser: &mut Parser, recovery: TokenSet) {
     if metrics::eat_value_record(parser, recovery.union(Kind::Semi.into())) {
         eat_chain_element(parser, recovery.union(Kind::Semi.into()));
     }
-    parser.expect_recover(Kind::Semi, recovery);
+    parser.expect_semi();
 }
 
 fn eat_chain_element(parser: &mut Parser, recovery: TokenSet) -> bool {

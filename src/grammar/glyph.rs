@@ -32,7 +32,7 @@ pub(crate) fn named_glyph_class_decl(parser: &mut Parser, recovery: TokenSet) {
 
     parser.start_node(Kind::NamedGlyphClass);
     glyph_class_body(parser, recovery);
-    parser.expect_recover(Kind::Semi, recovery);
+    parser.expect_semi();
     parser.finish_node();
 }
 

@@ -246,6 +246,17 @@ impl<'a> Parser<'a> {
         false
     }
 
+    /// semi gets special handling, we don't care to print whatever else we find,
+    /// and we want to include whitespace in the range (i.e, it hugs the previous line).
+    pub(crate) fn expect_semi(&mut self) -> bool {
+        if !self.eat(Kind::Semi) {
+            let pos = self.buf[0].start_pos;
+            self.raw_error(pos..pos + 1, "Expected ';'");
+            return false;
+        }
+        true
+    }
+
     pub(crate) fn expect_recover(
         &mut self,
         kind: impl TokenComparable,

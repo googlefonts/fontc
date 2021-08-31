@@ -69,11 +69,12 @@ pub(crate) fn feature(parser: &mut Parser) {
             Kind::Ident
         };
 
-        parser.expect_remap_recover(
-            tag_kind,
-            Kind::Ident,
-            TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]),
-        );
+        if !parser.eat_remap(tag_kind, Kind::Ident) {
+            parser.err_recover(
+                "Expected feature tag",
+                TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]),
+            );
+        }
         parser.eat(Kind::UseExtensionKw);
         parser.expect(Kind::LBrace);
         while feature_body_item(parser) {
@@ -81,7 +82,7 @@ pub(crate) fn feature(parser: &mut Parser) {
         }
         parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
         parser.expect_remap_recover(tag_kind, Kind::Ident, TokenSet::TOP_LEVEL);
-        parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
+        parser.expect_semi();
     }
 
     parser.eat_trivia();
@@ -111,7 +112,7 @@ fn name_entry(parser: &mut Parser, recovery: TokenSet) {
     } else {
         parser.eat_until(recovery);
     }
-    parser.expect_recover(Kind::Semi, recovery);
+    parser.expect_semi();
 }
 
 fn feature_names(parser: &mut Parser, recovery: TokenSet) {
@@ -124,7 +125,7 @@ fn feature_names(parser: &mut Parser, recovery: TokenSet) {
         name_entry(parser, name_recovery);
     }
     parser.expect_recover(Kind::RBrace, name_recovery);
-    parser.expect_recover(Kind::Semi, name_recovery);
+    parser.expect_semi();
     parser.finish_node();
 }
 
@@ -141,7 +142,7 @@ fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
     fn entry(parser: &mut Parser, recovery: TokenSet) {
         if parser.eat(Kind::CharacterKw) {
             parser.expect_recover(UNICODE_VALUE, recovery);
-            parser.expect_recover(Kind::Semi, recovery);
+            parser.expect_semi();
         } else if parser.matches(0, PARAM_KEYWORDS) {
             parser.start_node(parser.nth(0).kind);
             assert!(parser.eat(PARAM_KEYWORDS));
@@ -150,7 +151,7 @@ fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
                 name_entry(parser, recovery.add(Kind::NameKw));
             }
             parser.expect_recover(Kind::RBrace, recovery);
-            parser.expect_recover(Kind::Semi, recovery);
+            parser.expect_semi();
             parser.finish_node();
         }
     }
@@ -166,6 +167,6 @@ fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
         entry(parser, entry_recovery);
     }
     parser.expect_recover(Kind::RBrace, entry_recovery);
-    parser.expect_recover(Kind::Semi, entry_recovery);
+    parser.expect_semi();
     parser.finish_node();
 }

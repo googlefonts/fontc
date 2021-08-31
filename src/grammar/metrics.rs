@@ -147,7 +147,7 @@ pub(crate) fn parameters(parser: &mut Parser, recovery: TokenSet) {
         expect_param_item(parser, recovery.union(Kind::Semi.into()));
         expect_param_item(parser, recovery.union(Kind::Semi.into()));
     }
-    parser.expect_recover(Kind::Semi, recovery);
+    parser.expect_semi();
     parser.finish_node();
 }
 

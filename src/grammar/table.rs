@@ -44,7 +44,7 @@ fn table_impl(parser: &mut Parser, tag: &[u8], table_fn: impl Fn(&mut Parser, To
     } else {
         parser.eat_raw();
     }
-    parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
+    parser.expect_semi();
 }
 
 // if we don't recognize a table tag we still want to try parsing.
@@ -53,7 +53,7 @@ fn unknown_table(parser: &mut Parser, open_tag: Range<usize>) {
         match parser.nth(0).kind {
             Kind::RBrace if parser.nth_raw(1) == parser.raw_range(open_tag.clone()) => {
                 assert!(parser.eat(Kind::RBrace) && parser.eat(Kind::Ident));
-                parser.expect_recover(Kind::Semi, TokenSet::TOP_LEVEL);
+                parser.expect_semi();
                 break;
             }
             _ => {
@@ -100,7 +100,7 @@ mod base {
                 while parser.eat(Kind::Ident) {
                     continue;
                 }
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else if parser.matches(0, SCRIPT_LIST) {
             table_node(parser, |parser| {
@@ -109,7 +109,7 @@ mod base {
                 while parser.eat(Kind::Comma) {
                     expect_script_record(parser, recovery);
                 }
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else if parser.matches(0, MINMAX) {
             table_node(parser, |parser| {
@@ -162,8 +162,8 @@ mod gdef {
         TokenSet::new(&[Kind::LigatureCaretByPosKw, Kind::LigatureCaretByIndexKw]);
 
     pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
-        let eat_until = recovery.union(GDEF_KEYWORDS).union(Kind::RBrace.into());
-        let recovery = recovery.union(GDEF_KEYWORDS).union(Kind::Semi.into());
+        let eat_until = recovery.union(GDEF_KEYWORDS).add(Kind::RBrace);
+        let recovery = recovery.union(GDEF_KEYWORDS).add(Kind::Semi);
 
         if parser.matches(0, Kind::GlyphClassDefKw) {
             table_node(parser, |parser| {
@@ -180,7 +180,7 @@ mod gdef {
                 glyph::eat_named_or_unnamed_glyph_class(parser, class_recovery);
                 parser.expect_recover(Kind::Comma, class_recovery);
                 glyph::eat_named_or_unnamed_glyph_class(parser, class_recovery);
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else if parser.matches(0, Kind::AttachKw) {
             table_node(parser, |parser| {
@@ -194,7 +194,7 @@ mod gdef {
                 if parser.expect_recover(Kind::Number, recovery) {
                     parser.eat_while(Kind::Number);
                 }
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
             // unimplemented
         } else if parser.matches(0, Kind::LigatureCaretByDevKw) {
@@ -211,7 +211,7 @@ mod gdef {
                 if parser.expect_recover(Kind::Number, recovery) {
                     parser.eat_while(Kind::Number);
                 }
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else {
             // any unrecognized token
@@ -287,7 +287,7 @@ mod name {
                 assert!(parser.eat(Kind::NameIdKw));
                 parser.expect_recover(Kind::Number, recovery.union(Kind::Semi.into()));
                 metrics::expect_name_record(parser, recovery);
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else {
             parser.expect_recover(Kind::NameIdKw, recovery.union(Kind::Semi.into()));
@@ -334,25 +334,25 @@ mod os_2 {
             table_node(parser, |parser| {
                 assert!(parser.eat(METRICS));
                 parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery_semi);
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else if parser.matches(0, NUM_LISTS) {
             table_node(parser, |parser| {
                 assert!(parser.eat(NUM_LISTS));
                 parser.eat_while(Kind::Number);
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else if parser.matches(0, Kind::VendorKw) {
             table_node(parser, |parser| {
                 assert!(parser.eat(Kind::VendorKw));
                 parser.expect_recover(Kind::String, recovery_semi);
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else if RAW_KEYWORDS.contains(&parser.nth_raw(0)) {
             table_node(parser, |parser| {
                 parser.eat_raw();
                 parser.expect_recover(Kind::Number, recovery_semi);
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else {
             parser.err_recover("Expected OS/2 table keyword", recovery_semi);
@@ -377,7 +377,7 @@ mod vhea {
             table_node(parser, |parser| {
                 assert!(parser.eat(VHEA_KEYWORDS));
                 parser.expect_recover(Kind::Number, recovery_semi);
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else {
             parser.expect_recover(VHEA_KEYWORDS, recovery_semi);
@@ -400,7 +400,7 @@ mod vmtx {
                 assert!(parser.eat(VMTX_KEYWORDS));
                 glyph::expect_glyph_name_like(parser, recovery_semi.union(Kind::Number.into()));
                 parser.expect_recover(Kind::Number, recovery_semi);
-                parser.expect_recover(Kind::Semi, recovery);
+                parser.expect_semi();
             })
         } else {
             parser.expect_recover(VMTX_KEYWORDS, recovery_semi);
