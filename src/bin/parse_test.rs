@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use feature_parsing::{DebugSink, Parser};
+use fea_rs::{DebugSink, Parser};
 
 /// Attempt to parse fea files.
 ///
@@ -69,7 +69,7 @@ fn try_parse_file(path: &Path) -> (String, String) {
     let contents = fs::read_to_string(path).expect("file read failed");
     let mut sink = DebugSink::default();
     let mut parser = Parser::new(&contents, &mut sink);
-    feature_parsing::root(&mut parser);
+    fea_rs::root(&mut parser);
     (
         sink.simple_parse_tree(&contents),
         sink.print_errs(&contents),

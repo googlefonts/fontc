@@ -1,14 +1,14 @@
 use ansi_term::{Colour, Style};
 use std::{env, ffi::OsStr, path::PathBuf};
 
-use feature_parsing::{DebugSink, Parser};
+use fea_rs::{DebugSink, Parser};
 
 fn main() {
     let args = Args::get_from_env_or_exit();
     let contents = std::fs::read_to_string(&args.path).expect("file read failed");
     let mut sink = DebugSink::default();
     let mut parser = Parser::new(&contents, &mut sink);
-    feature_parsing::root(&mut parser);
+    fea_rs::root(&mut parser);
 
     let mut pos = 0;
     let mut cur_len = 0;
@@ -16,7 +16,7 @@ fn main() {
 
     let mut results = Vec::new();
     for (kind, len) in sink.iter_tokens() {
-        let style = feature_parsing::util::style_for_kind(kind);
+        let style = fea_rs::util::style_for_kind(kind);
         // if the style has changed, draw the previous range.
         if style != current_style {
             // we've drawn, so we reset.

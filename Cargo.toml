@@ -1,8 +1,16 @@
 [package]
-name = "feature-parsing"
-version = "0.1.0"
+name = "fea-rs"
+version = "0.0.0"
+license = "Apache-2.0"
+authors = ["Colin Rofls <colin@cmyr.net>"]
+description = "Tools for working with Adobe OpenType Feature files."
+repository = "https://github.com/cmyr/fea-rs"
+categories = ["parsing", "text-processing"]
+keywords = ["fonts", "opentype"]
+readme = "README.md"
 edition = "2018"
 default-run = "parse_test"
+exclude = ["test-data"]
 
 [dependencies]
 ansi_term = "0.12.1"
