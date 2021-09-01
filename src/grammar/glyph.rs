@@ -110,9 +110,7 @@ pub(crate) fn expect_glyph_name_like(parser: &mut Parser, recovery: TokenSet) ->
             parser.eat_raw();
             let kind = parser.nth(0).kind;
             parser.err(format!("Expected glyph name or CID, found {}", kind));
-            if !parser.matches(0, recovery) {
-                parser.eat_raw();
-            }
+            parser.eat_unless(recovery);
             false
         }
     } else {

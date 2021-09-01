@@ -160,9 +160,17 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Consume until first non-matching token
     pub(crate) fn eat_while(&mut self, token: impl TokenComparable) {
         while self.eat(token) {
             continue;
+        }
+    }
+
+    /// Consume unless token matches.
+    pub(crate) fn eat_unless(&mut self, token: impl TokenComparable) {
+        if !self.matches(0, token) {
+            self.eat_raw();
         }
     }
 
@@ -237,6 +245,14 @@ impl<'a> Parser<'a> {
         self.sink.error(err);
     }
 
+    /// Write an error associated *before* the whitespace of the current token.
+    ///
+    /// In practice this is useful when missing things like semis or braces.
+    pub(crate) fn err_before_ws(&mut self, error: impl Into<String>) {
+        let pos = self.buf[0].start_pos;
+        self.raw_error(pos..pos + 1, error);
+    }
+
     /// consume if the token matches, otherwise error without advancing
     pub(crate) fn expect(&mut self, kind: impl TokenComparable) -> bool {
         if self.eat(kind) {
@@ -250,8 +266,7 @@ impl<'a> Parser<'a> {
     /// and we want to include whitespace in the range (i.e, it hugs the previous line).
     pub(crate) fn expect_semi(&mut self) -> bool {
         if !self.eat(Kind::Semi) {
-            let pos = self.buf[0].start_pos;
-            self.raw_error(pos..pos + 1, "Expected ';'");
+            self.err_before_ws("Expected ';'");
             return false;
         }
         true

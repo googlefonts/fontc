@@ -230,10 +230,8 @@ fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
     } else {
         parser.eat(Kind::LookupKw);
         if parser.eat(Kind::Ident) {
-            parser.err_recover(
-                format!("Expected ';' or '{{', found '{}'", parser.nth(0).kind),
-                recovery,
-            );
+            parser.err_before_ws("Expected ';' or '{'");
+            parser.eat_unless(recovery);
         } else {
             parser.expect_recover(Kind::Ident, recovery);
         }
