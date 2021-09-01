@@ -4,6 +4,7 @@ use crate::token::Kind;
 use crate::token_set::TokenSet;
 
 pub(crate) fn feature(parser: &mut Parser) {
+    // returns true if we advanced the parser.
     fn feature_body_item(parser: &mut Parser) -> bool {
         let start_pos = parser.nth_range(0).start;
         match parser.nth(0).kind {
@@ -46,7 +47,13 @@ pub(crate) fn feature(parser: &mut Parser) {
             Kind::CvParametersKw => cv_parameters(parser, TokenSet::FEATURE_BODY_ITEM),
             Kind::FeatureNamesKw => feature_names(parser, TokenSet::FEATURE_BODY_ITEM),
 
-            _ => (),
+            _ => {
+                parser.err(format!(
+                    "'{}' Not valid in a feature block",
+                    parser.current_token_text()
+                ));
+                parser.eat_until(TokenSet::TOP_AND_FEATURE.add(Kind::RBrace));
+            }
         }
         parser.nth_range(0).start != start_pos
     }
@@ -62,23 +69,30 @@ pub(crate) fn feature(parser: &mut Parser) {
             Kind::FromKw,
             Kind::PosKw,
             Kind::RsubKw,
+            Kind::Ident,
         ]);
-        let tag_kind = if parser.matches(0, KEYWORD_TAGS) && parser.nth_raw(0).len() <= 4 {
-            parser.nth(0).kind
-        } else {
-            Kind::Ident
-        };
 
-        if !parser.eat_remap(tag_kind, Kind::Ident) {
+        let tag_kind = (parser.matches(0, KEYWORD_TAGS) && parser.nth_raw(0).len() <= 4)
+            .then(|| (parser.nth(0).kind));
+        let tag_range = tag_kind.as_ref().map(|_| parser.nth_range(0));
+        let tag_kind = tag_kind.unwrap_or(Kind::Ident);
+
+        if !parser.eat_remap(tag_kind, Kind::Tag) {
             parser.err_recover(
                 "Expected feature tag",
                 TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]),
             );
         }
+
         parser.eat(Kind::UseExtensionKw);
         parser.expect(Kind::LBrace);
-        while feature_body_item(parser) {
-            continue;
+        while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
+            if !feature_body_item(parser) {
+                if let Some(tag_range) = tag_range {
+                    parser.raw_error(tag_range, "Feature block is unclosed.");
+                }
+                break;
+            }
         }
         parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
         parser.expect_remap_recover(tag_kind, Kind::Ident, TokenSet::TOP_LEVEL);

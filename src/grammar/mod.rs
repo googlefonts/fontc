@@ -142,6 +142,7 @@ fn lookupflag(parser: &mut Parser, recovery: TokenSet) {
 }
 
 fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
+    // returns true if we advanced the parser
     fn lookup_item(parser: &mut Parser, recovery: TokenSet) -> bool {
         let start_pos = parser.nth_range(0).start;
         match parser.nth(0).kind {
@@ -158,8 +159,11 @@ fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
             Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
                 feature::pos_or_sub_rule(parser, recovery)
             }
-            other => {
-                parser.err(format!("'{}' Not valid in a lookup block", other));
+            _ => {
+                parser.err(format!(
+                    "'{}' Not valid in a lookup block",
+                    parser.current_token_text()
+                ));
                 parser.eat_until(TokenSet::TOP_AND_FEATURE.add(Kind::RBrace));
             }
         }
