@@ -35,7 +35,7 @@ macro_rules! assert_eq_str {
                        \n",
                        $maybe_semicolon,
                        format_args!($($arg)*),
-                       $crate::pretty_diff::MyStrs { left, right }
+                       $crate::parse::pretty_diff::MyStrs { left, right }
                     )
                 }
             }

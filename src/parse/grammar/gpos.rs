@@ -1,8 +1,5 @@
-use super::glyph;
-use super::metrics;
-use crate::parse::Parser;
-use crate::token::Kind;
-use crate::token_set::TokenSet;
+use super::{glyph, metrics};
+use crate::parse::{Kind, Parser, TokenSet};
 
 // 6.a: pos <glyph|glyphclass> <valuerecord>;
 // 6.b: [enum] pos <glyph|glyphclass> <valuerecord>

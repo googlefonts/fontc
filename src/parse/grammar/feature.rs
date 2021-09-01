@@ -1,7 +1,5 @@
 use super::{glyph, gpos, gsub, metrics};
-use crate::parse::Parser;
-use crate::token::Kind;
-use crate::token_set::TokenSet;
+use crate::parse::{Kind, Parser, TokenSet};
 
 pub(crate) fn feature(parser: &mut Parser) {
     // returns true if we advanced the parser.

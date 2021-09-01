@@ -1,8 +1,6 @@
 use std::ops::Range;
 
-use crate::parse::Parser;
-use crate::token::Kind;
-use crate::token_set::TokenSet;
+use crate::parse::{Kind, Parser, TokenSet};
 
 pub(crate) fn table(parser: &mut Parser) {
     parser.eat_trivia();
@@ -147,8 +145,8 @@ mod base {
 }
 
 mod gdef {
+    use super::super::glyph;
     use super::*;
-    use crate::grammar::glyph;
 
     const GDEF_KEYWORDS: TokenSet = TokenSet::new(&[
         Kind::GlyphClassDefKw,
@@ -277,8 +275,8 @@ mod hhea {
 }
 
 mod name {
+    use super::super::metrics;
     use super::*;
-    use crate::grammar::metrics;
 
     pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
         let recovery = recovery.union(TokenSet::new(&[Kind::NameIdKw, Kind::RBrace]));
@@ -387,8 +385,8 @@ mod vhea {
 }
 
 mod vmtx {
+    use super::super::glyph;
     use super::*;
-    use crate::grammar::glyph;
 
     const VMTX_KEYWORDS: TokenSet = TokenSet::new(&[Kind::VertOriginYKw, Kind::VertAdvanceYKw]);
 

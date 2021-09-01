@@ -1,6 +1,4 @@
-use crate::parse::Parser;
-use crate::token::Kind;
-use crate::token_set::TokenSet;
+use super::{Kind, Parser, TokenSet};
 
 mod feature;
 mod glyph;
@@ -366,8 +364,8 @@ fn anonymous(parser: &mut Parser) {
 }
 
 #[cfg(test)]
-fn debug_parse_output(text: &str, f: impl FnOnce(&mut Parser)) -> super::parse::DebugSink {
-    let mut sink = super::parse::DebugSink::default();
+fn debug_parse_output(text: &str, f: impl FnOnce(&mut Parser)) -> super::DebugSink {
+    let mut sink = super::DebugSink::default();
     let mut parser = Parser::new(text, &mut sink);
     f(&mut parser);
     sink

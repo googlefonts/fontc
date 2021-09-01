@@ -1,7 +1,5 @@
 use super::glyph;
-use crate::parse::Parser;
-use crate::token::Kind;
-use crate::token_set::TokenSet;
+use crate::parse::{Kind, Parser, TokenSet};
 
 pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
     fn gsub_body(parser: &mut Parser, recovery: TokenSet) {

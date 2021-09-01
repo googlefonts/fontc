@@ -5,7 +5,7 @@
 //! keyword from a glyph name. Instead we are just describing the most basic
 //! structure of the document.
 
-use crate::token::{Kind, Token};
+use super::{Kind, Token};
 
 const EOF: u8 = 0x0;
 

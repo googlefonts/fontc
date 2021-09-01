@@ -1,6 +1,6 @@
 use std::{fmt::Write, ops::Range};
 
-use crate::{parse::SyntaxError, Kind};
+use super::{Kind, SyntaxError};
 use ansi_term::{Colour, Style};
 
 pub fn style_for_kind(kind: Kind) -> Style {

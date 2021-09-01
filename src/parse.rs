@@ -3,9 +3,18 @@
 use std::fmt::{Display, Write};
 use std::ops::Range;
 
-use crate::lexer::Lexer;
-use crate::token::{Kind, Token};
-use crate::token_set::TokenSet;
+pub mod grammar;
+mod lexer;
+mod pretty_diff;
+mod token;
+mod token_set;
+pub mod util;
+
+pub use token::Kind;
+
+use lexer::Lexer;
+use token::Token;
+use token_set::TokenSet;
 
 const LOOKAHEAD: usize = 4;
 const LOOKAHEAD_MAX: usize = LOOKAHEAD - 1;
@@ -422,7 +431,7 @@ impl DebugSink {
 
     pub fn print_errs(&self, input: &str) -> String {
         let total_lines = input.lines().count();
-        let max_line_digit_width = crate::util::decimal_digits(total_lines);
+        let max_line_digit_width = util::decimal_digits(total_lines);
         let mut result = String::new();
         let mut pos = 0;
         let mut line_n = 0;
@@ -454,7 +463,7 @@ impl DebugSink {
             let n_skip = cur_tokens.iter().take_while(|t| t.1.end < pos).count();
             cur_tokens = &cur_tokens[n_skip..];
 
-            crate::util::write_line_error(
+            util::write_line_error(
                 &mut result,
                 pos,
                 current_line,
@@ -469,7 +478,7 @@ impl DebugSink {
     }
 
     pub fn simple_parse_tree(&self, input: &str) -> String {
-        use crate::util::SPACES;
+        use util::SPACES;
         let mut f = String::new();
         let mut pos = 0;
         let mut indent = 0;

@@ -1,6 +1,4 @@
-use crate::parse::Parser;
-use crate::token::Kind;
-use crate::token_set::TokenSet;
+use super::super::{Kind, Parser, TokenSet};
 
 // A: <anchor <metric> <metric>> (<anchor 120 -20>)
 // B: <anchor <metric> <metric>  # x coordinate, y coordinate
