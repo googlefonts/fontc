@@ -65,6 +65,47 @@ fn format_line(text: &str, line_start: usize, tokens: &[(Kind, Range<usize>)]) -
     out
 }
 
+//FIXME: get from terminal?
+const MAX_PRINT_WIDTH: usize = 100;
+
+pub fn stringify_errors(
+    input: &str,
+    tokens: &[(Kind, Range<usize>)],
+    errs: &[SyntaxError],
+) -> String {
+    let total_lines = input.lines().count();
+    let max_line_digit_width = decimal_digits(total_lines);
+    let mut result = String::new();
+    let mut pos = 0;
+    let mut line_n = 0;
+    let mut lines = iter_lines_including_breaks(input);
+    let mut current_line = lines.next().unwrap_or("");
+
+    let mut cur_tokens = tokens;
+    for err in errs {
+        while err.range.start >= pos + current_line.len() {
+            pos += current_line.len();
+            current_line = lines.next().unwrap();
+            line_n += 1;
+        }
+
+        let n_skip = cur_tokens.iter().take_while(|t| t.1.end < pos).count();
+        cur_tokens = &cur_tokens[n_skip..];
+
+        write_line_error(
+            &mut result,
+            pos,
+            current_line,
+            cur_tokens,
+            line_n,
+            MAX_PRINT_WIDTH,
+            &err,
+            max_line_digit_width,
+        );
+    }
+    result
+}
+
 /// Given an error and a line's text, write a fancy error message.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn write_line_error(
@@ -155,4 +196,35 @@ pub(crate) static SPACES: &str = "                                              
 
 pub(crate) fn decimal_digits(n: usize) -> usize {
     (n as f64).log10().floor() as usize + 1
+}
+
+// we can't use str::lines because it strips newline chars and we need them
+// to calculate error positions
+pub(crate) fn iter_lines_including_breaks(s: &str) -> impl Iterator<Item = &str> {
+    let mut slice = s;
+    std::iter::from_fn(move || {
+        if slice.is_empty() {
+            return None;
+        }
+        let next_cr = match slice.bytes().position(|b| b == b'\n') {
+            Some(idx) if slice.as_bytes().get(idx + 1) == Some(&b'\r') => idx + 2,
+            Some(idx) => idx + 1,
+            None => slice.len(),
+        };
+        let result = &slice[..next_cr];
+        slice = &slice[next_cr..];
+        Some(result)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iter_lines() {
+        let text = "hi\nfriends\n\r\nhow u?\n";
+        let lines = iter_lines_including_breaks(text).collect::<Vec<_>>();
+        assert_eq!(lines, vec!["hi\n", "friends\n\r", "\n", "how u?\n"]);
+    }
 }

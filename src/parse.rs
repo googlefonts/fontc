@@ -438,14 +438,6 @@ impl DebugSink {
     }
 
     pub fn print_errs(&self, input: &str) -> String {
-        let total_lines = input.lines().count();
-        let max_line_digit_width = util::decimal_digits(total_lines);
-        let mut result = String::new();
-        let mut pos = 0;
-        let mut line_n = 0;
-        let mut lines = iter_lines_including_breaks(input);
-        let mut current_line = lines.next().unwrap_or("");
-
         let tokens = {
             let mut toke_pos = 0;
             self.0
@@ -460,29 +452,7 @@ impl DebugSink {
                 })
                 .collect::<Vec<_>>()
         };
-        let mut cur_tokens = tokens.as_slice();
-        for err in self.errors() {
-            while err.range.start >= pos + current_line.len() {
-                pos += current_line.len();
-                current_line = lines.next().unwrap();
-                line_n += 1;
-            }
-
-            let n_skip = cur_tokens.iter().take_while(|t| t.1.end < pos).count();
-            cur_tokens = &cur_tokens[n_skip..];
-
-            util::write_line_error(
-                &mut result,
-                pos,
-                current_line,
-                cur_tokens,
-                line_n,
-                MAX_PRINT_WIDTH,
-                &err,
-                max_line_digit_width,
-            );
-        }
-        result
+        util::stringify_errors(input, &tokens, &self.errors())
     }
 
     pub fn simple_parse_tree(&self, input: &str) -> String {
@@ -530,28 +500,6 @@ impl DebugSink {
     }
 }
 
-//FIXME: get from terminal?
-const MAX_PRINT_WIDTH: usize = 100;
-
-// we can't use str::lines because it strips newline chars and we need them
-// to calculate error positions
-fn iter_lines_including_breaks(s: &str) -> impl Iterator<Item = &str> {
-    let mut slice = s;
-    std::iter::from_fn(move || {
-        if slice.is_empty() {
-            return None;
-        }
-        let next_cr = match slice.bytes().position(|b| b == b'\n') {
-            Some(idx) if slice.as_bytes().get(idx + 1) == Some(&b'\r') => idx + 2,
-            Some(idx) => idx + 1,
-            None => slice.len(),
-        };
-        let result = &slice[..next_cr];
-        slice = &slice[next_cr..];
-        Some(result)
-    })
-}
-
 impl TreeSink for DebugSink {
     fn token(&mut self, kind: Kind, len: usize) {
         self.0.push(Event::Token(kind, len))
@@ -595,17 +543,5 @@ impl std::fmt::Display for DebugSink {
             }
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn iter_lines() {
-        let text = "hi\nfriends\n\r\nhow u?\n";
-        let lines = iter_lines_including_breaks(text).collect::<Vec<_>>();
-        assert_eq!(lines, vec!["hi\n", "friends\n\r", "\n", "how u?\n"]);
     }
 }
