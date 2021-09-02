@@ -36,8 +36,7 @@ pub(crate) fn named_glyph_class_decl(parser: &mut Parser, recovery: TokenSet) {
 
 // B @class [a b]
 pub(crate) fn eat_glyph_or_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
-    parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName)
-        || eat_named_or_unnamed_glyph_class(parser, recovery)
+    eat_glyph_name_like(parser) || eat_named_or_unnamed_glyph_class(parser, recovery)
 }
 
 pub(crate) fn eat_named_or_unnamed_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
@@ -97,6 +96,15 @@ fn glyph_range(parser: &mut Parser, recovery: TokenSet) -> bool {
 }
 
 pub(crate) fn expect_glyph_name_like(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if eat_glyph_name_like(parser) {
+        return true;
+    }
+
+    parser.err_recover("Expected glyph name or CID", recovery);
+    return false;
+}
+
+fn eat_glyph_name_like(parser: &mut Parser) -> bool {
     if parser.matches(0, Kind::Backslash) {
         if parser.matches(1, Kind::Ident) {
             parser.eat_remap2(Kind::GlyphName);
@@ -105,14 +113,10 @@ pub(crate) fn expect_glyph_name_like(parser: &mut Parser, recovery: TokenSet) ->
             parser.eat_remap2(Kind::Cid);
             true
         } else {
-            parser.eat_raw();
-            let kind = parser.nth(0).kind;
-            parser.err(format!("Expected glyph name or CID, found {}", kind));
-            parser.eat_unless(recovery);
             false
         }
     } else {
-        parser.expect_remap_recover(TokenSet::IDENT_LIKE, Kind::GlyphName, recovery)
+        parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName)
     }
 }
 

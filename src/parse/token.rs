@@ -209,6 +209,7 @@ impl Kind {
                 | Self::Metric
                 | Self::Number
                 | Self::Label
+                | Self::Cid
         )
     }
 
