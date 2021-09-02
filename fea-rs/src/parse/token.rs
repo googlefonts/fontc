@@ -12,7 +12,7 @@ impl Token {
 }
 
 /// Kinds of tokens assigned during lexing and parsing.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u16)]
 pub enum Kind {
     Eof, // the end of the input stream
