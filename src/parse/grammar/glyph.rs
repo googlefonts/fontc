@@ -106,11 +106,13 @@ pub(crate) fn expect_glyph_name_like(parser: &mut Parser, recovery: TokenSet) ->
 
 fn eat_glyph_name_like(parser: &mut Parser) -> bool {
     if parser.matches(0, Kind::Backslash) {
-        if parser.matches(1, Kind::Ident) {
-            parser.eat_remap2(Kind::GlyphName);
+        if parser.matches(1, TokenSet::IDENT_LIKE) {
+            parser.eat(Kind::Backslash);
+            parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName);
             true
         } else if parser.matches(1, Kind::Number) {
-            parser.eat_remap2(Kind::Cid);
+            parser.eat(Kind::Backslash);
+            parser.eat_remap(Kind::Number, Kind::Cid);
             true
         } else {
             false
@@ -122,6 +124,8 @@ fn eat_glyph_name_like(parser: &mut Parser) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::DebugSink;
+
     use super::super::debug_parse_output;
     use super::*;
 
@@ -139,7 +143,8 @@ START GlyphClass
   [
   GlyphName(A)
   WS( )
-  GlyphName(\\\\mark)
+  \\
+  GlyphName(mark)
   WS( )
   GlyphName(Ascender)
   ]
@@ -178,9 +183,11 @@ START @GlyphClass
     END GlyphRange
     18..19 WS
     START GlyphRange
-      19..21 CID
+      19..20 \\
+      20..21 CID
       21..22 -
-      22..24 CID
+      22..23 \\
+      23..24 CID
     END GlyphRange
     24..25 WS
     25..28 @GlyphClass
@@ -191,5 +198,22 @@ END @GlyphClass
 "
         );
         assert!(out.errors().is_empty());
+    }
+
+    #[test]
+    fn name_like() {
+        let fea = "hi \\hi \\mark \\table \\12";
+        let mut sink = DebugSink::default();
+        let mut parser = Parser::new(fea, &mut sink);
+        assert!(eat_glyph_name_like(&mut parser));
+        assert_eq!(parser.nth_raw(1), b"hi");
+        assert!(eat_glyph_name_like(&mut parser));
+        assert_eq!(parser.nth_raw(1), b"mark");
+        assert!(eat_glyph_name_like(&mut parser));
+        assert_eq!(parser.nth_raw(1), b"table");
+        assert!(eat_glyph_name_like(&mut parser));
+        assert_eq!(parser.nth_raw(1), b"12");
+        assert!(eat_glyph_name_like(&mut parser));
+        assert!(!eat_glyph_name_like(&mut parser));
     }
 }

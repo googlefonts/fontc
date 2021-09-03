@@ -206,11 +206,6 @@ impl<'a> Parser<'a> {
         false
     }
 
-    /// combine two tokens into one
-    pub(crate) fn eat_remap2(&mut self, kind: Kind) {
-        self.do_bump::<2>(kind);
-    }
-
     pub(crate) fn at_eof(&self) -> bool {
         self.nth(0).kind == Kind::Eof
     }
