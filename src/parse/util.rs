@@ -17,11 +17,10 @@ pub fn style_for_kind(kind: Kind) -> Style {
         | Kind::AnchorDefKw
         | Kind::FeatureKw
         | Kind::MarkClassKw
-        | Kind::ScriptKw
-        | Kind::LanguageKw
-        | Kind::AnonKw => Style::new().fg(Colour::Cyan),
-        Kind::GlyphName | Kind::Cid => Style::new().fg(Colour::Blue),
+        | Kind::AnonKw |Kind::GlyphClassDefKw => Style::new().fg(Colour::Cyan),
         Kind::NamedGlyphClass => Style::new().fg(Colour::Blue).italic(),
+        Kind::LookupflagKw | Kind::ScriptKw | Kind::LanguageKw => Colour::Blue.into(),
+        Kind::Backslash => Style::new().fg(Colour::Yellow).dimmed(),
         Kind::SubKw
         | Kind::PosKw
         | Kind::IgnoreKw
