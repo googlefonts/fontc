@@ -11,7 +11,7 @@ pub(crate) fn named_glyph_class_decl(parser: &mut Parser, recovery: TokenSet) {
             Kind::Eq,
             recovery.union(TokenSet::new(&[
                 Kind::NamedGlyphClass,
-                Kind::LBrace,
+                Kind::LSquare,
                 Kind::Semi,
             ])),
         );
@@ -24,7 +24,7 @@ pub(crate) fn named_glyph_class_decl(parser: &mut Parser, recovery: TokenSet) {
                 recovery.add(Kind::Semi),
             );
         } else {
-            eat_glyph_class_list(parser, recovery);
+            eat_glyph_class_list(parser, recovery.add(Kind::Semi));
         }
     }
 
@@ -45,21 +45,23 @@ pub(crate) fn eat_named_or_unnamed_glyph_class(parser: &mut Parser, recovery: To
 
 // [ a b a-z @hi \0-\40 ]
 pub(crate) fn eat_glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> bool {
-    //FIXME: most of this should come from above?
-    const LIST_RECOVERY: TokenSet = TokenSet::TOP_SEMI.union(TokenSet::new(&[Kind::RSquare]));
-
+    let recovery = recovery.add(Kind::RSquare);
     if !parser.matches(0, Kind::LSquare) {
         return false;
     }
 
     parser.eat_trivia();
     parser.start_node(Kind::GlyphClass);
+    let range = parser.nth_range(0);
     assert!(parser.eat(Kind::LSquare));
-    while !parser.matches(0, LIST_RECOVERY.union(recovery)) {
+    while !parser.matches(0, recovery) {
         glyph_class_list_member(parser, recovery);
     }
 
-    parser.expect_recover(Kind::RSquare, recovery);
+    if !parser.eat(Kind::RSquare) {
+        parser.raw_error(range, "Unclosed glyph class.");
+        parser.err_recover("Expected closing ']'.", recovery);
+    }
     parser.finish_node();
     true
 }
