@@ -3,18 +3,14 @@
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
 
-import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { workspace, ExtensionContext } from 'vscode';
+import { ExtensionContext } from 'vscode';
 
 import {
     LanguageClient,
-    LanguageClientOptions,
-    ServerOptions,
-    TransportKind
-} from 'vscode-languageclient/node';
+    LanguageClientOptions} from 'vscode-languageclient/node';
 
 let client: LanguageClient;
 
@@ -61,8 +57,6 @@ export function activate(context: ExtensionContext) {
 
     // Start the client. This will also launch the server
     client.start();
-    console.log("started server!?");
-
 }
 
 export function deactivate(): Thenable<void> | undefined {

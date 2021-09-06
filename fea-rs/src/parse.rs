@@ -50,8 +50,8 @@ struct PendingToken {
 /// An error encountered while parsing.
 #[derive(Debug, Clone)]
 pub struct SyntaxError {
-    pub(crate) message: String,
-    pub(crate) range: Range<usize>,
+    pub message: String,
+    pub range: Range<usize>,
 }
 
 impl PendingToken {
@@ -171,7 +171,7 @@ impl<'a> Parser<'a> {
 
     /// Consumes all tokens until hitting a recovery item.
     pub(crate) fn eat_until(&mut self, recovery: impl TokenComparable) {
-        while !self.matches(0, recovery) {
+        while !self.at_eof() && !self.matches(0, recovery) {
             self.eat_raw();
         }
     }
@@ -405,7 +405,7 @@ impl DebugSink {
         })
     }
 
-    pub(crate) fn errors(&self) -> Vec<SyntaxError> {
+    pub fn errors(&self) -> Vec<SyntaxError> {
         let mut errors = Vec::new();
         let mut node_stack = Vec::new();
         let mut pos = 0;

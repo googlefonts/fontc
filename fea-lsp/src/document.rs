@@ -1,13 +1,17 @@
 use std::{ops::Range, sync::Mutex};
 
-use fea_rs::{DebugSink, Kind, Parser};
-use lspower::lsp::{Position, Range as UghRange, SemanticToken, SemanticTokenType, SemanticTokens};
+use fea_rs::{DebugSink, Kind, Parser, SyntaxError};
+use lspower::lsp::{
+    Diagnostic, DiagnosticSeverity, Position, Range as UghRange, SemanticToken, SemanticTokenType,
+    SemanticTokens,
+};
 
 #[derive(Debug, Clone, Default)]
 struct DocumentInner {
     text: String,
     offsets: Vec<usize>,
     tokens: Vec<(Kind, Range<usize>)>,
+    errors: Vec<SyntaxError>,
 }
 
 #[derive(Debug, Default)]
@@ -18,11 +22,12 @@ pub(crate) struct Document {
 impl Document {
     pub fn set_text(&self, text: String) {
         let offsets = compute_offsets(&text);
-        let tokens = parse(&text);
+        let (tokens, errors) = parse(&text);
         let mut inner = self.inner.lock().unwrap();
         inner.text = text;
         inner.offsets = offsets;
         inner.tokens = tokens;
+        inner.errors = errors;
     }
 
     pub fn replace_range(&self, range: Option<UghRange>, text: String) {
@@ -31,10 +36,12 @@ impl Document {
             None => return self.set_text(text),
         };
         let mut inner = self.inner.lock().unwrap();
-        let range = convert_range(range, &inner.offsets);
+        let range = from_lsp_range(range, &inner.offsets);
         inner.text.replace_range(range, &text);
         inner.offsets = compute_offsets(&inner.text);
-        inner.tokens = parse(&inner.text);
+        let (tokens, errors) = parse(&inner.text);
+        inner.tokens = tokens;
+        inner.errors = errors;
     }
 
     pub fn semantic_tokens(&self) -> SemanticTokens {
@@ -44,6 +51,21 @@ impl Document {
             result_id: None,
             data: tokens,
         }
+    }
+
+    pub fn diagnostics(&self) -> Vec<Diagnostic> {
+        let inner = self.inner.lock().unwrap();
+        let mut result = Vec::new();
+        for err in &inner.errors {
+            let range = to_lsp_range(err.range.clone(), &inner.offsets);
+            result.push(Diagnostic {
+                range,
+                severity: Some(DiagnosticSeverity::Error),
+                message: err.message.clone(),
+                ..Default::default()
+            })
+        }
+        result
     }
 
     #[cfg(test)]
@@ -69,19 +91,10 @@ impl Document {
                     None => None,
                 })
         {
-            let line = inner
-                .offsets
-                .iter()
-                .position(|off| *off > range.start)
-                .unwrap_or_else(|| inner.offsets.len())
-                - 1;
-            let line_start = inner.offsets[line];
-            //dbg!(line, line_start, range.start);
-            let line_pos = range.start - line_start;
-
+            let start_pos = to_lsp_pos(range.start, &inner.offsets);
             result.push(SemanticToken {
-                delta_line: line as u32,
-                delta_start: line_pos as u32,
+                delta_line: start_pos.line,
+                delta_start: start_pos.character,
                 length: range.len() as u32,
                 token_type,
                 token_modifiers_bitset: 0,
@@ -111,13 +124,33 @@ fn make_relative(tokens: &mut [SemanticToken]) {
     }
 }
 
-fn convert_range(ugh: UghRange, offsets: &[usize]) -> Range<usize> {
-    let start = convert_pos(ugh.start, offsets);
-    let end = convert_pos(ugh.end, offsets);
+fn from_lsp_range(ugh: UghRange, offsets: &[usize]) -> Range<usize> {
+    let start = from_lsp_pos(ugh.start, offsets);
+    let end = from_lsp_pos(ugh.end, offsets);
     start..end
 }
 
-fn convert_pos(pos: Position, offsets: &[usize]) -> usize {
+fn to_lsp_range(range: Range<usize>, offsets: &[usize]) -> UghRange {
+    let start = to_lsp_pos(range.start, offsets);
+    let end = to_lsp_pos(range.end, offsets);
+    UghRange { start, end }
+}
+
+fn to_lsp_pos(offset: usize, offsets: &[usize]) -> Position {
+    let line = offsets
+        .iter()
+        .position(|off| *off > offset)
+        .unwrap_or_else(|| offsets.len())
+        - 1;
+    let line_start = offsets[line];
+    let line_pos = offset - line_start;
+    Position {
+        line: line as u32,
+        character: line_pos as u32,
+    }
+}
+
+fn from_lsp_pos(pos: Position, offsets: &[usize]) -> usize {
     let line_offset = offsets[pos.line as usize];
     line_offset + (pos.character) as usize
 }
@@ -134,7 +167,7 @@ fn compute_offsets(text: &str) -> Vec<usize> {
         .collect()
 }
 
-fn parse(text: &str) -> Vec<(Kind, Range<usize>)> {
+fn parse(text: &str) -> (Vec<(Kind, Range<usize>)>, Vec<SyntaxError>) {
     let mut sink = DebugSink::default();
     let mut parser = Parser::new(text, &mut sink);
     fea_rs::root(&mut parser);
@@ -145,7 +178,7 @@ fn parse(text: &str) -> Vec<(Kind, Range<usize>)> {
         result.push((kind, pos..pos + len));
         pos += len;
     }
-    result
+    (result, sink.errors())
 }
 
 pub static STYLES: &[SemanticTokenType] = &[

@@ -4,4 +4,4 @@ mod parse;
 
 pub use parse::grammar::root;
 pub use parse::util;
-pub use parse::{DebugSink, Kind, Parser};
+pub use parse::{DebugSink, Kind, Parser, SyntaxError};

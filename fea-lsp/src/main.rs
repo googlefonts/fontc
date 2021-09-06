@@ -6,7 +6,6 @@ mod document;
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    //text: Mutex<String>,
     document: document::Document,
 }
 
@@ -34,11 +33,6 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::Incremental,
                 )),
-                completion_provider: Some(CompletionOptions {
-                    resolve_provider: Some(false),
-                    trigger_characters: Some(vec![".".to_string()]),
-                    ..Default::default()
-                }),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["dummy.do_something".to_string()],
                     ..Default::default()
@@ -103,19 +97,20 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, doc: DidOpenTextDocumentParams) {
         self.document.set_text(doc.text_document.text);
-        //*self.text.lock().unwrap() = doc.text_document.text;
+        let diagnostics = self.document.diagnostics();
         self.client
-            .log_message(MessageType::Info, "file opened!")
+            .publish_diagnostics(doc.text_document.uri.clone(), diagnostics, None)
             .await;
     }
 
     async fn did_change(&self, mut params: DidChangeTextDocumentParams) {
         if let Some(change) = params.content_changes.pop() {
-            self.document.replace_range(change.range, change.text)
+            self.document.replace_range(change.range, change.text);
+            let diagnostics = self.document.diagnostics();
+            self.client
+                .publish_diagnostics(params.text_document.uri.clone(), diagnostics, None)
+                .await;
         }
-        self.client
-            .log_message(MessageType::Info, "file changed!")
-            .await;
     }
 
     async fn did_save(&self, _: DidSaveTextDocumentParams) {
@@ -130,13 +125,6 @@ impl LanguageServer for Backend {
             .await;
     }
 
-    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
-        Ok(Some(CompletionResponse::Array(vec![
-            CompletionItem::new_simple("Hello".to_string(), "Some detail".to_string()),
-            CompletionItem::new_simple("Bye".to_string(), "More detail".to_string()),
-        ])))
-    }
-
     async fn semantic_tokens_full(
         &self,
         _params: SemanticTokensParams,
@@ -145,7 +133,6 @@ impl LanguageServer for Backend {
             .log_message(MessageType::Info, "semantic tokens full!?")
             .await;
 
-        //let text: String = self.text.lock().unwrap().clone();
         let tokens = self.document.semantic_tokens();
         Ok(Some(SemanticTokensResult::Tokens(tokens)))
     }
@@ -154,7 +141,6 @@ impl LanguageServer for Backend {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
-    eprintln!("what is happen");
 
     let (service, messages) = LspService::new(|client| Backend {
         client,
