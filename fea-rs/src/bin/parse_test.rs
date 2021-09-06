@@ -5,6 +5,7 @@ use std::{
     ffi::OsStr,
     fs,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use fea_rs::{DebugSink, Parser};
@@ -55,13 +56,19 @@ fn directory_arg(path: &Path) -> std::io::Result<()> {
 }
 
 fn single_file_arg(path: &Path, print_tree: bool) {
+    let time = Instant::now();
     let (tree, errors) = try_parse_file(path);
+    let elapsed = time.elapsed();
     if errors.is_empty() || print_tree {
         println!("{}", tree);
     }
     if !errors.is_empty() {
         eprintln!("{}", errors);
     }
+
+    let micros = elapsed.as_micros();
+    let millis = (micros as f64) / 1000.0;
+    println!("parsed in {:.2}ms", millis);
 }
 
 /// returns the tree and any errors
