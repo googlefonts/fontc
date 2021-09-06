@@ -17,7 +17,8 @@ pub fn style_for_kind(kind: Kind) -> Style {
         | Kind::AnchorDefKw
         | Kind::FeatureKw
         | Kind::MarkClassKw
-        | Kind::AnonKw |Kind::GlyphClassDefKw => Style::new().fg(Colour::Cyan),
+        | Kind::AnonKw
+        | Kind::GlyphClassDefKw => Style::new().fg(Colour::Cyan),
         Kind::NamedGlyphClass => Style::new().fg(Colour::Blue).italic(),
         Kind::LookupflagKw | Kind::ScriptKw | Kind::LanguageKw => Colour::Blue.into(),
         Kind::Backslash => Style::new().fg(Colour::Yellow).dimmed(),
