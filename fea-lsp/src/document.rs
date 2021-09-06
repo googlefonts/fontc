@@ -149,15 +149,18 @@ fn parse(text: &str) -> Vec<(Kind, Range<usize>)> {
 }
 
 pub static STYLES: &[SemanticTokenType] = &[
-    SemanticTokenType::KEYWORD,
+    SemanticTokenType::KEYWORD, // 0
     SemanticTokenType::NUMBER,
     SemanticTokenType::COMMENT,
     SemanticTokenType::STRING,
     SemanticTokenType::CLASS,
-    SemanticTokenType::STRUCT,
+    SemanticTokenType::STRUCT, // 5
     SemanticTokenType::OPERATOR,
     SemanticTokenType::MODIFIER,
     SemanticTokenType::NAMESPACE,
+    SemanticTokenType::FUNCTION,
+    SemanticTokenType::ENUM_MEMBER, // 10
+    SemanticTokenType::ENUM,
 ];
 
 fn style_for_kind(kind: Kind) -> Option<u32> {
@@ -166,7 +169,8 @@ fn style_for_kind(kind: Kind) -> Option<u32> {
         Kind::Number | Kind::Metric | Kind::Octal | Kind::Hex | Kind::Float => 1,
         Kind::String => 3,
 
-        Kind::Ident | Kind::Tag | Kind::Label | Kind::GlyphName => 5,
+        Kind::GlyphName | Kind::Cid => 10,
+        Kind::Ident | Kind::Tag | Kind::Label => 5,
         Kind::TableKw
         | Kind::IncludeKw
         | Kind::LookupKw
@@ -175,9 +179,11 @@ fn style_for_kind(kind: Kind) -> Option<u32> {
         | Kind::FeatureKw
         | Kind::MarkClassKw
         | Kind::AnonKw
-        | Kind::GlyphClassDefKw => 4,
-        Kind::NamedGlyphClass => 4,
-        Kind::LookupflagKw | Kind::ScriptKw | Kind::LanguageKw => 7,
+        | Kind::LookupflagKw
+        | Kind::ScriptKw
+        | Kind::LanguageKw
+        | Kind::GlyphClassDefKw => 0,
+        Kind::NamedGlyphClass => 11,
         Kind::Backslash | Kind::Eq => 6,
         Kind::SubKw
         | Kind::PosKw
@@ -185,7 +191,7 @@ fn style_for_kind(kind: Kind) -> Option<u32> {
         | Kind::EnumKw
         | Kind::RsubKw
         | Kind::ByKw
-        | Kind::FromKw => 0,
+        | Kind::FromKw => 9,
         _ => 700,
     };
     if raw > 20 {
