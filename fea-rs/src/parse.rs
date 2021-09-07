@@ -5,7 +5,8 @@ use std::ops::Range;
 
 pub mod grammar;
 mod lexer;
-mod pretty_diff;
+#[cfg(test)]
+pub mod pretty_diff;
 mod token;
 mod token_set;
 /// helpers for displaying parse output.

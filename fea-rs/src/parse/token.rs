@@ -213,6 +213,10 @@ impl Kind {
         )
     }
 
+    pub fn is_trivia(self) -> bool {
+        matches!(self, Kind::Comment | Kind::Whitespace)
+    }
+
     pub(crate) fn from_keyword(word: &[u8]) -> Option<Kind> {
         //eprintln!("{}", std::str::from_utf8(word).unwrap());
         match word {

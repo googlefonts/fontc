@@ -1,5 +1,4 @@
-use std::sync::Arc;
-//use std::collections::HashMap;
+use std::{mem::MaybeUninit, sync::Arc};
 
 use smol_str::SmolStr;
 
@@ -46,6 +45,135 @@ pub struct AstSink<'a> {
     text_pos: usize,
     builder: TreeBuilder,
     errors: Vec<SyntaxError>,
+}
+
+pub struct Cursor<'a> {
+    pos: usize,
+    current: NodeRef<'a>,
+    parents: ParentStack<NodeRef<'a>, 4>,
+}
+
+struct NodeRef<'a> {
+    node: &'a Node,
+    // the idx of the node's current child
+    idx: usize,
+}
+
+impl<'a> Cursor<'a> {
+    fn new(root: &'a Node) -> Self {
+        Cursor {
+            pos: 0,
+            current: NodeRef { node: root, idx: 0 },
+            parents: ParentStack::new(),
+        }
+    }
+
+    /// Our current depth in the tree
+    pub fn depth(&self) -> usize {
+        self.parents.len
+    }
+
+    /// The start position of the current token
+    pub fn pos(&self) -> usize {
+        self.pos
+    }
+
+    pub fn next_token(&mut self) -> Option<&'a Token> {
+        let cur_len = self.current.current_token_len();
+        match self.current.advance() {
+            Some(NodeOrToken::Token(token)) => {
+                self.pos += cur_len;
+                Some(token)
+            }
+            Some(NodeOrToken::Node(node)) => {
+                self.descend(node);
+                self.next_token()
+            }
+            None => {
+                assert!(self.current.is_done());
+                while self.current.is_done() {
+                    match self.parents.pop() {
+                        Some(parent) => self.current = parent,
+                        // this must be the root node, and it must be finished
+                        None => return None,
+                    }
+                }
+                self.next_token()
+            }
+        }
+    }
+
+    // move down into a child node.
+    //
+    // invariant: `node` is a child of `self.current`
+    fn descend(&mut self, node: &'a Node) {
+        // move the current node onto the parent set
+        let new_current = NodeRef { node, idx: 0 };
+        let prev = std::mem::replace(&mut self.current, new_current);
+        self.parents.push(prev);
+    }
+}
+
+/// Store a stack of objects, only allocating if depth 'N' is exceeded.
+struct ParentStack<T, const N: usize> {
+    parents: [MaybeUninit<T>; N],
+    len: usize,
+    fallback: Vec<T>,
+}
+
+impl<T, const N: usize> ParentStack<T, N> {
+    const INIT: MaybeUninit<T> = MaybeUninit::uninit();
+    fn new() -> Self {
+        Self {
+            parents: [Self::INIT; N],
+            len: 0,
+            fallback: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, item: T) {
+        if self.len < N {
+            // items beyond len are always uninit
+            unsafe { self.parents[self.len].as_mut_ptr().write(item) };
+        } else {
+            self.fallback.push(item);
+        }
+        self.len += 1;
+    }
+
+    fn pop(&mut self) -> Option<T> {
+        let parent = match self.len {
+            0 => None,
+            i if i <= N => {
+                let parent = std::mem::replace(&mut self.parents[i - 1], MaybeUninit::uninit());
+                // items below `len` must have been written
+                Some(unsafe { parent.assume_init() })
+            }
+            _ => self.fallback.pop(),
+        };
+        self.len = self.len.saturating_sub(1);
+        parent
+    }
+}
+
+impl<'a> NodeRef<'a> {
+    fn current_token_len(&self) -> usize {
+        self.node
+            .children
+            .get(self.idx)
+            .map(NodeOrToken::text_len)
+            .unwrap_or(0)
+    }
+
+    fn advance(&mut self) -> Option<&'a NodeOrToken> {
+        let idx = self.idx;
+        self.idx += 1;
+        self.node.children.get(idx)
+    }
+
+    fn is_done(&self) -> bool {
+        self.idx >= self.node.children.len()
+    }
 }
 
 impl TreeSink for AstSink<'_> {
@@ -99,6 +227,15 @@ impl Node {
             text_len,
             children: children.into(),
         }
+    }
+
+    pub fn cursor(&self) -> Cursor {
+        Cursor::new(self)
+    }
+
+    pub fn iter_tokens(&self) -> impl Iterator<Item = &Token> {
+        let mut cursor = Cursor::new(self);
+        std::iter::from_fn(move || cursor.next_token())
     }
 
     pub fn kind(&self) -> Kind {
@@ -179,11 +316,27 @@ impl NodeOrToken {
     }
 }
 
-//impl<N: fmt::Display, T: fmt::Display> fmt::Display for NodeOrToken<N, T> {
-//fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//match self {
-//NodeOrToken::Node(node) => fmt::Display::fmt(node, f),
-//NodeOrToken::Token(token) => fmt::Display::fmt(token, f),
-//}
-//}
-//}
+impl Token {
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Parser;
+
+    use super::*;
+
+    #[test]
+    fn token_iter() {
+        let fea = include_str!("../test-data/mini.fea");
+        let mut sink = AstSink::new(fea);
+        let mut parser = Parser::new(fea, &mut sink);
+        crate::root(&mut parser);
+        let (root, _errs) = sink.finish();
+        let reconstruct = root.iter_tokens().map(Token::as_str).collect::<String>();
+
+        crate::assert_eq_str!(fea, reconstruct);
+    }
+}
