@@ -1,17 +1,21 @@
 {
 	"name": "fea-lsp",
 	"description": "A langauge server for Adobe OpenType Feature files",
-	"author": "Some nerd",
 	"license": "MIT/Apache 2.0",
 	"version": "0.0.0",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/cmyr/fea-rs.git",
+        "directory": "fea-lsp/editors/vscode"
+    },
 	"categories": [],
 	"engines": {
-		"vscode": "^1.43.0"
+		"vscode": "^1.52.0"
 	},
 	"activationEvents": [
 		"onLanguage:FEA"
 	],
-	"main": "./client/out/extension",
+	"main": "./out/extension",
 	"contributes": {
 		"languages": [
 			{
@@ -28,7 +32,7 @@
 		  ],
 		"configuration": {
 			"type": "object",
-			"title": "FEA-lsp",
+			"title": "fea-lsp",
 			"properties": {
 				"fea-lsp.server.path": {
                     "type": [
@@ -46,10 +50,13 @@
 		"vscode:prepublish": "npm run compile",
 		"compile": "tsc -b",
 		"watch": "tsc -b -w",
-		"lint": "eslint ./client/src --ext .ts,.tsx",
-		"postinstall": "cd client && npm install && cd .."
+		"lint": "eslint ./src --ext .ts,.tsx"
+	},
+	"dependencies": {
+		"vscode-languageclient": "^7.0.0"
 	},
 	"devDependencies": {
+		"@types/vscode": "^1.52.0",
 		"@types/mocha": "^8.2.2",
 		"@types/node": "^12.12.0",
 		"@typescript-eslint/eslint-plugin": "^4.23.0",
