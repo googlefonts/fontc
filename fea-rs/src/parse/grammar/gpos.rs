@@ -32,6 +32,7 @@ pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
         }
     }
 
+    parser.eat_trivia();
     parser.start_node(Kind::GposNode);
     gpos_body(parser, recovery);
     parser.finish_node();

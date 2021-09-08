@@ -3,7 +3,8 @@ use super::{Kind, Parser, TokenSet};
 mod feature;
 mod glyph;
 mod gpos;
-mod gsub;
+//FIXME: figure out what to expose here, and how.
+pub mod gsub;
 mod metrics;
 mod table;
 
@@ -60,7 +61,7 @@ fn advance_to_top_level(parser: &mut Parser) {
     }
 }
 
-fn language_system(parser: &mut Parser) {
+pub fn language_system(parser: &mut Parser) {
     fn language_system_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::LanguagesystemKw));
         if !parser.expect_tag(Kind::Semi) || !parser.expect_tag(Kind::Semi) {
@@ -69,6 +70,7 @@ fn language_system(parser: &mut Parser) {
         parser.expect_semi();
     }
 
+    parser.eat_trivia();
     parser.start_node(Kind::LanguagesystemKw);
     language_system_body(parser);
     parser.finish_node();

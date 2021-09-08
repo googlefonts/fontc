@@ -13,10 +13,10 @@ mod token_set;
 pub mod util;
 
 pub use token::Kind;
+pub use token_set::TokenSet;
 
 use lexer::Lexer;
 use token::Token;
-use token_set::TokenSet;
 
 const LOOKAHEAD: usize = 4;
 const LOOKAHEAD_MAX: usize = LOOKAHEAD - 1;

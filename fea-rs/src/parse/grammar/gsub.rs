@@ -50,6 +50,7 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
         // else this should be a chain rule?
     }
 
+    parser.eat_trivia();
     parser.start_node(Kind::GsubNode);
     gsub_body(parser, recovery);
     parser.finish_node();
