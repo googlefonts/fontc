@@ -1,9 +1,10 @@
 //! A cursor for navigating through a tree.
 
-use super::{stack::Stack, Node, NodeOrToken, Token};
+use super::{stack::Stack, Kind, Node, NodeOrToken, Token};
 
 pub struct Cursor<'a> {
     pos: usize,
+    // the current root. This is not directly accessible.
     current: NodeRef<'a>,
     parents: Stack<NodeRef<'a>, 4>,
 }
@@ -39,6 +40,11 @@ impl<'a> Cursor<'a> {
         self.pos
     }
 
+    /// The kind of the current parent node.
+    pub fn parent_kind(&self) -> Kind {
+        self.current.node.kind
+    }
+
     pub fn next_token(&mut self) -> Option<&'a Token> {
         loop {
             let current = self.current();
@@ -49,6 +55,13 @@ impl<'a> Cursor<'a> {
                 None => break None,
             }
         }
+    }
+
+    /// advance the cursor, stepping over nodes.
+    pub fn step_over(&mut self) {
+        let len = self.current().map(NodeOrToken::text_len).unwrap_or(0);
+        self.current.advance();
+        self.pos += len;
     }
 
     /// Advance the cursor.
@@ -81,6 +94,8 @@ impl<'a> Cursor<'a> {
                     // this must be the root node, and it must be finished
                     None => return,
                 }
+                // after ascending, we need to advance
+                self.current.advance();
             }
         }
     }
@@ -149,11 +164,24 @@ impl<'a> Cursor<'a> {
         self.parents.push(prev);
     }
 
+    pub fn descend_current(&mut self) {
+        let new_current = self
+            .current()
+            .and_then(NodeOrToken::as_node)
+            .expect("descend_current expects current to be Node");
+        self.descend(new_current)
+    }
+
     /// Return to a parent node.
-    fn ascend(&mut self) {
+    ///
+    /// This always sets the cursor position to the start position of the
+    /// *current* node (which is within the parent).
+    pub fn ascend(&mut self) {
+        let len = self.current.prev_items_len();
         if let Some(parent) = self.parents.pop() {
             self.current = parent;
         }
+        self.pos -= len;
     }
 
     fn move_to_start_of_current_node(&mut self) {
@@ -223,11 +251,12 @@ mod tests {
     use super::*;
     use crate::{AstSink, Parser};
 
+    static SAMPLE_FEA: &str = include_str!("../../test-data/mini.fea");
+
     #[test]
     fn seek() {
-        let fea = include_str!("../../test-data/mini.fea");
-        let mut sink = AstSink::new(fea);
-        let mut parser = Parser::new(fea, &mut sink);
+        let mut sink = AstSink::new(SAMPLE_FEA);
+        let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
         crate::root(&mut parser);
         let (root, _errs) = sink.finish();
 
@@ -242,5 +271,91 @@ mod tests {
             cursor.current().and_then(NodeOrToken::token_text).unwrap(),
             "substitute"
         );
+    }
+
+    #[test]
+    fn ascend_jump() {
+        let mut sink = AstSink::new(SAMPLE_FEA);
+        let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
+        crate::root(&mut parser);
+        let (root, _errs) = sink.finish();
+
+        let mut cursor = root.cursor();
+        cursor.advance();
+        cursor.advance();
+        cursor.advance();
+        cursor.advance();
+        cursor.advance();
+        cursor.advance();
+        let pre_descent = cursor.pos();
+        cursor.descend_current();
+        cursor.ascend();
+        assert_eq!(cursor.pos(), pre_descent);
+        cursor.descend_current();
+        cursor.advance();
+        cursor.ascend();
+        assert_eq!(cursor.pos(), pre_descent);
+    }
+
+    fn at_node(cursor: &Cursor, kind: Kind) -> bool {
+        cursor
+            .current()
+            .and_then(NodeOrToken::as_node)
+            .map(|n| n.kind == kind)
+            .unwrap_or(false)
+    }
+
+    fn at_token(cursor: &Cursor, kind: Kind) -> bool {
+        cursor
+            .current()
+            .and_then(NodeOrToken::as_token)
+            .map(|n| n.kind == kind)
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn advance() {
+        let fea = "feature kern { pos a b -20; }kern;";
+        let mut sink = AstSink::new(fea);
+        let mut parser = Parser::new(fea, &mut sink);
+        crate::root(&mut parser);
+        let (root, errs) = sink.finish();
+        assert!(errs.is_empty());
+        let mut cursor = root.cursor();
+        assert!(at_node(&cursor, Kind::FeatureKw), "{:?}", cursor.current());
+        cursor.advance();
+        assert!(at_token(&cursor, Kind::FeatureKw), "{:?}", cursor.current());
+        cursor.advance();
+        assert!(at_token(&cursor, Kind::Whitespace));
+        cursor.advance();
+        assert!(at_token(&cursor, Kind::Tag));
+        cursor.advance();
+        cursor.advance();
+        assert!(at_token(&cursor, Kind::LBrace), "{:?}", cursor.current());
+        cursor.advance();
+        assert!(
+            at_token(&cursor, Kind::Whitespace),
+            "{:?}",
+            cursor.current()
+        );
+        cursor.advance();
+        assert!(at_node(&cursor, Kind::GposNode), "{:?}", cursor.current());
+        cursor.advance();
+        cursor.advance();
+        cursor.advance();
+        cursor.advance();
+        cursor.advance();
+        assert!(at_token(&cursor, Kind::GlyphName), "{:?}", cursor.current());
+        cursor.advance();
+        cursor.advance();
+        assert!(
+            at_node(&cursor, Kind::ValueRecordNode),
+            "{:?}",
+            cursor.current()
+        );
+        cursor.advance();
+        assert!(at_token(&cursor, Kind::Number), "{:?}", cursor.current());
+        cursor.advance();
+        assert!(at_token(&cursor, Kind::Semi), "{:?}", cursor.current());
     }
 }
