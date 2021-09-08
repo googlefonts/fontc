@@ -158,6 +158,14 @@ impl TreeBuilder {
 }
 
 impl NodeOrToken {
+    pub fn is_token(&self) -> bool {
+        matches!(self, NodeOrToken::Token(_))
+    }
+
+    pub fn token_text(&self) -> Option<&str> {
+        self.as_token().map(Token::as_str)
+    }
+
     pub fn text_len(&self) -> usize {
         match self {
             NodeOrToken::Node(n) => n.text_len,
