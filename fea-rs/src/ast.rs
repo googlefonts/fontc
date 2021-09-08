@@ -12,10 +12,12 @@ struct SyntaxKind(u16);
 
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
 pub struct Node {
-    kind: Kind,
-    // start of this node relative to start of parent node
-    //rel_pos: usize,
-    text_len: usize,
+    pub kind: Kind,
+    // start of this node relative to start of parent node.
+    // we can use this to more efficiently move to a given offset
+    // TODO: remove if unused
+    rel_pos: usize,
+    pub text_len: usize,
     children: Arc<[NodeOrToken]>,
 }
 
@@ -55,6 +57,8 @@ pub struct Cursor<'a> {
 
 struct NodeRef<'a> {
     node: &'a Node,
+    /// true if we are pointing at a child node, but have not yet descended.
+    fresh: bool,
     // the idx of the node's current child
     idx: usize,
 }
@@ -63,7 +67,11 @@ impl<'a> Cursor<'a> {
     fn new(root: &'a Node) -> Self {
         Cursor {
             pos: 0,
-            current: NodeRef { node: root, idx: 0 },
+            current: NodeRef {
+                node: root,
+                fresh: true,
+                idx: 0,
+            },
             parents: ParentStack::new(),
         }
     }
@@ -79,28 +87,66 @@ impl<'a> Cursor<'a> {
     }
 
     pub fn next_token(&mut self) -> Option<&'a Token> {
-        let cur_len = self.current.current_token_len();
-        match self.current.advance() {
-            Some(NodeOrToken::Token(token)) => {
-                self.pos += cur_len;
-                Some(token)
-            }
-            Some(NodeOrToken::Node(node)) => {
-                self.descend(node);
-                self.next_token()
-            }
-            None => {
-                assert!(self.current.is_done());
-                while self.current.is_done() {
-                    match self.parents.pop() {
-                        Some(parent) => self.current = parent,
-                        // this must be the root node, and it must be finished
-                        None => return None,
-                    }
-                }
-                self.next_token()
+        loop {
+            let current = self.current();
+            self.advance();
+            match current {
+                Some(NodeOrToken::Node(_)) => (),
+                Some(NodeOrToken::Token(t)) => return Some(t),
+                None => break None,
             }
         }
+    }
+
+    /// Advance the cursor.
+    ///
+    /// This descends or returns into and from child nodes.
+    pub fn advance(&mut self) {
+        self.pos += self.text_len_if_at_token().unwrap_or(0);
+        match self.current() {
+            Some(NodeOrToken::Token(_)) => {
+                self.current.advance();
+            }
+            Some(NodeOrToken::Node(node)) => {
+                if self.current.fresh {
+                    self.descend(node);
+                } else {
+                    self.current.advance();
+                }
+            }
+            // we need to pop parent, which we do below
+            None => (),
+        }
+
+        // if we are finished a node (including when we just advanced) we restore
+        // the previous unfinished parent
+        if self.current().is_none() {
+            assert!(self.current.is_done());
+            while self.current.is_done() {
+                match self.parents.pop() {
+                    Some(parent) => self.current = parent,
+                    // this must be the root node, and it must be finished
+                    None => return,
+                }
+            }
+        }
+    }
+
+    fn text_len_if_at_token(&self) -> Option<usize> {
+        match self.current()? {
+            NodeOrToken::Token(t) => Some(t.text.len()),
+            _ => None,
+        }
+    }
+
+    /// The current node or token.
+    ///
+    /// This is only `None` if the cursor is advanced past the end of the tree.
+    ///
+    /// This will never point to the root node itself, only its descendents.
+    //TODO: we could solve this with a dummy root, do we care?
+    pub fn current(&self) -> Option<&'a NodeOrToken> {
+        self.current.current()
     }
 
     // move down into a child node.
@@ -108,8 +154,13 @@ impl<'a> Cursor<'a> {
     // invariant: `node` is a child of `self.current`
     fn descend(&mut self, node: &'a Node) {
         // move the current node onto the parent set
-        let new_current = NodeRef { node, idx: 0 };
-        let prev = std::mem::replace(&mut self.current, new_current);
+        let new_current = NodeRef {
+            node,
+            fresh: true,
+            idx: 0,
+        };
+        let mut prev = std::mem::replace(&mut self.current, new_current);
+        prev.fresh = false;
         self.parents.push(prev);
     }
 }
@@ -157,15 +208,12 @@ impl<T, const N: usize> ParentStack<T, N> {
 }
 
 impl<'a> NodeRef<'a> {
-    fn current_token_len(&self) -> usize {
-        self.node
-            .children
-            .get(self.idx)
-            .map(NodeOrToken::text_len)
-            .unwrap_or(0)
+    fn current(&self) -> Option<&'a NodeOrToken> {
+        self.node.children.get(self.idx)
     }
 
     fn advance(&mut self) -> Option<&'a NodeOrToken> {
+        self.fresh = true;
         let idx = self.idx;
         self.idx += 1;
         self.node.children.get(idx)
@@ -213,18 +261,19 @@ impl<'a> AstSink<'a> {
 }
 
 impl Node {
-    fn new(kind: Kind, children: Vec<NodeOrToken>) -> Self {
-        let text_len = children
-            .iter()
-            .map(|child| match child {
-                NodeOrToken::Token(t) => t.text.len(),
-                NodeOrToken::Node(node) => node.text_len,
-            })
-            .sum();
+    fn new(kind: Kind, mut children: Vec<NodeOrToken>) -> Self {
+        let mut text_len = 0;
+        for child in &mut children {
+            if let NodeOrToken::Node(n) = child {
+                n.rel_pos += text_len;
+            }
+            text_len += child.text_len();
+        }
 
         Node {
             kind,
             text_len,
+            rel_pos: 0,
             children: children.into(),
         }
     }
@@ -257,10 +306,10 @@ impl TreeBuilder {
         self.parents.push((kind, len));
     }
 
-    fn token(&mut self, kind: Kind, text: &str) {
+    fn token(&mut self, kind: Kind, text: impl Into<SmolStr>) {
         let token = Token {
             kind,
-            text: SmolStr::from(text),
+            text: text.into(),
         };
 
         self.children.push(NodeOrToken::Token(token));
@@ -269,7 +318,6 @@ impl TreeBuilder {
     fn finish_node(&mut self) {
         let (kind, first_child) = self.parents.pop().unwrap();
         let node = Node::new(kind, self.children.split_off(first_child));
-        //self.children.truncate(first_child);
         self.children.push(NodeOrToken::Node(node));
     }
 
