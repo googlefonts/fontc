@@ -71,7 +71,7 @@ pub fn language_system(parser: &mut Parser) {
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::LanguagesystemKw);
+    parser.start_node(Kind::LanguageSystemNode);
     language_system_body(parser);
     parser.finish_node();
 }
@@ -93,7 +93,7 @@ fn include(parser: &mut Parser) {
         parser.expect_semi();
     }
 
-    parser.start_node(Kind::IncludeKw);
+    parser.start_node(Kind::IncludeNode);
     include_body(parser);
     parser.finish_node();
 }
@@ -297,7 +297,7 @@ fn mark_class(parser: &mut Parser) {
         parser.expect_semi();
     }
 
-    parser.start_node(Kind::MarkClassKw);
+    parser.start_node(Kind::MarkClassNode);
     mark_class_body(parser);
     parser.finish_node();
 }
@@ -305,6 +305,8 @@ fn mark_class(parser: &mut Parser) {
 fn anchor_def(parser: &mut Parser) {
     fn anchor_def_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::AnchorDefKw));
+        parser.eat_trivia();
+        parser.start_node(Kind::AnchorNode);
         let recovery = TokenSet::TOP_LEVEL
             .union(TokenSet::IDENT_LIKE)
             .union(TokenSet::new(&[Kind::ContourpointKw, Kind::Semi]));
@@ -313,12 +315,13 @@ fn anchor_def(parser: &mut Parser) {
         if parser.eat(Kind::ContourpointKw) {
             parser.expect_recover(Kind::Number, TokenSet::TOP_LEVEL.union(Kind::Semi.into()));
         }
+        parser.finish_node();
         parser.expect_recover(TokenSet::IDENT_LIKE, TokenSet::TOP_SEMI);
         parser.expect_semi();
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::AnchorDefKw);
+    parser.start_node(Kind::AnchorDefNode);
     anchor_def_body(parser);
     parser.finish_node();
 }
@@ -360,7 +363,7 @@ fn anonymous(parser: &mut Parser) {
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::AnonKw);
+    parser.start_node(Kind::AnonBlockNode);
     anon_body(parser);
     parser.finish_node();
 }
@@ -385,14 +388,14 @@ mod tests {
         crate::assert_eq_str!(
             out.to_string(),
             "\
-START LanguagesystemKw
+START LanguageSystemNode
   0..14 LanguagesystemKw
   14..15 WS
   15..19 Tag
   19..20 WS
   20..24 Tag
   24..25 ;
-END LanguagesystemKw
+END LanguageSystemNode
 "
         )
     }
@@ -408,14 +411,14 @@ END LanguagesystemKw
 START FILE
   0..4 #
   4..5 WS
-  START LanguagesystemKw
+  START LanguageSystemNode
     5..19 LanguagesystemKw
     19..20 WS
     20..24 Tag
     24..25 WS
     25..29 Tag
     29..30 ;
-  END LanguagesystemKw
+  END LanguageSystemNode
 END FILE
 "
         )
@@ -431,31 +434,31 @@ include(fun.fea);
         let out = debug_parse_output(input, root);
         let exp = "\
 START FILE
-  START LanguagesystemKw
+  START LanguageSystemNode
     0..14 LanguagesystemKw
     14..15 WS
     15..19 Tag
     19..20 WS
     20..24 Tag
     24..25 ;
-  END LanguagesystemKw
+  END LanguageSystemNode
   25..26 WS
-  START LanguagesystemKw
+  START LanguageSystemNode
     26..40 LanguagesystemKw
     40..41 WS
     41..45 Tag
     45..46 WS
     46..50 Tag
     50..51 ;
-  END LanguagesystemKw
+  END LanguageSystemNode
   51..52 WS
-  START IncludeKw
+  START IncludeNode
     52..59 IncludeKw
     59..60 (
     60..67 Path
     67..68 )
     68..69 ;
-  END IncludeKw
+  END IncludeNode
   69..70 WS
 END FILE
 ";
@@ -470,7 +473,7 @@ END FILE
         assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
         crate::assert_eq_str!(
             "\
-START MarkClassKw
+START MarkClassNode
   0..9 MarkClassKw
   9..10 WS
   START GlyphClass
@@ -479,7 +482,7 @@ START MarkClassKw
     16..17 ]
   END GlyphClass
   17..18 WS
-  START AnchorKw
+  START AnchorNode
     18..19 <
     19..25 AnchorKw
     25..26 WS
@@ -487,11 +490,11 @@ START MarkClassKw
     29..30 WS
     30..31 METRIC
     31..32 >
-  END AnchorKw
+  END AnchorNode
   32..33 WS
   33..43 @GlyphClass
   43..44 ;
-END MarkClassKw
+END MarkClassNode
 ",
             out.to_string(),
         );

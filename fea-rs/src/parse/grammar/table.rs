@@ -4,7 +4,7 @@ use crate::parse::{Kind, Parser, TokenSet};
 
 pub(crate) fn table(parser: &mut Parser) {
     parser.eat_trivia();
-    parser.start_node(Kind::TableKw);
+    parser.start_node(Kind::TableNode);
     assert!(parser.eat(Kind::TableKw));
     let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
     match parser.nth_raw(0) {

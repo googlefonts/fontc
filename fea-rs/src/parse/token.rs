@@ -188,6 +188,15 @@ pub enum Kind {
     LookupRefNode,
     LookupBlockNode,
     ScriptRecordNode,
+    IncludeNode,
+    TableNode,
+    MarkClassNode,
+    AnchorNode,
+    AnchorDefNode,
+    AnonBlockNode,
+    GlyphClassDefNode,
+    LanguageSystemNode,
+    FeatureNode,
 }
 
 impl Kind {
@@ -455,6 +464,15 @@ impl std::fmt::Display for Kind {
             Self::LookupBlockNode => write!(f, "LookupBlockNode"),
             Self::ScriptRecordNode => write!(f, "ScriptRecoordNode"),
             Self::TableEntryNode => write!(f, "TableEntryNode"),
+            Self::IncludeNode => write!(f, "IncludeNode"),
+            Self::TableNode => write!(f, "TableNode"),
+            Self::MarkClassNode => write!(f, "MarkClassNode"),
+            Self::AnchorDefNode => write!(f, "AnchorDefNode"),
+            Self::AnchorNode => write!(f, "AnchorNode"),
+            Self::AnonBlockNode => write!(f, "AnonBlockNode"),
+            Self::GlyphClassDefNode => write!(f, "GlyphClassDefNode"),
+            Self::LanguageSystemNode => write!(f, "LanguageSystemNode"),
+            Self::FeatureNode => write!(f, "FeatureNode"),
         }
     }
 }

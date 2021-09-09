@@ -28,7 +28,7 @@ pub(crate) fn named_glyph_class_decl(parser: &mut Parser, recovery: TokenSet) {
         }
     }
 
-    parser.start_node(Kind::NamedGlyphClass);
+    parser.start_node(Kind::GlyphClassDefNode);
     glyph_class_body(parser, recovery);
     parser.expect_semi();
     parser.finish_node();
@@ -165,7 +165,7 @@ END GlyphClass
         crate::assert_eq_str!(
             out.to_string(),
             "\
-START @GlyphClass
+START GlyphClassDefNode
   0..5 @GlyphClass
   5..6 WS
   6..7 =
@@ -196,7 +196,7 @@ START @GlyphClass
     28..29 ]
   END GlyphClass
   29..30 ;
-END @GlyphClass
+END GlyphClassDefNode
 "
         );
         assert!(out.errors().is_empty());

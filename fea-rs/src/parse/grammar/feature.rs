@@ -98,7 +98,7 @@ pub(crate) fn feature(parser: &mut Parser) {
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::FeatureKw);
+    parser.start_node(Kind::FeatureNode);
     feature_body(parser);
     parser.finish_node();
 }

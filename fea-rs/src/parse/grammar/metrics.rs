@@ -36,7 +36,7 @@ pub(crate) fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::AnchorKw);
+    parser.start_node(Kind::AnchorNode);
     let r = anchor_body(parser, recovery);
     parser.finish_node();
     r
@@ -174,7 +174,7 @@ mod tests {
         assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
         crate::assert_eq_str!(
             "\
-START AnchorKw
+START AnchorNode
   <
   AnchorKw
   WS( )
@@ -182,7 +182,7 @@ START AnchorKw
   WS( )
   METRIC(-30)
   >
-END AnchorKw
+END AnchorNode
 ",
             out.simple_parse_tree(fea),
         );
@@ -203,7 +203,7 @@ END AnchorKw
         );
         crate::assert_eq_str!(
             "\
-START AnchorKw
+START AnchorNode
   <
   AnchorKw
   WS( )
@@ -211,7 +211,7 @@ START AnchorKw
   WS( )
   METRIC(-30)
   >
-END AnchorKw
+END AnchorNode
 ",
             out.simple_parse_tree(fea),
         );
@@ -226,7 +226,7 @@ END AnchorKw
         assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
         crate::assert_eq_str!(
             "\
-START AnchorKw
+START AnchorNode
   <
   AnchorKw
   WS( )
@@ -238,7 +238,7 @@ START AnchorKw
   WS( )
   NUM(14)
   >
-END AnchorKw
+END AnchorNode
 ",
             out.simple_parse_tree(fea),
         );

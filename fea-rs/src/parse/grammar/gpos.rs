@@ -335,7 +335,7 @@ START GposNode
   GlyphName(lam_meem_jeem)
   WS(\\n    )
   START AnchorMarkNode
-    START AnchorKw
+    START AnchorNode
       <
       AnchorKw
       WS( )
@@ -343,7 +343,7 @@ START GposNode
       WS( )
       METRIC(1800)
       >
-    END AnchorKw
+    END AnchorNode
     WS( )
     MarkKw
     WS( )
@@ -357,7 +357,7 @@ START GposNode
   #(# start specifying marks for meem)
   WS(\\n    )
   START AnchorMarkNode
-    START AnchorKw
+    START AnchorNode
       <
       AnchorKw
       WS( )
@@ -365,7 +365,7 @@ START GposNode
       WS( )
       METRIC(-368)
       >
-    END AnchorKw
+    END AnchorNode
     WS( )
     MarkKw
     WS( )
@@ -375,13 +375,13 @@ START GposNode
   ID(ligComponent)
   WS(\\n    )
   START AnchorMarkNode
-    START AnchorKw
+    START AnchorNode
       <
       AnchorKw
       WS( )
       NullKw
       >
-    END AnchorKw
+    END AnchorNode
   END AnchorMarkNode
   ;
 END GposNode
