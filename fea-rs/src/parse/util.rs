@@ -192,7 +192,8 @@ pub(crate) fn write_line_error(
 
 static CARETS: &str = "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
 
-pub(crate) static SPACES: &str = "                                                                                                                                                                                    ";
+#[doc(hidden)]
+pub static SPACES: &str = "                                                                                                                                                                                    ";
 
 pub(crate) fn decimal_digits(n: usize) -> usize {
     (n as f64).log10().floor() as usize + 1

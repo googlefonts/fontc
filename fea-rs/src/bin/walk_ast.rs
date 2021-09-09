@@ -19,22 +19,85 @@ use fea_rs::{AstSink, Node, NodeOrToken, Parser, SyntaxError};
 fn main() {
     let args = Args::get_from_env_or_exit();
     if args.path.is_dir() {
-        panic!("no dirs in here");
-        //directory_arg(&args.path).unwrap();
+        directory_arg(&args.path).unwrap()
     } else {
         single_file_arg(&args.path, args.print_tree)
     }
 }
 
 fn single_file_arg(path: &Path, _print_tree: bool) {
-    let (tree, errors) = try_parse_file(path);
-    print_structure(&tree, &errors, 0, 0);
-    //if errors.is_empty() || print_tree {
-    ////println!("{}", tree);
-    //}
-    //if !errors.is_empty() {
-    //eprintln!("{}", errors);
-    //}
+    let (tree, _errors) = try_parse_file(path);
+    print_structure(&tree, &_errors);
+    println!("deepest: {}", deepest_depth(&tree));
+}
+
+fn deepest_depth(node: &Node) -> usize {
+    let mut deepest = 0;
+    let mut cursor = node.cursor();
+
+    while let Some(_) = cursor.next_token() {
+        deepest = deepest.max(cursor.depth());
+    }
+
+    deepest
+}
+
+fn print_structure(tree: &Node, _errors: &[SyntaxError]) {
+    let mut cursor = tree.cursor();
+    while let Some(thing) = cursor.current() {
+        if let NodeOrToken::Node(node) = thing {
+            let depth = cursor.depth();
+            println!(
+                "{}{} ({})",
+                &fea_rs::util::SPACES[..depth * 2],
+                node.kind,
+                node.text_len()
+            );
+        }
+        cursor.advance();
+    }
+}
+
+fn directory_arg(path: &Path) -> std::io::Result<()> {
+    let mut seen = 0;
+    // tuple of path + was panic
+    let mut failures = Vec::new();
+    let (mut deepest, mut d_path) = (0, PathBuf::new());
+    for entry in path.read_dir()? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension() == Some(OsStr::new("fea")) {
+            seen += 1;
+            //eprintln!("parsing '{}'", path.display());
+            match std::panic::catch_unwind(|| try_parse_file(&path)) {
+                Err(_) => failures.push((path, true)),
+                Ok((root, errs)) => {
+                    if !errs.is_empty() {
+                        failures.push((path.clone(), false));
+                    }
+
+                    let text = root.iter_tokens().map(|t| t.as_str()).collect::<String>();
+                    assert_eq!(text, std::fs::read_to_string(&path).unwrap());
+                    let depth = deepest_depth(&root);
+                    if depth > deepest {
+                        deepest = depth;
+                        d_path = path;
+                    }
+                }
+            };
+        }
+    }
+
+    println!("\nparsed {}/{} files.", seen - failures.len(), seen);
+    if !failures.is_empty() {
+        println!("\nFAILURES:");
+        for (path, panic) in failures {
+            let panic = if panic { "PANIC" } else { "     " };
+            println!(" {} {}", panic, path.display());
+        }
+    }
+    println!("deepest: {}: {}", d_path.display(), deepest);
+    Ok(())
 }
 
 /// returns the tree and any errors
@@ -44,47 +107,6 @@ fn try_parse_file(path: &Path) -> (Node, Vec<SyntaxError>) {
     let mut parser = Parser::new(&contents, &mut sink);
     fea_rs::root(&mut parser);
     sink.finish()
-    //(
-    //sink.simple_parse_tree(&contents),
-    //sink.print_errs(&contents),
-    //)
-}
-
-static SPACES: &str = "                                                                                                                                                      ";
-
-fn print_structure(tree: &Node, errors: &[SyntaxError], pos: usize, level: usize) {
-    let n_spaces = level * 2;
-    let split_error_pos = errors
-        .iter()
-        .position(|err| err.range.start >= pos)
-        .unwrap_or_else(|| errors.len());
-    //dbg!(split_error_pos);
-    let errors = &errors[split_error_pos..];
-    let n_errors = errors
-        .iter()
-        .take_while(|err| err.range.start <= pos + tree.text_len())
-        .count();
-    let err_text = match n_errors {
-        0 => String::new(),
-        1 => String::from(" 1 Error"),
-        n => format!(" {} Errors", n),
-    };
-    println!(
-        "{}{} {}..{}{}",
-        &SPACES[..n_spaces],
-        tree.kind(),
-        pos,
-        pos + tree.text_len(),
-        err_text
-    );
-    let mut rel_pos = 0;
-    for child in tree.children() {
-        if let NodeOrToken::Node(n) = child {
-            print_structure(n, errors, rel_pos + pos, level + 1);
-        }
-        rel_pos += child.text_len();
-    }
-    //let mut pos = 0;
 }
 
 macro_rules! exit_err {
