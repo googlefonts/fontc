@@ -23,6 +23,9 @@ pub struct Node {
     // TODO: remove if unused
     rel_pos: usize,
     pub text_len: usize,
+    // true if an error was encountered in this node. this is not recursive;
+    // it is only true for the direct parent of an error span.
+    pub error: bool,
     children: Arc<[NodeOrToken]>,
 }
 
@@ -52,6 +55,7 @@ pub struct AstSink<'a> {
     text_pos: usize,
     builder: TreeBuilder,
     errors: Vec<SyntaxError>,
+    cur_node_contains_error: bool,
 }
 
 impl TreeSink for AstSink<'_> {
@@ -66,11 +70,13 @@ impl TreeSink for AstSink<'_> {
     }
 
     fn finish_node(&mut self) {
-        self.builder.finish_node();
+        self.builder.finish_node(self.cur_node_contains_error);
+        self.cur_node_contains_error = false;
     }
 
     fn error(&mut self, error: SyntaxError) {
-        self.errors.push(error)
+        self.errors.push(error);
+        self.cur_node_contains_error = true;
     }
 }
 
@@ -81,6 +87,7 @@ impl<'a> AstSink<'a> {
             text_pos: 0,
             builder: TreeBuilder::default(),
             errors: Vec::new(),
+            cur_node_contains_error: false,
         }
     }
 
@@ -91,7 +98,7 @@ impl<'a> AstSink<'a> {
 }
 
 impl Node {
-    fn new(kind: Kind, mut children: Vec<NodeOrToken>) -> Self {
+    fn new(kind: Kind, mut children: Vec<NodeOrToken>, error: bool) -> Self {
         let mut text_len = 0;
         for child in &mut children {
             if let NodeOrToken::Node(n) = child {
@@ -105,6 +112,7 @@ impl Node {
             text_len,
             rel_pos: 0,
             children: children.into(),
+            error,
         }
     }
 
@@ -170,9 +178,9 @@ impl TreeBuilder {
         self.children.push(item)
     }
 
-    fn finish_node(&mut self) {
+    fn finish_node(&mut self, error: bool) {
         let (kind, first_child) = self.parents.pop().unwrap();
-        let node = Node::new(kind, self.children.split_off(first_child));
+        let node = Node::new(kind, self.children.split_off(first_child), error);
         self.children.push(NodeOrToken::Node(node));
     }
 
@@ -290,7 +298,7 @@ fn apply_edits_recurse(
             }
         }
     }
-    builder.finish_node();
+    builder.finish_node(false);
 }
 
 fn op_for_node(node_range: Range<usize>, edit_range: Range<usize>) -> EditOp {

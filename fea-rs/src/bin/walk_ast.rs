@@ -7,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use ansi_term::Colour;
 use fea_rs::{AstSink, Node, NodeOrToken, Parser, SyntaxError};
 
 /// Attempt to parse fea files.
@@ -47,12 +48,18 @@ fn print_structure(tree: &Node, _errors: &[SyntaxError]) {
     while let Some(thing) = cursor.current() {
         if let NodeOrToken::Node(node) = thing {
             let depth = cursor.depth();
+            if node.error {
+                print!("{}", Colour::Red.prefix());
+            }
             println!(
                 "{}{} ({})",
                 &fea_rs::util::SPACES[..depth * 2],
                 node.kind,
                 node.text_len()
             );
+            if node.error {
+                print!("{}", Colour::Red.suffix());
+            }
         }
         cursor.advance();
     }
