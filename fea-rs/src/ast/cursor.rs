@@ -106,7 +106,7 @@ impl<'a> Cursor<'a> {
     pub fn seek(&mut self, pos: usize) {
         // first ascend until pos is in front of us.
         self.move_to_start_of_current_node();
-        while pos < self.pos || pos >= self.pos + self.current.node.text_len {
+        while pos < self.pos || pos >= self.pos + self.current.node.text_len() {
             self.ascend();
             self.move_to_start_of_current_node();
         }
@@ -228,7 +228,7 @@ impl<'a> NodeRef<'a> {
     ///
     /// `pos` is relative to the current node.
     fn idx_for_pos(&mut self, pos: usize) -> usize {
-        assert!(pos < self.node.text_len);
+        assert!(pos < self.node.text_len());
         let mut text_pos = 0;
         for (i, child) in self.children().iter().enumerate() {
             if (text_pos..text_pos + child.text_len()).contains(&pos) {

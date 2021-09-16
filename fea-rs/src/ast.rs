@@ -3,8 +3,8 @@ use std::{ops::Range, sync::Arc};
 use smol_str::SmolStr;
 
 use crate::{
-    parse::{SyntaxError, TreeSink},
-    Kind,
+    parse::{SyntaxError, TokenComparable, TreeSink},
+    Kind, TokenSet,
 };
 
 use self::cursor::Cursor;
@@ -12,26 +12,24 @@ use self::cursor::Cursor;
 mod cursor;
 mod stack;
 
-#[derive(PartialEq, Eq, Clone, Copy)]
-struct SyntaxKind(u16);
-
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
 pub struct Node {
     pub kind: Kind,
     // start of this node relative to start of parent node.
     // we can use this to more efficiently move to a given offset
     // TODO: remove if unused
-    rel_pos: usize,
-    pub text_len: usize,
+    rel_pos: u32,
+    text_len: u32,
     // true if an error was encountered in this node. this is not recursive;
     // it is only true for the direct parent of an error span.
     pub error: bool,
-    children: Arc<[NodeOrToken]>,
+    pub(crate) children: Arc<Vec<NodeOrToken>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
 pub struct Token {
     pub kind: Kind,
+    pos: u32,
     pub text: SmolStr,
 }
 
@@ -42,7 +40,7 @@ pub enum NodeOrToken {
 }
 
 #[derive(Clone, Debug, Default)]
-struct TreeBuilder {
+pub(crate) struct TreeBuilder {
     //TODO: reuse tokens
     //token_cache: HashMap<Arc<Token>>,
     // the kind of the parent, and the index in children of the first child.
@@ -101,10 +99,11 @@ impl Node {
     fn new(kind: Kind, mut children: Vec<NodeOrToken>, error: bool) -> Self {
         let mut text_len = 0;
         for child in &mut children {
-            if let NodeOrToken::Node(n) = child {
-                n.rel_pos += text_len;
+            match child {
+                NodeOrToken::Node(n) => n.rel_pos += text_len,
+                NodeOrToken::Token(t) => t.pos += text_len as u32,
             }
-            text_len += child.text_len();
+            text_len += child.text_len() as u32;
         }
 
         Node {
@@ -130,11 +129,19 @@ impl Node {
     }
 
     pub fn text_len(&self) -> usize {
-        self.text_len
+        self.text_len as usize
+    }
+
+    pub fn rel_pos(&self) -> usize {
+        self.rel_pos as usize
     }
 
     pub fn children(&self) -> impl Iterator<Item = &NodeOrToken> {
         self.children.iter()
+    }
+
+    pub fn children_mut(&mut self) -> impl Iterator<Item = &mut NodeOrToken> {
+        Arc::make_mut(&mut self.children).iter_mut()
     }
 
     #[doc(hidden)]
@@ -161,14 +168,15 @@ impl Node {
 }
 
 impl TreeBuilder {
-    fn start_node(&mut self, kind: Kind) {
+    pub(crate) fn start_node(&mut self, kind: Kind) {
         let len = self.children.len();
         self.parents.push((kind, len));
     }
 
-    fn token(&mut self, kind: Kind, text: impl Into<SmolStr>) {
+    pub(crate) fn token(&mut self, kind: Kind, text: impl Into<SmolStr>) {
         let token = Token {
             kind,
+            pos: 0,
             text: text.into(),
         };
         self.push_raw(NodeOrToken::Token(token));
@@ -178,13 +186,13 @@ impl TreeBuilder {
         self.children.push(item)
     }
 
-    fn finish_node(&mut self, error: bool) {
+    pub(crate) fn finish_node(&mut self, error: bool) {
         let (kind, first_child) = self.parents.pop().unwrap();
         let node = Node::new(kind, self.children.split_off(first_child), error);
         self.children.push(NodeOrToken::Node(node));
     }
 
-    fn finish(mut self) -> Node {
+    pub(crate) fn finish(mut self) -> Node {
         assert_eq!(self.children.len(), 1);
         self.children.pop().unwrap().into_node().unwrap()
     }
@@ -199,24 +207,37 @@ impl NodeOrToken {
         self.as_token().map(Token::as_str)
     }
 
+    pub fn kind(&self) -> Kind {
+        match self {
+            NodeOrToken::Node(n) => n.kind,
+            NodeOrToken::Token(t) => t.kind,
+        }
+    }
+
+    pub fn matches(&self, predicate: TokenSet) -> bool {
+        predicate.matches(self.kind())
+    }
+
     pub fn text_len(&self) -> usize {
         match self {
-            NodeOrToken::Node(n) => n.text_len,
+            NodeOrToken::Node(n) => n.text_len as usize,
             NodeOrToken::Token(t) => t.text.len(),
         }
+    }
+
+    pub(crate) fn replace(&mut self, mut new: Node) {
+        assert_eq!(new.text_len(), self.text_len());
+        new.rel_pos = match self {
+            NodeOrToken::Token(t) => t.pos,
+            NodeOrToken::Node(n) => n.rel_pos,
+        };
+        *self = NodeOrToken::Node(new);
     }
 
     pub fn into_node(self) -> Option<Node> {
         match self {
             NodeOrToken::Node(node) => Some(node),
             NodeOrToken::Token(_) => None,
-        }
-    }
-
-    pub fn into_token(self) -> Option<Token> {
-        match self {
-            NodeOrToken::Node(_) => None,
-            NodeOrToken::Token(token) => Some(token),
         }
     }
 
@@ -244,6 +265,10 @@ impl From<Node> for NodeOrToken {
 impl Token {
     pub fn as_str(&self) -> &str {
         &self.text
+    }
+
+    pub fn range(&self) -> Range<usize> {
+        self.pos as usize..self.pos as usize + self.text.len()
     }
 }
 
@@ -383,7 +408,6 @@ feature liga {
             })
         };
 
-        //root.debug_print_structure(true);
         let edits = vec![(0..25, replace_lang), (72..94, replace_sub)];
         let edited = apply_edits(&root, edits);
         let result = edited.iter_tokens().map(|t| t.as_str()).collect::<String>();
