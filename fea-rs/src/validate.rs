@@ -62,7 +62,7 @@ impl<'a> ValidationContext<'a> {
             match child {
                 NodeOrToken::Token(t) if t.kind == Kind::Cid => (),
                 NodeOrToken::Token(t) if t.kind == Kind::GlyphName => {
-                    match validate_glyph_name(t.as_str()) {
+                    match validate_glyph_name(t.as_str().as_bytes()) {
                         NameType::Valid => (),
                         NameType::Invalid(idx) => {
                             let chr = t.as_str()[idx..].chars().next().unwrap();
@@ -88,7 +88,7 @@ impl<'a> ValidationContext<'a> {
     }
 }
 
-enum NameType {
+pub(crate) enum NameType {
     Valid,
     MaybeRange,
     Invalid(usize),
@@ -135,7 +135,7 @@ fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
         })
 }
 
-fn validate_glyph_name(name: &str) -> NameType {
+pub(crate) fn validate_glyph_name(name: &[u8]) -> NameType {
     fn validate_glyph_body(bytes: &[u8]) -> NameType {
         let mut range = false;
         for (idx, byte) in bytes.iter().enumerate() {
@@ -162,13 +162,10 @@ fn validate_glyph_name(name: &str) -> NameType {
         }
     }
 
-    let (first, rest) = name
-        .as_bytes()
-        .split_first()
-        .expect("glyph names are not empty");
+    let (first, rest) = name.split_first().expect("glyph names are not empty");
     match first {
         b'_' | b'a'..=b'z' | b'A'..=b'Z' => validate_glyph_body(rest),
-        b'.' if name == ".notdef" => NameType::Valid,
+        b'.' if name == b".notdef" => NameType::Valid,
         _ => NameType::Invalid(0),
     }
 }

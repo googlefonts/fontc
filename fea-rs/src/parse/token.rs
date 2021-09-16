@@ -176,6 +176,8 @@ pub enum Kind {
     Tag,
     Path,
     GlyphName,
+    // an ambiguious name, like a-z, which requires a glyphset to disambiguate.
+    GlyphNameOrRange,
     GlyphClass,
 
     // general purpose table node
@@ -359,6 +361,7 @@ impl std::fmt::Display for Kind {
             Self::NamedGlyphClass => write!(f, "@GlyphClass"),
             Self::GlyphRange => write!(f, "GlyphRange"),
             Self::GlyphName => write!(f, "GlyphName"),
+            Self::GlyphNameOrRange => write!(f, "GlyphNameOrRange"),
             Self::Cid => write!(f, "CID"),
             Self::Metric => write!(f, "METRIC"),
             Self::Label => write!(f, "LABEL"),

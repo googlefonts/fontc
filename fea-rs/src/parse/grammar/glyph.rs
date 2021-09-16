@@ -1,4 +1,7 @@
-use crate::parse::{Kind, Parser, TokenSet};
+use crate::{
+    parse::{Kind, Parser, TokenSet},
+    validate::{self, NameType},
+};
 
 // @class = @class;
 // @class = [a b c];
@@ -110,17 +113,50 @@ fn eat_glyph_name_like(parser: &mut Parser) -> bool {
     if parser.matches(0, Kind::Backslash) {
         if parser.matches(1, TokenSet::IDENT_LIKE) {
             parser.eat(Kind::Backslash);
-            parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName);
+            eat_and_validate_glyph_name(parser);
             true
         } else if parser.matches(1, Kind::Number) {
             parser.eat(Kind::Backslash);
-            parser.eat_remap(Kind::Number, Kind::Cid);
+            let raw = parser.nth_raw(0);
+            // negative numbers not allowed in CID
+            let valid = raw.first() != Some(&b'-');
+            if !valid {
+                parser.err_and_bump("CID must be positive decimal number.")
+            } else {
+                parser.eat_remap(Kind::Number, Kind::Cid);
+            }
             true
         } else {
             false
         }
+    } else if parser.matches(0, TokenSet::IDENT_LIKE) {
+        eat_and_validate_glyph_name(parser);
+        true
     } else {
-        parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName)
+        false
+    }
+}
+
+fn eat_and_validate_glyph_name(parser: &mut Parser) {
+    debug_assert!(parser.matches(0, TokenSet::IDENT_LIKE));
+    let raw = parser.nth_raw(0);
+    match validate::validate_glyph_name(raw) {
+        NameType::Valid => {
+            parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName);
+        }
+        NameType::MaybeRange => {
+            parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName);
+        }
+        NameType::Invalid(pos) => {
+            let err = match std::str::from_utf8(&raw[pos..])
+                .ok()
+                .and_then(|t| t.chars().next())
+            {
+                Some(chr) => format!("Invalid char '{}' in glyph name", chr),
+                None => "Invalid char in glyph name".to_string(),
+            };
+            parser.err_and_bump(err);
+        }
     }
 }
 
@@ -217,5 +253,16 @@ END GlyphClassDefNode
         assert_eq!(parser.nth_raw(1), b"12");
         assert!(eat_glyph_name_like(&mut parser));
         assert!(!eat_glyph_name_like(&mut parser));
+    }
+
+    #[test]
+    fn invalid_things() {
+        let bad_glyphs = [".hi", "hi!", "hî", "\\-5"];
+        for raw in bad_glyphs {
+            let mut sink = DebugSink::default();
+            let mut parser = Parser::new(raw, &mut sink);
+            eat_glyph_name_like(&mut parser);
+            assert_eq!(sink.errors().len(), 1, "'{}'", raw);
+        }
     }
 }
