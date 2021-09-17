@@ -145,7 +145,7 @@ fn eat_and_validate_glyph_name(parser: &mut Parser) {
             parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName);
         }
         NameType::MaybeRange => {
-            parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName);
+            parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphNameOrRange);
         }
         NameType::Invalid(pos) => {
             let err = match std::str::from_utf8(&raw[pos..])
@@ -162,7 +162,7 @@ fn eat_and_validate_glyph_name(parser: &mut Parser) {
 
 #[cfg(test)]
 mod tests {
-    use crate::DebugSink;
+    use crate::{AstSink, DebugSink, GlyphMap, GlyphName};
 
     use super::super::debug_parse_output;
     use super::*;
@@ -264,5 +264,45 @@ END GlyphClassDefNode
             eat_glyph_name_like(&mut parser);
             assert_eq!(sink.errors().len(), 1, "'{}'", raw);
         }
+    }
+
+    #[test]
+    fn disambiguate_range() {
+        let fea = "[a-b]";
+
+        // first we parse without a glyph map
+        let mut sink = AstSink::new(fea, None);
+        let mut parser = Parser::new(fea, &mut sink);
+        eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
+
+        let (node, errs) = sink.finish();
+        assert!(errs.is_empty());
+        let mut cursor = node.cursor();
+        assert_eq!(cursor.next_token().unwrap().kind, Kind::LSquare);
+        let next = cursor.next_token().unwrap();
+        assert_eq!(&next.text, "a-b");
+        assert_eq!(next.kind, Kind::GlyphNameOrRange);
+        assert_eq!(cursor.next_token().unwrap().kind, Kind::RSquare);
+
+
+        // now we parse with a glyph map
+        let glyphs: GlyphMap = ["a", "b"].iter().cloned().map(GlyphName::from).collect();
+
+        let mut sink = AstSink::new(fea, Some(&glyphs));
+        let mut parser = Parser::new(fea, &mut sink);
+        eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
+
+        let (node, errs) = sink.finish();
+        assert!(errs.is_empty());
+
+        let mut cursor = node.cursor();
+        assert_eq!(cursor.next_token().unwrap().kind, Kind::LSquare);
+        assert_eq!(cursor.current().unwrap().kind(), Kind::GlyphRange, "{:?}", node);
+        let next = cursor.next_token().unwrap();
+        assert_eq!(&next.text, "a");
+        assert_eq!(next.kind, Kind::GlyphName);
+        assert_eq!(cursor.next_token().unwrap().kind, Kind::Hyphen);
+        assert_eq!(cursor.next_token().unwrap().kind, Kind::GlyphName);
+        assert_eq!(cursor.next_token().unwrap().kind, Kind::RSquare);
     }
 }

@@ -95,7 +95,7 @@ pub(crate) enum NameType {
 }
 
 /// try to split a glyph containing hyphens into a glyph range.
-fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
+pub(crate) fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
     let mut solution = None;
 
     // we try all possible split points

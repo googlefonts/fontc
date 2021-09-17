@@ -14,7 +14,7 @@ use fea_rs::{AstSink, GlyphMap, GlyphName, Kind, Node, NodeOrToken, Parser, Synt
 fn main() {
     let args = flags::ValidateNames::from_env().unwrap();
     let (names, features) = load_font(&args.path);
-    let (mut root, mut errors) = try_parse_fea(&features);
+    let (mut root, mut errors) = try_parse_fea(&features, &names);
     let more_errors = fea_rs::validate(&mut root, &names);
     errors.extend(more_errors.into_iter());
 
@@ -48,8 +48,8 @@ fn load_font(filename: &Path) -> (GlyphMap, String) {
 }
 
 /// returns the tree and any errors
-fn try_parse_fea(contents: &str) -> (Node, Vec<SyntaxError>) {
-    let mut sink = AstSink::new(&contents);
+fn try_parse_fea(contents: &str, names: &GlyphMap) -> (Node, Vec<SyntaxError>) {
+    let mut sink = AstSink::new(&contents, Some(names));
     let mut parser = Parser::new(&contents, &mut sink);
     fea_rs::root(&mut parser);
     sink.finish()

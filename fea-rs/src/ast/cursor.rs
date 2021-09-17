@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn seek() {
-        let mut sink = AstSink::new(SAMPLE_FEA);
+        let mut sink = AstSink::new(SAMPLE_FEA, None);
         let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
         crate::root(&mut parser);
         let (root, _errs) = sink.finish();
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn ascend_jump() {
-        let mut sink = AstSink::new(SAMPLE_FEA);
+        let mut sink = AstSink::new(SAMPLE_FEA, None);
         let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
         crate::root(&mut parser);
         let (root, _errs) = sink.finish();
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn advance() {
         let fea = "feature kern { pos a b -20; }kern;";
-        let mut sink = AstSink::new(fea);
+        let mut sink = AstSink::new(fea, None);
         let mut parser = Parser::new(fea, &mut sink);
         crate::root(&mut parser);
         let (root, errs) = sink.finish();

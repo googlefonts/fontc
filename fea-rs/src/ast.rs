@@ -4,7 +4,7 @@ use smol_str::SmolStr;
 
 use crate::{
     parse::{SyntaxError, TokenComparable, TreeSink},
-    Kind, TokenSet,
+    validate, GlyphMap, Kind, TokenSet,
 };
 
 use self::cursor::Cursor;
@@ -52,6 +52,7 @@ pub struct AstSink<'a> {
     text: &'a str,
     text_pos: usize,
     builder: TreeBuilder,
+    glyph_map: Option<&'a GlyphMap>,
     errors: Vec<SyntaxError>,
     cur_node_contains_error: bool,
 }
@@ -59,7 +60,8 @@ pub struct AstSink<'a> {
 impl TreeSink for AstSink<'_> {
     fn token(&mut self, kind: Kind, len: usize) {
         let token_text = &self.text[self.text_pos..self.text_pos + len];
-        self.builder.token(kind, token_text);
+        let to_add = self.validate_token(kind, token_text);
+        self.builder.push_raw(to_add);
         self.text_pos += len;
     }
 
@@ -79,11 +81,12 @@ impl TreeSink for AstSink<'_> {
 }
 
 impl<'a> AstSink<'a> {
-    pub fn new(text: &'a str) -> Self {
+    pub fn new(text: &'a str, glyph_map: Option<&'a GlyphMap>) -> Self {
         AstSink {
             text,
             text_pos: 0,
             builder: TreeBuilder::default(),
+            glyph_map,
             errors: Vec::new(),
             cur_node_contains_error: false,
         }
@@ -92,6 +95,28 @@ impl<'a> AstSink<'a> {
     pub fn finish(self) -> (Node, Vec<SyntaxError>) {
         let node = self.builder.finish();
         (node, self.errors)
+    }
+
+    /// called before adding a token.
+    ///
+    /// We can perform additional validation here. Currently it is mostly for
+    /// disambiguating glyph names that might be ranges.
+    fn validate_token(&mut self, kind: Kind, text: &str) -> NodeOrToken {
+        if kind == Kind::GlyphNameOrRange {
+            if let Some(map) = self.glyph_map {
+                if map.contains(text) {
+                    return Token::new(Kind::GlyphName, text.into()).into();
+                }
+                match validate::try_split_range(text, map) {
+                    Ok(node) => return node.into(),
+                    Err(message) => {
+                        let range = self.text_pos..self.text_pos + text.len();
+                        self.error(SyntaxError { message, range });
+                    }
+                }
+            }
+        }
+        Token::new(kind, text.into()).into()
     }
 }
 
@@ -174,12 +199,8 @@ impl TreeBuilder {
     }
 
     pub(crate) fn token(&mut self, kind: Kind, text: impl Into<SmolStr>) {
-        let token = Token {
-            kind,
-            pos: 0,
-            text: text.into(),
-        };
-        self.push_raw(NodeOrToken::Token(token));
+        let token = Token::new(kind, text.into());
+        self.push_raw(token.into());
     }
 
     fn push_raw(&mut self, item: NodeOrToken) {
@@ -189,7 +210,7 @@ impl TreeBuilder {
     pub(crate) fn finish_node(&mut self, error: bool) {
         let (kind, first_child) = self.parents.pop().unwrap();
         let node = Node::new(kind, self.children.split_off(first_child), error);
-        self.children.push(NodeOrToken::Node(node));
+        self.push_raw(node.into());
     }
 
     pub(crate) fn finish(mut self) -> Node {
@@ -262,7 +283,19 @@ impl From<Node> for NodeOrToken {
     }
 }
 
+impl From<Token> for NodeOrToken {
+    fn from(src: Token) -> NodeOrToken {
+        NodeOrToken::Token(src)
+    }
+}
+
 impl Token {
+    // only call this internally; the `pos` field is set when the node
+    // is finalized.
+    fn new(kind: Kind, text: SmolStr) -> Self {
+        Token { kind, text, pos: 0 }
+    }
+
     pub fn as_str(&self) -> &str {
         &self.text
     }
@@ -358,7 +391,7 @@ mod tests {
 
     #[test]
     fn token_iter() {
-        let mut sink = AstSink::new(SAMPLE_FEA);
+        let mut sink = AstSink::new(SAMPLE_FEA, None);
         let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
         crate::root(&mut parser);
         let (root, _errs) = sink.finish();
@@ -368,7 +401,7 @@ mod tests {
     }
 
     fn make_node(fea: &str, f: impl FnOnce(&mut Parser)) -> Node {
-        let mut sink = AstSink::new(fea);
+        let mut sink = AstSink::new(fea, None);
         let mut parser = Parser::new(fea, &mut sink);
         f(&mut parser);
         let (root, _errs) = sink.finish();
@@ -392,7 +425,7 @@ feature liga {
 } liga;
 ";
 
-        let mut sink = AstSink::new(fea);
+        let mut sink = AstSink::new(fea, None);
         let mut parser = Parser::new(fea, &mut sink);
         crate::root(&mut parser);
         let (root, _errs) = sink.finish();

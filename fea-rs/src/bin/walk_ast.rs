@@ -110,7 +110,7 @@ fn directory_arg(path: &Path) -> std::io::Result<()> {
 /// returns the tree and any errors
 fn try_parse_file(path: &Path) -> (Node, Vec<SyntaxError>) {
     let contents = fs::read_to_string(path).expect("file read failed");
-    let mut sink = AstSink::new(&contents);
+    let mut sink = AstSink::new(&contents, None);
     let mut parser = Parser::new(&contents, &mut sink);
     fea_rs::root(&mut parser);
     sink.finish()
