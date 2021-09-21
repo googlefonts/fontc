@@ -4,7 +4,7 @@ use smol_str::SmolStr;
 
 use crate::{
     parse::{SyntaxError, TokenComparable, TreeSink},
-    validate, GlyphMap, Kind, TokenSet,
+    GlyphMap, Kind, TokenSet,
 };
 
 use self::cursor::Cursor;
@@ -107,7 +107,7 @@ impl<'a> AstSink<'a> {
                 if map.contains(text) {
                     return Token::new(Kind::GlyphName, text.into()).into();
                 }
-                match validate::try_split_range(text, map) {
+                match try_split_range(text, map) {
                     Ok(node) => return node.into(),
                     Err(message) => {
                         let range = self.text_pos..self.text_pos + text.len();
@@ -380,6 +380,47 @@ enum EditOp {
     Replace,
     Recurse,
     Copy,
+}
+
+/// try to split a glyph containing hyphens into a glyph range.
+fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
+    let mut solution = None;
+
+    // we try all possible split points
+    for idx in text
+        .bytes()
+        .enumerate()
+        .filter_map(|(idx, b)| (b == b'-').then(|| idx))
+    {
+        let (head, tail) = text.split_at(idx);
+        if glyph_map.contains(head) && glyph_map.contains(tail.trim_start_matches('-')) {
+            if let Some(prev_idx) = solution.replace(idx) {
+                let (head1, tail1) = text.split_at(prev_idx);
+                let (head2, tail2) = text.split_at(idx);
+                let message = format!("the name '{}' contains multiple possible glyph ranges ({} to {} and {} to {}). Please insert spaces around the '-' to clarify your intent.", text, head1, tail1.trim_end_matches('-'), head2, tail2.trim_end_matches('-'));
+                return Err(message);
+            }
+        }
+    }
+
+    // if we have a solution, generate a new node
+    solution
+        .map(|idx| {
+            let mut builder = TreeBuilder::default();
+            builder.start_node(Kind::GlyphRange);
+            let (head, tail) = text.split_at(idx);
+            builder.token(Kind::GlyphName, head);
+            builder.token(Kind::Hyphen, "-");
+            builder.token(Kind::GlyphName, tail.trim_start_matches('-'));
+            builder.finish_node(false);
+            builder.finish()
+        })
+        .ok_or_else(|| {
+            format!(
+                "'{}' is neither a known glyph or a range of known glyphs",
+                text
+            )
+        })
 }
 
 #[cfg(test)]

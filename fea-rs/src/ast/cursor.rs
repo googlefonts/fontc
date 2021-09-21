@@ -322,7 +322,11 @@ mod tests {
         let (root, errs) = sink.finish();
         assert!(errs.is_empty());
         let mut cursor = root.cursor();
-        assert!(at_node(&cursor, Kind::FeatureNode), "{:?}", cursor.current());
+        assert!(
+            at_node(&cursor, Kind::FeatureNode),
+            "{:?}",
+            cursor.current()
+        );
         cursor.advance();
         assert!(at_token(&cursor, Kind::FeatureKw), "{:?}", cursor.current());
         cursor.advance();

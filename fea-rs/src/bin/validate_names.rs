@@ -14,9 +14,7 @@ use fea_rs::{AstSink, GlyphMap, GlyphName, Kind, Node, NodeOrToken, Parser, Synt
 fn main() {
     let args = flags::ValidateNames::from_env().unwrap();
     let (names, features) = load_font(&args.path);
-    let (mut root, mut errors) = try_parse_fea(&features, &names);
-    let more_errors = fea_rs::validate(&mut root, &names);
-    errors.extend(more_errors.into_iter());
+    let (root, mut errors) = try_parse_fea(&features, &names);
 
     validate_names(&root, 0, &names, &mut errors);
     if !errors.is_empty() {
