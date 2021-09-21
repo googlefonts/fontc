@@ -10,6 +10,7 @@ use crate::{
 use self::cursor::Cursor;
 
 mod cursor;
+mod edit;
 mod stack;
 
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
@@ -305,83 +306,6 @@ impl Token {
     }
 }
 
-fn apply_edits(base: &Node, mut edits: Vec<(Range<usize>, Node)>) -> Node {
-    edits.sort_unstable_by_key(|(range, _)| range.start);
-    edits.reverse();
-    let mut builder = TreeBuilder::default();
-    let mut cursor = base.cursor();
-    apply_edits_recurse(&mut cursor, &mut builder, &mut edits);
-    builder.finish()
-}
-
-fn apply_edits_recurse(
-    cursor: &mut Cursor,
-    builder: &mut TreeBuilder,
-    edits: &mut Vec<(Range<usize>, Node)>,
-) {
-    builder.start_node(cursor.parent_kind());
-    while let Some(current) = cursor.current() {
-        let next_edit_range = match edits.last() {
-            None => {
-                builder.push_raw(current.clone());
-                cursor.step_over();
-                continue;
-            }
-            Some((range, _)) => range.clone(),
-        };
-
-        // now either:
-        // - the edit *is* this item, in which case we replace it
-        // - the edit is *inside* this item, in which case we recurse,
-        // - the edit does not touch this item in which case we push this item
-        //   and step over.
-        let cur_range = cursor.pos()..cursor.pos() + current.text_len();
-        match op_for_node(cur_range, next_edit_range) {
-            EditOp::Copy => {
-                builder.push_raw(current.clone());
-                cursor.step_over();
-                //continue;
-            }
-            EditOp::Replace => {
-                builder.push_raw(edits.pop().unwrap().1.into());
-                cursor.step_over();
-            }
-            EditOp::Recurse => {
-                cursor.descend_current();
-                apply_edits_recurse(cursor, builder, edits);
-                cursor.ascend();
-                // invariant: we have copied or edited all
-                // the items in this subtree.
-                cursor.step_over();
-            }
-        }
-    }
-    builder.finish_node(false);
-}
-
-fn op_for_node(node_range: Range<usize>, edit_range: Range<usize>) -> EditOp {
-    assert!(edit_range.start >= node_range.start);
-    if node_range == edit_range {
-        EditOp::Replace
-    } else if edit_range.start > node_range.start && edit_range.end < node_range.end {
-        EditOp::Recurse
-    } else {
-        assert!(
-            edit_range.end <= node_range.start || edit_range.start >= node_range.end,
-            "{:?} {:?}",
-            edit_range,
-            node_range
-        );
-        EditOp::Copy
-    }
-}
-
-enum EditOp {
-    Replace,
-    Recurse,
-    Copy,
-}
-
 /// try to split a glyph containing hyphens into a glyph range.
 fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
     let mut solution = None;
@@ -425,7 +349,7 @@ fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Parser, TokenSet};
+    use crate::Parser;
 
     use super::*;
     static SAMPLE_FEA: &str = include_str!("../test-data/mini.fea");
@@ -439,52 +363,5 @@ mod tests {
         let reconstruct = root.iter_tokens().map(Token::as_str).collect::<String>();
 
         crate::assert_eq_str!(SAMPLE_FEA, reconstruct);
-    }
-
-    fn make_node(fea: &str, f: impl FnOnce(&mut Parser)) -> Node {
-        let mut sink = AstSink::new(fea, None);
-        let mut parser = Parser::new(fea, &mut sink);
-        f(&mut parser);
-        let (root, _errs) = sink.finish();
-        root
-    }
-
-    #[test]
-    fn rewrite() {
-        let fea = "\
-languagesystem DFLT dftl;
-feature liga {
-    substitute f i by f_i;
-    substitute f l by f_l;
-} liga;
-";
-        let expected = "\
-languagesystem hihi ohno;
-feature liga {
-    substitute f i by f_i;
-    sub gg by w_p;
-} liga;
-";
-
-        let mut sink = AstSink::new(fea, None);
-        let mut parser = Parser::new(fea, &mut sink);
-        crate::root(&mut parser);
-        let (root, _errs) = sink.finish();
-
-        let replace_lang = {
-            let fea = "languagesystem hihi ohno;";
-            make_node(fea, |p| crate::parse::grammar::language_system(p))
-        };
-        let replace_sub = {
-            let fea = "sub gg by w_p;";
-            make_node(fea, |p| {
-                crate::parse::grammar::gsub::gsub(p, TokenSet::FEATURE_BODY_ITEM)
-            })
-        };
-
-        let edits = vec![(0..25, replace_lang), (72..94, replace_sub)];
-        let edited = apply_edits(&root, edits);
-        let result = edited.iter_tokens().map(|t| t.as_str()).collect::<String>();
-        crate::assert_eq_str!(expected, result);
     }
 }
