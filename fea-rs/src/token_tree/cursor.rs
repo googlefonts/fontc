@@ -1,5 +1,7 @@
 //! A cursor for navigating through a tree.
 
+use crate::TokenSet;
+
 use super::{stack::Stack, Kind, Node, NodeOrToken, Token};
 
 pub struct Cursor<'a> {
@@ -55,6 +57,21 @@ impl<'a> Cursor<'a> {
                 None => break None,
             }
         }
+    }
+
+    /// The next token or node, without descending, optionally skipping tokens.
+    pub fn next(&mut self, skipping: TokenSet) -> Option<&'a NodeOrToken> {
+        while self
+            .current()
+            .map(|item| skipping.contains(item.kind()))
+            .unwrap_or(false)
+        {
+            self.step_over();
+        }
+
+        let current = self.current();
+        self.step_over();
+        current
     }
 
     /// advance the cursor, stepping over nodes.

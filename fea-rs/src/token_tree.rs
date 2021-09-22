@@ -30,7 +30,7 @@ pub struct Node {
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
 pub struct Token {
     pub kind: Kind,
-    pos: u32,
+    rel_pos: u32,
     pub text: SmolStr,
 }
 
@@ -127,7 +127,7 @@ impl Node {
         for child in &mut children {
             match child {
                 NodeOrToken::Node(n) => n.rel_pos += text_len,
-                NodeOrToken::Token(t) => t.pos += text_len as u32,
+                NodeOrToken::Token(t) => t.rel_pos += text_len as u32,
             }
             text_len += child.text_len() as u32;
         }
@@ -236,6 +236,13 @@ impl NodeOrToken {
         }
     }
 
+    pub fn rel_pos(&self) -> usize {
+        match self {
+            NodeOrToken::Node(n) => n.rel_pos as usize,
+            NodeOrToken::Token(t) => t.rel_pos as usize,
+        }
+    }
+
     pub fn matches(&self, predicate: TokenSet) -> bool {
         predicate.matches(self.kind())
     }
@@ -250,7 +257,7 @@ impl NodeOrToken {
     pub(crate) fn replace(&mut self, mut new: Node) {
         assert_eq!(new.text_len(), self.text_len());
         new.rel_pos = match self {
-            NodeOrToken::Token(t) => t.pos,
+            NodeOrToken::Token(t) => t.rel_pos,
             NodeOrToken::Node(n) => n.rel_pos,
         };
         *self = NodeOrToken::Node(new);
@@ -294,7 +301,11 @@ impl Token {
     // only call this internally; the `pos` field is set when the node
     // is finalized.
     fn new(kind: Kind, text: SmolStr) -> Self {
-        Token { kind, text, pos: 0 }
+        Token {
+            kind,
+            text,
+            rel_pos: 0,
+        }
     }
 
     pub fn as_str(&self) -> &str {
@@ -302,7 +313,7 @@ impl Token {
     }
 
     pub fn range(&self) -> Range<usize> {
-        self.pos as usize..self.pos as usize + self.text.len()
+        self.rel_pos as usize..self.rel_pos as usize + self.text.len()
     }
 }
 

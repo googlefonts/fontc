@@ -1,4 +1,4 @@
-use super::{GlyphId, GlyphName};
+use super::{GlyphId, GlyphIdent, GlyphName};
 use std::{collections::HashMap, convert::TryFrom, iter::FromIterator};
 
 //construct with collect() on an iterator of cids or names :shrug:
@@ -9,6 +9,14 @@ pub struct GlyphMap {
 }
 
 impl GlyphMap {
+    pub fn len(&self) -> usize {
+        self.names.len() + self.cids.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.cids.is_empty()
+    }
+
     pub fn contains<Q: ?Sized + sealed::AsGlyphIdent>(&self, key: &Q) -> bool {
         if let Some(name) = key.named() {
             self.names.contains_key(name)
@@ -56,6 +64,26 @@ impl FromIterator<GlyphName> for GlyphMap {
     }
 }
 
+// only intended for testing.
+impl FromIterator<GlyphIdent> for GlyphMap {
+    fn from_iter<T: IntoIterator<Item = GlyphIdent>>(iter: T) -> Self {
+        let mut names = HashMap::new();
+        let mut cids = HashMap::new();
+        for (idx, item) in iter.into_iter().enumerate() {
+            let idx = GlyphId::try_from(idx).unwrap();
+            match item {
+                GlyphIdent::Cid(cid) => cids.insert(cid, idx),
+                GlyphIdent::Name(name) => names.insert(name, idx),
+            };
+        }
+        assert!(
+            names.is_empty() != cids.is_empty(),
+            "we want one or the other I think"
+        );
+        GlyphMap { names, cids }
+    }
+}
+
 mod sealed {
     use super::{super::GlyphIdent, GlyphName};
 
@@ -82,6 +110,12 @@ mod sealed {
 
     impl AsGlyphIdent for GlyphName {
         fn named(&self) -> Option<&str> {
+            Some(self)
+        }
+    }
+
+    impl AsGlyphIdent for u32 {
+        fn cid(&self) -> Option<&u32> {
             Some(self)
         }
     }

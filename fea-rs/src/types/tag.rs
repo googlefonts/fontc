@@ -5,6 +5,7 @@ pub struct Tag([u8; 4]);
 
 impl Tag {
     pub const DFLT_SCRIPT: Tag = Tag([b'D', b'F', b'L', b'T']);
+    pub const DFLT_LANG: Tag = Tag([b'd', b'f', b'l', b't']);
 }
 
 /// An error representing an invalid tag.
