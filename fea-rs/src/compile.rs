@@ -140,9 +140,11 @@ pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
     let mut ctx = ValidationCtx::new(glyph_map);
 
     let mut pos = 0;
-    for item in node.children() {
+    let mut cursor = node.cursor();
+    while let Some(item) = cursor.current() {
+        //for item in node.children() {
         match item.kind() {
-            Kind::LanguageSystemNode => language_system(&mut ctx, item.as_node().unwrap(), pos),
+            Kind::LanguageSystemNode => language_system(&mut ctx, item.as_node().unwrap()),
             Kind::GlyphClassDefNode => glyph_class_def(&mut ctx, item.as_node().unwrap(), pos),
             //Kind::MarkClassNode => mark_class_def(n, &mut ctx),
             //Kind::AnchorDefNode => anchor_def(n, &mut ctx),
@@ -157,16 +159,15 @@ pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
             other => panic!("I should maybe return an error?"),
         }
         pos += item.text_len();
+        cursor.step_over();
     }
 
     ctx
 }
 
-fn language_system(ctx: &mut ValidationCtx, node: &Node, pos: usize) {
+fn language_system(ctx: &mut ValidationCtx, node: &Node) {
     let language_system = get_language_system(node).unwrap();
-    let range = pos + node.rel_pos();
-    let range = range..range + node.text_len();
-    ctx.add_language_system(language_system, range)
+    ctx.add_language_system(language_system, node.range())
 }
 
 /// assumes that node is an error-free LanguageSystemNode
@@ -215,13 +216,13 @@ fn glyph_class_def(ctx: &mut ValidationCtx, node: &Node, pos: usize) {
         }
         NodeOrToken::Node(node) if node.kind == Kind::GlyphClass => {
             //TODO: resolve this class
-            glyph_class_list(ctx, node, pos + node.rel_pos())
+            glyph_class_list(ctx, node)
         }
         _other => unreachable!("glyph class def already validated"),
     };
 }
 
-fn glyph_class_list(ctx: &mut ValidationCtx, node: &Node, pos: usize) -> GlyphClass {
+fn glyph_class_list(ctx: &mut ValidationCtx, node: &Node) -> GlyphClass {
     let mut result = Vec::new();
     let mut cursor = node.cursor();
 
@@ -238,11 +239,7 @@ fn glyph_class_list(ctx: &mut ValidationCtx, node: &Node, pos: usize) -> GlyphCl
 
                 match id {
                     Some(id) => result.push(id),
-                    None => {
-                        let range = pos + item.rel_pos();
-                        let range = range..range + item.text_len();
-                        ctx.error(range, "glyph does not exist in font".to_string());
-                    }
+                    None => ctx.error(item.range(), "glyph does not exist in font".to_string()),
                 }
             }
             Kind::GlyphRange => {
@@ -261,23 +258,15 @@ fn glyph_class_list(ctx: &mut ValidationCtx, node: &Node, pos: usize) -> GlyphCl
                             }
                         }
                     }
-                    Err(err) => {
-                        let range = pos + item.rel_pos();
-                        let range = range..range + item.text_len();
-                        ctx.error(range, err);
-                    }
+                    Err(err) => ctx.error(item.range(), err),
                 }
             }
 
             Kind::NamedGlyphClass => match ctx.glyph_class_defs.get(item.token_text().unwrap()) {
-                Some((class, idx)) if *idx < pos => {
+                Some((class, idx)) if *idx < node.range().start => {
                     result.extend(class.items());
                 }
-                _ => {
-                    let range = pos + item.rel_pos();
-                    let range = range..range + item.text_len();
-                    ctx.error(range, "undefined glyph class".into());
-                }
+                _ => ctx.error(item.range(), "undefined glyph class".into()),
             },
             other => panic!("unexpected item kind in glyph class list: '{}'", other),
         }

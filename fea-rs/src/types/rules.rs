@@ -37,35 +37,35 @@ mod gsub {
         fn from_node(node: &Node) -> Result<Self, GsubParseError> {
             //const IGNORE: TokenSet = TokenSet::new(&[Kind::Whitespace, Kind::Comment, Kind::])
             assert_eq!(node.kind, Kind::GsubNode);
-            let mut buffer = Vec::new();
-            for child in node.children() {
-                if !child.kind().is_trivia() {
-                    buffer.push(child)
-                }
-            }
+            //let mut buffer = Vec::new();
+            //for child in node.children() {
+            //if !child.kind().is_trivia() {
+            //buffer.push(child)
+            //}
+            //}
 
-            let (first, body) = buffer
-                .split_first()
-                .ok_or(GsubParseError::InvalidStatement)?;
-            match first.kind() {
-                Kind::IgnoreKw => return Err(GsubParseError::Unimplemented("'ignore' keyword")),
-                Kind::SubKw => (),
-                Kind::RsubKw => (),
-                other => panic!("unexpected kind {}", other),
-            }
-            let is_reverse = first.kind() == Kind::RsubKw;
-            let is_contextual = body.iter().any(|t| t.kind() == Kind::SingleQuote);
+            //let (first, body) = buffer
+            //.split_first()
+            //.ok_or(GsubParseError::InvalidStatement)?;
+            //match first.kind() {
+            //Kind::IgnoreKw => return Err(GsubParseError::Unimplemented("'ignore' keyword")),
+            //Kind::SubKw => (),
+            //Kind::RsubKw => (),
+            //other => panic!("unexpected kind {}", other),
+            //}
+            //let is_reverse = first.kind() == Kind::RsubKw;
+            //let is_contextual = body.iter().any(|t| t.kind() == Kind::SingleQuote);
 
-            if !is_contextual {
-                let mut iter = body.iter();
-                let first = iter.next().ok_or(GsubParseError::InvalidStatement)?;
-                let second = iter.next().ok_or(GsubParseError::InvalidStatement)?;
+            //if !is_contextual {
+            //let mut iter = body.iter();
+            //let first = iter.next().ok_or(GsubParseError::InvalidStatement)?;
+            //let second = iter.next().ok_or(GsubParseError::InvalidStatement)?;
 
-                match first.kind() {
-                    Kind::GlyphClass | Kind::NamedGlyphClass => {}
-                    _ => (),
-                }
-            }
+            //match first.kind() {
+            //Kind::GlyphClass | Kind::NamedGlyphClass => {}
+            //_ => (),
+            //}
+            //}
 
             // now we have our non-trivia nodes in the buffer.
 

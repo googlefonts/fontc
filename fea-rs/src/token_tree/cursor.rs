@@ -21,8 +21,11 @@ struct NodeRef<'a> {
 
 impl<'a> Cursor<'a> {
     pub fn new(root: &'a Node) -> Self {
+        if let Some(child) = root.children.first() {
+            child.set_abs_pos(root.abs_pos.get() as usize);
+        }
         Cursor {
-            pos: 0,
+            pos: root.abs_pos.get() as usize,
             current: NodeRef {
                 node: root,
                 fresh: true,
@@ -79,6 +82,9 @@ impl<'a> Cursor<'a> {
         let len = self.current().map(NodeOrToken::text_len).unwrap_or(0);
         self.current.advance();
         self.pos += len;
+        if let Some(current) = self.current() {
+            current.set_abs_pos(self.pos);
+        }
     }
 
     /// Advance the cursor.
@@ -114,6 +120,9 @@ impl<'a> Cursor<'a> {
                 // after ascending, we need to advance
                 self.current.advance();
             }
+        }
+        if let Some(current) = self.current() {
+            current.set_abs_pos(self.pos);
         }
     }
 
@@ -288,6 +297,26 @@ mod tests {
             cursor.current().and_then(NodeOrToken::token_text).unwrap(),
             "substitute"
         );
+    }
+
+    #[test]
+    fn abs_positions() {
+        let mut sink = AstSink::new(SAMPLE_FEA, None);
+        let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
+        crate::root(&mut parser);
+        let (root, _errs) = sink.finish();
+        assert!(_errs.is_empty());
+        let mut last_end = 0;
+        for token in root.iter_tokens() {
+            assert_eq!(
+                token.range().start,
+                last_end,
+                "{:?}: '{}'",
+                token.range(),
+                token.text
+            );
+            last_end = token.range().end;
+        }
     }
 
     #[test]

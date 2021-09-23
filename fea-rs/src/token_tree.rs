@@ -1,4 +1,4 @@
-use std::{ops::Range, sync::Arc};
+use std::{cell::Cell, ops::Range, sync::Arc};
 
 use smol_str::SmolStr;
 
@@ -13,28 +13,35 @@ mod cursor;
 mod edit;
 mod stack;
 
-#[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct Node {
     pub kind: Kind,
     // start of this node relative to start of parent node.
     // we can use this to more efficiently move to a given offset
     // TODO: remove if unused
     rel_pos: u32,
+
+    // NOTE: the absolute position within the tree is not known when the node
+    // is created; this is updated (and correct) only when the node has been
+    // accessed via a `Cursor`.
+    abs_pos: Cell<u32>,
     text_len: u32,
     // true if an error was encountered in this node. this is not recursive;
     // it is only true for the direct parent of an error span.
     pub error: bool,
-    pub(crate) children: Arc<Vec<NodeOrToken>>,
+    //NOTE: children should not be accessed directly, but only via a cursor.
+    // this ensures that their positions are updated correctly.
+    children: Arc<Vec<NodeOrToken>>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct Token {
     pub kind: Kind,
-    rel_pos: u32,
+    abs_pos: Cell<u32>,
     pub text: SmolStr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NodeOrToken {
     Node(Node),
     Token(Token),
@@ -125,9 +132,8 @@ impl Node {
     fn new(kind: Kind, mut children: Vec<NodeOrToken>, error: bool) -> Self {
         let mut text_len = 0;
         for child in &mut children {
-            match child {
-                NodeOrToken::Node(n) => n.rel_pos += text_len,
-                NodeOrToken::Token(t) => t.rel_pos += text_len as u32,
+            if let NodeOrToken::Node(n) = child {
+                n.rel_pos += text_len;
             }
             text_len += child.text_len() as u32;
         }
@@ -136,6 +142,7 @@ impl Node {
             kind,
             text_len,
             rel_pos: 0,
+            abs_pos: Cell::new(0),
             children: children.into(),
             error,
         }
@@ -158,16 +165,12 @@ impl Node {
         self.text_len as usize
     }
 
-    pub fn rel_pos(&self) -> usize {
-        self.rel_pos as usize
-    }
-
-    pub fn children(&self) -> impl Iterator<Item = &NodeOrToken> {
-        self.children.iter()
-    }
-
-    pub fn children_mut(&mut self) -> impl Iterator<Item = &mut NodeOrToken> {
-        Arc::make_mut(&mut self.children).iter_mut()
+    /// The range in the original source of this node.
+    ///
+    /// Only correct if this node is accessed via a cursor.
+    pub fn range(&self) -> Range<usize> {
+        let start = self.abs_pos.get() as usize;
+        start..start + (self.text_len as usize)
     }
 
     #[doc(hidden)]
@@ -221,6 +224,13 @@ impl TreeBuilder {
 }
 
 impl NodeOrToken {
+    pub(crate) fn set_abs_pos(&self, pos: usize) {
+        match self {
+            NodeOrToken::Token(t) => t.abs_pos.set(pos as u32),
+            NodeOrToken::Node(n) => n.abs_pos.set(pos as u32),
+        }
+    }
+
     pub fn is_token(&self) -> bool {
         matches!(self, NodeOrToken::Token(_))
     }
@@ -236,10 +246,13 @@ impl NodeOrToken {
         }
     }
 
-    pub fn rel_pos(&self) -> usize {
+    /// The range in the source text of this node or token.
+    ///
+    /// Note: this is only accurate if the token was accessed via a cursor.
+    pub fn range(&self) -> Range<usize> {
         match self {
-            NodeOrToken::Node(n) => n.rel_pos as usize,
-            NodeOrToken::Token(t) => t.rel_pos as usize,
+            NodeOrToken::Token(t) => t.range(),
+            NodeOrToken::Node(n) => n.range(),
         }
     }
 
@@ -252,15 +265,6 @@ impl NodeOrToken {
             NodeOrToken::Node(n) => n.text_len as usize,
             NodeOrToken::Token(t) => t.text.len(),
         }
-    }
-
-    pub(crate) fn replace(&mut self, mut new: Node) {
-        assert_eq!(new.text_len(), self.text_len());
-        new.rel_pos = match self {
-            NodeOrToken::Token(t) => t.rel_pos,
-            NodeOrToken::Node(n) => n.rel_pos,
-        };
-        *self = NodeOrToken::Node(new);
     }
 
     pub fn into_node(self) -> Option<Node> {
@@ -298,13 +302,11 @@ impl From<Token> for NodeOrToken {
 }
 
 impl Token {
-    // only call this internally; the `pos` field is set when the node
-    // is finalized.
     fn new(kind: Kind, text: SmolStr) -> Self {
         Token {
             kind,
             text,
-            rel_pos: 0,
+            abs_pos: Cell::new(0),
         }
     }
 
@@ -313,7 +315,7 @@ impl Token {
     }
 
     pub fn range(&self) -> Range<usize> {
-        self.rel_pos as usize..self.rel_pos as usize + self.text.len()
+        self.abs_pos.get() as usize..self.abs_pos.get() as usize + self.text.len()
     }
 }
 
