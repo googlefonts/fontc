@@ -12,6 +12,7 @@ use self::cursor::Cursor;
 mod cursor;
 mod edit;
 mod stack;
+pub mod typed;
 
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct Node {
@@ -152,9 +153,20 @@ impl Node {
         Cursor::new(self)
     }
 
+    /// Iterate over tokens, descending into child nodes.
     pub fn iter_tokens(&self) -> impl Iterator<Item = &Token> {
         let mut cursor = Cursor::new(self);
         std::iter::from_fn(move || cursor.next_token())
+    }
+
+    /// Iterate over this node's direct children, without descending.
+    pub fn iter_children(&self) -> impl Iterator<Item = &NodeOrToken> {
+        let mut cursor = Cursor::new(self);
+        std::iter::from_fn(move || {
+            let current = cursor.current();
+            cursor.step_over();
+            current
+        })
     }
 
     pub fn kind(&self) -> Kind {

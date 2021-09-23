@@ -1,16 +1,21 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
-    str::FromStr,
 };
 
 use smol_str::SmolStr;
 
 use crate::{
-    token_tree::Token,
-    types::{GlyphClass, GlyphIdent, GposRule, GsubRule, LanguageSystem, Tag},
-    GlyphMap, Kind, Node, NodeOrToken, SyntaxError, TokenSet,
+    token_tree::{
+        typed::{self, AstNode},
+        Token,
+    },
+    types::{GlyphClass, GlyphId, GposRule, GsubRule, Tag},
+    GlyphMap, Kind, Node, SyntaxError,
 };
+
+#[cfg(test)]
+use crate::types::GlyphIdent;
 
 //pub struct CompileCtx {
 //glyph_map: GlyphMap,
@@ -24,10 +29,10 @@ use crate::{
 
 pub struct ValidationCtx<'a> {
     glyph_map: &'a GlyphMap,
-    errors: Vec<SyntaxError>,
+    pub errors: Vec<SyntaxError>,
     tables: Tables,
-    default_lang_systems: HashSet<LanguageSystem>,
-    lang_systems: HashSet<LanguageSystem>,
+    default_lang_systems: HashSet<(Tag, Tag)>,
+    lang_systems: HashSet<(Tag, Tag)>,
     seen_non_default_script: bool,
     lookups: Vec<(usize, LookupTable)>,
     // class and position
@@ -35,6 +40,7 @@ pub struct ValidationCtx<'a> {
     features: HashMap<Tag, Feature>,
 }
 
+#[allow(dead_code)]
 struct Feature {
     pos: usize,
     tag: Tag,
@@ -42,6 +48,7 @@ struct Feature {
 }
 
 /// A thing in a feature block
+#[allow(dead_code)]
 enum Statement {
     Gpos(GposRule),
     GSub(GsubRule),
@@ -67,6 +74,7 @@ struct Tables {
     //STAT: Option<tables::STAT>,
 }
 
+#[allow(dead_code)]
 struct LookupTable {
     pos: usize,
     name: SmolStr,
@@ -88,6 +96,33 @@ struct LookupTable {
 //InvalidTag(InvalidTag),
 //}
 
+/// given a ctx and N Result types, report any errors.
+///
+/// If errors are found, return after reporting; otherwise convert Result<T> to T.
+#[macro_export]
+macro_rules! report_errs {
+    ($val:expr) => {
+        match $val {
+            Ok(v) => v,
+            Err(_) => return,
+        }
+    };
+    ($ctx:expr, $val:expr $(,)?) => {
+        match &$val {
+            Ok(_) => (),
+            Err((range, err)) => $ctx.error(range.clone(), err.to_string()),
+        }
+    };
+    ($ctx:expr, $($val:expr),+ $(,)?) => {
+        {
+            // first report any errors, without discarding them
+            $($crate::report_errs!($ctx, $val);)+
+            // then convert to T, returning if there was an error anywhere.
+            ($($crate::report_errs!($val)),+,)
+        }
+    };
+}
+
 impl<'a> ValidationCtx<'a> {
     fn new(glyph_map: &'a GlyphMap) -> Self {
         ValidationCtx {
@@ -107,18 +142,27 @@ impl<'a> ValidationCtx<'a> {
         self.errors.push(SyntaxError { range, message })
     }
 
-    fn add_language_system(&mut self, language_system: LanguageSystem, loc: Range<usize>) {
-        if language_system == LanguageSystem::DEFAULT && !self.default_lang_systems.is_empty() {
+    fn add_language_system(&mut self, language_system: typed::LanguageSystem) {
+        let script = language_system.script();
+        let language = language_system.language();
+        let script_tag = script.parse().map_err(|err| (script.range(), err));
+        let lang_tag = language.parse().map_err(|err| (language.range(), err));
+        let (script_tag, lang_tag) = report_errs!(self, script_tag, lang_tag);
+
+        if script_tag == Tag::DFLT_SCRIPT
+            && lang_tag == Tag::DFLT_LANG
+            && !self.default_lang_systems.is_empty()
+        {
             self.error(
-                loc,
+                language_system.range(),
                 "DFLT dflt must be first languagesystem statement.".into(),
             );
             return;
         }
-        if language_system.script == Tag::DFLT_SCRIPT {
+        if script_tag == Tag::DFLT_SCRIPT {
             if self.seen_non_default_script {
                 self.error(
-                    loc,
+                    script.range(),
                     "languagesystem with 'DFLT' script tag must precede non-'DFLT' languagesystems.".into(),
                 );
                 return;
@@ -127,203 +171,249 @@ impl<'a> ValidationCtx<'a> {
             }
         }
 
-        if self.default_lang_systems.insert(language_system) {
-            self.error(loc, "Duplicate languagesystem definition".into());
+        if !self.default_lang_systems.insert((script_tag, lang_tag)) {
+            self.error(
+                language_system.range(),
+                "Duplicate languagesystem definition".into(),
+            );
+        }
+    }
+
+    fn define_glyph_class(&mut self, class_decl: typed::GlyphClassDef) {
+        let name = class_decl.class_name();
+        if self.glyph_class_defs.contains_key(name.text()) {
+            self.error(
+                name.range(),
+                "duplicate definition for named glyph class".into(),
+            );
+            return;
+        }
+        let glyphs = if let Some(class) = class_decl.class_def() {
+            self.resolve_glyph_class(&class)
+        } else if let Some(alias) = class_decl.class_alias() {
+            match self.glyph_class_defs.get(alias.text()) {
+                Some((class, pos)) if *pos < class_decl.range().start => class.clone(),
+                _ => return self.error(alias.range(), "Named glyph class is not defined".into()),
+            }
+        } else {
+            panic!("write more code I guess");
+        };
+
+        self.glyph_class_defs
+            .insert(name.text().clone(), (glyphs, class_decl.range().start));
+    }
+
+    fn resolve_glyph_class(&mut self, class: &typed::GlyphClass) -> GlyphClass {
+        let mut glyphs = Vec::new();
+        for item in class.iter() {
+            if let Some(id) =
+                typed::GlyphName::cast(item).and_then(|name| self.resolve_glyph_name(&name))
+            {
+                glyphs.push(id);
+            } else if let Some(id) = typed::Cid::cast(item).and_then(|cid| self.resolve_cid(&cid)) {
+                glyphs.push(id);
+            } else if let Some(range) = typed::GlyphRange::cast(item) {
+                self.add_glyphs_from_range(&range, &mut glyphs);
+            }
+        }
+        glyphs.into()
+    }
+
+    fn resolve_glyph_name(&mut self, name: &typed::GlyphName) -> Option<GlyphId> {
+        let id = self.glyph_map.get(name.text());
+        if id.is_none() {
+            self.error(name.range(), "glyph not in font".into());
+        }
+        id
+    }
+
+    fn resolve_cid(&mut self, cid: &typed::Cid) -> Option<GlyphId> {
+        let id = self.glyph_map.get(&cid.parse());
+        if id.is_none() {
+            self.error(cid.range(), "CID not in font".into());
+        }
+        id
+    }
+
+    fn add_glyphs_from_range(&mut self, range: &typed::GlyphRange, out: &mut Vec<GlyphId>) {
+        let start = range.start();
+        let end = range.end();
+
+        match (start.kind, end.kind) {
+            (Kind::Cid, Kind::Cid) => {
+                if let Err(err) = cid_range(start, end, |cid| {
+                    match self.glyph_map.get(&cid) {
+                        Some(id) => out.push(id),
+                        None => {
+                            // this is techincally allowed, but we error for now
+                            self.error(
+                                range.range(),
+                                format!("Range member '{}' does not exist in font", cid),
+                            );
+                        }
+                    }
+                }) {
+                    self.error(range.range(), err);
+                }
+            }
+            (Kind::GlyphName, Kind::GlyphName) => {
+                if let Err(err) = named_range(start, end, |name| {
+                    match self.glyph_map.get(name) {
+                        Some(id) => out.push(id),
+                        None => {
+                            // this is techincally allowed, but we error for now
+                            self.error(
+                                range.range(),
+                                format!("Range member '{}' does not exist in font", name),
+                            );
+                        }
+                    }
+                }) {
+                    self.error(range.range(), err);
+                }
+            }
+            (_, _) => self.error(range.range(), "Invalid types in glyph range".into()),
         }
     }
 }
 
-/// Token types to skip during validation
-const TO_SKIP: TokenSet = TokenSet::new(&[Kind::Comment, Kind::Whitespace, Kind::Semi]);
-
 pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
     let mut ctx = ValidationCtx::new(glyph_map);
 
-    let mut pos = 0;
-    let mut cursor = node.cursor();
-    while let Some(item) = cursor.current() {
-        //for item in node.children() {
-        match item.kind() {
-            Kind::LanguageSystemNode => language_system(&mut ctx, item.as_node().unwrap()),
-            Kind::GlyphClassDefNode => glyph_class_def(&mut ctx, item.as_node().unwrap(), pos),
-            //Kind::MarkClassNode => mark_class_def(n, &mut ctx),
-            //Kind::AnchorDefNode => anchor_def(n, &mut ctx),
-            //Kind::ValueRecordNode => value_record_def(n, &mut ctx),
-            //Kind::IncludeNode => include(n, &mut ctx),
-            //Kind::FeatureNode => feature(n, &mut ctx),
-            //Kind::TableNode => table(n, &mut ctx),
-            //Kind::AnonBlockNode => anon(n, &mut ctx),
-            //Kind::LookupBlockNode => lookup_block_top_level(n, &mut ctx),
-            Kind::Comment | Kind::Whitespace | Kind::Semi => (),
-            // maybe don't return an error? parsing should ensure we don't get here
-            other => panic!("I should maybe return an error?"),
+    for item in node.iter_children() {
+        if let Some(language_system) = typed::LanguageSystem::cast(item) {
+            ctx.add_language_system(language_system);
+        } else if let Some(class_def) = typed::GlyphClassDef::cast(item) {
+            ctx.define_glyph_class(class_def);
         }
-        pos += item.text_len();
-        cursor.step_over();
+        //for item in node.children() {
+        //match item.kind() {
+        ////Kind::LanguageSystemNode => language_system(&mut ctx, item.as_node().unwrap()),
+        ////Kind::GlyphClassDefNode => glyph_class_def(&mut ctx, item.as_node().unwrap(), pos),
+        ////Kind::MarkClassNode => mark_class_def(&mut ctx, item.as_node().unwrap(), pos),
+        ////Kind::AnchorDefNode => anchor_def(n, &mut ctx),
+        ////Kind::ValueRecordNode => value_record_def(n, &mut ctx),
+        ////Kind::IncludeNode => include(n, &mut ctx),
+        ////Kind::FeatureNode => feature(n, &mut ctx),
+        ////Kind::TableNode => table(n, &mut ctx),
+        ////Kind::AnonBlockNode => anon(n, &mut ctx),
+        ////Kind::LookupBlockNode => lookup_block_top_level(n, &mut ctx),
+        //Kind::Comment | Kind::Whitespace | Kind::Semi => (),
+        //// maybe don't return an error? parsing should ensure we don't get here
+        //other => panic!("I should maybe return an error?"),
+        //}
+        //cursor.step_over();
     }
 
     ctx
 }
 
-fn language_system(ctx: &mut ValidationCtx, node: &Node) {
-    let language_system = get_language_system(node).unwrap();
-    ctx.add_language_system(language_system, node.range())
-}
+//fn mark_class_def(ctx: &mut ValidationCtx, node: &Node, pos: usize) {
+//let mut cursor = node.cursor();
+//let _kw = cursor.next(TO_SKIP);
+//debug_assert_eq!(_kw.map(NodeOrToken::kind), Some(Kind::MarkClassKw));
+//let glyph_or_glyph_class = cursor.next(TO_SKIP).unwrap();
 
-/// assumes that node is an error-free LanguageSystemNode
-fn get_language_system(node: &Node) -> Result<LanguageSystem, ()> {
-    let mut cursor = node.cursor();
-    let _kw = cursor.next(TO_SKIP);
-    debug_assert_eq!(_kw.map(NodeOrToken::kind), Some(Kind::LanguagesystemKw));
-    let script_token = cursor
-        .next(TO_SKIP)
-        .and_then(NodeOrToken::as_token)
-        .unwrap();
-    let lang_token = cursor
-        .next(TO_SKIP)
-        .and_then(NodeOrToken::as_token)
-        .unwrap();
-    debug_assert_eq!(script_token.kind, Kind::Tag);
-    debug_assert_eq!(lang_token.kind, Kind::Tag);
-    let script = Tag::from_str(script_token.as_str()).unwrap();
-    let language = Tag::from_str(lang_token.as_str()).unwrap();
-    Ok(LanguageSystem { script, language })
-}
+//let resolved_class = match class_list_or_name {
+//NodeOrToken::Token(t) if t.kind == Kind::NamedGlyphClass => {
+//match ctx.glyph_class_defs.get(t.as_str()).cloned() {
+//Some((class, _pos)) => class,
+//None => {
+//let range = class_name.range();
+//ctx.error(
+//range.start + pos..range.end + pos,
+//"Glyph class already defined".into(),
+//);
+//return;
+//}
+//}
+//}
+//NodeOrToken::Node(node) if node.kind == Kind::GlyphClass => {
+////TODO: resolve this class
+//glyph_class_list(ctx, node, pos + node.rel_pos())
+//}
+//_other => unreachable!("glyph class def already validated"),
+//};
+//}
 
-fn glyph_class_def(ctx: &mut ValidationCtx, node: &Node, pos: usize) {
-    let mut cursor = node.cursor();
-    let class_name = cursor
-        .next(TO_SKIP)
-        .and_then(NodeOrToken::as_token)
-        .unwrap();
-    debug_assert_eq!(class_name.kind, Kind::NamedGlyphClass);
-    let _eq = cursor.next(TO_SKIP);
-    debug_assert_eq!(_eq.map(NodeOrToken::kind), Some(Kind::Eq));
-    let class_list_or_name = cursor.next(TO_SKIP).unwrap();
-    let resolved_class = match class_list_or_name {
-        NodeOrToken::Token(t) if t.kind == Kind::NamedGlyphClass => {
-            match ctx.glyph_class_defs.get(t.as_str()).cloned() {
-                Some((class, _pos)) => class,
-                None => {
-                    let range = class_name.range();
-                    ctx.error(
-                        range.start + pos..range.end + pos,
-                        "Glyph class already defined".into(),
-                    );
-                    return;
-                }
-            }
-        }
-        NodeOrToken::Node(node) if node.kind == Kind::GlyphClass => {
-            //TODO: resolve this class
-            glyph_class_list(ctx, node)
-        }
-        _other => unreachable!("glyph class def already validated"),
-    };
-}
+//fn glyph_class_maybe_named_or_singleton(ctx: &mut ValidationCtx, item: &NodeOrToken, pos: usize) -> Option<GlyphClass> {
+//match item {
+//NodeOrToken::Token(t) if t.kind == Kind::NamedGlyphClass => {
+//match ctx.glyph_class_defs.get(t.as_str()).cloned() {
+//Some((class, _pos)) => Some(class),
+//None => {
+//let range = t.range();
+//ctx.error(
+//range.start + pos..range.end + pos,
+//"Glyph class not defined".into(),
+//);
+//None
+//}
+//}
+//}
+//NodeOrToken::Token(t) if t.kind == Kind::GlyphName => {
+//match ctx.glyph_map.get(&t.text) {
+//Some(id) => Some(GlyphClass::from(&[id])),
+//None => (),
+//}
+//}
+//NodeOrToken::Node(node) if node.kind == Kind::GlyphClass => {
+//Some(glyph_class_list(ctx, node, pos + node.rel_pos()))
+//}
+//_other => unreachable!("glyph class def already validated"),
+//}
 
-fn glyph_class_list(ctx: &mut ValidationCtx, node: &Node) -> GlyphClass {
+//}
+
+/// A helper for testing, that just returns the names/cids that should be part
+/// of a given range. (This does not test if they're in the font.)
+#[cfg(test)]
+fn glyph_range(node: &Node) -> Result<Vec<GlyphIdent>, String> {
+    let range = typed::GlyphRange::cast(&node.clone().into()).unwrap();
+    let start = range.start();
+    let end = range.end();
     let mut result = Vec::new();
-    let mut cursor = node.cursor();
-
-    let to_skip = TO_SKIP.union(TokenSet::new(&[Kind::LSquare, Kind::RSquare]));
-    while let Some(item) = cursor.next(to_skip) {
-        match item.kind() {
-            Kind::GlyphName | Kind::Cid => {
-                let id = if item.kind() == Kind::GlyphName {
-                    ctx.glyph_map.get(item.token_text().unwrap())
-                } else {
-                    let cid = item.token_text().unwrap().parse::<u32>().unwrap();
-                    ctx.glyph_map.get(&cid)
-                };
-
-                match id {
-                    Some(id) => result.push(id),
-                    None => ctx.error(item.range(), "glyph does not exist in font".to_string()),
-                }
-            }
-            Kind::GlyphRange => {
-                match glyph_range(item.as_node().unwrap()) {
-                    Ok(idents) => {
-                        for ident in &idents {
-                            match ctx.glyph_map.get(ident) {
-                                Some(id) => result.push(id),
-                                // technically allowed? we don't have warnings yet
-                                None => eprintln!(
-                                    "missing glyph {} in range {}..{}",
-                                    ident,
-                                    idents.first().unwrap(),
-                                    idents.last().unwrap()
-                                ),
-                            }
-                        }
-                    }
-                    Err(err) => ctx.error(item.range(), err),
-                }
-            }
-
-            Kind::NamedGlyphClass => match ctx.glyph_class_defs.get(item.token_text().unwrap()) {
-                Some((class, idx)) if *idx < node.range().start => {
-                    result.extend(class.items());
-                }
-                _ => ctx.error(item.range(), "undefined glyph class".into()),
-            },
-            other => panic!("unexpected item kind in glyph class list: '{}'", other),
-        }
-    }
-    result.into()
-}
-
-fn glyph_range(
-    //ctx: &mut ValidationCtx,
-    node: &Node,
-    //pos: usize,
-) -> Result<Vec<GlyphIdent>, String> {
-    debug_assert_eq!(node.kind(), Kind::GlyphRange);
-    let mut cursor = node.cursor();
-    let start = cursor
-        .next(TO_SKIP)
-        .and_then(NodeOrToken::as_token)
-        .unwrap();
-    let _hyphen = cursor
-        .next(TO_SKIP)
-        .and_then(NodeOrToken::as_token)
-        .unwrap();
-    debug_assert_eq!(_hyphen.kind, Kind::Hyphen);
-    let end = cursor
-        .next(TO_SKIP)
-        .and_then(NodeOrToken::as_token)
-        .unwrap();
 
     match (start.kind, end.kind) {
-        (Kind::Cid, Kind::Cid) => cid_range(start, end),
-        (Kind::GlyphName, Kind::GlyphName) => named_range(start, end),
+        (Kind::Cid, Kind::Cid) => cid_range(start, end, |cid| result.push(GlyphIdent::Cid(cid)))?,
+        (Kind::GlyphName, Kind::GlyphName) => named_range(start, end, |string| {
+            result.push(GlyphIdent::Name(string.into()))
+        })?,
         (_, _) => return Err("Invalid glyph range".to_string()),
     }
+
+    Ok(result)
 }
 
-/// iter glyph ids in a cid range
-fn cid_range(
-    //ctx: &mut ValidationCtx,
-    start: &Token,
-    end: &Token,
-) -> Result<Vec<GlyphIdent>, String> {
+//NOTE: in order to save allocation for each item in the range, we adopt
+//the pattern of having the caller pass in a callback that is called with
+//each member in the range. The caller is then responsible for doing things like
+//ensuring that the item is in the glyph map.
+
+/// iter glyph ids in a cid range.
+///
+/// Returns an error if the range is not well-formed. If it is well-formed,
+/// the `callback` is called with each cid in the range.
+fn cid_range(start: &Token, end: &Token, mut callback: impl FnMut(u32)) -> Result<(), String> {
     let start_cid = start.text.parse::<u32>().unwrap();
     let end_cid = end.text.parse::<u32>().unwrap();
     if start_cid >= end_cid {
         return Err("Range end must be greater than start".into());
     }
 
-    Ok((start_cid..=end_cid).map(GlyphIdent::Cid).collect())
+    for i in start_cid..=end_cid {
+        callback(i);
+    }
+    Ok(())
 }
 
-fn named_range(
-    //ctx: &mut ValidationCtx,
-    start: &Token,
-    end: &Token,
-) -> Result<Vec<GlyphIdent>, String> {
+/// iter glyph ids in a named range.
+///
+/// Returns an error if the range is not well-formed. If it is well-formed,
+/// the `callback` is called with each name in the range.
+fn named_range(start: &Token, end: &Token, callback: impl FnMut(&str)) -> Result<(), String> {
     if start.text.len() != end.text.len() {
-        return Err("glyph range names must be equal length".into());
+        return Err("glyph range components must have equal length".into());
     }
     let diff_range = get_diff_range(&start.text, &end.text);
 
@@ -337,36 +427,40 @@ fn named_range(
             // range must be between two lowercase or two uppercase ascii letters
             && ((one_byte > b'Z') == (two_byte > b'Z'))
         {
-            return Ok(alpha_range(&start.text, &end.text, diff_range));
+            alpha_range(&start.text, &end.text, diff_range, callback);
+            return Ok(());
         }
     }
     let one = &start.text[diff_range.clone()];
     let two = &end.text[diff_range.clone()];
     match (one.parse::<u32>(), two.parse::<u32>()) {
-        (Ok(one), Ok(two)) if one < two => Ok(num_range(&start.text, one..two, diff_range)),
-            _ => Err("range glyphs must differ by a single letter a-Z or A-Z, or by a run of up to three decimal digits".to_string()),
-        }
+        (Ok(one), Ok(two)) if one < two => num_range(&start.text, one..two, diff_range, callback),
+            _ => return Err("range glyphs must differ by a single letter a-Z or A-Z, or by a run of up to three decimal digits".into()),
+        };
+    Ok(())
 }
 
-fn alpha_range(start: &str, end: &str, range: Range<usize>) -> Vec<GlyphIdent> {
-    let mut result = Vec::new();
+fn alpha_range(start: &str, end: &str, sub_range: Range<usize>, mut out: impl FnMut(&str)) {
     let mut template = start.to_string();
-    let start_char = start.as_bytes()[range.start] as char;
-    let end_char = end.as_bytes()[range.start] as char;
+    let start_char = start.as_bytes()[sub_range.start] as char;
+    let end_char = end.as_bytes()[sub_range.start] as char;
     for chr in start_char..=end_char {
         debug_assert_eq!(chr.len_utf8(), 1);
         // safety: validate glyph name is all ascii, so we only ever overwrite
         // a single byte with another single byte
         unsafe {
-            chr.encode_utf8(&mut template.as_bytes_mut()[range.start..range.end]);
+            chr.encode_utf8(&mut template.as_bytes_mut()[sub_range.start..sub_range.end]);
         }
-        result.push(SmolStr::from(template.as_str()).into());
+        out(&template);
     }
-    result
 }
 
-fn num_range(start: &str, sub_range: Range<u32>, text_range: Range<usize>) -> Vec<GlyphIdent> {
-    let mut result = Vec::new();
+fn num_range(
+    start: &str,
+    sub_range: Range<u32>,
+    text_range: Range<usize>,
+    mut out: impl FnMut(&str),
+) {
     let mut temp = String::new();
     let mut template = start.to_string();
 
@@ -376,9 +470,8 @@ fn num_range(start: &str, sub_range: Range<u32>, text_range: Range<usize>) -> Ve
         temp.clear();
         write!(&mut temp, "{:0width$}", val, width = width).unwrap();
         template.replace_range(text_range.clone(), &temp);
-        result.push(SmolStr::from(&template).into());
+        out(&template);
     }
-    result
 }
 
 fn get_diff_range(one: &str, two: &str) -> Range<usize> {
@@ -417,8 +510,6 @@ fn get_diff_range(one: &str, two: &str) -> Range<usize> {
         front..back
     }
 }
-
-//fn expect_next_token
 
 mod tables {
 

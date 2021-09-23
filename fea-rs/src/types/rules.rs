@@ -1,13 +1,13 @@
 pub use gpos::Rule as GposRule;
 pub use gsub::Rule as GsubRule;
 
+#[allow(dead_code)]
 mod gsub {
     use std::rc::Rc;
 
     use crate::{
-        token_tree::Token,
         types::{GlyphId, GlyphOrClass, GlyphSequence},
-        Kind, Node, NodeOrToken, TokenSet,
+        Kind, Node,
     };
 
     //use super::{GlyphId, GlyphOrClass, GlyphSequence};

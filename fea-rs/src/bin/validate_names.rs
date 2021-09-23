@@ -16,6 +16,8 @@ fn main() {
     let (names, features) = load_font(&args.path);
     let (root, mut errors) = try_parse_fea(&features, &names);
 
+    let mut val_ctx = fea_rs::validate(&root, &names);
+    errors.extend(val_ctx.errors.drain(..));
     validate_names(&root, &names, &mut errors);
     if !errors.is_empty() {
         let mut tokens = Vec::new();

@@ -96,7 +96,9 @@ macro_rules! report_errs {
     };
     ($ctx:expr, $($val:expr),+ $(,)?) => {
         {
+            // first report any errors, without discarding them
             $($crate::report_errs!($ctx, $val);)+
+            // then convert to T, returning if there was an error anywhere.
             ($($crate::report_errs!($val)),+,)
         }
     };

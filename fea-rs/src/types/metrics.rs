@@ -10,6 +10,7 @@ struct GlyphSequence(Rc<[GlyphId]>);
 //struct TwoOrMoreGlyphs
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum ValueRecord {
     Advance(i32),
     Placement {
@@ -24,6 +25,7 @@ enum ValueRecord {
     Named(SmolStr),
 }
 
+#[allow(dead_code)]
 enum Anchor {
     Coord { x: i32, y: i32 },
     Contour { x: i32, y: i32, point: u32 },

@@ -14,7 +14,7 @@ mod tag;
 
 pub use glyph_map::GlyphMap;
 pub use rules::{GposRule, GsubRule};
-pub use tag::Tag;
+pub use tag::{InvalidTag, Tag};
 
 pub type GlyphName = SmolStr;
 
