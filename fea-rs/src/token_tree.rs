@@ -14,7 +14,7 @@ mod edit;
 mod stack;
 pub mod typed;
 
-#[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct Node {
     pub kind: Kind,
     // start of this node relative to start of parent node.
@@ -370,6 +370,38 @@ fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
                 text
             )
         })
+}
+
+impl Node {
+    fn debug_impl(&self, f: &mut std::fmt::Formatter, depth: usize) -> std::fmt::Result {
+        use crate::util::SPACES;
+
+        let ws = &SPACES[..depth * 2];
+        write!(
+            f,
+            "\n{}{}: rel {} abs {} len {} children {}",
+            ws,
+            self.kind,
+            self.rel_pos,
+            self.abs_pos.get(),
+            self.text_len,
+            self.children.len()
+        )?;
+        let ws = &SPACES[..(depth + 1) * 2];
+        for child in self.iter_children() {
+            match child {
+                NodeOrToken::Token(t) => write!(f, "\n{}'{}' {}", ws, t.text, t.kind)?,
+                NodeOrToken::Node(n) => n.debug_impl(f, depth + 1)?,
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.debug_impl(f, 0)
+    }
 }
 
 #[cfg(test)]
