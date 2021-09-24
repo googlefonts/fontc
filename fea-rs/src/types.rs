@@ -21,7 +21,7 @@ pub type GlyphName = SmolStr;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlyphId(u16);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlyphClass(Rc<[GlyphId]>);
 
 #[derive(Debug, Clone)]
@@ -73,11 +73,22 @@ impl GlyphClass {
     pub fn items(&self) -> &[GlyphId] {
         &self.0
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 impl From<Vec<GlyphId>> for GlyphClass {
     fn from(src: Vec<GlyphId>) -> GlyphClass {
         GlyphClass(src.into())
+    }
+}
+
+impl From<GlyphId> for GlyphClass {
+    fn from(src: GlyphId) -> GlyphClass {
+        let slice: &[_] = &[src];
+        GlyphClass(slice.into())
     }
 }
 

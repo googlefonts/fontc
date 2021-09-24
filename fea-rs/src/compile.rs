@@ -11,7 +11,7 @@ use crate::{
         Token,
     },
     types::{GlyphClass, GlyphId, GposRule, GsubRule, Tag},
-    GlyphMap, Kind, Node, SyntaxError,
+    GlyphMap, Kind, Node, NodeOrToken, SyntaxError,
 };
 
 #[cfg(test)]
@@ -38,6 +38,7 @@ pub struct ValidationCtx<'a> {
     // class and position
     glyph_class_defs: HashMap<SmolStr, (GlyphClass, usize)>,
     features: HashMap<Tag, Feature>,
+    mark_classes: HashMap<SmolStr, MarkClass>,
 }
 
 #[allow(dead_code)]
@@ -45,6 +46,12 @@ struct Feature {
     pos: usize,
     tag: Tag,
     statements: Vec<Statement>,
+}
+
+struct MarkClass {
+    #[allow(dead_code)]
+    pos: usize,
+    members: Vec<(GlyphClass, typed::Anchor)>,
 }
 
 /// A thing in a feature block
@@ -135,6 +142,7 @@ impl<'a> ValidationCtx<'a> {
             glyph_class_defs: Default::default(),
             lookups: Vec::new(),
             features: Default::default(),
+            mark_classes: Default::default(),
         }
     }
 
@@ -191,9 +199,9 @@ impl<'a> ValidationCtx<'a> {
         let glyphs = if let Some(class) = class_decl.class_def() {
             self.resolve_glyph_class(&class)
         } else if let Some(alias) = class_decl.class_alias() {
-            match self.glyph_class_defs.get(alias.text()) {
-                Some((class, pos)) if *pos < class_decl.range().start => class.clone(),
-                _ => return self.error(alias.range(), "Named glyph class is not defined".into()),
+            match self.resolve_named_glyph_class(&alias) {
+                Some(class) => class,
+                None => return,
             }
         } else {
             panic!("write more code I guess");
@@ -201,6 +209,40 @@ impl<'a> ValidationCtx<'a> {
 
         self.glyph_class_defs
             .insert(name.text().clone(), (glyphs, class_decl.range().start));
+    }
+
+    fn define_mark_class(&mut self, class_decl: typed::MarkClassDef) {
+        let class_items = class_decl.glyph_class();
+        let class_items = match self.resolve_glyph_or_class(class_items) {
+            Some(items) => items,
+            None => return,
+        };
+
+        let anchor = class_decl.anchor();
+        let class_name = class_decl.mark_class_name();
+        if let Some(class) = self.mark_classes.get_mut(class_name.text()) {
+            class.members.push((class_items, anchor));
+        } else {
+            let class = MarkClass {
+                pos: class_decl.range().start,
+                members: vec![(class_items, anchor)],
+            };
+            self.mark_classes.insert(class_name.text().clone(), class);
+        }
+    }
+
+    fn resolve_glyph_or_class(&mut self, item: &NodeOrToken) -> Option<GlyphClass> {
+        if let Some(class) = typed::GlyphClass::cast(item) {
+            Some(self.resolve_glyph_class(&class))
+        } else if let Some(glyph) = typed::GlyphName::cast(item) {
+            self.resolve_glyph_name(&glyph).map(GlyphClass::from)
+        } else if let Some(cid) = typed::Cid::cast(item) {
+            self.resolve_cid(&cid).map(GlyphClass::from)
+        } else if let Some(named_class) = typed::GlyphClassName::cast(item) {
+            self.resolve_named_glyph_class(&named_class)
+        } else {
+            unreachable!("other types should are not sent here");
+        }
     }
 
     fn resolve_glyph_class(&mut self, class: &typed::GlyphClass) -> GlyphClass {
@@ -217,6 +259,16 @@ impl<'a> ValidationCtx<'a> {
             }
         }
         glyphs.into()
+    }
+
+    fn resolve_named_glyph_class(&mut self, name: &typed::GlyphClassName) -> Option<GlyphClass> {
+        match self.glyph_class_defs.get(name.text()) {
+            Some((class, pos)) if *pos < name.range().start => Some(class.clone()),
+            _ => {
+                self.error(name.range(), "Named glyph class is not defined".into());
+                None
+            }
+        }
     }
 
     fn resolve_glyph_name(&mut self, name: &typed::GlyphName) -> Option<GlyphId> {
@@ -285,6 +337,8 @@ pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
             ctx.add_language_system(language_system);
         } else if let Some(class_def) = typed::GlyphClassDef::cast(item) {
             ctx.define_glyph_class(class_def);
+        } else if let Some(mark_def) = typed::MarkClassDef::cast(item) {
+            ctx.define_mark_class(mark_def);
         }
         //for item in node.children() {
         //match item.kind() {

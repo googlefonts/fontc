@@ -84,6 +84,8 @@ ast_token!(Tag, Kind::Tag);
 ast_token!(GlyphClassName, Kind::NamedGlyphClass);
 ast_node!(GlyphRange, Kind::GlyphRange);
 ast_node!(GlyphClassDef, Kind::GlyphClassDefNode);
+ast_node!(MarkClassDef, Kind::MarkClassNode);
+ast_node!(Anchor, Kind::AnchorNode);
 ast_node!(GlyphClass, Kind::GlyphClass);
 ast_node!(LanguageSystem, Kind::LanguageSystemNode);
 
@@ -147,6 +149,32 @@ impl GlyphRange {
             .skip_while(|t| t.kind() != Kind::Hyphen)
             .find(|i| i.kind() == Kind::Cid || i.kind() == Kind::GlyphName)
             .and_then(NodeOrToken::as_token)
+            .unwrap()
+    }
+}
+
+impl MarkClassDef {
+    pub fn glyph_class(&self) -> &NodeOrToken {
+        for item in self.iter() {
+            if item.kind() == Kind::GlyphName
+                || item.kind() == Kind::NamedGlyphClass
+                || item.kind() == Kind::GlyphClass
+                || item.kind() == Kind::Cid
+            {
+                return item;
+            }
+        }
+        unreachable!()
+    }
+
+    pub fn anchor(&self) -> Anchor {
+        self.iter().find_map(Anchor::cast).unwrap()
+    }
+
+    pub fn mark_class_name(&self) -> GlyphClassName {
+        self.iter()
+            .skip_while(|t| t.kind() != Kind::AnchorNode)
+            .find_map(GlyphClassName::cast)
             .unwrap()
     }
 }
