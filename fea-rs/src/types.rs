@@ -13,6 +13,7 @@ mod rules;
 mod tag;
 
 pub use glyph_map::GlyphMap;
+pub use metrics::Anchor;
 pub use rules::{GposRule, GsubRule};
 pub use tag::{InvalidTag, Tag};
 

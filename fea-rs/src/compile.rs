@@ -10,7 +10,7 @@ use crate::{
         typed::{self, AstNode},
         Token,
     },
-    types::{GlyphClass, GlyphId, GposRule, GsubRule, Tag},
+    types::{Anchor, GlyphClass, GlyphId, GposRule, GsubRule, Tag},
     GlyphMap, Kind, Node, NodeOrToken, SyntaxError,
 };
 
@@ -39,6 +39,7 @@ pub struct ValidationCtx<'a> {
     glyph_class_defs: HashMap<SmolStr, (GlyphClass, usize)>,
     features: HashMap<Tag, Feature>,
     mark_classes: HashMap<SmolStr, MarkClass>,
+    anchor_defs: HashMap<SmolStr, (Anchor, usize)>,
 }
 
 #[allow(dead_code)]
@@ -143,6 +144,7 @@ impl<'a> ValidationCtx<'a> {
             lookups: Vec::new(),
             features: Default::default(),
             mark_classes: Default::default(),
+            anchor_defs: Default::default(),
         }
     }
 
@@ -229,6 +231,51 @@ impl<'a> ValidationCtx<'a> {
             };
             self.mark_classes.insert(class_name.text().clone(), class);
         }
+    }
+
+    fn define_named_anchor(&mut self, anchor_def: typed::AnchorDef) {
+        let anchor_block = anchor_def.anchor();
+        let name = anchor_def.name();
+        let anchor = match self.resolve_anchor(&anchor_block) {
+            Some(a @ Anchor::Coord { .. } | a @ Anchor::Contour { .. }) => a,
+            Some(_) => {
+                return self.error(
+                    anchor_block.range(),
+                    "named anchor definition can only be in format A or B".into(),
+                )
+            }
+            None => return,
+        };
+        if let Some(_prev) = self
+            .anchor_defs
+            .insert(name.text.clone(), (anchor, anchor_def.range().start))
+        {
+            self.error(name.range(), "duplicate anchor definition".into());
+        }
+    }
+
+    fn resolve_anchor(&mut self, item: &typed::Anchor) -> Option<Anchor> {
+        if let Some((x, y)) = item.coords().map(|(x, y)| (x.parse(), y.parse())) {
+            if let Some(point) = item.contourpoint() {
+                match point.parse_unsigned() {
+                    Some(point) => return Some(Anchor::Contour { x, y, point }),
+                    None => panic!("negative contourpoint, go fix your parser"),
+                }
+            } else {
+                return Some(Anchor::Coord { x, y });
+            }
+        } else if let Some(name) = item.name() {
+            match self.anchor_defs.get(&name.text) {
+                Some((anchor, pos)) if *pos < item.range().start => return Some(anchor.clone()),
+                _ => {
+                    self.error(name.range(), "anchor is not defined".into());
+                    return None;
+                }
+            }
+        } else if let Some(_) = item.null() {
+            return Some(Anchor::Null);
+        }
+        panic!("bad anchor {:?} go check your parser", item);
     }
 
     fn resolve_glyph_or_class(&mut self, item: &NodeOrToken) -> Option<GlyphClass> {
@@ -339,6 +386,8 @@ pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
             ctx.define_glyph_class(class_def);
         } else if let Some(mark_def) = typed::MarkClassDef::cast(item) {
             ctx.define_mark_class(mark_def);
+        } else if let Some(anchor_def) = typed::AnchorDef::cast(item) {
+            ctx.define_named_anchor(anchor_def);
         }
         //for item in node.children() {
         //match item.kind() {

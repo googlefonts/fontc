@@ -25,8 +25,8 @@ enum ValueRecord {
     Named(SmolStr),
 }
 
-#[allow(dead_code)]
-enum Anchor {
+#[derive(Clone, Debug)]
+pub enum Anchor {
     Coord { x: i32, y: i32 },
     Contour { x: i32, y: i32, point: u32 },
     //un
@@ -34,7 +34,7 @@ enum Anchor {
     //unimplemented
     Device,
     Null,
-    Named(SmolStr),
+    //Named(SmolStr),
 }
 
 //struct ParsePattern {

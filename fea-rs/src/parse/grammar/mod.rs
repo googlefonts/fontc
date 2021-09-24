@@ -316,7 +316,7 @@ fn anchor_def(parser: &mut Parser) {
             parser.expect_recover(Kind::Number, TokenSet::TOP_LEVEL.union(Kind::Semi.into()));
         }
         parser.finish_node();
-        parser.expect_recover(TokenSet::IDENT_LIKE, TokenSet::TOP_SEMI);
+        parser.expect_remap_recover(TokenSet::IDENT_LIKE, Kind::Ident, TokenSet::TOP_SEMI);
         parser.expect_semi();
     }
 

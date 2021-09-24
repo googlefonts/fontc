@@ -18,6 +18,7 @@ pub trait AstNode {
 
 macro_rules! ast_token {
     ($typ:ident, $kind:expr) => {
+        #[derive(Clone, Debug)]
         pub struct $typ {
             inner: Token,
         }
@@ -48,6 +49,7 @@ macro_rules! ast_token {
 
 macro_rules! ast_node {
     ($typ:ident, $kind:expr) => {
+        #[derive(Clone, Debug)]
         pub struct $typ {
             inner: Node,
         }
@@ -82,10 +84,13 @@ ast_token!(Cid, Kind::Cid);
 ast_token!(GlyphName, Kind::GlyphName);
 ast_token!(Tag, Kind::Tag);
 ast_token!(GlyphClassName, Kind::NamedGlyphClass);
+ast_token!(Number, Kind::Number);
+ast_token!(Metric, Kind::Metric);
 ast_node!(GlyphRange, Kind::GlyphRange);
 ast_node!(GlyphClassDef, Kind::GlyphClassDefNode);
 ast_node!(MarkClassDef, Kind::MarkClassNode);
 ast_node!(Anchor, Kind::AnchorNode);
+ast_node!(AnchorDef, Kind::AnchorDefNode);
 ast_node!(GlyphClass, Kind::GlyphClass);
 ast_node!(LanguageSystem, Kind::LanguageSystemNode);
 
@@ -176,5 +181,68 @@ impl MarkClassDef {
             .skip_while(|t| t.kind() != Kind::AnchorNode)
             .find_map(GlyphClassName::cast)
             .unwrap()
+    }
+}
+
+impl AnchorDef {
+    pub fn anchor(&self) -> Anchor {
+        self.iter().find_map(Anchor::cast).unwrap()
+    }
+
+    pub fn name(&self) -> &Token {
+        self.iter()
+            .find(|t| t.kind() == Kind::Ident)
+            .and_then(NodeOrToken::as_token)
+            .expect("pre-validated")
+    }
+}
+
+impl Anchor {
+    pub fn coords(&self) -> Option<(Metric, Metric)> {
+        let tokens = self.iter();
+        let mut first = None;
+
+        for token in tokens {
+            if let Some(metric) = Metric::cast(token) {
+                if let Some(prev) = first.take() {
+                    return Some((prev, metric));
+                } else {
+                    first = Some(metric);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn contourpoint(&self) -> Option<Number> {
+        self.iter().find_map(Number::cast)
+    }
+
+    pub fn null(&self) -> Option<&Token> {
+        self.iter()
+            .find(|t| t.kind() == Kind::NullKw)
+            .and_then(NodeOrToken::as_token)
+    }
+
+    pub fn name(&self) -> Option<&Token> {
+        self.iter()
+            .find(|t| t.kind() == Kind::Ident)
+            .and_then(NodeOrToken::as_token)
+    }
+}
+
+impl Number {
+    pub fn parse(&self) -> i32 {
+        self.text().parse().expect("already validated")
+    }
+
+    pub fn parse_unsigned(&self) -> Option<u32> {
+        self.text().parse().ok()
+    }
+}
+
+impl Metric {
+    pub fn parse(&self) -> i32 {
+        self.text().parse().expect("already validated")
     }
 }
