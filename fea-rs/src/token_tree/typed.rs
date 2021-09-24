@@ -59,6 +59,11 @@ macro_rules! ast_node {
             pub fn iter(&self) -> impl Iterator<Item = &NodeOrToken> {
                 self.inner.iter_children()
             }
+
+            //#[allow(unused)]
+            //pub fn node(&self) -> &Node {
+            //&self.inner
+            //}
         }
 
         impl AstNode for $typ {
@@ -93,6 +98,11 @@ ast_node!(Anchor, Kind::AnchorNode);
 ast_node!(AnchorDef, Kind::AnchorDefNode);
 ast_node!(GlyphClass, Kind::GlyphClass);
 ast_node!(LanguageSystem, Kind::LanguageSystemNode);
+ast_node!(Include, Kind::IncludeNode);
+ast_node!(Feature, Kind::FeatureNode);
+ast_node!(Script, Kind::ScriptNode);
+ast_node!(Language, Kind::LanguageNode);
+ast_node!(LookupFlag, Kind::LookupFlagNode);
 
 impl LanguageSystem {
     pub fn script(&self) -> Tag {
@@ -244,5 +254,47 @@ impl Number {
 impl Metric {
     pub fn parse(&self) -> i32 {
         self.text().parse().expect("already validated")
+    }
+}
+
+impl Feature {
+    pub fn tag(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+}
+
+impl Script {
+    pub fn tag(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+}
+
+impl Language {
+    pub fn tag(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    pub fn include_dflt(&self) -> Option<&Token> {
+        self.iter()
+            .find(|t| t.kind() == Kind::IncludeDfltKw)
+            .and_then(NodeOrToken::as_token)
+    }
+
+    pub fn exclude_dflt(&self) -> Option<&Token> {
+        self.iter()
+            .find(|t| t.kind() == Kind::ExcludeDfltKw)
+            .and_then(NodeOrToken::as_token)
+    }
+
+    pub fn required(&self) -> Option<&Token> {
+        self.iter()
+            .find(|t| t.kind() == Kind::RequiredKw)
+            .and_then(NodeOrToken::as_token)
+    }
+}
+
+impl LookupFlag {
+    pub fn number(&self) -> Option<Number> {
+        self.iter().find_map(Number::cast)
     }
 }

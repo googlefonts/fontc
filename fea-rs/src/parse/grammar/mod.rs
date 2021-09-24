@@ -136,7 +136,7 @@ fn lookupflag(parser: &mut Parser, recovery: TokenSet) {
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::LookupflagKw);
+    parser.start_node(Kind::LookupFlagNode);
     lookupflag_body(parser, recovery);
     parser.finish_node();
 }
@@ -247,7 +247,7 @@ fn eat_script(parser: &mut Parser, recovery: TokenSet) -> bool {
         return false;
     }
     parser.eat_trivia();
-    parser.start_node(Kind::ScriptKw);
+    parser.start_node(Kind::ScriptNode);
     parser.eat_raw();
     parser.expect_tag(recovery.union(Kind::Semi.into()));
     parser.expect_semi();
@@ -260,7 +260,7 @@ fn eat_language(parser: &mut Parser, recovery: TokenSet) -> bool {
         return false;
     }
     parser.eat_trivia();
-    parser.start_node(Kind::LanguageKw);
+    parser.start_node(Kind::LanguageNode);
     parser.eat_raw();
     parser.expect_tag(recovery.union(Kind::Semi.into()));
     parser.eat(Kind::ExcludeDfltKw);

@@ -199,6 +199,9 @@ pub enum Kind {
     GlyphClassDefNode,
     LanguageSystemNode,
     FeatureNode,
+    ScriptNode,
+    LanguageNode,
+    LookupFlagNode,
 }
 
 impl Kind {
@@ -476,6 +479,9 @@ impl std::fmt::Display for Kind {
             Self::GlyphClassDefNode => write!(f, "GlyphClassDefNode"),
             Self::LanguageSystemNode => write!(f, "LanguageSystemNode"),
             Self::FeatureNode => write!(f, "FeatureNode"),
+            Self::ScriptNode => write!(f, "ScriptNode"),
+            Self::LanguageNode => write!(f, "LanguageNode"),
+            Self::LookupFlagNode => write!(f, "LookupFlagNode"),
         }
     }
 }

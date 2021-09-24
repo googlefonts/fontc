@@ -61,9 +61,16 @@ enum Statement {
     Gpos(GposRule),
     GSub(GsubRule),
     Script(Tag),
-    Lang(Tag),
-    LookupFlag(()),
-    GlyphClassDef { name: SmolStr, class: GlyphClass },
+    Language {
+        tag: Tag,
+        exclude_dflt: bool,
+        required: bool,
+    },
+    LookupFlag(LookupFlag),
+    GlyphClassDef {
+        name: SmolStr,
+        class: GlyphClass,
+    },
     MarkStatement(()),
     Params(()),
     SizeMenuName(()),
@@ -233,6 +240,58 @@ impl<'a> ValidationCtx<'a> {
         }
     }
 
+    fn add_feature(&mut self, feature: typed::Feature) {
+        let tag = feature.tag();
+        let mut statements = Vec::new();
+        for item in feature.iter() {
+            if let Some(statement) = self.resolve_statement(item) {
+                statements.push(statement);
+            }
+        }
+    }
+
+    fn resolve_statement(&mut self, item: &NodeOrToken) -> Option<Statement> {
+        if let Some(script) = typed::Script::cast(item) {
+            let tag = script.tag();
+            if tag.text() == "dflt" {
+                self.error(
+                    tag.range(),
+                    "'dflt' is not a value value for script tag".into(),
+                );
+                return None;
+            }
+            Some(Statement::Script(tag.parse().unwrap()))
+        } else if let Some(language) = typed::Language::cast(item) {
+            let tag = language.tag();
+            if tag.text() == "DFLT" {
+                self.error(
+                    tag.range(),
+                    "'DFLT' is not a value value for language tag".into(),
+                );
+                return None;
+            }
+            let required = language.required().is_some();
+            let exclude_dflt = language.exclude_dflt().is_some();
+            if exclude_dflt {
+                if let Some(conflict) = language.include_dflt() {
+                    self.error(
+                        conflict.range(),
+                        "'include_dft' and 'exclude_dflt' are mutually exclusive".into(),
+                    );
+                }
+            }
+            Some(Statement::Language {
+                tag: tag.parse().unwrap(),
+                exclude_dflt,
+                required,
+            })
+        } else if let Some(lookupflag) = typed::LookupFlag::cast(item) {
+            resolve_lookupflags(self, &lookupflag).map(Statement::LookupFlag)
+        } else {
+            None
+        }
+    }
+
     fn define_named_anchor(&mut self, anchor_def: typed::AnchorDef) {
         let anchor_block = anchor_def.anchor();
         let name = anchor_def.name();
@@ -303,6 +362,13 @@ impl<'a> ValidationCtx<'a> {
                 glyphs.push(id);
             } else if let Some(range) = typed::GlyphRange::cast(item) {
                 self.add_glyphs_from_range(&range, &mut glyphs);
+            } else if let Some(alias) = typed::GlyphClassName::cast(item) {
+                if let Some(class) = self.resolve_named_glyph_class(&alias) {
+                    glyphs.extend(class.items().iter().clone());
+                }
+            } else if !item.kind().is_trivia() {
+                // just for debugging
+                eprintln!("unexpected item in glyph class: '{}'", item.kind());
             }
         }
         glyphs.into()
@@ -388,19 +454,19 @@ pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
             ctx.define_mark_class(mark_def);
         } else if let Some(anchor_def) = typed::AnchorDef::cast(item) {
             ctx.define_named_anchor(anchor_def);
+        } else if let Some(_include) = typed::Include::cast(item) {
+            //TODO: includes, eh? maybe resolved before now?
+        } else if let Some(feature) = typed::Feature::cast(item) {
+            ctx.add_feature(feature);
         }
         //for item in node.children() {
         //match item.kind() {
-        ////Kind::LanguageSystemNode => language_system(&mut ctx, item.as_node().unwrap()),
-        ////Kind::GlyphClassDefNode => glyph_class_def(&mut ctx, item.as_node().unwrap(), pos),
-        ////Kind::MarkClassNode => mark_class_def(&mut ctx, item.as_node().unwrap(), pos),
-        ////Kind::AnchorDefNode => anchor_def(n, &mut ctx),
-        ////Kind::ValueRecordNode => value_record_def(n, &mut ctx),
         ////Kind::IncludeNode => include(n, &mut ctx),
         ////Kind::FeatureNode => feature(n, &mut ctx),
         ////Kind::TableNode => table(n, &mut ctx),
         ////Kind::AnonBlockNode => anon(n, &mut ctx),
         ////Kind::LookupBlockNode => lookup_block_top_level(n, &mut ctx),
+        ////Kind::ValueRecordNode => value_record_def(n, &mut ctx),
         //Kind::Comment | Kind::Whitespace | Kind::Semi => (),
         //// maybe don't return an error? parsing should ensure we don't get here
         //other => panic!("I should maybe return an error?"),
@@ -467,6 +533,110 @@ pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
 //}
 
 //}
+
+#[derive(Clone, Debug, Default)]
+struct LookupFlag {
+    raw: u16,
+    mark_attachment: Option<GlyphClass>,
+    mark_filter: Option<GlyphClass>,
+}
+
+fn resolve_lookupflags(ctx: &mut ValidationCtx, node: &typed::LookupFlag) -> Option<LookupFlag> {
+    if let Some(number) = node.number() {
+        if let Ok(mask) = number.text().parse::<u16>() {
+            return Some(LookupFlag {
+                raw: mask,
+                ..Default::default()
+            });
+        } else {
+            ctx.error(number.range(), "value out of range".into());
+            return None;
+        }
+    }
+
+    //FIXME: this is a placeholder, we'll use the fonttools types later
+    let mut rtl = false;
+    let mut ignore_base = false;
+    let mut ignore_lig = false;
+    let mut ignore_marks = false;
+    let mut mark_set = None;
+    let mut filter_set = None;
+
+    let mut iter = node.iter();
+    while let Some(next) = iter.next() {
+        match next.kind() {
+            Kind::RightToLeftKw if !rtl => rtl = true,
+            Kind::IgnoreBaseGlyphsKw if !ignore_base => ignore_base = true,
+            Kind::IgnoreLigaturesKw if !ignore_lig => ignore_lig = true,
+            Kind::IgnoreMarksKw if !ignore_marks => ignore_marks = true,
+
+            //FIXME: we are not enforcing some requirements here. in particular,
+            // The glyph sets of the referenced classes must not overlap, and the MarkAttachmentType statement can reference at most 15 different classes.
+            // ALSO: this should accept mark classes.
+            Kind::MarkAttachmentTypeKw if mark_set.is_none() => {
+                match iter
+                    .find(|t| t.kind() == Kind::NamedGlyphClass || t.kind() == Kind::GlyphClass)
+                {
+                    Some(node) => {
+                        mark_set = ctx.resolve_glyph_or_class(node);
+                    }
+                    None => {
+                        ctx.error(
+                            next.range(),
+                            "MarkAttachmentType should be followed by glyph class".into(),
+                        );
+                        return None;
+                    }
+                }
+            }
+            Kind::UseMarkFilteringSetKw if filter_set.is_none() => {
+                match iter
+                    .find(|t| t.kind() == Kind::NamedGlyphClass || t.kind() == Kind::GlyphClass)
+                {
+                    Some(node) => {
+                        filter_set = ctx.resolve_glyph_or_class(node);
+                    }
+                    None => {
+                        ctx.error(
+                            next.range(),
+                            "UseMarkFilteringSet should be followed by glyph class".into(),
+                        );
+                        return None;
+                    }
+                }
+            }
+            Kind::RightToLeftKw
+            | Kind::IgnoreBaseGlyphsKw
+            | Kind::IgnoreMarksKw
+            | Kind::IgnoreLigaturesKw
+            | Kind::MarkAttachmentTypeKw
+            | Kind::UseMarkFilteringSetKw => {
+                ctx.error(next.range(), "duplicate value in lookupflag".into())
+            }
+            _ => (),
+        }
+    }
+
+    let mut raw = 0u16;
+    if rtl {
+        raw &= 1
+    };
+    if ignore_base {
+        raw &= 2
+    };
+    if ignore_lig {
+        raw &= 4
+    };
+    if ignore_marks {
+        raw &= 8
+    };
+
+    Some(LookupFlag {
+        raw,
+        mark_attachment: mark_set,
+        mark_filter: filter_set,
+    })
+}
 
 /// A helper for testing, that just returns the names/cids that should be part
 /// of a given range. (This does not test if they're in the font.)
