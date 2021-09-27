@@ -36,7 +36,7 @@ fn deepest_depth(node: &Node) -> usize {
     let mut deepest = 0;
     let mut cursor = node.cursor();
 
-    while let Some(_) = cursor.next_token() {
+    while cursor.next_token().is_some() {
         deepest = deepest.max(cursor.depth());
     }
 

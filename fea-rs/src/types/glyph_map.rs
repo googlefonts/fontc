@@ -82,14 +82,14 @@ mod sealed {
 
     impl AsGlyphIdent for GlyphName {
         fn named(&self) -> Option<&str> {
-            Some(&self)
+            Some(self)
         }
     }
 
     impl AsGlyphIdent for GlyphIdent {
         fn named(&self) -> Option<&str> {
             if let GlyphIdent::Name(name) = self {
-                Some(&name)
+                Some(name)
             } else {
                 None
             }
@@ -97,7 +97,7 @@ mod sealed {
 
         fn cid(&self) -> Option<&u32> {
             if let GlyphIdent::Cid(cid) = self {
-                Some(&cid)
+                Some(cid)
             } else {
                 None
             }

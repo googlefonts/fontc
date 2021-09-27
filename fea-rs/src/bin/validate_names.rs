@@ -47,8 +47,8 @@ fn load_font(filename: &Path) -> (GlyphMap, String) {
 
 /// returns the tree and any errors
 fn try_parse_fea(contents: &str, names: &GlyphMap) -> (Node, Vec<SyntaxError>) {
-    let mut sink = AstSink::new(&contents, Some(names));
-    let mut parser = Parser::new(&contents, &mut sink);
+    let mut sink = AstSink::new(contents, Some(names));
+    let mut parser = Parser::new(contents, &mut sink);
     fea_rs::root(&mut parser);
     sink.finish()
 }
@@ -78,7 +78,7 @@ fn collect_tokens(root: &Node, pos: usize, collect: &mut Vec<(Kind, Range<usize>
     let mut rel_pos = 0;
     for child in root.children() {
         match child {
-            NodeOrToken::Node(node) => collect_tokens(&node, pos + rel_pos, collect),
+            NodeOrToken::Node(node) => collect_tokens(node, pos + rel_pos, collect),
             NodeOrToken::Token(token) => {
                 let range = pos + rel_pos..pos + rel_pos + child.text_len();
                 collect.push((token.kind, range));

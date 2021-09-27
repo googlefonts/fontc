@@ -14,13 +14,13 @@ pub struct InvalidTag(String);
 impl FromStr for Tag {
     type Err = InvalidTag;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.as_bytes() {
-            &[a] => Ok(Tag([a, b' ', b' ', b' '])),
-            &[a, b] => Ok(Tag([a, b, b' ', b' '])),
-            &[a, b, c] => Ok(Tag([a, b, c, b' '])),
-            &[a, b, c, d] => Ok(Tag([a, b, c, d])),
-            _ => Err(InvalidTag(s.to_string())),
+    fn from_str(src: &str) -> Result<Self, Self::Err> {
+        match src.as_bytes() {
+            [a] => Ok(Tag([*a, b' ', b' ', b' '])),
+            [a, b] => Ok(Tag([*a, *b, b' ', b' '])),
+            [a, b, c] => Ok(Tag([*a, *b, *c, b' '])),
+            [a, b, c, d] => Ok(Tag([*a, *b, *c, *d])),
+            _ => Err(InvalidTag(src.to_string())),
         }
     }
 }

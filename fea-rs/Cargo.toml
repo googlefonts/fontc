@@ -16,7 +16,7 @@ exclude = ["test-data"]
 ansi_term = "0.12.1"
 smol_str = "0.1.18"
 xflags = "0.2.3"
-norad = "0.5"
+norad = "0.5" # just for use in sample binaries/debugging, remove eventually
 
 [dev-dependencies]
 diff = "0.1.12"
