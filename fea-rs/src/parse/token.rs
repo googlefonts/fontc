@@ -228,7 +228,7 @@ impl Kind {
     }
 
     pub fn is_trivia(self) -> bool {
-        matches!(self, Kind::Comment | Kind::Whitespace)
+        matches!(self, Kind::Comment | Kind::Whitespace | Kind::Backslash)
     }
 
     pub(crate) fn from_keyword(word: &[u8]) -> Option<Kind> {

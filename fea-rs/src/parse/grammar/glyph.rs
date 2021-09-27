@@ -107,30 +107,11 @@ pub(crate) fn expect_glyph_name_like(parser: &mut Parser, recovery: TokenSet) ->
 }
 
 fn eat_glyph_name_like(parser: &mut Parser) -> bool {
-    if parser.matches(0, Kind::Backslash) {
-        if parser.matches(1, TokenSet::IDENT_LIKE) {
-            parser.eat(Kind::Backslash);
-            eat_and_validate_glyph_name(parser);
-            true
-        } else if parser.matches(1, Kind::Number) {
-            parser.eat(Kind::Backslash);
-            let raw = parser.nth_raw(0);
-            // negative numbers not allowed in CID
-            let valid = raw.first() != Some(&b'-');
-            if !valid {
-                parser.err_and_bump("CID must be positive decimal number.")
-            } else {
-                parser.eat_remap(Kind::Number, Kind::Cid);
-            }
-            true
-        } else {
-            false
-        }
-    } else if parser.matches(0, TokenSet::IDENT_LIKE) {
+    if parser.matches(0, TokenSet::IDENT_LIKE) {
         eat_and_validate_glyph_name(parser);
         true
     } else {
-        false
+        parser.eat(Kind::Cid)
     }
 }
 
@@ -257,8 +238,8 @@ START GlyphClassDefNode
       17..18 GlyphName
     END GlyphRange
     18..19 WS
+    19..20 \\
     START GlyphRange
-      19..20 \\
       20..21 CID
       21..22 -
       22..23 \\
@@ -281,20 +262,20 @@ END GlyphClassDefNode
         let mut sink = DebugSink::default();
         let mut parser = Parser::new(fea, &mut sink);
         assert!(eat_glyph_name_like(&mut parser));
-        assert_eq!(parser.nth_raw(1), b"hi");
+        assert_eq!(parser.nth_raw(0), b"hi");
         assert!(eat_glyph_name_like(&mut parser));
-        assert_eq!(parser.nth_raw(1), b"mark");
+        assert_eq!(parser.nth_raw(0), b"mark");
         assert!(eat_glyph_name_like(&mut parser));
-        assert_eq!(parser.nth_raw(1), b"table");
+        assert_eq!(parser.nth_raw(0), b"table");
         assert!(eat_glyph_name_like(&mut parser));
-        assert_eq!(parser.nth_raw(1), b"12");
+        assert_eq!(parser.nth_raw(0), b"12");
         assert!(eat_glyph_name_like(&mut parser));
         assert!(!eat_glyph_name_like(&mut parser));
     }
 
     #[test]
     fn invalid_things() {
-        let bad_glyphs = [".hi", "hi!", "hî", "\\-5"];
+        let bad_glyphs = [".hi", "hi!", "hî"];
         for raw in bad_glyphs {
             let mut sink = DebugSink::default();
             let mut parser = Parser::new(raw, &mut sink);

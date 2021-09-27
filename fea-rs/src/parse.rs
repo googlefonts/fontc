@@ -129,7 +129,7 @@ impl<'a> Parser<'a> {
         pending.trivia_len = 0;
         pending.token = loop {
             let token = self.lexer.next_token();
-            if matches!(token.kind, Kind::Whitespace | Kind::Comment) {
+            if token.kind.is_trivia() {
                 pending.trivia_len += token.len;
                 pending.preceding_trivia.push(token);
             } else {

@@ -47,6 +47,7 @@ impl<'a> Lexer<'a> {
             byte if is_ascii_whitespace(byte) => self.whitespace(),
             b'#' => self.comment(),
             b'"' => self.string(),
+            b'0'..=b'9' if self.after_backslash => self.cid(),
             b'0' => self.number(true),
             b'1'..=b'9' => self.number(false),
             b';' => Kind::Semi,
@@ -164,6 +165,11 @@ impl<'a> Lexer<'a> {
         while self.nth(0).is_ascii_digit() {
             self.bump();
         }
+    }
+
+    fn cid(&mut self) -> Kind {
+        self.eat_decimal_digits();
+        Kind::Cid
     }
 
     fn glyph_class_name(&mut self) -> Kind {
@@ -368,10 +374,10 @@ mod tests {
         assert_eq!(token_strs[2], "=");
         assert_eq!(token_strs[3], "[");
         assert_eq!(token_strs[4], "\\");
-        assert_eq!(token_strs[5], "NUM(1)");
+        assert_eq!(token_strs[5], "CID(1)");
         assert_eq!(token_strs[6], "-");
         assert_eq!(token_strs[7], "\\");
-        assert_eq!(token_strs[8], "NUM(2)");
+        assert_eq!(token_strs[8], "CID(2)");
         assert_eq!(token_strs[9], "WS( )");
         assert_eq!(token_strs[10], "ID(a)");
         assert_eq!(token_strs[11], "WS( )");
