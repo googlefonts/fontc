@@ -99,7 +99,7 @@ pub fn stringify_errors(
             cur_tokens,
             line_n,
             MAX_PRINT_WIDTH,
-            &err,
+            err,
             max_line_digit_width,
         );
     }

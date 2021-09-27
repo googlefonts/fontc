@@ -82,14 +82,10 @@ impl Document {
         let inner = self.inner.lock().unwrap();
 
         let mut result: Vec<SemanticToken> = Vec::new();
-        for (token_type, range) in
-            inner
-                .tokens
-                .iter()
-                .filter_map(|(kind, range)| match style_for_kind(*kind) {
-                    Some(style) => Some((style, range)),
-                    None => None,
-                })
+        for (token_type, range) in inner
+            .tokens
+            .iter()
+            .filter_map(|(kind, range)| style_for_kind(*kind).map(|style| (style, range)))
         {
             let start_pos = to_lsp_pos(range.start, &inner.offsets);
             result.push(SemanticToken {

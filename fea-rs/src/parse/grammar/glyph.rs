@@ -103,7 +103,7 @@ pub(crate) fn expect_glyph_name_like(parser: &mut Parser, recovery: TokenSet) ->
     }
 
     parser.err_recover("Expected glyph name or CID", recovery);
-    return false;
+    false
 }
 
 fn eat_glyph_name_like(parser: &mut Parser) -> bool {
