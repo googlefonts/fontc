@@ -80,8 +80,8 @@ impl TreeSink for AstSink<'_> {
         self.builder.start_node(kind);
     }
 
-    fn finish_node(&mut self) {
-        self.builder.finish_node(self.cur_node_contains_error);
+    fn finish_node(&mut self, kind: Option<Kind>) {
+        self.builder.finish_node(self.cur_node_contains_error, kind);
         self.cur_node_contains_error = false;
     }
 
@@ -268,8 +268,9 @@ impl TreeBuilder {
         self.children.push(item)
     }
 
-    pub(crate) fn finish_node(&mut self, error: bool) {
+    pub(crate) fn finish_node(&mut self, error: bool, new_kind: Option<Kind>) {
         let (kind, first_child) = self.parents.pop().unwrap();
+        let kind = new_kind.unwrap_or(kind);
         let node = Node::new(kind, self.children.split_off(first_child), error);
         self.push_raw(node.into());
     }
@@ -406,7 +407,7 @@ fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
             builder.token(Kind::GlyphName, head);
             builder.token(Kind::Hyphen, "-");
             builder.token(Kind::GlyphName, tail.trim_start_matches('-'));
-            builder.finish_node(false);
+            builder.finish_node(false, None);
             builder.finish()
         })
         .ok_or_else(|| {

@@ -96,7 +96,11 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn finish_node(&mut self) {
-        self.sink.finish_node();
+        self.sink.finish_node(None);
+    }
+
+    pub(crate) fn finish_and_remap_node(&mut self, new_kind: Kind) {
+        self.sink.finish_node(Some(new_kind))
     }
 
     pub(crate) fn nth_raw(&self, n: usize) -> &[u8] {
@@ -377,9 +381,10 @@ pub trait TreeSink {
     /// Start new branch and make it current.
     fn start_node(&mut self, kind: Kind);
 
-    /// Finish current branch and restore previous
-    /// branch as current.
-    fn finish_node(&mut self);
+    /// Finish current branch and restore previous branch as current.
+    ///
+    /// If `kind` is provided, it replaces the [`Kind`] passed to `start_node`.
+    fn finish_node(&mut self, kind: Option<Kind>);
 
     fn error(&mut self, error: SyntaxError);
 }

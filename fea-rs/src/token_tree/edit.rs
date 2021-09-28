@@ -58,7 +58,7 @@ fn apply_edits_recurse(
             }
         }
     }
-    builder.finish_node(false);
+    builder.finish_node(false, None);
 }
 
 fn op_for_node(node_range: Range<usize>, edit_range: Range<usize>) -> EditOp {

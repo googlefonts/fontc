@@ -39,8 +39,26 @@ pub(crate) fn eat_glyph_or_glyph_class(parser: &mut Parser, recovery: TokenSet) 
     eat_glyph_name_like(parser) || eat_named_or_unnamed_glyph_class(parser, recovery)
 }
 
+pub(crate) fn expect_glyph_or_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if eat_glyph_or_glyph_class(parser, recovery) {
+        return true;
+    }
+
+    parser.err_recover("Expected glyph or glyph class", recovery);
+    false
+}
+
 pub(crate) fn eat_named_or_unnamed_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
     parser.eat(Kind::NamedGlyphClass) || eat_glyph_class_list(parser, recovery)
+}
+
+pub(crate) fn expect_named_or_unnamed_glyph_class(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if eat_named_or_unnamed_glyph_class(parser, recovery) {
+        return true;
+    }
+
+    parser.err_recover("Expected glyph class", recovery);
+    false
 }
 
 // [ a b a-z @hi \0-\40 ]
@@ -106,7 +124,7 @@ pub(crate) fn expect_glyph_name_like(parser: &mut Parser, recovery: TokenSet) ->
     false
 }
 
-fn eat_glyph_name_like(parser: &mut Parser) -> bool {
+pub(crate) fn eat_glyph_name_like(parser: &mut Parser) -> bool {
     if parser.matches(0, TokenSet::IDENT_LIKE) {
         eat_and_validate_glyph_name(parser);
         true
