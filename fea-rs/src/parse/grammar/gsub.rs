@@ -100,7 +100,7 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
     while parser.eat(Kind::SingleQuote) {
         if parser.eat(Kind::LookupKw) {
             if !parser.eat(Kind::Ident) {
-                parser.err_recover("expected named lookup", recovery);
+                parser.err("expected named lookup");
                 parser.eat_until(recovery);
                 return Kind::GsubNode;
             }
@@ -141,48 +141,11 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
 fn parse_ignore(parser: &mut Parser, recovery: TokenSet) -> Kind {
     assert!(parser.eat(Kind::IgnoreKw));
     assert!(parser.eat(Kind::SubKw));
-    let recovery = recovery.union(Kind::Semi.into());
-    if !eat_ignore_statement_item(parser, recovery) {
-        parser.err_recover("Expected ignore pattern", recovery);
-        parser.eat_until(recovery);
-        return Kind::GsubNode;
-    }
-
-    while parser.eat(Kind::Comma) {
-        eat_ignore_statement_item(parser, recovery);
-    }
-    parser.expect_semi();
-    Kind::GsubIgnore
-}
-
-fn eat_ignore_statement_item(parser: &mut Parser, recovery: TokenSet) -> bool {
-    let recovery = recovery.union(Kind::Comma.into());
-    // eat backtrack + first mark glyph
-    if !glyph::eat_glyph_or_glyph_class(parser, recovery) {
-        return false;
-    }
-    while glyph::eat_glyph_or_glyph_class(parser, recovery) {
-        continue;
-    }
-
-    // expect a marked glyph
-    if !parser.eat(Kind::SingleQuote) {
-        parser.err_recover("Ignore statement must include one marked glyph", recovery);
+    if super::expect_ignore_pattern_body(parser, recovery) {
+        Kind::GsubIgnore
     } else {
-        // eat all marked glyphs
-        loop {
-            glyph::eat_glyph_or_glyph_class(parser, recovery);
-            if !parser.eat(Kind::SingleQuote) {
-                break;
-            }
-        }
+        Kind::GsubNode
     }
-
-    // eat any suffix sequence
-    while glyph::eat_glyph_or_glyph_class(parser, recovery) {
-        continue;
-    }
-    true
 }
 
 fn parse_rsub(parser: &mut Parser, recovery: TokenSet) -> Kind {

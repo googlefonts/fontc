@@ -304,8 +304,8 @@ mod tests {
         let mut sink = AstSink::new(SAMPLE_FEA, None);
         let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
         crate::root(&mut parser);
-        let (root, _errs) = sink.finish();
-        assert!(_errs.is_empty());
+        let (root, errs, errstr) = sink.finish_stringified();
+        assert!(errs.is_empty(), "{}", errstr);
         let mut last_end = 0;
         for token in root.iter_tokens() {
             assert_eq!(
@@ -389,7 +389,7 @@ mod tests {
             cursor.current()
         );
         cursor.advance();
-        assert!(at_node(&cursor, Kind::GposNode), "{:?}", cursor.current());
+        assert!(at_node(&cursor, Kind::GposType2), "{:?}", cursor.current());
         cursor.advance();
         cursor.advance();
         cursor.advance();

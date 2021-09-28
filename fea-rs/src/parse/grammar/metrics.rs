@@ -90,6 +90,15 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
     true
 }
 
+pub(crate) fn expect_value_record(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if eat_value_record(parser, recovery) {
+        true
+    } else {
+        parser.err_recover("expected valuerecord", recovery);
+        false
+    }
+}
+
 fn expect_device(parser: &mut Parser, recovery: TokenSet) -> bool {
     fn device_body(parser: &mut Parser, recovery: TokenSet) {
         let recovery = recovery.union(TokenSet::new(&[Kind::LAngle, Kind::RAngle, Kind::Comma]));

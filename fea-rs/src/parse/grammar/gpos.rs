@@ -15,27 +15,78 @@ use crate::parse::{Kind, Parser, TokenSet};
 // 6.f: pos mark <glyph|class>
 //      <anchor> mark <named mark class> + ;
 pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
-    fn gpos_body(parser: &mut Parser, recovery: TokenSet) {
-        parser.eat(Kind::IgnoreKw);
-        parser.eat(Kind::EnumKw);
+    fn gpos_body(parser: &mut Parser, recovery: TokenSet) -> Kind {
+        if parser.matches(0, Kind::IgnoreKw) {
+            return parse_ignore(parser, recovery);
+        }
+        let recovery = recovery.union(Kind::Semi.into());
+        if parser.eat(Kind::EnumKw) {
+            assert!(parser.eat(Kind::PosKw));
+            if glyph::expect_glyph_or_glyph_class(parser, recovery)
+                && glyph::expect_glyph_or_glyph_class(parser, recovery)
+                && metrics::expect_value_record(parser, recovery)
+            {
+                return Kind::GposType2;
+            } else {
+                return Kind::GposNode;
+            }
+        }
         assert!(parser.eat(Kind::PosKw));
         if parser.matches(0, Kind::CursiveKw) {
             gpos_cursive(parser, recovery);
+            Kind::GposType3
         } else if parser.matches(0, Kind::MarkKw) {
             gpos_mark_to_mark(parser, recovery);
+            Kind::GposType6
         } else if parser.nth_raw(0) == b"base" {
             gpos_mark_to_base(parser, recovery);
+            Kind::GposType4
         } else if parser.nth_raw(0) == b"ligature" {
             gpos_ligature(parser, recovery);
+            Kind::GposType5
         } else {
-            gpos_single_pair_or_chain(parser, recovery);
+            // all other statements start with glyph or glyph class:
+            if !glyph::expect_glyph_or_glyph_class(parser, recovery) {
+                parser.eat_until(recovery);
+                return Kind::GposNode;
+            }
+            // now either a single or pair (type A)
+            if metrics::eat_value_record(parser, recovery) {
+                if glyph::eat_glyph_or_glyph_class(parser, recovery) {
+                    metrics::expect_value_record(parser, recovery);
+                    parser.expect_semi();
+                    return Kind::GposType2;
+                }
+                parser.expect_semi();
+                return Kind::GposType1;
+            }
+            // pair type B
+            if glyph::eat_glyph_or_glyph_class(parser, recovery) {
+                if metrics::eat_value_record(parser, recovery) {
+                    parser.expect_semi();
+                    return Kind::GposType2;
+                }
+            }
+
+            finish_chain_rule(parser, recovery)
         }
     }
 
     parser.eat_trivia();
     parser.start_node(Kind::GposNode);
-    gpos_body(parser, recovery);
-    parser.finish_node();
+    let kind = gpos_body(parser, recovery);
+    parser.finish_and_remap_node(kind);
+}
+
+fn parse_ignore(parser: &mut Parser, recovery: TokenSet) -> Kind {
+    assert!(parser.eat(Kind::IgnoreKw));
+    assert!(parser.eat(Kind::PosKw));
+
+    if super::expect_ignore_pattern_body(parser, recovery) {
+        Kind::GposIgnore
+    } else {
+        Kind::GposNode
+    }
 }
 
 fn gpos_cursive(parser: &mut Parser, recovery: TokenSet) {
@@ -63,9 +114,7 @@ fn gpos_mark_to_(parser: &mut Parser, recovery: TokenSet) {
         recovery.union(TokenSet::new(&[Kind::LAngle, Kind::AnchorKw])),
     );
     //FIXME: pass in more recovery?
-    while anchor_mark(parser, recovery) {
-        continue;
-    }
+    super::greedy(anchor_mark)(parser, recovery);
     parser.expect_semi();
 }
 
@@ -76,75 +125,66 @@ fn gpos_ligature(parser: &mut Parser, recovery: TokenSet) {
         parser,
         recovery.union(TokenSet::new(&[Kind::LAngle, Kind::AnchorKw])),
     );
-    while anchor_mark(parser, recovery) {
-        continue;
-    }
+    super::greedy(anchor_mark)(parser, recovery);
+
     while parser.nth_raw(0) == b"ligComponent" {
         parser.eat_raw();
-        while anchor_mark(parser, recovery) {
-            continue;
-        }
+        super::greedy(anchor_mark)(parser, recovery);
     }
     parser.expect_semi();
 }
 
-// single:
-// position one <-80 0 -160 0>;
-// position one -80;
-// pair A::
-// position T -60 a <-40 0 -40 0>;
-// pair B:
-// pos T a -100;        # specific pair (no glyph class present)
-// pos [T] a -100;      # class pair (singleton glyph class present)
-// pos T @a -100;       # class pair (glyph class present, even if singleton)
-// pos @T [a o u] -80
-fn gpos_single_pair_or_chain(parser: &mut Parser, recovery: TokenSet) {
-    parser.eat(Kind::EnumKw);
+fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
     const RECOVERY: TokenSet = TokenSet::new(&[
         Kind::LAngle,
         Kind::SingleQuote,
         Kind::Number,
-        Kind::Semi,
         Kind::LookupKw,
     ]);
-    glyph::eat_glyph_or_glyph_class(parser, recovery.union(RECOVERY));
-    if metrics::eat_value_record(parser, recovery) {
-        parser.current_token_text();
-        if parser.eat(Kind::Semi) {
-            // singleton
-            return;
+
+    //I should do this more:
+    debug_assert!(recovery.contains(Kind::Semi));
+    debug_assert!(recovery.contains(Kind::PosKw));
+    debug_assert!(recovery.contains(Kind::EnumKw));
+    debug_assert!(recovery.contains(Kind::SubKw));
+
+    // finish eating any prefix glyphes/classes
+    super::greedy(glyph::eat_glyph_or_glyph_class)(parser, recovery.union(RECOVERY));
+
+    if !parser.matches(0, Kind::SingleQuote) {
+        parser.err("expected marked glyph");
+        parser.eat_until(recovery);
+        return Kind::GposNode;
+    }
+
+    while parser.eat(Kind::SingleQuote) {
+        if !super::greedy(eat_lookup)(parser, recovery) {
+            metrics::eat_value_record(parser, recovery);
         }
-        // pair type A
-        glyph::eat_glyph_or_glyph_class(parser, recovery);
-        metrics::eat_value_record(parser, recovery);
-        parser.expect_semi();
-        return;
+        // do something else
+        glyph::eat_glyph_or_glyph_class(parser, recovery.union(RECOVERY));
     }
-    if glyph::eat_glyph_or_glyph_class(parser, recovery.union(RECOVERY)) {
-        // pair type B
-        if metrics::eat_value_record(parser, recovery) {
-            parser.expect_semi();
-            return;
-        }
+
+    // eat any suffix glyphs
+    super::greedy(glyph::eat_glyph_or_glyph_class)(parser, recovery);
+
+    //TODO: we should be done? but we also don't know how this works? inline rules
+    //are weird for gpos I need to rethink this
+    if parser.expect_semi() {
+        Kind::GposType8
+    } else {
+        Kind::GposNode
     }
-    // else a chain rule. we just eat all the tokens, since we will make sense
-    // of it in the AST
-    while eat_chain_element(parser, recovery) {
-        continue;
-    }
-    // in-line single pos rule (6.h.iii)
-    if metrics::eat_value_record(parser, recovery.union(Kind::Semi.into())) {
-        eat_chain_element(parser, recovery.union(Kind::Semi.into()));
-    }
-    parser.expect_semi();
 }
 
-fn eat_chain_element(parser: &mut Parser, recovery: TokenSet) -> bool {
-    parser.eat(Kind::SingleQuote)
-        || parser.eat(Kind::LookupKw)
-        || parser.eat(Kind::Ident)
-        || metrics::eat_value_record(parser, recovery)
-        || glyph::eat_glyph_or_glyph_class(parser, recovery)
+fn eat_lookup(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if parser.eat(Kind::LookupKw) {
+        if !parser.eat(Kind::Ident) {
+            parser.err_recover("expected named lookup", recovery);
+        }
+        return true;
+    }
+    false
 }
 
 // <anchor> mark <named mark glyphclass>
@@ -180,7 +220,7 @@ mod tests {
         assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
-START GposNode
+START GposType1
   PosKw
   WS( )
   GlyphName(one)
@@ -197,7 +237,7 @@ START GposNode
     >
   END ValueRecordNode
   ;
-END GposNode
+END GposType1
 ",
             out.simple_parse_tree(),
         );
@@ -211,7 +251,7 @@ END GposNode
         assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
-START GposNode
+START GposType2
   PosKw
   WS( )
   GlyphName(T)
@@ -222,7 +262,7 @@ START GposNode
     NUM(-100)
   END ValueRecordNode
   ;
-END GposNode
+END GposType2
 ",
             out.simple_parse_tree(),
         );
@@ -236,7 +276,7 @@ END GposNode
         assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
-START GposNode
+START GposType2
   PosKw
   WS( )
   START GlyphClass
@@ -251,7 +291,7 @@ START GposNode
     NUM(-100)
   END ValueRecordNode
   ;
-END GposNode
+END GposType2
 ",
             out.simple_parse_tree(),
         );
@@ -265,7 +305,7 @@ END GposNode
         assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
-START GposNode
+START GposType2
   PosKw
   WS( )
   START GlyphClass
@@ -280,7 +320,7 @@ START GposNode
     NUM(-100)
   END ValueRecordNode
   ;
-END GposNode
+END GposType2
 ",
             out.simple_parse_tree(),
         );
@@ -294,7 +334,7 @@ END GposNode
         assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
-START GposNode
+START GposType2
   PosKw
   WS( )
   @GlyphClass(@T)
@@ -313,7 +353,7 @@ START GposNode
     NUM(-100)
   END ValueRecordNode
   ;
-END GposNode
+END GposType2
 ",
             out.simple_parse_tree(),
         );
@@ -333,7 +373,7 @@ END GposNode
         assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
-START GposNode
+START GposType5
   PosKw
   WS( )
   LigatureKw
@@ -390,7 +430,7 @@ START GposNode
     END AnchorNode
   END AnchorMarkNode
   ;
-END GposNode
+END GposType5
 ",
             out.simple_parse_tree(),
         );

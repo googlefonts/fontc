@@ -368,6 +368,67 @@ fn anonymous(parser: &mut Parser) {
     parser.finish_node();
 }
 
+/// Common between gpos/gsub
+fn expect_ignore_pattern_body(parser: &mut Parser, recovery: TokenSet) -> bool {
+    let recovery = recovery.union(Kind::Semi.into());
+    if !eat_ignore_statement_item(parser, recovery) {
+        parser.err_recover("Expected ignore pattern", recovery);
+        parser.eat_until(recovery);
+        return false;
+    }
+
+    while parser.eat(Kind::Comma) {
+        eat_ignore_statement_item(parser, recovery);
+    }
+    parser.expect_semi();
+    true
+}
+
+fn eat_ignore_statement_item(parser: &mut Parser, recovery: TokenSet) -> bool {
+    let recovery = recovery.union(Kind::Comma.into());
+    // eat backtrack + first mark glyph
+    if !glyph::eat_glyph_or_glyph_class(parser, recovery) {
+        return false;
+    }
+    while glyph::eat_glyph_or_glyph_class(parser, recovery) {
+        continue;
+    }
+
+    // expect a marked glyph
+    if !parser.eat(Kind::SingleQuote) {
+        parser.err_recover("Ignore statement must include one marked glyph", recovery);
+    } else {
+        // eat all marked glyphs
+        loop {
+            glyph::eat_glyph_or_glyph_class(parser, recovery);
+            if !parser.eat(Kind::SingleQuote) {
+                break;
+            }
+        }
+    }
+
+    // eat any suffix sequence
+    while glyph::eat_glyph_or_glyph_class(parser, recovery) {
+        continue;
+    }
+    true
+}
+
+/// take an eat_ method and call it until it returns false.
+fn greedy<F: FnMut(&mut Parser, TokenSet) -> bool>(
+    mut f: F,
+) -> impl FnMut(&mut Parser, TokenSet) -> bool {
+    move |parser, recovery| {
+        if !f(parser, recovery) {
+            return false;
+        }
+        while f(parser, recovery) {
+            continue;
+        }
+        true
+    }
+}
+
 #[cfg(test)]
 fn debug_parse_output(
     text: &str,
