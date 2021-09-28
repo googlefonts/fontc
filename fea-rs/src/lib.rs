@@ -8,6 +8,6 @@ mod types;
 pub use compile::validate;
 pub use parse::grammar::root;
 pub use parse::util;
-pub use parse::{DebugSink, Kind, Parser, SyntaxError, TokenSet};
+pub use parse::{Kind, Parser, SyntaxError, TokenSet};
 pub use token_tree::{AstSink, Node, NodeOrToken};
 pub use types::{GlyphMap, GlyphName};

@@ -849,7 +849,7 @@ mod tests {
         builder.token(k1, t1);
         builder.token(Kind::Hyphen, "-");
         builder.token(k2, t2);
-        builder.finish_node(false);
+        builder.finish_node(false, None);
         builder.finish()
     }
 

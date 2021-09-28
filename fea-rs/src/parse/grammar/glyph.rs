@@ -180,7 +180,7 @@ fn validate_glyph_name(name: &[u8]) -> NameType {
 }
 #[cfg(test)]
 mod tests {
-    use crate::{AstSink, DebugSink, GlyphMap, GlyphName};
+    use crate::{AstSink, GlyphMap, GlyphName};
 
     use super::super::debug_parse_output;
     use super::*;
@@ -189,10 +189,10 @@ mod tests {
     fn glyph_name_smoke_test() {
         // normal name, an escaped glyph name, and a contextual keyword
         let fea = "[A \\mark Ascender]";
-        let out = debug_parse_output(fea, |parser| {
+        let (out, errors, errstr) = debug_parse_output(fea, |parser| {
             eat_glyph_class_list(parser, TokenSet::EMPTY);
         });
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GlyphClass
@@ -206,60 +206,60 @@ START GlyphClass
   ]
 END GlyphClass
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn glyph_class_alias() {
         let input = "@name = [a b d - z \\1-\\5 @hi];";
-        let out = debug_parse_output(input, |parser| {
+        let (out, errors, _errstr) = debug_parse_output(input, |parser| {
             named_glyph_class_decl(parser, TokenSet::EMPTY)
         });
         crate::assert_eq_str!(
-            out.to_string(),
+            out.simple_parse_tree(),
             "\
 START GlyphClassDefNode
-  0..5 @GlyphClass
-  5..6 WS
-  6..7 =
-  7..8 WS
+  @GlyphClass(@name)
+  WS( )
+  =
+  WS( )
   START GlyphClass
-    8..9 [
-    9..10 GlyphName
-    10..11 WS
-    11..12 GlyphName
-    12..13 WS
+    [
+    GlyphName(a)
+    WS( )
+    GlyphName(b)
+    WS( )
     START GlyphRange
-      13..14 GlyphName
-      14..15 WS
-      15..16 -
-      16..17 WS
-      17..18 GlyphName
+      GlyphName(d)
+      WS( )
+      -
+      WS( )
+      GlyphName(z)
     END GlyphRange
-    18..19 WS
-    19..20 \\
+    WS( )
+    \\
     START GlyphRange
-      20..21 CID
-      21..22 -
-      22..23 \\
-      23..24 CID
+      CID(1)
+      -
+      \\
+      CID(5)
     END GlyphRange
-    24..25 WS
-    25..28 @GlyphClass
-    28..29 ]
+    WS( )
+    @GlyphClass(@hi)
+    ]
   END GlyphClass
-  29..30 ;
+  ;
 END GlyphClassDefNode
 "
         );
-        assert!(out.errors().is_empty());
+        assert!(errors.is_empty());
     }
 
     #[test]
     fn name_like() {
         let fea = "hi \\hi \\mark \\table \\12";
-        let mut sink = DebugSink::default();
+        let mut sink = AstSink::new(fea, None);
         let mut parser = Parser::new(fea, &mut sink);
         assert!(eat_glyph_name_like(&mut parser));
         assert_eq!(parser.nth_raw(0), b"hi");
@@ -277,7 +277,7 @@ END GlyphClassDefNode
     fn invalid_things() {
         let bad_glyphs = [".hi", "hi!", "hî"];
         for raw in bad_glyphs {
-            let mut sink = DebugSink::default();
+            let mut sink = AstSink::new(raw, None);
             let mut parser = Parser::new(raw, &mut sink);
             eat_glyph_name_like(&mut parser);
             assert_eq!(sink.errors().len(), 1, "'{}'", raw);

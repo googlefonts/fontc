@@ -175,8 +175,9 @@ mod tests {
     #[test]
     fn single() {
         let fea = "position one <-80 0 -160 0>;";
-        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GposNode
@@ -198,15 +199,16 @@ START GposNode
   ;
 END GposNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn pair_1() {
         let fea = "pos T a -100;";
-        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GposNode
@@ -222,15 +224,16 @@ START GposNode
   ;
 END GposNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn pair_2() {
         let fea = "pos [T] a -100;";
-        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GposNode
@@ -250,15 +253,16 @@ START GposNode
   ;
 END GposNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn pair_3() {
         let fea = "pos [T] @a -100;";
-        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GposNode
@@ -278,15 +282,16 @@ START GposNode
   ;
 END GposNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn pair_4() {
         let fea = "pos @T [a o u] -100;";
-        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GposNode
@@ -310,7 +315,7 @@ START GposNode
   ;
 END GposNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
@@ -323,8 +328,9 @@ END GposNode
     ligComponent
     <anchor NULL>;"#;
 
-        let out = debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gpos(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GposNode
@@ -386,7 +392,7 @@ START GposNode
   ;
 END GposNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 }

@@ -1,6 +1,6 @@
 use std::{ops::Range, sync::Mutex};
 
-use fea_rs::{DebugSink, Kind, Parser, SyntaxError};
+use fea_rs::{AstSink, Kind, Parser, SyntaxError};
 use lspower::lsp::{
     Diagnostic, DiagnosticSeverity, Position, Range as UghRange, SemanticToken, SemanticTokenType,
     SemanticTokens,
@@ -164,17 +164,13 @@ fn compute_offsets(text: &str) -> Vec<usize> {
 }
 
 fn parse(text: &str) -> (Vec<(Kind, Range<usize>)>, Vec<SyntaxError>) {
-    let mut sink = DebugSink::default();
+    let mut sink = AstSink::new(text, None);
     let mut parser = Parser::new(text, &mut sink);
     fea_rs::root(&mut parser);
+    let (root, errors) = sink.finish();
 
-    let mut result = Vec::new();
-    let mut pos = 0;
-    for (kind, len) in sink.iter_tokens() {
-        result.push((kind, pos..pos + len));
-        pos += len;
-    }
-    (result, sink.errors())
+    let result = root.iter_tokens().map(|t| (t.kind, t.range())).collect();
+    (result, errors)
 }
 
 pub static STYLES: &[SemanticTokenType] = &[

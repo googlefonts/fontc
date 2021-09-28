@@ -1,12 +1,12 @@
 use ansi_term::{Colour, Style};
 use std::{env, ffi::OsStr, path::PathBuf};
 
-use fea_rs::{DebugSink, Parser};
+use fea_rs::{AstSink, Parser};
 
 fn main() {
     let args = Args::get_from_env_or_exit();
     let contents = std::fs::read_to_string(&args.path).expect("file read failed");
-    let mut sink = DebugSink::default();
+    let mut sink = AstSink::new(&contents, None);
     let mut parser = Parser::new(&contents, &mut sink);
     fea_rs::root(&mut parser);
 
@@ -15,8 +15,9 @@ fn main() {
     let mut current_style = Style::new().fg(Colour::White);
 
     let mut results = Vec::new();
-    for (kind, len) in sink.iter_tokens() {
-        let style = fea_rs::util::style_for_kind(kind);
+    let (root, _errs) = sink.finish();
+    for token in root.iter_tokens() {
+        let style = fea_rs::util::style_for_kind(token.kind);
         // if the style has changed, draw the previous range.
         if style != current_style {
             // we've drawn, so we reset.
@@ -24,10 +25,10 @@ fn main() {
             print!("{}", current_style.paint(slice));
             current_style = style;
             pos += cur_len;
-            cur_len = len;
+            cur_len = token.text.len();
         } else {
             // still the same style; we just increment cur_len
-            cur_len += len;
+            cur_len += token.text.len();
         }
     }
 

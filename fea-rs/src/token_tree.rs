@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use std::{cell::Cell, ops::Range, sync::Arc};
 
 use smol_str::SmolStr;
@@ -106,6 +108,23 @@ impl<'a> AstSink<'a> {
         (node, self.errors)
     }
 
+    #[cfg(test)]
+    pub fn finish_stringified(self) -> (Node, Vec<SyntaxError>, String) {
+        let node = self.builder.finish();
+        let tokens = node
+            .iter_tokens()
+            .map(|t| (t.kind, t.range()))
+            .collect::<Vec<_>>();
+
+        let string = crate::util::stringify_errors(self.text, &tokens, &self.errors);
+        (node, self.errors, string)
+    }
+
+    #[cfg(test)]
+    pub fn errors(&self) -> &[SyntaxError] {
+        &self.errors
+    }
+
     /// called before adding a token.
     ///
     /// We can perform additional validation here. Currently it is mostly for
@@ -205,6 +224,32 @@ impl Node {
             }
             cursor.advance();
         }
+    }
+
+    #[doc(hidden)]
+    pub fn simple_parse_tree(&self) -> String {
+        let mut result = String::new();
+        self.parse_tree_impl(0, &mut result);
+        result
+    }
+
+    fn parse_tree_impl(&self, depth: usize, buf: &mut String) {
+        use crate::util::SPACES;
+        writeln!(buf, "{}START {}", &SPACES[..depth * 2], self.kind).unwrap();
+        for child in self.iter_children() {
+            match child {
+                NodeOrToken::Token(Token { kind, text, .. }) => {
+                    let spaces = &SPACES[..(depth + 1) * 2];
+                    if kind.has_contents() {
+                        writeln!(buf, "{}{}({})", spaces, kind, text.escape_debug()).unwrap();
+                    } else {
+                        writeln!(buf, "{}{}", spaces, kind).unwrap();
+                    }
+                }
+                NodeOrToken::Node(node) => node.parse_tree_impl(depth + 1, buf),
+            }
+        }
+        writeln!(buf, "{}END {}", &SPACES[..depth * 2], self.kind).unwrap();
     }
 }
 

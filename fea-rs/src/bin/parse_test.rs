@@ -8,7 +8,7 @@ use std::{
     time::Instant,
 };
 
-use fea_rs::{DebugSink, Parser};
+use fea_rs::{util, AstSink, Node, Parser, SyntaxError};
 
 /// Attempt to parse fea files.
 ///
@@ -74,13 +74,22 @@ fn single_file_arg(path: &Path, print_tree: bool) {
 /// returns the tree and any errors
 fn try_parse_file(path: &Path) -> (String, String) {
     let contents = fs::read_to_string(path).expect("file read failed");
-    let mut sink = DebugSink::default();
+    let mut sink = AstSink::new(&contents, None);
     let mut parser = Parser::new(&contents, &mut sink);
     fea_rs::root(&mut parser);
+    let (root, errors) = sink.finish();
     (
-        sink.simple_parse_tree(&contents),
-        sink.print_errs(&contents),
+        root.simple_parse_tree(),
+        stringify_errors(&contents, &root, &errors), //sink.print_errs(&contents),
     )
+}
+
+fn stringify_errors(contents: &str, root: &Node, errors: &[SyntaxError]) -> String {
+    let tokens = root
+        .iter_tokens()
+        .map(|t| (t.kind, t.range()))
+        .collect::<Vec<_>>();
+    util::stringify_errors(contents, &tokens, errors)
 }
 
 macro_rules! exit_err {

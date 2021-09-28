@@ -369,11 +369,14 @@ fn anonymous(parser: &mut Parser) {
 }
 
 #[cfg(test)]
-fn debug_parse_output(text: &str, f: impl FnOnce(&mut Parser)) -> super::DebugSink {
-    let mut sink = super::DebugSink::default();
+fn debug_parse_output(
+    text: &str,
+    f: impl FnOnce(&mut Parser),
+) -> (crate::Node, Vec<crate::SyntaxError>, String) {
+    let mut sink = crate::AstSink::new(text, None);
     let mut parser = Parser::new(text, &mut sink);
     f(&mut parser);
-    sink
+    sink.finish_stringified()
 }
 
 #[cfg(test)]
@@ -383,18 +386,18 @@ mod tests {
     #[test]
     fn languagesystem() {
         let input = "languagesystem dflt cool;";
-        let out = debug_parse_output(input, |parser| language_system(parser));
-        assert!(out.errors().is_empty());
+        let (out, errors, _err_str) = debug_parse_output(input, |parser| language_system(parser));
+        assert!(errors.is_empty());
         crate::assert_eq_str!(
-            out.to_string(),
+            out.simple_parse_tree(),
             "\
 START LanguageSystemNode
-  0..14 LanguagesystemKw
-  14..15 WS
-  15..19 Tag
-  19..20 WS
-  20..24 Tag
-  24..25 ;
+  LanguagesystemKw
+  WS( )
+  Tag
+  WS( )
+  Tag
+  ;
 END LanguageSystemNode
 "
         )
@@ -403,21 +406,21 @@ END LanguageSystemNode
     #[test]
     fn languagesystem_trivia() {
         let input = "# hi\nlanguagesystem dflt cool;";
-        let out = debug_parse_output(input, |parser| root(parser));
-        assert!(out.errors().is_empty());
+        let (out, errors, _str) = debug_parse_output(input, |parser| root(parser));
+        assert!(errors.is_empty());
         crate::assert_eq_str!(
-            out.to_string(),
+            out.simple_parse_tree(),
             "\
 START FILE
-  0..4 #
-  4..5 WS
+  #(# hi)
+  WS(\\n)
   START LanguageSystemNode
-    5..19 LanguagesystemKw
-    19..20 WS
-    20..24 Tag
-    24..25 WS
-    25..29 Tag
-    29..30 ;
+    LanguagesystemKw
+    WS( )
+    Tag
+    WS( )
+    Tag
+    ;
   END LanguageSystemNode
 END FILE
 "
@@ -431,72 +434,72 @@ languagesystem dflt DFTL;
 languagesystem okay cool;
 include(fun.fea);
 ";
-        let out = debug_parse_output(input, root);
+        let (out, _errors, _str) = debug_parse_output(input, root);
         let exp = "\
 START FILE
   START LanguageSystemNode
-    0..14 LanguagesystemKw
-    14..15 WS
-    15..19 Tag
-    19..20 WS
-    20..24 Tag
-    24..25 ;
+    LanguagesystemKw
+    WS( )
+    Tag
+    WS( )
+    Tag
+    ;
   END LanguageSystemNode
-  25..26 WS
+  WS(\\n)
   START LanguageSystemNode
-    26..40 LanguagesystemKw
-    40..41 WS
-    41..45 Tag
-    45..46 WS
-    46..50 Tag
-    50..51 ;
+    LanguagesystemKw
+    WS( )
+    Tag
+    WS( )
+    Tag
+    ;
   END LanguageSystemNode
-  51..52 WS
+  WS(\\n)
   START IncludeNode
-    52..59 IncludeKw
-    59..60 (
-    60..67 Path
-    67..68 )
-    68..69 ;
+    IncludeKw
+    (
+    Path
+    )
+    ;
   END IncludeNode
-  69..70 WS
+  WS(\\n)
 END FILE
 ";
 
-        crate::assert_eq_str!(out.to_string(), exp);
+        crate::assert_eq_str!(out.simple_parse_tree(), exp);
     }
 
     #[test]
     fn mark_class_() {
         let fea = "markClass [acute] <anchor 350 0> @TOP_MARKS;";
-        let out = debug_parse_output(fea, |parser| mark_class(parser));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, _str) = debug_parse_output(fea, |parser| mark_class(parser));
+        assert!(errors.is_empty(), "{}", _str);
         crate::assert_eq_str!(
             "\
 START MarkClassNode
-  0..9 MarkClassKw
-  9..10 WS
+  MarkClassKw
+  WS( )
   START GlyphClass
-    10..11 [
-    11..16 GlyphName
-    16..17 ]
+    [
+    GlyphName(acute)
+    ]
   END GlyphClass
-  17..18 WS
+  WS( )
   START AnchorNode
-    18..19 <
-    19..25 AnchorKw
-    25..26 WS
-    26..29 METRIC
-    29..30 WS
-    30..31 METRIC
-    31..32 >
+    <
+    AnchorKw
+    WS( )
+    METRIC(350)
+    WS( )
+    METRIC(0)
+    >
   END AnchorNode
-  32..33 WS
-  33..43 @GlyphClass
-  43..44 ;
+  WS( )
+  @GlyphClass(@TOP_MARKS)
+  ;
 END MarkClassNode
 ",
-            out.to_string(),
+            out.simple_parse_tree(),
         );
     }
 }

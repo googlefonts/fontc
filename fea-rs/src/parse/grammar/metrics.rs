@@ -168,10 +168,10 @@ mod tests {
     #[test]
     fn anchor_a() {
         let fea = "<anchor 120 -30>";
-        let out = debug_parse_output(fea, |parser| {
+        let (out, errors, errstr) = debug_parse_output(fea, |parser| {
             anchor(parser, TokenSet::EMPTY);
         });
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START AnchorNode
@@ -184,17 +184,16 @@ START AnchorNode
   >
 END AnchorNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn anchor_a_octal() {
         let fea = "<anchor 070 -30>";
-        let out = debug_parse_output(fea, |parser| {
+        let (out, errors, _errstr) = debug_parse_output(fea, |parser| {
             anchor(parser, TokenSet::EMPTY);
         });
-        let errors = out.errors();
         assert_eq!(errors.len(), 1);
         assert!(
             errors[0].message.contains("Expected METRIC"),
@@ -213,17 +212,17 @@ START AnchorNode
   >
 END AnchorNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn anchor_b() {
         let fea = "<anchor 5 -5 contourpoint 14>";
-        let out = debug_parse_output(fea, |parser| {
+        let (out, errors, errstr) = debug_parse_output(fea, |parser| {
             anchor(parser, TokenSet::EMPTY);
         });
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START AnchorNode
@@ -240,17 +239,17 @@ START AnchorNode
   >
 END AnchorNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn value_record_b() {
         let fea = "<-80 0 -160 0>";
-        let out = debug_parse_output(fea, |parser| {
+        let (out, errors, errstr) = debug_parse_output(fea, |parser| {
             eat_value_record(parser, TokenSet::EMPTY);
         });
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START ValueRecordNode
@@ -265,7 +264,7 @@ START ValueRecordNode
   >
 END ValueRecordNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
@@ -277,9 +276,9 @@ END ValueRecordNode
 <device 1 2,>
 <device 1 2, 3 4, 5 6, 7 8>
 ";
-        let out = debug_parse_output(fea, |parser| {
+        let (_out, _, errstr) = debug_parse_output(fea, |parser| {
             expect_device(parser, TokenSet::EMPTY);
         });
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        assert!(errstr.is_empty(), "{}", errstr);
     }
 }

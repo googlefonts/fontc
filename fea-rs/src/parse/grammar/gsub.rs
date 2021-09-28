@@ -86,8 +86,9 @@ mod tests {
     #[test]
     fn gsub_1_a() {
         let fea = "sub a by A.sc;";
-        let out = debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, _, errstr) =
+            debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
+        assert!(errstr.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GsubNode
@@ -101,15 +102,16 @@ START GsubNode
   ;
 END GsubNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn gsub_1_b() {
         let fea = "substitute [one.fitted one.oldstyle one.tab.oldstyle] by one;";
-        let out = debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GsubNode
@@ -131,15 +133,16 @@ START GsubNode
   ;
 END GsubNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn gsub_1_c() {
         let fea = "substitute [a - z] by [A.sc - Z.sc];";
-        let out = debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GsubNode
@@ -173,15 +176,16 @@ START GsubNode
   ;
 END GsubNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn gsub_1_d() {
         let fea = "substitute [one.fitted one.oldstyle one.tab.oldstyle] by one;";
-        let out = debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GsubNode
@@ -203,15 +207,16 @@ START GsubNode
   ;
 END GsubNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn gsub_2() {
         let fea = "substitute f_f_i by f f i;";
-        let out = debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GsubNode
@@ -229,15 +234,16 @@ START GsubNode
   ;
 END GsubNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn gsub_3() {
         let fea = "substitute ampersand from [ampersand.1 ampersand.2 ampersand.3];";
-        let out = debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GsubNode
@@ -259,7 +265,7 @@ START GsubNode
   ;
 END GsubNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
@@ -267,8 +273,9 @@ END GsubNode
     fn gsub_4() {
         let fea = "substitute [one one.oldstyle] [slash fraction] [two two.oldstyle] by onehalf;
 ";
-        let out = debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GsubNode
@@ -304,15 +311,16 @@ START GsubNode
   ;
 END GsubNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 
     #[test]
     fn gsub_6() {
         let fea = "substitute [ a e i o u] f' lookup CNTXT_LIGS i' n' lookup CNTXT_SUB;";
-        let out = debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
-        assert!(out.errors().is_empty(), "{}", out.print_errs(fea));
+        let (out, errors, errstr) =
+            debug_parse_output(fea, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
+        assert!(errors.is_empty(), "{}", errstr);
         crate::assert_eq_str!(
             "\
 START GsubNode
@@ -352,7 +360,7 @@ START GsubNode
   ;
 END GsubNode
 ",
-            out.simple_parse_tree(fea),
+            out.simple_parse_tree(),
         );
     }
 }
