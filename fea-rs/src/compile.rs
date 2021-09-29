@@ -10,9 +10,11 @@ use crate::{
         typed::{self, AstNode},
         Token,
     },
-    types::{Anchor, GlyphClass, GlyphId, GposRule, GsubRule, Tag},
+    types::{gpos, gsub, Anchor, GlyphClass, GlyphId, GlyphOrClass, Tag},
     GlyphMap, Kind, Node, NodeOrToken, SyntaxError,
 };
+
+mod rules;
 
 #[cfg(test)]
 use crate::types::GlyphIdent;
@@ -30,13 +32,17 @@ use crate::types::GlyphIdent;
 pub struct ValidationCtx<'a> {
     glyph_map: &'a GlyphMap,
     pub errors: Vec<SyntaxError>,
+    #[allow(dead_code)]
     tables: Tables,
     default_lang_systems: HashSet<(Tag, Tag)>,
+    #[allow(dead_code)]
     lang_systems: HashSet<(Tag, Tag)>,
     seen_non_default_script: bool,
+    #[allow(dead_code)]
     lookups: Vec<(usize, LookupTable)>,
     // class and position
     glyph_class_defs: HashMap<SmolStr, (GlyphClass, usize)>,
+    #[allow(dead_code)]
     features: HashMap<Tag, Feature>,
     mark_classes: HashMap<SmolStr, MarkClass>,
     anchor_defs: HashMap<SmolStr, (Anchor, usize)>,
@@ -58,8 +64,8 @@ struct MarkClass {
 /// A thing in a feature block
 #[allow(dead_code)]
 enum Statement {
-    Gpos(GposRule),
-    GSub(GsubRule),
+    Gpos(gpos::Rule),
+    Gsub(gsub::Rule),
     Script(Tag),
     Language {
         tag: Tag,
@@ -67,11 +73,13 @@ enum Statement {
         required: bool,
     },
     LookupFlag(LookupFlag),
-    GlyphClassDef {
-        name: SmolStr,
-        class: GlyphClass,
-    },
-    MarkStatement(()),
+    LookupRef(Token),
+    LookupBlock(()),
+    //GlyphClassDef {
+    //name: SmolStr,
+    //class: GlyphClass,
+    //},
+    //MarkStatement(()),
     Params(()),
     SizeMenuName(()),
     FeatureNames(()),
@@ -206,7 +214,7 @@ impl<'a> ValidationCtx<'a> {
             return;
         }
         let glyphs = if let Some(class) = class_decl.class_def() {
-            self.resolve_glyph_class(&class)
+            self.resolve_glyph_class_literal(&class)
         } else if let Some(alias) = class_decl.class_alias() {
             match self.resolve_named_glyph_class(&alias) {
                 Some(class) => class,
@@ -222,8 +230,9 @@ impl<'a> ValidationCtx<'a> {
 
     fn define_mark_class(&mut self, class_decl: typed::MarkClassDef) {
         let class_items = class_decl.glyph_class();
-        let class_items = match self.resolve_glyph_or_class(class_items) {
-            Some(items) => items,
+        let class_items = match self.resolve_glyph_or_class(&class_items) {
+            Some(GlyphOrClass::Class(cls)) => cls,
+            Some(GlyphOrClass::Glyph(id)) => id.into(),
             None => return,
         };
 
@@ -241,7 +250,7 @@ impl<'a> ValidationCtx<'a> {
     }
 
     fn add_feature(&mut self, feature: typed::Feature) {
-        let tag = feature.tag();
+        let _tag = feature.tag();
         let mut statements = Vec::new();
         for item in feature.iter() {
             if let Some(statement) = self.resolve_statement(item) {
@@ -287,6 +296,24 @@ impl<'a> ValidationCtx<'a> {
             })
         } else if let Some(lookupflag) = typed::LookupFlag::cast(item) {
             resolve_lookupflags(self, &lookupflag).map(Statement::LookupFlag)
+        } else if let Some(glyph_def) = typed::GlyphClassDef::cast(item) {
+            self.define_glyph_class(glyph_def);
+            None
+        } else if let Some(glyph_def) = typed::MarkClassDef::cast(item) {
+            self.define_mark_class(glyph_def);
+            None
+        } else if item.kind() == Kind::SubtableKw {
+            Some(Statement::Subtable)
+        } else if let Some(lookup) = typed::LookupRef::cast(item) {
+            Some(Statement::LookupRef(lookup.label().to_owned()))
+        } else if let Some(_lookup) = typed::LookupBlock::cast(item) {
+            //FIXME: actually do lookup block
+            Some(Statement::LookupBlock(()))
+        } else if let Some(rule) = typed::GsubStatement::cast(item) {
+            rules::resolve_gsub_statement(self, rule).map(Statement::Gsub)
+            //None
+            //} else if let Some(_rule) = typed::PosStatement::cast(item) {
+            //None
         } else {
             None
         }
@@ -337,21 +364,29 @@ impl<'a> ValidationCtx<'a> {
         panic!("bad anchor {:?} go check your parser", item);
     }
 
-    fn resolve_glyph_or_class(&mut self, item: &NodeOrToken) -> Option<GlyphClass> {
-        if let Some(class) = typed::GlyphClass::cast(item) {
-            Some(self.resolve_glyph_class(&class))
-        } else if let Some(glyph) = typed::GlyphName::cast(item) {
-            self.resolve_glyph_name(&glyph).map(GlyphClass::from)
-        } else if let Some(cid) = typed::Cid::cast(item) {
-            self.resolve_cid(&cid).map(GlyphClass::from)
-        } else if let Some(named_class) = typed::GlyphClassName::cast(item) {
-            self.resolve_named_glyph_class(&named_class)
-        } else {
-            unreachable!("other types should are not sent here");
+    fn resolve_glyph_or_class(&mut self, item: &typed::GlyphOrClass) -> Option<GlyphOrClass> {
+        match item {
+            typed::GlyphOrClass::Glyph(name) => {
+                self.resolve_glyph_name(&name).map(GlyphOrClass::Glyph)
+            }
+            typed::GlyphOrClass::Cid(cid) => self.resolve_cid(&cid).map(GlyphOrClass::Glyph),
+            typed::GlyphOrClass::Class(class) => {
+                Some(GlyphOrClass::Class(self.resolve_glyph_class_literal(class)))
+            }
+            typed::GlyphOrClass::NamedClass(name) => self
+                .resolve_named_glyph_class(&name)
+                .map(GlyphOrClass::Class),
         }
     }
 
-    fn resolve_glyph_class(&mut self, class: &typed::GlyphClass) -> GlyphClass {
+    fn resolve_glyph(&mut self, item: &typed::Glyph) -> Option<GlyphId> {
+        match item {
+            typed::Glyph::Named(name) => self.resolve_glyph_name(name),
+            typed::Glyph::Cid(name) => self.resolve_cid(name),
+        }
+    }
+
+    fn resolve_glyph_class_literal(&mut self, class: &typed::GlyphClassLiteral) -> GlyphClass {
         let mut glyphs = Vec::new();
         for item in class.iter() {
             if let Some(id) =
@@ -576,9 +611,10 @@ fn resolve_lookupflags(ctx: &mut ValidationCtx, node: &typed::LookupFlag) -> Opt
             Kind::MarkAttachmentTypeKw if mark_set.is_none() => {
                 match iter
                     .find(|t| t.kind() == Kind::NamedGlyphClass || t.kind() == Kind::GlyphClass)
+                    .and_then(typed::GlyphOrClass::cast)
                 {
                     Some(node) => {
-                        mark_set = ctx.resolve_glyph_or_class(node);
+                        mark_set = ctx.resolve_glyph_or_class(&node);
                     }
                     None => {
                         ctx.error(
@@ -592,9 +628,10 @@ fn resolve_lookupflags(ctx: &mut ValidationCtx, node: &typed::LookupFlag) -> Opt
             Kind::UseMarkFilteringSetKw if filter_set.is_none() => {
                 match iter
                     .find(|t| t.kind() == Kind::NamedGlyphClass || t.kind() == Kind::GlyphClass)
+                    .and_then(typed::GlyphOrClass::cast)
                 {
                     Some(node) => {
-                        filter_set = ctx.resolve_glyph_or_class(node);
+                        filter_set = ctx.resolve_glyph_or_class(&node);
                     }
                     None => {
                         ctx.error(
@@ -633,8 +670,8 @@ fn resolve_lookupflags(ctx: &mut ValidationCtx, node: &typed::LookupFlag) -> Opt
 
     Some(LookupFlag {
         raw,
-        mark_attachment: mark_set,
-        mark_filter: filter_set,
+        mark_attachment: mark_set.map(Into::into),
+        mark_filter: filter_set.map(Into::into),
     })
 }
 

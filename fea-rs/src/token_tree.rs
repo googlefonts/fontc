@@ -304,6 +304,13 @@ impl NodeOrToken {
         }
     }
 
+    pub fn is_glyph_or_glyph_class(&self) -> bool {
+        matches!(
+            self.kind(),
+            Kind::GlyphName | Kind::Cid | Kind::GlyphClass | Kind::NamedGlyphClass
+        )
+    }
+
     /// The range in the source text of this node or token.
     ///
     /// Note: this is only accurate if the token was accessed via a cursor.

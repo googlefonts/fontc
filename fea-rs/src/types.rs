@@ -14,7 +14,7 @@ mod tag;
 
 pub use glyph_map::GlyphMap;
 pub use metrics::Anchor;
-pub use rules::{GposRule, GsubRule};
+pub use rules::{gpos, gsub};
 pub use tag::{InvalidTag, Tag};
 
 pub type GlyphName = SmolStr;
@@ -26,19 +26,44 @@ pub struct GlyphId(u16);
 pub struct GlyphClass(Rc<[GlyphId]>);
 
 #[derive(Debug, Clone)]
-enum GlyphOrClass {
+pub enum GlyphOrClass {
     Glyph(GlyphId),
     Class(GlyphClass),
 }
 
 // the general case; different uses have different constraints, which
 // we will not bother to have specific types for
-struct GlyphSequence(Rc<[GlyphOrClass]>);
+pub struct GlyphSequence(Rc<[GlyphOrClass]>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GlyphIdent {
     Name(GlyphName),
     Cid(u32),
+}
+
+impl GlyphId {
+    pub const NOTDEF: GlyphId = GlyphId(0);
+}
+
+impl From<GlyphOrClass> for GlyphClass {
+    fn from(src: GlyphOrClass) -> GlyphClass {
+        match src {
+            GlyphOrClass::Class(class) => class,
+            GlyphOrClass::Glyph(id) => id.into(),
+        }
+    }
+}
+
+impl std::iter::FromIterator<GlyphId> for GlyphClass {
+    fn from_iter<T: IntoIterator<Item = GlyphId>>(iter: T) -> Self {
+        GlyphClass(iter.into_iter().collect())
+    }
+}
+
+impl std::iter::FromIterator<GlyphOrClass> for GlyphSequence {
+    fn from_iter<T: IntoIterator<Item = GlyphOrClass>>(iter: T) -> Self {
+        GlyphSequence(iter.into_iter().collect())
+    }
 }
 
 impl<T: Into<GlyphName>> From<T> for GlyphIdent {
@@ -75,9 +100,9 @@ impl GlyphClass {
         &self.0
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
+    //pub fn len(&self) -> usize {
+    //self.0.len()
+    //}
 }
 
 impl From<Vec<GlyphId>> for GlyphClass {
@@ -97,11 +122,4 @@ impl From<GlyphId> for GlyphClass {
 pub struct LanguageSystem {
     pub script: Tag,
     pub language: Tag,
-}
-
-impl LanguageSystem {
-    pub const DEFAULT: LanguageSystem = LanguageSystem {
-        script: Tag::DFLT_SCRIPT,
-        language: Tag::DFLT_LANG,
-    };
 }
