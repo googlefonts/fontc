@@ -102,112 +102,6 @@ fn table(parser: &mut Parser) {
     table::table(parser)
 }
 
-fn lookupflag(parser: &mut Parser, recovery: TokenSet) {
-    fn eat_named_lookup_value(parser: &mut Parser, recovery: TokenSet) -> bool {
-        match parser.nth(0).kind {
-            Kind::RightToLeftKw
-            | Kind::IgnoreBaseGlyphsKw
-            | Kind::IgnoreMarksKw
-            | Kind::IgnoreLigaturesKw => {
-                parser.eat_raw();
-                true
-            }
-            Kind::MarkAttachmentTypeKw | Kind::UseMarkFilteringSetKw => {
-                parser.eat_raw();
-                if !parser.eat(Kind::NamedGlyphClass)
-                    && !glyph::eat_glyph_class_list(parser, recovery)
-                {
-                    parser.err("lookupflag '{}' must be followed by a glyph class.");
-                }
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn lookupflag_body(parser: &mut Parser, recovery: TokenSet) {
-        assert!(parser.eat(Kind::LookupflagKw));
-        if !parser.eat(Kind::Number) {
-            while eat_named_lookup_value(parser, recovery) {
-                continue;
-            }
-        }
-        parser.expect_semi();
-    }
-
-    parser.eat_trivia();
-    parser.start_node(Kind::LookupFlagNode);
-    lookupflag_body(parser, recovery);
-    parser.finish_node();
-}
-
-fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
-    // returns true if we advanced the parser
-    fn lookup_item(parser: &mut Parser, recovery: TokenSet) -> bool {
-        let start_pos = parser.nth_range(0).start;
-        match parser.nth(0).kind {
-            Kind::LookupflagKw => lookupflag(parser, recovery),
-            Kind::MarkClassKw => mark_class(parser),
-            Kind::ScriptKw => {
-                eat_script(parser, recovery);
-            }
-            Kind::NamedGlyphClass => glyph::named_glyph_class_decl(parser, recovery),
-            Kind::SubtableKw => {
-                parser.eat_raw();
-                parser.expect_semi();
-            }
-            Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
-                feature::pos_or_sub_rule(parser, recovery)
-            }
-            _ => {
-                parser.err(format!(
-                    "'{}' Not valid in a lookup block",
-                    parser.current_token_text()
-                ));
-                parser.eat_until(TokenSet::TOP_AND_FEATURE.add(Kind::RBrace));
-            }
-        }
-        parser.nth_range(0).start != start_pos
-    }
-
-    fn lookup_body(parser: &mut Parser, recovery: TokenSet) {
-        const LABEL_RECOVERY: TokenSet = TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]);
-        assert!(parser.eat(Kind::LookupKw));
-        let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
-        parser.expect_remap_recover(
-            TokenSet::IDENT_LIKE,
-            Kind::Label,
-            LABEL_RECOVERY.union(recovery),
-        );
-
-        parser.eat(Kind::UseExtensionKw);
-        parser.expect(Kind::LBrace);
-        while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
-            if !lookup_item(parser, recovery) {
-                if let Some(range) = raw_label_range {
-                    parser.raw_error(range, "Table is never closed");
-                }
-                break;
-            }
-        }
-        parser.expect_recover(
-            Kind::RBrace,
-            recovery.union(TokenSet::IDENT_LIKE.union(Kind::Semi.into())),
-        );
-        parser.expect_remap_recover(
-            TokenSet::IDENT_LIKE,
-            Kind::Label,
-            recovery.union(Kind::Semi.into()),
-        );
-        parser.expect_semi();
-    }
-
-    parser.eat_trivia();
-    parser.start_node(Kind::LookupBlockNode);
-    lookup_body(parser, recovery);
-    parser.finish_node();
-}
-
 //either lookup <label> { ... } <label>;
 //or     lookup <label>;
 //FIXME: doesn't handle IDENT_LIKE
@@ -223,7 +117,7 @@ fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
         _ => (false, false),
     };
     if block_like {
-        lookup_block(parser, recovery);
+        feature::lookup_block(parser, recovery);
     } else if ref_like {
         parser.eat_trivia();
         parser.start_node(Kind::LookupRefNode);
@@ -562,5 +456,13 @@ END MarkClassNode
 ",
             out.simple_parse_tree(),
         );
+    }
+
+    #[test]
+    fn no_cv_param_in_lookup() {
+        let fea = "lookup hi {cvParameters {}; } hi ;";
+        let (_out, errors, _errstr) = debug_parse_output(fea, |parser| root(parser));
+        assert!(!errors.is_empty(), "{}", fea);
+        assert!(errors.first().unwrap().message.contains("cvParameters"));
     }
 }

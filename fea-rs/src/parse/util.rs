@@ -85,6 +85,9 @@ pub fn stringify_errors(
     for err in errs {
         while err.range.start >= pos + current_line.len() {
             pos += current_line.len();
+            if pos == input.len() {
+                break;
+            }
             current_line = lines.next().unwrap();
             line_n += 1;
         }
