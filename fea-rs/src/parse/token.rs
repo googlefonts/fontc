@@ -244,6 +244,29 @@ impl Kind {
                 | Self::Number
                 | Self::Label
                 | Self::Cid
+                | Self::Tag
+        )
+    }
+
+    pub(crate) fn is_rule(&self) -> bool {
+        matches!(
+            self,
+            Self::GposType1
+                | Self::GposType2
+                | Self::GposType3
+                | Self::GposType4
+                | Self::GposType5
+                | Self::GposType6
+                | Self::GposType7
+                | Self::GposType8
+                | Self::GsubType1
+                | Self::GsubType2
+                | Self::GsubType3
+                | Self::GsubType4
+                | Self::GsubType5
+                | Self::GsubType6
+                | Self::GsubType7
+                | Self::GsubType8
         )
     }
 

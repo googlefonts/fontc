@@ -279,6 +279,7 @@ impl<'a> ValidationCtx<'a> {
         let tag = lookup.tag();
         let use_extension = lookup.use_extension().is_some();
         let mut statements = Vec::new();
+        let mut kind = None;
         for item in lookup.statements() {
             if top_level && (item.kind() == Kind::ScriptKw || item.kind() == Kind::LanguageKw) {
                 self.error(
@@ -287,6 +288,23 @@ impl<'a> ValidationCtx<'a> {
                         .into(),
                 );
                 return None;
+            }
+            if item.kind().is_rule() {
+                match kind {
+                    Some(kind) if kind != item.kind() => {
+                        self.error(
+                            item.range(),
+                            format!(
+                                "multiple rule types in lookup block (saw '{}' after '{}')",
+                                item.kind(),
+                                kind
+                            ),
+                        );
+                        // we continue, so that we can validate other items
+                        // in this block
+                    }
+                    _ => kind = Some(item.kind()),
+                }
             }
             if let Some(statement) = self.resolve_statement(item) {
                 statements.push(statement);
