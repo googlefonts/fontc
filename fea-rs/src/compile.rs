@@ -311,9 +311,8 @@ impl<'a> ValidationCtx<'a> {
             Some(Statement::LookupBlock(()))
         } else if let Some(rule) = typed::GsubStatement::cast(item) {
             rules::resolve_gsub_statement(self, rule).map(Statement::Gsub)
-            //None
-            //} else if let Some(_rule) = typed::PosStatement::cast(item) {
-            //None
+        } else if let Some(rule) = typed::GposStatement::cast(item) {
+            rules::resolve_gpos_statement(self, rule).map(Statement::Gpos)
         } else {
             None
         }

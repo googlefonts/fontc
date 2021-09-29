@@ -45,6 +45,20 @@ pub mod gsub {
 }
 
 pub mod gpos {
+    use crate::types::{GlyphOrClass, ValueRecord};
 
-    pub enum Rule {}
+    pub enum Rule {
+        Type1(Single),
+        Type2(Pair),
+    }
+
+    pub struct Single {
+        pub target: GlyphOrClass,
+        pub value: ValueRecord,
+    }
+
+    pub struct Pair {
+        pub first: Single,
+        pub second: Single,
+    }
 }
