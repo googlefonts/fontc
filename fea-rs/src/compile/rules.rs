@@ -32,25 +32,7 @@ pub(crate) fn resolve_gsub_statement(
         }
         typed::GsubStatement::Type3(stmt) => {
             let target = ctx.resolve_glyph(&stmt.target())?;
-            let alternates = match stmt.alternates() {
-                typed::GlyphClass::Literal(lit) => {
-                    let mut bad = false;
-                    for item in lit.iter() {
-                        if item.kind() == Kind::NamedGlyphClass {
-                            bad = true;
-                            ctx.error(
-                                item.range(),
-                                "glyph classes are not allowed in alternates".into(),
-                            );
-                        }
-                    }
-                    if bad {
-                        return None;
-                    }
-                    ctx.resolve_glyph_class_literal(&lit)
-                }
-                typed::GlyphClass::Named(name) => ctx.resolve_named_glyph_class(&name)?,
-            };
+            let alternates = ctx.resolve_glyph_class(&stmt.alternates())?;
             Some(gsub::Rule::Type3(gsub::Alternate { target, alternates }))
         }
         typed::GsubStatement::Type4(stmt) => {

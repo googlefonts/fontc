@@ -61,24 +61,8 @@ pub(crate) fn expect_named_or_unnamed_glyph_class(parser: &mut Parser, recovery:
     false
 }
 
-// only used for gsub type 4 (alternates)
-pub(crate) fn eat_named_or_unnamed_glyph_class_no_nested_classes(
-    parser: &mut Parser,
-    recovery: TokenSet,
-) -> bool {
-    parser.eat(Kind::NamedGlyphClass) || eat_glyph_class_list_impl(parser, recovery, false)
-}
-
 // [ a b a-z @hi \0-\40 ]
 pub(crate) fn eat_glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> bool {
-    eat_glyph_class_list_impl(parser, recovery, true)
-}
-
-fn eat_glyph_class_list_impl(
-    parser: &mut Parser,
-    recovery: TokenSet,
-    can_contain_classes: bool,
-) -> bool {
     let recovery = recovery.add(Kind::RSquare);
     if !parser.matches(0, Kind::LSquare) {
         return false;
@@ -89,10 +73,6 @@ fn eat_glyph_class_list_impl(
     let range = parser.nth_range(0);
     assert!(parser.eat(Kind::LSquare));
     while !parser.matches(0, recovery) {
-        if !can_contain_classes && parser.matches(0, Kind::NamedGlyphClass) {
-            parser.err_and_bump("class in alternate rule cannot contain classes");
-            continue;
-        }
         glyph_class_list_member(parser, recovery);
     }
 

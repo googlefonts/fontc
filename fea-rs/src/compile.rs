@@ -385,6 +385,13 @@ impl<'a> ValidationCtx<'a> {
         }
     }
 
+    fn resolve_glyph_class(&mut self, item: &typed::GlyphClass) -> Option<GlyphClass> {
+        match item {
+            typed::GlyphClass::Named(name) => self.resolve_named_glyph_class(name),
+            typed::GlyphClass::Literal(lit) => Some(self.resolve_glyph_class_literal(lit)),
+        }
+    }
+
     fn resolve_glyph_class_literal(&mut self, class: &typed::GlyphClassLiteral) -> GlyphClass {
         let mut glyphs = Vec::new();
         for item in class.iter() {

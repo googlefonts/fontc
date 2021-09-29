@@ -54,10 +54,7 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
             }
         // sub glyph from (type 3)
         } else if !is_class && parser.eat(Kind::FromKw) {
-            glyph::eat_named_or_unnamed_glyph_class_no_nested_classes(
-                parser,
-                recovery.union(RECOVERY),
-            );
+            glyph::eat_named_or_unnamed_glyph_class(parser, recovery.union(RECOVERY));
             parser.expect_semi();
             return Kind::GsubType3;
         } else if parser.matches(0, Kind::FromKw) {
@@ -471,13 +468,9 @@ END GsubType6
             "substitute a by [A.sc - Z.sc];", // glyph by glyph class is disallowed
             "sub a by b [c-d];",              // by sequence can't include classes
             "sub a by b @c;",                 // by sequence can't include classes
-            "sub a from [a @b];",             // alternates can't include classes
             "rsub a b' c' d;",                // only one mark glyph in rsub
             "sub a b' c d' by g;",            // only one run of marked glyphs
         ];
-
-        //FIXME: elsewhere we need to handle "sub a from @b" where @b includes
-        //another class reference..
 
         for bad in not_allowed {
             let (_out, errors, _errstr) =
