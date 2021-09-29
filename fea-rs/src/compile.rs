@@ -250,9 +250,13 @@ impl<'a> ValidationCtx<'a> {
     }
 
     fn add_feature(&mut self, feature: typed::Feature) {
-        let _tag = feature.tag();
+        let tag = feature.tag();
+        if tag.text() == "aalt" {
+            self.error(tag.range(), "aalt feature currently is unimplemented".into());
+            return;
+        }
         let mut statements = Vec::new();
-        for item in feature.iter() {
+        for item in feature.statements() {
             if let Some(statement) = self.resolve_statement(item) {
                 statements.push(statement);
             }
@@ -314,6 +318,15 @@ impl<'a> ValidationCtx<'a> {
         } else if let Some(rule) = typed::GposStatement::cast(item) {
             rules::resolve_gpos_statement(self, rule).map(Statement::Gpos)
         } else {
+            let span = match item {
+                NodeOrToken::Token(t) => t.range(),
+                NodeOrToken::Node(node) => {
+                    let range = node.range();
+                    let end = range.end.min(range.start + 16);
+                    range.start..end
+                }
+            };
+            self.error(span, format!("unhandled statement: '{}'", item.kind()));
             None
         }
     }
@@ -394,7 +407,7 @@ impl<'a> ValidationCtx<'a> {
 
     fn resolve_glyph_class_literal(&mut self, class: &typed::GlyphClassLiteral) -> GlyphClass {
         let mut glyphs = Vec::new();
-        for item in class.iter() {
+        for item in class.items() {
             if let Some(id) =
                 typed::GlyphName::cast(item).and_then(|name| self.resolve_glyph_name(&name))
             {
@@ -407,9 +420,8 @@ impl<'a> ValidationCtx<'a> {
                 if let Some(class) = self.resolve_named_glyph_class(&alias) {
                     glyphs.extend(class.items().iter().clone());
                 }
-            } else if !item.kind().is_trivia() {
-                // just for debugging
-                eprintln!("unexpected item in glyph class: '{}'", item.kind());
+            } else {
+                panic!("unexptected kind in class literal: '{}'", item.kind());
             }
         }
         glyphs.into()
@@ -495,10 +507,19 @@ pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
             ctx.define_mark_class(mark_def);
         } else if let Some(anchor_def) = typed::AnchorDef::cast(item) {
             ctx.define_named_anchor(anchor_def);
-        } else if let Some(_include) = typed::Include::cast(item) {
-            //TODO: includes, eh? maybe resolved before now?
         } else if let Some(feature) = typed::Feature::cast(item) {
             ctx.add_feature(feature);
+        //TODO: includes, eh? maybe resolved before now?
+        } else if !item.kind().is_trivia() {
+            let span = match item {
+                NodeOrToken::Token(t) => t.range(),
+                NodeOrToken::Node(node) => {
+                    let range = node.range();
+                    let end = range.end.min(range.start + 16);
+                    range.start..end
+                }
+            };
+            ctx.error(span, format!("unhandled top-level item: '{}'", item.kind()));
         }
         //for item in node.children() {
         //match item.kind() {

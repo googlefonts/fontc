@@ -204,6 +204,13 @@ impl GlyphClassDef {
     }
 }
 
+impl GlyphClassLiteral {
+    pub fn items(&self) -> impl Iterator<Item = &NodeOrToken> {
+        self.iter()
+            .filter(|t| t.is_glyph_or_glyph_class() || t.kind() == Kind::GlyphRange)
+    }
+}
+
 impl Cid {
     pub fn parse(&self) -> u32 {
         self.inner.text.parse().expect("cid is already validated")
@@ -311,6 +318,14 @@ impl Feature {
     pub fn tag(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
     }
+
+    pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
+        self.iter()
+            .skip_while(|t| t.kind() != Kind::LBrace)
+            .skip(1)
+            .filter(|t| !t.kind().is_trivia())
+            .take_while(|t| t.kind() != Kind::RBrace)
+    }
 }
 
 impl Script {
@@ -387,6 +402,7 @@ impl Gsub2 {
     pub fn replacement(&self) -> impl Iterator<Item = Glyph> + '_ {
         self.iter()
             .skip_while(|t| t.kind() != Kind::ByKw)
+            .skip(1)
             .filter_map(Glyph::cast)
     }
 }
