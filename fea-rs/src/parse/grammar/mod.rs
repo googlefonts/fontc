@@ -117,7 +117,7 @@ fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
         _ => (false, false),
     };
     if block_like {
-        feature::lookup_block(parser, recovery);
+        feature::lookup_block(parser, recovery.union(TokenSet::STATEMENT));
     } else if ref_like {
         parser.eat_trivia();
         parser.start_node(Kind::LookupRefNode);

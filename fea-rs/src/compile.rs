@@ -99,7 +99,6 @@ struct Tables {
 
 #[allow(dead_code)]
 struct LookupTable {
-    pos: usize,
     name: SmolStr,
     use_extension: bool,
     statements: Vec<Statement>,
@@ -252,7 +251,10 @@ impl<'a> ValidationCtx<'a> {
     fn add_feature(&mut self, feature: typed::Feature) {
         let tag = feature.tag();
         if tag.text() == "aalt" {
-            self.error(tag.range(), "aalt feature currently is unimplemented".into());
+            self.error(
+                tag.range(),
+                "aalt feature currently is unimplemented".into(),
+            );
             return;
         }
         let mut statements = Vec::new();
@@ -261,6 +263,40 @@ impl<'a> ValidationCtx<'a> {
                 statements.push(statement);
             }
         }
+    }
+
+    fn add_lookup(&mut self, lookup: typed::LookupBlock) {
+        if let Some(item) = self.resolve_lookup_block(&lookup, true) {
+            self.lookups.push((lookup.range().start, item))
+        }
+    }
+
+    fn resolve_lookup_block(
+        &mut self,
+        lookup: &typed::LookupBlock,
+        top_level: bool,
+    ) -> Option<LookupTable> {
+        let tag = lookup.tag();
+        let use_extension = lookup.use_extension().is_some();
+        let mut statements = Vec::new();
+        for item in lookup.statements() {
+            if top_level && (item.kind() == Kind::ScriptKw || item.kind() == Kind::LanguageKw) {
+                self.error(
+                    item.range(),
+                    "standalone lookup blocks cannot contain 'script' or 'language' statements"
+                        .into(),
+                );
+                return None;
+            }
+            if let Some(statement) = self.resolve_statement(item) {
+                statements.push(statement);
+            }
+        }
+        Some(LookupTable {
+            use_extension,
+            statements,
+            name: tag.text.clone(),
+        })
     }
 
     fn resolve_statement(&mut self, item: &NodeOrToken) -> Option<Statement> {
@@ -310,9 +346,9 @@ impl<'a> ValidationCtx<'a> {
             Some(Statement::Subtable)
         } else if let Some(lookup) = typed::LookupRef::cast(item) {
             Some(Statement::LookupRef(lookup.label().to_owned()))
-        } else if let Some(_lookup) = typed::LookupBlock::cast(item) {
-            //FIXME: actually do lookup block
-            Some(Statement::LookupBlock(()))
+        //} else if let Some(_lookup) = typed::LookupBlock::cast(item) {
+        ////FIXME: actually do lookup block
+        //Some(Statement::LookupBlock(()))
         } else if let Some(rule) = typed::GsubStatement::cast(item) {
             rules::resolve_gsub_statement(self, rule).map(Statement::Gsub)
         } else if let Some(rule) = typed::GposStatement::cast(item) {
@@ -509,6 +545,9 @@ pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
             ctx.define_named_anchor(anchor_def);
         } else if let Some(feature) = typed::Feature::cast(item) {
             ctx.add_feature(feature);
+        } else if let Some(lookup) = typed::LookupBlock::cast(item) {
+            ctx.add_lookup(lookup);
+
         //TODO: includes, eh? maybe resolved before now?
         } else if !item.kind().is_trivia() {
             let span = match item {

@@ -1,7 +1,6 @@
 use crate::{
     token_tree::typed,
     types::{gpos, gsub, ValueRecord},
-    Kind,
 };
 
 use super::ValidationCtx;

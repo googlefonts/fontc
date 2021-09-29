@@ -323,7 +323,31 @@ impl Feature {
         self.iter()
             .skip_while(|t| t.kind() != Kind::LBrace)
             .skip(1)
-            .filter(|t| !t.kind().is_trivia())
+            .filter(|t| !t.kind().is_trivia() && t.kind() != Kind::Semi)
+            .take_while(|t| t.kind() != Kind::RBrace)
+    }
+}
+
+impl LookupBlock {
+    pub fn tag(&self) -> &Token {
+        self.iter()
+            .find(|t| t.kind() == Kind::Label)
+            .and_then(NodeOrToken::as_token)
+            .unwrap()
+    }
+
+    pub fn use_extension(&self) -> Option<&Token> {
+        self.iter()
+            .take_while(|t| t.kind() != Kind::LBrace)
+            .find(|t| t.kind() == Kind::UseExtensionKw)
+            .and_then(NodeOrToken::as_token)
+    }
+
+    pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
+        self.iter()
+            .skip_while(|t| t.kind() != Kind::LBrace)
+            .skip(1)
+            .filter(|t| !t.kind().is_trivia() && t.kind() != Kind::Semi)
             .take_while(|t| t.kind() != Kind::RBrace)
     }
 }
