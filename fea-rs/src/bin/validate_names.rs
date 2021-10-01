@@ -3,7 +3,7 @@
 use std::{collections::HashMap, path::Path};
 
 use fea_rs::typed::AstNode as _;
-use fea_rs::{AstSink, GlyphMap, GlyphName, Node, Parser, SyntaxError};
+use fea_rs::{AstSink, Diagnostic, GlyphMap, GlyphName, Node, Parser};
 
 /// Attempt to parse fea files.
 ///
@@ -18,14 +18,14 @@ fn main() {
     let (root, mut errors) = try_parse_fea(&features, &names);
     print_statement_info(&root);
 
-    let mut val_ctx = fea_rs::validate(&root, &names);
-    errors.extend(val_ctx.errors.drain(..));
+    let val_ctx = fea_rs::validate(&root, &names);
+    errors.extend(val_ctx.errors);
     if !errors.is_empty() {
         let tokens = root
             .iter_tokens()
             .map(|t| (t.kind, t.range()))
             .collect::<Vec<_>>();
-        errors.sort_unstable_by_key(|err| (err.range.start, err.range.end));
+        errors.sort_unstable_by_key(|err| (err.span().start, err.span().end));
         println!(
             "{}",
             fea_rs::util::stringify_errors(&features, &tokens, &errors)
@@ -51,7 +51,7 @@ fn load_font(filename: &Path) -> (GlyphMap, String) {
 }
 
 /// returns the tree and any errors
-fn try_parse_fea(contents: &str, names: &GlyphMap) -> (Node, Vec<SyntaxError>) {
+fn try_parse_fea(contents: &str, names: &GlyphMap) -> (Node, Vec<Diagnostic>) {
     let mut sink = AstSink::new(contents, Some(names));
     let mut parser = Parser::new(contents, &mut sink);
     fea_rs::root(&mut parser);

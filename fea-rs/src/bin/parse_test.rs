@@ -8,7 +8,7 @@ use std::{
     time::Instant,
 };
 
-use fea_rs::{util, AstSink, Node, Parser, SyntaxError};
+use fea_rs::{util, AstSink, Diagnostic, Node, Parser};
 
 /// Attempt to parse fea files.
 ///
@@ -84,7 +84,7 @@ fn try_parse_file(path: &Path) -> (String, String) {
     )
 }
 
-fn stringify_errors(contents: &str, root: &Node, errors: &[SyntaxError]) -> String {
+fn stringify_errors(contents: &str, root: &Node, errors: &[Diagnostic]) -> String {
     let tokens = root
         .iter_tokens()
         .map(|t| (t.kind, t.range()))

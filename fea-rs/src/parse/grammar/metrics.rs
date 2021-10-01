@@ -205,9 +205,9 @@ END AnchorNode
         });
         assert_eq!(errors.len(), 1);
         assert!(
-            errors[0].message.contains("Expected METRIC"),
+            errors[0].text().contains("Expected METRIC"),
             "{}",
-            errors[0].message
+            errors[0].text()
         );
         crate::assert_eq_str!(
             "\

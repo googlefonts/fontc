@@ -5,7 +5,8 @@ use std::{cell::Cell, ops::Range, sync::Arc};
 use smol_str::SmolStr;
 
 use crate::{
-    parse::{SyntaxError, TokenComparable, TreeSink},
+    diagnostic::Diagnostic,
+    parse::{TokenComparable, TreeSink},
     GlyphMap, Kind, TokenSet,
 };
 
@@ -64,7 +65,7 @@ pub struct AstSink<'a> {
     text_pos: usize,
     builder: TreeBuilder,
     glyph_map: Option<&'a GlyphMap>,
-    errors: Vec<SyntaxError>,
+    errors: Vec<Diagnostic>,
     cur_node_contains_error: bool,
 }
 
@@ -85,7 +86,7 @@ impl TreeSink for AstSink<'_> {
         self.cur_node_contains_error = false;
     }
 
-    fn error(&mut self, error: SyntaxError) {
+    fn error(&mut self, error: Diagnostic) {
         self.errors.push(error);
         self.cur_node_contains_error = true;
     }
@@ -103,13 +104,13 @@ impl<'a> AstSink<'a> {
         }
     }
 
-    pub fn finish(self) -> (Node, Vec<SyntaxError>) {
+    pub fn finish(self) -> (Node, Vec<Diagnostic>) {
         let node = self.builder.finish();
         (node, self.errors)
     }
 
     #[cfg(test)]
-    pub fn finish_stringified(self) -> (Node, Vec<SyntaxError>, String) {
+    pub fn finish_stringified(self) -> (Node, Vec<Diagnostic>, String) {
         let node = self.builder.finish();
         let tokens = node
             .iter_tokens()
@@ -121,7 +122,7 @@ impl<'a> AstSink<'a> {
     }
 
     #[cfg(test)]
-    pub fn errors(&self) -> &[SyntaxError] {
+    pub fn errors(&self) -> &[Diagnostic] {
         &self.errors
     }
 
@@ -139,7 +140,7 @@ impl<'a> AstSink<'a> {
                     Ok(node) => return node.into(),
                     Err(message) => {
                         let range = self.text_pos..self.text_pos + text.len();
-                        self.error(SyntaxError { message, range });
+                        self.error(Diagnostic::error(range, message));
                     }
                 }
             }

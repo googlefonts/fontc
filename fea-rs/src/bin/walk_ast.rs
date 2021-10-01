@@ -8,7 +8,7 @@ use std::{
 };
 
 use ansi_term::Colour;
-use fea_rs::{AstSink, Node, NodeOrToken, Parser, SyntaxError};
+use fea_rs::{AstSink, Diagnostic, Node, NodeOrToken, Parser};
 
 /// Attempt to parse fea files.
 ///
@@ -43,7 +43,7 @@ fn deepest_depth(node: &Node) -> usize {
     deepest
 }
 
-fn print_structure(tree: &Node, _errors: &[SyntaxError]) {
+fn print_structure(tree: &Node, _errors: &[Diagnostic]) {
     let mut cursor = tree.cursor();
     while let Some(thing) = cursor.current() {
         if let NodeOrToken::Node(node) = thing {
@@ -108,7 +108,7 @@ fn directory_arg(path: &Path) -> std::io::Result<()> {
 }
 
 /// returns the tree and any errors
-fn try_parse_file(path: &Path) -> (Node, Vec<SyntaxError>) {
+fn try_parse_file(path: &Path) -> (Node, Vec<Diagnostic>) {
     let contents = fs::read_to_string(path).expect("file read failed");
     let mut sink = AstSink::new(&contents, None);
     let mut parser = Parser::new(&contents, &mut sink);

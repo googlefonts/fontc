@@ -327,7 +327,7 @@ fn greedy<F: FnMut(&mut Parser, TokenSet) -> bool>(
 fn debug_parse_output(
     text: &str,
     f: impl FnOnce(&mut Parser),
-) -> (crate::Node, Vec<crate::SyntaxError>, String) {
+) -> (crate::Node, Vec<crate::Diagnostic>, String) {
     let mut sink = crate::AstSink::new(text, None);
     let mut parser = Parser::new(text, &mut sink);
     f(&mut parser);
@@ -349,9 +349,9 @@ mod tests {
 START LanguageSystemNode
   LanguagesystemKw
   WS( )
-  Tag
+  Tag(dflt)
   WS( )
-  Tag
+  Tag(cool)
   ;
 END LanguageSystemNode
 "
@@ -372,9 +372,9 @@ START FILE
   START LanguageSystemNode
     LanguagesystemKw
     WS( )
-    Tag
+    Tag(dflt)
     WS( )
-    Tag
+    Tag(cool)
     ;
   END LanguageSystemNode
 END FILE
@@ -385,7 +385,7 @@ END FILE
     #[test]
     fn top_level() {
         let input = "\
-languagesystem dflt DFTL;
+languagesystem dflt DFLT;
 languagesystem okay cool;
 include(fun.fea);
 ";
@@ -395,18 +395,18 @@ START FILE
   START LanguageSystemNode
     LanguagesystemKw
     WS( )
-    Tag
+    Tag(dflt)
     WS( )
-    Tag
+    Tag(DFLT)
     ;
   END LanguageSystemNode
   WS(\\n)
   START LanguageSystemNode
     LanguagesystemKw
     WS( )
-    Tag
+    Tag(okay)
     WS( )
-    Tag
+    Tag(cool)
     ;
   END LanguageSystemNode
   WS(\\n)
@@ -463,6 +463,6 @@ END MarkClassNode
         let fea = "lookup hi {cvParameters {}; } hi ;";
         let (_out, errors, _errstr) = debug_parse_output(fea, |parser| root(parser));
         assert!(!errors.is_empty(), "{}", fea);
-        assert!(errors.first().unwrap().message.contains("cvParameters"));
+        assert!(errors.first().unwrap().text().contains("cvParameters"));
     }
 }

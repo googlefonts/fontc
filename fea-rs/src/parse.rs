@@ -18,6 +18,8 @@ pub use token_set::TokenSet;
 use lexer::Lexer;
 use token::Token;
 
+use crate::diagnostic::Diagnostic;
+
 const LOOKAHEAD: usize = 4;
 const LOOKAHEAD_MAX: usize = LOOKAHEAD - 1;
 
@@ -157,10 +159,7 @@ impl<'a> Parser<'a> {
             if replace_kind == Kind::String {
                 range.end = range.start + 1;
             }
-            self.sink.error(SyntaxError {
-                range,
-                message: error.into(),
-            });
+            self.sink.error(Diagnostic::error(range, error));
             self.buf[LOOKAHEAD_MAX].token.kind = replace_kind;
         }
     }
@@ -234,10 +233,7 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn raw_error(&mut self, range: Range<usize>, message: impl Into<String>) {
-        self.sink.error(SyntaxError {
-            range,
-            message: message.into(),
-        });
+        self.sink.error(Diagnostic::error(range, message));
     }
 
     /// Error, and advance unless the current token matches a predicate.
@@ -254,10 +250,11 @@ impl<'a> Parser<'a> {
 
     /// write an error, do not advance
     pub(crate) fn err(&mut self, error: impl Into<String>) {
-        let err = SyntaxError {
-            range: self.nth_range(0),
-            message: error.into(),
-        };
+        //let err = SyntaxError {
+        //range: self.nth_range(0),
+        //message: error.into(),
+        //};
+        let err = Diagnostic::error(self.nth_range(0), error);
         self.sink.error(err);
     }
 
@@ -386,5 +383,5 @@ pub trait TreeSink {
     /// If `kind` is provided, it replaces the [`Kind`] passed to `start_node`.
     fn finish_node(&mut self, kind: Option<Kind>);
 
-    fn error(&mut self, error: SyntaxError);
+    fn error(&mut self, error: Diagnostic);
 }

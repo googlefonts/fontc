@@ -1,6 +1,6 @@
 use std::{fmt::Write, ops::Range};
 
-use super::{Kind, SyntaxError};
+use super::{Diagnostic, Kind};
 use ansi_term::{Colour, Style};
 
 pub fn style_for_kind(kind: Kind) -> Style {
@@ -71,7 +71,7 @@ const MAX_PRINT_WIDTH: usize = 100;
 pub fn stringify_errors(
     input: &str,
     tokens: &[(Kind, Range<usize>)],
-    errs: &[SyntaxError],
+    errs: &[Diagnostic],
 ) -> String {
     let total_lines = input.lines().count();
     let max_line_digit_width = decimal_digits(total_lines);
@@ -83,7 +83,7 @@ pub fn stringify_errors(
 
     let mut cur_tokens = tokens;
     for err in errs {
-        while err.range.start >= pos + current_line.len() {
+        while err.message.span.start >= pos + current_line.len() {
             pos += current_line.len();
             if pos == input.len() {
                 break;
@@ -118,10 +118,10 @@ pub(crate) fn write_line_error(
     tokens: &[(Kind, Range<usize>)],
     line_n: usize,
     line_width: usize,
-    err: &SyntaxError,
+    err: &Diagnostic,
     max_digits: usize,
 ) {
-    let err_start = err.range.start - line_start;
+    let err_start = err.message.span.start - line_start;
 
     // if a line is really long, we clip it
     let trim_start = if text.len() > line_width {
@@ -162,23 +162,23 @@ pub(crate) fn write_line_error(
         color_string,
     )
     .unwrap();
-    let n_spaces = (err.range.start - line_start) - trim_start;
+    let n_spaces = (err.message.span.start - line_start) - trim_start;
     // use the whitespace at the front of the line first, so that
     // we don't replace tabs with spaces
     let reuse_ws = n_spaces.min(line_ws);
     let extra_ws = n_spaces - reuse_ws;
-    let (extra_ws, msg_first) = if extra_ws > (err.message.len() + 1) {
-        (extra_ws - err.message.len() - 1, true)
+    let (extra_ws, msg_first) = if extra_ws > (err.message.text.len() + 1) {
+        (extra_ws - err.message.text.len() - 1, true)
     } else {
         (extra_ws, false)
     };
 
-    let n_carets = err.range.end - err.range.start;
+    let n_carets = err.message.span.end - err.message.span.start;
 
     let (first, second) = if msg_first {
-        (err.message.as_str(), &CARETS[..n_carets])
+        (err.message.text.as_str(), &CARETS[..n_carets])
     } else {
-        (&CARETS[..n_carets], err.message.as_str())
+        (&CARETS[..n_carets], err.message.text.as_str())
     };
     writeln!(
         writer,

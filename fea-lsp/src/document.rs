@@ -1,6 +1,6 @@
 use std::{ops::Range, sync::Mutex};
 
-use fea_rs::{AstSink, Kind, Parser, SyntaxError};
+use fea_rs::{AstSink, Kind, Parser};
 use lspower::lsp::{
     Diagnostic, DiagnosticSeverity, Position, Range as UghRange, SemanticToken, SemanticTokenType,
     SemanticTokens,
@@ -11,7 +11,7 @@ struct DocumentInner {
     text: String,
     offsets: Vec<usize>,
     tokens: Vec<(Kind, Range<usize>)>,
-    errors: Vec<SyntaxError>,
+    errors: Vec<fea_rs::Diagnostic>,
 }
 
 #[derive(Debug, Default)]
@@ -57,11 +57,11 @@ impl Document {
         let inner = self.inner.lock().unwrap();
         let mut result = Vec::new();
         for err in &inner.errors {
-            let range = to_lsp_range(err.range.clone(), &inner.offsets);
+            let range = to_lsp_range(err.span(), &inner.offsets);
             result.push(Diagnostic {
                 range,
                 severity: Some(DiagnosticSeverity::Error),
-                message: err.message.clone(),
+                message: err.text().to_owned(),
                 ..Default::default()
             })
         }
@@ -163,7 +163,7 @@ fn compute_offsets(text: &str) -> Vec<usize> {
         .collect()
 }
 
-fn parse(text: &str) -> (Vec<(Kind, Range<usize>)>, Vec<SyntaxError>) {
+fn parse(text: &str) -> (Vec<(Kind, Range<usize>)>, Vec<fea_rs::Diagnostic>) {
     let mut sink = AstSink::new(text, None);
     let mut parser = Parser::new(text, &mut sink);
     fea_rs::root(&mut parser);

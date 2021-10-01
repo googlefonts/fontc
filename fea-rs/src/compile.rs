@@ -11,7 +11,7 @@ use crate::{
         Token,
     },
     types::{gpos, gsub, Anchor, GlyphClass, GlyphId, GlyphOrClass, Tag},
-    GlyphMap, Kind, Node, NodeOrToken, SyntaxError,
+    Diagnostic, GlyphMap, Kind, Node, NodeOrToken,
 };
 
 mod rules;
@@ -31,7 +31,7 @@ use crate::types::GlyphIdent;
 
 pub struct ValidationCtx<'a> {
     glyph_map: &'a GlyphMap,
-    pub errors: Vec<SyntaxError>,
+    pub errors: Vec<Diagnostic>,
     #[allow(dead_code)]
     tables: Tables,
     default_lang_systems: HashSet<(Tag, Tag)>,
@@ -163,7 +163,7 @@ impl<'a> ValidationCtx<'a> {
     }
 
     fn error(&mut self, range: Range<usize>, message: String) {
-        self.errors.push(SyntaxError { range, message })
+        self.errors.push(Diagnostic::error(range, message));
     }
 
     fn add_language_system(&mut self, language_system: typed::LanguageSystem) {
