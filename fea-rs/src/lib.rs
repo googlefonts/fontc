@@ -8,7 +8,7 @@ mod types;
 mod validate;
 
 pub use compile::compile;
-pub use diagnostic::Diagnostic;
+pub use diagnostic::{Diagnostic, Level};
 pub use parse::grammar::root;
 pub use parse::util;
 pub use parse::{Kind, Parser, SyntaxError, TokenSet};
