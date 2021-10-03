@@ -72,9 +72,7 @@ pub(crate) fn eat_glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> b
     parser.start_node(Kind::GlyphClass);
     let range = parser.nth_range(0);
     assert!(parser.eat(Kind::LSquare));
-    while !parser.matches(0, recovery) {
-        glyph_class_list_member(parser, recovery);
-    }
+    super::greedy(glyph_class_list_member)(parser, recovery);
 
     if !parser.eat(Kind::RSquare) {
         parser.raw_error(range, "Unclosed glyph class.");
@@ -84,9 +82,9 @@ pub(crate) fn eat_glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> b
     true
 }
 
-fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) {
+fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) -> bool {
     if parser.eat(Kind::NamedGlyphClass) {
-        return;
+        return true;
     }
     // a glyphname
     // a glyph development name
@@ -100,8 +98,9 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) {
         parser.start_node(Kind::GlyphRange);
         glyph_range(parser, recovery.add(Kind::RSquare));
         parser.finish_node();
+        true
     } else {
-        expect_glyph_name_like(parser, recovery.add(Kind::RSquare));
+        eat_glyph_name_like(parser)
     }
 }
 
