@@ -130,7 +130,7 @@ impl<'a> ValidationCtx<'a> {
         } else if let Some(alias) = node.class_alias() {
             self.validate_glyph_class_ref(&alias, false);
         } else {
-            unreachable!("there's a parser bug?");
+            self.error(node.range(), "unknown parser bug?");
         }
     }
 
