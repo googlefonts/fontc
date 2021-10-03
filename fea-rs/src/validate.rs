@@ -395,6 +395,7 @@ impl<'a> ValidationCtx<'a> {
             typed::GlyphOrClass::Cid(cid) => self.validate_cid(&cid),
             typed::GlyphOrClass::Class(class) => self.validate_glyph_class_literal(class, false),
             typed::GlyphOrClass::NamedClass(name) => self.validate_glyph_class_ref(name, false),
+            typed::GlyphOrClass::Null(_) => (),
         }
     }
 
@@ -402,6 +403,7 @@ impl<'a> ValidationCtx<'a> {
         match node {
             typed::Glyph::Named(name) => self.validate_glyph_name(&name),
             typed::Glyph::Cid(cid) => self.validate_cid(&cid),
+            typed::Glyph::Null(_) => (),
         }
     }
 

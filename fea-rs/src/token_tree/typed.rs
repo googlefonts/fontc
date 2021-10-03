@@ -171,11 +171,13 @@ pub enum GlyphOrClass {
     Cid(Cid),
     NamedClass(GlyphClassName),
     Class(GlyphClassLiteral),
+    Null(Token),
 }
 
 pub enum Glyph {
     Named(GlyphName),
     Cid(Cid),
+    Null(Token),
 }
 
 pub enum GlyphClass {
@@ -570,6 +572,7 @@ impl AstNode for GlyphOrClass {
             Kind::Cid => Cid::cast(node).map(Self::Cid),
             Kind::GlyphClass => GlyphClassLiteral::cast(node).map(Self::Class),
             Kind::NamedGlyphClass => GlyphClassName::cast(node).map(Self::NamedClass),
+            Kind::NullKw => node.as_token().cloned().map(Self::Null),
             _ => None,
         }
     }
@@ -580,6 +583,7 @@ impl AstNode for GlyphOrClass {
             Self::Cid(item) => item.range(),
             Self::NamedClass(item) => item.range(),
             Self::Class(item) => item.range(),
+            Self::Null(item) => item.range(),
         }
     }
 }
@@ -592,6 +596,7 @@ impl AstNode for Glyph {
         match node.kind() {
             Kind::GlyphName => GlyphName::cast(node).map(Self::Named),
             Kind::Cid => Cid::cast(node).map(Self::Cid),
+            Kind::NullKw => node.as_token().cloned().map(Self::Null),
             _ => None,
         }
     }
@@ -600,6 +605,7 @@ impl AstNode for Glyph {
         match self {
             Self::Named(item) => item.range(),
             Self::Cid(item) => item.range(),
+            Self::Null(item) => item.range(),
         }
     }
 }

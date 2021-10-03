@@ -442,6 +442,7 @@ impl<'a> CompilationCtx<'a> {
             typed::GlyphOrClass::NamedClass(name) => self
                 .resolve_named_glyph_class(&name)
                 .map(GlyphOrClass::Class),
+                typed::GlyphOrClass::Null(_) => None,
         }
     }
 
@@ -449,6 +450,7 @@ impl<'a> CompilationCtx<'a> {
         match item {
             typed::Glyph::Named(name) => self.resolve_glyph_name(name),
             typed::Glyph::Cid(name) => self.resolve_cid(name),
+            typed::Glyph::Null(_) => None,
         }
     }
 
