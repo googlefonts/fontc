@@ -25,6 +25,7 @@ pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
             if glyph::expect_glyph_or_glyph_class(parser, recovery)
                 && glyph::expect_glyph_or_glyph_class(parser, recovery)
                 && metrics::expect_value_record(parser, recovery)
+                && parser.expect_semi()
             {
                 return Kind::GposType2;
             } else {
