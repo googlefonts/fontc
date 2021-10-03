@@ -42,6 +42,8 @@ fn top_level_element(parser: &mut Parser) {
         anonymous(parser)
     } else if parser.matches(0, Kind::NamedGlyphClass) {
         glyph::named_glyph_class_decl(parser, TokenSet::TOP_LEVEL)
+    } else if parser.matches(0, Kind::ValueRecordDefKw) {
+        unimplemented!()
     } else {
         parser.err_and_bump(format!(
             "Unexpected token '{}', expected global keyword.",

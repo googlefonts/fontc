@@ -28,6 +28,11 @@ macro_rules! ast_token {
             pub fn text(&self) -> &SmolStr {
                 &self.inner.text
             }
+
+            #[allow(unused)]
+            pub fn token(&self) -> &Token {
+                &self.inner
+            }
         }
 
         impl AstNode for $typ {
@@ -55,25 +60,37 @@ macro_rules! ast_node {
         }
 
         impl $typ {
+            pub fn try_from_node(node: &Node) -> Option<Self> {
+                if node.kind == $kind {
+                    return Some(Self {
+                        inner: node.clone(),
+                    });
+                }
+                None
+            }
+
+            #[allow(dead_code)]
+            pub fn find_token(&self, kind: Kind) -> Option<&Token> {
+                self.iter()
+                    .find(|t| t.kind() == kind)
+                    .and_then(NodeOrToken::as_token)
+            }
+
             #[allow(unused)]
             pub fn iter(&self) -> impl Iterator<Item = &NodeOrToken> {
                 self.inner.iter_children()
             }
 
-            //#[allow(unused)]
-            //pub fn node(&self) -> &Node {
-            //&self.inner
-            //}
+            #[allow(dead_code)]
+            pub fn node(&self) -> &Node {
+                &self.inner
+            }
         }
 
         impl AstNode for $typ {
             fn cast(node: &NodeOrToken) -> Option<Self> {
                 if let NodeOrToken::Node(inner) = node {
-                    if inner.kind == $kind {
-                        return Some(Self {
-                            inner: inner.clone(),
-                        });
-                    }
+                    return Self::try_from_node(inner);
                 }
                 None
             }
@@ -90,15 +107,18 @@ ast_token!(Tag, Kind::Tag);
 ast_token!(GlyphClassName, Kind::NamedGlyphClass);
 ast_token!(Number, Kind::Number);
 ast_token!(Metric, Kind::Metric);
+ast_node!(Root, Kind::SourceFile);
 ast_node!(GlyphRange, Kind::GlyphRange);
 ast_node!(GlyphClassDef, Kind::GlyphClassDefNode);
 ast_node!(MarkClassDef, Kind::MarkClassNode);
 ast_node!(Anchor, Kind::AnchorNode);
 ast_node!(AnchorDef, Kind::AnchorDefNode);
+ast_node!(ValueRecordDef, Kind::ValueRecordDefKw);
 ast_node!(GlyphClassLiteral, Kind::GlyphClass);
 ast_node!(LanguageSystem, Kind::LanguageSystemNode);
 ast_node!(Include, Kind::IncludeNode);
 ast_node!(Feature, Kind::FeatureNode);
+ast_node!(Table, Kind::TableNode);
 ast_node!(Script, Kind::ScriptNode);
 ast_node!(Language, Kind::LanguageNode);
 ast_node!(LookupFlag, Kind::LookupFlagNode);
@@ -163,6 +183,12 @@ pub enum GlyphClass {
     Literal(GlyphClassLiteral),
 }
 
+impl Root {
+    pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
+        self.iter().filter(|t| !t.kind().is_trivia())
+    }
+}
+
 impl LanguageSystem {
     pub fn script(&self) -> Tag {
         self.inner.iter_children().find_map(Tag::cast).unwrap()
@@ -207,7 +233,9 @@ impl GlyphClassDef {
 impl GlyphClassLiteral {
     pub fn items(&self) -> impl Iterator<Item = &NodeOrToken> {
         self.iter()
-            .filter(|t| t.is_glyph_or_glyph_class() || t.kind() == Kind::GlyphRange)
+            .skip_while(|t| t.kind() != Kind::LSquare)
+            .skip(1)
+            .take_while(|t| t.kind() != Kind::RSquare)
     }
 }
 
@@ -235,6 +263,10 @@ impl GlyphRange {
 }
 
 impl MarkClassDef {
+    pub fn keyword(&self) -> &Token {
+        self.find_token(Kind::MarkClassKw).unwrap()
+    }
+
     pub fn glyph_class(&self) -> GlyphOrClass {
         self.iter().find_map(GlyphOrClass::cast).expect("validated")
     }
@@ -257,10 +289,7 @@ impl AnchorDef {
     }
 
     pub fn name(&self) -> &Token {
-        self.iter()
-            .find(|t| t.kind() == Kind::Ident)
-            .and_then(NodeOrToken::as_token)
-            .expect("pre-validated")
+        self.find_token(Kind::Ident).expect("pre-validated")
     }
 }
 
@@ -286,15 +315,11 @@ impl Anchor {
     }
 
     pub fn null(&self) -> Option<&Token> {
-        self.iter()
-            .find(|t| t.kind() == Kind::NullKw)
-            .and_then(NodeOrToken::as_token)
+        self.find_token(Kind::NullKw)
     }
 
     pub fn name(&self) -> Option<&Token> {
-        self.iter()
-            .find(|t| t.kind() == Kind::Ident)
-            .and_then(NodeOrToken::as_token)
+        self.find_token(Kind::Ident)
     }
 }
 
@@ -323,17 +348,14 @@ impl Feature {
         self.iter()
             .skip_while(|t| t.kind() != Kind::LBrace)
             .skip(1)
-            .filter(|t| !t.kind().is_trivia() && t.kind() != Kind::Semi)
+            .filter(|t| !t.kind().is_trivia())
             .take_while(|t| t.kind() != Kind::RBrace)
     }
 }
 
 impl LookupBlock {
     pub fn tag(&self) -> &Token {
-        self.iter()
-            .find(|t| t.kind() == Kind::Label)
-            .and_then(NodeOrToken::as_token)
-            .unwrap()
+        self.find_token(Kind::Label).unwrap()
     }
 
     pub fn use_extension(&self) -> Option<&Token> {
@@ -343,11 +365,19 @@ impl LookupBlock {
             .and_then(NodeOrToken::as_token)
     }
 
+    pub fn keyword(&self) -> &Token {
+        self.find_token(Kind::LookupKw).unwrap()
+    }
+
+    pub fn label(&self) -> &Token {
+        self.find_token(Kind::Label).unwrap()
+    }
+
     pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
         self.iter()
             .skip_while(|t| t.kind() != Kind::LBrace)
             .skip(1)
-            .filter(|t| !t.kind().is_trivia() && t.kind() != Kind::Semi)
+            .filter(|t| !t.kind().is_trivia())
             .take_while(|t| t.kind() != Kind::RBrace)
     }
 }
@@ -364,21 +394,15 @@ impl Language {
     }
 
     pub fn include_dflt(&self) -> Option<&Token> {
-        self.iter()
-            .find(|t| t.kind() == Kind::IncludeDfltKw)
-            .and_then(NodeOrToken::as_token)
+        self.find_token(Kind::IncludeDfltKw)
     }
 
     pub fn exclude_dflt(&self) -> Option<&Token> {
-        self.iter()
-            .find(|t| t.kind() == Kind::ExcludeDfltKw)
-            .and_then(NodeOrToken::as_token)
+        self.find_token(Kind::ExcludeDfltKw)
     }
 
     pub fn required(&self) -> Option<&Token> {
-        self.iter()
-            .find(|t| t.kind() == Kind::RequiredKw)
-            .and_then(NodeOrToken::as_token)
+        self.find_token(Kind::RequiredKw)
     }
 }
 
@@ -390,10 +414,7 @@ impl LookupFlag {
 
 impl LookupRef {
     pub fn label(&self) -> &Token {
-        self.iter()
-            .find(|t| t.kind() == Kind::Ident)
-            .and_then(NodeOrToken::as_token)
-            .unwrap()
+        self.find_token(Kind::Ident).unwrap()
     }
 
     #[allow(dead_code)]
@@ -663,6 +684,36 @@ impl AstNode for GposStatement {
             Self::Type6(item) => item.range(),
             Self::Type8(item) => item.range(),
             Self::Ignore(item) => item.range(),
+        }
+    }
+}
+
+impl GposStatement {
+    pub fn node(&self) -> &Node {
+        match self {
+            Self::Type1(item) => item.node(),
+            Self::Type2(item) => item.node(),
+            Self::Type3(item) => item.node(),
+            Self::Type4(item) => item.node(),
+            Self::Type5(item) => item.node(),
+            Self::Type6(item) => item.node(),
+            Self::Type8(item) => item.node(),
+            Self::Ignore(item) => item.node(),
+        }
+    }
+}
+
+impl GsubStatement {
+    pub fn node(&self) -> &Node {
+        match self {
+            Self::Type1(item) => item.node(),
+            Self::Type2(item) => item.node(),
+            Self::Type3(item) => item.node(),
+            Self::Type4(item) => item.node(),
+            Self::Type5(item) => item.node(),
+            Self::Type6(item) => item.node(),
+            Self::Type8(item) => item.node(),
+            Self::Ignore(item) => item.node(),
         }
     }
 }

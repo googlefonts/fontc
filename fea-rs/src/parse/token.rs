@@ -207,6 +207,7 @@ pub enum Kind {
 
     AnchorMarkNode,
     ValueRecordNode,
+    ValueRecordDefNode,
     LookupRefNode,
     LookupBlockNode,
     ScriptRecordNode,
@@ -222,6 +223,7 @@ pub enum Kind {
     ScriptNode,
     LanguageNode,
     LookupFlagNode,
+    CvParametersNode,
 }
 
 impl Kind {
@@ -507,6 +509,7 @@ impl std::fmt::Display for Kind {
 
             Self::AnchorMarkNode => write!(f, "AnchorMarkNode"),
             Self::ValueRecordNode => write!(f, "ValueRecordNode"),
+            Self::ValueRecordDefNode => write!(f, "ValueRecordDefNode"),
             Self::GsubNode => write!(f, "GsubNode"),
             Self::GsubType1 => write!(f, "GsubType1"),
             Self::GsubType2 => write!(f, "GsubType2"),
@@ -543,6 +546,7 @@ impl std::fmt::Display for Kind {
             Self::ScriptNode => write!(f, "ScriptNode"),
             Self::LanguageNode => write!(f, "LanguageNode"),
             Self::LookupFlagNode => write!(f, "LookupFlagNode"),
+            Self::CvParametersNode => write!(f, "cvParametersNode"),
         }
     }
 }

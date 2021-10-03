@@ -29,7 +29,7 @@ use crate::types::GlyphIdent;
 //features: HashMap<Tag, Feature>,
 //}
 
-pub struct ValidationCtx<'a> {
+pub struct CompilationCtx<'a> {
     glyph_map: &'a GlyphMap,
     pub errors: Vec<Diagnostic>,
     #[allow(dead_code)]
@@ -145,9 +145,9 @@ macro_rules! report_errs {
     };
 }
 
-impl<'a> ValidationCtx<'a> {
+impl<'a> CompilationCtx<'a> {
     fn new(glyph_map: &'a GlyphMap) -> Self {
-        ValidationCtx {
+        CompilationCtx {
             glyph_map,
             errors: Vec::new(),
             tables: Tables::default(),
@@ -549,8 +549,8 @@ impl<'a> ValidationCtx<'a> {
     }
 }
 
-pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
-    let mut ctx = ValidationCtx::new(glyph_map);
+pub fn compile<'a>(node: &Node, glyph_map: &'a GlyphMap) -> CompilationCtx<'a> {
+    let mut ctx = CompilationCtx::new(glyph_map);
 
     for item in node.iter_children() {
         if let Some(language_system) = typed::LanguageSystem::cast(item) {
@@ -660,7 +660,7 @@ struct LookupFlag {
     mark_filter: Option<GlyphClass>,
 }
 
-fn resolve_lookupflags(ctx: &mut ValidationCtx, node: &typed::LookupFlag) -> Option<LookupFlag> {
+fn resolve_lookupflags(ctx: &mut CompilationCtx, node: &typed::LookupFlag) -> Option<LookupFlag> {
     if let Some(number) = node.number() {
         if let Ok(mask) = number.text().parse::<u16>() {
             return Some(LookupFlag {
@@ -788,7 +788,11 @@ fn glyph_range(node: &Node) -> Result<Vec<GlyphIdent>, String> {
 ///
 /// Returns an error if the range is not well-formed. If it is well-formed,
 /// the `callback` is called with each cid in the range.
-fn cid_range(start: &Token, end: &Token, mut callback: impl FnMut(u32)) -> Result<(), String> {
+pub(crate) fn cid_range(
+    start: &Token,
+    end: &Token,
+    mut callback: impl FnMut(u32),
+) -> Result<(), String> {
     let start_cid = start.text.parse::<u32>().unwrap();
     let end_cid = end.text.parse::<u32>().unwrap();
     if start_cid >= end_cid {
@@ -805,7 +809,11 @@ fn cid_range(start: &Token, end: &Token, mut callback: impl FnMut(u32)) -> Resul
 ///
 /// Returns an error if the range is not well-formed. If it is well-formed,
 /// the `callback` is called with each name in the range.
-fn named_range(start: &Token, end: &Token, callback: impl FnMut(&str)) -> Result<(), String> {
+pub(crate) fn named_range(
+    start: &Token,
+    end: &Token,
+    callback: impl FnMut(&str),
+) -> Result<(), String> {
     if start.text.len() != end.text.len() {
         return Err("glyph range components must have equal length".into());
     }

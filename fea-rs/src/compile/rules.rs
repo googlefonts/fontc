@@ -3,10 +3,10 @@ use crate::{
     types::{gpos, gsub, ValueRecord},
 };
 
-use super::ValidationCtx;
+use super::CompilationCtx;
 
 pub(crate) fn resolve_gsub_statement(
-    ctx: &mut ValidationCtx,
+    ctx: &mut CompilationCtx,
     statement: typed::GsubStatement,
 ) -> Option<gsub::Rule> {
     match statement {
@@ -50,7 +50,7 @@ pub(crate) fn resolve_gsub_statement(
 }
 
 pub(crate) fn resolve_gpos_statement(
-    ctx: &mut ValidationCtx,
+    ctx: &mut CompilationCtx,
     statement: typed::GposStatement,
 ) -> Option<gpos::Rule> {
     match statement {

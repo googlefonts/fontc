@@ -174,6 +174,7 @@ pub(crate) fn write_line_error(
     };
 
     let n_carets = err.message.span.end - err.message.span.start;
+    let n_carets = n_carets.min(CARETS.len());
 
     let (first, second) = if msg_first {
         (err.message.text.as_str(), &CARETS[..n_carets])

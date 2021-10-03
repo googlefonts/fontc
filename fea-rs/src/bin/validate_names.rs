@@ -18,8 +18,9 @@ fn main() {
     let (root, mut errors) = try_parse_fea(&features, &names);
     print_statement_info(&root);
 
-    let val_ctx = fea_rs::validate(&root, &names);
-    errors.extend(val_ctx.errors);
+    let val_errors = fea_rs::validate(&root, &names);
+    errors.extend(val_errors);
+
     if !errors.is_empty() {
         let tokens = root
             .iter_tokens()
