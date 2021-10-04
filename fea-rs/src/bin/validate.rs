@@ -70,7 +70,7 @@ fn load_font(filename: &Path) -> (GlyphMap, String) {
     } else if filename.extension().and_then(|ext| ext.to_str()) == Some("fea") {
         let features = std::fs::read_to_string(filename).unwrap();
         let glyphs = DEFAULT_GLYPH_LIST
-            .into_iter()
+            .iter()
             .map(|s| GlyphName::from(*s))
             .collect();
         (glyphs, features)

@@ -505,11 +505,7 @@ impl Gpos2 {
     }
 
     pub fn second_item(&self) -> GlyphOrClass {
-        self.iter()
-            .filter_map(GlyphOrClass::cast)
-            .skip(1)
-            .next()
-            .unwrap()
+        self.iter().filter_map(GlyphOrClass::cast).nth(1).unwrap()
     }
 
     pub fn first_value(&self) -> ValueRecord {
@@ -517,7 +513,7 @@ impl Gpos2 {
     }
 
     pub fn second_value(&self) -> Option<ValueRecord> {
-        self.iter().filter_map(ValueRecord::cast).skip(1).next()
+        self.iter().filter_map(ValueRecord::cast).nth(1)
     }
 }
 
@@ -528,18 +524,13 @@ impl ValueRecord {
 
     pub fn null(&self) -> Option<&Token> {
         self.iter()
-            .skip_while(|t| t.kind() != Kind::LAngle)
-            .next()
-            .filter(|t| t.kind() == Kind::NullKw)
+            .take(3)
+            .find(|t| t.kind() == Kind::NullKw)
             .and_then(NodeOrToken::as_token)
     }
 
     pub fn named(&self) -> Option<&Token> {
-        self.iter()
-            .skip_while(|t| t.kind() != Kind::LAngle)
-            .next()
-            .filter(|t| t.kind() == Kind::Ident)
-            .and_then(NodeOrToken::as_token)
+        self.find_token(Kind::Ident)
     }
 
     pub fn placement(&self) -> Option<[Number; 4]> {

@@ -223,18 +223,11 @@ impl<'a> ValidationCtx<'a> {
             self.warning(name.range(), "layout label already defined");
         }
         for item in node.statements() {
-            if item.kind() == Kind::ScriptNode {
+            if item.kind() == Kind::ScriptNode || item.kind() == Kind::LanguageNode {
                 if top_level {
                     self.error(
                         item.range(),
-                        "script statements not allowed in standalone lookup blocks",
-                    );
-                }
-            } else if item.kind() == Kind::LanguageNode {
-                if top_level {
-                    self.error(
-                        item.range(),
-                        "script statements not allowed in standalone lookup blocks",
+                        "script and language statements not allowed in standalone lookup blocks",
                     );
                 }
             } else if item.kind() == Kind::SubtableKw {
@@ -391,8 +384,8 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_glyph_or_class(&mut self, node: &typed::GlyphOrClass) {
         match node {
-            typed::GlyphOrClass::Glyph(name) => self.validate_glyph_name(&name),
-            typed::GlyphOrClass::Cid(cid) => self.validate_cid(&cid),
+            typed::GlyphOrClass::Glyph(name) => self.validate_glyph_name(name),
+            typed::GlyphOrClass::Cid(cid) => self.validate_cid(cid),
             typed::GlyphOrClass::Class(class) => self.validate_glyph_class_literal(class, false),
             typed::GlyphOrClass::NamedClass(name) => self.validate_glyph_class_ref(name, false),
             typed::GlyphOrClass::Null(_) => (),
@@ -401,8 +394,8 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_glyph(&mut self, node: &typed::Glyph) {
         match node {
-            typed::Glyph::Named(name) => self.validate_glyph_name(&name),
-            typed::Glyph::Cid(cid) => self.validate_cid(&cid),
+            typed::Glyph::Named(name) => self.validate_glyph_name(name),
+            typed::Glyph::Cid(cid) => self.validate_cid(cid),
             typed::Glyph::Null(_) => (),
         }
     }
@@ -410,10 +403,10 @@ impl<'a> ValidationCtx<'a> {
     fn validate_glyph_class(&mut self, node: &typed::GlyphClass, accept_mark_class: bool) {
         match node {
             typed::GlyphClass::Literal(lit) => {
-                self.validate_glyph_class_literal(&lit, accept_mark_class)
+                self.validate_glyph_class_literal(lit, accept_mark_class)
             }
             typed::GlyphClass::Named(name) => {
-                self.validate_glyph_class_ref(&name, accept_mark_class)
+                self.validate_glyph_class_ref(name, accept_mark_class)
             }
         }
     }
@@ -514,7 +507,7 @@ impl<'a> ValidationCtx<'a> {
     }
 }
 
-pub fn validate<'a>(node: &Node, glyph_map: &'a GlyphMap) -> Vec<Diagnostic> {
+pub fn validate(node: &Node, glyph_map: &GlyphMap) -> Vec<Diagnostic> {
     let mut ctx = ValidationCtx::new(glyph_map);
     if let Some(node) = typed::Root::try_from_node(node) {
         ctx.validate_root(&node);

@@ -73,7 +73,7 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
         if is_seq && parser.eat(Kind::ByKw) {
             glyph::expect_glyph_name_like(parser, recovery.union(RECOVERY));
             parser.expect_semi();
-            return Kind::GsubType4;
+            Kind::GsubType4
         } else if parser.matches(0, Kind::SingleQuote) {
             finish_chain_rule(parser, recovery)
         } else {
@@ -83,7 +83,7 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
                 parser.err("expected ligature substitution or marked glyph");
             }
             parser.eat_until(recovery.union(Kind::Semi.into()));
-            return Kind::GsubNode;
+            Kind::GsubNode
         }
     }
 
@@ -97,13 +97,11 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
     debug_assert!(parser.matches(0, Kind::SingleQuote));
     let recovery = recovery.union(Kind::Semi.into());
     // eat all the marked glyphs + their lookups
-    while parser.eat(Kind::SingleQuote) {
-        if parser.eat(Kind::LookupKw) {
-            if !parser.eat(Kind::Ident) {
-                parser.err("expected named lookup");
-                parser.eat_until(recovery);
-                return Kind::GsubNode;
-            }
+    while parser.eat(Kind::SingleQuote) && parser.eat(Kind::LookupKw) {
+        if !parser.eat(Kind::Ident) {
+            parser.err("expected named lookup");
+            parser.eat_until(recovery);
+            return Kind::GsubNode;
         }
         glyph::eat_glyph_or_glyph_class(parser, recovery);
     }
@@ -124,11 +122,11 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
             parser.eat_until(recovery);
             return Kind::GsubNode;
         }
-    } else if parser.eat(Kind::FromKw) {
-        if !glyph::expect_named_or_unnamed_glyph_class(parser, recovery) {
-            parser.eat_until(recovery);
-            return Kind::GsubNode;
-        }
+    } else if parser.eat(Kind::FromKw)
+        && !glyph::expect_named_or_unnamed_glyph_class(parser, recovery)
+    {
+        parser.eat_until(recovery);
+        return Kind::GsubNode;
     }
 
     if parser.expect_semi() {

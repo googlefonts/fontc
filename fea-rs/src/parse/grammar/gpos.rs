@@ -62,11 +62,11 @@ pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
                 return Kind::GposType1;
             }
             // pair type B
-            if glyph::eat_glyph_or_glyph_class(parser, recovery) {
-                if metrics::eat_value_record(parser, recovery) {
-                    parser.expect_semi();
-                    return Kind::GposType2;
-                }
+            if glyph::eat_glyph_or_glyph_class(parser, recovery)
+                && metrics::eat_value_record(parser, recovery)
+            {
+                parser.expect_semi();
+                return Kind::GposType2;
             }
 
             finish_chain_rule(parser, recovery)

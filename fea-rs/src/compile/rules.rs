@@ -85,7 +85,7 @@ pub(crate) fn resolve_gpos_statement(
 }
 
 fn resolve_value_record(raw: &typed::ValueRecord) -> ValueRecord {
-    if let Some(_) = raw.null() {
+    if raw.null().is_some() {
         ValueRecord::Null
     } else if let Some(advance) = raw.advance() {
         ValueRecord::Advance(advance.parse())

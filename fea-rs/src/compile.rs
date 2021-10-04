@@ -424,7 +424,7 @@ impl<'a> CompilationCtx<'a> {
                     return None;
                 }
             }
-        } else if let Some(_) = item.null() {
+        } else if item.null().is_some() {
             return Some(Anchor::Null);
         }
         panic!("bad anchor {:?} go check your parser", item);
@@ -433,14 +433,14 @@ impl<'a> CompilationCtx<'a> {
     fn resolve_glyph_or_class(&mut self, item: &typed::GlyphOrClass) -> Option<GlyphOrClass> {
         match item {
             typed::GlyphOrClass::Glyph(name) => {
-                self.resolve_glyph_name(&name).map(GlyphOrClass::Glyph)
+                self.resolve_glyph_name(name).map(GlyphOrClass::Glyph)
             }
-            typed::GlyphOrClass::Cid(cid) => self.resolve_cid(&cid).map(GlyphOrClass::Glyph),
+            typed::GlyphOrClass::Cid(cid) => self.resolve_cid(cid).map(GlyphOrClass::Glyph),
             typed::GlyphOrClass::Class(class) => {
                 Some(GlyphOrClass::Class(self.resolve_glyph_class_literal(class)))
             }
             typed::GlyphOrClass::NamedClass(name) => self
-                .resolve_named_glyph_class(&name)
+                .resolve_named_glyph_class(name)
                 .map(GlyphOrClass::Class),
             typed::GlyphOrClass::Null(_) => None,
         }
