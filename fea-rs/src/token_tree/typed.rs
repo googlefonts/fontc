@@ -1,5 +1,6 @@
 //! typing for ast nodes. based on rust-analyzer.
 
+use std::convert::TryInto;
 use std::ops::Range;
 
 use smol_str::SmolStr;
@@ -210,6 +211,13 @@ impl Tag {
     pub fn parse(&self) -> Result<crate::types::Tag, InvalidTag> {
         self.inner.text.parse()
     }
+
+    pub fn to_raw(&self) -> fonttools::types::Tag {
+        self.text()
+            //.as_bytes()
+            .parse()
+            .expect("tag is exactly 4 bytes")
+    }
 }
 
 impl GlyphClassDef {
@@ -326,17 +334,17 @@ impl Anchor {
 }
 
 impl Number {
-    pub fn parse(&self) -> i32 {
+    pub fn parse_signed(&self) -> i16 {
         self.text().parse().expect("already validated")
     }
 
-    pub fn parse_unsigned(&self) -> Option<u32> {
+    pub fn parse_unsigned(&self) -> Option<u16> {
         self.text().parse().ok()
     }
 }
 
 impl Metric {
-    pub fn parse(&self) -> i32 {
+    pub fn parse(&self) -> i16 {
         self.text().parse().expect("already validated")
     }
 }

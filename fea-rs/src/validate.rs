@@ -282,6 +282,7 @@ impl<'a> ValidationCtx<'a> {
     fn validate_gsub_statement(&mut self, node: &typed::GsubStatement) {
         match node {
             typed::GsubStatement::Type1(rule) => {
+                //TODO: ensure equal lengths, other rerquirements
                 self.validate_glyph_or_class(&rule.target());
                 self.validate_glyph_or_class(&rule.replacement());
             }

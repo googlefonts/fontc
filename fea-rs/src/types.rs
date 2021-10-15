@@ -29,6 +29,7 @@ pub struct GlyphClass(Rc<[GlyphId]>);
 pub enum GlyphOrClass {
     Glyph(GlyphId),
     Class(GlyphClass),
+    Null,
 }
 
 // the general case; different uses have different constraints, which
@@ -43,6 +44,10 @@ pub enum GlyphIdent {
 
 impl GlyphId {
     pub const NOTDEF: GlyphId = GlyphId(0);
+
+    pub fn to_raw(self) -> u16 {
+        self.0
+    }
 }
 
 impl From<GlyphOrClass> for GlyphClass {
@@ -50,6 +55,7 @@ impl From<GlyphOrClass> for GlyphClass {
         match src {
             GlyphOrClass::Class(class) => class,
             GlyphOrClass::Glyph(id) => id.into(),
+            Null => GlyphClass(Rc::new([])),
         }
     }
 }
@@ -95,14 +101,33 @@ impl Display for GlyphIdent {
     }
 }
 
+impl GlyphOrClass {
+    pub fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
+        let mut idx = 0;
+        std::iter::from_fn(move || {
+            let next = match self {
+                GlyphOrClass::Glyph(id) if idx == 1 => Some(*id),
+                GlyphOrClass::Class(cls) => cls.0.get(idx).copied(),
+                _ => None,
+            };
+            idx += 1;
+            next
+        })
+    }
+}
+
 impl GlyphClass {
     pub fn items(&self) -> &[GlyphId] {
         &self.0
     }
 
-    //pub fn len(&self) -> usize {
-    //self.0.len()
-    //}
+    pub fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
+        self.items().iter().copied()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 impl From<Vec<GlyphId>> for GlyphClass {
