@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    convert::TryInto,
     ops::{Index, Range},
 };
 
@@ -34,6 +35,8 @@ const SIZE_TAG: Tag = tag!("size");
 const LANG_DFLT_TAG: Tag = tag!("dflt");
 const SCRIPT_DFLT_TAG: Tag = tag!("DFLT");
 
+type FilterSetId = u16;
+
 pub struct CompilationCtx<'a> {
     glyph_map: &'a GlyphMap,
     pub errors: Vec<Diagnostic>,
@@ -43,15 +46,16 @@ pub struct CompilationCtx<'a> {
     default_lang_systems: HashSet<(Tag, Tag)>,
     lookups: AllLookups,
     lookup_flags: LookupFlags,
-    cur_mark_filter_set: Option<GlyphId>,
+    cur_mark_filter_set: Option<FilterSetId>,
     cur_language_systems: HashSet<(Tag, Tag)>,
-    //cur_lookup: Option<LookupId>,
     cur_feature_name: Option<Tag>,
-    //cur_lookup_name: Option<SmolStr>,
     script: Option<Tag>,
     glyph_class_defs: HashMap<SmolStr, GlyphClass>,
     mark_classes: HashMap<SmolStr, MarkClass>,
     anchor_defs: HashMap<SmolStr, (Anchor, usize)>,
+    mark_attach_class_id: HashMap<GlyphClass, u16>,
+    mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
+    //mark_attach_used_glyphs: HashMap<GlyphId, u16>,
 }
 
 #[derive(Debug)]
@@ -110,6 +114,9 @@ impl<'a> CompilationCtx<'a> {
             //cur_lookup: None,
             //cur_lookup_name: None,
             script: None,
+            mark_attach_class_id: Default::default(),
+            mark_filter_sets: Default::default(),
+            //mark_attach_used_glyphs: Default::default(),
         }
     }
 
@@ -162,7 +169,7 @@ impl<'a> CompilationCtx<'a> {
         self.cur_mark_filter_set = None;
     }
 
-    fn start_lookup_block(&mut self, name: Token) {
+    fn start_lookup_block(&mut self, name: &Token) {
         if self.cur_feature_name == Some(tag!("aalt")) {
             self.error(name.range(), "no lookups allowed in aalt");
         }
@@ -259,6 +266,66 @@ impl<'a> CompilationCtx<'a> {
             .extend([(real_key.script, real_key.language)]);
     }
 
+    fn set_lookup_flag(&mut self, node: typed::LookupFlag) {
+        if let Some(number) = node.number() {
+            self.lookup_flags = LookupFlags::from_bits_truncate(number.parse_unsigned().unwrap());
+            return;
+        }
+
+        let mut flags = LookupFlags::empty();
+
+        let mut iter = node.iter();
+        while let Some(next) = iter.next() {
+            match next.kind() {
+                Kind::RightToLeftKw => flags |= LookupFlags::RIGHT_TO_LEFT,
+                Kind::IgnoreBaseGlyphsKw => flags |= LookupFlags::IGNORE_BASE_GLYPHS,
+                Kind::IgnoreLigaturesKw => flags |= LookupFlags::IGNORE_LIGATURES,
+                Kind::IgnoreMarksKw => flags |= LookupFlags::IGNORE_MARKS,
+
+                //FIXME: we are not enforcing some requirements here. in particular,
+                // The glyph sets of the referenced classes must not overlap, and the MarkAttachmentType statement can reference at most 15 different classes.
+                // ALSO: this should accept mark classes.
+                Kind::MarkAttachmentTypeKw => {
+                    let node = iter.find_map(typed::GlyphClass::cast).expect("validated");
+                    let mark_attach_set = self.resolve_mark_attach_class(&node);
+                    flags |= LookupFlags::from_bits_truncate(mark_attach_set << 8);
+                }
+                Kind::UseMarkFilteringSetKw => {
+                    let node = iter.find_map(typed::GlyphClass::cast).expect("validated");
+                    let filter_set = self.resolve_mark_filter_set(&node);
+                    flags |= LookupFlags::USE_MARK_FILTERING_SET;
+                    self.cur_mark_filter_set = Some(filter_set);
+                }
+                _ => unreachable!("mark statements have been validated"),
+            }
+        }
+        self.lookup_flags = flags;
+    }
+
+    fn resolve_mark_attach_class(&mut self, glyphs: &typed::GlyphClass) -> u16 {
+        let glyphs = self.resolve_glyph_class(glyphs);
+        let mark_set = glyphs.sort_and_dedupe();
+        if let Some(id) = self.mark_attach_class_id.get(&mark_set) {
+            return *id;
+        }
+
+        let id = self.mark_attach_class_id.len() as u16 + 1;
+        //FIXME: I don't understand what is not allowed here
+
+        self.mark_attach_class_id.insert(mark_set, id);
+        id
+    }
+
+    fn resolve_mark_filter_set(&mut self, glyphs: &typed::GlyphClass) -> u16 {
+        let glyphs = self.resolve_glyph_class(glyphs);
+        let set = glyphs.sort_and_dedupe();
+        let id = self.mark_filter_sets.len() + 1;
+        *self
+            .mark_filter_sets
+            .entry(set)
+            .or_insert(id.try_into().unwrap())
+    }
+
     pub fn add_subtable_break(&mut self) {
         if !self.lookups.add_subtable_break() {
             //TODO: report that we weren't in a lookup?
@@ -286,13 +353,13 @@ impl<'a> CompilationCtx<'a> {
         }
     }
 
-    fn add_gpos_statement(&mut self, node: &typed::GposStatement) {
+    fn add_gpos_statement(&mut self, node: typed::GposStatement) {
         match node {
             typed::GposStatement::Type1(rule) => {
-                self.add_single_pos(rule);
+                self.add_single_pos(&rule);
             }
             typed::GposStatement::Type2(rule) => {
-                self.add_pair_pos(rule);
+                self.add_pair_pos(&rule);
             }
             _ => {
                 self.warning(node.range(), "unimplemented rule type");
@@ -300,10 +367,10 @@ impl<'a> CompilationCtx<'a> {
         }
     }
 
-    fn add_gsub_statement(&mut self, node: &typed::GsubStatement) {
+    fn add_gsub_statement(&mut self, node: typed::GsubStatement) {
         match node {
             typed::GsubStatement::Type1(rule) => {
-                self.add_single_sub(rule);
+                self.add_single_sub(&rule);
             }
             _ => self.warning(node.range(), "unimplemented rule type"),
         }
@@ -442,133 +509,70 @@ impl<'a> CompilationCtx<'a> {
             self.error(tag.range(), "aalt feature is unimplemented");
             return;
         }
+        self.start_feature(tag);
         for item in feature.statements() {
-            //if let Some(statement) = self.resolve_statement(item) {
-            //statements.push(statement);
-            //}
+            self.resolve_statement(item);
+        }
+        self.end_feature();
+    }
+
+    fn resolve_lookup_ref(&mut self, lookup: typed::LookupRef) {
+        let id = self
+            .lookups
+            .get_named(&lookup.label().text)
+            .expect("checked in validation pass");
+        match self.cur_feature_name {
+            Some(feature) => self.add_lookup_to_feature(id, feature),
+            None => self.warning(
+                lookup.range(),
+                "lookup reference outside of feature does nothing",
+            ),
         }
     }
 
-    //fn add_lookup(&mut self, lookup: typed::LookupBlock) {
-    //if let Some(item) = self.resolve_lookup_block(&lookup, true) {
-    //self.lookups.push((lookup.range().start, item))
-    //}
-    //}
+    fn resolve_lookup_block(&mut self, lookup: typed::LookupBlock) {
+        self.start_lookup_block(lookup.tag());
 
-    //fn resolve_lookup_block(
-    //&mut self,
-    //lookup: &typed::LookupBlock,
-    //top_level: bool,
-    //) -> Option<SomeLookup> {
-    //let tag = lookup.tag();
-    //let use_extension = lookup.use_extension().is_some();
-    //let mut statements = Vec::new();
-    //let mut kind = None;
-    //for item in lookup.statements() {
-    //if top_level && (item.kind() == Kind::ScriptKw || item.kind() == Kind::LanguageKw) {
-    //self.error(
-    //item.range(),
-    //"standalone lookup blocks cannot contain 'script' or 'language' statements"
-    //.into(),
-    //);
-    //return None;
-    //}
-    //if item.kind().is_rule() {
-    //match kind {
-    //Some(kind) if kind != item.kind() => {
-    //self.error(
-    //item.range(),
-    //format!(
-    //"multiple rule types in lookup block (saw '{}' after '{}')",
-    //item.kind(),
-    //kind
-    //),
-    //);
-    //// we continue, so that we can validate other items
-    //// in this block
-    //}
-    //_ => kind = Some(item.kind()),
-    //}
-    //}
-    //if let Some(statement) = self.resolve_statement(item) {
-    //statements.push(statement);
-    //}
-    //}
-    //None
-    ////Some(LookupTable {
-    ////use_extension,
-    ////statements,
-    ////name: tag.text.clone(),
-    ////})
-    //}
+        //let use_extension = lookup.use_extension().is_some();
+        for item in lookup.statements() {
+            self.resolve_statement(item);
+        }
+        self.end_lookup_block();
+    }
 
-    //fn resolve_statement(&mut self, item: &NodeOrToken) -> Option<Statement> {
-    //if let Some(script) = typed::Script::cast(item) {
-    //let tag = script.tag();
-    //if tag.text() == "dflt" {
-    //self.error(
-    //tag.range(),
-    //"'dflt' is not a value value for script tag".into(),
-    //);
-    //return None;
-    //}
-    //Some(Statement::Script(tag.parse().unwrap()))
-    //} else if let Some(language) = typed::Language::cast(item) {
-    //let tag = language.tag();
-    //if tag.text() == "DFLT" {
-    //self.error(
-    //tag.range(),
-    //"'DFLT' is not a value value for language tag".into(),
-    //);
-    //return None;
-    //}
-    //let required = language.required().is_some();
-    //let exclude_dflt = language.exclude_dflt().is_some();
-    //if exclude_dflt {
-    //if let Some(conflict) = language.include_dflt() {
-    //self.error(
-    //conflict.range(),
-    //"'include_dft' and 'exclude_dflt' are mutually exclusive".into(),
-    //);
-    //}
-    //}
-    //Some(Statement::Language {
-    //tag: tag.parse().unwrap(),
-    //exclude_dflt,
-    //required,
-    //})
-    //} else if let Some(lookupflag) = typed::LookupFlag::cast(item) {
-    //resolve_lookupflags(self, &lookupflag).map(Statement::LookupFlag)
-    //} else if let Some(glyph_def) = typed::GlyphClassDef::cast(item) {
-    //self.define_glyph_class(glyph_def);
-    //None
-    //} else if let Some(glyph_def) = typed::MarkClassDef::cast(item) {
-    //self.define_mark_class(glyph_def);
-    //None
-    //} else if item.kind() == Kind::SubtableKw {
-    //Some(Statement::Subtable)
-    //} else if let Some(lookup) = typed::LookupRef::cast(item) {
-    //Some(Statement::LookupRef(lookup.label().to_owned()))
-    ////} else if let Some(_lookup) = typed::LookupBlock::cast(item) {
-    //////FIXME: actually do lookup block
-    ////Some(Statement::LookupBlock(()))
-    //} else if let Some(rule) = typed::GsubStatement::cast(item) {
-    //rules::resolve_gsub_statement(self, rule).map(Statement::Gsub)
-    //} else if let Some(rule) = typed::GposStatement::cast(item) {
-    //rules::resolve_gpos_statement(self, rule).map(Statement::Gpos)
-    //} else {
-    //let span = match item {
-    //NodeOrToken::Token(t) => t.range(),
-    //NodeOrToken::Node(node) => {
-    //let range = node.range();
-    //let end = range.end.min(range.start + 16);
-    //range.start..end
-    //}
-    //};
-    //self.error(span, format!("unhandled statement: '{}'", item.kind()));
-    //None
-    //}
-    //}
+    fn resolve_statement(&mut self, item: &NodeOrToken) {
+        if let Some(script) = typed::Script::cast(item) {
+            self.set_script(script);
+        } else if let Some(language) = typed::Language::cast(item) {
+            self.set_language(language);
+        } else if let Some(lookupflag) = typed::LookupFlag::cast(item) {
+            self.set_lookup_flag(lookupflag);
+        } else if let Some(glyph_def) = typed::GlyphClassDef::cast(item) {
+            self.define_glyph_class(glyph_def);
+        } else if let Some(glyph_def) = typed::MarkClassDef::cast(item) {
+            self.define_mark_class(glyph_def);
+        } else if item.kind() == Kind::SubtableKw {
+            self.add_subtable_break();
+        } else if let Some(lookup) = typed::LookupRef::cast(item) {
+            self.resolve_lookup_ref(lookup);
+        } else if let Some(lookup) = typed::LookupBlock::cast(item) {
+            self.resolve_lookup_block(lookup);
+        } else if let Some(rule) = typed::GsubStatement::cast(item) {
+            self.add_gsub_statement(rule);
+        } else if let Some(rule) = typed::GposStatement::cast(item) {
+            self.add_gpos_statement(rule)
+        } else {
+            let span = match item {
+                NodeOrToken::Token(t) => t.range(),
+                NodeOrToken::Node(node) => {
+                    let range = node.range();
+                    let end = range.end.min(range.start + 16);
+                    range.start..end
+                }
+            };
+            self.error(span, format!("unhandled statement: '{}'", item.kind()));
+        }
+    }
 
     fn define_named_anchor(&mut self, anchor_def: typed::AnchorDef) {
         let anchor_block = anchor_def.anchor();
@@ -629,13 +633,13 @@ impl<'a> CompilationCtx<'a> {
         }
     }
 
-    fn resolve_glyph(&mut self, item: &typed::Glyph) -> GlyphId {
-        match item {
-            typed::Glyph::Named(name) => self.resolve_glyph_name(name),
-            typed::Glyph::Cid(name) => self.resolve_cid(name),
-            typed::Glyph::Null(_) => GlyphId::NOTDEF,
-        }
-    }
+    //fn resolve_glyph(&mut self, item: &typed::Glyph) -> GlyphId {
+    //match item {
+    //typed::Glyph::Named(name) => self.resolve_glyph_name(name),
+    //typed::Glyph::Cid(name) => self.resolve_cid(name),
+    //typed::Glyph::Null(_) => GlyphId::NOTDEF,
+    //}
+    //}
 
     fn resolve_glyph_class(&mut self, item: &typed::GlyphClass) -> GlyphClass {
         match item {
@@ -733,7 +737,7 @@ pub fn compile<'a>(node: &Node, glyph_map: &'a GlyphMap) -> CompilationCtx<'a> {
         } else if let Some(feature) = typed::Feature::cast(item) {
             ctx.add_feature(feature);
         } else if let Some(lookup) = typed::LookupBlock::cast(item) {
-            //ctx.add_lookup(lookup);
+            ctx.resolve_lookup_block(lookup);
 
             //TODO: includes, eh? maybe resolved before now?
         } else if !item.kind().is_trivia() {
@@ -747,187 +751,12 @@ pub fn compile<'a>(node: &Node, glyph_map: &'a GlyphMap) -> CompilationCtx<'a> {
             };
             ctx.error(span, format!("unhandled top-level item: '{}'", item.kind()));
         }
-        //for item in node.children() {
-        //match item.kind() {
-        ////Kind::IncludeNode => include(n, &mut ctx),
-        ////Kind::FeatureNode => feature(n, &mut ctx),
-        ////Kind::TableNode => table(n, &mut ctx),
-        ////Kind::AnonBlockNode => anon(n, &mut ctx),
-        ////Kind::LookupBlockNode => lookup_block_top_level(n, &mut ctx),
-        ////Kind::ValueRecordNode => value_record_def(n, &mut ctx),
-        //Kind::Comment | Kind::Whitespace | Kind::Semi => (),
-        //// maybe don't return an error? parsing should ensure we don't get here
-        //other => panic!("I should maybe return an error?"),
-        //}
-        //cursor.step_over();
     }
 
     ctx
 }
 
-//fn mark_class_def(ctx: &mut ValidationCtx, node: &Node, pos: usize) {
-//let mut cursor = node.cursor();
-//let _kw = cursor.next(TO_SKIP);
-//debug_assert_eq!(_kw.map(NodeOrToken::kind), Some(Kind::MarkClassKw));
-//let glyph_or_glyph_class = cursor.next(TO_SKIP).unwrap();
-
-//let resolved_class = match class_list_or_name {
-//NodeOrToken::Token(t) if t.kind == Kind::NamedGlyphClass => {
-//match ctx.glyph_class_defs.get(t.as_str()).cloned() {
-//Some((class, _pos)) => class,
-//None => {
-//let range = class_name.range();
-//ctx.error(
-//range.start + pos..range.end + pos,
-//"Glyph class already defined".into(),
-//);
-//return;
-//}
-//}
-//}
-//NodeOrToken::Node(node) if node.kind == Kind::GlyphClass => {
-////TODO: resolve this class
-//glyph_class_list(ctx, node, pos + node.rel_pos())
-//}
-//_other => unreachable!("glyph class def already validated"),
-//};
-//}
-
-//fn glyph_class_maybe_named_or_singleton(ctx: &mut ValidationCtx, item: &NodeOrToken, pos: usize) -> Option<GlyphClass> {
-//match item {
-//NodeOrToken::Token(t) if t.kind == Kind::NamedGlyphClass => {
-//match ctx.glyph_class_defs.get(t.as_str()).cloned() {
-//Some((class, _pos)) => Some(class),
-//None => {
-//let range = t.range();
-//ctx.error(
-//range.start + pos..range.end + pos,
-//"Glyph class not defined".into(),
-//);
-//None
-//}
-//}
-//}
-//NodeOrToken::Token(t) if t.kind == Kind::GlyphName => {
-//match ctx.glyph_map.get(&t.text) {
-//Some(id) => Some(GlyphClass::from(&[id])),
-//None => (),
-//}
-//}
-//NodeOrToken::Node(node) if node.kind == Kind::GlyphClass => {
-//Some(glyph_class_list(ctx, node, pos + node.rel_pos()))
-//}
-//_other => unreachable!("glyph class def already validated"),
-//}
-
-//}
-
-#[derive(Clone, Debug, Default)]
-struct LookupFlag {
-    raw: u16,
-    mark_attachment: Option<GlyphClass>,
-    mark_filter: Option<GlyphClass>,
-}
-
-fn resolve_lookupflags(ctx: &mut CompilationCtx, node: &typed::LookupFlag) -> Option<LookupFlag> {
-    if let Some(number) = node.number() {
-        if let Ok(mask) = number.text().parse::<u16>() {
-            return Some(LookupFlag {
-                raw: mask,
-                ..Default::default()
-            });
-        } else {
-            ctx.error(number.range(), "value out of range");
-            return None;
-        }
-    }
-
-    //FIXME: this is a placeholder, we'll use the fonttools types later
-    let mut rtl = false;
-    let mut ignore_base = false;
-    let mut ignore_lig = false;
-    let mut ignore_marks = false;
-    let mut mark_set = None;
-    let mut filter_set = None;
-
-    let mut iter = node.iter();
-    while let Some(next) = iter.next() {
-        match next.kind() {
-            Kind::RightToLeftKw if !rtl => rtl = true,
-            Kind::IgnoreBaseGlyphsKw if !ignore_base => ignore_base = true,
-            Kind::IgnoreLigaturesKw if !ignore_lig => ignore_lig = true,
-            Kind::IgnoreMarksKw if !ignore_marks => ignore_marks = true,
-
-            //FIXME: we are not enforcing some requirements here. in particular,
-            // The glyph sets of the referenced classes must not overlap, and the MarkAttachmentType statement can reference at most 15 different classes.
-            // ALSO: this should accept mark classes.
-            Kind::MarkAttachmentTypeKw if mark_set.is_none() => {
-                match iter
-                    .find(|t| t.kind() == Kind::NamedGlyphClass || t.kind() == Kind::GlyphClass)
-                    .and_then(typed::GlyphOrClass::cast)
-                {
-                    Some(node) => {
-                        mark_set = Some(ctx.resolve_glyph_or_class(&node));
-                    }
-                    None => {
-                        ctx.error(
-                            next.range(),
-                            "MarkAttachmentType should be followed by glyph class",
-                        );
-                        return None;
-                    }
-                }
-            }
-            Kind::UseMarkFilteringSetKw if filter_set.is_none() => {
-                match iter
-                    .find(|t| t.kind() == Kind::NamedGlyphClass || t.kind() == Kind::GlyphClass)
-                    .and_then(typed::GlyphOrClass::cast)
-                {
-                    Some(node) => {
-                        filter_set = Some(ctx.resolve_glyph_or_class(&node));
-                    }
-                    None => {
-                        ctx.error(
-                            next.range(),
-                            "UseMarkFilteringSet should be followed by glyph class",
-                        );
-                        return None;
-                    }
-                }
-            }
-            Kind::RightToLeftKw
-            | Kind::IgnoreBaseGlyphsKw
-            | Kind::IgnoreMarksKw
-            | Kind::IgnoreLigaturesKw
-            | Kind::MarkAttachmentTypeKw
-            | Kind::UseMarkFilteringSetKw => {
-                ctx.error(next.range(), "duplicate value in lookupflag")
-            }
-            _ => (),
-        }
-    }
-
-    let mut raw = 0u16;
-    if rtl {
-        raw &= 1
-    };
-    if ignore_base {
-        raw &= 2
-    };
-    if ignore_lig {
-        raw &= 4
-    };
-    if ignore_marks {
-        raw &= 8
-    };
-
-    Some(LookupFlag {
-        raw,
-        mark_attachment: mark_set.map(Into::into),
-        mark_filter: filter_set.map(Into::into),
-    })
-}
-
+//FIXME: put these somewhere and reuse them
 /// A helper for testing, that just returns the names/cids that should be part
 /// of a given range. (This does not test if they're in the font.)
 #[cfg(test)]
@@ -1095,12 +924,8 @@ impl AllLookups {
         LookupId(self.all.len() - 1)
     }
 
-    fn get(&self, id: LookupId) -> Option<&SomeLookup> {
-        self.all.get(id.0)
-    }
-
-    fn get_mut(&mut self, id: LookupId) -> Option<&mut SomeLookup> {
-        self.all.get_mut(id.0)
+    fn get_named(&self, name: &str) -> Option<LookupId> {
+        self.named.get(name).copied()
     }
 
     fn current_mut(&mut self) -> Option<&mut SomeLookup> {
@@ -1134,7 +959,7 @@ impl AllLookups {
         kind: Kind,
         name: Option<SmolStr>,
         flags: LookupFlags,
-        mark_set: Option<GlyphId>,
+        mark_set: Option<FilterSetId>,
     ) -> Option<LookupId> {
         assert!(self.current_name.is_none(), "named lookup not finished");
         let finished_id = self.current.take().map(|lookup| self.push(lookup));
@@ -1142,20 +967,6 @@ impl AllLookups {
         self.current_name = name;
         finished_id
     }
-
-    ///// prepare for a new rule.
-    /////
-    ///// If this finshes an anonymous lookup, we return the id.
-    //fn prepare_for_rule(&mut self, kind: Kind) -> Option<LookupId> {
-    //if self.current.map(SomeLookup::kind) == Some(kind) {
-    //return None;
-    //}
-    //let finished_id = self.current.take().map(|lookup| self.push(lookup));
-
-    ////self.current = Some()
-
-    //finished_id
-    //}
 
     fn finish_named(&mut self) -> (LookupId, SmolStr) {
         let (id, name) = self
@@ -1200,9 +1011,7 @@ impl FeatureKey {
 }
 
 impl SomeLookup {
-    //self.current = Some(SomeLookup::new(kind, flags, mark_set));
-    fn new(kind: Kind, flags: LookupFlags, mark_set: Option<GlyphId>) -> Self {
-        let mark_filtering_set = mark_set.map(|id| id.to_raw());
+    fn new(kind: Kind, flags: LookupFlags, mark_filtering_set: Option<FilterSetId>) -> Self {
         if is_gpos_rule(kind) {
             SomeLookup::GposLookup(Lookup {
                 flags,
@@ -1327,10 +1136,6 @@ fn is_gpos_rule(kind: Kind) -> bool {
             | Kind::GposType8
     )
 }
-
-//impl FeatureKey {
-//fn new()
-//}
 
 mod tables {
 

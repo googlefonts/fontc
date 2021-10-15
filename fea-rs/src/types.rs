@@ -121,6 +121,14 @@ impl GlyphClass {
         &self.0
     }
 
+    pub fn sort_and_dedupe(&self) -> GlyphClass {
+        //idfk I guess this is fine
+        let mut vec = self.0.iter().cloned().collect::<Vec<_>>();
+        vec.sort_unstable();
+        vec.dedup();
+        GlyphClass(vec.into())
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
         self.items().iter().copied()
     }

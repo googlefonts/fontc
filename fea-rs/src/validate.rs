@@ -218,11 +218,25 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_lookup_block(&mut self, node: &typed::LookupBlock, top_level: bool) {
         let name = node.label();
+        let mut kind = None;
         if let Some(_prev) = self.lookup_defs.insert(name.text.clone(), name.clone()) {
             //TODO: annotate with previous location
             self.warning(name.range(), "layout label already defined");
         }
         for item in node.statements() {
+            if item.kind().is_rule() {
+                match kind {
+                    Some(kind) if kind != item.kind() => self.error(
+                        item.range(),
+                        format!(
+                            "multiple rule types in lookup block (saw '{}' after '{}')",
+                            item.kind(),
+                            kind
+                        ),
+                    ),
+                    _ => kind = Some(item.kind()),
+                }
+            }
             if item.kind() == Kind::ScriptNode || item.kind() == Kind::LanguageNode {
                 if top_level {
                     self.error(
@@ -241,7 +255,7 @@ impl<'a> ValidationCtx<'a> {
                     node.keyword().range(),
                     "lookup blocks cannot contain other blocks",
                 );
-                self.validate_lookup_block(&node, false);
+                //self.validate_lookup_block(&node, false);
             } else if let Some(node) = typed::LookupFlag::cast(item) {
                 self.validate_lookupflag(&node);
             } else if let Some(node) = typed::GsubStatement::cast(item) {
