@@ -1,17 +1,17 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
-    ops::{Index, Range},
+    ops::Range,
 };
 
 use smol_str::SmolStr;
 
 use fonttools::{
     layout::{
-        common::{Lookup, LookupFlags},
+        common::{LanguageSystem, Lookup, LookupFlags, Script, GPOSGSUB},
         valuerecord::ValueRecord,
     },
-    tables::{GPOS::Positioning, GSUB::Substitution},
+    tables::{self, GPOS::Positioning, GSUB::Substitution},
     tag,
     types::Tag,
 };
@@ -42,7 +42,7 @@ pub struct CompilationCtx<'a> {
     pub errors: Vec<Diagnostic>,
     #[allow(dead_code)]
     tables: Tables,
-    features: HashMap<FeatureKey, Vec<LookupId>>,
+    features: BTreeMap<FeatureKey, Vec<LookupId>>,
     default_lang_systems: HashSet<(Tag, Tag)>,
     lookups: AllLookups,
     lookup_flags: LookupFlags,
@@ -58,41 +58,51 @@ pub struct CompilationCtx<'a> {
     //mark_attach_used_glyphs: HashMap<GlyphId, u16>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SomeLookup {
     GsubLookup(Lookup<Substitution>),
     GposLookup(Lookup<Positioning>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct FeatureKey {
+    feature: Tag,
     script: Tag,
     language: Tag,
-    feature: Tag,
 }
 
 #[derive(Debug, Default)]
 struct AllLookups {
     current: Option<SomeLookup>,
     current_name: Option<SmolStr>,
-    all: Vec<SomeLookup>,
+    gpos: Vec<Lookup<Positioning>>,
+    gsub: Vec<Lookup<Substitution>>,
     named: HashMap<SmolStr, LookupId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
-struct LookupId(usize);
+enum LookupId {
+    Gpos(usize),
+    Gsub(usize),
+}
+
 struct MarkClass {
     members: Vec<(GlyphClass, typed::Anchor)>,
 }
 
 #[derive(Clone, Debug, Default)]
 struct Tables {
-    head: Option<tables::head>,
-    hhea: Option<tables::hhea>,
-    vhea: Option<tables::vhea>,
+    head: Option<fea_tables::head>,
+    hhea: Option<fea_tables::hhea>,
+    vhea: Option<fea_tables::vhea>,
     //name: Option<tables::name>,
     //OS2: Option<tables::OS2>,
     //STAT: Option<tables::STAT>,
+}
+
+struct Compilation {
+    gpos: Option<tables::GPOS::GPOS>,
+    gsub: Option<tables::GSUB::GSUB>,
 }
 
 impl<'a> CompilationCtx<'a> {
@@ -118,6 +128,37 @@ impl<'a> CompilationCtx<'a> {
             mark_filter_sets: Default::default(),
             //mark_attach_used_glyphs: Default::default(),
         }
+    }
+
+    fn build(&mut self) -> Result<Compilation, Vec<Diagnostic>> {
+        if self.errors.iter().any(Diagnostic::is_error) {
+            return Err(self.errors.clone());
+        }
+
+        let (gsub, gpos) = self.make_gsub_gpos();
+        Ok(Compilation { gpos, gsub })
+    }
+
+    fn make_gsub_gpos(&mut self) -> (Option<tables::GSUB::GSUB>, Option<tables::GPOS::GPOS>) {
+        let mut gpos_builder = PosSubBuilder::new(self.lookups.gpos.clone());
+        let mut gsub_builder = PosSubBuilder::new(self.lookups.gsub.clone());
+
+        for (key, feature_indices) in &self.features {
+            let split_idx = feature_indices
+                .iter()
+                .position(|x| matches!(x, LookupId::Gsub(_)))
+                .unwrap_or_else(|| feature_indices.len());
+
+            let (gpos_idxes, gsub_idxes) = feature_indices.split_at(split_idx);
+            if !gpos_idxes.is_empty() {
+                gpos_builder.add(*key, gpos_idxes);
+            }
+
+            if !gsub_idxes.is_empty() {
+                gsub_builder.add(*key, gsub_idxes);
+            }
+        }
+        (gsub_builder.build(), gpos_builder.build())
     }
 
     fn error(&mut self, range: Range<usize>, message: impl Into<String>) {
@@ -824,8 +865,8 @@ pub(crate) fn named_range(
             return Err("glyph range end must be greater than start".into());
         }
         if one_byte.is_ascii_alphabetic() && two_byte.is_ascii_alphabetic()
-            // range must be between two lowercase or two uppercase ascii letters
-            && ((one_byte > b'Z') == (two_byte > b'Z'))
+        // range must be between two lowercase or two uppercase ascii letters
+        && ((one_byte > b'Z') == (two_byte > b'Z'))
         {
             alpha_range(&start.text, &end.text, diff_range, callback);
             return Ok(());
@@ -834,9 +875,9 @@ pub(crate) fn named_range(
     let one = &start.text[diff_range.clone()];
     let two = &end.text[diff_range.clone()];
     match (one.parse::<u32>(), two.parse::<u32>()) {
-        (Ok(one), Ok(two)) if one < two => num_range(&start.text, one..two, diff_range, callback),
-            _ => return Err("range glyphs must differ by a single letter a-Z or A-Z, or by a run of up to three decimal digits".into()),
-        };
+    (Ok(one), Ok(two)) if one < two => num_range(&start.text, one..two, diff_range, callback),
+        _ => return Err("range glyphs must differ by a single letter a-Z or A-Z, or by a run of up to three decimal digits".into()),
+    };
     Ok(())
 }
 
@@ -911,17 +952,18 @@ fn get_diff_range(one: &str, two: &str) -> Range<usize> {
     }
 }
 
-impl Index<LookupId> for AllLookups {
-    type Output = SomeLookup;
-    fn index(&self, idx: LookupId) -> &SomeLookup {
-        &self.all[idx.0]
-    }
-}
-
 impl AllLookups {
     fn push(&mut self, lookup: SomeLookup) -> LookupId {
-        self.all.push(lookup);
-        LookupId(self.all.len() - 1)
+        match lookup {
+            SomeLookup::GsubLookup(sub) => {
+                self.gsub.push(sub);
+                LookupId::Gsub(self.gsub.len() - 1)
+            }
+            SomeLookup::GposLookup(pos) => {
+                self.gpos.push(pos);
+                LookupId::Gpos(self.gpos.len() - 1)
+            }
+        }
     }
 
     fn get_named(&self, name: &str) -> Option<LookupId> {
@@ -988,6 +1030,101 @@ impl AllLookups {
             None
         }
     }
+
+    //fn build(&self, features: &BTreeMap<FeatureKey, Vec<LookupId>>) {
+    //let mut gpos_builder = PosSubBuilder::new(self.gpos.clone());
+    //let mut gsub_builder = PosSubBuilder::new(self.gsub.clone());
+
+    //for (key, feature_indices) in features {
+    //let split_idx = feature_indices
+    //.iter()
+    //.position(|x| matches!(x, LookupId::Gsub(_)))
+    //.unwrap_or_else(|| feature_indices.len());
+
+    //let (gpos_idxes, gsub_idxes) = feature_indices.split_at(split_idx);
+    //if !gpos_idxes.is_empty() {
+    //gpos_builder.add(key, gpos_idxes);
+    //}
+
+    //if !gsub_idxes.is_empty() {
+    //gsub_builder.add(key, gsub_idxes);
+    //}
+    //}
+
+    //}
+}
+
+/// A helper for building GSUB/GPOS tables
+struct PosSubBuilder<T> {
+    lookups: Vec<Lookup<T>>,
+    scripts: HashMap<Tag, HashMap<Tag, Vec<usize>>>,
+    features: HashMap<(Tag, Vec<usize>), usize>,
+}
+
+impl<T> PosSubBuilder<T> {
+    fn new(lookups: Vec<Lookup<T>>) -> Self {
+        PosSubBuilder {
+            lookups,
+            scripts: Default::default(),
+            features: Default::default(),
+        }
+    }
+
+    fn add(&mut self, key: FeatureKey, lookups: &[LookupId]) {
+        let lookups = lookups.iter().map(|idx| idx.to_raw()).collect();
+        let feat_key = (key.feature, lookups);
+        let idx = match self.features.get(&feat_key) {
+            Some(idx) => *idx,
+            None => {
+                let idx = self.features.len();
+                self.features.insert(feat_key, idx);
+                idx
+            }
+        };
+        self.scripts
+            .entry(key.script)
+            .or_default()
+            .entry(key.language)
+            .or_default()
+            .push(idx);
+    }
+
+    fn build(self) -> Option<GPOSGSUB<T>> {
+        if self.lookups.is_empty() {
+            return None;
+        }
+
+        let mut result = GPOSGSUB {
+            lookups: self.lookups,
+            scripts: Default::default(),
+            features: Vec::with_capacity(self.features.len()),
+        };
+
+        for (script, entry) in self.scripts.into_iter() {
+            let mut script_record = Script::default();
+            for (lang, feature_indices) in entry {
+                let ls = LanguageSystem {
+                    required_feature: None, // XXX
+                    feature_indices,
+                };
+                if lang == LANG_DFLT_TAG {
+                    script_record.default_language_system = Some(ls);
+                } else {
+                    script_record.language_systems.insert(lang, ls);
+                }
+            }
+            result.scripts.scripts.insert(script, script_record);
+        }
+
+        // push empty items so we can insert by index
+        for _ in 0..self.features.len() {
+            result.features.push((LANG_DFLT_TAG, Vec::new(), None));
+        }
+        for ((tag, lookups), idx) in self.features {
+            result.features[idx] = (tag, lookups, None);
+        }
+        Some(result)
+    }
 }
 
 impl FeatureKey {
@@ -1007,6 +1144,29 @@ impl FeatureKey {
     fn language(mut self, language: Tag) -> Self {
         self.language = language;
         self
+    }
+}
+
+impl LookupId {
+    fn to_raw(self) -> usize {
+        match self {
+            LookupId::Gpos(idx) => idx,
+            LookupId::Gsub(idx) => idx,
+        }
+    }
+
+    fn gpos_raw(self) -> Option<usize> {
+        match self {
+            LookupId::Gpos(raw) => Some(raw),
+            _ => None,
+        }
+    }
+
+    fn gsub_raw(self) -> Option<usize> {
+        match self {
+            LookupId::Gsub(raw) => Some(raw),
+            _ => None,
+        }
     }
 }
 
@@ -1137,7 +1297,7 @@ fn is_gpos_rule(kind: Kind) -> bool {
     )
 }
 
-mod tables {
+mod fea_tables {
 
     #[derive(Debug, Clone)]
     #[allow(non_camel_case_types)]

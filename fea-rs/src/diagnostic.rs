@@ -64,4 +64,8 @@ impl Diagnostic {
     pub fn span(&self) -> Range<usize> {
         self.message.span.clone()
     }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self.level, Level::Error)
+    }
 }
