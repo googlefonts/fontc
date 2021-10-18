@@ -11,6 +11,7 @@ use std::{
 
 use smol_str::SmolStr;
 
+use super::glyph_range;
 use crate::{
     token_tree::{
         typed::{self, AstNode},
@@ -34,7 +35,7 @@ pub struct ValidationCtx<'a> {
 }
 
 impl<'a> ValidationCtx<'a> {
-    fn new(glyph_map: &'a GlyphMap) -> Self {
+    pub(crate) fn new(glyph_map: &'a GlyphMap) -> Self {
         ValidationCtx {
             glyph_map,
             errors: Vec::new(),
@@ -57,7 +58,7 @@ impl<'a> ValidationCtx<'a> {
         self.errors.push(Diagnostic::warning(range, message));
     }
 
-    fn validate_root(&mut self, node: &typed::Root) {
+    pub(crate) fn validate_root(&mut self, node: &typed::Root) {
         for item in node.statements() {
             if let Some(language_system) = typed::LanguageSystem::cast(item) {
                 self.validate_language_system(&language_system)
@@ -477,7 +478,7 @@ impl<'a> ValidationCtx<'a> {
 
         match (start.kind, end.kind) {
             (Kind::Cid, Kind::Cid) => {
-                if let Err(err) = crate::compile::cid_range(start, end, |cid| {
+                if let Err(err) = glyph_range::cid(start, end, |cid| {
                     if self.glyph_map.get(&cid).is_none() {
                         // this is techincally allowed, but we error for now
                         self.warning(
@@ -490,7 +491,7 @@ impl<'a> ValidationCtx<'a> {
                 }
             }
             (Kind::GlyphName, Kind::GlyphName) => {
-                if let Err(err) = crate::compile::named_range(start, end, |name| {
+                if let Err(err) = glyph_range::named(start, end, |name| {
                     if self.glyph_map.get(name).is_none() {
                         self.warning(
                             range.range(),
@@ -520,14 +521,4 @@ impl<'a> ValidationCtx<'a> {
             }
         }
     }
-}
-
-pub fn validate(node: &Node, glyph_map: &GlyphMap) -> Vec<Diagnostic> {
-    let mut ctx = ValidationCtx::new(glyph_map);
-    if let Some(node) = typed::Root::try_from_node(node) {
-        ctx.validate_root(&node);
-    } else {
-        panic!("validate called with invalid root node '{}'", node.kind());
-    }
-    ctx.errors
 }

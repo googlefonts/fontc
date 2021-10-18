@@ -9,12 +9,12 @@ use smol_str::SmolStr;
 
 mod glyph_map;
 mod metrics;
-mod rules;
+//mod rules;
 mod tag;
 
 pub use glyph_map::GlyphMap;
-pub use metrics::{Anchor, ValueRecord};
-pub use rules::{gpos, gsub};
+pub use metrics::Anchor;
+//pub use rules::{gpos, gsub};
 pub use tag::{InvalidTag, Tag};
 
 pub type GlyphName = SmolStr;
@@ -55,7 +55,7 @@ impl From<GlyphOrClass> for GlyphClass {
         match src {
             GlyphOrClass::Class(class) => class,
             GlyphOrClass::Glyph(id) => id.into(),
-            Null => GlyphClass(Rc::new([])),
+            GlyphOrClass::Null => GlyphClass(Rc::new([])),
         }
     }
 }

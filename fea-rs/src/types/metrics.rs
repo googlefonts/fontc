@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use smol_str::SmolStr;
+//use smol_str::SmolStr;
 
 use super::GlyphId;
 
@@ -9,20 +9,20 @@ struct GlyphSequence(Rc<[GlyphId]>);
 
 //struct TwoOrMoreGlyphs
 
-#[derive(Debug, Clone)]
-pub enum ValueRecord {
-    Advance(i32),
-    Placement {
-        x_placement: i32,
-        y_placement: i32,
-        x_advance: i32,
-        y_advance: i32,
-    },
-    // unimplemented
-    //Device,
-    Null,
-    Named(SmolStr),
-}
+//#[derive(Debug, Clone)]
+//pub enum ValueRecord {
+//Advance(i32),
+//Placement {
+//x_placement: i32,
+//y_placement: i32,
+//x_advance: i32,
+//y_advance: i32,
+//},
+//// unimplemented
+////Device,
+//Null,
+//Named(SmolStr),
+//}
 
 #[derive(Clone, Debug)]
 pub enum Anchor {

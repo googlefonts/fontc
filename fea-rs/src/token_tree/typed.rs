@@ -1,6 +1,5 @@
 //! typing for ast nodes. based on rust-analyzer.
 
-use std::convert::TryInto;
 use std::ops::Range;
 
 use smol_str::SmolStr;
