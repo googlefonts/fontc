@@ -182,14 +182,12 @@ impl<'a> CompilationCtx<'a> {
             }
         }
 
-        //self.cur_lookup_name = Some(name.text.clone());
-        //self.cur_lookup = None;
         if self.cur_feature_name.is_none() {
             self.lookup_flags = LookupFlags::empty();
             self.cur_mark_filter_set = None;
         }
 
-        //self.lookups.start_lookup
+        self.lookups.start_named(name.text.clone());
     }
 
     fn end_lookup_block(&mut self) {
@@ -335,10 +333,12 @@ impl<'a> CompilationCtx<'a> {
 
     fn ensure_current_lookup_type(&mut self, kind: Kind) -> &mut SomeLookup {
         if self.lookups.needs_new_lookup(kind) {
-            assert!(!self.lookups.is_named(), "ensure rule type in validation");
+            //FIXME: find another way of ensuring that named lookup blocks don't
+            //contain mismatched rules
+            //assert!(!self.lookups.is_named(), "ensure rule type in validation");
             if let Some(lookup) =
                 self.lookups
-                    .start_lookup(kind, None, self.lookup_flags, self.cur_mark_filter_set)
+                    .start_lookup(kind, self.lookup_flags, self.cur_mark_filter_set)
             {
                 self.add_lookup_to_feature(lookup, self.cur_feature_name.unwrap());
             }

@@ -88,7 +88,7 @@ impl AllLookups {
 
     /// should be called before each new rule.
     pub(crate) fn needs_new_lookup(&self, kind: Kind) -> bool {
-        self.current.as_ref().map(SomeLookup::kind) == Some(kind)
+        self.current.is_none() || self.current.as_ref().map(SomeLookup::kind) != Some(kind)
     }
 
     // `false` if we didn't have an active lookup
@@ -104,17 +104,21 @@ impl AllLookups {
         }
     }
 
+    // doesn't start it, just stashes the name
+    pub(crate) fn start_named(&mut self, name: SmolStr) {
+        self.current_name = Some(name);
+    }
+
     pub(crate) fn start_lookup(
         &mut self,
         kind: Kind,
-        name: Option<SmolStr>,
         flags: LookupFlags,
         mark_set: Option<FilterSetId>,
     ) -> Option<LookupId> {
-        assert!(self.current_name.is_none(), "named lookup not finished");
+        //assert!(self.current_name.is_none(), "named lookup not finished");
         let finished_id = self.current.take().map(|lookup| self.push(lookup));
         self.current = Some(SomeLookup::new(kind, flags, mark_set));
-        self.current_name = name;
+        //self.current_name = name;
         finished_id
     }
 
@@ -202,14 +206,14 @@ impl SomeLookup {
                 flags,
                 mark_filtering_set,
                 rule: match kind {
-                    Kind::GposType1 => Positioning::Single(Default::default()),
-                    Kind::GposType2 => Positioning::Pair(Default::default()),
-                    Kind::GposType3 => Positioning::Cursive(Default::default()),
-                    Kind::GposType4 => Positioning::MarkToBase(Default::default()),
+                    Kind::GposType1 => Positioning::Single(vec![Default::default()]),
+                    Kind::GposType2 => Positioning::Pair(vec![Default::default()]),
+                    Kind::GposType3 => Positioning::Cursive(vec![Default::default()]),
+                    Kind::GposType4 => Positioning::MarkToBase(vec![Default::default()]),
                     Kind::GposType5 => Positioning::MarkToLig,
                     Kind::GposType6 => Positioning::MarkToMark,
-                    Kind::GposType7 => Positioning::Contextual(Default::default()),
-                    Kind::GposType8 => Positioning::ChainedContextual(Default::default()),
+                    Kind::GposType7 => Positioning::Contextual(vec![Default::default()]),
+                    Kind::GposType8 => Positioning::ChainedContextual(vec![Default::default()]),
                     Kind::GposNode => unimplemented!("other gpos type?"),
                     other => panic!("illegal kind for lookup: '{}'", other),
                 },
@@ -219,12 +223,12 @@ impl SomeLookup {
                 flags,
                 mark_filtering_set,
                 rule: match kind {
-                    Kind::GsubType1 => Substitution::Single(Default::default()),
-                    Kind::GsubType2 => Substitution::Multiple(Default::default()),
-                    Kind::GsubType3 => Substitution::Alternate(Default::default()),
-                    Kind::GsubType4 => Substitution::Ligature(Default::default()),
-                    Kind::GsubType5 => Substitution::Contextual(Default::default()),
-                    Kind::GsubType6 => Substitution::ChainedContextual(Default::default()),
+                    Kind::GsubType1 => Substitution::Single(vec![Default::default()]),
+                    Kind::GsubType2 => Substitution::Multiple(vec![Default::default()]),
+                    Kind::GsubType3 => Substitution::Alternate(vec![Default::default()]),
+                    Kind::GsubType4 => Substitution::Ligature(vec![Default::default()]),
+                    Kind::GsubType5 => Substitution::Contextual(vec![Default::default()]),
+                    Kind::GsubType6 => Substitution::ChainedContextual(vec![Default::default()]),
                     Kind::GsubType7 => unimplemented!("extension"),
                     Kind::GsubType8 => unimplemented!("reverse chaining"),
                     other => panic!("illegal kind for lookup: '{}'", other),

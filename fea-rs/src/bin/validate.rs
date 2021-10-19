@@ -1,4 +1,4 @@
-//! Attempt to parse input, reporting errors.
+//! Attempt to validate input, reporting errors.
 
 use std::{collections::HashMap, path::Path};
 
@@ -6,11 +6,9 @@ use fea_rs::{typed::AstNode as _, AstSink, Diagnostic, GlyphMap, GlyphName, Leve
 
 /// Attempt to parse fea files.
 ///
-/// usage: PATH [-t|--tree]
+/// usage: PATH [-v]
 ///
-/// PATH may be a single fea file or a directory containing fea files.
-/// if --tree is present, and path is a single file, prints tree even when
-/// encountering errors, otherwise only prints errors.
+/// PATH may be a feature file or a ufo.
 fn main() {
     let args = flags::ValidateNames::from_env().unwrap();
     let (names, features) = load_font(&args.path);

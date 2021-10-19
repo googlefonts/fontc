@@ -245,6 +245,7 @@ impl GlyphClassLiteral {
             .skip_while(|t| t.kind() != Kind::LSquare)
             .skip(1)
             .take_while(|t| t.kind() != Kind::RSquare)
+            .filter(|t| !t.kind().is_trivia())
     }
 }
 
