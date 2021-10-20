@@ -1,9 +1,0 @@
-
-feature ccmp {
-# zero.slash alternate
-    sub zero VS1 by zero.slash;
-    lookup latnSoftDot {
-        @CombiningTopAccents = [acomb acutecomb acutetonecomb almostequaltoabovecomb arrowheadrightabovecomb brevecomb breveinvertedcomb candraBinducomb caroncomb ccomb circumflexcomb commaabovecomb commareversedabovecomb commaturnedabovecomb dblgravecomb];
-    sub zero VS1 by zero.slash;
-    } latnSoftDot;
-} ccmp;
