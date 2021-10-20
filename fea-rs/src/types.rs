@@ -9,13 +9,9 @@ use smol_str::SmolStr;
 
 mod glyph_map;
 mod metrics;
-//mod rules;
-mod tag;
 
 pub use glyph_map::GlyphMap;
 pub use metrics::Anchor;
-//pub use rules::{gpos, gsub};
-pub use tag::{InvalidTag, Tag};
 
 pub type GlyphName = SmolStr;
 
@@ -149,10 +145,4 @@ impl From<GlyphId> for GlyphClass {
         let slice: &[_] = &[src];
         GlyphClass(slice.into())
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LanguageSystem {
-    pub script: Tag,
-    pub language: Tag,
 }

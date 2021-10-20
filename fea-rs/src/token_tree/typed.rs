@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use smol_str::SmolStr;
 
-use crate::{types::InvalidTag, Kind, Node, NodeOrToken};
+use crate::{Kind, Node, NodeOrToken};
 
 use super::Token;
 
@@ -207,7 +207,7 @@ impl LanguageSystem {
 }
 
 impl Tag {
-    pub fn parse(&self) -> Result<crate::types::Tag, InvalidTag> {
+    pub fn parse(&self) -> Result<fonttools::types::Tag, fonttools::types::InvalidTag> {
         self.inner.text.parse()
     }
 
