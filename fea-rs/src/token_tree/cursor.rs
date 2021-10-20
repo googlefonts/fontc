@@ -277,7 +277,7 @@ mod tests {
     use super::*;
     use crate::{AstSink, Parser};
 
-    static SAMPLE_FEA: &str = include_str!("../../test-data/mini.fea");
+    static SAMPLE_FEA: &str = include_str!("../../test-data/fonttools-tests/mini.fea");
 
     #[test]
     fn seek() {

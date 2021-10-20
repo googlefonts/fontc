@@ -463,7 +463,7 @@ mod tests {
     use crate::Parser;
 
     use super::*;
-    static SAMPLE_FEA: &str = include_str!("../test-data/mini.fea");
+    static SAMPLE_FEA: &str = include_str!("../test-data/fonttools-tests/mini.fea");
 
     #[test]
     fn token_iter() {

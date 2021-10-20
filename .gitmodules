@@ -1,0 +1,3 @@
+[submodule "fea-rs/test-data"]
+	path = fea-rs/test-data
+	url = https://github.com/cmyr/fea-rs-test-data.git
