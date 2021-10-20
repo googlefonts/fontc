@@ -35,7 +35,11 @@ fn main() {
                     font.tables.remove(tag!("GSUB"));
                 }
             }
-            font.save("compile-out.ttf").unwrap()
+            if let Some(path) = args.out_path {
+                font.save(path).unwrap()
+            } else {
+                font.save("compile-out.ttf").unwrap()
+            }
         }
 
         Err(e) => {

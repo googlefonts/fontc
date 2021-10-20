@@ -22,3 +22,6 @@ fonttools = { path="../../extern/fonttools-rs", features = ["rayon"] }
 [dev-dependencies]
 diff = "0.1.12"
 
+[[bin]]
+name = "fea-rs"
+path = "src/bin/compile.rs"
