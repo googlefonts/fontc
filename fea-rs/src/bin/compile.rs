@@ -91,8 +91,8 @@ fn main() {
                 font.save("compile-out.ttf").unwrap()
             }
         }
-        flags::ArgsCmd::Debug(sub_args) => {
-            let to_print = sub_args
+        flags::ArgsCmd::Debug(args) => {
+            let to_print = args
                 .print_tables
                 .as_ref()
                 .map(|s| s.split(',').map(|s| s.to_owned()).collect::<HashSet<_>>())
@@ -142,7 +142,7 @@ mod flags {
                 /// Path to the fea file
                 required fea: PathBuf
                 {
-                optional -o, --out-path out_path: PathBuf
+                    optional -o, --out-path out_path: PathBuf
                 }
             cmd debug
                 /// Path to test FEA file. This should be in a directory that
@@ -150,9 +150,9 @@ mod flags {
                 /// Comma-separated list of tables to print (e.g: -p GSUB,GPOS)
                 required fea: PathBuf
                 {
-                optional -p, --print-tables tables: String
+                    optional -p, --print-tables tables: String
+                    optional -v, --verbose
                 }
-            optional -v, --verbose
             /// Print help
             optional -h, --help
         }

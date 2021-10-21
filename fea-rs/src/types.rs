@@ -102,7 +102,7 @@ impl GlyphOrClass {
         let mut idx = 0;
         std::iter::from_fn(move || {
             let next = match self {
-                GlyphOrClass::Glyph(id) if idx == 1 => Some(*id),
+                GlyphOrClass::Glyph(id) if idx == 0 => Some(*id),
                 GlyphOrClass::Class(cls) => cls.0.get(idx).copied(),
                 _ => None,
             };
