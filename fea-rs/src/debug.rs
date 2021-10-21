@@ -85,9 +85,9 @@ fn explode_gsub_impl(
 ) -> fmt::Result {
     writeln!(f, "<GSUB>")?;
     f.indent += 1;
-    explode_script_list(f, &table)?;
-    explode_feature_list(f, &table)?;
-    explode_gsub_lookup_list(f, &table, verbose)?;
+    explode_script_list(f, table)?;
+    explode_feature_list(f, table)?;
+    explode_gsub_lookup_list(f, table, verbose)?;
     f.indent -= 1;
     Ok(())
 }
@@ -99,9 +99,9 @@ fn explode_gpos_impl(
 ) -> fmt::Result {
     writeln!(f, "<GPOS>")?;
     f.indent += 1;
-    explode_script_list(f, &table)?;
-    explode_feature_list(f, &table)?;
-    explode_gpos_lookup_list(f, &table, verbose)?;
+    explode_script_list(f, table)?;
+    explode_feature_list(f, table)?;
+    explode_gpos_lookup_list(f, table, verbose)?;
     f.indent -= 1;
     Ok(())
 }
@@ -110,7 +110,7 @@ fn explode_script_list<T>(f: &mut IndentWriter, table: &GPOSGSUB<T>) -> fmt::Res
     for (tag, script) in &table.scripts.scripts {
         writeln!(f, "script {}", tag)?;
         if let Some(dflt) = &script.default_language_system {
-            print_language_system(f, tag!("dflt"), &dflt, table)?;
+            print_language_system(f, tag!("dflt"), dflt, table)?;
         }
         for (tag, sys) in &script.language_systems {
             print_language_system(f, *tag, sys, table)?;
@@ -197,7 +197,7 @@ fn explode_gsub_lookup_list(
                         for item in by {
                             write!(f, " {}", item)?;
                         }
-                        write!(f, "\n")?;
+                        writeln!(f)?;
                     }
                     f.indent -= 1;
                 }
@@ -214,7 +214,7 @@ fn explode_gsub_lookup_list(
                         for item in from {
                             write!(f, " {}", item)?;
                         }
-                        write!(f, " ]\n")?;
+                        writeln!(f, " ]")?;
                     }
                     f.indent -= 1;
                 }
@@ -279,7 +279,7 @@ fn explode_gpos_lookup_list(
                     for (item, pos) in item.mapping.iter() {
                         write!(f, "{} -> ", item)?;
                         write_value_record(f, pos)?;
-                        writeln!(f, "")?;
+                        writeln!(f)?;
                     }
                     f.indent -= 1;
                 }
@@ -296,7 +296,7 @@ fn explode_gpos_lookup_list(
                         write_value_record(f, &pos.0)?;
                         write!(f, " ")?;
                         write_value_record(f, &pos.1)?;
-                        writeln!(f, "")?;
+                        writeln!(f)?;
                     }
                     f.indent -= 1;
                 }

@@ -1,5 +1,7 @@
 //! Compile features into a font file
 
+use std::collections::HashSet;
+
 use fea_rs::{AstSink, Diagnostic, GlyphMap, GlyphName, Level, Node, Parser};
 use fonttools::tag;
 
@@ -7,9 +9,20 @@ use fonttools::tag;
 ///
 /// usage: FONT_PATH FEA_PATH
 fn main() {
-    let args = flags::Compile::from_env().unwrap();
-    let mut font = fonttools::font::Font::load(&args.path).expect("failed to load font");
-    let features = std::fs::read_to_string(&args.fea).expect("failed to load fea");
+    let args = match flags::Args::from_env() {
+        Ok(args) if args.help => {
+            println!("{}", flags::Args::HELP);
+            return;
+        }
+        Ok(args) => args,
+        Err(err) => {
+            eprintln!("Error: {}.\n\nUsage:\n{}", err, flags::Args::HELP);
+            std::process::exit(1);
+        }
+    };
+
+    let mut font = fonttools::font::Font::load(args.path()).expect("failed to load font");
+    let features = std::fs::read_to_string(args.fea()).expect("failed to load fea");
     let names = font
         .tables
         .post()
@@ -34,11 +47,6 @@ fn main() {
                 None => {
                     font.tables.remove(tag!("GSUB"));
                 }
-            }
-            if let Some(path) = args.out_path {
-                font.save(path).unwrap()
-            } else {
-                font.save("compile-out.ttf").unwrap()
             }
         }
 
@@ -71,14 +79,46 @@ fn main() {
                 .filter(|err| err.level == Level::Warning)
                 .count();
             println!("{} errors, {} warnings", err_count, warning_count);
+            std::process::exit(1);
         }
     }
-    //let val_errors = fea_rs::validate(&root, &names);
-    //errors.extend(val_errors);
 
-    if !errors.is_empty() {
-    } else {
-        println!("exited successfully!")
+    match &args.subcommand {
+        flags::ArgsCmd::Compile(args) => {
+            if let Some(path) = &args.out_path {
+                font.save(path).unwrap()
+            } else {
+                font.save("compile-out.ttf").unwrap()
+            }
+        }
+        flags::ArgsCmd::Debug(sub_args) => {
+            let to_print = sub_args
+                .print_tables
+                .as_ref()
+                .map(|s| s.split(',').map(|s| s.to_owned()).collect::<HashSet<_>>())
+                .unwrap_or_default();
+            if to_print.is_empty() {
+                fea_rs::debug::explode_font(&font, args.verbose);
+            }
+
+            for table in to_print {
+                if table == "GPOS" {
+                    if let Some(gpos) = font.tables.GPOS().unwrap() {
+                        fea_rs::debug::explode_gpos(&gpos, args.verbose);
+                    } else {
+                        eprintln!("no GPOS table exists");
+                    }
+                } else if table == "GSUB" {
+                    if let Some(gsub) = font.tables.GSUB().unwrap() {
+                        fea_rs::debug::explode_gsub(&gsub, args.verbose);
+                    } else {
+                        eprintln!("no GSUB table exists");
+                    }
+                } else {
+                    eprintln!("unknown table '{}'", table);
+                }
+            }
+        }
     }
 }
 
@@ -91,15 +131,46 @@ fn try_parse_fea(contents: &str, names: &GlyphMap) -> (Node, Vec<Diagnostic>) {
 }
 
 mod flags {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     xflags::xflags! {
 
-        cmd compile
-            required path: PathBuf
-            required fea: PathBuf
-            {
+        /// Compile a fea file into a source font
+        cmd args {
+            cmd compile
+                /// Path to the font
+                required path: PathBuf
+                /// Path to the fea file
+                required fea: PathBuf
+                {
                 optional -o, --out-path out_path: PathBuf
-                optional -v, --verbose
+                }
+            cmd debug
+                /// Path to test FEA file. This should be in a directory that
+                /// contains a 'font.ttf' file to be used for testing.
+                /// Comma-separated list of tables to print (e.g: -p GSUB,GPOS)
+                required fea: PathBuf
+                {
+                optional -p, --print-tables tables: String
+                }
+            optional -v, --verbose
+            /// Print help
+            optional -h, --help
+        }
+    }
+
+    impl Args {
+        pub fn fea(&self) -> &Path {
+            match &self.subcommand {
+                ArgsCmd::Compile(args) => &args.fea,
+                ArgsCmd::Debug(args) => &args.fea,
             }
+        }
+
+        pub fn path(&self) -> PathBuf {
+            match &self.subcommand {
+                ArgsCmd::Compile(args) => args.path.clone(),
+                ArgsCmd::Debug(args) => args.fea.with_file_name("font.ttf"),
+            }
+        }
     }
 }
