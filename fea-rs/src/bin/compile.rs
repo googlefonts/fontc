@@ -33,7 +33,12 @@ fn main() {
         .map(|names| names.iter().map(GlyphName::new).collect())
         .expect("no glyph map");
 
-    let (root, mut errors) = try_parse_fea(&features, &names);
+    let (root, errors) = try_parse_fea(&features, &names);
+    if errors.iter().any(Diagnostic::is_error) {
+        print_diagnostics(&root, &features, &errors);
+        std::process::exit(1);
+    }
+
     match fea_rs::compile(&root, &names) {
         Ok(compilation) => {
             match compilation.gpos {
@@ -48,28 +53,14 @@ fn main() {
                     font.tables.remove(tag!("GSUB"));
                 }
             }
+
+            if !compilation.warnings.is_empty() {
+                print_diagnostics(&root, &features, &compilation.warnings);
+            }
         }
 
-        Err(e) => {
-            errors.extend(e);
-            let tokens = root
-                .iter_tokens()
-                .map(|t| (t.kind, t.range()))
-                .collect::<Vec<_>>();
-            errors.sort_unstable_by_key(|err| (err.span().start, err.span().end));
-            let mut prev_range = 0..usize::MAX;
-
-            errors.retain(|x| {
-                let retain = x.span() != prev_range;
-                prev_range = x.span();
-                retain
-            });
-
-            println!(
-                "{}",
-                fea_rs::util::stringify_errors(&features, &tokens, &errors)
-            );
-
+        Err(errors) => {
+            print_diagnostics(&root, &features, &errors);
             let err_count = errors
                 .iter()
                 .filter(|err| err.level == Level::Error)
@@ -120,6 +111,18 @@ fn main() {
             }
         }
     }
+}
+
+fn print_diagnostics(root: &Node, features: &str, diagnostics: &[Diagnostic]) {
+    let tokens = root
+        .iter_tokens()
+        .map(|t| (t.kind, t.range()))
+        .collect::<Vec<_>>();
+
+    println!(
+        "{}",
+        fea_rs::util::stringify_errors(&features, &tokens, &diagnostics)
+    );
 }
 
 /// returns the tree and any errors

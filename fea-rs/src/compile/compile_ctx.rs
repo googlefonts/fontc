@@ -55,6 +55,7 @@ struct MarkClass {
 }
 
 pub struct Compilation {
+    pub warnings: Vec<Diagnostic>,
     pub gpos: Option<tables::GPOS::GPOS>,
     pub gsub: Option<tables::GSUB::GSUB>,
 }
@@ -118,7 +119,11 @@ impl<'a> CompilationCtx<'a> {
         }
 
         let (gsub, gpos) = self.lookups.build(&self.features);
-        Ok(Compilation { gpos, gsub })
+        Ok(Compilation {
+            warnings: self.errors.clone(),
+            gpos,
+            gsub,
+        })
     }
 
     fn error(&mut self, range: Range<usize>, message: impl Into<String>) {

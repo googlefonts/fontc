@@ -66,16 +66,29 @@ pub fn explode_gsub(table: &tables::GSUB::GSUB, verbose: bool) {
 }
 
 fn explode_font_impl(f: &mut IndentWriter, font: &Font, verbose: bool) -> fmt::Result {
-    let gsub = font.tables.GSUB().expect("failed to load gsub");
+    print_font_name(f, font, verbose)?;
+
+    let gsub = font.tables.GSUB().expect("failed to load GSUB");
     if let Some(gsub) = gsub {
         explode_gsub_impl(f, &gsub, verbose)?;
     }
 
-    let gpos = font.tables.GPOS().expect("failed to load gpos");
+    let gpos = font.tables.GPOS().expect("failed to load GPOS");
     if let Some(gpos) = gpos {
         explode_gpos_impl(f, &gpos, verbose)?;
     }
     Ok(())
+}
+
+fn print_font_name(f: &mut IndentWriter, font: &Font, _verbose: bool) -> fmt::Result {
+    let name = font.tables.name().expect("failed to load name");
+    let font_name = name.as_ref().and_then(|name| {
+        name.records
+            .iter()
+            .find(|rec| rec.nameID == u16::from(tables::name::NameRecordID::PostscriptName))
+            .map(|rec| rec.string.as_str())
+    });
+    writeln!(f, "exploding '{}'", font_name.unwrap_or("unknown font"))
 }
 
 fn explode_gsub_impl(
@@ -248,6 +261,7 @@ fn explode_gsub_lookup_list(
             }
             _ => writeln!(f, "unknown")?,
         }
+        f.indent -= 1;
     }
     f.indent -= 1;
     Ok(())
