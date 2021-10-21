@@ -1,6 +1,7 @@
 //! Parsing the Adobe OpenType Feature File format.
 
 mod compile;
+pub mod debug;
 mod diagnostic;
 mod parse;
 mod token_tree;
