@@ -44,6 +44,11 @@ impl GlyphId {
     pub fn to_raw(self) -> u16 {
         self.0
     }
+
+    #[cfg(test)]
+    pub fn from_raw(raw: u16) -> Self {
+        Self(raw)
+    }
 }
 
 impl From<GlyphOrClass> for GlyphClass {

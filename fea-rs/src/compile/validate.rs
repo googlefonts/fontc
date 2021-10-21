@@ -303,8 +303,14 @@ impl<'a> ValidationCtx<'a> {
             }
             typed::GsubStatement::Type2(rule) => {
                 self.validate_glyph(&rule.target());
+                let mut count = 0;
                 for item in rule.replacement() {
                     self.validate_glyph(&item);
+                    count += 1;
+                }
+                if count < 2 {
+                    let range = range_for_iter(rule.replacement()).unwrap_or_else(|| rule.range());
+                    self.error(range, "sequence must contain at least two items");
                 }
             }
             typed::GsubStatement::Type3(rule) => {
@@ -312,8 +318,14 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_glyph_class(&rule.alternates(), false);
             }
             typed::GsubStatement::Type4(rule) => {
+                let mut count = 0;
                 for item in rule.target() {
                     self.validate_glyph_or_class(&item);
+                    count += 1;
+                }
+                if count < 2 {
+                    let range = range_for_iter(rule.target()).unwrap_or_else(|| rule.range());
+                    self.error(range, "sequence must contain at least two items");
                 }
                 self.validate_glyph(&rule.replacement());
             }
@@ -521,4 +533,9 @@ impl<'a> ValidationCtx<'a> {
             }
         }
     }
+}
+
+fn range_for_iter<T: AstNode>(mut iter: impl Iterator<Item = T>) -> Option<Range<usize>> {
+    let start = iter.next()?.range();
+    Some(iter.fold(start, |cur, node| cur.start..node.range().end))
 }

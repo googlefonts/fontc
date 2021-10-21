@@ -310,6 +310,45 @@ impl SomeLookup {
             panic!("lookup mismatch");
         }
     }
+
+    pub(crate) fn add_gsub_type_2(&mut self, id: GlyphId, replacement: Vec<u16>) {
+        if let SomeLookup::GsubLookup(Lookup {
+            rule: Substitution::Multiple(table),
+            ..
+        }) = self
+        {
+            let subtable = table.last_mut().unwrap();
+            subtable.mapping.insert(id.to_raw(), replacement);
+        } else {
+            panic!("lookup mismatch");
+        }
+    }
+
+    pub(crate) fn add_gsub_type_3(&mut self, id: GlyphId, alternates: Vec<u16>) {
+        if let SomeLookup::GsubLookup(Lookup {
+            rule: Substitution::Alternate(table),
+            ..
+        }) = self
+        {
+            let subtable = table.last_mut().unwrap();
+            subtable.mapping.insert(id.to_raw(), alternates);
+        } else {
+            panic!("lookup mismatch");
+        }
+    }
+
+    pub(crate) fn add_gsub_type_4(&mut self, target: Vec<u16>, replacement: GlyphId) {
+        if let SomeLookup::GsubLookup(Lookup {
+            rule: Substitution::Ligature(table),
+            ..
+        }) = self
+        {
+            let subtable = table.last_mut().unwrap();
+            subtable.mapping.insert(target, replacement.to_raw());
+        } else {
+            panic!("lookup mismatch");
+        }
+    }
 }
 
 impl<T> PosSubBuilder<T> {

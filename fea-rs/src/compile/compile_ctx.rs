@@ -378,6 +378,15 @@ impl<'a> CompilationCtx<'a> {
             typed::GsubStatement::Type1(rule) => {
                 self.add_single_sub(&rule);
             }
+            typed::GsubStatement::Type2(rule) => {
+                self.add_multiple_sub(&rule);
+            }
+            typed::GsubStatement::Type3(rule) => {
+                self.add_alternate_sub(&rule);
+            }
+            typed::GsubStatement::Type4(rule) => {
+                self.add_ligature_sub(&rule);
+            }
             _ => self.warning(node.range(), "unimplemented rule type"),
         }
     }
@@ -421,6 +430,37 @@ impl<'a> CompilationCtx<'a> {
                     }
                 }
             },
+        }
+    }
+
+    fn add_multiple_sub(&mut self, node: &typed::Gsub2) {
+        let target = node.target();
+        let target_id = self.resolve_glyph(&target);
+        let replacement = node
+            .replacement()
+            .map(|g| self.resolve_glyph(&g).to_raw())
+            .collect();
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
+        lookup.add_gsub_type_2(target_id, replacement);
+    }
+
+    fn add_alternate_sub(&mut self, node: &typed::Gsub3) {
+        let target = self.resolve_glyph(&node.target());
+        let alts = self.resolve_glyph_class(&node.alternates());
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType3);
+        lookup.add_gsub_type_3(target, alts.iter().map(|g| g.to_raw()).collect());
+    }
+
+    fn add_ligature_sub(&mut self, node: &typed::Gsub4) {
+        let target = node
+            .target()
+            .map(|g| self.resolve_glyph_or_class(&g))
+            .collect::<Vec<_>>();
+        let replacement = self.resolve_glyph(&node.replacement());
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType4);
+
+        for target in sequence_enumerator(&target) {
+            lookup.add_gsub_type_4(target, replacement);
         }
     }
 
@@ -639,13 +679,13 @@ impl<'a> CompilationCtx<'a> {
         }
     }
 
-    //fn resolve_glyph(&mut self, item: &typed::Glyph) -> GlyphId {
-    //match item {
-    //typed::Glyph::Named(name) => self.resolve_glyph_name(name),
-    //typed::Glyph::Cid(name) => self.resolve_cid(name),
-    //typed::Glyph::Null(_) => GlyphId::NOTDEF,
-    //}
-    //}
+    fn resolve_glyph(&mut self, item: &typed::Glyph) -> GlyphId {
+        match item {
+            typed::Glyph::Named(name) => self.resolve_glyph_name(name),
+            typed::Glyph::Cid(name) => self.resolve_cid(name),
+            typed::Glyph::Null(_) => GlyphId::NOTDEF,
+        }
+    }
 
     fn resolve_glyph_class(&mut self, item: &typed::GlyphClass) -> GlyphClass {
         match item {
@@ -725,5 +765,63 @@ impl<'a> CompilationCtx<'a> {
             }
             (_, _) => self.error(range.range(), "Invalid types in glyph range"),
         }
+    }
+}
+
+fn sequence_enumerator(sequence: &[GlyphOrClass]) -> Vec<Vec<u16>> {
+    assert!(sequence.len() >= 2);
+    let split = sequence.split_first();
+    let mut result = Vec::new();
+    let (left, right) = split.unwrap();
+    sequence_enumerator_impl(Vec::new(), &left, right, &mut result);
+    result
+}
+
+fn sequence_enumerator_impl(
+    prefix: Vec<u16>,
+    left: &GlyphOrClass,
+    right: &[GlyphOrClass],
+    acc: &mut Vec<Vec<u16>>,
+) {
+    for glyph in left.iter() {
+        let mut prefix = prefix.clone();
+        prefix.push(glyph.to_raw());
+
+        match right.split_first() {
+            Some((head, tail)) => sequence_enumerator_impl(prefix, head, tail, acc),
+            None => acc.push(prefix),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sequence_enumerator_smoke_test() {
+        let sequence = vec![
+            GlyphOrClass::Glyph(GlyphId::from_raw(1)),
+            GlyphOrClass::Class(
+                [2_u16, 3, 4]
+                    .iter()
+                    .copied()
+                    .map(GlyphId::from_raw)
+                    .collect(),
+            ),
+            GlyphOrClass::Class([8, 9].iter().copied().map(GlyphId::from_raw).collect()),
+        ];
+
+        assert_eq!(
+            sequence_enumerator(&sequence),
+            vec![
+                vec![1, 2, 8],
+                vec![1, 2, 9],
+                vec![1, 3, 8],
+                vec![1, 3, 9],
+                vec![1, 4, 8],
+                vec![1, 4, 9],
+            ]
+        );
     }
 }
