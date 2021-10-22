@@ -1,9 +1,8 @@
 use crate::{token_tree::typed, Diagnostic, GlyphMap, Node};
 
-use self::{
-    compile_ctx::{Compilation, CompilationCtx},
-    validate::ValidationCtx,
-};
+use self::{compile_ctx::CompilationCtx, validate::ValidationCtx};
+
+pub use compile_ctx::Compilation;
 
 mod compile_ctx;
 mod glyph_range;

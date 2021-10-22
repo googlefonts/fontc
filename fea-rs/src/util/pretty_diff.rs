@@ -5,8 +5,6 @@
 //!
 //! source: https://github.com/colin-kiegel/rust-pretty-assertions/blob/main/pretty_assertions/src/lib.rs (MIT/Apache)
 
-#![cfg(test)]
-
 use std::fmt;
 
 use ansi_term::{
@@ -35,7 +33,7 @@ macro_rules! assert_eq_str {
                        \n",
                        $maybe_semicolon,
                        format_args!($($arg)*),
-                       $crate::parse::pretty_diff::MyStrs { left, right }
+                       $crate::util::pretty_diff::MyStrs { left, right }
                     )
                 }
             }
@@ -56,16 +54,12 @@ pub(crate) struct MyStrs<'a> {
 
 impl std::fmt::Display for MyStrs<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write_lines(f, self.left, self.right)
+        write_line_diff(f, self.left, self.right)
     }
 }
 
 /// Present the diff output for two mutliline strings in a pretty, colorised manner.
-pub(crate) fn write_lines<TWrite: fmt::Write>(
-    f: &mut TWrite,
-    left: &str,
-    right: &str,
-) -> fmt::Result {
+pub fn write_line_diff<TWrite: fmt::Write>(f: &mut TWrite, left: &str, right: &str) -> fmt::Result {
     let diff = ::diff::lines(left, right);
 
     let mut changes = diff.into_iter().peekable();

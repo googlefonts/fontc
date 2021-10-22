@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use fea_rs::{AstSink, Diagnostic, GlyphMap, GlyphName, Level, Node, Parser};
+use fea_rs::{util, AstSink, Diagnostic, GlyphMap, GlyphName, Level, Node, Parser};
 use fonttools::tag;
 
 /// Attempt to compile features into a font file.
@@ -89,19 +89,19 @@ fn main() {
                 .map(|s| s.split(',').map(|s| s.to_owned()).collect::<HashSet<_>>())
                 .unwrap_or_default();
             if to_print.is_empty() {
-                fea_rs::debug::explode_font(&font, args.verbose);
+                fea_rs::util::debug::explode_font(&font, args.verbose);
             }
 
             for table in to_print {
                 if table == "GPOS" {
                     if let Some(gpos) = font.tables.GPOS().unwrap() {
-                        fea_rs::debug::explode_gpos(&gpos, args.verbose);
+                        util::debug::explode_gpos(&gpos, args.verbose);
                     } else {
                         eprintln!("no GPOS table exists");
                     }
                 } else if table == "GSUB" {
                     if let Some(gsub) = font.tables.GSUB().unwrap() {
-                        fea_rs::debug::explode_gsub(&gsub, args.verbose);
+                        util::debug::explode_gsub(&gsub, args.verbose);
                     } else {
                         eprintln!("no GSUB table exists");
                     }
@@ -121,7 +121,7 @@ fn print_diagnostics(root: &Node, features: &str, diagnostics: &[Diagnostic]) {
 
     println!(
         "{}",
-        fea_rs::util::stringify_errors(&features, &tokens, &diagnostics)
+        util::stringify_errors(&features, &tokens, &diagnostics)
     );
 }
 

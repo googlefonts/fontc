@@ -1,6 +1,8 @@
+//! syntax highlighting functions
+
 use std::{fmt::Write, ops::Range};
 
-use super::{Diagnostic, Kind};
+use crate::{Diagnostic, Kind};
 use ansi_term::{Colour, Style};
 
 pub fn style_for_kind(kind: Kind) -> Style {
@@ -156,7 +158,7 @@ pub(crate) fn write_line_error(
     writeln!(
         writer,
         "\n{}{} | {}{}",
-        &SPACES[..padding],
+        &super::SPACES[..padding],
         line_n,
         ellipsis,
         color_string,
@@ -184,10 +186,10 @@ pub(crate) fn write_line_error(
     writeln!(
         writer,
         "{} | {}{}{}{} {}",
-        &SPACES[..max_digits],
+        &super::SPACES[..max_digits],
         &text[..reuse_ws],
-        &SPACES[..extra_ws],
-        &SPACES[..ellipsis.len()],
+        &super::SPACES[..extra_ws],
+        &super::SPACES[..ellipsis.len()],
         first,
         second
     )
@@ -195,9 +197,6 @@ pub(crate) fn write_line_error(
 }
 
 static CARETS: &str = "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
-
-#[doc(hidden)]
-pub static SPACES: &str = "                                                                                                                                                                                    ";
 
 pub(crate) fn decimal_digits(n: usize) -> usize {
     (n as f64).log10().floor() as usize + 1

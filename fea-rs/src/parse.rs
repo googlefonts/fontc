@@ -5,12 +5,8 @@ use std::ops::Range;
 
 pub mod grammar;
 mod lexer;
-#[cfg(test)]
-pub mod pretty_diff;
 mod token;
 mod token_set;
-/// helpers for displaying parse output.
-pub mod util;
 
 pub use token::Kind;
 pub use token_set::TokenSet;

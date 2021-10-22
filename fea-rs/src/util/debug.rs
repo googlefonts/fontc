@@ -21,8 +21,8 @@ struct IndentWriter<'a> {
 impl IndentWriter<'_> {
     fn write_indent(&mut self) -> fmt::Result {
         let indent = if self.needs_indent {
-            let indent_n = crate::parse::util::SPACES.len().min(self.indent * 2);
-            &crate::parse::util::SPACES[..indent_n]
+            let indent_n = super::SPACES.len().min(self.indent * 2);
+            &super::SPACES[..indent_n]
         } else {
             ""
         };
