@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use fea_rs::{AstSink, Diagnostic, Parser};
+use crate::{AstSink, Diagnostic, Parser};
 
 static TEST_DATA1: &str = "./test-data/fonttools-tests";
 static TEST_DATA2: &str = "./test-data/other-parse-tests";
@@ -73,7 +73,7 @@ fn try_parse_file(path: &Path) -> Result<(), Vec<Diagnostic>> {
     let contents = fs::read_to_string(path).expect("file read failed");
     let mut sink = AstSink::new(&contents, None);
     let mut parser = Parser::new(&contents, &mut sink);
-    fea_rs::root(&mut parser);
+    crate::root(&mut parser);
     let (_, errors) = sink.finish();
     if errors.iter().any(Diagnostic::is_error) {
         Err(errors)

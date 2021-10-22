@@ -15,7 +15,7 @@ use std::{
     time::SystemTime,
 };
 
-use fea_rs::{AstSink, Compilation, Diagnostic, GlyphIdent, GlyphMap, GlyphName, Node, Parser};
+use crate::{AstSink, Compilation, Diagnostic, GlyphIdent, GlyphMap, GlyphName, Node, Parser};
 use fonttools::{font::Font, tables};
 
 static TEST_DATA1: &str = "./test-data/fonttools-tests";
@@ -75,7 +75,7 @@ fn all_compile_tests() -> Result<(), Results> {
                 path: path.clone(),
                 reason: Reason::ParseFail(errs),
             }),
-            Ok(node) => match fea_rs::compile(&node, &glyph_map) {
+            Ok(node) => match crate::compile(&node, &glyph_map) {
                 Err(errs) => Err(Failure {
                     path: path.clone(),
                     reason: Reason::CompileFail(errs),
@@ -216,7 +216,7 @@ fn try_parse_file(path: &Path, map: &GlyphMap) -> Result<Node, Vec<Diagnostic>> 
     let contents = fs::read_to_string(path).expect("file read failed");
     let mut sink = AstSink::new(&contents, Some(map));
     let mut parser = Parser::new(&contents, &mut sink);
-    fea_rs::root(&mut parser);
+    crate::root(&mut parser);
     let (root, errors) = sink.finish();
     if errors.iter().any(Diagnostic::is_error) {
         Err(errors)
@@ -260,7 +260,7 @@ impl Debug for Reason {
             Self::CompareFail { expected, result } => {
                 if std::env::var("FEA_TEST_VERBOSE").is_ok() {
                     writeln!(f, "compare failure")?;
-                    fea_rs::util::write_line_diff(f, &expected, &result)
+                    crate::util::write_line_diff(f, &expected, &result)
                 } else {
                     write!(f, "compare failure")
                 }

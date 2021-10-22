@@ -7,6 +7,9 @@ mod token_tree;
 mod types;
 pub mod util;
 
+#[cfg(test)]
+mod tests;
+
 pub use compile::{compile, validate, Compilation};
 pub use diagnostic::{Diagnostic, Level};
 pub use parse::grammar::root;
