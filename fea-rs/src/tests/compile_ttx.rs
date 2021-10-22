@@ -16,25 +16,17 @@ use std::{
 };
 
 use crate::{AstSink, Compilation, Diagnostic, GlyphIdent, GlyphMap, GlyphName, Node, Parser};
+use ansi_term::Color;
 use fonttools::{font::Font, tables};
+use rayon::prelude::*;
 
 static TEST_DATA1: &str = "./test-data/fonttools-tests";
-//static TEST_DATA2: &str = "./test-data/other-parse-tests";
-
-static ALLOWED_PARSE_FAILURES: &[&str] = &[
-    "GSUB_error.fea",     // expected failure
-    "bug509.fea",         // see https://github.com/adobe-type-tools/afdko/issues/1415
-    "GSUB_5_formats.fea", // ditto
-    //FIXME these should be working!
-    "GSUB_8.fea",                  // we just don't handle rsub yet?
-    "MultipleLookupsPerGlyph.fea", // multiple lookups per glyph, eh?
-];
 
 /// A way to customize output when our test fails
 #[derive(Default)]
 struct Results {
-    seen: usize,
     failures: Vec<Failure>,
+    successes: Vec<PathBuf>,
 }
 
 struct Failure {
@@ -42,12 +34,31 @@ struct Failure {
     reason: Reason,
 }
 
+#[derive(PartialEq)]
 enum Reason {
     Panic,
     ParseFail(Vec<Diagnostic>),
     CompileFail(Vec<Diagnostic>),
     TtxFail { code: Option<i32>, std_err: String },
     CompareFail { expected: String, result: String },
+}
+
+impl Results {
+    fn len(&self) -> usize {
+        self.failures.len() + self.successes.len()
+    }
+}
+
+impl Reason {
+    fn sort_order(&self) -> u8 {
+        match self {
+            Self::Panic => 1,
+            Self::ParseFail(_) => 2,
+            Self::CompileFail(_) => 3,
+            Self::TtxFail { .. } => 4,
+            Self::CompareFail { .. } => 5,
+        }
+    }
 }
 
 #[test]
@@ -67,10 +78,11 @@ fn all_compile_tests() -> Result<(), Results> {
         })
         .collect::<HashMap<_, _>>();
 
-    let mut results = Vec::new();
+    let mut failures = Vec::new();
+    let mut successes = Vec::new();
 
     for path in iter_compile_tests(TEST_DATA1) {
-        let err = match std::panic::catch_unwind(|| match try_parse_file(&path, &glyph_map) {
+        match std::panic::catch_unwind(|| match try_parse_file(&path, &glyph_map) {
             Err(errs) => Err(Failure {
                 path: path.clone(),
                 reason: Reason::ParseFail(errs),
@@ -80,31 +92,39 @@ fn all_compile_tests() -> Result<(), Results> {
                     path: path.clone(),
                     reason: Reason::CompileFail(errs),
                 }),
-                Ok(result) => Ok((make_font(result, &glyph_map), path.clone())),
+                Ok(result) => Ok((result, path.clone())),
             },
         }) {
-            Err(_) => Err(Failure {
+            Err(_) => failures.push(Failure {
                 path,
                 reason: Reason::Panic,
             }),
-            Ok(thing) => thing,
+            Ok(Ok(thing)) => successes.push(thing),
+            Ok(Err(e)) => failures.push(e),
         };
-        results.push(err);
     }
 
-    let result = results
-        .into_iter()
-        .map(|result| match result {
-            Err(e) => Err(e),
-            Ok((font, path)) => compare_ttx(font, path, &reverse_map),
+    let mut result = successes
+        .into_par_iter()
+        .map(|(result, path)| {
+            let font = make_font(result, &glyph_map);
+            compare_ttx(font, &path, &reverse_map).map(|_| path)
         })
+        .collect::<Vec<_>>();
+    result.extend(failures.into_iter().map(Err));
+
+    let mut result = result
+        .into_iter()
         .fold(Results::default(), |mut results, current| {
-            results.seen += 1;
-            if let Err(err) = current {
-                results.failures.push(err);
+            match current {
+                Err(e) => results.failures.push(e),
+                Ok(path) => results.successes.push(path),
             }
             results
         });
+    result
+        .failures
+        .sort_unstable_by(|a, b| a.reason.sort_order().cmp(&b.reason.sort_order()));
 
     if result.failures.is_empty() {
         Ok(())
@@ -115,7 +135,7 @@ fn all_compile_tests() -> Result<(), Results> {
 
 fn compare_ttx(
     mut font: Font,
-    fea_path: PathBuf,
+    fea_path: &Path,
     reverse_map: &HashMap<String, String>,
 ) -> Result<(), Failure> {
     let ttx_path = fea_path.with_extension("ttx");
@@ -232,8 +252,18 @@ impl std::fmt::Debug for Results {
             .failures
             .iter()
             .map(|item| item.path.as_os_str().len())
+            .chain(self.successes.iter().map(|path| path.as_os_str().len()))
             .max()
             .unwrap_or(0);
+        for success in &self.successes {
+            writeln!(
+                f,
+                "{:width$} {}",
+                success.display(),
+                Color::Green.paint("success"),
+                width = widest
+            )?;
+        }
         for failure in &self.failures {
             writeln!(
                 f,
@@ -243,7 +273,12 @@ impl std::fmt::Debug for Results {
                 width = widest
             )?;
         }
-        writeln!(f, "failed {}/{} test cases", self.failures.len(), self.seen)?;
+        writeln!(
+            f,
+            "failed {}/{} test cases",
+            self.failures.len(),
+            self.len()
+        )?;
         Ok(())
     }
 }
@@ -251,9 +286,9 @@ impl std::fmt::Debug for Results {
 impl Debug for Reason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Panic => write!(f, "panic"),
-            Self::ParseFail(_arg0) => write!(f, "parse failure"),
-            Self::CompileFail(_arg0) => write!(f, "compile failure"),
+            Self::Panic => write!(f, "{}", Color::Red.paint("panic")),
+            Self::ParseFail(_arg0) => write!(f, "{}", Color::Purple.paint("parse failure")),
+            Self::CompileFail(_arg0) => write!(f, "{}", Color::Yellow.paint("compile failure")),
             Self::TtxFail { code, std_err } => {
                 write!(f, "ttx failure ({:?}) stderr:\n{}", code, std_err)
             }
@@ -262,7 +297,7 @@ impl Debug for Reason {
                     writeln!(f, "compare failure")?;
                     crate::util::write_line_diff(f, &expected, &result)
                 } else {
-                    write!(f, "compare failure")
+                    write!(f, "{}", Color::Blue.paint("compare failure"))
                 }
             }
         }

@@ -21,6 +21,7 @@ xflags = "0.2.3"
 
 [dev-dependencies]
 diff = "0.1.12"
+rayon = "1.5"
 
 [[bin]]
 name = "fea-rs"
