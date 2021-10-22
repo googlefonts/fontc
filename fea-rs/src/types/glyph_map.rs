@@ -1,11 +1,15 @@
 use super::{GlyphId, GlyphIdent, GlyphName};
-use std::{collections::HashMap, convert::TryFrom, iter::FromIterator};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryFrom,
+    iter::FromIterator,
+};
 
 //construct with collect() on an iterator of cids or names :shrug:
 #[derive(Clone, Debug, Default)]
 pub struct GlyphMap {
     names: HashMap<GlyphName, GlyphId>,
-    cids: HashMap<u32, GlyphId>,
+    cids: HashMap<u16, GlyphId>,
 }
 
 impl GlyphMap {
@@ -15,6 +19,19 @@ impl GlyphMap {
 
     pub fn is_empty(&self) -> bool {
         self.names.is_empty() && self.cids.is_empty()
+    }
+
+    // maybe just for testing?
+    pub fn reverse_map(&self) -> BTreeMap<GlyphId, GlyphIdent> {
+        self.names
+            .iter()
+            .map(|(name, id)| (*id, GlyphIdent::Name(name.clone())))
+            .chain(
+                self.cids
+                    .iter()
+                    .map(|(cid, id)| (*id, GlyphIdent::Cid(*cid))),
+            )
+            .collect()
     }
 
     pub fn contains<Q: ?Sized + sealed::AsGlyphIdent>(&self, key: &Q) -> bool {
@@ -38,8 +55,8 @@ impl GlyphMap {
     }
 }
 
-impl FromIterator<u32> for GlyphMap {
-    fn from_iter<T: IntoIterator<Item = u32>>(iter: T) -> Self {
+impl FromIterator<u16> for GlyphMap {
+    fn from_iter<T: IntoIterator<Item = u16>>(iter: T) -> Self {
         GlyphMap {
             names: HashMap::new(),
             cids: iter
@@ -76,10 +93,6 @@ impl FromIterator<GlyphIdent> for GlyphMap {
                 GlyphIdent::Name(name) => names.insert(name, idx),
             };
         }
-        assert!(
-            names.is_empty() != cids.is_empty(),
-            "we want one or the other I think"
-        );
         GlyphMap { names, cids }
     }
 }
@@ -97,7 +110,8 @@ mod sealed {
         fn named(&self) -> Option<&str> {
             None
         }
-        fn cid(&self) -> Option<&u32> {
+
+        fn cid(&self) -> Option<&u16> {
             None
         }
     }
@@ -114,8 +128,8 @@ mod sealed {
         }
     }
 
-    impl AsGlyphIdent for u32 {
-        fn cid(&self) -> Option<&u32> {
+    impl AsGlyphIdent for u16 {
+        fn cid(&self) -> Option<&u16> {
             Some(self)
         }
     }
@@ -129,7 +143,7 @@ mod sealed {
             }
         }
 
-        fn cid(&self) -> Option<&u32> {
+        fn cid(&self) -> Option<&u16> {
             if let GlyphIdent::Cid(cid) = self {
                 Some(cid)
             } else {

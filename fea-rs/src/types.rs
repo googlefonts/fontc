@@ -35,7 +35,7 @@ pub struct GlyphSequence(Rc<[GlyphOrClass]>);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GlyphIdent {
     Name(GlyphName),
-    Cid(u32),
+    Cid(u16),
 }
 
 impl GlyphId {

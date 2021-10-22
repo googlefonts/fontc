@@ -250,7 +250,7 @@ impl GlyphClassLiteral {
 }
 
 impl Cid {
-    pub fn parse(&self) -> u32 {
+    pub fn parse(&self) -> u16 {
         self.inner.text.parse().expect("cid is already validated")
     }
 }

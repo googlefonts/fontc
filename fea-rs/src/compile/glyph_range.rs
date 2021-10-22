@@ -11,9 +11,9 @@ use crate::token_tree::Token;
 ///
 /// Returns an error if the range is not well-formed. If it is well-formed,
 /// the `callback` is called with each cid in the range.
-pub(crate) fn cid(start: &Token, end: &Token, mut callback: impl FnMut(u32)) -> Result<(), String> {
-    let start_cid = start.text.parse::<u32>().unwrap();
-    let end_cid = end.text.parse::<u32>().unwrap();
+pub(crate) fn cid(start: &Token, end: &Token, mut callback: impl FnMut(u16)) -> Result<(), String> {
+    let start_cid = start.text.parse::<u16>().unwrap();
+    let end_cid = end.text.parse::<u16>().unwrap();
     if start_cid >= end_cid {
         return Err("Range end must be greater than start".into());
     }
@@ -50,7 +50,7 @@ pub(crate) fn named(start: &Token, end: &Token, callback: impl FnMut(&str)) -> R
     }
     let one = &start.text[diff_range.clone()];
     let two = &end.text[diff_range.clone()];
-    match (one.parse::<u32>(), two.parse::<u32>()) {
+    match (one.parse::<u16>(), two.parse::<u16>()) {
     (Ok(one), Ok(two)) if one < two => num_range(&start.text, one..two, diff_range, callback),
         _ => return Err("range glyphs must differ by a single letter a-Z or A-Z, or by a run of up to three decimal digits".into()),
     };
@@ -74,7 +74,7 @@ fn alpha_range(start: &str, end: &str, sub_range: Range<usize>, mut out: impl Fn
 
 fn num_range(
     start: &str,
-    sub_range: Range<u32>,
+    sub_range: Range<u16>,
     text_range: Range<usize>,
     mut out: impl FnMut(&str),
 ) {
@@ -200,7 +200,7 @@ mod tests {
         let range = make_range_node(Kind::Cid, "4", Kind::Cid, "12");
         let idents = glyph_range(&range).unwrap();
         let map: GlyphMap = idents.into_iter().collect();
-        for val in 4u32..=12 {
+        for val in 4u16..=12 {
             assert!(map.contains(&val));
         }
     }
