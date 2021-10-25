@@ -16,9 +16,8 @@ static ALLOWED_PARSE_FAILURES: &[&str] = &[
     "GSUB_error.fea",     // expected failure
     "bug509.fea",         // see https://github.com/adobe-type-tools/afdko/issues/1415
     "GSUB_5_formats.fea", // ditto
-    //FIXME these should be working!
-    "GSUB_8.fea",                  // we just don't handle rsub yet?
-    "MultipleLookupsPerGlyph.fea", // multiple lookups per glyph, eh?
+    //FIXME this should be working!
+    "GSUB_8.fea", // we just don't handle rsub yet?
 ];
 
 /// A way to customize output when our test fails

@@ -98,7 +98,7 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
     let recovery = recovery.union(Kind::Semi.into());
     // eat all the marked glyphs + their lookups
     while parser.eat(Kind::SingleQuote) {
-        if parser.eat(Kind::LookupKw) {
+        while parser.eat(Kind::LookupKw) {
             if !parser.eat(Kind::Ident) {
                 parser.err("expected named lookup");
                 parser.eat_until(recovery);
