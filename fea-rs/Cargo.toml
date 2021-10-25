@@ -18,6 +18,7 @@ smol_str = "0.1.18"
 norad = "0.5" # just for use in sample binaries/debugging, remove eventually
 fonttools = { path="../../extern/fonttools-rs", features = ["rayon"] }
 xflags = "0.2.3"
+diff = { version = "0.1.12", optional = true }
 
 [dev-dependencies]
 diff = "0.1.12"
@@ -26,3 +27,8 @@ rayon = "1.5"
 [[bin]]
 name = "fea-rs"
 path = "src/bin/compile.rs"
+
+# this is an example so it can use dev-dependencies
+[[example]]
+name = "ttx_test"
+required-features = ["diff"]

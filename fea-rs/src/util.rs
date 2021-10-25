@@ -2,11 +2,11 @@
 
 pub mod debug;
 mod highlighting;
-#[cfg(test)]
+#[cfg(any(test, feature = "diff"))]
 pub mod pretty_diff;
 
 pub use highlighting::{stringify_errors, style_for_kind};
-#[cfg(test)]
+#[cfg(any(test, feature = "diff"))]
 pub use pretty_diff::write_line_diff;
 
 #[doc(hidden)]
