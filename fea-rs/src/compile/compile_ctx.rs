@@ -608,7 +608,7 @@ impl<'a> CompilationCtx<'a> {
             self.define_glyph_class(glyph_def);
         } else if let Some(glyph_def) = typed::MarkClassDef::cast(item) {
             self.define_mark_class(glyph_def);
-        } else if item.kind() == Kind::SubtableKw {
+        } else if item.kind() == Kind::SubtableNode {
             self.add_subtable_break();
         } else if let Some(lookup) = typed::LookupRef::cast(item) {
             self.resolve_lookup_ref(lookup);

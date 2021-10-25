@@ -189,7 +189,7 @@ impl<'a> ValidationCtx<'a> {
         for item in node.statements() {
             if item.kind() == Kind::ScriptNode
                 || item.kind() == Kind::LanguageNode
-                || item.kind() == Kind::SubtableKw
+                || item.kind() == Kind::SubtableNode
             {
                 // lgtm
             } else if let Some(node) = typed::LookupRef::cast(item) {
@@ -210,8 +210,8 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_mark_class_def(&node);
             } else {
                 self.warning(
-                    node.range(),
-                    format!("unhandled item '{}' in feature", node.node().kind),
+                    item.range(),
+                    format!("unhandled item '{}' in feature", item.kind()),
                 );
             }
         }
@@ -245,7 +245,7 @@ impl<'a> ValidationCtx<'a> {
                         "script and language statements not allowed in standalone lookup blocks",
                     );
                 }
-            } else if item.kind() == Kind::SubtableKw {
+            } else if item.kind() == Kind::SubtableNode {
                 // lgtm
             } else if let Some(node) = typed::LookupRef::cast(item) {
                 if !self.lookup_defs.contains_key(&node.label().text) {
@@ -270,7 +270,7 @@ impl<'a> ValidationCtx<'a> {
             } else {
                 self.warning(
                     item.range(),
-                    format!("unhandled item {} in feature", item.kind()),
+                    format!("unhandled item {} in lookup block", item.kind()),
                 );
             }
         }

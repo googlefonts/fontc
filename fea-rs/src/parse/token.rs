@@ -224,6 +224,7 @@ pub enum Kind {
     LanguageNode,
     LookupFlagNode,
     CvParametersNode,
+    SubtableNode,
 }
 
 impl Kind {
@@ -547,6 +548,7 @@ impl std::fmt::Display for Kind {
             Self::LanguageNode => write!(f, "LanguageNode"),
             Self::LookupFlagNode => write!(f, "LookupFlagNode"),
             Self::CvParametersNode => write!(f, "cvParametersNode"),
+            Self::SubtableNode => write!(f, "SubtableNode"),
         }
     }
 }

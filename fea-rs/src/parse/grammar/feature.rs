@@ -102,8 +102,10 @@ fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
         Kind::MarkClassKw => super::mark_class(parser),
         Kind::ParametersKw => metrics::parameters(parser, recovery),
         Kind::SubtableKw => {
+            parser.start_node(Kind::SubtableNode);
             parser.eat_raw();
             parser.expect_recover(Kind::Semi, recovery);
+            parser.finish_node();
         }
         Kind::LookupKw if in_lookup => {
             parser.err_and_bump("lookups cannot be nested.");
