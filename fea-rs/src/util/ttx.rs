@@ -130,7 +130,7 @@ fn run_test(
     glyph_map: &GlyphMap,
     reverse_map: &HashMap<String, String>,
 ) -> Result<PathBuf, Failure> {
-    let compilation = match std::panic::catch_unwind(|| match try_parse_file(&path, glyph_map) {
+    match std::panic::catch_unwind(|| match try_parse_file(&path, glyph_map) {
         Err(errs) => Err(Failure {
             path: path.clone(),
             reason: Reason::ParseFail(errs),
@@ -140,7 +140,10 @@ fn run_test(
                 path: path.clone(),
                 reason: Reason::CompileFail(stringify_diagnostics(&node, &contents, &errs)),
             }),
-            Ok(result) => Ok(result),
+            Ok(result) => {
+                let font = make_font(result, glyph_map);
+                compare_ttx(font, &path, reverse_map)
+            }
         },
     }) {
         Err(_) => {
@@ -149,11 +152,9 @@ fn run_test(
                 reason: Reason::Panic,
             })
         }
-        Ok(Ok(thing)) => thing,
         Ok(Err(e)) => return Err(e),
+        Ok(Ok(_)) => (),
     };
-    let font = make_font(compilation, glyph_map);
-    compare_ttx(font, &path, reverse_map)?;
     Ok(path)
 }
 
