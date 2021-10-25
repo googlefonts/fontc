@@ -341,7 +341,7 @@ impl<'a> ValidationCtx<'a> {
             .find(|t| t.text.len() > 2)
             .map(|t| t.range())
             .unwrap_or_else(|| node.range());
-        self.warning(range, format!("unimplemented rule type {}", node.kind));
+        self.error(range, format!("unimplemented rule type {}", node.kind));
         for item in node.iter_children() {
             if let Some(node) = typed::GlyphOrClass::cast(item) {
                 self.validate_glyph_or_class(&node);

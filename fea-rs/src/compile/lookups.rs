@@ -40,6 +40,10 @@ pub(crate) enum SomeLookup {
 pub(crate) enum LookupId {
     Gpos(usize),
     Gsub(usize),
+    /// Used when a named lookup block has no rules.
+    ///
+    /// We parse this, but then discard it immediately whenever it is refernced.
+    Empty,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -118,15 +122,7 @@ impl AllLookups {
         //assert!(self.current_name.is_none(), "named lookup not finished");
         let finished_id = self.current.take().map(|lookup| self.push(lookup));
         self.current = Some(SomeLookup::new(kind, flags, mark_set));
-        //self.current_name = name;
         finished_id
-    }
-
-    pub(crate) fn finish_named(&mut self) -> (LookupId, SmolStr) {
-        let (id, name) = self
-            .finish_current()
-            .expect("finish_named called with no current lookup");
-        (id, name.expect("finish_named called with anonymous lookup"))
     }
 
     pub(crate) fn finish_current(&mut self) -> Option<(LookupId, Option<SmolStr>)> {
@@ -138,6 +134,10 @@ impl AllLookups {
             } else {
                 Some((id, None))
             }
+        } else if let Some(name) = self.current_name.take() {
+            self.named.insert(name.clone(), LookupId::Empty);
+            // there was a named block with no rules, return the empty lookup
+            Some((LookupId::Empty, Some(name)))
         } else {
             None
         }
@@ -195,6 +195,7 @@ impl LookupId {
         match self {
             LookupId::Gpos(idx) => idx,
             LookupId::Gsub(idx) => idx,
+            LookupId::Empty => usize::MAX,
         }
     }
 }

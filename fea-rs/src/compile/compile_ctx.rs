@@ -196,9 +196,11 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn end_lookup_block(&mut self) {
-        let (id, _name) = self.lookups.finish_named();
+        let current = self.lookups.finish_current();
         if let Some(feature) = self.cur_feature_name {
-            self.add_lookup_to_feature(id, feature);
+            if let Some((id, _)) = current {
+                self.add_lookup_to_feature(id, feature);
+            }
         } else {
             self.lookup_flags = LookupFlags::empty();
             self.cur_mark_filter_set = None;
@@ -358,6 +360,9 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_lookup_to_feature(&mut self, lookup: LookupId, feature: Tag) {
+        if lookup == LookupId::Empty {
+            return;
+        }
         let key = FeatureKey::for_feature(feature);
         for (script, lang) in &self.cur_language_systems {
             let key = key.script(*script).language(*lang);
