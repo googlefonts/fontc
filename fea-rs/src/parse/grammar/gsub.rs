@@ -170,7 +170,7 @@ fn parse_rsub(parser: &mut Parser, recovery: TokenSet) -> Kind {
         return Kind::GsubNode;
     }
     if parser.eat(Kind::ByKw) {
-        glyph::expect_glyph_name_like(parser, recovery);
+        glyph::expect_glyph_or_glyph_class(parser, recovery);
     }
     parser.expect_semi();
     Kind::GsubType8
