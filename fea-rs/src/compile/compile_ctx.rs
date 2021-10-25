@@ -278,7 +278,7 @@ impl<'a> CompilationCtx<'a> {
 
         let mut flags = LookupFlags::empty();
 
-        let mut iter = node.iter();
+        let mut iter = node.values();
         while let Some(next) = iter.next() {
             match next.kind() {
                 Kind::RightToLeftKw => flags |= LookupFlags::RIGHT_TO_LEFT,
@@ -290,17 +290,23 @@ impl<'a> CompilationCtx<'a> {
                 // The glyph sets of the referenced classes must not overlap, and the MarkAttachmentType statement can reference at most 15 different classes.
                 // ALSO: this should accept mark classes.
                 Kind::MarkAttachmentTypeKw => {
-                    let node = iter.find_map(typed::GlyphClass::cast).expect("validated");
+                    let node = iter
+                        .next()
+                        .and_then(typed::GlyphClass::cast)
+                        .expect("validated");
                     let mark_attach_set = self.resolve_mark_attach_class(&node);
                     flags |= LookupFlags::from_bits_truncate(mark_attach_set << 8);
                 }
                 Kind::UseMarkFilteringSetKw => {
-                    let node = iter.find_map(typed::GlyphClass::cast).expect("validated");
+                    let node = iter
+                        .next()
+                        .and_then(typed::GlyphClass::cast)
+                        .expect("validated");
                     let filter_set = self.resolve_mark_filter_set(&node);
                     flags |= LookupFlags::USE_MARK_FILTERING_SET;
                     self.cur_mark_filter_set = Some(filter_set);
                 }
-                _ => unreachable!("mark statements have been validated"),
+                other => unreachable!("mark statements have been validated: '{:?}'", other),
             }
         }
         self.lookup_flags = flags;
@@ -715,7 +721,18 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_named_glyph_class(&mut self, name: &typed::GlyphClassName) -> GlyphClass {
-        self.glyph_class_defs.get(name.text()).cloned().unwrap()
+        self.glyph_class_defs
+            .get(name.text())
+            .cloned()
+            .or_else(|| {
+                self.mark_classes.get(name.text()).map(|cls| {
+                    cls.members
+                        .iter()
+                        .flat_map(|(glyphs, _)| glyphs.iter())
+                        .collect()
+                })
+            })
+            .unwrap()
     }
 
     fn resolve_glyph_name(&mut self, name: &typed::GlyphName) -> GlyphId {

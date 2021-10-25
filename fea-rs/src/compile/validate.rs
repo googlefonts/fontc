@@ -366,7 +366,7 @@ impl<'a> ValidationCtx<'a> {
         let mut mark_set = false;
         let mut filter_set = false;
 
-        let mut iter = node.iter();
+        let mut iter = node.values();
         while let Some(next) = iter.next() {
             match next.kind() {
                 Kind::RightToLeftKw if !rtl => rtl = true,
@@ -378,7 +378,7 @@ impl<'a> ValidationCtx<'a> {
                 // The glyph sets of the referenced classes must not overlap, and the MarkAttachmentType statement can reference at most 15 different classes.
                 Kind::MarkAttachmentTypeKw if !mark_set => {
                     mark_set = true;
-                    match iter.find_map(typed::GlyphClass::cast) {
+                    match iter.next().and_then(typed::GlyphClass::cast) {
                         Some(node) => self.validate_glyph_class(&node, true),
                         None => self.error(
                             next.range(),
@@ -388,7 +388,7 @@ impl<'a> ValidationCtx<'a> {
                 }
                 Kind::UseMarkFilteringSetKw if !filter_set => {
                     filter_set = true;
-                    match iter.find_map(typed::GlyphClass::cast) {
+                    match iter.next().and_then(typed::GlyphClass::cast) {
                         Some(node) => self.validate_glyph_class(&node, true),
                         None => self.error(
                             next.range(),
@@ -405,7 +405,7 @@ impl<'a> ValidationCtx<'a> {
                     self.error(next.range(), "duplicate value in lookupflag")
                 }
 
-                _ => (),
+                _ => self.error(next.range(), "invalid lookupflag value"),
             }
         }
     }

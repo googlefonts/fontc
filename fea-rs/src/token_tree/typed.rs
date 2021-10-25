@@ -420,6 +420,13 @@ impl LookupFlag {
     pub fn number(&self) -> Option<Number> {
         self.iter().find_map(Number::cast)
     }
+
+    pub fn values(&self) -> impl Iterator<Item = &NodeOrToken> + '_ {
+        self.iter()
+            .skip(1)
+            .take_while(|t| t.kind() != Kind::Number && t.kind() != Kind::Semi)
+            .filter(|t| !t.kind().is_trivia())
+    }
 }
 
 impl LookupRef {
@@ -469,7 +476,7 @@ impl Gsub3 {
 
     pub fn alternates(&self) -> GlyphClass {
         self.iter()
-            .skip_while(|t| t.kind() != Kind::ByKw)
+            .skip_while(|t| t.kind() != Kind::FromKw)
             .find_map(GlyphClass::cast)
             .unwrap()
     }
