@@ -4,6 +4,8 @@ pub mod debug;
 mod highlighting;
 #[cfg(any(test, feature = "diff"))]
 pub mod pretty_diff;
+#[cfg(any(test, feature = "test"))]
+pub mod ttx;
 
 pub use highlighting::{stringify_errors, style_for_kind};
 #[cfg(any(test, feature = "diff"))]
