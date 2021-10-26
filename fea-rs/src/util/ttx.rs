@@ -124,18 +124,26 @@ fn iter_compile_tests(
     })
 }
 
+pub fn try_compile(fea: &str, glyph_map: &GlyphMap) -> Result<Font, Vec<Diagnostic>> {
+    try_parse_file(fea, glyph_map)
+        .map_err(|(_, errs)| errs)
+        .and_then(|node| crate::compile(&node, glyph_map))
+        .map(|comp| make_font(comp, glyph_map))
+}
+
 /// takes a path to a sample ttx file
 fn run_test(
     path: PathBuf,
     glyph_map: &GlyphMap,
     reverse_map: &HashMap<String, String>,
 ) -> Result<PathBuf, Failure> {
-    match std::panic::catch_unwind(|| match try_parse_file(&path, glyph_map) {
-        Err(errs) => Err(Failure {
+    let contents = fs::read_to_string(&path).expect("file read failed");
+    match std::panic::catch_unwind(|| match try_parse_file(&contents, glyph_map) {
+        Err((node, errs)) => Err(Failure {
             path: path.clone(),
-            reason: Reason::ParseFail(errs),
+            reason: Reason::ParseFail(stringify_diagnostics(&node, &contents, &errs)),
         }),
-        Ok((node, contents)) => match crate::compile(&node, glyph_map) {
+        Ok(node) => match crate::compile(&node, glyph_map) {
             Err(errs) => Err(Failure {
                 path: path.clone(),
                 reason: Reason::CompileFail(stringify_diagnostics(&node, &contents, &errs)),
@@ -158,17 +166,20 @@ fn run_test(
     Ok(path)
 }
 
-/// returns the tree and any errors
-fn try_parse_file(path: &Path, map: &GlyphMap) -> Result<(Node, String), String> {
-    let contents = fs::read_to_string(path).expect("file read failed");
-    let mut sink = AstSink::new(&contents, Some(map));
-    let mut parser = Parser::new(&contents, &mut sink);
+fn parse_file(fea: &str, map: &GlyphMap) -> (Node, Vec<Diagnostic>) {
+    let mut sink = AstSink::new(&fea, Some(map));
+    let mut parser = Parser::new(&fea, &mut sink);
     crate::root(&mut parser);
-    let (root, errors) = sink.finish();
+    sink.finish()
+}
+
+/// returns the tree and any errors
+fn try_parse_file(contents: &str, map: &GlyphMap) -> Result<Node, (Node, Vec<Diagnostic>)> {
+    let (root, errors) = parse_file(&contents, map);
     if errors.iter().any(Diagnostic::is_error) {
-        Err(stringify_diagnostics(&root, &contents, &errors))
+        Err((root, errors))
     } else {
-        Ok((root, contents))
+        Ok(root)
     }
 }
 
@@ -285,7 +296,7 @@ fn rewrite_ttx(input: &str, reverse_map: &HashMap<String, String>) -> String {
     out
 }
 
-fn make_glyph_map() -> GlyphMap {
+pub fn make_glyph_map() -> GlyphMap {
     #[rustfmt::skip]
 static TEST_FONT_GLYPHS: &[&str] = &[
     ".notdef", "space", "slash", "fraction", "semicolon", "period", "comma",
