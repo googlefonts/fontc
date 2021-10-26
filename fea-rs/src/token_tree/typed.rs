@@ -143,6 +143,7 @@ ast_node!(Gpos5, Kind::GposType5);
 ast_node!(Gpos6, Kind::GposType6);
 ast_node!(Gpos8, Kind::GposType8);
 ast_node!(GposIgnore, Kind::GposIgnore);
+ast_node!(AnchorMark, Kind::AnchorMarkNode);
 
 pub enum GposStatement {
     Type1(Gpos1),
@@ -555,7 +556,30 @@ impl Gpos3 {
     }
 }
 
-impl Gpos4 {}
+impl Gpos4 {
+    pub fn base(&self) -> GlyphOrClass {
+        self.iter()
+            .filter(|t| !t.kind().is_trivia())
+            .skip(2)
+            .next()
+            .and_then(GlyphOrClass::cast)
+            .unwrap()
+    }
+
+    pub fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
+        self.iter().skip(3).filter_map(AnchorMark::cast)
+    }
+}
+
+impl AnchorMark {
+    pub fn anchor(&self) -> Anchor {
+        self.iter().find_map(Anchor::cast).unwrap()
+    }
+
+    pub fn mark_class_name(&self) -> GlyphClassName {
+        self.iter().find_map(GlyphClassName::cast).unwrap()
+    }
+}
 
 impl ValueRecord {
     pub fn advance(&self) -> Option<Number> {

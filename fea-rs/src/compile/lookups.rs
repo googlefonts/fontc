@@ -7,6 +7,7 @@ use smol_str::SmolStr;
 use fonttools::{
     layout::{
         common::{LanguageSystem, Lookup, LookupFlags, Script, GPOSGSUB},
+        gpos4::MarkBasePos,
         valuerecord::ValueRecord,
     },
     tables::{self, GPOS::Positioning, GSUB::Substitution},
@@ -312,6 +313,19 @@ impl SomeLookup {
             subtable
                 .mapping
                 .insert(id.to_raw(), (entry.to_raw(), exit.to_raw()));
+        } else {
+            panic!("lookup mismatch");
+        }
+    }
+
+    pub(crate) fn with_gpos_type_4(&mut self, f: impl FnOnce(&mut MarkBasePos)) {
+        if let SomeLookup::GposLookup(Lookup {
+            rule: Positioning::MarkToBase(table),
+            ..
+        }) = self
+        {
+            let subtable = table.last_mut().unwrap();
+            f(subtable);
         } else {
             panic!("lookup mismatch");
         }

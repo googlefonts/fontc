@@ -162,6 +162,12 @@ impl<'a> ValidationCtx<'a> {
         self.validate_anchor(&node.anchor());
     }
 
+    fn validate_mark_class(&mut self, node: &typed::GlyphClassName) {
+        if !self.mark_class_defs.contains(node.text()) {
+            self.error(node.range(), "undefined mark class");
+        }
+    }
+
     fn validate_table(&mut self, _node: &typed::Table) {}
 
     // simple: 'include', 'script', 'language', 'subtable', 'lookup', 'lookupflag',
@@ -294,6 +300,13 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_glyph_or_class(&rule.target());
                 self.validate_anchor(&rule.entry());
                 self.validate_anchor(&rule.exit());
+            }
+            typed::GposStatement::Type4(rule) => {
+                self.validate_glyph_or_class(&rule.base());
+                for mark in rule.attachments() {
+                    self.validate_anchor(&mark.anchor());
+                    self.validate_mark_class(&mark.mark_class_name());
+                }
             }
             _ => self.fallback_validate_rule(node.node()),
         }

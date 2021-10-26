@@ -51,7 +51,8 @@ pub struct CompilationCtx<'a> {
 }
 
 struct MarkClass {
-    members: Vec<(GlyphClass, typed::Anchor)>,
+    id: u16,
+    members: Vec<(GlyphClass, Anchor)>,
 }
 
 pub struct Compilation {
@@ -381,6 +382,9 @@ impl<'a> CompilationCtx<'a> {
             typed::GposStatement::Type3(rule) => {
                 self.add_cursive_pos(&rule);
             }
+            typed::GposStatement::Type4(rule) => {
+                self.add_mark_to_base_pos(&rule);
+            }
             _ => {
                 self.warning(node.range(), "unimplemented rule type");
             }
@@ -510,11 +514,51 @@ impl<'a> CompilationCtx<'a> {
 
     fn add_cursive_pos(&mut self, node: &typed::Gpos3) {
         let ids = self.resolve_glyph_or_class(&node.target());
+        // if null it means we've already reported an error and compilation
+        // will fail.
         let entry = self.resolve_anchor(&node.entry()).unwrap_or(Anchor::Null);
         let exit = self.resolve_anchor(&node.exit()).unwrap_or(Anchor::Null);
         let lookup = self.ensure_current_lookup_type(Kind::GposType3);
         for id in ids.iter() {
             lookup.add_gpos_type_3(id, entry, exit)
+        }
+    }
+
+    fn add_mark_to_base_pos(&mut self, node: &typed::Gpos4) {
+        let base_ids = self.resolve_glyph_or_class(&node.base());
+        for mark in node.attachments() {
+            let base_anchor = self.resolve_anchor(&mark.anchor()).unwrap_or(Anchor::Null);
+            // ensure we're in the right lookup but drop the reference
+            let _ = self.ensure_current_lookup_type(Kind::GposType4);
+
+            let mark_class = mark.mark_class_name();
+            let mark_class = self.mark_classes.get(mark_class.text()).unwrap();
+
+            // access the lookup through the field, so the borrow checker
+            // doesn't think we're borrowing all of self
+            self.lookups
+                .current_mut()
+                .unwrap()
+                .with_gpos_type_4(|subtable| {
+                    for (glyphs, mark_anchor) in &mark_class.members {
+                        let anchor = mark_anchor
+                            .to_raw()
+                            .expect("no null anchors in mark-to-base (check validation)");
+                        for glyph in glyphs.iter() {
+                            subtable
+                                .marks
+                                .insert(glyph.to_raw(), (mark_class.id, anchor));
+                        }
+                    }
+                    for base in base_ids.iter() {
+                        subtable.bases.entry(base.to_raw()).or_default().insert(
+                            mark_class.id,
+                            base_anchor
+                                .to_raw()
+                                .expect("no null anchors in mark-to-base"),
+                        );
+                    }
+                })
         }
     }
 
@@ -560,13 +604,15 @@ impl<'a> CompilationCtx<'a> {
         let class_items = class_decl.glyph_class();
         let class_items = self.resolve_glyph_or_class(&class_items).into();
 
-        let anchor = class_decl.anchor();
+        let anchor = self
+            .resolve_anchor(&class_decl.anchor())
+            .unwrap_or(Anchor::Null);
         let class_name = class_decl.mark_class_name();
         if let Some(class) = self.mark_classes.get_mut(class_name.text()) {
             class.members.push((class_items, anchor));
         } else {
             let class = MarkClass {
-                //pos: class_decl.range().start,
+                id: self.mark_classes.len().try_into().unwrap(),
                 members: vec![(class_items, anchor)],
             };
             self.mark_classes.insert(class_name.text().clone(), class);
