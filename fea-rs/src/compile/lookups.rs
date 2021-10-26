@@ -318,14 +318,14 @@ impl SomeLookup {
         }
     }
 
-    pub(crate) fn with_gpos_type_4(&mut self, f: impl FnOnce(&mut MarkBasePos)) {
+    pub(crate) fn with_gpos_type_4<R>(&mut self, f: impl FnOnce(&mut MarkBasePos) -> R) -> R {
         if let SomeLookup::GposLookup(Lookup {
             rule: Positioning::MarkToBase(table),
             ..
         }) = self
         {
             let subtable = table.last_mut().unwrap();
-            f(subtable);
+            f(subtable)
         } else {
             panic!("lookup mismatch");
         }

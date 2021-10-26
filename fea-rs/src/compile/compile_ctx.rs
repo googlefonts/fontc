@@ -531,12 +531,15 @@ impl<'a> CompilationCtx<'a> {
             // ensure we're in the right lookup but drop the reference
             let _ = self.ensure_current_lookup_type(Kind::GposType4);
 
-            let mark_class = mark.mark_class_name();
-            let mark_class = self.mark_classes.get(mark_class.text()).unwrap();
+            let mark_class_node = mark.mark_class_name();
+            let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
 
             // access the lookup through the field, so the borrow checker
             // doesn't think we're borrowing all of self
-            self.lookups
+            //TODO: we do validation here because our validation pass isn't smart
+            //enough. We need to not just validate a rule, but every rule in a lookup.
+            let maybe_bad_mark = self
+                .lookups
                 .current_mut()
                 .unwrap()
                 .with_gpos_type_4(|subtable| {
@@ -545,9 +548,15 @@ impl<'a> CompilationCtx<'a> {
                             .to_raw()
                             .expect("no null anchors in mark-to-base (check validation)");
                         for glyph in glyphs.iter() {
-                            subtable
+                            // validate here that classes are disjoint
+                            let prev = subtable
                                 .marks
                                 .insert(glyph.to_raw(), (mark_class.id, anchor));
+                            if let Some(id) =
+                                prev.map(|(id, _)| id).filter(|id| *id != mark_class.id)
+                            {
+                                return Err(id);
+                            }
                         }
                     }
                     for base in base_ids.iter() {
@@ -558,7 +567,22 @@ impl<'a> CompilationCtx<'a> {
                                 .expect("no null anchors in mark-to-base"),
                         );
                     }
-                })
+                    Ok(())
+                });
+            if let Err(mark_id) = maybe_bad_mark {
+                let prev_class_name = self
+                    .mark_classes
+                    .iter()
+                    .find_map(|(name, class)| (class.id == mark_id).then(|| name.clone()))
+                    .unwrap();
+                self.error(
+                    mark_class_node.range(),
+                    format!(
+                        "mark class includes glyph in class '{}', already used in lookup.",
+                        prev_class_name
+                    ),
+                );
+            }
         }
     }
 

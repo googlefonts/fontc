@@ -301,6 +301,8 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_anchor(&rule.entry());
                 self.validate_anchor(&rule.exit());
             }
+            //FIXME: this should be also checking that all mark classes referenced
+            //in this rule are disjoint
             typed::GposStatement::Type4(rule) => {
                 self.validate_glyph_or_class(&rule.base());
                 for mark in rule.attachments() {

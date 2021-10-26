@@ -22,7 +22,6 @@ fn expected_failures() {
             panic!("unexpected success: {}", path.display());
         }
     }
-
 }
 
 fn iter_compile_tests(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> + 'static {
