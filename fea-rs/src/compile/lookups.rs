@@ -14,7 +14,10 @@ use fonttools::{
     types::Tag,
 };
 
-use crate::{types::GlyphId, Kind};
+use crate::{
+    types::{Anchor, GlyphId},
+    Kind,
+};
 
 pub(crate) type FilterSetId = u16;
 
@@ -294,6 +297,21 @@ impl SomeLookup {
             subtable
                 .mapping
                 .insert((one.to_raw(), two.to_raw()), (val_one, val_two));
+        } else {
+            panic!("lookup mismatch");
+        }
+    }
+
+    pub(crate) fn add_gpos_type_3(&mut self, id: GlyphId, entry: Anchor, exit: Anchor) {
+        if let SomeLookup::GposLookup(Lookup {
+            rule: Positioning::Cursive(table),
+            ..
+        }) = self
+        {
+            let subtable = table.last_mut().unwrap();
+            subtable
+                .mapping
+                .insert(id.to_raw(), (entry.to_raw(), exit.to_raw()));
         } else {
             panic!("lookup mismatch");
         }

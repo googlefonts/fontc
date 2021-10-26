@@ -532,6 +532,31 @@ impl Gpos2 {
     }
 }
 
+impl Gpos3 {
+    pub fn target(&self) -> GlyphOrClass {
+        self.iter()
+            .filter(|t| !t.kind().is_trivia())
+            .skip(2)
+            .next()
+            .and_then(GlyphOrClass::cast)
+            .unwrap()
+    }
+
+    pub fn entry(&self) -> Anchor {
+        self.iter().skip(3).find_map(Anchor::cast).unwrap()
+    }
+
+    pub fn exit(&self) -> Anchor {
+        self.iter()
+            .skip_while(|t| t.kind() != Kind::AnchorNode)
+            .skip(1)
+            .find_map(Anchor::cast)
+            .unwrap()
+    }
+}
+
+impl Gpos4 {}
+
 impl ValueRecord {
     pub fn advance(&self) -> Option<Number> {
         self.iter().next().and_then(Number::cast)

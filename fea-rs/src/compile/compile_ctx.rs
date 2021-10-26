@@ -378,6 +378,9 @@ impl<'a> CompilationCtx<'a> {
             typed::GposStatement::Type2(rule) => {
                 self.add_pair_pos(&rule);
             }
+            typed::GposStatement::Type3(rule) => {
+                self.add_cursive_pos(&rule);
+            }
             _ => {
                 self.warning(node.range(), "unimplemented rule type");
             }
@@ -502,6 +505,16 @@ impl<'a> CompilationCtx<'a> {
                     second_value.clone(),
                 );
             }
+        }
+    }
+
+    fn add_cursive_pos(&mut self, node: &typed::Gpos3) {
+        let ids = self.resolve_glyph_or_class(&node.target());
+        let entry = self.resolve_anchor(&node.entry()).unwrap_or(Anchor::Null);
+        let exit = self.resolve_anchor(&node.exit()).unwrap_or(Anchor::Null);
+        let lookup = self.ensure_current_lookup_type(Kind::GposType3);
+        for id in ids.iter() {
+            lookup.add_gpos_type_3(id, entry, exit)
         }
     }
 

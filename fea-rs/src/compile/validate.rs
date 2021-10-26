@@ -290,6 +290,11 @@ impl<'a> ValidationCtx<'a> {
                     self.validate_value_record(&second);
                 }
             }
+            typed::GposStatement::Type3(rule) => {
+                self.validate_glyph_or_class(&rule.target());
+                self.validate_anchor(&rule.entry());
+                self.validate_anchor(&rule.exit());
+            }
             _ => self.fallback_validate_rule(node.node()),
         }
     }
