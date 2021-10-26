@@ -587,6 +587,21 @@ impl Gpos5 {
     }
 }
 
+impl Gpos6 {
+    pub fn base(&self) -> GlyphOrClass {
+        self.iter()
+            .filter(|t| !t.kind().is_trivia())
+            .skip(2)
+            .next()
+            .and_then(GlyphOrClass::cast)
+            .unwrap()
+    }
+
+    pub fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
+        self.iter().skip(3).filter_map(AnchorMark::cast)
+    }
+}
+
 impl LigatureComponent {
     /// If the iterator is empty this is a null anchor
     pub fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {

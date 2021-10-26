@@ -337,6 +337,18 @@ impl<'a> ValidationCtx<'a> {
                     }
                 }
             }
+            typed::GposStatement::Type6(rule) => {
+                self.validate_glyph_or_class(&rule.base());
+                for mark in rule.attachments() {
+                    self.validate_anchor(&mark.anchor());
+                    match mark.mark_class_name() {
+                        Some(name) => self.validate_mark_class(&name),
+                        None => {
+                            self.error(mark.range(), "mark-to-mark attachments should not be null")
+                        }
+                    }
+                }
+            }
             _ => self.fallback_validate_rule(node.node()),
         }
     }
