@@ -389,11 +389,28 @@ impl std::fmt::Debug for ResultsPrinter<'_> {
                 width = widest
             )?;
         }
+        let (panic, parse, compile, compare) = self.results.failures.iter().fold(
+            (0, 0, 0, 0),
+            |(panic, parse, compile, compare), fail| match fail.reason {
+                Reason::Panic => (panic + 1, parse, compile, compare),
+                Reason::ParseFail(_) => (panic, parse + 1, compile, compare),
+                Reason::CompileFail(_) => (panic, parse, compile + 1, compare),
+                Reason::CompareFail { .. } => (panic, parse, compile, compare + 1),
+                _ => (panic, parse, compile, compare),
+            },
+        );
+
         writeln!(
             f,
             "failed {}/{} test cases",
             self.results.failures.len(),
             self.results.len()
+        )?;
+
+        writeln!(
+            f,
+            "{} panic, {} parse, {} compile, {} compare",
+            panic, parse, compile, compare
         )?;
         Ok(())
     }
