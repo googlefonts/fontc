@@ -103,9 +103,9 @@ impl<'a> ValidationCtx<'a> {
                     "languagesystem with 'DFLT' script tag must precede non-'DFLT' languagesystems",
                 );
                 return;
-            } else {
-                self.seen_non_default_script = true;
             }
+        } else {
+            self.seen_non_default_script = true;
         }
 
         if !self
