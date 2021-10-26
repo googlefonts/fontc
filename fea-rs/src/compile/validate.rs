@@ -307,7 +307,34 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_glyph_or_class(&rule.base());
                 for mark in rule.attachments() {
                     self.validate_anchor(&mark.anchor());
-                    self.validate_mark_class(&mark.mark_class_name());
+                    match mark.mark_class_name() {
+                        Some(name) => self.validate_mark_class(&name),
+                        None => {
+                            self.error(mark.range(), "mark-to-base attachments should not be null")
+                        }
+                    }
+                }
+            }
+            typed::GposStatement::Type5(rule) => {
+                //FIXME: if this is a class each member should have the same
+                //number of ligature components? not sure how we check this.
+                self.validate_glyph_or_class(&rule.base());
+                for component in rule.ligature_components() {
+                    for mark in component.attachments() {
+                        let anchor = mark.anchor();
+                        match mark.mark_class_name() {
+                            Some(name) => self.validate_mark_class(&name),
+                            None => {
+                                if anchor.null().is_none() {
+                                    self.error(
+                                        anchor.range(),
+                                        "non-NULL anchor must specify mark class",
+                                    );
+                                }
+                            }
+                        }
+                        self.validate_anchor(&anchor);
+                    }
                 }
             }
             _ => self.fallback_validate_rule(node.node()),

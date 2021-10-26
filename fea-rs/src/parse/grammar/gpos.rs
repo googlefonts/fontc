@@ -126,11 +126,17 @@ fn gpos_ligature(parser: &mut Parser, recovery: TokenSet) {
         parser,
         recovery.union(TokenSet::new(&[Kind::LAngle, Kind::AnchorKw])),
     );
+    parser.eat_trivia();
+    parser.start_node(Kind::LigatureComponentNode);
     super::greedy(anchor_mark)(parser, recovery);
+    parser.finish_node();
 
     while parser.nth_raw(0) == b"ligComponent" {
+        parser.eat_trivia();
+        parser.start_node(Kind::LigatureComponentNode);
         parser.eat_raw();
         super::greedy(anchor_mark)(parser, recovery);
+        parser.finish_node();
     }
     parser.expect_semi();
 }
@@ -381,55 +387,61 @@ START GposType5
   WS( )
   GlyphName(lam_meem_jeem)
   WS(\\n    )
-  START AnchorMarkNode
-    START AnchorNode
-      <
-      AnchorKw
+  START LigatureComponentNode
+    START AnchorMarkNode
+      START AnchorNode
+        <
+        AnchorKw
+        WS( )
+        METRIC(625)
+        WS( )
+        METRIC(1800)
+        >
+      END AnchorNode
       WS( )
-      METRIC(625)
+      MarkKw
       WS( )
-      METRIC(1800)
-      >
-    END AnchorNode
-    WS( )
-    MarkKw
-    WS( )
-    @GlyphClass(@TOP_MARKS)
-  END AnchorMarkNode
+      @GlyphClass(@TOP_MARKS)
+    END AnchorMarkNode
+  END LigatureComponentNode
   WS(     )
   #(# mark above lam)
   WS(\\n    )
-  ID(ligComponent)
-  WS(                          )
-  #(# start specifying marks for meem)
-  WS(\\n    )
-  START AnchorMarkNode
-    START AnchorNode
-      <
-      AnchorKw
+  START LigatureComponentNode
+    ID(ligComponent)
+    WS(                          )
+    #(# start specifying marks for meem)
+    WS(\\n    )
+    START AnchorMarkNode
+      START AnchorNode
+        <
+        AnchorKw
+        WS( )
+        METRIC(376)
+        WS( )
+        METRIC(-368)
+        >
+      END AnchorNode
       WS( )
-      METRIC(376)
+      MarkKw
       WS( )
-      METRIC(-368)
-      >
-    END AnchorNode
-    WS( )
-    MarkKw
-    WS( )
-    @GlyphClass(@BOTTOM_MARKS)
-  END AnchorMarkNode
+      @GlyphClass(@BOTTOM_MARKS)
+    END AnchorMarkNode
+  END LigatureComponentNode
   WS(\\n    )
-  ID(ligComponent)
-  WS(\\n    )
-  START AnchorMarkNode
-    START AnchorNode
-      <
-      AnchorKw
-      WS( )
-      NullKw
-      >
-    END AnchorNode
-  END AnchorMarkNode
+  START LigatureComponentNode
+    ID(ligComponent)
+    WS(\\n    )
+    START AnchorMarkNode
+      START AnchorNode
+        <
+        AnchorKw
+        WS( )
+        NullKw
+        >
+      END AnchorNode
+    END AnchorMarkNode
+  END LigatureComponentNode
   ;
 END GposType5
 ",

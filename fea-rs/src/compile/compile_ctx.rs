@@ -531,7 +531,7 @@ impl<'a> CompilationCtx<'a> {
             // ensure we're in the right lookup but drop the reference
             let _ = self.ensure_current_lookup_type(Kind::GposType4);
 
-            let mark_class_node = mark.mark_class_name();
+            let mark_class_node = mark.mark_class_name().expect("checked in validation");
             let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
 
             // access the lookup through the field, so the borrow checker

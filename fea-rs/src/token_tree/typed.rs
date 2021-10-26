@@ -144,6 +144,7 @@ ast_node!(Gpos6, Kind::GposType6);
 ast_node!(Gpos8, Kind::GposType8);
 ast_node!(GposIgnore, Kind::GposIgnore);
 ast_node!(AnchorMark, Kind::AnchorMarkNode);
+ast_node!(LigatureComponent, Kind::LigatureComponentNode);
 
 pub enum GposStatement {
     Type1(Gpos1),
@@ -571,13 +572,35 @@ impl Gpos4 {
     }
 }
 
+impl Gpos5 {
+    pub fn base(&self) -> GlyphOrClass {
+        self.iter()
+            .filter(|t| !t.kind().is_trivia())
+            .skip(2)
+            .next()
+            .and_then(GlyphOrClass::cast)
+            .unwrap()
+    }
+
+    pub fn ligature_components(&self) -> impl Iterator<Item = LigatureComponent> + '_ {
+        self.iter().skip(3).filter_map(LigatureComponent::cast)
+    }
+}
+
+impl LigatureComponent {
+    /// If the iterator is empty this is a null anchor
+    pub fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
+        self.iter().filter_map(AnchorMark::cast)
+    }
+}
+
 impl AnchorMark {
     pub fn anchor(&self) -> Anchor {
         self.iter().find_map(Anchor::cast).unwrap()
     }
 
-    pub fn mark_class_name(&self) -> GlyphClassName {
-        self.iter().find_map(GlyphClassName::cast).unwrap()
+    pub fn mark_class_name(&self) -> Option<GlyphClassName> {
+        self.iter().find_map(GlyphClassName::cast)
     }
 }
 

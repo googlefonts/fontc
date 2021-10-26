@@ -206,6 +206,7 @@ pub enum Kind {
     GposIgnore,
 
     AnchorMarkNode,
+    LigatureComponentNode,
     ValueRecordNode,
     ValueRecordDefNode,
     LookupRefNode,
@@ -509,6 +510,7 @@ impl std::fmt::Display for Kind {
             Self::BaseKw => write!(f, "BaseKw"),
 
             Self::AnchorMarkNode => write!(f, "AnchorMarkNode"),
+            Self::LigatureComponentNode => write!(f, "LigatureComponentNode"),
             Self::ValueRecordNode => write!(f, "ValueRecordNode"),
             Self::ValueRecordDefNode => write!(f, "ValueRecordDefNode"),
             Self::GsubNode => write!(f, "GsubNode"),
