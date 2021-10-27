@@ -33,6 +33,12 @@ macro_rules! ast_token {
             pub fn token(&self) -> &Token {
                 &self.inner
             }
+
+            // just used for the ast_enum macro
+            #[allow(dead_code)]
+            pub fn node_(&self) -> Option<&Node> {
+                None
+            }
         }
 
         impl AstNode for $typ {
@@ -85,6 +91,12 @@ macro_rules! ast_node {
             pub fn node(&self) -> &Node {
                 &self.inner
             }
+
+            // just used for the ast_enum macro
+            #[allow(dead_code)]
+            pub fn node_(&self) -> Option<&Node> {
+                Some(&self.inner)
+            }
         }
 
         impl AstNode for $typ {
@@ -101,12 +113,58 @@ macro_rules! ast_node {
         }
     };
 }
+
+/// Create an enum from some set of AstNodes.
+///
+/// This is useful when you have places in the tree where you aceept multiple
+/// different concrete types.
+macro_rules! ast_enum {
+    ($typ:ident{ $($name:ident($member:ident),)*}) => {
+        #[derive(Clone, Debug)]
+        pub enum $typ {
+            $($name($member)),*
+        }
+
+        impl AstNode for $typ {
+            fn cast(node: &NodeOrToken) -> Option<Self> {
+                $(
+                    if let Some(thing) = $member::cast(node) {
+                        return Some(Self::$name(thing));
+                    }
+                )*
+                    None
+
+            }
+
+            fn range(&self) -> std::ops::Range<usize> {
+                match self {
+                    $(
+                        Self::$name(inner) => inner.range(),
+                    )*
+                }
+            }
+        }
+
+        impl $typ {
+            pub fn node(&self) -> Option<&Node> {
+                match self {
+                    $(
+                        Self::$name(inner) => inner.node_(),
+                    )*
+                }
+            }
+        }
+    };
+
+}
+
 ast_token!(Cid, Kind::Cid);
 ast_token!(GlyphName, Kind::GlyphName);
 ast_token!(Tag, Kind::Tag);
 ast_token!(GlyphClassName, Kind::NamedGlyphClass);
 ast_token!(Number, Kind::Number);
 ast_token!(Metric, Kind::Metric);
+ast_token!(Null, Kind::NullKw);
 ast_node!(Root, Kind::SourceFile);
 ast_node!(GlyphRange, Kind::GlyphRange);
 ast_node!(GlyphClassDef, Kind::GlyphClassDefNode);
@@ -146,7 +204,7 @@ ast_node!(GposIgnore, Kind::GposIgnore);
 ast_node!(AnchorMark, Kind::AnchorMarkNode);
 ast_node!(LigatureComponent, Kind::LigatureComponentNode);
 
-pub enum GposStatement {
+ast_enum!(GposStatement {
     Type1(Gpos1),
     Type2(Gpos2),
     Type3(Gpos3),
@@ -155,9 +213,9 @@ pub enum GposStatement {
     Type6(Gpos6),
     Type8(Gpos8),
     Ignore(GposIgnore),
-}
+});
 
-pub enum GsubStatement {
+ast_enum!(GsubStatement {
     Type1(Gsub1),
     Type2(Gsub2),
     Type3(Gsub3),
@@ -166,26 +224,26 @@ pub enum GsubStatement {
     Type6(Gsub6),
     Type8(Gsub8),
     Ignore(GsubIgnore),
-}
+});
 
-pub enum GlyphOrClass {
+ast_enum!(GlyphOrClass {
     Glyph(GlyphName),
     Cid(Cid),
     NamedClass(GlyphClassName),
     Class(GlyphClassLiteral),
-    Null(Token),
-}
+    Null(Null),
+});
 
-pub enum Glyph {
+ast_enum!(Glyph {
     Named(GlyphName),
     Cid(Cid),
-    Null(Token),
-}
+    Null(Null),
+});
 
-pub enum GlyphClass {
+ast_enum!(GlyphClass {
     Named(GlyphClassName),
     Literal(GlyphClassLiteral),
-}
+});
 
 impl Root {
     pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
@@ -652,167 +710,5 @@ impl ValueRecord {
             ]);
         }
         None
-    }
-}
-
-impl AstNode for GlyphOrClass {
-    fn cast(node: &NodeOrToken) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match node.kind() {
-            Kind::GlyphName => GlyphName::cast(node).map(Self::Glyph),
-            Kind::Cid => Cid::cast(node).map(Self::Cid),
-            Kind::GlyphClass => GlyphClassLiteral::cast(node).map(Self::Class),
-            Kind::NamedGlyphClass => GlyphClassName::cast(node).map(Self::NamedClass),
-            Kind::NullKw => node.as_token().cloned().map(Self::Null),
-            _ => None,
-        }
-    }
-
-    fn range(&self) -> Range<usize> {
-        match self {
-            Self::Glyph(item) => item.range(),
-            Self::Cid(item) => item.range(),
-            Self::NamedClass(item) => item.range(),
-            Self::Class(item) => item.range(),
-            Self::Null(item) => item.range(),
-        }
-    }
-}
-
-impl AstNode for Glyph {
-    fn cast(node: &NodeOrToken) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match node.kind() {
-            Kind::GlyphName => GlyphName::cast(node).map(Self::Named),
-            Kind::Cid => Cid::cast(node).map(Self::Cid),
-            Kind::NullKw => node.as_token().cloned().map(Self::Null),
-            _ => None,
-        }
-    }
-
-    fn range(&self) -> Range<usize> {
-        match self {
-            Self::Named(item) => item.range(),
-            Self::Cid(item) => item.range(),
-            Self::Null(item) => item.range(),
-        }
-    }
-}
-
-impl AstNode for GlyphClass {
-    fn cast(node: &NodeOrToken) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match node.kind() {
-            Kind::GlyphClass => GlyphClassLiteral::cast(node).map(Self::Literal),
-            Kind::NamedGlyphClass => GlyphClassName::cast(node).map(Self::Named),
-            _ => None,
-        }
-    }
-
-    fn range(&self) -> Range<usize> {
-        match self {
-            Self::Literal(item) => item.range(),
-            Self::Named(item) => item.range(),
-        }
-    }
-}
-
-impl AstNode for GsubStatement {
-    fn cast(node: &NodeOrToken) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match node.kind() {
-            Kind::GsubType1 => Gsub1::cast(node).map(Self::Type1),
-            Kind::GsubType2 => Gsub2::cast(node).map(Self::Type2),
-            Kind::GsubType3 => Gsub3::cast(node).map(Self::Type3),
-            Kind::GsubType4 => Gsub4::cast(node).map(Self::Type4),
-            Kind::GsubType5 => Gsub5::cast(node).map(Self::Type5),
-            Kind::GsubType6 => Gsub6::cast(node).map(Self::Type6),
-            Kind::GsubType8 => Gsub8::cast(node).map(Self::Type8),
-            Kind::GsubIgnore => GsubIgnore::cast(node).map(Self::Ignore),
-            _ => None,
-        }
-    }
-
-    fn range(&self) -> Range<usize> {
-        match self {
-            Self::Type1(item) => item.range(),
-            Self::Type2(item) => item.range(),
-            Self::Type3(item) => item.range(),
-            Self::Type4(item) => item.range(),
-            Self::Type5(item) => item.range(),
-            Self::Type6(item) => item.range(),
-            Self::Type8(item) => item.range(),
-            Self::Ignore(item) => item.range(),
-        }
-    }
-}
-
-impl AstNode for GposStatement {
-    fn cast(node: &NodeOrToken) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match node.kind() {
-            Kind::GposType1 => Gpos1::cast(node).map(Self::Type1),
-            Kind::GposType2 => Gpos2::cast(node).map(Self::Type2),
-            Kind::GposType3 => Gpos3::cast(node).map(Self::Type3),
-            Kind::GposType4 => Gpos4::cast(node).map(Self::Type4),
-            Kind::GposType5 => Gpos5::cast(node).map(Self::Type5),
-            Kind::GposType6 => Gpos6::cast(node).map(Self::Type6),
-            Kind::GposType8 => Gpos8::cast(node).map(Self::Type8),
-            Kind::GposIgnore => GposIgnore::cast(node).map(Self::Ignore),
-            _ => None,
-        }
-    }
-
-    fn range(&self) -> Range<usize> {
-        match self {
-            Self::Type1(item) => item.range(),
-            Self::Type2(item) => item.range(),
-            Self::Type3(item) => item.range(),
-            Self::Type4(item) => item.range(),
-            Self::Type5(item) => item.range(),
-            Self::Type6(item) => item.range(),
-            Self::Type8(item) => item.range(),
-            Self::Ignore(item) => item.range(),
-        }
-    }
-}
-
-impl GposStatement {
-    pub fn node(&self) -> &Node {
-        match self {
-            Self::Type1(item) => item.node(),
-            Self::Type2(item) => item.node(),
-            Self::Type3(item) => item.node(),
-            Self::Type4(item) => item.node(),
-            Self::Type5(item) => item.node(),
-            Self::Type6(item) => item.node(),
-            Self::Type8(item) => item.node(),
-            Self::Ignore(item) => item.node(),
-        }
-    }
-}
-
-impl GsubStatement {
-    pub fn node(&self) -> &Node {
-        match self {
-            Self::Type1(item) => item.node(),
-            Self::Type2(item) => item.node(),
-            Self::Type3(item) => item.node(),
-            Self::Type4(item) => item.node(),
-            Self::Type5(item) => item.node(),
-            Self::Type6(item) => item.node(),
-            Self::Type8(item) => item.node(),
-            Self::Ignore(item) => item.node(),
-        }
     }
 }

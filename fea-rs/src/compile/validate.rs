@@ -349,7 +349,7 @@ impl<'a> ValidationCtx<'a> {
                     }
                 }
             }
-            _ => self.fallback_validate_rule(node.node()),
+            _ => self.fallback_validate_rule(node.node().expect("always a node")),
         }
     }
 
@@ -388,7 +388,7 @@ impl<'a> ValidationCtx<'a> {
                 }
                 self.validate_glyph(&rule.replacement());
             }
-            _ => self.fallback_validate_rule(node.node()),
+            _ => self.fallback_validate_rule(node.node().expect("always a node")),
         }
     }
 
