@@ -176,13 +176,55 @@ ast_node!(GlyphClassLiteral, Kind::GlyphClass);
 ast_node!(LanguageSystem, Kind::LanguageSystemNode);
 ast_node!(Include, Kind::IncludeNode);
 ast_node!(Feature, Kind::FeatureNode);
-ast_node!(Table, Kind::TableNode);
 ast_node!(Script, Kind::ScriptNode);
 ast_node!(Language, Kind::LanguageNode);
 ast_node!(LookupFlag, Kind::LookupFlagNode);
 ast_node!(LookupRef, Kind::LookupRefNode);
 ast_node!(LookupBlock, Kind::LookupBlockNode);
 ast_node!(ValueRecord, Kind::ValueRecordNode);
+
+ast_node!(HeadTable, Kind::HeadTableNode);
+ast_node!(HheaTable, Kind::HheaTableNode);
+ast_node!(NameTable, Kind::NameTableNode);
+ast_node!(BaseTable, Kind::BaseTableNode);
+ast_node!(GdefTable, Kind::GdefTableNode);
+ast_node!(Os2Table, Kind::Os2TableNode);
+ast_node!(VheaTable, Kind::VheaTableNode);
+ast_node!(VmtxTable, Kind::VmtxTableNode);
+ast_node!(StatTable, Kind::StatTableNode);
+ast_node!(UnimplentedTable, Kind::TableNode);
+
+ast_enum!(Table {
+    Head(HeadTable),
+    Hhea(HheaTable),
+    Name(NameTable),
+    Base(BaseTable),
+    Gdef(GdefTable),
+    Os2(Os2Table),
+    Vhea(VheaTable),
+    Vmtx(VmtxTable),
+    Stat(StatTable),
+    Other(UnimplentedTable),
+});
+
+ast_node!(BaseTagList, Kind::BaseTagListNode);
+ast_node!(BaseScriptList, Kind::BaseScriptListNode);
+//ast_node!(BaseMinMax, Kind::BaseMinMaxNode); (unimplemented in spec)
+ast_enum!(BaseTableItem {
+    TagList(BaseTagList),
+    ScriptList(BaseScriptList),
+});
+
+ast_node!(GdefClassDef, Kind::GdefClassDefNode);
+ast_node!(GdefClassDefEntry, Kind::GdefClassDefEntryNode);
+ast_node!(GdefAttach, Kind::GdefAttachNode);
+ast_node!(GdefLigatureCaret, Kind::GdefLigatureCaretNode);
+
+ast_enum!(GdefTableItem {
+    ClassDef(GdefClassDef),
+    Attach(GdefAttach),
+    LigatureCaret(GdefLigatureCaret),
+});
 
 ast_node!(Gsub1, Kind::GsubType1);
 ast_node!(Gsub2, Kind::GsubType2);
@@ -700,7 +742,6 @@ impl ValueRecord {
             .count()
             == 4
         {
-            //let mut result = [Option<]
             let mut iter = self.iter().filter_map(Number::cast);
             return Some([
                 iter.next().unwrap(),
@@ -710,5 +751,69 @@ impl ValueRecord {
             ]);
         }
         None
+    }
+}
+
+impl GdefTable {
+    pub fn statements(&self) -> impl Iterator<Item = GdefTableItem> + '_ {
+        self.iter().filter_map(GdefTableItem::cast)
+    }
+}
+
+impl GdefClassDef {
+    fn nth_item(&self, n: usize) -> Option<GlyphClass> {
+        assert!(n < 4);
+        self.iter()
+            .filter(|t| t.kind() == Kind::GdefClassDefEntryNode)
+            .nth(n)
+            .and_then(GdefClassDefEntry::cast)
+            .expect("validated")
+            .iter()
+            .find_map(GlyphClass::cast)
+    }
+
+    pub fn base_glyphs(&self) -> Option<GlyphClass> {
+        self.nth_item(0)
+    }
+
+    pub fn ligature_glyphs(&self) -> Option<GlyphClass> {
+        self.nth_item(1)
+    }
+
+    pub fn mark_glyphs(&self) -> Option<GlyphClass> {
+        self.nth_item(2)
+    }
+
+    pub fn component_glyphs(&self) -> Option<GlyphClass> {
+        self.nth_item(3)
+    }
+}
+
+impl GdefAttach {
+    pub fn target(&self) -> GlyphOrClass {
+        self.iter().find_map(GlyphOrClass::cast).unwrap()
+    }
+
+    /// of a contourpoint
+    pub fn index(&self) -> Number {
+        self.iter().find_map(Number::cast).unwrap()
+    }
+}
+
+impl GdefLigatureCaret {
+    pub fn by_pos(&self) -> bool {
+        match self.iter().next().map(|t| t.kind()) {
+            Some(Kind::LigatureCaretByPosKw) => true,
+            Some(Kind::LigatureCaretByIndexKw) => false,
+            other => panic!("unexpected token in ligaturecaret {:?}", other),
+        }
+    }
+
+    pub fn target(&self) -> GlyphOrClass {
+        self.iter().find_map(GlyphOrClass::cast).unwrap()
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = Number> + '_ {
+        self.iter().filter_map(Number::cast)
     }
 }
