@@ -4,43 +4,25 @@ use crate::parse::{Kind, Parser, TokenSet};
 pub(crate) fn feature(parser: &mut Parser) {
     fn feature_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::FeatureKw));
-        // if there's a tag, stash the range
-        // keywords that could be valid tags
-        const KINDS_THAT_MIGHT_BE_TAGS: TokenSet = TokenSet::new(&[
-            Kind::MarkKw,
-            Kind::AnonKw,
-            Kind::ByKw,
-            Kind::FromKw,
-            Kind::PosKw,
-            Kind::RsubKw,
-            Kind::Ident,
-        ]);
-
-        let tag_kind = (parser.matches(0, KINDS_THAT_MIGHT_BE_TAGS)
-            && parser.nth_raw(0).len() <= 4)
-            .then(|| (parser.nth(0).kind));
-        let tag_range = tag_kind.as_ref().map(|_| parser.nth_range(0));
-        let tag_kind = tag_kind.unwrap_or(Kind::Ident);
-
-        if !parser.eat_remap(tag_kind, Kind::Tag) {
-            parser.err_recover(
-                "Expected feature tag",
-                TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]),
-            );
-        }
+        let open_tag = parser.expect_tag(TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]));
 
         parser.eat(Kind::UseExtensionKw);
         parser.expect(Kind::LBrace);
         while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
             if !statement(parser, TokenSet::FEATURE_STATEMENT, false) {
-                if let Some(tag_range) = tag_range {
-                    parser.raw_error(tag_range, "Feature block is unclosed.");
+                if let Some(tag) = open_tag.as_ref() {
+                    parser.raw_error(tag.range.clone(), "Feature block is unclosed");
                 }
                 break;
             }
         }
         parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
-        parser.expect_remap_recover(tag_kind, Kind::Ident, TokenSet::TOP_LEVEL);
+        let close_tag = parser.expect_tag(TokenSet::TOP_LEVEL);
+        if let (Some(open), Some(close)) = (open_tag, close_tag) {
+            if open.tag != close.tag {
+                parser.raw_error(close.range, format!("expected tag '{}'", open.tag));
+            }
+        }
         parser.expect_semi();
     }
 
@@ -121,7 +103,7 @@ fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
         }
         Kind::FeatureKw => {
             // aalt only
-            if parser.matches(1, TokenSet::IDENT_LIKE) && parser.matches(2, Kind::Semi) {
+            if parser.matches(1, TokenSet::TAG_LIKE) && parser.matches(2, Kind::Semi) {
                 assert!(parser.eat(Kind::FeatureKw));
                 parser.expect_tag(TokenSet::EMPTY);
                 assert!(parser.eat(Kind::Semi));

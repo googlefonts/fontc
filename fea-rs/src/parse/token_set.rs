@@ -23,6 +23,10 @@ impl TokenSet {
         Kind::GlyphClass,
     ]);
 
+    /// Tokens that may be a tag.
+    pub(crate) const TAG_LIKE: TokenSet =
+        TokenSet::new(&[Kind::MarkKw, Kind::NameKw, Kind::FlagKw, Kind::Ident]);
+
     /// Tokens that may be identifiers.
     ///
     /// This includes tokens that have special meaning only in certain contexts.

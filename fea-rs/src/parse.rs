@@ -8,6 +8,7 @@ mod lexer;
 mod token;
 mod token_set;
 
+use fonttools::types::Tag;
 pub use token::Kind;
 pub use token_set::TokenSet;
 
@@ -50,6 +51,16 @@ struct PendingToken {
 #[derive(Debug, Clone)]
 pub struct SyntaxError {
     pub message: String,
+    pub range: Range<usize>,
+}
+
+/// A tag and its range.
+///
+/// We often want to associate errors with tag locations, so we handle
+/// them specially.
+#[derive(Clone, Debug)]
+pub struct TagToken {
+    pub tag: Tag,
     pub range: Range<usize>,
 }
 
@@ -312,23 +323,27 @@ impl<'a> Parser<'a> {
         false
     }
 
-    pub(crate) fn expect_tag(&mut self, recover: impl TokenComparable) -> bool {
-        if self.nth(0).kind == Kind::Ident {
-            if self.nth_range(0).len() <= 4 {
-                self.eat_remap(Kind::Ident, Kind::Tag);
-            } else {
-                // this is an error, but we continue parsing
-                self.eat_raw();
-                self.err("Tag must be four or fewer characters.");
+    pub(crate) fn eat_tag(&mut self) -> Option<TagToken> {
+        if self.matches(0, TokenSet::TAG_LIKE) {
+            if let Ok(tag) = Tag::from_raw(self.nth_raw(0)) {
+                let range = self.nth_range(0);
+                self.do_bump::<1>(Kind::Tag);
+                return Some(TagToken { tag, range });
             }
-            true
-        } else {
-            self.err(format!("expected tag, found {}", self.nth(0).kind));
-            if !self.matches(0, recover) {
-                self.eat_raw();
-            }
-            false
         }
+        None
+    }
+
+    pub(crate) fn expect_tag(&mut self, recover: impl TokenComparable) -> Option<TagToken> {
+        if self.matches(0, TokenSet::TAG_LIKE) {
+            match self.eat_tag() {
+                Some(tag) => return Some(tag),
+                None => self.err_and_bump("invalid tag"),
+            }
+        } else {
+            self.err_recover(format!("expected tag, found {}", self.nth(0).kind), recover);
+        }
+        None
     }
 
     pub(crate) fn matches(&self, nth: usize, token: impl TokenComparable) -> bool {
@@ -338,15 +353,6 @@ impl<'a> Parser<'a> {
     pub(crate) fn raw_range(&self, range: Range<usize>) -> &[u8] {
         &self.text.as_bytes()[range]
     }
-
-    // If current token is ident, return underlying bytes
-    //pub(crate) fn ident(&self) -> Option<&[u8]> {
-    //if self.nth(0).kind == Kind::Ident {
-    //Some(&self.text.as_bytes()[self.nth_range(0)])
-    //} else {
-    //None
-    //}
-    //}
 }
 
 pub(crate) trait TokenComparable: Copy + Display {
