@@ -18,6 +18,47 @@ use ansi_term::Color;
 use fonttools::{font::Font, tables};
 use rayon::prelude::*;
 
+// we don't compile this, so don't bother testing them yet
+static HAS_MARK_GLYPH: &[&str] = &[
+    "GSUB_6_formats.fea",
+    "spec6h_ii.fea",
+    "spec5f_ii_1.fea",
+    "spec5f_ii_3.fea",
+    "spec5f_ii_2.fea",
+    "bug512.fea",
+    "MultipleLookupsPerGlyph2.fea",
+    "bug506.fea",
+    "ZeroValue_ChainSinglePos_vertical.fea",
+    "spec8d.fea",
+    "spec5f_ii_4.fea",
+    "bug514.fea",
+    "spec8a.fea",
+    "ChainPosSubtable.fea",
+    "ChainSubstSubtable.fea",
+    "bug463.fea",
+    "GSUB_6.fea",
+    "aalt_chain_contextual_subst.fea",
+    "spec6h_iii_3d.fea",
+    "GPOS_8.fea",
+    "feature_aalt.fea",
+    "ZeroValue_ChainSinglePos_horizontal.fea",
+    "MultipleLookupsPerGlyph.fea",
+    "spec5fi4.fea",
+    "spec6h_iii_1.fea",
+    "mini.fea",
+    "spec5h1.fea",
+    "spec5fi3.fea",
+    "spec9f.ttx",
+    "spec5fi2.fea",
+    "spec5fi1.fea",
+    "spec4h1.fea",
+    "GSUB_8.fea",
+    "SubstSubtable.fea",
+    "AlternateChained.fea",
+    "bug509.fea",
+    "ignore_pos.fea",
+];
+
 /// A way to customize output when our test fails
 #[derive(Default)]
 pub struct Results {
@@ -112,10 +153,11 @@ fn iter_compile_tests(
         let entry = dir.next()?.unwrap();
         let path = entry.path();
         if path.extension() == Some(OsStr::new("fea")) && path.with_extension("ttx").exists() {
-            if !filter_items.is_empty()
-                && !filter_items
-                    .iter()
-                    .any(|item| path.to_str().unwrap().contains(item))
+            let path_str = path.file_name().unwrap().to_str().unwrap();
+            if HAS_MARK_GLYPH.contains(&path_str) {
+                continue;
+            }
+            if !filter_items.is_empty() && !filter_items.iter().any(|item| path_str.contains(item))
             {
                 continue;
             }
