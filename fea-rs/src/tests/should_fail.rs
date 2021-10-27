@@ -15,12 +15,22 @@ static TEST_DATA: &str = "./test-data/error-tests";
 #[test]
 fn expected_failures() {
     let glyph_map = ttx::make_glyph_map();
+    let mut failures = Vec::new();
     for path in iter_compile_tests(TEST_DATA) {
         let contents = std::fs::read_to_string(&path).unwrap();
         let result = ttx::try_compile(&contents, &glyph_map);
-        if let Ok(_) = result {
-            panic!("unexpected success: {}", path.display());
+        if result.is_ok() {
+            failures.push(path);
         }
+    }
+
+    if !failures.is_empty() {
+        eprintln!("failures ({}):", failures.len());
+        for path in &failures {
+            eprintln!("  {}", path.display());
+        }
+        eprintln!("");
+        panic!("ahhh");
     }
 }
 
