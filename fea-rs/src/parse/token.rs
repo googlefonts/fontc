@@ -213,7 +213,6 @@ pub enum Kind {
     LookupBlockNode,
     ScriptRecordNode,
     IncludeNode,
-    TableNode,
     MarkClassNode,
     AnchorNode,
     AnchorDefNode,
@@ -226,6 +225,17 @@ pub enum Kind {
     LookupFlagNode,
     CvParametersNode,
     SubtableNode,
+
+    TableNode,
+    HeadTableNode,
+    HheaTableNode,
+    NameTableNode,
+    BaseTableNode,
+    GdefTableNode,
+    Os2TableNode,
+    VheaTableNode,
+    VmtxTableNode,
+    StatTableNode,
 }
 
 impl Kind {
@@ -538,7 +548,6 @@ impl std::fmt::Display for Kind {
             Self::ScriptRecordNode => write!(f, "ScriptRecoordNode"),
             Self::TableEntryNode => write!(f, "TableEntryNode"),
             Self::IncludeNode => write!(f, "IncludeNode"),
-            Self::TableNode => write!(f, "TableNode"),
             Self::MarkClassNode => write!(f, "MarkClassNode"),
             Self::AnchorDefNode => write!(f, "AnchorDefNode"),
             Self::AnchorNode => write!(f, "AnchorNode"),
@@ -551,6 +560,16 @@ impl std::fmt::Display for Kind {
             Self::LookupFlagNode => write!(f, "LookupFlagNode"),
             Self::CvParametersNode => write!(f, "cvParametersNode"),
             Self::SubtableNode => write!(f, "SubtableNode"),
+            Self::TableNode => write!(f, "TableNode"),
+            Self::HeadTableNode => write!(f, "HeadTableNode"),
+            Self::HheaTableNode => write!(f, "HheaTableNode"),
+            Self::NameTableNode => write!(f, "NameTableNode"),
+            Self::BaseTableNode => write!(f, "BaseTableNode"),
+            Self::GdefTableNode => write!(f, "GdefTableNode"),
+            Self::Os2TableNode => write!(f, "Os2TableNode"),
+            Self::VheaTableNode => write!(f, "VheaTableNode"),
+            Self::VmtxTableNode => write!(f, "VmtxTableNode"),
+            Self::StatTableNode => write!(f, "StatTableNode"),
         }
     }
 }

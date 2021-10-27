@@ -1,47 +1,68 @@
 use std::ops::Range;
 
+use fonttools::types::Tag;
+
 use crate::parse::{Kind, Parser, TokenSet};
+
+#[allow(non_upper_case_globals)]
+mod tags {
+    use fonttools::{tag, types::Tag};
+    pub const BASE: Tag = tag!("BASE");
+    pub const GDEF: Tag = tag!("GDEF");
+    pub const STAT: Tag = tag!("STAT");
+    pub const head: Tag = tag!("head");
+    pub const hhea: Tag = tag!("hhea");
+    pub const name: Tag = tag!("name");
+    pub const OS2: Tag = tag!("OS/2");
+    pub const vhea: Tag = tag!("vhea");
+    pub const vmtx: Tag = tag!("vmtx");
+}
 
 pub(crate) fn table(parser: &mut Parser) {
     parser.eat_trivia();
     parser.start_node(Kind::TableNode);
     assert!(parser.eat(Kind::TableKw));
-    let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
-    match parser.nth_raw(0) {
-        b"BASE" => table_impl(parser, b"BASE", base::table_entry),
-        b"GDEF" => table_impl(parser, b"GDEF", gdef::table_entry),
-        b"head" => table_impl(parser, b"head", head::table_entry),
-        b"hhea" => table_impl(parser, b"hhea", hhea::table_entry),
-        b"name" => table_impl(parser, b"name", name::table_entry),
-        b"os/2" => table_impl(parser, b"os/2", os_2::table_entry),
-        b"vhea" => table_impl(parser, b"vhea", vhea::table_entry),
-        b"vmtx" => table_impl(parser, b"vmtx", vmtx::table_entry),
-        _ => {
-            parser.expect_recover(Kind::Ident, TokenSet::TOP_LEVEL.union(Kind::LBrace.into()));
-            if parser.expect_recover(Kind::LBrace, TokenSet::TOP_LEVEL) {
-                if let Some(range) = raw_label_range {
-                    unknown_table(parser, range);
-                }
-            }
+
+    let tag = match parser.eat_tag() {
+        Some(tag) => tag,
+        None => {
+            parser.err("expected tag");
+            parser.eat_until(TokenSet::TOP_LEVEL);
+            parser.finish_node();
+            return;
         }
+    };
+
+    match tag.tag {
+        tags::BASE => table_impl(parser, tags::BASE, base::table_entry),
+        tags::GDEF => table_impl(parser, tags::GDEF, gdef::table_entry),
+        tags::head => table_impl(parser, tags::head, head::table_entry),
+        tags::hhea => table_impl(parser, tags::hhea, hhea::table_entry),
+        tags::name => table_impl(parser, tags::name, name::table_entry),
+        tags::OS2 => table_impl(parser, tags::OS2, os2::table_entry),
+        tags::vhea => table_impl(parser, tags::vhea, vhea::table_entry),
+        tags::vmtx => table_impl(parser, tags::vmtx, vmtx::table_entry),
+        _ => unknown_table(parser, tag.range),
     }
-    parser.finish_node();
+
+    let table_kind = table_kind_for_tag(tag.tag);
+    parser.finish_and_remap_node(table_kind);
 }
 
 // build any table, given a function that parses items from that table.
-fn table_impl(parser: &mut Parser, tag: &[u8], table_fn: impl Fn(&mut Parser, TokenSet)) {
-    assert_eq!(parser.nth_raw(0), tag);
-    parser.eat_raw();
+fn table_impl(parser: &mut Parser, tag: Tag, table_fn: impl Fn(&mut Parser, TokenSet)) {
     parser.expect_recover(Kind::LBrace, TokenSet::TOP_SEMI);
     while !parser.at_eof() && !parser.matches(0, TokenSet::TOP_LEVEL.union(Kind::RBrace.into())) {
         table_fn(parser, TokenSet::TOP_LEVEL);
     }
+
     parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
-    if parser.nth_raw(0) != tag {
-        parser.err_and_bump(format!("Expected '{}' tag", String::from_utf8_lossy(tag)));
-    } else {
-        parser.eat_raw();
+    if let Some(close) = parser.expect_tag(TokenSet::TOP_SEMI) {
+        if close.tag != tag {
+            parser.raw_error(close.range, format!("expected tag '{}'", tag));
+        }
     }
+
     parser.expect_semi();
 }
 
@@ -294,7 +315,7 @@ mod name {
     }
 }
 
-mod os_2 {
+mod os2 {
     use super::*;
 
     const METRICS: TokenSet = TokenSet::new(&[
@@ -404,5 +425,20 @@ mod vmtx {
             parser.expect_recover(VMTX_KEYWORDS, recovery_semi);
             parser.eat_until(recovery);
         }
+    }
+}
+
+fn table_kind_for_tag(tag: Tag) -> Kind {
+    match tag {
+        tags::head => Kind::HeadTableNode,
+        tags::hhea => Kind::HheaTableNode,
+        tags::BASE => Kind::BaseTableNode,
+        tags::GDEF => Kind::GdefTableNode,
+        tags::name => Kind::NameTableNode,
+        tags::OS2 => Kind::Os2TableNode,
+        tags::vhea => Kind::VheaTableNode,
+        tags::vmtx => Kind::VmtxTableNode,
+        tags::STAT => Kind::StatTableNode,
+        _ => Kind::TableNode,
     }
 }
