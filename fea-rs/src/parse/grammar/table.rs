@@ -289,11 +289,12 @@ mod name {
     use super::*;
 
     pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
+        const NUM_TYPES: TokenSet = TokenSet::new(&[Kind::Number, Kind::Octal, Kind::Hex]);
         let recovery = recovery.union(TokenSet::new(&[Kind::NameIdKw, Kind::RBrace]));
         if parser.matches(0, Kind::NameIdKw) {
-            table_node(parser, |parser| {
+            parser.in_node(Kind::NameRecordNode, |parser| {
                 assert!(parser.eat(Kind::NameIdKw));
-                parser.expect_recover(Kind::Number, recovery.union(Kind::Semi.into()));
+                parser.expect_recover(NUM_TYPES, recovery.union(Kind::Semi.into()));
                 metrics::expect_name_record(parser, recovery);
                 parser.expect_semi();
             })

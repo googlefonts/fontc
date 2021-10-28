@@ -1,4 +1,5 @@
 use fonttools::types::Tag;
+use smol_str::SmolStr;
 
 use crate::types::{GlyphClass, GlyphId};
 
@@ -9,6 +10,7 @@ pub(crate) struct Tables {
     pub head: Option<head>,
     pub hhea: Option<hhea>,
     pub vhea: Option<vhea>,
+    pub name: Option<name>,
     pub GDEF: Option<GDEF>,
     pub BASE: Option<BASE>,
     //name: Option<tables::name>,
@@ -36,6 +38,21 @@ pub struct vhea {
     pub vert_typo_ascender: i16,
     pub vert_typo_descender: i16,
     pub vert_typo_line_gap: i16,
+}
+
+#[derive(Clone, Debug, Default)]
+#[allow(non_camel_case_types)]
+pub struct name {
+    pub records: Vec<NameRecord>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct NameRecord {
+    pub platform_id: u16,
+    pub encoding_id: u16,
+    pub language_id: u16,
+    pub name_id: u16,
+    pub string: SmolStr,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -95,5 +112,23 @@ impl hhea {
             metricDataFormat: 0,
             numberOfHMetrics: 0,
         }
+    }
+}
+
+impl name {
+    pub fn build(&self) -> fonttools::tables::name::name {
+        let records = self
+            .records
+            .iter()
+            .filter(|record| !(1..=6).contains(&record.name_id))
+            .map(|record| fonttools::tables::name::NameRecord {
+                platformID: record.platform_id,
+                encodingID: record.encoding_id,
+                languageID: record.language_id,
+                nameID: record.name_id,
+                string: record.string.trim_matches('"').to_string(),
+            })
+            .collect();
+        fonttools::tables::name::name { records }
     }
 }

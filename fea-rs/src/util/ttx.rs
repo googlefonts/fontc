@@ -230,6 +230,9 @@ fn make_font(compilation: Compilation, glyphs: &GlyphMap) -> Font {
     if let Some(hhea) = compilation.hhea {
         font.tables.insert(hhea);
     }
+    if let Some(name) = compilation.name {
+        font.tables.insert(name);
+    }
     if let Some(gsub) = compilation.gsub {
         font.tables.insert(gsub);
     }

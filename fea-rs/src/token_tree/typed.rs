@@ -163,6 +163,8 @@ ast_token!(GlyphName, Kind::GlyphName);
 ast_token!(Tag, Kind::Tag);
 ast_token!(GlyphClassName, Kind::NamedGlyphClass);
 ast_token!(Number, Kind::Number);
+ast_token!(Octal, Kind::Octal);
+ast_token!(Hex, Kind::Hex);
 ast_token!(Metric, Kind::Metric);
 ast_token!(Null, Kind::NullKw);
 ast_token!(Fixed32, Kind::Float);
@@ -213,6 +215,13 @@ ast_node!(BaseScriptList, Kind::BaseScriptListNode);
 ast_node!(ScriptRecord, Kind::ScriptRecordNode);
 
 ast_node!(MetricRecord, Kind::MetricNode);
+ast_node!(NameRecord, Kind::NameRecordNode);
+
+ast_enum!(DecOctHex {
+    Decimal(Number),
+    Octal(Octal),
+    Hex(Hex),
+});
 
 ast_node!(GdefClassDef, Kind::GdefClassDefNode);
 ast_node!(GdefClassDefEntry, Kind::GdefClassDefEntryNode);
@@ -852,6 +861,45 @@ impl MetricRecord {
 
     pub fn metric(&self) -> Metric {
         self.iter().find_map(Metric::cast).unwrap()
+    }
+}
+
+impl NameTable {
+    pub fn statements(&self) -> impl Iterator<Item = NameRecord> + '_ {
+        self.iter().filter_map(NameRecord::cast)
+    }
+}
+
+impl NameRecord {
+    pub fn name_id(&self) -> DecOctHex {
+        self.iter().find_map(DecOctHex::cast).unwrap()
+    }
+
+    pub fn platform_id(&self) -> Option<DecOctHex> {
+        self.iter().filter_map(DecOctHex::cast).nth(1)
+    }
+
+    pub fn platspec_id(&self) -> Option<DecOctHex> {
+        self.iter().filter_map(DecOctHex::cast).nth(2)
+    }
+
+    pub fn language_id(&self) -> Option<DecOctHex> {
+        self.iter().filter_map(DecOctHex::cast).nth(3)
+    }
+
+    pub fn string(&self) -> &Token {
+        self.find_token(Kind::String).unwrap()
+    }
+}
+
+impl DecOctHex {
+    pub fn parse(&self) -> Result<u16, String> {
+        match self {
+            DecOctHex::Decimal(num) => num.text().parse::<u16>().map_err(|e| e.to_string()),
+            DecOctHex::Octal(num) => u16::from_str_radix(num.text(), 8).map_err(|e| e.to_string()),
+            DecOctHex::Hex(num) => u16::from_str_radix(num.text().trim_start_matches("0x"), 16)
+                .map_err(|e| e.to_string()),
+        }
     }
 }
 

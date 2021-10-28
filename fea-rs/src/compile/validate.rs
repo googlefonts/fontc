@@ -175,6 +175,7 @@ impl<'a> ValidationCtx<'a> {
             typed::Table::Head(table) => self.validate_head(&table),
             typed::Table::Hhea(table) => self.validate_hhea(&table),
             typed::Table::Vhea(table) => self.validate_vhea(&table),
+            typed::Table::Name(table) => self.validate_name(&table),
             _ => (),
         }
     }
@@ -189,6 +190,47 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_vhea(&mut self, _node: &typed::VheaTable) {
         // lgtm
+    }
+
+    fn validate_name(&mut self, node: &typed::NameTable) {
+        for record in node.statements() {
+            let name_id = record.name_id();
+            match name_id.parse() {
+                Err(e) => self.error(name_id.range(), e),
+                Ok(1..=6) => {
+                    self.warning(name_id.range(), "ID's 1-6 are reserved and will be ignored")
+                }
+                _ => (),
+            }
+            let platform_id_range = match record.platform_id() {
+                Some(id) => {
+                    match id.parse() {
+                        Err(e) => self.error(id.range(), e),
+                        Ok(1 | 3) => (),
+                        Ok(_) => self.error(id.range(), "platform id must be one of '1' or '3'"),
+                    }
+                    id.range()
+                }
+                None => continue,
+            };
+
+            if let Some(platspec) = record.platspec_id() {
+                if let Err(e) = platspec.parse() {
+                    self.error(platspec.range(), e);
+                }
+                match record.language_id() {
+                    Some(id) => {
+                        if let Err(e) = id.parse() {
+                            self.error(id.range(), e);
+                        }
+                    }
+                    None => self.error(
+                        platform_id_range.start..platspec.range().end,
+                        "attribute must be 1 or 3 numbers",
+                    ),
+                }
+            }
+        }
     }
 
     fn validate_gdef(&mut self, node: &typed::GdefTable) {

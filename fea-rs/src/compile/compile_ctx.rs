@@ -58,6 +58,7 @@ struct MarkClass {
 pub struct Compilation {
     pub warnings: Vec<Diagnostic>,
     pub hhea: Option<tables::hhea::hhea>,
+    pub name: Option<tables::name::name>,
     pub gpos: Option<tables::GPOS::GPOS>,
     pub gsub: Option<tables::GSUB::GSUB>,
     pub head: Option<tables::head::head>,
@@ -124,11 +125,13 @@ impl<'a> CompilationCtx<'a> {
         }
 
         let hhea = self.tables.hhea.as_ref().map(|t| t.build());
+        let name = self.tables.name.as_ref().map(|t| t.build());
         let (gsub, gpos) = self.lookups.build(&self.features);
         let head = self.tables.head.as_ref().map(|t| t.build());
         Ok(Compilation {
             warnings: self.errors.clone(),
             hhea,
+            name,
             gpos,
             gsub,
             head,
@@ -669,6 +672,7 @@ impl<'a> CompilationCtx<'a> {
             typed::Table::Base(table) => self.resolve_base(&table),
             typed::Table::Hhea(table) => self.resolve_hhea(&table),
             typed::Table::Vhea(table) => self.resolve_vhea(&table),
+            typed::Table::Name(table) => self.resolve_name(&table),
             typed::Table::Gdef(table) => self.resolve_gdef(&table),
             typed::Table::Head(table) => self.resolve_head(&table),
             _ => (),
@@ -705,6 +709,36 @@ impl<'a> CompilationCtx<'a> {
                 .collect();
         }
         self.tables.BASE = Some(base);
+    }
+
+    fn resolve_name(&mut self, table: &typed::NameTable) {
+        let mut name = super::tables::name::default();
+        for record in table.statements() {
+            let name_id = record.name_id().parse().unwrap();
+            let platform_id = record
+                .platform_id()
+                .map(|n| n.parse().unwrap())
+                .unwrap_or(3);
+            let (platspec_id, language_id) = match record.platspec_id() {
+                Some(id) => (
+                    id.parse().unwrap(),
+                    record.language_id().unwrap().parse().unwrap(),
+                ),
+                None => match platform_id {
+                    1 => (0, 0),
+                    3 => (1, 0x409),
+                    _ => panic!("parser error"),
+                },
+            };
+            name.records.push(super::tables::NameRecord {
+                platform_id,
+                encoding_id: platspec_id,
+                language_id,
+                name_id,
+                string: record.string().text.clone(),
+            })
+        }
+        self.tables.name = Some(name);
     }
 
     fn resolve_hhea(&mut self, table: &typed::HheaTable) {
