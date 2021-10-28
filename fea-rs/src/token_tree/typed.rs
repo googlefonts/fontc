@@ -209,11 +209,7 @@ ast_enum!(Table {
 
 ast_node!(BaseTagList, Kind::BaseTagListNode);
 ast_node!(BaseScriptList, Kind::BaseScriptListNode);
-//ast_node!(BaseMinMax, Kind::BaseMinMaxNode); (unimplemented in spec)
-ast_enum!(BaseTableItem {
-    TagList(BaseTagList),
-    ScriptList(BaseScriptList),
-});
+ast_node!(ScriptRecord, Kind::ScriptRecordNode);
 
 ast_node!(GdefClassDef, Kind::GdefClassDefNode);
 ast_node!(GdefClassDefEntry, Kind::GdefClassDefEntryNode);
@@ -754,6 +750,80 @@ impl ValueRecord {
     }
 }
 
+impl BaseTable {
+    pub fn horiz_base_tag_list(&self) -> Option<BaseTagList> {
+        self.iter()
+            .filter_map(BaseTagList::cast)
+            .find(BaseTagList::is_horiz)
+    }
+
+    pub fn vert_base_tag_list(&self) -> Option<BaseTagList> {
+        self.iter()
+            .filter_map(BaseTagList::cast)
+            .find(|b| !b.is_horiz())
+    }
+
+    pub fn horiz_base_script_record_list(&self) -> Option<BaseScriptList> {
+        self.iter()
+            .filter_map(BaseScriptList::cast)
+            .find(BaseScriptList::is_horiz)
+    }
+
+    pub fn vert_base_script_record_list(&self) -> Option<BaseScriptList> {
+        self.iter()
+            .filter_map(BaseScriptList::cast)
+            .find(|b| !b.is_horiz())
+    }
+}
+
+impl BaseTagList {
+    fn is_horiz(&self) -> bool {
+        match self.iter().next().map(|t| t.kind()) {
+            Some(Kind::HorizAxisBaseTagListKw) => true,
+            Some(Kind::VertAxisBaseTagListKw) => false,
+            other => panic!("unexpected token in BaseTagList {:?}", other),
+        }
+    }
+
+    pub fn tags(&self) -> impl Iterator<Item = Tag> + '_ {
+        self.iter()
+            .skip(1)
+            .take_while(|t| t.kind() != Kind::Semi)
+            .filter_map(Tag::cast)
+    }
+}
+
+impl BaseScriptList {
+    fn is_horiz(&self) -> bool {
+        match self.iter().next().map(|t| t.kind()) {
+            Some(Kind::HorizAxisBaseScriptListKw) => true,
+            Some(Kind::VertAxisBaseTagListKw) => false,
+            other => panic!("unexpected token in BaseScriptList {:?}", other),
+        }
+    }
+
+    pub fn script_records(&self) -> impl Iterator<Item = ScriptRecord> + '_ {
+        self.iter()
+            .skip(1)
+            .take_while(|t| t.kind() != Kind::Semi)
+            .filter_map(ScriptRecord::cast)
+    }
+}
+
+impl ScriptRecord {
+    pub fn script(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    pub fn default_baseline(&self) -> Tag {
+        self.iter().filter_map(Tag::cast).nth(1).unwrap()
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = Number> + '_ {
+        self.iter().skip(2).filter_map(Number::cast)
+    }
+}
+
 impl GdefTable {
     pub fn statements(&self) -> impl Iterator<Item = GdefTableItem> + '_ {
         self.iter().filter_map(GdefTableItem::cast)
@@ -795,8 +865,8 @@ impl GdefAttach {
     }
 
     /// of a contourpoint
-    pub fn index(&self) -> Number {
-        self.iter().find_map(Number::cast).unwrap()
+    pub fn indices(&self) -> impl Iterator<Item = Number> + '_ {
+        self.iter().filter_map(Number::cast)
     }
 }
 

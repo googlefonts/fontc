@@ -7,6 +7,7 @@ pub use compile_ctx::Compilation;
 mod compile_ctx;
 mod glyph_range;
 mod lookups;
+mod tables;
 mod validate;
 
 /// Run the validation pass, returning any diagnostics.

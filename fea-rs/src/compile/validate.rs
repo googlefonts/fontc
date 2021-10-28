@@ -168,7 +168,49 @@ impl<'a> ValidationCtx<'a> {
         }
     }
 
-    fn validate_table(&mut self, _node: &typed::Table) {}
+    fn validate_table(&mut self, node: &typed::Table) {
+        match node {
+            typed::Table::Base(table) => self.validate_base(&table),
+            typed::Table::Gdef(table) => self.validate_gdef(&table),
+            _ => (),
+        }
+    }
+
+    fn validate_base(&mut self, _node: &typed::BaseTable) {
+        //TODO: same number of records as there are number of baseline tags
+    }
+
+    fn validate_gdef(&mut self, node: &typed::GdefTable) {
+        for statement in node.statements() {
+            match statement {
+                typed::GdefTableItem::ClassDef(node) => {
+                    if let Some(cls) = node.base_glyphs() {
+                        self.validate_glyph_class(&cls, true);
+                    }
+
+                    if let Some(cls) = node.ligature_glyphs() {
+                        self.validate_glyph_class(&cls, true);
+                    }
+
+                    if let Some(cls) = node.mark_glyphs() {
+                        self.validate_glyph_class(&cls, true);
+                    }
+
+                    if let Some(cls) = node.component_glyphs() {
+                        self.validate_glyph_class(&cls, true);
+                    }
+                }
+                typed::GdefTableItem::Attach(node) => {
+                    self.validate_glyph_or_class(&node.target());
+                }
+                //FIXME: only one rule allowed per glyph; we need
+                //to resolve glyphs here in order to track that.
+                typed::GdefTableItem::LigatureCaret(node) => {
+                    self.validate_glyph_or_class(&node.target());
+                }
+            }
+        }
+    }
 
     // simple: 'include', 'script', 'language', 'subtable', 'lookup', 'lookupflag',
     // rules: 'enumerate', 'enum', 'ignore', 'substitute', 'sub', 'reversesub', 'rsub', 'position', 'pos',

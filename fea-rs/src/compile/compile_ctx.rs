@@ -21,8 +21,9 @@ use crate::{
     Diagnostic, GlyphMap, Kind, NodeOrToken,
 };
 
-use super::glyph_range;
 use super::lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, SomeLookup};
+use super::tables::Tables;
+use super::{glyph_range, tables::ScriptRecord};
 
 const AALT_TAG: Tag = tag!("aalt");
 const SIZE_TAG: Tag = tag!("size");
@@ -32,8 +33,7 @@ const SCRIPT_DFLT_TAG: Tag = tag!("DFLT");
 pub struct CompilationCtx<'a> {
     glyph_map: &'a GlyphMap,
     pub errors: Vec<Diagnostic>,
-    //#[allow(dead_code)]
-    //tables: Tables,
+    tables: Tables,
     features: BTreeMap<FeatureKey, Vec<LookupId>>,
     default_lang_systems: HashSet<(Tag, Tag)>,
     lookups: AllLookups,
@@ -66,7 +66,7 @@ impl<'a> CompilationCtx<'a> {
         CompilationCtx {
             glyph_map,
             errors: Vec::new(),
-            //tables: Tables::default(),
+            tables: Tables::default(),
             default_lang_systems: Default::default(),
             glyph_class_defs: Default::default(),
             lookups: Default::default(),
@@ -98,6 +98,8 @@ impl<'a> CompilationCtx<'a> {
                 self.add_feature(feature);
             } else if let Some(lookup) = typed::LookupBlock::cast(item) {
                 self.resolve_lookup_block(lookup);
+            } else if let Some(table) = typed::Table::cast(item) {
+                self.resolve_table(table);
 
                 //TODO: includes, eh? maybe resolved before now?
             } else if !item.kind().is_trivia() {
@@ -654,6 +656,90 @@ impl<'a> CompilationCtx<'a> {
             self.resolve_statement(item);
         }
         self.end_feature();
+    }
+
+    fn resolve_table(&mut self, table: typed::Table) {
+        match table {
+            typed::Table::Base(table) => self.resolve_base(&table),
+            typed::Table::Gdef(table) => self.resolve_gdef(&table),
+            _ => (),
+        }
+    }
+
+    fn resolve_base(&mut self, table: &typed::BaseTable) {
+        let mut base = super::tables::BASE::default();
+        if let Some(list) = table.horiz_base_tag_list() {
+            base.horiz_tag_list = list.tags().map(|t| t.to_raw()).collect();
+        }
+        if let Some(list) = table.horiz_base_script_record_list() {
+            base.horiz_script_list = list
+                .script_records()
+                .map(|record| ScriptRecord {
+                    script: record.script().to_raw(),
+                    default_baseline_tag: record.default_baseline().to_raw(),
+                    values: record.values().map(|i| i.parse_signed()).collect(),
+                })
+                .collect();
+        }
+
+        if let Some(list) = table.vert_base_tag_list() {
+            base.vert_tag_list = list.tags().map(|t| t.to_raw()).collect();
+        }
+        if let Some(list) = table.vert_base_script_record_list() {
+            base.vert_script_list = list
+                .script_records()
+                .map(|record| ScriptRecord {
+                    script: record.script().to_raw(),
+                    default_baseline_tag: record.default_baseline().to_raw(),
+                    values: record.values().map(|i| i.parse_signed()).collect(),
+                })
+                .collect();
+        }
+        self.tables.BASE = Some(base);
+    }
+
+    fn resolve_gdef(&mut self, table: &typed::GdefTable) {
+        let mut lig_glyphs = HashMap::new();
+        let mut gdef = super::tables::GDEF::default();
+        for statement in table.statements() {
+            match statement {
+                typed::GdefTableItem::Attach(rule) => {
+                    let glyphs = self.resolve_glyph_or_class(&rule.target());
+                    let indices = rule.indices().map(|n| n.parse_signed()).collect::<Vec<_>>();
+                    assert!(!indices.is_empty(), "check this in validation");
+                    for glyph in glyphs.iter() {
+                        gdef.attach.push((glyph, indices.clone()));
+                    }
+                }
+                typed::GdefTableItem::LigatureCaret(rule) => {
+                    let target = rule.target();
+                    let glyphs = self.resolve_glyph_or_class(&target);
+                    let values = rule.values().map(|n| n.parse_signed()).collect::<Vec<_>>();
+                    for glyph in glyphs.iter() {
+                        if let Some(_prev) = lig_glyphs.insert(glyph, target.clone()) {
+                            //TODO: report previous span
+                            //TODO: have a reverse glyphmap, so we can say what the glyph is
+                            self.error(target.range(), "duplicate glyph in ligature rule");
+                            if rule.by_pos() {
+                                gdef.ligature_caret_pos.push((glyph, values.clone()));
+                            } else {
+                                gdef.ligature_caret_index.push((glyph, values.clone()));
+                            }
+                        }
+                    }
+                }
+                typed::GdefTableItem::ClassDef(rule) => {
+                    gdef.base_glyphs = rule.base_glyphs().map(|g| self.resolve_glyph_class(&g));
+                    gdef.ligature_glyphs =
+                        rule.ligature_glyphs().map(|g| self.resolve_glyph_class(&g));
+                    gdef.mark_glyphs = rule.mark_glyphs().map(|g| self.resolve_glyph_class(&g));
+                    gdef.component_glyphs = rule
+                        .component_glyphs()
+                        .map(|g| self.resolve_glyph_class(&g));
+                }
+            }
+        }
+        self.tables.GDEF = Some(gdef);
     }
 
     fn resolve_lookup_ref(&mut self, lookup: typed::LookupRef) {
