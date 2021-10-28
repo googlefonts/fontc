@@ -165,6 +165,7 @@ ast_token!(GlyphClassName, Kind::NamedGlyphClass);
 ast_token!(Number, Kind::Number);
 ast_token!(Metric, Kind::Metric);
 ast_token!(Null, Kind::NullKw);
+ast_token!(Fixed32, Kind::Float);
 ast_node!(Root, Kind::SourceFile);
 ast_node!(GlyphRange, Kind::GlyphRange);
 ast_node!(GlyphClassDef, Kind::GlyphClassDefNode);
@@ -221,6 +222,8 @@ ast_enum!(GdefTableItem {
     Attach(GdefAttach),
     LigatureCaret(GdefLigatureCaret),
 });
+
+ast_node!(HeadFontRevision, Kind::HeadFontRevisionNode);
 
 ast_node!(Gsub1, Kind::GsubType1);
 ast_node!(Gsub2, Kind::GsubType2);
@@ -885,5 +888,17 @@ impl GdefLigatureCaret {
 
     pub fn values(&self) -> impl Iterator<Item = Number> + '_ {
         self.iter().filter_map(Number::cast)
+    }
+}
+
+impl HeadTable {
+    pub fn statements(&self) -> impl Iterator<Item = HeadFontRevision> + '_ {
+        self.iter().filter_map(HeadFontRevision::cast)
+    }
+}
+
+impl HeadFontRevision {
+    pub fn value(&self) -> Fixed32 {
+        self.iter().find_map(Fixed32::cast).unwrap()
     }
 }

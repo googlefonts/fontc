@@ -59,6 +59,7 @@ pub struct Compilation {
     pub warnings: Vec<Diagnostic>,
     pub gpos: Option<tables::GPOS::GPOS>,
     pub gsub: Option<tables::GSUB::GSUB>,
+    pub head: Option<tables::head::head>,
 }
 
 impl<'a> CompilationCtx<'a> {
@@ -122,10 +123,12 @@ impl<'a> CompilationCtx<'a> {
         }
 
         let (gsub, gpos) = self.lookups.build(&self.features);
+        let head = self.tables.head.as_ref().map(|t| t.build());
         Ok(Compilation {
             warnings: self.errors.clone(),
             gpos,
             gsub,
+            head,
         })
     }
 
@@ -662,6 +665,7 @@ impl<'a> CompilationCtx<'a> {
         match table {
             typed::Table::Base(table) => self.resolve_base(&table),
             typed::Table::Gdef(table) => self.resolve_gdef(&table),
+            typed::Table::Head(table) => self.resolve_head(&table),
             _ => (),
         }
     }
@@ -740,6 +744,14 @@ impl<'a> CompilationCtx<'a> {
             }
         }
         self.tables.GDEF = Some(gdef);
+    }
+
+    fn resolve_head(&mut self, table: &typed::HeadTable) {
+        let mut head = super::tables::head::default();
+        let font_rev = table.statements().last().unwrap().value();
+        let float = font_rev.text().parse::<f32>().unwrap();
+        head.font_revision = float;
+        self.tables.head = Some(head);
     }
 
     fn resolve_lookup_ref(&mut self, lookup: typed::LookupRef) {

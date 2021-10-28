@@ -15,10 +15,10 @@ pub(crate) struct Tables {
     //OS2: Option<tables::OS2>,
     //STAT: Option<tables::STAT>,
 }
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Default)]
 #[allow(non_camel_case_types)]
 pub struct head {
-    font_revision: u16,
+    pub font_revision: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -65,4 +65,10 @@ pub struct ScriptRecord {
     pub script: Tag,
     pub default_baseline_tag: Tag,
     pub values: Vec<i16>,
+}
+
+impl head {
+    pub(crate) fn build(&self) -> fonttools::tables::head::head {
+        fonttools::tables::head::head::new(self.font_revision, 0, 0, 0, 0, 0)
+    }
 }

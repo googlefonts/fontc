@@ -234,6 +234,10 @@ fn make_font(compilation: Compilation, glyphs: &GlyphMap) -> Font {
         font.tables.insert(gpos);
     }
 
+    if let Some(head) = compilation.head {
+        font.tables.insert(head);
+    }
+
     let maxp = tables::maxp::maxp::new05(glyphs.len().try_into().unwrap());
     font.tables.insert(maxp);
     font

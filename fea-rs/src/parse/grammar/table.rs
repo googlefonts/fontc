@@ -234,7 +234,7 @@ mod head {
 
     pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
         if parser.matches(0, Kind::FontRevisionKw) {
-            table_node(parser, |parser| {
+            parser.in_node(Kind::HeadFontRevisionNode, |parser| {
                 assert!(parser.eat(Kind::FontRevisionKw));
                 parser.expect_recover(
                     Kind::Float,

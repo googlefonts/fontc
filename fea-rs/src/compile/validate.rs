@@ -172,6 +172,7 @@ impl<'a> ValidationCtx<'a> {
         match node {
             typed::Table::Base(table) => self.validate_base(&table),
             typed::Table::Gdef(table) => self.validate_gdef(&table),
+            typed::Table::Head(table) => self.validate_head(&table),
             _ => (),
         }
     }
@@ -208,6 +209,29 @@ impl<'a> ValidationCtx<'a> {
                 typed::GdefTableItem::LigatureCaret(node) => {
                     self.validate_glyph_or_class(&node.target());
                 }
+            }
+        }
+    }
+
+    fn validate_head(&mut self, node: &typed::HeadTable) {
+        let mut prev = None;
+        for statement in node.statements() {
+            if let Some(prev) = prev.replace(statement.range()) {
+                self.warning(prev, "FontRevision overwritten by subsequent statement");
+            }
+            let value = statement.value();
+            let (int, fract) = value.text().split_once('.').expect("checked at parse time");
+            if int.parse::<i16>().is_err() {
+                let start = value.range().start;
+                self.error(start..start + int.len(), "value exceeds 16bit limit");
+            }
+            if fract.len() != 3 {
+                let start = value.range().start + int.len();
+                self.warning(
+                    start..start + fract.len(),
+                    "version number should have exactly three decimal places",
+                );
+                //TODO: richer error, showing suggested input
             }
         }
     }
