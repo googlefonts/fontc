@@ -227,6 +227,9 @@ fn try_parse_file(contents: &str, map: &GlyphMap) -> Result<Node, (Node, Vec<Dia
 
 fn make_font(compilation: Compilation, glyphs: &GlyphMap) -> Font {
     let mut font = Font::new(fonttools::font::SfntVersion::TrueType);
+    if let Some(hhea) = compilation.hhea {
+        font.tables.insert(hhea);
+    }
     if let Some(gsub) = compilation.gsub {
         font.tables.insert(gsub);
     }

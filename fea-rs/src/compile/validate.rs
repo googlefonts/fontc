@@ -173,12 +173,17 @@ impl<'a> ValidationCtx<'a> {
             typed::Table::Base(table) => self.validate_base(&table),
             typed::Table::Gdef(table) => self.validate_gdef(&table),
             typed::Table::Head(table) => self.validate_head(&table),
+            typed::Table::Hhea(table) => self.validate_hhea(&table),
             _ => (),
         }
     }
 
     fn validate_base(&mut self, _node: &typed::BaseTable) {
         //TODO: same number of records as there are number of baseline tags
+    }
+
+    fn validate_hhea(&mut self, _node: &typed::HheaTable) {
+        // lgtm
     }
 
     fn validate_gdef(&mut self, node: &typed::GdefTable) {

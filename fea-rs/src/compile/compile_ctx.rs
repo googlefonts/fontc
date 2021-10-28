@@ -57,6 +57,7 @@ struct MarkClass {
 
 pub struct Compilation {
     pub warnings: Vec<Diagnostic>,
+    pub hhea: Option<tables::hhea::hhea>,
     pub gpos: Option<tables::GPOS::GPOS>,
     pub gsub: Option<tables::GSUB::GSUB>,
     pub head: Option<tables::head::head>,
@@ -122,10 +123,12 @@ impl<'a> CompilationCtx<'a> {
             return Err(self.errors.clone());
         }
 
+        let hhea = self.tables.hhea.as_ref().map(|t| t.build());
         let (gsub, gpos) = self.lookups.build(&self.features);
         let head = self.tables.head.as_ref().map(|t| t.build());
         Ok(Compilation {
             warnings: self.errors.clone(),
+            hhea,
             gpos,
             gsub,
             head,
@@ -664,6 +667,7 @@ impl<'a> CompilationCtx<'a> {
     fn resolve_table(&mut self, table: typed::Table) {
         match table {
             typed::Table::Base(table) => self.resolve_base(&table),
+            typed::Table::Hhea(table) => self.resolve_hhea(&table),
             typed::Table::Gdef(table) => self.resolve_gdef(&table),
             typed::Table::Head(table) => self.resolve_head(&table),
             _ => (),
@@ -700,6 +704,20 @@ impl<'a> CompilationCtx<'a> {
                 .collect();
         }
         self.tables.BASE = Some(base);
+    }
+    fn resolve_hhea(&mut self, table: &typed::HheaTable) {
+        let mut hhea = super::tables::hhea::default();
+        for record in table.metrics() {
+            let keyword = record.keyword();
+            match keyword.kind {
+                Kind::CaretOffsetKw => hhea.caret_offset = record.metric().parse(),
+                Kind::AscenderKw => hhea.ascender = record.metric().parse(),
+                Kind::DescenderKw => hhea.descender = record.metric().parse(),
+                Kind::LineGapKw => hhea.line_gap = record.metric().parse(),
+                other => panic!("bug in parser, unexpected token '{}'", other),
+            }
+        }
+        self.tables.hhea = Some(hhea);
     }
 
     fn resolve_gdef(&mut self, table: &typed::GdefTable) {

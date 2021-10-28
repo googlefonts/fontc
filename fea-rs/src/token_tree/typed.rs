@@ -212,6 +212,8 @@ ast_node!(BaseTagList, Kind::BaseTagListNode);
 ast_node!(BaseScriptList, Kind::BaseScriptListNode);
 ast_node!(ScriptRecord, Kind::ScriptRecordNode);
 
+ast_node!(MetricRecord, Kind::MetricNode);
+
 ast_node!(GdefClassDef, Kind::GdefClassDefNode);
 ast_node!(GdefClassDefEntry, Kind::GdefClassDefEntryNode);
 ast_node!(GdefAttach, Kind::GdefAttachNode);
@@ -824,6 +826,22 @@ impl ScriptRecord {
 
     pub fn values(&self) -> impl Iterator<Item = Number> + '_ {
         self.iter().skip(2).filter_map(Number::cast)
+    }
+}
+
+impl HheaTable {
+    pub fn metrics(&self) -> impl Iterator<Item = MetricRecord> + '_ {
+        self.iter().filter_map(MetricRecord::cast)
+    }
+}
+
+impl MetricRecord {
+    pub fn keyword(&self) -> &Token {
+        self.iter().next().and_then(|t| t.as_token()).unwrap()
+    }
+
+    pub fn metric(&self) -> Metric {
+        self.iter().find_map(Metric::cast).unwrap()
     }
 }
 

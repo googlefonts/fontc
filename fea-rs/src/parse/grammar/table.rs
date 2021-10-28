@@ -265,7 +265,7 @@ mod hhea {
     pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
         let recovery = recovery.union(HHEA_KEYWORDS);
         if parser.matches(0, HHEA_KEYWORDS) {
-            table_node(parser, |parser| {
+            parser.in_node(Kind::MetricNode, |parser| {
                 assert!(parser.eat(HHEA_KEYWORDS));
                 parser.expect_remap_recover(
                     Kind::Number,
