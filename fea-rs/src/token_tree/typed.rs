@@ -835,6 +835,16 @@ impl HheaTable {
     }
 }
 
+impl VheaTable {
+    pub fn tag(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    pub fn metrics(&self) -> impl Iterator<Item = MetricRecord> + '_ {
+        self.iter().filter_map(MetricRecord::cast)
+    }
+}
+
 impl MetricRecord {
     pub fn keyword(&self) -> &Token {
         self.iter().next().and_then(|t| t.as_token()).unwrap()

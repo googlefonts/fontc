@@ -382,9 +382,9 @@ mod vhea {
         let recovery = recovery.union(VHEA_KEYWORDS).union(Kind::RBrace.into());
         let recovery_semi = recovery.union(Kind::Semi.into());
         if parser.matches(0, VHEA_KEYWORDS) {
-            table_node(parser, |parser| {
+            parser.in_node(Kind::MetricNode, |parser| {
                 assert!(parser.eat(VHEA_KEYWORDS));
-                parser.expect_recover(Kind::Number, recovery_semi);
+                parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery_semi);
                 parser.expect_semi();
             })
         } else {

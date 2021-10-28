@@ -30,12 +30,12 @@ pub struct hhea {
     pub line_gap: i16,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Default)]
 #[allow(non_camel_case_types)]
 pub struct vhea {
-    vert_typo_ascender: i16,
-    vert_typo_descender: i16,
-    vert_typo_line_gap: i16,
+    pub vert_typo_ascender: i16,
+    pub vert_typo_descender: i16,
+    pub vert_typo_line_gap: i16,
 }
 
 #[derive(Clone, Debug, Default)]

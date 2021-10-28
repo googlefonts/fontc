@@ -174,6 +174,7 @@ impl<'a> ValidationCtx<'a> {
             typed::Table::Gdef(table) => self.validate_gdef(&table),
             typed::Table::Head(table) => self.validate_head(&table),
             typed::Table::Hhea(table) => self.validate_hhea(&table),
+            typed::Table::Vhea(table) => self.validate_vhea(&table),
             _ => (),
         }
     }
@@ -183,6 +184,10 @@ impl<'a> ValidationCtx<'a> {
     }
 
     fn validate_hhea(&mut self, _node: &typed::HheaTable) {
+        // lgtm
+    }
+
+    fn validate_vhea(&mut self, _node: &typed::VheaTable) {
         // lgtm
     }
 

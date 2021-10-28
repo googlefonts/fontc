@@ -668,6 +668,7 @@ impl<'a> CompilationCtx<'a> {
         match table {
             typed::Table::Base(table) => self.resolve_base(&table),
             typed::Table::Hhea(table) => self.resolve_hhea(&table),
+            typed::Table::Vhea(table) => self.resolve_vhea(&table),
             typed::Table::Gdef(table) => self.resolve_gdef(&table),
             typed::Table::Head(table) => self.resolve_head(&table),
             _ => (),
@@ -705,6 +706,7 @@ impl<'a> CompilationCtx<'a> {
         }
         self.tables.BASE = Some(base);
     }
+
     fn resolve_hhea(&mut self, table: &typed::HheaTable) {
         let mut hhea = super::tables::hhea::default();
         for record in table.metrics() {
@@ -718,6 +720,24 @@ impl<'a> CompilationCtx<'a> {
             }
         }
         self.tables.hhea = Some(hhea);
+    }
+
+    fn resolve_vhea(&mut self, table: &typed::VheaTable) {
+        let mut vhea = super::tables::vhea::default();
+        for record in table.metrics() {
+            let keyword = record.keyword();
+            match keyword.kind {
+                Kind::VertTypoAscenderKw => vhea.vert_typo_ascender = record.metric().parse(),
+                Kind::VertTypoDescenderKw => vhea.vert_typo_descender = record.metric().parse(),
+                Kind::VertTypoLineGapKw => vhea.vert_typo_line_gap = record.metric().parse(),
+                other => panic!("bug in parser, unexpected token '{}'", other),
+            }
+        }
+        self.tables.vhea = Some(vhea);
+
+        //FIXME: add vhea to fonttools
+        let tag = table.tag();
+        self.error(tag.range(), "vhea compilation not implemented");
     }
 
     fn resolve_gdef(&mut self, table: &typed::GdefTable) {
