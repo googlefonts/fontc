@@ -20,6 +20,7 @@ fonttools = { path="../../extern/fonttools-rs", features = ["rayon"] }
 xflags = "0.2.3"
 diff = { version = "0.1.12", optional = true }
 rayon = { version = "1.5", optional = true }
+chrono = "0.4.3"
 
 [features]
 test = ["diff", "rayon"]

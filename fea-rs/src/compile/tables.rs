@@ -86,7 +86,16 @@ pub struct ScriptRecord {
 
 impl head {
     pub(crate) fn build(&self) -> fonttools::tables::head::head {
-        fonttools::tables::head::head::new(self.font_revision, 0, 0, 0, 0, 0)
+        // match what python fonttools does
+        let mut table = fonttools::tables::head::head::new(self.font_revision, 0, 0, 0, 0, 0);
+        table.magicNumber = 0;
+        table.flags = 0;
+        table.lowestRecPPEM = 0;
+        table.fontDirectionHint = 0;
+        table.created = chrono::NaiveDate::from_ymd(2011, 12, 13).and_hms(11, 22, 33);
+        table.modified = chrono::NaiveDate::from_ymd(2011, 12, 13).and_hms(11, 22, 33);
+        //table.checksumAdjustment = 0;
+        table
     }
 }
 
