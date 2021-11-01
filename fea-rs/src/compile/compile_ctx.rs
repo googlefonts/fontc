@@ -719,19 +719,17 @@ impl<'a> CompilationCtx<'a> {
         let mut name = super::tables::name::default();
         for record in table.statements() {
             let name_id = record.name_id().parse().unwrap();
-            let platform_id = record
-                .platform_id()
-                .map(|n| n.parse().unwrap())
-                .unwrap_or(3);
-            let (platspec_id, language_id) = match record.platspec_id() {
-                Some(id) => (
-                    id.parse().unwrap(),
-                    record.language_id().unwrap().parse().unwrap(),
-                ),
+            let entry = record.entry();
+            let platform_id = entry.platform_id().map(|n| n.parse().unwrap()).unwrap_or(3);
+
+            let (platspec_id, language_id) = match entry.platform_and_language_ids() {
+                Some((platform, language)) => {
+                    (platform.parse().unwrap(), language.parse().unwrap())
+                }
                 None => match platform_id {
                     1 => (0, 0),
                     3 => (1, 0x409),
-                    _ => panic!("parser error"),
+                    _ => panic!("missed validation"),
                 },
             };
             name.records.push(super::tables::NameRecord {
@@ -739,7 +737,7 @@ impl<'a> CompilationCtx<'a> {
                 encoding_id: platspec_id,
                 language_id,
                 name_id,
-                string: record.string().text.clone(),
+                string: entry.string().text.clone(),
             })
         }
         self.tables.name = Some(name);

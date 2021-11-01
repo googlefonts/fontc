@@ -161,12 +161,16 @@ pub(crate) fn parameters(parser: &mut Parser, recovery: TokenSet) {
 /// used in size feature and name table.
 ///
 /// This doesn't include the leading keyword or ID, which vary.
-pub(crate) fn expect_name_record(parser: &mut Parser, recovery: TokenSet) -> bool {
+pub(crate) fn expect_name_record(parser: &mut Parser, recovery: TokenSet) {
     const NUM_TYPES: TokenSet = TokenSet::new(&[Kind::Number, Kind::Octal, Kind::Hex]);
-    parser.eat(NUM_TYPES);
-    parser.eat(NUM_TYPES);
-    parser.eat(NUM_TYPES);
-    parser.expect_recover(Kind::String, recovery.union(Kind::Semi.into()))
+    parser.in_node(Kind::NameRecordEntryNode, |parser| {
+        if parser.eat(NUM_TYPES) && parser.eat(NUM_TYPES) {
+            if !parser.eat(NUM_TYPES) {
+                parser.err_recover("name record must contain 1 or 3 numbers", recovery);
+            }
+        }
+        parser.expect_recover(Kind::String, recovery.union(Kind::Semi.into()));
+    })
 }
 
 #[cfg(test)]

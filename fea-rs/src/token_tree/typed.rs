@@ -218,6 +218,7 @@ ast_node!(MetricRecord, Kind::MetricValueNode);
 ast_node!(NumberRecord, Kind::NumberValueNode);
 ast_node!(VendorRecord, Kind::Os2VendorNode);
 ast_node!(NameRecord, Kind::NameRecordNode);
+ast_node!(NameRecordEntry, Kind::NameRecordEntryNode);
 
 ast_enum!(DecOctHex {
     Decimal(Number),
@@ -925,16 +926,24 @@ impl NameRecord {
         self.iter().find_map(DecOctHex::cast).unwrap()
     }
 
+    pub fn entry(&self) -> NameRecordEntry {
+        self.iter().find_map(NameRecordEntry::cast).unwrap()
+    }
+}
+
+impl NameRecordEntry {
     pub fn platform_id(&self) -> Option<DecOctHex> {
-        self.iter().filter_map(DecOctHex::cast).nth(1)
+        self.iter().find_map(DecOctHex::cast)
     }
 
-    pub fn platspec_id(&self) -> Option<DecOctHex> {
-        self.iter().filter_map(DecOctHex::cast).nth(2)
-    }
-
-    pub fn language_id(&self) -> Option<DecOctHex> {
-        self.iter().filter_map(DecOctHex::cast).nth(3)
+    pub fn platform_and_language_ids(&self) -> Option<(DecOctHex, DecOctHex)> {
+        let mut iter = self.iter().filter_map(DecOctHex::cast).skip(1);
+        if let Some(platform) = iter.next() {
+            let language = iter.next().unwrap();
+            Some((platform, language))
+        } else {
+            None
+        }
     }
 
     pub fn string(&self) -> &Token {

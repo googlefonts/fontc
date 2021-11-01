@@ -275,32 +275,22 @@ impl<'a> ValidationCtx<'a> {
                 }
                 _ => (),
             }
-            let platform_id_range = match record.platform_id() {
-                Some(id) => {
-                    match id.parse() {
-                        Err(e) => self.error(id.range(), e),
-                        Ok(1 | 3) => (),
-                        Ok(_) => self.error(id.range(), "platform id must be one of '1' or '3'"),
-                    }
-                    id.range()
-                }
+            let record = record.entry();
+            match record.platform_id() {
+                Some(id) => match id.parse() {
+                    Err(e) => self.error(id.range(), e),
+                    Ok(1 | 3) => (),
+                    Ok(_) => self.error(id.range(), "platform id must be one of '1' or '3'"),
+                },
                 None => continue,
             };
 
-            if let Some(platspec) = record.platspec_id() {
+            if let Some((platspec, language)) = record.platform_and_language_ids() {
                 if let Err(e) = platspec.parse() {
                     self.error(platspec.range(), e);
                 }
-                match record.language_id() {
-                    Some(id) => {
-                        if let Err(e) = id.parse() {
-                            self.error(id.range(), e);
-                        }
-                    }
-                    None => self.error(
-                        platform_id_range.start..platspec.range().end,
-                        "attribute must be 1 or 3 numbers",
-                    ),
+                if let Err(e) = language.parse() {
+                    self.error(language.range(), e);
                 }
             }
         }

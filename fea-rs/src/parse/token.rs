@@ -237,6 +237,7 @@ pub enum Kind {
     Os2FamilyClassNode,
     NameTableNode,
     NameRecordNode,
+    NameRecordEntryNode,
     BaseTableNode,
     BaseTagListNode,
     BaseScriptListNode,
@@ -608,6 +609,7 @@ impl std::fmt::Display for Kind {
             Self::GdefAttachNode => write!(f, "GdefAttachNode"),
             Self::GdefLigatureCaretNode => write!(f, "GdefLigatureCaretNode"),
             Self::NameRecordNode => write!(f, "NameRecordNode"),
+            Self::NameRecordEntryNode => write!(f, "NameRecordEntryNode"),
             Self::HeadFontRevisionNode => write!(f, "HeadFontRevisionNode"),
             Self::MetricValueNode => write!(f, "MetricNode"), // shared between hhea, vhea, and os2
             Self::NumberValueNode => write!(f, "NumberNode"), // used in os2
