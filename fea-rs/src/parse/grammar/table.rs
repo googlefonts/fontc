@@ -265,7 +265,7 @@ mod hhea {
     pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
         let recovery = recovery.union(HHEA_KEYWORDS);
         if parser.matches(0, HHEA_KEYWORDS) {
-            parser.in_node(Kind::MetricNode, |parser| {
+            parser.in_node(Kind::MetricValueNode, |parser| {
                 assert!(parser.eat(HHEA_KEYWORDS));
                 parser.expect_remap_recover(
                     Kind::Number,
@@ -289,12 +289,11 @@ mod name {
     use super::*;
 
     pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
-        const NUM_TYPES: TokenSet = TokenSet::new(&[Kind::Number, Kind::Octal, Kind::Hex]);
         let recovery = recovery.union(TokenSet::new(&[Kind::NameIdKw, Kind::RBrace]));
         if parser.matches(0, Kind::NameIdKw) {
             parser.in_node(Kind::NameRecordNode, |parser| {
                 assert!(parser.eat(Kind::NameIdKw));
-                parser.expect_recover(NUM_TYPES, recovery.union(Kind::Semi.into()));
+                parser.expect_recover(TokenSet::NUM_TYPES, recovery.union(Kind::Semi.into()));
                 metrics::expect_name_record(parser, recovery);
                 parser.expect_semi();
             })
@@ -327,7 +326,7 @@ mod os2 {
 
     // these are not keywords per the spec, so we have to handle them specially??
     static RAW_KEYWORDS: &[&[u8]] = &[
-        b"FamilyClass",
+        //b"FamilyClass",
         b"FSType",
         b"LowerOpSize",
         b"WeightClass",
@@ -340,27 +339,33 @@ mod os2 {
         let recovery_semi = recovery.union(Kind::Semi.into());
 
         if parser.matches(0, METRICS) {
-            table_node(parser, |parser| {
+            parser.in_node(Kind::MetricValueNode, |parser| {
                 assert!(parser.eat(METRICS));
                 parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery_semi);
                 parser.expect_semi();
             })
         } else if parser.matches(0, NUM_LISTS) {
-            table_node(parser, |parser| {
+            parser.in_node(Kind::Os2NumberListNode, |parser| {
                 assert!(parser.eat(NUM_LISTS));
                 parser.eat_while(Kind::Number);
                 parser.expect_semi();
             })
         } else if parser.matches(0, Kind::VendorKw) {
-            table_node(parser, |parser| {
+            parser.in_node(Kind::Os2VendorNode, |parser| {
                 assert!(parser.eat(Kind::VendorKw));
                 parser.expect_recover(Kind::String, recovery_semi);
                 parser.expect_semi();
             })
         } else if RAW_KEYWORDS.contains(&parser.nth_raw(0)) {
-            table_node(parser, |parser| {
+            parser.in_node(Kind::NumberValueNode, |parser| {
                 parser.eat_raw();
                 parser.expect_recover(Kind::Number, recovery_semi);
+                parser.expect_semi();
+            })
+        } else if parser.nth_raw(0) == b"FamilyClass" {
+            parser.in_node(Kind::Os2FamilyClassNode, |parser| {
+                parser.eat_raw();
+                parser.expect_recover(TokenSet::NUM_TYPES, recovery.union(Kind::Semi.into()));
                 parser.expect_semi();
             })
         } else {
@@ -383,7 +388,7 @@ mod vhea {
         let recovery = recovery.union(VHEA_KEYWORDS).union(Kind::RBrace.into());
         let recovery_semi = recovery.union(Kind::Semi.into());
         if parser.matches(0, VHEA_KEYWORDS) {
-            parser.in_node(Kind::MetricNode, |parser| {
+            parser.in_node(Kind::MetricValueNode, |parser| {
                 assert!(parser.eat(VHEA_KEYWORDS));
                 parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery_semi);
                 parser.expect_semi();

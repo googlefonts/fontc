@@ -7,8 +7,10 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
+    str::FromStr,
 };
 
+use fonttools::types::Tag;
 use smol_str::SmolStr;
 
 use super::glyph_range;
@@ -170,12 +172,13 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_table(&mut self, node: &typed::Table) {
         match node {
-            typed::Table::Base(table) => self.validate_base(&table),
-            typed::Table::Gdef(table) => self.validate_gdef(&table),
-            typed::Table::Head(table) => self.validate_head(&table),
-            typed::Table::Hhea(table) => self.validate_hhea(&table),
-            typed::Table::Vhea(table) => self.validate_vhea(&table),
-            typed::Table::Name(table) => self.validate_name(&table),
+            typed::Table::Base(table) => self.validate_base(table),
+            typed::Table::Gdef(table) => self.validate_gdef(table),
+            typed::Table::Head(table) => self.validate_head(table),
+            typed::Table::Hhea(table) => self.validate_hhea(table),
+            typed::Table::Vhea(table) => self.validate_vhea(table),
+            typed::Table::Name(table) => self.validate_name(table),
+            typed::Table::Os2(table) => self.validate_os2(table),
             _ => (),
         }
     }
@@ -190,6 +193,76 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_vhea(&mut self, _node: &typed::VheaTable) {
         // lgtm
+    }
+
+    fn validate_os2(&mut self, node: &typed::Os2Table) {
+        for item in node.statements() {
+            match item {
+                typed::Os2TableItem::NumberList(item) => match item.keyword().kind {
+                    Kind::PanoseKw => {
+                        for number in item.values() {
+                            match number.parse_unsigned() {
+                                None => self.error(number.range(), "expected positive number"),
+                                Some(0..=127) => (),
+                                Some(_) => {
+                                    self.error(number.range(), "expected value in range 0..128")
+                                }
+                            }
+                        }
+                    }
+                    Kind::UnicodeRangeKw => {
+                        for number in item.values() {
+                            if !(0..128).contains(&number.parse_signed()) {
+                                self.error(
+                                    number.range(),
+                                    "expected value in unicode character range 0..=127",
+                                );
+                            }
+                        }
+                    }
+                    Kind::CodePageRangeKw => {
+                        for number in item.values() {
+                            if super::tables::OS2::bit_for_code_page(number.parse_signed() as u16)
+                                .is_none()
+                            {
+                                self.error(number.range(), "not a valid code page");
+                            }
+                        }
+                    }
+                    _ => unreachable!(),
+                },
+                typed::Os2TableItem::FamilyClass(item) => {
+                    let val = item.value();
+                    match val.parse() {
+                        Ok(_val) => {
+                            //FIXME: check if valid, and warn if not? makeotf
+                            // does not validate
+                        }
+                        Err(e) => self.error(val.range(), e),
+                    };
+                }
+                typed::Os2TableItem::Metric(i) => {
+                    if matches!(i.keyword().kind, Kind::WinAscentKw | Kind::WinDescentKw) {
+                        let val = i.metric();
+                        if val.parse().is_negative() {
+                            self.error(val.range(), "expected positive number");
+                        }
+                    }
+                }
+                typed::Os2TableItem::Number(item) => {
+                    let val = item.number();
+                    if val.parse_unsigned().is_none() {
+                        self.error(val.range(), "expected positive number");
+                    }
+                }
+                typed::Os2TableItem::Vendor(item) => {
+                    let val = item.value();
+                    if let Err(e) = Tag::from_str(val.as_str().trim_matches('"')) {
+                        self.error(val.range(), format!("invalid tag: '{}'", e));
+                    }
+                }
+            }
+        }
     }
 
     fn validate_name(&mut self, node: &typed::NameTable) {

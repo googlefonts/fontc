@@ -13,8 +13,7 @@ pub(crate) struct Tables {
     pub name: Option<name>,
     pub GDEF: Option<GDEF>,
     pub BASE: Option<BASE>,
-    //name: Option<tables::name>,
-    //OS2: Option<tables::OS2>,
+    pub OS2: Option<OS2>,
     //STAT: Option<tables::STAT>,
 }
 #[derive(Clone, Debug, Default)]
@@ -56,7 +55,7 @@ pub struct NameRecord {
 }
 
 #[derive(Clone, Debug, Default)]
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 pub struct GDEF {
     pub base_glyphs: Option<GlyphClass>,
     pub ligature_glyphs: Option<GlyphClass>,
@@ -69,12 +68,37 @@ pub struct GDEF {
 }
 
 #[derive(Clone, Debug, Default)]
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 pub struct BASE {
     pub horiz_tag_list: Vec<Tag>,
     pub horiz_script_list: Vec<ScriptRecord>,
     pub vert_tag_list: Vec<Tag>,
     pub vert_script_list: Vec<ScriptRecord>,
+}
+
+#[derive(Clone, Debug, Default)]
+#[allow(non_camel_case_types)]
+pub struct OS2 {
+    pub fs_type: u16,
+    pub panose: [u8; 10],
+    pub unicode_range: u128,
+    pub code_page_range: u64,
+    pub typo_ascender: i16,
+    pub typo_descender: i16,
+    pub typo_line_gap: i16,
+    pub x_height: i16,
+    pub cap_height: i16,
+    pub win_ascent: u16,
+    pub win_descent: u16,
+    pub width_class: u16,
+    pub weight_class: u16,
+    pub vendor_id: SmolStr,
+    pub lower_op_size: Option<u16>,
+    pub upper_op_size: Option<u16>,
+    pub horiz_script_list: Vec<ScriptRecord>,
+    pub vert_tag_list: Vec<Tag>,
+    pub vert_script_list: Vec<ScriptRecord>,
+    pub family_class: i16,
 }
 
 #[derive(Clone, Debug)]
@@ -141,3 +165,107 @@ impl name {
         fonttools::tables::name::name { records }
     }
 }
+
+impl OS2 {
+    pub fn bit_for_code_page(val: u16) -> Option<u8> {
+        CODEPAGE_TO_BIT
+            .iter()
+            .find_map(|(page, bit)| if *page == val { Some(*bit) } else { None })
+    }
+
+    pub fn build(&self) -> fonttools::tables::os2::os2 {
+        const MASK_32: u32 = 0xffff_ffff;
+        let panose = fonttools::tables::os2::Panose {
+            panose0: self.panose[0],
+            panose1: self.panose[1],
+            panose2: self.panose[2],
+            panose3: self.panose[3],
+            panose4: self.panose[4],
+            panose5: self.panose[5],
+            panose6: self.panose[6],
+            panose7: self.panose[7],
+            panose8: self.panose[8],
+            panose9: self.panose[9],
+        };
+        let mut result = fonttools::tables::os2::os2 {
+            version: 2,
+            xAvgCharWidth: 0,
+            usWeightClass: self.weight_class,
+            usWidthClass: self.width_class,
+            fsType: self.fs_type,
+            ySubscriptXSize: 0,
+            ySubscriptYSize: 0,
+            ySubscriptXOffset: 0,
+            ySubscriptYOffset: 0,
+            ySuperscriptXSize: 0,
+            ySuperscriptYSize: 0,
+            ySuperscriptYOffset: 0,
+            ySuperscriptXOffset: 0,
+            yStrikeoutSize: 0,
+            yStrikeoutPosition: 0,
+            sFamilyClass: self.family_class,
+            panose,
+            ulUnicodeRange1: (self.unicode_range & MASK_32 as u128) as u32,
+            ulUnicodeRange2: (self.unicode_range >> 32 & MASK_32 as u128) as u32,
+            ulUnicodeRange3: (self.unicode_range >> 64 & MASK_32 as u128) as u32,
+            ulUnicodeRange4: (self.unicode_range >> 96 & MASK_32 as u128) as u32,
+            achVendID: self.vendor_id.parse().unwrap(),
+            fsSelection: 0,
+            usFirstCharIndex: 0,
+            usLastCharIndex: 0,
+            sTypoAscender: self.typo_ascender,
+            sTypoDescender: self.typo_descender,
+            sTypoLineGap: self.typo_line_gap,
+            usWinAscent: self.win_ascent,
+            usWinDescent: self.win_descent,
+            ulCodePageRange1: Some((self.code_page_range & MASK_32 as u64) as u32),
+            ulCodePageRange2: Some((self.code_page_range >> 32 & MASK_32 as u64) as u32),
+            sxHeight: Some(self.x_height),
+            sCapHeight: Some(self.cap_height),
+            usLowerOpticalPointSize: self.lower_op_size,
+            usUpperOpticalPointSize: self.upper_op_size,
+            usDefaultChar: None,
+            usBreakChar: None,
+            usMaxContext: None,
+        };
+
+        if result.usLowerOpticalPointSize.is_some() || result.usUpperOpticalPointSize.is_some() {
+            result.version = 5;
+        }
+        result
+    }
+}
+
+static CODEPAGE_TO_BIT: &[(u16, u8)] = &[
+    (437, 63),
+    (708, 61),
+    (737, 60),
+    (775, 59),
+    (850, 62),
+    (852, 58),
+    (855, 57),
+    (857, 56),
+    (860, 55),
+    (861, 54),
+    (862, 53),
+    (863, 52),
+    (864, 51),
+    (865, 50),
+    (866, 49),
+    (869, 48),
+    (874, 16),
+    (932, 17),
+    (936, 18),
+    (949, 19),
+    (950, 20),
+    (1250, 1),
+    (1251, 2),
+    (1252, 0),
+    (1253, 3),
+    (1254, 4),
+    (1255, 5),
+    (1256, 6),
+    (1257, 7),
+    (1258, 8),
+    (1361, 21),
+];

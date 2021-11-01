@@ -230,7 +230,11 @@ pub enum Kind {
     HeadTableNode,
     HeadFontRevisionNode,
     HheaTableNode,
-    MetricNode, // shared between hhea, vhea, and os2
+    MetricValueNode, // shared between hhea, vhea, and os2
+    NumberValueNode, // used in os2
+    StringValueNode, // used in os2
+    Os2NumberListNode,
+    Os2FamilyClassNode,
     NameTableNode,
     NameRecordNode,
     BaseTableNode,
@@ -605,7 +609,11 @@ impl std::fmt::Display for Kind {
             Self::GdefLigatureCaretNode => write!(f, "GdefLigatureCaretNode"),
             Self::NameRecordNode => write!(f, "NameRecordNode"),
             Self::HeadFontRevisionNode => write!(f, "HeadFontRevisionNode"),
-            Self::MetricNode => write!(f, "MetricNode"), // shared between hhea, vhea, and os2
+            Self::MetricValueNode => write!(f, "MetricNode"), // shared between hhea, vhea, and os2
+            Self::NumberValueNode => write!(f, "NumberNode"), // used in os2
+            Self::StringValueNode => write!(f, "StringNode"), // used in os2
+            Self::Os2NumberListNode => write!(f, "Os2NumberListNode"),
+            Self::Os2FamilyClassNode => write!(f, "Os2FamilyClassNode"),
         }
     }
 }

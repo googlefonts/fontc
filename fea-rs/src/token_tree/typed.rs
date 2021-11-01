@@ -214,7 +214,9 @@ ast_node!(BaseTagList, Kind::BaseTagListNode);
 ast_node!(BaseScriptList, Kind::BaseScriptListNode);
 ast_node!(ScriptRecord, Kind::ScriptRecordNode);
 
-ast_node!(MetricRecord, Kind::MetricNode);
+ast_node!(MetricRecord, Kind::MetricValueNode);
+ast_node!(NumberRecord, Kind::NumberValueNode);
+ast_node!(VendorRecord, Kind::Os2VendorNode);
 ast_node!(NameRecord, Kind::NameRecordNode);
 
 ast_enum!(DecOctHex {
@@ -235,6 +237,16 @@ ast_enum!(GdefTableItem {
 });
 
 ast_node!(HeadFontRevision, Kind::HeadFontRevisionNode);
+
+ast_node!(Os2NumberList, Kind::Os2NumberListNode);
+ast_node!(Os2FamilyClass, Kind::Os2FamilyClassNode);
+ast_enum!(Os2TableItem {
+    Number(NumberRecord),
+    NumberList(Os2NumberList),
+    Metric(MetricRecord),
+    Vendor(VendorRecord),
+    FamilyClass(Os2FamilyClass),
+});
 
 ast_node!(Gsub1, Kind::GsubType1);
 ast_node!(Gsub2, Kind::GsubType2);
@@ -861,6 +873,48 @@ impl MetricRecord {
 
     pub fn metric(&self) -> Metric {
         self.iter().find_map(Metric::cast).unwrap()
+    }
+}
+
+impl Os2Table {
+    pub fn statements(&self) -> impl Iterator<Item = Os2TableItem> + '_ {
+        self.iter().filter_map(Os2TableItem::cast)
+    }
+}
+
+impl NumberRecord {
+    pub fn keyword(&self) -> &Token {
+        self.iter().next().and_then(|t| t.as_token()).unwrap()
+    }
+
+    pub fn number(&self) -> Number {
+        self.iter().find_map(Number::cast).unwrap()
+    }
+}
+
+impl VendorRecord {
+    pub fn keyword(&self) -> &Token {
+        self.iter().next().and_then(|t| t.as_token()).unwrap()
+    }
+
+    pub fn value(&self) -> &Token {
+        self.find_token(Kind::String).unwrap()
+    }
+}
+
+impl Os2NumberList {
+    pub fn keyword(&self) -> &Token {
+        self.iter().next().and_then(|t| t.as_token()).unwrap()
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = Number> + '_ {
+        self.iter().skip(1).filter_map(Number::cast)
+    }
+}
+
+impl Os2FamilyClass {
+    pub fn value(&self) -> DecOctHex {
+        self.iter().find_map(DecOctHex::cast).unwrap()
     }
 }
 
