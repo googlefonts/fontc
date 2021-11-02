@@ -14,7 +14,7 @@ pub(crate) struct Tables {
     pub GDEF: Option<GDEF>,
     pub BASE: Option<BASE>,
     pub OS2: Option<OS2>,
-    //STAT: Option<tables::STAT>,
+    pub STAT: Option<STAT>,
 }
 #[derive(Clone, Debug, Default)]
 #[allow(non_camel_case_types)]
@@ -47,10 +47,15 @@ pub struct name {
 
 #[derive(Clone, Debug, Default)]
 pub struct NameRecord {
+    pub name_id: u16,
+    pub spec: NameSpec,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct NameSpec {
     pub platform_id: u16,
     pub encoding_id: u16,
     pub language_id: u16,
-    pub name_id: u16,
     pub string: SmolStr,
 }
 
@@ -108,6 +113,54 @@ pub struct ScriptRecord {
     pub values: Vec<i16>,
 }
 
+#[derive(Clone, Debug)]
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+pub struct STAT {
+    pub name: StatFallbackName,
+    pub records: Vec<AxisRecord>,
+    pub values: Vec<AxisValue>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AxisRecord {
+    pub tag: Tag,
+    pub name: Vec<NameSpec>,
+    pub ordering: u16,
+}
+
+#[derive(Clone, Debug)]
+pub struct AxisValue {
+    pub flags: u16,
+    pub name: Vec<NameSpec>,
+    pub location: AxisLocation,
+}
+
+#[derive(Clone, Debug)]
+pub enum AxisLocation {
+    One {
+        tag: Tag,
+        value: f32,
+    },
+    Two {
+        tag: Tag,
+        nominal: f32,
+        min: f32,
+        max: f32,
+    },
+    Three {
+        tag: Tag,
+        value: f32,
+        linked: f32,
+    },
+    Four(Vec<(Tag, f32)>),
+}
+
+#[derive(Clone, Debug)]
+pub enum StatFallbackName {
+    Id(u16),
+    Record(Vec<NameSpec>),
+}
+
 impl head {
     pub(crate) fn build(&self) -> fonttools::tables::head::head {
         // match what python fonttools does
@@ -155,11 +208,11 @@ impl name {
             .iter()
             .filter(|record| !(1..=6).contains(&record.name_id))
             .map(|record| fonttools::tables::name::NameRecord {
-                platformID: record.platform_id,
-                encodingID: record.encoding_id,
-                languageID: record.language_id,
+                platformID: record.spec.platform_id,
+                encodingID: record.spec.encoding_id,
+                languageID: record.spec.language_id,
                 nameID: record.name_id,
-                string: record.string.trim_matches('"').to_string(),
+                string: record.spec.string.trim_matches('"').to_string(),
             })
             .collect();
         fonttools::tables::name::name { records }

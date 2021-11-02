@@ -679,6 +679,7 @@ impl<'a> CompilationCtx<'a> {
             typed::Table::Gdef(table) => self.resolve_gdef(&table),
             typed::Table::Head(table) => self.resolve_head(&table),
             typed::Table::Os2(table) => self.resolve_os2(&table),
+            typed::Table::Stat(table) => self.resolve_stat(&table),
             _ => (),
         }
     }
@@ -719,26 +720,9 @@ impl<'a> CompilationCtx<'a> {
         let mut name = super::tables::name::default();
         for record in table.statements() {
             let name_id = record.name_id().parse().unwrap();
-            let entry = record.entry();
-            let platform_id = entry.platform_id().map(|n| n.parse().unwrap()).unwrap_or(3);
-
-            let (platspec_id, language_id) = match entry.platform_and_language_ids() {
-                Some((platform, language)) => {
-                    (platform.parse().unwrap(), language.parse().unwrap())
-                }
-                None => match platform_id {
-                    1 => (0, 0),
-                    3 => (1, 0x409),
-                    _ => panic!("missed validation"),
-                },
-            };
-            name.records.push(super::tables::NameRecord {
-                platform_id,
-                encoding_id: platspec_id,
-                language_id,
-                name_id,
-                string: entry.string().text.clone(),
-            })
+            let spec = self.resolve_name_spec(&record.entry());
+            name.records
+                .push(super::tables::NameRecord { spec, name_id })
         }
         self.tables.name = Some(name);
     }
@@ -801,6 +785,109 @@ impl<'a> CompilationCtx<'a> {
             }
         }
         self.tables.OS2 = Some(os2);
+    }
+
+    fn resolve_stat(&mut self, table: &typed::StatTable) {
+        let mut stat = super::tables::STAT {
+            name: super::tables::StatFallbackName::Id(u16::MAX),
+            records: Vec::new(),
+            values: Vec::new(),
+        };
+
+        for item in table.statements() {
+            match item {
+                typed::StatTableItem::ElidedFallbackName(name) => {
+                    if let Some(id) = name.elided_fallback_name_id() {
+                        //FIXME: validate
+                        stat.name =
+                            super::tables::StatFallbackName::Id(id.parse_unsigned().unwrap());
+                    } else {
+                        let names = name
+                            .names()
+                            .map(|n| self.resolve_name_spec(&n.name()))
+                            .collect();
+                        stat.name = super::tables::StatFallbackName::Record(names);
+                    }
+                }
+                typed::StatTableItem::AxisValue(value) => {
+                    stat.values.push(self.resolve_stat_axis_value(&value));
+                }
+                typed::StatTableItem::DesignAxis(value) => {
+                    let tag = value.tag().to_raw();
+                    let ordering = value.ordering().parse_unsigned().unwrap();
+                    //FIXME: validate
+                    let name = value
+                        .names()
+                        .map(|n| self.resolve_name_spec(&n.name()))
+                        .collect();
+                    stat.records.push(super::tables::AxisRecord {
+                        tag,
+                        ordering,
+                        name,
+                    });
+                }
+            }
+        }
+        self.tables.STAT = Some(stat);
+    }
+
+    fn resolve_stat_axis_value(&mut self, node: &typed::StatAxisValue) -> super::tables::AxisValue {
+        use super::tables::AxisLocation;
+        let mut flags = 0;
+        let mut name = Vec::new();
+        let mut location = None;
+        for item in node.statements() {
+            match item {
+                typed::StatAxisValueItem::Flag(flag) => {
+                    for bit in flag.bits() {
+                        flags |= bit;
+                    }
+                }
+                typed::StatAxisValueItem::NameRecord(record) => {
+                    name.push(self.resolve_name_spec(&record.name()));
+                }
+                typed::StatAxisValueItem::Location(loc) => {
+                    let loc_tag = loc.tag().to_raw();
+                    match loc.value() {
+                        typed::LocationValue::Value(num) => {
+                            let val = num.parse();
+                            if let Some(AxisLocation::One { tag, value }) = location.as_ref() {
+                                location = Some(AxisLocation::Four(vec![(*tag, *value)]));
+                            }
+                            if let Some(AxisLocation::Four(vals)) = location.as_mut() {
+                                vals.push((loc_tag, val));
+                            } else {
+                                location = Some(AxisLocation::One {
+                                    tag: loc_tag,
+                                    value: val,
+                                });
+                            }
+                        }
+                        typed::LocationValue::MinMax { nominal, min, max } => {
+                            location = Some(AxisLocation::Two {
+                                tag: loc_tag,
+                                nominal: nominal.parse(),
+                                max: max.parse(),
+                                min: min.parse(),
+                            });
+                        }
+                        typed::LocationValue::Linked { value, linked } => {
+                            location = Some(AxisLocation::Three {
+                                tag: loc_tag,
+                                value: value.parse(),
+                                linked: linked.parse(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        super::tables::AxisValue {
+            flags,
+            name,
+            location: location.unwrap(),
+        }
     }
 
     fn resolve_hhea(&mut self, table: &typed::HheaTable) {
@@ -886,6 +973,33 @@ impl<'a> CompilationCtx<'a> {
         let float = font_rev.text().parse::<f32>().unwrap();
         head.font_revision = float;
         self.tables.head = Some(head);
+    }
+
+    fn resolve_name_spec(&mut self, node: &typed::NameSpec) -> super::tables::NameSpec {
+        const WIN_PLATFORM: u16 = 3;
+        const MAC_PLATFORM: u16 = 1;
+        const WIN_DEFAULT_IDS: (u16, u16) = (1, 0x0409);
+        const MAC_DEFAULT_IDS: (u16, u16) = (0, 0);
+
+        let platform_id = node
+            .platform_id()
+            .map(|n| n.parse().unwrap())
+            .unwrap_or(WIN_PLATFORM);
+
+        let (encoding_id, language_id) = match node.platform_and_language_ids() {
+            Some((platform, language)) => (platform.parse().unwrap(), language.parse().unwrap()),
+            None => match platform_id {
+                MAC_PLATFORM => MAC_DEFAULT_IDS,
+                WIN_PLATFORM => WIN_DEFAULT_IDS,
+                _ => panic!("missed validation"),
+            },
+        };
+        super::tables::NameSpec {
+            platform_id,
+            encoding_id,
+            language_id,
+            string: node.string().text.clone(),
+        }
     }
 
     fn resolve_lookup_ref(&mut self, lookup: typed::LookupRef) {

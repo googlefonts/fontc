@@ -179,6 +179,7 @@ impl<'a> ValidationCtx<'a> {
             typed::Table::Vhea(table) => self.validate_vhea(table),
             typed::Table::Name(table) => self.validate_name(table),
             typed::Table::Os2(table) => self.validate_os2(table),
+            typed::Table::Stat(table) => self.validate_stat(table),
             _ => (),
         }
     }
@@ -262,6 +263,46 @@ impl<'a> ValidationCtx<'a> {
                     }
                 }
             }
+        }
+    }
+
+    fn validate_stat(&mut self, node: &typed::StatTable) {
+        let mut seen_fallback_name = false;
+        for item in node.statements() {
+            match item {
+                typed::StatTableItem::ElidedFallbackName(_) => {
+                    if seen_fallback_name {
+                        self.error(item.range(), "fallback name must only be defined once");
+                    }
+                    seen_fallback_name = true;
+                }
+                typed::StatTableItem::AxisValue(axis) => {
+                    let mut seen_location_format = None;
+                    for item in axis.statements() {
+                        if let typed::StatAxisValueItem::Location(loc) = item {
+                            let format = match loc.value() {
+                                typed::LocationValue::Value(_) => 'a',
+                                typed::LocationValue::MinMax { .. } => 'b',
+                                typed::LocationValue::Linked { .. } => 'c',
+                            };
+                            let prev_format = seen_location_format.replace(format);
+                            match (prev_format, format) {
+                                (Some('a'), 'a') => (),
+                                (Some(_), 'a') => self.error(loc.range(), "multiple location statements, but previous statement was not format 'a'"),
+                                (Some(_), 'b' | 'c') => self.error(loc.range(),format!("location statement format '{}' must be only statement", format)),
+                                _ => (),
+                            }
+                        }
+                    }
+                }
+                _ => (),
+            }
+        }
+        if !seen_fallback_name {
+            self.error(
+                node.tag().range(),
+                "STAT table must include 'ElidedFallbackName' or 'ElidedFallbackNameID'",
+            );
         }
     }
 

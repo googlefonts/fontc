@@ -42,6 +42,7 @@ pub(crate) fn table(parser: &mut Parser) {
         tags::OS2 => table_impl(parser, tags::OS2, os2::table_entry),
         tags::vhea => table_impl(parser, tags::vhea, vhea::table_entry),
         tags::vmtx => table_impl(parser, tags::vmtx, vmtx::table_entry),
+        tags::STAT => table_impl(parser, tags::STAT, stat::table_entry),
         _ => unknown_table(parser, tag.range),
     }
 
@@ -420,6 +421,107 @@ mod vmtx {
             parser.expect_recover(VMTX_KEYWORDS, recovery_semi);
             parser.eat_until(recovery);
         }
+    }
+}
+
+mod stat {
+    use super::*;
+    const STAT_TOPLEVEL: TokenSet = TokenSet::new(&[
+        Kind::ElidedFallbackNameKw,
+        Kind::ElidedFallbackNameIDKw,
+        Kind::DesignAxisKw,
+        Kind::AxisValueKw,
+    ]);
+
+    pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
+        let recovery = recovery.union(STAT_TOPLEVEL);
+        if parser.matches(0, Kind::ElidedFallbackNameKw) {
+            parser.in_node(Kind::StatElidedFallbackNameNode, |parser| {
+                assert!(parser.eat(Kind::ElidedFallbackNameKw));
+                parser.expect_recover(Kind::LBrace, recovery);
+                super::super::greedy(eat_name_entry)(parser, recovery);
+                parser.expect_recover(Kind::RBrace, recovery);
+                parser.expect_semi();
+            })
+        } else if parser.matches(0, Kind::ElidedFallbackNameIDKw) {
+            parser.in_node(Kind::StatElidedFallbackNameNode, |parser| {
+                assert!(parser.eat(Kind::ElidedFallbackNameIDKw));
+                parser.expect_recover(Kind::Number, recovery.union(Kind::Semi.into()));
+                parser.expect_semi();
+            })
+        } else if parser.matches(0, Kind::DesignAxisKw) {
+            parser.in_node(Kind::StatDesignAxisNode, |parser| {
+                assert!(parser.eat(Kind::DesignAxisKw));
+                parser.expect_tag(recovery);
+                parser.expect_recover(Kind::Number, recovery);
+                parser.expect_recover(Kind::LBrace, recovery);
+                super::super::greedy(eat_name_entry)(parser, recovery);
+                parser.expect_recover(Kind::RBrace, recovery);
+                parser.expect_semi();
+            })
+        } else if parser.matches(0, Kind::AxisValueKw) {
+            parser.in_node(Kind::StatAxisValueNode, |parser| {
+                assert!(parser.eat(Kind::AxisValueKw));
+                parser.expect_recover(Kind::LBrace, recovery);
+                super::super::greedy(axis_value_field)(parser, recovery);
+                parser.expect_recover(Kind::RBrace, recovery);
+                parser.expect_semi();
+            })
+        } else {
+            parser.err_recover("not valid in STAT table", recovery);
+            parser.eat_until(recovery);
+        }
+    }
+
+    fn axis_value_field(parser: &mut Parser, recovery: TokenSet) -> bool {
+        eat_name_entry(parser, recovery)
+            || eat_location(parser, recovery)
+            || eat_flags(parser, recovery)
+    }
+
+    fn eat_flags(parser: &mut Parser, _recovery: TokenSet) -> bool {
+        const FLAGS: TokenSet = TokenSet::new(&[
+            Kind::ElidableAxisValueNameKw,
+            Kind::OlderSiblingFontAttributeKw,
+        ]);
+        if parser.matches(0, Kind::FlagKw) {
+            parser.in_node(Kind::StatAxisValueFlagNode, |parser| {
+                assert!(parser.eat(Kind::FlagKw));
+                parser.eat(FLAGS);
+                parser.eat(FLAGS);
+                parser.expect_semi();
+            });
+            return true;
+        }
+        false
+    }
+
+    fn eat_location(parser: &mut Parser, recovery: TokenSet) -> bool {
+        const NUM_OR_FLOAT: TokenSet = TokenSet::new(&[Kind::Number, Kind::Float]);
+        if parser.matches(0, Kind::LocationKw) {
+            parser.in_node(Kind::StatAxisValueLocationNode, |parser| {
+                assert!(parser.eat(Kind::LocationKw));
+                parser.expect_tag(recovery);
+                parser.expect_recover(NUM_OR_FLOAT, recovery);
+                parser.eat(NUM_OR_FLOAT);
+                parser.eat(NUM_OR_FLOAT);
+                parser.expect_semi();
+            });
+            return true;
+        }
+        false
+    }
+
+    fn eat_name_entry(parser: &mut Parser, recovery: TokenSet) -> bool {
+        if parser.matches(0, Kind::NameKw) {
+            parser.in_node(Kind::StatNameRecordNode, |parser| {
+                assert!(parser.eat(Kind::NameKw));
+                super::super::metrics::expect_name_record(parser, recovery);
+                parser.expect_semi();
+            });
+            return true;
+        }
+        false
     }
 }
 

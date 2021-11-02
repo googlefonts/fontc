@@ -163,6 +163,7 @@ ast_token!(GlyphName, Kind::GlyphName);
 ast_token!(Tag, Kind::Tag);
 ast_token!(GlyphClassName, Kind::NamedGlyphClass);
 ast_token!(Number, Kind::Number);
+ast_token!(Float, Kind::Float);
 ast_token!(Octal, Kind::Octal);
 ast_token!(Hex, Kind::Hex);
 ast_token!(Metric, Kind::Metric);
@@ -218,12 +219,17 @@ ast_node!(MetricRecord, Kind::MetricValueNode);
 ast_node!(NumberRecord, Kind::NumberValueNode);
 ast_node!(VendorRecord, Kind::Os2VendorNode);
 ast_node!(NameRecord, Kind::NameRecordNode);
-ast_node!(NameRecordEntry, Kind::NameRecordEntryNode);
+ast_node!(NameSpec, Kind::NameRecordEntryNode);
 
 ast_enum!(DecOctHex {
     Decimal(Number),
     Octal(Octal),
     Hex(Hex),
+});
+
+ast_enum!(FloatLike {
+    Float(Float),
+    Number(Number),
 });
 
 ast_node!(GdefClassDef, Kind::GdefClassDefNode);
@@ -247,6 +253,26 @@ ast_enum!(Os2TableItem {
     Metric(MetricRecord),
     Vendor(VendorRecord),
     FamilyClass(Os2FamilyClass),
+});
+
+ast_node!(StatElidedFallbackName, Kind::StatElidedFallbackNameNode);
+ast_node!(StatDesignAxis, Kind::StatDesignAxisNode);
+ast_node!(StatAxisValue, Kind::StatAxisValueNode);
+
+ast_enum!(StatTableItem {
+    ElidedFallbackName(StatElidedFallbackName),
+    DesignAxis(StatDesignAxis),
+    AxisValue(StatAxisValue),
+});
+
+ast_node!(StatNameRecord, Kind::StatNameRecordNode);
+ast_node!(StatAxisFlag, Kind::StatAxisValueFlagNode);
+ast_node!(StatAxisLocation, Kind::StatAxisValueLocationNode);
+
+ast_enum!(StatAxisValueItem {
+    NameRecord(StatNameRecord),
+    Flag(StatAxisFlag),
+    Location(StatAxisLocation),
 });
 
 ast_node!(Gsub1, Kind::GsubType1);
@@ -465,6 +491,15 @@ impl Number {
 
     pub fn parse_unsigned(&self) -> Option<u16> {
         self.text().parse().ok()
+    }
+}
+
+impl FloatLike {
+    pub fn parse(&self) -> f32 {
+        match self {
+            FloatLike::Number(n) => n.parse_signed() as f32,
+            FloatLike::Float(n) => n.text().parse().unwrap(),
+        }
     }
 }
 
@@ -926,12 +961,12 @@ impl NameRecord {
         self.iter().find_map(DecOctHex::cast).unwrap()
     }
 
-    pub fn entry(&self) -> NameRecordEntry {
-        self.iter().find_map(NameRecordEntry::cast).unwrap()
+    pub fn entry(&self) -> NameSpec {
+        self.iter().find_map(NameSpec::cast).unwrap()
     }
 }
 
-impl NameRecordEntry {
+impl NameSpec {
     pub fn platform_id(&self) -> Option<DecOctHex> {
         self.iter().find_map(DecOctHex::cast)
     }
@@ -1036,4 +1071,111 @@ impl HeadFontRevision {
     pub fn value(&self) -> Fixed32 {
         self.iter().find_map(Fixed32::cast).unwrap()
     }
+}
+
+impl StatTable {
+    pub fn tag(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    pub fn statements(&self) -> impl Iterator<Item = StatTableItem> + '_ {
+        self.iter().filter_map(StatTableItem::cast)
+    }
+}
+
+impl StatElidedFallbackName {
+    pub fn elided_fallback_name_id(&self) -> Option<Number> {
+        self.iter()
+            .take_while(|t| t.kind() != Kind::StatNameRecordNode)
+            .find_map(Number::cast)
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = StatNameRecord> + '_ {
+        self.iter().filter_map(StatNameRecord::cast)
+    }
+}
+
+impl StatDesignAxis {
+    pub fn tag(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    pub fn ordering(&self) -> Number {
+        self.iter()
+            .take_while(|t| t.kind() != Kind::LBrace)
+            .find_map(Number::cast)
+            .unwrap()
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = StatNameRecord> + '_ {
+        self.iter()
+            .skip_while(|t| t.kind() != Kind::LBrace)
+            .filter_map(StatNameRecord::cast)
+    }
+}
+
+impl StatNameRecord {
+    pub fn name(&self) -> NameSpec {
+        self.iter().find_map(NameSpec::cast).unwrap()
+    }
+}
+
+impl StatAxisValue {
+    pub fn statements(&self) -> impl Iterator<Item = StatAxisValueItem> + '_ {
+        self.iter().skip(2).filter_map(StatAxisValueItem::cast)
+    }
+}
+
+impl StatAxisFlag {
+    /// iterate bits to be accumulated
+    pub fn bits(&self) -> impl Iterator<Item = u16> + '_ {
+        self.iter()
+            .skip(1)
+            .take_while(|t| t.kind() != Kind::Semi)
+            .filter_map(|t| match t.kind() {
+                Kind::OlderSiblingFontAttributeKw => Some(0x01),
+                Kind::ElidableAxisValueNameKw => Some(0x02),
+                t if t.is_trivia() => None,
+                other => panic!("parser error '{}'", other),
+            })
+    }
+}
+
+impl StatAxisLocation {
+    pub fn tag(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    pub fn value(&self) -> LocationValue {
+        let mut iter = self.iter().filter_map(FloatLike::cast);
+        let first = iter.next().unwrap();
+        let second = match iter.next() {
+            Some(second) => second,
+            None => return LocationValue::Value(first),
+        };
+        match iter.next() {
+            Some(third) => LocationValue::MinMax {
+                nominal: first,
+                min: second,
+                max: third,
+            },
+            None => LocationValue::Linked {
+                value: first,
+                linked: second,
+            },
+        }
+    }
+}
+
+pub enum LocationValue {
+    Value(FloatLike),
+    MinMax {
+        nominal: FloatLike,
+        min: FloatLike,
+        max: FloatLike,
+    },
+    Linked {
+        value: FloatLike,
+        linked: FloatLike,
+    },
 }

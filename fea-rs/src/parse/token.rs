@@ -257,8 +257,11 @@ pub enum Kind {
     VmtxEntryNode,
     StatTableNode,
     StatElidedFallbackNameNode,
+    StatNameRecordNode,
     StatDesignAxisNode,
     StatAxisValueNode,
+    StatAxisValueLocationNode,
+    StatAxisValueFlagNode,
 }
 
 impl Kind {
@@ -597,8 +600,11 @@ impl std::fmt::Display for Kind {
             Self::VmtxTableNode => write!(f, "VmtxTableNode"),
             Self::StatTableNode => write!(f, "StatTableNode"),
             Self::StatElidedFallbackNameNode => write!(f, "StatElidedFallbackNameNode"),
+            Self::StatNameRecordNode => write!(f, "StatNameRecordNode"),
             Self::StatDesignAxisNode => write!(f, "StatDesignAxisNode"),
             Self::StatAxisValueNode => write!(f, "StatAxisValueNode"),
+            Self::StatAxisValueLocationNode => write!(f, "StatAxisValueLocationNode"),
+            Self::StatAxisValueFlagNode => write!(f, "StatAxisValueFlagNode"),
             Self::VmtxEntryNode => write!(f, "VmtxEntryNode"),
             Self::Os2PanoseNode => write!(f, "Os2PanoseNode"),
             Self::Os2UnicodeRangeNode => write!(f, "Os2UnicodeRangeNode"),
