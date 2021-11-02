@@ -513,12 +513,9 @@ mod stat {
     }
 
     fn eat_name_entry(parser: &mut Parser, recovery: TokenSet) -> bool {
-        if parser.matches(0, Kind::NameKw) {
-            parser.in_node(Kind::StatNameRecordNode, |parser| {
-                assert!(parser.eat(Kind::NameKw));
-                super::super::metrics::expect_name_record(parser, recovery);
-                parser.expect_semi();
-            });
+        if parser.eat(Kind::NameKw) {
+            super::super::metrics::expect_name_record(parser, recovery);
+            parser.expect_semi();
             return true;
         }
         false

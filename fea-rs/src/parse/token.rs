@@ -237,7 +237,7 @@ pub enum Kind {
     Os2FamilyClassNode,
     NameTableNode,
     NameRecordNode,
-    NameRecordEntryNode,
+    NameSpecNode,
     BaseTableNode,
     BaseTagListNode,
     BaseScriptListNode,
@@ -257,7 +257,6 @@ pub enum Kind {
     VmtxEntryNode,
     StatTableNode,
     StatElidedFallbackNameNode,
-    StatNameRecordNode,
     StatDesignAxisNode,
     StatAxisValueNode,
     StatAxisValueLocationNode,
@@ -600,7 +599,6 @@ impl std::fmt::Display for Kind {
             Self::VmtxTableNode => write!(f, "VmtxTableNode"),
             Self::StatTableNode => write!(f, "StatTableNode"),
             Self::StatElidedFallbackNameNode => write!(f, "StatElidedFallbackNameNode"),
-            Self::StatNameRecordNode => write!(f, "StatNameRecordNode"),
             Self::StatDesignAxisNode => write!(f, "StatDesignAxisNode"),
             Self::StatAxisValueNode => write!(f, "StatAxisValueNode"),
             Self::StatAxisValueLocationNode => write!(f, "StatAxisValueLocationNode"),
@@ -615,7 +613,7 @@ impl std::fmt::Display for Kind {
             Self::GdefAttachNode => write!(f, "GdefAttachNode"),
             Self::GdefLigatureCaretNode => write!(f, "GdefLigatureCaretNode"),
             Self::NameRecordNode => write!(f, "NameRecordNode"),
-            Self::NameRecordEntryNode => write!(f, "NameRecordEntryNode"),
+            Self::NameSpecNode => write!(f, "NameRecordEntryNode"),
             Self::HeadFontRevisionNode => write!(f, "HeadFontRevisionNode"),
             Self::MetricValueNode => write!(f, "MetricNode"), // shared between hhea, vhea, and os2
             Self::NumberValueNode => write!(f, "NumberNode"), // used in os2

@@ -802,10 +802,7 @@ impl<'a> CompilationCtx<'a> {
                         stat.name =
                             super::tables::StatFallbackName::Id(id.parse_unsigned().unwrap());
                     } else {
-                        let names = name
-                            .names()
-                            .map(|n| self.resolve_name_spec(&n.name()))
-                            .collect();
+                        let names = name.names().map(|n| self.resolve_name_spec(&n)).collect();
                         stat.name = super::tables::StatFallbackName::Record(names);
                     }
                 }
@@ -816,10 +813,7 @@ impl<'a> CompilationCtx<'a> {
                     let tag = value.tag().to_raw();
                     let ordering = value.ordering().parse_unsigned().unwrap();
                     //FIXME: validate
-                    let name = value
-                        .names()
-                        .map(|n| self.resolve_name_spec(&n.name()))
-                        .collect();
+                    let name = value.names().map(|n| self.resolve_name_spec(&n)).collect();
                     stat.records.push(super::tables::AxisRecord {
                         tag,
                         ordering,
@@ -844,7 +838,7 @@ impl<'a> CompilationCtx<'a> {
                     }
                 }
                 typed::StatAxisValueItem::NameRecord(record) => {
-                    name.push(self.resolve_name_spec(&record.name()));
+                    name.push(self.resolve_name_spec(&record));
                 }
                 typed::StatAxisValueItem::Location(loc) => {
                     let loc_tag = loc.tag().to_raw();

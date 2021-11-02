@@ -163,7 +163,7 @@ pub(crate) fn parameters(parser: &mut Parser, recovery: TokenSet) {
 /// This doesn't include the leading keyword or ID, which vary.
 pub(crate) fn expect_name_record(parser: &mut Parser, recovery: TokenSet) {
     const NUM_TYPES: TokenSet = TokenSet::new(&[Kind::Number, Kind::Octal, Kind::Hex]);
-    parser.in_node(Kind::NameRecordEntryNode, |parser| {
+    parser.in_node(Kind::NameSpecNode, |parser| {
         if parser.eat(NUM_TYPES) && parser.eat(NUM_TYPES) && !parser.eat(NUM_TYPES) {
             parser.err_recover("name record must contain 1 or 3 numbers", recovery);
         }

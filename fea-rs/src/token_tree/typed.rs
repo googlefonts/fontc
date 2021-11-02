@@ -219,7 +219,7 @@ ast_node!(MetricRecord, Kind::MetricValueNode);
 ast_node!(NumberRecord, Kind::NumberValueNode);
 ast_node!(VendorRecord, Kind::Os2VendorNode);
 ast_node!(NameRecord, Kind::NameRecordNode);
-ast_node!(NameSpec, Kind::NameRecordEntryNode);
+ast_node!(NameSpec, Kind::NameSpecNode);
 
 ast_enum!(DecOctHex {
     Decimal(Number),
@@ -265,12 +265,11 @@ ast_enum!(StatTableItem {
     AxisValue(StatAxisValue),
 });
 
-ast_node!(StatNameRecord, Kind::StatNameRecordNode);
 ast_node!(StatAxisFlag, Kind::StatAxisValueFlagNode);
 ast_node!(StatAxisLocation, Kind::StatAxisValueLocationNode);
 
 ast_enum!(StatAxisValueItem {
-    NameRecord(StatNameRecord),
+    NameRecord(NameSpec),
     Flag(StatAxisFlag),
     Location(StatAxisLocation),
 });
@@ -1086,12 +1085,12 @@ impl StatTable {
 impl StatElidedFallbackName {
     pub fn elided_fallback_name_id(&self) -> Option<Number> {
         self.iter()
-            .take_while(|t| t.kind() != Kind::StatNameRecordNode)
+            .take_while(|t| t.kind() != Kind::NameKw)
             .find_map(Number::cast)
     }
 
-    pub fn names(&self) -> impl Iterator<Item = StatNameRecord> + '_ {
-        self.iter().filter_map(StatNameRecord::cast)
+    pub fn names(&self) -> impl Iterator<Item = NameSpec> + '_ {
+        self.iter().filter_map(NameSpec::cast)
     }
 }
 
@@ -1107,16 +1106,10 @@ impl StatDesignAxis {
             .unwrap()
     }
 
-    pub fn names(&self) -> impl Iterator<Item = StatNameRecord> + '_ {
+    pub fn names(&self) -> impl Iterator<Item = NameSpec> + '_ {
         self.iter()
             .skip_while(|t| t.kind() != Kind::LBrace)
-            .filter_map(StatNameRecord::cast)
-    }
-}
-
-impl StatNameRecord {
-    pub fn name(&self) -> NameSpec {
-        self.iter().find_map(NameSpec::cast).unwrap()
+            .filter_map(NameSpec::cast)
     }
 }
 
