@@ -10,8 +10,8 @@ pub enum Anchor {
 }
 
 impl Anchor {
-    pub fn to_raw(&self) -> Option<RawAnchor> {
-        match *self {
+    pub fn to_raw(self) -> Option<RawAnchor> {
+        match self {
             Anchor::Coord { x, y } => Some(RawAnchor {
                 xCoordinate: x,
                 yCoordinate: y,

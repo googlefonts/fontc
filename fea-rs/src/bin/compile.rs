@@ -119,10 +119,7 @@ fn print_diagnostics(root: &Node, features: &str, diagnostics: &[Diagnostic]) {
         .map(|t| (t.kind, t.range()))
         .collect::<Vec<_>>();
 
-    println!(
-        "{}",
-        util::stringify_errors(&features, &tokens, &diagnostics)
-    );
+    println!("{}", util::stringify_errors(features, &tokens, diagnostics));
 }
 
 /// returns the tree and any errors

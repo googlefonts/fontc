@@ -16,7 +16,7 @@ pub fn validate(node: &Node, glyph_map: &GlyphMap) -> Vec<Diagnostic> {
 }
 
 /// Run the compilation pass (including validation)
-pub fn compile<'a>(node: &Node, glyph_map: &'a GlyphMap) -> Result<Compilation, Vec<Diagnostic>> {
+pub fn compile(node: &Node, glyph_map: &GlyphMap) -> Result<Compilation, Vec<Diagnostic>> {
     let ctx = validate_impl(node, glyph_map);
     if ctx.errors.iter().any(Diagnostic::is_error) {
         return Err(ctx.errors);

@@ -350,7 +350,7 @@ impl<'a> CompilationCtx<'a> {
         *self
             .mark_filter_sets
             .entry(set)
-            .or_insert(id.try_into().unwrap())
+            .or_insert_with(|| id.try_into().unwrap())
     }
 
     pub fn add_subtable_break(&mut self) {
@@ -981,7 +981,7 @@ impl<'a> CompilationCtx<'a> {
             }
         } else if let Some(name) = item.name() {
             match self.anchor_defs.get(&name.text) {
-                Some((anchor, pos)) if *pos < item.range().start => return Some(anchor.clone()),
+                Some((anchor, pos)) if *pos < item.range().start => return Some(*anchor),
                 _ => {
                     self.error(name.range(), "anchor is not defined");
                     return None;
@@ -1112,7 +1112,7 @@ fn sequence_enumerator(sequence: &[GlyphOrClass]) -> Vec<Vec<u16>> {
     let split = sequence.split_first();
     let mut result = Vec::new();
     let (left, right) = split.unwrap();
-    sequence_enumerator_impl(Vec::new(), &left, right, &mut result);
+    sequence_enumerator_impl(Vec::new(), left, right, &mut result);
     result
 }
 

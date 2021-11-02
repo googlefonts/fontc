@@ -66,7 +66,7 @@ fn advance_to_top_level(parser: &mut Parser) {
 pub fn language_system(parser: &mut Parser) {
     fn language_system_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::LanguagesystemKw));
-        if !parser.expect_tag(Kind::Semi).is_some() || !parser.expect_tag(Kind::Semi).is_some() {
+        if parser.expect_tag(Kind::Semi).is_none() || parser.expect_tag(Kind::Semi).is_none() {
             return advance_to_top_level(parser);
         }
         parser.expect_semi();

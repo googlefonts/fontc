@@ -660,8 +660,7 @@ impl Gpos3 {
     pub fn target(&self) -> GlyphOrClass {
         self.iter()
             .filter(|t| !t.kind().is_trivia())
-            .skip(2)
-            .next()
+            .nth(2)
             .and_then(GlyphOrClass::cast)
             .unwrap()
     }
@@ -683,8 +682,7 @@ impl Gpos4 {
     pub fn base(&self) -> GlyphOrClass {
         self.iter()
             .filter(|t| !t.kind().is_trivia())
-            .skip(2)
-            .next()
+            .nth(2)
             .and_then(GlyphOrClass::cast)
             .unwrap()
     }
@@ -698,8 +696,7 @@ impl Gpos5 {
     pub fn base(&self) -> GlyphOrClass {
         self.iter()
             .filter(|t| !t.kind().is_trivia())
-            .skip(2)
-            .next()
+            .nth(2)
             .and_then(GlyphOrClass::cast)
             .unwrap()
     }
@@ -713,8 +710,7 @@ impl Gpos6 {
     pub fn base(&self) -> GlyphOrClass {
         self.iter()
             .filter(|t| !t.kind().is_trivia())
-            .skip(2)
-            .next()
+            .nth(2)
             .and_then(GlyphOrClass::cast)
             .unwrap()
     }
