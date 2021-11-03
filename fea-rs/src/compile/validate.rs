@@ -13,7 +13,7 @@ use std::{
 use fonttools::types::Tag;
 use smol_str::SmolStr;
 
-use super::glyph_range;
+use super::{glyph_range, tables};
 use crate::{
     token_tree::{
         typed::{self, AstNode},
@@ -317,15 +317,20 @@ impl<'a> ValidationCtx<'a> {
                 _ => (),
             }
             let record = record.entry();
+            let mut platform = None;
             match record.platform_id() {
                 Some(id) => match id.parse() {
                     Err(e) => self.error(id.range(), e),
-                    Ok(1 | 3) => (),
+                    Ok(n @ 1 | n @ 3) => platform = Some(n),
                     Ok(_) => self.error(id.range(), "platform id must be one of '1' or '3'"),
                 },
-                None => continue,
+                None => (),
             };
 
+            let platform = platform.unwrap_or(tables::name::WIN_PLATFORM);
+            if let Err((range, err)) = validate_name_string_encoding(platform, record.string()) {
+                self.error(range, err);
+            }
             if let Some((platspec, language)) = record.platform_and_language_ids() {
                 if let Err(e) = platspec.parse() {
                     self.error(platspec.range(), e);
@@ -819,4 +824,62 @@ impl<'a> ValidationCtx<'a> {
 fn range_for_iter<T: AstNode>(mut iter: impl Iterator<Item = T>) -> Option<Range<usize>> {
     let start = iter.next()?.range();
     Some(iter.fold(start, |cur, node| cur.start..node.range().end))
+}
+
+fn validate_name_string_encoding(
+    platform: u16,
+    string: &Token,
+) -> Result<(), (Range<usize>, String)> {
+    let mut to_scan: &str = &string.as_str();
+    let token_start = string.range().start;
+    let mut cur_off = 0;
+    while !to_scan.is_empty() {
+        match to_scan.bytes().position(|b| b == b'\\') {
+            None => to_scan = "",
+            Some(pos) if platform == tables::name::WIN_PLATFORM => {
+                let range_start = token_start + cur_off + pos;
+                if let Some(val) = to_scan.get(pos + 1..pos + 5) {
+                    if let Some(c) = val.chars().find(|c| !c.is_digit(16)) {
+                        return Err((
+                            range_start..range_start + 5,
+                            format!("invalid escape sequence: '{}' is not a hex digit", c),
+                        ));
+                    }
+                } else {
+                    return Err((
+                        range_start..range_start + 1,
+                        "windows escape sequences must be four hex digits long".into(),
+                    ));
+                }
+                cur_off += to_scan[..pos].len();
+                to_scan = &to_scan[pos + 5..];
+            }
+            Some(pos) => {
+                let range_start = token_start + cur_off + pos;
+                if let Some(val) = to_scan.get(pos + 1..pos + 3) {
+                    if let Some(c) = val.chars().find(|c| !c.is_digit(16)) {
+                        return Err((
+                            range_start..range_start + 5,
+                            format!("invalid escape sequence: '{}' is not a hex digit", c),
+                        ));
+                    }
+
+                    if let Err(e) = u8::from_str_radix(val, 16) {
+                        return Err((
+                            range_start..range_start + 3,
+                            format!("invalid escape sequence '{}'", e),
+                        ));
+                    }
+                } else {
+                    return Err((
+                        range_start..range_start + 1,
+                        "windows escape sequences must be four hex digits long".into(),
+                    ));
+                }
+                cur_off += to_scan[..pos].len();
+                to_scan = &to_scan[pos + 3..];
+            }
+        }
+    }
+    Ok(())
 }
