@@ -108,11 +108,12 @@ impl<'a> Parser<'a> {
         self.sink.finish_node(None);
     }
 
-    pub(crate) fn in_node(&mut self, kind: Kind, f: impl FnOnce(&mut Parser)) {
+    pub(crate) fn in_node<R>(&mut self, kind: Kind, f: impl FnOnce(&mut Parser) -> R) -> R {
         self.eat_trivia();
         self.start_node(kind);
-        f(self);
+        let r = f(self);
         self.finish_node();
+        r
     }
 
     pub(crate) fn finish_and_remap_node(&mut self, new_kind: Kind) {

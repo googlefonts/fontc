@@ -26,20 +26,13 @@ pub(crate) fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
         parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
         if parser.eat(Kind::ContourpointKw) {
             parser.expect_recover(Kind::Number, recovery);
-        } else if parser.matches(0, Kind::LAngle)
-            && parser.matches(1, Kind::DeviceKw)
-            && expect_device(parser, recovery)
-        {
+        } else if eat_device(parser, recovery) {
             expect_device(parser, recovery);
         }
         parser.expect_recover(Kind::RAngle, recovery)
     }
 
-    parser.eat_trivia();
-    parser.start_node(Kind::AnchorNode);
-    let r = anchor_body(parser, recovery);
-    parser.finish_node();
-    r
+    parser.in_node(Kind::AnchorNode, |parser| anchor_body(parser, recovery))
 }
 
 // A: <metric> (-5)
@@ -100,6 +93,14 @@ pub(crate) fn expect_value_record(parser: &mut Parser, recovery: TokenSet) -> bo
 }
 
 fn expect_device(parser: &mut Parser, recovery: TokenSet) -> bool {
+    let result = eat_device(parser, recovery);
+    if !result {
+        parser.err_recover("expected device record", recovery);
+    }
+    result
+}
+
+fn eat_device(parser: &mut Parser, recovery: TokenSet) -> bool {
     fn device_body(parser: &mut Parser, recovery: TokenSet) {
         let recovery = recovery.union(TokenSet::new(&[Kind::LAngle, Kind::RAngle, Kind::Comma]));
         parser.expect_recover(Kind::LAngle, recovery);
@@ -128,10 +129,7 @@ fn expect_device(parser: &mut Parser, recovery: TokenSet) -> bool {
     }
 
     if parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw) {
-        parser.eat_trivia();
-        parser.start_node(Kind::DeviceKw);
-        device_body(parser, recovery);
-        parser.finish_node();
+        parser.in_node(Kind::DeviceNode, |parser| device_body(parser, recovery));
         true
     } else {
         false
