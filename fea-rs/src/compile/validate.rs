@@ -322,13 +322,12 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_name_spec(&mut self, spec: &typed::NameSpec) {
         let mut platform = None;
-        match spec.platform_id() {
-            Some(id) => match id.parse() {
+        if let Some(id) = spec.platform_id() {
+            match id.parse() {
                 Err(e) => self.error(id.range(), e),
                 Ok(n @ 1 | n @ 3) => platform = Some(n),
                 Ok(_) => self.error(id.range(), "platform id must be one of '1' or '3'"),
-            },
-            None => (),
+            }
         };
 
         let platform = platform.unwrap_or(tables::name::WIN_PLATFORM);
@@ -880,7 +879,7 @@ fn validate_name_string_encoding(
     platform: u16,
     string: &Token,
 ) -> Result<(), (Range<usize>, String)> {
-    let mut to_scan: &str = &string.as_str();
+    let mut to_scan: &str = string.as_str();
     let token_start = string.range().start;
     let mut cur_off = 0;
     while !to_scan.is_empty() {

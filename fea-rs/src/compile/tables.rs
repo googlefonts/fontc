@@ -225,7 +225,7 @@ fn parse_mac(s: &str) -> String {
             out.push_str(work);
         }
     }
-    return out;
+    out
 }
 
 impl head {
