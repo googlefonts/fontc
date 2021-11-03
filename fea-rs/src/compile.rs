@@ -2,11 +2,12 @@ use crate::{token_tree::typed, Diagnostic, GlyphMap, Node};
 
 use self::{compile_ctx::CompilationCtx, validate::ValidationCtx};
 
-pub use compile_ctx::Compilation;
+pub use output::Compilation;
 
 mod compile_ctx;
 mod glyph_range;
 mod lookups;
+mod output;
 mod tables;
 mod validate;
 

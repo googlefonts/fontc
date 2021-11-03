@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 
 use fea_rs::{util, AstSink, Diagnostic, GlyphMap, GlyphName, Level, Node, Parser};
-use fonttools::tag;
 
 /// Attempt to compile features into a font file.
 ///
@@ -41,19 +40,7 @@ fn main() {
 
     match fea_rs::compile(&root, &names) {
         Ok(compilation) => {
-            match compilation.gpos {
-                Some(table) => font.tables.insert(table),
-                None => {
-                    font.tables.remove(tag!("GPOS"));
-                }
-            }
-            match compilation.gsub {
-                Some(table) => font.tables.insert(table),
-                None => {
-                    font.tables.remove(tag!("GSUB"));
-                }
-            }
-
+            compilation.apply(&mut font).unwrap();
             if !compilation.warnings.is_empty() {
                 print_diagnostics(&root, &features, &compilation.warnings);
             }

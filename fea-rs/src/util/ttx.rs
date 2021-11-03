@@ -227,29 +227,9 @@ fn try_parse_file(contents: &str, map: &GlyphMap) -> Result<Node, (Node, Vec<Dia
 
 fn make_font(compilation: Compilation, glyphs: &GlyphMap) -> Font {
     let mut font = Font::new(fonttools::font::SfntVersion::TrueType);
-    if let Some(hhea) = compilation.hhea {
-        font.tables.insert(hhea);
-    }
-    if let Some(name) = compilation.name {
-        font.tables.insert(name);
-    }
-    if let Some(gsub) = compilation.gsub {
-        font.tables.insert(gsub);
-    }
-    if let Some(gpos) = compilation.gpos {
-        font.tables.insert(gpos);
-    }
-
-    if let Some(head) = compilation.head {
-        font.tables.insert(head);
-    }
-
-    if let Some(os2) = compilation.os2 {
-        font.tables.insert(os2);
-    }
-
     let maxp = tables::maxp::maxp::new05(glyphs.len().try_into().unwrap());
     font.tables.insert(maxp);
+    compilation.apply(&mut font).unwrap();
     font
 }
 

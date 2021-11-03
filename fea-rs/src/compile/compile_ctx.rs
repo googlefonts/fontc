@@ -8,7 +8,7 @@ use smol_str::SmolStr;
 
 use fonttools::{
     layout::{common::LookupFlags, valuerecord::ValueRecord},
-    tables, tag,
+    tag,
     types::Tag,
 };
 
@@ -22,6 +22,7 @@ use crate::{
 };
 
 use super::lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, SomeLookup};
+use super::output::Compilation;
 use super::tables::Tables;
 use super::{glyph_range, tables::ScriptRecord};
 
@@ -53,16 +54,6 @@ pub struct CompilationCtx<'a> {
 struct MarkClass {
     id: u16,
     members: Vec<(GlyphClass, Anchor)>,
-}
-
-pub struct Compilation {
-    pub warnings: Vec<Diagnostic>,
-    pub hhea: Option<tables::hhea::hhea>,
-    pub name: Option<tables::name::name>,
-    pub gpos: Option<tables::GPOS::GPOS>,
-    pub gsub: Option<tables::GSUB::GSUB>,
-    pub head: Option<tables::head::head>,
-    pub os2: Option<tables::os2::os2>,
 }
 
 impl<'a> CompilationCtx<'a> {
@@ -124,20 +115,11 @@ impl<'a> CompilationCtx<'a> {
         if self.errors.iter().any(Diagnostic::is_error) {
             return Err(self.errors.clone());
         }
-
-        let hhea = self.tables.hhea.as_ref().map(|t| t.build());
-        let name = self.tables.name.as_ref().map(|t| t.build());
-        let (gsub, gpos) = self.lookups.build(&self.features);
-        let head = self.tables.head.as_ref().map(|t| t.build());
-        let os2 = self.tables.OS2.as_ref().map(|t| t.build());
         Ok(Compilation {
             warnings: self.errors.clone(),
-            hhea,
-            name,
-            gpos,
-            gsub,
-            head,
-            os2,
+            lookups: self.lookups.clone(),
+            features: self.features.clone(),
+            tables: self.tables.clone(),
         })
     }
 

@@ -25,7 +25,7 @@ pub(crate) type FilterSetId = u16;
 const LANG_DFLT_TAG: Tag = tag!("dflt");
 const SCRIPT_DFLT_TAG: Tag = tag!("DFLT");
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct AllLookups {
     current: Option<SomeLookup>,
     current_name: Option<SmolStr>,

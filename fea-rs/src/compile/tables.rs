@@ -161,6 +161,18 @@ pub enum StatFallbackName {
     Record(Vec<NameSpec>),
 }
 
+impl NameSpec {
+    pub fn to_otf(&self, name_id: u16) -> fonttools::tables::name::NameRecord {
+        fonttools::tables::name::NameRecord {
+            platformID: self.platform_id,
+            encodingID: self.encoding_id,
+            languageID: self.language_id,
+            nameID: name_id,
+            string: self.string.trim_matches('"').to_string(),
+        }
+    }
+}
+
 impl head {
     pub(crate) fn build(&self) -> fonttools::tables::head::head {
         // match what python fonttools does
@@ -198,24 +210,6 @@ impl hhea {
             metricDataFormat: 0,
             numberOfHMetrics: 0,
         }
-    }
-}
-
-impl name {
-    pub fn build(&self) -> fonttools::tables::name::name {
-        let records = self
-            .records
-            .iter()
-            .filter(|record| !(1..=6).contains(&record.name_id))
-            .map(|record| fonttools::tables::name::NameRecord {
-                platformID: record.spec.platform_id,
-                encodingID: record.spec.encoding_id,
-                languageID: record.spec.language_id,
-                nameID: record.name_id,
-                string: record.spec.string.trim_matches('"').to_string(),
-            })
-            .collect();
-        fonttools::tables::name::name { records }
     }
 }
 
