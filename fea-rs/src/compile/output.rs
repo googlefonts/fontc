@@ -62,6 +62,10 @@ impl Compilation {
             font.tables.insert(os2.build());
         }
 
+        if let Some(gdef) = self.tables.GDEF.as_ref() {
+            font.tables.insert(gdef.build());
+        }
+
         let mut name = font
             .tables
             .name()

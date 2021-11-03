@@ -1051,7 +1051,7 @@ impl GdefAttach {
 }
 
 impl GdefLigatureCaret {
-    pub fn by_pos(&self) -> bool {
+    fn by_pos(&self) -> bool {
         match self.iter().next().map(|t| t.kind()) {
             Some(Kind::LigatureCaretByPosKw) => true,
             Some(Kind::LigatureCaretByIndexKw) => false,
@@ -1063,9 +1063,28 @@ impl GdefLigatureCaret {
         self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
-    pub fn values(&self) -> impl Iterator<Item = Number> + '_ {
-        self.iter().filter_map(Number::cast)
+    pub fn values(&self) -> LigatureCaretValue {
+        if self.by_pos() {
+            LigatureCaretValue::Pos(LigatureCaretIter(self))
+        } else {
+            LigatureCaretValue::Index(LigatureCaretIter(self))
+        }
     }
+}
+
+// some helpers for handling the different caret representations; one is signed,
+// the other unsigned.
+pub struct LigatureCaretIter<'a>(&'a GdefLigatureCaret);
+
+impl LigatureCaretIter<'_> {
+    pub fn values(&self) -> impl Iterator<Item = Number> + '_ {
+        self.0.iter().filter_map(Number::cast)
+    }
+}
+
+pub enum LigatureCaretValue<'a> {
+    Pos(LigatureCaretIter<'a>),
+    Index(LigatureCaretIter<'a>),
 }
 
 impl HeadTable {

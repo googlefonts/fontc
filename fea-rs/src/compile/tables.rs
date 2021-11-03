@@ -1,4 +1,9 @@
-use fonttools::types::Tag;
+use std::collections::HashMap;
+
+use fonttools::{
+    tables::GDEF::{CaretValue, GlyphClass as FtGlyphClass},
+    types::Tag,
+};
 use smol_str::SmolStr;
 
 use crate::types::{GlyphClass, GlyphId};
@@ -67,9 +72,9 @@ pub struct GDEF {
     pub mark_glyphs: Option<GlyphClass>,
     pub component_glyphs: Option<GlyphClass>,
 
-    pub attach: Vec<(GlyphId, Vec<i16>)>,
-    pub ligature_caret_pos: Vec<(GlyphId, Vec<i16>)>,
-    pub ligature_caret_index: Vec<(GlyphId, Vec<i16>)>,
+    pub attach: Vec<(GlyphId, Vec<u16>)>,
+    pub ligature_caret_pos: HashMap<GlyphId, Vec<i16>>,
+    pub ligature_caret_index: HashMap<GlyphId, Vec<u16>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -335,6 +340,69 @@ impl OS2 {
             result.version = 5;
         }
         result
+    }
+}
+
+impl GDEF {
+    pub fn build(&self) -> fonttools::tables::GDEF::GDEF {
+        let mut table = empty_gdef();
+        for id in self.base_glyphs.iter().flat_map(GlyphClass::iter) {
+            table
+                .glyph_class
+                .insert(id.to_raw(), FtGlyphClass::BaseGlyph);
+        }
+        for id in self.ligature_glyphs.iter().flat_map(GlyphClass::iter) {
+            table
+                .glyph_class
+                .insert(id.to_raw(), FtGlyphClass::LigatureGlyph);
+        }
+        for id in self.mark_glyphs.iter().flat_map(GlyphClass::iter) {
+            table
+                .glyph_class
+                .insert(id.to_raw(), FtGlyphClass::MarkGlyph);
+        }
+
+        for id in self.component_glyphs.iter().flat_map(GlyphClass::iter) {
+            table
+                .glyph_class
+                .insert(id.to_raw(), FtGlyphClass::ComponentGlyph);
+        }
+
+        //TODO: turn this back on when supported in fonttools
+        // (https://github.com/simoncozens/fonttools-rs/issues/59)
+        //for (glyph, points) in &self.attach {
+        //table
+        //.attachment_point_list
+        //.insert(glyph.to_raw(), points.clone());
+        //}
+
+        for (glyph, points) in &self.ligature_caret_index {
+            let points = points
+                .iter()
+                .map(|p| CaretValue::Format2 { pointIndex: *p })
+                .collect();
+            table.ligature_caret_list.insert(glyph.to_raw(), points);
+        }
+
+        for (glyph, coords) in &self.ligature_caret_pos {
+            let coords = coords
+                .iter()
+                .map(|p| CaretValue::Format1 { coordinate: *p })
+                .collect();
+            table.ligature_caret_list.insert(glyph.to_raw(), coords);
+        }
+        table
+    }
+}
+
+fn empty_gdef() -> fonttools::tables::GDEF::GDEF {
+    fonttools::tables::GDEF::GDEF {
+        glyph_class: Default::default(),
+        attachment_point_list: Default::default(),
+        ligature_caret_list: Default::default(),
+        mark_attachment_class: Default::default(),
+        mark_glyph_sets: Default::default(),
+        item_variation_store: Default::default(),
     }
 }
 

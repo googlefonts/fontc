@@ -941,13 +941,15 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_gdef(&mut self, table: &typed::GdefTable) {
-        let mut lig_glyphs = HashMap::new();
         let mut gdef = super::tables::GDEF::default();
         for statement in table.statements() {
             match statement {
                 typed::GdefTableItem::Attach(rule) => {
                     let glyphs = self.resolve_glyph_or_class(&rule.target());
-                    let indices = rule.indices().map(|n| n.parse_signed()).collect::<Vec<_>>();
+                    let indices = rule
+                        .indices()
+                        .map(|n| n.parse_unsigned().unwrap())
+                        .collect::<Vec<_>>();
                     assert!(!indices.is_empty(), "check this in validation");
                     for glyph in glyphs.iter() {
                         gdef.attach.push((glyph, indices.clone()));
@@ -956,16 +958,21 @@ impl<'a> CompilationCtx<'a> {
                 typed::GdefTableItem::LigatureCaret(rule) => {
                     let target = rule.target();
                     let glyphs = self.resolve_glyph_or_class(&target);
-                    let values = rule.values().map(|n| n.parse_signed()).collect::<Vec<_>>();
-                    for glyph in glyphs.iter() {
-                        if let Some(_prev) = lig_glyphs.insert(glyph, target.clone()) {
-                            //TODO: report previous span
-                            //TODO: have a reverse glyphmap, so we can say what the glyph is
-                            self.error(target.range(), "duplicate glyph in ligature rule");
-                            if rule.by_pos() {
-                                gdef.ligature_caret_pos.push((glyph, values.clone()));
-                            } else {
-                                gdef.ligature_caret_index.push((glyph, values.clone()));
+                    match rule.values() {
+                        typed::LigatureCaretValue::Pos(items) => {
+                            for glyph in glyphs.iter() {
+                                gdef.ligature_caret_pos
+                                    .entry(glyph)
+                                    .or_default()
+                                    .extend(items.values().map(|n| n.parse_signed()));
+                            }
+                        }
+                        typed::LigatureCaretValue::Index(items) => {
+                            for glyph in glyphs.iter() {
+                                gdef.ligature_caret_index
+                                    .entry(glyph)
+                                    .or_default()
+                                    .extend(items.values().map(|n| n.parse_unsigned().unwrap()));
                             }
                         }
                     }

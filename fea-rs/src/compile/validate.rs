@@ -367,11 +367,23 @@ impl<'a> ValidationCtx<'a> {
                 }
                 typed::GdefTableItem::Attach(node) => {
                     self.validate_glyph_or_class(&node.target());
+                    for idx in node.indices() {
+                        if idx.parse_unsigned().is_none() {
+                            self.error(idx.range(), "contourpoint indexes must be non-negative");
+                        }
+                    }
                 }
                 //FIXME: only one rule allowed per glyph; we need
                 //to resolve glyphs here in order to track that.
                 typed::GdefTableItem::LigatureCaret(node) => {
                     self.validate_glyph_or_class(&node.target());
+                    if let typed::LigatureCaretValue::Pos(node) = node.values() {
+                        for idx in node.values() {
+                            if idx.parse_unsigned().is_none() {
+                                self.error(idx.range(), "contourpoint index must be non-negative");
+                            }
+                        }
+                    }
                 }
             }
         }
