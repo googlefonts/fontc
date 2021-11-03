@@ -495,11 +495,17 @@ impl Number {
     }
 }
 
+impl Float {
+    pub fn parse(&self) -> f32 {
+        self.text().parse().unwrap()
+    }
+}
+
 impl FloatLike {
     pub fn parse(&self) -> f32 {
         match self {
             FloatLike::Number(n) => n.parse_signed() as f32,
-            FloatLike::Float(n) => n.text().parse().unwrap(),
+            FloatLike::Float(n) => n.parse(),
         }
     }
 }

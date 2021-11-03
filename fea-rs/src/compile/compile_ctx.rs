@@ -22,14 +22,9 @@ use crate::{
 };
 
 use super::lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, SomeLookup};
-use super::output::Compilation;
-use super::tables::Tables;
-use super::{glyph_range, tables::ScriptRecord};
-
-const AALT_TAG: Tag = tag!("aalt");
-const SIZE_TAG: Tag = tag!("size");
-const LANG_DFLT_TAG: Tag = tag!("dflt");
-const SCRIPT_DFLT_TAG: Tag = tag!("DFLT");
+use super::output::{Compilation, SizeFeature};
+use super::tables::{ScriptRecord, Tables};
+use super::{consts, glyph_range};
 
 pub struct CompilationCtx<'a> {
     glyph_map: &'a GlyphMap,
@@ -48,6 +43,7 @@ pub struct CompilationCtx<'a> {
     anchor_defs: HashMap<SmolStr, (Anchor, usize)>,
     mark_attach_class_id: HashMap<GlyphClass, u16>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
+    size: Option<SizeFeature>,
     //mark_attach_used_glyphs: HashMap<GlyphId, u16>,
 }
 
@@ -75,6 +71,7 @@ impl<'a> CompilationCtx<'a> {
             script: None,
             mark_attach_class_id: Default::default(),
             mark_filter_sets: Default::default(),
+            size: None,
             //mark_attach_used_glyphs: Default::default(),
         }
     }
@@ -120,6 +117,7 @@ impl<'a> CompilationCtx<'a> {
             lookups: self.lookups.clone(),
             features: self.features.clone(),
             tables: self.tables.clone(),
+            size: self.size.clone(),
         })
     }
 
@@ -145,7 +143,7 @@ impl<'a> CompilationCtx<'a> {
                 .extend(self.default_lang_systems.iter().cloned());
         } else {
             self.cur_language_systems
-                .extend([(SCRIPT_DFLT_TAG, LANG_DFLT_TAG)]);
+                .extend([(consts::SCRIPT_DFLT_TAG, consts::LANG_DFLT_TAG)]);
         };
 
         assert!(
@@ -210,7 +208,7 @@ impl<'a> CompilationCtx<'a> {
             self.error(token.range(), "required is not implemented");
         }
         let language = stmt.tag().to_raw();
-        let script = self.script.unwrap_or(SCRIPT_DFLT_TAG);
+        let script = self.script.unwrap_or(consts::SCRIPT_DFLT_TAG);
         self.set_script_language(
             script,
             language,
@@ -223,7 +221,7 @@ impl<'a> CompilationCtx<'a> {
     fn set_script(&mut self, stmt: typed::Script) {
         let script = stmt.tag().to_raw();
         self.script = Some(script);
-        self.set_script_language(script, LANG_DFLT_TAG, false, false, stmt.range());
+        self.set_script_language(script, consts::LANG_DFLT_TAG, false, false, stmt.range());
     }
 
     fn set_script_language(
@@ -235,7 +233,7 @@ impl<'a> CompilationCtx<'a> {
         err_range: Range<usize>,
     ) {
         let feature = match self.cur_feature_name {
-            Some(tag @ AALT_TAG | tag @ SIZE_TAG) => {
+            Some(tag @ consts::AALT_TAG | tag @ consts::SIZE_TAG) => {
                 self.error(
                     err_range,
                     format!("language/script not allowed in '{}' feature", tag),
@@ -641,15 +639,58 @@ impl<'a> CompilationCtx<'a> {
 
     fn add_feature(&mut self, feature: typed::Feature) {
         let tag = feature.tag();
-        if tag.text() == "aalt" {
+        let tag_raw = tag.to_raw();
+        if tag_raw == consts::AALT_TAG {
             self.error(tag.range(), "aalt feature is unimplemented");
             return;
         }
         self.start_feature(tag);
-        for item in feature.statements() {
-            self.resolve_statement(item);
+        if tag_raw == consts::SIZE_TAG {
+            self.resolve_size_feature(&feature);
+        } else {
+            for item in feature.statements() {
+                self.resolve_statement(item);
+            }
         }
         self.end_feature();
+    }
+
+    fn resolve_size_feature(&mut self, feature: &typed::Feature) {
+        fn resolve_decipoint(node: &typed::FloatLike) -> i16 {
+            match node {
+                typed::FloatLike::Number(n) => n.parse_signed(),
+                typed::FloatLike::Float(f) => {
+                    let f = f.parse();
+                    (f * 10.0).round() as i16
+                }
+            }
+        }
+
+        let mut size = SizeFeature::default();
+        for statement in feature.statements() {
+            if let Some(node) = typed::SizeMenuName::cast(statement) {
+                size.names.push(self.resolve_name_spec(&node.spec()));
+            } else if let Some(node) = typed::Parameters::cast(statement) {
+                size.params.0 = resolve_decipoint(&node.design_size());
+                size.params.1 = node.subfamily().parse_signed();
+                size.params.2 = node
+                    .range_start()
+                    .as_ref()
+                    .map(resolve_decipoint)
+                    .unwrap_or(0);
+                size.params.3 = node
+                    .range_end()
+                    .as_ref()
+                    .map(resolve_decipoint)
+                    .unwrap_or(0);
+            }
+        }
+        let key = FeatureKey::for_feature(consts::SIZE_TAG);
+        for (script, lang) in &self.cur_language_systems {
+            let key = key.script(*script).language(*lang);
+            self.features.entry(key).or_default();
+        }
+        self.size = Some(size);
     }
 
     fn resolve_table(&mut self, table: typed::Table) {

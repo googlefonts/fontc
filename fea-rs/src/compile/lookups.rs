@@ -160,6 +160,11 @@ impl AllLookups {
                 .position(|x| matches!(x, LookupId::Gsub(_)))
                 .unwrap_or_else(|| feature_indices.len());
 
+            if key.feature.as_str() == "size" {
+                gpos_builder.add(*key, &[]);
+                continue;
+            }
+
             let (gpos_idxes, gsub_idxes) = feature_indices.split_at(split_idx);
             if !gpos_idxes.is_empty() {
                 gpos_builder.add(*key, gpos_idxes);
@@ -413,7 +418,7 @@ impl<T> PosSubBuilder<T> {
     }
 
     fn build(self) -> Option<GPOSGSUB<T>> {
-        if self.lookups.is_empty() {
+        if self.lookups.is_empty() && self.features.is_empty() {
             return None;
         }
 

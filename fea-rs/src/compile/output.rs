@@ -2,11 +2,16 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use fonttools::{font::Font, tables};
+use fonttools::{
+    font::Font,
+    layout::common::{sizeFeatureParams, FeatureParams},
+    tables,
+};
 
 use super::{
+    consts,
     lookups::{AllLookups, FeatureKey, LookupId},
-    tables::Tables,
+    tables::{NameSpec, Tables},
 };
 use crate::{
     compile::tables::{AxisLocation, StatFallbackName},
@@ -23,6 +28,13 @@ pub struct Compilation {
     pub(crate) tables: Tables,
     pub(crate) lookups: AllLookups,
     pub(crate) features: BTreeMap<FeatureKey, Vec<LookupId>>,
+    pub(crate) size: Option<SizeFeature>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct SizeFeature {
+    pub params: (i16, i16, i16, i16),
+    pub names: Vec<NameSpec>,
 }
 
 impl Compilation {
@@ -48,16 +60,6 @@ impl Compilation {
 
         if let Some(os2) = self.tables.OS2.as_ref() {
             font.tables.insert(os2.build());
-        }
-
-        let (gsub, gpos) = self.lookups.build(&self.features);
-
-        if let Some(gsub) = gsub {
-            font.tables.insert(gsub);
-        }
-
-        if let Some(gpos) = gpos {
-            font.tables.insert(gpos);
         }
 
         let mut name = font
@@ -159,6 +161,34 @@ impl Compilation {
                 stat.axis_values.push(to_add);
             }
             font.tables.insert(stat);
+        }
+
+        let (gsub, mut gpos) = self.lookups.build(&self.features);
+
+        if let Some(size) = self.size.as_ref() {
+            let name_id = find_next_name_id(&name);
+            name.records
+                .extend(size.names.iter().map(|n| n.to_otf(name_id)));
+            let gpos = gpos.as_mut().unwrap();
+            for (tag, _, params) in gpos.features.iter_mut() {
+                if tag == &consts::SIZE_TAG {
+                    *params = Some(FeatureParams::SizeFeature(sizeFeatureParams {
+                        designSize: size.params.0 as u16,
+                        subfamilyIdentifier: size.params.1 as u16,
+                        subfamilyNameID: name_id,
+                        smallest: size.params.2 as u16,
+                        largest: size.params.3 as u16,
+                    }));
+                }
+            }
+        }
+
+        if let Some(gsub) = gsub {
+            font.tables.insert(gsub);
+        }
+
+        if let Some(gpos) = gpos {
+            font.tables.insert(gpos);
         }
 
         if !name.records.is_empty() {

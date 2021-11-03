@@ -5,6 +5,7 @@ use self::{compile_ctx::CompilationCtx, validate::ValidationCtx};
 pub use output::Compilation;
 
 mod compile_ctx;
+mod consts;
 mod glyph_range;
 mod lookups;
 mod output;
