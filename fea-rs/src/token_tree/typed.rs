@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use smol_str::SmolStr;
 
-use crate::{Kind, Node, NodeOrToken};
+use crate::{Kind, Node, NodeOrToken, TokenSet};
 
 use super::Token;
 
@@ -186,6 +186,8 @@ ast_node!(LookupFlag, Kind::LookupFlagNode);
 ast_node!(LookupRef, Kind::LookupRefNode);
 ast_node!(LookupBlock, Kind::LookupBlockNode);
 ast_node!(ValueRecord, Kind::ValueRecordNode);
+ast_node!(SizeMenuName, Kind::SizeMenuNameNode);
+ast_node!(Parameters, Kind::ParametersNode);
 
 ast_node!(HeadTable, Kind::HeadTableNode);
 ast_node!(HheaTable, Kind::HheaTableNode);
@@ -1171,4 +1173,32 @@ pub enum LocationValue {
         value: FloatLike,
         linked: FloatLike,
     },
+}
+
+impl SizeMenuName {
+    pub fn spec(&self) -> NameSpec {
+        self.iter().find_map(NameSpec::cast).unwrap()
+    }
+}
+
+impl Parameters {
+    pub fn design_size(&self) -> FloatLike {
+        self.iter().find_map(FloatLike::cast).unwrap()
+    }
+
+    pub fn subfamily(&self) -> Number {
+        self.iter()
+            .filter(|t| TokenSet::FLOAT_LIKE.contains(t.kind()))
+            .nth(1)
+            .and_then(Number::cast)
+            .unwrap()
+    }
+
+    pub fn range_start(&self) -> Option<FloatLike> {
+        self.iter().filter_map(FloatLike::cast).nth(2)
+    }
+
+    pub fn range_end(&self) -> Option<FloatLike> {
+        self.iter().filter_map(FloatLike::cast).nth(3)
+    }
 }

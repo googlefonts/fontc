@@ -82,7 +82,6 @@ fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
             glyph::named_glyph_class_decl(parser, TokenSet::TOP_LEVEL.union(recovery))
         }
         Kind::MarkClassKw => super::mark_class(parser),
-        Kind::ParametersKw => metrics::parameters(parser, recovery),
         Kind::SubtableKw => {
             parser.start_node(Kind::SubtableNode);
             parser.eat_raw();
@@ -109,13 +108,12 @@ fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
                 assert!(parser.eat(Kind::Semi));
             }
         }
-        Kind::SizemenunameKw => {
-            parser.start_node(Kind::SizemenunameKw);
+        Kind::ParametersKw => metrics::parameters(parser, recovery),
+        Kind::SizemenunameKw => parser.in_node(Kind::SizeMenuNameNode, |parser| {
             assert!(parser.eat(Kind::SizemenunameKw));
             metrics::expect_name_record(parser, recovery);
             parser.expect_recover(Kind::Semi, recovery);
-            parser.finish_node();
-        }
+        }),
         Kind::CvParametersKw if in_lookup => {
             parser.err_and_bump("'cvParameters' invalid in lookup block");
             parser.eat_until(recovery);

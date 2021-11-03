@@ -113,6 +113,8 @@ impl TokenSet {
 
     pub(crate) const NUM_TYPES: TokenSet = TokenSet::new(&[Kind::Number, Kind::Octal, Kind::Hex]);
 
+    pub(crate) const FLOAT_LIKE: TokenSet = TokenSet::new(&[Kind::Number, Kind::Float]);
+
     pub(crate) const fn new(kinds: &[Kind]) -> TokenSet {
         let mut res = 0u128;
         let mut i = 0;

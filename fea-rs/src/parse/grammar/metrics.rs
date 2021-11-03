@@ -137,23 +137,18 @@ fn eat_device(parser: &mut Parser, recovery: TokenSet) -> bool {
 }
 
 pub(crate) fn parameters(parser: &mut Parser, recovery: TokenSet) {
-    fn expect_param_item(parser: &mut Parser, recovery: TokenSet) {
-        if !parser.eat(Kind::Float) {
-            parser.expect_recover(Kind::Number, recovery);
-        }
-    }
+    let recovery = recovery.union(Kind::Semi.into());
 
-    parser.eat_trivia();
-    parser.start_node(Kind::ParametersKw);
-    assert!(parser.eat(Kind::ParametersKw));
-    expect_param_item(parser, recovery.union(Kind::Semi.into()));
-    expect_param_item(parser, recovery.union(Kind::Semi.into()));
-    if !parser.matches(0, Kind::Semi) {
-        expect_param_item(parser, recovery.union(Kind::Semi.into()));
-        expect_param_item(parser, recovery.union(Kind::Semi.into()));
-    }
-    parser.expect_semi();
-    parser.finish_node();
+    parser.in_node(Kind::ParametersNode, |parser| {
+        assert!(parser.eat(Kind::ParametersKw));
+        parser.expect_recover(TokenSet::FLOAT_LIKE, recovery);
+        parser.expect_recover(Kind::Number, recovery);
+        if !parser.matches(0, Kind::Semi) {
+            parser.expect_recover(TokenSet::FLOAT_LIKE, recovery);
+            parser.expect_recover(TokenSet::FLOAT_LIKE, recovery);
+        }
+        parser.expect_semi();
+    })
 }
 
 /// used in size feature and name table.

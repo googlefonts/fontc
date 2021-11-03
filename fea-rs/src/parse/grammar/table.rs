@@ -497,14 +497,13 @@ mod stat {
     }
 
     fn eat_location(parser: &mut Parser, recovery: TokenSet) -> bool {
-        const NUM_OR_FLOAT: TokenSet = TokenSet::new(&[Kind::Number, Kind::Float]);
         if parser.matches(0, Kind::LocationKw) {
             parser.in_node(Kind::StatAxisValueLocationNode, |parser| {
                 assert!(parser.eat(Kind::LocationKw));
                 parser.expect_tag(recovery);
-                parser.expect_recover(NUM_OR_FLOAT, recovery);
-                parser.eat(NUM_OR_FLOAT);
-                parser.eat(NUM_OR_FLOAT);
+                parser.expect_recover(TokenSet::FLOAT_LIKE, recovery);
+                parser.eat(TokenSet::FLOAT_LIKE);
+                parser.eat(TokenSet::FLOAT_LIKE);
                 parser.expect_semi();
             });
             return true;

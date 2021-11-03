@@ -316,28 +316,32 @@ impl<'a> ValidationCtx<'a> {
                 }
                 _ => (),
             }
-            let record = record.entry();
-            let mut platform = None;
-            match record.platform_id() {
-                Some(id) => match id.parse() {
-                    Err(e) => self.error(id.range(), e),
-                    Ok(n @ 1 | n @ 3) => platform = Some(n),
-                    Ok(_) => self.error(id.range(), "platform id must be one of '1' or '3'"),
-                },
-                None => (),
-            };
+            self.validate_name_spec(&record.entry());
+        }
+    }
 
-            let platform = platform.unwrap_or(tables::name::WIN_PLATFORM);
-            if let Err((range, err)) = validate_name_string_encoding(platform, record.string()) {
-                self.error(range, err);
+    fn validate_name_spec(&mut self, spec: &typed::NameSpec) {
+        let mut platform = None;
+        match spec.platform_id() {
+            Some(id) => match id.parse() {
+                Err(e) => self.error(id.range(), e),
+                Ok(n @ 1 | n @ 3) => platform = Some(n),
+                Ok(_) => self.error(id.range(), "platform id must be one of '1' or '3'"),
+            },
+            None => (),
+        };
+
+        let platform = platform.unwrap_or(tables::name::WIN_PLATFORM);
+
+        if let Err((range, err)) = validate_name_string_encoding(platform, spec.string()) {
+            self.error(range, err);
+        }
+        if let Some((platspec, language)) = spec.platform_and_language_ids() {
+            if let Err(e) = platspec.parse() {
+                self.error(platspec.range(), e);
             }
-            if let Some((platspec, language)) = record.platform_and_language_ids() {
-                if let Err(e) = platspec.parse() {
-                    self.error(platspec.range(), e);
-                }
-                if let Err(e) = language.parse() {
-                    self.error(language.range(), e);
-                }
+            if let Err(e) = language.parse() {
+                self.error(language.range(), e);
             }
         }
     }
@@ -403,10 +407,12 @@ impl<'a> ValidationCtx<'a> {
     // special: 'feature', 'parameters', 'featureNames', 'cvParameters', 'sizemenuname'
     fn validate_feature(&mut self, node: &typed::Feature) {
         let tag = node.tag();
+        if tag.text() == "size" {
+            return self.validate_size_feature(node);
+        }
         let _is_aalt = tag.text() == "aalt";
         // - must occur before anything it references
 
-        let _is_size = tag.text() == "size";
         let _is_ss = tag.text().starts_with("ss")
             && tag.text()[2..]
                 .parse::<u8>()
@@ -446,6 +452,50 @@ impl<'a> ValidationCtx<'a> {
                     item.range(),
                     format!("unhandled item '{}' in feature", item.kind()),
                 );
+            }
+        }
+    }
+
+    fn validate_size_feature(&mut self, node: &typed::Feature) {
+        let mut param = None;
+        let mut menu_name_count = 0;
+        for item in node.statements() {
+            if let Some(node) = typed::Parameters::cast(item) {
+                if param.is_some() {
+                    self.error(
+                        node.range(),
+                        "size feature can have only one 'parameters' statement",
+                    );
+                }
+                param = Some(node);
+            } else if let Some(node) = typed::SizeMenuName::cast(item) {
+                self.validate_name_spec(&node.spec());
+                menu_name_count += 1;
+            } else if !item.kind().is_trivia() {
+                self.error(
+                    item.range(),
+                    format!("unexpected item in size feature '{}'", item.kind()),
+                );
+            }
+        }
+
+        match param {
+            None => self.error(
+                node.tag().range(),
+                "size feature must include a 'parameters' statement",
+            ),
+            Some(param) => {
+                if param.subfamily().parse_signed() == 0
+                    && param.range_start().map(|x| x.parse() as i32).unwrap_or(0) == 0
+                    && param.range_end().map(|x| x.parse() as i32).unwrap_or(0) == 0
+                    && menu_name_count != 0
+                {
+                    //TODO: better diagnostics
+                    self.error(
+                        param.range(),
+                        "if subfamily is omitted, there must be no 'sizemenuname' statements",
+                    );
+                }
             }
         }
     }
