@@ -700,6 +700,7 @@ impl<'a> CompilationCtx<'a> {
             typed::Table::Base(table) => self.resolve_base(&table),
             typed::Table::Hhea(table) => self.resolve_hhea(&table),
             typed::Table::Vhea(table) => self.resolve_vhea(&table),
+            typed::Table::Vmtx(table) => self.resolve_vmtx(&table),
             typed::Table::Name(table) => self.resolve_name(&table),
             typed::Table::Gdef(table) => self.resolve_gdef(&table),
             typed::Table::Head(table) => self.resolve_head(&table),
@@ -940,6 +941,20 @@ impl<'a> CompilationCtx<'a> {
         //FIXME: add vhea to fonttools
         let tag = table.tag();
         self.error(tag.range(), "vhea compilation not implemented");
+    }
+
+    fn resolve_vmtx(&mut self, table: &typed::VmtxTable) {
+        let mut vmtx = super::tables::vmtx::default();
+        for item in table.statements() {
+            let glyph = self.resolve_glyph(&item.glyph());
+            let value = item.value().parse_signed();
+            match item.keyword().kind {
+                Kind::VertAdvanceYKw => vmtx.advances_y.push((glyph, value)),
+                Kind::VertOriginYKw => vmtx.origins_y.push((glyph, value)),
+                _ => unreachable!(),
+            }
+        }
+        self.tables.vmtx = Some(vmtx);
     }
 
     fn resolve_gdef(&mut self, table: &typed::GdefTable) {

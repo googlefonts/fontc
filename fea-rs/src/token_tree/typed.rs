@@ -222,6 +222,7 @@ ast_node!(NumberRecord, Kind::NumberValueNode);
 ast_node!(VendorRecord, Kind::Os2VendorNode);
 ast_node!(NameRecord, Kind::NameRecordNode);
 ast_node!(NameSpec, Kind::NameSpecNode);
+ast_node!(VmtxEntry, Kind::VmtxEntryNode);
 
 ast_enum!(DecOctHex {
     Decimal(Number),
@@ -815,6 +816,16 @@ impl ValueRecord {
     }
 }
 
+impl Table {
+    pub fn tag(&self) -> Tag {
+        self.node()
+            .unwrap()
+            .iter_children()
+            .find_map(Tag::cast)
+            .unwrap()
+    }
+}
+
 impl BaseTable {
     pub fn horiz_base_tag_list(&self) -> Option<BaseTagList> {
         self.iter()
@@ -902,6 +913,26 @@ impl VheaTable {
 
     pub fn metrics(&self) -> impl Iterator<Item = MetricRecord> + '_ {
         self.iter().filter_map(MetricRecord::cast)
+    }
+}
+
+impl VmtxTable {
+    pub fn statements(&self) -> impl Iterator<Item = VmtxEntry> + '_ {
+        self.iter().filter_map(VmtxEntry::cast)
+    }
+}
+
+impl VmtxEntry {
+    pub fn keyword(&self) -> &Token {
+        self.iter().next().and_then(NodeOrToken::as_token).unwrap()
+    }
+
+    pub fn glyph(&self) -> Glyph {
+        self.iter().find_map(Glyph::cast).unwrap()
+    }
+
+    pub fn value(&self) -> Number {
+        self.iter().find_map(Number::cast).unwrap()
     }
 }
 

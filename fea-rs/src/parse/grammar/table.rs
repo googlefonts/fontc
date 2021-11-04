@@ -410,8 +410,8 @@ mod vmtx {
     pub(crate) fn table_entry(parser: &mut Parser, recovery: TokenSet) {
         let recovery = recovery.union(VMTX_KEYWORDS).union(Kind::RBrace.into());
         let recovery_semi = recovery.union(Kind::Semi.into());
-        if parser.matches(0, Kind::NameIdKw) {
-            table_node(parser, |parser| {
+        if parser.matches(0, VMTX_KEYWORDS) {
+            parser.in_node(Kind::VmtxEntryNode, |parser| {
                 assert!(parser.eat(VMTX_KEYWORDS));
                 glyph::expect_glyph_name_like(parser, recovery_semi.union(Kind::Number.into()));
                 parser.expect_recover(Kind::Number, recovery_semi);

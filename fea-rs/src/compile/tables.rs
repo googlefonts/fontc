@@ -15,6 +15,7 @@ pub(crate) struct Tables {
     pub head: Option<head>,
     pub hhea: Option<hhea>,
     pub vhea: Option<vhea>,
+    pub vmtx: Option<vmtx>,
     pub name: Option<name>,
     pub GDEF: Option<GDEF>,
     pub BASE: Option<BASE>,
@@ -42,6 +43,13 @@ pub struct vhea {
     pub vert_typo_ascender: i16,
     pub vert_typo_descender: i16,
     pub vert_typo_line_gap: i16,
+}
+
+#[derive(Clone, Debug, Default)]
+#[allow(non_camel_case_types)]
+pub struct vmtx {
+    pub origins_y: Vec<(GlyphId, i16)>,
+    pub advances_y: Vec<(GlyphId, i16)>,
 }
 
 #[derive(Clone, Debug, Default)]

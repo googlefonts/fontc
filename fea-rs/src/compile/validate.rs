@@ -177,10 +177,11 @@ impl<'a> ValidationCtx<'a> {
             typed::Table::Head(table) => self.validate_head(table),
             typed::Table::Hhea(table) => self.validate_hhea(table),
             typed::Table::Vhea(table) => self.validate_vhea(table),
+            typed::Table::Vmtx(table) => self.validate_vmtx(table),
             typed::Table::Name(table) => self.validate_name(table),
             typed::Table::Os2(table) => self.validate_os2(table),
             typed::Table::Stat(table) => self.validate_stat(table),
-            _ => (),
+            _ => self.error(node.tag().range(), "unsupported table type"),
         }
     }
 
@@ -194,6 +195,12 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_vhea(&mut self, _node: &typed::VheaTable) {
         // lgtm
+    }
+
+    fn validate_vmtx(&mut self, node: &typed::VmtxTable) {
+        for statement in node.statements() {
+            self.validate_glyph(&statement.glyph());
+        }
     }
 
     fn validate_os2(&mut self, node: &typed::Os2Table) {
