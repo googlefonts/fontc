@@ -5,7 +5,7 @@ use std::{
     convert::TryInto,
     env::temp_dir,
     ffi::OsStr,
-    fmt::Debug,
+    fmt::{Debug, Write},
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -62,7 +62,7 @@ static HAS_MARK_GLYPH: &[&str] = &[
 /// A way to customize output when our test fails
 #[derive(Default)]
 pub struct Results {
-    failures: Vec<Failure>,
+    pub failures: Vec<Failure>,
     successes: Vec<PathBuf>,
 }
 
@@ -71,13 +71,13 @@ pub struct ResultsPrinter<'a> {
     results: &'a Results,
 }
 
-struct Failure {
-    path: PathBuf,
-    reason: Reason,
+pub struct Failure {
+    pub path: PathBuf,
+    pub reason: Reason,
 }
 
 #[derive(PartialEq)]
-enum Reason {
+pub enum Reason {
     Panic,
     ParseFail(String),
     CompileFail(String),
@@ -247,6 +247,7 @@ fn compare_ttx(
     reverse_map: &HashMap<String, String>,
 ) -> Result<(), Failure> {
     let ttx_path = fea_path.with_extension("ttx");
+    let expected_diff_path = fea_path.with_extension("expected_diff");
     assert!(ttx_path.exists());
     let temp_path = temp_dir()
         .join(
@@ -290,6 +291,14 @@ fn compare_ttx(
     let result = std::fs::read_to_string(ttx_out_path).unwrap();
     let result = rewrite_ttx(&result, reverse_map);
 
+    if expected_diff_path.exists() {
+        let expected_diff = std::fs::read_to_string(&expected_diff_path).unwrap();
+        let simple_diff = plain_text_diff(&expected, &result);
+        if expected_diff == simple_diff {
+            return Ok(());
+        }
+    }
+
     if expected != result {
         Err(Failure {
             path: fea_path.into(),
@@ -330,6 +339,67 @@ fn rewrite_ttx(input: &str, reverse_map: &HashMap<String, String>) -> String {
         out.push('\n');
     }
     out
+}
+
+fn write_lines(f: &mut impl Write, lines: &[&str], line_num: usize, prefix: char) {
+    writeln!(f, "L{}", line_num).unwrap();
+    for line in lines {
+        writeln!(f, "{}  {}", prefix, line).unwrap();
+    }
+}
+
+static DIFF_PREAMBLE: &str = "\
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+";
+
+// a simple diff we write to disk
+pub fn plain_text_diff(left: &str, right: &str) -> String {
+    let lines = diff::lines(left, right);
+    let mut result = DIFF_PREAMBLE.to_string();
+    let mut temp: Vec<&str> = Vec::new();
+    let mut left_or_right = None;
+    let mut section_start = 0;
+
+    for (i, line) in lines.iter().enumerate() {
+        match line {
+            diff::Result::Left(line) => {
+                if left_or_right == Some('R') {
+                    write_lines(&mut result, &temp, section_start, '<');
+                    temp.clear();
+                } else if left_or_right != Some('L') {
+                    section_start = i;
+                }
+                temp.push(line);
+                left_or_right = Some('L');
+            }
+            diff::Result::Right(line) => {
+                if left_or_right == Some('L') {
+                    write_lines(&mut result, &temp, section_start, '>');
+                    temp.clear();
+                } else if left_or_right != Some('R') {
+                    section_start = i;
+                }
+                temp.push(line);
+                left_or_right = Some('R');
+            }
+            diff::Result::Both { .. } => {
+                match left_or_right.take() {
+                    Some('R') => write_lines(&mut result, &temp, section_start, '<'),
+                    Some('L') => write_lines(&mut result, &temp, section_start, '>'),
+                    _ => (),
+                }
+                temp.clear();
+            }
+        }
+    }
+    match left_or_right.take() {
+        Some('R') => write_lines(&mut result, &temp, section_start, '<'),
+        Some('L') => write_lines(&mut result, &temp, section_start, '>'),
+        _ => (),
+    }
+    result
 }
 
 pub fn make_glyph_map() -> GlyphMap {
