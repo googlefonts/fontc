@@ -11,7 +11,6 @@ static WIP_DIFF_DIR: &str = "./wip";
 fn main() {
     let args = flags::Args::from_env().unwrap();
 
-    dbg!(&args);
     if let Err(err) = ttx::run_all_tests(TEST_DATA, args.test.as_ref()) {
         eprintln!("{:?}", err.printer(args.verbose));
         if args.write_diff {

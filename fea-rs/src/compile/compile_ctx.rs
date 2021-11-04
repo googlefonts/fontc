@@ -90,6 +90,8 @@ impl<'a> CompilationCtx<'a> {
                 self.add_feature(feature);
             } else if let Some(lookup) = typed::LookupBlock::cast(item) {
                 self.resolve_lookup_block(lookup);
+            } else if item.kind() == Kind::AnonBlockNode {
+                // noop
             } else if let Some(table) = typed::Table::cast(item) {
                 self.resolve_table(table);
 
