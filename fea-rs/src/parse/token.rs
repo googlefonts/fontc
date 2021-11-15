@@ -149,6 +149,7 @@ pub enum Kind {
     SampleTextNameIdKw,        // cv01-cv99
     ParamUiLabelNameIdKw,      // cv01-cv99
     CharacterKw,               // cv01-cv99
+    Path,
 
     // ### IMPORTANT ###
     //
@@ -174,7 +175,6 @@ pub enum Kind {
     Metric,
     Label,
     Tag,
-    Path,
     GlyphName,
     // an ambiguious name, like a-z, which requires a glyphset to disambiguate.
     GlyphNameOrRange,

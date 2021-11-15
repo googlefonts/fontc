@@ -84,8 +84,7 @@ fn include(parser: &mut Parser) {
         if !parser.expect(Kind::LParen) {
             advance_to_top_level(parser);
         }
-        //FIXME: really anything can be a path?
-        if !parser.eat_remap(TokenSet::IDENT_LIKE, Kind::Path) {
+        if !parser.eat(Kind::Path) {
             parser.err("Include statement missing path");
             return advance_to_top_level(parser);
         }
@@ -389,9 +388,11 @@ END FILE
         let input = "\
 languagesystem dflt DFLT;
 languagesystem okay cool;
-include(fun.fea);
+include(../fun times.fea);
 ";
-        let (out, _errors, _str) = debug_parse_output(input, root);
+        let (out, errors, _str) = debug_parse_output(input, root);
+        assert!(errors.is_empty(), "{}", _str);
+
         let exp = "\
 START FILE
   START LanguageSystemNode

@@ -13,6 +13,7 @@ pub(crate) struct Lexer<'a> {
     input: &'a str,
     pos: usize,
     after_backslash: bool,
+    after_l_paren: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -21,6 +22,7 @@ impl<'a> Lexer<'a> {
             input,
             pos: 0,
             after_backslash: false,
+            after_l_paren: false,
         }
     }
 
@@ -65,10 +67,12 @@ impl<'a> Lexer<'a> {
             b'<' => Kind::LAngle,
             b'>' => Kind::RAngle,
             b'\'' => Kind::SingleQuote,
+            _ if self.after_l_paren => self.path(),
             _ => self.ident(),
         };
 
         self.after_backslash = matches!(kind, Kind::Backslash);
+        self.after_l_paren = matches!(kind, Kind::LParen);
 
         let len = self.pos - start_pos;
         Token { len, kind }
@@ -201,6 +205,15 @@ impl<'a> Lexer<'a> {
 
         let raw_token = &self.input.as_bytes()[start_pos..self.pos];
         Kind::from_keyword(raw_token).unwrap_or(Kind::Ident)
+    }
+
+    fn path(&mut self) -> Kind {
+        while !matches!(self.nth(0), EOF | b')') {
+            self.bump();
+        }
+
+        self.after_l_paren = false;
+        Kind::Path
     }
 }
 
