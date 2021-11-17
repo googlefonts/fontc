@@ -104,8 +104,9 @@ impl<'a> AstSink<'a> {
         }
     }
 
-    pub fn finish(self) -> (Node, Vec<Diagnostic>) {
+    pub fn finish(mut self) -> (Node, Vec<Diagnostic>) {
         let node = self.builder.finish();
+        self.errors.sort_by_key(|d| d.span().start);
         (node, self.errors)
     }
 

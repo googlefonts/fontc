@@ -80,11 +80,17 @@ pub fn stringify_errors(
     let mut result = String::new();
     let mut pos = 0;
     let mut line_n = 0;
+    let mut prev_err_start = 0;
     let mut lines = iter_lines_including_breaks(input);
     let mut current_line = lines.next().unwrap_or("");
 
     let mut cur_tokens = tokens;
     for err in errs {
+        assert!(
+            err.span().start >= prev_err_start,
+            "errors passed to 'stringify_errors' must be sorted by the start of their spans"
+        );
+        prev_err_start = err.message.span.start;
         while err.message.span.start >= pos + current_line.len() {
             pos += current_line.len();
             if pos == input.len() {
