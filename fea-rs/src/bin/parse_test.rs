@@ -8,7 +8,7 @@ use std::{
     time::Instant,
 };
 
-use fea_rs::{util, AstSink, Diagnostic, Node, Parser};
+use fea_rs::{util, AstSink, Diagnostic, Kind, Node, Parser};
 
 /// Attempt to parse fea files.
 ///
@@ -30,6 +30,8 @@ fn directory_arg(path: &Path) -> std::io::Result<()> {
     let mut seen = 0;
     // tuple of path + was panic
     let mut failures = Vec::new();
+    let mut successes = Vec::new();
+
     for entry in path.read_dir()? {
         let entry = entry?;
         let path = entry.path();
@@ -39,7 +41,7 @@ fn directory_arg(path: &Path) -> std::io::Result<()> {
             match std::panic::catch_unwind(|| try_parse_file(&path)) {
                 Err(_) => failures.push((path, true)),
                 Ok((_, errs)) if !errs.is_empty() => failures.push((path, false)),
-                _ => (),
+                Ok((node, _)) => successes.push((path, node)),
             };
         }
     }
@@ -52,6 +54,7 @@ fn directory_arg(path: &Path) -> std::io::Result<()> {
             println!(" {} {}", panic, path.display());
         }
     }
+    look_at_nodes_if_you_want(&successes);
     Ok(())
 }
 
@@ -60,7 +63,7 @@ fn single_file_arg(path: &Path, print_tree: bool) {
     let (tree, errors) = try_parse_file(path);
     let elapsed = time.elapsed();
     if errors.is_empty() || print_tree {
-        println!("{}", tree);
+        println!("{}", tree.simple_parse_tree());
     }
     if !errors.is_empty() {
         eprintln!("{}", errors);
@@ -72,16 +75,14 @@ fn single_file_arg(path: &Path, print_tree: bool) {
 }
 
 /// returns the tree and any errors
-fn try_parse_file(path: &Path) -> (String, String) {
+fn try_parse_file(path: &Path) -> (Node, String) {
     let contents = fs::read_to_string(path).expect("file read failed");
     let mut sink = AstSink::new(&contents, None);
     let mut parser = Parser::new(&contents, &mut sink);
     fea_rs::root(&mut parser);
     let (root, errors) = sink.finish();
-    (
-        root.simple_parse_tree(),
-        stringify_errors(&contents, &root, &errors), //sink.print_errs(&contents),
-    )
+    let errors = stringify_errors(&contents, &root, &errors);
+    (root, errors)
 }
 
 fn stringify_errors(contents: &str, root: &Node, errors: &[Diagnostic]) -> String {
@@ -90,6 +91,21 @@ fn stringify_errors(contents: &str, root: &Node, errors: &[Diagnostic]) -> Strin
         .map(|t| (t.kind, t.range()))
         .collect::<Vec<_>>();
     util::stringify_errors(contents, &tokens, errors)
+}
+
+fn look_at_nodes_if_you_want(nodes: &[(PathBuf, Node)]) {
+    for (path, node) in nodes {
+        let mut printed_preamble = false;
+        for child in node.iter_tokens() {
+            if child.kind == Kind::Path {
+                if !printed_preamble {
+                    printed_preamble = true;
+                    println!("{}", path.display());
+                }
+                println!("  {}", child.text);
+            }
+        }
+    }
 }
 
 macro_rules! exit_err {
