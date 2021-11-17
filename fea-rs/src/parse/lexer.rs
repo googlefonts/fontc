@@ -122,7 +122,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn number(&mut self, leading_zero: bool) -> Kind {
-        if leading_zero {
+        if leading_zero && self.nth(0) != b'.' {
             if [b'x', b'X'].contains(&self.nth(0)) {
                 self.bump();
                 if self.nth(0).is_ascii_hexdigit() {
