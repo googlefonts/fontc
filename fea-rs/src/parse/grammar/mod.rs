@@ -91,7 +91,9 @@ fn include(parser: &mut Parser) {
         if !parser.expect(Kind::RParen) {
             return advance_to_top_level(parser);
         }
-        parser.expect_semi();
+        if !parser.eat(Kind::Semi) {
+            parser.warn_before_ws("include statement is missing ';'");
+        }
     }
 
     parser.start_node(Kind::IncludeNode);

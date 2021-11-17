@@ -268,10 +268,6 @@ impl<'a> Parser<'a> {
 
     /// write an error, do not advance
     pub(crate) fn err(&mut self, error: impl Into<String>) {
-        //let err = SyntaxError {
-        //range: self.nth_range(0),
-        //message: error.into(),
-        //};
         let err = Diagnostic::error(self.nth_range(0), error);
         self.sink.error(err);
     }
@@ -282,6 +278,16 @@ impl<'a> Parser<'a> {
     pub(crate) fn err_before_ws(&mut self, error: impl Into<String>) {
         let pos = self.buf[0].start_pos;
         self.raw_error(pos..pos + 1, error);
+    }
+
+    /// Write a *warning* before the whitespace of the associated token.
+    ///
+    /// This only exists so we can warn if a semi is missing after an include
+    /// statement (which is common in the wild)
+    pub(crate) fn warn_before_ws(&mut self, error: impl Into<String>) {
+        let pos = self.buf[0].start_pos;
+        let diagnostic = Diagnostic::warning(pos..pos + 1, error);
+        self.sink.error(diagnostic);
     }
 
     /// consume if the token matches, otherwise error without advancing

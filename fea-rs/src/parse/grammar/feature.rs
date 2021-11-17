@@ -92,6 +92,7 @@ fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
             parser.err_and_bump("lookups cannot be nested.");
             parser.eat_until(recovery);
         }
+        Kind::IncludeKw => super::include(parser),
         Kind::LookupKw => super::lookup_block_or_reference(parser, recovery),
         Kind::LookupflagKw => lookupflag(parser, recovery),
         Kind::ScriptKw => {
