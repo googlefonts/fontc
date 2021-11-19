@@ -359,6 +359,12 @@ impl LanguageSystem {
     }
 }
 
+impl Include {
+    pub fn path(&self) -> &Token {
+        self.find_token(Kind::Path).unwrap()
+    }
+}
+
 impl Tag {
     pub fn parse(&self) -> Result<fonttools::types::Tag, fonttools::types::InvalidTag> {
         self.inner.text.parse()

@@ -11,6 +11,7 @@ use crate::{
 };
 
 use self::cursor::Cursor;
+use typed::AstNode as _;
 
 mod cursor;
 mod edit;
@@ -66,6 +67,7 @@ pub struct AstSink<'a> {
     builder: TreeBuilder,
     glyph_map: Option<&'a GlyphMap>,
     errors: Vec<Diagnostic>,
+    includes: Vec<typed::Include>,
     cur_node_contains_error: bool,
 }
 
@@ -84,6 +86,10 @@ impl TreeSink for AstSink<'_> {
     fn finish_node(&mut self, kind: Option<Kind>) {
         self.builder.finish_node(self.cur_node_contains_error, kind);
         self.cur_node_contains_error = false;
+        // if this is an include statement we store a copy.
+        if let Some(node) = self.builder.children.last().and_then(typed::Include::cast) {
+            self.includes.push(node);
+        }
     }
 
     fn error(&mut self, error: Diagnostic) {
@@ -101,6 +107,7 @@ impl<'a> AstSink<'a> {
             glyph_map,
             errors: Vec::new(),
             cur_node_contains_error: false,
+            includes: Vec::new(),
         }
     }
 
@@ -108,6 +115,11 @@ impl<'a> AstSink<'a> {
         let node = self.builder.finish();
         self.errors.sort_by_key(|d| d.span().start);
         (node, self.errors)
+    }
+
+    pub fn finish2(self) -> (Node, Vec<Diagnostic>, Vec<typed::Include>) {
+        let node = self.builder.finish();
+        (node, self.errors, self.includes)
     }
 
     #[cfg(test)]
@@ -125,6 +137,10 @@ impl<'a> AstSink<'a> {
     #[cfg(test)]
     pub fn errors(&self) -> &[Diagnostic] {
         &self.errors
+    }
+
+    pub fn includes(&self) -> &[typed::Include] {
+        &self.includes
     }
 
     /// called before adding a token.
@@ -375,6 +391,11 @@ impl Token {
             text,
             abs_pos: Cell::new(0),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test(kind: Kind, text: impl Into<SmolStr>) -> Self {
+        Token::new(kind, text.into())
     }
 
     pub fn as_str(&self) -> &str {

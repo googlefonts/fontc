@@ -3,6 +3,7 @@
 mod compile;
 mod diagnostic;
 mod parse;
+mod source;
 mod token_tree;
 mod types;
 pub mod util;

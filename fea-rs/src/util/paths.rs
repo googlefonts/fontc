@@ -2,6 +2,24 @@
 
 use std::path::{Path, PathBuf};
 
+// this is a fancy way of ensuring by construction that this is
+// actually canonicalized.
+/// A canonical path.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CanonicalPath(PathBuf);
+
+impl CanonicalPath {
+    pub fn new(path: impl AsRef<Path>) -> std::io::Result<Self> {
+        path.as_ref().canonicalize().map(CanonicalPath)
+    }
+}
+
+impl AsRef<Path> for CanonicalPath {
+    fn as_ref(&self) -> &Path {
+        self.0.as_path()
+    }
+}
+
 /// Attempt to normalize a path relative to a base path.
 ///
 /// This cannot always work perfectly. The main goal is just to avoid the situation
@@ -42,6 +60,20 @@ pub fn rebase_path(path: &Path, base: &Path) -> PathBuf {
         acc.push(el);
         acc
     })
+}
+
+/// Given a relative path, resolve it to a specific path per [the spec][]
+///
+/// [the spec]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#3-including-files
+pub fn resolve_path(path: &Path, root: &Path, parent: &Path) -> PathBuf {
+    if root.join(path).exists() {
+        return rebase_path(path, root);
+    }
+    if parent.join(path).exists() {
+        return rebase_path(path, parent);
+    }
+
+    path.to_owned()
 }
 
 #[cfg(test)]
