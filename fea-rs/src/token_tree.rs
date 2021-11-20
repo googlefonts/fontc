@@ -67,7 +67,7 @@ pub struct AstSink<'a> {
     builder: TreeBuilder,
     glyph_map: Option<&'a GlyphMap>,
     errors: Vec<Diagnostic>,
-    includes: Vec<typed::Include>,
+    include_statement_count: usize,
     cur_node_contains_error: bool,
 }
 
@@ -87,8 +87,8 @@ impl TreeSink for AstSink<'_> {
         self.builder.finish_node(self.cur_node_contains_error, kind);
         self.cur_node_contains_error = false;
         // if this is an include statement we store a copy.
-        if let Some(node) = self.builder.children.last().and_then(typed::Include::cast) {
-            self.includes.push(node);
+        if self.builder.children.last().map(|n| n.kind()) == Some(Kind::IncludeNode) {
+            self.include_statement_count += 1;
         }
     }
 
@@ -107,7 +107,7 @@ impl<'a> AstSink<'a> {
             glyph_map,
             errors: Vec::new(),
             cur_node_contains_error: false,
-            includes: Vec::new(),
+            include_statement_count: 0,
         }
     }
 
@@ -119,7 +119,11 @@ impl<'a> AstSink<'a> {
 
     pub fn finish2(self) -> (Node, Vec<Diagnostic>, Vec<typed::Include>) {
         let node = self.builder.finish();
-        (node, self.errors, self.includes)
+        let mut includes = Vec::new();
+        if self.include_statement_count > 0 {
+            node.find_include_nodes(&mut includes, self.include_statement_count);
+        }
+        (node, self.errors, includes)
     }
 
     #[cfg(test)]
@@ -137,10 +141,6 @@ impl<'a> AstSink<'a> {
     #[cfg(test)]
     pub fn errors(&self) -> &[Diagnostic] {
         &self.errors
-    }
-
-    pub fn includes(&self) -> &[typed::Include] {
-        &self.includes
     }
 
     /// called before adding a token.
@@ -220,6 +220,32 @@ impl Node {
     pub fn range(&self) -> Range<usize> {
         let start = self.abs_pos.get() as usize;
         start..start + (self.text_len as usize)
+    }
+
+    /// Create a new tree, replacing the provided ranges with the provided
+    /// nodes.
+    ///
+    /// if skip_parent is true, children of inserted nodes are added directly,
+    /// without their parent nodes. (we use this when resolving includes
+    ///
+    /// range start/end just fall on token boundaries.
+    pub fn edit(&self, edits: Vec<(Range<usize>, Node)>, skip_parent: bool) -> Node {
+        edit::apply_edits(self, edits, skip_parent)
+    }
+
+    fn find_include_nodes(&self, collect: &mut Vec<typed::Include>, num: usize) {
+        for item in self.iter_children() {
+            if let Some(node) = item.as_node() {
+                if let Some(include) = typed::Include::cast(item) {
+                    collect.push(include);
+                    if collect.len() == num {
+                        return;
+                    }
+                } else {
+                    node.find_include_nodes(collect, num);
+                }
+            }
+        }
     }
 
     #[doc(hidden)]

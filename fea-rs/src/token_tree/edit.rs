@@ -7,12 +7,18 @@ use std::ops::Range;
 
 use super::{cursor::Cursor, Node, TreeBuilder};
 
-fn apply_edits(base: &Node, mut edits: Vec<(Range<usize>, Node)>) -> Node {
+/// if 'skip_parent' is true, then the children of inserted nodes are added
+/// but the inserted node itself is skipped.
+pub(crate) fn apply_edits(
+    base: &Node,
+    mut edits: Vec<(Range<usize>, Node)>,
+    skip_parent: bool,
+) -> Node {
     edits.sort_unstable_by_key(|(range, _)| range.start);
     edits.reverse();
     let mut builder = TreeBuilder::default();
     let mut cursor = base.cursor();
-    apply_edits_recurse(&mut cursor, &mut builder, &mut edits);
+    apply_edits_recurse(&mut cursor, &mut builder, &mut edits, skip_parent);
     builder.finish()
 }
 
@@ -20,6 +26,7 @@ fn apply_edits_recurse(
     cursor: &mut Cursor,
     builder: &mut TreeBuilder,
     edits: &mut Vec<(Range<usize>, Node)>,
+    skip_parent: bool,
 ) {
     builder.start_node(cursor.parent_kind());
     while let Some(current) = cursor.current() {
@@ -45,12 +52,19 @@ fn apply_edits_recurse(
                 //continue;
             }
             EditOp::Replace => {
-                builder.push_raw(edits.pop().unwrap().1.into());
+                let to_add = edits.pop().unwrap().1;
+                if skip_parent {
+                    for child in to_add.children.iter() {
+                        builder.push_raw(child.to_owned());
+                    }
+                } else {
+                    builder.push_raw(to_add.into());
+                }
                 cursor.step_over();
             }
             EditOp::Recurse => {
                 cursor.descend_current();
-                apply_edits_recurse(cursor, builder, edits);
+                apply_edits_recurse(cursor, builder, edits, skip_parent);
                 cursor.ascend();
                 // invariant: we have copied or edited all
                 // the items in this subtree.
@@ -78,6 +92,7 @@ fn op_for_node(node_range: Range<usize>, edit_range: Range<usize>) -> EditOp {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 enum EditOp {
     Replace,
     Recurse,
@@ -132,7 +147,7 @@ feature liga {
         };
 
         let edits = vec![(0..25, replace_lang), (72..94, replace_sub)];
-        let edited = apply_edits(&root, edits);
+        let edited = apply_edits(&root, edits, false);
         let result = edited.iter_tokens().map(|t| t.as_str()).collect::<String>();
         crate::assert_eq_str!(expected, result);
     }
