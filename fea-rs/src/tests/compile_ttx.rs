@@ -9,6 +9,7 @@ static TEST_DATA1: &str = "./test-data/fonttools-tests";
 #[test]
 fn all_compile_tests() {
     let verbose = std::env::var("FEA_TEST_VERBOSE").is_ok();
+    ttx::assert_has_ttx_executable();
     if let Err(e) = ttx::run_all_tests(TEST_DATA1, None) {
         eprintln!("{:?}", e.printer(verbose));
         eprintln!("## to inspect specific tests, use the included 'ttx_test'  binary. ##\n");

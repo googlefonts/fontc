@@ -90,6 +90,17 @@ pub struct ReasonPrinter<'a> {
     reason: &'a Reason,
 }
 
+pub fn assert_has_ttx_executable() {
+    assert!(
+        Command::new("ttx")
+            .arg("--version")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false),
+        "\nmissing `ttx` executable. Install it with `pip install fonttools`."
+    )
+}
+
 /// Run the fonttools tests.
 ///
 /// This compiles the test files, generates ttx, and compares that with what
