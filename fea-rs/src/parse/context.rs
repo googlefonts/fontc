@@ -50,11 +50,19 @@ pub enum HardError {
     },
 }
 
-/// internal; we convert this to a diagnostic immediately.
-#[cfg_attr(test, derive(Debug))]
-enum IncludeError {
-    Cycle { file: FileId, span: Range<usize> },
-    ToDeep { file: FileId, span: Range<usize> },
+#[derive(Debug)]
+struct IncludeError {
+    file: FileId,
+    /// the index of the problem statement, in the list of that file's includes
+    statement_idx: usize,
+    range: Range<usize>,
+    kind: IncludeErrorKind,
+}
+
+#[derive(Debug, Clone)]
+enum IncludeErrorKind {
+    Cycle,
+    ToDeep,
 }
 
 impl ParseContext {
@@ -70,8 +78,6 @@ impl ParseContext {
         glyph_map: Option<&GlyphMap>,
         project_root: Option<PathBuf>,
     ) -> Result<Self, HardError> {
-        let path = path.into();
-
         let mut sources = SourceList::new(project_root, path).map_err(|e| HardError::IoError {
             path: e.path,
             cause: e.cause,
@@ -123,19 +129,6 @@ impl ParseContext {
             }
         }
 
-        if let Err(e) = includes.validate(sources.root_id()) {
-            match e {
-                IncludeError::Cycle { file, span } => {
-                    //TODO: we could have a fancy error here showing the cycle
-                    let err = Diagnostic::error(span.clone(), "cyclical include statement");
-                    parsed_files.get_mut(&file).unwrap().1.push(err);
-                }
-                IncludeError::ToDeep { file, span } => {
-                    let err = Diagnostic::error(span.clone(), "maximum include depth exceded");
-                    parsed_files.get_mut(&file).unwrap().1.push(err);
-                }
-            }
-        }
         Ok(ParseContext {
             sources,
             parsed_files,
@@ -151,21 +144,43 @@ impl ParseContext {
     }
 
     /// If there are no errors, returns a generated `ParseTree`.
-    pub fn generate_parse_tree(&self) -> Option<ParseTree> {
-        if self.has_errors() {
-            return None;
+    pub fn generate_parse_tree(&self) -> (ParseTree, Vec<Diagnostic>) {
+        let mut all_errors = self
+            .parsed_files
+            .values()
+            .flat_map(|(_, errs)| errs.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        let include_errors = self.graph.validate(self.sources.root_id());
+        // record any errors:
+        for IncludeError { range, kind, .. } in &include_errors {
+            // find statement
+            let message = match kind {
+                IncludeErrorKind::Cycle => "cyclical include statement",
+                IncludeErrorKind::ToDeep => "exceded maximum include depth",
+            };
+            all_errors.push(Diagnostic::error(range.clone(), message));
         }
 
         let mut map = SourceMap::default();
-        let root = self.assemble_recurse(self.sources.root_id(), &mut map, 0);
-        Some(ParseTree {
-            root,
-            map,
-            sources: self.sources.clone(),
-        })
+        let root = self.assemble_recurse(self.sources.root_id(), &include_errors, &mut map, 0);
+        (
+            ParseTree {
+                root,
+                map,
+                sources: self.sources.clone(),
+            },
+            all_errors,
+        )
     }
 
-    fn assemble_recurse(&self, id: FileId, source_map: &mut SourceMap, offset: usize) -> Node {
+    fn assemble_recurse(
+        &self,
+        id: FileId,
+        skip: &[IncludeError],
+        source_map: &mut SourceMap,
+        offset: usize,
+    ) -> Node {
         let this_node = self.parsed_files[&id].0.clone();
         let self_len = this_node.text_len();
         let mut self_pos = 0;
@@ -174,7 +189,13 @@ impl ParseContext {
             Some(includes) => {
                 let mut edits = Vec::with_capacity(includes.len());
 
-                for (child_id, stmt) in includes {
+                for (i, (child_id, stmt)) in includes.iter().enumerate() {
+                    if skip
+                        .iter()
+                        .any(|err| err.file == id && err.statement_idx == i)
+                    {
+                        continue;
+                    }
                     let stmt_range = stmt.range();
                     // add everything up to this attach to the sourcemap
                     let pre_len = stmt_range.start - self_pos;
@@ -182,7 +203,7 @@ impl ParseContext {
                     source_map.add_entry(pre_range, (id, self_pos));
                     self_pos = stmt_range.end;
                     global_pos += pre_len;
-                    let child_node = self.assemble_recurse(*child_id, source_map, global_pos);
+                    let child_node = self.assemble_recurse(*child_id, skip, source_map, global_pos);
                     global_pos += child_node.text_len();
                     edits.push((stmt_range, child_node));
                 }
@@ -207,24 +228,33 @@ impl IncludeGraph {
         self.nodes.get(&file).map(|f| f.as_slice())
     }
 
-    fn validate(&self, root: FileId) -> Result<(), IncludeError> {
+    /// Validate the graph of include statements, returning any problems.
+    ///
+    /// If the result is non-empty, each returned error should be converted to
+    /// d to diagnostics by the caller, and those statements should
+    /// not be resolved when building the final tree.
+    fn validate(&self, root: FileId) -> Vec<IncludeError> {
         let edges = match self.nodes.get(&root) {
-            None => return Ok(()),
+            None => return Vec::new(),
             Some(edges) => edges,
         };
 
         let mut stack = vec![(root, edges, 0_usize)];
         let mut seen = HashSet::new();
+        let mut bad_edges = Vec::new();
 
         while let Some((node, edges, cur_edge)) = stack.pop() {
             if let Some((child, stmt)) = edges.get(cur_edge) {
                 // push parent, advancing idx
                 stack.push((node, edges, cur_edge + 1));
                 if stack.len() >= MAX_INCLUDE_DEPTH - 1 {
-                    return Err(IncludeError::ToDeep {
+                    bad_edges.push(IncludeError {
                         file: node,
-                        span: stmt.range(),
+                        statement_idx: cur_edge,
+                        range: stmt.range(),
+                        kind: IncludeErrorKind::ToDeep,
                     });
+                    continue;
                 }
 
                 // only recurse if we haven't seen this node yet
@@ -234,15 +264,16 @@ impl IncludeGraph {
                     }
                 } else if stack.iter().any(|(ancestor, _, _)| ancestor == child) {
                     // we have a cycle
-                    return Err(IncludeError::Cycle {
+                    bad_edges.push(IncludeError {
                         file: node,
-                        span: stmt.range(),
+                        statement_idx: cur_edge,
+                        range: stmt.range(),
+                        kind: IncludeErrorKind::Cycle,
                     });
                 }
             }
         }
-
-        Ok(())
+        bad_edges
     }
 }
 
@@ -262,15 +293,22 @@ fn parse_source(
 
 #[cfg(test)]
 mod tests {
+    use std::iter::FromIterator;
+
+    use super::*;
     use crate::{
         token_tree::{typed, TreeBuilder},
         Kind,
     };
 
-    use std::iter::FromIterator;
-
-    use super::super::make_ids;
-    use super::*;
+    fn make_ids<const N: usize>() -> [FileId; N] {
+        let one = FileId::next();
+        let mut result = [one; N];
+        for i in 1..N {
+            result[i] = FileId::next();
+        }
+        result
+    }
 
     /// Ensure we error if there are cyclical includes
     #[test]
@@ -295,12 +333,33 @@ mod tests {
         graph.add_edge(d, (b, statement.clone()));
 
         let r = graph.validate(a);
-        eprintln!("{:?}", d);
-        assert!(
-            matches!(r, Err(IncludeError::Cycle { file: id, span: Range { start: 0, end: 18 } }) if id == d ),
-            "{:?}",
-            r
-        );
+        assert_eq!(r[0].file, d);
+        assert_eq!(r[0].range, 0..18);
+    }
+
+    #[test]
+    fn skip_cycle_in_build() {
+        let [a, b] = make_ids();
+        let sources = SourceList::new_for_test(a);
+        let file_a = "include(bb);";
+        let file_b = "include(a)";
+
+        let (node_a, er, includes_a) = parse_source(file_a, None);
+        assert!(er.is_empty());
+        let (node_b, er, includes_b) = parse_source(file_b, None);
+        assert!(!er.is_empty());
+        let mut graph = IncludeGraph::default();
+        graph.add_edge(a, (b, includes_a[0].clone()));
+        graph.add_edge(b, (a, includes_b[0].clone()));
+        let parse = ParseContext {
+            sources,
+            parsed_files: HashMap::from_iter([(a, (node_a, vec![])), (b, (node_b, vec![]))]),
+            graph,
+        };
+
+        let (resolved, errs) = parse.generate_parse_tree();
+        assert_eq!(errs.len(), 1);
+        assert_eq!(resolved.root.text_len(), file_a.len());
     }
 
     #[test]
@@ -338,7 +397,8 @@ mod tests {
             graph,
         };
 
-        let resolved = parse.generate_parse_tree().unwrap();
+        let (resolved, errs) = parse.generate_parse_tree();
+        assert!(errs.is_empty());
         let top_level_nodes = resolved
             .root
             .iter_children()

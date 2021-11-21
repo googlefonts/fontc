@@ -30,13 +30,3 @@ pub fn parse_root_file(
 ) -> Result<ParseContext, HardError> {
     ParseContext::generate(path.into(), glyph_map, project_root)
 }
-
-#[cfg(test)]
-pub(crate) fn make_ids<const N: usize>() -> [FileId; N] {
-    let one = FileId::next();
-    let mut result = [one; N];
-    for i in 1..N {
-        result[i] = FileId::next();
-    }
-    result
-}
