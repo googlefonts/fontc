@@ -51,9 +51,12 @@ pub(crate) struct SourceLoadError {
 }
 
 impl FileId {
+    /// A reserved FileId used during parsing.
+    pub const CURRENT_FILE: FileId = FileId(unsafe { NonZeroU32::new_unchecked(1) });
+
     pub fn next() -> FileId {
         use std::sync::atomic;
-        static COUNTER: atomic::AtomicU32 = atomic::AtomicU32::new(1);
+        static COUNTER: atomic::AtomicU32 = atomic::AtomicU32::new(2);
         FileId(NonZeroU32::new(COUNTER.fetch_add(1, atomic::Ordering::Relaxed)).unwrap())
     }
 }

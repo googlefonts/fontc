@@ -20,7 +20,7 @@ pub(crate) use parser::{TokenComparable, TreeSink};
 pub(crate) use source::{SourceList, SourceMap};
 pub(crate) use token::Token;
 
-use crate::{AstSink, GlyphMap};
+use crate::GlyphMap;
 
 /// Attempt to parse a feature file at a given path, including its imports.
 pub fn parse_root_file(

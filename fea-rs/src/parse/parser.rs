@@ -7,7 +7,7 @@ use fonttools::types::Tag;
 
 use super::{lexer::Lexer, token::Token, Kind, TokenSet};
 
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::LocalDiagnostic;
 
 const LOOKAHEAD: usize = 4;
 const LOOKAHEAD_MAX: usize = LOOKAHEAD - 1;
@@ -69,7 +69,7 @@ impl PendingToken {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(text: &'a str, sink: &'a mut dyn TreeSink) -> Self {
+    pub(crate) fn new(text: &'a str, sink: &'a mut dyn TreeSink) -> Self {
         let mut this = Parser {
             lexer: Lexer::new(text),
             sink,
@@ -169,7 +169,7 @@ impl<'a> Parser<'a> {
             if replace_kind == Kind::String {
                 range.end = range.start + 1;
             }
-            self.sink.error(Diagnostic::error(range, error));
+            self.sink.error(LocalDiagnostic::error(range, error));
             self.buf[LOOKAHEAD_MAX].token.kind = replace_kind;
         }
     }
@@ -243,7 +243,7 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn raw_error(&mut self, range: Range<usize>, message: impl Into<String>) {
-        self.sink.error(Diagnostic::error(range, message));
+        self.sink.error(LocalDiagnostic::error(range, message));
     }
 
     /// Error, and advance unless the current token matches a predicate.
@@ -260,7 +260,7 @@ impl<'a> Parser<'a> {
 
     /// write an error, do not advance
     pub(crate) fn err(&mut self, error: impl Into<String>) {
-        let err = Diagnostic::error(self.nth_range(0), error);
+        let err = LocalDiagnostic::error(self.nth_range(0), error);
         self.sink.error(err);
     }
 
@@ -278,7 +278,7 @@ impl<'a> Parser<'a> {
     /// statement (which is common in the wild)
     pub(crate) fn warn_before_ws(&mut self, error: impl Into<String>) {
         let pos = self.buf[0].start_pos;
-        let diagnostic = Diagnostic::warning(pos..pos + 1, error);
+        let diagnostic = LocalDiagnostic::warning(pos..pos + 1, error);
         self.sink.error(diagnostic);
     }
 
@@ -382,7 +382,7 @@ impl TokenComparable for TokenSet {
 
 // taken from rust-analzyer
 /// `TreeSink` abstracts details of a particular syntax tree implementation.
-pub trait TreeSink {
+pub(crate) trait TreeSink {
     /// Adds new token to the current branch.
     fn token(&mut self, kind: Kind, len: usize);
 
@@ -394,5 +394,5 @@ pub trait TreeSink {
     /// If `kind` is provided, it replaces the [`Kind`] passed to `start_node`.
     fn finish_node(&mut self, kind: Option<Kind>);
 
-    fn error(&mut self, error: Diagnostic);
+    fn error(&mut self, error: LocalDiagnostic);
 }

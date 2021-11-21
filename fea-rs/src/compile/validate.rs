@@ -15,6 +15,7 @@ use smol_str::SmolStr;
 
 use super::{glyph_range, tables};
 use crate::{
+    parse::SourceMap,
     token_tree::{
         typed::{self, AstNode},
         Token,
@@ -25,6 +26,7 @@ use crate::{
 pub struct ValidationCtx<'a> {
     pub errors: Vec<Diagnostic>,
     glyph_map: &'a GlyphMap,
+    source_map: &'a SourceMap,
     default_lang_systems: HashSet<(SmolStr, SmolStr)>,
     seen_non_default_script: bool,
     lookup_defs: HashMap<SmolStr, Token>,
@@ -37,9 +39,10 @@ pub struct ValidationCtx<'a> {
 }
 
 impl<'a> ValidationCtx<'a> {
-    pub(crate) fn new(glyph_map: &'a GlyphMap) -> Self {
+    pub(crate) fn new(glyph_map: &'a GlyphMap, source_map: &'a SourceMap) -> Self {
         ValidationCtx {
             glyph_map,
+            source_map,
             errors: Vec::new(),
             default_lang_systems: Default::default(),
             seen_non_default_script: false,
@@ -53,11 +56,13 @@ impl<'a> ValidationCtx<'a> {
     }
 
     fn error(&mut self, range: Range<usize>, message: impl Into<String>) {
-        self.errors.push(Diagnostic::error(range, message));
+        let (file, range) = self.source_map.resolve_range(range);
+        self.errors.push(Diagnostic::error(file, range, message));
     }
 
     fn warning(&mut self, range: Range<usize>, message: impl Into<String>) {
-        self.errors.push(Diagnostic::warning(range, message));
+        let (file, range) = self.source_map.resolve_range(range);
+        self.errors.push(Diagnostic::warning(file, range, message));
     }
 
     pub(crate) fn validate_root(&mut self, node: &typed::Root) {

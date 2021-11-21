@@ -1,6 +1,14 @@
 //! Reporting errors, warnings, and other information to the user.
+use crate::parse::FileId;
+use std::{convert::TryInto, ops::Range};
 
-use std::ops::Range;
+/// A span of a source file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    file: FileId,
+    start: u32,
+    end: u32,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
@@ -12,7 +20,7 @@ pub enum Level {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     pub text: String,
-    pub span: Range<usize>,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,12 +31,32 @@ pub struct Diagnostic {
     help: Option<String>,
 }
 
+// internal: a diagnostic generated during parsing, that doesn't have an explicit
+// FileId; the FileId is added when the tree is built.
+#[derive(Clone)]
+pub(crate) struct LocalDiagnostic(Diagnostic);
+
+impl Span {
+    pub fn range(&self) -> Range<usize> {
+        self.start as usize..self.end as usize
+    }
+}
+
 impl Diagnostic {
-    pub fn new(level: Level, span: Range<usize>, message: impl Into<String>) -> Self {
+    pub fn new(
+        level: Level,
+        file: FileId,
+        range: Range<usize>,
+        message: impl Into<String>,
+    ) -> Self {
         Diagnostic {
             message: Message {
                 text: message.into(),
-                span,
+                span: Span {
+                    start: range.start.try_into().unwrap(),
+                    end: range.end.try_into().unwrap(),
+                    file,
+                },
             },
             level,
             annotations: Vec::new(),
@@ -36,21 +64,21 @@ impl Diagnostic {
         }
     }
 
-    pub fn error(span: Range<usize>, message: impl Into<String>) -> Self {
-        Diagnostic::new(Level::Error, span, message)
+    pub fn error(file: FileId, span: Range<usize>, message: impl Into<String>) -> Self {
+        Diagnostic::new(Level::Error, file, span, message)
     }
 
-    pub fn warning(span: Range<usize>, message: impl Into<String>) -> Self {
-        Diagnostic::new(Level::Warning, span, message)
+    pub fn warning(file: FileId, span: Range<usize>, message: impl Into<String>) -> Self {
+        Diagnostic::new(Level::Warning, file, span, message)
     }
 
-    pub fn annotation(mut self, text: impl Into<String>, span: Range<usize>) -> Self {
-        self.annotations.push(Message {
-            text: text.into(),
-            span,
-        });
-        self
-    }
+    //pub fn annotation(mut self, text: impl Into<String>, span: Range<usize>) -> Self {
+    //self.annotations.push(Message {
+    //text: text.into(),
+    //span: span.into(),
+    //});
+    //self
+    //}
 
     pub fn help(mut self, help: impl Into<String>) -> Self {
         self.help = Some(help.into());
@@ -62,10 +90,41 @@ impl Diagnostic {
     }
 
     pub fn span(&self) -> Range<usize> {
-        self.message.span.clone()
+        self.message.span.range()
     }
 
     pub fn is_error(&self) -> bool {
         matches!(self.level, Level::Error)
+    }
+}
+
+impl LocalDiagnostic {
+    pub fn new(level: Level, range: Range<usize>, message: impl Into<String>) -> Self {
+        LocalDiagnostic(Diagnostic::new(level, FileId::CURRENT_FILE, range, message))
+    }
+
+    pub fn error(span: Range<usize>, message: impl Into<String>) -> Self {
+        Self::new(Level::Error, span, message)
+    }
+
+    pub fn warning(span: Range<usize>, message: impl Into<String>) -> Self {
+        Self::new(Level::Warning, span, message)
+    }
+
+    pub fn to_diagnostic(mut self, in_file: FileId) -> Diagnostic {
+        self.0.message.span.file = in_file;
+        self.0
+            .annotations
+            .iter_mut()
+            .for_each(|m| m.span.file = in_file);
+        self.0
+    }
+
+    pub fn span(&self) -> Range<usize> {
+        self.0.span()
+    }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self.0.level, Level::Error)
     }
 }

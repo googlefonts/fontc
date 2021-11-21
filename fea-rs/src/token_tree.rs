@@ -5,7 +5,7 @@ use std::{cell::Cell, ops::Range, sync::Arc};
 use smol_str::SmolStr;
 
 use crate::{
-    diagnostic::Diagnostic,
+    diagnostic::LocalDiagnostic,
     parse::{TokenComparable, TreeSink},
     GlyphMap, Kind, TokenSet,
 };
@@ -61,12 +61,12 @@ pub(crate) struct TreeBuilder {
     children: Vec<NodeOrToken>,
 }
 
-pub struct AstSink<'a> {
+pub(crate) struct AstSink<'a> {
     text: &'a str,
     text_pos: usize,
     builder: TreeBuilder,
     glyph_map: Option<&'a GlyphMap>,
-    errors: Vec<Diagnostic>,
+    errors: Vec<LocalDiagnostic>,
     include_statement_count: usize,
     cur_node_contains_error: bool,
 }
@@ -92,7 +92,7 @@ impl TreeSink for AstSink<'_> {
         }
     }
 
-    fn error(&mut self, error: Diagnostic) {
+    fn error(&mut self, error: LocalDiagnostic) {
         self.errors.push(error);
         self.cur_node_contains_error = true;
     }
@@ -111,13 +111,13 @@ impl<'a> AstSink<'a> {
         }
     }
 
-    pub fn finish(mut self) -> (Node, Vec<Diagnostic>) {
+    pub fn finish(mut self) -> (Node, Vec<LocalDiagnostic>) {
         let node = self.builder.finish();
         self.errors.sort_by_key(|d| d.span().start);
         (node, self.errors)
     }
 
-    pub fn finish2(self) -> (Node, Vec<Diagnostic>, Vec<typed::Include>) {
+    pub fn finish2(self) -> (Node, Vec<LocalDiagnostic>, Vec<typed::Include>) {
         let node = self.builder.finish();
         let mut includes = Vec::new();
         if self.include_statement_count > 0 {
@@ -127,7 +127,7 @@ impl<'a> AstSink<'a> {
     }
 
     #[cfg(test)]
-    pub fn finish_stringified(self) -> (Node, Vec<Diagnostic>, String) {
+    pub fn finish_stringified(self) -> (Node, Vec<LocalDiagnostic>, String) {
         let node = self.builder.finish();
         let tokens = node
             .iter_tokens()
@@ -139,7 +139,7 @@ impl<'a> AstSink<'a> {
     }
 
     #[cfg(test)]
-    pub fn errors(&self) -> &[Diagnostic] {
+    pub fn errors(&self) -> &[LocalDiagnostic] {
         &self.errors
     }
 
@@ -157,7 +157,7 @@ impl<'a> AstSink<'a> {
                     Ok(node) => return node.into(),
                     Err(message) => {
                         let range = self.text_pos..self.text_pos + text.len();
-                        self.error(Diagnostic::error(range, message));
+                        self.error(LocalDiagnostic::error(range, message));
                     }
                 }
             }

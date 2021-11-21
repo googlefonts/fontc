@@ -2,9 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use super::{AstSink, FileId, Parser, SourceList, SourceMap};
+use super::{FileId, Parser, SourceList, SourceMap};
+use crate::diagnostic::LocalDiagnostic;
 use crate::token_tree::typed::AstNode as _;
-use crate::{util, Diagnostic, GlyphMap, Node};
+use crate::token_tree::AstSink;
+use crate::{typed, util, Diagnostic, GlyphMap, Node};
 
 const MAX_INCLUDE_DEPTH: usize = 50;
 
@@ -28,7 +30,7 @@ struct IncludeGraph {
 /// an intermediate type generates a `ParseTree`.
 pub struct ParseContext {
     sources: SourceList,
-    parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
+    parsed_files: HashMap<FileId, (Node, Vec<LocalDiagnostic>)>,
     graph: IncludeGraph,
 }
 
@@ -37,6 +39,16 @@ pub struct ParseTree {
     root: Node,
     sources: SourceList,
     map: SourceMap,
+}
+
+impl ParseTree {
+    pub fn root(&self) -> typed::Root {
+        typed::Root::try_from_node(&self.root).expect("parse tree has invalid root node type")
+    }
+
+    pub fn source_map(&self) -> &SourceMap {
+        &self.map
+    }
 }
 
 /// An unrecoverable error that occurs during parsing.
@@ -119,10 +131,14 @@ impl ParseContext {
                     }
                     Err(e) => {
                         let range = path_token.range();
-                        parsed_files.get_mut(&id).unwrap().1.push(Diagnostic::error(
-                            range,
-                            format!("Unable to resolve import: '{}'", e.cause),
-                        ));
+                        parsed_files
+                            .get_mut(&id)
+                            .unwrap()
+                            .1
+                            .push(LocalDiagnostic::error(
+                                range,
+                                format!("Unable to resolve import: '{}'", e.cause),
+                            ));
                     }
                 }
             }
@@ -146,19 +162,21 @@ impl ParseContext {
     pub fn generate_parse_tree(&self) -> (ParseTree, Vec<Diagnostic>) {
         let mut all_errors = self
             .parsed_files
-            .values()
-            .flat_map(|(_, errs)| errs.iter())
-            .cloned()
+            .iter()
+            .flat_map(|(id, (_, errs))| errs.iter().map(move |e| e.clone().to_diagnostic(*id)))
             .collect::<Vec<_>>();
         let include_errors = self.graph.validate(self.sources.root_id());
         // record any errors:
-        for IncludeError { range, kind, .. } in &include_errors {
+        for IncludeError {
+            file, range, kind, ..
+        } in &include_errors
+        {
             // find statement
             let message = match kind {
                 IncludeErrorKind::Cycle => "cyclical include statement",
                 IncludeErrorKind::ToDeep => "exceded maximum include depth",
             };
-            all_errors.push(Diagnostic::error(range.clone(), message));
+            all_errors.push(Diagnostic::error(*file, range.clone(), message));
         }
 
         let mut map = SourceMap::default();
@@ -280,7 +298,7 @@ fn parse_source(
     glyph_map: Option<&GlyphMap>,
 ) -> (
     Node,
-    Vec<Diagnostic>,
+    Vec<LocalDiagnostic>,
     Vec<crate::token_tree::typed::Include>,
 ) {
     let mut sink = AstSink::new(src, glyph_map);

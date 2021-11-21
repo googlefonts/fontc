@@ -13,6 +13,7 @@ use fonttools::{
 };
 
 use crate::{
+    parse::SourceMap,
     token_tree::{
         typed::{self, AstNode},
         Token,
@@ -28,6 +29,7 @@ use super::{consts, glyph_range};
 
 pub struct CompilationCtx<'a> {
     glyph_map: &'a GlyphMap,
+    source_map: &'a SourceMap,
     pub errors: Vec<Diagnostic>,
     tables: Tables,
     features: BTreeMap<FeatureKey, Vec<LookupId>>,
@@ -53,9 +55,10 @@ struct MarkClass {
 }
 
 impl<'a> CompilationCtx<'a> {
-    pub(crate) fn new(glyph_map: &'a GlyphMap) -> Self {
+    pub(crate) fn new(glyph_map: &'a GlyphMap, source_map: &'a SourceMap) -> Self {
         CompilationCtx {
             glyph_map,
+            source_map,
             errors: Vec::new(),
             tables: Tables::default(),
             default_lang_systems: Default::default(),
@@ -124,11 +127,13 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn error(&mut self, range: Range<usize>, message: impl Into<String>) {
-        self.errors.push(Diagnostic::error(range, message));
+        let (file, range) = self.source_map.resolve_range(range);
+        self.errors.push(Diagnostic::error(file, range, message));
     }
 
     fn warning(&mut self, range: Range<usize>, message: impl Into<String>) {
-        self.errors.push(Diagnostic::warning(range, message));
+        let (file, range) = self.source_map.resolve_range(range);
+        self.errors.push(Diagnostic::warning(file, range, message));
     }
 
     fn add_language_system(&mut self, language_system: typed::LanguageSystem) {

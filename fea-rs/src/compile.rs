@@ -1,4 +1,4 @@
-use crate::{token_tree::typed, Diagnostic, GlyphMap, Node};
+use crate::{parse::ParseTree, token_tree::typed, Diagnostic, GlyphMap, Node};
 
 use self::{compile_ctx::CompilationCtx, validate::ValidationCtx};
 
@@ -13,12 +13,12 @@ mod tables;
 mod validate;
 
 /// Run the validation pass, returning any diagnostics.
-pub fn validate(node: &Node, glyph_map: &GlyphMap) -> Vec<Diagnostic> {
+pub fn validate(node: &ParseTree, glyph_map: &GlyphMap) -> Vec<Diagnostic> {
     validate_impl(node, glyph_map).errors
 }
 
 /// Run the compilation pass (including validation)
-pub fn compile(node: &Node, glyph_map: &GlyphMap) -> Result<Compilation, Vec<Diagnostic>> {
+pub fn compile(node: &ParseTree, glyph_map: &GlyphMap) -> Result<Compilation, Vec<Diagnostic>> {
     let ctx = validate_impl(node, glyph_map);
     if ctx.errors.iter().any(Diagnostic::is_error) {
         return Err(ctx.errors);
@@ -28,22 +28,14 @@ pub fn compile(node: &Node, glyph_map: &GlyphMap) -> Result<Compilation, Vec<Dia
     ctx.build()
 }
 
-fn validate_impl<'a>(node: &Node, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
-    let mut ctx = validate::ValidationCtx::new(glyph_map);
-    if let Some(node) = typed::Root::try_from_node(node) {
-        ctx.validate_root(&node);
-    } else {
-        panic!("validate called with invalid root node '{}'", node.kind());
-    }
+fn validate_impl<'a>(node: &'a ParseTree, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
+    let mut ctx = validate::ValidationCtx::new(glyph_map, node.source_map());
+    ctx.validate_root(&node.root());
     ctx
 }
 
-fn compile_impl<'a>(node: &Node, glyph_map: &'a GlyphMap) -> CompilationCtx<'a> {
-    let mut ctx = CompilationCtx::new(glyph_map);
-    if let Some(node) = typed::Root::try_from_node(node) {
-        ctx.compile(&node);
-    } else {
-        panic!("compile called with invalid root node '{}'", node.kind());
-    }
+fn compile_impl<'a>(node: &'a ParseTree, glyph_map: &'a GlyphMap) -> CompilationCtx<'a> {
+    let mut ctx = CompilationCtx::new(glyph_map, node.source_map());
+    ctx.compile(&node.root());
     ctx
 }

@@ -90,8 +90,9 @@ pub fn stringify_errors(
             err.span().start >= prev_err_start,
             "errors passed to 'stringify_errors' must be sorted by the start of their spans"
         );
-        prev_err_start = err.message.span.start;
-        while err.message.span.start >= pos + current_line.len() {
+        let err_range = err.message.span.range();
+        prev_err_start = err_range.start;
+        while err_range.start >= pos + current_line.len() {
             pos += current_line.len();
             if pos == input.len() {
                 break;
@@ -129,7 +130,8 @@ pub(crate) fn write_line_error(
     err: &Diagnostic,
     max_digits: usize,
 ) {
-    let err_start = err.message.span.start - line_start;
+    let span = err.message.span.range();
+    let err_start = span.start - line_start;
 
     // if a line is really long, we clip it
     let trim_start = if text.len() > line_width {
@@ -170,7 +172,7 @@ pub(crate) fn write_line_error(
         color_string,
     )
     .unwrap();
-    let n_spaces = (err.message.span.start - line_start) - trim_start;
+    let n_spaces = (span.start - line_start) - trim_start;
     // use the whitespace at the front of the line first, so that
     // we don't replace tabs with spaces
     let reuse_ws = n_spaces.min(line_ws);
@@ -181,7 +183,7 @@ pub(crate) fn write_line_error(
         (extra_ws, false)
     };
 
-    let n_carets = err.message.span.end - err.message.span.start;
+    let n_carets = span.end - span.start;
     let n_carets = n_carets.min(CARETS.len());
 
     let (first, second) = if msg_first {
