@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use super::{AstSink, FileId, Parser, SourceList, SourceMap};
-use crate::token_tree::typed::{self, AstNode as _};
+use crate::token_tree::typed::AstNode as _;
 use crate::{util, Diagnostic, GlyphMap, Node};
 
 const MAX_INCLUDE_DEPTH: usize = 50;
@@ -15,7 +15,8 @@ const MAX_INCLUDE_DEPTH: usize = 50;
 /// depth of 50.
 #[derive(Clone, Debug, Default)]
 struct IncludeGraph {
-    nodes: HashMap<FileId, Vec<(FileId, typed::Include)>>,
+    // (source file, (destination file, span-in-source-for-error))
+    nodes: HashMap<FileId, Vec<(FileId, Range<usize>)>>,
 }
 
 /// The result of parsing a FEA file + its included files.
@@ -50,7 +51,6 @@ pub enum HardError {
     },
 }
 
-#[derive(Debug)]
 struct IncludeError {
     file: FileId,
     /// the index of the problem statement, in the list of that file's includes
@@ -59,7 +59,6 @@ struct IncludeError {
     kind: IncludeErrorKind,
 }
 
-#[derive(Debug, Clone)]
 enum IncludeErrorKind {
     Cycle,
     ToDeep,
@@ -115,7 +114,7 @@ impl ParseContext {
 
                 match sources.source_for_path(path) {
                     Ok(included_id) => {
-                        includes.add_edge(id, (included_id, include.clone()));
+                        includes.add_edge(id, (included_id, include.range()));
                         queue.push(included_id);
                     }
                     Err(e) => {
@@ -196,16 +195,15 @@ impl ParseContext {
                     {
                         continue;
                     }
-                    let stmt_range = stmt.range();
                     // add everything up to this attach to the sourcemap
-                    let pre_len = stmt_range.start - self_pos;
+                    let pre_len = stmt.start - self_pos;
                     let pre_range = global_pos..global_pos + pre_len;
                     source_map.add_entry(pre_range, (id, self_pos));
-                    self_pos = stmt_range.end;
+                    self_pos = stmt.end;
                     global_pos += pre_len;
                     let child_node = self.assemble_recurse(*child_id, skip, source_map, global_pos);
                     global_pos += child_node.text_len();
-                    edits.push((stmt_range, child_node));
+                    edits.push((stmt.clone(), child_node));
                 }
                 this_node.edit(edits, true)
             }
@@ -220,11 +218,11 @@ impl ParseContext {
 }
 
 impl IncludeGraph {
-    fn add_edge(&mut self, from: FileId, to: (FileId, typed::Include)) {
+    fn add_edge(&mut self, from: FileId, to: (FileId, Range<usize>)) {
         self.nodes.entry(from).or_default().push(to);
     }
 
-    fn includes_for_file(&self, file: FileId) -> Option<&[(FileId, typed::Include)]> {
+    fn includes_for_file(&self, file: FileId) -> Option<&[(FileId, Range<usize>)]> {
         self.nodes.get(&file).map(|f| f.as_slice())
     }
 
@@ -251,7 +249,7 @@ impl IncludeGraph {
                     bad_edges.push(IncludeError {
                         file: node,
                         statement_idx: cur_edge,
-                        range: stmt.range(),
+                        range: stmt.clone(),
                         kind: IncludeErrorKind::ToDeep,
                     });
                     continue;
@@ -267,7 +265,7 @@ impl IncludeGraph {
                     bad_edges.push(IncludeError {
                         file: node,
                         statement_idx: cur_edge,
-                        range: stmt.range(),
+                        range: stmt.clone(),
                         kind: IncludeErrorKind::Cycle,
                     });
                 }
@@ -327,10 +325,10 @@ mod tests {
         };
         let statement = typed::Include::cast(&statement.into()).unwrap();
         let mut graph = IncludeGraph::default();
-        graph.add_edge(a, (b, statement.clone()));
-        graph.add_edge(b, (c, statement.clone()));
-        graph.add_edge(c, (d, statement.clone()));
-        graph.add_edge(d, (b, statement.clone()));
+        graph.add_edge(a, (b, statement.range()));
+        graph.add_edge(b, (c, statement.range()));
+        graph.add_edge(c, (d, statement.range()));
+        graph.add_edge(d, (b, statement.range()));
 
         let r = graph.validate(a);
         assert_eq!(r[0].file, d);
@@ -349,8 +347,8 @@ mod tests {
         let (node_b, er, includes_b) = parse_source(file_b, None);
         assert!(!er.is_empty());
         let mut graph = IncludeGraph::default();
-        graph.add_edge(a, (b, includes_a[0].clone()));
-        graph.add_edge(b, (a, includes_b[0].clone()));
+        graph.add_edge(a, (b, includes_a[0].range()));
+        graph.add_edge(b, (a, includes_b[0].range()));
         let parse = ParseContext {
             sources,
             parsed_files: HashMap::from_iter([(a, (node_a, vec![])), (b, (node_b, vec![]))]),
@@ -382,8 +380,8 @@ mod tests {
         let mut graph = IncludeGraph::default();
         for include in includes {
             match include.path().text.as_str() {
-                "b" => graph.add_edge(a, (b, include)),
-                "c" => graph.add_edge(a, (c, include)),
+                "b" => graph.add_edge(a, (b, include.range())),
+                "c" => graph.add_edge(a, (c, include.range())),
                 other => panic!("unexpectd include '{}'", other),
             }
         }
