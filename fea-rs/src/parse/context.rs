@@ -115,10 +115,11 @@ impl ParseContext {
         glyph_map: Option<&GlyphMap>,
         project_root: Option<PathBuf>,
     ) -> Result<Self, HardError> {
-        let mut sources = SourceList::new(project_root, path).map_err(|e| HardError::IoError {
+        let source = Source::from_path(path).map_err(|e| HardError::IoError {
             path: e.path,
             cause: e.cause,
         })?;
+        let mut sources = SourceList::new(source, project_root);
         let mut queue = vec![sources.root_id()];
         let mut parsed_files = HashMap::new();
         let mut includes = IncludeGraph::default();
@@ -129,25 +130,23 @@ impl ParseContext {
                 continue;
             }
             let source = sources.get(&id).unwrap();
-            let (node, mut errors, include_stmts) = parse_str(source.contents(), glyph_map);
+            let (node, mut errors, include_stmts) = parse_src(&source, glyph_map);
             errors.iter_mut().for_each(|e| e.message.file = id);
 
-            // we need to drop `source` so we can mutate source_map to add new includes
-            let source_path = if !include_stmts.is_empty() {
-                source.path().to_owned()
-            } else {
-                PathBuf::new()
-            };
-
             parsed_files.insert(source.id(), (node, errors));
+            if include_stmts.is_empty() {
+                continue;
+            }
+
+            // we need to drop `source` so we can mutate source_map below
+            let source_path = source.path().map(PathBuf::from);
+
             for include in &include_stmts {
                 let path = Path::new(include.path());
                 let path = util::paths::resolve_path(
                     path,
                     sources.project_root(),
-                    source_path
-                        .parent()
-                        .expect("always a file; must have parent"),
+                    source_path.as_ref().and_then(|p| p.parent()),
                 );
 
                 match sources.source_for_path(path) {
@@ -344,12 +343,12 @@ impl ParseTree {
 }
 
 /// Parse a single source file.
-pub fn parse_str(
-    src: &str,
+pub fn parse_src(
+    src: &Source,
     glyph_map: Option<&GlyphMap>,
 ) -> (Node, Vec<Diagnostic>, Vec<IncludeStatement>) {
-    let mut sink = AstSink::new(src, glyph_map);
-    let mut parser = Parser::new(src, &mut sink);
+    let mut sink = AstSink::new(src.contents(), glyph_map);
+    let mut parser = Parser::new(src.contents(), &mut sink);
     super::grammar::root(&mut parser);
     sink.finish()
 }
@@ -399,18 +398,22 @@ mod tests {
 
     #[test]
     fn skip_cycle_in_build() {
-        let [a, b] = make_ids();
-        let sources = SourceList::new_for_test(a);
-        let file_a = "include(bb);";
-        let file_b = "include(a)";
+        let file_a = Source::from_str("include(bb);");
+        let file_b = Source::from_str("include(a)");
+        let (a, b) = (file_a.id(), file_b.id());
+        let a_len = file_a.contents().len();
 
-        let (node_a, er, includes_a) = parse_str(file_a, None);
+        let (node_a, er, includes_a) = parse_src(&file_a, None);
         assert!(er.is_empty());
-        let (node_b, er, includes_b) = parse_str(file_b, None);
+        let (node_b, er, includes_b) = parse_src(&file_b, None);
         assert!(!er.is_empty());
         let mut graph = IncludeGraph::default();
         graph.add_edge(a, (b, includes_a[0].path_range()));
         graph.add_edge(b, (a, includes_b[0].path_range()));
+
+        let mut sources = SourceList::new(file_a, None);
+        sources.add_source(file_b);
+
         let parse = ParseContext {
             sources,
             parsed_files: HashMap::from_iter([(a, (node_a, vec![])), (b, (node_b, vec![]))]),
@@ -419,25 +422,29 @@ mod tests {
 
         let (resolved, errs) = parse.generate_parse_tree();
         assert_eq!(errs.len(), 1);
-        assert_eq!(resolved.root.text_len(), file_a.len());
+        assert_eq!(resolved.root.text_len(), a_len);
     }
 
     #[test]
     fn assembly_basic() {
-        let [a, b, c] = make_ids();
-        let sources = SourceList::new_for_test(a);
-        let file_a = "\
+        let file_a = Source::from_str(
+            "\
         include(b);\n\
         # hmm\n\
-        include(c);";
-        let file_b = "languagesystem dflt DFLT;\n";
-        let file_c = "feature kern {\n pos a b 20;\n } kern;";
+        include(c);",
+        );
+        let file_b = Source::from_str("languagesystem dflt DFLT;\n");
+        let file_c = Source::from_str("feature kern {\n pos a b 20;\n } kern;");
 
-        let (node_a, er, includes) = parse_str(file_a, None);
+        let (a, b, c) = (file_a.id(), file_b.id(), file_c.id());
+        let b_len = file_b.contents().len();
+        let c_len = file_c.contents().len();
+
+        let (node_a, er, includes) = parse_src(&file_a, None);
         assert!(er.is_empty());
-        let (node_b, er, _) = parse_str(file_b, None);
+        let (node_b, er, _) = parse_src(&file_b, None);
         assert!(er.is_empty());
-        let (node_c, er, _) = parse_str(file_c, None);
+        let (node_c, er, _) = parse_src(&file_c, None);
         assert!(er.is_empty());
         let mut graph = IncludeGraph::default();
         for include in includes {
@@ -447,6 +454,11 @@ mod tests {
                 other => panic!("unexpectd include '{}'", other),
             }
         }
+
+        let mut sources = SourceList::new(file_a, None);
+        sources.add_source(file_b);
+        sources.add_source(file_c);
+
         let parse = ParseContext {
             sources,
             parsed_files: HashMap::from_iter([
@@ -467,11 +479,11 @@ mod tests {
         let inter_node_len = "\n# hmm\n".len();
         assert_eq!(top_level_nodes.len(), 2);
         assert_eq!(top_level_nodes[0].kind(), Kind::LanguageSystemNode);
-        assert_eq!(top_level_nodes[0].range(), 0..file_b.len() - 1); // ignore newline
-        let node_2_start = file_b.len() + inter_node_len;
+        assert_eq!(top_level_nodes[0].range(), 0..b_len - 1); // ignore newline
+        let node_2_start = b_len + inter_node_len;
         assert_eq!(
             top_level_nodes[1].range(),
-            node_2_start..node_2_start + file_c.len()
+            node_2_start..node_2_start + c_len,
         );
         assert_eq!(top_level_nodes[1].kind(), Kind::FeatureNode);
 

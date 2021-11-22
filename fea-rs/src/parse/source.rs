@@ -21,7 +21,7 @@ pub struct FileId(NonZeroU32);
 pub struct Source {
     id: FileId,
     /// The non-canonical path to this source, suitable for printing.
-    path: PathBuf,
+    path: Option<PathBuf>,
     contents: String,
     /// The index of each newline character, for efficiently fetching lines
     /// (for error reporting, e.g.)
@@ -45,7 +45,8 @@ pub struct SourceMap {
     offsets: Vec<(Range<usize>, (FileId, usize))>,
 }
 
-pub(crate) struct SourceLoadError {
+/// An error that occurs when trying to read a file from disk.
+pub struct SourceLoadError {
     pub(crate) cause: std::io::Error,
     pub(crate) path: PathBuf,
 }
@@ -62,7 +63,8 @@ impl FileId {
 }
 
 impl Source {
-    pub(crate) fn new(path: impl Into<PathBuf>) -> Result<Self, SourceLoadError> {
+    /// Attempts to generate a `Source` from the contents of the provided path.
+    pub fn from_path(path: impl Into<PathBuf>) -> Result<Self, SourceLoadError> {
         let path = path.into();
         let contents = std::fs::read_to_string(&path).map_err(|cause| SourceLoadError {
             path: path.clone(),
@@ -70,22 +72,24 @@ impl Source {
         })?;
         let line_offsets = line_offsets(&contents);
         Ok(Source {
-            path,
+            path: Some(path),
             id: FileId::next(),
             contents,
             line_offsets,
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn new_for_test(text: impl Into<String>, path: impl Into<PathBuf>) -> Source {
-        let contents = text.into();
+    /// Create a source from a string.
+    ///
+    /// This is useful for things like testing.
+    pub fn from_str(contents: impl Into<String>) -> Source {
+        let contents = contents.into();
         let line_offsets = line_offsets(&contents);
         Source {
-            contents,
-            line_offsets,
             id: FileId::next(),
-            path: path.into(),
+            contents,
+            path: None,
+            line_offsets,
         }
     }
 
@@ -93,8 +97,8 @@ impl Source {
         &self.contents
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_ref().map(|p| p.as_path())
     }
 
     pub fn id(&self) -> FileId {
@@ -161,25 +165,23 @@ impl SourceMap {
         let len = global_range.end - global_range.start;
         (*file, range_start..range_start + len)
     }
-
-    //pub(crate) fn reverse_resolve(&self, file_id)
 }
 
 impl SourceList {
-    pub(crate) fn new(
-        project_root: Option<PathBuf>,
-        root_fea: PathBuf,
-    ) -> Result<Self, SourceLoadError> {
-        assert!(root_fea.exists());
-        assert!(root_fea.is_file());
-        let project_root = project_root.unwrap_or_else(|| root_fea.parent().unwrap().to_owned());
-        let canonical =
-            util::paths::CanonicalPath::new(&root_fea).map_err(|cause| SourceLoadError {
-                path: root_fea.clone(),
-                cause,
-            })?;
-        let source = Source::new(root_fea)?;
-        let root_id = source.id;
+    pub(crate) fn new(root: Source, project_root: Option<PathBuf>) -> Self {
+        // if root has no source it means we're testing, and project_root can
+        // be empty? (future me: if this caused a bug, I'm sorry.
+        // it looked harmless.)
+        let project_root = project_root.unwrap_or_else(|| match root.path() {
+            // if path is real, it should exist and have a parent
+            Some(path) => path.parent().unwrap().to_owned(),
+            None => PathBuf::new(),
+        });
+        let root_id = root.id;
+        let canonical = match root.path() {
+            Some(path) => util::paths::CanonicalPath::from_path(path).unwrap(),
+            None => util::paths::CanonicalPath::fake(format!("path/to/{}.fea", root_id.0)),
+        };
 
         let mut myself = SourceList {
             project_root,
@@ -188,27 +190,22 @@ impl SourceList {
             sources: Default::default(),
         };
 
-        myself.ids.insert(canonical, source.id);
-        myself.sources.insert(source.id, source);
-        Ok(myself)
+        myself.ids.insert(canonical, root.id);
+        myself.sources.insert(root.id, root);
+        myself
     }
 
     pub(crate) fn project_root(&self) -> &Path {
         &self.project_root
     }
 
-    #[cfg(test)]
-    pub(crate) fn new_for_test(root_id: FileId) -> Self {
-        SourceList {
-            root_id,
-            project_root: Default::default(),
-            ids: Default::default(),
-            sources: Default::default(),
-        }
-    }
-
     pub(crate) fn root_id(&self) -> FileId {
         self.root_id
+    }
+
+    #[cfg(test)]
+    pub(crate) fn add_source(&mut self, source: Source) {
+        self.sources.insert(source.id, source);
     }
 
     pub(crate) fn get(&self, id: &FileId) -> Option<&Source> {
@@ -222,7 +219,7 @@ impl SourceList {
     /// `path` should have already been normalized with `util::paths::resolve_path`.
     pub(crate) fn source_for_path(&mut self, path: PathBuf) -> Result<FileId, SourceLoadError> {
         let canonical =
-            util::paths::CanonicalPath::new(&path).map_err(|cause| SourceLoadError {
+            util::paths::CanonicalPath::from_path(&path).map_err(|cause| SourceLoadError {
                 cause,
                 path: path.clone(),
             })?;
@@ -230,7 +227,7 @@ impl SourceList {
             return Ok(*src);
         }
 
-        let source = Source::new(path)?;
+        let source = Source::from_path(path)?;
         let id = source.id;
         self.ids.insert(canonical, id);
         self.sources.insert(id, source);

@@ -10,7 +10,7 @@ mod token_set;
 
 use std::path::PathBuf;
 
-pub use context::{parse_str, HardError, IncludeStatement, ParseContext, ParseTree};
+pub use context::{parse_src, HardError, IncludeStatement, ParseContext, ParseTree};
 pub use parser::{Parser, SyntaxError};
 pub use source::FileId;
 pub use token::Kind;

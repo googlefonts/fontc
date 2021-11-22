@@ -5,18 +5,20 @@ use std::path::{Path, PathBuf};
 // this is a fancy way of ensuring by construction that this is
 // actually canonicalized.
 /// A canonical path.
+///
+/// By construction, this is always canonicalized if the original path exists.
+/// If not, the original path is untouched.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CanonicalPath(PathBuf);
 
 impl CanonicalPath {
-    pub fn new(path: impl AsRef<Path>) -> std::io::Result<Self> {
+    pub fn from_path(path: impl AsRef<Path>) -> std::io::Result<Self> {
         path.as_ref().canonicalize().map(CanonicalPath)
     }
-}
 
-impl AsRef<Path> for CanonicalPath {
-    fn as_ref(&self) -> &Path {
-        self.0.as_path()
+    /// Make a fake path, if using a source with no path (as in a test)
+    pub(crate) fn fake(path: impl Into<PathBuf>) -> Self {
+        CanonicalPath(path.into())
     }
 }
 
@@ -65,14 +67,15 @@ pub fn rebase_path(path: &Path, base: &Path) -> PathBuf {
 /// Given a relative path, resolve it to a specific path per [the spec][]
 ///
 /// [the spec]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#3-including-files
-pub fn resolve_path(path: &Path, root: &Path, parent: &Path) -> PathBuf {
+pub fn resolve_path(path: &Path, root: &Path, parent: Option<&Path>) -> PathBuf {
     if root.join(path).exists() {
         return rebase_path(path, root);
     }
-    if parent.join(path).exists() {
-        return rebase_path(path, parent);
+    if let Some(parent) = parent {
+        if parent.join(path).exists() {
+            return rebase_path(path, parent);
+        }
     }
-
     path.to_owned()
 }
 

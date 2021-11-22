@@ -274,13 +274,16 @@ impl std::fmt::Debug for NodeRef<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::parse::Source;
+
     use super::*;
 
     static SAMPLE_FEA: &str = include_str!("../../test-data/fonttools-tests/mini.fea");
 
     #[test]
     fn seek() {
-        let (root, _errs, _) = crate::parse_str(SAMPLE_FEA, None);
+        let fea = Source::from_str(SAMPLE_FEA);
+        let (root, _errs, _) = crate::parse_src(&fea, None);
 
         let mut cursor = root.cursor();
         cursor.seek(192);
@@ -297,7 +300,8 @@ mod tests {
 
     #[test]
     fn abs_positions() {
-        let (root, errs, _) = crate::parse_str(SAMPLE_FEA, None);
+        let fea = Source::from_str(SAMPLE_FEA);
+        let (root, errs, _) = crate::parse_src(&fea, None);
         assert!(errs.is_empty());
         let mut last_end = 0;
         for token in root.iter_tokens() {
@@ -314,7 +318,8 @@ mod tests {
 
     #[test]
     fn ascend_jump() {
-        let (root, _errs, _) = crate::parse_str(SAMPLE_FEA, None);
+        let fea = Source::from_str(SAMPLE_FEA);
+        let (root, _errs, _) = crate::parse_src(&fea, None);
         let mut cursor = root.cursor();
         cursor.advance();
         cursor.advance();
@@ -350,8 +355,8 @@ mod tests {
 
     #[test]
     fn advance() {
-        let fea = "feature kern { pos a b -20; }kern;";
-        let (root, errs, _) = crate::parse_str(fea, None);
+        let fea = Source::from_str("feature kern { pos a b -20; }kern;");
+        let (root, errs, _) = crate::parse_src(&fea, None);
         assert!(errs.is_empty());
         let mut cursor = root.cursor();
         assert!(

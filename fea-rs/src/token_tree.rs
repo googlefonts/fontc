@@ -487,12 +487,14 @@ impl std::fmt::Debug for Node {
 #[cfg(test)]
 mod tests {
 
+    use crate::parse::Source;
+
     use super::*;
     static SAMPLE_FEA: &str = include_str!("../test-data/fonttools-tests/mini.fea");
 
     #[test]
     fn token_iter() {
-        let (root, _errs, _) = crate::parse_str(SAMPLE_FEA, None);
+        let (root, _errs, _) = crate::parse_src(&Source::from_str(SAMPLE_FEA), None);
         let reconstruct = root.iter_tokens().map(Token::as_str).collect::<String>();
         crate::assert_eq_str!(SAMPLE_FEA, reconstruct);
     }

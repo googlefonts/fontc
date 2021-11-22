@@ -337,7 +337,7 @@ fn debug_parse_output(
     let mut parser = Parser::new(text, &mut sink);
     f(&mut parser);
     let (node, errs, _) = sink.finish();
-    let source = Source::new_for_test(text, "");
+    let source = Source::from_str(text);
     let mut err_str = String::new();
     for err in &errs {
         if !err_str.is_empty() {
