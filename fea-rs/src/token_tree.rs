@@ -64,6 +64,7 @@ pub(crate) struct TreeBuilder {
 
 pub(crate) struct AstSink<'a> {
     text: &'a str,
+    file_id: FileId,
     text_pos: usize,
     builder: TreeBuilder,
     glyph_map: Option<&'a GlyphMap>,
@@ -93,15 +94,17 @@ impl TreeSink for AstSink<'_> {
         }
     }
 
-    fn error(&mut self, error: Diagnostic) {
+    fn error(&mut self, mut error: Diagnostic) {
+        error.message.file = self.file_id;
         self.errors.push(error);
         self.cur_node_contains_error = true;
     }
 }
 
 impl<'a> AstSink<'a> {
-    pub fn new(text: &'a str, glyph_map: Option<&'a GlyphMap>) -> Self {
+    pub fn new(text: &'a str, file_id: FileId, glyph_map: Option<&'a GlyphMap>) -> Self {
         AstSink {
+            file_id,
             text,
             text_pos: 0,
             builder: TreeBuilder::default(),

@@ -197,6 +197,7 @@ fn validate_glyph_name(name: &[u8]) -> NameType {
 }
 #[cfg(test)]
 mod tests {
+    use crate::parse::FileId;
     use crate::token_tree::AstSink;
     use crate::{GlyphMap, GlyphName};
 
@@ -277,7 +278,7 @@ END GlyphClassDefNode
     #[test]
     fn name_like() {
         let fea = "hi \\hi \\mark \\table \\12";
-        let mut sink = AstSink::new(fea, None);
+        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
         let mut parser = Parser::new(fea, &mut sink);
         assert!(eat_glyph_name_like(&mut parser));
         assert_eq!(parser.nth_raw(0), b"hi");
@@ -295,7 +296,7 @@ END GlyphClassDefNode
     fn invalid_things() {
         let bad_glyphs = [".hi", "hi!", "hî"];
         for raw in bad_glyphs {
-            let mut sink = AstSink::new(raw, None);
+            let mut sink = AstSink::new(raw, FileId::CURRENT_FILE, None);
             let mut parser = Parser::new(raw, &mut sink);
             eat_glyph_name_like(&mut parser);
             assert_eq!(sink.errors().len(), 1, "'{}'", raw);
@@ -307,7 +308,7 @@ END GlyphClassDefNode
         let fea = "[a-b]";
 
         // first we parse without a glyph map
-        let mut sink = AstSink::new(fea, None);
+        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
         let mut parser = Parser::new(fea, &mut sink);
         eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
 
@@ -323,7 +324,7 @@ END GlyphClassDefNode
         // now we parse with a glyph map
         let glyphs: GlyphMap = ["a", "b"].iter().cloned().map(GlyphName::from).collect();
 
-        let mut sink = AstSink::new(fea, Some(&glyphs));
+        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, Some(&glyphs));
         let mut parser = Parser::new(fea, &mut sink);
         eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
 

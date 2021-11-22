@@ -101,12 +101,16 @@ enum EditOp {
 
 #[cfg(test)]
 mod tests {
-    use crate::{parse::Parser, token_tree::AstSink, TokenSet};
+    use crate::{
+        parse::{FileId, Parser},
+        token_tree::AstSink,
+        TokenSet,
+    };
 
     use super::*;
 
     fn make_node(fea: &str, f: impl FnOnce(&mut Parser)) -> Node {
-        let mut sink = AstSink::new(fea, None);
+        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
         let mut parser = Parser::new(fea, &mut sink);
         f(&mut parser);
         let (root, _errs, _) = sink.finish();
@@ -130,7 +134,7 @@ feature liga {
 } liga;
 ";
 
-        let mut sink = AstSink::new(fea, None);
+        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
         let mut parser = Parser::new(fea, &mut sink);
         crate::parse::grammar::root(&mut parser);
         let (root, _errs, _) = sink.finish();

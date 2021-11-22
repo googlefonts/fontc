@@ -347,7 +347,7 @@ pub fn parse_src(
     src: &Source,
     glyph_map: Option<&GlyphMap>,
 ) -> (Node, Vec<Diagnostic>, Vec<IncludeStatement>) {
-    let mut sink = AstSink::new(src.contents(), glyph_map);
+    let mut sink = AstSink::new(src.contents(), src.id(), glyph_map);
     let mut parser = Parser::new(src.contents(), &mut sink);
     super::grammar::root(&mut parser);
     sink.finish()
