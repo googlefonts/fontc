@@ -2,11 +2,16 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use super::source::Source;
 use super::{FileId, Parser, SourceList, SourceMap};
 use crate::diagnostic::LocalDiagnostic;
-use crate::token_tree::typed::AstNode as _;
-use crate::token_tree::AstSink;
-use crate::{typed, util, Diagnostic, GlyphMap, Node};
+use crate::{
+    token_tree::{
+        typed::{self, AstNode as _},
+        AstSink,
+    },
+    util, Diagnostic, GlyphMap, Node,
+};
 
 const MAX_INCLUDE_DEPTH: usize = 50;
 
@@ -41,20 +46,11 @@ pub struct ParseTree {
     map: SourceMap,
 }
 
-impl ParseTree {
-    pub fn root(&self) -> typed::Root {
-        typed::Root::try_from_node(&self.root).expect("parse tree has invalid root node type")
-    }
-
-    pub fn source_map(&self) -> &SourceMap {
-        &self.map
-    }
-}
-
 /// An unrecoverable error that occurs during parsing.
 ///
 /// This is in contrast with things like syntax errors, which we collect
 /// and report when we're finished parsing.
+#[derive(Debug)]
 pub enum HardError {
     /// A file could not be found or could not be read.
     IoError {
@@ -62,6 +58,9 @@ pub enum HardError {
         cause: std::io::Error,
     },
 }
+
+/// An include statement in a source file.
+pub struct IncludeStatement(pub(crate) typed::Include);
 
 struct IncludeError {
     file: FileId,
@@ -76,7 +75,35 @@ enum IncludeErrorKind {
     ToDeep,
 }
 
+impl IncludeStatement {
+    /// The path part of the statement.
+    ///
+    /// For the statement `include(file.fea)`, this is `file.fea`.
+    pub fn path(&self) -> &str {
+        &self.0.path().text
+    }
+
+    /// The range of the entire include statement.
+    pub fn stmt_range(&self) -> Range<usize> {
+        self.0.range()
+    }
+
+    /// The range of just the path text.
+    //FIXME: is this accurate? has it seen a cursor yet?
+    pub fn path_range(&self) -> Range<usize> {
+        self.0.path().range()
+    }
+}
+
 impl ParseContext {
+    pub fn root_id(&self) -> FileId {
+        self.sources.root_id()
+    }
+
+    pub fn get_raw(&self, file: FileId) -> Option<&(Node, Vec<LocalDiagnostic>)> {
+        self.parsed_files.get(&file)
+    }
+
     /// Attempt to parse the feature file at `path` and any includes.
     ///
     /// This will only error in unrecoverable cases, such as if `path` cannot
@@ -103,7 +130,7 @@ impl ParseContext {
                 continue;
             }
             let source = sources.get(&id).unwrap();
-            let (node, errors, include_stmts) = parse_source(source.contents(), glyph_map);
+            let (node, errors, include_stmts) = parse_str(source.contents(), glyph_map);
 
             // we need to drop `source` so we can mutate source_map to add new includes
             let source_path = if !include_stmts.is_empty() {
@@ -114,8 +141,8 @@ impl ParseContext {
 
             parsed_files.insert(source.id(), (node, errors));
             for include in &include_stmts {
-                let path_token = include.path();
-                let path = Path::new(path_token.text.as_str());
+                //let path_token = include.path();
+                let path = Path::new(include.path());
                 let path = util::paths::resolve_path(
                     path,
                     sources.project_root(),
@@ -126,11 +153,11 @@ impl ParseContext {
 
                 match sources.source_for_path(path) {
                     Ok(included_id) => {
-                        includes.add_edge(id, (included_id, include.range()));
+                        includes.add_edge(id, (included_id, include.stmt_range()));
                         queue.push(included_id);
                     }
                     Err(e) => {
-                        let range = path_token.range();
+                        let range = include.path_range();
                         parsed_files
                             .get_mut(&id)
                             .unwrap()
@@ -163,7 +190,7 @@ impl ParseContext {
         let mut all_errors = self
             .parsed_files
             .iter()
-            .flat_map(|(id, (_, errs))| errs.iter().map(move |e| e.clone().to_diagnostic(*id)))
+            .flat_map(|(id, (_, errs))| errs.iter().map(move |e| e.clone().into_diagnostic(*id)))
             .collect::<Vec<_>>();
         let include_errors = self.graph.validate(self.sources.root_id());
         // record any errors:
@@ -293,18 +320,41 @@ impl IncludeGraph {
     }
 }
 
-fn parse_source(
+//TODO: move to another file if this gets at all big
+impl ParseTree {
+    pub fn root(&self) -> &Node {
+        &self.root
+    }
+
+    pub fn typed_root(&self) -> typed::Root {
+        typed::Root::try_from_node(&self.root).expect("parse tree has invalid root node type")
+    }
+
+    pub fn source_map(&self) -> &SourceMap {
+        &self.map
+    }
+
+    pub fn get_source(&self, id: FileId) -> Option<&Source> {
+        self.sources.get(&id)
+    }
+
+    pub fn format_diagnostic(&self, err: &Diagnostic) -> String {
+        let mut s = String::new();
+        let source = self.get_source(err.message.file).unwrap();
+        crate::util::highlighting::write_diagnostic(&mut s, err, source, None);
+        s
+    }
+}
+
+/// Parse a single source file.
+pub fn parse_str(
     src: &str,
     glyph_map: Option<&GlyphMap>,
-) -> (
-    Node,
-    Vec<LocalDiagnostic>,
-    Vec<crate::token_tree::typed::Include>,
-) {
+) -> (Node, Vec<LocalDiagnostic>, Vec<IncludeStatement>) {
     let mut sink = AstSink::new(src, glyph_map);
     let mut parser = Parser::new(src, &mut sink);
-    crate::parse::grammar::root(&mut parser);
-    sink.finish2()
+    super::grammar::root(&mut parser);
+    sink.finish()
 }
 
 #[cfg(test)]
@@ -318,11 +368,8 @@ mod tests {
     };
 
     fn make_ids<const N: usize>() -> [FileId; N] {
-        let one = FileId::next();
-        let mut result = [one; N];
-        for i in 1..N {
-            result[i] = FileId::next();
-        }
+        let mut result = [FileId::CURRENT_FILE; N];
+        result.iter_mut().for_each(|id| *id = FileId::next());
         result
     }
 
@@ -348,9 +395,9 @@ mod tests {
         graph.add_edge(c, (d, statement.range()));
         graph.add_edge(d, (b, statement.range()));
 
-        let r = graph.validate(a);
-        assert_eq!(r[0].file, d);
-        assert_eq!(r[0].range, 0..18);
+        let result = graph.validate(a);
+        assert_eq!(result[0].file, d);
+        assert_eq!(result[0].range, 0..18);
     }
 
     #[test]
@@ -360,13 +407,13 @@ mod tests {
         let file_a = "include(bb);";
         let file_b = "include(a)";
 
-        let (node_a, er, includes_a) = parse_source(file_a, None);
+        let (node_a, er, includes_a) = parse_str(file_a, None);
         assert!(er.is_empty());
-        let (node_b, er, includes_b) = parse_source(file_b, None);
+        let (node_b, er, includes_b) = parse_str(file_b, None);
         assert!(!er.is_empty());
         let mut graph = IncludeGraph::default();
-        graph.add_edge(a, (b, includes_a[0].range()));
-        graph.add_edge(b, (a, includes_b[0].range()));
+        graph.add_edge(a, (b, includes_a[0].path_range()));
+        graph.add_edge(b, (a, includes_b[0].path_range()));
         let parse = ParseContext {
             sources,
             parsed_files: HashMap::from_iter([(a, (node_a, vec![])), (b, (node_b, vec![]))]),
@@ -389,17 +436,17 @@ mod tests {
         let file_b = "languagesystem dflt DFLT;\n";
         let file_c = "feature kern {\n pos a b 20;\n } kern;";
 
-        let (node_a, er, includes) = parse_source(file_a, None);
+        let (node_a, er, includes) = parse_str(file_a, None);
         assert!(er.is_empty());
-        let (node_b, er, _) = parse_source(file_b, None);
+        let (node_b, er, _) = parse_str(file_b, None);
         assert!(er.is_empty());
-        let (node_c, er, _) = parse_source(file_c, None);
+        let (node_c, er, _) = parse_str(file_c, None);
         assert!(er.is_empty());
         let mut graph = IncludeGraph::default();
         for include in includes {
-            match include.path().text.as_str() {
-                "b" => graph.add_edge(a, (b, include.range())),
-                "c" => graph.add_edge(a, (c, include.range())),
+            match include.path() {
+                "b" => graph.add_edge(a, (b, include.stmt_range())),
+                "c" => graph.add_edge(a, (c, include.stmt_range())),
                 other => panic!("unexpectd include '{}'", other),
             }
         }

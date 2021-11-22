@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use fea_rs::{util, AstSink, Diagnostic, GlyphMap, GlyphName, Level, Node, Parser};
+use fea_rs::{util, GlyphName};
 
 /// Attempt to compile features into a font file.
 ///
@@ -21,7 +21,6 @@ fn main() {
     };
 
     let mut font = fonttools::font::Font::load(args.path()).expect("failed to load font");
-    let features = std::fs::read_to_string(args.fea()).expect("failed to load fea");
     let names = font
         .tables
         .post()
@@ -32,30 +31,34 @@ fn main() {
         .map(|names| names.iter().map(GlyphName::new).collect())
         .expect("no glyph map");
 
-    let (root, errors) = try_parse_fea(&features, &names);
-    if errors.iter().any(Diagnostic::is_error) {
-        print_diagnostics(&root, &features, &errors);
+    let parse = fea_rs::parse_root_file(args.fea(), Some(&names), None).unwrap();
+    let (tree, diagnostics) = parse.generate_parse_tree();
+    let mut has_error = false;
+    for msg in &diagnostics {
+        eprintln!("{}", tree.format_diagnostic(msg));
+        has_error |= msg.is_error();
+    }
+    if has_error {
         std::process::exit(1);
     }
 
-    match fea_rs::compile(&root, &names) {
+    match fea_rs::compile(&tree, &names) {
         Ok(compilation) => {
             compilation.apply(&mut font).unwrap();
-            if !compilation.warnings.is_empty() {
-                print_diagnostics(&root, &features, &compilation.warnings);
+            for warning in &compilation.warnings {
+                eprintln!("{}", tree.format_diagnostic(warning));
             }
         }
 
         Err(errors) => {
-            print_diagnostics(&root, &features, &errors);
-            let err_count = errors
-                .iter()
-                .filter(|err| err.level == Level::Error)
-                .count();
-            let warning_count = errors
-                .iter()
-                .filter(|err| err.level == Level::Warning)
-                .count();
+            let mut err_count = 0;
+            for msg in &errors {
+                eprintln!("{}", tree.format_diagnostic(msg));
+                if msg.is_error() {
+                    err_count += 1;
+                }
+            }
+            let warning_count = errors.len() - err_count;
             println!("{} errors, {} warnings", err_count, warning_count);
             std::process::exit(1);
         }
@@ -98,23 +101,6 @@ fn main() {
             }
         }
     }
-}
-
-fn print_diagnostics(root: &Node, features: &str, diagnostics: &[Diagnostic]) {
-    let tokens = root
-        .iter_tokens()
-        .map(|t| (t.kind, t.range()))
-        .collect::<Vec<_>>();
-
-    println!("{}", util::stringify_errors(features, &tokens, diagnostics));
-}
-
-/// returns the tree and any errors
-fn try_parse_fea(contents: &str, names: &GlyphMap) -> (Node, Vec<Diagnostic>) {
-    let mut sink = AstSink::new(contents, Some(names));
-    let mut parser = Parser::new(contents, &mut sink);
-    fea_rs::root(&mut parser);
-    sink.finish()
 }
 
 mod flags {

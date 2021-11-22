@@ -4,6 +4,7 @@ use std::{cell::Cell, ops::Range, sync::Arc};
 
 use smol_str::SmolStr;
 
+use crate::parse::IncludeStatement;
 use crate::{
     diagnostic::LocalDiagnostic,
     parse::{TokenComparable, TreeSink},
@@ -111,31 +112,13 @@ impl<'a> AstSink<'a> {
         }
     }
 
-    pub fn finish(mut self) -> (Node, Vec<LocalDiagnostic>) {
-        let node = self.builder.finish();
-        self.errors.sort_by_key(|d| d.span().start);
-        (node, self.errors)
-    }
-
-    pub fn finish2(self) -> (Node, Vec<LocalDiagnostic>, Vec<typed::Include>) {
+    pub fn finish(self) -> (Node, Vec<LocalDiagnostic>, Vec<IncludeStatement>) {
         let node = self.builder.finish();
         let mut includes = Vec::new();
         if self.include_statement_count > 0 {
             node.find_include_nodes(&mut includes, self.include_statement_count);
         }
         (node, self.errors, includes)
-    }
-
-    #[cfg(test)]
-    pub fn finish_stringified(self) -> (Node, Vec<LocalDiagnostic>, String) {
-        let node = self.builder.finish();
-        let tokens = node
-            .iter_tokens()
-            .map(|t| (t.kind, t.range()))
-            .collect::<Vec<_>>();
-
-        let string = crate::util::stringify_errors(self.text, &tokens, &self.errors);
-        (node, self.errors, string)
     }
 
     #[cfg(test)]
@@ -233,11 +216,11 @@ impl Node {
         edit::apply_edits(self, edits, skip_parent)
     }
 
-    fn find_include_nodes(&self, collect: &mut Vec<typed::Include>, num: usize) {
+    fn find_include_nodes(&self, collect: &mut Vec<IncludeStatement>, num: usize) {
         for item in self.iter_children() {
             if let Some(node) = item.as_node() {
                 if let Some(include) = typed::Include::cast(item) {
-                    collect.push(include);
+                    collect.push(IncludeStatement(include));
                     if collect.len() == num {
                         return;
                     }
@@ -419,11 +402,6 @@ impl Token {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn new_for_test(kind: Kind, text: impl Into<SmolStr>) -> Self {
-        Token::new(kind, text.into())
-    }
-
     pub fn as_str(&self) -> &str {
         &self.text
     }
@@ -508,19 +486,14 @@ impl std::fmt::Debug for Node {
 
 #[cfg(test)]
 mod tests {
-    use crate::Parser;
 
     use super::*;
     static SAMPLE_FEA: &str = include_str!("../test-data/fonttools-tests/mini.fea");
 
     #[test]
     fn token_iter() {
-        let mut sink = AstSink::new(SAMPLE_FEA, None);
-        let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
-        crate::root(&mut parser);
-        let (root, _errs) = sink.finish();
+        let (root, _errs, _) = crate::parse_str(SAMPLE_FEA, None);
         let reconstruct = root.iter_tokens().map(Token::as_str).collect::<String>();
-
         crate::assert_eq_str!(SAMPLE_FEA, reconstruct);
     }
 }

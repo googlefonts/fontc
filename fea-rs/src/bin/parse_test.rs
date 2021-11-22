@@ -3,12 +3,11 @@
 use std::{
     env,
     ffi::OsStr,
-    fs,
     path::{Path, PathBuf},
     time::Instant,
 };
 
-use fea_rs::{util, AstSink, Diagnostic, Kind, Node, Parser};
+use fea_rs::{Diagnostic, Kind, ParseTree};
 
 /// Attempt to parse fea files.
 ///
@@ -40,7 +39,7 @@ fn directory_arg(path: &Path) -> std::io::Result<()> {
             eprintln!("parsing '{}'", path.display());
             match std::panic::catch_unwind(|| try_parse_file(&path)) {
                 Err(_) => failures.push((path, true)),
-                Ok((_, errs)) if !errs.is_empty() => failures.push((path, false)),
+                Ok((_, errs)) if errs.iter().any(|e| e.is_error()) => failures.push((path, false)),
                 Ok((node, _)) => successes.push((path, node)),
             };
         }
@@ -63,10 +62,10 @@ fn single_file_arg(path: &Path, print_tree: bool) {
     let (tree, errors) = try_parse_file(path);
     let elapsed = time.elapsed();
     if errors.is_empty() || print_tree {
-        println!("{}", tree.simple_parse_tree());
+        println!("{}", tree.root().simple_parse_tree());
     }
-    if !errors.is_empty() {
-        eprintln!("{}", errors);
+    for diagnostic in &errors {
+        eprintln!("{}", tree.format_diagnostic(diagnostic));
     }
 
     let micros = elapsed.as_micros();
@@ -75,28 +74,15 @@ fn single_file_arg(path: &Path, print_tree: bool) {
 }
 
 /// returns the tree and any errors
-fn try_parse_file(path: &Path) -> (Node, String) {
-    let contents = fs::read_to_string(path).expect("file read failed");
-    let mut sink = AstSink::new(&contents, None);
-    let mut parser = Parser::new(&contents, &mut sink);
-    fea_rs::root(&mut parser);
-    let (root, errors) = sink.finish();
-    let errors = stringify_errors(&contents, &root, &errors);
-    (root, errors)
+fn try_parse_file(path: &Path) -> (ParseTree, Vec<Diagnostic>) {
+    let parse = fea_rs::parse_root_file(path, None, None).unwrap();
+    parse.generate_parse_tree()
 }
 
-fn stringify_errors(contents: &str, root: &Node, errors: &[Diagnostic]) -> String {
-    let tokens = root
-        .iter_tokens()
-        .map(|t| (t.kind, t.range()))
-        .collect::<Vec<_>>();
-    util::stringify_errors(contents, &tokens, errors)
-}
-
-fn look_at_nodes_if_you_want(nodes: &[(PathBuf, Node)]) {
+fn look_at_nodes_if_you_want(nodes: &[(PathBuf, ParseTree)]) {
     for (path, node) in nodes {
         let mut printed_preamble = false;
-        for child in node.iter_tokens() {
+        for child in node.root().iter_tokens() {
             if child.kind == Kind::Path {
                 if !printed_preamble {
                     printed_preamble = true;

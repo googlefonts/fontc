@@ -5,7 +5,6 @@ use std::{convert::TryInto, ops::Range};
 /// A span of a source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
-    file: FileId,
     start: u32,
     end: u32,
 }
@@ -20,6 +19,7 @@ pub enum Level {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     pub text: String,
+    pub file: FileId,
     pub span: Span,
 }
 
@@ -34,7 +34,7 @@ pub struct Diagnostic {
 // internal: a diagnostic generated during parsing, that doesn't have an explicit
 // FileId; the FileId is added when the tree is built.
 #[derive(Clone)]
-pub(crate) struct LocalDiagnostic(Diagnostic);
+pub struct LocalDiagnostic(Diagnostic);
 
 impl Span {
     pub fn range(&self) -> Range<usize> {
@@ -55,8 +55,8 @@ impl Diagnostic {
                 span: Span {
                     start: range.start.try_into().unwrap(),
                     end: range.end.try_into().unwrap(),
-                    file,
                 },
+                file,
             },
             level,
             annotations: Vec::new(),
@@ -111,13 +111,14 @@ impl LocalDiagnostic {
         Self::new(Level::Warning, span, message)
     }
 
-    pub fn to_diagnostic(mut self, in_file: FileId) -> Diagnostic {
-        self.0.message.span.file = in_file;
+    pub fn into_diagnostic(mut self, in_file: FileId) -> Diagnostic {
+        self.0.message.file = in_file;
+        self.0.annotations.iter_mut().for_each(|m| m.file = in_file);
         self.0
-            .annotations
-            .iter_mut()
-            .for_each(|m| m.span.file = in_file);
-        self.0
+    }
+
+    pub fn text(&self) -> &str {
+        self.0.text()
     }
 
     pub fn span(&self) -> Range<usize> {

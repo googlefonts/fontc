@@ -1,4 +1,4 @@
-use crate::{parse::ParseTree, token_tree::typed, Diagnostic, GlyphMap, Node};
+use crate::{parse::ParseTree, Diagnostic, GlyphMap};
 
 use self::{compile_ctx::CompilationCtx, validate::ValidationCtx};
 
@@ -30,12 +30,12 @@ pub fn compile(node: &ParseTree, glyph_map: &GlyphMap) -> Result<Compilation, Ve
 
 fn validate_impl<'a>(node: &'a ParseTree, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
     let mut ctx = validate::ValidationCtx::new(glyph_map, node.source_map());
-    ctx.validate_root(&node.root());
+    ctx.validate_root(&node.typed_root());
     ctx
 }
 
 fn compile_impl<'a>(node: &'a ParseTree, glyph_map: &'a GlyphMap) -> CompilationCtx<'a> {
     let mut ctx = CompilationCtx::new(glyph_map, node.source_map());
-    ctx.compile(&node.root());
+    ctx.compile(&node.typed_root());
     ctx
 }

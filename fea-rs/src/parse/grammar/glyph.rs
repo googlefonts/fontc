@@ -197,7 +197,8 @@ fn validate_glyph_name(name: &[u8]) -> NameType {
 }
 #[cfg(test)]
 mod tests {
-    use crate::{AstSink, GlyphMap, GlyphName};
+    use crate::token_tree::AstSink;
+    use crate::{GlyphMap, GlyphName};
 
     use super::super::debug_parse_output;
     use super::*;
@@ -310,7 +311,7 @@ END GlyphClassDefNode
         let mut parser = Parser::new(fea, &mut sink);
         eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
 
-        let (node, errs) = sink.finish();
+        let (node, errs, _) = sink.finish();
         assert!(errs.is_empty());
         let mut cursor = node.cursor();
         assert_eq!(cursor.next_token().unwrap().kind, Kind::LSquare);
@@ -326,7 +327,7 @@ END GlyphClassDefNode
         let mut parser = Parser::new(fea, &mut sink);
         eat_glyph_class_list(&mut parser, TokenSet::EMPTY);
 
-        let (node, errs) = sink.finish();
+        let (node, errs, _) = sink.finish();
         assert!(errs.is_empty());
 
         let mut cursor = node.cursor();

@@ -6,13 +6,12 @@ use std::{
     env::temp_dir,
     ffi::OsStr,
     fmt::{Debug, Write},
-    fs,
     path::{Path, PathBuf},
     process::Command,
     time::SystemTime,
 };
 
-use crate::{AstSink, Compilation, Diagnostic, GlyphIdent, GlyphMap, GlyphName, Node, Parser};
+use crate::{Compilation, Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree};
 
 use ansi_term::Color;
 use fonttools::{font::Font, tables};
@@ -177,11 +176,24 @@ fn iter_compile_tests(
     })
 }
 
-pub fn try_compile(fea: &str, glyph_map: &GlyphMap) -> Result<Font, Vec<Diagnostic>> {
-    try_parse_file(fea, glyph_map)
+pub fn try_compile(path: &Path, glyph_map: &GlyphMap) -> Result<Font, Vec<Diagnostic>> {
+    try_parse_file(path, glyph_map)
         .map_err(|(_, errs)| errs)
         .and_then(|node| crate::compile(&node, glyph_map))
         .map(|comp| make_font(comp, glyph_map))
+}
+
+fn try_parse_file(
+    path: &Path,
+    glyphs: &GlyphMap,
+) -> Result<ParseTree, (ParseTree, Vec<Diagnostic>)> {
+    let ctx = crate::parse_root_file(path, Some(glyphs), None).unwrap();
+    let (tree, errs) = ctx.generate_parse_tree();
+    if errs.iter().any(Diagnostic::is_error) {
+        Err((tree, errs))
+    } else {
+        Ok(tree)
+    }
 }
 
 /// takes a path to a sample ttx file
@@ -190,16 +202,15 @@ fn run_test(
     glyph_map: &GlyphMap,
     reverse_map: &HashMap<String, String>,
 ) -> Result<PathBuf, Failure> {
-    let contents = fs::read_to_string(&path).expect("file read failed");
-    match std::panic::catch_unwind(|| match try_parse_file(&contents, glyph_map) {
+    match std::panic::catch_unwind(|| match try_parse_file(&path, glyph_map) {
         Err((node, errs)) => Err(Failure {
             path: path.clone(),
-            reason: Reason::ParseFail(stringify_diagnostics(&node, &contents, &errs)),
+            reason: Reason::ParseFail(stringify_diagnostics(&node, &errs)),
         }),
         Ok(node) => match crate::compile(&node, glyph_map) {
             Err(errs) => Err(Failure {
                 path: path.clone(),
-                reason: Reason::CompileFail(stringify_diagnostics(&node, &contents, &errs)),
+                reason: Reason::CompileFail(stringify_diagnostics(&node, &errs)),
             }),
             Ok(result) => {
                 let font = make_font(result, glyph_map);
@@ -219,23 +230,6 @@ fn run_test(
     Ok(path)
 }
 
-fn parse_file(fea: &str, map: &GlyphMap) -> (Node, Vec<Diagnostic>) {
-    let mut sink = AstSink::new(&fea, Some(map));
-    let mut parser = Parser::new(&fea, &mut sink);
-    crate::root(&mut parser);
-    sink.finish()
-}
-
-/// returns the tree and any errors
-fn try_parse_file(contents: &str, map: &GlyphMap) -> Result<Node, (Node, Vec<Diagnostic>)> {
-    let (root, errors) = parse_file(&contents, map);
-    if errors.iter().any(Diagnostic::is_error) {
-        Err((root, errors))
-    } else {
-        Ok(root)
-    }
-}
-
 fn make_font(compilation: Compilation, glyphs: &GlyphMap) -> Font {
     let mut font = Font::new(fonttools::font::SfntVersion::TrueType);
     let maxp = tables::maxp::maxp::new05(glyphs.len().try_into().unwrap());
@@ -244,12 +238,15 @@ fn make_font(compilation: Compilation, glyphs: &GlyphMap) -> Font {
     font
 }
 
-fn stringify_diagnostics(root: &Node, features: &str, diagnostics: &[Diagnostic]) -> String {
-    let tokens = root
-        .iter_tokens()
-        .map(|t| (t.kind, t.range()))
-        .collect::<Vec<_>>();
-    crate::util::stringify_errors(features, &tokens, diagnostics)
+fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> String {
+    let mut out = String::new();
+    for d in diagnostics {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&root.format_diagnostic(d));
+    }
+    out
 }
 
 fn compare_ttx(

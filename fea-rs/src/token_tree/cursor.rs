@@ -275,16 +275,12 @@ impl std::fmt::Debug for NodeRef<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AstSink, Parser};
 
     static SAMPLE_FEA: &str = include_str!("../../test-data/fonttools-tests/mini.fea");
 
     #[test]
     fn seek() {
-        let mut sink = AstSink::new(SAMPLE_FEA, None);
-        let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
-        crate::root(&mut parser);
-        let (root, _errs) = sink.finish();
+        let (root, _errs, _) = crate::parse_str(SAMPLE_FEA, None);
 
         let mut cursor = root.cursor();
         cursor.seek(192);
@@ -301,11 +297,8 @@ mod tests {
 
     #[test]
     fn abs_positions() {
-        let mut sink = AstSink::new(SAMPLE_FEA, None);
-        let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
-        crate::root(&mut parser);
-        let (root, errs, errstr) = sink.finish_stringified();
-        assert!(errs.is_empty(), "{}", errstr);
+        let (root, errs, _) = crate::parse_str(SAMPLE_FEA, None);
+        assert!(errs.is_empty());
         let mut last_end = 0;
         for token in root.iter_tokens() {
             assert_eq!(
@@ -321,11 +314,7 @@ mod tests {
 
     #[test]
     fn ascend_jump() {
-        let mut sink = AstSink::new(SAMPLE_FEA, None);
-        let mut parser = Parser::new(SAMPLE_FEA, &mut sink);
-        crate::root(&mut parser);
-        let (root, _errs) = sink.finish();
-
+        let (root, _errs, _) = crate::parse_str(SAMPLE_FEA, None);
         let mut cursor = root.cursor();
         cursor.advance();
         cursor.advance();
@@ -362,10 +351,7 @@ mod tests {
     #[test]
     fn advance() {
         let fea = "feature kern { pos a b -20; }kern;";
-        let mut sink = AstSink::new(fea, None);
-        let mut parser = Parser::new(fea, &mut sink);
-        crate::root(&mut parser);
-        let (root, errs) = sink.finish();
+        let (root, errs, _) = crate::parse_str(fea, None);
         assert!(errs.is_empty());
         let mut cursor = root.cursor();
         assert!(

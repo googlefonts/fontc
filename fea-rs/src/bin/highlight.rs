@@ -1,41 +1,30 @@
+/// print a fea file to stdout, with syntax highlighting
 use ansi_term::{Colour, Style};
 use std::{env, ffi::OsStr, path::PathBuf};
 
-use fea_rs::{AstSink, Parser};
-
 fn main() {
     let args = Args::get_from_env_or_exit();
-    let contents = std::fs::read_to_string(&args.path).expect("file read failed");
-    let mut sink = AstSink::new(&contents, None);
-    let mut parser = Parser::new(&contents, &mut sink);
-    fea_rs::root(&mut parser);
-
-    let mut pos = 0;
-    let mut cur_len = 0;
+    let parse = fea_rs::parse_root_file(&args.path, None, None).unwrap();
+    let (node, _errors) = parse.get_raw(parse.root_id()).unwrap();
     let mut current_style = Style::new().fg(Colour::White);
+    let mut needs_paint = String::new();
 
-    let mut results = Vec::new();
-    let (root, _errs) = sink.finish();
-    for token in root.iter_tokens() {
+    for token in node.iter_tokens() {
         let style = fea_rs::util::style_for_kind(token.kind);
         // if the style has changed, draw the previous range.
         if style != current_style {
             // we've drawn, so we reset.
-            let slice = &contents[pos..pos + cur_len];
-            print!("{}", current_style.paint(slice));
+            if !needs_paint.is_empty() {
+                print!("{}", current_style.paint(&needs_paint));
+            }
             current_style = style;
-            pos += cur_len;
-            cur_len = token.text.len();
-        } else {
-            // still the same style; we just increment cur_len
-            cur_len += token.text.len();
+            needs_paint.clear();
         }
+        needs_paint.push_str(token.as_str());
     }
 
     // draw the last span
-    let slice = &contents[pos..pos + cur_len];
-    print!("{}", current_style.paint(slice));
-    results.push((current_style, slice));
+    print!("{}", current_style.paint(needs_paint));
 }
 
 macro_rules! exit_err {

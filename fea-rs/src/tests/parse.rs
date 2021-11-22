@@ -3,11 +3,10 @@
 use std::{
     env,
     ffi::OsStr,
-    fs,
     path::{Path, PathBuf},
 };
 
-use crate::{AstSink, Diagnostic, Parser};
+use crate::Diagnostic;
 
 static TEST_DATA1: &str = "./test-data/fonttools-tests";
 static TEST_DATA2: &str = "./test-data/other-parse-tests";
@@ -69,11 +68,8 @@ fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
 
 /// returns the tree and any errors
 fn try_parse_file(path: &Path) -> Result<(), Vec<Diagnostic>> {
-    let contents = fs::read_to_string(path).expect("file read failed");
-    let mut sink = AstSink::new(&contents, None);
-    let mut parser = Parser::new(&contents, &mut sink);
-    crate::root(&mut parser);
-    let (_, errors) = sink.finish();
+    let ctx = crate::parse_root_file(path, None, None).unwrap();
+    let (_, errors) = ctx.generate_parse_tree();
     if errors.iter().any(Diagnostic::is_error) {
         Err(errors)
     } else {

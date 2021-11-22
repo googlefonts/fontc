@@ -101,7 +101,7 @@ enum EditOp {
 
 #[cfg(test)]
 mod tests {
-    use crate::{AstSink, Parser, TokenSet};
+    use crate::{parse::Parser, token_tree::AstSink, TokenSet};
 
     use super::*;
 
@@ -109,7 +109,7 @@ mod tests {
         let mut sink = AstSink::new(fea, None);
         let mut parser = Parser::new(fea, &mut sink);
         f(&mut parser);
-        let (root, _errs) = sink.finish();
+        let (root, _errs, _) = sink.finish();
         root
     }
 
@@ -132,8 +132,8 @@ feature liga {
 
         let mut sink = AstSink::new(fea, None);
         let mut parser = Parser::new(fea, &mut sink);
-        crate::root(&mut parser);
-        let (root, _errs) = sink.finish();
+        crate::parse::grammar::root(&mut parser);
+        let (root, _errs, _) = sink.finish();
 
         let replace_lang = {
             let fea = "languagesystem hihi ohno;";

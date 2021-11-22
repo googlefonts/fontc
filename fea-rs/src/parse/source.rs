@@ -77,6 +77,18 @@ impl Source {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_for_test(text: impl Into<String>, path: impl Into<PathBuf>) -> Source {
+        let contents = text.into();
+        let line_offsets = line_offsets(&contents);
+        Source {
+            contents,
+            line_offsets,
+            id: FileId::next(),
+            path: path.into(),
+        }
+    }
+
     pub fn contents(&self) -> &str {
         &self.contents
     }
@@ -88,14 +100,43 @@ impl Source {
     pub fn id(&self) -> FileId {
         self.id
     }
+
+    /// returns the (1-indexed) number and text.
+    pub fn line_containing_offset(&self, offset: usize) -> (usize, &str) {
+        let offset_idx = match self.line_offsets.binary_search(&offset) {
+            Ok(x) => x,
+            Err(x) => x - 1, // cannot underflow as 0 is always in list
+        };
+        let start_offset = self.line_offsets[offset_idx];
+        let end_offset = self
+            .line_offsets
+            .get(offset_idx + 1)
+            .copied()
+            .unwrap_or_else(|| self.contents.len());
+
+        (
+            offset_idx + 1,
+            self.contents[start_offset..end_offset].trim_end_matches('\n'),
+        )
+    }
+
+    /// Return the offset of the start of the (1-indexed) line.
+    ///
+    /// Panics if the line number exceeds the total number of lines in the file.
+    pub fn offset_for_line_number(&self, line_number: usize) -> usize {
+        self.line_offsets[line_number - 1]
+    }
 }
 
 fn line_offsets(text: &str) -> Vec<usize> {
     // we could use memchar for this; benefits would require benchmarking
-    text.bytes()
-        .enumerate()
-        .filter_map(|(i, b)| if b == b'\n' { Some(i) } else { None })
-        .collect()
+    let mut result = vec![0];
+    result.extend(
+        text.bytes()
+            .enumerate()
+            .filter_map(|(i, b)| if b == b'\n' { Some(i + 1) } else { None }),
+    );
+    result
 }
 
 impl SourceMap {

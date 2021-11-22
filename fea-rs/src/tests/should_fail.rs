@@ -17,8 +17,7 @@ fn expected_failures() {
     let glyph_map = ttx::make_glyph_map();
     let mut failures = Vec::new();
     for path in iter_compile_tests(TEST_DATA) {
-        let contents = std::fs::read_to_string(&path).unwrap();
-        let result = ttx::try_compile(&contents, &glyph_map);
+        let result = ttx::try_compile(&path, &glyph_map);
         if result.is_ok() {
             failures.push(path);
         }
@@ -29,7 +28,7 @@ fn expected_failures() {
         for path in &failures {
             eprintln!("  {}", path.display());
         }
-        eprintln!("");
+        eprintln!();
         panic!("ahhh");
     }
 }
