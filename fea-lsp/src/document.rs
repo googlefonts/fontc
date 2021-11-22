@@ -1,6 +1,6 @@
 use std::{ops::Range, sync::Mutex};
 
-use fea_rs::{AstSink, Kind, Parser};
+use fea_rs::{Kind, Source};
 use lspower::lsp::{
     Diagnostic, DiagnosticSeverity, Position, Range as UghRange, SemanticToken, SemanticTokenType,
     SemanticTokens,
@@ -164,11 +164,8 @@ fn compute_offsets(text: &str) -> Vec<usize> {
 }
 
 fn parse(text: &str) -> (Vec<(Kind, Range<usize>)>, Vec<fea_rs::Diagnostic>) {
-    let mut sink = AstSink::new(text, None);
-    let mut parser = Parser::new(text, &mut sink);
-    fea_rs::root(&mut parser);
-    let (root, errors) = sink.finish();
-
+    let src = Source::from_str(text);
+    let (root, errors, _) = fea_rs::parse_src(&src, None);
     let result = root.iter_tokens().map(|t| (t.kind, t.range())).collect();
     (result, errors)
 }

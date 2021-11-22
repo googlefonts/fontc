@@ -12,12 +12,12 @@ use std::path::PathBuf;
 
 pub use context::{parse_src, HardError, IncludeStatement, ParseContext, ParseTree};
 pub use parser::{Parser, SyntaxError};
-pub use source::FileId;
+pub use source::{FileId, Source};
 pub use token::Kind;
 pub use token_set::TokenSet;
 
 pub(crate) use parser::{TokenComparable, TreeSink};
-pub(crate) use source::{Source, SourceList, SourceMap};
+pub(crate) use source::{SourceList, SourceMap};
 pub(crate) use token::Token;
 
 use crate::GlyphMap;
