@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use super::source::Source;
 use super::{FileId, Parser, SourceList, SourceMap};
-use crate::diagnostic::LocalDiagnostic;
 use crate::{
     token_tree::{
         typed::{self, AstNode as _},
@@ -35,7 +34,7 @@ struct IncludeGraph {
 /// an intermediate type generates a `ParseTree`.
 pub struct ParseContext {
     sources: SourceList,
-    parsed_files: HashMap<FileId, (Node, Vec<LocalDiagnostic>)>,
+    parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
     graph: IncludeGraph,
 }
 
@@ -100,7 +99,7 @@ impl ParseContext {
         self.sources.root_id()
     }
 
-    pub fn get_raw(&self, file: FileId) -> Option<&(Node, Vec<LocalDiagnostic>)> {
+    pub fn get_raw(&self, file: FileId) -> Option<&(Node, Vec<Diagnostic>)> {
         self.parsed_files.get(&file)
     }
 
@@ -130,7 +129,8 @@ impl ParseContext {
                 continue;
             }
             let source = sources.get(&id).unwrap();
-            let (node, errors, include_stmts) = parse_str(source.contents(), glyph_map);
+            let (node, mut errors, include_stmts) = parse_str(source.contents(), glyph_map);
+            errors.iter_mut().for_each(|e| e.message.file = id);
 
             // we need to drop `source` so we can mutate source_map to add new includes
             let source_path = if !include_stmts.is_empty() {
@@ -141,7 +141,6 @@ impl ParseContext {
 
             parsed_files.insert(source.id(), (node, errors));
             for include in &include_stmts {
-                //let path_token = include.path();
                 let path = Path::new(include.path());
                 let path = util::paths::resolve_path(
                     path,
@@ -158,14 +157,11 @@ impl ParseContext {
                     }
                     Err(e) => {
                         let range = include.path_range();
-                        parsed_files
-                            .get_mut(&id)
-                            .unwrap()
-                            .1
-                            .push(LocalDiagnostic::error(
-                                range,
-                                format!("Unable to resolve import: '{}'", e.cause),
-                            ));
+                        parsed_files.get_mut(&id).unwrap().1.push(Diagnostic::error(
+                            id,
+                            range,
+                            format!("Unable to resolve import: '{}'", e.cause),
+                        ));
                     }
                 }
             }
@@ -190,7 +186,8 @@ impl ParseContext {
         let mut all_errors = self
             .parsed_files
             .iter()
-            .flat_map(|(id, (_, errs))| errs.iter().map(move |e| e.clone().into_diagnostic(*id)))
+            .flat_map(|(_, (_, errs))| errs.iter())
+            .cloned()
             .collect::<Vec<_>>();
         let include_errors = self.graph.validate(self.sources.root_id());
         // record any errors:
@@ -350,7 +347,7 @@ impl ParseTree {
 pub fn parse_str(
     src: &str,
     glyph_map: Option<&GlyphMap>,
-) -> (Node, Vec<LocalDiagnostic>, Vec<IncludeStatement>) {
+) -> (Node, Vec<Diagnostic>, Vec<IncludeStatement>) {
     let mut sink = AstSink::new(src, glyph_map);
     let mut parser = Parser::new(src, &mut sink);
     super::grammar::root(&mut parser);

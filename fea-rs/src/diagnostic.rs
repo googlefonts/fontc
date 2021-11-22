@@ -31,11 +31,6 @@ pub struct Diagnostic {
     help: Option<String>,
 }
 
-// internal: a diagnostic generated during parsing, that doesn't have an explicit
-// FileId; the FileId is added when the tree is built.
-#[derive(Clone)]
-pub struct LocalDiagnostic(Diagnostic);
-
 impl Span {
     pub fn range(&self) -> Range<usize> {
         self.start as usize..self.end as usize
@@ -95,37 +90,5 @@ impl Diagnostic {
 
     pub fn is_error(&self) -> bool {
         matches!(self.level, Level::Error)
-    }
-}
-
-impl LocalDiagnostic {
-    pub fn new(level: Level, range: Range<usize>, message: impl Into<String>) -> Self {
-        LocalDiagnostic(Diagnostic::new(level, FileId::CURRENT_FILE, range, message))
-    }
-
-    pub fn error(span: Range<usize>, message: impl Into<String>) -> Self {
-        Self::new(Level::Error, span, message)
-    }
-
-    pub fn warning(span: Range<usize>, message: impl Into<String>) -> Self {
-        Self::new(Level::Warning, span, message)
-    }
-
-    pub fn into_diagnostic(mut self, in_file: FileId) -> Diagnostic {
-        self.0.message.file = in_file;
-        self.0.annotations.iter_mut().for_each(|m| m.file = in_file);
-        self.0
-    }
-
-    pub fn text(&self) -> &str {
-        self.0.text()
-    }
-
-    pub fn span(&self) -> Range<usize> {
-        self.0.span()
-    }
-
-    pub fn is_error(&self) -> bool {
-        matches!(self.0.level, Level::Error)
     }
 }

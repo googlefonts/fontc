@@ -5,9 +5,9 @@ use std::ops::Range;
 
 use fonttools::types::Tag;
 
-use super::{lexer::Lexer, token::Token, Kind, TokenSet};
+use super::{lexer::Lexer, token::Token, FileId, Kind, TokenSet};
 
-use crate::diagnostic::LocalDiagnostic;
+use crate::diagnostic::Diagnostic;
 
 const LOOKAHEAD: usize = 4;
 const LOOKAHEAD_MAX: usize = LOOKAHEAD - 1;
@@ -169,7 +169,8 @@ impl<'a> Parser<'a> {
             if replace_kind == Kind::String {
                 range.end = range.start + 1;
             }
-            self.sink.error(LocalDiagnostic::error(range, error));
+            self.sink
+                .error(Diagnostic::error(FileId::CURRENT_FILE, range, error));
             self.buf[LOOKAHEAD_MAX].token.kind = replace_kind;
         }
     }
@@ -243,7 +244,8 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn raw_error(&mut self, range: Range<usize>, message: impl Into<String>) {
-        self.sink.error(LocalDiagnostic::error(range, message));
+        self.sink
+            .error(Diagnostic::error(FileId::CURRENT_FILE, range, message));
     }
 
     /// Error, and advance unless the current token matches a predicate.
@@ -260,7 +262,7 @@ impl<'a> Parser<'a> {
 
     /// write an error, do not advance
     pub(crate) fn err(&mut self, error: impl Into<String>) {
-        let err = LocalDiagnostic::error(self.nth_range(0), error);
+        let err = Diagnostic::error(FileId::CURRENT_FILE, self.nth_range(0), error);
         self.sink.error(err);
     }
 
@@ -278,7 +280,7 @@ impl<'a> Parser<'a> {
     /// statement (which is common in the wild)
     pub(crate) fn warn_before_ws(&mut self, error: impl Into<String>) {
         let pos = self.buf[0].start_pos;
-        let diagnostic = LocalDiagnostic::warning(pos..pos + 1, error);
+        let diagnostic = Diagnostic::warning(FileId::CURRENT_FILE, pos..pos + 1, error);
         self.sink.error(diagnostic);
     }
 
@@ -394,5 +396,5 @@ pub(crate) trait TreeSink {
     /// If `kind` is provided, it replaces the [`Kind`] passed to `start_node`.
     fn finish_node(&mut self, kind: Option<Kind>);
 
-    fn error(&mut self, error: LocalDiagnostic);
+    fn error(&mut self, error: Diagnostic);
 }

@@ -4,9 +4,9 @@ use std::{cell::Cell, ops::Range, sync::Arc};
 
 use smol_str::SmolStr;
 
-use crate::parse::IncludeStatement;
+use crate::parse::{FileId, IncludeStatement};
 use crate::{
-    diagnostic::LocalDiagnostic,
+    diagnostic::Diagnostic,
     parse::{TokenComparable, TreeSink},
     GlyphMap, Kind, TokenSet,
 };
@@ -67,7 +67,7 @@ pub(crate) struct AstSink<'a> {
     text_pos: usize,
     builder: TreeBuilder,
     glyph_map: Option<&'a GlyphMap>,
-    errors: Vec<LocalDiagnostic>,
+    errors: Vec<Diagnostic>,
     include_statement_count: usize,
     cur_node_contains_error: bool,
 }
@@ -93,7 +93,7 @@ impl TreeSink for AstSink<'_> {
         }
     }
 
-    fn error(&mut self, error: LocalDiagnostic) {
+    fn error(&mut self, error: Diagnostic) {
         self.errors.push(error);
         self.cur_node_contains_error = true;
     }
@@ -112,7 +112,7 @@ impl<'a> AstSink<'a> {
         }
     }
 
-    pub fn finish(self) -> (Node, Vec<LocalDiagnostic>, Vec<IncludeStatement>) {
+    pub fn finish(self) -> (Node, Vec<Diagnostic>, Vec<IncludeStatement>) {
         let node = self.builder.finish();
         let mut includes = Vec::new();
         if self.include_statement_count > 0 {
@@ -122,7 +122,7 @@ impl<'a> AstSink<'a> {
     }
 
     #[cfg(test)]
-    pub fn errors(&self) -> &[LocalDiagnostic] {
+    pub fn errors(&self) -> &[Diagnostic] {
         &self.errors
     }
 
@@ -140,7 +140,7 @@ impl<'a> AstSink<'a> {
                     Ok(node) => return node.into(),
                     Err(message) => {
                         let range = self.text_pos..self.text_pos + text.len();
-                        self.error(LocalDiagnostic::error(range, message));
+                        self.error(Diagnostic::error(FileId::CURRENT_FILE, range, message));
                     }
                 }
             }

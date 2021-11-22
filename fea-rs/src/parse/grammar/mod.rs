@@ -327,12 +327,10 @@ fn greedy<F: FnMut(&mut Parser, TokenSet) -> bool>(
 }
 
 #[cfg(test)]
-use crate::diagnostic::LocalDiagnostic;
-#[cfg(test)]
 fn debug_parse_output(
     text: &str,
     f: impl FnOnce(&mut Parser),
-) -> (crate::Node, Vec<LocalDiagnostic>, String) {
+) -> (crate::Node, Vec<crate::Diagnostic>, String) {
     use super::Source;
 
     let mut sink = crate::token_tree::AstSink::new(text, None);
@@ -345,7 +343,6 @@ fn debug_parse_output(
         if !err_str.is_empty() {
             err_str.push('\n');
         }
-        let err = err.clone().into_diagnostic(source.id());
         crate::util::highlighting::write_diagnostic(&mut err_str, &err, &source, Some(80));
     }
     (node, errs, err_str)
