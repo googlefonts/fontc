@@ -7,14 +7,16 @@ mod parser;
 mod source;
 mod token;
 mod token_set;
+mod tree;
 
 use std::path::PathBuf;
 
-pub use context::{parse_src, HardError, IncludeStatement, ParseContext, ParseTree};
+pub use context::{parse_src, HardError, IncludeStatement, ParseContext};
 pub use parser::{Parser, SyntaxError};
 pub use source::{FileId, Source};
 pub use token::Kind;
 pub use token_set::TokenSet;
+pub use tree::ParseTree;
 
 pub(crate) use parser::{TokenComparable, TreeSink};
 pub(crate) use source::{SourceList, SourceMap};
@@ -28,5 +30,5 @@ pub fn parse_root_file(
     glyph_map: Option<&GlyphMap>,
     project_root: Option<PathBuf>,
 ) -> Result<ParseContext, HardError> {
-    ParseContext::generate(path.into(), glyph_map, project_root)
+    ParseContext::parse_from_root(path.into(), glyph_map, project_root)
 }

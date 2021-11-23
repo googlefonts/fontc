@@ -164,7 +164,7 @@ fn compute_offsets(text: &str) -> Vec<usize> {
 }
 
 fn parse(text: &str) -> (Vec<(Kind, Range<usize>)>, Vec<fea_rs::Diagnostic>) {
-    let src = Source::from_str(text);
+    let src = Source::from_text(text);
     let (root, errors, _) = fea_rs::parse_src(&src, None);
     let result = root.iter_tokens().map(|t| (t.kind, t.range())).collect();
     (result, errors)

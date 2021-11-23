@@ -5,6 +5,7 @@ use std::{
     num::NonZeroU32,
     ops::Range,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use crate::util;
@@ -22,10 +23,10 @@ pub struct Source {
     id: FileId,
     /// The non-canonical path to this source, suitable for printing.
     path: Option<PathBuf>,
-    contents: String,
+    contents: Arc<str>,
     /// The index of each newline character, for efficiently fetching lines
     /// (for error reporting, e.g.)
-    line_offsets: Vec<usize>,
+    line_offsets: Arc<[usize]>,
 }
 
 /// A list of sources in a project.
@@ -74,7 +75,7 @@ impl Source {
         Ok(Source {
             path: Some(path),
             id: FileId::next(),
-            contents,
+            contents: contents.into(),
             line_offsets,
         })
     }
@@ -82,7 +83,7 @@ impl Source {
     /// Create a source from a string.
     ///
     /// This is useful for things like testing.
-    pub fn from_str(contents: impl Into<String>) -> Source {
+    pub fn from_text(contents: impl Into<Arc<str>>) -> Source {
         let contents = contents.into();
         let line_offsets = line_offsets(&contents);
         Source {
@@ -93,12 +94,12 @@ impl Source {
         }
     }
 
-    pub fn contents(&self) -> &str {
+    pub fn text(&self) -> &str {
         &self.contents
     }
 
     pub fn path(&self) -> Option<&Path> {
-        self.path.as_ref().map(|p| p.as_path())
+        self.path.as_deref()
     }
 
     pub fn id(&self) -> FileId {
@@ -132,7 +133,7 @@ impl Source {
     }
 }
 
-fn line_offsets(text: &str) -> Vec<usize> {
+fn line_offsets(text: &str) -> Arc<[usize]> {
     // we could use memchar for this; benefits would require benchmarking
     let mut result = vec![0];
     result.extend(
@@ -140,7 +141,7 @@ fn line_offsets(text: &str) -> Vec<usize> {
             .enumerate()
             .filter_map(|(i, b)| if b == b'\n' { Some(i + 1) } else { None }),
     );
-    result
+    result.into()
 }
 
 impl SourceMap {

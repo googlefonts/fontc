@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn seek() {
-        let fea = Source::from_str(SAMPLE_FEA);
+        let fea = Source::from_text(SAMPLE_FEA);
         let (root, _errs, _) = crate::parse_src(&fea, None);
 
         let mut cursor = root.cursor();
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn abs_positions() {
-        let fea = Source::from_str(SAMPLE_FEA);
+        let fea = Source::from_text(SAMPLE_FEA);
         let (root, errs, _) = crate::parse_src(&fea, None);
         assert!(errs.is_empty());
         let mut last_end = 0;
@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn ascend_jump() {
-        let fea = Source::from_str(SAMPLE_FEA);
+        let fea = Source::from_text(SAMPLE_FEA);
         let (root, _errs, _) = crate::parse_src(&fea, None);
         let mut cursor = root.cursor();
         cursor.advance();
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn advance() {
-        let fea = Source::from_str("feature kern { pos a b -20; }kern;");
+        let fea = Source::from_text("feature kern { pos a b -20; }kern;");
         let (root, errs, _) = crate::parse_src(&fea, None);
         assert!(errs.is_empty());
         let mut cursor = root.cursor();

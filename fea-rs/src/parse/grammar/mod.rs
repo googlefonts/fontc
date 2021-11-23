@@ -333,7 +333,7 @@ fn debug_parse_output(
 ) -> (crate::Node, Vec<crate::Diagnostic>, String) {
     use super::Source;
 
-    let source = Source::from_str(text);
+    let source = Source::from_text(text);
     let mut sink = crate::token_tree::AstSink::new(text, source.id(), None);
     let mut parser = Parser::new(text, &mut sink);
     f(&mut parser);

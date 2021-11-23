@@ -1,9 +1,11 @@
+//! parsing and resolving includes
+
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use super::source::Source;
-use super::{FileId, Parser, SourceList, SourceMap};
+use super::{FileId, ParseTree, Parser, SourceList, SourceMap};
 use crate::{
     token_tree::{
         typed::{self, AstNode as _},
@@ -14,6 +16,43 @@ use crate::{
 
 const MAX_INCLUDE_DEPTH: usize = 50;
 
+/// Oversees parsing, following, resolving and validating input statements.
+///
+/// Includes are annoying. Existing tools tend to handle them as they're
+/// encountered, pushing another parser onto the stack and building the tree
+/// in-place. This doesn't work for us, because we want to be able to preserve
+/// the original source locations for tokens so that we can provide good error
+/// messages.
+///
+/// We handle this in a reasonably straight-forward way: instead of parsing
+/// includes immediately, we return a list of the includes found in each
+/// source file. We use these to build a graph of include statements, and then
+/// we also add these files to a queue, skipping files that have been parsed
+/// already. Importantly, we don't worry about recursion or include depth
+/// at parse time; we just parse every file we find, and if there's a cycle
+/// we avoid it by keeping track of what we've already parsed.
+///
+/// Once parsing is finished, we use our `IncludeGraph` to validate that there
+/// are no cycles, and that the depth limit is not exceeded.
+///
+/// After parsing, you use [`generate_parse_tree`] to validate and assemble
+/// the parsed sources into a single parse tree. This is also where validation
+/// occurs; if there are any errors in include statements, those statements
+/// are ignored when the tree is built, and an error is recorded: however we will
+/// always attempt to construct *some* tree.
+///
+/// In the future, it should be possible to augment this type to allow for use by
+/// a language server or similar, where an edit could be applied to a particular
+/// source, and then only that source would need to be recompiled.
+///
+/// But we don't take advantage of that, yet, so this is currently more like
+/// an intermediate type for generating a `ParseTree`.
+pub struct ParseContext {
+    sources: SourceList,
+    parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
+    graph: IncludeGraph,
+}
+
 /// A simple graph of files and their includes.
 ///
 /// We maintain this in order to validate that the input does not contain
@@ -21,28 +60,8 @@ const MAX_INCLUDE_DEPTH: usize = 50;
 /// depth of 50.
 #[derive(Clone, Debug, Default)]
 struct IncludeGraph {
-    // (source file, (destination file, span-in-source-for-error))
+    // source file -> (destination file, span-in-source-for-error)
     nodes: HashMap<FileId, Vec<(FileId, Range<usize>)>>,
-}
-
-/// The result of parsing a FEA file + its included files.
-///
-/// The idea here is that you can edit a single file and we can rebuild the tree
-/// without needing to parse everything else again.
-///
-/// But we don't take advantage of that, yet, so this is currently more like
-/// an intermediate type generates a `ParseTree`.
-pub struct ParseContext {
-    sources: SourceList,
-    parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
-    graph: IncludeGraph,
-}
-
-/// A fully parsed feature file, with attached imports and a sourcemap.
-pub struct ParseTree {
-    root: Node,
-    sources: SourceList,
-    map: SourceMap,
 }
 
 /// An unrecoverable error that occurs during parsing.
@@ -95,14 +114,6 @@ impl IncludeStatement {
 }
 
 impl ParseContext {
-    pub fn root_id(&self) -> FileId {
-        self.sources.root_id()
-    }
-
-    pub fn get_raw(&self, file: FileId) -> Option<&(Node, Vec<Diagnostic>)> {
-        self.parsed_files.get(&file)
-    }
-
     /// Attempt to parse the feature file at `path` and any includes.
     ///
     /// This will only error in unrecoverable cases, such as if `path` cannot
@@ -110,7 +121,7 @@ impl ParseContext {
     ///
     /// After parsing, you can call [`generate_parse_tree`] in order to generate
     /// a unified parse tree suitable for compilation.
-    pub fn generate(
+    pub fn parse_from_root(
         path: PathBuf,
         glyph_map: Option<&GlyphMap>,
         project_root: Option<PathBuf>,
@@ -130,7 +141,7 @@ impl ParseContext {
                 continue;
             }
             let source = sources.get(&id).unwrap();
-            let (node, mut errors, include_stmts) = parse_src(&source, glyph_map);
+            let (node, mut errors, include_stmts) = parse_src(source, glyph_map);
             errors.iter_mut().for_each(|e| e.message.file = id);
 
             parsed_files.insert(source.id(), (node, errors));
@@ -173,14 +184,17 @@ impl ParseContext {
         })
     }
 
-    pub fn has_errors(&self) -> bool {
-        self.parsed_files
-            .values()
-            .flat_map(|(_, errs)| errs.iter())
-            .any(|e| e.is_error())
+    pub fn root_id(&self) -> FileId {
+        self.sources.root_id()
     }
 
-    /// If there are no errors, returns a generated `ParseTree`.
+    pub fn get_raw(&self, file: FileId) -> Option<&(Node, Vec<Diagnostic>)> {
+        self.parsed_files.get(&file)
+    }
+
+    /// Construct a `ParseTree`, and return any diagnostics.
+    ///
+    /// This method also performs validation of include statements.
     pub fn generate_parse_tree(&self) -> (ParseTree, Vec<Diagnostic>) {
         let mut all_errors = self
             .parsed_files
@@ -203,7 +217,7 @@ impl ParseContext {
         }
 
         let mut map = SourceMap::default();
-        let root = self.assemble_recurse(self.sources.root_id(), &include_errors, &mut map, 0);
+        let root = self.generate_recurse(self.sources.root_id(), &include_errors, &mut map, 0);
         (
             ParseTree {
                 root,
@@ -214,7 +228,8 @@ impl ParseContext {
         )
     }
 
-    fn assemble_recurse(
+    /// recursively construct the output tree.
+    fn generate_recurse(
         &self,
         id: FileId,
         skip: &[IncludeError],
@@ -242,7 +257,7 @@ impl ParseContext {
                     source_map.add_entry(pre_range, (id, self_pos));
                     self_pos = stmt.end;
                     global_pos += pre_len;
-                    let child_node = self.assemble_recurse(*child_id, skip, source_map, global_pos);
+                    let child_node = self.generate_recurse(*child_id, skip, source_map, global_pos);
                     global_pos += child_node.text_len();
                     edits.push((stmt.clone(), child_node));
                 }
@@ -316,39 +331,13 @@ impl IncludeGraph {
     }
 }
 
-//TODO: move to another file if this gets at all big
-impl ParseTree {
-    pub fn root(&self) -> &Node {
-        &self.root
-    }
-
-    pub fn typed_root(&self) -> typed::Root {
-        typed::Root::try_from_node(&self.root).expect("parse tree has invalid root node type")
-    }
-
-    pub fn source_map(&self) -> &SourceMap {
-        &self.map
-    }
-
-    pub fn get_source(&self, id: FileId) -> Option<&Source> {
-        self.sources.get(&id)
-    }
-
-    pub fn format_diagnostic(&self, err: &Diagnostic) -> String {
-        let mut s = String::new();
-        let source = self.get_source(err.message.file).unwrap();
-        crate::util::highlighting::write_diagnostic(&mut s, err, source, None);
-        s
-    }
-}
-
 /// Parse a single source file.
 pub fn parse_src(
     src: &Source,
     glyph_map: Option<&GlyphMap>,
 ) -> (Node, Vec<Diagnostic>, Vec<IncludeStatement>) {
-    let mut sink = AstSink::new(src.contents(), src.id(), glyph_map);
-    let mut parser = Parser::new(src.contents(), &mut sink);
+    let mut sink = AstSink::new(src.text(), src.id(), glyph_map);
+    let mut parser = Parser::new(src.text(), &mut sink);
     super::grammar::root(&mut parser);
     sink.finish()
 }
@@ -398,10 +387,10 @@ mod tests {
 
     #[test]
     fn skip_cycle_in_build() {
-        let file_a = Source::from_str("include(bb);");
-        let file_b = Source::from_str("include(a)");
+        let file_a = Source::from_text("include(bb);");
+        let file_b = Source::from_text("include(a)");
         let (a, b) = (file_a.id(), file_b.id());
-        let a_len = file_a.contents().len();
+        let a_len = file_a.text().len();
 
         let (node_a, er, includes_a) = parse_src(&file_a, None);
         assert!(er.is_empty());
@@ -427,18 +416,18 @@ mod tests {
 
     #[test]
     fn assembly_basic() {
-        let file_a = Source::from_str(
+        let file_a = Source::from_text(
             "\
         include(b);\n\
         # hmm\n\
         include(c);",
         );
-        let file_b = Source::from_str("languagesystem dflt DFLT;\n");
-        let file_c = Source::from_str("feature kern {\n pos a b 20;\n } kern;");
+        let file_b = Source::from_text("languagesystem dflt DFLT;\n");
+        let file_c = Source::from_text("feature kern {\n pos a b 20;\n } kern;");
 
         let (a, b, c) = (file_a.id(), file_b.id(), file_c.id());
-        let b_len = file_b.contents().len();
-        let c_len = file_c.contents().len();
+        let b_len = file_b.text().len();
+        let c_len = file_c.text().len();
 
         let (node_a, er, includes) = parse_src(&file_a, None);
         assert!(er.is_empty());

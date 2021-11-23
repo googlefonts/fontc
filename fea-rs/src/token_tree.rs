@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn token_iter() {
-        let (root, _errs, _) = crate::parse_src(&Source::from_str(SAMPLE_FEA), None);
+        let (root, _errs, _) = crate::parse_src(&Source::from_text(SAMPLE_FEA), None);
         let reconstruct = root.iter_tokens().map(Token::as_str).collect::<String>();
         crate::assert_eq_str!(SAMPLE_FEA, reconstruct);
     }

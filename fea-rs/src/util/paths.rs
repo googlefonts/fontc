@@ -80,7 +80,7 @@ pub fn resolve_path(path: &Path, root: &Path, parent: Option<&Path>) -> PathBuf 
 }
 
 #[cfg(test)]
-mod testz {
+mod tests {
     use super::*;
     #[test]
     fn test_rebase_path() {
