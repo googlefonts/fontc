@@ -10,6 +10,7 @@ use crate::Diagnostic;
 
 static TEST_DATA1: &str = "./test-data/fonttools-tests";
 static TEST_DATA2: &str = "./test-data/other-parse-tests";
+static OTHER_TESTS: &[&str] = &["./test-data/include-resolution-tests/dir1/test1.fea"];
 
 static ALLOWED_PARSE_FAILURES: &[&str] = &[
     "GSUB_error.fea",     // expected failure
@@ -37,6 +38,7 @@ fn all_parse_tests() -> Result<(), Results> {
 
     for path in iter_fea_files(TEST_DATA1)
         .chain(iter_fea_files(TEST_DATA2))
+        .chain(OTHER_TESTS.iter().map(PathBuf::from))
         .filter(|path| {
             !ALLOWED_PARSE_FAILURES.contains(&path.file_name().unwrap().to_str().unwrap())
         })
