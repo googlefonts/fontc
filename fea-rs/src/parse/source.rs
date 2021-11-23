@@ -106,6 +106,16 @@ impl Source {
         self.id
     }
 
+    pub fn line_col_for_offset(&self, offset: usize) -> (usize, usize) {
+        let offset_idx = match self.line_offsets.binary_search(&offset) {
+            Ok(x) => x,
+            Err(x) => x - 1, // cannot underflow as 0 is always in list
+        };
+        let offset_of_line = self.line_offsets[offset_idx];
+        let offset_in_line = offset - offset_of_line;
+        (offset_idx + 1, offset_in_line)
+    }
+
     /// returns the (1-indexed) number and text.
     pub fn line_containing_offset(&self, offset: usize) -> (usize, &str) {
         let offset_idx = match self.line_offsets.binary_search(&offset) {
