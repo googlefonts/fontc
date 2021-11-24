@@ -17,6 +17,7 @@ ansi_term = "0.12.1"
 smol_str = "0.1.18"
 norad = "0.5" # just for use in sample binaries/debugging, remove eventually
 fonttools = { path="../../extern/fonttools-rs", features = ["rayon"] }
+otspec = { path ="../../extern/fonttools-rs/crates/otspec" }
 xflags = "0.2.3"
 diff = { version = "0.1.12", optional = true }
 rayon = { version = "1.5", optional = true }

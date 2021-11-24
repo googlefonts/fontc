@@ -4,10 +4,7 @@ use std::fmt::{self, Write};
 
 use fonttools::{
     font::Font,
-    layout::{
-        common::{LanguageSystem, GPOSGSUB},
-        valuerecord::ValueRecord,
-    },
+    layout::common::{LanguageSystem, ValueRecord, GPOSGSUB},
     tables::{self, GPOS::Positioning, GSUB::Substitution},
     tag, types,
 };
@@ -141,7 +138,7 @@ fn print_language_system<T>(
     let features = sys
         .feature_indices
         .iter()
-        .map(|idx| format!("{}({})", idx, table.features[*idx].0))
+        .map(|idx| format!("{}({})", idx, table.features.get(*idx).unwrap().0))
         .collect::<Vec<_>>();
     let features_str = features.join(" ");
     f.indent += 1;
@@ -149,7 +146,9 @@ fn print_language_system<T>(
         writeln!(
             f,
             "{}: required({}), features [{}]",
-            tag, table.features[required].0, features_str
+            tag,
+            table.features.get(required).unwrap().0,
+            features_str
         )?
     } else {
         writeln!(f, "{}: features [{}]", tag, features_str)?;
@@ -161,7 +160,7 @@ fn print_language_system<T>(
 fn explode_feature_list<T>(f: &mut IndentWriter, table: &GPOSGSUB<T>) -> fmt::Result {
     writeln!(f, "features ({}):", table.features.len())?;
     f.indent += 1;
-    for (tag, lookups, _) in &table.features {
+    for (tag, lookups, _) in table.features.iter() {
         writeln!(f, "{} {:?}", tag, lookups.as_slice())?;
     }
     f.indent -= 1;
@@ -354,10 +353,9 @@ fn pos_rule_name(rule: &Positioning) -> &str {
         Positioning::Pair(_) => "Pair",
         Positioning::Cursive(_) => "Cursive",
         Positioning::MarkToBase(_) => "MarkToBase",
-        Positioning::MarkToLig => "MarkToLig",
-        Positioning::MarkToMark => "MarkToMark",
+        Positioning::MarkToLig(_) => "MarkToLig",
+        Positioning::MarkToMark(_) => "MarkToMark",
         Positioning::Contextual(_) => "Contextual",
         Positioning::ChainedContextual(_) => "ChainedContextual",
-        Positioning::Extension => "Extension",
     }
 }

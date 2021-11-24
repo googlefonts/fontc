@@ -7,7 +7,7 @@ use std::{
 use smol_str::SmolStr;
 
 use fonttools::{
-    layout::{common::LookupFlags, valuerecord::ValueRecord},
+    layout::common::{LookupFlags, ValueRecord},
     tag,
     types::Tag,
 };

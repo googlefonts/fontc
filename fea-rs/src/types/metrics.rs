@@ -1,4 +1,4 @@
-use fonttools::layout::anchor::Anchor as RawAnchor;
+use otspec::layout::anchor::Anchor as RawAnchor;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Anchor {

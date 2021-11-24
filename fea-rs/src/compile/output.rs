@@ -2,11 +2,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use fonttools::{
-    font::Font,
-    layout::common::{sizeFeatureParams, FeatureParams},
-    tables,
-};
+use fonttools::{font::Font, tables};
+use otspec::layout::common::{sizeFeatureParams, FeatureParams};
 
 use super::{
     consts,

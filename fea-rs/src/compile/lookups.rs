@@ -6,9 +6,8 @@ use smol_str::SmolStr;
 
 use fonttools::{
     layout::{
-        common::{LanguageSystem, Lookup, LookupFlags, Script, GPOSGSUB},
+        common::{FeatureList, LanguageSystem, Lookup, LookupFlags, Script, ValueRecord, GPOSGSUB},
         gpos4::MarkBasePos,
-        valuerecord::ValueRecord,
     },
     tables::{self, GPOS::Positioning, GSUB::Substitution},
     tag,
@@ -103,8 +102,8 @@ impl AllLookups {
     pub(crate) fn add_subtable_break(&mut self) -> bool {
         if let Some(current) = self.current.as_mut() {
             match current {
-                SomeLookup::GsubLookup(lookup) => lookup.add_subtable_break(),
-                SomeLookup::GposLookup(lookup) => lookup.add_subtable_break(),
+                SomeLookup::GsubLookup(lookup) => lookup.rule.add_subtable_break(),
+                SomeLookup::GposLookup(lookup) => lookup.rule.add_subtable_break(),
             }
             true
         } else {
@@ -220,8 +219,8 @@ impl SomeLookup {
                     Kind::GposType2 => Positioning::Pair(vec![Default::default()]),
                     Kind::GposType3 => Positioning::Cursive(vec![Default::default()]),
                     Kind::GposType4 => Positioning::MarkToBase(vec![Default::default()]),
-                    Kind::GposType5 => Positioning::MarkToLig,
-                    Kind::GposType6 => Positioning::MarkToMark,
+                    Kind::GposType5 => Positioning::MarkToLig(vec![Default::default()]),
+                    Kind::GposType6 => Positioning::MarkToMark(vec![Default::default()]),
                     Kind::GposType7 => Positioning::Contextual(vec![Default::default()]),
                     Kind::GposType8 => Positioning::ChainedContextual(vec![Default::default()]),
                     Kind::GposNode => unimplemented!("other gpos type?"),
@@ -256,20 +255,20 @@ impl SomeLookup {
                 Substitution::Ligature(_) => Kind::GsubType4,
                 Substitution::Contextual(_) => Kind::GsubType5,
                 Substitution::ChainedContextual(_) => Kind::GsubType6,
-                Substitution::Extension => Kind::GsubType7,
-                Substitution::ReverseChaining => Kind::GsubType8,
+                //Substitution::Extension => Kind::GsubType7,
+                Substitution::ReverseChainContextual(_) => Kind::GsubType8,
             },
             SomeLookup::GposLookup(gpos) => match gpos.rule {
                 Positioning::Single(_) => Kind::GposType1,
                 Positioning::Pair(_) => Kind::GposType2,
                 Positioning::Cursive(_) => Kind::GposType3,
                 Positioning::MarkToBase(_) => Kind::GposType4,
-                Positioning::MarkToLig => Kind::GposType5,
-                Positioning::MarkToMark => Kind::GposType6,
+                Positioning::MarkToLig(_) => Kind::GposType5,
+                Positioning::MarkToMark(_) => Kind::GposType6,
                 Positioning::Contextual(_) => Kind::GposType7,
                 Positioning::ChainedContextual(_) => Kind::GposType8,
                 //FIXME: should be a kind? idk
-                Positioning::Extension => Kind::GposNode,
+                //Positioning::Extension => Kind::GposNode,
             },
         }
     }
@@ -422,10 +421,19 @@ impl<T> PosSubBuilder<T> {
             return None;
         }
 
+        let mut features = Vec::with_capacity(self.features.len());
+        // push empty items so we can insert by index
+        for _ in 0..self.features.len() {
+            features.push((LANG_DFLT_TAG, Vec::new(), None));
+        }
+        for ((tag, lookups), idx) in self.features {
+            features[idx] = (tag, lookups, None);
+        }
+
         let mut result = GPOSGSUB {
             lookups: self.lookups,
             scripts: Default::default(),
-            features: Vec::with_capacity(self.features.len()),
+            features: FeatureList::new(features),
         };
 
         for (script, entry) in self.scripts.into_iter() {
@@ -444,13 +452,6 @@ impl<T> PosSubBuilder<T> {
             result.scripts.scripts.insert(script, script_record);
         }
 
-        // push empty items so we can insert by index
-        for _ in 0..self.features.len() {
-            result.features.push((LANG_DFLT_TAG, Vec::new(), None));
-        }
-        for ((tag, lookups), idx) in self.features {
-            result.features[idx] = (tag, lookups, None);
-        }
         Some(result)
     }
 }
