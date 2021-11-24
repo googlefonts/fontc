@@ -8,6 +8,8 @@ use fonttools::{
     layout::{
         common::{FeatureList, LanguageSystem, Lookup, LookupFlags, Script, ValueRecord, GPOSGSUB},
         gpos4::MarkBasePos,
+        gpos5::MarkLigPos,
+        gpos6::MarkMarkPos,
     },
     tables::{self, GPOS::Positioning, GSUB::Substitution},
     tag,
@@ -325,6 +327,32 @@ impl SomeLookup {
     pub(crate) fn with_gpos_type_4<R>(&mut self, f: impl FnOnce(&mut MarkBasePos) -> R) -> R {
         if let SomeLookup::GposLookup(Lookup {
             rule: Positioning::MarkToBase(table),
+            ..
+        }) = self
+        {
+            let subtable = table.last_mut().unwrap();
+            f(subtable)
+        } else {
+            panic!("lookup mismatch");
+        }
+    }
+
+    pub(crate) fn with_gpos_type_5<R>(&mut self, f: impl FnOnce(&mut MarkLigPos) -> R) -> R {
+        if let SomeLookup::GposLookup(Lookup {
+            rule: Positioning::MarkToLig(table),
+            ..
+        }) = self
+        {
+            let subtable = table.last_mut().unwrap();
+            f(subtable)
+        } else {
+            panic!("lookup mismatch");
+        }
+    }
+
+    pub(crate) fn with_gpos_type_6<R>(&mut self, f: impl FnOnce(&mut MarkMarkPos) -> R) -> R {
+        if let SomeLookup::GposLookup(Lookup {
+            rule: Positioning::MarkToMark(table),
             ..
         }) = self
         {

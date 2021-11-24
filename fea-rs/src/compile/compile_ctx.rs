@@ -384,7 +384,13 @@ impl<'a> CompilationCtx<'a> {
                 self.add_cursive_pos(&rule);
             }
             typed::GposStatement::Type4(rule) => {
-                self.add_mark_to_base_pos(&rule);
+                self.add_mark_to_base(&rule);
+            }
+            typed::GposStatement::Type5(rule) => {
+                self.add_mark_to_lig(&rule);
+            }
+            typed::GposStatement::Type6(rule) => {
+                self.add_mark_to_mark(&rule);
             }
             _ => {
                 self.warning(node.range(), "unimplemented rule type");
@@ -525,12 +531,12 @@ impl<'a> CompilationCtx<'a> {
         }
     }
 
-    fn add_mark_to_base_pos(&mut self, node: &typed::Gpos4) {
+    fn add_mark_to_base(&mut self, node: &typed::Gpos4) {
         let base_ids = self.resolve_glyph_or_class(&node.base());
+        let _ = self.ensure_current_lookup_type(Kind::GposType4);
         for mark in node.attachments() {
             let base_anchor = self.resolve_anchor(&mark.anchor()).unwrap_or(Anchor::Null);
             // ensure we're in the right lookup but drop the reference
-            let _ = self.ensure_current_lookup_type(Kind::GposType4);
 
             let mark_class_node = mark.mark_class_name().expect("checked in validation");
             let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
@@ -567,6 +573,161 @@ impl<'a> CompilationCtx<'a> {
                                 .to_raw()
                                 .expect("no null anchors in mark-to-base"),
                         );
+                    }
+                    Ok(())
+                });
+            if let Err(mark_id) = maybe_bad_mark {
+                let prev_class_name = self
+                    .mark_classes
+                    .iter()
+                    .find_map(|(name, class)| (class.id == mark_id).then(|| name.clone()))
+                    .unwrap();
+                self.error(
+                    mark_class_node.range(),
+                    format!(
+                        "mark class includes glyph in class '{}', already used in lookup.",
+                        prev_class_name
+                    ),
+                );
+            }
+        }
+    }
+
+    fn add_mark_to_lig(&mut self, node: &typed::Gpos5) {
+        let base_ids = self.resolve_glyph_or_class(&node.base());
+        //table
+        for component in node.ligature_components() {
+            let lookup = self.ensure_current_lookup_type(Kind::GposType5);
+            // add an empty map for the component, to be used below
+            lookup.with_gpos_type_5(|subtable| {
+                for base in base_ids.iter() {
+                    subtable
+                        .ligatures
+                        .entry(base.to_raw())
+                        .or_default()
+                        .push(Default::default());
+                }
+            });
+
+            for mark in component.attachments() {
+                let base_anchor = self.resolve_anchor(&mark.anchor()).unwrap_or(Anchor::Null);
+                // ensure we're in the right lookup but drop the reference
+
+                // this is allowed to be null
+                let mark_class_node = match mark.mark_class_name() {
+                    Some(node) => node,
+                    None => continue,
+                };
+                let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
+
+                // access the lookup through the field, so the borrow checker
+                // doesn't think we're borrowing all of self
+                //TODO: we do validation here because our validation pass isn't smart
+                //enough. We need to not just validate a rule, but every rule in a lookup.
+                let maybe_bad_mark =
+                    self.lookups
+                        .current_mut()
+                        .unwrap()
+                        .with_gpos_type_5(|subtable| {
+                            for (glyphs, mark_anchor) in &mark_class.members {
+                                let anchor = mark_anchor
+                                    .to_raw()
+                                    .expect("no null anchors in mark-to-base (check validation)");
+                                for glyph in glyphs.iter() {
+                                    // validate here that classes are disjoint
+                                    let prev = subtable
+                                        .marks
+                                        .insert(glyph.to_raw(), (mark_class.id, anchor));
+                                    if let Some(id) =
+                                        prev.map(|(id, _)| id).filter(|id| *id != mark_class.id)
+                                    {
+                                        return Err(id);
+                                    }
+                                }
+                            }
+                            for base in base_ids.iter() {
+                                subtable
+                                    .ligatures
+                                    .get_mut(&base.to_raw())
+                                    .unwrap() // we just created this at top of loop
+                                    .last_mut()
+                                    .unwrap() // ditto
+                                    .insert(
+                                        mark_class.id,
+                                        base_anchor
+                                            .to_raw()
+                                            .expect("no null anchors in mark-to-base"),
+                                    );
+                            }
+                            Ok(())
+                        });
+                if let Err(mark_id) = maybe_bad_mark {
+                    let prev_class_name = self
+                        .mark_classes
+                        .iter()
+                        .find_map(|(name, class)| (class.id == mark_id).then(|| name.clone()))
+                        .unwrap();
+                    self.error(
+                        mark_class_node.range(),
+                        format!(
+                            "mark class includes glyph in class '{}', already used in lookup.",
+                            prev_class_name
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    //FIXME: this is basically identical to type 4, but the validation stuff
+    //makes it all a big PITA. when we have better validation, we can probably improve this
+    //significantly.
+    fn add_mark_to_mark(&mut self, node: &typed::Gpos6) {
+        let base_ids = self.resolve_glyph_or_class(&node.base());
+        let _ = self.ensure_current_lookup_type(Kind::GposType6);
+        for mark in node.attachments() {
+            let base_anchor = self.resolve_anchor(&mark.anchor()).unwrap_or(Anchor::Null);
+            // ensure we're in the right lookup but drop the reference
+
+            let mark_class_node = mark.mark_class_name().expect("checked in validation");
+            let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
+
+            // access the lookup through the field, so the borrow checker
+            // doesn't think we're borrowing all of self
+            //TODO: we do validation here because our validation pass isn't smart
+            //enough. We need to not just validate a rule, but every rule in a lookup.
+            let maybe_bad_mark = self
+                .lookups
+                .current_mut()
+                .unwrap()
+                .with_gpos_type_6(|subtable| {
+                    for (glyphs, mark_anchor) in &mark_class.members {
+                        let anchor = mark_anchor
+                            .to_raw()
+                            .expect("no null anchors in mark-to-base (check validation)");
+                        for glyph in glyphs.iter() {
+                            // validate here that classes are disjoint
+                            let prev = subtable
+                                .combining_marks
+                                .insert(glyph.to_raw(), (mark_class.id, anchor));
+                            if let Some(id) =
+                                prev.map(|(id, _)| id).filter(|id| *id != mark_class.id)
+                            {
+                                return Err(id);
+                            }
+                        }
+                    }
+                    for base in base_ids.iter() {
+                        subtable
+                            .base_marks
+                            .entry(base.to_raw())
+                            .or_default()
+                            .insert(
+                                mark_class.id,
+                                base_anchor
+                                    .to_raw()
+                                    .expect("no null anchors in mark-to-base"),
+                            );
                     }
                     Ok(())
                 });
