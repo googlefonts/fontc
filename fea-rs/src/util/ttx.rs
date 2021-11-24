@@ -80,8 +80,15 @@ pub enum Reason {
     Panic,
     ParseFail(String),
     CompileFail(String),
-    TtxFail { code: Option<i32>, std_err: String },
-    CompareFail { expected: String, result: String },
+    TtxFail {
+        code: Option<i32>,
+        std_err: String,
+    },
+    CompareFail {
+        expected: String,
+        result: String,
+        diff_percent: f64,
+    },
 }
 
 pub struct ReasonPrinter<'a> {
@@ -307,10 +314,16 @@ fn compare_ttx(
         }
     }
 
+    let diff_percent = compute_diff_percentage(&expected, &result);
+
     if expected != result {
         Err(Failure {
             path: fea_path.into(),
-            reason: Reason::CompareFail { expected, result },
+            reason: Reason::CompareFail {
+                expected,
+                result,
+                diff_percent,
+            },
         })
     } else {
         Ok(())
@@ -361,6 +374,16 @@ static DIFF_PREAMBLE: &str = "\
 # this file represents an acceptable difference between the output of
 # fonttools and the output of fea-rs for a given input.
 ";
+
+fn compute_diff_percentage(left: &str, right: &str) -> f64 {
+    let lines = diff::lines(left, right);
+    let same = lines
+        .iter()
+        .filter(|l| matches!(l, diff::Result::Both { .. }))
+        .count();
+    let total = lines.len() as f64;
+    (same as f64) / total
+}
 
 // a simple diff we write to disk
 pub fn plain_text_diff(left: &str, right: &str) -> String {
@@ -568,12 +591,21 @@ impl Debug for ReasonPrinter<'_> {
             Reason::TtxFail { code, std_err } => {
                 write!(f, "ttx failure ({:?}) stderr:\n{}", code, std_err)
             }
-            Reason::CompareFail { expected, result } => {
+            Reason::CompareFail {
+                expected,
+                result,
+                diff_percent,
+            } => {
                 if self.verbose {
                     writeln!(f, "compare failure")?;
                     super::write_line_diff(f, result, expected)
                 } else {
-                    write!(f, "{}", Color::Blue.paint("compare failure"))
+                    write!(
+                        f,
+                        "{} ({:.0}%)",
+                        Color::Blue.paint("compare failure"),
+                        diff_percent * 100.0
+                    )
                 }
             }
         }
