@@ -25,7 +25,10 @@ fn save_wip_diffs(results: &ttx::Results) {
         std::fs::create_dir(WIP_DIFF_DIR).unwrap();
     }
     for failure in &results.failures {
-        if let ttx::Reason::CompareFail { expected, result } = &failure.reason {
+        if let ttx::Reason::CompareFail {
+            expected, result, ..
+        } = &failure.reason
+        {
             let file_name = failure.path.file_name().unwrap();
             let out_path = Path::new(WIP_DIFF_DIR)
                 .join(&file_name)
