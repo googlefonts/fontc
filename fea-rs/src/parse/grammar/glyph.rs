@@ -1,4 +1,9 @@
-use crate::parse::{Kind, Parser, TokenSet};
+//use crate::parse::{Kind, Parser, TokenSet};
+use crate::parse::{
+    lexer::{Kind, TokenSet},
+    Parser,
+};
+use crate::token_tree::Kind as AstKind;
 
 // @class = @class;
 // @class = [a b c];
@@ -28,7 +33,7 @@ pub(crate) fn named_glyph_class_decl(parser: &mut Parser, recovery: TokenSet) {
         }
     }
 
-    parser.start_node(Kind::GlyphClassDefNode);
+    parser.start_node(AstKind::GlyphClassDefNode);
     glyph_class_body(parser, recovery);
     parser.expect_semi();
     parser.finish_node();
@@ -69,7 +74,7 @@ pub(crate) fn eat_glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> b
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::GlyphClass);
+    parser.start_node(AstKind::GlyphClass);
     let range = parser.nth_range(0);
     assert!(parser.eat(Kind::LSquare));
     super::greedy(glyph_class_list_member)(parser, recovery);
@@ -95,7 +100,7 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) -> bool {
         || (parser.matches(0, Kind::Backslash) && parser.matches(2, Kind::Hyphen));
     if looks_like_range {
         parser.eat_trivia();
-        parser.start_node(Kind::GlyphRange);
+        parser.start_node(AstKind::GlyphRange);
         glyph_range(parser, recovery.add(Kind::RSquare));
         parser.finish_node();
         true
@@ -137,10 +142,10 @@ fn eat_and_validate_glyph_name(parser: &mut Parser) {
     let raw = parser.nth_raw(0);
     match validate_glyph_name(raw) {
         NameType::Valid => {
-            parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName);
+            parser.eat_remap(TokenSet::IDENT_LIKE, AstKind::GlyphName);
         }
         NameType::MaybeRange => {
-            parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphNameOrRange);
+            parser.eat_remap(TokenSet::IDENT_LIKE, AstKind::GlyphNameOrRange);
         }
         NameType::Invalid(pos) => {
             let err = match std::str::from_utf8(&raw[pos..])
@@ -315,11 +320,11 @@ END GlyphClassDefNode
         let (node, errs, _) = sink.finish();
         assert!(errs.is_empty());
         let mut cursor = node.cursor();
-        assert_eq!(cursor.next_token().unwrap().kind, Kind::LSquare);
+        assert_eq!(cursor.next_token().unwrap().kind, AstKind::LSquare);
         let next = cursor.next_token().unwrap();
         assert_eq!(&next.text, "a-b");
-        assert_eq!(next.kind, Kind::GlyphNameOrRange);
-        assert_eq!(cursor.next_token().unwrap().kind, Kind::RSquare);
+        assert_eq!(next.kind, AstKind::GlyphNameOrRange);
+        assert_eq!(cursor.next_token().unwrap().kind, AstKind::RSquare);
 
         // now we parse with a glyph map
         let glyphs: GlyphMap = ["a", "b"].iter().cloned().map(GlyphName::from).collect();
@@ -332,18 +337,18 @@ END GlyphClassDefNode
         assert!(errs.is_empty());
 
         let mut cursor = node.cursor();
-        assert_eq!(cursor.next_token().unwrap().kind, Kind::LSquare);
+        assert_eq!(cursor.next_token().unwrap().kind, AstKind::LSquare);
         assert_eq!(
             cursor.current().unwrap().kind(),
-            Kind::GlyphRange,
+            AstKind::GlyphRange,
             "{:?}",
             node
         );
         let next = cursor.next_token().unwrap();
         assert_eq!(&next.text, "a");
-        assert_eq!(next.kind, Kind::GlyphName);
-        assert_eq!(cursor.next_token().unwrap().kind, Kind::Hyphen);
-        assert_eq!(cursor.next_token().unwrap().kind, Kind::GlyphName);
-        assert_eq!(cursor.next_token().unwrap().kind, Kind::RSquare);
+        assert_eq!(next.kind, AstKind::GlyphName);
+        assert_eq!(cursor.next_token().unwrap().kind, AstKind::Hyphen);
+        assert_eq!(cursor.next_token().unwrap().kind, AstKind::GlyphName);
+        assert_eq!(cursor.next_token().unwrap().kind, AstKind::RSquare);
     }
 }

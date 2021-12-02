@@ -1,10 +1,15 @@
+use super::super::lexer::{Kind as LexemeKind, TokenSet};
 use super::{glyph, gpos, gsub, metrics};
-use crate::parse::{Kind, Parser, TokenSet};
+
+use crate::parse::Parser;
+use crate::token_tree::Kind;
+
+const LABEL_RECOVERY: TokenSet = TokenSet::new(&[LexemeKind::UseExtensionKw, LexemeKind::LBrace]);
 
 pub(crate) fn feature(parser: &mut Parser) {
     fn feature_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::FeatureKw));
-        let open_tag = parser.expect_tag(TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]));
+        let open_tag = parser.expect_tag(LABEL_RECOVERY);
 
         parser.eat(Kind::UseExtensionKw);
         parser.expect(Kind::LBrace);
@@ -34,7 +39,6 @@ pub(crate) fn feature(parser: &mut Parser) {
 
 pub(crate) fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
     fn lookup_body(parser: &mut Parser, recovery: TokenSet) {
-        const LABEL_RECOVERY: TokenSet = TokenSet::new(&[Kind::UseExtensionKw, Kind::LBrace]);
         assert!(parser.eat(Kind::LookupKw));
         let raw_label_range = parser.matches(0, Kind::Ident).then(|| parser.nth_range(0));
         parser.expect_remap_recover(
@@ -55,12 +59,12 @@ pub(crate) fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
         }
         parser.expect_recover(
             Kind::RBrace,
-            recovery.union(TokenSet::IDENT_LIKE.union(Kind::Semi.into())),
+            recovery.union(TokenSet::IDENT_LIKE.union(TokenSet::SEMI)),
         );
         parser.expect_remap_recover(
             TokenSet::IDENT_LIKE,
             Kind::Label,
-            recovery.union(Kind::Semi.into()),
+            recovery.union(TokenSet::SEMI),
         );
         parser.expect_semi();
     }
@@ -74,7 +78,7 @@ pub(crate) fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
 /// returns true if we advanced the parser.
 fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
     let start_pos = parser.nth_range(0).start;
-    match parser.nth(0).kind {
+    match parser.nth(0).kind.to_token_kind() {
         Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {
             pos_or_sub_rule(parser, recovery)
         }
@@ -127,18 +131,20 @@ fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
                 "'{}' Not valid in a feature block",
                 parser.current_token_text()
             ));
-            parser.eat_until(TokenSet::TOP_AND_FEATURE.add(Kind::RBrace));
+            parser.eat_until(TokenSet::TOP_AND_FEATURE.add(LexemeKind::RBrace));
         }
     }
     parser.nth_range(0).start != start_pos
 }
 
 pub(crate) fn pos_or_sub_rule(parser: &mut Parser, recovery: TokenSet) {
-    match parser.nth(0).kind {
+    match parser.nth(0).kind.to_token_kind() {
         Kind::PosKw => gpos::gpos(parser, recovery),
-        Kind::EnumKw if parser.nth(1).kind == Kind::PosKw => gpos::gpos(parser, recovery),
+        Kind::EnumKw if parser.nth(1).kind.to_token_kind() == Kind::PosKw => {
+            gpos::gpos(parser, recovery)
+        }
         Kind::EnumKw => parser.err_and_bump("'enum' keyword must be followed by position rule"),
-        Kind::IgnoreKw => match parser.nth(1).kind {
+        Kind::IgnoreKw => match parser.nth(1).kind.to_token_kind() {
             Kind::PosKw => gpos::gpos(parser, recovery),
             Kind::SubKw => gsub::gsub(parser, recovery),
             _ => parser
@@ -158,12 +164,16 @@ fn name_entry(parser: &mut Parser, recovery: TokenSet) {
 }
 
 fn feature_names(parser: &mut Parser, recovery: TokenSet) {
-    let name_recovery = recovery.union(TokenSet::new(&[Kind::NameKw, Kind::RBrace, Kind::Semi]));
+    let name_recovery = recovery.union(TokenSet::new(&[
+        LexemeKind::NameKw,
+        LexemeKind::RBrace,
+        LexemeKind::Semi,
+    ]));
 
     parser.start_node(Kind::FeatureNamesKw);
     assert!(parser.eat(Kind::FeatureNamesKw));
     parser.expect_recover(Kind::LBrace, name_recovery);
-    while !parser.at_eof() && !parser.matches(0, recovery.add(Kind::RBrace)) {
+    while !parser.at_eof() && !parser.matches(0, recovery.add(LexemeKind::RBrace)) {
         name_entry(parser, name_recovery);
     }
     parser.expect_recover(Kind::RBrace, name_recovery);
@@ -172,13 +182,13 @@ fn feature_names(parser: &mut Parser, recovery: TokenSet) {
 }
 
 fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
-    const UNICODE_VALUE: TokenSet = TokenSet::new(&[Kind::Number, Kind::Hex]);
+    const UNICODE_VALUE: TokenSet = TokenSet::new(&[LexemeKind::Number, LexemeKind::Hex]);
     const PARAM_KEYWORDS: TokenSet = TokenSet::new(&[
-        Kind::FeatUiLabelNameIdKw,
-        Kind::FeatUiTooltipTextNameIdKw,
-        Kind::SampleTextNameIdKw,
-        Kind::ParamUiLabelNameIdKw,
-        Kind::CharacterKw,
+        LexemeKind::FeatUiLabelNameIdKw,
+        LexemeKind::FeatUiTooltipTextNameIdKw,
+        LexemeKind::SampleTextNameIdKw,
+        LexemeKind::ParamUiLabelNameIdKw,
+        LexemeKind::CharacterKw,
     ]);
 
     fn entry(parser: &mut Parser, recovery: TokenSet) {
@@ -186,11 +196,11 @@ fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
             parser.expect_recover(UNICODE_VALUE, recovery);
             parser.expect_semi();
         } else if parser.matches(0, PARAM_KEYWORDS) {
-            parser.start_node(parser.nth(0).kind);
+            parser.start_node(parser.nth(0).kind.to_token_kind());
             assert!(parser.eat(PARAM_KEYWORDS));
-            parser.expect_recover(Kind::LBrace, recovery.add(Kind::NameKw));
+            parser.expect_recover(Kind::LBrace, recovery.add(LexemeKind::NameKw));
             while !parser.at_eof() && !parser.matches(0, recovery) {
-                name_entry(parser, recovery.add(Kind::NameKw));
+                name_entry(parser, recovery.add(LexemeKind::NameKw));
             }
             parser.expect_recover(Kind::RBrace, recovery);
             parser.expect_semi();
@@ -200,12 +210,12 @@ fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
 
     let entry_recovery = recovery
         .union(PARAM_KEYWORDS)
-        .union(TokenSet::new(&[Kind::RBrace, Kind::Semi]));
+        .union(TokenSet::new(&[LexemeKind::RBrace, LexemeKind::Semi]));
 
     parser.start_node(Kind::CvParametersKw);
     assert!(parser.eat(Kind::CvParametersKw));
     parser.expect_recover(Kind::LBrace, entry_recovery);
-    while !parser.at_eof() && !parser.matches(0, recovery.add(Kind::RBrace)) {
+    while !parser.at_eof() && !parser.matches(0, recovery.add(LexemeKind::RBrace)) {
         entry(parser, entry_recovery);
     }
     parser.expect_recover(Kind::RBrace, entry_recovery);
@@ -215,7 +225,7 @@ fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
 
 fn lookupflag(parser: &mut Parser, recovery: TokenSet) {
     fn eat_named_lookup_value(parser: &mut Parser, recovery: TokenSet) -> bool {
-        match parser.nth(0).kind {
+        match parser.nth(0).kind.to_token_kind() {
             Kind::RightToLeftKw
             | Kind::IgnoreBaseGlyphsKw
             | Kind::IgnoreMarksKw

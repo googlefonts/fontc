@@ -11,7 +11,9 @@ impl Token {
     };
 }
 
-/// Kinds of tokens assigned during lexing and parsing.
+/// Kinds of tokens assigned during lexing.
+///
+/// During parsing, we consume these tokens and convert them into TK
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u16)]
 pub enum Kind {
@@ -136,10 +138,6 @@ pub enum Kind {
     ElidableAxisValueNameKw,     //STAT table
     OlderSiblingFontAttributeKw, //STAT table
 
-    //FIXME: we could assign multiple keywords to a single kind, like 'CvKeyword',
-    //and then just check the raw values? this would still let us use bitsets
-    //but without needing a distinct member for each keyword...
-    //
     // not technically a keyword but we lex and treat contextually:
     FeatureNamesKw,            // ss01-ss20
     NameKw,                    // ss01-ss20
@@ -151,123 +149,11 @@ pub enum Kind {
     CharacterKw,               // cv01-cv99
     Path,
 
-    // ### IMPORTANT ###
-    //
-    // ALL LEXED TOKENS MUST BE ABOVE THIS MARK
-    //
-    // TokenSet uses a u128 bitmask to represent tokens. This means we
-    // can only represent 128 discrete tokens during lexing.
-    //
-    // As a sanity check, we keep a test that ensures Tombstone's raw value is
-    // <= 128. as values are assigned in order, this ensures (assuming Tombstone
-    // is ordered after all lexed tokens) that lexed tokens are in the
-    // allowed range.
     Tombstone,  // a placeholder value
-    SourceFile, // scope of a file
-
-    // not technically keywords and not lexed, but assigned during parsing
-    // in gsub/gpos:
-    LigatureKw,
-    BaseKw,
-
-    // not lexed
-    GlyphRange,
-    Metric,
-    Label,
-    Tag,
-    GlyphName,
-    // an ambiguious name, like a-z, which requires a glyphset to disambiguate.
-    GlyphNameOrRange,
-    GlyphClass,
-
-    // general purpose table node
-    TableEntryNode,
-    // node-only tokens, assigned during parsing
-    GsubNode,
-    GsubType1,
-    GsubType2,
-    GsubType3,
-    GsubType4,
-    GsubType5,
-    GsubType6,
-    GsubType7,
-    GsubType8,
-    GsubIgnore,
-
-    GposNode,
-    GposType1,
-    GposType2,
-    GposType3,
-    GposType4,
-    GposType5,
-    GposType6,
-    GposType7,
-    GposType8,
-    GposIgnore,
-
-    AnchorMarkNode,
-    LigatureComponentNode,
-    ValueRecordNode,
-    ValueRecordDefNode,
-    LookupRefNode,
-    LookupBlockNode,
-    ScriptRecordNode,
-    IncludeNode,
-    MarkClassNode,
-    AnchorNode,
-    DeviceNode,
-    AnchorDefNode,
-    AnonBlockNode,
-    GlyphClassDefNode,
-    LanguageSystemNode,
-    FeatureNode,
-    SizeMenuNameNode,
-    ParametersNode,
-    ScriptNode,
-    LanguageNode,
-    LookupFlagNode,
-    CvParametersNode,
-    SubtableNode,
-
-    TableNode,
-    HeadTableNode,
-    HeadFontRevisionNode,
-    HheaTableNode,
-    MetricValueNode, // shared between hhea, vhea, and os2
-    NumberValueNode, // used in os2
-    StringValueNode, // used in os2
-    Os2NumberListNode,
-    Os2FamilyClassNode,
-    NameTableNode,
-    NameRecordNode,
-    NameSpecNode,
-    BaseTableNode,
-    BaseTagListNode,
-    BaseScriptListNode,
-    BaseMinMaxNode,
-    GdefTableNode,
-    GdefClassDefNode,
-    GdefClassDefEntryNode,
-    GdefAttachNode,
-    GdefLigatureCaretNode,
-    Os2TableNode,
-    Os2PanoseNode,
-    Os2UnicodeRangeNode,
-    Os2CodePageRangeNode,
-    Os2VendorNode,
-    VheaTableNode,
-    VmtxTableNode,
-    VmtxEntryNode,
-    StatTableNode,
-    StatElidedFallbackNameNode,
-    StatDesignAxisNode,
-    StatAxisValueNode,
-    StatAxisValueLocationNode,
-    StatAxisValueFlagNode,
 }
 
 impl Kind {
-    // only used for debugging
+    #[cfg(test)]
     pub(crate) fn has_contents(&self) -> bool {
         matches!(
             self,
@@ -281,34 +167,8 @@ impl Kind {
                 | Self::Comment
                 | Self::Whitespace
                 | Self::NamedGlyphClass
-                | Self::GlyphName
-                | Self::Metric
                 | Self::Number
-                | Self::Label
                 | Self::Cid
-                | Self::Tag
-        )
-    }
-
-    pub(crate) fn is_rule(&self) -> bool {
-        matches!(
-            self,
-            Self::GposType1
-                | Self::GposType2
-                | Self::GposType3
-                | Self::GposType4
-                | Self::GposType5
-                | Self::GposType6
-                | Self::GposType7
-                | Self::GposType8
-                | Self::GsubType1
-                | Self::GsubType2
-                | Self::GsubType3
-                | Self::GsubType4
-                | Self::GsubType5
-                | Self::GsubType6
-                | Self::GsubType7
-                | Self::GsubType8
         )
     }
 
@@ -317,7 +177,6 @@ impl Kind {
     }
 
     pub(crate) fn from_keyword(word: &[u8]) -> Option<Kind> {
-        //eprintln!("{}", std::str::from_utf8(word).unwrap());
         match word {
             b"anchor" => Some(Kind::AnchorKw),
             b"anchorDef" => Some(Kind::AnchorDefKw),
@@ -410,6 +269,132 @@ impl Kind {
             _ => None,
         }
     }
+
+    /// Convert this lex kind into the more robust token kind used in the rest
+    /// of the crate.
+    pub(crate) fn to_token_kind(self) -> crate::token_tree::Kind {
+        match self {
+            Self::Eof => crate::token_tree::Kind::Eof,
+            Self::Tombstone => crate::token_tree::Kind::Tombstone,
+            Self::Ident => crate::token_tree::Kind::Ident,
+            Self::StringUnterminated => crate::token_tree::Kind::StringUnterminated,
+            Self::String => crate::token_tree::Kind::String,
+            Self::Number => crate::token_tree::Kind::Number,
+            Self::Octal => crate::token_tree::Kind::Octal,
+            Self::Hex => crate::token_tree::Kind::Hex,
+            Self::HexEmpty => crate::token_tree::Kind::HexEmpty,
+            Self::Float => crate::token_tree::Kind::Float,
+            Self::Whitespace => crate::token_tree::Kind::Whitespace,
+            Self::Semi => crate::token_tree::Kind::Semi,
+            Self::Comma => crate::token_tree::Kind::Comma,
+            Self::Backslash => crate::token_tree::Kind::Backslash,
+            Self::Hyphen => crate::token_tree::Kind::Hyphen,
+            Self::Eq => crate::token_tree::Kind::Eq,
+            Self::LBrace => crate::token_tree::Kind::LBrace,
+            Self::RBrace => crate::token_tree::Kind::RBrace,
+            Self::LSquare => crate::token_tree::Kind::LSquare,
+            Self::RSquare => crate::token_tree::Kind::RSquare,
+            Self::LParen => crate::token_tree::Kind::LParen,
+            Self::RParen => crate::token_tree::Kind::RParen,
+            Self::LAngle => crate::token_tree::Kind::LAngle,
+            Self::RAngle => crate::token_tree::Kind::RAngle,
+            Self::SingleQuote => crate::token_tree::Kind::SingleQuote,
+            Self::Comment => crate::token_tree::Kind::Comment,
+            Self::Path => crate::token_tree::Kind::Path,
+            Self::NamedGlyphClass => crate::token_tree::Kind::NamedGlyphClass,
+            Self::Cid => crate::token_tree::Kind::Cid,
+            Self::TableKw => crate::token_tree::Kind::TableKw,
+            Self::LookupKw => crate::token_tree::Kind::LookupKw,
+            Self::LanguagesystemKw => crate::token_tree::Kind::LanguagesystemKw,
+            Self::AnchorDefKw => crate::token_tree::Kind::AnchorDefKw,
+            Self::FeatureKw => crate::token_tree::Kind::FeatureKw,
+            Self::MarkClassKw => crate::token_tree::Kind::MarkClassKw,
+            Self::AnonKw => crate::token_tree::Kind::AnonKw,
+            Self::AnchorKw => crate::token_tree::Kind::AnchorKw,
+            Self::ByKw => crate::token_tree::Kind::ByKw,
+            Self::ContourpointKw => crate::token_tree::Kind::ContourpointKw,
+            Self::CursiveKw => crate::token_tree::Kind::CursiveKw,
+            Self::DeviceKw => crate::token_tree::Kind::DeviceKw,
+            Self::EnumKw => crate::token_tree::Kind::EnumKw,
+            Self::ExcludeDfltKw => crate::token_tree::Kind::ExcludeDfltKw,
+            Self::FromKw => crate::token_tree::Kind::FromKw,
+            Self::IgnoreKw => crate::token_tree::Kind::IgnoreKw,
+            Self::IgnoreBaseGlyphsKw => crate::token_tree::Kind::IgnoreBaseGlyphsKw,
+            Self::IgnoreLigaturesKw => crate::token_tree::Kind::IgnoreLigaturesKw,
+            Self::IgnoreMarksKw => crate::token_tree::Kind::IgnoreMarksKw,
+            Self::IncludeKw => crate::token_tree::Kind::IncludeKw,
+            Self::IncludeDfltKw => crate::token_tree::Kind::IncludeDfltKw,
+            Self::LanguageKw => crate::token_tree::Kind::LanguageKw,
+            Self::LookupflagKw => crate::token_tree::Kind::LookupflagKw,
+            Self::MarkKw => crate::token_tree::Kind::MarkKw,
+            Self::MarkAttachmentTypeKw => crate::token_tree::Kind::MarkAttachmentTypeKw,
+            Self::NameIdKw => crate::token_tree::Kind::NameIdKw,
+            Self::NullKw => crate::token_tree::Kind::NullKw,
+            Self::ParametersKw => crate::token_tree::Kind::ParametersKw,
+            Self::PosKw => crate::token_tree::Kind::PosKw,
+            Self::RequiredKw => crate::token_tree::Kind::RequiredKw,
+            Self::RightToLeftKw => crate::token_tree::Kind::RightToLeftKw,
+            Self::RsubKw => crate::token_tree::Kind::RsubKw,
+            Self::ScriptKw => crate::token_tree::Kind::ScriptKw,
+            Self::SubKw => crate::token_tree::Kind::SubKw,
+            Self::SubtableKw => crate::token_tree::Kind::SubtableKw,
+            Self::UseExtensionKw => crate::token_tree::Kind::UseExtensionKw,
+            Self::UseMarkFilteringSetKw => crate::token_tree::Kind::UseMarkFilteringSetKw,
+            Self::ValueRecordDefKw => crate::token_tree::Kind::ValueRecordDefKw,
+            Self::HorizAxisBaseScriptListKw => crate::token_tree::Kind::HorizAxisBaseScriptListKw,
+            Self::HorizAxisBaseTagListKw => crate::token_tree::Kind::HorizAxisBaseTagListKw,
+            Self::HorizAxisMinMaxKw => crate::token_tree::Kind::HorizAxisMinMaxKw,
+            Self::VertAxisBaseScriptListKw => crate::token_tree::Kind::VertAxisBaseScriptListKw,
+            Self::VertAxisBaseTagListKw => crate::token_tree::Kind::VertAxisBaseTagListKw,
+            Self::VertAxisMinMaxKw => crate::token_tree::Kind::VertAxisMinMaxKw,
+            Self::AttachKw => crate::token_tree::Kind::AttachKw,
+            Self::GlyphClassDefKw => crate::token_tree::Kind::GlyphClassDefKw,
+            Self::LigatureCaretByDevKw => crate::token_tree::Kind::LigatureCaretByDevKw,
+            Self::LigatureCaretByIndexKw => crate::token_tree::Kind::LigatureCaretByIndexKw,
+            Self::LigatureCaretByPosKw => crate::token_tree::Kind::LigatureCaretByPosKw,
+            Self::MarkAttachClassKw => crate::token_tree::Kind::MarkAttachClassKw,
+            Self::FontRevisionKw => crate::token_tree::Kind::FontRevisionKw,
+            Self::AscenderKw => crate::token_tree::Kind::AscenderKw,
+            Self::CaretOffsetKw => crate::token_tree::Kind::CaretOffsetKw,
+            Self::DescenderKw => crate::token_tree::Kind::DescenderKw,
+            Self::LineGapKw => crate::token_tree::Kind::LineGapKw,
+            Self::CapHeightKw => crate::token_tree::Kind::CapHeightKw,
+            Self::CodePageRangeKw => crate::token_tree::Kind::CodePageRangeKw,
+            Self::PanoseKw => crate::token_tree::Kind::PanoseKw,
+            Self::TypoAscenderKw => crate::token_tree::Kind::TypoAscenderKw,
+            Self::TypoDescenderKw => crate::token_tree::Kind::TypoDescenderKw,
+            Self::TypoLineGapKw => crate::token_tree::Kind::TypoLineGapKw,
+            Self::UnicodeRangeKw => crate::token_tree::Kind::UnicodeRangeKw,
+            Self::VendorKw => crate::token_tree::Kind::VendorKw,
+            Self::WinAscentKw => crate::token_tree::Kind::WinAscentKw,
+            Self::WinDescentKw => crate::token_tree::Kind::WinDescentKw,
+            Self::XHeightKw => crate::token_tree::Kind::XHeightKw,
+            Self::SizemenunameKw => crate::token_tree::Kind::SizemenunameKw,
+            Self::VertTypoAscenderKw => crate::token_tree::Kind::VertTypoAscenderKw,
+            Self::VertTypoDescenderKw => crate::token_tree::Kind::VertTypoDescenderKw,
+            Self::VertTypoLineGapKw => crate::token_tree::Kind::VertTypoLineGapKw,
+            Self::VertAdvanceYKw => crate::token_tree::Kind::VertAdvanceYKw,
+            Self::VertOriginYKw => crate::token_tree::Kind::VertOriginYKw,
+            Self::ElidedFallbackNameKw => crate::token_tree::Kind::ElidedFallbackNameKw,
+            Self::ElidedFallbackNameIDKw => crate::token_tree::Kind::ElidedFallbackNameIDKw,
+            Self::DesignAxisKw => crate::token_tree::Kind::DesignAxisKw,
+            Self::AxisValueKw => crate::token_tree::Kind::AxisValueKw,
+            Self::FlagKw => crate::token_tree::Kind::FlagKw,
+            Self::LocationKw => crate::token_tree::Kind::LocationKw,
+            Self::ElidableAxisValueNameKw => crate::token_tree::Kind::ElidableAxisValueNameKw,
+            Self::OlderSiblingFontAttributeKw => {
+                crate::token_tree::Kind::OlderSiblingFontAttributeKw
+            }
+            Self::FeatureNamesKw => crate::token_tree::Kind::FeatureNamesKw,
+            Self::NameKw => crate::token_tree::Kind::NameKw,
+            Self::CvParametersKw => crate::token_tree::Kind::CvParametersKw,
+            Self::FeatUiLabelNameIdKw => crate::token_tree::Kind::FeatUiLabelNameIdKw,
+            Self::FeatUiTooltipTextNameIdKw => crate::token_tree::Kind::FeatUiTooltipTextNameIdKw,
+            Self::SampleTextNameIdKw => crate::token_tree::Kind::SampleTextNameIdKw,
+            Self::ParamUiLabelNameIdKw => crate::token_tree::Kind::ParamUiLabelNameIdKw,
+            Self::CharacterKw => crate::token_tree::Kind::CharacterKw,
+        }
+    }
 }
 
 impl std::fmt::Display for Kind {
@@ -417,7 +402,6 @@ impl std::fmt::Display for Kind {
         match self {
             Self::Eof => write!(f, "EOF"),
             Self::Tombstone => write!(f, "X_X"),
-            Self::SourceFile => write!(f, "FILE"),
             Self::Ident => write!(f, "ID"),
             Self::StringUnterminated => write!(f, "STR OPEN"),
             Self::String => write!(f, "STR"),
@@ -443,16 +427,9 @@ impl std::fmt::Display for Kind {
             Self::SingleQuote => write!(f, "'"),
             Self::Comment => write!(f, "#"),
 
-            Self::Tag => write!(f, "Tag"),
             Self::Path => write!(f, "Path"),
-            Self::GlyphClass => write!(f, "GlyphClass"),
             Self::NamedGlyphClass => write!(f, "@GlyphClass"),
-            Self::GlyphRange => write!(f, "GlyphRange"),
-            Self::GlyphName => write!(f, "GlyphName"),
-            Self::GlyphNameOrRange => write!(f, "GlyphNameOrRange"),
             Self::Cid => write!(f, "CID"),
-            Self::Metric => write!(f, "METRIC"),
-            Self::Label => write!(f, "LABEL"),
 
             Self::TableKw => write!(f, "TableKw"),
             Self::LookupKw => write!(f, "LookupKw"),
@@ -543,89 +520,6 @@ impl std::fmt::Display for Kind {
             Self::SampleTextNameIdKw => write!(f, "SampleTextNameId"),
             Self::ParamUiLabelNameIdKw => write!(f, "ParamUiLabelNameId"),
             Self::CharacterKw => write!(f, "CharacterKw"),
-
-            Self::LigatureKw => write!(f, "LigatureKw"),
-            Self::BaseKw => write!(f, "BaseKw"),
-
-            Self::AnchorMarkNode => write!(f, "AnchorMarkNode"),
-            Self::LigatureComponentNode => write!(f, "LigatureComponentNode"),
-            Self::ValueRecordNode => write!(f, "ValueRecordNode"),
-            Self::ValueRecordDefNode => write!(f, "ValueRecordDefNode"),
-            Self::GsubNode => write!(f, "GsubNode"),
-            Self::GsubType1 => write!(f, "GsubType1"),
-            Self::GsubType2 => write!(f, "GsubType2"),
-            Self::GsubType3 => write!(f, "GsubType3"),
-            Self::GsubType4 => write!(f, "GsubType4"),
-            Self::GsubType5 => write!(f, "GsubType5"),
-            Self::GsubType6 => write!(f, "GsubType6"),
-            Self::GsubType7 => write!(f, "GsubType7"),
-            Self::GsubType8 => write!(f, "GsubType8"),
-            Self::GsubIgnore => write!(f, "GsubIgnore"),
-            Self::GposNode => write!(f, "GposNode"),
-            Self::GposType1 => write!(f, "GposType1"),
-            Self::GposType2 => write!(f, "GposType2"),
-            Self::GposType3 => write!(f, "GposType3"),
-            Self::GposType4 => write!(f, "GposType4"),
-            Self::GposType5 => write!(f, "GposType5"),
-            Self::GposType6 => write!(f, "GposType6"),
-            Self::GposType7 => write!(f, "GposType7"),
-            Self::GposType8 => write!(f, "GposType8"),
-            Self::GposIgnore => write!(f, "GposIgnore"),
-            Self::LookupRefNode => write!(f, "LookupRefNode"),
-            Self::LookupBlockNode => write!(f, "LookupBlockNode"),
-            Self::ScriptRecordNode => write!(f, "ScriptRecoordNode"),
-            Self::TableEntryNode => write!(f, "TableEntryNode"),
-            Self::IncludeNode => write!(f, "IncludeNode"),
-            Self::MarkClassNode => write!(f, "MarkClassNode"),
-            Self::AnchorDefNode => write!(f, "AnchorDefNode"),
-            Self::AnchorNode => write!(f, "AnchorNode"),
-            Self::DeviceNode => write!(f, "DeviceNode"),
-            Self::AnonBlockNode => write!(f, "AnonBlockNode"),
-            Self::GlyphClassDefNode => write!(f, "GlyphClassDefNode"),
-            Self::LanguageSystemNode => write!(f, "LanguageSystemNode"),
-            Self::FeatureNode => write!(f, "FeatureNode"),
-            Self::SizeMenuNameNode => write!(f, "SizeMenuNameNode"),
-            Self::ParametersNode => write!(f, "ParametersNode"),
-            Self::ScriptNode => write!(f, "ScriptNode"),
-            Self::LanguageNode => write!(f, "LanguageNode"),
-            Self::LookupFlagNode => write!(f, "LookupFlagNode"),
-            Self::CvParametersNode => write!(f, "cvParametersNode"),
-            Self::SubtableNode => write!(f, "SubtableNode"),
-            Self::TableNode => write!(f, "TableNode"),
-            Self::HeadTableNode => write!(f, "HeadTableNode"),
-            Self::HheaTableNode => write!(f, "HheaTableNode"),
-            Self::NameTableNode => write!(f, "NameTableNode"),
-            Self::BaseTableNode => write!(f, "BaseTableNode"),
-            Self::BaseTagListNode => write!(f, "BaseTagListNode"),
-            Self::BaseScriptListNode => write!(f, "BaseScriptListNode"),
-            Self::BaseMinMaxNode => write!(f, "BaseMinMaxNode"),
-            Self::GdefTableNode => write!(f, "GdefTableNode"),
-            Self::Os2TableNode => write!(f, "Os2TableNode"),
-            Self::VheaTableNode => write!(f, "VheaTableNode"),
-            Self::VmtxTableNode => write!(f, "VmtxTableNode"),
-            Self::StatTableNode => write!(f, "StatTableNode"),
-            Self::StatElidedFallbackNameNode => write!(f, "StatElidedFallbackNameNode"),
-            Self::StatDesignAxisNode => write!(f, "StatDesignAxisNode"),
-            Self::StatAxisValueNode => write!(f, "StatAxisValueNode"),
-            Self::StatAxisValueLocationNode => write!(f, "StatAxisValueLocationNode"),
-            Self::StatAxisValueFlagNode => write!(f, "StatAxisValueFlagNode"),
-            Self::VmtxEntryNode => write!(f, "VmtxEntryNode"),
-            Self::Os2PanoseNode => write!(f, "Os2PanoseNode"),
-            Self::Os2UnicodeRangeNode => write!(f, "Os2UnicodeRangeNode"),
-            Self::Os2CodePageRangeNode => write!(f, "Os2CodePageRangeNode"),
-            Self::Os2VendorNode => write!(f, "Os2VendorNode"),
-            Self::GdefClassDefNode => write!(f, "GdefClassDefNode"),
-            Self::GdefClassDefEntryNode => write!(f, "GdefClassDefEntryNode"),
-            Self::GdefAttachNode => write!(f, "GdefAttachNode"),
-            Self::GdefLigatureCaretNode => write!(f, "GdefLigatureCaretNode"),
-            Self::NameRecordNode => write!(f, "NameRecordNode"),
-            Self::NameSpecNode => write!(f, "NameRecordEntryNode"),
-            Self::HeadFontRevisionNode => write!(f, "HeadFontRevisionNode"),
-            Self::MetricValueNode => write!(f, "MetricNode"), // shared between hhea, vhea, and os2
-            Self::NumberValueNode => write!(f, "NumberNode"), // used in os2
-            Self::StringValueNode => write!(f, "StringNode"), // used in os2
-            Self::Os2NumberListNode => write!(f, "Os2NumberListNode"),
-            Self::Os2FamilyClassNode => write!(f, "Os2FamilyClassNode"),
         }
     }
 }

@@ -1,4 +1,8 @@
-use super::super::{Kind, Parser, TokenSet};
+use crate::parse::{
+    lexer::{Kind, TokenSet},
+    Parser,
+};
+use crate::token_tree::Kind as AstKind;
 
 // A: <anchor <metric> <metric>> (<anchor 120 -20>)
 // B: <anchor <metric> <metric>  # x coordinate, y coordinate
@@ -22,8 +26,8 @@ pub(crate) fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
         // <metric> metric>
         // <metric> <metric> <contour point>
         // <metric> <metric> <device> <device>
-        parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
-        parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
+        parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery);
+        parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery);
         if parser.eat(Kind::ContourpointKw) {
             parser.expect_recover(Kind::Number, recovery);
         } else if eat_device(parser, recovery) {
@@ -32,7 +36,7 @@ pub(crate) fn anchor(parser: &mut Parser, recovery: TokenSet) -> bool {
         parser.expect_recover(Kind::RAngle, recovery)
     }
 
-    parser.in_node(Kind::AnchorNode, |parser| anchor_body(parser, recovery))
+    parser.in_node(AstKind::AnchorNode, |parser| anchor_body(parser, recovery))
 }
 
 // A: <metric> (-5)
@@ -77,7 +81,7 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::ValueRecordNode);
+    parser.start_node(AstKind::ValueRecordNode);
     value_record_body(parser, recovery);
     parser.finish_node();
     true
@@ -129,7 +133,7 @@ fn eat_device(parser: &mut Parser, recovery: TokenSet) -> bool {
     }
 
     if parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::DeviceKw) {
-        parser.in_node(Kind::DeviceNode, |parser| device_body(parser, recovery));
+        parser.in_node(AstKind::DeviceNode, |parser| device_body(parser, recovery));
         true
     } else {
         false
@@ -139,7 +143,7 @@ fn eat_device(parser: &mut Parser, recovery: TokenSet) -> bool {
 pub(crate) fn parameters(parser: &mut Parser, recovery: TokenSet) {
     let recovery = recovery.union(Kind::Semi.into());
 
-    parser.in_node(Kind::ParametersNode, |parser| {
+    parser.in_node(AstKind::ParametersNode, |parser| {
         assert!(parser.eat(Kind::ParametersKw));
         parser.expect_recover(TokenSet::FLOAT_LIKE, recovery);
         parser.expect_recover(Kind::Number, recovery);
@@ -156,7 +160,7 @@ pub(crate) fn parameters(parser: &mut Parser, recovery: TokenSet) {
 /// This doesn't include the leading keyword or ID, which vary.
 pub(crate) fn expect_name_record(parser: &mut Parser, recovery: TokenSet) {
     const NUM_TYPES: TokenSet = TokenSet::new(&[Kind::Number, Kind::Octal, Kind::Hex]);
-    parser.in_node(Kind::NameSpecNode, |parser| {
+    parser.in_node(AstKind::NameSpecNode, |parser| {
         if parser.eat(NUM_TYPES) && parser.eat(NUM_TYPES) && !parser.eat(NUM_TYPES) {
             parser.err_recover("name record must contain 1 or 3 numbers", recovery);
         }

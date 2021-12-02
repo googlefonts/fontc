@@ -1,5 +1,10 @@
 use super::{glyph, metrics};
-use crate::parse::{Kind, Parser, TokenSet};
+
+use crate::parse::{
+    lexer::{Kind, TokenSet},
+    Parser,
+};
+use crate::token_tree::Kind as AstKind;
 
 // 6.a: pos <glyph|glyphclass> <valuerecord>;
 // 6.b: [enum] pos <glyph|glyphclass> <valuerecord>
@@ -15,7 +20,7 @@ use crate::parse::{Kind, Parser, TokenSet};
 // 6.f: pos mark <glyph|class>
 //      <anchor> mark <named mark class> + ;
 pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
-    fn gpos_body(parser: &mut Parser, recovery: TokenSet) -> Kind {
+    fn gpos_body(parser: &mut Parser, recovery: TokenSet) -> AstKind {
         if parser.matches(0, Kind::IgnoreKw) {
             return parse_ignore(parser, recovery);
         }
@@ -27,46 +32,46 @@ pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
                 && metrics::expect_value_record(parser, recovery)
                 && parser.expect_semi()
             {
-                return Kind::GposType2;
+                return AstKind::GposType2;
             } else {
-                return Kind::GposNode;
+                return AstKind::GposNode;
             }
         }
         assert!(parser.eat(Kind::PosKw));
         if parser.matches(0, Kind::CursiveKw) {
             gpos_cursive(parser, recovery);
-            Kind::GposType3
+            AstKind::GposType3
         } else if parser.matches(0, Kind::MarkKw) {
             gpos_mark_to_mark(parser, recovery);
-            Kind::GposType6
+            AstKind::GposType6
         } else if parser.nth_raw(0) == b"base" {
             gpos_mark_to_base(parser, recovery);
-            Kind::GposType4
+            AstKind::GposType4
         } else if parser.nth_raw(0) == b"ligature" {
             gpos_ligature(parser, recovery);
-            Kind::GposType5
+            AstKind::GposType5
         } else {
             // all other statements start with glyph or glyph class:
             if !glyph::expect_glyph_or_glyph_class(parser, recovery) {
                 parser.eat_until(recovery);
-                return Kind::GposNode;
+                return AstKind::GposNode;
             }
             // now either a single or pair (type A)
             if metrics::eat_value_record(parser, recovery) {
                 if glyph::eat_glyph_or_glyph_class(parser, recovery) {
                     metrics::expect_value_record(parser, recovery);
                     parser.expect_semi();
-                    return Kind::GposType2;
+                    return AstKind::GposType2;
                 }
                 parser.expect_semi();
-                return Kind::GposType1;
+                return AstKind::GposType1;
             }
             // pair type B
             if glyph::eat_glyph_or_glyph_class(parser, recovery)
                 && metrics::eat_value_record(parser, recovery)
             {
                 parser.expect_semi();
-                return Kind::GposType2;
+                return AstKind::GposType2;
             }
 
             finish_chain_rule(parser, recovery)
@@ -74,19 +79,19 @@ pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::GposNode);
+    parser.start_node(AstKind::GposNode);
     let kind = gpos_body(parser, recovery);
     parser.finish_and_remap_node(kind);
 }
 
-fn parse_ignore(parser: &mut Parser, recovery: TokenSet) -> Kind {
+fn parse_ignore(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     assert!(parser.eat(Kind::IgnoreKw));
     assert!(parser.eat(Kind::PosKw));
 
     if super::expect_ignore_pattern_body(parser, recovery) {
-        Kind::GposIgnore
+        AstKind::GposIgnore
     } else {
-        Kind::GposNode
+        AstKind::GposNode
     }
 }
 
@@ -105,7 +110,7 @@ fn gpos_mark_to_mark(parser: &mut Parser, recovery: TokenSet) {
 
 fn gpos_mark_to_base(parser: &mut Parser, recovery: TokenSet) {
     assert!(parser.nth_raw(0) == b"base");
-    parser.eat_remap(Kind::Ident, Kind::BaseKw);
+    parser.eat_remap(Kind::Ident, AstKind::BaseKw);
     gpos_mark_to_(parser, recovery);
 }
 
@@ -121,19 +126,19 @@ fn gpos_mark_to_(parser: &mut Parser, recovery: TokenSet) {
 
 fn gpos_ligature(parser: &mut Parser, recovery: TokenSet) {
     assert!(parser.nth_raw(0) == b"ligature");
-    parser.eat_remap(Kind::Ident, Kind::LigatureKw);
+    parser.eat_remap(Kind::Ident, AstKind::LigatureKw);
     glyph::eat_glyph_or_glyph_class(
         parser,
         recovery.union(TokenSet::new(&[Kind::LAngle, Kind::AnchorKw])),
     );
     parser.eat_trivia();
-    parser.start_node(Kind::LigatureComponentNode);
+    parser.start_node(AstKind::LigatureComponentNode);
     super::greedy(anchor_mark)(parser, recovery);
     parser.finish_node();
 
     while parser.nth_raw(0) == b"ligComponent" {
         parser.eat_trivia();
-        parser.start_node(Kind::LigatureComponentNode);
+        parser.start_node(AstKind::LigatureComponentNode);
         parser.eat_raw();
         super::greedy(anchor_mark)(parser, recovery);
         parser.finish_node();
@@ -141,7 +146,7 @@ fn gpos_ligature(parser: &mut Parser, recovery: TokenSet) {
     parser.expect_semi();
 }
 
-fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
+fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     const RECOVERY: TokenSet = TokenSet::new(&[
         Kind::LAngle,
         Kind::SingleQuote,
@@ -161,7 +166,7 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
     if !parser.matches(0, Kind::SingleQuote) {
         parser.err("expected marked glyph");
         parser.eat_until(recovery);
-        return Kind::GposNode;
+        return AstKind::GposNode;
     }
 
     while parser.eat(Kind::SingleQuote) {
@@ -178,9 +183,9 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
     //TODO: we should be done? but we also don't know how this works? inline rules
     //are weird for gpos I need to rethink this
     if parser.expect_semi() {
-        Kind::GposType8
+        AstKind::GposType8
     } else {
-        Kind::GposNode
+        AstKind::GposNode
     }
 }
 
@@ -203,7 +208,7 @@ fn anchor_mark(parser: &mut Parser, recovery: TokenSet) -> bool {
         return false;
     }
     parser.eat_trivia();
-    parser.start_node(Kind::AnchorMarkNode);
+    parser.start_node(AstKind::AnchorMarkNode);
     metrics::anchor(parser, recovery.union(RECOVERY));
     // we will verify later that the anchor was NULL
     if !parser.matches(0, Kind::Semi) {

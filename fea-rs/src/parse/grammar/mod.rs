@@ -1,4 +1,6 @@
-use super::{Kind, Parser, TokenSet};
+use super::lexer::{Kind, TokenSet};
+use super::Parser;
+use crate::token_tree::Kind as AstKind;
 
 mod feature;
 mod glyph;
@@ -10,7 +12,7 @@ mod table;
 
 /// Entry point for parsing a FEA file.
 pub fn root(parser: &mut Parser) {
-    parser.start_node(Kind::SourceFile);
+    parser.start_node(AstKind::SourceFile);
     while !parser.at_eof() {
         top_level_element(parser);
     }
@@ -73,7 +75,7 @@ pub fn language_system(parser: &mut Parser) {
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::LanguageSystemNode);
+    parser.start_node(AstKind::LanguageSystemNode);
     language_system_body(parser);
     parser.finish_node();
 }
@@ -96,7 +98,7 @@ fn include(parser: &mut Parser) {
         }
     }
 
-    parser.start_node(Kind::IncludeNode);
+    parser.start_node(AstKind::IncludeNode);
     include_body(parser);
     parser.finish_node();
 }
@@ -107,27 +109,16 @@ fn table(parser: &mut Parser) {
 
 //either lookup <label> { ... } <label>;
 //or     lookup <label>;
-//FIXME: doesn't handle IDENT_LIKE
 fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
     assert!(parser.matches(0, Kind::LookupKw));
-    let kind1 = parser.nth(1).kind;
-    let kind2 = parser.nth(2).kind;
-    let (ref_like, block_like) = match (kind1, kind2) {
-        (Kind::Ident, Kind::Semi) => (true, false),
-        (Kind::Ident, Kind::LBrace) => (false, true),
-        (Kind::Semi, _) => (true, false),   // ref without ident
-        (Kind::LBrace, _) => (false, true), // block without ident
-        _ => (false, false),
-    };
-    if block_like {
+    if parser.matches(2, Kind::LBrace) {
         feature::lookup_block(parser, recovery.union(TokenSet::STATEMENT));
-    } else if ref_like {
-        parser.eat_trivia();
-        parser.start_node(Kind::LookupRefNode);
-        parser.eat(Kind::LookupKw);
-        parser.expect_recover(Kind::Ident, recovery.union(Kind::Semi.into()));
-        parser.expect_semi();
-        parser.finish_node();
+    } else if parser.matches(2, Kind::Semi) {
+        parser.in_node(AstKind::LookupRefNode, |parser| {
+            assert!(parser.eat(Kind::LookupKw));
+            parser.eat_remap(TokenSet::IDENT_LIKE, AstKind::Ident);
+            parser.expect_semi();
+        })
     } else {
         parser.eat(Kind::LookupKw);
         if parser.eat(Kind::Ident) {
@@ -140,26 +131,20 @@ fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
 }
 
 fn eat_script(parser: &mut Parser, recovery: TokenSet) -> bool {
-    if !parser.matches(0, Kind::ScriptKw) {
-        return false;
-    }
     parser.eat_trivia();
-    parser.start_node(Kind::ScriptNode);
-    parser.eat_raw();
-    parser.expect_tag(recovery.union(Kind::Semi.into()));
+    parser.start_node(AstKind::ScriptNode);
+    assert!(parser.eat(Kind::ScriptKw));
+    parser.expect_tag(recovery.union(TokenSet::SEMI));
     parser.expect_semi();
     parser.finish_node();
     true
 }
 
 fn eat_language(parser: &mut Parser, recovery: TokenSet) -> bool {
-    if !parser.matches(0, Kind::LanguageKw) {
-        return false;
-    }
     parser.eat_trivia();
-    parser.start_node(Kind::LanguageNode);
-    parser.eat_raw();
-    parser.expect_tag(recovery.union(Kind::Semi.into()));
+    parser.start_node(AstKind::LanguageNode);
+    assert!(parser.eat(Kind::LanguageKw));
+    parser.expect_tag(recovery.union(TokenSet::SEMI));
     parser.eat(Kind::ExcludeDfltKw);
     parser.eat(Kind::IncludeDfltKw);
     parser.eat(Kind::RequiredKw);
@@ -180,7 +165,7 @@ fn mark_class(parser: &mut Parser) {
         } else if parser.matches(0, Kind::LSquare) {
             glyph::eat_glyph_class_list(parser, ANCHOR_START)
         } else {
-            parser.eat_remap(TokenSet::IDENT_LIKE, Kind::GlyphName)
+            parser.eat_remap(TokenSet::IDENT_LIKE, AstKind::GlyphName)
         }
     }
 
@@ -194,7 +179,7 @@ fn mark_class(parser: &mut Parser) {
         parser.expect_semi();
     }
 
-    parser.start_node(Kind::MarkClassNode);
+    parser.start_node(AstKind::MarkClassNode);
     mark_class_body(parser);
     parser.finish_node();
 }
@@ -203,22 +188,22 @@ fn anchor_def(parser: &mut Parser) {
     fn anchor_def_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::AnchorDefKw));
         parser.eat_trivia();
-        parser.start_node(Kind::AnchorNode);
+        parser.start_node(AstKind::AnchorNode);
         let recovery = TokenSet::TOP_LEVEL
             .union(TokenSet::IDENT_LIKE)
             .union(TokenSet::new(&[Kind::ContourpointKw, Kind::Semi]));
-        parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
-        parser.expect_remap_recover(Kind::Number, Kind::Metric, recovery);
+        parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery);
+        parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery);
         if parser.eat(Kind::ContourpointKw) {
-            parser.expect_recover(Kind::Number, TokenSet::TOP_LEVEL.union(Kind::Semi.into()));
+            parser.expect_recover(Kind::Number, TokenSet::TOP_SEMI);
         }
         parser.finish_node();
-        parser.expect_remap_recover(TokenSet::IDENT_LIKE, Kind::Ident, TokenSet::TOP_SEMI);
+        parser.expect_remap_recover(TokenSet::IDENT_LIKE, AstKind::Ident, TokenSet::TOP_SEMI);
         parser.expect_semi();
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::AnchorDefNode);
+    parser.start_node(AstKind::AnchorDefNode);
     anchor_def_body(parser);
     parser.finish_node();
 }
@@ -229,7 +214,7 @@ fn anonymous(parser: &mut Parser) {
         let raw_label_range = parser
             .matches(0, TokenSet::IDENT_LIKE)
             .then(|| parser.nth_range(0));
-        if !(parser.expect_recover(TokenSet::IDENT_LIKE, TokenSet::new(&[Kind::LBrace]))
+        if !(parser.expect_recover(TokenSet::IDENT_LIKE, Kind::LBrace)
             & parser.expect(Kind::LBrace))
         {
             return;
@@ -260,14 +245,14 @@ fn anonymous(parser: &mut Parser) {
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::AnonBlockNode);
+    parser.start_node(AstKind::AnonBlockNode);
     anon_body(parser);
     parser.finish_node();
 }
 
 /// Common between gpos/gsub
 fn expect_ignore_pattern_body(parser: &mut Parser, recovery: TokenSet) -> bool {
-    let recovery = recovery.union(Kind::Semi.into());
+    let recovery = recovery.add(Kind::Semi.into());
     if !eat_ignore_statement_item(parser, recovery) {
         parser.err_recover("Expected ignore pattern", recovery);
         parser.eat_until(recovery);

@@ -2,7 +2,7 @@
 //!
 //! This is taken directly from rust-analzyer
 
-use super::token::Kind;
+use super::Kind;
 
 /// A bit-set of `Kind`s
 #[derive(Clone, Copy)]
@@ -10,6 +10,10 @@ pub struct TokenSet(u128);
 
 impl TokenSet {
     pub(crate) const EMPTY: TokenSet = TokenSet(0);
+
+    pub(crate) const SEMI: TokenSet = TokenSet::new(&[Kind::Semi]);
+
+    pub(crate) const SEMI_RBRACE: TokenSet = TokenSet::new(&[Kind::Semi, Kind::RBrace]);
 
     pub(crate) const TOP_LEVEL: TokenSet = TokenSet::new(&[
         Kind::TableKw,
@@ -20,7 +24,7 @@ impl TokenSet {
         Kind::FeatureKw,
         Kind::MarkClassKw,
         Kind::AnonKw,
-        Kind::GlyphClass,
+        Kind::NamedGlyphClass,
     ]);
 
     /// Tokens that may be a tag.
@@ -215,7 +219,6 @@ mod tests {
             Kind::NamedGlyphClass,
             Kind::TableKw,
             Kind::ElidableAxisValueNameKw,
-            Kind::LigatureKw,
         ] {
             assert!(!set.contains(*token));
         }

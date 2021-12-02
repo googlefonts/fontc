@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use smol_str::SmolStr;
 
-use crate::{Kind, Node, NodeOrToken, TokenSet};
+use crate::{Kind, Node, NodeOrToken};
 
 use super::Token;
 
@@ -1250,7 +1250,7 @@ impl Parameters {
 
     pub fn subfamily(&self) -> Number {
         self.iter()
-            .filter(|t| TokenSet::FLOAT_LIKE.contains(t.kind()))
+            .filter(|t| t.kind() == Kind::Number || t.kind() == Kind::Float)
             .nth(1)
             .and_then(Number::cast)
             .unwrap()

@@ -5,7 +5,11 @@
 //! keyword from a glyph name. Instead we are just describing the most basic
 //! structure of the document.
 
-use super::{Kind, Token};
+//use super::{Kind, Token};
+mod lexeme;
+mod token_set;
+pub(crate) use lexeme::{Kind, Token};
+pub use token_set::TokenSet;
 
 const EOF: u8 = 0x0;
 

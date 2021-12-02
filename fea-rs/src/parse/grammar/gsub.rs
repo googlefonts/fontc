@@ -1,8 +1,13 @@
 use super::glyph;
-use crate::parse::{Kind, Parser, TokenSet};
+
+use crate::parse::{
+    lexer::{Kind, TokenSet},
+    Parser,
+};
+use crate::token_tree::Kind as AstKind;
 
 pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
-    fn gsub_body(parser: &mut Parser, recovery: TokenSet) -> Kind {
+    fn gsub_body(parser: &mut Parser, recovery: TokenSet) -> AstKind {
         const RECOVERY: TokenSet = TokenSet::new(&[
             Kind::ByKw,
             Kind::FromKw,
@@ -24,21 +29,21 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
         if !glyph::eat_glyph_or_glyph_class(parser, recovery.union(RECOVERY)) {
             parser.err_and_bump("Expected glyph or glyph class");
             parser.eat_until(recovery.union(Kind::Semi.into()));
-            return Kind::GsubNode;
+            return AstKind::GsubNode;
         }
 
         // sub glyph by (type 1 or 2)
         if parser.eat(Kind::ByKw) {
             if parser.eat(Kind::NullKw) {
                 parser.expect_semi();
-                return Kind::GsubType1;
+                return AstKind::GsubType1;
             }
 
             if is_class && glyph::eat_named_or_unnamed_glyph_class(parser, recovery.union(RECOVERY))
             {
                 // type 1, format C
                 parser.expect_semi();
-                return Kind::GsubType1;
+                return AstKind::GsubType1;
             }
 
             glyph::expect_glyph_name_like(parser, recovery.union(RECOVERY));
@@ -48,19 +53,19 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
             }
             parser.expect_semi();
             if is_seq {
-                return Kind::GsubType2;
+                return AstKind::GsubType2;
             } else {
-                return Kind::GsubType1;
+                return AstKind::GsubType1;
             }
         // sub glyph from (type 3)
         } else if !is_class && parser.eat(Kind::FromKw) {
             glyph::eat_named_or_unnamed_glyph_class(parser, recovery.union(RECOVERY));
             parser.expect_semi();
-            return Kind::GsubType3;
+            return AstKind::GsubType3;
         } else if parser.matches(0, Kind::FromKw) {
             parser.err_and_bump("'from' can only follow glyph, not glyph class");
             parser.eat_until(recovery.union(Kind::Semi.into()));
-            return Kind::GsubNode;
+            return AstKind::GsubNode;
         }
 
         // now either ligature or chain
@@ -73,7 +78,7 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
         if is_seq && parser.eat(Kind::ByKw) {
             glyph::expect_glyph_name_like(parser, recovery.union(RECOVERY));
             parser.expect_semi();
-            Kind::GsubType4
+            AstKind::GsubType4
         } else if parser.matches(0, Kind::SingleQuote) {
             finish_chain_rule(parser, recovery)
         } else {
@@ -83,17 +88,17 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
                 parser.err("expected ligature substitution or marked glyph");
             }
             parser.eat_until(recovery.union(Kind::Semi.into()));
-            Kind::GsubNode
+            AstKind::GsubNode
         }
     }
 
     parser.eat_trivia();
-    parser.start_node(Kind::GsubNode);
+    parser.start_node(AstKind::GsubNode);
     let kind = gsub_body(parser, recovery);
     parser.finish_and_remap_node(kind);
 }
 
-fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
+fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     debug_assert!(parser.matches(0, Kind::SingleQuote));
     let recovery = recovery.union(Kind::Semi.into());
     // eat all the marked glyphs + their lookups
@@ -102,7 +107,7 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
             if !parser.eat(Kind::Ident) {
                 parser.err("expected named lookup");
                 parser.eat_until(recovery);
-                return Kind::GsubNode;
+                return AstKind::GsubNode;
             }
         }
         glyph::eat_glyph_or_glyph_class(parser, recovery);
@@ -122,44 +127,44 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> Kind {
         } else if !glyph::expect_named_or_unnamed_glyph_class(parser, recovery) {
             // unexpected thing here?
             parser.eat_until(recovery);
-            return Kind::GsubNode;
+            return AstKind::GsubNode;
         }
     } else if parser.eat(Kind::FromKw)
         && !glyph::expect_named_or_unnamed_glyph_class(parser, recovery)
     {
         parser.eat_until(recovery);
-        return Kind::GsubNode;
+        return AstKind::GsubNode;
     }
 
     if parser.expect_semi() {
-        Kind::GsubType6
+        AstKind::GsubType6
     } else {
-        Kind::GsubNode
+        AstKind::GsubNode
     }
 }
 
-fn parse_ignore(parser: &mut Parser, recovery: TokenSet) -> Kind {
+fn parse_ignore(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     assert!(parser.eat(Kind::IgnoreKw));
     assert!(parser.eat(Kind::SubKw));
     if super::expect_ignore_pattern_body(parser, recovery) {
-        Kind::GsubIgnore
+        AstKind::GsubIgnore
     } else {
-        Kind::GsubNode
+        AstKind::GsubNode
     }
 }
 
-fn parse_rsub(parser: &mut Parser, recovery: TokenSet) -> Kind {
+fn parse_rsub(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     assert!(parser.eat(Kind::RsubKw));
     if !glyph::expect_glyph_or_glyph_class(parser, recovery) {
         parser.eat_until(recovery);
-        return Kind::GsubNode;
+        return AstKind::GsubNode;
     }
 
     super::greedy(glyph::eat_glyph_or_glyph_class)(parser, recovery);
 
     if !parser.expect(Kind::SingleQuote) {
         parser.eat_until(recovery);
-        return Kind::GsubNode;
+        return AstKind::GsubNode;
     }
 
     super::greedy(glyph::eat_glyph_or_glyph_class)(parser, recovery);
@@ -167,13 +172,13 @@ fn parse_rsub(parser: &mut Parser, recovery: TokenSet) -> Kind {
     if parser.matches(0, Kind::SingleQuote) {
         parser.err("reversesub rule can have only one marked glyph");
         parser.eat_until(recovery);
-        return Kind::GsubNode;
+        return AstKind::GsubNode;
     }
     if parser.eat(Kind::ByKw) {
         glyph::expect_glyph_or_glyph_class(parser, recovery);
     }
     parser.expect_semi();
-    Kind::GsubType8
+    AstKind::GsubType8
 }
 
 #[cfg(test)]

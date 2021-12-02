@@ -5,7 +5,11 @@ use std::ops::Range;
 
 use fonttools::types::Tag;
 
-use super::{lexer::Lexer, token::Token, FileId, Kind, TokenSet};
+use super::{
+    lexer::{Kind as LexemeKind, Lexer, Token, TokenSet},
+    FileId,
+};
+use crate::token_tree::{Kind, TreeSink};
 
 use crate::diagnostic::Diagnostic;
 
@@ -124,6 +128,7 @@ impl<'a> Parser<'a> {
         &self.text[self.nth_range(0)]
     }
 
+    /// advance `N` lexemes, remapping to `Kind`.
     fn do_bump<const N: usize>(&mut self, kind: Kind) {
         let mut len = 0;
         for _ in 0..N {
@@ -158,15 +163,18 @@ impl<'a> Parser<'a> {
 
     fn validate_new_token(&mut self) {
         if let Some((replace_kind, error)) = match self.nth(LOOKAHEAD_MAX).kind {
-            Kind::StringUnterminated => {
-                Some((Kind::String, "Unterminated string (missing trailing '\"')"))
+            LexemeKind::StringUnterminated => Some((
+                LexemeKind::String,
+                "Unterminated string (missing trailing '\"')",
+            )),
+            LexemeKind::HexEmpty => {
+                Some((LexemeKind::Hex, "Missing digits after hexidecimal prefix."))
             }
-            Kind::HexEmpty => Some((Kind::Hex, "Missing digits after hexidecimal prefix.")),
             _ => None,
         } {
             let mut range = self.nth_range(LOOKAHEAD_MAX);
             // for unterminated string, error only points to opening "
-            if replace_kind == Kind::String {
+            if replace_kind == LexemeKind::String {
                 range.end = range.start + 1;
             }
             self.sink
@@ -207,7 +215,7 @@ impl<'a> Parser<'a> {
 
     /// Eat the next token, regardless of what it is.
     pub(crate) fn eat_raw(&mut self) {
-        self.do_bump::<1>(self.nth(0).kind);
+        self.do_bump::<1>(self.nth(0).kind.to_token_kind());
     }
 
     /// Eat the next token if it matches `expect`, replacing it with `remap`.
@@ -222,7 +230,7 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn at_eof(&self) -> bool {
-        self.nth(0).kind == Kind::Eof
+        self.nth(0).kind == LexemeKind::Eof
     }
 
     /// Eat any trivia preceding the current token.
@@ -232,7 +240,7 @@ impl<'a> Parser<'a> {
     /// associated with a particular node.
     pub(crate) fn eat_trivia(&mut self) {
         for token in self.buf[0].preceding_trivia.drain(..) {
-            self.sink.token(token.kind, token.len);
+            self.sink.token(token.kind.to_token_kind(), token.len);
         }
         self.buf[0].start_pos += self.buf[0].trivia_len;
         self.buf[0].trivia_len = 0;
@@ -296,7 +304,7 @@ impl<'a> Parser<'a> {
     /// semi gets special handling, we don't care to print whatever else we find,
     /// and we want to include whitespace in the range (i.e, it hugs the previous line).
     pub(crate) fn expect_semi(&mut self) -> bool {
-        if !self.eat(Kind::Semi) {
+        if !self.eat(LexemeKind::Semi) {
             self.err_before_ws("Expected ';'");
             return false;
         }
@@ -367,34 +375,23 @@ impl<'a> Parser<'a> {
 }
 
 pub(crate) trait TokenComparable: Copy + Display {
-    fn matches(&self, kind: Kind) -> bool;
+    fn matches(&self, kind: LexemeKind) -> bool;
 }
 
-impl TokenComparable for Kind {
-    fn matches(&self, kind: Kind) -> bool {
+impl TokenComparable for LexemeKind {
+    fn matches(&self, kind: LexemeKind) -> bool {
         self == &kind
     }
 }
 
-impl TokenComparable for TokenSet {
-    fn matches(&self, kind: Kind) -> bool {
-        self.contains(kind)
+impl TokenComparable for Kind {
+    fn matches(&self, kind: LexemeKind) -> bool {
+        kind.to_token_kind() == *self
     }
 }
 
-// taken from rust-analzyer
-/// `TreeSink` abstracts details of a particular syntax tree implementation.
-pub(crate) trait TreeSink {
-    /// Adds new token to the current branch.
-    fn token(&mut self, kind: Kind, len: usize);
-
-    /// Start new branch and make it current.
-    fn start_node(&mut self, kind: Kind);
-
-    /// Finish current branch and restore previous branch as current.
-    ///
-    /// If `kind` is provided, it replaces the [`Kind`] passed to `start_node`.
-    fn finish_node(&mut self, kind: Option<Kind>);
-
-    fn error(&mut self, error: Diagnostic);
+impl TokenComparable for TokenSet {
+    fn matches(&self, kind: LexemeKind) -> bool {
+        self.contains(kind)
+    }
 }

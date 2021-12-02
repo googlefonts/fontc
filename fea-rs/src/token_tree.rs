@@ -5,11 +5,7 @@ use std::{cell::Cell, ops::Range, sync::Arc};
 use smol_str::SmolStr;
 
 use crate::parse::{FileId, IncludeStatement};
-use crate::{
-    diagnostic::Diagnostic,
-    parse::{TokenComparable, TreeSink},
-    GlyphMap, Kind, TokenSet,
-};
+use crate::{diagnostic::Diagnostic, GlyphMap};
 
 use self::cursor::Cursor;
 use typed::AstNode as _;
@@ -17,7 +13,27 @@ use typed::AstNode as _;
 mod cursor;
 mod edit;
 mod stack;
+mod token;
 pub mod typed;
+
+pub use token::Kind;
+
+// taken from rust-analzyer
+/// `TreeSink` abstracts details of a particular syntax tree implementation.
+pub(crate) trait TreeSink {
+    /// Adds new token to the current branch.
+    fn token(&mut self, kind: Kind, len: usize);
+
+    /// Start new branch and make it current.
+    fn start_node(&mut self, kind: Kind);
+
+    /// Finish current branch and restore previous branch as current.
+    ///
+    /// If `kind` is provided, it replaces the [`Kind`] passed to `start_node`.
+    fn finish_node(&mut self, kind: Option<Kind>);
+
+    fn error(&mut self, error: Diagnostic);
+}
 
 #[derive(PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct Node {
@@ -349,10 +365,6 @@ impl NodeOrToken {
             NodeOrToken::Token(t) => t.range(),
             NodeOrToken::Node(n) => n.range(),
         }
-    }
-
-    pub fn matches(&self, predicate: TokenSet) -> bool {
-        predicate.matches(self.kind())
     }
 
     pub fn text_len(&self) -> usize {

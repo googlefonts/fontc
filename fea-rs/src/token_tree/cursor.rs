@@ -62,21 +62,6 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    /// The next token or node, without descending, optionally skipping tokens.
-    pub fn next(&mut self, skipping: TokenSet) -> Option<&'a NodeOrToken> {
-        while self
-            .current()
-            .map(|item| skipping.contains(item.kind()))
-            .unwrap_or(false)
-        {
-            self.step_over();
-        }
-
-        let current = self.current();
-        self.step_over();
-        current
-    }
-
     /// advance the cursor, stepping over nodes.
     pub fn step_over(&mut self) {
         let len = self.current().map(NodeOrToken::text_len).unwrap_or(0);
