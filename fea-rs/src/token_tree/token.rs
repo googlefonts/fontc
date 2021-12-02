@@ -123,10 +123,6 @@ pub enum Kind {
     ElidableAxisValueNameKw,     //STAT table
     OlderSiblingFontAttributeKw, //STAT table
 
-    //FIXME: we could assign multiple keywords to a single kind, like 'CvKeyword',
-    //and then just check the raw values? this would still let us use bitsets
-    //but without needing a distinct member for each keyword...
-    //
     // not technically a keyword but we lex and treat contextually:
     FeatureNamesKw,            // ss01-ss20
     NameKw,                    // ss01-ss20
@@ -138,18 +134,6 @@ pub enum Kind {
     CharacterKw,               // cv01-cv99
     Path,
 
-    // ### IMPORTANT ###
-    //
-    // ALL LEXED TOKENS MUST BE ABOVE THIS MARK
-    //
-    // TokenSet uses a u128 bitmask to represent tokens. This means we
-    // can only represent 128 discrete tokens during lexing.
-    //
-    // As a sanity check, we keep a test that ensures Tombstone's raw value is
-    // <= 128. as values are assigned in order, this ensures (assuming Tombstone
-    // is ordered after all lexed tokens) that lexed tokens are in the
-    // allowed range.
-    Tombstone,  // a placeholder value
     SourceFile, // scope of a file
 
     // not technically keywords and not lexed, but assigned during parsing
@@ -308,7 +292,7 @@ impl std::fmt::Display for Kind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Eof => write!(f, "EOF"),
-            Self::Tombstone => write!(f, "X_X"),
+            //Self::Tombstone => write!(f, "X_X"),
             Self::SourceFile => write!(f, "FILE"),
             Self::Ident => write!(f, "ID"),
             Self::StringUnterminated => write!(f, "STR OPEN"),
@@ -519,16 +503,5 @@ impl std::fmt::Display for Kind {
             Self::Os2NumberListNode => write!(f, "Os2NumberListNode"),
             Self::Os2FamilyClassNode => write!(f, "Os2FamilyClassNode"),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 128 is the max size of our TokenSet.
-    #[test]
-    fn max_lexed_token_discriminent() {
-        assert!((Kind::Tombstone as u16) < 128, "{}", Kind::Tombstone as u16);
     }
 }

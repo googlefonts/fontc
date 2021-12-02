@@ -6,7 +6,7 @@ use std::ops::Range;
 use fonttools::types::Tag;
 
 use super::{
-    lexer::{Kind as LexemeKind, Lexer, Token, TokenSet},
+    lexer::{Kind as LexemeKind, Lexeme, Lexer, TokenSet},
     FileId,
 };
 use crate::token_tree::{Kind, TreeSink};
@@ -38,12 +38,12 @@ pub struct Parser<'a> {
 /// and store it attached to the subsequent non-trivia token, and then add it
 /// to the tree when that token is consumed.
 struct PendingToken {
-    preceding_trivia: Vec<Token>,
+    preceding_trivia: Vec<Lexeme>,
     // the position of the first token, including trivia
     start_pos: usize,
     // total length of trivia
     trivia_len: usize,
-    token: Token,
+    token: Lexeme,
 }
 
 /// An error encountered while parsing.
@@ -68,7 +68,7 @@ impl PendingToken {
         preceding_trivia: Vec::new(),
         start_pos: 0,
         trivia_len: 0,
-        token: Token::EMPTY,
+        token: Lexeme::EMPTY,
     };
 }
 
@@ -94,7 +94,7 @@ impl<'a> Parser<'a> {
         start..start + self.buf[n].token.len
     }
 
-    pub(crate) fn nth(&self, n: usize) -> Token {
+    pub(crate) fn nth(&self, n: usize) -> Lexeme {
         assert!(n <= LOOKAHEAD_MAX);
         self.buf[n].token
     }

@@ -1,7 +1,5 @@
 //! A cursor for navigating through a tree.
 
-use crate::TokenSet;
-
 use super::{stack::Stack, Kind, Node, NodeOrToken, Token};
 
 pub struct Cursor<'a> {

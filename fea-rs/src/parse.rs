@@ -5,8 +5,6 @@ pub mod grammar;
 mod lexer;
 mod parser;
 mod source;
-//mod token;
-//mod token_set;
 mod tree;
 
 use std::path::PathBuf;

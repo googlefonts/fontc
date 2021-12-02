@@ -5,10 +5,9 @@
 //! keyword from a glyph name. Instead we are just describing the most basic
 //! structure of the document.
 
-//use super::{Kind, Token};
 mod lexeme;
 mod token_set;
-pub(crate) use lexeme::{Kind, Token};
+pub(crate) use lexeme::{Kind, Lexeme};
 pub use token_set::TokenSet;
 
 const EOF: u8 = 0x0;
@@ -45,7 +44,7 @@ impl<'a> Lexer<'a> {
         next
     }
 
-    pub(crate) fn next_token(&mut self) -> Token {
+    pub(crate) fn next_token(&mut self) -> Lexeme {
         let start_pos = self.pos;
         let first = self.bump().unwrap_or(EOF);
         let kind = match first {
@@ -79,7 +78,7 @@ impl<'a> Lexer<'a> {
         self.after_l_paren = matches!(kind, Kind::LParen);
 
         let len = self.pos - start_pos;
-        Token { len, kind }
+        Lexeme { len, kind }
     }
 
     fn whitespace(&mut self) -> Kind {
@@ -222,12 +221,12 @@ impl<'a> Lexer<'a> {
 }
 
 #[cfg(test)]
-pub(crate) fn tokenize(text: &str) -> Vec<Token> {
+pub(crate) fn tokenize(text: &str) -> Vec<Lexeme> {
     iter_tokens(text).collect()
 }
 
 #[cfg(test)]
-pub(crate) fn iter_tokens(text: &str) -> impl Iterator<Item = Token> + '_ {
+pub(crate) fn iter_tokens(text: &str) -> impl Iterator<Item = Lexeme> + '_ {
     let mut cursor = Lexer::new(text);
     std::iter::from_fn(move || {
         let next = cursor.next_token();
@@ -252,7 +251,7 @@ fn is_ascii_whitespace(byte: u8) -> bool {
 }
 
 #[cfg(test)]
-pub(crate) fn debug_tokens(tokens: &[Token]) -> Vec<String> {
+pub(crate) fn debug_tokens(tokens: &[Lexeme]) -> Vec<String> {
     let mut result = Vec::new();
     let mut pos = 0;
     for token in tokens {
@@ -263,7 +262,7 @@ pub(crate) fn debug_tokens(tokens: &[Token]) -> Vec<String> {
 }
 
 #[cfg(test)]
-pub(crate) fn debug_tokens2(tokens: &[Token], src: &str) -> Vec<String> {
+pub(crate) fn debug_tokens2(tokens: &[Lexeme], src: &str) -> Vec<String> {
     let mut result = Vec::new();
     let mut pos = 0;
     for token in tokens {
