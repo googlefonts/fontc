@@ -31,10 +31,7 @@ pub(crate) fn feature(parser: &mut Parser) {
         parser.expect_semi();
     }
 
-    parser.eat_trivia();
-    parser.start_node(Kind::FeatureNode);
-    feature_body(parser);
-    parser.finish_node();
+    parser.in_node(Kind::FeatureNode, feature_body);
 }
 
 pub(crate) fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
@@ -69,10 +66,9 @@ pub(crate) fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
         parser.expect_semi();
     }
 
-    parser.eat_trivia();
-    parser.start_node(Kind::LookupBlockNode);
-    lookup_body(parser, recovery);
-    parser.finish_node();
+    parser.in_node(Kind::LookupBlockNode, |parser| {
+        lookup_body(parser, recovery)
+    });
 }
 
 /// returns true if we advanced the parser.
@@ -86,12 +82,10 @@ fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
             glyph::named_glyph_class_decl(parser, TokenSet::TOP_LEVEL.union(recovery))
         }
         Kind::MarkClassKw => super::mark_class(parser),
-        Kind::SubtableKw => {
-            parser.start_node(Kind::SubtableNode);
+        Kind::SubtableKw => parser.in_node(Kind::SubtableNode, |parser| {
             parser.eat_raw();
             parser.expect_recover(Kind::Semi, recovery);
-            parser.finish_node();
-        }
+        }),
         Kind::LookupKw if in_lookup => {
             parser.err_and_bump("lookups cannot be nested.");
             parser.eat_until(recovery);
@@ -170,15 +164,15 @@ fn feature_names(parser: &mut Parser, recovery: TokenSet) {
         LexemeKind::Semi,
     ]));
 
-    parser.start_node(Kind::FeatureNamesKw);
-    assert!(parser.eat(Kind::FeatureNamesKw));
-    parser.expect_recover(Kind::LBrace, name_recovery);
-    while !parser.at_eof() && !parser.matches(0, recovery.add(LexemeKind::RBrace)) {
-        name_entry(parser, name_recovery);
-    }
-    parser.expect_recover(Kind::RBrace, name_recovery);
-    parser.expect_semi();
-    parser.finish_node();
+    parser.in_node(Kind::FeatureNamesKw, |parser| {
+        assert!(parser.eat(Kind::FeatureNamesKw));
+        parser.expect_recover(Kind::LBrace, name_recovery);
+        while !parser.at_eof() && !parser.matches(0, recovery.add(LexemeKind::RBrace)) {
+            name_entry(parser, name_recovery);
+        }
+        parser.expect_recover(Kind::RBrace, name_recovery);
+        parser.expect_semi();
+    })
 }
 
 fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
@@ -196,15 +190,15 @@ fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
             parser.expect_recover(UNICODE_VALUE, recovery);
             parser.expect_semi();
         } else if parser.matches(0, PARAM_KEYWORDS) {
-            parser.start_node(parser.nth(0).kind.to_token_kind());
-            assert!(parser.eat(PARAM_KEYWORDS));
-            parser.expect_recover(Kind::LBrace, recovery.add(LexemeKind::NameKw));
-            while !parser.at_eof() && !parser.matches(0, recovery) {
-                name_entry(parser, recovery.add(LexemeKind::NameKw));
-            }
-            parser.expect_recover(Kind::RBrace, recovery);
-            parser.expect_semi();
-            parser.finish_node();
+            parser.in_node(parser.nth(0).kind.to_token_kind(), |parser| {
+                assert!(parser.eat(PARAM_KEYWORDS));
+                parser.expect_recover(Kind::LBrace, recovery.add(LexemeKind::NameKw));
+                while !parser.at_eof() && !parser.matches(0, recovery) {
+                    name_entry(parser, recovery.add(LexemeKind::NameKw));
+                }
+                parser.expect_recover(Kind::RBrace, recovery);
+                parser.expect_semi();
+            });
         }
     }
 
@@ -212,15 +206,15 @@ fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
         .union(PARAM_KEYWORDS)
         .union(TokenSet::new(&[LexemeKind::RBrace, LexemeKind::Semi]));
 
-    parser.start_node(Kind::CvParametersKw);
-    assert!(parser.eat(Kind::CvParametersKw));
-    parser.expect_recover(Kind::LBrace, entry_recovery);
-    while !parser.at_eof() && !parser.matches(0, recovery.add(LexemeKind::RBrace)) {
-        entry(parser, entry_recovery);
-    }
-    parser.expect_recover(Kind::RBrace, entry_recovery);
-    parser.expect_semi();
-    parser.finish_node();
+    parser.in_node(Kind::CvParametersKw, |parser| {
+        assert!(parser.eat(Kind::CvParametersKw));
+        parser.expect_recover(Kind::LBrace, entry_recovery);
+        while !parser.at_eof() && !parser.matches(0, recovery.add(LexemeKind::RBrace)) {
+            entry(parser, entry_recovery);
+        }
+        parser.expect_recover(Kind::RBrace, entry_recovery);
+        parser.expect_semi();
+    });
 }
 
 fn lookupflag(parser: &mut Parser, recovery: TokenSet) {
@@ -256,8 +250,7 @@ fn lookupflag(parser: &mut Parser, recovery: TokenSet) {
         parser.expect_semi();
     }
 
-    parser.eat_trivia();
-    parser.start_node(Kind::LookupFlagNode);
-    lookupflag_body(parser, recovery);
-    parser.finish_node();
+    parser.in_node(Kind::LookupFlagNode, |parser| {
+        lookupflag_body(parser, recovery);
+    });
 }

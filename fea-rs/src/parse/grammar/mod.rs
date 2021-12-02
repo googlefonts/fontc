@@ -66,18 +66,13 @@ fn advance_to_top_level(parser: &mut Parser) {
 }
 
 pub fn language_system(parser: &mut Parser) {
-    fn language_system_body(parser: &mut Parser) {
+    parser.in_node(AstKind::LanguageSystemNode, |parser| {
         assert!(parser.eat(Kind::LanguagesystemKw));
         if parser.expect_tag(Kind::Semi).is_none() || parser.expect_tag(Kind::Semi).is_none() {
             return advance_to_top_level(parser);
         }
         parser.expect_semi();
-    }
-
-    parser.eat_trivia();
-    parser.start_node(AstKind::LanguageSystemNode);
-    language_system_body(parser);
-    parser.finish_node();
+    })
 }
 
 fn include(parser: &mut Parser) {
@@ -98,9 +93,7 @@ fn include(parser: &mut Parser) {
         }
     }
 
-    parser.start_node(AstKind::IncludeNode);
-    include_body(parser);
-    parser.finish_node();
+    parser.in_node(AstKind::IncludeNode, include_body)
 }
 
 fn table(parser: &mut Parser) {
@@ -131,25 +124,29 @@ fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
 }
 
 fn eat_script(parser: &mut Parser, recovery: TokenSet) -> bool {
-    parser.eat_trivia();
-    parser.start_node(AstKind::ScriptNode);
-    assert!(parser.eat(Kind::ScriptKw));
-    parser.expect_tag(recovery.union(TokenSet::SEMI));
-    parser.expect_semi();
-    parser.finish_node();
+    if !parser.matches(0, Kind::ScriptKw) {
+        return false;
+    }
+    parser.in_node(AstKind::ScriptNode, |parser| {
+        assert!(parser.eat(Kind::ScriptKw));
+        parser.expect_tag(recovery.union(TokenSet::SEMI));
+        parser.expect_semi();
+    });
     true
 }
 
 fn eat_language(parser: &mut Parser, recovery: TokenSet) -> bool {
-    parser.eat_trivia();
-    parser.start_node(AstKind::LanguageNode);
-    assert!(parser.eat(Kind::LanguageKw));
-    parser.expect_tag(recovery.union(TokenSet::SEMI));
-    parser.eat(Kind::ExcludeDfltKw);
-    parser.eat(Kind::IncludeDfltKw);
-    parser.eat(Kind::RequiredKw);
-    parser.expect_semi();
-    parser.finish_node();
+    if !parser.matches(0, Kind::LanguageKw) {
+        return false;
+    }
+    parser.in_node(AstKind::LanguageNode, |parser| {
+        assert!(parser.eat(Kind::LanguageKw));
+        parser.expect_tag(recovery.union(TokenSet::SEMI));
+        parser.eat(Kind::ExcludeDfltKw);
+        parser.eat(Kind::IncludeDfltKw);
+        parser.eat(Kind::RequiredKw);
+        parser.expect_semi();
+    });
     true
 }
 
@@ -179,33 +176,27 @@ fn mark_class(parser: &mut Parser) {
         parser.expect_semi();
     }
 
-    parser.start_node(AstKind::MarkClassNode);
-    mark_class_body(parser);
-    parser.finish_node();
+    parser.in_node(AstKind::MarkClassNode, mark_class_body);
 }
 
 fn anchor_def(parser: &mut Parser) {
     fn anchor_def_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::AnchorDefKw));
-        parser.eat_trivia();
-        parser.start_node(AstKind::AnchorNode);
-        let recovery = TokenSet::TOP_LEVEL
-            .union(TokenSet::IDENT_LIKE)
-            .union(TokenSet::new(&[Kind::ContourpointKw, Kind::Semi]));
-        parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery);
-        parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery);
-        if parser.eat(Kind::ContourpointKw) {
-            parser.expect_recover(Kind::Number, TokenSet::TOP_SEMI);
-        }
-        parser.finish_node();
+        parser.in_node(AstKind::AnchorNode, |parser| {
+            let recovery = TokenSet::TOP_LEVEL
+                .union(TokenSet::IDENT_LIKE)
+                .union(TokenSet::new(&[Kind::ContourpointKw, Kind::Semi]));
+            parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery);
+            parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery);
+            if parser.eat(Kind::ContourpointKw) {
+                parser.expect_recover(Kind::Number, TokenSet::TOP_SEMI);
+            }
+        });
         parser.expect_remap_recover(TokenSet::IDENT_LIKE, AstKind::Ident, TokenSet::TOP_SEMI);
         parser.expect_semi();
     }
 
-    parser.eat_trivia();
-    parser.start_node(AstKind::AnchorDefNode);
-    anchor_def_body(parser);
-    parser.finish_node();
+    parser.in_node(AstKind::AnchorDefNode, anchor_def_body);
 }
 
 fn anonymous(parser: &mut Parser) {
@@ -244,10 +235,7 @@ fn anonymous(parser: &mut Parser) {
         }
     }
 
-    parser.eat_trivia();
-    parser.start_node(AstKind::AnonBlockNode);
-    anon_body(parser);
-    parser.finish_node();
+    parser.in_node(AstKind::AnonBlockNode, anon_body);
 }
 
 /// Common between gpos/gsub

@@ -32,10 +32,10 @@ pub(crate) fn named_glyph_class_decl(parser: &mut Parser, recovery: TokenSet) {
         }
     }
 
-    parser.start_node(AstKind::GlyphClassDefNode);
-    glyph_class_body(parser, recovery);
-    parser.expect_semi();
-    parser.finish_node();
+    parser.in_node(AstKind::GlyphClassDefNode, |parser| {
+        glyph_class_body(parser, recovery);
+        parser.expect_semi();
+    });
 }
 
 // B @class [a b]
@@ -72,17 +72,16 @@ pub(crate) fn eat_glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> b
         return false;
     }
 
-    parser.eat_trivia();
-    parser.start_node(AstKind::GlyphClass);
-    let range = parser.nth_range(0);
-    assert!(parser.eat(Kind::LSquare));
-    super::greedy(glyph_class_list_member)(parser, recovery);
+    parser.in_node(AstKind::GlyphClass, |parser| {
+        let range = parser.nth_range(0);
+        assert!(parser.eat(Kind::LSquare));
+        super::greedy(glyph_class_list_member)(parser, recovery);
 
-    if !parser.eat(Kind::RSquare) {
-        parser.raw_error(range, "Unclosed glyph class.");
-        parser.err_recover("Expected closing ']'.", recovery);
-    }
-    parser.finish_node();
+        if !parser.eat(Kind::RSquare) {
+            parser.raw_error(range, "Unclosed glyph class.");
+            parser.err_recover("Expected closing ']'.", recovery);
+        }
+    });
     true
 }
 
@@ -98,16 +97,17 @@ fn glyph_class_list_member(parser: &mut Parser, recovery: TokenSet) -> bool {
     let looks_like_range = parser.matches(1, Kind::Hyphen)
         || (parser.matches(0, Kind::Backslash) && parser.matches(2, Kind::Hyphen));
     if looks_like_range {
-        parser.eat_trivia();
-        parser.start_node(AstKind::GlyphRange);
-        glyph_range(parser, recovery.add(Kind::RSquare));
-        parser.finish_node();
+        parser.in_node(AstKind::GlyphRange, |parser| {
+            glyph_range(parser, recovery.add(Kind::RSquare));
+        });
         true
     } else {
         eat_glyph_name_like(parser)
     }
 }
 
+//TODO:  this should be eat_glyph_range, and it should do the checking that
+//is currently done above?
 fn glyph_range(parser: &mut Parser, recovery: TokenSet) -> bool {
     const HYPHEN: TokenSet = TokenSet::new(&[Kind::Hyphen]);
 

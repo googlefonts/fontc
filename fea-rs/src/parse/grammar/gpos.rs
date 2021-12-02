@@ -131,17 +131,15 @@ fn gpos_ligature(parser: &mut Parser, recovery: TokenSet) {
         parser,
         recovery.union(TokenSet::new(&[Kind::LAngle, Kind::AnchorKw])),
     );
-    parser.eat_trivia();
-    parser.start_node(AstKind::LigatureComponentNode);
-    super::greedy(anchor_mark)(parser, recovery);
-    parser.finish_node();
+    parser.in_node(AstKind::LigatureComponentNode, |parser| {
+        super::greedy(anchor_mark)(parser, recovery);
+    });
 
     while parser.nth_raw(0) == b"ligComponent" {
-        parser.eat_trivia();
-        parser.start_node(AstKind::LigatureComponentNode);
-        parser.eat_raw();
-        super::greedy(anchor_mark)(parser, recovery);
-        parser.finish_node();
+        parser.in_node(AstKind::LigatureComponentNode, |parser| {
+            parser.eat_raw();
+            super::greedy(anchor_mark)(parser, recovery);
+        });
     }
     parser.expect_semi();
 }
@@ -207,15 +205,14 @@ fn anchor_mark(parser: &mut Parser, recovery: TokenSet) -> bool {
     if !(parser.matches(0, Kind::LAngle) && parser.matches(1, Kind::AnchorKw)) {
         return false;
     }
-    parser.eat_trivia();
-    parser.start_node(AstKind::AnchorMarkNode);
-    metrics::anchor(parser, recovery.union(RECOVERY));
-    // we will verify later that the anchor was NULL
-    if !parser.matches(0, Kind::Semi) {
-        parser.expect_recover(Kind::MarkKw, recovery.union(RECOVERY));
-        parser.expect_recover(Kind::NamedGlyphClass, recovery.union(RECOVERY));
-    }
-    parser.finish_node();
+    parser.in_node(AstKind::AnchorMarkNode, |parser| {
+        metrics::anchor(parser, recovery.union(RECOVERY));
+        // we will verify later that the anchor was NULL
+        if !parser.matches(0, Kind::Semi) {
+            parser.expect_recover(Kind::MarkKw, recovery.union(RECOVERY));
+            parser.expect_recover(Kind::NamedGlyphClass, recovery.union(RECOVERY));
+        }
+    });
     true
 }
 

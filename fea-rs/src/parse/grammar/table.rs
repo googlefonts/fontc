@@ -91,13 +91,6 @@ fn unknown_table(parser: &mut Parser, open_tag: Range<usize>) {
     }
 }
 
-fn table_node(parser: &mut Parser, f: impl FnOnce(&mut Parser)) {
-    parser.eat_trivia();
-    parser.start_node(AstKind::TableEntryNode);
-    f(parser);
-    parser.finish_node();
-}
-
 mod base {
     use super::*;
     const MINMAX: TokenSet = TokenSet::new(&[Kind::HorizAxisMinMaxKw, Kind::VertAxisMinMaxKw]);
@@ -165,10 +158,9 @@ mod base {
         if !parser.matches(0, Kind::Ident) {
             return false;
         }
-        parser.eat_trivia();
-        parser.start_node(AstKind::ScriptRecordNode);
-        script_record_body(parser, recovery);
-        parser.finish_node();
+        parser.in_node(AstKind::ScriptRecordNode, |parser| {
+            script_record_body(parser, recovery);
+        });
         true
     }
 }
@@ -220,7 +212,9 @@ mod gdef {
             })
             // unimplemented (in spec)
         } else if parser.matches(0, Kind::LigatureCaretByDevKw) {
-            table_node(parser, |parser| parser.eat_until(eat_until))
+            parser.in_node(AstKind::TableEntryNode, |parser| {
+                parser.eat_until(eat_until)
+            })
         } else if parser.matches(0, CARET_POS_OR_IDX) {
             parser.in_node(AstKind::GdefLigatureCaretNode, |parser| {
                 assert!(parser.eat(CARET_POS_OR_IDX));
