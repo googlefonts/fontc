@@ -29,6 +29,11 @@ test = ["diff", "rayon"]
 [dev-dependencies]
 diff = "0.1.12"
 rayon = "1.5"
+criterion = "0.3"
+
+[[bench]]
+name = "parsing"
+harness = false
 
 [[bin]]
 name = "fea-rs"
