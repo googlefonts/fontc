@@ -9,7 +9,7 @@ use super::{
     lexer::{Kind as LexemeKind, Lexeme, Lexer, TokenSet},
     FileId,
 };
-use crate::token_tree::{Kind, TreeSink};
+use crate::token_tree::{AstSink, Kind};
 
 use crate::diagnostic::Diagnostic;
 
@@ -24,9 +24,10 @@ const LOOKAHEAD_MAX: usize = LOOKAHEAD - 1;
 ///
 /// This type does not implement the parsing *logic*; it is driven by various
 /// functions defined in the [`grammar`] module.
-pub struct Parser<'a> {
+pub struct Parser<'a, 'b> {
     lexer: Lexer<'a>,
-    sink: &'a mut dyn TreeSink,
+    // these lifetimes are a hangover from a previous design.
+    sink: &'b mut AstSink<'a>,
     text: &'a str,
     buf: [PendingToken; LOOKAHEAD],
 }
@@ -72,8 +73,8 @@ impl PendingToken {
     };
 }
 
-impl<'a> Parser<'a> {
-    pub(crate) fn new(text: &'a str, sink: &'a mut dyn TreeSink) -> Self {
+impl<'b, 'a> Parser<'a, 'b> {
+    pub(crate) fn new(text: &'a str, sink: &'b mut AstSink<'a>) -> Self {
         let mut this = Parser {
             lexer: Lexer::new(text),
             sink,

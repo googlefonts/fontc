@@ -18,23 +18,6 @@ pub mod typed;
 
 pub use token::Kind;
 
-// taken from rust-analzyer
-/// `TreeSink` abstracts details of a particular syntax tree implementation.
-pub(crate) trait TreeSink {
-    /// Adds new token to the current branch.
-    fn token(&mut self, kind: Kind, len: usize);
-
-    /// Start new branch and make it current.
-    fn start_node(&mut self, kind: Kind);
-
-    /// Finish current branch and restore previous branch as current.
-    ///
-    /// If `kind` is provided, it replaces the [`Kind`] passed to `start_node`.
-    fn finish_node(&mut self, kind: Option<Kind>);
-
-    fn error(&mut self, error: Diagnostic);
-}
-
 #[derive(PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct Node {
     pub kind: Kind,
@@ -89,34 +72,6 @@ pub(crate) struct AstSink<'a> {
     cur_node_contains_error: bool,
 }
 
-impl TreeSink for AstSink<'_> {
-    fn token(&mut self, kind: Kind, len: usize) {
-        let token_text = &self.text[self.text_pos..self.text_pos + len];
-        let to_add = self.validate_token(kind, token_text);
-        self.builder.push_raw(to_add);
-        self.text_pos += len;
-    }
-
-    fn start_node(&mut self, kind: Kind) {
-        self.builder.start_node(kind);
-    }
-
-    fn finish_node(&mut self, kind: Option<Kind>) {
-        self.builder.finish_node(self.cur_node_contains_error, kind);
-        self.cur_node_contains_error = false;
-        // if this is an include statement we store a copy.
-        if self.builder.children.last().map(|n| n.kind()) == Some(Kind::IncludeNode) {
-            self.include_statement_count += 1;
-        }
-    }
-
-    fn error(&mut self, mut error: Diagnostic) {
-        error.message.file = self.file_id;
-        self.errors.push(error);
-        self.cur_node_contains_error = true;
-    }
-}
-
 impl<'a> AstSink<'a> {
     pub fn new(text: &'a str, file_id: FileId, glyph_map: Option<&'a GlyphMap>) -> Self {
         AstSink {
@@ -129,6 +84,32 @@ impl<'a> AstSink<'a> {
             cur_node_contains_error: false,
             include_statement_count: 0,
         }
+    }
+
+    pub(crate) fn token(&mut self, kind: Kind, len: usize) {
+        let token_text = &self.text[self.text_pos..self.text_pos + len];
+        let to_add = self.validate_token(kind, token_text);
+        self.builder.push_raw(to_add);
+        self.text_pos += len;
+    }
+
+    pub(crate) fn start_node(&mut self, kind: Kind) {
+        self.builder.start_node(kind);
+    }
+
+    pub(crate) fn finish_node(&mut self, kind: Option<Kind>) {
+        self.builder.finish_node(self.cur_node_contains_error, kind);
+        self.cur_node_contains_error = false;
+        // if this is an include statement we store a copy.
+        if self.builder.children.last().map(|n| n.kind()) == Some(Kind::IncludeNode) {
+            self.include_statement_count += 1;
+        }
+    }
+
+    pub(crate) fn error(&mut self, mut error: Diagnostic) {
+        error.message.file = self.file_id;
+        self.errors.push(error);
+        self.cur_node_contains_error = true;
     }
 
     pub fn finish(self) -> (Node, Vec<Diagnostic>, Vec<IncludeStatement>) {
