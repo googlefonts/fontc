@@ -154,7 +154,13 @@ pub enum Kind {
     // general purpose table node
     TableEntryNode,
     // node-only tokens, assigned during parsing
+    // a catchall, includes gsub nodes with errors
     GsubNode,
+    // a contextual or chaining contextual rule that needs to be rewritten.
+    // when the sink sees a node finished with this type, it rewrites it before
+    // adding it to the parent.
+    GsubNodeNeedsRewrite,
+
     GsubType1,
     GsubType2,
     GsubType3,
@@ -175,6 +181,14 @@ pub enum Kind {
     GposType7,
     GposType8,
     GposIgnore,
+
+    // context & chaining context rule components:
+    BacktrackSequence,
+    LookaheadSequence,
+    ContextSequence,
+    ContextGlyphNode,
+    ContextLookup,
+    InlineSubNode,
 
     AnchorMarkNode,
     LigatureComponentNode,
@@ -428,6 +442,7 @@ impl std::fmt::Display for Kind {
             Self::ValueRecordNode => write!(f, "ValueRecordNode"),
             Self::ValueRecordDefNode => write!(f, "ValueRecordDefNode"),
             Self::GsubNode => write!(f, "GsubNode"),
+            Self::GsubNodeNeedsRewrite => write!(f, "GsubNodeNeedsRewrite"),
             Self::GsubType1 => write!(f, "GsubType1"),
             Self::GsubType2 => write!(f, "GsubType2"),
             Self::GsubType3 => write!(f, "GsubType3"),
@@ -447,6 +462,14 @@ impl std::fmt::Display for Kind {
             Self::GposType7 => write!(f, "GposType7"),
             Self::GposType8 => write!(f, "GposType8"),
             Self::GposIgnore => write!(f, "GposIgnore"),
+
+            Self::BacktrackSequence => write!(f, "BacktrackSequence"),
+            Self::LookaheadSequence => write!(f, "LookaheadSequence"),
+            Self::ContextSequence => write!(f, "ContextSequence"),
+            Self::ContextGlyphNode => write!(f, "ContextGlyphNode"),
+            Self::ContextLookup => write!(f, "ContextLookup"),
+            Self::InlineSubNode => write!(f, "InlineSubNode"),
+
             Self::LookupRefNode => write!(f, "LookupRefNode"),
             Self::LookupBlockNode => write!(f, "LookupBlockNode"),
             Self::ScriptRecordNode => write!(f, "ScriptRecoordNode"),

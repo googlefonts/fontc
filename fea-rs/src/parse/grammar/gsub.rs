@@ -23,6 +23,7 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
         if parser.matches(0, Kind::RsubKw) {
             return parse_rsub(parser, recovery);
         }
+
         assert!(parser.eat(Kind::SubKw));
 
         let is_class = matches!(parser.nth(0).kind, Kind::LSquare | Kind::NamedGlyphClass);
@@ -93,6 +94,7 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
     }
 
     parser.eat_trivia();
+
     parser.start_node(AstKind::GsubNode);
     let kind = gsub_body(parser, recovery);
     parser.finish_and_remap_node(kind);
@@ -137,7 +139,7 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     }
 
     if parser.expect_semi() {
-        AstKind::GsubType6
+        AstKind::GsubNodeNeedsRewrite
     } else {
         AstKind::GsubNode
     }

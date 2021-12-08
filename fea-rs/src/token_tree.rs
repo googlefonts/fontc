@@ -12,10 +12,12 @@ use typed::AstNode as _;
 
 mod cursor;
 mod edit;
+mod rewrite;
 mod stack;
 mod token;
 pub mod typed;
 
+use rewrite::ReparseCtx;
 pub use token::Kind;
 
 #[derive(PartialEq, Eq, Clone, PartialOrd, Ord)]
@@ -66,6 +68,8 @@ pub(crate) struct AstSink<'a> {
     file_id: FileId,
     text_pos: usize,
     builder: TreeBuilder,
+    // reuseable buffer for reparsing
+    reparse_buf: Vec<NodeOrToken>,
     glyph_map: Option<&'a GlyphMap>,
     errors: Vec<Diagnostic>,
     include_statement_count: usize,
@@ -83,6 +87,7 @@ impl<'a> AstSink<'a> {
             errors: Vec::new(),
             cur_node_contains_error: false,
             include_statement_count: 0,
+            reparse_buf: Default::default(),
         }
     }
 
@@ -98,12 +103,20 @@ impl<'a> AstSink<'a> {
     }
 
     pub(crate) fn finish_node(&mut self, kind: Option<Kind>) {
+        let cur_kind = kind
+            .or_else(|| self.builder.parents.last().map(|x| x.0))
+            .unwrap();
+        let kind = self.maybe_rewrite_current_node(cur_kind).or(kind);
         self.builder.finish_node(self.cur_node_contains_error, kind);
         self.cur_node_contains_error = false;
         // if this is an include statement we store a copy.
         if self.builder.children.last().map(|n| n.kind()) == Some(Kind::IncludeNode) {
             self.include_statement_count += 1;
         }
+    }
+
+    pub(crate) fn current_node_has_error(&self) -> bool {
+        self.cur_node_contains_error
     }
 
     pub(crate) fn error(&mut self, mut error: Diagnostic) {
@@ -146,6 +159,56 @@ impl<'a> AstSink<'a> {
             }
         }
         Token::new(kind, text.into()).into()
+    }
+
+    /// Called before finishing a node.
+    ///
+    /// This is an opportunity for us to rewrite this node's tree, which is
+    /// something that we do for rules with contextual glyphs.
+    ///
+    /// This lets us provide much better information about the rule to the
+    /// rest of the compilation pipeline.
+    ///
+    /// The reason that we have to do this after the first pass is because
+    /// determining whether or not a rule is contextual requires arbitrary
+    /// lookahead at the parser level. Instead of writing an arbitrary lookahead
+    /// parser, we instead rescan the children after parsing, grouping them
+    /// into things like backtrack/context/lookahead sequences.
+    fn maybe_rewrite_current_node(&mut self, cur_kind: Kind) -> Option<Kind> {
+        match cur_kind {
+            _ if self.cur_node_contains_error => None,
+            Kind::GsubNodeNeedsRewrite => {
+                Some(self.rewrite_current_node(rewrite::reparse_contextual_sub_rule))
+            }
+            _ => None,
+        }
+    }
+
+    fn rewrite_current_node(&mut self, rewrite_fn: impl FnOnce(&mut ReparseCtx) -> Kind) -> Kind {
+        assert!(self.reparse_buf.is_empty());
+        self.builder.move_current_children(&mut self.reparse_buf);
+        // temporarily take the buffer to satisfy borrowck
+        let mut buf = std::mem::take(&mut self.reparse_buf);
+        let items_start_offset: usize = buf.iter().map(NodeOrToken::text_len).sum();
+
+        let mut reparse_ctx = ReparseCtx {
+            in_buf: &mut buf,
+            text_pos: self.text_pos - items_start_offset,
+            sink: self,
+        };
+        let new_kind = rewrite_fn(&mut reparse_ctx);
+        // put back the buffer so we can reuse the storage next time
+        assert!(
+            reparse_ctx.in_buf.is_empty(),
+            "rewrite finished with unhandled items"
+        );
+        buf.clear();
+        std::mem::swap(&mut self.reparse_buf, &mut buf);
+        new_kind
+    }
+
+    fn push_raw(&mut self, n: NodeOrToken) {
+        self.builder.push_raw(n);
     }
 }
 
@@ -307,6 +370,15 @@ impl TreeBuilder {
 
     fn push_raw(&mut self, item: NodeOrToken) {
         self.children.push(item)
+    }
+
+    /// copy the children of the currently open node into a buffer.
+    ///
+    /// This is only used as part of reparsing.
+    fn move_current_children(&mut self, to_buf: &mut Vec<NodeOrToken>) {
+        if let Some(idx) = self.parents.last().map(|(_, idx)| idx).copied() {
+            to_buf.extend(self.children.drain(idx..));
+        }
     }
 
     pub(crate) fn finish_node(&mut self, error: bool, new_kind: Option<Kind>) {
