@@ -174,32 +174,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn anchor_a() {
-        let fea = "<anchor 120 -30>";
-        let (out, errors, errstr) = debug_parse_output(fea, |parser| {
-            anchor(parser, TokenSet::EMPTY);
-        });
-        assert!(errors.is_empty(), "{}", errstr);
-        crate::assert_eq_str!(
-            "\
-START AnchorNode
-  <
-  AnchorKw
-  WS( )
-  METRIC(120)
-  WS( )
-  METRIC(-30)
-  >
-END AnchorNode
-",
-            out.simple_parse_tree(),
-        );
-    }
-
-    #[test]
     fn anchor_a_octal() {
         let fea = "<anchor 070 -30>";
-        let (out, errors, _errstr) = debug_parse_output(fea, |parser| {
+        let (_out, errors, _errstr) = debug_parse_output(fea, |parser| {
             anchor(parser, TokenSet::EMPTY);
         });
         assert_eq!(errors.len(), 1);
@@ -207,72 +184,6 @@ END AnchorNode
             errors[0].text().contains("Expected METRIC"),
             "{}",
             errors[0].text()
-        );
-        crate::assert_eq_str!(
-            "\
-START AnchorNode
-  <
-  AnchorKw
-  WS( )
-  OCT(070)
-  WS( )
-  METRIC(-30)
-  >
-END AnchorNode
-",
-            out.simple_parse_tree(),
-        );
-    }
-
-    #[test]
-    fn anchor_b() {
-        let fea = "<anchor 5 -5 contourpoint 14>";
-        let (out, errors, errstr) = debug_parse_output(fea, |parser| {
-            anchor(parser, TokenSet::EMPTY);
-        });
-        assert!(errors.is_empty(), "{}", errstr);
-        crate::assert_eq_str!(
-            "\
-START AnchorNode
-  <
-  AnchorKw
-  WS( )
-  METRIC(5)
-  WS( )
-  METRIC(-5)
-  WS( )
-  ContourpointKw
-  WS( )
-  NUM(14)
-  >
-END AnchorNode
-",
-            out.simple_parse_tree(),
-        );
-    }
-
-    #[test]
-    fn value_record_b() {
-        let fea = "<-80 0 -160 0>";
-        let (out, errors, errstr) = debug_parse_output(fea, |parser| {
-            eat_value_record(parser, TokenSet::EMPTY);
-        });
-        assert!(errors.is_empty(), "{}", errstr);
-        crate::assert_eq_str!(
-            "\
-START ValueRecordNode
-  <
-  NUM(-80)
-  WS( )
-  NUM(0)
-  WS( )
-  NUM(-160)
-  WS( )
-  NUM(0)
-  >
-END ValueRecordNode
-",
-            out.simple_parse_tree(),
         );
     }
 

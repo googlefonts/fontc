@@ -59,7 +59,7 @@ fn run_test(path: PathBuf) -> Result<PathBuf, Failure> {
             let result = compare_parse_output(&node, &path);
             if result.is_err() && std::env::var(WRITE_RESULTS_VAR).is_ok() {
                 let to_write = node.root().parse_tree_two();
-                let to_path = path.with_extension(WIP_OUTPUT_EXTENSION);
+                let to_path = path.with_extension(EXP_OUTPUT_EXTENSION);
                 std::fs::write(&to_path, &to_write).expect("failed to write output");
             }
             result

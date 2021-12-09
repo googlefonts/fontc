@@ -201,83 +201,10 @@ fn validate_glyph_name(name: &[u8]) -> NameType {
 }
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::parse::FileId;
     use crate::token_tree::AstSink;
     use crate::{GlyphMap, GlyphName};
-
-    use super::super::debug_parse_output;
-    use super::*;
-
-    #[test]
-    fn glyph_name_smoke_test() {
-        // normal name, an escaped glyph name, and a contextual keyword
-        let fea = "[A \\mark Ascender]";
-        let (out, errors, errstr) = debug_parse_output(fea, |parser| {
-            eat_glyph_class_list(parser, TokenSet::EMPTY);
-        });
-        assert!(errors.is_empty(), "{}", errstr);
-        crate::assert_eq_str!(
-            "\
-START GlyphClass
-  [
-  GlyphName(A)
-  WS( )
-  \\
-  GlyphName(mark)
-  WS( )
-  GlyphName(Ascender)
-  ]
-END GlyphClass
-",
-            out.simple_parse_tree(),
-        );
-    }
-
-    #[test]
-    fn glyph_class_alias() {
-        let input = "@name = [a b d - z \\1-\\5 @hi];";
-        let (out, errors, _errstr) = debug_parse_output(input, |parser| {
-            named_glyph_class_decl(parser, TokenSet::EMPTY)
-        });
-        crate::assert_eq_str!(
-            out.simple_parse_tree(),
-            "\
-START GlyphClassDefNode
-  @GlyphClass(@name)
-  WS( )
-  =
-  WS( )
-  START GlyphClass
-    [
-    GlyphName(a)
-    WS( )
-    GlyphName(b)
-    WS( )
-    START GlyphRange
-      GlyphName(d)
-      WS( )
-      -
-      WS( )
-      GlyphName(z)
-    END GlyphRange
-    WS( )
-    \\
-    START GlyphRange
-      CID(1)
-      -
-      \\
-      CID(5)
-    END GlyphRange
-    WS( )
-    @GlyphClass(@hi)
-    ]
-  END GlyphClass
-  ;
-END GlyphClassDefNode
-"
-        );
-        assert!(errors.is_empty());
-    }
 
     #[test]
     fn name_like() {
