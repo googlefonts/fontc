@@ -297,6 +297,47 @@ impl Node {
         }
         writeln!(buf, "{}END {}", &SPACES[..depth * 2], self.kind).unwrap();
     }
+
+    //TODO: remove simple_parse_tree, and rename this.
+    #[doc(hidden)]
+    pub fn parse_tree_two(&self) -> String {
+        let mut result = String::new();
+        self.parse_tree_impl2(0, &mut result).unwrap();
+        result
+    }
+
+    fn parse_tree_impl2(&self, depth: usize, buf: &mut String) -> std::fmt::Result {
+        use crate::util::SPACES;
+        let mut pos = self.abs_pos.get();
+        writeln!(
+            buf,
+            "{}{}@[{}; {})",
+            &SPACES[..depth * 2],
+            self.kind,
+            pos,
+            pos + self.text_len
+        )?;
+        let depth = depth + 1;
+        for child in self.iter_children() {
+            match child {
+                NodeOrToken::Token(Token { kind, text, .. }) => {
+                    let spaces = &SPACES[..depth * 2];
+                    write!(buf, "{}{}@{}", spaces, kind, pos)?;
+                    if kind.is_trivia() {
+                        writeln!(buf, " \"{}\"", text.escape_debug())?;
+                    } else {
+                        writeln!(buf, " \"{}\"", text)?;
+                    }
+                    pos += text.len() as u32;
+                }
+                NodeOrToken::Node(node) => {
+                    node.parse_tree_impl2(depth + 1, buf)?;
+                    pos += node.text_len;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl TreeBuilder {

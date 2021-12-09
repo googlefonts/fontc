@@ -1,4 +1,10 @@
-//! Run the parser against a bunch of inputs
+//! Test parser output against expected results.
+//!
+//! This generates textual representations of the parse tree, which are compared
+//! against saved versions.
+//!
+//! To regenerate the comparison files, pass FEA_WRITE_PARSE_TREE=1 as an
+//! environment variable.
 
 use std::{
     env,
@@ -6,55 +12,30 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::Diagnostic;
+use crate::util::ttx::{self as test_utils, Failure, Reason, Results};
+use crate::{Diagnostic, ParseTree};
 
-static TEST_DATA1: &str = "./test-data/fonttools-tests";
-static TEST_DATA2: &str = "./test-data/other-parse-tests";
+static PARSE_TESTS: &str = "./test-data/other-parse-tests";
 static OTHER_TESTS: &[&str] = &["./test-data/include-resolution-tests/dir1/test1.fea"];
-
-static ALLOWED_PARSE_FAILURES: &[&str] = &[
-    "GSUB_error.fea",     // expected failure
-    "bug509.fea",         // see https://github.com/adobe-type-tools/afdko/issues/1415
-    "GSUB_5_formats.fea", // ditto
-    //FIXME this should be working!
-    "GSUB_8.fea", // we just don't handle rsub yet?
-];
-
-/// A way to customize output when our test fails
-#[derive(Default)]
-struct Results {
-    seen: usize,
-    failures: Vec<(PathBuf, bool)>, // true if this was a panic
-}
+const WRITE_RESULTS_VAR: &str = "FEA_WRITE_PARSE_TREE";
+const EXP_OUTPUT_EXTENSION: &str = "PARSE_TREE";
+// when no file is present or the env var is set, we write the tree to this
+// path.
+const WIP_OUTPUT_EXTENSION: &str = "WIP";
 
 #[test]
 fn all_parse_tests() -> Result<(), Results> {
     assert!(
-        std::path::Path::new(TEST_DATA1).exists(),
-        "{:?}",
+        std::path::Path::new(PARSE_TESTS).exists(),
+        "test data is missing. Do you need to update submodules? cwd: '{:?}'",
         env::current_dir()
     );
-    let mut failures = Results::default();
 
-    for path in iter_fea_files(TEST_DATA1)
-        .chain(iter_fea_files(TEST_DATA2))
+    let results = iter_fea_files(PARSE_TESTS)
         .chain(OTHER_TESTS.iter().map(PathBuf::from))
-        .filter(|path| {
-            !ALLOWED_PARSE_FAILURES.contains(&path.file_name().unwrap().to_str().unwrap())
-        })
-    {
-        failures.seen += 1;
-        match std::panic::catch_unwind(|| try_parse_file(&path)) {
-            Err(_e) => failures.push(path, true),
-            Ok(Err(_)) => failures.push(path, false),
-            Ok(_) => (),
-        }
-    }
-    if failures.failures.is_empty() {
-        Ok(())
-    } else {
-        Err(failures)
-    }
+        .map(run_test)
+        .collect::<Vec<_>>();
+    test_utils::finalize_results(results)
 }
 
 fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
@@ -68,41 +49,61 @@ fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> {
     })
 }
 
-/// returns the tree and any errors
-fn try_parse_file(path: &Path) -> Result<(), Vec<Diagnostic>> {
-    let ctx = crate::parse_root_file(path, None, None).unwrap();
-    let (_, errors) = ctx.generate_parse_tree();
-    if errors.iter().any(Diagnostic::is_error) {
-        Err(errors)
-    } else {
-        Ok(())
-    }
-}
-
-impl Results {
-    fn push(&mut self, path: PathBuf, panic: bool) {
-        self.failures.push((path, panic))
-    }
-}
-
-impl std::fmt::Debug for Results {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        writeln!(
-            f,
-            "failed {}/{} test cases:",
-            self.failures.len(),
-            self.seen
-        )?;
-        let widest = self
-            .failures
-            .iter()
-            .map(|(path, _)| path.as_os_str().len())
-            .max()
-            .unwrap_or(0);
-        for (path, panic) in &self.failures {
-            let panic = if *panic { "(panic)" } else { "" };
-            writeln!(f, "{:width$} {}", path.display(), panic, width = widest)?;
+fn run_test(path: PathBuf) -> Result<PathBuf, Failure> {
+    match std::panic::catch_unwind(|| match try_parse_file(&path) {
+        Err((node, errs)) => Err(Failure {
+            path: path.clone(),
+            reason: Reason::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
+        }),
+        Ok(node) => {
+            let result = compare_parse_output(&node, &path);
+            if result.is_err() && std::env::var(WRITE_RESULTS_VAR).is_ok() {
+                let to_write = node.root().parse_tree_two();
+                let to_path = path.with_extension(WIP_OUTPUT_EXTENSION);
+                std::fs::write(&to_path, &to_write).expect("failed to write output");
+            }
+            result
         }
-        Ok(())
+    }) {
+        Err(_) => Err(Failure {
+            path,
+            reason: Reason::Panic,
+        }),
+        Ok(Err(e)) => Err(e),
+        Ok(_) => Ok(path),
     }
+}
+
+/// returns the tree and any errors
+fn try_parse_file(path: &Path) -> Result<ParseTree, (ParseTree, Vec<Diagnostic>)> {
+    let ctx = crate::parse_root_file(path, None, None).unwrap();
+    let (tree, errors) = ctx.generate_parse_tree();
+    if errors.iter().any(Diagnostic::is_error) {
+        Err((tree, errors))
+    } else {
+        Ok(tree)
+    }
+}
+
+fn compare_parse_output(tree: &ParseTree, path: &Path) -> Result<(), Failure> {
+    let output = tree.root().parse_tree_two();
+    let cmp_path = path.with_extension(EXP_OUTPUT_EXTENSION);
+    let expected = if cmp_path.exists() {
+        std::fs::read_to_string(&cmp_path).expect("failed to read cmp_path")
+    } else {
+        String::new()
+    };
+
+    if expected != output {
+        let diff_percent = test_utils::compute_diff_percentage(&expected, &output);
+        return Err(Failure {
+            path: path.to_owned(),
+            reason: Reason::CompareFail {
+                expected,
+                result: output,
+                diff_percent,
+            },
+        });
+    }
+    Ok(())
 }

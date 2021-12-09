@@ -62,7 +62,7 @@ fn single_file_arg(path: &Path, print_tree: bool) {
     let (tree, errors) = try_parse_file(path);
     let elapsed = time.elapsed();
     if errors.is_empty() || print_tree {
-        println!("{}", tree.root().simple_parse_tree());
+        println!("{}", tree.root().parse_tree_two());
     }
     for diagnostic in &errors {
         eprintln!("{}", tree.format_diagnostic(diagnostic));

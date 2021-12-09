@@ -138,6 +138,10 @@ pub fn run_all_tests(
         .map(|path| run_test(path, &glyph_map, &reverse_map))
         .collect::<Vec<_>>();
 
+    finalize_results(result)
+}
+
+pub fn finalize_results(result: Vec<Result<PathBuf, Failure>>) -> Result<(), Results> {
     let mut result = result
         .into_iter()
         .fold(Results::default(), |mut results, current| {
@@ -245,7 +249,7 @@ fn make_font(compilation: Compilation, glyphs: &GlyphMap) -> Font {
     font
 }
 
-fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> String {
+pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> String {
     let mut out = String::new();
     for d in diagnostics {
         if !out.is_empty() {
@@ -375,7 +379,7 @@ static DIFF_PREAMBLE: &str = "\
 # fonttools and the output of fea-rs for a given input.
 ";
 
-fn compute_diff_percentage(left: &str, right: &str) -> f64 {
+pub fn compute_diff_percentage(left: &str, right: &str) -> f64 {
     let lines = diff::lines(left, right);
     let same = lines
         .iter()
