@@ -275,38 +275,11 @@ impl Node {
     #[doc(hidden)]
     pub fn simple_parse_tree(&self) -> String {
         let mut result = String::new();
-        self.parse_tree_impl(0, &mut result);
+        self.parse_tree_impl(0, &mut result).unwrap();
         result
     }
 
-    fn parse_tree_impl(&self, depth: usize, buf: &mut String) {
-        use crate::util::SPACES;
-        writeln!(buf, "{}START {}", &SPACES[..depth * 2], self.kind).unwrap();
-        for child in self.iter_children() {
-            match child {
-                NodeOrToken::Token(Token { kind, text, .. }) => {
-                    let spaces = &SPACES[..(depth + 1) * 2];
-                    if kind.has_contents() {
-                        writeln!(buf, "{}{}({})", spaces, kind, text.escape_debug()).unwrap();
-                    } else {
-                        writeln!(buf, "{}{}", spaces, kind).unwrap();
-                    }
-                }
-                NodeOrToken::Node(node) => node.parse_tree_impl(depth + 1, buf),
-            }
-        }
-        writeln!(buf, "{}END {}", &SPACES[..depth * 2], self.kind).unwrap();
-    }
-
-    //TODO: remove simple_parse_tree, and rename this.
-    #[doc(hidden)]
-    pub fn parse_tree_two(&self) -> String {
-        let mut result = String::new();
-        self.parse_tree_impl2(0, &mut result).unwrap();
-        result
-    }
-
-    fn parse_tree_impl2(&self, depth: usize, buf: &mut String) -> std::fmt::Result {
+    fn parse_tree_impl(&self, depth: usize, buf: &mut String) -> std::fmt::Result {
         use crate::util::SPACES;
         let mut pos = self.abs_pos.get();
         writeln!(
@@ -331,7 +304,7 @@ impl Node {
                     pos += text.len() as u32;
                 }
                 NodeOrToken::Node(node) => {
-                    node.parse_tree_impl2(depth + 1, buf)?;
+                    node.parse_tree_impl(depth + 1, buf)?;
                     pos += node.text_len;
                 }
             }

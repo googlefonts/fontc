@@ -19,9 +19,6 @@ static PARSE_TESTS: &str = "./test-data/other-parse-tests";
 static OTHER_TESTS: &[&str] = &["./test-data/include-resolution-tests/dir1/test1.fea"];
 const WRITE_RESULTS_VAR: &str = "FEA_WRITE_PARSE_TREE";
 const EXP_OUTPUT_EXTENSION: &str = "PARSE_TREE";
-// when no file is present or the env var is set, we write the tree to this
-// path.
-const WIP_OUTPUT_EXTENSION: &str = "WIP";
 
 #[test]
 fn all_parse_tests() -> Result<(), Results> {
@@ -58,7 +55,7 @@ fn run_test(path: PathBuf) -> Result<PathBuf, Failure> {
         Ok(node) => {
             let result = compare_parse_output(&node, &path);
             if result.is_err() && std::env::var(WRITE_RESULTS_VAR).is_ok() {
-                let to_write = node.root().parse_tree_two();
+                let to_write = node.root().simple_parse_tree();
                 let to_path = path.with_extension(EXP_OUTPUT_EXTENSION);
                 std::fs::write(&to_path, &to_write).expect("failed to write output");
             }
@@ -86,7 +83,7 @@ fn try_parse_file(path: &Path) -> Result<ParseTree, (ParseTree, Vec<Diagnostic>)
 }
 
 fn compare_parse_output(tree: &ParseTree, path: &Path) -> Result<(), Failure> {
-    let output = tree.root().parse_tree_two();
+    let output = tree.root().simple_parse_tree();
     let cmp_path = path.with_extension(EXP_OUTPUT_EXTENSION);
     let expected = if cmp_path.exists() {
         std::fs::read_to_string(&cmp_path).expect("failed to read cmp_path")
