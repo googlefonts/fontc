@@ -194,6 +194,9 @@ pub enum Kind {
     ContextGlyphNode,
     ContextLookup,
     InlineSubNode,
+    // there can be multiple ignore rules specified in the same block, separated
+    // by commas
+    IgnoreRuleStatementNode,
 
     AnchorMarkNode,
     LigatureComponentNode,
@@ -475,6 +478,7 @@ impl std::fmt::Display for Kind {
             Self::ContextGlyphNode => write!(f, "ContextGlyphNode"),
             Self::ContextLookup => write!(f, "ContextLookup"),
             Self::InlineSubNode => write!(f, "InlineSubNode"),
+            Self::IgnoreRuleStatementNode => write!(f, "IgnoreRuleStatementNode"),
 
             Self::LookupRefNode => write!(f, "LookupRefNode"),
             Self::LookupBlockNode => write!(f, "LookupBlockNode"),

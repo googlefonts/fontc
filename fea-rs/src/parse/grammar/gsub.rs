@@ -149,7 +149,7 @@ fn parse_ignore(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     assert!(parser.eat(Kind::IgnoreKw));
     assert!(parser.eat(Kind::SubKw));
     if super::expect_ignore_pattern_body(parser, recovery) {
-        AstKind::GsubIgnore
+        AstKind::GsubNodeNeedsRewrite
     } else {
         AstKind::GsubNode
     }

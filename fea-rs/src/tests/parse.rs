@@ -124,7 +124,7 @@ fn compare_to_expected_output(output: &str, src_path: &Path, cmp_ext: &str) -> R
     };
 
     if expected != output {
-        let diff_percent = test_utils::compute_diff_percentage(&expected, &output);
+        let diff_percent = test_utils::compute_diff_percentage(&expected, output);
         return Err(Failure {
             path: src_path.to_owned(),
             reason: Reason::CompareFail {

@@ -240,7 +240,7 @@ fn anonymous(parser: &mut Parser) {
 
 /// Common between gpos/gsub
 fn expect_ignore_pattern_body(parser: &mut Parser, recovery: TokenSet) -> bool {
-    let recovery = recovery.add(Kind::Semi.into());
+    let recovery = recovery.add(Kind::Semi);
     if !eat_ignore_statement_item(parser, recovery) {
         parser.err_recover("Expected ignore pattern", recovery);
         parser.eat_until(recovery);
@@ -316,7 +316,7 @@ fn debug_parse_output(
         if !err_str.is_empty() {
             err_str.push('\n');
         }
-        crate::util::highlighting::write_diagnostic(&mut err_str, &err, &source, Some(80));
+        crate::util::highlighting::write_diagnostic(&mut err_str, err, &source, Some(80));
     }
     (node, errs, err_str)
 }

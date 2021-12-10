@@ -89,7 +89,7 @@ fn parse_ignore(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     assert!(parser.eat(Kind::PosKw));
 
     if super::expect_ignore_pattern_body(parser, recovery) {
-        AstKind::GposIgnore
+        AstKind::GposNodeNeedsRewrite
     } else {
         AstKind::GposNode
     }

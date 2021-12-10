@@ -128,6 +128,11 @@ impl<'a, 'b> ReparseCtx<'a, 'b> {
 }
 
 pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
+    if rewriter.eat(Kind::IgnoreKw) {
+        rewriter.expect(Kind::SubKw);
+        reparse_ignore_rule(rewriter);
+        return Kind::GsubIgnore;
+    }
     rewriter.expect(Kind::SubKw);
     let mut any_lookups = false;
     // the backtrack sequence
@@ -169,6 +174,11 @@ pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
 }
 
 pub(crate) fn reparse_contextual_pos_rule(rewriter: &mut ReparseCtx) -> Kind {
+    if rewriter.eat(Kind::IgnoreKw) {
+        rewriter.expect(Kind::PosKw);
+        reparse_ignore_rule(rewriter);
+        return Kind::GposIgnore;
+    }
     rewriter.expect(Kind::PosKw);
     // the backtrack sequence
     eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
@@ -190,6 +200,31 @@ pub(crate) fn reparse_contextual_pos_rule(rewriter: &mut ReparseCtx) -> Kind {
 
     rewriter.expect_semi_and_nothing_else();
     Kind::GposType8
+}
+
+// common between GSUB & GPOS
+fn reparse_ignore_rule(rewriter: &mut ReparseCtx) {
+    expect_ignore_rule_statement(rewriter);
+    while rewriter.eat(Kind::Comma) {
+        expect_ignore_rule_statement(rewriter);
+    }
+    rewriter.expect_semi_and_nothing_else();
+}
+
+fn expect_ignore_rule_statement(rewriter: &mut ReparseCtx) {
+    rewriter.in_node(Kind::IgnoreRuleStatementNode, |rewriter| {
+        eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
+        loop {
+            if !at_glyph_or_glyph_class(rewriter.nth_kind(0))
+                || !rewriter.matches(1, Kind::SingleQuote)
+            {
+                break;
+            }
+            expect_glyph_or_glyph_class(rewriter);
+            rewriter.expect(Kind::SingleQuote);
+        }
+        eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
+    });
 }
 
 // impl common to eating backtrack or lookahead
