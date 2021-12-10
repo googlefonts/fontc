@@ -157,15 +157,13 @@ fn parse_ignore(parser: &mut Parser, recovery: TokenSet) -> AstKind {
 
 fn parse_rsub(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     assert!(parser.eat(Kind::RsubKw));
-    if !glyph::expect_glyph_or_glyph_class(parser, recovery) {
-        parser.eat_until(recovery);
-        return AstKind::GsubNode;
-    }
+    let recovery = recovery.add(Kind::Semi);
 
     super::greedy(glyph::eat_glyph_or_glyph_class)(parser, recovery);
 
     if !parser.expect(Kind::SingleQuote) {
         parser.eat_until(recovery);
+        parser.expect_semi();
         return AstKind::GsubNode;
     }
 
@@ -174,13 +172,14 @@ fn parse_rsub(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     if parser.matches(0, Kind::SingleQuote) {
         parser.err("reversesub rule can have only one marked glyph");
         parser.eat_until(recovery);
+        parser.expect_semi();
         return AstKind::GsubNode;
     }
     if parser.eat(Kind::ByKw) {
         glyph::expect_glyph_or_glyph_class(parser, recovery);
     }
     parser.expect_semi();
-    AstKind::GsubType8
+    AstKind::GsubNodeNeedsRewrite
 }
 
 #[cfg(test)]

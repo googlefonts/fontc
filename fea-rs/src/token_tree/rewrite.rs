@@ -133,7 +133,14 @@ pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
         reparse_ignore_rule(rewriter);
         return Kind::GsubIgnore;
     }
-    rewriter.expect(Kind::SubKw);
+
+    let rule_type = if rewriter.eat(Kind::RsubKw) {
+        Kind::GsubType8
+    } else {
+        rewriter.expect(Kind::SubKw);
+        Kind::GsubType6
+    };
+
     let mut any_lookups = false;
     // the backtrack sequence
     eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
@@ -170,7 +177,7 @@ pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
         eat_glyph_or_glyph_class(rewriter);
     }
     rewriter.expect_semi_and_nothing_else();
-    Kind::GsubType6
+    rule_type
 }
 
 pub(crate) fn reparse_contextual_pos_rule(rewriter: &mut ReparseCtx) -> Kind {
