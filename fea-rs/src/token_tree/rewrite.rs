@@ -111,8 +111,8 @@ impl<'a, 'b> ReparseCtx<'a, 'b> {
 
     // for debugging
     #[allow(dead_code)]
-    fn print_contents(&self) {
-        eprint!("reparse contents: '");
+    fn print_contents(&self, msg: &str) {
+        eprint!("[{}] reparse contents: \"", msg);
         for item in self.in_buf {
             match item {
                 NodeOrToken::Token(t) => eprint!("{}", t.text),
@@ -123,7 +123,7 @@ impl<'a, 'b> ReparseCtx<'a, 'b> {
                 }
             }
         }
-        eprintln!("'");
+        eprintln!("\"");
     }
 }
 
@@ -131,11 +131,7 @@ pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
     rewriter.expect(Kind::SubKw);
     let mut any_lookups = false;
     // the backtrack sequence
-    rewriter.in_node(Kind::BacktrackSequence, |rewriter| loop {
-        if rewriter.matches(1, Kind::SingleQuote) || !eat_glyph_or_glyph_class(rewriter) {
-            break;
-        }
-    });
+    eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
     // the contextual sequence
     rewriter.in_node(Kind::ContextSequence, |rewriter| loop {
         if !at_glyph_or_glyph_class(rewriter.nth_kind(0)) || !rewriter.matches(1, Kind::SingleQuote)
@@ -149,11 +145,7 @@ pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
         })
     });
     // the lookahead sequence
-    rewriter.in_node(Kind::LookaheadSequence, |rewriter| {
-        while eat_glyph_or_glyph_class(rewriter) {
-            // continue
-        }
-    });
+    eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
     if rewriter.matches(0, Kind::ByKw) {
         if any_lookups {
             rewriter.error(
@@ -174,6 +166,39 @@ pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
     }
     rewriter.expect_semi_and_nothing_else();
     Kind::GsubType6
+}
+
+pub(crate) fn reparse_contextual_pos_rule(rewriter: &mut ReparseCtx) -> Kind {
+    rewriter.expect(Kind::PosKw);
+    // the backtrack sequence
+    eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
+    // the contextual sequence
+    rewriter.in_node(Kind::ContextSequence, |rewriter| loop {
+        if !at_glyph_or_glyph_class(rewriter.nth_kind(0)) || !rewriter.matches(1, Kind::SingleQuote)
+        {
+            break;
+        }
+        rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
+            expect_glyph_or_glyph_class(rewriter);
+            rewriter.expect(Kind::SingleQuote);
+            eat_contextual_lookups(rewriter);
+            rewriter.eat(Kind::ValueRecordNode);
+        })
+    });
+    // the lookahead sequence
+    eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
+
+    rewriter.expect_semi_and_nothing_else();
+    Kind::GposType8
+}
+
+// impl common to eating backtrack or lookahead
+fn eat_non_marked_seqeunce(rewriter: &mut ReparseCtx, kind: Kind) {
+    rewriter.in_node(kind, |rewriter| loop {
+        if rewriter.matches(1, Kind::SingleQuote) || !eat_glyph_or_glyph_class(rewriter) {
+            break;
+        }
+    });
 }
 
 // the two lookups in "sub ka' lookup ONE lookup TWO b'"

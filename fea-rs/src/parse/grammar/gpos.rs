@@ -181,7 +181,7 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     //TODO: we should be done? but we also don't know how this works? inline rules
     //are weird for gpos I need to rethink this
     if parser.expect_semi() {
-        AstKind::GposType8
+        AstKind::GposNodeNeedsRewrite
     } else {
         AstKind::GposNode
     }

@@ -153,7 +153,8 @@ pub enum Kind {
 
     // general purpose table node
     TableEntryNode,
-    // node-only tokens, assigned during parsing
+    // ## node-only tokens, assigned during parsing ##
+
     // a catchall, includes gsub nodes with errors
     GsubNode,
     // a contextual or chaining contextual rule that needs to be rewritten.
@@ -171,7 +172,11 @@ pub enum Kind {
     GsubType8,
     GsubIgnore,
 
+    // catchall, including gpos nodes with errors
     GposNode,
+    // A node containing marked glyphs, and which needs to be rewritten.
+    GposNodeNeedsRewrite,
+
     GposType1,
     GposType2,
     GposType3,
@@ -453,6 +458,7 @@ impl std::fmt::Display for Kind {
             Self::GsubType8 => write!(f, "GsubType8"),
             Self::GsubIgnore => write!(f, "GsubIgnore"),
             Self::GposNode => write!(f, "GposNode"),
+            Self::GposNodeNeedsRewrite => write!(f, "GposNodeNeedsRewrite"),
             Self::GposType1 => write!(f, "GposType1"),
             Self::GposType2 => write!(f, "GposType2"),
             Self::GposType3 => write!(f, "GposType3"),

@@ -180,6 +180,9 @@ impl<'a> AstSink<'a> {
             Kind::GsubNodeNeedsRewrite => {
                 Some(self.rewrite_current_node(rewrite::reparse_contextual_sub_rule))
             }
+            Kind::GposNodeNeedsRewrite => {
+                Some(self.rewrite_current_node(rewrite::reparse_contextual_pos_rule))
+            }
             _ => None,
         }
     }
