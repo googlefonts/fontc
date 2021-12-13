@@ -155,7 +155,6 @@ pub fn finalize_results(result: Vec<Result<PathBuf, Failure>>) -> Result<(), Res
     result.failures.sort_unstable_by(|a, b| {
         (a.reason.sort_order(), &a.path).cmp(&(b.reason.sort_order(), &b.path))
     });
-
     if result.failures.is_empty() {
         Ok(())
     } else {

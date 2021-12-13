@@ -34,6 +34,7 @@ pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
         }
 
         // sub glyph by (type 1 or 2)
+        //FIXME: gsub 1 also lets you omit the 'by' keyword
         if parser.eat(Kind::ByKw) {
             if parser.eat(Kind::NullKw) {
                 parser.expect_semi();

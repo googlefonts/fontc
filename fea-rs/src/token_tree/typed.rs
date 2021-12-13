@@ -297,6 +297,13 @@ ast_node!(GposIgnore, Kind::GposIgnore);
 ast_node!(AnchorMark, Kind::AnchorMarkNode);
 ast_node!(LigatureComponent, Kind::LigatureComponentNode);
 
+ast_node!(BacktrackSequence, Kind::BacktrackSequence);
+ast_node!(LookaheadSequence, Kind::LookaheadSequence);
+ast_node!(InputSequence, Kind::ContextSequence);
+ast_node!(InputItem, Kind::ContextGlyphNode);
+ast_node!(ContextLookup, Kind::ContextLookup);
+ast_node!(InlineSubRule, Kind::InlineSubNode);
+
 ast_enum!(GposStatement {
     Type1(Gpos1),
     Type2(Gpos2),
@@ -428,6 +435,12 @@ impl GlyphRange {
             .find(|i| i.kind() == Kind::Cid || i.kind() == Kind::GlyphName)
             .and_then(NodeOrToken::as_token)
             .unwrap()
+    }
+}
+
+impl GlyphOrClass {
+    pub fn is_class(&self) -> bool {
+        matches!(self, GlyphOrClass::Class(_) | GlyphOrClass::NamedClass(_))
     }
 }
 
@@ -668,6 +681,87 @@ impl Gsub4 {
             .skip_while(|t| t.kind() != Kind::ByKw)
             .find_map(Glyph::cast)
             .unwrap()
+    }
+}
+
+impl Gsub6 {
+    pub fn backtrack(&self) -> BacktrackSequence {
+        self.iter().find_map(BacktrackSequence::cast).unwrap()
+    }
+
+    pub fn lookahead(&self) -> LookaheadSequence {
+        self.iter().find_map(LookaheadSequence::cast).unwrap()
+    }
+
+    pub fn input(&self) -> InputSequence {
+        self.iter().find_map(InputSequence::cast).unwrap()
+    }
+
+    pub fn inline_rule(&self) -> Option<InlineSubRule> {
+        self.iter().find_map(InlineSubRule::cast)
+    }
+}
+
+impl Gsub8 {
+    pub fn backtrack(&self) -> BacktrackSequence {
+        self.iter().find_map(BacktrackSequence::cast).unwrap()
+    }
+
+    pub fn lookahead(&self) -> LookaheadSequence {
+        self.iter().find_map(LookaheadSequence::cast).unwrap()
+    }
+
+    pub fn input(&self) -> InputSequence {
+        self.iter().find_map(InputSequence::cast).unwrap()
+    }
+
+    pub fn inline_rule(&self) -> Option<InlineSubRule> {
+        self.iter().find_map(InlineSubRule::cast)
+    }
+}
+
+impl BacktrackSequence {
+    pub fn items(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
+        self.iter().filter_map(GlyphOrClass::cast)
+    }
+}
+
+impl LookaheadSequence {
+    pub fn items(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
+        self.iter().filter_map(GlyphOrClass::cast)
+    }
+}
+
+impl InputSequence {
+    pub fn items(&self) -> impl Iterator<Item = InputItem> + '_ {
+        self.iter().filter_map(InputItem::cast)
+    }
+}
+
+impl InputItem {
+    pub fn target(&self) -> GlyphOrClass {
+        self.iter().find_map(GlyphOrClass::cast).unwrap()
+    }
+
+    pub fn lookups(&self) -> impl Iterator<Item = ContextLookup> + '_ {
+        self.iter().filter_map(ContextLookup::cast)
+    }
+}
+
+impl ContextLookup {
+    pub fn label(&self) -> &Token {
+        self.find_token(Kind::Ident).unwrap()
+    }
+}
+
+impl InlineSubRule {
+    pub fn replacement_class(&self) -> Option<GlyphClass> {
+        self.iter().find_map(GlyphClass::cast)
+    }
+
+    // if empty, there is a class
+    pub fn replacement_glyphs(&self) -> impl Iterator<Item = Glyph> + '_ {
+        self.iter().filter_map(Glyph::cast)
     }
 }
 
