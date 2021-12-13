@@ -133,7 +133,7 @@ pub fn run_all_tests(
         })
         .collect::<HashMap<_, _>>();
 
-    let result = iter_compile_tests(fonttools_data_dir, filter)
+    let result = iter_compile_tests(fonttools_data_dir.as_ref(), filter)
         .par_bridge()
         .map(|path| run_test(path, &glyph_map, &reverse_map))
         .collect::<Vec<_>>();
@@ -162,43 +162,59 @@ pub fn finalize_results(result: Vec<Result<PathBuf, Failure>>) -> Result<(), Res
     }
 }
 
-fn iter_compile_tests(
-    path: impl AsRef<Path>,
-    filter: Option<&String>,
-) -> impl Iterator<Item = PathBuf> + '_ {
+fn iter_compile_tests<'a>(
+    path: &'a Path,
+    filter: Option<&'a String>,
+) -> impl Iterator<Item = PathBuf> + 'a {
     let filter_items = filter
         .map(|s| s.split(',').map(|s| s.trim()).collect::<Vec<_>>())
         .unwrap_or_default();
+
+    iter_fea_files(path).filter(move |p| {
+        if p.extension() == Some(OsStr::new("fea")) && p.with_extension("ttx").exists() {
+            let path_str = p.file_name().unwrap().to_str().unwrap();
+            if HAS_MARK_GLYPH.contains(&path_str) {
+                return false;
+            }
+            if !filter_items.is_empty() && !filter_items.iter().any(|item| path_str.contains(item))
+            {
+                return false;
+            }
+            return true;
+        }
+        {
+            false
+        }
+    })
+}
+
+pub fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> + 'static {
     let mut dir = path.as_ref().read_dir().unwrap();
     std::iter::from_fn(move || loop {
         let entry = dir.next()?.unwrap();
         let path = entry.path();
-        if path.extension() == Some(OsStr::new("fea")) && path.with_extension("ttx").exists() {
-            let path_str = path.file_name().unwrap().to_str().unwrap();
-            if HAS_MARK_GLYPH.contains(&path_str) {
-                continue;
-            }
-            if !filter_items.is_empty() && !filter_items.iter().any(|item| path_str.contains(item))
-            {
-                continue;
-            }
+        if path.extension() == Some(OsStr::new("fea")) {
             return Some(path);
         }
     })
 }
 
-pub fn try_compile(path: &Path, glyph_map: &GlyphMap) -> Result<Font, Vec<Diagnostic>> {
-    try_parse_file(path, glyph_map)
-        .map_err(|(_, errs)| errs)
-        .and_then(|node| crate::compile(&node, glyph_map))
-        .map(|comp| make_font(comp, glyph_map))
-}
+//pub fn try_compile(path: &Path, glyph_map: &GlyphMap) -> Result<Font, Vec<Diagnostic>> {
+//try_parse_file(path, glyph_map)
+//.map_err(|(_, errs)| errs)
+//.and_then(|node| crate::compile(&node, glyph_map))
+//.map(|comp| make_font(comp, glyph_map))
+//}
 
-fn try_parse_file(
+//pub fn compile_expecting_err(path: &Path, glyph_map: &GlyphMap) -> Result<(ParseTree, Vec<Diagnostic>), Option<Reason>> {
+
+//}
+
+pub fn try_parse_file(
     path: &Path,
-    glyphs: &GlyphMap,
+    glyphs: Option<&GlyphMap>,
 ) -> Result<ParseTree, (ParseTree, Vec<Diagnostic>)> {
-    let ctx = crate::parse_root_file(path, Some(glyphs), None).unwrap();
+    let ctx = crate::parse_root_file(path, glyphs, None).unwrap();
     let (tree, errs) = ctx.generate_parse_tree();
     if errs.iter().any(Diagnostic::is_error) {
         Err((tree, errs))
@@ -213,7 +229,7 @@ fn run_test(
     glyph_map: &GlyphMap,
     reverse_map: &HashMap<String, String>,
 ) -> Result<PathBuf, Failure> {
-    match std::panic::catch_unwind(|| match try_parse_file(&path, glyph_map) {
+    match std::panic::catch_unwind(|| match try_parse_file(&path, Some(glyph_map)) {
         Err((node, errs)) => Err(Failure {
             path: path.clone(),
             reason: Reason::ParseFail(stringify_diagnostics(&node, &errs)),
@@ -334,6 +350,31 @@ fn compare_ttx(
     }
 }
 
+pub fn compare_to_expected_output(
+    output: &str,
+    src_path: &Path,
+    cmp_ext: &str,
+) -> Result<(), Failure> {
+    let cmp_path = src_path.with_extension(cmp_ext);
+    let expected = if cmp_path.exists() {
+        std::fs::read_to_string(&cmp_path).expect("failed to read cmp_path")
+    } else {
+        String::new()
+    };
+
+    if expected != output {
+        let diff_percent = compute_diff_percentage(&expected, output);
+        return Err(Failure {
+            path: src_path.to_owned(),
+            reason: Reason::CompareFail {
+                expected,
+                result: output.to_string(),
+                diff_percent,
+            },
+        });
+    }
+    Ok(())
+}
 // hacky way to make our ttx output match fonttools'
 fn rewrite_ttx(input: &str, reverse_map: &HashMap<String, String>) -> String {
     let mut out = String::with_capacity(input.len());

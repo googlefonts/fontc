@@ -904,23 +904,29 @@ fn validate_name_string_encoding(
     string: &Token,
 ) -> Result<(), (Range<usize>, String)> {
     let mut to_scan: &str = string.as_str();
+    debug_assert!(to_scan.starts_with('"'));
+    debug_assert!(to_scan.ends_with('"'));
+    to_scan = &to_scan[1..to_scan.len() - 1];
     let token_start = string.range().start;
-    let mut cur_off = 0;
+    let mut cur_off = 1;
     while !to_scan.is_empty() {
         match to_scan.bytes().position(|b| b == b'\\') {
             None => to_scan = "",
             Some(pos) if platform == tables::name::WIN_PLATFORM => {
                 let range_start = token_start + cur_off + pos;
                 if let Some(val) = to_scan.get(pos + 1..pos + 5) {
-                    if let Some(c) = val.chars().find(|c| !c.is_digit(16)) {
+                    if let Some(idx) = val.bytes().position(|b| !b.is_ascii_hexdigit()) {
                         return Err((
-                            range_start..range_start + 5,
-                            format!("invalid escape sequence: '{}' is not a hex digit", c),
+                            range_start + idx..range_start + idx + 1,
+                            format!(
+                                "invalid escape sequence: '{}' is not a hex digit",
+                                val.as_bytes()[idx] as char
+                            ),
                         ));
                     }
                 } else {
                     return Err((
-                        range_start..range_start + 1,
+                        range_start..range_start + to_scan[pos..].len(),
                         "windows escape sequences must be four hex digits long".into(),
                     ));
                 }
@@ -930,10 +936,13 @@ fn validate_name_string_encoding(
             Some(pos) => {
                 let range_start = token_start + cur_off + pos;
                 if let Some(val) = to_scan.get(pos + 1..pos + 3) {
-                    if let Some(c) = val.chars().find(|c| !c.is_digit(16)) {
+                    if let Some(idx) = val.bytes().position(|b| !b.is_ascii_hexdigit()) {
                         return Err((
-                            range_start..range_start + 5,
-                            format!("invalid escape sequence: '{}' is not a hex digit", c),
+                            range_start + idx..range_start + idx + 1,
+                            format!(
+                                "invalid escape sequence: '{}' is not a hex digit",
+                                val.as_bytes()[idx] as char
+                            ),
                         ));
                     }
 
@@ -945,8 +954,8 @@ fn validate_name_string_encoding(
                     }
                 } else {
                     return Err((
-                        range_start..range_start + 1,
-                        "windows escape sequences must be four hex digits long".into(),
+                        range_start..range_start + to_scan[pos..].len(),
+                        "mac escape sequences must be two hex digits long".into(),
                     ));
                 }
                 cur_off += to_scan[..pos].len();
