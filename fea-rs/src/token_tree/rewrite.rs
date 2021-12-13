@@ -141,7 +141,6 @@ pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
         Kind::GsubType6
     };
 
-    let mut any_lookups = false;
     // the backtrack sequence
     eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
     // the contextual sequence
@@ -153,17 +152,12 @@ pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
         rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
             expect_glyph_or_glyph_class(rewriter);
             rewriter.expect(Kind::SingleQuote);
-            any_lookups |= eat_contextual_lookups(rewriter);
+            eat_contextual_lookups(rewriter);
         })
     });
     // the lookahead sequence
     eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
     if rewriter.matches(0, Kind::ByKw) {
-        if any_lookups {
-            rewriter.error(
-                "cannot have inline ('by X') alongside explicit ('lookup MY_LOOKUP') statement",
-            );
-        }
         rewriter.in_node(Kind::InlineSubNode, |rewriter| {
             rewriter.expect(Kind::ByKw);
             expect_glyph_or_glyph_class(rewriter);

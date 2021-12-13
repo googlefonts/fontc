@@ -90,7 +90,7 @@ fn run_bad_test(path: PathBuf) -> Result<PathBuf, Failure> {
         }
         Ok(_) => Err(Failure {
             path: path.clone(),
-            reason: Reason::ParseFail("unexpected success".into()),
+            reason: Reason::UnexpectedSuccess,
         }),
     }) {
         Err(_) => Err(Failure {

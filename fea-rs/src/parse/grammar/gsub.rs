@@ -129,12 +129,14 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> AstKind {
         } else if !glyph::expect_named_or_unnamed_glyph_class(parser, recovery) {
             // unexpected thing here?
             parser.eat_until(recovery);
+            parser.eat(Kind::Semi);
             return AstKind::GsubNode;
         }
     } else if parser.eat(Kind::FromKw)
         && !glyph::expect_named_or_unnamed_glyph_class(parser, recovery)
     {
         parser.eat_until(recovery);
+        parser.eat(Kind::Semi);
         return AstKind::GsubNode;
     }
 

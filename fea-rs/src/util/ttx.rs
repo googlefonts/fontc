@@ -80,6 +80,7 @@ pub enum Reason {
     Panic,
     ParseFail(String),
     CompileFail(String),
+    UnexpectedSuccess,
     TtxFail {
         code: Option<i32>,
         std_err: String,
@@ -537,8 +538,9 @@ impl Reason {
             Self::Panic => 1,
             Self::ParseFail(_) => 2,
             Self::CompileFail(_) => 3,
-            Self::TtxFail { .. } => 4,
-            Self::CompareFail { .. } => 5,
+            Self::UnexpectedSuccess => 6,
+            Self::TtxFail { .. } => 10,
+            Self::CompareFail { .. } => 50,
         }
     }
 
@@ -633,6 +635,7 @@ impl Debug for ReasonPrinter<'_> {
                 }
                 Ok(())
             }
+            Reason::UnexpectedSuccess => write!(f, "{}", Color::Yellow.paint("unexpected success")),
             Reason::TtxFail { code, std_err } => {
                 write!(f, "ttx failure ({:?}) stderr:\n{}", code, std_err)
             }
