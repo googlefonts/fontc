@@ -888,8 +888,8 @@ impl<'a> ValidationCtx<'a> {
         match node {
             typed::GlyphOrClass::Glyph(name) => self.validate_glyph_name(name),
             typed::GlyphOrClass::Cid(cid) => self.validate_cid(cid),
-            typed::GlyphOrClass::Class(class) => self.validate_glyph_class_literal(class, false),
-            typed::GlyphOrClass::NamedClass(name) => self.validate_glyph_class_ref(name, false),
+            typed::GlyphOrClass::Class(class) => self.validate_glyph_class_literal(class, true),
+            typed::GlyphOrClass::NamedClass(name) => self.validate_glyph_class_ref(name, true),
             typed::GlyphOrClass::Null(_) => (),
         }
     }

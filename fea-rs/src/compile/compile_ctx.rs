@@ -212,7 +212,7 @@ impl<'a> CompilationCtx<'a> {
     fn set_language(&mut self, stmt: typed::Language) {
         // not currently handled
         if let Some(token) = stmt.required() {
-            self.error(token.range(), "required is not implemented");
+            self.warning(token.range(), "required is not implemented");
         }
         let language = stmt.tag().to_raw();
         let script = self.script.unwrap_or(consts::SCRIPT_DFLT_TAG);
@@ -809,7 +809,7 @@ impl<'a> CompilationCtx<'a> {
         let tag = feature.tag();
         let tag_raw = tag.to_raw();
         if tag_raw == consts::AALT_TAG {
-            self.error(tag.range(), "aalt feature is unimplemented");
+            self.warning(tag.range(), "aalt feature is unimplemented");
             return;
         }
         self.start_feature(tag);
