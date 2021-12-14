@@ -215,15 +215,17 @@ fn reparse_ignore_rule(rewriter: &mut ReparseCtx) {
 fn expect_ignore_rule_statement(rewriter: &mut ReparseCtx) {
     rewriter.in_node(Kind::IgnoreRuleStatementNode, |rewriter| {
         eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
-        loop {
+        rewriter.in_node(Kind::ContextSequence, |rewriter| loop {
             if !at_glyph_or_glyph_class(rewriter.nth_kind(0))
                 || !rewriter.matches(1, Kind::SingleQuote)
             {
                 break;
             }
-            expect_glyph_or_glyph_class(rewriter);
-            rewriter.expect(Kind::SingleQuote);
-        }
+            rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
+                expect_glyph_or_glyph_class(rewriter);
+                rewriter.expect(Kind::SingleQuote);
+            })
+        });
         eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
     });
 }
