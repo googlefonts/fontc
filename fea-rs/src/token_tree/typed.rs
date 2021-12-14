@@ -301,7 +301,6 @@ ast_node!(BacktrackSequence, Kind::BacktrackSequence);
 ast_node!(LookaheadSequence, Kind::LookaheadSequence);
 ast_node!(InputSequence, Kind::ContextSequence);
 ast_node!(InputItem, Kind::ContextGlyphNode);
-ast_node!(ContextLookup, Kind::ContextLookup);
 ast_node!(InlineSubRule, Kind::InlineSubNode);
 
 ast_enum!(GposStatement {
@@ -620,14 +619,6 @@ impl LookupRef {
     pub fn label(&self) -> &Token {
         self.find_token(Kind::Ident).unwrap()
     }
-
-    #[allow(dead_code)]
-    pub fn use_extension(&self) -> Option<&Token> {
-        self.iter()
-            .take_while(|t| t.kind() != Kind::LBrace)
-            .find(|t| t.kind() == Kind::UseExtensionKw)
-            .and_then(NodeOrToken::as_token)
-    }
 }
 
 impl Gsub1 {
@@ -743,14 +734,8 @@ impl InputItem {
         self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
-    pub fn lookups(&self) -> impl Iterator<Item = ContextLookup> + '_ {
-        self.iter().filter_map(ContextLookup::cast)
-    }
-}
-
-impl ContextLookup {
-    pub fn label(&self) -> &Token {
-        self.find_token(Kind::Ident).unwrap()
+    pub fn lookups(&self) -> impl Iterator<Item = LookupRef> + '_ {
+        self.iter().filter_map(LookupRef::cast)
     }
 }
 

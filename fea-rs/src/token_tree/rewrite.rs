@@ -252,7 +252,7 @@ fn eat_contextual_lookups(rewriter: &mut ReparseCtx) -> bool {
 fn eat_one_contextual_lookup(rewriter: &mut ReparseCtx) -> bool {
     rewriter.eat_trivia();
     if rewriter.matches(0, Kind::LookupKw) {
-        rewriter.in_node(Kind::ContextLookup, |rewriter| {
+        rewriter.in_node(Kind::LookupRefNode, |rewriter| {
             rewriter.expect(Kind::LookupKw);
             rewriter.expect(Kind::Ident);
         });

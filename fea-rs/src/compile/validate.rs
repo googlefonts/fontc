@@ -456,9 +456,7 @@ impl<'a> ValidationCtx<'a> {
             {
                 // lgtm
             } else if let Some(node) = typed::LookupRef::cast(item) {
-                if !self.lookup_defs.contains_key(&node.label().text) {
-                    self.error(node.label().range(), "lookup is not defined");
-                }
+                self.validate_lookup_ref(&node);
             } else if let Some(node) = typed::LookupBlock::cast(item) {
                 self.validate_lookup_block(&node, false);
             } else if let Some(node) = typed::LookupFlag::cast(item) {
@@ -555,9 +553,7 @@ impl<'a> ValidationCtx<'a> {
             } else if item.kind() == Kind::SubtableNode {
                 // lgtm
             } else if let Some(node) = typed::LookupRef::cast(item) {
-                if !self.lookup_defs.contains_key(&node.label().text) {
-                    self.error(node.label().range(), "lookup is not defined");
-                }
+                self.validate_lookup_ref(&node);
             } else if let Some(node) = typed::LookupBlock::cast(item) {
                 self.error(
                     node.keyword().range(),
@@ -716,9 +712,7 @@ impl<'a> ValidationCtx<'a> {
                     self.validate_glyph_or_class(&item.target());
                     for lookup in item.lookups() {
                         has_inline_lookup = true;
-                        if !self.lookup_defs.contains_key(&lookup.label().text) {
-                            self.error(lookup.label().range(), "lookup is not defined");
-                        }
+                        self.validate_lookup_ref(&lookup);
                     }
                     input_len += 1;
                 }
@@ -930,6 +924,12 @@ impl<'a> ValidationCtx<'a> {
         }
         if !self.glyph_class_defs.contains_key(node.text()) {
             self.error(node.range(), "undefined glyph class");
+        }
+    }
+
+    fn validate_lookup_ref(&mut self, node: &typed::LookupRef) {
+        if !self.lookup_defs.contains_key(&node.label().text) {
+            self.error(node.label().range(), "lookup is not defined");
         }
     }
 
