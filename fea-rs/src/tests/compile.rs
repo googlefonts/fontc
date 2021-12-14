@@ -80,7 +80,7 @@ fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), Failure> {
         Ok(node) => match crate::compile(&node, glyph_map) {
             Ok(_) => Err(Failure {
                 path: path.to_owned(),
-                reason: Reason::CompileFail("unexpected success".into()),
+                reason: Reason::UnexpectedSuccess,
             }),
             Err(errs) => {
                 let msg = test_utils::stringify_diagnostics(&node, &errs);

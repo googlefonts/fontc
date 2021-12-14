@@ -740,15 +740,15 @@ impl<'a> ValidationCtx<'a> {
                 }
 
                 let mut has_inline_lookup = false;
-                let mut input_len = 0;
                 let mut input_class = false;
-                for item in rule.input().items() {
+                for (i, item) in rule.input().items().enumerate() {
                     let target = item.target();
-                    if target.is_class() && input_len > 0 {
-                        input_class = true;
+                    if i == 0 {
+                        input_class = target.is_class();
+                    } else if input_class || target.is_class() {
                         self.error(
                             target.range(),
-                            "if glyph class is present, it must be only item in input sequence",
+                            "if glyph class is present it must be only item in input sequence",
                         );
                     }
                     self.validate_glyph_or_class(&item.target());
@@ -756,13 +756,12 @@ impl<'a> ValidationCtx<'a> {
                         has_inline_lookup = true;
                         self.validate_lookup_ref(&lookup);
                     }
-                    input_len += 1;
                 }
                 if let Some(inline) = rule.inline_rule() {
                     if let Some(class) = inline.replacement_class() {
                         debug_assert!(inline.replacement_glyphs().next().is_none());
                         self.validate_glyph_class(&class, true);
-                        if input_len == 1 && !input_class {
+                        if !input_class {
                             // if len is longer we've already errored
                             self.error(class.range(), "class can only substitute another class");
                         }
