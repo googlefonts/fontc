@@ -737,6 +737,11 @@ impl InputItem {
     pub fn lookups(&self) -> impl Iterator<Item = LookupRef> + '_ {
         self.iter().filter_map(LookupRef::cast)
     }
+
+    /// for pos rules only
+    pub fn valuerecord(&self) -> Option<ValueRecord> {
+        self.iter().find_map(ValueRecord::cast)
+    }
 }
 
 impl InlineSubRule {
@@ -846,6 +851,20 @@ impl Gpos6 {
 
     pub fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
         self.iter().skip(3).filter_map(AnchorMark::cast)
+    }
+}
+
+impl Gpos8 {
+    pub fn backtrack(&self) -> BacktrackSequence {
+        self.iter().find_map(BacktrackSequence::cast).unwrap()
+    }
+
+    pub fn lookahead(&self) -> LookaheadSequence {
+        self.iter().find_map(LookaheadSequence::cast).unwrap()
+    }
+
+    pub fn input(&self) -> InputSequence {
+        self.iter().find_map(InputSequence::cast).unwrap()
     }
 }
 

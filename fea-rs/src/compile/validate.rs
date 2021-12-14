@@ -646,7 +646,40 @@ impl<'a> ValidationCtx<'a> {
                     }
                 }
             }
+            typed::GposStatement::Type8(rule) => self.validate_gpos_contextual_rule(rule),
             _ => self.fallback_validate_rule(node.node().expect("always a node")),
+        }
+    }
+
+    fn validate_gpos_contextual_rule(&mut self, node: &typed::Gpos8) {
+        for item in node.backtrack().items().chain(node.lookahead().items()) {
+            self.validate_glyph_or_class(&item);
+        }
+
+        let mut seen_lookup = false;
+        let mut seen_inline = false;
+        for item in node.input().items() {
+            self.validate_glyph_or_class(&item.target());
+            for lookup in item.lookups() {
+                self.validate_lookup_ref(&lookup);
+                if seen_inline {
+                    self.error(
+                        lookup.range(),
+                        "rule cannot have both explicit lookups and inline position values",
+                    );
+                }
+                seen_lookup = true;
+            }
+            if let Some(value) = item.valuerecord() {
+                if seen_lookup {
+                    self.error(
+                        value.range(),
+                        "rule cannot have both inline rules and explicit lookups",
+                    );
+                }
+                seen_inline = true;
+                self.validate_value_record(&value);
+            }
         }
     }
 

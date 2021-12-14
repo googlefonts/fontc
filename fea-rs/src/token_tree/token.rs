@@ -192,7 +192,6 @@ pub enum Kind {
     LookaheadSequence,
     ContextSequence,
     ContextGlyphNode,
-    ContextLookup,
     InlineSubNode,
     // there can be multiple ignore rules specified in the same block, separated
     // by commas
@@ -476,7 +475,6 @@ impl std::fmt::Display for Kind {
             Self::LookaheadSequence => write!(f, "LookaheadSequence"),
             Self::ContextSequence => write!(f, "ContextSequence"),
             Self::ContextGlyphNode => write!(f, "ContextGlyphNode"),
-            Self::ContextLookup => write!(f, "ContextLookup"),
             Self::InlineSubNode => write!(f, "InlineSubNode"),
             Self::IgnoreRuleStatementNode => write!(f, "IgnoreRuleStatementNode"),
 
