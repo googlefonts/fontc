@@ -739,41 +739,40 @@ impl<'a> ValidationCtx<'a> {
                     self.validate_glyph_or_class(&item);
                 }
 
-                let mut has_inline_lookup = false;
-                let mut input_class = false;
-                for (i, item) in rule.input().items().enumerate() {
-                    let target = item.target();
-                    if i == 0 {
-                        input_class = target.is_class();
-                    } else if input_class || target.is_class() {
-                        self.error(
-                            target.range(),
-                            "if glyph class is present it must be only item in input sequence",
-                        );
-                    }
-                    self.validate_glyph_or_class(&item.target());
-                    for lookup in item.lookups() {
-                        has_inline_lookup = true;
-                        self.validate_lookup_ref(&lookup);
-                    }
-                }
+                let mut inline_class_sub = false;
+                let mut has_inline_rule = false;
                 if let Some(inline) = rule.inline_rule() {
+                    has_inline_rule = true;
                     if let Some(class) = inline.replacement_class() {
                         debug_assert!(inline.replacement_glyphs().next().is_none());
                         self.validate_glyph_class(&class, true);
-                        if !input_class {
-                            // if len is longer we've already errored
-                            self.error(class.range(), "class can only substitute another class");
-                        }
+                        inline_class_sub = true;
                     }
                     for glyph in inline.replacement_glyphs() {
                         self.validate_glyph(&glyph);
                     }
-                    if has_inline_lookup {
-                        self.error(
-                            inline.range(),
-                            "inline rule not allowed in statement that includes named lookup",
+                }
+
+                let input_seq = rule.input();
+                for (i, item) in input_seq.items().enumerate() {
+                    let target = item.target();
+                    if i == 0 && inline_class_sub {
+                        if !target.is_class() {
+                            self.error(
+                            input_seq.range(),
+                            "if replacing by glyph class, input sequence must be a single glyph class",
                         );
+                        }
+                    }
+                    self.validate_glyph_or_class(&item.target());
+                    for lookup in item.lookups() {
+                        if has_inline_rule {
+                            self.error(
+                                lookup.range(),
+                                "named lookup not allowed in statement that includes inline rule",
+                            );
+                        }
+                        self.validate_lookup_ref(&lookup);
                     }
                 }
             }
