@@ -302,6 +302,7 @@ ast_node!(LookaheadSequence, Kind::LookaheadSequence);
 ast_node!(InputSequence, Kind::ContextSequence);
 ast_node!(InputItem, Kind::ContextGlyphNode);
 ast_node!(InlineSubRule, Kind::InlineSubNode);
+ast_node!(IgnoreRule, Kind::IgnoreRuleStatementNode);
 
 ast_enum!(GposStatement {
     Type1(Gpos1),
@@ -711,6 +712,26 @@ impl Gsub8 {
     }
 }
 
+impl GsubIgnore {
+    pub fn rules(&self) -> impl Iterator<Item = IgnoreRule> + '_ {
+        self.iter().filter_map(IgnoreRule::cast)
+    }
+}
+
+impl IgnoreRule {
+    pub fn backtrack(&self) -> BacktrackSequence {
+        self.iter().find_map(BacktrackSequence::cast).unwrap()
+    }
+
+    pub fn lookahead(&self) -> LookaheadSequence {
+        self.iter().find_map(LookaheadSequence::cast).unwrap()
+    }
+
+    pub fn input(&self) -> InputSequence {
+        self.iter().find_map(InputSequence::cast).unwrap()
+    }
+}
+
 impl BacktrackSequence {
     pub fn items(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
         self.iter().filter_map(GlyphOrClass::cast)
@@ -865,6 +886,12 @@ impl Gpos8 {
 
     pub fn input(&self) -> InputSequence {
         self.iter().find_map(InputSequence::cast).unwrap()
+    }
+}
+
+impl GposIgnore {
+    pub fn rules(&self) -> impl Iterator<Item = IgnoreRule> + '_ {
+        self.iter().filter_map(IgnoreRule::cast)
     }
 }
 

@@ -20,7 +20,7 @@ use crate::{
         typed::{self, AstNode},
         Token,
     },
-    Diagnostic, GlyphMap, Kind, Node,
+    Diagnostic, GlyphMap, Kind,
 };
 
 pub struct ValidationCtx<'a> {
@@ -647,7 +647,16 @@ impl<'a> ValidationCtx<'a> {
                 }
             }
             typed::GposStatement::Type8(rule) => self.validate_gpos_contextual_rule(rule),
-            _ => self.fallback_validate_rule(node.node().expect("always a node")),
+            typed::GposStatement::Ignore(node) => {
+                for rule in node.rules() {
+                    for item in rule.backtrack().items().chain(rule.lookahead().items()) {
+                        self.validate_glyph_or_class(&item);
+                    }
+                    for item in rule.input().items() {
+                        self.validate_glyph_or_class(&item.target());
+                    }
+                }
+            }
         }
     }
 
@@ -805,24 +814,15 @@ impl<'a> ValidationCtx<'a> {
                     }
                 }
             }
-            _ => self.fallback_validate_rule(node.node().expect("always a node")),
-        }
-    }
-
-    /// we don't currently handle all rules, but we at least check glyph names etc
-    fn fallback_validate_rule(&mut self, node: &Node) {
-        let range = node
-            .iter_tokens()
-            .filter(|t| !t.kind.is_trivia())
-            .find(|t| t.text.len() > 2)
-            .map(|t| t.range())
-            .unwrap_or_else(|| node.range());
-        self.error(range, format!("unimplemented rule type {}", node.kind));
-        for item in node.iter_children() {
-            if let Some(node) = typed::GlyphOrClass::cast(item) {
-                self.validate_glyph_or_class(&node);
-            } else if let Some(anchor) = typed::Anchor::cast(item) {
-                self.validate_anchor(&anchor);
+            typed::GsubStatement::Ignore(node) => {
+                for rule in node.rules() {
+                    for item in rule.backtrack().items().chain(rule.lookahead().items()) {
+                        self.validate_glyph_or_class(&item);
+                    }
+                    for item in rule.input().items() {
+                        self.validate_glyph_or_class(&item.target());
+                    }
+                }
             }
         }
     }
