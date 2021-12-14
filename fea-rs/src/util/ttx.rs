@@ -17,45 +17,18 @@ use ansi_term::Color;
 use fonttools::{font::Font, tables};
 use rayon::prelude::*;
 
-// we don't compile this, so don't bother testing them yet
-static HAS_MARK_GLYPH: &[&str] = &[
-    "GSUB_6_formats.fea",
-    "spec6h_ii.fea",
-    "spec5f_ii_1.fea",
-    "spec5f_ii_3.fea",
-    "spec5f_ii_2.fea",
-    "bug512.fea",
-    "MultipleLookupsPerGlyph2.fea",
-    "bug506.fea",
-    "ZeroValue_ChainSinglePos_vertical.fea",
-    "spec8d.fea",
-    "spec5f_ii_4.fea",
-    "bug514.fea",
-    "spec8a.fea",
-    "ChainPosSubtable.fea",
-    "ChainSubstSubtable.fea",
-    "bug463.fea",
-    "GSUB_6.fea",
-    "aalt_chain_contextual_subst.fea",
-    "spec6h_iii_3d.fea",
-    "GPOS_8.fea",
-    "feature_aalt.fea",
-    "ZeroValue_ChainSinglePos_horizontal.fea",
-    "MultipleLookupsPerGlyph.fea",
-    "spec5fi4.fea",
-    "spec6h_iii_1.fea",
-    "mini.fea",
-    "spec5h1.fea",
-    "spec5fi3.fea",
-    "spec9f.ttx",
-    "spec5fi2.fea",
-    "spec5fi1.fea",
-    "spec4h1.fea",
-    "GSUB_8.fea",
-    "SubstSubtable.fea",
+static IGNORED_TESTS: &[&str] = &[
+    // ## tests with invalid syntax ## //
+    "GSUB_5_formats.fea",
     "AlternateChained.fea",
+    "GSUB_6.fea",
+    // https://github.com/adobe-type-tools/afdko/issues/1415
     "bug509.fea",
-    "ignore_pos.fea",
+    //
+    // ## tests that should be revisited ## //
+    //
+    // includes syntax that is (i think) useless, and should at least be a warning
+    "GSUB_8.fea",
 ];
 
 /// A way to customize output when our test fails
@@ -173,7 +146,7 @@ fn iter_compile_tests<'a>(
     iter_fea_files(path).filter(move |p| {
         if p.extension() == Some(OsStr::new("fea")) && p.with_extension("ttx").exists() {
             let path_str = p.file_name().unwrap().to_str().unwrap();
-            if HAS_MARK_GLYPH.contains(&path_str) {
+            if IGNORED_TESTS.contains(&path_str) {
                 return false;
             }
             if !filter_items.is_empty() && !filter_items.iter().any(|item| path_str.contains(item))
@@ -198,17 +171,6 @@ pub fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> +
         }
     })
 }
-
-//pub fn try_compile(path: &Path, glyph_map: &GlyphMap) -> Result<Font, Vec<Diagnostic>> {
-//try_parse_file(path, glyph_map)
-//.map_err(|(_, errs)| errs)
-//.and_then(|node| crate::compile(&node, glyph_map))
-//.map(|comp| make_font(comp, glyph_map))
-//}
-
-//pub fn compile_expecting_err(path: &Path, glyph_map: &GlyphMap) -> Result<(ParseTree, Vec<Diagnostic>), Option<Reason>> {
-
-//}
 
 pub fn try_parse_file(
     path: &Path,
