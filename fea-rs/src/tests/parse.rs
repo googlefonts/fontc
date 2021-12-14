@@ -50,10 +50,15 @@ fn run_good_test(path: PathBuf) -> Result<PathBuf, Failure> {
             let output = node.root().simple_parse_tree();
             let result =
                 test_utils::compare_to_expected_output(&output, &path, GOOD_OUTPUT_EXTENSION);
-            if result.is_err() && std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
-                let to_write = node.root().simple_parse_tree();
-                let to_path = path.with_extension(GOOD_OUTPUT_EXTENSION);
-                std::fs::write(&to_path, &to_write).expect("failed to write output");
+            if result.is_err() {
+                if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
+                    let to_write = node.root().simple_parse_tree();
+                    let to_path = path.with_extension(GOOD_OUTPUT_EXTENSION);
+                    std::fs::write(&to_path, &to_write).expect("failed to write output");
+                }
+                if std::env::var(super::VERBOSE).is_ok() {
+                    eprintln!("{}", node.root().simple_parse_tree());
+                }
             }
             result
         }
@@ -72,9 +77,14 @@ fn run_bad_test(path: PathBuf) -> Result<PathBuf, Failure> {
         Err((node, errs)) => {
             let msg = test_utils::stringify_diagnostics(&node, &errs);
             let result = test_utils::compare_to_expected_output(&msg, &path, BAD_OUTPUT_EXTENSION);
-            if result.is_err() && std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
-                let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);
-                std::fs::write(&to_path, &msg).expect("failed to write output");
+            if result.is_err() {
+                if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
+                    let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);
+                    std::fs::write(&to_path, &msg).expect("failed to write output");
+                }
+                if std::env::var(super::VERBOSE).is_ok() {
+                    eprintln!("{}", msg);
+                }
             }
             result
         }

@@ -164,6 +164,7 @@ impl<'a> ValidationCtx<'a> {
             // disjoint: none may include a glyph which is in another mark class
             // that is used within the same lookup."
         }
+        self.validate_glyph_or_class(&node.glyph_class());
         self.mark_class_defs
             .insert(node.mark_class_name().text().clone());
         self.validate_anchor(&node.anchor());
