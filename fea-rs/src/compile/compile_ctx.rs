@@ -392,9 +392,8 @@ impl<'a> CompilationCtx<'a> {
             typed::GposStatement::Type6(rule) => {
                 self.add_mark_to_mark(&rule);
             }
-            _ => {
-                self.warning(node.range(), "unimplemented rule type");
-            }
+            typed::GposStatement::Type8(rule) => self.add_contextual_pos_rule(&rule),
+            typed::GposStatement::Ignore(rule) => self.add_contextual_pos_ignore(&rule),
         }
     }
 
@@ -882,6 +881,81 @@ impl<'a> CompilationCtx<'a> {
                     ),
                 );
             }
+        }
+    }
+
+    fn add_contextual_pos_rule(&mut self, node: &typed::Gpos8) {
+        let _ = self.ensure_current_lookup_type(Kind::GposType8);
+        let mut backtrack = node
+            .backtrack()
+            .items()
+            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+            .collect::<Vec<_>>();
+        backtrack.reverse();
+        let lookahead = node
+            .lookahead()
+            .items()
+            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+            .collect::<Vec<_>>();
+
+        let context = node
+            .input()
+            .items()
+            .map(|item| {
+                let glyphs = self.resolve_glyph_or_class(&item.target());
+                let mut lookups = Vec::new();
+                if let Some(value) = item.valuerecord() {
+                    let value = self.resolve_value_record(&value);
+                    let lookup_id = self.lookups.with_anon_contextual_lookup(
+                        Kind::GposType1,
+                        self.lookup_flags,
+                        self.cur_mark_filter_set,
+                        |lookup| {
+                            for id in glyphs.iter() {
+                                lookup.add_gpos_type_1(id, value.clone());
+                            }
+                        },
+                    );
+                    lookups.push(lookup_id.to_u16_or_die());
+                }
+
+                for lookup in item.lookups() {
+                    let id = self.lookups.get_named(&lookup.label().text).unwrap();
+                    lookups.push(id.to_u16_or_die());
+                }
+
+                (make_ctx_glyphs(&glyphs), lookups)
+            })
+            .collect();
+        self.ensure_current_lookup_type(Kind::GposType8)
+            .add_gpos_type_8(backtrack, context, lookahead);
+    }
+
+    fn add_contextual_pos_ignore(&mut self, node: &typed::GposIgnore) {
+        for rule in node.rules() {
+            let mut backtrack = rule
+                .backtrack()
+                .items()
+                .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+                .collect::<Vec<_>>();
+            backtrack.reverse();
+            let lookahead = rule
+                .lookahead()
+                .items()
+                .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+                .collect::<Vec<_>>();
+            let context = rule
+                .input()
+                .items()
+                .map(|item| {
+                    (
+                        make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target())),
+                        Vec::new(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+            lookup.add_gsub_type_6(backtrack, context, lookahead);
         }
     }
 

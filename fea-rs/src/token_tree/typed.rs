@@ -880,6 +880,7 @@ impl Gpos6 {
     }
 }
 
+//FIXME: move backtrack/lookahead/input into a trait
 impl Gpos8 {
     pub fn backtrack(&self) -> BacktrackSequence {
         self.iter().find_map(BacktrackSequence::cast).unwrap()

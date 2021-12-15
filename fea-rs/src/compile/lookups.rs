@@ -419,6 +419,29 @@ impl SomeLookup {
         }
     }
 
+    pub(crate) fn add_gpos_type_8(
+        &mut self,
+        backtrack: Vec<BTreeSet<u16>>,
+        input: Vec<(BTreeSet<u16>, Vec<u16>)>,
+        lookahead: Vec<BTreeSet<u16>>,
+    ) {
+        if let SomeLookup::GposLookup(Lookup {
+            rule: Positioning::ChainedContextual(table),
+            ..
+        }) = self
+        {
+            let mut subtable = ChainedSequenceContext::default();
+            subtable.rules.push(ChainedSequenceContextRule {
+                backtrack,
+                input,
+                lookahead,
+            });
+            table.push(subtable);
+        } else {
+            panic!("looup mismatch");
+        }
+    }
+
     pub(crate) fn add_gsub_type_1(&mut self, id: GlyphId, replacement: GlyphId) {
         if let SomeLookup::GsubLookup(Lookup {
             rule: Substitution::Single(table),
