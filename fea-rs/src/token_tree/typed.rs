@@ -774,6 +774,11 @@ impl InlineSubRule {
     pub fn replacement_glyphs(&self) -> impl Iterator<Item = Glyph> + '_ {
         self.iter().filter_map(Glyph::cast)
     }
+
+    // this overlaps with the other two? i don't know what the best API is.. :/
+    pub fn replacements(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
+        self.iter().filter_map(GlyphOrClass::cast)
+    }
 }
 
 impl Gpos1 {

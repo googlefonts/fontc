@@ -756,13 +756,11 @@ impl<'a> ValidationCtx<'a> {
                 let input_seq = rule.input();
                 for (i, item) in input_seq.items().enumerate() {
                     let target = item.target();
-                    if i == 0 && inline_class_sub {
-                        if !target.is_class() {
-                            self.error(
+                    if i == 0 && inline_class_sub && !target.is_class() {
+                        self.error(
                             input_seq.range(),
                             "if replacing by glyph class, input sequence must be a single glyph class",
                         );
-                        }
                     }
                     self.validate_glyph_or_class(&item.target());
                     for lookup in item.lookups() {

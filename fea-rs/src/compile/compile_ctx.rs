@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     convert::TryInto,
     ops::Range,
 };
@@ -412,6 +412,7 @@ impl<'a> CompilationCtx<'a> {
             typed::GsubStatement::Type4(rule) => {
                 self.add_ligature_sub(&rule);
             }
+            typed::GsubStatement::Type6(rule) => self.add_contextual_sub(&rule),
             _ => self.warning(node.range(), "unimplemented rule type"),
         }
     }
@@ -420,36 +421,64 @@ impl<'a> CompilationCtx<'a> {
         let target = node.target();
         let replace = node.replacement();
 
-        let target_ids = self.resolve_glyph_or_class(&target);
-        let replace_ids = self.resolve_glyph_or_class(&replace);
-        let lookup = self.ensure_current_lookup_type(Kind::GsubType1);
-        match target_ids {
-            GlyphOrClass::Null => {
-                self.error(target.range(), "NULL is not a valid substitution target")
+        if let Some((target, replace)) = self.validate_single_sub_inputs(&target, &replace) {
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType1);
+            Self::add_single_sub_impl(target, replace, lookup);
+        }
+    }
+
+    //TODO: this should be in validate, but we don't have access to resolved
+    //glyphs there right now :(
+    fn validate_single_sub_inputs(
+        &mut self,
+        target: &typed::GlyphOrClass,
+        replace: &typed::GlyphOrClass,
+    ) -> Option<(GlyphOrClass, GlyphOrClass)> {
+        let target_ids = self.resolve_glyph_or_class(target);
+        let replace_ids = self.resolve_glyph_or_class(replace);
+        match (target_ids, replace_ids) {
+            (GlyphOrClass::Null, _) => {
+                self.error(target.range(), "NULL is not a valid substitution target");
+                None
             }
-            GlyphOrClass::Glyph(id) => match replace_ids {
+            (GlyphOrClass::Glyph(_), GlyphOrClass::Class(_)) => {
+                self.error(replace.range(), "cannot sub glyph by glyph class");
+                None
+            }
+            (GlyphOrClass::Class(c1), GlyphOrClass::Class(c2)) if c1.len() != c2.len() => {
+                self.error(
+                    replace.range(),
+                    format!(
+                        "class has different length ({}) than target ({})",
+                        c1.len(),
+                        c2.len()
+                    ),
+                );
+                None
+            }
+            other => Some(other),
+        }
+    }
+
+    // this is a free fn to get around borrowck :/
+    // this is shared between normal and contextual rules.
+    fn add_single_sub_impl(target: GlyphOrClass, replace: GlyphOrClass, lookup: &mut SomeLookup) {
+        match target {
+            GlyphOrClass::Null => unreachable!("validated earlier"),
+            GlyphOrClass::Glyph(id) => match replace {
                 GlyphOrClass::Null => lookup.add_gsub_type_1(id, GlyphId::NOTDEF),
                 GlyphOrClass::Glyph(r_id) => lookup.add_gsub_type_1(id, r_id),
-                GlyphOrClass::Class(_) => {
-                    self.error(replace.range(), "cannot sub glyph by glyphclass")
-                }
+                GlyphOrClass::Class(_) => unreachable!(".."),
             },
-            GlyphOrClass::Class(cls) => match replace_ids {
+            GlyphOrClass::Class(cls) => match replace {
                 GlyphOrClass::Null => cls
                     .iter()
                     .for_each(|id| lookup.add_gsub_type_1(id, GlyphId::NOTDEF)),
                 GlyphOrClass::Glyph(r_id) => {
                     cls.iter().for_each(|id| lookup.add_gsub_type_1(id, r_id))
                 }
-                GlyphOrClass::Class(cls2) if cls.len() != cls2.len() => self.error(
-                    replace.range(),
-                    format!(
-                        "class has different length ({}) than target ({})",
-                        cls.len(),
-                        cls2.len()
-                    ),
-                ),
                 GlyphOrClass::Class(cls2) => {
+                    debug_assert_eq!(cls.len(), cls2.len());
                     for (id, r_id) in cls.iter().zip(cls2.iter()) {
                         lookup.add_gsub_type_1(id, r_id);
                     }
@@ -487,6 +516,94 @@ impl<'a> CompilationCtx<'a> {
         for target in sequence_enumerator(&target) {
             lookup.add_gsub_type_4(target, replacement);
         }
+    }
+
+    fn add_contextual_sub(&mut self, node: &typed::Gsub6) {
+        let _ = self.ensure_current_lookup_type(Kind::GsubType6);
+        let backtrack = node
+            .backtrack()
+            .items()
+            .map(|g| {
+                self.resolve_glyph_or_class(&g)
+                    .iter()
+                    .map(|g| g.to_raw())
+                    .collect::<BTreeSet<_>>()
+            })
+            .collect::<Vec<_>>();
+        let lookahead = node
+            .lookahead()
+            .items()
+            .map(|g| {
+                self.resolve_glyph_or_class(&g)
+                    .iter()
+                    .map(|g| g.to_raw())
+                    .collect::<BTreeSet<_>>()
+            })
+            .collect::<Vec<_>>();
+        // does this have an inline rule?
+        let mut inline = node.inline_rule().map(|rule| {
+            let input = node.input();
+            if input.items().nth(1).is_some() {
+                // more than one input: this is a ligature rule
+                let target = input
+                    .items()
+                    .map(|inp| self.resolve_glyph_or_class(&inp.target()))
+                    .collect::<Vec<_>>();
+                let replacement = self.resolve_glyph(&rule.replacement_glyphs().next().unwrap());
+                self.lookups.with_anon_contextual_lookup(
+                    Kind::GsubType4,
+                    self.lookup_flags,
+                    self.cur_mark_filter_set,
+                    |lookup| {
+                        for target in sequence_enumerator(&target) {
+                            lookup.add_gsub_type_4(target, replacement);
+                        }
+                    },
+                )
+            } else {
+                let target = input.items().next().unwrap().target();
+                let replacement = rule.replacements().next().unwrap();
+                let resolved = self.validate_single_sub_inputs(&target, &replacement);
+                self.lookups.with_anon_contextual_lookup(
+                    Kind::GsubType1,
+                    self.lookup_flags,
+                    self.cur_mark_filter_set,
+                    |lookup| {
+                        if let Some((target, replacement)) = resolved {
+                            Self::add_single_sub_impl(target, replacement, lookup);
+                        }
+                    },
+                )
+            }
+        });
+
+        let context = node
+            .input()
+            .items()
+            .map(|item| {
+                let glyphs = self
+                    .resolve_glyph_or_class(&item.target())
+                    .iter()
+                    .map(GlyphId::to_raw)
+                    .collect::<BTreeSet<_>>();
+                let mut lookups = Vec::new();
+                // if there's an inline rule it always belongs to the first marked
+                // glyph, so this should work? it may need to change for fancier
+                // inline rules in the future.
+                if let Some(inline) = inline.take() {
+                    lookups.push(inline.to_u16_or_die());
+                }
+
+                for lookup in item.lookups() {
+                    let lookup = self.lookups.get_named(&lookup.label().text).unwrap(); // validated already
+                    lookups.push(lookup.to_u16_or_die());
+                }
+                (glyphs, lookups)
+            })
+            .collect::<Vec<_>>();
+
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+        lookup.add_gsub_type_6(backtrack, context, lookahead);
     }
 
     fn add_single_pos(&mut self, node: &typed::Gpos1) {

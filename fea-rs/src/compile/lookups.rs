@@ -1,12 +1,16 @@
 //! gsub/gpos lookup table stuff
 
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    convert::TryInto,
+};
 
 use smol_str::SmolStr;
 
 use fonttools::{
     layout::{
         common::{FeatureList, LanguageSystem, Lookup, LookupFlags, Script, ValueRecord, GPOSGSUB},
+        contextual::{ChainedSequenceContext, ChainedSequenceContextRule},
         gpos4::MarkBasePos,
         gpos5::MarkLigPos,
         gpos6::MarkMarkPos,
@@ -29,6 +33,9 @@ const SCRIPT_DFLT_TAG: Tag = tag!("DFLT");
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AllLookups {
     current: Option<SomeLookup>,
+    // if `current` is a contextual lookup, and rules contain inline statements,
+    // this table stores those inline statements.
+    current_anon_contextual: Option<SomeLookup>,
     current_name: Option<SmolStr>,
     gpos: Vec<Lookup<Positioning>>,
     gsub: Vec<Lookup<Substitution>>,
@@ -47,7 +54,7 @@ pub(crate) enum LookupId {
     Gsub(usize),
     /// Used when a named lookup block has no rules.
     ///
-    /// We parse this, but then discard it immediately whenever it is refernced.
+    /// We parse this, but then discard it immediately whenever it is referenced.
     Empty,
 }
 
@@ -87,10 +94,6 @@ impl AllLookups {
         self.current.as_mut()
     }
 
-    pub(crate) fn is_named(&self) -> bool {
-        self.current_name.is_some()
-    }
-
     pub(crate) fn has_current(&self) -> bool {
         self.current.is_some()
     }
@@ -124,14 +127,57 @@ impl AllLookups {
         flags: LookupFlags,
         mark_set: Option<FilterSetId>,
     ) -> Option<LookupId> {
-        //assert!(self.current_name.is_none(), "named lookup not finished");
         let finished_id = self.current.take().map(|lookup| self.push(lookup));
         self.current = Some(SomeLookup::new(kind, flags, mark_set));
+        if let Some(lookup) = self.current_anon_contextual.take() {
+            self.push(lookup);
+        }
         finished_id
     }
 
+    // this has to take into account the fact that the current lookup has not
+    // yet been added to the appropriate vec.
+    fn id_for_anon_lookup(&self, kind: Kind) -> LookupId {
+        assert!(self.current.is_some());
+        let (pos, sub) = if is_gpos_rule(
+            self.current
+                .as_ref()
+                .expect("current always exists when adding anon")
+                .kind(),
+        ) {
+            (1, 0)
+        } else {
+            (0, 1)
+        };
+        if is_gpos_rule(kind) {
+            LookupId::Gpos(self.gpos.len() + pos)
+        } else {
+            LookupId::Gsub(self.gsub.len() + sub)
+        }
+    }
+
+    /// ensures that the current inline contextual lookup is of the appropriate
+    /// kind, creating it if necessary. Then calls the closure with the lookup,
+    /// and returns the lookup id.
+    pub(crate) fn with_anon_contextual_lookup(
+        &mut self,
+        kind: Kind,
+        flags: LookupFlags,
+        mark_set: Option<FilterSetId>,
+        f: impl FnOnce(&mut SomeLookup),
+    ) -> LookupId {
+        if self.current_anon_contextual.as_ref().map(SomeLookup::kind) != Some(kind) {
+            if let Some(lookup) = self.current_anon_contextual.take() {
+                self.push(lookup);
+            }
+            self.current_anon_contextual = Some(SomeLookup::new(kind, flags, mark_set));
+        }
+        f(self.current_anon_contextual.as_mut().unwrap());
+        self.id_for_anon_lookup(kind)
+    }
+
     pub(crate) fn finish_current(&mut self) -> Option<(LookupId, Option<SmolStr>)> {
-        if let Some(lookup) = self.current.take() {
+        let result = if let Some(lookup) = self.current.take() {
             let id = self.push(lookup);
             if let Some(name) = self.current_name.take() {
                 self.named.insert(name.clone(), id);
@@ -145,7 +191,12 @@ impl AllLookups {
             Some((LookupId::Empty, Some(name)))
         } else {
             None
+        };
+
+        if let Some(lookup) = self.current_anon_contextual.take() {
+            self.push(lookup);
         }
+        result
     }
 
     pub(crate) fn build(
@@ -156,6 +207,7 @@ impl AllLookups {
         let mut gsub_builder = PosSubBuilder::new(self.gsub.clone());
 
         for (key, feature_indices) in features {
+            assert!(crate::util::is_sorted(feature_indices));
             let split_idx = feature_indices
                 .iter()
                 .position(|x| matches!(x, LookupId::Gsub(_)))
@@ -207,6 +259,10 @@ impl LookupId {
             LookupId::Gsub(idx) => idx,
             LookupId::Empty => usize::MAX,
         }
+    }
+
+    pub(crate) fn to_u16_or_die(self) -> u16 {
+        self.to_raw().try_into().unwrap()
     }
 }
 
@@ -412,6 +468,27 @@ impl SomeLookup {
             subtable.mapping.insert(target, replacement.to_raw());
         } else {
             panic!("lookup mismatch");
+        }
+    }
+
+    pub(crate) fn add_gsub_type_6(
+        &mut self,
+        backtrack: Vec<BTreeSet<u16>>,
+        input: Vec<(BTreeSet<u16>, Vec<u16>)>,
+        lookahead: Vec<BTreeSet<u16>>,
+    ) {
+        if let SomeLookup::GsubLookup(Lookup {
+            rule: Substitution::ChainedContextual(table),
+            ..
+        }) = self
+        {
+            let mut subtable = ChainedSequenceContext::default();
+            subtable.rules.push(ChainedSequenceContextRule {
+                backtrack,
+                input,
+                lookahead,
+            });
+            table.push(subtable);
         }
     }
 }
