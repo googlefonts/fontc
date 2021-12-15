@@ -413,6 +413,7 @@ impl<'a> CompilationCtx<'a> {
                 self.add_ligature_sub(&rule);
             }
             typed::GsubStatement::Type6(rule) => self.add_contextual_sub(&rule),
+            typed::GsubStatement::Ignore(rule) => self.add_contextual_sub_ignore(&rule),
             _ => self.warning(node.range(), "unimplemented rule type"),
         }
     }
@@ -520,25 +521,16 @@ impl<'a> CompilationCtx<'a> {
 
     fn add_contextual_sub(&mut self, node: &typed::Gsub6) {
         let _ = self.ensure_current_lookup_type(Kind::GsubType6);
-        let backtrack = node
+        let mut backtrack = node
             .backtrack()
             .items()
-            .map(|g| {
-                self.resolve_glyph_or_class(&g)
-                    .iter()
-                    .map(|g| g.to_raw())
-                    .collect::<BTreeSet<_>>()
-            })
+            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
             .collect::<Vec<_>>();
+        backtrack.reverse();
         let lookahead = node
             .lookahead()
             .items()
-            .map(|g| {
-                self.resolve_glyph_or_class(&g)
-                    .iter()
-                    .map(|g| g.to_raw())
-                    .collect::<BTreeSet<_>>()
-            })
+            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
             .collect::<Vec<_>>();
         // does this have an inline rule?
         let mut inline = node.inline_rule().map(|rule| {
@@ -581,11 +573,7 @@ impl<'a> CompilationCtx<'a> {
             .input()
             .items()
             .map(|item| {
-                let glyphs = self
-                    .resolve_glyph_or_class(&item.target())
-                    .iter()
-                    .map(GlyphId::to_raw)
-                    .collect::<BTreeSet<_>>();
+                let glyphs = make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target()));
                 let mut lookups = Vec::new();
                 // if there's an inline rule it always belongs to the first marked
                 // glyph, so this should work? it may need to change for fancier
@@ -602,6 +590,38 @@ impl<'a> CompilationCtx<'a> {
             })
             .collect::<Vec<_>>();
 
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+        lookup.add_gsub_type_6(backtrack, context, lookahead);
+    }
+
+    fn add_contextual_sub_ignore(&mut self, node: &typed::GsubIgnore) {
+        for rule in node.rules() {
+            self.add_contextual_sub_ignore_rule(&rule);
+        }
+    }
+
+    fn add_contextual_sub_ignore_rule(&mut self, rule: &typed::IgnoreRule) {
+        let mut backtrack = rule
+            .backtrack()
+            .items()
+            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+            .collect::<Vec<_>>();
+        backtrack.reverse();
+        let lookahead = rule
+            .lookahead()
+            .items()
+            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+            .collect::<Vec<_>>();
+        let context = rule
+            .input()
+            .items()
+            .map(|item| {
+                (
+                    make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target())),
+                    Vec::new(),
+                )
+            })
+            .collect::<Vec<_>>();
         let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
         lookup.add_gsub_type_6(backtrack, context, lookahead);
     }
@@ -1567,6 +1587,10 @@ fn sequence_enumerator_impl(
             None => acc.push(prefix),
         }
     }
+}
+
+fn make_ctx_glyphs(item: &GlyphOrClass) -> BTreeSet<u16> {
+    item.iter().map(|g| g.to_raw()).collect()
 }
 
 #[cfg(test)]
