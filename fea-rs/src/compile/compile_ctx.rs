@@ -8,6 +8,7 @@ use smol_str::SmolStr;
 
 use fonttools::{
     layout::common::{LookupFlags, ValueRecord},
+    tables::GPOS::Positioning,
     tag,
     types::Tag,
 };
@@ -882,6 +883,22 @@ impl<'a> CompilationCtx<'a> {
                 let mut lookups = Vec::new();
                 if let Some(value) = item.valuerecord() {
                     let value = self.resolve_value_record(&value);
+                    if let Some(subtables) = self
+                        .lookups
+                        .current_anon()
+                        .and_then(SomeLookup::as_gpos_type_1)
+                    {
+                        if subtables.iter().any(|t| {
+                            glyphs.iter().any(|gid| {
+                                t.mapping
+                                    .get(&gid.to_raw())
+                                    .map(|existing| existing != &value)
+                                    .unwrap_or(false)
+                            })
+                        }) {
+                            self.lookups.break_current_anon_lookup();
+                        }
+                    }
                     let lookup_id = self.lookups.with_anon_contextual_lookup(
                         Kind::GposType1,
                         self.lookup_flags,

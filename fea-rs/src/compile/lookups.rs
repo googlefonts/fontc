@@ -11,6 +11,7 @@ use fonttools::{
     layout::{
         common::{FeatureList, LanguageSystem, Lookup, LookupFlags, Script, ValueRecord, GPOSGSUB},
         contextual::{ChainedSequenceContext, ChainedSequenceContextRule},
+        gpos1::SinglePos,
         gpos4::MarkBasePos,
         gpos5::MarkLigPos,
         gpos6::MarkMarkPos,
@@ -94,6 +95,10 @@ impl AllLookups {
         self.current.as_mut()
     }
 
+    pub(crate) fn current_anon(&self) -> Option<&SomeLookup> {
+        self.current_anon_contextual.as_ref()
+    }
+
     pub(crate) fn has_current(&self) -> bool {
         self.current.is_some()
     }
@@ -109,6 +114,9 @@ impl AllLookups {
             match current {
                 SomeLookup::GsubLookup(lookup) => lookup.rule.add_subtable_break(),
                 SomeLookup::GposLookup(lookup) => lookup.rule.add_subtable_break(),
+            }
+            if let Some(lookup) = self.current_anon_contextual.take() {
+                self.push(lookup);
             }
             true
         } else {
@@ -154,6 +162,12 @@ impl AllLookups {
         } else {
             LookupId::Gsub(self.gsub.len() + sub)
         }
+    }
+
+    pub(crate) fn break_current_anon_lookup(&mut self) {
+        self.current_anon_contextual
+            .take()
+            .map(|lookup| self.push(lookup));
     }
 
     /// ensures that the current inline contextual lookup is of the appropriate
@@ -513,6 +527,17 @@ impl SomeLookup {
             });
             table.push(subtable);
         }
+    }
+
+    pub(crate) fn as_gpos_type_1(&self) -> Option<&[SinglePos]> {
+        if let SomeLookup::GposLookup(Lookup {
+            rule: Positioning::Single(table),
+            ..
+        }) = self
+        {
+            return Some(&table);
+        }
+        None
     }
 }
 
