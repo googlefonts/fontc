@@ -259,29 +259,6 @@ pub enum Kind {
 }
 
 impl Kind {
-    // only used for debugging
-    pub(crate) fn has_contents(&self) -> bool {
-        matches!(
-            self,
-            Self::Ident
-                | Self::String
-                | Self::StringUnterminated
-                | Self::Float
-                | Self::Hex
-                | Self::HexEmpty
-                | Self::Octal
-                | Self::Comment
-                | Self::Whitespace
-                | Self::NamedGlyphClass
-                | Self::GlyphName
-                | Self::Metric
-                | Self::Number
-                | Self::Label
-                | Self::Cid
-                | Self::Tag
-        )
-    }
-
     pub(crate) fn is_rule(&self) -> bool {
         matches!(
             self,

@@ -374,24 +374,12 @@ impl<'a> CompilationCtx<'a> {
 
     fn add_gpos_statement(&mut self, node: typed::GposStatement) {
         match node {
-            typed::GposStatement::Type1(rule) => {
-                self.add_single_pos(&rule);
-            }
-            typed::GposStatement::Type2(rule) => {
-                self.add_pair_pos(&rule);
-            }
-            typed::GposStatement::Type3(rule) => {
-                self.add_cursive_pos(&rule);
-            }
-            typed::GposStatement::Type4(rule) => {
-                self.add_mark_to_base(&rule);
-            }
-            typed::GposStatement::Type5(rule) => {
-                self.add_mark_to_lig(&rule);
-            }
-            typed::GposStatement::Type6(rule) => {
-                self.add_mark_to_mark(&rule);
-            }
+            typed::GposStatement::Type1(rule) => self.add_single_pos(&rule),
+            typed::GposStatement::Type2(rule) => self.add_pair_pos(&rule),
+            typed::GposStatement::Type3(rule) => self.add_cursive_pos(&rule),
+            typed::GposStatement::Type4(rule) => self.add_mark_to_base(&rule),
+            typed::GposStatement::Type5(rule) => self.add_mark_to_lig(&rule),
+            typed::GposStatement::Type6(rule) => self.add_mark_to_mark(&rule),
             typed::GposStatement::Type8(rule) => self.add_contextual_pos_rule(&rule),
             typed::GposStatement::Ignore(rule) => self.add_contextual_pos_ignore(&rule),
         }
@@ -399,18 +387,10 @@ impl<'a> CompilationCtx<'a> {
 
     fn add_gsub_statement(&mut self, node: typed::GsubStatement) {
         match node {
-            typed::GsubStatement::Type1(rule) => {
-                self.add_single_sub(&rule);
-            }
-            typed::GsubStatement::Type2(rule) => {
-                self.add_multiple_sub(&rule);
-            }
-            typed::GsubStatement::Type3(rule) => {
-                self.add_alternate_sub(&rule);
-            }
-            typed::GsubStatement::Type4(rule) => {
-                self.add_ligature_sub(&rule);
-            }
+            typed::GsubStatement::Type1(rule) => self.add_single_sub(&rule),
+            typed::GsubStatement::Type2(rule) => self.add_multiple_sub(&rule),
+            typed::GsubStatement::Type3(rule) => self.add_alternate_sub(&rule),
+            typed::GsubStatement::Type4(rule) => self.add_ligature_sub(&rule),
             typed::GsubStatement::Type6(rule) => self.add_contextual_sub(&rule),
             typed::GsubStatement::Ignore(rule) => self.add_contextual_sub_ignore(&rule),
             _ => self.warning(node.range(), "unimplemented rule type"),
@@ -595,34 +575,30 @@ impl<'a> CompilationCtx<'a> {
 
     fn add_contextual_sub_ignore(&mut self, node: &typed::GsubIgnore) {
         for rule in node.rules() {
-            self.add_contextual_sub_ignore_rule(&rule);
+            let mut backtrack = rule
+                .backtrack()
+                .items()
+                .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+                .collect::<Vec<_>>();
+            backtrack.reverse();
+            let lookahead = rule
+                .lookahead()
+                .items()
+                .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+                .collect::<Vec<_>>();
+            let context = rule
+                .input()
+                .items()
+                .map(|item| {
+                    (
+                        make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target())),
+                        Vec::new(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+            lookup.add_gsub_type_6(backtrack, context, lookahead);
         }
-    }
-
-    fn add_contextual_sub_ignore_rule(&mut self, rule: &typed::IgnoreRule) {
-        let mut backtrack = rule
-            .backtrack()
-            .items()
-            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-            .collect::<Vec<_>>();
-        backtrack.reverse();
-        let lookahead = rule
-            .lookahead()
-            .items()
-            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-            .collect::<Vec<_>>();
-        let context = rule
-            .input()
-            .items()
-            .map(|item| {
-                (
-                    make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target())),
-                    Vec::new(),
-                )
-            })
-            .collect::<Vec<_>>();
-        let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-        lookup.add_gsub_type_6(backtrack, context, lookahead);
     }
 
     fn add_single_pos(&mut self, node: &typed::Gpos1) {
