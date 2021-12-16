@@ -393,6 +393,7 @@ impl<'a> CompilationCtx<'a> {
             typed::GsubStatement::Type4(rule) => self.add_ligature_sub(&rule),
             typed::GsubStatement::Type6(rule) => self.add_contextual_sub(&rule),
             typed::GsubStatement::Ignore(rule) => self.add_contextual_sub_ignore(&rule),
+            typed::GsubStatement::Type8(rule) => self.add_reverse_contextual_sub(&rule),
             _ => self.warning(node.range(), "unimplemented rule type"),
         }
     }
@@ -401,7 +402,9 @@ impl<'a> CompilationCtx<'a> {
         let target = node.target();
         let replace = node.replacement();
 
-        if let Some((target, replacement)) = self.validate_single_sub_inputs(&target, &replace) {
+        if let Some((target, replacement)) =
+            self.validate_single_sub_inputs(&target, Some(&replace))
+        {
             let lookup = self.ensure_current_lookup_type(Kind::GsubType1);
             for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
                 lookup.add_gsub_type_1(target, replacement);
@@ -414,22 +417,24 @@ impl<'a> CompilationCtx<'a> {
     fn validate_single_sub_inputs(
         &mut self,
         target: &typed::GlyphOrClass,
-        replace: &typed::GlyphOrClass,
+        replace: Option<&typed::GlyphOrClass>,
     ) -> Option<(GlyphOrClass, GlyphOrClass)> {
         let target_ids = self.resolve_glyph_or_class(target);
-        let replace_ids = self.resolve_glyph_or_class(replace);
+        let replace_ids = replace
+            .map(|r| self.resolve_glyph_or_class(r))
+            .unwrap_or(GlyphOrClass::Null);
         match (target_ids, replace_ids) {
             (GlyphOrClass::Null, _) => {
                 self.error(target.range(), "NULL is not a valid substitution target");
                 None
             }
             (GlyphOrClass::Glyph(_), GlyphOrClass::Class(_)) => {
-                self.error(replace.range(), "cannot sub glyph by glyph class");
+                self.error(replace.unwrap().range(), "cannot sub glyph by glyph class");
                 None
             }
             (GlyphOrClass::Class(c1), GlyphOrClass::Class(c2)) if c1.len() != c2.len() => {
                 self.error(
-                    replace.range(),
+                    replace.unwrap().range(),
                     format!(
                         "class has different length ({}) than target ({})",
                         c1.len(),
@@ -511,7 +516,7 @@ impl<'a> CompilationCtx<'a> {
                 let target = input.items().next().unwrap().target();
                 let replacement = rule.replacements().next().unwrap();
                 if let Some((target, replacement)) =
-                    self.validate_single_sub_inputs(&target, &replacement)
+                    self.validate_single_sub_inputs(&target, Some(&replacement))
                 {
                     let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
                     Some(
@@ -575,6 +580,36 @@ impl<'a> CompilationCtx<'a> {
                 .collect::<Vec<_>>();
             let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
             lookup.add_gsub_type_6(backtrack, context, lookahead);
+        }
+    }
+
+    fn add_reverse_contextual_sub(&mut self, node: &typed::Gsub8) {
+        let mut backtrack = node
+            .backtrack()
+            .items()
+            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+            .collect::<Vec<_>>();
+        backtrack.reverse();
+        let lookahead = node
+            .lookahead()
+            .items()
+            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+            .collect::<Vec<_>>();
+
+        let input = node.input().items().next().unwrap();
+        let target = input.target();
+        let replacement = node.inline_rule().and_then(|r| r.replacements().next());
+        //FIXME: warn if there are actual lookups here, we don't support that
+        if let Some((target, replacement)) =
+            self.validate_single_sub_inputs(&target, replacement.as_ref())
+        {
+            let context = target
+                .iter()
+                .zip(replacement.into_iter_for_target())
+                .map(|(a, b)| (a.to_raw(), b.to_raw()))
+                .collect();
+            self.ensure_current_lookup_type(Kind::GsubType8)
+                .add_gsub_type_8(backtrack, context, lookahead);
         }
     }
 
@@ -838,7 +873,6 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_contextual_pos_rule(&mut self, node: &typed::Gpos8) {
-        //let _ = self.ensure_current_lookup_type(Kind::GposType8);
         let mut backtrack = node
             .backtrack()
             .items()

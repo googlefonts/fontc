@@ -14,6 +14,7 @@ use fonttools::{
         gpos4::MarkBasePos,
         gpos5::MarkLigPos,
         gpos6::MarkMarkPos,
+        gsub8::ReverseChainSubst,
     },
     tables::{self, GPOS::Positioning, GSUB::Substitution},
     tag,
@@ -44,6 +45,7 @@ pub(crate) enum SomeLookup {
     GsubLookup(Lookup<Substitution>),
     GposLookup(Lookup<Positioning>),
     GsubContextual(ContextualLookup<ChainedSequenceContext, Substitution>),
+    GsubReverse(ContextualLookup<ReverseChainSubst, Substitution>),
     GposContextual(ContextualLookup<ChainedSequenceContext, Positioning>),
 }
 
@@ -106,6 +108,23 @@ impl AllLookups {
                     flags,
                     mark_filtering_set: mark_set,
                     rule: Substitution::ChainedContextual(subtables),
+                });
+                self.gsub.extend(anon_lookups);
+                id
+            }
+            SomeLookup::GsubReverse(ContextualLookup {
+                flags,
+                mark_set,
+                subtables,
+                anon_lookups,
+                root_id,
+            }) => {
+                let id = LookupId::Gsub(self.gsub.len());
+                assert_eq!(id, root_id); // sanity check
+                self.gsub.push(Lookup {
+                    flags,
+                    mark_filtering_set: mark_set,
+                    rule: Substitution::ReverseChainContextual(subtables),
                 });
                 self.gsub.extend(anon_lookups);
                 id
@@ -183,6 +202,7 @@ impl AllLookups {
 
         match &mut new_one {
             SomeLookup::GsubContextual(lookup) => lookup.root_id = new_id,
+            SomeLookup::GsubReverse(lookup) => lookup.root_id = new_id,
             SomeLookup::GposContextual(lookup) => lookup.root_id = new_id,
             SomeLookup::GsubLookup(_) | SomeLookup::GposLookup(_) => (),
         }
@@ -291,6 +311,8 @@ impl SomeLookup {
     fn new(kind: Kind, flags: LookupFlags, mark_filtering_set: Option<FilterSetId>) -> Self {
         if kind == Kind::GsubType6 {
             return SomeLookup::GsubContextual(ContextualLookup::new(flags, mark_filtering_set));
+        } else if kind == Kind::GsubType8 {
+            return SomeLookup::GsubReverse(ContextualLookup::new(flags, mark_filtering_set));
         } else if kind == Kind::GposType8 {
             return SomeLookup::GposContextual(ContextualLookup::new(flags, mark_filtering_set));
         }
@@ -329,6 +351,7 @@ impl SomeLookup {
     fn kind(&self) -> Kind {
         match self {
             SomeLookup::GsubContextual(_) => Kind::GsubType6,
+            SomeLookup::GsubReverse(_) => Kind::GsubType8,
             SomeLookup::GposContextual(_) => Kind::GposType8,
             SomeLookup::GsubLookup(gsub) => match gsub.rule {
                 Substitution::Single(_) => Kind::GsubType1,
@@ -526,6 +549,26 @@ impl SomeLookup {
                 lookahead,
             });
             lookup.subtables.push(subtable);
+        }
+    }
+
+    pub(crate) fn add_gsub_type_8(
+        &mut self,
+        _backtrack: Vec<BTreeSet<u16>>,
+        input: BTreeMap<u16, u16>,
+        _lookahead: Vec<BTreeSet<u16>>,
+    ) {
+        //FIXME: use lookahead/backtrack
+        if let SomeLookup::GsubReverse(lookup) = self {
+            if lookup
+                .subtables
+                .last()
+                .map(|t| !t.mapping.is_empty())
+                .unwrap_or(true)
+            {
+                lookup.subtables.push(ReverseChainSubst::default());
+            }
+            lookup.subtables.last_mut().unwrap().mapping = input;
         }
     }
 
