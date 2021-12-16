@@ -103,15 +103,41 @@ impl Display for GlyphIdent {
 }
 
 impl GlyphOrClass {
-    pub fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            GlyphOrClass::Class(cls) => cls.len(),
+            _ => 1,
+        }
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
         let mut idx = 0;
         std::iter::from_fn(move || {
-            let next = match self {
+            let next = match &self {
                 GlyphOrClass::Glyph(id) if idx == 0 => Some(*id),
                 GlyphOrClass::Class(cls) => cls.0.get(idx).copied(),
                 _ => None,
             };
             idx += 1;
+            next
+        })
+    }
+
+    /// an iterator that loops forever, and which returns NOTDEF for null.
+    ///
+    /// this is used to create the replacement targets for class -> glyph or
+    /// class -> null substitutions.
+    pub(crate) fn into_iter_for_target(self) -> impl Iterator<Item = GlyphId> {
+        let mut idx = 0;
+        std::iter::from_fn(move || {
+            let next = match &self {
+                GlyphOrClass::Glyph(id) if idx == 0 => Some(*id),
+                GlyphOrClass::Null if idx == 0 => Some(GlyphId::NOTDEF),
+                GlyphOrClass::Class(cls) => cls.0.get(idx).copied(),
+                _ => None,
+            };
+            idx += 1;
+            idx %= self.len();
             next
         })
     }

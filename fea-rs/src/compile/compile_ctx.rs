@@ -8,7 +8,6 @@ use smol_str::SmolStr;
 
 use fonttools::{
     layout::common::{LookupFlags, ValueRecord},
-    tables::GPOS::Positioning,
     tag,
     types::Tag,
 };
@@ -402,9 +401,11 @@ impl<'a> CompilationCtx<'a> {
         let target = node.target();
         let replace = node.replacement();
 
-        if let Some((target, replace)) = self.validate_single_sub_inputs(&target, &replace) {
+        if let Some((target, replacement)) = self.validate_single_sub_inputs(&target, &replace) {
             let lookup = self.ensure_current_lookup_type(Kind::GsubType1);
-            Self::add_single_sub_impl(target, replace, lookup);
+            for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
+                lookup.add_gsub_type_1(target, replacement);
+            }
         }
     }
 
@@ -441,33 +442,6 @@ impl<'a> CompilationCtx<'a> {
         }
     }
 
-    // this is a free fn to get around borrowck :/
-    // this is shared between normal and contextual rules.
-    fn add_single_sub_impl(target: GlyphOrClass, replace: GlyphOrClass, lookup: &mut SomeLookup) {
-        match target {
-            GlyphOrClass::Null => unreachable!("validated earlier"),
-            GlyphOrClass::Glyph(id) => match replace {
-                GlyphOrClass::Null => lookup.add_gsub_type_1(id, GlyphId::NOTDEF),
-                GlyphOrClass::Glyph(r_id) => lookup.add_gsub_type_1(id, r_id),
-                GlyphOrClass::Class(_) => unreachable!(".."),
-            },
-            GlyphOrClass::Class(cls) => match replace {
-                GlyphOrClass::Null => cls
-                    .iter()
-                    .for_each(|id| lookup.add_gsub_type_1(id, GlyphId::NOTDEF)),
-                GlyphOrClass::Glyph(r_id) => {
-                    cls.iter().for_each(|id| lookup.add_gsub_type_1(id, r_id))
-                }
-                GlyphOrClass::Class(cls2) => {
-                    debug_assert_eq!(cls.len(), cls2.len());
-                    for (id, r_id) in cls.iter().zip(cls2.iter()) {
-                        lookup.add_gsub_type_1(id, r_id);
-                    }
-                }
-            },
-        }
-    }
-
     fn add_multiple_sub(&mut self, node: &typed::Gsub2) {
         let target = node.target();
         let target_id = self.resolve_glyph(&target);
@@ -500,7 +474,6 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_contextual_sub(&mut self, node: &typed::Gsub6) {
-        let _ = self.ensure_current_lookup_type(Kind::GsubType6);
         let mut backtrack = node
             .backtrack()
             .items()
@@ -513,7 +486,7 @@ impl<'a> CompilationCtx<'a> {
             .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
             .collect::<Vec<_>>();
         // does this have an inline rule?
-        let mut inline = node.inline_rule().map(|rule| {
+        let mut inline = node.inline_rule().and_then(|rule| {
             let input = node.input();
             if input.items().nth(1).is_some() {
                 // more than one input: this is a ligature rule
@@ -522,30 +495,33 @@ impl<'a> CompilationCtx<'a> {
                     .map(|inp| self.resolve_glyph_or_class(&inp.target()))
                     .collect::<Vec<_>>();
                 let replacement = self.resolve_glyph(&rule.replacement_glyphs().next().unwrap());
-                self.lookups.with_anon_contextual_lookup(
-                    Kind::GsubType4,
-                    self.lookup_flags,
-                    self.cur_mark_filter_set,
-                    |lookup| {
-                        for target in sequence_enumerator(&target) {
-                            lookup.add_gsub_type_4(target, replacement);
-                        }
-                    },
-                )
+                let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+                //FIXME: we should check that the whole sequence is not present the
+                //lookup before adding..
+                let mut to_return = None;
+                for target in sequence_enumerator(&target) {
+                    to_return = Some(
+                        lookup
+                            .as_gsub_type_6()
+                            .add_anon_gsub_type_4(target, replacement),
+                    );
+                }
+                to_return
             } else {
                 let target = input.items().next().unwrap().target();
                 let replacement = rule.replacements().next().unwrap();
-                let resolved = self.validate_single_sub_inputs(&target, &replacement);
-                self.lookups.with_anon_contextual_lookup(
-                    Kind::GsubType1,
-                    self.lookup_flags,
-                    self.cur_mark_filter_set,
-                    |lookup| {
-                        if let Some((target, replacement)) = resolved {
-                            Self::add_single_sub_impl(target, replacement, lookup);
-                        }
-                    },
-                )
+                if let Some((target, replacement)) =
+                    self.validate_single_sub_inputs(&target, &replacement)
+                {
+                    let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+                    Some(
+                        lookup
+                            .as_gsub_type_6()
+                            .add_anon_gsub_type_1(target, replacement),
+                    )
+                } else {
+                    None
+                }
             }
         });
 
@@ -862,7 +838,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_contextual_pos_rule(&mut self, node: &typed::Gpos8) {
-        let _ = self.ensure_current_lookup_type(Kind::GposType8);
+        //let _ = self.ensure_current_lookup_type(Kind::GposType8);
         let mut backtrack = node
             .backtrack()
             .items()
@@ -883,33 +859,11 @@ impl<'a> CompilationCtx<'a> {
                 let mut lookups = Vec::new();
                 if let Some(value) = item.valuerecord() {
                     let value = self.resolve_value_record(&value);
-                    if let Some(subtables) = self
-                        .lookups
-                        .current_anon()
-                        .and_then(SomeLookup::as_gpos_type_1)
-                    {
-                        if subtables.iter().any(|t| {
-                            glyphs.iter().any(|gid| {
-                                t.mapping
-                                    .get(&gid.to_raw())
-                                    .map(|existing| existing != &value)
-                                    .unwrap_or(false)
-                            })
-                        }) {
-                            self.lookups.break_current_anon_lookup();
-                        }
-                    }
-                    let lookup_id = self.lookups.with_anon_contextual_lookup(
-                        Kind::GposType1,
-                        self.lookup_flags,
-                        self.cur_mark_filter_set,
-                        |lookup| {
-                            for id in glyphs.iter() {
-                                lookup.add_gpos_type_1(id, value.clone());
-                            }
-                        },
-                    );
-                    lookups.push(lookup_id.to_u16_or_die());
+                    let anon_id = self
+                        .ensure_current_lookup_type(Kind::GposType8)
+                        .as_gpos_type_8()
+                        .add_anon_gpos_type_1(&glyphs, value);
+                    lookups.push(anon_id.to_u16_or_die());
                 }
 
                 for lookup in item.lookups() {
@@ -947,8 +901,8 @@ impl<'a> CompilationCtx<'a> {
                     )
                 })
                 .collect::<Vec<_>>();
-            let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-            lookup.add_gsub_type_6(backtrack, context, lookahead);
+            let lookup = self.ensure_current_lookup_type(Kind::GposType8);
+            lookup.add_gpos_type_8(backtrack, context, lookahead);
         }
     }
 
