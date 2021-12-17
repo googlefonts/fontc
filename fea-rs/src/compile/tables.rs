@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use fonttools::{
     tables::GDEF::{CaretValue, GlyphClass as FtGlyphClass},
@@ -80,8 +80,8 @@ pub struct GDEF {
     pub mark_glyphs: Option<GlyphClass>,
     pub component_glyphs: Option<GlyphClass>,
 
-    pub attach: Vec<(GlyphId, Vec<u16>)>,
-    pub ligature_caret_pos: HashMap<GlyphId, Vec<i16>>,
+    pub attach: HashMap<GlyphId, BTreeSet<u16>>,
+    pub ligature_caret_pos: HashMap<GlyphId, BTreeSet<i16>>,
     pub ligature_caret_index: HashMap<GlyphId, Vec<u16>>,
 }
 
@@ -376,13 +376,11 @@ impl GDEF {
                 .insert(id.to_raw(), FtGlyphClass::ComponentGlyph);
         }
 
-        //TODO: turn this back on when supported in fonttools
-        // (https://github.com/simoncozens/fonttools-rs/issues/59)
-        //for (glyph, points) in &self.attach {
-        //table
-        //.attachment_point_list
-        //.insert(glyph.to_raw(), points.clone());
-        //}
+        for (glyph, points) in &self.attach {
+            table
+                .attachment_point_list
+                .insert(glyph.to_raw(), points.iter().copied().collect());
+        }
 
         for (glyph, points) in &self.ligature_caret_index {
             let points = points

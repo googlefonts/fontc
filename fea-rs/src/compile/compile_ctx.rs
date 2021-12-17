@@ -1327,7 +1327,10 @@ impl<'a> CompilationCtx<'a> {
                         .collect::<Vec<_>>();
                     assert!(!indices.is_empty(), "check this in validation");
                     for glyph in glyphs.iter() {
-                        gdef.attach.push((glyph, indices.clone()));
+                        gdef.attach
+                            .entry(glyph)
+                            .or_default()
+                            .extend(indices.iter().copied());
                     }
                 }
                 typed::GdefTableItem::LigatureCaret(rule) => {
