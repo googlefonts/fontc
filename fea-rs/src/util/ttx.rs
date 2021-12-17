@@ -545,16 +545,20 @@ impl std::fmt::Debug for ResultsPrinter<'_> {
                 width = widest
             )?;
         }
-        let (panic, parse, compile, compare) = self.results.failures.iter().fold(
-            (0, 0, 0, 0),
-            |(panic, parse, compile, compare), fail| match fail.reason {
-                Reason::Panic => (panic + 1, parse, compile, compare),
-                Reason::ParseFail(_) => (panic, parse + 1, compile, compare),
-                Reason::CompileFail(_) => (panic, parse, compile + 1, compare),
-                Reason::CompareFail { .. } => (panic, parse, compile, compare + 1),
-                _ => (panic, parse, compile, compare),
+        let (panic, parse, compile, compare, perc) = self.results.failures.iter().fold(
+            (0, 0, 0, 0, 0.0),
+            |(panic, parse, compile, compare, perc), fail| match fail.reason {
+                Reason::Panic => (panic + 1, parse, compile, compare, perc),
+                Reason::ParseFail(_) => (panic, parse + 1, compile, compare, perc),
+                Reason::CompileFail(_) => (panic, parse, compile + 1, compare, perc),
+                Reason::CompareFail { diff_percent, .. } => {
+                    (panic, parse, compile, compare + 1, perc + diff_percent)
+                }
+                _ => (panic, parse, compile, compare, perc),
             },
         );
+        let perc = perc + self.results.successes.len() as f64;
+        let perc = perc / self.results.len() as f64;
 
         writeln!(
             f,
@@ -565,8 +569,12 @@ impl std::fmt::Debug for ResultsPrinter<'_> {
 
         writeln!(
             f,
-            "{} panic, {} parse, {} compile, {} compare",
-            panic, parse, compile, compare
+            "{} panic, {} parse, {} compile, {} compare ({:.0}%)",
+            panic,
+            parse,
+            compile,
+            compare,
+            perc * 100.0,
         )?;
         Ok(())
     }
