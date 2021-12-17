@@ -554,11 +554,10 @@ impl SomeLookup {
 
     pub(crate) fn add_gsub_type_8(
         &mut self,
-        _backtrack: Vec<BTreeSet<u16>>,
+        backtrack: Vec<BTreeSet<u16>>,
         input: BTreeMap<u16, u16>,
-        _lookahead: Vec<BTreeSet<u16>>,
+        lookahead: Vec<BTreeSet<u16>>,
     ) {
-        //FIXME: use lookahead/backtrack
         if let SomeLookup::GsubReverse(lookup) = self {
             if lookup
                 .subtables
@@ -568,7 +567,10 @@ impl SomeLookup {
             {
                 lookup.subtables.push(ReverseChainSubst::default());
             }
-            lookup.subtables.last_mut().unwrap().mapping = input;
+            let subtable = lookup.subtables.last_mut().unwrap();
+            subtable.mapping = input;
+            subtable.backtrack = backtrack;
+            subtable.lookahead = lookahead;
         }
     }
 
