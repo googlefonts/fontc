@@ -26,6 +26,8 @@ use crate::{
     Kind,
 };
 
+use super::tables::ClassId;
+
 pub(crate) type FilterSetId = u16;
 
 const LANG_DFLT_TAG: Tag = tag!("dflt");
@@ -226,6 +228,51 @@ impl AllLookups {
         } else {
             None
         }
+    }
+
+    pub(crate) fn infer_glyph_classes(&self, mut f: impl FnMut(GlyphId, ClassId)) {
+        for lookup in &self.gpos {
+            match &lookup.rule {
+                Positioning::MarkToBase(subtables) => {
+                    for subtable in subtables {
+                        subtable
+                            .bases
+                            .keys()
+                            .for_each(|k| f(GlyphId::from_raw(*k), ClassId::Base));
+                        subtable
+                            .marks
+                            .keys()
+                            .for_each(|k| f(GlyphId::from_raw(*k), ClassId::Mark));
+                    }
+                }
+                Positioning::MarkToLig(subtables) => {
+                    for subtable in subtables {
+                        subtable
+                            .ligatures
+                            .keys()
+                            .for_each(|k| f(GlyphId::from_raw(*k), ClassId::Ligature));
+                        subtable
+                            .marks
+                            .keys()
+                            .for_each(|k| f(GlyphId::from_raw(*k), ClassId::Mark));
+                    }
+                }
+                Positioning::MarkToMark(subtables) => {
+                    for subtable in subtables {
+                        subtable
+                            .base_marks
+                            .keys()
+                            .for_each(|k| f(GlyphId::from_raw(*k), ClassId::Mark));
+                        subtable
+                            .combining_marks
+                            .keys()
+                            .for_each(|k| f(GlyphId::from_raw(*k), ClassId::Mark));
+                    }
+                }
+                _ => (),
+            }
+        }
+        //TODO: the spec says to do gsub too, but fonttools doesn't?
     }
 
     pub(crate) fn build(

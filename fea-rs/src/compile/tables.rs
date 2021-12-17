@@ -6,7 +6,7 @@ use fonttools::{
 };
 use smol_str::SmolStr;
 
-use crate::types::{GlyphClass, GlyphId};
+use crate::types::{GlyphId, GlyphClass};
 
 /// The explicit tables allowed in a fea file
 #[allow(non_snake_case)]
@@ -72,14 +72,31 @@ pub struct NameSpec {
     pub string: SmolStr,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u16)]
+pub enum ClassId {
+    Base = 1,
+    Ligature = 2,
+    Mark = 3,
+    Component = 4,
+}
+
+impl From<ClassId> for FtGlyphClass {
+    fn from(src: ClassId) -> FtGlyphClass {
+        match src {
+            ClassId::Base => FtGlyphClass::BaseGlyph,
+            ClassId::Ligature => FtGlyphClass::LigatureGlyph,
+            ClassId::Mark => FtGlyphClass::MarkGlyph,
+            ClassId::Component => FtGlyphClass::ComponentGlyph,
+        }
+    }
+}
+
+
 #[derive(Clone, Debug, Default)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 pub struct GDEF {
-    pub base_glyphs: Option<GlyphClass>,
-    pub ligature_glyphs: Option<GlyphClass>,
-    pub mark_glyphs: Option<GlyphClass>,
-    pub component_glyphs: Option<GlyphClass>,
-
+    pub glyph_classes: HashMap<GlyphId, ClassId>,
     pub attach: HashMap<GlyphId, BTreeSet<u16>>,
     pub ligature_caret_pos: HashMap<GlyphId, BTreeSet<i16>>,
     pub ligature_caret_index: HashMap<GlyphId, Vec<u16>>,
@@ -354,26 +371,8 @@ impl OS2 {
 impl GDEF {
     pub fn build(&self) -> fonttools::tables::GDEF::GDEF {
         let mut table = empty_gdef();
-        for id in self.base_glyphs.iter().flat_map(GlyphClass::iter) {
-            table
-                .glyph_class
-                .insert(id.to_raw(), FtGlyphClass::BaseGlyph);
-        }
-        for id in self.ligature_glyphs.iter().flat_map(GlyphClass::iter) {
-            table
-                .glyph_class
-                .insert(id.to_raw(), FtGlyphClass::LigatureGlyph);
-        }
-        for id in self.mark_glyphs.iter().flat_map(GlyphClass::iter) {
-            table
-                .glyph_class
-                .insert(id.to_raw(), FtGlyphClass::MarkGlyph);
-        }
-
-        for id in self.component_glyphs.iter().flat_map(GlyphClass::iter) {
-            table
-                .glyph_class
-                .insert(id.to_raw(), FtGlyphClass::ComponentGlyph);
+        for (glyph, class) in self.glyph_classes.iter() {
+            table.glyph_class.insert(glyph.to_raw(), (*class).into());
         }
 
         for (glyph, points) in &self.attach {
@@ -398,6 +397,13 @@ impl GDEF {
             table.ligature_caret_list.insert(glyph.to_raw(), coords);
         }
         table
+    }
+
+    pub fn add_glyph_class(&mut self, glyphs: GlyphClass, class: ClassId) {
+        for glyph in glyphs.iter() {
+            self.glyph_classes.insert(glyph, class);
+        }
+
     }
 }
 

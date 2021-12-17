@@ -22,10 +22,13 @@ use crate::{
     Diagnostic, GlyphMap, Kind, NodeOrToken,
 };
 
-use super::lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, SomeLookup};
 use super::output::{Compilation, SizeFeature};
 use super::tables::{ScriptRecord, Tables};
 use super::{consts, glyph_range};
+use super::{
+    lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, SomeLookup},
+    tables::ClassId,
+};
 
 pub struct CompilationCtx<'a> {
     glyph_map: &'a GlyphMap,
@@ -117,6 +120,9 @@ impl<'a> CompilationCtx<'a> {
         if self.errors.iter().any(Diagnostic::is_error) {
             return Err(self.errors.clone());
         }
+        if self.tables.GDEF.is_none() {
+            self.infer_glyph_classes();
+        }
         Ok(Compilation {
             warnings: self.errors.clone(),
             lookups: self.lookups.clone(),
@@ -124,6 +130,26 @@ impl<'a> CompilationCtx<'a> {
             tables: self.tables.clone(),
             size: self.size.clone(),
         })
+    }
+
+    // if a GDEF table is not explicitly defined, we are supposed to create one:
+    // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#4f-markclass
+    fn infer_glyph_classes(&mut self) {
+        let mut gdef = super::tables::GDEF::default();
+        self.lookups.infer_glyph_classes(|glyph, class_id| {
+            gdef.glyph_classes.insert(glyph, class_id);
+        });
+        for glyph in self
+            .mark_classes
+            .values()
+            .flat_map(|class| class.members.iter().map(|(cls, _)| cls.iter()))
+            .flatten()
+        {
+            gdef.glyph_classes.insert(glyph, ClassId::Mark);
+        }
+        if !gdef.glyph_classes.is_empty() {
+            self.tables.GDEF = Some(gdef);
+        }
     }
 
     fn error(&mut self, range: Range<usize>, message: impl Into<String>) {
@@ -1356,13 +1382,18 @@ impl<'a> CompilationCtx<'a> {
                     }
                 }
                 typed::GdefTableItem::ClassDef(rule) => {
-                    gdef.base_glyphs = rule.base_glyphs().map(|g| self.resolve_glyph_class(&g));
-                    gdef.ligature_glyphs =
-                        rule.ligature_glyphs().map(|g| self.resolve_glyph_class(&g));
-                    gdef.mark_glyphs = rule.mark_glyphs().map(|g| self.resolve_glyph_class(&g));
-                    gdef.component_glyphs = rule
-                        .component_glyphs()
-                        .map(|g| self.resolve_glyph_class(&g));
+                    if let Some(glyphs) = rule.base_glyphs() {
+                        gdef.add_glyph_class(self.resolve_glyph_class(&glyphs), ClassId::Base);
+                    }
+                    if let Some(glyphs) = rule.ligature_glyphs() {
+                        gdef.add_glyph_class(self.resolve_glyph_class(&glyphs), ClassId::Ligature);
+                    }
+                    if let Some(glyphs) = rule.mark_glyphs() {
+                        gdef.add_glyph_class(self.resolve_glyph_class(&glyphs), ClassId::Mark);
+                    }
+                    if let Some(glyphs) = rule.component_glyphs() {
+                        gdef.add_glyph_class(self.resolve_glyph_class(&glyphs), ClassId::Component);
+                    }
                 }
             }
         }

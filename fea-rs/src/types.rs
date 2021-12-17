@@ -45,7 +45,6 @@ impl GlyphId {
         self.0
     }
 
-    #[cfg(test)]
     pub fn from_raw(raw: u16) -> Self {
         Self(raw)
     }
