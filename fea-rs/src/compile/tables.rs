@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use fonttools::{
     tables::GDEF::{CaretValue, GlyphClass as FtGlyphClass},
@@ -6,7 +6,7 @@ use fonttools::{
 };
 use smol_str::SmolStr;
 
-use crate::types::{GlyphId, GlyphClass};
+use crate::types::{GlyphClass, GlyphId};
 
 /// The explicit tables allowed in a fea file
 #[allow(non_snake_case)]
@@ -92,14 +92,12 @@ impl From<ClassId> for FtGlyphClass {
     }
 }
 
-
 #[derive(Clone, Debug, Default)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 pub struct GDEF {
     pub glyph_classes: HashMap<GlyphId, ClassId>,
     pub attach: HashMap<GlyphId, BTreeSet<u16>>,
-    pub ligature_caret_pos: HashMap<GlyphId, BTreeSet<i16>>,
-    pub ligature_caret_index: HashMap<GlyphId, Vec<u16>>,
+    pub ligature_pos: BTreeMap<GlyphId, Vec<CaretValue>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -381,20 +379,10 @@ impl GDEF {
                 .insert(glyph.to_raw(), points.iter().copied().collect());
         }
 
-        for (glyph, points) in &self.ligature_caret_index {
-            let points = points
-                .iter()
-                .map(|p| CaretValue::Format2 { pointIndex: *p })
-                .collect();
-            table.ligature_caret_list.insert(glyph.to_raw(), points);
-        }
-
-        for (glyph, coords) in &self.ligature_caret_pos {
-            let coords = coords
-                .iter()
-                .map(|p| CaretValue::Format1 { coordinate: *p })
-                .collect();
-            table.ligature_caret_list.insert(glyph.to_raw(), coords);
+        for (glyph, carets) in &self.ligature_pos {
+            table
+                .ligature_caret_list
+                .insert(glyph.to_raw(), carets.clone());
         }
         table
     }
@@ -403,7 +391,6 @@ impl GDEF {
         for glyph in glyphs.iter() {
             self.glyph_classes.insert(glyph, class);
         }
-
     }
 }
 

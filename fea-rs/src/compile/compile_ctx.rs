@@ -8,6 +8,7 @@ use smol_str::SmolStr;
 
 use fonttools::{
     layout::common::{LookupFlags, ValueRecord},
+    tables::GDEF::CaretValue,
     tag,
     types::Tag,
 };
@@ -1362,25 +1363,33 @@ impl<'a> CompilationCtx<'a> {
                 typed::GdefTableItem::LigatureCaret(rule) => {
                     let target = rule.target();
                     let glyphs = self.resolve_glyph_or_class(&target);
-                    match rule.values() {
-                        typed::LigatureCaretValue::Pos(items) => {
-                            for glyph in glyphs.iter() {
-                                gdef.ligature_caret_pos
-                                    .entry(glyph)
-                                    .or_default()
-                                    .extend(items.values().map(|n| n.parse_signed()));
-                            }
-                        }
-                        typed::LigatureCaretValue::Index(items) => {
-                            for glyph in glyphs.iter() {
-                                gdef.ligature_caret_index
-                                    .entry(glyph)
-                                    .or_default()
-                                    .extend(items.values().map(|n| n.parse_unsigned().unwrap()));
-                            }
-                        }
+                    let mut carets: Vec<_> = match rule.values() {
+                        typed::LigatureCaretValue::Pos(items) => items
+                            .values()
+                            .map(|n| n.parse_signed())
+                            .map(|p| CaretValue::Format1 { coordinate: p })
+                            .collect(),
+                        typed::LigatureCaretValue::Index(items) => items
+                            .values()
+                            .map(|n| n.parse_unsigned())
+                            .map(|p| CaretValue::Format2 {
+                                pointIndex: p.unwrap(),
+                            })
+                            .collect(),
+                    };
+                    carets.sort_by_key(|c| match c {
+                        CaretValue::Format1 { coordinate } => *coordinate as i32,
+                        CaretValue::Format2 { pointIndex } => *pointIndex as i32,
+                        CaretValue::Format3 { coordinate, .. } => *coordinate as i32,
+                    });
+                    for glyph in glyphs.iter() {
+                        gdef.ligature_pos
+                            .entry(glyph)
+                            .or_insert_with(|| carets.clone());
+                        dbg!(&glyph, &carets);
                     }
                 }
+
                 typed::GdefTableItem::ClassDef(rule) => {
                     if let Some(glyphs) = rule.base_glyphs() {
                         gdef.add_glyph_class(self.resolve_glyph_class(&glyphs), ClassId::Base);
