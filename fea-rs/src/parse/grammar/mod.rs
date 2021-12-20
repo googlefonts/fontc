@@ -327,7 +327,7 @@ mod tests {
     #[test]
     fn no_cv_param_in_lookup() {
         let fea = "lookup hi {cvParameters {}; } hi ;";
-        let (_out, errors, _errstr) = debug_parse_output(fea, |parser| root(parser));
+        let (_out, errors, _errstr) = debug_parse_output(fea, root);
         assert!(!errors.is_empty(), "{}", fea);
         assert!(errors.first().unwrap().text().contains("cvParameters"));
     }

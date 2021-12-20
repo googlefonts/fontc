@@ -232,7 +232,7 @@ mod tests {
         let fea = "lookup hi {\n\
 pos a b 5;
 }";
-        let offsets = compute_offsets(&fea);
+        let offsets = compute_offsets(fea);
         assert_eq!(offsets, vec![0, 12, 23]);
     }
 

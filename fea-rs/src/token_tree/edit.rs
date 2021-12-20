@@ -141,7 +141,7 @@ feature liga {
 
         let replace_lang = {
             let fea = "languagesystem hihi ohno;";
-            make_node(fea, |p| crate::parse::grammar::language_system(p))
+            make_node(fea, crate::parse::grammar::language_system)
         };
         let replace_sub = {
             let fea = "sub gg by w_p;";
