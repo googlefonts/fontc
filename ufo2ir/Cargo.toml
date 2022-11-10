@@ -1,0 +1,22 @@
+[package]
+name = "compiler-ufo2ir"
+version = "0.0.1"
+edition = "2021"
+license = "MIT/Apache-2.0"
+description = "Converts UFO or UFO+designspace to font ir for compilation."
+repository = "https://github.com/googlefonts/fontations"
+readme = "README.md"
+categories = ["text-processing", "parsing", "graphics"]
+
+[features]
+
+[dependencies]
+font-types = { git = 'https://github.com/googlefonts/fontations' }
+read-fonts = { git = 'https://github.com/googlefonts/fontations' }
+ir = { version = "0.0.1", path = "../ir" }
+norad = "0.7.0"
+quick-xml = { version = "0.22.0", features = ["serialize"] }
+
+[dev-dependencies]
+diff = "0.1.12"
+ansi_term = "0.12.1"
