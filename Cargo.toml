@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "ir",
+    "ufo2ir",
+]
