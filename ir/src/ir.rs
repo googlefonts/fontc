@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Axis<'a> {
-    tag: &'a str,
+pub struct Axis {
+    tag: String,
     min: f32,
     default: f32,
     max: f32,
@@ -15,23 +15,27 @@ pub struct Axis<'a> {
 mod tests {
     use crate::ir::Axis;
 
-    const TEST_AXIS: Axis = Axis {
-        tag: "wght",
-        min: 100.,
-        default: 400.,
-        max: 900.,
-        hidden: false,
-    };
+    fn test_axis() -> Axis {
+        Axis {
+            tag: String::from("wght"),
+            min: 100.,
+            default: 400.,
+            max: 900.,
+            hidden: false,
+        }
+    }
 
     #[test]
     fn axis_toml() {
-        let toml = toml::ser::to_string_pretty(&TEST_AXIS).unwrap();
-        assert_eq!(TEST_AXIS, toml::from_str(&toml).unwrap());
+        let test_axis = test_axis();
+        let toml = toml::ser::to_string_pretty(&test_axis).unwrap();
+        assert_eq!(test_axis, toml::from_str(&toml).unwrap());
     }
 
     #[test]
     fn axis_bincode() {
-        let bin = bincode::serialize(&TEST_AXIS).unwrap();
-        assert_eq!(TEST_AXIS, bincode::deserialize(&bin).unwrap());
+        let test_axis = test_axis();
+        let bin = bincode::serialize(&test_axis).unwrap();
+        assert_eq!(test_axis, bincode::deserialize(&bin).unwrap());
     }
 }
