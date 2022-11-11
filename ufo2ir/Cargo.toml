@@ -13,7 +13,8 @@ categories = ["text-processing", "parsing", "graphics"]
 [dependencies]
 read-fonts = { git = 'https://github.com/googlefonts/fontations' }
 ir = { version = "0.0.1", path = "../ir" }
-norad = "0.7.0"
+# norad = "0.7.0"
+norad = { git = 'https://github.com/rsheeter/norad', branch = 'designspace' }
 quick-xml = { version = "0.22.0", features = ["serialize"] }
 
 [dev-dependencies]

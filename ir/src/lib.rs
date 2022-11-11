@@ -1,1 +1,1 @@
-mod ir;
+pub mod ir;
