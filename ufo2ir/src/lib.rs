@@ -1,1 +1,2 @@
-mod toir;
+pub mod error;
+pub mod toir;

@@ -20,6 +20,8 @@ norad = { git = 'https://github.com/linebender/norad' }
 
 quick-xml = { version = "0.22.0", features = ["serialize"] }
 
+thiserror = "1.0.37"
+
 [dev-dependencies]
 diff = "0.1.12"
 ansi_term = "0.12.1"
