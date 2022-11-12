@@ -7,7 +7,7 @@ fn to_ir_axis(axis: designspace::Axis) -> ir::Axis {
         min: axis.minimum.expect("Discrete axes not supported yet"),
         default: axis.default,
         max: axis.maximum.expect("Discrete axes not supported yet"),
-        hidden: axis.hidden.unwrap_or(false),
+        hidden: axis.hidden,
     }
 }
 
@@ -31,7 +31,6 @@ mod tests {
                 hidden: false
             }],
             ds.axes
-                .axis
                 .into_iter()
                 .map(to_ir_axis)
                 .collect::<Vec<ir::Axis>>()

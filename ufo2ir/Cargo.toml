@@ -13,8 +13,11 @@ categories = ["text-processing", "parsing", "graphics"]
 [dependencies]
 read-fonts = { git = 'https://github.com/googlefonts/fontations' }
 ir = { version = "0.0.1", path = "../ir" }
+
+# TODO use a version of norad with https://github.com/linebender/norad/pull/272 once one exists
 # norad = "0.7.0"
-norad = { git = 'https://github.com/rsheeter/norad', branch = 'designspace' }
+norad = { git = 'https://github.com/linebender/norad' }
+
 quick-xml = { version = "0.22.0", features = ["serialize"] }
 
 [dev-dependencies]
