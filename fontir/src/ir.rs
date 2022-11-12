@@ -1,6 +1,14 @@
 //! Serde types for font IR. See TODO:PublicLink.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Font {
+    pub upem: u16,
+    pub axes: Vec<Axis>,
+}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Axis {
@@ -9,6 +17,28 @@ pub struct Axis {
     pub default: f32,
     pub max: f32,
     pub hidden: bool,
+}
+
+pub type DesignSpaceLocation = HashMap<String, f32>;
+
+/// A variable definition of a single glyph.
+///
+/// Defined in at least once position in designspace. If defined in
+/// many, presumed to vary continuously between positions and required
+/// to have variation compatible structure.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Glyph {
+    pub name: String,
+    pub instances: Vec<GlyphInstance>,
+}
+
+/// A Glyph at a specific position in designspace.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct GlyphInstance {
+    pub location: DesignSpaceLocation,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    // TODO: outlines, a Vec<Shape>
 }
 
 #[cfg(test)]
