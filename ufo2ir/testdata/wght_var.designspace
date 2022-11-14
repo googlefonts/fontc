@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="4.1">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="400" maximum="700" default="400"/>
+  </axes>
+  <sources>
+    <source filename="WghtVar-Regular.ufo" name="Wght Var Regular" familyname="Wght Var" stylename="Regular">
+      <lib copy="1"/>
+      <groups copy="1"/>
+      <features copy="1"/>
+      <info copy="1"/>
+      <location>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </source>
+    <source filename="WghtVar-Bold.ufo" name="Wght Var Bold" familyname="Wght Var" stylename="Bold">
+      <location>
+        <dimension name="Weight" xvalue="700"/>
+      </location>
+    </source>
+  </sources>
+  <instances>
+    <instance name="Wght Var Regular" familyname="Wght Var" stylename="Regular" filename="instance_ufos/WghtVar-Regular.ufo" stylemapfamilyname="Wght Var" stylemapstylename="regular">
+      <location>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </instance>
+    <instance name="Wght Var Bold" familyname="Wght Var" stylename="Bold" filename="instance_ufos/WghtVar-Bold.ufo" stylemapfamilyname="Wght Var" stylemapstylename="bold">
+      <location>
+        <dimension name="Weight" xvalue="700"/>
+      </location>      
+    </instance>
+  </instances>
+</designspace>

@@ -13,8 +13,14 @@ categories = ["text-processing", "parsing", "graphics"]
 [dependencies]
 read-fonts = { git = 'https://github.com/googlefonts/fontations' }
 ir = { version = "0.0.1", path = "../ir" }
-norad = "0.7.0"
+
+# TODO use a version of norad with https://github.com/linebender/norad/pull/272 once one exists
+# norad = "0.7.0"
+norad = { git = 'https://github.com/linebender/norad' }
+
 quick-xml = { version = "0.22.0", features = ["serialize"] }
+
+thiserror = "1.0.37"
 
 [dev-dependencies]
 diff = "0.1.12"

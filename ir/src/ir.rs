@@ -4,11 +4,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Axis {
-    tag: String,
-    min: f32,
-    default: f32,
-    max: f32,
-    hidden: bool,
+    pub tag: String,
+    pub min: f32,
+    pub default: f32,
+    pub max: f32,
+    pub hidden: bool,
 }
 
 #[cfg(test)]
