@@ -2,7 +2,7 @@ use filetime::FileTime;
 use serde::{Deserialize, Serialize};
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs, io,
     path::{Path, PathBuf},
     vec,
@@ -148,7 +148,8 @@ impl DepGraph {
             // For a dir to register unchanged we need to add it's current contents
             if let InitialState::NotChanged = default_state {
                 if path.is_dir() {
-                    if let Some(new_paths) = self.new_paths(path) {
+                    let mut dirs_visited = HashSet::new();
+                    if let Some(new_paths) = self.new_paths(&mut dirs_visited, path) {
                         for new_path in new_paths {
                             self.entries
                                 .insert(new_path.clone(), Some(DepGraphEntry::new(&new_path)?));
@@ -183,20 +184,26 @@ impl DepGraph {
         }
     }
 
-    fn new_paths(&self, dir: &PathBuf) -> Option<Vec<PathBuf>> {
+    fn new_paths(
+        &self,
+        dirs_visited: &mut HashSet<PathBuf>,
+        dir: &PathBuf,
+    ) -> Option<Vec<PathBuf>> {
         assert!(dir.is_dir());
+        if dirs_visited.contains(dir) {
+            return None;
+        }
 
-        // TODO: adding dir here makes Vec<&PathBuf> and then inside loop we can't push new entries. User
         let mut frontier = vec![dir.to_owned()];
         let mut results: Option<Vec<PathBuf>> = None;
 
         while let Some(dir) = frontier.pop() {
-            let dir_entries = fs::read_dir(dir).expect("Unable to iterate directory");
+            let dir_entries = fs::read_dir(&dir).expect("Unable to iterate directory");
             for dir_entry in dir_entries {
                 let dir_entry = dir_entry.expect("Cannot read dir entry").path();
 
                 // Queue subdir for processing. Bravely assume lack of cycles.
-                if dir_entry.is_dir() {
+                if dir_entry.is_dir() && !dirs_visited.contains(&dir_entry) {
                     frontier.push(dir_entry.to_owned());
                 }
 
@@ -206,6 +213,7 @@ impl DepGraph {
                     new_files.push(dir_entry);
                 }
             }
+            dirs_visited.insert(dir.to_owned());
         }
         results
     }
@@ -218,10 +226,11 @@ impl DepGraph {
         let mut changes: Vec<Change> = Vec::new();
 
         // Add any new files in tracked dirs
+        let mut dirs_visited: HashSet<PathBuf> = HashSet::new();
         let new_paths: Vec<PathBuf> = paths
             .iter()
             .filter(|p| p.is_dir())
-            .flat_map(|p| self.new_paths(p).unwrap_or_default())
+            .flat_map(|p| self.new_paths(&mut dirs_visited, p).unwrap_or_default())
             .collect();
         new_paths.iter().for_each(|p| paths.push(p));
 
@@ -292,14 +301,7 @@ mod tests {
 
         // We're happy with that change
         dg.update(&changes);
-        assert_eq!(
-            Vec::<&PathBuf>::new(),
-            dg.changed()
-                .unwrap()
-                .iter()
-                .map(|c| &c.path)
-                .collect::<Vec<&PathBuf>>()
-        );
+        assert_no_changes(&dg);
 
         // Detect changed mtime
         let new_mtime = file
@@ -336,13 +338,20 @@ mod tests {
         )
         .unwrap();
 
+        // Notably, we should NOT report the files temp dir as changed
+        // because we added the entire directory as unchanged and nothing
+        // in it has changed since then
+        assert_no_changes(&dg);
+
+        // If we change or add files in the tracked dir that should count
+        let f3 = subdir.join("fileC");
+        fs::write(&f2, "eh+").unwrap();
+        fs::write(&f3, "eh").unwrap();
+
+        let changes = dg.changed().unwrap();
         assert_eq!(
-            Vec::<&PathBuf>::new(),
-            dg.changed()
-                .unwrap()
-                .iter()
-                .map(|c| &c.path)
-                .collect::<Vec<&PathBuf>>()
+            vec![&f2, &f3],
+            changes.iter().map(|c| &c.path).collect::<Vec<&PathBuf>>()
         );
     }
 
