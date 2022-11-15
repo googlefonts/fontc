@@ -379,9 +379,6 @@ mod tests {
     }
 
     #[test]
-    fn read_write_bincode_entry() {}
-
-    #[test]
     fn read_write_toml() {
         let temp_dir = tempdir().unwrap();
 
