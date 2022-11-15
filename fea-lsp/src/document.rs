@@ -60,7 +60,7 @@ impl Document {
             let range = to_lsp_range(err.span(), &inner.offsets);
             result.push(Diagnostic {
                 range,
-                severity: Some(DiagnosticSeverity::Error),
+                severity: Some(DiagnosticSeverity::ERROR),
                 message: err.text().to_owned(),
                 ..Default::default()
             })
