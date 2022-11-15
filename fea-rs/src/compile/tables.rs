@@ -1,10 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use fonttools::{
-    tables::GDEF::{CaretValue, GlyphClass as FtGlyphClass},
-    types::Tag,
-};
+use font_types::{Fixed, LongDateTime, Tag};
 use smol_str::SmolStr;
+use write_fonts::{
+    dump_table,
+    tables::{
+        self,
+        gdef::{AttachList, AttachPoint, CaretValue, GlyphClassDef, LigCaretList, LigGlyph},
+        layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
+    },
+    validate::ValidationReport,
+};
 
 use crate::types::{GlyphClass, GlyphId};
 
@@ -13,11 +19,11 @@ use crate::types::{GlyphClass, GlyphId};
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Tables {
     pub head: Option<head>,
-    pub hhea: Option<hhea>,
+    pub hhea: Option<tables::hhea::Hhea>,
     pub vhea: Option<vhea>,
     pub vmtx: Option<vmtx>,
     pub name: Option<name>,
-    pub GDEF: Option<GDEF>,
+    pub GDEF: Option<Gdef>,
     pub BASE: Option<BASE>,
     pub OS2: Option<OS2>,
     pub STAT: Option<STAT>,
@@ -28,14 +34,14 @@ pub struct head {
     pub font_revision: f32,
 }
 
-#[derive(Clone, Debug, Default)]
-#[allow(non_camel_case_types)]
-pub struct hhea {
-    pub caret_offset: i16,
-    pub ascender: i16,
-    pub descender: i16,
-    pub line_gap: i16,
-}
+//#[derive(Clone, Debug, Default)]
+//#[allow(non_camel_case_types)]
+//pub struct hhea {
+//pub caret_offset: i16,
+//pub ascender: i16,
+//pub descender: i16,
+//pub line_gap: i16,
+//}
 
 #[derive(Clone, Debug, Default)]
 #[allow(non_camel_case_types)]
@@ -81,22 +87,21 @@ pub enum ClassId {
     Component = 4,
 }
 
-impl From<ClassId> for FtGlyphClass {
-    fn from(src: ClassId) -> FtGlyphClass {
+impl From<ClassId> for GlyphClassDef {
+    fn from(src: ClassId) -> GlyphClassDef {
         match src {
-            ClassId::Base => FtGlyphClass::BaseGlyph,
-            ClassId::Ligature => FtGlyphClass::LigatureGlyph,
-            ClassId::Mark => FtGlyphClass::MarkGlyph,
-            ClassId::Component => FtGlyphClass::ComponentGlyph,
+            ClassId::Base => GlyphClassDef::Base,
+            ClassId::Ligature => GlyphClassDef::Ligature,
+            ClassId::Mark => GlyphClassDef::Mark,
+            ClassId::Component => GlyphClassDef::Component,
         }
     }
 }
 
 #[derive(Clone, Debug, Default)]
-#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
-pub struct GDEF {
+pub struct Gdef {
     pub glyph_classes: HashMap<GlyphId, ClassId>,
-    pub attach: HashMap<GlyphId, BTreeSet<u16>>,
+    pub attach: BTreeMap<GlyphId, BTreeSet<u16>>,
     pub ligature_pos: BTreeMap<GlyphId, Vec<CaretValue>>,
 }
 
@@ -167,20 +172,20 @@ pub struct AxisValue {
 pub enum AxisLocation {
     One {
         tag: Tag,
-        value: f32,
+        value: Fixed,
     },
     Two {
         tag: Tag,
-        nominal: f32,
-        min: f32,
-        max: f32,
+        nominal: Fixed,
+        min: Fixed,
+        max: Fixed,
     },
     Three {
         tag: Tag,
-        value: f32,
-        linked: f32,
+        value: Fixed,
+        linked: Fixed,
     },
-    Four(Vec<(Tag, f32)>),
+    Four(Vec<(Tag, Fixed)>),
 }
 
 #[derive(Clone, Debug)]
@@ -195,15 +200,15 @@ impl name {
 }
 
 impl NameSpec {
-    pub fn to_otf(&self, name_id: u16) -> fonttools::tables::name::NameRecord {
+    pub fn to_otf(&self, name_id: u16) -> write_fonts::tables::name::NameRecord {
         let string = parse_string(self.platform_id, self.string.trim_matches('"'));
-        fonttools::tables::name::NameRecord {
-            platformID: self.platform_id,
-            encodingID: self.encoding_id,
-            languageID: self.language_id,
-            nameID: name_id,
-            string,
-        }
+        write_fonts::tables::name::NameRecord::new(
+            self.platform_id,
+            self.encoding_id,
+            self.language_id,
+            name_id,
+            string.into(),
+        )
     }
 }
 
@@ -256,46 +261,47 @@ fn parse_mac(s: &str) -> String {
     out
 }
 
-impl head {
-    #[allow(deprecated)] //FIXME: only until we move to fontations
-    pub(crate) fn build(&self) -> fonttools::tables::head::head {
-        // match what python fonttools does
-        let mut table = fonttools::tables::head::new(self.font_revision, 0, 0, 0, 0, 0);
-        table.magicNumber = 0;
-        table.flags = 0;
-        table.lowestRecPPEM = 0;
-        table.fontDirectionHint = 0;
-        table.created = chrono::NaiveDate::from_ymd(2011, 12, 13).and_hms(11, 22, 33);
-        table.modified = chrono::NaiveDate::from_ymd(2011, 12, 13).and_hms(11, 22, 33);
-        //table.checksumAdjustment = 0;
-        table
-    }
-}
+// this is the value used in python fonttools when writing this table
+const DATE_2011_12_13_H11_M22_S33: LongDateTime = LongDateTime::new(1323775353);
 
-impl hhea {
-    pub fn build(&self) -> fonttools::tables::hhea::hhea {
-        fonttools::tables::hhea::hhea {
-            majorVersion: 1,
-            minorVersion: 0,
-            ascender: self.ascender,
-            descender: self.descender,
-            lineGap: self.line_gap,
-            advanceWidthMax: 0,
-            minLeftSideBearing: 0,
-            minRightSideBearing: 0,
-            xMaxExtent: 0,
-            caretSlopeRun: 0,
-            caretSlopeRise: 0,
-            caretOffset: self.caret_offset,
-            reserved0: 0,
-            reserved1: 0,
-            reserved2: 0,
-            reserved3: 0,
-            metricDataFormat: 0,
-            numberOfHMetrics: 0,
+impl head {
+    pub(crate) fn build(&self) -> write_fonts::tables::head::Head {
+        // match what python fonttools does
+        write_fonts::tables::head::Head {
+            font_revision: Fixed::from_f64(self.font_revision as f64),
+            checksum_adjustment: 0,
+            flags: 0,
+            units_per_em: 1000,
+            created: DATE_2011_12_13_H11_M22_S33,
+            modified: DATE_2011_12_13_H11_M22_S33,
+            x_min: 0,
+            y_min: 0,
+            x_max: 0,
+            y_max: 0,
+            mac_style: 0,
+            lowest_rec_ppem: 0,
+            index_to_loc_format: 0,
         }
     }
 }
+
+//impl hhea {
+//pub fn build(&self) -> write_fonts::tables::hhea::Hhea {
+//write_fonts::tables::hhea::Hhea {
+//ascender: FWord::new(self.ascender),
+//descender: FWord::new(self.descender),
+//line_gap: FWord::new(self.line_gap),
+//advance_width_max: UfWord::new(0),
+//min_right_side_bearing: FWord::new(0),
+//min_left_side_bearing: FWord::new(0),
+//x_max_extent: FWord::new(0),
+//caret_slope_run: 0,
+//caret_slope_rise: 0,
+//caret_offset: self.caret_offset,
+//number_of_h_metrics: 0,
+//}
+//}
+//}
 
 impl OS2 {
     pub fn bit_for_code_page(val: u16) -> Option<u8> {
@@ -304,105 +310,117 @@ impl OS2 {
             .find_map(|(page, bit)| if *page == val { Some(*bit) } else { None })
     }
 
-    pub fn build(&self) -> fonttools::tables::os2::os2 {
-        const MASK_32: u32 = 0xffff_ffff;
-        let panose = fonttools::tables::os2::Panose {
-            panose0: self.panose[0],
-            panose1: self.panose[1],
-            panose2: self.panose[2],
-            panose3: self.panose[3],
-            panose4: self.panose[4],
-            panose5: self.panose[5],
-            panose6: self.panose[6],
-            panose7: self.panose[7],
-            panose8: self.panose[8],
-            panose9: self.panose[9],
-        };
-        let mut result = fonttools::tables::os2::os2 {
-            version: 2,
-            xAvgCharWidth: 0,
-            usWeightClass: self.weight_class,
-            usWidthClass: self.width_class,
-            fsType: self.fs_type,
-            ySubscriptXSize: 0,
-            ySubscriptYSize: 0,
-            ySubscriptXOffset: 0,
-            ySubscriptYOffset: 0,
-            ySuperscriptXSize: 0,
-            ySuperscriptYSize: 0,
-            ySuperscriptYOffset: 0,
-            ySuperscriptXOffset: 0,
-            yStrikeoutSize: 0,
-            yStrikeoutPosition: 0,
-            sFamilyClass: self.family_class,
-            panose,
-            ulUnicodeRange1: (self.unicode_range & MASK_32 as u128) as u32,
-            ulUnicodeRange2: (self.unicode_range >> 32 & MASK_32 as u128) as u32,
-            ulUnicodeRange3: (self.unicode_range >> 64 & MASK_32 as u128) as u32,
-            ulUnicodeRange4: (self.unicode_range >> 96 & MASK_32 as u128) as u32,
-            achVendID: self.vendor_id.parse().unwrap(),
-            fsSelection: 0,
-            usFirstCharIndex: 0,
-            usLastCharIndex: 0,
-            sTypoAscender: self.typo_ascender,
-            sTypoDescender: self.typo_descender,
-            sTypoLineGap: self.typo_line_gap,
-            usWinAscent: self.win_ascent,
-            usWinDescent: self.win_descent,
-            ulCodePageRange1: Some((self.code_page_range & MASK_32 as u64) as u32),
-            ulCodePageRange2: Some((self.code_page_range >> 32 & MASK_32 as u64) as u32),
-            sxHeight: Some(self.x_height),
-            sCapHeight: Some(self.cap_height),
-            usLowerOpticalPointSize: self.lower_op_size,
-            usUpperOpticalPointSize: self.upper_op_size,
-            usDefaultChar: None,
-            usBreakChar: None,
-            usMaxContext: None,
-        };
+    pub fn build(&self) -> () {
+        //pub fn build(&self) -> write_fonts::tables::os2::os2 {
+        todo!()
+        //const MASK_32: u32 = 0xffff_ffff;
+        //let panose = fonttools::tables::os2::Panose {
+        //panose0: self.panose[0],
+        //panose1: self.panose[1],
+        //panose2: self.panose[2],
+        //panose3: self.panose[3],
+        //panose4: self.panose[4],
+        //panose5: self.panose[5],
+        //panose6: self.panose[6],
+        //panose7: self.panose[7],
+        //panose8: self.panose[8],
+        //panose9: self.panose[9],
+        //};
+        //let mut result = fonttools::tables::os2::os2 {
+        //version: 2,
+        //xAvgCharWidth: 0,
+        //usWeightClass: self.weight_class,
+        //usWidthClass: self.width_class,
+        //fsType: self.fs_type,
+        //ySubscriptXSize: 0,
+        //ySubscriptYSize: 0,
+        //ySubscriptXOffset: 0,
+        //ySubscriptYOffset: 0,
+        //ySuperscriptXSize: 0,
+        //ySuperscriptYSize: 0,
+        //ySuperscriptYOffset: 0,
+        //ySuperscriptXOffset: 0,
+        //yStrikeoutSize: 0,
+        //yStrikeoutPosition: 0,
+        //sFamilyClass: self.family_class,
+        //panose,
+        //ulUnicodeRange1: (self.unicode_range & MASK_32 as u128) as u32,
+        //ulUnicodeRange2: (self.unicode_range >> 32 & MASK_32 as u128) as u32,
+        //ulUnicodeRange3: (self.unicode_range >> 64 & MASK_32 as u128) as u32,
+        //ulUnicodeRange4: (self.unicode_range >> 96 & MASK_32 as u128) as u32,
+        //achVendID: self.vendor_id.parse().unwrap(),
+        //fsSelection: 0,
+        //usFirstCharIndex: 0,
+        //usLastCharIndex: 0,
+        //sTypoAscender: self.typo_ascender,
+        //sTypoDescender: self.typo_descender,
+        //sTypoLineGap: self.typo_line_gap,
+        //usWinAscent: self.win_ascent,
+        //usWinDescent: self.win_descent,
+        //ulCodePageRange1: Some((self.code_page_range & MASK_32 as u64) as u32),
+        //ulCodePageRange2: Some((self.code_page_range >> 32 & MASK_32 as u64) as u32),
+        //sxHeight: Some(self.x_height),
+        //sCapHeight: Some(self.cap_height),
+        //usLowerOpticalPointSize: self.lower_op_size,
+        //usUpperOpticalPointSize: self.upper_op_size,
+        //usDefaultChar: None,
+        //usBreakChar: None,
+        //usMaxContext: None,
+        //};
 
-        if result.usLowerOpticalPointSize.is_some() || result.usUpperOpticalPointSize.is_some() {
-            result.version = 5;
-        }
-        result
+        //if result.usLowerOpticalPointSize.is_some() || result.usUpperOpticalPointSize.is_some() {
+        //result.version = 5;
+        //}
+        //result
     }
 }
 
-impl GDEF {
-    pub fn build(&self) -> fonttools::tables::GDEF::GDEF {
-        let mut table = empty_gdef();
-        for (glyph, class) in self.glyph_classes.iter() {
-            table.glyph_class.insert(glyph.to_raw(), (*class).into());
-        }
+impl Gdef {
+    pub fn build(&self) -> Result<Vec<u8>, ValidationReport> {
+        let table = tables::gdef::Gdef::new(
+            self.build_class_def(),
+            self.build_attach_list(),
+            self.build_lig_caret_list(),
+            None,
+        );
+        dump_table(&table)
+    }
 
+    fn build_class_def(&self) -> Option<ClassDef> {
+        (!self.glyph_classes.is_empty()).then(|| {
+            self.glyph_classes
+                .iter()
+                .map(|(gid, cls)| (*gid, *cls as u16))
+                .collect::<ClassDefBuilder>()
+                .build()
+        })
+    }
+
+    fn build_attach_list(&self) -> Option<AttachList> {
+        let mut coverage = CoverageTableBuilder::default();
+        let mut attach_points = Vec::new();
         for (glyph, points) in &self.attach {
-            table
-                .attachment_point_list
-                .insert(glyph.to_raw(), points.iter().copied().collect());
+            coverage.add(*glyph);
+            attach_points.push(AttachPoint::new(points.iter().copied().collect()));
         }
+        (!attach_points.is_empty()).then(|| AttachList::new(coverage.build(), attach_points))
+    }
 
+    fn build_lig_caret_list(&self) -> Option<LigCaretList> {
+        let mut coverage = CoverageTableBuilder::default();
+        let mut lig_glyphs = Vec::new();
         for (glyph, carets) in &self.ligature_pos {
-            table
-                .ligature_caret_list
-                .insert(glyph.to_raw(), carets.clone());
+            coverage.add(*glyph);
+            carets.iter().map(|caret| ());
+            lig_glyphs.push(LigGlyph::new(carets.clone()));
         }
-        table
+        (!lig_glyphs.is_empty()).then(|| LigCaretList::new(coverage.build(), lig_glyphs))
     }
 
     pub fn add_glyph_class(&mut self, glyphs: GlyphClass, class: ClassId) {
         for glyph in glyphs.iter() {
             self.glyph_classes.insert(glyph, class);
         }
-    }
-}
-
-fn empty_gdef() -> fonttools::tables::GDEF::GDEF {
-    fonttools::tables::GDEF::GDEF {
-        glyph_class: Default::default(),
-        attachment_point_list: Default::default(),
-        ligature_caret_list: Default::default(),
-        mark_attachment_class: Default::default(),
-        mark_glyph_sets: Default::default(),
-        item_variation_store: Default::default(),
     }
 }
 
@@ -479,4 +497,5 @@ fn smoke_test_conversion() {
     assert_eq!(mac_roman_to_char(0x7F), 0x7f as char);
     assert_eq!(mac_roman_to_char(0x80), 'Ä');
     assert_eq!(mac_roman_to_char(0xFF), 'ˇ');
+    assert_eq!(mac_roman_to_char(0x8e), 'é');
 }

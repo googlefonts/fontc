@@ -2,13 +2,6 @@
 
 use std::fmt::{self, Write};
 
-use fonttools::{
-    font::Font,
-    layout::common::{LanguageSystem, ValueRecord, GPOSGSUB},
-    tables::{self, GPOS::Positioning, GSUB::Substitution},
-    tag, types,
-};
-
 struct IndentWriter<'a> {
     writer: &'a mut dyn Write,
     needs_indent: bool,
@@ -120,7 +113,7 @@ fn explode_script_list<T>(f: &mut IndentWriter, table: &GPOSGSUB<T>) -> fmt::Res
     for (tag, script) in &table.scripts.scripts {
         writeln!(f, "script {}", tag)?;
         if let Some(dflt) = &script.default_language_system {
-            print_language_system(f, tag!("dflt"), dflt, table)?;
+            print_language_system(f, font_types::Tag::new(b"dflt"), dflt, table)?;
         }
         for (tag, sys) in &script.language_systems {
             print_language_system(f, *tag, sys, table)?;

@@ -4,14 +4,9 @@ use std::{
     ops::Range,
 };
 
+use font_types::Tag;
 use smol_str::SmolStr;
-
-use fonttools::{
-    layout::common::{LookupFlags, ValueRecord},
-    tables::GDEF::CaretValue,
-    tag,
-    types::Tag,
-};
+use write_fonts::tables::{self, gdef::CaretValue, gpos::ValueRecord, layout::LookupFlag};
 
 use crate::{
     parse::SourceMap,
@@ -23,12 +18,12 @@ use crate::{
     Diagnostic, GlyphMap, Kind, NodeOrToken,
 };
 
-use super::output::{Compilation, SizeFeature};
-use super::tables::{ScriptRecord, Tables};
-use super::{consts, glyph_range};
 use super::{
+    builders::PreviouslyAssignedClass,
+    consts, glyph_range,
     lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, SomeLookup},
-    tables::ClassId,
+    output::{Compilation, SizeFeature},
+    tables::{ClassId, ScriptRecord, Tables},
 };
 
 pub struct CompilationCtx<'a> {
@@ -39,7 +34,7 @@ pub struct CompilationCtx<'a> {
     features: BTreeMap<FeatureKey, Vec<LookupId>>,
     default_lang_systems: HashSet<(Tag, Tag)>,
     lookups: AllLookups,
-    lookup_flags: LookupFlags,
+    lookup_flags: LookupFlag,
     cur_mark_filter_set: Option<FilterSetId>,
     cur_language_systems: HashSet<(Tag, Tag)>,
     cur_feature_name: Option<Tag>,
@@ -71,7 +66,7 @@ impl<'a> CompilationCtx<'a> {
             features: Default::default(),
             mark_classes: Default::default(),
             anchor_defs: Default::default(),
-            lookup_flags: LookupFlags::empty(),
+            lookup_flags: Default::default(),
             cur_mark_filter_set: Default::default(),
             cur_language_systems: Default::default(),
             cur_feature_name: None,
@@ -136,7 +131,7 @@ impl<'a> CompilationCtx<'a> {
     // if a GDEF table is not explicitly defined, we are supposed to create one:
     // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#4f-markclass
     fn infer_glyph_classes(&mut self) {
-        let mut gdef = super::tables::GDEF::default();
+        let mut gdef = super::tables::Gdef::default();
         self.lookups.infer_glyph_classes(|glyph, class_id| {
             gdef.glyph_classes.insert(glyph, class_id);
         });
@@ -185,7 +180,7 @@ impl<'a> CompilationCtx<'a> {
             "no lookup should be active at start of feature"
         );
         self.cur_feature_name = Some(feature_name.to_raw());
-        self.lookup_flags = LookupFlags::empty();
+        self.lookup_flags = LookupFlag::empty();
         self.cur_mark_filter_set = None;
     }
 
@@ -200,12 +195,12 @@ impl<'a> CompilationCtx<'a> {
         self.cur_feature_name = None;
         self.cur_language_systems.clear();
         //self.cur_lookup = None;
-        self.lookup_flags = LookupFlags::empty();
+        self.lookup_flags = LookupFlag::empty();
         self.cur_mark_filter_set = None;
     }
 
     fn start_lookup_block(&mut self, name: &Token) {
-        if self.cur_feature_name == Some(tag!("aalt")) {
+        if self.cur_feature_name == Some(consts::AALT_TAG) {
             self.error(name.range(), "no lookups allowed in aalt");
         }
 
@@ -217,7 +212,7 @@ impl<'a> CompilationCtx<'a> {
         }
 
         if self.cur_feature_name.is_none() {
-            self.lookup_flags = LookupFlags::empty();
+            self.lookup_flags = LookupFlag::empty();
             self.cur_mark_filter_set = None;
         }
 
@@ -231,7 +226,7 @@ impl<'a> CompilationCtx<'a> {
                 self.add_lookup_to_feature(id, feature);
             }
         } else {
-            self.lookup_flags = LookupFlags::empty();
+            self.lookup_flags = LookupFlag::empty();
             self.cur_mark_filter_set = None;
         }
     }
@@ -303,19 +298,19 @@ impl<'a> CompilationCtx<'a> {
 
     fn set_lookup_flag(&mut self, node: typed::LookupFlag) {
         if let Some(number) = node.number() {
-            self.lookup_flags = LookupFlags::from_bits_truncate(number.parse_unsigned().unwrap());
+            self.lookup_flags = LookupFlag::from_bits_truncate(number.parse_unsigned().unwrap());
             return;
         }
 
-        let mut flags = LookupFlags::empty();
+        let mut flags = LookupFlag::empty();
 
         let mut iter = node.values();
         while let Some(next) = iter.next() {
             match next.kind() {
-                Kind::RightToLeftKw => flags |= LookupFlags::RIGHT_TO_LEFT,
-                Kind::IgnoreBaseGlyphsKw => flags |= LookupFlags::IGNORE_BASE_GLYPHS,
-                Kind::IgnoreLigaturesKw => flags |= LookupFlags::IGNORE_LIGATURES,
-                Kind::IgnoreMarksKw => flags |= LookupFlags::IGNORE_MARKS,
+                Kind::RightToLeftKw => flags.set_right_to_left(true),
+                Kind::IgnoreBaseGlyphsKw => flags.set_ignore_base_glyphs(true),
+                Kind::IgnoreLigaturesKw => flags.set_ignore_ligatures(true),
+                Kind::IgnoreMarksKw => flags.set_ignore_marks(true),
 
                 //FIXME: we are not enforcing some requirements here. in particular,
                 // The glyph sets of the referenced classes must not overlap, and the MarkAttachmentType statement can reference at most 15 different classes.
@@ -326,7 +321,7 @@ impl<'a> CompilationCtx<'a> {
                         .and_then(typed::GlyphClass::cast)
                         .expect("validated");
                     let mark_attach_set = self.resolve_mark_attach_class(&node);
-                    flags |= LookupFlags::from_bits_truncate(mark_attach_set << 8);
+                    flags.set_mark_attachment_type(mark_attach_set);
                 }
                 Kind::UseMarkFilteringSetKw => {
                     let node = iter
@@ -334,7 +329,7 @@ impl<'a> CompilationCtx<'a> {
                         .and_then(typed::GlyphClass::cast)
                         .expect("validated");
                     let filter_set = self.resolve_mark_filter_set(&node);
-                    flags |= LookupFlags::USE_MARK_FILTERING_SET;
+                    flags.set_use_mark_filtering_set(true);
                     self.cur_mark_filter_set = Some(filter_set);
                 }
                 other => unreachable!("mark statements have been validated: '{:?}'", other),
@@ -477,10 +472,7 @@ impl<'a> CompilationCtx<'a> {
     fn add_multiple_sub(&mut self, node: &typed::Gsub2) {
         let target = node.target();
         let target_id = self.resolve_glyph(&target);
-        let replacement = node
-            .replacement()
-            .map(|g| self.resolve_glyph(&g).to_raw())
-            .collect();
+        let replacement = node.replacement().map(|g| self.resolve_glyph(&g)).collect();
         let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
         lookup.add_gsub_type_2(target_id, replacement);
     }
@@ -489,7 +481,7 @@ impl<'a> CompilationCtx<'a> {
         let target = self.resolve_glyph(&node.target());
         let alts = self.resolve_glyph_class(&node.alternates());
         let lookup = self.ensure_current_lookup_type(Kind::GsubType3);
-        lookup.add_gsub_type_3(target, alts.iter().map(|g| g.to_raw()).collect());
+        lookup.add_gsub_type_3(target, alts.iter().collect());
     }
 
     fn add_ligature_sub(&mut self, node: &typed::Gsub4) {
@@ -506,138 +498,141 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_contextual_sub(&mut self, node: &typed::Gsub6) {
-        let mut backtrack = node
-            .backtrack()
-            .items()
-            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-            .collect::<Vec<_>>();
-        backtrack.reverse();
-        let lookahead = node
-            .lookahead()
-            .items()
-            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-            .collect::<Vec<_>>();
-        // does this have an inline rule?
-        let mut inline = node.inline_rule().and_then(|rule| {
-            let input = node.input();
-            if input.items().nth(1).is_some() {
-                // more than one input: this is a ligature rule
-                let target = input
-                    .items()
-                    .map(|inp| self.resolve_glyph_or_class(&inp.target()))
-                    .collect::<Vec<_>>();
-                let replacement = self.resolve_glyph(&rule.replacement_glyphs().next().unwrap());
-                let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-                //FIXME: we should check that the whole sequence is not present the
-                //lookup before adding..
-                let mut to_return = None;
-                for target in sequence_enumerator(&target) {
-                    to_return = Some(
-                        lookup
-                            .as_gsub_type_6()
-                            .add_anon_gsub_type_4(target, replacement),
-                    );
-                }
-                to_return
-            } else {
-                let target = input.items().next().unwrap().target();
-                let replacement = rule.replacements().next().unwrap();
-                if let Some((target, replacement)) =
-                    self.validate_single_sub_inputs(&target, Some(&replacement))
-                {
-                    let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-                    Some(
-                        lookup
-                            .as_gsub_type_6()
-                            .add_anon_gsub_type_1(target, replacement),
-                    )
-                } else {
-                    None
-                }
-            }
-        });
+        //TODO: me
+        //let mut backtrack = node
+        //.backtrack()
+        //.items()
+        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+        //.collect::<Vec<_>>();
+        //backtrack.reverse();
+        //let lookahead = node
+        //.lookahead()
+        //.items()
+        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+        //.collect::<Vec<_>>();
+        //// does this have an inline rule?
+        //let mut inline = node.inline_rule().and_then(|rule| {
+        //let input = node.input();
+        //if input.items().nth(1).is_some() {
+        //// more than one input: this is a ligature rule
+        //let target = input
+        //.items()
+        //.map(|inp| self.resolve_glyph_or_class(&inp.target()))
+        //.collect::<Vec<_>>();
+        //let replacement = self.resolve_glyph(&rule.replacement_glyphs().next().unwrap());
+        //let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+        ////FIXME: we should check that the whole sequence is not present the
+        ////lookup before adding..
+        //let mut to_return = None;
+        //for target in sequence_enumerator(&target) {
+        //to_return = Some(
+        //lookup
+        //.as_gsub_type_6()
+        //.add_anon_gsub_type_4(target, replacement),
+        //);
+        //}
+        //to_return
+        //} else {
+        //let target = input.items().next().unwrap().target();
+        //let replacement = rule.replacements().next().unwrap();
+        //if let Some((target, replacement)) =
+        //self.validate_single_sub_inputs(&target, Some(&replacement))
+        //{
+        //let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+        //Some(
+        //lookup
+        //.as_gsub_type_6()
+        //.add_anon_gsub_type_1(target, replacement),
+        //)
+        //} else {
+        //None
+        //}
+        //}
+        //});
 
-        let context = node
-            .input()
-            .items()
-            .map(|item| {
-                let glyphs = make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target()));
-                let mut lookups = Vec::new();
-                // if there's an inline rule it always belongs to the first marked
-                // glyph, so this should work? it may need to change for fancier
-                // inline rules in the future.
-                if let Some(inline) = inline.take() {
-                    lookups.push(inline.to_u16_or_die());
-                }
+        //let context = node
+        //.input()
+        //.items()
+        //.map(|item| {
+        //let glyphs = make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target()));
+        //let mut lookups = Vec::new();
+        //// if there's an inline rule it always belongs to the first marked
+        //// glyph, so this should work? it may need to change for fancier
+        //// inline rules in the future.
+        //if let Some(inline) = inline.take() {
+        //lookups.push(inline.to_u16_or_die());
+        //}
 
-                for lookup in item.lookups() {
-                    let lookup = self.lookups.get_named(&lookup.label().text).unwrap(); // validated already
-                    lookups.push(lookup.to_u16_or_die());
-                }
-                (glyphs, lookups)
-            })
-            .collect::<Vec<_>>();
+        //for lookup in item.lookups() {
+        //let lookup = self.lookups.get_named(&lookup.label().text).unwrap(); // validated already
+        //lookups.push(lookup.to_u16_or_die());
+        //}
+        //(glyphs, lookups)
+        //})
+        //.collect::<Vec<_>>();
 
-        let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-        lookup.add_gsub_type_6(backtrack, context, lookahead);
+        //let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+        //lookup.add_gsub_type_6(backtrack, context, lookahead);
     }
 
     fn add_contextual_sub_ignore(&mut self, node: &typed::GsubIgnore) {
-        for rule in node.rules() {
-            let mut backtrack = rule
-                .backtrack()
-                .items()
-                .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-                .collect::<Vec<_>>();
-            backtrack.reverse();
-            let lookahead = rule
-                .lookahead()
-                .items()
-                .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-                .collect::<Vec<_>>();
-            let context = rule
-                .input()
-                .items()
-                .map(|item| {
-                    (
-                        make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target())),
-                        Vec::new(),
-                    )
-                })
-                .collect::<Vec<_>>();
-            let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-            lookup.add_gsub_type_6(backtrack, context, lookahead);
-        }
+        //TODO: me!
+        //for rule in node.rules() {
+        //let mut backtrack = rule
+        //.backtrack()
+        //.items()
+        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+        //.collect::<Vec<_>>();
+        //backtrack.reverse();
+        //let lookahead = rule
+        //.lookahead()
+        //.items()
+        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+        //.collect::<Vec<_>>();
+        //let context = rule
+        //.input()
+        //.items()
+        //.map(|item| {
+        //(
+        //make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target())),
+        //Vec::new(),
+        //)
+        //})
+        //.collect::<Vec<_>>();
+        //let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+        //lookup.add_gsub_type_6(backtrack, context, lookahead);
+        //}
     }
 
     fn add_reverse_contextual_sub(&mut self, node: &typed::Gsub8) {
-        let mut backtrack = node
-            .backtrack()
-            .items()
-            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-            .collect::<Vec<_>>();
-        backtrack.reverse();
-        let lookahead = node
-            .lookahead()
-            .items()
-            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-            .collect::<Vec<_>>();
+        //TODO: me!
+        //let mut backtrack = node
+        //.backtrack()
+        //.items()
+        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+        //.collect::<Vec<_>>();
+        //backtrack.reverse();
+        //let lookahead = node
+        //.lookahead()
+        //.items()
+        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+        //.collect::<Vec<_>>();
 
-        let input = node.input().items().next().unwrap();
-        let target = input.target();
-        let replacement = node.inline_rule().and_then(|r| r.replacements().next());
-        //FIXME: warn if there are actual lookups here, we don't support that
-        if let Some((target, replacement)) =
-            self.validate_single_sub_inputs(&target, replacement.as_ref())
-        {
-            let context = target
-                .iter()
-                .zip(replacement.into_iter_for_target())
-                .map(|(a, b)| (a.to_raw(), b.to_raw()))
-                .collect();
-            self.ensure_current_lookup_type(Kind::GsubType8)
-                .add_gsub_type_8(backtrack, context, lookahead);
-        }
+        //let input = node.input().items().next().unwrap();
+        //let target = input.target();
+        //let replacement = node.inline_rule().and_then(|r| r.replacements().next());
+        ////FIXME: warn if there are actual lookups here, we don't support that
+        //if let Some((target, replacement)) =
+        //self.validate_single_sub_inputs(&target, replacement.as_ref())
+        //{
+        //let context = target
+        //.iter()
+        //.zip(replacement.into_iter_for_target())
+        //.map(|(a, b)| (a.to_u16(), b.to_u16()))
+        //.collect();
+        //self.ensure_current_lookup_type(Kind::GsubType8)
+        //.add_gsub_type_8(backtrack, context, lookahead);
+        //}
     }
 
     fn add_single_pos(&mut self, node: &typed::Gpos1) {
@@ -647,6 +642,12 @@ impl<'a> CompilationCtx<'a> {
         for id in ids.iter() {
             lookup.add_gpos_type_1(id, record.clone());
         }
+        //if let Some(_prev_format) = err {
+        //self.error(
+        //node.value().range(),
+        //format!("rule has different value format from previous rule"),
+        //);
+        //}
     }
 
     fn add_pair_pos(&mut self, node: &typed::Gpos2) {
@@ -696,8 +697,7 @@ impl<'a> CompilationCtx<'a> {
             // doesn't think we're borrowing all of self
             //TODO: we do validation here because our validation pass isn't smart
             //enough. We need to not just validate a rule, but every rule in a lookup.
-            let maybe_bad_mark = self
-                .lookups
+            self.lookups
                 .current_mut()
                 .unwrap()
                 .with_gpos_type_4(|subtable| {
@@ -707,127 +707,96 @@ impl<'a> CompilationCtx<'a> {
                             .expect("no null anchors in mark-to-base (check validation)");
                         for glyph in glyphs.iter() {
                             // validate here that classes are disjoint
-                            let prev = subtable
-                                .marks
-                                .insert(glyph.to_raw(), (mark_class.id, anchor));
-                            if let Some(id) =
-                                prev.map(|(id, _)| id).filter(|id| *id != mark_class.id)
-                            {
-                                return Err(id);
-                            }
+                            subtable.insert_mark(glyph, mark_class.id, anchor.clone())?;
                         }
                     }
                     for base in base_ids.iter() {
-                        subtable.bases.entry(base.to_raw()).or_default().insert(
+                        subtable.insert_base(
+                            base,
                             mark_class.id,
                             base_anchor
                                 .to_raw()
                                 .expect("no null anchors in mark-to-base"),
-                        );
+                        )
                     }
                     Ok(())
+                })
+                .err()
+                .map(|PreviouslyAssignedClass { class, .. }| {
+                    self.report_mark_class_conflict(mark_class_node.range(), class)
                 });
-            if let Err(mark_id) = maybe_bad_mark {
-                let prev_class_name = self
-                    .mark_classes
-                    .iter()
-                    .find_map(|(name, class)| (class.id == mark_id).then(|| name.clone()))
-                    .unwrap();
-                self.error(
-                    mark_class_node.range(),
-                    format!(
-                        "mark class includes glyph in class '{}', already used in lookup.",
-                        prev_class_name
-                    ),
-                );
-            }
         }
     }
 
     fn add_mark_to_lig(&mut self, node: &typed::Gpos5) {
         let base_ids = self.resolve_glyph_or_class(&node.base());
-        //table
-        for component in node.ligature_components() {
-            let lookup = self.ensure_current_lookup_type(Kind::GposType5);
-            // add an empty map for the component, to be used below
-            lookup.with_gpos_type_5(|subtable| {
-                for base in base_ids.iter() {
-                    subtable
-                        .ligatures
-                        .entry(base.to_raw())
-                        .or_default()
-                        .push(Default::default());
-                }
-            });
+        // okay so:
+        // for each lig glyph in the input, we create a lig array table.
+        // for each component in each lig glyph, we add a component record
+        // to that lig glyph table.
+        // for each anchor point in each component, we add an anchor record
+        // to that component
 
-            for mark in component.attachments() {
-                let base_anchor = self.resolve_anchor(&mark.anchor()).unwrap_or(Anchor::Null);
+        let mut components = Vec::new();
+        for component in node.ligature_components() {
+            let _lookup = self.ensure_current_lookup_type(Kind::GposType5);
+
+            let mut anchor_records = BTreeMap::new();
+            for attachment in component.attachments() {
+                let component_anchor = self
+                    .resolve_anchor(&attachment.anchor())
+                    .unwrap_or(Anchor::Null);
                 // ensure we're in the right lookup but drop the reference
 
-                // this is allowed to be null
-                let mark_class_node = match mark.mark_class_name() {
+                let mark_class_node = match attachment.mark_class_name() {
                     Some(node) => node,
-                    None => continue,
+                    None => {
+                        // this means that there is a single null anchor for this
+                        // component, which in turn means that there are no
+                        // attachment points. we will fill them in later.
+                        assert!(matches!(component_anchor, Anchor::Null));
+                        continue;
+                    }
                 };
+                let component_anchor = component_anchor.to_raw().unwrap();
                 let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
 
                 // access the lookup through the field, so the borrow checker
                 // doesn't think we're borrowing all of self
                 //TODO: we do validation here because our validation pass isn't smart
                 //enough. We need to not just validate a rule, but every rule in a lookup.
-                let maybe_bad_mark =
-                    self.lookups
-                        .current_mut()
-                        .unwrap()
-                        .with_gpos_type_5(|subtable| {
-                            for (glyphs, mark_anchor) in &mark_class.members {
-                                let anchor = mark_anchor
-                                    .to_raw()
-                                    .expect("no null anchors in mark-to-base (check validation)");
-                                for glyph in glyphs.iter() {
-                                    // validate here that classes are disjoint
-                                    let prev = subtable
-                                        .marks
-                                        .insert(glyph.to_raw(), (mark_class.id, anchor));
-                                    if let Some(id) =
-                                        prev.map(|(id, _)| id).filter(|id| *id != mark_class.id)
-                                    {
-                                        return Err(id);
-                                    }
-                                }
+                anchor_records.insert(mark_class.id, component_anchor);
+                self.lookups
+                    .current_mut()
+                    .unwrap()
+                    .with_gpos_type_5(|subtable| {
+                        for (glyphs, mark_anchor) in &mark_class.members {
+                            let anchor = mark_anchor
+                                .to_raw()
+                                .expect("no null anchors on marks (check validation)");
+                            for glyph in glyphs.iter() {
+                                // validate here that classes are disjoint
+                                subtable.insert_mark(glyph, mark_class.id, anchor.clone())?;
                             }
-                            for base in base_ids.iter() {
-                                subtable
-                                    .ligatures
-                                    .get_mut(&base.to_raw())
-                                    .unwrap() // we just created this at top of loop
-                                    .last_mut()
-                                    .unwrap() // ditto
-                                    .insert(
-                                        mark_class.id,
-                                        base_anchor
-                                            .to_raw()
-                                            .expect("no null anchors in mark-to-base"),
-                                    );
-                            }
-                            Ok(())
-                        });
-                if let Err(mark_id) = maybe_bad_mark {
-                    let prev_class_name = self
-                        .mark_classes
-                        .iter()
-                        .find_map(|(name, class)| (class.id == mark_id).then(|| name.clone()))
-                        .unwrap();
-                    self.error(
-                        mark_class_node.range(),
-                        format!(
-                            "mark class includes glyph in class '{}', already used in lookup.",
-                            prev_class_name
-                        ),
-                    );
-                }
+                        }
+                        Ok(())
+                    })
+                    .err()
+                    .map(|PreviouslyAssignedClass { class, .. }| {
+                        self.report_mark_class_conflict(mark_class_node.range(), class)
+                    });
             }
+            components.push(anchor_records);
         }
+
+        self.lookups
+            .current_mut()
+            .unwrap()
+            .with_gpos_type_5(|subtable| {
+                for base in base_ids.iter() {
+                    subtable.add_base(base, components.clone());
+                }
+            })
     }
 
     //FIXME: this is basically identical to type 4, but the validation stuff
@@ -847,140 +816,142 @@ impl<'a> CompilationCtx<'a> {
             // doesn't think we're borrowing all of self
             //TODO: we do validation here because our validation pass isn't smart
             //enough. We need to not just validate a rule, but every rule in a lookup.
-            let maybe_bad_mark = self
-                .lookups
+            self.lookups
                 .current_mut()
                 .unwrap()
                 .with_gpos_type_6(|subtable| {
                     for (glyphs, mark_anchor) in &mark_class.members {
                         let anchor = mark_anchor
                             .to_raw()
-                            .expect("no null anchors in mark-to-base (check validation)");
+                            .expect("no null anchors in mark-to-mark (check validation)");
                         for glyph in glyphs.iter() {
-                            // validate here that classes are disjoint
-                            let prev = subtable
-                                .combining_marks
-                                .insert(glyph.to_raw(), (mark_class.id, anchor));
-                            if let Some(id) =
-                                prev.map(|(id, _)| id).filter(|id| *id != mark_class.id)
-                            {
-                                return Err(id);
-                            }
+                            subtable.insert_mark(glyph, mark_class.id, anchor.clone())?;
                         }
                     }
                     for base in base_ids.iter() {
-                        subtable
-                            .base_marks
-                            .entry(base.to_raw())
-                            .or_default()
-                            .insert(
-                                mark_class.id,
-                                base_anchor
-                                    .to_raw()
-                                    .expect("no null anchors in mark-to-base"),
-                            );
+                        subtable.insert_base(
+                            base,
+                            mark_class.id,
+                            base_anchor
+                                .to_raw()
+                                .expect("no null anchors in mark-to-mark"),
+                        );
                     }
                     Ok(())
+                })
+                .err()
+                .map(|PreviouslyAssignedClass { class, .. }| {
+                    self.report_mark_class_conflict(mark_class_node.range(), class)
                 });
-            if let Err(mark_id) = maybe_bad_mark {
-                let prev_class_name = self
-                    .mark_classes
-                    .iter()
-                    .find_map(|(name, class)| (class.id == mark_id).then(|| name.clone()))
-                    .unwrap();
-                self.error(
-                    mark_class_node.range(),
-                    format!(
-                        "mark class includes glyph in class '{}', already used in lookup.",
-                        prev_class_name
-                    ),
-                );
-            }
         }
+    }
+
+    fn report_mark_class_conflict(&mut self, range: Range<usize>, prev_class_id: u16) {
+        let prev_class_name = self
+            .mark_classes
+            .iter()
+            .find_map(|(name, class)| (class.id == prev_class_id).then(|| name.clone()))
+            .unwrap();
+        self.error(
+            range,
+            format!(
+                "mark class includes glyph in class '{}', already used in lookup.",
+                prev_class_name
+            ),
+        );
     }
 
     fn add_contextual_pos_rule(&mut self, node: &typed::Gpos8) {
-        let mut backtrack = node
-            .backtrack()
-            .items()
-            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-            .collect::<Vec<_>>();
-        backtrack.reverse();
-        let lookahead = node
-            .lookahead()
-            .items()
-            .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-            .collect::<Vec<_>>();
+        eprintln!("contextual pos currently disabled");
+        //let mut backtrack = node
+        //.backtrack()
+        //.items()
+        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+        //.collect::<Vec<_>>();
+        //backtrack.reverse();
+        //let lookahead = node
+        //.lookahead()
+        //.items()
+        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+        //.collect::<Vec<_>>();
 
-        let context = node
-            .input()
-            .items()
-            .map(|item| {
-                let glyphs = self.resolve_glyph_or_class(&item.target());
-                let mut lookups = Vec::new();
-                if let Some(value) = item.valuerecord() {
-                    let value = self.resolve_value_record(&value);
-                    let anon_id = self
-                        .ensure_current_lookup_type(Kind::GposType8)
-                        .as_gpos_type_8()
-                        .add_anon_gpos_type_1(&glyphs, value);
-                    lookups.push(anon_id.to_u16_or_die());
-                }
+        //let context = node
+        //.input()
+        //.items()
+        //.map(|item| {
+        //let glyphs = self.resolve_glyph_or_class(&item.target());
+        //let mut lookups = Vec::new();
+        //if let Some(value) = item.valuerecord() {
+        //let value = self.resolve_value_record(&value);
+        //let anon_id = self
+        //.ensure_current_lookup_type(Kind::GposType8)
+        //.as_gpos_type_8()
+        //.add_anon_gpos_type_1(&glyphs, value);
+        //lookups.push(anon_id.to_u16_or_die());
+        //}
 
-                for lookup in item.lookups() {
-                    let id = self.lookups.get_named(&lookup.label().text).unwrap();
-                    lookups.push(id.to_u16_or_die());
-                }
+        //for lookup in item.lookups() {
+        //let id = self.lookups.get_named(&lookup.label().text).unwrap();
+        //lookups.push(id.to_u16_or_die());
+        //}
 
-                (make_ctx_glyphs(&glyphs), lookups)
-            })
-            .collect();
-        self.ensure_current_lookup_type(Kind::GposType8)
-            .add_gpos_type_8(backtrack, context, lookahead);
+        //(make_ctx_glyphs(&glyphs), lookups)
+        //})
+        //.collect();
+        //self.ensure_current_lookup_type(Kind::GposType8)
+        //.add_gpos_type_8(backtrack, context, lookahead);
     }
 
     fn add_contextual_pos_ignore(&mut self, node: &typed::GposIgnore) {
-        for rule in node.rules() {
-            let mut backtrack = rule
-                .backtrack()
-                .items()
-                .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-                .collect::<Vec<_>>();
-            backtrack.reverse();
-            let lookahead = rule
-                .lookahead()
-                .items()
-                .map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-                .collect::<Vec<_>>();
-            let context = rule
-                .input()
-                .items()
-                .map(|item| {
-                    (
-                        make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target())),
-                        Vec::new(),
-                    )
-                })
-                .collect::<Vec<_>>();
-            let lookup = self.ensure_current_lookup_type(Kind::GposType8);
-            lookup.add_gpos_type_8(backtrack, context, lookahead);
-        }
+        eprintln!("contextual pos ignore currently disabled");
+        //for rule in node.rules() {
+        //let mut backtrack = rule
+        //.backtrack()
+        //.items()
+        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+        //.collect::<Vec<_>>();
+        //backtrack.reverse();
+        //let lookahead = rule
+        //.lookahead()
+        //.items()
+        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
+        //.collect::<Vec<_>>();
+        //let context = rule
+        //.input()
+        //.items()
+        //.map(|item| {
+        //(
+        //make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target())),
+        //Vec::new(),
+        //)
+        //})
+        //.collect::<Vec<_>>();
+        //let lookup = self.ensure_current_lookup_type(Kind::GposType8);
+        //lookup.add_gpos_type_8(backtrack, context, lookahead);
+        //}
     }
 
     fn resolve_value_record(&mut self, record: &typed::ValueRecord) -> ValueRecord {
+        // in the context of value records, we treat 0 as null
+        fn parse(value: typed::Number) -> Option<i16> {
+            match value.parse_signed() {
+                0 => None,
+                other => Some(other),
+            }
+        }
         if let Some(x_adv) = record.advance() {
             //FIXME: whether this is x or y depends on the current feature?
             return ValueRecord {
-                xAdvance: Some(x_adv.parse_signed()),
+                x_advance: parse(x_adv),
                 ..Default::default()
             };
         }
         if let Some([x_place, y_place, x_adv, y_adv]) = record.placement() {
             return ValueRecord {
-                xAdvance: Some(x_adv.parse_signed()),
-                yAdvance: Some(y_adv.parse_signed()),
-                xPlacement: Some(x_place.parse_signed()),
-                yPlacement: Some(y_place.parse_signed()),
+                x_advance: parse(x_adv),
+                y_advance: parse(y_adv),
+                x_placement: parse(x_place),
+                y_placement: parse(y_place),
                 ..Default::default()
             };
         }
@@ -1043,14 +1014,17 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_size_feature(&mut self, feature: &typed::Feature) {
-        fn resolve_decipoint(node: &typed::FloatLike) -> i16 {
+        //FIXME: I thought this was signed, but I now think it's
+        // unsigned? Double check with spec and ensure this is validated
+        fn resolve_decipoint(node: &typed::FloatLike) -> u16 {
             match node {
-                typed::FloatLike::Number(n) => n.parse_signed(),
+                typed::FloatLike::Number(n) => n.parse_unsigned(),
                 typed::FloatLike::Float(f) => {
                     let f = f.parse();
-                    (f * 10.0).round() as i16
+                    ((f * 10.0).round() as i16).try_into().ok()
                 }
             }
+            .expect("validated at parse time")
         }
 
         let mut size = SizeFeature::default();
@@ -1058,14 +1032,14 @@ impl<'a> CompilationCtx<'a> {
             if let Some(node) = typed::SizeMenuName::cast(statement) {
                 size.names.push(self.resolve_name_spec(&node.spec()));
             } else if let Some(node) = typed::Parameters::cast(statement) {
-                size.params.0 = resolve_decipoint(&node.design_size());
-                size.params.1 = node.subfamily().parse_signed();
-                size.params.2 = node
+                size.params.design_size = resolve_decipoint(&node.design_size());
+                size.params.identifier = node.subfamily().parse_unsigned().unwrap();
+                size.params.range_start = node
                     .range_start()
                     .as_ref()
                     .map(resolve_decipoint)
                     .unwrap_or(0);
-                size.params.3 = node
+                size.params.range_end = node
                     .range_end()
                     .as_ref()
                     .map(resolve_decipoint)
@@ -1255,7 +1229,7 @@ impl<'a> CompilationCtx<'a> {
                     let loc_tag = loc.tag().to_raw();
                     match loc.value() {
                         typed::LocationValue::Value(num) => {
-                            let val = num.parse();
+                            let val = num.parse_fixed();
                             if let Some(AxisLocation::One { tag, value }) = location.as_ref() {
                                 location = Some(AxisLocation::Four(vec![(*tag, *value)]));
                             }
@@ -1271,16 +1245,16 @@ impl<'a> CompilationCtx<'a> {
                         typed::LocationValue::MinMax { nominal, min, max } => {
                             location = Some(AxisLocation::Two {
                                 tag: loc_tag,
-                                nominal: nominal.parse(),
-                                max: max.parse(),
-                                min: min.parse(),
+                                nominal: nominal.parse_fixed(),
+                                max: max.parse_fixed(),
+                                min: min.parse_fixed(),
                             });
                         }
                         typed::LocationValue::Linked { value, linked } => {
                             location = Some(AxisLocation::Three {
                                 tag: loc_tag,
-                                value: value.parse(),
-                                linked: linked.parse(),
+                                value: value.parse_fixed(),
+                                linked: linked.parse_fixed(),
                             });
                         }
                     }
@@ -1296,14 +1270,14 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_hhea(&mut self, table: &typed::HheaTable) {
-        let mut hhea = super::tables::hhea::default();
+        let mut hhea = tables::hhea::Hhea::default();
         for record in table.metrics() {
             let keyword = record.keyword();
             match keyword.kind {
                 Kind::CaretOffsetKw => hhea.caret_offset = record.metric().parse(),
-                Kind::AscenderKw => hhea.ascender = record.metric().parse(),
-                Kind::DescenderKw => hhea.descender = record.metric().parse(),
-                Kind::LineGapKw => hhea.line_gap = record.metric().parse(),
+                Kind::AscenderKw => hhea.ascender = record.metric().parse().into(),
+                Kind::DescenderKw => hhea.descender = record.metric().parse().into(),
+                Kind::LineGapKw => hhea.line_gap = record.metric().parse().into(),
                 other => panic!("bug in parser, unexpected token '{}'", other),
             }
         }
@@ -1311,17 +1285,17 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_vhea(&mut self, table: &typed::VheaTable) {
-        let mut vhea = super::tables::vhea::default();
-        for record in table.metrics() {
-            let keyword = record.keyword();
-            match keyword.kind {
-                Kind::VertTypoAscenderKw => vhea.vert_typo_ascender = record.metric().parse(),
-                Kind::VertTypoDescenderKw => vhea.vert_typo_descender = record.metric().parse(),
-                Kind::VertTypoLineGapKw => vhea.vert_typo_line_gap = record.metric().parse(),
-                other => panic!("bug in parser, unexpected token '{}'", other),
-            }
-        }
-        self.tables.vhea = Some(vhea);
+        //let mut vhea = super::tables::vhea::default();
+        //for record in table.metrics() {
+        //let keyword = record.keyword();
+        //match keyword.kind {
+        //Kind::VertTypoAscenderKw => vhea.vert_typo_ascender = record.metric().parse(),
+        //Kind::VertTypoDescenderKw => vhea.vert_typo_descender = record.metric().parse(),
+        //Kind::VertTypoLineGapKw => vhea.vert_typo_line_gap = record.metric().parse(),
+        //other => panic!("bug in parser, unexpected token '{}'", other),
+        //}
+        //}
+        //self.tables.vhea = Some(vhea);
 
         //FIXME: add vhea to fonttools
         let tag = table.tag();
@@ -1343,7 +1317,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_gdef(&mut self, table: &typed::GdefTable) {
-        let mut gdef = super::tables::GDEF::default();
+        let mut gdef = super::tables::Gdef::default();
         for statement in table.statements() {
             match statement {
                 typed::GdefTableItem::Attach(rule) => {
@@ -1366,27 +1340,22 @@ impl<'a> CompilationCtx<'a> {
                     let mut carets: Vec<_> = match rule.values() {
                         typed::LigatureCaretValue::Pos(items) => items
                             .values()
-                            .map(|n| n.parse_signed())
-                            .map(|p| CaretValue::Format1 { coordinate: p })
+                            .map(|n| CaretValue::format_1(n.parse_signed()))
                             .collect(),
                         typed::LigatureCaretValue::Index(items) => items
                             .values()
-                            .map(|n| n.parse_unsigned())
-                            .map(|p| CaretValue::Format2 {
-                                pointIndex: p.unwrap(),
-                            })
+                            .map(|n| CaretValue::format_2(n.parse_unsigned().unwrap()))
                             .collect(),
                     };
                     carets.sort_by_key(|c| match c {
-                        CaretValue::Format1 { coordinate } => *coordinate as i32,
-                        CaretValue::Format2 { pointIndex } => *pointIndex as i32,
-                        CaretValue::Format3 { coordinate, .. } => *coordinate as i32,
+                        CaretValue::Format1(table) => table.coordinate as i32,
+                        CaretValue::Format2(table) => table.caret_value_point_index as i32,
+                        CaretValue::Format3(table) => table.coordinate as i32,
                     });
                     for glyph in glyphs.iter() {
                         gdef.ligature_pos
                             .entry(glyph)
                             .or_insert_with(|| carets.clone());
-                        dbg!(&glyph, &carets);
                     }
                 }
 
@@ -1661,7 +1630,7 @@ impl<'a> CompilationCtx<'a> {
     }
 }
 
-fn sequence_enumerator(sequence: &[GlyphOrClass]) -> Vec<Vec<u16>> {
+fn sequence_enumerator(sequence: &[GlyphOrClass]) -> Vec<Vec<GlyphId>> {
     assert!(sequence.len() >= 2);
     let split = sequence.split_first();
     let mut result = Vec::new();
@@ -1671,14 +1640,14 @@ fn sequence_enumerator(sequence: &[GlyphOrClass]) -> Vec<Vec<u16>> {
 }
 
 fn sequence_enumerator_impl(
-    prefix: Vec<u16>,
+    prefix: Vec<GlyphId>,
     left: &GlyphOrClass,
     right: &[GlyphOrClass],
-    acc: &mut Vec<Vec<u16>>,
+    acc: &mut Vec<Vec<GlyphId>>,
 ) {
     for glyph in left.iter() {
         let mut prefix = prefix.clone();
-        prefix.push(glyph.to_raw());
+        prefix.push(glyph);
 
         match right.split_first() {
             Some((head, tail)) => sequence_enumerator_impl(prefix, head, tail, acc),
@@ -1687,37 +1656,35 @@ fn sequence_enumerator_impl(
     }
 }
 
-fn make_ctx_glyphs(item: &GlyphOrClass) -> BTreeSet<u16> {
-    item.iter().map(|g| g.to_raw()).collect()
+fn make_ctx_glyphs(item: &GlyphOrClass) -> BTreeSet<GlyphId> {
+    item.iter().collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn glyph_id_vec<const N: usize>(ids: [u16; N]) -> Vec<GlyphId> {
+        ids.iter().copied().map(GlyphId::new).collect()
+    }
+
     #[test]
     fn sequence_enumerator_smoke_test() {
         let sequence = vec![
-            GlyphOrClass::Glyph(GlyphId::from_raw(1)),
-            GlyphOrClass::Class(
-                [2_u16, 3, 4]
-                    .iter()
-                    .copied()
-                    .map(GlyphId::from_raw)
-                    .collect(),
-            ),
-            GlyphOrClass::Class([8, 9].iter().copied().map(GlyphId::from_raw).collect()),
+            GlyphOrClass::Glyph(GlyphId::new(1)),
+            GlyphOrClass::Class([2_u16, 3, 4].iter().copied().map(GlyphId::new).collect()),
+            GlyphOrClass::Class([8, 9].iter().copied().map(GlyphId::new).collect()),
         ];
 
         assert_eq!(
             sequence_enumerator(&sequence),
             vec![
-                vec![1, 2, 8],
-                vec![1, 2, 9],
-                vec![1, 3, 8],
-                vec![1, 3, 9],
-                vec![1, 4, 8],
-                vec![1, 4, 9],
+                glyph_id_vec([1, 2, 8]),
+                glyph_id_vec([1, 2, 9]),
+                glyph_id_vec([1, 3, 8]),
+                glyph_id_vec([1, 3, 9]),
+                glyph_id_vec([1, 4, 8]),
+                glyph_id_vec([1, 4, 9]),
             ]
         );
     }

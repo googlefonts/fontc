@@ -1,6 +1,6 @@
 //! helpers and utilties (mostly for testing/debugging?)
 
-pub mod debug;
+//pub mod debug;
 pub(crate) mod highlighting;
 pub mod paths;
 #[cfg(any(test, feature = "diff"))]

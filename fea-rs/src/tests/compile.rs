@@ -2,7 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-use fonttools::font::Font;
+//use fonttools::font::Font;
+
+use read_fonts::{tables::post::DEFAULT_GLYPH_NAMES, FontData, FontRef, TableProvider};
+use write_fonts::{from_obj::ToOwnedTable, tables::post::Post};
 
 use crate::{
     util::ttx::{self as test_utils, Failure, Reason, Results},
@@ -19,7 +22,8 @@ static BAD_OUTPUT_EXTENSION: &str = "ERR";
 fn should_fail() -> Result<(), Results> {
     let mut results = Vec::new();
     for (font, tests) in iter_test_groups(BAD_DIR) {
-        let glyph_map = make_glyph_map(&font);
+        let font_data = std::fs::read(font).unwrap();
+        let glyph_map = make_glyph_map(&font_data);
         results.extend(tests.into_iter().map(|path| run_bad_test(path, &glyph_map)));
     }
     test_utils::finalize_results(results)
@@ -29,7 +33,8 @@ fn should_fail() -> Result<(), Results> {
 fn should_pass() -> Result<(), Results> {
     let mut results = Vec::new();
     for (font, tests) in iter_test_groups(GOOD_DIR) {
-        let glyph_map = make_glyph_map(&font);
+        let font_data = std::fs::read(font).unwrap();
+        let glyph_map = make_glyph_map(&font_data);
         results.extend(
             tests
                 .into_iter()
@@ -39,13 +44,12 @@ fn should_pass() -> Result<(), Results> {
     test_utils::finalize_results(results)
 }
 
-fn iter_test_groups(test_dir: &str) -> impl Iterator<Item = (Font, Vec<PathBuf>)> + '_ {
+fn iter_test_groups(test_dir: &str) -> impl Iterator<Item = (PathBuf, Vec<PathBuf>)> + '_ {
     iter_test_group_dirs(ROOT_TEST_DIR).map(move |dir| {
         let font_path = dir.join(FONT_FILE);
-        let font = Font::load(&font_path).unwrap();
         let tests_dir = dir.join(test_dir);
         let tests = test_utils::iter_fea_files(tests_dir).collect::<Vec<_>>();
-        (font, tests)
+        (font_path, tests)
     })
 }
 
@@ -128,13 +132,23 @@ fn good_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), Failure> {
     }
 }
 
-fn make_glyph_map(font: &Font) -> GlyphMap {
-    font.tables
-        .post()
-        .unwrap()
-        .expect("missing 'name' table")
-        .glyphnames
+fn make_glyph_map(font_data: &[u8]) -> GlyphMap {
+    let font_data = FontData::new(font_data);
+    let font = FontRef::new(font_data).unwrap();
+    let post: Post = font.post().unwrap().to_owned_table();
+    post.glyph_name_index
         .as_ref()
-        .map(|names| names.iter().map(GlyphName::new).collect())
-        .expect("no glyph map")
+        .unwrap()
+        .iter()
+        .map(|name_idx| match *name_idx {
+            i @ 0..=257 => GlyphName::new(&DEFAULT_GLYPH_NAMES[i as usize]),
+            i => GlyphName::new(
+                post.string_data
+                    .as_ref()
+                    .unwrap()
+                    .get((i - 258) as usize)
+                    .unwrap(),
+            ),
+        })
+        .collect()
 }

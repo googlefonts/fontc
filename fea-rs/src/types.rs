@@ -34,7 +34,6 @@ pub enum GlyphIdent {
     Cid(u16),
 }
 
-
 impl From<GlyphOrClass> for GlyphClass {
     fn from(src: GlyphOrClass) -> GlyphClass {
         match src {
