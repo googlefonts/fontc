@@ -14,8 +14,10 @@ use std::{
 use crate::{Compilation, Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree};
 
 use ansi_term::Color;
-use fonttools::{font::Font, tables};
 use rayon::prelude::*;
+
+use font_types::Tag;
+use write_fonts::{tables::maxp::Maxp, FontBuilder};
 
 static IGNORED_TESTS: &[&str] = &[
     // ## tests with invalid syntax ## //
@@ -98,7 +100,7 @@ pub fn run_all_tests(
         .into_iter()
         .map(|(id, glyph)| {
             (
-                format!("glyph{:05}", id.to_raw()),
+                format!("glyph{:05}", id.to_u16()),
                 match glyph {
                     GlyphIdent::Cid(num) => format!("cid{:05}", num),
                     GlyphIdent::Name(name) => name.to_string(),
@@ -202,8 +204,8 @@ fn run_test(
                 reason: Reason::CompileFail(stringify_diagnostics(&node, &errs)),
             }),
             Ok(result) => {
-                let font = make_font(result, glyph_map);
-                compare_ttx(font, &path, reverse_map)
+                let font_data = build_font(result, glyph_map);
+                compare_ttx(&font_data, &path, reverse_map)
             }
         },
     }) {
@@ -219,12 +221,12 @@ fn run_test(
     Ok(path)
 }
 
-fn make_font(compilation: Compilation, glyphs: &GlyphMap) -> Font {
-    let mut font = Font::new(fonttools::font::SfntVersion::TrueType);
-    let maxp = tables::maxp::maxp::new05(glyphs.len().try_into().unwrap());
-    font.tables.insert(maxp);
+fn build_font(compilation: Compilation, glyphs: &GlyphMap) -> Vec<u8> {
+    let mut font = FontBuilder::default();
+    let maxp = Maxp::new(glyphs.len().try_into().unwrap());
+    font.add_table(Tag::new(b"maxp"), write_fonts::dump_table(&maxp).unwrap());
     compilation.apply(&mut font).unwrap();
-    font
+    font.build()
 }
 
 pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> String {
@@ -239,7 +241,7 @@ pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> St
 }
 
 fn compare_ttx(
-    mut font: Font,
+    font_data: &[u8],
     fea_path: &Path,
     reverse_map: &HashMap<String, String>,
 ) -> Result<(), Failure> {
@@ -255,7 +257,7 @@ fn compare_ttx(
                 .to_string(),
         )
         .with_extension("ttf");
-    font.save(&temp_path).unwrap();
+    std::fs::write(&temp_path, &font_data).unwrap();
 
     const TO_WRITE: &[&str] = &[
         "head", "name", "BASE", "GDEF", "GSUB", "GPOS", "OS/2", "STAT", "hhea", "vhea",

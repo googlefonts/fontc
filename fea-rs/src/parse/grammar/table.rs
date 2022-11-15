@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use fonttools::types::Tag;
+use font_types::Tag;
 
 use crate::parse::{
     lexer::{Kind, TokenSet},
@@ -10,16 +10,16 @@ use crate::token_tree::Kind as AstKind;
 
 #[allow(non_upper_case_globals)]
 mod tags {
-    use fonttools::{tag, types::Tag};
-    pub const BASE: Tag = tag!("BASE");
-    pub const GDEF: Tag = tag!("GDEF");
-    pub const STAT: Tag = tag!("STAT");
-    pub const head: Tag = tag!("head");
-    pub const hhea: Tag = tag!("hhea");
-    pub const name: Tag = tag!("name");
-    pub const OS2: Tag = tag!("OS/2");
-    pub const vhea: Tag = tag!("vhea");
-    pub const vmtx: Tag = tag!("vmtx");
+    use font_types::Tag;
+    pub const BASE: Tag = Tag::new(b"BASE");
+    pub const GDEF: Tag = Tag::new(b"GDEF");
+    pub const STAT: Tag = Tag::new(b"STAT");
+    pub const head: Tag = Tag::new(b"head");
+    pub const hhea: Tag = Tag::new(b"hhea");
+    pub const name: Tag = Tag::new(b"name");
+    pub const OS2: Tag = Tag::new(b"OS/2");
+    pub const vhea: Tag = Tag::new(b"vhea");
+    pub const vmtx: Tag = Tag::new(b"vmtx");
 }
 
 pub(crate) fn table(parser: &mut Parser) {

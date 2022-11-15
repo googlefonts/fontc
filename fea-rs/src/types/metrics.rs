@@ -1,4 +1,4 @@
-use otspec::layout::anchor::Anchor as RawAnchor;
+use write_fonts::tables::gpos::AnchorTable as RawAnchor;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Anchor {
@@ -12,16 +12,8 @@ pub enum Anchor {
 impl Anchor {
     pub fn to_raw(self) -> Option<RawAnchor> {
         match self {
-            Anchor::Coord { x, y } => Some(RawAnchor {
-                xCoordinate: x,
-                yCoordinate: y,
-                anchorPoint: None,
-            }),
-            Anchor::Contour { x, y, point } => Some(RawAnchor {
-                xCoordinate: x,
-                yCoordinate: y,
-                anchorPoint: Some(point),
-            }),
+            Anchor::Coord { x, y } => Some(RawAnchor::format_1(x, y)),
+            Anchor::Contour { x, y, point } => Some(RawAnchor::format_2(x, y, point)),
             Anchor::Null => None,
         }
     }

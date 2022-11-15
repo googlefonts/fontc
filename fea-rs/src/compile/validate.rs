@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
 };
 
-use fonttools::types::Tag;
+use font_types::Tag;
 use smol_str::SmolStr;
 
 use super::{glyph_range, tables};

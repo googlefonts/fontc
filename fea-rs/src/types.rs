@@ -1,10 +1,9 @@
 use std::{
-    convert::TryFrom,
     fmt::{Display, Formatter},
-    num::TryFromIntError,
     rc::Rc,
 };
 
+pub use font_types::GlyphId;
 use smol_str::SmolStr;
 
 mod glyph_map;
@@ -14,9 +13,6 @@ pub use glyph_map::GlyphMap;
 pub use metrics::Anchor;
 
 pub type GlyphName = SmolStr;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GlyphId(u16);
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlyphClass(Rc<[GlyphId]>);
@@ -38,17 +34,6 @@ pub enum GlyphIdent {
     Cid(u16),
 }
 
-impl GlyphId {
-    pub const NOTDEF: GlyphId = GlyphId(0);
-
-    pub fn to_raw(self) -> u16 {
-        self.0
-    }
-
-    pub fn from_raw(raw: u16) -> Self {
-        Self(raw)
-    }
-}
 
 impl From<GlyphOrClass> for GlyphClass {
     fn from(src: GlyphOrClass) -> GlyphClass {
@@ -66,6 +51,16 @@ impl std::iter::FromIterator<GlyphId> for GlyphClass {
     }
 }
 
+impl<'a> std::iter::IntoIterator for &'a GlyphClass {
+    type Item = &'a GlyphId;
+
+    type IntoIter = std::slice::Iter<'a, GlyphId>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 impl std::iter::FromIterator<GlyphOrClass> for GlyphSequence {
     fn from_iter<T: IntoIterator<Item = GlyphOrClass>>(iter: T) -> Self {
         GlyphSequence(iter.into_iter().collect())
@@ -75,20 +70,6 @@ impl std::iter::FromIterator<GlyphOrClass> for GlyphSequence {
 impl<T: Into<GlyphName>> From<T> for GlyphIdent {
     fn from(src: T) -> Self {
         GlyphIdent::Name(src.into())
-    }
-}
-
-impl From<u16> for GlyphId {
-    fn from(src: u16) -> GlyphId {
-        GlyphId(src)
-    }
-}
-
-impl TryFrom<usize> for GlyphId {
-    type Error = TryFromIntError;
-
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
-        u16::try_from(value).map(GlyphId)
     }
 }
 

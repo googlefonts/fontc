@@ -2,6 +2,7 @@
 
 use std::ops::Range;
 
+use font_types::Fixed;
 use smol_str::SmolStr;
 
 use crate::{Kind, Node, NodeOrToken};
@@ -373,11 +374,11 @@ impl Include {
 }
 
 impl Tag {
-    pub fn parse(&self) -> Result<fonttools::types::Tag, fonttools::types::InvalidTag> {
+    pub fn parse(&self) -> Result<font_types::Tag, font_types::InvalidTag> {
         self.inner.text.parse()
     }
 
-    pub fn to_raw(&self) -> fonttools::types::Tag {
+    pub fn to_raw(&self) -> font_types::Tag {
         self.text()
             //.as_bytes()
             .parse()
@@ -527,6 +528,10 @@ impl FloatLike {
             FloatLike::Number(n) => n.parse_signed() as f32,
             FloatLike::Float(n) => n.parse(),
         }
+    }
+
+    pub fn parse_fixed(&self) -> Fixed {
+        Fixed::from_f64(self.parse() as _)
     }
 }
 

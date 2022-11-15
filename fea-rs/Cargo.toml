@@ -16,8 +16,9 @@ exclude = ["test-data"]
 ansi_term = "0.12.1"
 smol_str = "0.1.18"
 norad = "0.5" # just for use in sample binaries/debugging, remove eventually
-fonttools = { git="https://github.com/simoncozens/fonttools-rs", rev="1d9a1b2", features = ["rayon"] }
-otspec = { git="https://github.com/simoncozens/fonttools-rs", rev="1d9a1b2" }
+font-types = { version = "0.0.2", path = "../../fontations/font-types" }
+write-fonts = { version = "0.0.2", path = "../../fontations/write-fonts" }
+read-fonts = { version = "0.0.2", path = "../../fontations/read-fonts" }
 xflags = "0.2.3"
 diff = { version = "0.1.12", optional = true }
 rayon = { version = "1.5", optional = true }

@@ -1,7 +1,7 @@
 use super::{GlyphId, GlyphIdent, GlyphName};
 use std::{
     collections::{BTreeMap, HashMap},
-    convert::TryFrom,
+    convert::TryInto,
     iter::FromIterator,
 };
 
@@ -62,7 +62,7 @@ impl FromIterator<u16> for GlyphMap {
             cids: iter
                 .into_iter()
                 .enumerate()
-                .map(|(i, cid)| (cid, GlyphId::try_from(i).unwrap()))
+                .map(|(i, cid)| (cid, GlyphId::new(i.try_into().unwrap())))
                 .collect(),
         }
     }
@@ -74,7 +74,7 @@ impl FromIterator<GlyphName> for GlyphMap {
             names: iter
                 .into_iter()
                 .enumerate()
-                .map(|(i, cid)| (cid, GlyphId::try_from(i).unwrap()))
+                .map(|(i, cid)| (cid, GlyphId::new(i.try_into().unwrap())))
                 .collect(),
             cids: HashMap::new(),
         }
@@ -87,7 +87,7 @@ impl FromIterator<GlyphIdent> for GlyphMap {
         let mut names = HashMap::new();
         let mut cids = HashMap::new();
         for (idx, item) in iter.into_iter().enumerate() {
-            let idx = GlyphId::try_from(idx).unwrap();
+            let idx = GlyphId::new(idx.try_into().unwrap());
             match item {
                 GlyphIdent::Cid(cid) => cids.insert(cid, idx),
                 GlyphIdent::Name(name) => names.insert(name, idx),

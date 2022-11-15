@@ -3,7 +3,7 @@
 use std::fmt::Display;
 use std::ops::Range;
 
-use fonttools::types::Tag;
+use font_types::Tag;
 
 use super::{
     lexer::{Kind as LexemeKind, Lexeme, Lexer, TokenSet},
@@ -345,7 +345,7 @@ impl<'b, 'a> Parser<'a, 'b> {
 
     pub(crate) fn eat_tag(&mut self) -> Option<TagToken> {
         if self.matches(0, TokenSet::TAG_LIKE) {
-            if let Ok(tag) = Tag::from_raw(self.nth_raw(0)) {
+            if let Ok(tag) = Tag::new_checked(self.nth_raw(0)) {
                 let range = self.nth_range(0);
                 self.do_bump::<1>(Kind::Tag);
                 return Some(TagToken { tag, range });
