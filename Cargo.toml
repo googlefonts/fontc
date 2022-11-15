@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
-    "ir",
-    "ufo2ir",
+    "fontir",
+    "ufo2fontir",
+    "fontc",
 ]

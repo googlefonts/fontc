@@ -12,8 +12,9 @@ cargo fmt --all -- --check
 cargo doc --all-features --document-private-items
 
 # ensure we at least compile without default features
-cargo check --manifest-path=ir/Cargo.toml --no-default-features
-cargo check --manifest-path=ufo2ir/Cargo.toml --no-default-features
+cargo check --manifest-path=fontir/Cargo.toml --no-default-features
+cargo check --manifest-path=ufo2fontir/Cargo.toml --no-default-features
+cargo check --manifest-path=fontc/Cargo.toml --no-default-features
 
 cargo clippy --all-features --all-targets -- -D warnings
 
