@@ -9,7 +9,7 @@ use std::{
 };
 
 /// Helps identify changes in a set of files.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(from = "DepGraphSerdeRepr", into = "DepGraphSerdeRepr")]
 pub struct DepGraph {
     entries: HashMap<PathBuf, Option<DepGraphEntry>>,
@@ -22,7 +22,7 @@ struct DepGraphEntry {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct DepGraphSerdeRepr {
+struct DepGraphSerdeRepr {
     entries: Vec<DepGraphEntrySerdeRepr>,
 }
 
@@ -79,6 +79,8 @@ impl From<DepGraph> for DepGraphSerdeRepr {
     }
 }
 
+/// The serde-friendly representation of a DepGraphEntry.
+///
 /// SystemTime lacks a platform independent representation we can
 /// depend on so use FileTime's unix_seconds,nanos.
 /// unix_seconds = nanos = size = 0 is used to represent lack of a DepGraphEntry.
@@ -118,20 +120,12 @@ impl DepGraphEntry {
 
 impl DepGraph {
     pub fn new() -> DepGraph {
-        DepGraph {
-            entries: HashMap::new(),
-        }
-    }
-}
-
-impl Default for DepGraph {
-    fn default() -> Self {
-        Self::new()
+        Default::default()
     }
 }
 
 impl DepGraph {
-    pub fn is_tracked(&self, path: &PathBuf) -> bool {
+    pub fn contains(&self, path: &PathBuf) -> bool {
         self.entries.contains_key(path)
     }
 
@@ -149,7 +143,7 @@ impl DepGraph {
             if let InitialState::NotChanged = default_state {
                 if path.is_dir() {
                     let mut dirs_visited = HashSet::new();
-                    if let Some(new_paths) = self.new_paths(&mut dirs_visited, path) {
+                    if let Some(new_paths) = self.new_files(&mut dirs_visited, path) {
                         for new_path in new_paths {
                             self.entries
                                 .insert(new_path.clone(), Some(DepGraphEntry::new(&new_path)?));
@@ -175,7 +169,7 @@ impl DepGraph {
             .unwrap_or(true);
     }
 
-    pub fn update(&mut self, changes: &Vec<Change>) {
+    pub fn update(&mut self, changes: &[Change]) {
         for change in changes {
             if self.has_changed(change) {
                 self.entries
@@ -184,7 +178,7 @@ impl DepGraph {
         }
     }
 
-    fn new_paths(
+    fn new_files(
         &self,
         dirs_visited: &mut HashSet<PathBuf>,
         dir: &PathBuf,
@@ -207,8 +201,8 @@ impl DepGraph {
                     frontier.push(dir_entry.to_owned());
                 }
 
-                // A path we've never seen before?!
-                if !self.entries.contains_key(&dir_entry) {
+                // A file we've never seen before?!
+                if !dir_entry.is_dir() && !self.entries.contains_key(&dir_entry) {
                     let new_files = results.get_or_insert_with(Vec::new);
                     new_files.push(dir_entry);
                 }
@@ -218,8 +212,10 @@ impl DepGraph {
         results
     }
 
-    /// Set of things that have either changed themselves or had
+    /// Set of files that have either changed themselves or had
     /// something they depend on change.
+    ///
+    /// Directories can be tracked but never report as changed.
     pub fn changed(&self) -> Result<Vec<Change>, io::Error> {
         let mut paths: Vec<&PathBuf> = self.entries.iter().map(|(k, _)| k).collect();
 
@@ -227,25 +223,21 @@ impl DepGraph {
 
         // Add any new files in tracked dirs
         let mut dirs_visited: HashSet<PathBuf> = HashSet::new();
-        let new_paths: Vec<PathBuf> = paths
+        let new_files: Vec<PathBuf> = paths
             .iter()
             .filter(|p| p.is_dir())
-            .flat_map(|p| self.new_paths(&mut dirs_visited, p).unwrap_or_default())
+            .flat_map(|p| self.new_files(&mut dirs_visited, p).unwrap_or_default())
             .collect();
-        new_paths.iter().for_each(|p| paths.push(p));
+        new_files.iter().for_each(|p| paths.push(p));
 
         // Anything change 'round here?
         for path in paths {
             let updated_entry = DepGraphEntry::new(path)?;
-            let has_changed = if self.entries.contains_key(path) {
-                let maybe_current = self.entries.get(path).unwrap();
-                maybe_current
-                    .as_ref()
-                    .map(|current_entry| updated_entry != *current_entry)
-                    .unwrap_or(true)
-            } else {
-                true
-            };
+            let has_changed = self
+                .entries
+                .get(path)
+                .map(|maybe_current| maybe_current.as_ref() != Some(&updated_entry))
+                .unwrap_or(true);
 
             if has_changed {
                 changes.push(Change {
@@ -367,8 +359,8 @@ mod tests {
             .unwrap();
         dg.track(&changed, super::InitialState::Changed).unwrap();
 
-        assert!(dg.is_tracked(&changed));
-        assert!(dg.is_tracked(&unchanged));
+        assert!(dg.contains(&changed));
+        assert!(dg.contains(&unchanged));
 
         (changed, unchanged, dg)
     }
