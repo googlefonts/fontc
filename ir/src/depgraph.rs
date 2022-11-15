@@ -12,18 +12,18 @@ use std::{
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(from = "DepGraphSerdeRepr", into = "DepGraphSerdeRepr")]
 pub struct DepGraph {
-    entries: HashMap<PathBuf, Option<DepGraphEntry>>,
+    entries: HashMap<PathBuf, PathState>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct DepGraphEntry {
-    mtime: FileTime,
-    size: u64,
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum PathState {
+    Seen { mtime: FileTime, size: u64 },
+    Unknown,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct DepGraphSerdeRepr {
-    entries: Vec<DepGraphEntrySerdeRepr>,
+    entries: Vec<PathStateSerdeRepr>,
 }
 
 impl From<DepGraphSerdeRepr> for DepGraph {
@@ -36,12 +36,12 @@ impl From<DepGraphSerdeRepr> for DepGraph {
                     (
                         PathBuf::from(&d.path),
                         if d.has_graph_entry() {
-                            Some(DepGraphEntry {
+                            PathState::Seen {
                                 mtime: FileTime::from_unix_time(d.unix_seconds, d.nanos),
                                 size: d.size,
-                            })
+                            }
                         } else {
-                            None
+                            PathState::Unknown
                         },
                     )
                 })
@@ -58,20 +58,19 @@ impl From<DepGraph> for DepGraphSerdeRepr {
                 .iter()
                 .map(|e| {
                     let path = e.0.to_str().expect("Only UTF names please").to_string();
-                    if let Some(dep_entry) = e.1 {
-                        DepGraphEntrySerdeRepr {
+                    match e.1 {
+                        PathState::Seen { mtime, size } => PathStateSerdeRepr {
                             path,
-                            unix_seconds: dep_entry.mtime.unix_seconds(),
-                            nanos: dep_entry.mtime.nanoseconds(),
-                            size: dep_entry.size,
-                        }
-                    } else {
-                        DepGraphEntrySerdeRepr {
+                            unix_seconds: mtime.unix_seconds(),
+                            nanos: mtime.nanoseconds(),
+                            size: *size,
+                        },
+                        PathState::Unknown => PathStateSerdeRepr {
                             path,
                             unix_seconds: 0,
                             nanos: 0,
                             size: 0,
-                        }
+                        },
                     }
                 })
                 .collect(),
@@ -85,22 +84,25 @@ impl From<DepGraph> for DepGraphSerdeRepr {
 /// depend on so use FileTime's unix_seconds,nanos.
 /// unix_seconds = nanos = size = 0 is used to represent lack of a DepGraphEntry.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct DepGraphEntrySerdeRepr {
+struct PathStateSerdeRepr {
     path: String,
     unix_seconds: i64,
     nanos: u32,
     size: u64,
 }
 
-impl DepGraphEntrySerdeRepr {
+impl PathStateSerdeRepr {
     fn has_graph_entry(&self) -> bool {
         !(self.unix_seconds == 0 && self.nanos == 0 && self.size == 0)
     }
 }
 
+/// A new snapshot of the state of a file.
+///
+/// Always contains PathState::Seen.
 pub struct Change {
     path: PathBuf,
-    updated_entry: DepGraphEntry,
+    path_state: PathState,
 }
 
 pub enum InitialState {
@@ -108,10 +110,10 @@ pub enum InitialState {
     Changed,
 }
 
-impl DepGraphEntry {
-    fn new(path: &Path) -> Result<DepGraphEntry, io::Error> {
+impl PathState {
+    fn of(path: &Path) -> Result<PathState, io::Error> {
         let metadata = path.metadata()?;
-        Ok(DepGraphEntry {
+        Ok(PathState::Seen {
             mtime: FileTime::from_system_time(metadata.modified()?),
             size: metadata.len(),
         })
@@ -134,8 +136,8 @@ impl DepGraph {
             self.entries.insert(
                 path.clone(),
                 match default_state {
-                    InitialState::NotChanged => Some(DepGraphEntry::new(path)?),
-                    InitialState::Changed => None,
+                    InitialState::NotChanged => PathState::of(path)?,
+                    InitialState::Changed => PathState::Unknown,
                 },
             );
 
@@ -146,7 +148,7 @@ impl DepGraph {
                     if let Some(new_paths) = self.new_files(&mut dirs_visited, path) {
                         for new_path in new_paths {
                             self.entries
-                                .insert(new_path.clone(), Some(DepGraphEntry::new(&new_path)?));
+                                .insert(new_path.clone(), PathState::of(&new_path)?);
                         }
                     }
                 }
@@ -156,24 +158,18 @@ impl DepGraph {
     }
 
     pub fn has_changed(&self, change: &Change) -> bool {
-        return self
+        // If we are tracking with different state or we're not tracking at all then you've changed
+        let current_state = self
             .entries
             .get(&change.path)
-            // If we are tracking with different state or we're not tracking at all then you've changed
-            .map(|maybe_entry| {
-                maybe_entry
-                    .as_ref()
-                    .map(|entry| change.updated_entry != *entry)
-                    .unwrap_or(true)
-            })
-            .unwrap_or(true);
+            .unwrap_or(&PathState::Unknown);
+        *current_state != change.path_state
     }
 
     pub fn update(&mut self, changes: &[Change]) {
         for change in changes {
             if self.has_changed(change) {
-                self.entries
-                    .insert(change.path.clone(), Some(change.updated_entry.clone()));
+                self.entries.insert(change.path.clone(), change.path_state);
             }
         }
     }
@@ -232,17 +228,17 @@ impl DepGraph {
 
         // Anything change 'round here?
         for path in paths {
-            let updated_entry = DepGraphEntry::new(path)?;
+            let path_state = PathState::of(path)?;
             let has_changed = self
                 .entries
                 .get(path)
-                .map(|maybe_current| maybe_current.as_ref() != Some(&updated_entry))
+                .map(|prior_state| *prior_state != path_state)
                 .unwrap_or(true);
 
             if has_changed {
                 changes.push(Change {
                     path: path.to_owned(),
-                    updated_entry,
+                    path_state,
                 });
             }
         }
