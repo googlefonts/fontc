@@ -93,15 +93,20 @@ jobs:
           override: true
 
 
-      - name: cargo check ir
+      - name: cargo check fontir
         uses: actions-rs/cargo@v1
         with:
           command: check
-          args: --manifest-path=ir/Cargo.toml --no-default-features
+          args: --manifest-path=fontir/Cargo.toml --no-default-features
 
-      - name: cargo check ufo2ir
+      - name: cargo check ufo2fontir
         uses: actions-rs/cargo@v1
         with:
           command: check
-          args: --manifest-path=ufo2ir/Cargo.toml --no-default-features
+          args: --manifest-path=ufo2fontir/Cargo.toml --no-default-features
 
+      - name: cargo check fontc
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --manifest-path=fontc/Cargo.toml --no-default-features

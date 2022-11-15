@@ -1,4 +1,4 @@
-use ir::ir;
+use fontir::ir;
 use norad::designspace::{self, DesignSpaceDocument};
 
 use crate::error::UfoToIrError;
@@ -27,7 +27,7 @@ mod tests {
     use std::path::Path;
 
     use crate::toir::designspace_to_ir;
-    use ir::ir;
+    use fontir::ir;
 
     #[test]
     fn simple_wght_variable() {

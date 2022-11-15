@@ -1,5 +1,5 @@
 [package]
-name = "compiler-ufo2ir"
+name = "ufo2fontir"
 version = "0.0.1"
 edition = "2021"
 license = "MIT/Apache-2.0"
@@ -12,7 +12,7 @@ categories = ["text-processing", "parsing", "graphics"]
 
 [dependencies]
 read-fonts = { git = 'https://github.com/googlefonts/fontations' }
-ir = { version = "0.0.1", path = "../ir" }
+fontir = { version = "0.0.1", path = "../fontir" }
 
 # TODO use a version of norad with https://github.com/linebender/norad/pull/272 once one exists
 # norad = "0.7.0"
