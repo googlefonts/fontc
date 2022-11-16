@@ -175,8 +175,8 @@ impl Builder for PositionLookup {
             PositionLookup::Single(lookup) => lookup.build().map(gpos::PositionLookup::Single),
             PositionLookup::Pair(lookup) => lookup.build().map(gpos::PositionLookup::Pair),
             PositionLookup::Cursive(lookup) => lookup.build().map(gpos::PositionLookup::Cursive),
-            PositionLookup::MarkToBase(_) => {
-                Ok(gpos::PositionLookup::MarkToBase(Default::default()))
+            PositionLookup::MarkToBase(lookup) => {
+                lookup.build().map(gpos::PositionLookup::MarkToBase)
             }
             PositionLookup::MarkToLig(_) => Ok(gpos::PositionLookup::MarkToLig(Default::default())),
             PositionLookup::MarkToMark(_) => {

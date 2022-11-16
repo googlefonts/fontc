@@ -1,11 +1,14 @@
 //! Builders for layout tables
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use font_types::GlyphId;
 use write_fonts::tables::{
-    gpos::{self, AnchorTable, PairSet, PairValueRecord, ValueFormat, ValueRecord},
-    layout::CoverageTableBuilder,
+    gpos::{
+        self, AnchorTable, MarkArray, MarkRecord, PairSet, PairValueRecord, ValueFormat,
+        ValueRecord,
+    },
+    layout::{CoverageTable, CoverageTableBuilder},
 };
 
 type MarkClass = u16;
@@ -154,7 +157,7 @@ impl Builder for CursivePosBuilder {
 
 // shared between several tables
 #[derive(Clone, Debug, Default)]
-struct MarkList(BTreeMap<GlyphId, (MarkClass, AnchorTable)>);
+struct MarkList(BTreeMap<GlyphId, MarkRecord>);
 
 impl MarkList {
     fn insert(
@@ -163,7 +166,11 @@ impl MarkList {
         class: MarkClass,
         anchor: AnchorTable,
     ) -> Result<(), PreviouslyAssignedClass> {
-        match self.0.insert(glyph, (class, anchor)).map(|(cls, _)| cls) {
+        match self
+            .0
+            .insert(glyph, MarkRecord::new(class, anchor))
+            .map(|rec| rec.mark_class)
+        {
             Some(old_class) if old_class != class => Err(PreviouslyAssignedClass {
                 glyph_id: glyph,
                 class: old_class,
@@ -177,10 +184,21 @@ impl MarkList {
     }
 }
 
+impl Builder for MarkList {
+    type Output = (CoverageTable, MarkArray);
+
+    fn build(self) -> Result<Self::Output, ()> {
+        let coverage = self.0.keys().copied().collect::<CoverageTableBuilder>();
+        let array = MarkArray::new(self.0.into_values().collect());
+        Ok((coverage.build(), array))
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct MarkToBaseBuilder {
     marks: MarkList,
-    bases: BTreeMap<GlyphId, Vec<AnchorTable>>,
+    mark_classes: BTreeSet<MarkClass>,
+    bases: BTreeMap<GlyphId, Vec<(MarkClass, AnchorTable)>>,
 }
 
 /// An error indicating a given glyph is has be
@@ -200,23 +218,12 @@ impl MarkToBaseBuilder {
         class: MarkClass,
         anchor: AnchorTable,
     ) -> Result<(), PreviouslyAssignedClass> {
+        self.mark_classes.insert(class);
         self.marks.insert(glyph, class, anchor)
     }
 
-    //pub fn define_mark_class(
-    //&mut self,
-    //glyphs: impl IntoIterator<Item = GlyphId>,
-    //class: MarkClass,
-    //anchor: AnchorTable,
-    //) -> Result<(), PreviouslyAssignedClass> {
-    //for glyph in glyphs {
-    //self.insert_mark(glyph, class, anchor)?;
-    //}
-    //Ok(())
-    //}
-
     pub fn insert_base(&mut self, glyph: GlyphId, class: MarkClass, anchor: AnchorTable) {
-        self.bases.entry(glyph).or_default().push(anchor)
+        self.bases.entry(glyph).or_default().push((class, anchor))
     }
 
     pub fn base_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
@@ -225,6 +232,40 @@ impl MarkToBaseBuilder {
 
     pub fn mark_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.marks.glyphs()
+    }
+}
+
+impl Builder for MarkToBaseBuilder {
+    type Output = Vec<gpos::MarkBasePosFormat1>;
+
+    fn build(self) -> Result<Self::Output, ()> {
+        let MarkToBaseBuilder {
+            marks,
+            bases,
+            mark_classes,
+        } = self;
+
+        let (mark_coverage, mark_array) = marks.build()?;
+        let base_coverage = bases.keys().copied().collect::<CoverageTableBuilder>();
+        let base_records = bases
+            .into_values()
+            .map(|anchors| {
+                let mut anchor_offsets: Vec<Option<AnchorTable>> = Vec::new();
+                anchor_offsets.resize(mark_classes.len(), None);
+                for (class, anchor) in anchors {
+                    let class_idx = mark_classes.iter().position(|c| c == &class).unwrap();
+                    anchor_offsets[class_idx] = Some(anchor);
+                }
+                gpos::BaseRecord::new(anchor_offsets)
+            })
+            .collect();
+        let base_array = gpos::BaseArray::new(base_records);
+        Ok(vec![gpos::MarkBasePosFormat1::new(
+            mark_coverage,
+            base_coverage.build(),
+            mark_array,
+            base_array,
+        )])
     }
 }
 
