@@ -37,6 +37,7 @@ pub struct SizeFeature {
 impl Compilation {
     /// Attempt to update the provided font with the results of this compilation.
     //TODO: figure out error reporting
+    #[allow(clippy::result_unit_err)]
     pub fn apply(&self, font: &mut Font) -> Result<(), ()> {
         if let Some(head_raw) = self.tables.head.as_ref() {
             let mut head = font

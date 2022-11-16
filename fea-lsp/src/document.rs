@@ -136,7 +136,7 @@ fn to_lsp_pos(offset: usize, offsets: &[usize]) -> Position {
     let line = offsets
         .iter()
         .position(|off| *off > offset)
-        .unwrap_or_else(|| offsets.len())
+        .unwrap_or(offsets.len())
         - 1;
     let line_start = offsets[line];
     let line_pos = offset - line_start;

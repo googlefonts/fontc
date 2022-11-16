@@ -47,6 +47,8 @@ const MAX_INCLUDE_DEPTH: usize = 50;
 ///
 /// But we don't take advantage of that, yet, so this is currently more like
 /// an intermediate type for generating a `ParseTree`.
+///
+/// [`generate_parse_tree`]: ParseContext::generate_parse_tree
 pub struct ParseContext {
     sources: SourceList,
     parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
@@ -121,6 +123,8 @@ impl ParseContext {
     ///
     /// After parsing, you can call [`generate_parse_tree`] in order to generate
     /// a unified parse tree suitable for compilation.
+    ///
+    /// [`generate_parse_tree`]: ParseContext::generate_parse_tree
     pub fn parse_from_root(
         path: PathBuf,
         glyph_map: Option<&GlyphMap>,

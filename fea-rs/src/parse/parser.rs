@@ -23,7 +23,7 @@ const LOOKAHEAD_MAX: usize = LOOKAHEAD - 1;
 /// well as recording any encountered errors.
 ///
 /// This type does not implement the parsing *logic*; it is driven by various
-/// functions defined in the [`grammar`] module.
+/// functions defined in the [`grammar`](super::grammar) module.
 pub struct Parser<'a, 'b> {
     lexer: Lexer<'a>,
     // these lifetimes are a hangover from a previous design.

@@ -127,7 +127,7 @@ impl Source {
             .line_offsets
             .get(offset_idx + 1)
             .copied()
-            .unwrap_or_else(|| self.contents.len());
+            .unwrap_or(self.contents.len());
 
         (
             offset_idx + 1,

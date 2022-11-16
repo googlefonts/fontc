@@ -40,7 +40,7 @@ impl<'a> Lexer<'a> {
     fn bump(&mut self) -> Option<u8> {
         let pos = self.pos;
         let next = self.input.as_bytes().get(pos).copied();
-        self.pos += if next.is_some() { 1 } else { 0 };
+        self.pos += usize::from(next.is_some());
         next
     }
 

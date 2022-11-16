@@ -72,7 +72,7 @@ pub struct NameSpec {
     pub string: SmolStr,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
 pub enum ClassId {
     Base = 1,
@@ -257,6 +257,7 @@ fn parse_mac(s: &str) -> String {
 }
 
 impl head {
+    #[allow(deprecated)] //FIXME: only until we move to fontations
     pub(crate) fn build(&self) -> fonttools::tables::head::head {
         // match what python fonttools does
         let mut table = fonttools::tables::head::new(self.font_revision, 0, 0, 0, 0, 0);

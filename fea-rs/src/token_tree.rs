@@ -504,7 +504,7 @@ fn try_split_range(text: &str, glyph_map: &GlyphMap) -> Result<Node, String> {
     for idx in text
         .bytes()
         .enumerate()
-        .filter_map(|(idx, b)| (b == b'-').then(|| idx))
+        .filter_map(|(idx, b)| (b == b'-').then_some(idx))
     {
         let (head, tail) = text.split_at(idx);
         if glyph_map.contains(head) && glyph_map.contains(tail.trim_start_matches('-')) {

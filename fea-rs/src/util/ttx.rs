@@ -348,7 +348,7 @@ fn rewrite_ttx(input: &str, reverse_map: &HashMap<String, String>) -> String {
         }
         let mut scan = line;
         loop {
-            let next = scan.find("glyph").unwrap_or_else(|| scan.len());
+            let next = scan.find("glyph").unwrap_or(scan.len());
             out.push_str(&scan[..next]);
             scan = &scan[next..];
             if scan.is_empty() {

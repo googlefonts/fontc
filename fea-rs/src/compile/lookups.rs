@@ -287,7 +287,7 @@ impl AllLookups {
             let split_idx = feature_indices
                 .iter()
                 .position(|x| matches!(x, LookupId::Gsub(_)))
-                .unwrap_or_else(|| feature_indices.len());
+                .unwrap_or(feature_indices.len());
 
             if key.feature.as_str() == "size" {
                 gpos_builder.add(*key, &[]);

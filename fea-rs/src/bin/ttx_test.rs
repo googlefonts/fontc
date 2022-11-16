@@ -31,7 +31,7 @@ fn save_wip_diffs(results: &ttx::Results) {
         {
             let file_name = failure.path.file_name().unwrap();
             let out_path = Path::new(WIP_DIFF_DIR)
-                .join(&file_name)
+                .join(file_name)
                 .with_extension("expected_diff");
             let diff = ttx::plain_text_diff(expected, result);
             eprintln!("saved diff to {}", out_path.display());
