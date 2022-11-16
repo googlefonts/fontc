@@ -347,7 +347,8 @@ impl Builder for MarkToLigBuilder {
 #[derive(Clone, Debug, Default)]
 pub struct MarkToMarkBuilder {
     attaching_marks: MarkList,
-    base_marks: BTreeMap<GlyphId, Vec<AnchorTable>>,
+    mark_classes: BTreeSet<MarkClass>,
+    base_marks: BTreeMap<GlyphId, Vec<(MarkClass, AnchorTable)>>,
 }
 
 impl MarkToMarkBuilder {
@@ -357,11 +358,15 @@ impl MarkToMarkBuilder {
         class: MarkClass,
         anchor: AnchorTable,
     ) -> Result<(), PreviouslyAssignedClass> {
+        self.mark_classes.insert(class);
         self.attaching_marks.insert(glyph, class, anchor)
     }
 
     pub fn insert_base(&mut self, glyph: GlyphId, class: MarkClass, anchor: AnchorTable) {
-        self.base_marks.entry(glyph).or_default().push(anchor)
+        self.base_marks
+            .entry(glyph)
+            .or_default()
+            .push((class, anchor))
     }
 
     pub fn mark1_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
@@ -370,6 +375,40 @@ impl MarkToMarkBuilder {
 
     pub fn mark2_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.base_marks.keys().copied()
+    }
+}
+
+impl Builder for MarkToMarkBuilder {
+    type Output = Vec<gpos::MarkMarkPosFormat1>;
+
+    fn build(self) -> Result<Self::Output, ()> {
+        let MarkToMarkBuilder {
+            attaching_marks,
+            base_marks,
+            mark_classes,
+        } = self;
+
+        let (mark_coverage, mark_array) = attaching_marks.build()?;
+        let mark2_coverage = base_marks.keys().copied().collect::<CoverageTableBuilder>();
+        let mark2_records = base_marks
+            .into_values()
+            .map(|anchors| {
+                let mut anchor_offsets: Vec<Option<AnchorTable>> = Vec::new();
+                anchor_offsets.resize(mark_classes.len(), None);
+                for (class, anchor) in anchors {
+                    let class_idx = mark_classes.iter().position(|c| c == &class).unwrap();
+                    anchor_offsets[class_idx] = Some(anchor);
+                }
+                gpos::Mark2Record::new(anchor_offsets)
+            })
+            .collect();
+        let mark2array = gpos::Mark2Array::new(mark2_records);
+        Ok(vec![gpos::MarkMarkPosFormat1::new(
+            mark_coverage,
+            mark2_coverage.build(),
+            mark_array,
+            mark2array,
+        )])
     }
 }
 

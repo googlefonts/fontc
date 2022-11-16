@@ -181,8 +181,8 @@ impl Builder for PositionLookup {
             PositionLookup::MarkToLig(lookup) => {
                 lookup.build().map(gpos::PositionLookup::MarkToLig)
             }
-            PositionLookup::MarkToMark(_) => {
-                Ok(gpos::PositionLookup::MarkToMark(Default::default()))
+            PositionLookup::MarkToMark(lookup) => {
+                lookup.build().map(gpos::PositionLookup::MarkToMark)
             }
             PositionLookup::Contextual(_) => {
                 Ok(gpos::PositionLookup::Contextual(Default::default()))
