@@ -124,7 +124,7 @@ impl Builder for PairPosBuilder {
 
 #[derive(Clone, Debug, Default)]
 pub struct CursivePosBuilder {
-    items: BTreeMap<GlyphId, (Option<AnchorTable>, Option<AnchorTable>)>,
+    items: BTreeMap<GlyphId, gpos::EntryExitRecord>,
 }
 
 impl CursivePosBuilder {
@@ -134,7 +134,21 @@ impl CursivePosBuilder {
         entry: Option<AnchorTable>,
         exit: Option<AnchorTable>,
     ) {
-        self.items.insert(glyph, (entry, exit));
+        let record = gpos::EntryExitRecord::new(entry, exit);
+        self.items.insert(glyph, record);
+    }
+}
+
+impl Builder for CursivePosBuilder {
+    type Output = Vec<gpos::CursivePosFormat1>;
+
+    fn build(self) -> Result<Self::Output, ()> {
+        let coverage: CoverageTableBuilder = self.items.keys().copied().collect();
+        let records = self.items.into_values().collect();
+        Ok(vec![gpos::CursivePosFormat1::new(
+            coverage.build(),
+            records,
+        )])
     }
 }
 

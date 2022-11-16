@@ -174,7 +174,7 @@ impl Builder for PositionLookup {
         match self {
             PositionLookup::Single(lookup) => lookup.build().map(gpos::PositionLookup::Single),
             PositionLookup::Pair(lookup) => lookup.build().map(gpos::PositionLookup::Pair),
-            PositionLookup::Cursive(_) => Ok(gpos::PositionLookup::Cursive(Default::default())),
+            PositionLookup::Cursive(lookup) => lookup.build().map(gpos::PositionLookup::Cursive),
             PositionLookup::MarkToBase(_) => {
                 Ok(gpos::PositionLookup::MarkToBase(Default::default()))
             }
