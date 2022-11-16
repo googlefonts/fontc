@@ -272,10 +272,9 @@ impl Builder for MarkToBaseBuilder {
 #[derive(Clone, Debug, Default)]
 pub struct MarkToLigBuilder {
     marks: MarkList,
+    mark_classes: BTreeSet<MarkClass>,
     ligatures: BTreeMap<GlyphId, Vec<BTreeMap<MarkClass, AnchorTable>>>,
 }
-
-struct LigatureComponent(BTreeMap<MarkClass, AnchorTable>);
 
 impl MarkToLigBuilder {
     pub fn insert_mark(
@@ -284,10 +283,11 @@ impl MarkToLigBuilder {
         class: MarkClass,
         anchor: AnchorTable,
     ) -> Result<(), PreviouslyAssignedClass> {
+        self.mark_classes.insert(class);
         self.marks.insert(glyph, class, anchor)
     }
 
-    pub fn add_base(&mut self, glyph: GlyphId, components: Vec<BTreeMap<MarkClass, AnchorTable>>) {
+    pub fn add_lig(&mut self, glyph: GlyphId, components: Vec<BTreeMap<MarkClass, AnchorTable>>) {
         self.ligatures.insert(glyph, components);
     }
 
@@ -297,6 +297,50 @@ impl MarkToLigBuilder {
 
     pub fn lig_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.ligatures.keys().copied()
+    }
+}
+
+impl Builder for MarkToLigBuilder {
+    type Output = Vec<gpos::MarkLigPosFormat1>;
+
+    fn build(self) -> Result<Self::Output, ()> {
+        let MarkToLigBuilder {
+            marks,
+            mark_classes,
+            ligatures,
+        } = self;
+
+        let (mark_coverage, mark_array) = marks.build()?;
+        // LigArray:
+        // - [LigatureAttach] (one per ligature glyph)
+        //    - [ComponentRecord] (one per component)
+        //    - [Anchor] (one per mark-class)
+        let ligature_coverage = ligatures.keys().copied().collect::<CoverageTableBuilder>();
+        let ligature_array = ligatures
+            .into_values()
+            .map(|components| {
+                let comp_records = components
+                    .into_iter()
+                    .map(|anchors| {
+                        let mut anchor_offsets: Vec<Option<AnchorTable>> = Vec::new();
+                        anchor_offsets.resize(mark_classes.len(), None);
+                        for (class, anchor) in anchors {
+                            let class_idx = mark_classes.iter().position(|c| c == &class).unwrap();
+                            anchor_offsets[class_idx] = Some(anchor);
+                        }
+                        gpos::ComponentRecord::new(anchor_offsets)
+                    })
+                    .collect();
+                gpos::LigatureAttach::new(comp_records)
+            })
+            .collect();
+        let ligature_array = gpos::LigatureArray::new(ligature_array);
+        Ok(vec![gpos::MarkLigPosFormat1::new(
+            mark_coverage,
+            ligature_coverage.build(),
+            mark_array,
+            ligature_array,
+        )])
     }
 }
 

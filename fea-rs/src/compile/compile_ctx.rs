@@ -794,7 +794,7 @@ impl<'a> CompilationCtx<'a> {
             .unwrap()
             .with_gpos_type_5(|subtable| {
                 for base in base_ids.iter() {
-                    subtable.add_base(base, components.clone());
+                    subtable.add_lig(base, components.clone());
                 }
             })
     }
