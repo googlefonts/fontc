@@ -33,6 +33,11 @@ static IGNORED_TESTS: &[&str] = &[
     "GSUB_8.fea",
 ];
 
+/// An environment variable that can be set to specify where to write generated files.
+///
+/// This can be set during debugging if you want to inspect the generated files.
+static TEMP_DIR_ENV: &str = "TTX_TEMP_DIR";
+
 /// A way to customize output when our test fails
 #[derive(Default)]
 pub struct Results {
@@ -240,6 +245,28 @@ pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> St
     out
 }
 
+fn get_temp_dir() -> PathBuf {
+    match std::env::var(TEMP_DIR_ENV) {
+        Ok(dir) => {
+            let dir = PathBuf::from(dir);
+            if !dir.exists() {
+                std::fs::create_dir_all(&dir).unwrap();
+            }
+            dir
+        }
+        Err(_) => temp_dir(),
+    }
+}
+
+fn get_temp_file_name(in_file: &Path) -> PathBuf {
+    let stem = in_file.file_stem().unwrap().to_str().unwrap();
+    let millis = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    Path::new(&format!("{stem}_{millis}")).with_extension("ttf")
+}
+
 fn compare_ttx(
     font_data: &[u8],
     fea_path: &Path,
@@ -248,15 +275,7 @@ fn compare_ttx(
     let ttx_path = fea_path.with_extension("ttx");
     let expected_diff_path = fea_path.with_extension("expected_diff");
     assert!(ttx_path.exists());
-    let temp_path = temp_dir()
-        .join(
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-                .to_string(),
-        )
-        .with_extension("ttf");
+    let temp_path = get_temp_dir().join(get_temp_file_name(fea_path));
     std::fs::write(&temp_path, &font_data).unwrap();
 
     const TO_WRITE: &[&str] = &[
