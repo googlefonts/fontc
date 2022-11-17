@@ -532,6 +532,23 @@ pub struct MultipleSubBuilder {
     items: BTreeMap<GlyphId, Vec<GlyphId>>,
 }
 
+impl Builder for MultipleSubBuilder {
+    type Output = Vec<write_gsub::MultipleSubstFormat1>;
+
+    fn build(self) -> Result<Self::Output, ()> {
+        let coverage = self.items.keys().copied().collect::<CoverageTableBuilder>();
+        let seq_tables = self
+            .items
+            .into_values()
+            .map(write_gsub::Sequence::new)
+            .collect();
+        Ok(vec![write_gsub::MultipleSubstFormat1::new(
+            coverage.build(),
+            seq_tables,
+        )])
+    }
+}
+
 impl MultipleSubBuilder {
     pub fn insert(&mut self, target: GlyphId, replacement: Vec<GlyphId>) {
         self.items.insert(target, replacement);
