@@ -1,10 +1,12 @@
 //! Builders for layout tables
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::TryFrom;
 
-use font_types::GlyphId;
+use font_types::{FixedSize, GlyphId};
 use write_fonts::tables::{
     gpos::{self as write_gpos, AnchorTable, MarkRecord, ValueFormat, ValueRecord},
+    gsub as write_gsub,
     layout::{CoverageTable, CoverageTableBuilder},
 };
 
@@ -411,12 +413,117 @@ impl Builder for MarkToMarkBuilder {
 
 #[derive(Clone, Debug, Default)]
 pub struct SingleSubBuilder {
-    items: BTreeMap<GlyphId, GlyphId>,
+    items: BTreeMap<GlyphId, (GlyphId, PossibleSingleSubFormat)>,
+}
+
+/// Used to divide pairs into subtables as needed.
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+enum PossibleSingleSubFormat {
+    // this pair can be format1
+    Delta(i16),
+    // this pair must be format 2 (delta not in i16 range)
+    Format2,
 }
 
 impl SingleSubBuilder {
     pub fn insert(&mut self, target: GlyphId, replacement: GlyphId) {
-        self.items.insert(target, replacement);
+        let delta = target.to_u16() as i32 - replacement.to_u16() as i32;
+        let delta = i16::try_from(delta)
+            .map(PossibleSingleSubFormat::Delta)
+            .unwrap_or(PossibleSingleSubFormat::Format2);
+        self.items.insert(target, (replacement, delta));
+    }
+}
+
+impl Builder for SingleSubBuilder {
+    type Output = Vec<write_gsub::SingleSubst>;
+
+    fn build(self) -> Result<Self::Output, ()> {
+        const COST_OF_EXTRA_SUB1F1_SUBTABLE: usize = 2 + // extra offset
+2 + 2 + 2 + // format1 table itself
+2 + 2; // extra coverage table
+
+        const N_GLYPHS_TO_JUSTIFY_EXTRA_SUB1F1: usize =
+            COST_OF_EXTRA_SUB1F1_SUBTABLE / GlyphId::RAW_BYTE_LEN;
+
+        #[derive(Default)]
+        struct SubtableMap {
+            format1: BTreeMap<i16, Vec<(GlyphId, GlyphId)>>,
+            format2: Vec<(GlyphId, GlyphId)>,
+        }
+
+        impl SubtableMap {
+            fn from_builder(builder: SingleSubBuilder) -> Self {
+                let mut this = SubtableMap::default();
+                for (g1, (g2, delta)) in builder.items {
+                    match delta {
+                        PossibleSingleSubFormat::Delta(delta) => {
+                            this.format1.entry(delta).or_default().push((g1, g2))
+                        }
+                        PossibleSingleSubFormat::Format2 => this.format2.push((g1, g2)),
+                    }
+                }
+                this
+            }
+
+            fn len(&self) -> usize {
+                self.format1.len() + usize::from(!self.format2.is_empty())
+            }
+
+            fn reduce(&mut self) {
+                if self.len() <= 1 {
+                    return;
+                }
+
+                //TODO: there is an optimization here where we preserve two
+                //(and possibly three?) format1 tables if format2 does not already exist
+
+                let SubtableMap { format1, format2 } = self;
+                format1.retain(|_delta, pairs| {
+                    if pairs.len() < N_GLYPHS_TO_JUSTIFY_EXTRA_SUB1F1 {
+                        format2.extend(pairs.iter().copied());
+                        false
+                    } else {
+                        true
+                    }
+                })
+            }
+
+            fn build(mut self) -> Vec<write_gsub::SingleSubst> {
+                let mut result = Vec::with_capacity(self.len());
+                if !self.format2.is_empty() {
+                    self.format2.sort_unstable();
+                    let coverage = self
+                        .format2
+                        .iter()
+                        .copied()
+                        .map(|(g1, _)| g1)
+                        .collect::<CoverageTableBuilder>();
+                    let subs = self.format2.into_iter().map(|(_, g2)| g2).collect();
+                    result.push(write_gsub::SingleSubst::format_2(coverage.build(), subs));
+                }
+
+                for (delta, pairs) in self.format1 {
+                    let coverage = pairs
+                        .into_iter()
+                        .map(|(g1, _)| g1)
+                        .collect::<CoverageTableBuilder>();
+                    result.push(write_gsub::SingleSubst::format_1(coverage.build(), delta));
+                }
+                result
+            }
+        }
+
+        // optimal subtable generation:
+        // TODO: the runtime efficiency of this implementation could be improved.
+        // steps:
+        // - sort all pairs into their 'preferred' subtables (everything that
+        // can be in a format 1 table is)
+        // - go through the format1 tables and move small ones into the format 2 table
+
+        let mut map = SubtableMap::from_builder(self);
+        map.reduce();
+        Ok(map.build())
     }
 }
 

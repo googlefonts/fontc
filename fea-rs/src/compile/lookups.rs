@@ -200,8 +200,8 @@ impl Builder for SubstitutionLookup {
 
     fn build(self) -> Result<Self::Output, ()> {
         match self {
-            SubstitutionLookup::Single(_) => {
-                Ok(write_gsub::SubstitutionLookup::Single(Default::default()))
+            SubstitutionLookup::Single(lookup) => {
+                lookup.build().map(write_gsub::SubstitutionLookup::Single)
             }
             SubstitutionLookup::Multiple(_) => {
                 Ok(write_gsub::SubstitutionLookup::Multiple(Default::default()))
