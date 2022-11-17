@@ -566,6 +566,23 @@ impl AlternateSubBuilder {
     }
 }
 
+impl Builder for AlternateSubBuilder {
+    type Output = Vec<write_gsub::AlternateSubstFormat1>;
+
+    fn build(self) -> Result<Self::Output, ()> {
+        let coverage = self.items.keys().copied().collect::<CoverageTableBuilder>();
+        let seq_tables = self
+            .items
+            .into_values()
+            .map(write_gsub::AlternateSet::new)
+            .collect();
+        Ok(vec![write_gsub::AlternateSubstFormat1::new(
+            coverage.build(),
+            seq_tables,
+        )])
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct LigatureSubBuilder {
     items: BTreeMap<Vec<GlyphId>, GlyphId>,

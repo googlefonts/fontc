@@ -206,9 +206,9 @@ impl Builder for SubstitutionLookup {
             SubstitutionLookup::Multiple(lookup) => {
                 lookup.build().map(write_gsub::SubstitutionLookup::Multiple)
             }
-            SubstitutionLookup::Alternate(_) => {
-                Ok(write_gsub::SubstitutionLookup::Alternate(Default::default()))
-            }
+            SubstitutionLookup::Alternate(lookup) => lookup
+                .build()
+                .map(write_gsub::SubstitutionLookup::Alternate),
             SubstitutionLookup::Ligature(_) => {
                 Ok(write_gsub::SubstitutionLookup::Ligature(Default::default()))
             }
