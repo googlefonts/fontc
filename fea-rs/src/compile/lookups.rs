@@ -149,48 +149,40 @@ where
 {
     type Output = RawLookup<U>;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let subtables = self
             .subtables
             .into_iter()
-            .map(|b| b.build().unwrap().into_iter())
+            .map(|b| b.build().into_iter())
             .flatten()
             .collect();
-        Ok(RawLookup::new(
-            self.flags,
-            subtables,
-            self.mark_set.unwrap_or_default(),
-        ))
+        RawLookup::new(self.flags, subtables, self.mark_set.unwrap_or_default())
     }
 }
 
 impl Builder for PositionLookup {
     type Output = write_gpos::PositionLookup;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         match self {
-            PositionLookup::Single(lookup) => {
-                lookup.build().map(write_gpos::PositionLookup::Single)
-            }
-            PositionLookup::Pair(lookup) => lookup.build().map(write_gpos::PositionLookup::Pair),
-            PositionLookup::Cursive(lookup) => {
-                lookup.build().map(write_gpos::PositionLookup::Cursive)
-            }
+            PositionLookup::Single(lookup) => write_gpos::PositionLookup::Single(lookup.build()),
+            PositionLookup::Pair(lookup) => write_gpos::PositionLookup::Pair(lookup.build()),
+            PositionLookup::Cursive(lookup) => write_gpos::PositionLookup::Cursive(lookup.build()),
             PositionLookup::MarkToBase(lookup) => {
-                lookup.build().map(write_gpos::PositionLookup::MarkToBase)
+                write_gpos::PositionLookup::MarkToBase(lookup.build())
             }
             PositionLookup::MarkToLig(lookup) => {
-                lookup.build().map(write_gpos::PositionLookup::MarkToLig)
+                write_gpos::PositionLookup::MarkToLig(lookup.build())
             }
             PositionLookup::MarkToMark(lookup) => {
-                lookup.build().map(write_gpos::PositionLookup::MarkToMark)
+                write_gpos::PositionLookup::MarkToMark(lookup.build())
             }
             PositionLookup::Contextual(_) => {
-                Ok(write_gpos::PositionLookup::Contextual(Default::default()))
+                write_gpos::PositionLookup::Contextual(Default::default())
             }
-            PositionLookup::ChainedContextual(_) => Ok(
-                write_gpos::PositionLookup::ChainContextual(Default::default()),
-            ),
+            PositionLookup::ChainedContextual(_) => {
+                write_gpos::PositionLookup::ChainContextual(Default::default())
+            }
         }
     }
 }
@@ -198,28 +190,28 @@ impl Builder for PositionLookup {
 impl Builder for SubstitutionLookup {
     type Output = write_gsub::SubstitutionLookup;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         match self {
             SubstitutionLookup::Single(lookup) => {
-                lookup.build().map(write_gsub::SubstitutionLookup::Single)
+                write_gsub::SubstitutionLookup::Single(lookup.build())
             }
             SubstitutionLookup::Multiple(lookup) => {
-                lookup.build().map(write_gsub::SubstitutionLookup::Multiple)
+                write_gsub::SubstitutionLookup::Multiple(lookup.build())
             }
-            SubstitutionLookup::Alternate(lookup) => lookup
-                .build()
-                .map(write_gsub::SubstitutionLookup::Alternate),
+            SubstitutionLookup::Alternate(lookup) => {
+                write_gsub::SubstitutionLookup::Alternate(lookup.build())
+            }
             SubstitutionLookup::Ligature(lookup) => {
-                lookup.build().map(write_gsub::SubstitutionLookup::Ligature)
+                write_gsub::SubstitutionLookup::Ligature(lookup.build())
             }
-            SubstitutionLookup::Contextual(_) => Ok(write_gsub::SubstitutionLookup::Contextual(
-                Default::default(),
-            )),
-            SubstitutionLookup::ChainedContextual(_) => Ok(
-                write_gsub::SubstitutionLookup::ChainContextual(Default::default()),
-            ),
+            SubstitutionLookup::Contextual(_) => {
+                write_gsub::SubstitutionLookup::Contextual(Default::default())
+            }
+            SubstitutionLookup::ChainedContextual(_) => {
+                write_gsub::SubstitutionLookup::ChainContextual(Default::default())
+            }
             SubstitutionLookup::Reverse(_) => {
-                Ok(write_gsub::SubstitutionLookup::Reverse(Default::default()))
+                write_gsub::SubstitutionLookup::Reverse(Default::default())
             }
         }
     }
@@ -425,7 +417,7 @@ impl AllLookups {
             }
         }
 
-        (gsub_builder.build().unwrap(), gpos_builder.build().unwrap())
+        (gsub_builder.build(), gpos_builder.build())
     }
 }
 
@@ -920,11 +912,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        let lookups = self
-            .lookups
-            .into_iter()
-            .map(|x| x.build().unwrap())
-            .collect();
+        let lookups = self.lookups.into_iter().map(|x| x.build()).collect();
         Some((
             LookupList::new(lookups),
             ScriptList::new(scripts),
@@ -936,20 +924,18 @@ where
 impl Builder for PosSubBuilder<PositionLookup> {
     type Output = Option<write_gpos::Gpos>;
 
-    fn build(self) -> Result<Self::Output, ()> {
-        Ok(self
-            .build_raw()
-            .map(|(lookups, scripts, features)| write_gpos::Gpos::new(scripts, features, lookups)))
+    fn build(self) -> Self::Output {
+        self.build_raw()
+            .map(|(lookups, scripts, features)| write_gpos::Gpos::new(scripts, features, lookups))
     }
 }
 
 impl Builder for PosSubBuilder<SubstitutionLookup> {
     type Output = Option<write_gsub::Gsub>;
 
-    fn build(self) -> Result<Self::Output, ()> {
-        Ok(self
-            .build_raw()
-            .map(|(lookups, scripts, features)| write_gsub::Gsub::new(scripts, features, lookups)))
+    fn build(self) -> Self::Output {
+        self.build_raw()
+            .map(|(lookups, scripts, features)| write_gsub::Gsub::new(scripts, features, lookups))
     }
 }
 

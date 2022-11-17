@@ -14,7 +14,7 @@ type MarkClass = u16;
 
 pub trait Builder {
     type Output;
-    fn build(self) -> Result<Self::Output, ()>;
+    fn build(self) -> Self::Output;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -50,7 +50,7 @@ impl SinglePosBuilder {
 impl Builder for SinglePosBuilder {
     type Output = Vec<write_gpos::SinglePos>;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         self.subtables.into_iter().map(Builder::build).collect()
     }
 }
@@ -58,20 +58,14 @@ impl Builder for SinglePosBuilder {
 impl Builder for SinglePosSubtable {
     type Output = write_gpos::SinglePos;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let first_value = self.items.values().next().unwrap();
         let format_1 = self.items.values().all(|val| val == first_value);
         let coverage: CoverageTableBuilder = self.items.keys().copied().collect();
         if format_1 {
-            Ok(write_gpos::SinglePos::format_1(
-                coverage.build(),
-                first_value.to_owned(),
-            ))
+            write_gpos::SinglePos::format_1(coverage.build(), first_value.to_owned())
         } else {
-            Ok(write_gpos::SinglePos::format_2(
-                coverage.build(),
-                self.items.into_values().collect(),
-            ))
+            write_gpos::SinglePos::format_2(coverage.build(), self.items.into_values().collect())
         }
     }
 }
@@ -100,7 +94,7 @@ impl Builder for PairPosBuilder {
     type Output = Vec<write_gpos::PairPos>;
 
     //FIXME: this always uses format 1.
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let mut split_by_format = BTreeMap::new();
         for (g1, map) in self.items {
             for (g2, (v1, v2)) in map {
@@ -113,14 +107,14 @@ impl Builder for PairPosBuilder {
             }
         }
 
-        Ok(split_by_format
+        split_by_format
             .into_iter()
             .map(|(_, map)| {
                 let coverage: CoverageTableBuilder = map.keys().copied().collect();
                 let pair_sets = map.into_values().map(write_gpos::PairSet::new).collect();
                 write_gpos::PairPos::format_1(coverage.build(), pair_sets)
             })
-            .collect())
+            .collect()
     }
 }
 
@@ -144,13 +138,13 @@ impl CursivePosBuilder {
 impl Builder for CursivePosBuilder {
     type Output = Vec<write_gpos::CursivePosFormat1>;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let coverage: CoverageTableBuilder = self.items.keys().copied().collect();
         let records = self.items.into_values().collect();
-        Ok(vec![write_gpos::CursivePosFormat1::new(
+        vec![write_gpos::CursivePosFormat1::new(
             coverage.build(),
             records,
-        )])
+        )]
     }
 }
 
@@ -186,10 +180,10 @@ impl MarkList {
 impl Builder for MarkList {
     type Output = (CoverageTable, write_gpos::MarkArray);
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let coverage = self.0.keys().copied().collect::<CoverageTableBuilder>();
         let array = write_gpos::MarkArray::new(self.0.into_values().collect());
-        Ok((coverage.build(), array))
+        (coverage.build(), array)
     }
 }
 
@@ -237,14 +231,14 @@ impl MarkToBaseBuilder {
 impl Builder for MarkToBaseBuilder {
     type Output = Vec<write_gpos::MarkBasePosFormat1>;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let MarkToBaseBuilder {
             marks,
             bases,
             mark_classes,
         } = self;
 
-        let (mark_coverage, mark_array) = marks.build()?;
+        let (mark_coverage, mark_array) = marks.build();
         let base_coverage = bases.keys().copied().collect::<CoverageTableBuilder>();
         let base_records = bases
             .into_values()
@@ -259,12 +253,12 @@ impl Builder for MarkToBaseBuilder {
             })
             .collect();
         let base_array = write_gpos::BaseArray::new(base_records);
-        Ok(vec![write_gpos::MarkBasePosFormat1::new(
+        vec![write_gpos::MarkBasePosFormat1::new(
             mark_coverage,
             base_coverage.build(),
             mark_array,
             base_array,
-        )])
+        )]
     }
 }
 
@@ -302,14 +296,14 @@ impl MarkToLigBuilder {
 impl Builder for MarkToLigBuilder {
     type Output = Vec<write_gpos::MarkLigPosFormat1>;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let MarkToLigBuilder {
             marks,
             mark_classes,
             ligatures,
         } = self;
 
-        let (mark_coverage, mark_array) = marks.build()?;
+        let (mark_coverage, mark_array) = marks.build();
         // LigArray:
         // - [LigatureAttach] (one per ligature glyph)
         //    - [ComponentRecord] (one per component)
@@ -334,12 +328,12 @@ impl Builder for MarkToLigBuilder {
             })
             .collect();
         let ligature_array = write_gpos::LigatureArray::new(ligature_array);
-        Ok(vec![write_gpos::MarkLigPosFormat1::new(
+        vec![write_gpos::MarkLigPosFormat1::new(
             mark_coverage,
             ligature_coverage.build(),
             mark_array,
             ligature_array,
-        )])
+        )]
     }
 }
 
@@ -380,14 +374,14 @@ impl MarkToMarkBuilder {
 impl Builder for MarkToMarkBuilder {
     type Output = Vec<write_gpos::MarkMarkPosFormat1>;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let MarkToMarkBuilder {
             attaching_marks,
             base_marks,
             mark_classes,
         } = self;
 
-        let (mark_coverage, mark_array) = attaching_marks.build()?;
+        let (mark_coverage, mark_array) = attaching_marks.build();
         let mark2_coverage = base_marks.keys().copied().collect::<CoverageTableBuilder>();
         let mark2_records = base_marks
             .into_values()
@@ -402,12 +396,12 @@ impl Builder for MarkToMarkBuilder {
             })
             .collect();
         let mark2array = write_gpos::Mark2Array::new(mark2_records);
-        Ok(vec![write_gpos::MarkMarkPosFormat1::new(
+        vec![write_gpos::MarkMarkPosFormat1::new(
             mark_coverage,
             mark2_coverage.build(),
             mark_array,
             mark2array,
-        )])
+        )]
     }
 }
 
@@ -438,7 +432,7 @@ impl SingleSubBuilder {
 impl Builder for SingleSubBuilder {
     type Output = Vec<write_gsub::SingleSubst>;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         const COST_OF_EXTRA_SUB1F1_SUBTABLE: usize = 2 + // extra offset
 2 + 2 + 2 + // format1 table itself
 2 + 2; // extra coverage table
@@ -523,7 +517,7 @@ impl Builder for SingleSubBuilder {
 
         let mut map = SubtableMap::from_builder(self);
         map.reduce();
-        Ok(map.build())
+        map.build()
     }
 }
 
@@ -535,17 +529,17 @@ pub struct MultipleSubBuilder {
 impl Builder for MultipleSubBuilder {
     type Output = Vec<write_gsub::MultipleSubstFormat1>;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let coverage = self.items.keys().copied().collect::<CoverageTableBuilder>();
         let seq_tables = self
             .items
             .into_values()
             .map(write_gsub::Sequence::new)
             .collect();
-        Ok(vec![write_gsub::MultipleSubstFormat1::new(
+        vec![write_gsub::MultipleSubstFormat1::new(
             coverage.build(),
             seq_tables,
-        )])
+        )]
     }
 }
 
@@ -569,17 +563,17 @@ impl AlternateSubBuilder {
 impl Builder for AlternateSubBuilder {
     type Output = Vec<write_gsub::AlternateSubstFormat1>;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let coverage = self.items.keys().copied().collect::<CoverageTableBuilder>();
         let seq_tables = self
             .items
             .into_values()
             .map(write_gsub::AlternateSet::new)
             .collect();
-        Ok(vec![write_gsub::AlternateSubstFormat1::new(
+        vec![write_gsub::AlternateSubstFormat1::new(
             coverage.build(),
             seq_tables,
-        )])
+        )]
     }
 }
 
@@ -603,7 +597,7 @@ impl LigatureSubBuilder {
 impl Builder for LigatureSubBuilder {
     type Output = Vec<write_gsub::LigatureSubstFormat1>;
 
-    fn build(self) -> Result<Self::Output, ()> {
+    fn build(self) -> Self::Output {
         let coverage = self.items.keys().copied().collect::<CoverageTableBuilder>();
         let lig_sets = self
             .items
@@ -620,10 +614,10 @@ impl Builder for LigatureSubBuilder {
             })
             .collect();
 
-        Ok(vec![write_gsub::LigatureSubstFormat1::new(
+        vec![write_gsub::LigatureSubstFormat1::new(
             coverage.build(),
             lig_sets,
-        )])
+        )]
     }
 }
 
