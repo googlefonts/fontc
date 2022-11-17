@@ -11,21 +11,22 @@ static WIP_DIFF_DIR: &str = "./wip";
 fn main() {
     let args = flags::Args::from_env().unwrap();
 
-    if let Err(err) = ttx::run_all_tests(TEST_DATA, args.test.as_ref()) {
-        eprintln!("{:?}", err.printer(args.verbose));
-        if args.write_diff {
-            save_wip_diffs(&err);
-        }
+    let results = ttx::run_all_tests(TEST_DATA, args.test.as_ref());
+    eprintln!("{:?}", results.printer(args.verbose));
+    if args.write_diff {
+        save_wip_diffs(&results);
+    }
+    if results.has_failures() {
         std::process::exit(1);
     }
 }
 
-fn save_wip_diffs(results: &ttx::Results) {
+fn save_wip_diffs(results: &ttx::Report) {
     if !Path::new(WIP_DIFF_DIR).exists() {
         std::fs::create_dir(WIP_DIFF_DIR).unwrap();
     }
-    for failure in &results.failures {
-        if let ttx::Reason::CompareFail {
+    for failure in &results.results {
+        if let ttx::TestResult::CompareFail {
             expected, result, ..
         } = &failure.reason
         {

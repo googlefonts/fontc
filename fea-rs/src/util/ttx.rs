@@ -38,25 +38,25 @@ static IGNORED_TESTS: &[&str] = &[
 /// This can be set during debugging if you want to inspect the generated files.
 static TEMP_DIR_ENV: &str = "TTX_TEMP_DIR";
 
-/// A way to customize output when our test fails
+/// The combined results of this set of tests
 #[derive(Default)]
-pub struct Results {
-    pub failures: Vec<Failure>,
-    successes: Vec<PathBuf>,
+pub struct Report {
+    pub results: Vec<TestCase>,
 }
 
 pub struct ResultsPrinter<'a> {
     verbose: bool,
-    results: &'a Results,
+    results: &'a Report,
 }
 
-pub struct Failure {
+pub struct TestCase {
     pub path: PathBuf,
-    pub reason: Reason,
+    pub reason: TestResult,
 }
 
 #[derive(PartialEq)]
-pub enum Reason {
+pub enum TestResult {
+    Success,
     Panic,
     ParseFail(String),
     CompileFail(String),
@@ -74,7 +74,7 @@ pub enum Reason {
 
 pub struct ReasonPrinter<'a> {
     verbose: bool,
-    reason: &'a Reason,
+    reason: &'a TestResult,
 }
 
 pub fn assert_has_ttx_executable() {
@@ -95,10 +95,7 @@ pub fn assert_has_ttx_executable() {
 ///
 /// `filter` is an optional comma-separated list of strings. If present, only
 /// tests which contain one of the strings in the list will be run.
-pub fn run_all_tests(
-    fonttools_data_dir: impl AsRef<Path>,
-    filter: Option<&String>,
-) -> Result<(), Results> {
+pub fn run_all_tests(fonttools_data_dir: impl AsRef<Path>, filter: Option<&String>) -> Report {
     let glyph_map = make_glyph_map();
     let reverse_map = glyph_map.reverse_map();
     let reverse_map = reverse_map
@@ -122,24 +119,23 @@ pub fn run_all_tests(
     finalize_results(result)
 }
 
-pub fn finalize_results(result: Vec<Result<PathBuf, Failure>>) -> Result<(), Results> {
+pub fn finalize_results(result: Vec<Result<PathBuf, TestCase>>) -> Report {
     let mut result = result
         .into_iter()
-        .fold(Results::default(), |mut results, current| {
+        .fold(Report::default(), |mut results, current| {
             match current {
-                Err(e) => results.failures.push(e),
-                Ok(path) => results.successes.push(path),
+                Err(e) => results.results.push(e),
+                Ok(path) => results.results.push(TestCase {
+                    path,
+                    reason: TestResult::Success,
+                }),
             }
             results
         });
-    result.failures.sort_unstable_by(|a, b| {
+    result.results.sort_unstable_by(|a, b| {
         (a.reason.sort_order(), &a.path).cmp(&(b.reason.sort_order(), &b.path))
     });
-    if result.failures.is_empty() {
-        Ok(())
-    } else {
-        Err(result)
-    }
+    result
 }
 
 fn iter_compile_tests<'a>(
@@ -197,16 +193,16 @@ fn run_test(
     path: PathBuf,
     glyph_map: &GlyphMap,
     reverse_map: &HashMap<String, String>,
-) -> Result<PathBuf, Failure> {
+) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| match try_parse_file(&path, Some(glyph_map)) {
-        Err((node, errs)) => Err(Failure {
+        Err((node, errs)) => Err(TestCase {
             path: path.clone(),
-            reason: Reason::ParseFail(stringify_diagnostics(&node, &errs)),
+            reason: TestResult::ParseFail(stringify_diagnostics(&node, &errs)),
         }),
         Ok(node) => match crate::compile(&node, glyph_map) {
-            Err(errs) => Err(Failure {
+            Err(errs) => Err(TestCase {
                 path: path.clone(),
-                reason: Reason::CompileFail(stringify_diagnostics(&node, &errs)),
+                reason: TestResult::CompileFail(stringify_diagnostics(&node, &errs)),
             }),
             Ok(result) => {
                 let font_data = build_font(result, glyph_map);
@@ -215,9 +211,9 @@ fn run_test(
         },
     }) {
         Err(_) => {
-            return Err(Failure {
+            return Err(TestCase {
                 path,
-                reason: Reason::Panic,
+                reason: TestResult::Panic,
             })
         }
         Ok(Err(e)) => return Err(e),
@@ -271,7 +267,7 @@ fn compare_ttx(
     font_data: &[u8],
     fea_path: &Path,
     reverse_map: &HashMap<String, String>,
-) -> Result<(), Failure> {
+) -> Result<(), TestCase> {
     let ttx_path = fea_path.with_extension("ttx");
     let expected_diff_path = fea_path.with_extension("expected_diff");
     assert!(ttx_path.exists());
@@ -292,9 +288,9 @@ fn compare_ttx(
         .unwrap_or_else(|_| panic!("failed to execute for path {}", fea_path.display()));
     if !status.status.success() {
         let std_err = String::from_utf8_lossy(&status.stderr).into_owned();
-        return Err(Failure {
+        return Err(TestCase {
             path: fea_path.into(),
-            reason: Reason::TtxFail {
+            reason: TestResult::TtxFail {
                 code: status.status.code(),
                 std_err,
             },
@@ -320,9 +316,9 @@ fn compare_ttx(
     let diff_percent = compute_diff_percentage(&expected, &result);
 
     if expected != result {
-        Err(Failure {
+        Err(TestCase {
             path: fea_path.into(),
-            reason: Reason::CompareFail {
+            reason: TestResult::CompareFail {
                 expected,
                 result,
                 diff_percent,
@@ -337,7 +333,7 @@ pub fn compare_to_expected_output(
     output: &str,
     src_path: &Path,
     cmp_ext: &str,
-) -> Result<(), Failure> {
+) -> Result<(), TestCase> {
     let cmp_path = src_path.with_extension(cmp_ext);
     let expected = if cmp_path.exists() {
         std::fs::read_to_string(&cmp_path).expect("failed to read cmp_path")
@@ -347,9 +343,9 @@ pub fn compare_to_expected_output(
 
     if expected != output {
         let diff_percent = compute_diff_percentage(&expected, output);
-        return Err(Failure {
+        return Err(TestCase {
             path: src_path.to_owned(),
-            reason: Reason::CompareFail {
+            reason: TestResult::CompareFail {
                 expected,
                 result: output.to_string(),
                 diff_percent,
@@ -501,9 +497,28 @@ static TEST_FONT_GLYPHS: &[&str] = &[
         .collect()
 }
 
-impl Results {
+impl Report {
     fn len(&self) -> usize {
-        self.failures.len() + self.successes.len()
+        self.results.len()
+    }
+
+    pub fn has_failures(&self) -> bool {
+        self.results.iter().any(|r| !r.reason.is_success())
+    }
+
+    pub fn success_count(&self) -> usize {
+        self.results
+            .iter()
+            .filter(|t| t.reason.is_success())
+            .count()
+    }
+
+    pub fn into_error(self) -> Result<(), Self> {
+        if self.has_failures() {
+            Err(self)
+        } else {
+            Ok(())
+        }
     }
 
     pub fn printer(&self, verbose: bool) -> ResultsPrinter {
@@ -514,16 +529,21 @@ impl Results {
     }
 }
 
-impl Reason {
+impl TestResult {
     fn sort_order(&self) -> u8 {
         match self {
-            Self::Panic => 1,
-            Self::ParseFail(_) => 2,
-            Self::CompileFail(_) => 3,
+            Self::Success => 1,
+            Self::Panic => 2,
+            Self::ParseFail(_) => 3,
+            Self::CompileFail(_) => 4,
             Self::UnexpectedSuccess => 6,
             Self::TtxFail { .. } => 10,
             Self::CompareFail { .. } => 50,
         }
+    }
+
+    fn is_success(&self) -> bool {
+        matches!(self, Self::Success)
     }
 
     pub fn printer(&self, verbose: bool) -> ReasonPrinter {
@@ -539,24 +559,15 @@ impl std::fmt::Debug for ResultsPrinter<'_> {
         writeln!(f, "failed test cases")?;
         let widest = self
             .results
-            .failures
+            .results
             .iter()
             .map(|item| &item.path)
-            .chain(self.results.successes.iter())
             .map(|p| p.file_name().unwrap().to_str().unwrap().len())
             .max()
             .unwrap_or(0)
             + 2;
-        for success in &self.results.successes {
-            writeln!(
-                f,
-                "{:width$} {}",
-                success.file_name().unwrap().to_str().unwrap(),
-                Color::Green.paint("success"),
-                width = widest
-            )?;
-        }
-        for failure in &self.results.failures {
+
+        for failure in &self.results.results {
             let file_name = failure.path.file_name().unwrap().to_str().unwrap();
             writeln!(
                 f,
@@ -566,25 +577,25 @@ impl std::fmt::Debug for ResultsPrinter<'_> {
                 width = widest
             )?;
         }
-        let (panic, parse, compile, compare, perc) = self.results.failures.iter().fold(
+        let (panic, parse, compile, compare, perc) = self.results.results.iter().fold(
             (0, 0, 0, 0, 0.0),
             |(panic, parse, compile, compare, perc), fail| match fail.reason {
-                Reason::Panic => (panic + 1, parse, compile, compare, perc),
-                Reason::ParseFail(_) => (panic, parse + 1, compile, compare, perc),
-                Reason::CompileFail(_) => (panic, parse, compile + 1, compare, perc),
-                Reason::CompareFail { diff_percent, .. } => {
+                TestResult::Panic => (panic + 1, parse, compile, compare, perc),
+                TestResult::ParseFail(_) => (panic, parse + 1, compile, compare, perc),
+                TestResult::CompileFail(_) => (panic, parse, compile + 1, compare, perc),
+                TestResult::CompareFail { diff_percent, .. } => {
                     (panic, parse, compile, compare + 1, perc + diff_percent)
                 }
                 _ => (panic, parse, compile, compare, perc),
             },
         );
-        let perc = perc + self.results.successes.len() as f64;
+        let perc = perc + self.results.success_count() as f64;
         let perc = perc / self.results.len() as f64;
 
         writeln!(
             f,
             "failed {}/{} test cases",
-            self.results.failures.len(),
+            self.results.results.len(),
             self.results.len()
         )?;
 
@@ -601,7 +612,7 @@ impl std::fmt::Debug for ResultsPrinter<'_> {
     }
 }
 
-impl std::fmt::Debug for Results {
+impl std::fmt::Debug for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.printer(false).fmt(f)
     }
@@ -610,26 +621,29 @@ impl std::fmt::Debug for Results {
 impl Debug for ReasonPrinter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.reason {
-            Reason::Panic => write!(f, "{}", Color::Red.paint("panic")),
-            Reason::ParseFail(diagnostics) => {
+            TestResult::Success => write!(f, "{}", Color::Green.paint("success")),
+            TestResult::Panic => write!(f, "{}", Color::Red.paint("panic")),
+            TestResult::ParseFail(diagnostics) => {
                 write!(f, "{}", Color::Purple.paint("parse failure"))?;
                 if self.verbose {
                     write!(f, "\n{}", diagnostics)?;
                 }
                 Ok(())
             }
-            Reason::CompileFail(diagnostics) => {
+            TestResult::CompileFail(diagnostics) => {
                 write!(f, "{}", Color::Yellow.paint("compile failure"))?;
                 if self.verbose {
                     write!(f, "\n{}", diagnostics)?;
                 }
                 Ok(())
             }
-            Reason::UnexpectedSuccess => write!(f, "{}", Color::Yellow.paint("unexpected success")),
-            Reason::TtxFail { code, std_err } => {
+            TestResult::UnexpectedSuccess => {
+                write!(f, "{}", Color::Yellow.paint("unexpected success"))
+            }
+            TestResult::TtxFail { code, std_err } => {
                 write!(f, "ttx failure ({:?}) stderr:\n{}", code, std_err)
             }
-            Reason::CompareFail {
+            TestResult::CompareFail {
                 expected,
                 result,
                 diff_percent,
@@ -650,7 +664,7 @@ impl Debug for ReasonPrinter<'_> {
     }
 }
 
-impl Debug for Reason {
+impl Debug for TestResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.printer(false).fmt(f)
     }

@@ -8,7 +8,7 @@
 
 use std::{env, path::PathBuf};
 
-use crate::util::ttx::{self as test_utils, Failure, Reason, Results};
+use crate::util::ttx::{self as test_utils, Report, TestCase, TestResult};
 
 static PARSE_GOOD: &str = "./test-data/parse-tests/good";
 static PARSE_BAD: &str = "./test-data/parse-tests/bad";
@@ -17,7 +17,7 @@ const GOOD_OUTPUT_EXTENSION: &str = "PARSE_TREE";
 const BAD_OUTPUT_EXTENSION: &str = "ERR";
 
 #[test]
-fn parse_good() -> Result<(), Results> {
+fn parse_good() -> Result<(), Report> {
     assert!(
         std::path::Path::new(PARSE_GOOD).exists(),
         "test data is missing. Do you need to update submodules? cwd: '{:?}'",
@@ -28,23 +28,24 @@ fn parse_good() -> Result<(), Results> {
         .chain(OTHER_TESTS.iter().map(PathBuf::from))
         .map(run_good_test)
         .collect::<Vec<_>>();
-    test_utils::finalize_results(results)
+    test_utils::finalize_results(results).into_error()
 }
 
 #[test]
-fn parse_bad() -> Result<(), Results> {
+fn parse_bad() -> Result<(), Report> {
     test_utils::finalize_results(
         test_utils::iter_fea_files(PARSE_BAD)
             .map(run_bad_test)
             .collect(),
     )
+    .into_error()
 }
 
-fn run_good_test(path: PathBuf) -> Result<PathBuf, Failure> {
+fn run_good_test(path: PathBuf) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| match test_utils::try_parse_file(&path, None) {
-        Err((node, errs)) => Err(Failure {
+        Err((node, errs)) => Err(TestCase {
             path: path.clone(),
-            reason: Reason::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
+            reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
         }),
         Ok(node) => {
             let output = node.root().simple_parse_tree();
@@ -63,16 +64,16 @@ fn run_good_test(path: PathBuf) -> Result<PathBuf, Failure> {
             result
         }
     }) {
-        Err(_) => Err(Failure {
+        Err(_) => Err(TestCase {
             path,
-            reason: Reason::Panic,
+            reason: TestResult::Panic,
         }),
         Ok(Err(e)) => Err(e),
         Ok(_) => Ok(path),
     }
 }
 
-fn run_bad_test(path: PathBuf) -> Result<PathBuf, Failure> {
+fn run_bad_test(path: PathBuf) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| match test_utils::try_parse_file(&path, None) {
         Err((node, errs)) => {
             let msg = test_utils::stringify_diagnostics(&node, &errs);
@@ -88,14 +89,14 @@ fn run_bad_test(path: PathBuf) -> Result<PathBuf, Failure> {
             }
             result
         }
-        Ok(_) => Err(Failure {
+        Ok(_) => Err(TestCase {
             path: path.clone(),
-            reason: Reason::UnexpectedSuccess,
+            reason: TestResult::UnexpectedSuccess,
         }),
     }) {
-        Err(_) => Err(Failure {
+        Err(_) => Err(TestCase {
             path,
-            reason: Reason::Panic,
+            reason: TestResult::Panic,
         }),
         Ok(Err(e)) => Err(e),
         Ok(_) => Ok(path),

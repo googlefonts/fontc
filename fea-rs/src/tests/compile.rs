@@ -8,7 +8,7 @@ use read_fonts::{tables::post::DEFAULT_GLYPH_NAMES, FontData, FontRef, TableProv
 use write_fonts::{from_obj::ToOwnedTable, tables::post::Post};
 
 use crate::{
-    util::ttx::{self as test_utils, Failure, Reason, Results},
+    util::ttx::{self as test_utils, Report, TestCase, TestResult},
     GlyphMap, GlyphName,
 };
 
@@ -19,18 +19,18 @@ static FONT_FILE: &str = "font.ttf";
 static BAD_OUTPUT_EXTENSION: &str = "ERR";
 
 #[test]
-fn should_fail() -> Result<(), Results> {
+fn should_fail() -> Result<(), Report> {
     let mut results = Vec::new();
     for (font, tests) in iter_test_groups(BAD_DIR) {
         let font_data = std::fs::read(font).unwrap();
         let glyph_map = make_glyph_map(&font_data);
         results.extend(tests.into_iter().map(|path| run_bad_test(path, &glyph_map)));
     }
-    test_utils::finalize_results(results)
+    test_utils::finalize_results(results).into_error()
 }
 
 #[test]
-fn should_pass() -> Result<(), Results> {
+fn should_pass() -> Result<(), Report> {
     let mut results = Vec::new();
     for (font, tests) in iter_test_groups(GOOD_DIR) {
         let font_data = std::fs::read(font).unwrap();
@@ -41,7 +41,7 @@ fn should_pass() -> Result<(), Results> {
                 .map(|path| run_good_test(path, &glyph_map)),
         );
     }
-    test_utils::finalize_results(results)
+    test_utils::finalize_results(results).into_error()
 }
 
 fn iter_test_groups(test_dir: &str) -> impl Iterator<Item = (PathBuf, Vec<PathBuf>)> + '_ {
@@ -64,27 +64,27 @@ fn iter_test_group_dirs(root_dir: impl AsRef<Path>) -> impl Iterator<Item = Path
     })
 }
 
-fn run_bad_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, Failure> {
+fn run_bad_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| bad_test_body(&path, map)) {
-        Err(_) => Err(Failure {
+        Err(_) => Err(TestCase {
             path,
-            reason: Reason::Panic,
+            reason: TestResult::Panic,
         }),
         Ok(Err(e)) => Err(e),
         Ok(_) => Ok(path),
     }
 }
 
-fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), Failure> {
+fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
     match test_utils::try_parse_file(path, Some(glyph_map)) {
-        Err((node, errs)) => Err(Failure {
+        Err((node, errs)) => Err(TestCase {
             path: path.to_owned(),
-            reason: Reason::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
+            reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
         }),
         Ok(node) => match crate::compile(&node, glyph_map) {
-            Ok(_) => Err(Failure {
+            Ok(_) => Err(TestCase {
                 path: path.to_owned(),
-                reason: Reason::UnexpectedSuccess,
+                reason: TestResult::UnexpectedSuccess,
             }),
             Err(errs) => {
                 let msg = test_utils::stringify_diagnostics(&node, &errs);
@@ -105,28 +105,28 @@ fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), Failure> {
     }
 }
 
-fn run_good_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, Failure> {
+fn run_good_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| good_test_body(&path, map)) {
-        Err(_) => Err(Failure {
+        Err(_) => Err(TestCase {
             path,
-            reason: Reason::Panic,
+            reason: TestResult::Panic,
         }),
         Ok(Err(e)) => Err(e),
         Ok(_) => Ok(path),
     }
 }
 
-fn good_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), Failure> {
+fn good_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
     match test_utils::try_parse_file(path, Some(glyph_map)) {
-        Err((node, errs)) => Err(Failure {
+        Err((node, errs)) => Err(TestCase {
             path: path.to_owned(),
-            reason: Reason::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
+            reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
         }),
         Ok(node) => match crate::compile(&node, glyph_map) {
             Ok(_thing) => Ok(()),
-            Err(errs) => Err(Failure {
+            Err(errs) => Err(TestCase {
                 path: path.to_owned(),
-                reason: Reason::CompileFail(test_utils::stringify_diagnostics(&node, &errs)),
+                reason: TestResult::CompileFail(test_utils::stringify_diagnostics(&node, &errs)),
             }),
         },
     }
