@@ -116,8 +116,8 @@ pub(crate) struct FeatureKey {
 /// A helper for building GSUB/GPOS tables
 pub(crate) struct PosSubBuilder<T> {
     lookups: Vec<T>,
-    scripts: HashMap<Tag, HashMap<Tag, Vec<u16>>>,
-    features: HashMap<(Tag, Vec<u16>), usize>,
+    scripts: BTreeMap<Tag, BTreeMap<Tag, Vec<u16>>>,
+    features: BTreeMap<(Tag, Vec<u16>), usize>,
 }
 
 impl<T> Lookup<T> {

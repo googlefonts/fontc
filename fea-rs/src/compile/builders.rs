@@ -1,6 +1,6 @@
 //! Builders for layout tables
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use font_types::GlyphId;
 use write_fonts::tables::{
@@ -102,7 +102,7 @@ impl Builder for PairPosBuilder {
 
     //FIXME: this always uses format 1.
     fn build(self) -> Result<Self::Output, ()> {
-        let mut split_by_format = HashMap::new();
+        let mut split_by_format = BTreeMap::new();
         for (g1, map) in self.items {
             for (g2, (v1, v2)) in map {
                 split_by_format
