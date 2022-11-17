@@ -585,12 +585,45 @@ impl Builder for AlternateSubBuilder {
 
 #[derive(Clone, Debug, Default)]
 pub struct LigatureSubBuilder {
-    items: BTreeMap<Vec<GlyphId>, GlyphId>,
+    items: BTreeMap<GlyphId, Vec<(Vec<GlyphId>, GlyphId)>>,
 }
 
 impl LigatureSubBuilder {
     pub fn insert(&mut self, target: Vec<GlyphId>, replacement: GlyphId) {
-        self.items.insert(target, replacement);
+        let mut iter = target.into_iter();
+        let first = iter.next().unwrap();
+        let rest = iter.collect::<Vec<_>>();
+        self.items
+            .entry(first)
+            .or_default()
+            .push((rest, replacement));
+    }
+}
+
+impl Builder for LigatureSubBuilder {
+    type Output = Vec<write_gsub::LigatureSubstFormat1>;
+
+    fn build(self) -> Result<Self::Output, ()> {
+        let coverage = self.items.keys().copied().collect::<CoverageTableBuilder>();
+        let lig_sets = self
+            .items
+            .into_values()
+            .map(|mut ligs| {
+                ligs.sort_unstable();
+                write_gsub::LigatureSet::new(
+                    ligs.into_iter()
+                        .map(|(components, lig_glyph)| {
+                            write_gsub::Ligature::new(lig_glyph, components)
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+
+        Ok(vec![write_gsub::LigatureSubstFormat1::new(
+            coverage.build(),
+            lig_sets,
+        )])
     }
 }
 
