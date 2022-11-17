@@ -5,7 +5,7 @@ use std::{
     convert::TryInto,
     env::temp_dir,
     ffi::OsStr,
-    fmt::{Debug, Write},
+    fmt::{Debug, Display, Write},
     path::{Path, PathBuf},
     process::Command,
     time::SystemTime,
@@ -15,6 +15,7 @@ use crate::{Compilation, Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree}
 
 use ansi_term::Color;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use font_types::Tag;
 use write_fonts::{tables::maxp::Maxp, FontBuilder};
@@ -39,9 +40,20 @@ static IGNORED_TESTS: &[&str] = &[
 static TEMP_DIR_ENV: &str = "TTX_TEMP_DIR";
 
 /// The combined results of this set of tests
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Report {
     pub results: Vec<TestCase>,
+}
+
+#[derive(Default)]
+struct ReportSummary {
+    passed: u32,
+    panic: u32,
+    parse: u32,
+    compile: u32,
+    compare: u32,
+    other: u32,
+    sum_compare_perc: f64,
 }
 
 pub struct ResultsPrinter<'a> {
@@ -49,12 +61,18 @@ pub struct ResultsPrinter<'a> {
     results: &'a Report,
 }
 
+pub struct ReportComparePrinter<'a> {
+    old: &'a Report,
+    new: &'a Report,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct TestCase {
     pub path: PathBuf,
     pub reason: TestResult,
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum TestResult {
     Success,
     Panic,
@@ -399,14 +417,17 @@ static DIFF_PREAMBLE: &str = "\
 # fonttools and the output of fea-rs for a given input.
 ";
 
-pub fn compute_diff_percentage(left: &str, right: &str) -> f64 {
+fn compute_diff_percentage(left: &str, right: &str) -> f64 {
     let lines = diff::lines(left, right);
     let same = lines
         .iter()
         .filter(|l| matches!(l, diff::Result::Both { .. }))
         .count();
     let total = lines.len() as f64;
-    (same as f64) / total
+    let perc = (same as f64) / total;
+
+    const PRECISION_SMUDGE: f64 = 10000.0;
+    (perc * PRECISION_SMUDGE).trunc() / PRECISION_SMUDGE
 }
 
 // a simple diff we write to disk
@@ -498,19 +519,8 @@ static TEST_FONT_GLYPHS: &[&str] = &[
 }
 
 impl Report {
-    fn len(&self) -> usize {
-        self.results.len()
-    }
-
     pub fn has_failures(&self) -> bool {
         self.results.iter().any(|r| !r.reason.is_success())
-    }
-
-    pub fn success_count(&self) -> usize {
-        self.results
-            .iter()
-            .filter(|t| t.reason.is_success())
-            .count()
     }
 
     pub fn into_error(self) -> Result<(), Self> {
@@ -526,6 +536,38 @@ impl Report {
             verbose,
             results: self,
         }
+    }
+
+    pub fn compare_printer<'a, 'b: 'a>(&'b self, old: &'a Report) -> ReportComparePrinter<'a> {
+        ReportComparePrinter { old, new: self }
+    }
+
+    /// returns the number of chars in the widest path
+    fn widest_path(&self) -> usize {
+        self.results
+            .iter()
+            .map(|item| &item.path)
+            .map(|p| p.file_name().unwrap().to_str().unwrap().chars().count())
+            .max()
+            .unwrap_or(0)
+    }
+
+    fn summary(&self) -> ReportSummary {
+        let mut summary = ReportSummary::default();
+        for item in &self.results {
+            match &item.reason {
+                TestResult::Success => summary.passed += 1,
+                TestResult::Panic => summary.panic += 1,
+                TestResult::ParseFail(_) => summary.parse += 1,
+                TestResult::CompileFail(_) => summary.compile += 1,
+                TestResult::UnexpectedSuccess | TestResult::TtxFail { .. } => summary.other += 1,
+                TestResult::CompareFail { diff_percent, .. } => {
+                    summary.compare += 1;
+                    summary.sum_compare_perc += diff_percent;
+                }
+            }
+        }
+        summary
     }
 }
 
@@ -555,61 +597,119 @@ impl TestResult {
 }
 
 impl std::fmt::Debug for ResultsPrinter<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        writeln!(f, "failed test cases")?;
-        let widest = self
-            .results
-            .results
-            .iter()
-            .map(|item| &item.path)
-            .map(|p| p.file_name().unwrap().to_str().unwrap().len())
-            .max()
-            .unwrap_or(0)
-            + 2;
-
-        for failure in &self.results.results {
-            let file_name = failure.path.file_name().unwrap().to_str().unwrap();
-            writeln!(
-                f,
-                "{:width$} {:?}",
-                file_name,
-                failure.reason.printer(self.verbose),
-                width = widest
-            )?;
-        }
-        let (panic, parse, compile, compare, perc) = self.results.results.iter().fold(
-            (0, 0, 0, 0, 0.0),
-            |(panic, parse, compile, compare, perc), fail| match fail.reason {
-                TestResult::Panic => (panic + 1, parse, compile, compare, perc),
-                TestResult::ParseFail(_) => (panic, parse + 1, compile, compare, perc),
-                TestResult::CompileFail(_) => (panic, parse, compile + 1, compare, perc),
-                TestResult::CompareFail { diff_percent, .. } => {
-                    (panic, parse, compile, compare + 1, perc + diff_percent)
-                }
-                _ => (panic, parse, compile, compare, perc),
-            },
-        );
-        let perc = perc + self.results.success_count() as f64;
-        let perc = perc / self.results.len() as f64;
-
-        writeln!(
-            f,
-            "failed {}/{} test cases",
-            self.results.results.len(),
-            self.results.len()
-        )?;
-
-        writeln!(
-            f,
-            "{} panic, {} parse, {} compile, {} compare ({:.0}%)",
-            panic,
-            parse,
-            compile,
-            compare,
-            perc * 100.0,
-        )?;
-        Ok(())
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        debug_impl(f, &self.results, None, self.verbose)
     }
+}
+
+impl std::fmt::Debug for ReportComparePrinter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        debug_impl(f, self.new, Some(self.old), false)
+    }
+}
+
+struct OldResults<'a> {
+    map: Option<HashMap<&'a Path, TestResult>>,
+}
+
+impl<'a> OldResults<'a> {
+    fn new(report: Option<&'a Report>) -> Self {
+        Self {
+            map: report.map(|report| {
+                report
+                    .results
+                    .iter()
+                    .map(|test| (test.path.as_path(), test.reason.clone()))
+                    .collect()
+            }),
+        }
+    }
+
+    fn get(&self, result: &TestCase) -> ComparePrinter {
+        match self.map.as_ref() {
+            None => ComparePrinter::NotComparing,
+            Some(map) => match map.get(result.path.as_path()) {
+                None => ComparePrinter::Missing,
+                Some(prev) => match (prev, &result.reason) {
+                    (
+                        TestResult::CompareFail {
+                            diff_percent: old, ..
+                        },
+                        TestResult::CompareFail {
+                            diff_percent: new, ..
+                        },
+                    ) => {
+                        if (old - new).abs() > f64::EPSILON {
+                            ComparePrinter::PercChange((new - old) * 100.)
+                        } else {
+                            ComparePrinter::Same
+                        }
+                    }
+                    (x, y) if x == y => ComparePrinter::Same,
+                    (old, _) => ComparePrinter::Different(old.clone()),
+                },
+            },
+        }
+    }
+}
+
+enum ComparePrinter {
+    // print nothing, we aren't comparing
+    NotComparing,
+    // this item didn't previously exist
+    Missing,
+    // no diff
+    Same,
+    /// we are both compare failures, with a percentage change
+    PercChange(f64),
+    /// we are some other difference
+    Different(TestResult),
+}
+
+impl std::fmt::Display for ComparePrinter {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ComparePrinter::NotComparing => Ok(()),
+            ComparePrinter::Missing => write!(f, "(new)"),
+            ComparePrinter::Same => write!(f, "--"),
+            ComparePrinter::PercChange(val) if val.is_sign_positive() => {
+                write!(f, "{}", Color::Green.paint(format!("+{val:.2}")))
+            }
+            ComparePrinter::PercChange(val) => {
+                write!(f, "{}", Color::Red.paint(format!("-{val:.2}")))
+            }
+            ComparePrinter::Different(reason) => write!(f, "{reason:?}"),
+        }
+    }
+}
+
+fn debug_impl(
+    f: &mut std::fmt::Formatter,
+    report: &Report,
+    old: Option<&Report>,
+    verbose: bool,
+) -> std::fmt::Result {
+    writeln!(f, "failed test cases")?;
+    let path_pad = report.widest_path();
+    let old_results = OldResults::new(old);
+
+    for result in &report.results {
+        let old = old_results.get(result);
+        let file_name = result.path.file_name().unwrap().to_str().unwrap();
+        writeln!(
+            f,
+            "{file_name:path_pad$}  {:<30}  {old}",
+            result.reason.printer(verbose).to_string(),
+        )?;
+    }
+    let summary = report.summary();
+    let prefix = old.is_some().then_some("new: ").unwrap_or("");
+    writeln!(f, "{prefix}{summary}")?;
+    if let Some(old_summary) = old.map(Report::summary) {
+        writeln!(f, "old: {old_summary}")?;
+    }
+
+    Ok(())
 }
 
 impl std::fmt::Debug for Report {
@@ -618,7 +718,7 @@ impl std::fmt::Debug for Report {
     }
 }
 
-impl Debug for ReasonPrinter<'_> {
+impl Display for ReasonPrinter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.reason {
             TestResult::Success => write!(f, "{}", Color::Green.paint("success")),
@@ -667,5 +767,30 @@ impl Debug for ReasonPrinter<'_> {
 impl Debug for TestResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.printer(false).fmt(f)
+    }
+}
+
+impl ReportSummary {
+    fn total_items(&self) -> u32 {
+        self.passed + self.panic + self.parse + self.compile + self.compare + self.other
+    }
+
+    fn average_diff_percent(&self) -> f64 {
+        (self.sum_compare_perc + (self.passed as f64)) / self.total_items() as f64 * 100.
+    }
+}
+
+impl Display for ReportSummary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let total = self.total_items();
+        let perc = self.average_diff_percent();
+        let ReportSummary {
+            passed,
+            panic,
+            parse,
+            compile,
+            ..
+        } = self;
+        write!(f, "passed {passed}/{total} tests: ({panic} panics {parse} unparsed {compile} compile) {perc:.2}% avg diff")
     }
 }

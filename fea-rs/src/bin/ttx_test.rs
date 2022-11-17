@@ -12,10 +12,29 @@ fn main() {
     let args = flags::Args::from_env().unwrap();
 
     let results = ttx::run_all_tests(TEST_DATA, args.test.as_ref());
-    eprintln!("{:?}", results.printer(args.verbose));
+
+    if let Some(to_compare) = args
+        .compare
+        .as_ref()
+        .map(std::fs::read)
+        .transpose()
+        .unwrap()
+    {
+        let old_result: ttx::Report = serde_json::from_slice(&to_compare).unwrap();
+        eprintln!("{:?}", results.compare_printer(&old_result));
+    } else {
+        eprintln!("{:?}", results.printer(args.verbose));
+    }
+
+    if let Some(path) = args.save {
+        let serialized = serde_json::to_vec(&results).unwrap();
+        std::fs::write(path, serialized).unwrap();
+    }
+
     if args.write_diff {
         save_wip_diffs(&results);
     }
+
     if results.has_failures() {
         std::process::exit(1);
     }
@@ -42,6 +61,7 @@ fn save_wip_diffs(results: &ttx::Report) {
 }
 
 mod flags {
+    use std::path::PathBuf;
     xflags::xflags! {
 
         /// Compile a fea file into a source font
@@ -53,6 +73,10 @@ mod flags {
             optional -t, --test test_filter: String
             /// Write diffs to a ./wip directory
             optional -d, --write-diff
+            /// save the results to a file. you can compare runs with the --compare option
+            optional -s, --save save: PathBuf
+            /// compare results against those previously saved
+            optional -c, --compare compare: PathBuf
         }
     }
 }
