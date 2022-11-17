@@ -44,7 +44,7 @@ pub(crate) struct AllLookups {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Lookup<T> {
+pub(crate) struct LookupBuilder<T> {
     flags: LookupFlag,
     mark_set: Option<FilterSetId>,
     subtables: Vec<T>,
@@ -52,25 +52,25 @@ pub(crate) struct Lookup<T> {
 
 #[derive(Clone, Debug)]
 pub(crate) enum PositionLookup {
-    Single(Lookup<SinglePosBuilder>),
-    Pair(Lookup<PairPosBuilder>),
-    Cursive(Lookup<CursivePosBuilder>),
-    MarkToBase(Lookup<MarkToBaseBuilder>),
-    MarkToLig(Lookup<MarkToLigBuilder>),
-    MarkToMark(Lookup<MarkToMarkBuilder>),
-    Contextual(Lookup<()>),
-    ChainedContextual(Lookup<()>),
+    Single(LookupBuilder<SinglePosBuilder>),
+    Pair(LookupBuilder<PairPosBuilder>),
+    Cursive(LookupBuilder<CursivePosBuilder>),
+    MarkToBase(LookupBuilder<MarkToBaseBuilder>),
+    MarkToLig(LookupBuilder<MarkToLigBuilder>),
+    MarkToMark(LookupBuilder<MarkToMarkBuilder>),
+    Contextual(LookupBuilder<()>),
+    ChainedContextual(LookupBuilder<()>),
 }
 
 #[derive(Clone, Debug)]
 pub(crate) enum SubstitutionLookup {
-    Single(Lookup<SingleSubBuilder>),
-    Multiple(Lookup<MultipleSubBuilder>),
-    Alternate(Lookup<AlternateSubBuilder>),
-    Ligature(Lookup<LigatureSubBuilder>),
-    Contextual(Lookup<()>),
-    ChainedContextual(Lookup<()>),
-    Reverse(Lookup<()>),
+    Single(LookupBuilder<SingleSubBuilder>),
+    Multiple(LookupBuilder<MultipleSubBuilder>),
+    Alternate(LookupBuilder<AlternateSubBuilder>),
+    Ligature(LookupBuilder<LigatureSubBuilder>),
+    Contextual(LookupBuilder<()>),
+    ChainedContextual(LookupBuilder<()>),
+    Reverse(LookupBuilder<()>),
 }
 
 #[derive(Clone, Debug)]
@@ -117,32 +117,55 @@ pub(crate) struct PosSubBuilder<T> {
     features: BTreeMap<(Tag, Vec<u16>), usize>,
 }
 
-impl<T> Lookup<T> {
-    pub fn brand_new(flags: LookupFlag, mark_set: Option<FilterSetId>) -> Self
-    where
-        T: Default,
-    {
-        Lookup {
+impl<T: Default> LookupBuilder<T> {
+    fn new(flags: LookupFlag, mark_set: Option<FilterSetId>) -> Self {
+        LookupBuilder {
             flags,
             mark_set,
             subtables: vec![Default::default()],
         }
     }
 
-    pub fn new(flags: LookupFlag, mark_set: Option<FilterSetId>, subtables: Vec<T>) -> Self {
-        Self {
-            flags,
-            mark_set,
-            subtables,
-        }
-    }
     //TODO: if we keep this, make it unwrap and ensure we always have a subtable
     pub fn last_mut(&mut self) -> Option<&mut T> {
         self.subtables.last_mut()
     }
+
+    pub fn force_subtable_break(&mut self) {
+        self.subtables.push(Default::default())
+    }
 }
 
-impl<U, T> Builder for Lookup<T>
+impl PositionLookup {
+    fn force_subtable_break(&mut self) {
+        match self {
+            PositionLookup::Single(lookup) => lookup.force_subtable_break(),
+            PositionLookup::Pair(lookup) => lookup.force_subtable_break(),
+            PositionLookup::Cursive(lookup) => lookup.force_subtable_break(),
+            PositionLookup::MarkToBase(lookup) => lookup.force_subtable_break(),
+            PositionLookup::MarkToLig(lookup) => lookup.force_subtable_break(),
+            PositionLookup::MarkToMark(lookup) => lookup.force_subtable_break(),
+            PositionLookup::Contextual(lookup) => lookup.force_subtable_break(),
+            PositionLookup::ChainedContextual(lookup) => lookup.force_subtable_break(),
+        }
+    }
+}
+
+impl SubstitutionLookup {
+    fn force_subtable_break(&mut self) {
+        match self {
+            SubstitutionLookup::Single(lookup) => lookup.force_subtable_break(),
+            SubstitutionLookup::Multiple(lookup) => lookup.force_subtable_break(),
+            SubstitutionLookup::Alternate(lookup) => lookup.force_subtable_break(),
+            SubstitutionLookup::Ligature(lookup) => lookup.force_subtable_break(),
+            SubstitutionLookup::Contextual(lookup) => lookup.force_subtable_break(),
+            SubstitutionLookup::Reverse(lookup) => lookup.force_subtable_break(),
+            SubstitutionLookup::ChainedContextual(lookup) => lookup.force_subtable_break(),
+        }
+    }
+}
+
+impl<U, T> Builder for LookupBuilder<T>
 where
     T: Builder<Output = Vec<U>>,
     U: Default,
@@ -300,11 +323,11 @@ impl AllLookups {
     pub(crate) fn add_subtable_break(&mut self) -> bool {
         if let Some(current) = self.current.as_mut() {
             //FIXME
-            //match current {
-            //SomeLookup::GsubLookup(lookup) => lookup.rule.add_subtable_break(),
-            //SomeLookup::GposLookup(lookup) => lookup.rule.add_subtable_break(),
-            //_ => (),
-            //}
+            match current {
+                SomeLookup::GsubLookup(lookup) => lookup.force_subtable_break(),
+                SomeLookup::GposLookup(lookup) => lookup.force_subtable_break(),
+                //_ => (),
+            }
             true
         } else {
             false
@@ -481,19 +504,21 @@ impl SomeLookup {
                 //flags,
                 //mark_filtering_set,
                 match kind {
-                    Kind::GposType1 => PositionLookup::Single(Lookup::brand_new(flags, filter_set)),
-                    Kind::GposType2 => PositionLookup::Pair(Lookup::brand_new(flags, filter_set)),
+                    Kind::GposType1 => {
+                        PositionLookup::Single(LookupBuilder::new(flags, filter_set))
+                    }
+                    Kind::GposType2 => PositionLookup::Pair(LookupBuilder::new(flags, filter_set)),
                     Kind::GposType3 => {
-                        PositionLookup::Cursive(Lookup::brand_new(flags, filter_set))
+                        PositionLookup::Cursive(LookupBuilder::new(flags, filter_set))
                     }
                     Kind::GposType4 => {
-                        PositionLookup::MarkToBase(Lookup::brand_new(flags, filter_set))
+                        PositionLookup::MarkToBase(LookupBuilder::new(flags, filter_set))
                     }
                     Kind::GposType5 => {
-                        PositionLookup::MarkToLig(Lookup::brand_new(flags, filter_set))
+                        PositionLookup::MarkToLig(LookupBuilder::new(flags, filter_set))
                     }
                     Kind::GposType6 => {
-                        PositionLookup::MarkToMark(Lookup::brand_new(flags, filter_set))
+                        PositionLookup::MarkToMark(LookupBuilder::new(flags, filter_set))
                     }
                     Kind::GposNode => unimplemented!("other gpos type?"),
                     other => panic!("illegal kind for lookup: '{}'", other),
@@ -505,19 +530,19 @@ impl SomeLookup {
                 //mark_filtering_set,
                 match kind {
                     Kind::GsubType1 => {
-                        SubstitutionLookup::Single(Lookup::brand_new(flags, filter_set))
+                        SubstitutionLookup::Single(LookupBuilder::new(flags, filter_set))
                     }
                     Kind::GsubType2 => {
-                        SubstitutionLookup::Multiple(Lookup::brand_new(flags, filter_set))
+                        SubstitutionLookup::Multiple(LookupBuilder::new(flags, filter_set))
                     }
                     Kind::GsubType3 => {
-                        SubstitutionLookup::Alternate(Lookup::brand_new(flags, filter_set))
+                        SubstitutionLookup::Alternate(LookupBuilder::new(flags, filter_set))
                     }
                     Kind::GsubType4 => {
-                        SubstitutionLookup::Ligature(Lookup::brand_new(flags, filter_set))
+                        SubstitutionLookup::Ligature(LookupBuilder::new(flags, filter_set))
                     }
                     Kind::GsubType5 => {
-                        SubstitutionLookup::Contextual(Lookup::brand_new(flags, filter_set))
+                        SubstitutionLookup::Contextual(LookupBuilder::new(flags, filter_set))
                     }
                     Kind::GsubType7 => unimplemented!("extension"),
                     other => panic!("illegal kind for lookup: '{}'", other),
@@ -669,6 +694,7 @@ impl SomeLookup {
         }
     }
 
+    #[allow(dead_code, unused_variables)]
     pub(crate) fn add_gsub_type_6(
         &mut self,
         backtrack: Vec<BTreeSet<u16>>,
@@ -687,6 +713,7 @@ impl SomeLookup {
         //}
     }
 
+    #[allow(dead_code, unused_variables)]
     pub(crate) fn add_gsub_type_8(
         &mut self,
         backtrack: Vec<BTreeSet<u16>>,
