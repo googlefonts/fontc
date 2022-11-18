@@ -29,6 +29,10 @@ impl SingleSubBuilder {
             .unwrap_or(PossibleSingleSubFormat::Format2);
         self.items.insert(target, (replacement, delta));
     }
+
+    pub fn contains_target(&self, target: GlyphId) -> bool {
+        self.items.contains_key(&target)
+    }
 }
 
 impl Builder for SingleSubBuilder {
@@ -193,6 +197,12 @@ impl LigatureSubBuilder {
             .entry(first)
             .or_default()
             .push((rest, replacement));
+    }
+
+    pub fn contains_target(&self, target: GlyphId) -> bool {
+        //FIXME: we could be more aggressive here, but for now we will force a new
+        //lookup anytime the target exists? idk
+        self.items.contains_key(&target)
     }
 }
 

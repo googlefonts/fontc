@@ -498,80 +498,80 @@ impl<'a> CompilationCtx<'a> {
 
     fn add_contextual_sub(&mut self, node: &typed::Gsub6) {
         //TODO: me
-        //let mut backtrack = node
-        //.backtrack()
-        //.items()
-        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-        //.collect::<Vec<_>>();
-        //backtrack.reverse();
-        //let lookahead = node
-        //.lookahead()
-        //.items()
-        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-        //.collect::<Vec<_>>();
-        //// does this have an inline rule?
-        //let mut inline = node.inline_rule().and_then(|rule| {
-        //let input = node.input();
-        //if input.items().nth(1).is_some() {
-        //// more than one input: this is a ligature rule
-        //let target = input
-        //.items()
-        //.map(|inp| self.resolve_glyph_or_class(&inp.target()))
-        //.collect::<Vec<_>>();
-        //let replacement = self.resolve_glyph(&rule.replacement_glyphs().next().unwrap());
-        //let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-        ////FIXME: we should check that the whole sequence is not present the
-        ////lookup before adding..
-        //let mut to_return = None;
-        //for target in sequence_enumerator(&target) {
-        //to_return = Some(
-        //lookup
-        //.as_gsub_type_6()
-        //.add_anon_gsub_type_4(target, replacement),
-        //);
-        //}
-        //to_return
-        //} else {
-        //let target = input.items().next().unwrap().target();
-        //let replacement = rule.replacements().next().unwrap();
-        //if let Some((target, replacement)) =
-        //self.validate_single_sub_inputs(&target, Some(&replacement))
-        //{
-        //let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-        //Some(
-        //lookup
-        //.as_gsub_type_6()
-        //.add_anon_gsub_type_1(target, replacement),
-        //)
-        //} else {
-        //None
-        //}
-        //}
-        //});
+        let mut backtrack = node
+            .backtrack()
+            .items()
+            .map(|g| self.resolve_glyph_or_class(&g))
+            .collect::<Vec<_>>();
+        backtrack.reverse();
+        let lookahead = node
+            .lookahead()
+            .items()
+            .map(|g| self.resolve_glyph_or_class(&g))
+            .collect::<Vec<_>>();
+        // does this have an inline rule?
+        let mut inline = node.inline_rule().and_then(|rule| {
+            let input = node.input();
+            if input.items().nth(1).is_some() {
+                // more than one input: this is a ligature rule
+                let target = input
+                    .items()
+                    .map(|inp| self.resolve_glyph_or_class(&inp.target()))
+                    .collect::<Vec<_>>();
+                let replacement = self.resolve_glyph(&rule.replacement_glyphs().next().unwrap());
+                let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+                //FIXME: we should check that the whole sequence is not present the
+                //lookup before adding..
+                let mut to_return = None;
+                for target in sequence_enumerator(&target) {
+                    to_return = Some(
+                        lookup
+                            .as_gsub_contextual()
+                            .add_anon_gsub_type_4(target, replacement),
+                    );
+                }
+                to_return
+            } else {
+                let target = input.items().next().unwrap().target();
+                let replacement = rule.replacements().next().unwrap();
+                if let Some((target, replacement)) =
+                    self.validate_single_sub_inputs(&target, Some(&replacement))
+                {
+                    let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+                    Some(
+                        lookup
+                            .as_gsub_contextual()
+                            .add_anon_gsub_type_1(target, replacement),
+                    )
+                } else {
+                    None
+                }
+            }
+        });
 
-        //let context = node
-        //.input()
-        //.items()
-        //.map(|item| {
-        //let glyphs = make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target()));
-        //let mut lookups = Vec::new();
-        //// if there's an inline rule it always belongs to the first marked
-        //// glyph, so this should work? it may need to change for fancier
-        //// inline rules in the future.
-        //if let Some(inline) = inline.take() {
-        //lookups.push(inline.to_u16_or_die());
-        //}
+        let context = node
+            .input()
+            .items()
+            .map(|item| {
+                let glyphs = self.resolve_glyph_or_class(&item.target());
+                let mut lookups = Vec::new();
+                // if there's an inline rule it always belongs to the first marked
+                // glyph, so this should work? it may need to change for fancier
+                // inline rules in the future.
+                if let Some(inline) = inline.take() {
+                    lookups.push(inline);
+                }
 
-        //for lookup in item.lookups() {
-        //let lookup = self.lookups.get_named(&lookup.label().text).unwrap(); // validated already
-        //lookups.push(lookup.to_u16_or_die());
-        //}
-        //(glyphs, lookups)
-        //})
-        //.collect::<Vec<_>>();
+                for lookup in item.lookups() {
+                    let lookup = self.lookups.get_named(&lookup.label().text).unwrap(); // validated already
+                    lookups.push(lookup);
+                }
+                (glyphs, lookups)
+            })
+            .collect::<Vec<_>>();
 
-        //let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-        //lookup.add_gsub_type_6(backtrack, context, lookahead);
+        let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+        lookup.add_contextual_rule(backtrack, context, lookahead);
     }
 
     fn add_contextual_sub_ignore(&mut self, node: &typed::GsubIgnore) {

@@ -2,6 +2,7 @@
 
 use std::convert::TryInto;
 
+use font_types::GlyphId;
 use write_fonts::tables::{
     gpos::ValueRecord,
     layout::{self as write_layout, CoverageTableBuilder, LookupFlag},
@@ -9,7 +10,7 @@ use write_fonts::tables::{
 
 use crate::types::GlyphOrClass;
 
-use super::{Builder, FilterSetId, LookupBuilder, LookupId, PositionLookup};
+use super::{Builder, FilterSetId, LookupBuilder, LookupId, PositionLookup, SubstitutionLookup};
 
 /// When building a contextual/chaining contextual rule, we also build a
 /// bunch of anonymous lookups.
@@ -115,6 +116,69 @@ impl ContextualLookupBuilder<PositionLookup> {
         for id in glyphs.iter() {
             sub.insert(id, value.clone());
         }
+        self.current_anon_lookup_id()
+    }
+}
+
+impl ContextualLookupBuilder<SubstitutionLookup> {
+    fn current_anon_lookup_id(&self) -> LookupId {
+        LookupId::Gsub(self.root_id.to_raw() + self.anon_lookups.len())
+    }
+
+    pub(crate) fn add_anon_gsub_type_1(
+        &mut self,
+        target: GlyphOrClass,
+        replacement: GlyphOrClass,
+    ) -> LookupId {
+        // do we need a new lookup or can we use the existing one?
+        self.add_new_lookup_if_necessary(
+            |existing| match existing {
+                SubstitutionLookup::Single(subtables) => subtables
+                    .subtables
+                    .iter()
+                    .any(|subt| target.iter().any(|t| subt.contains_target(t))),
+                _ => true,
+            },
+            |flags, mark_set| SubstitutionLookup::Single(LookupBuilder::new(flags, mark_set)),
+        );
+
+        let lookup = self.anon_lookups.last_mut().unwrap();
+        let SubstitutionLookup::Single(subtables) = lookup else {
+            // we didn't panic here before my refactor but I don't think we
+            // want to fall through. let's find out?
+            panic!("I don't think this should happen?");
+        };
+        let sub = subtables.last_mut().unwrap();
+        for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
+            sub.insert(target, replacement);
+        }
+        self.current_anon_lookup_id()
+    }
+
+    pub(crate) fn add_anon_gsub_type_4(
+        &mut self,
+        target: Vec<GlyphId>,
+        replacement: GlyphId,
+    ) -> LookupId {
+        // do we need a new lookup or can we use the existing one?
+        self.add_new_lookup_if_necessary(
+            |existing| match existing {
+                SubstitutionLookup::Ligature(builder) => builder
+                    .subtables
+                    .iter()
+                    .any(|sub| sub.contains_target(target.first().copied().unwrap())),
+                _ => true,
+            },
+            |flags, mark_set| SubstitutionLookup::Ligature(LookupBuilder::new(flags, mark_set)),
+        );
+
+        let lookup = self.anon_lookups.last_mut().unwrap();
+        let SubstitutionLookup::Ligature(subtables) = lookup else {
+            panic!("ahhhhhh");
+        };
+
+        let sub = subtables.last_mut().unwrap();
+        sub.insert(target, replacement);
         self.current_anon_lookup_id()
     }
 }
