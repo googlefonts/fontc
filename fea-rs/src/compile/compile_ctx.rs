@@ -19,9 +19,8 @@ use crate::{
 };
 
 use super::{
-    builders::PreviouslyAssignedClass,
     consts, glyph_range,
-    lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, SomeLookup},
+    lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, PreviouslyAssignedClass, SomeLookup},
     output::{Compilation, SizeFeature},
     tables::{ClassId, ScriptRecord, Tables},
 };

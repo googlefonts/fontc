@@ -23,14 +23,24 @@ use crate::{
 };
 
 use super::{
-    builders::{
-        AlternateSubBuilder, Builder, CursivePosBuilder, LigatureSubBuilder, MarkToBaseBuilder,
-        MarkToLigBuilder, MarkToMarkBuilder, MultipleSubBuilder, PairPosBuilder, SinglePosBuilder,
-        SingleSubBuilder,
-    },
     consts::{LANG_DFLT_TAG, SCRIPT_DFLT_TAG, SIZE_TAG},
     tables::ClassId,
 };
+
+pub use gpos::PreviouslyAssignedClass;
+use gpos::{
+    CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder,
+    SinglePosBuilder,
+};
+use gsub::{AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder};
+
+mod gpos;
+mod gsub;
+
+pub trait Builder {
+    type Output;
+    fn build(self) -> Self::Output;
+}
 
 pub(crate) type FilterSetId = u16;
 
