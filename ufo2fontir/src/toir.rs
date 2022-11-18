@@ -53,10 +53,10 @@ fn extract_upem(val: NonNegativeIntegerOrFloat) -> Result<u16, UfoToIrError> {
     Ok(val as u16)
 }
 
-fn upem(fonts: &Vec<Font>) -> Result<u16, UfoToIrError> {
+fn upem(fonts: &[Font]) -> Result<u16, UfoToIrError> {
     // Optional NonNegativeIntegerOrFloat for a u16 field is super awesome
     let upem: HashSet<u16> = fonts
-        .into_iter()
+        .iter()
         .filter_map(|f| f.font_info.units_per_em)
         .map(extract_upem)
         .collect::<Result<HashSet<u16>, _>>()?;
@@ -81,7 +81,7 @@ pub fn designspace_to_ir(
 
     let mut glyphs = HashMap::<String, ir::Glyph>::new();
     for font in fonts.iter() {
-        let glyph_dir = dir.join("glyphs");
+        let glyph_dir = font.path.join("glyphs");
         for glif_file in fs::read_dir(glyph_dir).map_err(UfoToIrError::IoError)? {
             let glif_file = glif_file.map_err(UfoToIrError::IoError)?.path();
             let norad_glyph =
@@ -105,10 +105,12 @@ pub fn designspace_to_ir(
                 width: None,
                 height: None,
             };
+
+            glyph.instances.push(glyph_instance);
         }
     }
 
-    Ok((ir::Font { upem, axes }, vec![]))
+    Ok((ir::Font { upem, axes }, glyphs.into_values().collect()))
 }
 
 fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
