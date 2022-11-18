@@ -861,44 +861,43 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_contextual_pos_rule(&mut self, node: &typed::Gpos8) {
-        eprintln!("contextual pos currently disabled");
-        //let mut backtrack = node
-        //.backtrack()
-        //.items()
-        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-        //.collect::<Vec<_>>();
-        //backtrack.reverse();
-        //let lookahead = node
-        //.lookahead()
-        //.items()
-        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-        //.collect::<Vec<_>>();
+        let mut backtrack = node
+            .backtrack()
+            .items()
+            .map(|g| self.resolve_glyph_or_class(&g))
+            .collect::<Vec<_>>();
+        backtrack.reverse();
+        let lookahead = node
+            .lookahead()
+            .items()
+            .map(|g| self.resolve_glyph_or_class(&g))
+            .collect::<Vec<_>>();
 
-        //let context = node
-        //.input()
-        //.items()
-        //.map(|item| {
-        //let glyphs = self.resolve_glyph_or_class(&item.target());
-        //let mut lookups = Vec::new();
-        //if let Some(value) = item.valuerecord() {
-        //let value = self.resolve_value_record(&value);
-        //let anon_id = self
-        //.ensure_current_lookup_type(Kind::GposType8)
-        //.as_gpos_type_8()
-        //.add_anon_gpos_type_1(&glyphs, value);
-        //lookups.push(anon_id.to_u16_or_die());
-        //}
+        let context = node
+            .input()
+            .items()
+            .map(|item| {
+                let glyphs = self.resolve_glyph_or_class(&item.target());
+                let mut lookups = Vec::new();
+                if let Some(value) = item.valuerecord() {
+                    let value = self.resolve_value_record(&value);
+                    let anon_id = self
+                        .ensure_current_lookup_type(Kind::GposType8)
+                        .as_gpos_contextual()
+                        .add_anon_gpos_type_1(&glyphs, value);
+                    lookups.push(anon_id);
+                }
 
-        //for lookup in item.lookups() {
-        //let id = self.lookups.get_named(&lookup.label().text).unwrap();
-        //lookups.push(id.to_u16_or_die());
-        //}
+                for lookup in item.lookups() {
+                    let id = self.lookups.get_named(&lookup.label().text).unwrap();
+                    lookups.push(id);
+                }
 
-        //(make_ctx_glyphs(&glyphs), lookups)
-        //})
-        //.collect();
-        //self.ensure_current_lookup_type(Kind::GposType8)
-        //.add_gpos_type_8(backtrack, context, lookahead);
+                (glyphs, lookups)
+            })
+            .collect();
+        self.ensure_current_lookup_type(Kind::GposType8)
+            .add_contextual_rule(backtrack, context, lookahead);
     }
 
     fn add_contextual_pos_ignore(&mut self, node: &typed::GposIgnore) {

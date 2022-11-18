@@ -40,6 +40,14 @@ impl SinglePosBuilder {
         }
         self.subtables.last_mut().unwrap()
     }
+
+    pub(crate) fn can_add_rule(&self, glyph: GlyphId, value: &ValueRecord) -> bool {
+        self.subtables
+            .iter()
+            .find_map(|sub| sub.items.get(&glyph))
+            .filter(|&record| record == value)
+            .is_some()
+    }
 }
 
 impl Builder for SinglePosBuilder {
