@@ -24,10 +24,6 @@ pub enum GlyphOrClass {
     Null,
 }
 
-// the general case; different uses have different constraints, which
-// we will not bother to have specific types for
-pub struct GlyphSequence(Rc<[GlyphOrClass]>);
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GlyphIdent {
     Name(GlyphName),
@@ -57,12 +53,6 @@ impl<'a> std::iter::IntoIterator for &'a GlyphClass {
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
-    }
-}
-
-impl std::iter::FromIterator<GlyphOrClass> for GlyphSequence {
-    fn from_iter<T: IntoIterator<Item = GlyphOrClass>>(iter: T) -> Self {
-        GlyphSequence(iter.into_iter().collect())
     }
 }
 

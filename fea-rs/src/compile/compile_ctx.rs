@@ -565,32 +565,9 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_contextual_sub_ignore(&mut self, node: &typed::GsubIgnore) {
-        //TODO: me!
-        //for rule in node.rules() {
-        //let mut backtrack = rule
-        //.backtrack()
-        //.items()
-        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-        //.collect::<Vec<_>>();
-        //backtrack.reverse();
-        //let lookahead = rule
-        //.lookahead()
-        //.items()
-        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-        //.collect::<Vec<_>>();
-        //let context = rule
-        //.input()
-        //.items()
-        //.map(|item| {
-        //(
-        //make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target())),
-        //Vec::new(),
-        //)
-        //})
-        //.collect::<Vec<_>>();
-        //let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-        //lookup.add_gsub_type_6(backtrack, context, lookahead);
-        //}
+        for rule in node.rules() {
+            self.add_contextual_ignore_rule(&rule, Kind::GsubType6);
+        }
     }
 
     fn add_reverse_contextual_sub(&mut self, node: &typed::Gsub8) {
@@ -881,32 +858,21 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_contextual_pos_ignore(&mut self, node: &typed::GposIgnore) {
-        eprintln!("contextual pos ignore currently disabled");
-        //for rule in node.rules() {
-        //let mut backtrack = rule
-        //.backtrack()
-        //.items()
-        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-        //.collect::<Vec<_>>();
-        //backtrack.reverse();
-        //let lookahead = rule
-        //.lookahead()
-        //.items()
-        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-        //.collect::<Vec<_>>();
-        //let context = rule
-        //.input()
-        //.items()
-        //.map(|item| {
-        //(
-        //make_ctx_glyphs(&self.resolve_glyph_or_class(&item.target())),
-        //Vec::new(),
-        //)
-        //})
-        //.collect::<Vec<_>>();
-        //let lookup = self.ensure_current_lookup_type(Kind::GposType8);
-        //lookup.add_gpos_type_8(backtrack, context, lookahead);
-        //}
+        for rule in node.rules() {
+            self.add_contextual_ignore_rule(&rule, Kind::GposType8);
+        }
+    }
+
+    fn add_contextual_ignore_rule(&mut self, rule: &typed::IgnoreRule, kind: Kind) {
+        let backtrack = self.resolve_backtrack_sequence(rule.backtrack().items());
+        let lookahead = self.resolve_lookahead_sequence(rule.lookahead().items());
+        let context = rule
+            .input()
+            .items()
+            .map(|item| (self.resolve_glyph_or_class(&item.target()), Vec::new()))
+            .collect();
+        let lookup = self.ensure_current_lookup_type(kind);
+        lookup.add_contextual_rule(backtrack, context, lookahead);
     }
 
     fn resolve_value_record(&mut self, record: &typed::ValueRecord) -> ValueRecord {
