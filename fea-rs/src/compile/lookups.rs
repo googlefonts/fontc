@@ -220,8 +220,8 @@ impl Builder for PositionLookup {
             PositionLookup::Contextual(lookup) => {
                 write_gpos::PositionLookup::Contextual(lookup.build().into_concrete())
             }
-            PositionLookup::ChainedContextual(_) => {
-                write_gpos::PositionLookup::ChainContextual(Default::default())
+            PositionLookup::ChainedContextual(lookup) => {
+                write_gpos::PositionLookup::ChainContextual(lookup.build().into_concrete())
             }
         }
     }
@@ -247,8 +247,8 @@ impl Builder for SubstitutionLookup {
             SubstitutionLookup::Contextual(lookup) => {
                 write_gsub::SubstitutionLookup::Contextual(lookup.build().into_concrete())
             }
-            SubstitutionLookup::ChainedContextual(_) => {
-                write_gsub::SubstitutionLookup::ChainContextual(Default::default())
+            SubstitutionLookup::ChainedContextual(lookup) => {
+                write_gsub::SubstitutionLookup::ChainContextual(lookup.build().into_concrete())
             }
             SubstitutionLookup::Reverse(_) => {
                 write_gsub::SubstitutionLookup::Reverse(Default::default())

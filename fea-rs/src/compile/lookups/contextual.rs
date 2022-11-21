@@ -257,3 +257,51 @@ impl Builder for ContextBuilder {
             .collect()
     }
 }
+
+impl Builder for ChainContextBuilder {
+    type Output = Vec<write_layout::ChainedSequenceContext>;
+
+    fn build(self) -> Self::Output {
+        self.0
+            .rules
+            .into_iter()
+            .map(|rule| {
+                let backtrack = rule
+                    .backtrack
+                    .iter()
+                    .map(|seq| seq.iter().collect::<CoverageTableBuilder>().build())
+                    .collect();
+                let lookahead = rule
+                    .lookahead
+                    .iter()
+                    .map(|seq| seq.iter().collect::<CoverageTableBuilder>().build())
+                    .collect();
+                let input = rule
+                    .context
+                    .iter()
+                    .map(|(seq, _)| seq.iter().collect::<CoverageTableBuilder>().build())
+                    .collect();
+                let seq_lookups = rule
+                    .context
+                    .into_iter()
+                    .enumerate()
+                    .flat_map(|(i, (_, lookups))| {
+                        lookups.into_iter().map(move |lookup_id| {
+                            write_layout::SequenceLookupRecord::new(
+                                i.try_into().unwrap(),
+                                lookup_id.to_u16_or_die(),
+                            )
+                        })
+                    })
+                    .collect();
+
+                write_layout::ChainedSequenceContext::format_3(
+                    backtrack,
+                    input,
+                    lookahead,
+                    seq_lookups,
+                )
+            })
+            .collect()
+    }
+}
