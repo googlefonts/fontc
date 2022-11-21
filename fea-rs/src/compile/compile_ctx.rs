@@ -497,18 +497,8 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_contextual_sub(&mut self, node: &typed::Gsub6) {
-        //TODO: me
-        let mut backtrack = node
-            .backtrack()
-            .items()
-            .map(|g| self.resolve_glyph_or_class(&g))
-            .collect::<Vec<_>>();
-        backtrack.reverse();
-        let lookahead = node
-            .lookahead()
-            .items()
-            .map(|g| self.resolve_glyph_or_class(&g))
-            .collect::<Vec<_>>();
+        let backtrack = self.resolve_backtrack_sequence(node.backtrack().items());
+        let lookahead = self.resolve_lookahead_sequence(node.lookahead().items());
         // does this have an inline rule?
         let mut inline = node.inline_rule().and_then(|rule| {
             let input = node.input();
@@ -861,18 +851,8 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_contextual_pos_rule(&mut self, node: &typed::Gpos8) {
-        let mut backtrack = node
-            .backtrack()
-            .items()
-            .map(|g| self.resolve_glyph_or_class(&g))
-            .collect::<Vec<_>>();
-        backtrack.reverse();
-        let lookahead = node
-            .lookahead()
-            .items()
-            .map(|g| self.resolve_glyph_or_class(&g))
-            .collect::<Vec<_>>();
-
+        let backtrack = self.resolve_backtrack_sequence(node.backtrack().items());
+        let lookahead = self.resolve_lookahead_sequence(node.lookahead().items());
         let context = node
             .input()
             .items()
@@ -1580,6 +1560,22 @@ impl<'a> CompilationCtx<'a> {
 
     fn resolve_glyph_name(&mut self, name: &typed::GlyphName) -> GlyphId {
         self.glyph_map.get(name.text()).unwrap()
+    }
+
+    fn resolve_lookahead_sequence(
+        &mut self,
+        seq: impl Iterator<Item = typed::GlyphOrClass>,
+    ) -> Vec<GlyphOrClass> {
+        seq.map(|inp| self.resolve_glyph_or_class(&inp)).collect()
+    }
+
+    fn resolve_backtrack_sequence(
+        &mut self,
+        seq: impl Iterator<Item = typed::GlyphOrClass>,
+    ) -> Vec<GlyphOrClass> {
+        let mut result = self.resolve_lookahead_sequence(seq);
+        result.reverse();
+        result
     }
 
     fn resolve_cid(&mut self, cid: &typed::Cid) -> GlyphId {
