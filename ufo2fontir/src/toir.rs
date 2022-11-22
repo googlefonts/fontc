@@ -93,7 +93,7 @@ pub fn designspace_to_ir(
                     name.clone(),
                     ir::Glyph {
                         name: name.clone(),
-                        instances: Vec::new(),
+                        sources: Vec::new(),
                     },
                 );
             }
@@ -106,7 +106,7 @@ pub fn designspace_to_ir(
                 height: None,
             };
 
-            glyph.instances.push(glyph_instance);
+            glyph.sources.push(glyph_instance);
         }
     }
 

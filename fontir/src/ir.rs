@@ -29,7 +29,7 @@ pub type DesignSpaceLocation = HashMap<String, f32>;
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Glyph {
     pub name: String,
-    pub instances: Vec<GlyphInstance>,
+    pub sources: Vec<GlyphInstance>,
 }
 
 /// A Glyph at a specific position in designspace.
