@@ -17,8 +17,7 @@ use ansi_term::Color;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use font_types::Tag;
-use write_fonts::{tables::maxp::Maxp, FontBuilder};
+use write_fonts::{tables::maxp::Maxp, types::Tag, FontBuilder};
 
 static IGNORED_TESTS: &[&str] = &[
     // ## tests with invalid syntax ## //
