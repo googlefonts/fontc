@@ -5,7 +5,7 @@ mod gpos;
 mod gsub;
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, HashMap},
     convert::TryInto,
 };
 
@@ -27,7 +27,7 @@ use crate::{
     Kind,
 };
 
-use self::contextual::ChainContextBuilder;
+use self::contextual::{ChainContextBuilder, ReverseChainBuilder};
 
 use super::{
     consts::{LANG_DFLT_TAG, SCRIPT_DFLT_TAG, SIZE_TAG},
@@ -85,7 +85,7 @@ pub(crate) enum SubstitutionLookup {
     Ligature(LookupBuilder<LigatureSubBuilder>),
     Contextual(LookupBuilder<ContextBuilder>),
     ChainedContextual(LookupBuilder<ChainContextBuilder>),
-    Reverse(LookupBuilder<()>),
+    Reverse(LookupBuilder<ReverseChainBuilder>),
 }
 
 #[derive(Clone, Debug)]
@@ -94,8 +94,6 @@ pub(crate) enum SomeLookup {
     GposLookup(PositionLookup),
     GposContextual(ContextualLookupBuilder<PositionLookup>),
     GsubContextual(ContextualLookupBuilder<SubstitutionLookup>),
-    //GsubContextual(ContextualLookup<SubstitutionSequenceContext, SubstitutionLookup>),
-    //GsubReverse(ContextualLookup<ReverseChainSingleSubstFormat1, SubstitutionLookup>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
@@ -250,8 +248,8 @@ impl Builder for SubstitutionLookup {
             SubstitutionLookup::ChainedContextual(lookup) => {
                 write_gsub::SubstitutionLookup::ChainContextual(lookup.build().into_concrete())
             }
-            SubstitutionLookup::Reverse(_) => {
-                write_gsub::SubstitutionLookup::Reverse(Default::default())
+            SubstitutionLookup::Reverse(lookup) => {
+                write_gsub::SubstitutionLookup::Reverse(lookup.build())
             }
         }
     }
@@ -297,39 +295,7 @@ impl AllLookups {
                 }
                 self.gsub.extend(anon_lookups);
                 id
-            } //flags,
-              //mark_set,
-              //subtables,
-              //anon_lookups,
-              //root_id,
-              //}) => {
-              //let id = LookupId::Gsub(self.gsub.len());
-              //assert_eq!(id, root_id); // sanity check
-              //self.gsub.push(SubstitutionLookup::Contextual(Lookup::new(
-              //flags, mark_set, subtables,
-              //)));
-              ////lookup_flag: flags,
-              ////mark_filtering_set: mark_set,
-              ////subtable_offsets: subtables.into_iter().map(OffsetMarker::new).collect(),
-              ////}));
-              //self.gsub.extend(anon_lookups);
-              //id
-              //}
-              //SomeLookup::GsubReverse(ContextualLookup {
-              //flags,
-              //mark_set,
-              //subtables,
-              //anon_lookups,
-              //root_id,
-              //}) => {
-              //let id = LookupId::Gsub(self.gsub.len());
-              //assert_eq!(id, root_id); // sanity check
-              //self.gsub.push(SubstitutionLookup::Reverse(Lookup::new(
-              //flags, mark_set, subtables,
-              //)));
-              //self.gsub.extend(anon_lookups);
-              //id
-              //}
+            }
         }
     }
 
@@ -387,8 +353,8 @@ impl AllLookups {
 
         match &mut new_one {
             SomeLookup::GsubContextual(lookup) => lookup.root_id = new_id,
-            //SomeLookup::GsubReverse(lookup) => lookup.root_id = new_id,
             SomeLookup::GposContextual(lookup) => lookup.root_id = new_id,
+            //SomeLookup::GsubReverse(_) => (),
             SomeLookup::GsubLookup(_) | SomeLookup::GposLookup(_) => (),
         }
         self.current = Some(new_one);
@@ -519,7 +485,6 @@ impl SomeLookup {
             Kind::GsubType5 | Kind::GsubType6 => {
                 return SomeLookup::GsubContextual(ContextualLookupBuilder::new(flags, filter))
             }
-            Kind::GsubType8 => (),
             _ => (),
         }
 
@@ -545,6 +510,7 @@ impl SomeLookup {
                     SubstitutionLookup::Contextual(LookupBuilder::new(flags, filter))
                 }
                 Kind::GsubType7 => unimplemented!("extension"),
+                Kind::GsubType8 => SubstitutionLookup::Reverse(LookupBuilder::new(flags, filter)),
                 other => panic!("illegal kind for lookup: '{}'", other),
             };
             SomeLookup::GsubLookup(lookup)
@@ -554,7 +520,6 @@ impl SomeLookup {
     fn kind(&self) -> Kind {
         match self {
             SomeLookup::GsubContextual(_) => Kind::GsubType6,
-            //SomeLookup::GsubReverse(_) => Kind::GsubType8,
             SomeLookup::GposContextual(_) => Kind::GposType8,
             SomeLookup::GsubLookup(gsub) => match gsub {
                 SubstitutionLookup::Single(_) => Kind::GsubType1,
@@ -693,28 +658,16 @@ impl SomeLookup {
         }
     }
 
-    #[allow(dead_code, unused_variables)]
     pub(crate) fn add_gsub_type_8(
         &mut self,
-        backtrack: Vec<BTreeSet<u16>>,
-        input: BTreeMap<u16, u16>,
-        lookahead: Vec<BTreeSet<u16>>,
+        backtrack: Vec<GlyphOrClass>,
+        input: BTreeMap<GlyphId, GlyphId>,
+        lookahead: Vec<GlyphOrClass>,
     ) {
-        //FIXME
-        //if let SomeLookup::GsubReverse(lookup) = self {
-        //if lookup
-        //.subtables
-        //.last()
-        //.map(|t| !t.mapping.is_empty())
-        //.unwrap_or(true)
-        //{
-        //lookup.subtables.push(ReverseChainSubst::default());
-        //}
-        //let subtable = lookup.subtables.last_mut().unwrap();
-        //subtable.mapping = input;
-        //subtable.backtrack = backtrack;
-        //subtable.lookahead = lookahead;
-        //}
+        if let SomeLookup::GsubLookup(SubstitutionLookup::Reverse(table)) = self {
+            let subtable = table.last_mut().unwrap();
+            subtable.add(backtrack, input, lookahead);
+        }
     }
 
     pub(crate) fn as_gsub_contextual(

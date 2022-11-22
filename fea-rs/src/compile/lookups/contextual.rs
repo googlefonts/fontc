@@ -1,10 +1,12 @@
 //! Contextual lookup builders
 
-use std::convert::TryInto;
+use std::{collections::BTreeMap, convert::TryInto};
 
 use font_types::GlyphId;
 use write_fonts::tables::{
     gpos::ValueRecord,
+    gsub as write_gsub,
+    gsub::ReverseChainSingleSubstFormat1,
     layout::{self as write_layout, CoverageTableBuilder, LookupFlag},
 };
 
@@ -189,6 +191,18 @@ pub(crate) struct ContextBuilder {
 }
 
 #[derive(Clone, Debug, Default)]
+pub(crate) struct ReverseChainBuilder {
+    rules: Vec<ReverseSubRule>,
+}
+
+#[derive(Clone, Debug)]
+struct ReverseSubRule {
+    backtrack: Vec<GlyphOrClass>,
+    context: BTreeMap<GlyphId, GlyphId>,
+    lookahead: Vec<GlyphOrClass>,
+}
+
+#[derive(Clone, Debug, Default)]
 pub(crate) struct ChainContextBuilder(ContextBuilder);
 
 #[derive(Clone, Debug)]
@@ -300,6 +314,56 @@ impl Builder for ChainContextBuilder {
                     input,
                     lookahead,
                     seq_lookups,
+                )
+            })
+            .collect()
+    }
+}
+
+impl ReverseChainBuilder {
+    pub fn add(
+        &mut self,
+        backtrack: Vec<GlyphOrClass>,
+        context: BTreeMap<GlyphId, GlyphId>,
+        lookahead: Vec<GlyphOrClass>,
+    ) {
+        self.rules.push(ReverseSubRule {
+            backtrack,
+            context,
+            lookahead,
+        })
+    }
+}
+
+impl Builder for ReverseChainBuilder {
+    type Output = Vec<ReverseChainSingleSubstFormat1>;
+
+    fn build(self) -> Self::Output {
+        self.rules
+            .into_iter()
+            .map(|rule| {
+                let backtrack = rule
+                    .backtrack
+                    .iter()
+                    .map(|seq| seq.iter().collect::<CoverageTableBuilder>().build())
+                    .collect();
+                let lookahead = rule
+                    .lookahead
+                    .iter()
+                    .map(|seq| seq.iter().collect::<CoverageTableBuilder>().build())
+                    .collect();
+                let input = rule
+                    .context
+                    .keys()
+                    .copied()
+                    .collect::<CoverageTableBuilder>();
+                let replacements = rule.context.into_values().collect();
+
+                write_gsub::ReverseChainSingleSubstFormat1::new(
+                    input.build(),
+                    backtrack,
+                    lookahead,
+                    replacements,
                 )
             })
             .collect()

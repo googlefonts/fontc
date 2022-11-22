@@ -571,34 +571,22 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_reverse_contextual_sub(&mut self, node: &typed::Gsub8) {
-        //TODO: me!
-        //let mut backtrack = node
-        //.backtrack()
-        //.items()
-        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-        //.collect::<Vec<_>>();
-        //backtrack.reverse();
-        //let lookahead = node
-        //.lookahead()
-        //.items()
-        //.map(|g| make_ctx_glyphs(&self.resolve_glyph_or_class(&g)))
-        //.collect::<Vec<_>>();
-
-        //let input = node.input().items().next().unwrap();
-        //let target = input.target();
-        //let replacement = node.inline_rule().and_then(|r| r.replacements().next());
-        ////FIXME: warn if there are actual lookups here, we don't support that
-        //if let Some((target, replacement)) =
-        //self.validate_single_sub_inputs(&target, replacement.as_ref())
-        //{
-        //let context = target
-        //.iter()
-        //.zip(replacement.into_iter_for_target())
-        //.map(|(a, b)| (a.to_u16(), b.to_u16()))
-        //.collect();
-        //self.ensure_current_lookup_type(Kind::GsubType8)
-        //.add_gsub_type_8(backtrack, context, lookahead);
-        //}
+        let backtrack = self.resolve_backtrack_sequence(node.backtrack().items());
+        let lookahead = self.resolve_lookahead_sequence(node.lookahead().items());
+        let input = node.input().items().next().unwrap();
+        let target = input.target();
+        let replacement = node.inline_rule().and_then(|r| r.replacements().next());
+        //FIXME: warn if there are actual lookups here, we don't support that
+        if let Some((target, replacement)) =
+            self.validate_single_sub_inputs(&target, replacement.as_ref())
+        {
+            let context = target
+                .iter()
+                .zip(replacement.into_iter_for_target())
+                .collect();
+            self.ensure_current_lookup_type(Kind::GsubType8)
+                .add_gsub_type_8(backtrack, context, lookahead);
+        }
     }
 
     fn add_single_pos(&mut self, node: &typed::Gpos1) {
