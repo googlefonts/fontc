@@ -1315,8 +1315,7 @@ impl<'a> CompilationCtx<'a> {
     fn resolve_head(&mut self, table: &typed::HeadTable) {
         let mut head = super::tables::head::default();
         let font_rev = table.statements().last().unwrap().value();
-        let float = font_rev.text().parse::<f32>().unwrap();
-        head.font_revision = float;
+        head.font_revision = font_rev.parse_fixed();
         self.tables.head = Some(head);
     }
 

@@ -17,7 +17,12 @@ use ansi_term::Color;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use write_fonts::{tables::maxp::Maxp, types::Tag, FontBuilder};
+use write_fonts::{
+    read::{FontData, FontRef},
+    tables::maxp::Maxp,
+    types::Tag,
+    FontBuilder,
+};
 
 static IGNORED_TESTS: &[&str] = &[
     // ## tests with invalid syntax ## //
@@ -240,10 +245,15 @@ fn run_test(
 }
 
 fn build_font(compilation: Compilation, glyphs: &GlyphMap) -> Vec<u8> {
+    let empty = make_empty_font(glyphs.len());
+    let font = FontRef::new(FontData::new(&empty)).unwrap();
+    compilation.apply(&font).unwrap()
+}
+
+fn make_empty_font(n_glyphs: usize) -> Vec<u8> {
     let mut font = FontBuilder::default();
-    let maxp = Maxp::new(glyphs.len().try_into().unwrap());
+    let maxp = Maxp::new(n_glyphs.try_into().unwrap());
     font.add_table(Tag::new(b"maxp"), write_fonts::dump_table(&maxp).unwrap());
-    compilation.apply(&mut font).unwrap();
     font.build()
 }
 

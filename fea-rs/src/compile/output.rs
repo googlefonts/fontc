@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use write_fonts::{
     dump_table,
+    read::{FontRef, TableProvider},
     tables::{
         self,
         layout::{FeatureParams, SizeParams},
@@ -45,34 +46,31 @@ pub struct SizeFeature {
 impl Compilation {
     /// Attempt to update the provided font with the results of this compilation.
     //TODO: figure out error reporting
-    pub fn apply(&self, font: &mut FontBuilder) -> Result<(), ()> {
-        //if let Some(head_raw) = self.tables.head.as_ref() {
-        //let mut head = font
-        //.tables
-        //.head()
-        //.unwrap()
-        //.map(|t| t.into_owned())
-        //.unwrap_or_else(|| head_raw.build());
-        //head.fontRevision = head_raw.font_revision;
-        //font.tables.insert(head);
-        //}
+    pub fn apply(&self, font: &FontRef) -> Result<Vec<u8>, ()> {
+        let mut builder = FontBuilder::default();
+        if let Some(head_raw) = &self.tables.head {
+            let head = head_raw.build(font);
+            builder.add_table(Tag::new(b"head"), dump_table(&head).unwrap());
+        }
 
         //TODO: can this contain some subset of keys? should we preserve
         //existing values in this case?
         if let Some(hhea_raw) = self.tables.hhea.as_ref() {
             let data = dump_table(hhea_raw).unwrap();
-            font.add_table(Tag::new(b"hhea"), data);
+            builder.add_table(Tag::new(b"hhea"), data);
         }
 
+        //TODO: OS/2
         //if let Some(os2) = self.tables.OS2.as_ref() {
         //let data = dump_table(hhea_raw).unwrap();
         //font.add_table(Tag::new(b"hhea"), data);
         //}
 
-        if let Some(gdef) = self.tables.GDEF.as_ref() {
-            font.add_table(Tag::new(b"GDEF"), gdef.build().unwrap());
+        if let Some(gdef) = &self.tables.GDEF {
+            builder.add_table(Tag::new(b"GDEF"), gdef.build().unwrap());
         }
 
+        //TODO: reuse existing name table if present
         //let mut name = font
         //.tables
         //.name()
@@ -182,7 +180,7 @@ impl Compilation {
                 .collect::<Vec<_>>();
             let mut table = tables::stat::Stat::new(design_axes, axis_values.into());
             table.elided_fallback_name_id = Some(elided_fallback_name_id);
-            font.add_table(Tag::new(b"STAT"), dump_table(&table).unwrap());
+            builder.add_table(Tag::new(b"STAT"), dump_table(&table).unwrap());
         }
 
         let (gsub, mut gpos) = self.lookups.build(&self.features);
@@ -200,18 +198,25 @@ impl Compilation {
         }
 
         if let Some(gsub) = gsub {
-            font.add_table(Tag::new(b"GSUB"), dump_table(&gsub).unwrap());
+            builder.add_table(Tag::new(b"GSUB"), dump_table(&gsub).unwrap());
         }
 
         if let Some(gpos) = gpos {
-            font.add_table(Tag::new(b"GPOS"), dump_table(&gpos).unwrap());
+            builder.add_table(Tag::new(b"GPOS"), dump_table(&gpos).unwrap());
         }
 
         if !name.name_record.is_empty() {
-            font.add_table(Tag::new(b"name"), dump_table(&name).unwrap());
+            builder.add_table(Tag::new(b"name"), dump_table(&name).unwrap());
         }
 
-        Ok(())
+        for record in font.table_directory.table_records() {
+            if !builder.contains(record.tag()) {
+                let data = font.data_for_tag(record.tag()).unwrap();
+                builder.add_table(record.tag(), data);
+            }
+        }
+
+        Ok(builder.build())
     }
 }
 

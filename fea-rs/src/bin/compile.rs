@@ -2,7 +2,11 @@
 
 //use std::collections::HashSet;
 
-use fea_rs::{util, GlyphName};
+use fea_rs::{util, GlyphMap, GlyphName};
+use write_fonts::{
+    read::{tables::post::Post, FontData, FontRef, TableProvider},
+    types::GlyphId,
+};
 
 /// Attempt to compile features into a font file.
 ///
@@ -20,50 +24,45 @@ fn main() {
         }
     };
 
-    //let mut font = fonttools::font::Font::load(args.path()).expect("failed to load font");
-    //let font = read-
-    //let names = font
-    //.tables
-    //.post()
-    //.unwrap()
-    //.expect("missing 'name' table")
-    //.glyphnames
-    //.as_ref()
-    //.map(|names| names.iter().map(GlyphName::new).collect())
-    //.expect("no glyph map");
+    let bytes = std::fs::read(args.path()).expect("failed to load font data");
+    let data = FontData::new(&bytes);
+    let font = FontRef::new(data).expect("failed to parse font");
+    let post = font.post().expect("failed to read 'post' table");
+    let names = try_to_make_glyph_map(post)
+        .expect("no glyph names in post table, which is currently required");
 
-    //let parse = fea_rs::parse_root_file(args.fea(), Some(&names), None).unwrap();
-    //let (tree, diagnostics) = parse.generate_parse_tree();
-    //let mut has_error = false;
-    //for msg in &diagnostics {
-    //eprintln!("{}", tree.format_diagnostic(msg));
-    //has_error |= msg.is_error();
-    //}
-    //if has_error {
-    //std::process::exit(1);
-    //}
+    let parse = fea_rs::parse_root_file(args.fea(), Some(&names), None).unwrap();
+    let (tree, diagnostics) = parse.generate_parse_tree();
+    let mut has_error = false;
+    for msg in &diagnostics {
+        eprintln!("{}", tree.format_diagnostic(msg));
+        has_error |= msg.is_error();
+    }
+    if has_error {
+        std::process::exit(1);
+    }
 
-    //match fea_rs::compile(&tree, &names) {
-    //Ok(compilation) => {
-    //compilation.apply(&mut font).unwrap();
-    //for warning in &compilation.warnings {
-    //eprintln!("{}", tree.format_diagnostic(warning));
-    //}
-    //}
+    match fea_rs::compile(&tree, &names) {
+        Ok(compilation) => {
+            compilation.apply(&font).unwrap();
+            for warning in &compilation.warnings {
+                eprintln!("{}", tree.format_diagnostic(warning));
+            }
+        }
 
-    //Err(errors) => {
-    //let mut err_count = 0;
-    //for msg in &errors {
-    //eprintln!("{}", tree.format_diagnostic(msg));
-    //if msg.is_error() {
-    //err_count += 1;
-    //}
-    //}
-    //let warning_count = errors.len() - err_count;
-    //println!("{} errors, {} warnings", err_count, warning_count);
-    //std::process::exit(1);
-    //}
-    //}
+        Err(errors) => {
+            let mut err_count = 0;
+            for msg in &errors {
+                eprintln!("{}", tree.format_diagnostic(msg));
+                if msg.is_error() {
+                    err_count += 1;
+                }
+            }
+            let warning_count = errors.len() - err_count;
+            println!("{} errors, {} warnings", err_count, warning_count);
+            std::process::exit(1);
+        }
+    }
 
     //match &args.subcommand {
     //flags::ArgsCmd::Compile(args) => {
@@ -102,6 +101,20 @@ fn main() {
     //}
     //}
     //}
+}
+
+fn try_to_make_glyph_map(post: Post) -> Option<GlyphMap> {
+    let Some(num_glyphs) = post.num_glyphs() else {
+        return None;
+    };
+
+    Some(
+        (0..num_glyphs)
+            .map(GlyphId::new)
+            .map(|id| post.glyph_name(id).unwrap())
+            .map(GlyphName::new)
+            .collect(),
+    )
 }
 
 mod flags {

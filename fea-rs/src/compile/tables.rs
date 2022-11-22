@@ -3,6 +3,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use smol_str::SmolStr;
 use write_fonts::{
     dump_table,
+    from_obj::ToOwnedTable,
+    read::{FontRef, TableProvider},
     tables::{
         self,
         gdef::{AttachList, AttachPoint, CaretValue, GlyphClassDef, LigCaretList, LigGlyph},
@@ -31,7 +33,7 @@ pub(crate) struct Tables {
 #[derive(Clone, Debug, Default)]
 #[allow(non_camel_case_types)]
 pub struct head {
-    pub font_revision: f32,
+    pub font_revision: Fixed,
 }
 
 //#[derive(Clone, Debug, Default)]
@@ -262,26 +264,26 @@ fn parse_mac(s: &str) -> String {
 }
 
 // this is the value used in python fonttools when writing this table
-const DATE_2011_12_13_H11_M22_S33: LongDateTime = LongDateTime::new(1323775353);
+const DATE_2011_12_13_H11_M22_S33: LongDateTime = LongDateTime::new(1323780153);
 
 impl head {
-    pub(crate) fn build(&self) -> write_fonts::tables::head::Head {
+    pub(crate) fn build(&self, font: &FontRef) -> write_fonts::tables::head::Head {
         // match what python fonttools does
-        write_fonts::tables::head::Head {
-            font_revision: Fixed::from_f64(self.font_revision as f64),
-            checksum_adjustment: 0,
-            flags: 0,
-            units_per_em: 1000,
-            created: DATE_2011_12_13_H11_M22_S33,
-            modified: DATE_2011_12_13_H11_M22_S33,
-            x_min: 0,
-            y_min: 0,
-            x_max: 0,
-            y_max: 0,
-            mac_style: 0,
-            lowest_rec_ppem: 0,
-            index_to_loc_format: 0,
-        }
+        let mut head = font.head().map(|x| x.to_owned_table()).unwrap_or_else(|_| {
+            let mut head = write_fonts::tables::head::Head {
+                created: DATE_2011_12_13_H11_M22_S33,
+                modified: DATE_2011_12_13_H11_M22_S33,
+                ..Default::default()
+            };
+
+            // I think we should still use the known default values but this matches
+            // feaLib tests so :shrug:
+            head.magic_number = 0;
+            head.font_direction_hint = 0;
+            head
+        });
+        head.font_revision = self.font_revision;
+        head
     }
 }
 
