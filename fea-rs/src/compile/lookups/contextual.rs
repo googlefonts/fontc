@@ -2,12 +2,14 @@
 
 use std::{collections::BTreeMap, convert::TryInto};
 
-use font_types::GlyphId;
-use write_fonts::tables::{
-    gpos::ValueRecord,
-    gsub as write_gsub,
-    gsub::ReverseChainSingleSubstFormat1,
-    layout::{self as write_layout, CoverageTableBuilder, LookupFlag},
+use write_fonts::{
+    tables::{
+        gpos::ValueRecord,
+        gsub as write_gsub,
+        gsub::ReverseChainSingleSubstFormat1,
+        layout::{self as write_layout, CoverageTableBuilder, LookupFlag},
+    },
+    types::GlyphId,
 };
 
 use crate::types::GlyphOrClass;

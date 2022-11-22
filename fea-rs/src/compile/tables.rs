@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use font_types::{Fixed, LongDateTime, Tag};
 use smol_str::SmolStr;
 use write_fonts::{
     dump_table,
@@ -9,6 +8,7 @@ use write_fonts::{
         gdef::{AttachList, AttachPoint, CaretValue, GlyphClassDef, LigCaretList, LigGlyph},
         layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
     },
+    types::{Fixed, LongDateTime, Tag},
     validate::ValidationReport,
 };
 

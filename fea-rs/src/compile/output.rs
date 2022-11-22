@@ -2,9 +2,6 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use font_types::Tag;
-//use fonttools::{font::Font, tables};
-//use otspec::layout::common::{sizeFeatureParams, FeatureParams};
 use write_fonts::{
     dump_table,
     tables::{
@@ -12,6 +9,7 @@ use write_fonts::{
         layout::{FeatureParams, SizeParams},
         stat::AxisValueRecord,
     },
+    types::Tag,
     FontBuilder, OffsetMarker,
 };
 

@@ -4,9 +4,11 @@ use std::{
     ops::Range,
 };
 
-use font_types::Tag;
 use smol_str::SmolStr;
-use write_fonts::tables::{self, gdef::CaretValue, gpos::ValueRecord, layout::LookupFlag};
+use write_fonts::{
+    tables::{self, gdef::CaretValue, gpos::ValueRecord, layout::LookupFlag},
+    types::Tag,
+};
 
 use crate::{
     parse::SourceMap,

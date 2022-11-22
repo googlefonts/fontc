@@ -2,10 +2,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use font_types::GlyphId;
-use write_fonts::tables::{
-    gpos::{self as write_gpos, AnchorTable, MarkRecord, ValueFormat, ValueRecord},
-    layout::{CoverageTable, CoverageTableBuilder},
+use write_fonts::{
+    tables::{
+        gpos::{self as write_gpos, AnchorTable, MarkRecord, ValueFormat, ValueRecord},
+        layout::{CoverageTable, CoverageTableBuilder},
+    },
+    types::GlyphId,
 };
 
 use super::Builder;

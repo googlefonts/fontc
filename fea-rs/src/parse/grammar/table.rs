@@ -1,16 +1,18 @@
 use std::ops::Range;
 
-use font_types::Tag;
+use write_fonts::types::Tag;
 
-use crate::parse::{
-    lexer::{Kind, TokenSet},
-    Parser,
+use crate::{
+    parse::{
+        lexer::{Kind, TokenSet},
+        Parser,
+    },
+    token_tree::Kind as AstKind,
 };
-use crate::token_tree::Kind as AstKind;
 
 #[allow(non_upper_case_globals)]
 mod tags {
-    use font_types::Tag;
+    use write_fonts::types::Tag;
     pub const BASE: Tag = Tag::new(b"BASE");
     pub const GDEF: Tag = Tag::new(b"GDEF");
     pub const STAT: Tag = Tag::new(b"STAT");

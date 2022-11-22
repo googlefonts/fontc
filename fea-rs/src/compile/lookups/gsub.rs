@@ -2,8 +2,10 @@
 
 use std::{collections::BTreeMap, convert::TryFrom};
 
-use font_types::{FixedSize, GlyphId};
-use write_fonts::tables::{gsub as write_gsub, layout::CoverageTableBuilder};
+use write_fonts::{
+    tables::{gsub as write_gsub, layout::CoverageTableBuilder},
+    types::{FixedSize, GlyphId},
+};
 
 use super::Builder;
 

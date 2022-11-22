@@ -3,8 +3,8 @@ use std::{
     rc::Rc,
 };
 
-pub use font_types::GlyphId;
 use smol_str::SmolStr;
+pub use write_fonts::types::GlyphId;
 
 mod glyph_map;
 mod metrics;

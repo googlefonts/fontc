@@ -9,16 +9,18 @@ use std::{
     convert::TryInto,
 };
 
-use font_types::Tag;
 use smol_str::SmolStr;
 
-use write_fonts::tables::{
-    gpos::{self as write_gpos, ValueRecord},
-    gsub as write_gsub,
-    layout::{
-        Feature, FeatureList, FeatureRecord, LangSys, LangSysRecord, Lookup as RawLookup,
-        LookupFlag, LookupList, Script, ScriptList, ScriptRecord,
+use write_fonts::{
+    tables::{
+        gpos::{self as write_gpos, ValueRecord},
+        gsub as write_gsub,
+        layout::{
+            Feature, FeatureList, FeatureRecord, LangSys, LangSysRecord, Lookup as RawLookup,
+            LookupFlag, LookupList, Script, ScriptList, ScriptRecord,
+        },
     },
+    types::Tag,
 };
 
 use crate::{

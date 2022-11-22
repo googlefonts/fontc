@@ -4,8 +4,11 @@ use std::path::{Path, PathBuf};
 
 //use fonttools::font::Font;
 
-use read_fonts::{tables::post::DEFAULT_GLYPH_NAMES, FontData, FontRef, TableProvider};
-use write_fonts::{from_obj::ToOwnedTable, tables::post::Post};
+use write_fonts::{
+    from_obj::ToOwnedTable,
+    read::{tables::post::DEFAULT_GLYPH_NAMES, FontData, FontRef, TableProvider},
+    tables::post::Post,
+};
 
 use crate::{
     util::ttx::{self as test_utils, Report, TestCase, TestResult},

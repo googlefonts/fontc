@@ -3,7 +3,7 @@
 use std::fmt::Display;
 use std::ops::Range;
 
-use font_types::Tag;
+use write_fonts::types::Tag;
 
 use super::{
     lexer::{Kind as LexemeKind, Lexeme, Lexer, TokenSet},

@@ -1,4 +1,4 @@
-use font_types::Tag;
+use write_fonts::types::Tag;
 
 pub const AALT_TAG: Tag = Tag::new(b"aalt");
 pub const SIZE_TAG: Tag = Tag::new(b"size");

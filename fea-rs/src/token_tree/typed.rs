@@ -2,8 +2,8 @@
 
 use std::ops::Range;
 
-use font_types::Fixed;
 use smol_str::SmolStr;
+use write_fonts::types::Fixed;
 
 use crate::{Kind, Node, NodeOrToken};
 
@@ -169,7 +169,6 @@ ast_token!(Octal, Kind::Octal);
 ast_token!(Hex, Kind::Hex);
 ast_token!(Metric, Kind::Metric);
 ast_token!(Null, Kind::NullKw);
-ast_token!(Fixed32, Kind::Float);
 ast_node!(Root, Kind::SourceFile);
 ast_node!(GlyphRange, Kind::GlyphRange);
 ast_node!(GlyphClassDef, Kind::GlyphClassDefNode);
@@ -374,11 +373,11 @@ impl Include {
 }
 
 impl Tag {
-    pub fn parse(&self) -> Result<font_types::Tag, font_types::InvalidTag> {
+    pub fn parse(&self) -> Result<write_fonts::types::Tag, write_fonts::types::InvalidTag> {
         self.inner.text.parse()
     }
 
-    pub fn to_raw(&self) -> font_types::Tag {
+    pub fn to_raw(&self) -> write_fonts::types::Tag {
         self.text()
             //.as_bytes()
             .parse()
@@ -519,6 +518,10 @@ impl Number {
 impl Float {
     pub fn parse(&self) -> f32 {
         self.text().parse().unwrap()
+    }
+
+    pub fn parse_fixed(&self) -> Fixed {
+        Fixed::from_f64(self.parse() as _)
     }
 }
 
@@ -1267,8 +1270,8 @@ impl HeadTable {
 }
 
 impl HeadFontRevision {
-    pub fn value(&self) -> Fixed32 {
-        self.iter().find_map(Fixed32::cast).unwrap()
+    pub fn value(&self) -> Float {
+        self.iter().find_map(Float::cast).unwrap()
     }
 }
 

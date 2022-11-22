@@ -10,8 +10,8 @@ use std::{
     str::FromStr,
 };
 
-use font_types::Tag;
 use smol_str::SmolStr;
+use write_fonts::types::Tag;
 
 use super::{glyph_range, tables};
 use crate::{
