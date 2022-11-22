@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Font {
+pub struct FontInfo {
     pub upem: u16,
     pub axes: Vec<Axis>,
 }

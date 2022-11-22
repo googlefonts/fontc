@@ -68,7 +68,7 @@ fn upem(fonts: &[Font]) -> Result<u16, UfoToIrError> {
 
 pub fn designspace_to_ir(
     path: impl AsRef<Path>,
-) -> Result<(ir::Font, Vec<ir::Glyph>), UfoToIrError> {
+) -> Result<(ir::FontInfo, Vec<ir::Glyph>), UfoToIrError> {
     let designspace =
         DesignSpaceDocument::load(&path).map_err(UfoToIrError::DesignSpaceLoadError)?;
     let dir = path.as_ref().parent().unwrap(); // designspace *must* exist in a directory
@@ -110,7 +110,7 @@ pub fn designspace_to_ir(
         }
     }
 
-    Ok((ir::Font { upem, axes }, glyphs.into_values().collect()))
+    Ok((ir::FontInfo { upem, axes }, glyphs.into_values().collect()))
 }
 
 fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
