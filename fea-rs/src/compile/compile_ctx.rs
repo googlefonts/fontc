@@ -1204,7 +1204,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_hhea(&mut self, table: &typed::HheaTable) {
-        let mut hhea = tables::hhea::Hhea::default();
+        let mut hhea = tables::hvhea::HVhea::default();
         for record in table.metrics() {
             let keyword = record.keyword();
             match keyword.kind {

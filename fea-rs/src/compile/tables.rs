@@ -19,7 +19,7 @@ use crate::types::{GlyphClass, GlyphId};
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Tables {
     pub head: Option<head>,
-    pub hhea: Option<tables::hhea::Hhea>,
+    pub hhea: Option<tables::hvhea::HVhea>,
     pub vhea: Option<vhea>,
     pub vmtx: Option<vmtx>,
     pub name: Option<name>,
