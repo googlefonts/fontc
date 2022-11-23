@@ -12,6 +12,7 @@ pub struct FontInfo {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Axis {
+    pub name: String,
     pub tag: String,
     pub min: f32,
     pub default: f32,
@@ -47,6 +48,7 @@ mod tests {
 
     fn test_axis() -> Axis {
         Axis {
+            name: String::from("Weight"),
             tag: String::from("wght"),
             min: 100.,
             default: 400.,

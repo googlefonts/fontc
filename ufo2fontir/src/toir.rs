@@ -115,6 +115,7 @@ pub fn designspace_to_ir(
 
 fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
     ir::Axis {
+        name: axis.name.clone(),
         tag: axis.tag.clone(),
         min: axis.minimum.expect("Discrete axes not supported yet"),
         default: axis.default,
@@ -134,6 +135,7 @@ mod tests {
         assert_eq!(1000, font.upem);
         assert_eq!(
             vec![ir::Axis {
+                name: "Weight".to_string(),
                 tag: "wght".to_string(),
                 min: 400.,
                 default: 400.,
