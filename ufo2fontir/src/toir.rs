@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -18,6 +17,41 @@ struct FontSource {
     location: ir::DesignSpaceLocation,
     font_info: norad::FontInfo,
     layer: Option<String>,
+}
+
+impl FontSource {
+    fn layer_contents(&self) -> Result<HashMap<String, PathBuf>, UfoToIrError> {
+        let layer_contents_path = self.path.join("layercontents.plist");
+        if !layer_contents_path.exists() {
+            return Err(UfoToIrError::MissingRequiredFileError(layer_contents_path));
+        }
+        let layer_contents: Vec<(String, PathBuf)> =
+            plist::from_file(&layer_contents_path).map_err(UfoToIrError::PlistLoadError)?;
+        Ok(layer_contents.into_iter().collect())
+    }
+
+    fn glif_files(&self) -> Result<HashMap<String, PathBuf>, UfoToIrError> {
+        let mut layer_path = self.path.join("glyphs");
+        if let Some(layer_name) = &self.layer {
+            layer_path = self.path.join(
+                self.layer_contents()?
+                    .get(layer_name)
+                    .ok_or_else(|| UfoToIrError::LayerNotFoundError(layer_name.to_string()))?,
+            );
+        }
+        let contents_file = layer_path.join("contents.plist");
+        if !contents_file.is_file() {
+            return Err(UfoToIrError::MissingRequiredFileError(contents_file));
+        }
+        let contents: HashMap<String, PathBuf> =
+            plist::from_file(&contents_file).map_err(UfoToIrError::PlistLoadError)?;
+
+        let mut glif_files = HashMap::new();
+        for (name, path) in contents {
+            glif_files.insert(name.to_string(), layer_path.join(path));
+        }
+        Ok(glif_files)
+    }
 }
 
 // TODO we will need the ability to map coordinates and a test font that does. Then no unwrap.
@@ -84,19 +118,10 @@ pub fn designspace_to_ir(
 
     let mut glyphs = HashMap::<String, ir::Glyph>::new();
     for font in fonts.iter() {
-        let glyph_dir = font.path.join("glyphs");
-        for entry in fs::read_dir(glyph_dir).map_err(UfoToIrError::IoError)? {
-            let entry = entry.map_err(UfoToIrError::IoError)?;
-            // maybe we should parse contents.plist instead of listing the directory?
-            if entry.file_name() == "contents.plist" {
-                continue;
-            }
-            let glif_file = entry.path();
-            let norad_glyph =
-                norad::Glyph::load(&glif_file).map_err(UfoToIrError::GlifLoadError)?;
+        for (name, glif_file) in font.glif_files()?.iter() {
+            let norad_glyph = norad::Glyph::load(glif_file).map_err(UfoToIrError::GlifLoadError)?;
             eprintln!("{:#?} {:#?}", glif_file, norad_glyph.name());
-            let name = norad_glyph.name().as_str().to_owned();
-            if !glyphs.contains_key(&name) {
+            if !glyphs.contains_key(name) {
                 glyphs.insert(
                     name.clone(),
                     ir::Glyph {
@@ -106,7 +131,7 @@ pub fn designspace_to_ir(
                 );
             }
 
-            let glyph = glyphs.get_mut(&name).unwrap();
+            let glyph = glyphs.get_mut(name).unwrap();
 
             let glyph_instance = ir::GlyphInstance {
                 width: None,
