@@ -9,6 +9,7 @@ use norad::{
     designspace::{self, DesignSpaceDocument, Dimension},
     fontinfo::NonNegativeIntegerOrFloat,
 };
+use ordered_float::OrderedFloat;
 
 use crate::error::UfoToIrError;
 
@@ -21,7 +22,7 @@ struct Font {
 // TODO we will need the ability to map coordinates and a test font that does. Then no unwrap.
 fn to_ir_location(loc: &[Dimension]) -> ir::DesignSpaceLocation {
     loc.iter()
-        .map(|d| (d.name.clone(), d.xvalue.unwrap()))
+        .map(|d| (d.name.clone(), OrderedFloat(d.xvalue.unwrap())))
         .collect()
 }
 
@@ -93,7 +94,7 @@ pub fn designspace_to_ir(
                     name.clone(),
                     ir::Glyph {
                         name: name.clone(),
-                        sources: Vec::new(),
+                        sources: HashMap::new(),
                     },
                 );
             }
@@ -101,12 +102,16 @@ pub fn designspace_to_ir(
             let glyph = glyphs.get_mut(&name).unwrap();
 
             let glyph_instance = ir::GlyphInstance {
-                location: font.location.clone(),
                 width: None,
                 height: None,
             };
 
-            glyph.sources.push(glyph_instance);
+            let location = font.location.clone();
+            if glyph.sources.contains_key(&location) {
+                return Err(UfoToIrError::DuplicateLocationError);
+            }
+
+            glyph.sources.insert(location, glyph_instance);
         }
     }
 

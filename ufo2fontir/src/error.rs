@@ -17,4 +17,6 @@ pub enum UfoToIrError {
     AmbiguousUpemError,
     #[error("Dimension missing uservalue")]
     DimensionError,
+    #[error("Duplicate location")]
+    DuplicateLocationError,
 }

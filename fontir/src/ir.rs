@@ -1,8 +1,10 @@
 //! Serde types for font IR. See TODO:PublicLink.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
+
+use ordered_float::OrderedFloat;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct FontInfo {
@@ -20,7 +22,9 @@ pub struct Axis {
     pub hidden: bool,
 }
 
-pub type DesignSpaceLocation = HashMap<String, f32>;
+// Using BTreeMap instead of HashMap and OrderedFloat instead of f32 so that
+// the location is hashable and can be used as a key in Glyph::sources HashMap
+pub type DesignSpaceLocation = BTreeMap<String, OrderedFloat<f32>>;
 
 /// A variable definition of a single glyph.
 ///
@@ -30,13 +34,12 @@ pub type DesignSpaceLocation = HashMap<String, f32>;
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Glyph {
     pub name: String,
-    pub sources: Vec<GlyphInstance>,
+    pub sources: HashMap<DesignSpaceLocation, GlyphInstance>,
 }
 
 /// A Glyph at a specific position in designspace.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct GlyphInstance {
-    pub location: DesignSpaceLocation,
     pub width: Option<f32>,
     pub height: Option<f32>,
     // TODO: outlines, a Vec<Shape>
