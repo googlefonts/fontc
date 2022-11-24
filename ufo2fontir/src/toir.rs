@@ -83,8 +83,13 @@ pub fn designspace_to_ir(
     let mut glyphs = HashMap::<String, ir::Glyph>::new();
     for font in fonts.iter() {
         let glyph_dir = font.path.join("glyphs");
-        for glif_file in fs::read_dir(glyph_dir).map_err(UfoToIrError::IoError)? {
-            let glif_file = glif_file.map_err(UfoToIrError::IoError)?.path();
+        for entry in fs::read_dir(glyph_dir).map_err(UfoToIrError::IoError)? {
+            let entry = entry.map_err(UfoToIrError::IoError)?;
+            // maybe we should parse contents.plist instead of listing the directory?
+            if entry.file_name() == "contents.plist" {
+                continue;
+            }
+            let glif_file = entry.path();
             let norad_glyph =
                 norad::Glyph::load(&glif_file).map_err(UfoToIrError::GlifLoadError)?;
             eprintln!("{:#?} {:#?}", glif_file, norad_glyph.name());
@@ -133,10 +138,20 @@ fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
 mod tests {
     use crate::toir::designspace_to_ir;
     use fontir::ir;
+    use std::path::PathBuf;
+
+    fn testdata_dir() -> PathBuf {
+        let path = PathBuf::from("../resources/testdata")
+            .canonicalize()
+            .unwrap();
+        assert!(path.is_dir(), "{:#?} isn't a dir", path);
+        path
+    }
 
     #[test]
     fn simple_wght_variable() {
-        let (font, glyphs) = designspace_to_ir("testdata/wght_var.designspace").unwrap();
+        let designspace_path = testdata_dir().join("wght_var.designspace");
+        let (font, glyphs) = designspace_to_ir(designspace_path).unwrap();
         assert_eq!(1000, font.upem);
         assert_eq!(
             vec![ir::Axis {
