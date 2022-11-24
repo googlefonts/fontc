@@ -13,10 +13,11 @@ use ordered_float::OrderedFloat;
 
 use crate::error::UfoToIrError;
 
-struct Font {
+struct FontSource {
     path: PathBuf,
     location: ir::DesignSpaceLocation,
     font_info: norad::FontInfo,
+    layer: Option<String>,
 }
 
 // TODO we will need the ability to map coordinates and a test font that does. Then no unwrap.
@@ -26,20 +27,21 @@ fn to_ir_location(loc: &[Dimension]) -> ir::DesignSpaceLocation {
         .collect()
 }
 
-fn fonts(designspace: &DesignSpaceDocument, dir: &Path) -> Result<Vec<Font>, UfoToIrError> {
+fn fonts(designspace: &DesignSpaceDocument, dir: &Path) -> Result<Vec<FontSource>, UfoToIrError> {
     let datareq = norad::DataRequest::none();
     designspace
         .sources
         .iter()
-        .map(|s| (dir.join(&s.filename), to_ir_location(&s.location)))
-        .map(|(p, l)| {
-            norad::Font::load_requested_data(&p, &datareq).map(|f| Font {
+        .map(|s| (dir.join(&s.filename), to_ir_location(&s.location), &s.layer))
+        .map(|(p, loc, ln)| {
+            norad::Font::load_requested_data(&p, &datareq).map(|f| FontSource {
                 path: p,
-                location: l,
+                location: loc,
                 font_info: f.font_info,
+                layer: ln.clone(),
             })
         })
-        .collect::<Result<Vec<Font>, _>>()
+        .collect::<Result<Vec<FontSource>, _>>()
         .map_err(UfoToIrError::UfoLoadError)
 }
 
@@ -54,7 +56,7 @@ fn extract_upem(val: NonNegativeIntegerOrFloat) -> Result<u16, UfoToIrError> {
     Ok(val as u16)
 }
 
-fn upem(fonts: &[Font]) -> Result<u16, UfoToIrError> {
+fn upem(fonts: &[FontSource]) -> Result<u16, UfoToIrError> {
     // Optional NonNegativeIntegerOrFloat for a u16 field is super awesome
     let upem: HashSet<u16> = fonts
         .iter()
