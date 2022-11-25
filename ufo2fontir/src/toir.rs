@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::Path,
 };
 
@@ -87,7 +87,7 @@ pub fn designspace_to_ir(
     let fonts = load_fonts(&designspace, dir)?;
     let upem = upem(fonts.values())?;
 
-    let mut glyphs = HashMap::<String, ir::Glyph>::new();
+    let mut glyphs = BTreeMap::<String, ir::Glyph>::new();
     for source in designspace.sources.iter() {
         let font = fonts.get(&source.filename).unwrap();
         let layer = match &source.layer {
