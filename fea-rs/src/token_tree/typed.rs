@@ -1,5 +1,6 @@
 //! typing for ast nodes. based on rust-analyzer.
 
+use std::convert::TryFrom;
 use std::ops::Range;
 
 use smol_str::SmolStr;
@@ -186,6 +187,7 @@ ast_node!(LookupFlag, Kind::LookupFlagNode);
 ast_node!(LookupRef, Kind::LookupRefNode);
 ast_node!(LookupBlock, Kind::LookupBlockNode);
 ast_node!(ValueRecord, Kind::ValueRecordNode);
+ast_node!(Device, Kind::DeviceNode);
 ast_node!(SizeMenuName, Kind::SizeMenuNameNode);
 ast_node!(Parameters, Kind::ParametersNode);
 
@@ -943,12 +945,7 @@ impl ValueRecord {
     }
 
     pub fn placement(&self) -> Option<[Number; 4]> {
-        if self
-            .iter()
-            .filter(|t| t.kind() == Kind::Number || t.kind() == Kind::DeviceKw)
-            .count()
-            == 4
-        {
+        if self.iter().filter(|t| t.kind() == Kind::Number).count() == 4 {
             let mut iter = self.iter().filter_map(Number::cast);
             return Some([
                 iter.next().unwrap(),
@@ -958,6 +955,70 @@ impl ValueRecord {
             ]);
         }
         None
+    }
+
+    pub fn device(&self) -> Option<[Device; 4]> {
+        if self.iter().skip(4).any(|t| t.kind() == Kind::DeviceNode) {
+            let mut iter = self.iter().filter_map(Device::cast);
+            return Some([
+                iter.next().unwrap(),
+                iter.next().unwrap(),
+                iter.next().unwrap(),
+                iter.next().unwrap(),
+            ]);
+        }
+        None
+    }
+}
+
+impl Device {
+    fn null(&self) -> Option<&Token> {
+        self.iter()
+            .take(4)
+            .find(|t| t.kind() == Kind::NullKw)
+            .and_then(NodeOrToken::as_token)
+    }
+
+    fn entries(&self) -> impl Iterator<Item = (Number, Number)> + '_ {
+        let mut iter = self
+            .iter()
+            .filter(|i| i.kind() == Kind::Number || i.kind() == Kind::Comma);
+        std::iter::from_fn(move || {
+            let ppem = iter.next().and_then(Number::cast)?;
+            let pixels = iter.next().and_then(Number::cast).unwrap();
+            let _maybe_comma = iter.next();
+            Some((ppem, pixels))
+        })
+    }
+
+    pub fn compile(&self) -> Option<write_fonts::tables::layout::Device> {
+        if self.null().is_some() {
+            return None;
+        }
+
+        let mut entries = Vec::new();
+        for (ppem, pix) in self.entries() {
+            let ppem = ppem.parse_unsigned().expect("validated before now");
+            let pix = pix.parse_signed();
+            // if there are gaps in the range, add zeros
+            if let Some(prev) = entries.last().map(|(pp, _)| *pp) {
+                for missing in (prev + 1)..ppem {
+                    entries.push((missing, 0));
+                }
+            }
+            entries.push((ppem, pix));
+        }
+
+        let first = entries.first().unwrap().0;
+        let last = entries.last().unwrap().0;
+        let values = entries
+            .into_iter()
+            .map(|(_, pix)| i8::try_from(pix).expect("validated before now"))
+            .collect::<Vec<_>>();
+
+        Some(write_fonts::tables::layout::Device::new(
+            first, last, &values,
+        ))
     }
 }
 

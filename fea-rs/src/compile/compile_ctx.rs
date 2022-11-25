@@ -873,6 +873,7 @@ impl<'a> CompilationCtx<'a> {
                 other => Some(other),
             }
         }
+
         if let Some(x_adv) = record.advance() {
             //FIXME: whether this is x or y depends on the current feature?
             return ValueRecord {
@@ -881,13 +882,20 @@ impl<'a> CompilationCtx<'a> {
             };
         }
         if let Some([x_place, y_place, x_adv, y_adv]) = record.placement() {
-            return ValueRecord {
+            let mut result = ValueRecord {
                 x_advance: parse(x_adv),
                 y_advance: parse(y_adv),
                 x_placement: parse(x_place),
                 y_placement: parse(y_place),
                 ..Default::default()
             };
+            if let Some([x_place_dev, y_place_dev, x_adv_dev, y_adv_dev]) = record.device() {
+                result.x_placement_device.set(x_place_dev.compile());
+                result.y_placement_device.set(y_place_dev.compile());
+                result.x_advance_device.set(x_adv_dev.compile());
+                result.y_advance_device.set(y_adv_dev.compile());
+            }
+            return result;
         }
         if let Some(name) = record.named() {
             //FIXME:
