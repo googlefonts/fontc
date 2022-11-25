@@ -1441,6 +1441,13 @@ impl<'a> CompilationCtx<'a> {
                     Some(point) => return Some(AnchorTable::format_2(x, y, point)),
                     None => panic!("negative contourpoint, go fix your parser"),
                 }
+            } else if let Some((x_coord, y_coord)) = item.devices() {
+                return Some(AnchorTable::format_3(
+                    x,
+                    y,
+                    x_coord.compile(),
+                    y_coord.compile(),
+                ));
             } else {
                 return Some(AnchorTable::format_1(x, y));
             }

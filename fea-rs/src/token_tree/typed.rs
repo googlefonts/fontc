@@ -498,6 +498,12 @@ impl Anchor {
         self.iter().find_map(Number::cast)
     }
 
+    pub fn devices(&self) -> Option<(Device, Device)> {
+        let mut iter = self.iter().filter_map(Device::cast);
+        iter.next()
+            .map(|first| (first, iter.next().expect("one device implies another")))
+    }
+
     pub fn null(&self) -> Option<&Token> {
         self.find_token(Kind::NullKw)
     }
