@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use fontir::ir;
@@ -12,48 +12,6 @@ use ordered_float::OrderedFloat;
 
 use crate::error::UfoToIrError;
 
-struct FontSource {
-    path: PathBuf,
-    location: ir::DesignSpaceLocation,
-    font_info: norad::FontInfo,
-    layer: Option<String>,
-}
-
-impl FontSource {
-    fn layer_contents(&self) -> Result<HashMap<String, PathBuf>, UfoToIrError> {
-        let layer_contents_path = self.path.join("layercontents.plist");
-        if !layer_contents_path.exists() {
-            return Err(UfoToIrError::MissingRequiredFileError(layer_contents_path));
-        }
-        let layer_contents: Vec<(String, PathBuf)> =
-            plist::from_file(&layer_contents_path).map_err(UfoToIrError::PlistLoadError)?;
-        Ok(layer_contents.into_iter().collect())
-    }
-
-    fn glif_files(&self) -> Result<HashMap<String, PathBuf>, UfoToIrError> {
-        let mut layer_path = self.path.join("glyphs");
-        if let Some(layer_name) = &self.layer {
-            layer_path = self.path.join(
-                self.layer_contents()?
-                    .get(layer_name)
-                    .ok_or_else(|| UfoToIrError::LayerNotFoundError(layer_name.to_string()))?,
-            );
-        }
-        let contents_file = layer_path.join("contents.plist");
-        if !contents_file.is_file() {
-            return Err(UfoToIrError::MissingRequiredFileError(contents_file));
-        }
-        let contents: HashMap<String, PathBuf> =
-            plist::from_file(&contents_file).map_err(UfoToIrError::PlistLoadError)?;
-
-        let mut glif_files = HashMap::new();
-        for (name, path) in contents {
-            glif_files.insert(name.to_string(), layer_path.join(path));
-        }
-        Ok(glif_files)
-    }
-}
-
 // TODO we will need the ability to map coordinates and a test font that does. Then no unwrap.
 fn to_ir_location(loc: &[Dimension]) -> ir::DesignSpaceLocation {
     loc.iter()
@@ -61,22 +19,33 @@ fn to_ir_location(loc: &[Dimension]) -> ir::DesignSpaceLocation {
         .collect()
 }
 
-fn fonts(designspace: &DesignSpaceDocument, dir: &Path) -> Result<Vec<FontSource>, UfoToIrError> {
-    let datareq = norad::DataRequest::none();
-    designspace
-        .sources
-        .iter()
-        .map(|s| (dir.join(&s.filename), to_ir_location(&s.location), &s.layer))
-        .map(|(p, loc, ln)| {
-            norad::Font::load_requested_data(&p, &datareq).map(|f| FontSource {
-                path: p,
-                location: loc,
-                font_info: f.font_info,
-                layer: ln.clone(),
-            })
-        })
-        .collect::<Result<Vec<FontSource>, _>>()
-        .map_err(UfoToIrError::UfoLoadError)
+fn load_fonts(
+    designspace: &DesignSpaceDocument,
+    dir: &Path,
+) -> Result<HashMap<String, norad::Font>, UfoToIrError> {
+    let mut font_load_params: HashMap<String, norad::DataRequest> = HashMap::new();
+    for source in &designspace.sources {
+        let mut datareq = font_load_params
+            .remove(&source.filename)
+            .unwrap_or_else(norad::DataRequest::none);
+        if let Some(layer) = &source.layer {
+            datareq = datareq.filter_layers(|name, _path| name == layer.clone());
+        } else {
+            datareq = datareq.default_layer(true);
+        }
+        font_load_params.insert(source.filename.clone(), datareq);
+    }
+
+    let mut fonts: HashMap<String, norad::Font> = HashMap::new();
+    for (filename, datareq) in font_load_params {
+        let path = dir.join(&filename);
+        fonts.insert(
+            filename,
+            norad::Font::load_requested_data(path, datareq).map_err(UfoToIrError::UfoLoadError)?,
+        );
+    }
+
+    Ok(fonts)
 }
 
 fn extract_upem(val: NonNegativeIntegerOrFloat) -> Result<u16, UfoToIrError> {
@@ -90,10 +59,12 @@ fn extract_upem(val: NonNegativeIntegerOrFloat) -> Result<u16, UfoToIrError> {
     Ok(val as u16)
 }
 
-fn upem(fonts: &[FontSource]) -> Result<u16, UfoToIrError> {
+fn upem<'a, I>(fonts: I) -> Result<u16, UfoToIrError>
+where
+    I: Iterator<Item = &'a norad::Font>,
+{
     // Optional NonNegativeIntegerOrFloat for a u16 field is super awesome
     let upem: HashSet<u16> = fonts
-        .iter()
         .filter_map(|f| f.font_info.units_per_em)
         .map(extract_upem)
         .collect::<Result<HashSet<u16>, _>>()?;
@@ -113,15 +84,22 @@ pub fn designspace_to_ir(
     let axes: Vec<ir::Axis> = designspace.axes.iter().map(to_ir_axis).collect();
 
     // TODO: to support file-change checks we may want to do our own granular loading
-    let fonts = fonts(&designspace, dir)?;
-    let upem = upem(&fonts)?;
+    let fonts = load_fonts(&designspace, dir)?;
+    let upem = upem(fonts.values())?;
 
     let mut glyphs = HashMap::<String, ir::Glyph>::new();
-    for font in fonts.iter() {
-        for (name, glif_file) in font.glif_files()?.iter() {
-            let norad_glyph = norad::Glyph::load(glif_file).map_err(UfoToIrError::GlifLoadError)?;
-            eprintln!("{:#?} {:#?}", glif_file, norad_glyph.name());
-            if !glyphs.contains_key(name) {
+    for source in designspace.sources.iter() {
+        let font = fonts.get(&source.filename).unwrap();
+        let layer = match &source.layer {
+            Some(l) => font
+                .layers
+                .get(l)
+                .ok_or_else(|| UfoToIrError::LayerNotFoundError(l.clone()))?,
+            None => font.default_layer(),
+        };
+        for norad_glyph in layer.iter() {
+            let name = norad_glyph.name().to_string();
+            if !glyphs.contains_key(&name) {
                 glyphs.insert(
                     name.clone(),
                     ir::Glyph {
@@ -131,19 +109,19 @@ pub fn designspace_to_ir(
                 );
             }
 
-            let glyph = glyphs.get_mut(name).unwrap();
+            let glyph = glyphs.get_mut(&name).unwrap();
 
             let glyph_instance = ir::GlyphInstance {
                 width: None,
                 height: None,
             };
 
-            let location = font.location.clone();
+            let location = to_ir_location(&source.location);
             if glyph.sources.contains_key(&location) {
                 return Err(UfoToIrError::DuplicateLocationError);
             }
 
-            glyph.sources.insert(location, glyph_instance);
+            glyph.sources.insert(location.clone(), glyph_instance);
         }
     }
 
