@@ -13,7 +13,7 @@ use smol_str::SmolStr;
 
 use write_fonts::{
     tables::{
-        gpos::{self as write_gpos, ValueRecord},
+        gpos::{self as write_gpos, AnchorTable, ValueRecord},
         gsub as write_gsub,
         layout::{
             Feature, FeatureList, FeatureRecord, LangSys, LangSysRecord, Lookup as RawLookup,
@@ -25,7 +25,7 @@ use write_fonts::{
 
 use crate::{
     compile::lookups::contextual::ChainOrNot,
-    types::{Anchor, GlyphId, GlyphOrClass},
+    types::{GlyphId, GlyphOrClass},
     Kind,
 };
 
@@ -570,10 +570,15 @@ impl SomeLookup {
         }
     }
 
-    pub(crate) fn add_gpos_type_3(&mut self, id: GlyphId, entry: Anchor, exit: Anchor) {
+    pub(crate) fn add_gpos_type_3(
+        &mut self,
+        id: GlyphId,
+        entry: Option<AnchorTable>,
+        exit: Option<AnchorTable>,
+    ) {
         if let SomeLookup::GposLookup(PositionLookup::Cursive(table)) = self {
             let subtable = table.last_mut().unwrap();
-            subtable.insert(id, entry.to_raw(), exit.to_raw());
+            subtable.insert(id, entry, exit);
         } else {
             panic!("lookup mismatch");
         }

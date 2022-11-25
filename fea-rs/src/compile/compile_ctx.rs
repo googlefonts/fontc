@@ -6,7 +6,12 @@ use std::{
 
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::{self, gdef::CaretValue, gpos::ValueRecord, layout::LookupFlag},
+    tables::{
+        self,
+        gdef::CaretValue,
+        gpos::{AnchorTable, ValueRecord},
+        layout::LookupFlag,
+    },
     types::Tag,
 };
 
@@ -16,7 +21,7 @@ use crate::{
         typed::{self, AstNode},
         Token,
     },
-    types::{Anchor, GlyphClass, GlyphId, GlyphOrClass},
+    types::{GlyphClass, GlyphId, GlyphOrClass},
     Diagnostic, GlyphMap, Kind, NodeOrToken,
 };
 
@@ -42,7 +47,7 @@ pub struct CompilationCtx<'a> {
     script: Option<Tag>,
     glyph_class_defs: HashMap<SmolStr, GlyphClass>,
     mark_classes: HashMap<SmolStr, MarkClass>,
-    anchor_defs: HashMap<SmolStr, (Anchor, usize)>,
+    anchor_defs: HashMap<SmolStr, (AnchorTable, usize)>,
     mark_attach_class_id: HashMap<GlyphClass, u16>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
     size: Option<SizeFeature>,
@@ -51,7 +56,7 @@ pub struct CompilationCtx<'a> {
 
 struct MarkClass {
     id: u16,
-    members: Vec<(GlyphClass, Anchor)>,
+    members: Vec<(GlyphClass, Option<AnchorTable>)>,
 }
 
 impl<'a> CompilationCtx<'a> {
@@ -631,11 +636,11 @@ impl<'a> CompilationCtx<'a> {
         let ids = self.resolve_glyph_or_class(&node.target());
         // if null it means we've already reported an error and compilation
         // will fail.
-        let entry = self.resolve_anchor(&node.entry()).unwrap_or(Anchor::Null);
-        let exit = self.resolve_anchor(&node.exit()).unwrap_or(Anchor::Null);
+        let entry = self.resolve_anchor(&node.entry());
+        let exit = self.resolve_anchor(&node.exit());
         let lookup = self.ensure_current_lookup_type(Kind::GposType3);
         for id in ids.iter() {
-            lookup.add_gpos_type_3(id, entry, exit)
+            lookup.add_gpos_type_3(id, entry.clone(), exit.clone())
         }
     }
 
@@ -643,7 +648,7 @@ impl<'a> CompilationCtx<'a> {
         let base_ids = self.resolve_glyph_or_class(&node.base());
         let _ = self.ensure_current_lookup_type(Kind::GposType4);
         for mark in node.attachments() {
-            let base_anchor = self.resolve_anchor(&mark.anchor()).unwrap_or(Anchor::Null);
+            let base_anchor = self.resolve_anchor(&mark.anchor());
             // ensure we're in the right lookup but drop the reference
 
             let mark_class_node = mark.mark_class_name().expect("checked in validation");
@@ -659,7 +664,7 @@ impl<'a> CompilationCtx<'a> {
                 .with_gpos_type_4(|subtable| {
                     for (glyphs, mark_anchor) in &mark_class.members {
                         let anchor = mark_anchor
-                            .to_raw()
+                            .as_ref()
                             .expect("no null anchors in mark-to-base (check validation)");
                         for glyph in glyphs.iter() {
                             // validate here that classes are disjoint
@@ -671,7 +676,7 @@ impl<'a> CompilationCtx<'a> {
                             base,
                             mark_class.id,
                             base_anchor
-                                .to_raw()
+                                .clone()
                                 .expect("no null anchors in mark-to-base"),
                         )
                     }
@@ -699,9 +704,7 @@ impl<'a> CompilationCtx<'a> {
 
             let mut anchor_records = BTreeMap::new();
             for attachment in component.attachments() {
-                let component_anchor = self
-                    .resolve_anchor(&attachment.anchor())
-                    .unwrap_or(Anchor::Null);
+                let component_anchor = self.resolve_anchor(&attachment.anchor());
                 // ensure we're in the right lookup but drop the reference
 
                 let mark_class_node = match attachment.mark_class_name() {
@@ -710,11 +713,11 @@ impl<'a> CompilationCtx<'a> {
                         // this means that there is a single null anchor for this
                         // component, which in turn means that there are no
                         // attachment points. we will fill them in later.
-                        assert!(matches!(component_anchor, Anchor::Null));
+                        assert!(component_anchor.is_none());
                         continue;
                     }
                 };
-                let component_anchor = component_anchor.to_raw().unwrap();
+                let component_anchor = component_anchor.unwrap();
                 let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
 
                 // access the lookup through the field, so the borrow checker
@@ -728,7 +731,7 @@ impl<'a> CompilationCtx<'a> {
                     .with_gpos_type_5(|subtable| {
                         for (glyphs, mark_anchor) in &mark_class.members {
                             let anchor = mark_anchor
-                                .to_raw()
+                                .as_ref()
                                 .expect("no null anchors on marks (check validation)");
                             for glyph in glyphs.iter() {
                                 // validate here that classes are disjoint
@@ -762,7 +765,7 @@ impl<'a> CompilationCtx<'a> {
         let base_ids = self.resolve_glyph_or_class(&node.base());
         let _ = self.ensure_current_lookup_type(Kind::GposType6);
         for mark in node.attachments() {
-            let base_anchor = self.resolve_anchor(&mark.anchor()).unwrap_or(Anchor::Null);
+            let base_anchor = self.resolve_anchor(&mark.anchor());
             // ensure we're in the right lookup but drop the reference
 
             let mark_class_node = mark.mark_class_name().expect("checked in validation");
@@ -778,7 +781,7 @@ impl<'a> CompilationCtx<'a> {
                 .with_gpos_type_6(|subtable| {
                     for (glyphs, mark_anchor) in &mark_class.members {
                         let anchor = mark_anchor
-                            .to_raw()
+                            .as_ref()
                             .expect("no null anchors in mark-to-mark (check validation)");
                         for glyph in glyphs.iter() {
                             subtable.insert_mark(glyph, mark_class.id, anchor.clone())?;
@@ -789,7 +792,7 @@ impl<'a> CompilationCtx<'a> {
                             base,
                             mark_class.id,
                             base_anchor
-                                .to_raw()
+                                .clone()
                                 .expect("no null anchors in mark-to-mark"),
                         );
                     }
@@ -922,9 +925,7 @@ impl<'a> CompilationCtx<'a> {
         let class_items = class_decl.glyph_class();
         let class_items = self.resolve_glyph_or_class(&class_items).into();
 
-        let anchor = self
-            .resolve_anchor(&class_decl.anchor())
-            .unwrap_or(Anchor::Null);
+        let anchor = self.resolve_anchor(&class_decl.anchor());
         let class_name = class_decl.mark_class_name();
         if let Some(class) = self.mark_classes.get_mut(class_name.text()) {
             class.members.push((class_items, anchor));
@@ -1416,7 +1417,7 @@ impl<'a> CompilationCtx<'a> {
         let anchor_block = anchor_def.anchor();
         let name = anchor_def.name();
         let anchor = match self.resolve_anchor(&anchor_block) {
-            Some(a @ Anchor::Coord { .. } | a @ Anchor::Contour { .. }) => a,
+            Some(a @ AnchorTable::Format1(_) | a @ AnchorTable::Format2(_)) => a,
             Some(_) => {
                 return self.error(
                     anchor_block.range(),
@@ -1433,26 +1434,26 @@ impl<'a> CompilationCtx<'a> {
         }
     }
 
-    fn resolve_anchor(&mut self, item: &typed::Anchor) -> Option<Anchor> {
+    fn resolve_anchor(&mut self, item: &typed::Anchor) -> Option<AnchorTable> {
         if let Some((x, y)) = item.coords().map(|(x, y)| (x.parse(), y.parse())) {
             if let Some(point) = item.contourpoint() {
                 match point.parse_unsigned() {
-                    Some(point) => return Some(Anchor::Contour { x, y, point }),
+                    Some(point) => return Some(AnchorTable::format_2(x, y, point)),
                     None => panic!("negative contourpoint, go fix your parser"),
                 }
             } else {
-                return Some(Anchor::Coord { x, y });
+                return Some(AnchorTable::format_1(x, y));
             }
         } else if let Some(name) = item.name() {
             match self.anchor_defs.get(&name.text) {
-                Some((anchor, pos)) if *pos < item.range().start => return Some(*anchor),
+                Some((anchor, pos)) if *pos < item.range().start => return Some(anchor.clone()),
                 _ => {
                     self.error(name.range(), "anchor is not defined");
                     return None;
                 }
             }
         } else if item.null().is_some() {
-            return Some(Anchor::Null);
+            return None;
         }
         panic!("bad anchor {:?} go check your parser", item);
     }

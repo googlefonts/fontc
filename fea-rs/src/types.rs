@@ -7,10 +7,8 @@ use smol_str::SmolStr;
 pub use write_fonts::types::GlyphId;
 
 mod glyph_map;
-mod metrics;
 
 pub use glyph_map::GlyphMap;
-pub use metrics::Anchor;
 
 pub type GlyphName = SmolStr;
 
