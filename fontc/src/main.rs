@@ -8,10 +8,12 @@ use std::{
 use clap::Parser;
 use fontc::Error;
 use fontir::{
+    error::WorkError,
     filestate::FileStateSet,
-    source::{Input, Source},
+    source::{Input, Source, Work},
 };
-use log::{info, warn};
+use log::{error, info, warn};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use ufo2fontir::source::DesignSpaceIrSource;
 
@@ -157,15 +159,32 @@ fn main() -> Result<(), Error> {
     let glyphs_changed = glyphs_changed(&current_inputs, &prev_inputs);
     let glyphs_deleted = glyphs_deleted(&current_inputs, &prev_inputs);
 
-    // TODO: something useful with our newfound information
-    eprintln!("GLYPHS CHANGED");
-    for glyph_name in glyphs_changed {
-        eprintln!("  {}", glyph_name);
+    // Delete anything associated with deleted glyphs
+    for glyph_name in glyphs_deleted {
+        ir_source
+            .remove_glyph_ir(glyph_name)
+            .expect("Should have been able to delete glyph IR");
     }
 
-    eprintln!("GLYPHS DELETED (TODO delete associated IR)");
-    for glyph_name in glyphs_deleted {
-        eprintln!("  {}", glyph_name);
+    // Build IR for glyphs, potentially in parallel
+    // You'd think we could do source => work => do-in-|| in one go but that angers the compiler
+    let glyph_work: Vec<Box<dyn Work<()>>> = glyphs_changed
+        .into_iter()
+        .map(|glyph_name| {
+            ir_source
+                .create_glyph_ir_work(glyph_name, current_inputs.glyphs.get(glyph_name).unwrap())
+        })
+        .collect();
+    let glyph_errors: Vec<Result<(), WorkError>> = glyph_work
+        .into_par_iter()
+        .map(|work| work.exec())
+        .filter(|r| r.is_err())
+        .collect();
+    for glyph_error in glyph_errors.iter() {
+        error!("{:#?}", glyph_error);
+    }
+    if !glyph_errors.is_empty() {
+        return Err(Error::GlyphIrError);
     }
 
     finish_successfully(&build_dir, &current_inputs)?;

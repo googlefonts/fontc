@@ -12,4 +12,6 @@ pub enum Error {
     IoError(#[from] io::Error),
     #[error("Font IR error")]
     FontIrError(#[from] fontir::error::Error),
+    #[error("Unable to produce IR for glyphs")]
+    GlyphIrError,
 }

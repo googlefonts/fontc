@@ -1,12 +1,13 @@
 use std::{
     collections::{BTreeMap, HashMap},
+    io,
     path::{Path, PathBuf},
 };
 
 use fontir::{
-    error::Error,
+    error::{Error, WorkError},
     filestate::FileStateSet,
-    source::{Input, Source},
+    source::{Input, Source, Work},
 };
 use norad::designspace::DesignSpaceDocument;
 
@@ -78,5 +79,25 @@ impl Source for DesignSpaceIrSource {
         }
 
         Ok(Input { font_info, glyphs })
+    }
+
+    fn remove_glyph_ir(&self, glyph_name: &str) -> Result<(), io::Error> {
+        todo!("Remove glyph IR for {}", glyph_name)
+    }
+
+    fn create_glyph_ir_work(
+        &self,
+        _glyph_name: &str,
+        _glyph_files: &FileStateSet,
+    ) -> Box<dyn Work<()>> {
+        Box::from(GlyphIrWork {})
+    }
+}
+
+struct GlyphIrWork {}
+
+impl Work<()> for GlyphIrWork {
+    fn exec(&self) -> Result<(), WorkError> {
+        todo!()
     }
 }

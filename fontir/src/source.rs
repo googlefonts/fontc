@@ -1,15 +1,36 @@
 //! Generic model of font sources.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, io};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Error, filestate::FileStateSet};
+use crate::{
+    error::{Error, WorkError},
+    filestate::FileStateSet,
+};
+
+/// A unit of work safe to run in parallel
+///
+/// Naively you'd think we'd just return FnOnce + Send but that didn't want to compile
+/// https://github.com/rust-lang/rust/issues/29625
+pub trait Work<R>: Send {
+    fn exec(&self) -> Result<R, WorkError>;
+}
 
 /// Manipulations on some sort of font source.
 pub trait Source {
     /// Resolve a source to a set of files and their dependencies.
     fn inputs(&self) -> Result<Input, Error>;
+
+    /// Delete IR for a glyph, probably because it was removed from sources
+    fn remove_glyph_ir(&self, glyph_name: &str) -> Result<(), io::Error>;
+
+    // Create a function that could be called to generate IR for a glyph
+    fn create_glyph_ir_work(
+        &self,
+        glyph_name: &str,
+        glyph_files: &FileStateSet,
+    ) -> Box<dyn Work<()>>;
 }
 
 /// The files (in future non-file sources?) that drive various parts of IR
