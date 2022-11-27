@@ -1,18 +1,20 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    io,
+    fs,
     path::{Path, PathBuf},
 };
 
 use fontir::{
     error::{Error, WorkError},
     filestate::FileStateSet,
-    source::{Input, Source, Work},
+    source::{Input, Paths, Source, Work},
 };
+use log::debug;
 use norad::designspace::DesignSpaceDocument;
 
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
+    ir_paths: Paths,
 }
 
 fn glif_files(ufo_dir: &Path) -> Result<BTreeMap<String, PathBuf>, Error> {
@@ -25,9 +27,10 @@ fn glif_files(ufo_dir: &Path) -> Result<BTreeMap<String, PathBuf>, Error> {
 }
 
 impl DesignSpaceIrSource {
-    pub fn new(source: &Path) -> DesignSpaceIrSource {
+    pub fn new(designspace_file: PathBuf, ir_paths: Paths) -> DesignSpaceIrSource {
         DesignSpaceIrSource {
-            designspace_file: source.to_path_buf(),
+            designspace_file,
+            ir_paths,
         }
     }
 }
@@ -81,23 +84,27 @@ impl Source for DesignSpaceIrSource {
         Ok(Input { font_info, glyphs })
     }
 
-    fn remove_glyph_ir(&self, glyph_name: &str) -> Result<(), io::Error> {
-        todo!("Remove glyph IR for {}", glyph_name)
-    }
-
     fn create_glyph_ir_work(
         &self,
-        _glyph_name: &str,
+        glyph_name: &str,
         _glyph_files: &FileStateSet,
     ) -> Box<dyn Work<()>> {
-        Box::from(GlyphIrWork {})
+        Box::from(GlyphIrWork {
+            glyph_name: glyph_name.to_string(),
+            ir_file: self.ir_paths.glyph_ir_file(glyph_name),
+        })
     }
 }
 
-struct GlyphIrWork {}
+struct GlyphIrWork {
+    glyph_name: String,
+    ir_file: PathBuf,
+}
 
 impl Work<()> for GlyphIrWork {
     fn exec(&self) -> Result<(), WorkError> {
-        todo!()
+        debug!("Generate IR for {}", self.glyph_name);
+        fs::write(&self.ir_file, &self.glyph_name).map_err(WorkError::IoError)?;
+        Ok(())
     }
 }

@@ -10,9 +10,9 @@ use fontc::Error;
 use fontir::{
     error::WorkError,
     filestate::FileStateSet,
-    source::{Input, Source, Work},
+    source::{DeleteWork, Input, Paths, Source, Work},
 };
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use ufo2fontir::source::DesignSpaceIrSource;
@@ -54,34 +54,32 @@ impl Config {
     }
 }
 
-fn establish_build_dir() -> PathBuf {
-    let build_dir = Path::new("build");
-    if build_dir.exists() && !build_dir.is_dir() {
-        panic!("The name build is taken by something that isn't a directory");
+fn require_dir(dir: &Path) -> PathBuf {
+    if dir.exists() && !dir.is_dir() {
+        panic!("{:#?} is taken by something that isn't a directory", dir);
     }
-    if !build_dir.exists() {
-        fs::create_dir(build_dir).expect("Unable to create build/");
+    if !dir.exists() {
+        if let Err(e) = fs::create_dir(dir) {
+            panic!("Unable to create {:#?} {}", dir, e);
+        }
     }
-    build_dir.to_path_buf()
+    dir.to_path_buf()
 }
 
 fn config_file(build_dir: &Path) -> PathBuf {
     build_dir.join("fontc.toml")
 }
 
-fn ir_input_file(build_dir: &Path) -> PathBuf {
-    build_dir.join("irinput.toml")
-}
-
 fn init(build_dir: &Path, args: Args) -> Result<(Config, Input), io::Error> {
     let config = Config::new(args)?;
     let config_file = config_file(build_dir);
 
-    let ir_input_file = ir_input_file(build_dir);
+    let ir_paths = Paths::new(build_dir);
+    let ir_input_file = ir_paths.ir_input_file();
     if config.has_changed(&config_file) {
         info!("Config changed, generating a new one");
         if ir_input_file.exists() {
-            fs::remove_file(&ir_input_file).expect("Unable to delete old ir input file");
+            fs::remove_file(ir_input_file).expect("Unable to delete old ir input file");
         }
         fs::write(
             config_file,
@@ -99,36 +97,49 @@ fn init(build_dir: &Path, args: Args) -> Result<(Config, Input), io::Error> {
     Ok((config, ir_input))
 }
 
-fn ir_source(source: &Path) -> Result<Box<dyn Source>, Error> {
+fn ir_source(source: &Path, paths: Paths) -> Result<Box<dyn Source>, Error> {
     let ext = source
         .extension()
         .and_then(OsStr::to_str)
         .ok_or_else(|| Error::UnrecognizedSource(source.to_path_buf()))?;
     match ext {
-        "designspace" => Ok(Box::from(DesignSpaceIrSource::new(source))),
+        "designspace" => Ok(Box::from(DesignSpaceIrSource::new(
+            source.to_path_buf(),
+            paths,
+        ))),
         _ => Err(Error::UnrecognizedSource(source.to_path_buf())),
     }
 }
 
-fn finish_successfully(build_dir: &Path, current_inputs: &Input) -> Result<(), Error> {
-    let current_sources = toml::to_string_pretty(&current_inputs).map_err(Error::TomlSerError)?;
-    fs::write(ir_input_file(build_dir), current_sources).map_err(Error::IoError)
+fn finish_successfully(context: CompileContext) -> Result<(), Error> {
+    let current_sources =
+        toml::to_string_pretty(&context.current_inputs).map_err(Error::TomlSerError)?;
+    fs::write(context.paths.ir_input_file(), current_sources).map_err(Error::IoError)
 }
 
 fn global_change(current_inputs: &Input, prev_inputs: &Input) -> bool {
     current_inputs.font_info != prev_inputs.font_info
 }
 
-fn glyphs_changed<'a>(current_inputs: &'a Input, prev_inputs: &Input) -> HashSet<&'a str> {
-    if global_change(current_inputs, prev_inputs) {
-        return current_inputs.glyphs.keys().map(|e| e.as_str()).collect();
+fn glyphs_changed(context: &CompileContext) -> HashSet<&str> {
+    if global_change(&context.current_inputs, &context.prev_inputs) {
+        return context
+            .current_inputs
+            .glyphs
+            .keys()
+            .map(|e| e.as_str())
+            .collect();
     }
-    current_inputs
+    context
+        .current_inputs
         .glyphs
         .iter()
         .filter(
-            |(glyph_name, curr_state)| match prev_inputs.glyphs.get(*glyph_name) {
-                Some(prev_state) => prev_state != *curr_state,
+            |(glyph_name, curr_state)| match context.prev_inputs.glyphs.get(*glyph_name) {
+                Some(prev_state) => {
+                    // If the input changed or the output doesn't exist a rebuild is probably in order
+                    prev_state != *curr_state || !context.paths.glyph_ir_file(glyph_name).exists()
+                }
                 None => true,
             },
         )
@@ -145,50 +156,93 @@ fn glyphs_deleted<'a>(current_inputs: &Input, prev_inputs: &'a Input) -> HashSet
         .collect()
 }
 
-fn main() -> Result<(), Error> {
-    env_logger::init();
+fn add_glyph_work(context: &CompileContext, work: &mut Vec<Box<dyn Work<()>>>) {
+    // Destroy IR for deleted glyphs
 
-    let build_dir = establish_build_dir();
-    let (config, prev_inputs) = init(&build_dir, Args::parse()).map_err(Error::IoError)?;
+    work.extend(
+        glyphs_deleted(&context.current_inputs, &context.prev_inputs)
+            .iter()
+            .map(|glyph_name| DeleteWork::create(context.paths.glyph_ir_file(glyph_name))),
+    );
 
-    // What sources are we dealing with?
-    let ir_source = ir_source(&config.args.source)?;
-    let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
-
-    // TODO: contemplate generalizing
-    let glyphs_changed = glyphs_changed(&current_inputs, &prev_inputs);
-    let glyphs_deleted = glyphs_deleted(&current_inputs, &prev_inputs);
-
-    // Delete anything associated with deleted glyphs
-    for glyph_name in glyphs_deleted {
-        ir_source
-            .remove_glyph_ir(glyph_name)
-            .expect("Should have been able to delete glyph IR");
-    }
-
-    // Build IR for glyphs, potentially in parallel
+    // Generate IR for changed glyphs
     // You'd think we could do source => work => do-in-|| in one go but that angers the compiler
-    let glyph_work: Vec<Box<dyn Work<()>>> = glyphs_changed
-        .into_iter()
-        .map(|glyph_name| {
-            ir_source
-                .create_glyph_ir_work(glyph_name, current_inputs.glyphs.get(glyph_name).unwrap())
-        })
-        .collect();
-    let glyph_errors: Vec<Result<(), WorkError>> = glyph_work
+    work.extend(glyphs_changed(context).into_iter().map(|glyph_name| {
+        context.ir_source.create_glyph_ir_work(
+            glyph_name,
+            context.current_inputs.glyphs.get(glyph_name).unwrap(),
+        )
+    }));
+}
+
+fn do_work(work: Vec<Box<dyn Work<()>>>) -> Result<(), Error> {
+    let work_units = work.len();
+    debug!("{} work units to execute", work_units);
+    let errors: Vec<Result<(), WorkError>> = work
         .into_par_iter()
         .map(|work| work.exec())
         .filter(|r| r.is_err())
         .collect();
-    for glyph_error in glyph_errors.iter() {
-        error!("{:#?}", glyph_error);
+    for error in errors.iter() {
+        warn!("{:#?}", error);
     }
-    if !glyph_errors.is_empty() {
-        return Err(Error::GlyphIrError);
+    if !errors.is_empty() {
+        error!(
+            "{}/{} work units failed, details logged at warn",
+            errors.len(),
+            work_units
+        );
+        return Err(Error::IrGenerationError);
+    } else {
+        debug!("{}/{} work units successful", work_units, work_units);
     }
+    Ok(())
+}
 
-    finish_successfully(&build_dir, &current_inputs)?;
+struct CompileContext {
+    paths: Paths,
+    ir_source: Box<dyn Source>,
+    prev_inputs: Input,
+    current_inputs: Input,
+}
 
+fn establish_context(paths: Paths, args: Args) -> Result<CompileContext, Error> {
+    let build_dir = require_dir(paths.build_dir());
+    require_dir(paths.glyph_ir_dir());
+    let (config, prev_inputs) = init(&build_dir, args).map_err(Error::IoError)?;
+
+    // What sources are we dealing with?
+    let ir_source = ir_source(&config.args.source, paths.clone())?;
+    let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
+
+    Ok(CompileContext {
+        paths,
+        ir_source,
+        prev_inputs,
+        current_inputs,
+    })
+}
+
+fn main() -> Result<(), Error> {
+    env_logger::init();
+
+    let paths = Paths::new(Path::new("build"));
+    let context = establish_context(paths, Args::parse())?;
+
+    // TODO: consider making a more explicit model of a graph
+    // TODO: Rayon focuses on CPU-bound tasks but we are doing IO too
+    // perhaps we should do the IO first, e.g. read (but not parse) inputs, etc?
+
+    // Accumulate work for the parts of IR that trivially parallelize
+    let mut work: Vec<Box<dyn Work<()>>> = Vec::new();
+
+    add_glyph_work(&context, &mut work);
+
+    // Try to do the work
+    do_work(work)?;
+
+    // Goodness, it all seems to have worked
+    finish_successfully(context)?;
     Ok(())
 }
 
@@ -197,16 +251,17 @@ mod tests {
 
     use std::{
         collections::HashSet,
+        fs,
         path::{Path, PathBuf},
     };
 
     use filetime::FileTime;
-    use fontir::{filestate::FileStateSet, source::Input};
+    use fontir::{filestate::FileStateSet, source::Paths};
     use tempfile::tempdir;
 
     use crate::{
-        config_file, finish_successfully, glyphs_changed, glyphs_deleted, init, ir_input_file,
-        ir_source, Args, Config,
+        add_glyph_work, config_file, establish_context, finish_successfully, glyphs_changed,
+        glyphs_deleted, init, Args, CompileContext, Config,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -217,18 +272,23 @@ mod tests {
         path
     }
 
-    struct CompileResult {
-        prev_inputs: Input,
-        current_inputs: Input,
+    struct TestCompile {
+        glyphs_changed: HashSet<String>,
+        glyphs_deleted: HashSet<String>,
     }
 
-    impl CompileResult {
-        fn glyphs_changed(&self) -> HashSet<&str> {
-            glyphs_changed(&self.current_inputs, &self.prev_inputs)
-        }
-
-        fn glyphs_deleted(&self) -> HashSet<&str> {
-            glyphs_deleted(&self.current_inputs, &self.prev_inputs)
+    impl TestCompile {
+        fn new(context: &CompileContext) -> TestCompile {
+            TestCompile {
+                glyphs_changed: glyphs_changed(context)
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                glyphs_deleted: glyphs_deleted(&context.current_inputs, &context.prev_inputs)
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            }
         }
     }
 
@@ -241,7 +301,8 @@ mod tests {
         };
         init(build_dir, args.clone()).unwrap();
         let config_file = config_file(build_dir);
-        let ir_input_file = ir_input_file(build_dir);
+        let paths = Paths::new(build_dir);
+        let ir_input_file = paths.ir_input_file();
 
         assert!(config_file.exists(), "Should exist: {:#?}", config_file);
         assert!(
@@ -273,20 +334,25 @@ mod tests {
         assert!(Config { args, compiler }.has_changed(&config_file(build_dir)));
     }
 
-    fn compile(build_dir: &Path, source: &str) -> CompileResult {
+    fn compile(build_dir: &Path, source: &str) -> TestCompile {
         let args = Args {
             source: testdata_dir().join(source),
         };
-        let (config, prev_inputs) = init(build_dir, args).unwrap();
+        let paths = Paths::new(build_dir);
+        let context = establish_context(paths, args).unwrap();
+        let result = TestCompile::new(&context);
 
-        let current_inputs = ir_source(&config.args.source).unwrap().inputs().unwrap();
+        let mut work = Vec::new();
 
-        finish_successfully(build_dir, &current_inputs).unwrap();
+        add_glyph_work(&context, &mut work);
 
-        CompileResult {
-            current_inputs,
-            prev_inputs,
+        // Try to do the work
+        for work_item in work {
+            work_item.exec().unwrap();
         }
+
+        finish_successfully(context).unwrap();
+        result
     }
 
     #[test]
@@ -294,12 +360,30 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
 
-        let compile_result = compile(build_dir, "wght_var.designspace");
-        assert_eq!(HashSet::from(["bar"]), compile_result.glyphs_changed());
-        assert_eq!(HashSet::from([]), compile_result.glyphs_deleted());
+        let result = compile(build_dir, "wght_var.designspace");
+        assert_eq!(HashSet::from(["bar".to_string()]), result.glyphs_changed);
+        assert_eq!(HashSet::from([]), result.glyphs_deleted);
 
-        let compile_result = compile(build_dir, "wght_var.designspace");
-        assert_eq!(HashSet::from([]), compile_result.glyphs_changed());
-        assert_eq!(HashSet::from([]), compile_result.glyphs_deleted());
+        let result = compile(build_dir, "wght_var.designspace");
+        assert_eq!(HashSet::from([]), result.glyphs_changed);
+        assert_eq!(HashSet::from([]), result.glyphs_deleted);
+    }
+
+    #[test]
+    fn deleted_ir_recreated() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+
+        let result = compile(build_dir, "wght_var.designspace");
+        assert_eq!(HashSet::from(["bar".to_string()]), result.glyphs_changed);
+        assert_eq!(HashSet::from([]), result.glyphs_deleted);
+
+        let bar_ir = build_dir.join("glyph_ir/bar.toml");
+        assert!(bar_ir.is_file(), "no file {:#?}", bar_ir);
+        fs::remove_file(bar_ir).unwrap();
+
+        let result = compile(build_dir, "wght_var.designspace");
+        assert_eq!(HashSet::from(["bar".to_string()]), result.glyphs_changed);
+        assert_eq!(HashSet::from([]), result.glyphs_deleted);
     }
 }

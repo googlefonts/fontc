@@ -57,7 +57,7 @@ impl From<FileStateSet> for FileStateSetSerdeRepr {
     }
 }
 
-/// The serde-friendly representation of a [FileState] for a [Path].
+/// The serde-friendly representation of a [FileState] for a [std::path::Path].
 ///
 /// SystemTime lacks a platform independent representation we can
 /// depend on so use FileTime's unix_seconds,nanos.

@@ -17,5 +17,8 @@ pub enum Error {
 }
 
 /// An async work error, hence one that must be Send
-#[derive(Debug)]
-pub enum WorkError {}
+#[derive(Debug, Error)]
+pub enum WorkError {
+    #[error("IO failure")]
+    IoError(#[from] io::Error),
+}
