@@ -14,6 +14,11 @@
         <dimension name="Weight" xvalue="400"/>
       </location>
     </source>
+    <source filename="WghtVar-Regular.ufo" name="Wght Var Regular {600}" layer="{600}">
+      <location>
+        <dimension name="Weight" xvalue="600"/>
+      </location>
+    </source>
     <source filename="WghtVar-Bold.ufo" name="Wght Var Bold" familyname="Wght Var" stylename="Bold">
       <location>
         <dimension name="Weight" xvalue="700"/>
