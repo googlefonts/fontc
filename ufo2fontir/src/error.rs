@@ -1,6 +1,6 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum UfoToIrError {
+pub enum Error {
     // It is in fact inconceivable that this would fail
 }
