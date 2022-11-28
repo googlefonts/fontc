@@ -143,6 +143,8 @@ fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
 mod tests {
     use crate::toir::designspace_to_ir;
     use fontir::ir;
+    use ordered_float::OrderedFloat;
+    use std::collections::HashSet;
     use std::path::PathBuf;
 
     fn testdata_dir() -> PathBuf {
@@ -170,5 +172,16 @@ mod tests {
             font.axes
         );
         assert_eq!(1, glyphs.len());
+        let glyph = &glyphs[0];
+        assert_eq!("bar", glyph.name);
+        assert_eq!(3, glyph.sources.len());
+        assert_eq!(
+            HashSet::from([
+                ir::DesignSpaceLocation::from([("Weight".to_string(), OrderedFloat(400.))]),
+                ir::DesignSpaceLocation::from([("Weight".to_string(), OrderedFloat(600.))]),
+                ir::DesignSpaceLocation::from([("Weight".to_string(), OrderedFloat(700.))]),
+            ]),
+            glyph.sources.keys().cloned().collect::<HashSet<_>>()
+        )
     }
 }
