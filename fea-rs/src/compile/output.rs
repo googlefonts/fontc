@@ -1,11 +1,14 @@
 //! The result of a compilation
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, convert::TryInto};
 
 use write_fonts::{
     dump_table,
-    read::{FontRef, TableProvider},
-    tables::layout::{FeatureParams, SizeParams},
+    read::{FontData, FontRef, TableProvider},
+    tables::{
+        layout::{FeatureParams, SizeParams},
+        maxp::Maxp,
+    },
     types::Tag,
     FontBuilder,
 };
@@ -15,7 +18,8 @@ use super::{
     lookups::{AllLookups, FeatureKey, LookupId},
     tables::{NameSpec, Tables},
 };
-use crate::Diagnostic;
+
+use crate::{Diagnostic, GlyphMap};
 
 /// The output of a compilation operation.
 ///
@@ -37,8 +41,23 @@ pub struct SizeFeature {
 }
 
 impl Compilation {
-    /// Attempt to update the provided font with the results of this compilation.
+    /// Compile this output into a new binary font.
+    #[allow(clippy::result_unit_err)] //TODO: figure out error reporting
+    pub fn build_raw(&self, glyph_map: &GlyphMap) -> Result<Vec<u8>, ()> {
+        // hack: currently implemented in terms of apply, below, which expects font
+        // as input. So build an empty font with a maxp table, since that is expected:
+        let mut builder = FontBuilder::default();
+        let maxp = Maxp::new(glyph_map.len().try_into().unwrap());
+        builder.add_table(Tag::new(b"maxp"), write_fonts::dump_table(&maxp).unwrap());
+        let empty = builder.build();
+        let font = FontRef::new(FontData::new(&empty)).unwrap();
+        self.apply(&font)
+    }
 
+    /// Attempt to update the provided font with the results of this compilation.
+    //TODO: I hate it? we should figure out what a rational approach to this is. What stuff do we
+    //expect to have just living in the font by this point? Why can't we just start from a namelist
+    //and FEA file, and go from there? maybe let's try?
     #[allow(clippy::result_unit_err)] //TODO: figure out error reporting
     pub fn apply(&self, font: &FontRef) -> Result<Vec<u8>, ()> {
         let mut builder = FontBuilder::default();
