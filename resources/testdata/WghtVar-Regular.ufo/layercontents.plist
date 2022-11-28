@@ -6,5 +6,9 @@
       <string>public.default</string>
       <string>glyphs</string>
     </array>
+    <array>
+      <string>{600}</string>
+      <string>glyphs.{600}</string>
+    </array>
   </array>
 </plist>
