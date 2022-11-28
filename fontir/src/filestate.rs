@@ -1,3 +1,4 @@
+use crate::serde::FileStateSetSerdeRepr;
 use filetime::FileTime;
 use serde::{Deserialize, Serialize};
 
@@ -12,77 +13,13 @@ use std::{
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 #[serde(from = "FileStateSetSerdeRepr", into = "FileStateSetSerdeRepr")]
 pub struct FileStateSet {
-    entries: HashMap<PathBuf, FileState>,
+    pub(crate) entries: HashMap<PathBuf, FileState>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-struct FileState {
-    mtime: FileTime,
-    size: u64,
-}
-
-// We use a named field because toml doesn't like tuple-structs very much
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct FileStateSetSerdeRepr {
-    entries: Vec<PathStateSerdeRepr>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct FileStateSerdeRepr {
-    path: PathBuf,
-    depends_on: Vec<PathBuf>,
-}
-
-impl From<FileStateSetSerdeRepr> for FileStateSet {
-    fn from(from: FileStateSetSerdeRepr) -> Self {
-        FileStateSet {
-            entries: from
-                .entries
-                .iter()
-                .map(|d| {
-                    (
-                        PathBuf::from(&d.path),
-                        FileState {
-                            mtime: FileTime::from_unix_time(d.unix_seconds, d.nanos),
-                            size: d.size,
-                        },
-                    )
-                })
-                .collect(),
-        }
-    }
-}
-
-impl From<FileStateSet> for FileStateSetSerdeRepr {
-    fn from(fs: FileStateSet) -> Self {
-        let mut entries: Vec<PathStateSerdeRepr> = fs
-            .entries
-            .iter()
-            .map(|e| {
-                let path = e.0.to_str().expect("Only UTF names please").to_string();
-                PathStateSerdeRepr {
-                    path,
-                    unix_seconds: e.1.mtime.unix_seconds(),
-                    nanos: e.1.mtime.nanoseconds(),
-                    size: e.1.size,
-                }
-            })
-            .collect();
-        entries.sort_by(|e1, e2| e1.path.cmp(&e2.path));
-        FileStateSetSerdeRepr { entries }
-    }
-}
-
-/// The serde-friendly representation of a [FileState] for a [Path].
-///
-/// SystemTime lacks a platform independent representation we can
-/// depend on so use FileTime's unix_seconds,nanos.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct PathStateSerdeRepr {
-    path: String,
-    unix_seconds: i64,
-    nanos: u32,
-    size: u64,
+pub(crate) struct FileState {
+    pub(crate) mtime: FileTime,
+    pub(crate) size: u64,
 }
 
 impl FileState {
@@ -124,25 +61,23 @@ impl FileStateSet {
             // For a dir to register unchanged we need to add it's current contents
             if path.is_dir() {
                 let mut dirs_visited = HashSet::new();
-                if let Some(new_paths) = self.new_files(&mut dirs_visited, path) {
-                    for new_path in new_paths {
-                        self.entries
-                            .insert(new_path.clone(), FileState::of(&new_path)?);
-                    }
+                for new_path in self.new_files(&mut dirs_visited, path) {
+                    self.entries
+                        .insert(new_path.clone(), FileState::of(&new_path)?);
                 }
             }
         }
         Ok(())
     }
 
-    fn new_files(&self, dirs_visited: &mut HashSet<PathBuf>, dir: &Path) -> Option<Vec<PathBuf>> {
+    fn new_files(&self, dirs_visited: &mut HashSet<PathBuf>, dir: &Path) -> Vec<PathBuf> {
         assert!(dir.is_dir());
         if dirs_visited.contains(dir) {
-            return None;
+            return Vec::new();
         }
 
         let mut frontier = vec![dir.to_owned()];
-        let mut results: Option<Vec<PathBuf>> = None;
+        let mut results: Vec<PathBuf> = Vec::new();
 
         while let Some(dir) = frontier.pop() {
             let dir_entries = fs::read_dir(&dir).expect("Unable to iterate directory");
@@ -156,8 +91,7 @@ impl FileStateSet {
 
                 // A file we've never seen before?!
                 if !dir_entry.is_dir() && !self.entries.contains_key(&dir_entry) {
-                    let new_files = results.get_or_insert_with(Vec::new);
-                    new_files.push(dir_entry);
+                    results.push(dir_entry);
                 }
             }
             dirs_visited.insert(dir.to_owned());

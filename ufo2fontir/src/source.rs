@@ -4,9 +4,9 @@ use std::{
 };
 
 use fontir::{
-    error::FontIrError,
+    error::Error,
     filestate::FileStateSet,
-    source::{IrInput, IrSource},
+    source::{Input, Source},
 };
 use norad::designspace::DesignSpaceDocument;
 
@@ -14,13 +14,13 @@ pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
 }
 
-fn glif_files(ufo_dir: &Path) -> Result<BTreeMap<String, PathBuf>, FontIrError> {
+fn glif_files(ufo_dir: &Path) -> Result<BTreeMap<String, PathBuf>, Error> {
     let contents_file = ufo_dir.join("glyphs/contents.plist");
     if !contents_file.is_file() {
-        return Err(FontIrError::FileExpected(contents_file));
+        return Err(Error::FileExpected(contents_file));
     }
     plist::from_file::<&Path, BTreeMap<String, PathBuf>>(&contents_file)
-        .map_err(|e| FontIrError::ParseError(contents_file, e.into()))
+        .map_err(|e| Error::ParseError(contents_file, e.into()))
 }
 
 impl DesignSpaceIrSource {
@@ -31,10 +31,10 @@ impl DesignSpaceIrSource {
     }
 }
 
-impl IrSource for DesignSpaceIrSource {
-    fn inputs(&self) -> Result<IrInput, FontIrError> {
+impl Source for DesignSpaceIrSource {
+    fn inputs(&self) -> Result<Input, Error> {
         let designspace = DesignSpaceDocument::load(&self.designspace_file)
-            .map_err(|e| FontIrError::UnableToLoadSource(Box::from(e)))?;
+            .map_err(|e| Error::UnableToLoadSource(Box::from(e)))?;
         let designspace_dir = self
             .designspace_file
             .parent()
@@ -48,7 +48,7 @@ impl IrSource for DesignSpaceIrSource {
                 .join(&source.filename)
                 .join("fontinfo.plist");
             if !font_info_file.is_file() {
-                return Err(FontIrError::FileExpected(font_info_file));
+                return Err(Error::FileExpected(font_info_file));
             }
             font_info.insert(&font_info_file)?;
         }
@@ -65,18 +65,18 @@ impl IrSource for DesignSpaceIrSource {
             let glif_files = glif_files(&ufo_dir)?;
             let glyph_dir = ufo_dir.join("glyphs");
             if !glyph_dir.is_dir() {
-                return Err(FontIrError::DirectoryExpected(glyph_dir));
+                return Err(Error::DirectoryExpected(glyph_dir));
             }
-            for (glyph_name, glif_file) in glif_files.into_iter() {
+            for (glyph_name, glif_file) in glif_files {
                 let glif_file = glyph_dir.join(&glif_file);
                 if !glif_file.exists() {
-                    return Err(FontIrError::FileExpected(glif_file));
+                    return Err(Error::FileExpected(glif_file));
                 }
                 let glif_file = glif_file.clone();
                 glyphs.entry(glyph_name).or_default().insert(&glif_file)?;
             }
         }
 
-        Ok(IrInput { font_info, glyphs })
+        Ok(Input { font_info, glyphs })
     }
 }

@@ -3,7 +3,7 @@ use std::{io, path::PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum FontcError {
+pub enum Error {
     #[error("Unrecognized source")]
     UnrecognizedSource(PathBuf),
     #[error("toml error")]
@@ -11,5 +11,5 @@ pub enum FontcError {
     #[error("IO failures")]
     IoError(#[from] io::Error),
     #[error("Font IR error")]
-    FontIrError(#[from] fontir::error::FontIrError),
+    FontIrError(#[from] fontir::error::Error),
 }

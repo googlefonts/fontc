@@ -1,9 +1,9 @@
 use fontir::ir;
 use norad::designspace::{self, DesignSpaceDocument};
 
-use crate::error::UfoToIrError;
+use crate::error::Error;
 
-pub fn designspace_to_ir(designspace: DesignSpaceDocument) -> Result<Vec<ir::Axis>, UfoToIrError> {
+pub fn designspace_to_ir(designspace: DesignSpaceDocument) -> Result<Vec<ir::Axis>, Error> {
     // Truly we have done something amazing here today
     let ir_axes: Vec<ir::Axis> = designspace.axes.into_iter().map(to_ir_axis).collect();
 

@@ -6,10 +6,10 @@ use std::{
 };
 
 use clap::Parser;
-use fontc::error::FontcError;
+use fontc::Error;
 use fontir::{
     filestate::FileStateSet,
-    source::{IrInput, IrSource},
+    source::{Input, Source},
 };
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -53,14 +53,14 @@ impl Config {
 }
 
 fn establish_build_dir() -> PathBuf {
-    let build_dir = PathBuf::from("build");
+    let build_dir = Path::new("build");
     if build_dir.exists() && !build_dir.is_dir() {
         panic!("The name build is taken by something that isn't a directory");
     }
     if !build_dir.exists() {
-        fs::create_dir(&build_dir).expect("Unable to create build/");
+        fs::create_dir(build_dir).expect("Unable to create build/");
     }
-    build_dir
+    build_dir.to_path_buf()
 }
 
 fn config_file(build_dir: &Path) -> PathBuf {
@@ -71,7 +71,7 @@ fn ir_input_file(build_dir: &Path) -> PathBuf {
     build_dir.join("irinput.toml")
 }
 
-fn init(build_dir: &Path, args: Args) -> Result<(Config, IrInput), io::Error> {
+fn init(build_dir: &Path, args: Args) -> Result<(Config, Input), io::Error> {
     let config = Config::new(args)?;
     let config_file = config_file(build_dir);
 
@@ -92,33 +92,32 @@ fn init(build_dir: &Path, args: Args) -> Result<(Config, IrInput), io::Error> {
         let toml = fs::read_to_string(ir_input_file).expect("Unable to load ir input file");
         toml::from_str(&toml).expect("Unable to parse ir input file")
     } else {
-        IrInput::new()
+        Input::new()
     };
     Ok((config, ir_input))
 }
 
-fn ir_source(source: &Path) -> Result<Box<dyn IrSource>, FontcError> {
+fn ir_source(source: &Path) -> Result<Box<dyn Source>, Error> {
     let ext = source
         .extension()
         .and_then(OsStr::to_str)
-        .ok_or_else(|| FontcError::UnrecognizedSource(source.to_path_buf()))?;
+        .ok_or_else(|| Error::UnrecognizedSource(source.to_path_buf()))?;
     match ext {
         "designspace" => Ok(Box::from(DesignSpaceIrSource::new(source))),
-        _ => Err(FontcError::UnrecognizedSource(source.to_path_buf())),
+        _ => Err(Error::UnrecognizedSource(source.to_path_buf())),
     }
 }
 
-fn finish_successfully(build_dir: &Path, current_inputs: &IrInput) -> Result<(), FontcError> {
-    let current_sources =
-        toml::to_string_pretty(&current_inputs).map_err(FontcError::TomlSerError)?;
-    fs::write(ir_input_file(build_dir), current_sources).map_err(FontcError::IoError)
+fn finish_successfully(build_dir: &Path, current_inputs: &Input) -> Result<(), Error> {
+    let current_sources = toml::to_string_pretty(&current_inputs).map_err(Error::TomlSerError)?;
+    fs::write(ir_input_file(build_dir), current_sources).map_err(Error::IoError)
 }
 
-fn global_change(current_inputs: &IrInput, prev_inputs: &IrInput) -> bool {
+fn global_change(current_inputs: &Input, prev_inputs: &Input) -> bool {
     current_inputs.font_info != prev_inputs.font_info
 }
 
-fn glyphs_changed<'a>(current_inputs: &'a IrInput, prev_inputs: &IrInput) -> HashSet<&'a str> {
+fn glyphs_changed<'a>(current_inputs: &'a Input, prev_inputs: &Input) -> HashSet<&'a str> {
     if global_change(current_inputs, prev_inputs) {
         return current_inputs.glyphs.keys().map(|e| e.as_str()).collect();
     }
@@ -135,7 +134,7 @@ fn glyphs_changed<'a>(current_inputs: &'a IrInput, prev_inputs: &IrInput) -> Has
         .collect()
 }
 
-fn glyphs_deleted<'a>(current_inputs: &IrInput, prev_inputs: &'a IrInput) -> HashSet<&'a str> {
+fn glyphs_deleted<'a>(current_inputs: &Input, prev_inputs: &'a Input) -> HashSet<&'a str> {
     prev_inputs
         .glyphs
         .keys()
@@ -144,15 +143,15 @@ fn glyphs_deleted<'a>(current_inputs: &IrInput, prev_inputs: &'a IrInput) -> Has
         .collect()
 }
 
-fn main() -> Result<(), FontcError> {
+fn main() -> Result<(), Error> {
     env_logger::init();
 
     let build_dir = establish_build_dir();
-    let (config, prev_inputs) = init(&build_dir, Args::parse()).map_err(FontcError::IoError)?;
+    let (config, prev_inputs) = init(&build_dir, Args::parse()).map_err(Error::IoError)?;
 
     // What sources are we dealing with?
     let ir_source = ir_source(&config.args.source)?;
-    let current_inputs = ir_source.inputs().map_err(FontcError::FontIrError)?;
+    let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
 
     // TODO: contemplate generalizing
     let glyphs_changed = glyphs_changed(&current_inputs, &prev_inputs);
@@ -183,7 +182,7 @@ mod tests {
     };
 
     use filetime::FileTime;
-    use fontir::{filestate::FileStateSet, source::IrInput};
+    use fontir::{filestate::FileStateSet, source::Input};
     use tempfile::tempdir;
 
     use crate::{
@@ -200,8 +199,8 @@ mod tests {
     }
 
     struct CompileResult {
-        prev_inputs: IrInput,
-        current_inputs: IrInput,
+        prev_inputs: Input,
+        current_inputs: Input,
     }
 
     impl CompileResult {
