@@ -31,7 +31,7 @@ fn glif_files<'a>(
     layer_cache: &'a mut HashMap<String, HashMap<String, PathBuf>>,
     source: &designspace::Source,
 ) -> Result<BTreeMap<String, PathBuf>, Error> {
-    let layer_name = layer_name(ufo_dir, layer_cache, source)?;
+    let layer_name = layer_dir(ufo_dir, layer_cache, source)?;
     let glyph_dir = ufo_dir.join(layer_name);
     if !glyph_dir.is_dir() {
         return Err(Error::DirectoryExpected(glyph_dir));
@@ -60,22 +60,24 @@ fn layer_contents(ufo_dir: &Path) -> Result<HashMap<String, PathBuf>, Error> {
     Ok(contents.into_iter().collect())
 }
 
-pub(crate) fn layer_name<'a>(
+pub(crate) fn layer_dir<'a>(
     ufo_dir: &Path,
     layer_cache: &'a mut HashMap<String, HashMap<String, PathBuf>>,
     source: &designspace::Source,
 ) -> Result<&'a PathBuf, Error> {
-    static DEFAULT_LAYER_NAME: &str = "public.default";
-
     if !layer_cache.contains_key(&source.filename) {
         let contents = layer_contents(ufo_dir)?;
         layer_cache.insert(source.filename.clone(), contents);
     }
-    let layer_name = source.layer.as_deref().unwrap_or(DEFAULT_LAYER_NAME);
-    layer_cache
-        .get(&source.filename)
-        .unwrap()
-        .get(layer_name)
+    let name_to_path = layer_cache.get_mut(&source.filename).unwrap();
+
+    // No answer means dir is glyphs, which we'll stuff in under an empty string so the lifetime checks out
+    let default_name = String::new();
+    if source.layer.is_none() {
+        name_to_path.insert(default_name.clone(), PathBuf::from("glyphs"));
+    }
+    name_to_path
+        .get(source.layer.as_ref().unwrap_or(&default_name))
         .ok_or_else(|| Error::NoSuchLayer(source.filename.clone()))
 }
 
