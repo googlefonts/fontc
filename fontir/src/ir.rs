@@ -1,5 +1,7 @@
 //! Serde types for font IR. See TODO:PublicLink.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -10,6 +12,9 @@ pub struct Axis {
     pub max: f32,
     pub hidden: bool,
 }
+
+// TODO(https://github.com/googlefonts/fontmake-rs/pull/4) fix this type
+pub type DesignSpaceLocation = BTreeMap<String, i32>;
 
 #[cfg(test)]
 mod tests {

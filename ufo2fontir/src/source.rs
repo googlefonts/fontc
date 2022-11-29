@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -7,6 +7,7 @@ use std::{
 use fontir::{
     error::{Error, WorkError},
     filestate::FileStateSet,
+    ir::DesignSpaceLocation,
     source::{Input, Paths, Source, Work},
 };
 use log::debug;
@@ -14,14 +15,23 @@ use norad::designspace::{self, DesignSpaceDocument};
 
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
+    designspace_dir: PathBuf,
     ir_paths: Paths,
+    // A cache of locations, valid provided no font info file changes
+    glif_locations: (FileStateSet, HashMap<PathBuf, Vec<DesignSpaceLocation>>),
 }
 
 impl DesignSpaceIrSource {
     pub fn new(designspace_file: PathBuf, ir_paths: Paths) -> DesignSpaceIrSource {
+        let designspace_dir = designspace_file
+            .parent()
+            .expect("designspace file *must* be in a directory")
+            .to_path_buf();
         DesignSpaceIrSource {
             designspace_file,
+            designspace_dir,
             ir_paths,
+            glif_locations: (Default::default(), Default::default()),
         }
     }
 }
@@ -81,20 +91,19 @@ pub(crate) fn layer_dir<'a>(
         .ok_or_else(|| Error::NoSuchLayer(source.filename.clone()))
 }
 
-impl Source for DesignSpaceIrSource {
-    fn inputs(&self) -> Result<Input, Error> {
-        let designspace = DesignSpaceDocument::load(&self.designspace_file)
-            .map_err(|e| Error::UnableToLoadSource(Box::from(e)))?;
-        let designspace_dir = self
-            .designspace_file
-            .parent()
-            .expect("designspace file *must* be in a directory");
+impl DesignSpaceIrSource {
+    fn load_designspace(&self) -> Result<DesignSpaceDocument, Error> {
+        DesignSpaceDocument::load(&self.designspace_file)
+            .map_err(|e| Error::UnableToLoadSource(Box::from(e)))
+    }
 
-        // font info comes from the designspace and each ufo's fontinfo
+    // font info comes from the designspace and each ufo's fontinfo
+    fn font_info_files(&self, designspace: &DesignSpaceDocument) -> Result<FileStateSet, Error> {
         let mut font_info = FileStateSet::new();
         font_info.insert(&self.designspace_file)?;
         for source in designspace.sources.iter() {
-            let font_info_file = designspace_dir
+            let font_info_file = self
+                .designspace_dir
                 .join(&source.filename)
                 .join("fontinfo.plist");
             if !font_info_file.is_file() {
@@ -102,6 +111,14 @@ impl Source for DesignSpaceIrSource {
             }
             font_info.insert(&font_info_file)?;
         }
+        Ok(font_info)
+    }
+}
+
+impl Source for DesignSpaceIrSource {
+    fn inputs(&mut self) -> Result<Input, Error> {
+        let designspace = self.load_designspace()?;
+        let font_info = self.font_info_files(&designspace)?;
 
         // glif filenames are not reversible so we need to read contents.plist to figure out groups
         // See https://github.com/unified-font-object/ufo-spec/issues/164.
@@ -110,10 +127,18 @@ impl Source for DesignSpaceIrSource {
         // UFO filename => map of layer
         let mut layer_cache = HashMap::new();
 
+        let mut glif_locations: HashMap<PathBuf, Vec<DesignSpaceLocation>> = HashMap::new();
+
         for source in designspace.sources {
             // Track files within each UFO
             // The UFO dir *must* exist since we were able to find fontinfo in it earlier
-            let ufo_dir = designspace_dir.join(&source.filename);
+            let ufo_dir = self.designspace_dir.join(&source.filename);
+
+            // TODO less dumbed down version of dim => location mapping
+            let mut location = DesignSpaceLocation::new();
+            source.location.iter().for_each(|dim| {
+                location.insert(dim.name.clone(), dim.xvalue.map(|v| v as i32).unwrap());
+            });
 
             for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, &source)? {
                 if !glif_file.exists() {
@@ -121,32 +146,73 @@ impl Source for DesignSpaceIrSource {
                 }
                 let glif_file = glif_file.clone();
                 glyphs.entry(glyph_name).or_default().insert(&glif_file)?;
+
+                let glif_locations = glif_locations.entry(glif_file).or_default();
+                glif_locations.push(location.clone());
             }
         }
+
+        self.glif_locations = (font_info.clone(), glif_locations);
 
         Ok(Input { font_info, glyphs })
     }
 
     fn create_glyph_ir_work(
         &self,
-        glyph_name: &str,
-        _glyph_files: &FileStateSet,
-    ) -> Box<dyn Work<()>> {
-        Box::from(GlyphIrWork {
-            glyph_name: glyph_name.to_string(),
-            ir_file: self.ir_paths.glyph_ir_file(glyph_name),
-        })
+        glyph_names: &HashSet<&str>,
+        input: &Input,
+    ) -> Result<Vec<Box<dyn Work<()>>>, Error> {
+        // A single glif could be used by many source blocks that use the same layer
+        // *gasp*
+        // So resolve each file to 1..N locations in designspace
+
+        let mut work: Vec<Box<dyn Work<()>>> = Vec::new();
+
+        // Do we have the location of glifs written down?
+        // TODO: consider just recomputing here instead of failing
+        if input.font_info != self.glif_locations.0 {
+            return Err(Error::UnableToCreateGlyphIrWork);
+        }
+
+        // TODO feels a bit heavy on the copying
+        for glyph_name in glyph_names {
+            let glyph_name = glyph_name.to_string();
+            let fileset = input
+                .glyphs
+                .get(&glyph_name)
+                .ok_or_else(|| Error::NoFilesForGlyph(glyph_name.clone()))?;
+            let mut glif_files = HashMap::new();
+            for glif_file in fileset {
+                let locations = self
+                    .glif_locations
+                    .1
+                    .get(glif_file)
+                    .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;
+                glif_files.insert(glif_file.to_path_buf(), locations.clone());
+            }
+            work.push(Box::from(GlyphIrWork {
+                glyph_name: glyph_name.clone(),
+                glif_files,
+                ir_file: self.ir_paths.glyph_ir_file(&glyph_name),
+            }));
+        }
+
+        Ok(work)
     }
 }
 
 struct GlyphIrWork {
     glyph_name: String,
+    glif_files: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
     ir_file: PathBuf,
 }
 
 impl Work<()> for GlyphIrWork {
     fn exec(&self) -> Result<(), WorkError> {
-        debug!("Generate IR for {}", self.glyph_name);
+        debug!(
+            "Generate {:#?} for {} {:#?}",
+            self.ir_file, self.glyph_name, self.glif_files
+        );
         fs::write(&self.ir_file, &self.glyph_name).map_err(WorkError::IoError)?;
         Ok(())
     }
@@ -185,7 +251,10 @@ mod tests {
     #[test]
     pub fn glyphs_from_default_layer() {
         assert_eq!(
-            vec![PathBuf::from("glyphs/bar.glif")],
+            vec![
+                PathBuf::from("glyphs/bar.glif"),
+                PathBuf::from("glyphs/plus.glif")
+            ],
             glifs_for_layer("WghtVar-Regular.ufo", None)
         );
     }
@@ -197,4 +266,6 @@ mod tests {
             glifs_for_layer("WghtVar-Regular.ufo", Some("{600}".to_string()))
         );
     }
+
+    // TODO test that we create work for the appropriate location/file pairs
 }

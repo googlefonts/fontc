@@ -1,7 +1,7 @@
 //! Generic model of font sources.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -46,14 +46,18 @@ impl Work<()> for DeleteWork {
 /// Manipulations on some sort of font source.
 pub trait Source {
     /// Resolve a source to a set of files and their dependencies.
-    fn inputs(&self) -> Result<Input, Error>;
+    ///
+    /// Mut to permit caching.
+    fn inputs(&mut self) -> Result<Input, Error>;
 
-    // Create a function that could be called to generate IR for a glyph
+    /// Create a function that could be called to generate IR for glyphs.
+    ///
+    /// Batched because some formats require IO to figure out the work.
     fn create_glyph_ir_work(
         &self,
-        glyph_name: &str,
-        glyph_files: &FileStateSet,
-    ) -> Box<dyn Work<()>>;
+        glyph_names: &HashSet<&str>,
+        input: &Input,
+    ) -> Result<Vec<Box<dyn Work<()>>>, Error>;
 }
 
 /// Where does IR go anyway?

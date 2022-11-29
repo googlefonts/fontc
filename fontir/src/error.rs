@@ -16,6 +16,12 @@ pub enum Error {
     UnableToLoadSource(Box<dyn error::Error>),
     #[error("Missing layer")]
     NoSuchLayer(String),
+    #[error("No files associated with glyph")]
+    NoFilesForGlyph(String),
+    #[error("No design space location(s) associated with glyph")]
+    NoLocationsForGlyph(String),
+    #[error("Asked to create work for something other than the last input we created")]
+    UnableToCreateGlyphIrWork,
 }
 
 /// An async work error, hence one that must be Send
