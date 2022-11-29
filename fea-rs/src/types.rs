@@ -50,7 +50,7 @@ impl<'a> std::iter::IntoIterator for &'a GlyphClass {
     type IntoIter = std::slice::Iter<'a, GlyphId>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.0.iter()
     }
 }
 

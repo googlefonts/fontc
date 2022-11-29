@@ -277,69 +277,69 @@ impl OS2 {
             .find_map(|(page, bit)| if *page == val { Some(*bit) } else { None })
     }
 
-    pub fn build(&self) -> () {
-        //pub fn build(&self) -> write_fonts::tables::os2::os2 {
-        todo!()
-        //const MASK_32: u32 = 0xffff_ffff;
-        //let panose = fonttools::tables::os2::Panose {
-        //panose0: self.panose[0],
-        //panose1: self.panose[1],
-        //panose2: self.panose[2],
-        //panose3: self.panose[3],
-        //panose4: self.panose[4],
-        //panose5: self.panose[5],
-        //panose6: self.panose[6],
-        //panose7: self.panose[7],
-        //panose8: self.panose[8],
-        //panose9: self.panose[9],
-        //};
-        //let mut result = fonttools::tables::os2::os2 {
-        //version: 2,
-        //xAvgCharWidth: 0,
-        //usWeightClass: self.weight_class,
-        //usWidthClass: self.width_class,
-        //fsType: self.fs_type,
-        //ySubscriptXSize: 0,
-        //ySubscriptYSize: 0,
-        //ySubscriptXOffset: 0,
-        //ySubscriptYOffset: 0,
-        //ySuperscriptXSize: 0,
-        //ySuperscriptYSize: 0,
-        //ySuperscriptYOffset: 0,
-        //ySuperscriptXOffset: 0,
-        //yStrikeoutSize: 0,
-        //yStrikeoutPosition: 0,
-        //sFamilyClass: self.family_class,
-        //panose,
-        //ulUnicodeRange1: (self.unicode_range & MASK_32 as u128) as u32,
-        //ulUnicodeRange2: (self.unicode_range >> 32 & MASK_32 as u128) as u32,
-        //ulUnicodeRange3: (self.unicode_range >> 64 & MASK_32 as u128) as u32,
-        //ulUnicodeRange4: (self.unicode_range >> 96 & MASK_32 as u128) as u32,
-        //achVendID: self.vendor_id.parse().unwrap(),
-        //fsSelection: 0,
-        //usFirstCharIndex: 0,
-        //usLastCharIndex: 0,
-        //sTypoAscender: self.typo_ascender,
-        //sTypoDescender: self.typo_descender,
-        //sTypoLineGap: self.typo_line_gap,
-        //usWinAscent: self.win_ascent,
-        //usWinDescent: self.win_descent,
-        //ulCodePageRange1: Some((self.code_page_range & MASK_32 as u64) as u32),
-        //ulCodePageRange2: Some((self.code_page_range >> 32 & MASK_32 as u64) as u32),
-        //sxHeight: Some(self.x_height),
-        //sCapHeight: Some(self.cap_height),
-        //usLowerOpticalPointSize: self.lower_op_size,
-        //usUpperOpticalPointSize: self.upper_op_size,
-        //usDefaultChar: None,
-        //usBreakChar: None,
-        //usMaxContext: None,
-        //};
+    //pub fn build(&self) -> () {
+    //pub fn build(&self) -> write_fonts::tables::os2::os2 {
+    //todo!()
+    //const MASK_32: u32 = 0xffff_ffff;
+    //let panose = fonttools::tables::os2::Panose {
+    //panose0: self.panose[0],
+    //panose1: self.panose[1],
+    //panose2: self.panose[2],
+    //panose3: self.panose[3],
+    //panose4: self.panose[4],
+    //panose5: self.panose[5],
+    //panose6: self.panose[6],
+    //panose7: self.panose[7],
+    //panose8: self.panose[8],
+    //panose9: self.panose[9],
+    //};
+    //let mut result = fonttools::tables::os2::os2 {
+    //version: 2,
+    //xAvgCharWidth: 0,
+    //usWeightClass: self.weight_class,
+    //usWidthClass: self.width_class,
+    //fsType: self.fs_type,
+    //ySubscriptXSize: 0,
+    //ySubscriptYSize: 0,
+    //ySubscriptXOffset: 0,
+    //ySubscriptYOffset: 0,
+    //ySuperscriptXSize: 0,
+    //ySuperscriptYSize: 0,
+    //ySuperscriptYOffset: 0,
+    //ySuperscriptXOffset: 0,
+    //yStrikeoutSize: 0,
+    //yStrikeoutPosition: 0,
+    //sFamilyClass: self.family_class,
+    //panose,
+    //ulUnicodeRange1: (self.unicode_range & MASK_32 as u128) as u32,
+    //ulUnicodeRange2: (self.unicode_range >> 32 & MASK_32 as u128) as u32,
+    //ulUnicodeRange3: (self.unicode_range >> 64 & MASK_32 as u128) as u32,
+    //ulUnicodeRange4: (self.unicode_range >> 96 & MASK_32 as u128) as u32,
+    //achVendID: self.vendor_id.parse().unwrap(),
+    //fsSelection: 0,
+    //usFirstCharIndex: 0,
+    //usLastCharIndex: 0,
+    //sTypoAscender: self.typo_ascender,
+    //sTypoDescender: self.typo_descender,
+    //sTypoLineGap: self.typo_line_gap,
+    //usWinAscent: self.win_ascent,
+    //usWinDescent: self.win_descent,
+    //ulCodePageRange1: Some((self.code_page_range & MASK_32 as u64) as u32),
+    //ulCodePageRange2: Some((self.code_page_range >> 32 & MASK_32 as u64) as u32),
+    //sxHeight: Some(self.x_height),
+    //sCapHeight: Some(self.cap_height),
+    //usLowerOpticalPointSize: self.lower_op_size,
+    //usUpperOpticalPointSize: self.upper_op_size,
+    //usDefaultChar: None,
+    //usBreakChar: None,
+    //usMaxContext: None,
+    //};
 
-        //if result.usLowerOpticalPointSize.is_some() || result.usUpperOpticalPointSize.is_some() {
-        //result.version = 5;
-        //}
-        //result
-    }
+    //if result.usLowerOpticalPointSize.is_some() || result.usUpperOpticalPointSize.is_some() {
+    //result.version = 5;
+    //}
+    //result
+    //}
 }
 
 impl Gdef {
@@ -378,7 +378,6 @@ impl Gdef {
         let mut lig_glyphs = Vec::new();
         for (glyph, carets) in &self.ligature_pos {
             coverage.add(*glyph);
-            carets.iter().map(|caret| ());
             lig_glyphs.push(LigGlyph::new(carets.clone()));
         }
         (!lig_glyphs.is_empty()).then(|| LigCaretList::new(coverage.build(), lig_glyphs))

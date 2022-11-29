@@ -1,8 +1,6 @@
 //! Compile features into a font file
 
-//use std::collections::HashSet;
-
-use fea_rs::{util, GlyphMap, GlyphName};
+use fea_rs::{GlyphMap, GlyphName};
 use write_fonts::{
     read::{tables::post::Post, FontData, FontRef, TableProvider},
     types::GlyphId,

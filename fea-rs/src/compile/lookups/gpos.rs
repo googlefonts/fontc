@@ -100,14 +100,14 @@ impl Builder for PairPosBuilder {
 
     //FIXME: this always uses format 1.
     fn build(self) -> Self::Output {
-        let mut split_by_format = BTreeMap::new();
+        let mut split_by_format = BTreeMap::<_, BTreeMap<_, Vec<_>>>::default();
         for (g1, map) in self.items {
             for (g2, (v1, v2)) in map {
                 split_by_format
                     .entry((v1.format(), v2.format()))
-                    .or_insert(BTreeMap::default())
+                    .or_default()
                     .entry(g1)
-                    .or_insert(Vec::new())
+                    .or_default()
                     .push(write_gpos::PairValueRecord::new(g2, v1, v2));
             }
         }

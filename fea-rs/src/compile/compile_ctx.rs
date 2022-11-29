@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
     ops::Range,
 };
@@ -603,12 +603,6 @@ impl<'a> CompilationCtx<'a> {
         for id in ids.iter() {
             lookup.add_gpos_type_1(id, record.clone());
         }
-        //if let Some(_prev_format) = err {
-        //self.error(
-        //node.value().range(),
-        //format!("rule has different value format from previous rule"),
-        //);
-        //}
     }
 
     fn add_pair_pos(&mut self, node: &typed::Gpos2) {
@@ -658,7 +652,8 @@ impl<'a> CompilationCtx<'a> {
             // doesn't think we're borrowing all of self
             //TODO: we do validation here because our validation pass isn't smart
             //enough. We need to not just validate a rule, but every rule in a lookup.
-            self.lookups
+            let maybe_err = self
+                .lookups
                 .current_mut()
                 .unwrap()
                 .with_gpos_type_4(|subtable| {
@@ -681,11 +676,8 @@ impl<'a> CompilationCtx<'a> {
                         )
                     }
                     Ok(())
-                })
-                .err()
-                .map(|PreviouslyAssignedClass { class, .. }| {
-                    self.report_mark_class_conflict(mark_class_node.range(), class)
                 });
+            self.maybe_report_mark_class_conflict(mark_class_node.range(), maybe_err.err())
         }
     }
 
@@ -725,7 +717,8 @@ impl<'a> CompilationCtx<'a> {
                 //TODO: we do validation here because our validation pass isn't smart
                 //enough. We need to not just validate a rule, but every rule in a lookup.
                 anchor_records.insert(mark_class.id, component_anchor);
-                self.lookups
+                let maybe_err = self
+                    .lookups
                     .current_mut()
                     .unwrap()
                     .with_gpos_type_5(|subtable| {
@@ -739,11 +732,8 @@ impl<'a> CompilationCtx<'a> {
                             }
                         }
                         Ok(())
-                    })
-                    .err()
-                    .map(|PreviouslyAssignedClass { class, .. }| {
-                        self.report_mark_class_conflict(mark_class_node.range(), class)
                     });
+                self.maybe_report_mark_class_conflict(mark_class_node.range(), maybe_err.err());
             }
             components.push(anchor_records);
         }
@@ -775,7 +765,8 @@ impl<'a> CompilationCtx<'a> {
             // doesn't think we're borrowing all of self
             //TODO: we do validation here because our validation pass isn't smart
             //enough. We need to not just validate a rule, but every rule in a lookup.
-            self.lookups
+            let maybe_err = self
+                .lookups
                 .current_mut()
                 .unwrap()
                 .with_gpos_type_6(|subtable| {
@@ -797,19 +788,24 @@ impl<'a> CompilationCtx<'a> {
                         );
                     }
                     Ok(())
-                })
-                .err()
-                .map(|PreviouslyAssignedClass { class, .. }| {
-                    self.report_mark_class_conflict(mark_class_node.range(), class)
                 });
+            self.maybe_report_mark_class_conflict(mark_class_node.range(), maybe_err.err())
         }
     }
 
-    fn report_mark_class_conflict(&mut self, range: Range<usize>, prev_class_id: u16) {
+    fn maybe_report_mark_class_conflict(
+        &mut self,
+        range: Range<usize>,
+        maybe_err: Option<PreviouslyAssignedClass>,
+    ) {
+        let Some(PreviouslyAssignedClass { class, .. }) = maybe_err else {
+            return;
+        };
+
         let prev_class_name = self
             .mark_classes
             .iter()
-            .find_map(|(name, class)| (class.id == prev_class_id).then(|| name.clone()))
+            .find_map(|(name, cls)| (cls.id == class).then(|| name.clone()))
             .unwrap();
         self.error(
             range,
@@ -1617,9 +1613,11 @@ fn sequence_enumerator_impl(
     }
 }
 
-fn make_ctx_glyphs(item: &GlyphOrClass) -> BTreeSet<GlyphId> {
-    item.iter().collect()
-}
+//FIXME: sometimes a glyph class should be unique/sorted and sometimes order matters
+//and dupes are allowed?
+//fn make_ctx_glyphs(item: &GlyphOrClass) -> BTreeSet<GlyphId> {
+//item.iter().collect()
+//}
 
 #[cfg(test)]
 mod tests {

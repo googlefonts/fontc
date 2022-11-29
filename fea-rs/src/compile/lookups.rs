@@ -193,8 +193,7 @@ where
         let subtables = self
             .subtables
             .into_iter()
-            .map(|b| b.build().into_iter())
-            .flatten()
+            .flat_map(|b| b.build().into_iter())
             .collect();
         RawLookup::new(self.flags, subtables, self.mark_set.unwrap_or_default())
     }

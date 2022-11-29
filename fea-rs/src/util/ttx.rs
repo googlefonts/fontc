@@ -299,7 +299,7 @@ fn compare_ttx(
     let expected_diff_path = fea_path.with_extension("expected_diff");
     assert!(ttx_path.exists());
     let temp_path = get_temp_dir().join(get_temp_file_name(fea_path));
-    std::fs::write(&temp_path, &font_data).unwrap();
+    std::fs::write(&temp_path, font_data).unwrap();
 
     const TO_WRITE: &[&str] = &[
         "head", "name", "BASE", "GDEF", "GSUB", "GPOS", "OS/2", "STAT", "hhea", "vhea",
@@ -607,7 +607,7 @@ impl TestResult {
 
 impl std::fmt::Debug for ResultsPrinter<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        debug_impl(f, &self.results, None, self.verbose)
+        debug_impl(f, self.results, None, self.verbose)
     }
 }
 
@@ -712,7 +712,7 @@ fn debug_impl(
         )?;
     }
     let summary = report.summary();
-    let prefix = old.is_some().then_some("new: ").unwrap_or("");
+    let prefix = if old.is_some() { "new: " } else { "" };
     writeln!(f, "{prefix}{summary}")?;
     if let Some(old_summary) = old.map(Report::summary) {
         writeln!(f, "old: {old_summary}")?;

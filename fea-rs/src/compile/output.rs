@@ -45,7 +45,8 @@ pub struct SizeFeature {
 
 impl Compilation {
     /// Attempt to update the provided font with the results of this compilation.
-    //TODO: figure out error reporting
+
+    #[allow(clippy::result_unit_err)] //TODO: figure out error reporting
     pub fn apply(&self, font: &FontRef) -> Result<Vec<u8>, ()> {
         let mut builder = FontBuilder::default();
         if let Some(head_raw) = &self.tables.head {
@@ -97,12 +98,6 @@ impl Compilation {
         }
 
         if let Some(stat_raw) = self.tables.STAT.as_ref() {
-            //let mut stat = tables::stat::Stat {
-            //design_axes_offset: todo!(),
-            //offset_to_axis_value_offsets: todo!(),
-            //elided_fallback_name_id: None,
-            //};
-
             let elided_fallback_name_id = match &stat_raw.name {
                 StatFallbackName::Id(id) if name.name_record.iter().any(|r| r.name_id == *id) => {
                     *id

@@ -16,7 +16,8 @@ exclude = ["test-data"]
 ansi_term = "0.12.1"
 smol_str = "0.1.18"
 norad = "0.5" # just for use in sample binaries/debugging, remove eventually
-write-fonts = { version = "0.0.2", path = "../../fontations/write-fonts" }
+write-fonts = { git = "https://github.com/googlefonts/fontations", rev = "df6b8f1"}
+#write-fonts = { version = "0.0.2", path = "../../fontations/write-fonts" }
 xflags = "0.2.3"
 chrono = "0.4.3"
 diff = { version = "0.1.12", optional = true }

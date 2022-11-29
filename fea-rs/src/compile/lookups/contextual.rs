@@ -79,12 +79,7 @@ impl<T> ContextualLookupBuilder<T> {
         check_fn: impl FnOnce(&T) -> bool,
         new_fn: impl FnOnce(LookupFlag, Option<FilterSetId>) -> T,
     ) {
-        if self
-            .anon_lookups
-            .last()
-            .map(|lookup| check_fn(&lookup))
-            .unwrap_or(true)
-        {
+        if self.anon_lookups.last().map(check_fn).unwrap_or(true) {
             let lookup = new_fn(self.flags, self.mark_set);
             self.anon_lookups.push(lookup);
         }

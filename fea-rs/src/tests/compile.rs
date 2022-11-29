@@ -144,7 +144,7 @@ fn make_glyph_map(font_data: &[u8]) -> GlyphMap {
         .unwrap()
         .iter()
         .map(|name_idx| match *name_idx {
-            i @ 0..=257 => GlyphName::new(&DEFAULT_GLYPH_NAMES[i as usize]),
+            i @ 0..=257 => GlyphName::new(DEFAULT_GLYPH_NAMES[i as usize]),
             i => GlyphName::new(
                 post.string_data
                     .as_ref()
