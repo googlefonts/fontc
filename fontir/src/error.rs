@@ -14,6 +14,8 @@ pub enum Error {
     ParseError(PathBuf, Box<dyn error::Error>),
     #[error("Illegible source")]
     UnableToLoadSource(Box<dyn error::Error>),
+    #[error("Missing layer")]
+    NoSuchLayer(String),
 }
 
 /// An async work error, hence one that must be Send
