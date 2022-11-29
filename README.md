@@ -1,9 +1,14 @@
 # fontmake-rs
 Where in we pursue oxidizing (context: https://github.com/googlefonts/oxidize) fontmake.
 
-Converts source to IR, and then IR to font binary.
+Converts source to IR, and then IR to font binary. Aims to be safe, incremental, and fast.
 
-See [Why IR?](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-14-why-ir.md) and [IR notes](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-08-font-compiler-ir.md).
+References
+
+   * Intermediate Representation (IR)
+      * [Why IR?](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-14-why-ir.md)
+      * [IR notes](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-08-font-compiler-ir.md).
+   * Editor perspective [note from Just](https://github.com/googlefonts/oxidize/issues/21)
 
 ## Sources to play with
 
