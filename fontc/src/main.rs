@@ -54,16 +54,14 @@ impl Config {
     }
 }
 
-fn require_dir(dir: &Path) -> PathBuf {
+fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     if dir.exists() && !dir.is_dir() {
         panic!("{:#?} is taken by something that isn't a directory", dir);
     }
     if !dir.exists() {
-        if let Err(e) = fs::create_dir(dir) {
-            panic!("Unable to create {:#?} {}", dir, e);
-        }
+        fs::create_dir(dir)?
     }
-    dir.to_path_buf()
+    Ok(dir.to_path_buf())
 }
 
 fn config_file(build_dir: &Path) -> PathBuf {
@@ -206,28 +204,30 @@ struct CompileContext {
     current_inputs: Input,
 }
 
-fn establish_context(paths: Paths, args: Args) -> Result<CompileContext, Error> {
-    let build_dir = require_dir(paths.build_dir());
-    require_dir(paths.glyph_ir_dir());
-    let (config, prev_inputs) = init(&build_dir, args).map_err(Error::IoError)?;
+impl CompileContext {
+    fn new(paths: Paths, args: Args) -> Result<CompileContext, Error> {
+        let build_dir = require_dir(paths.build_dir())?;
+        require_dir(paths.glyph_ir_dir())?;
+        let (config, prev_inputs) = init(&build_dir, args).map_err(Error::IoError)?;
 
-    // What sources are we dealing with?
-    let ir_source = ir_source(&config.args.source, paths.clone())?;
-    let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
+        // What sources are we dealing with?
+        let ir_source = ir_source(&config.args.source, paths.clone())?;
+        let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
 
-    Ok(CompileContext {
-        paths,
-        ir_source,
-        prev_inputs,
-        current_inputs,
-    })
+        Ok(CompileContext {
+            paths,
+            ir_source,
+            prev_inputs,
+            current_inputs,
+        })
+    }
 }
 
 fn main() -> Result<(), Error> {
     env_logger::init();
 
     let paths = Paths::new(Path::new("build"));
-    let context = establish_context(paths, Args::parse())?;
+    let context = CompileContext::new(paths, Args::parse())?;
 
     // TODO: consider making a more explicit model of a graph
     // TODO: Rayon focuses on CPU-bound tasks but we are doing IO too
@@ -260,8 +260,8 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::{
-        add_glyph_work, config_file, establish_context, finish_successfully, glyphs_changed,
-        glyphs_deleted, init, Args, CompileContext, Config,
+        add_glyph_work, config_file, finish_successfully, glyphs_changed, glyphs_deleted, init,
+        Args, CompileContext, Config,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -339,7 +339,7 @@ mod tests {
             source: testdata_dir().join(source),
         };
         let paths = Paths::new(build_dir);
-        let context = establish_context(paths, args).unwrap();
+        let context = CompileContext::new(paths, args).unwrap();
         let result = TestCompile::new(&context);
 
         let mut work = Vec::new();
