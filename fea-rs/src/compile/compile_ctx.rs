@@ -1228,21 +1228,17 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_vhea(&mut self, table: &typed::VheaTable) {
-        //let mut vhea = super::tables::vhea::default();
-        //for record in table.metrics() {
-        //let keyword = record.keyword();
-        //match keyword.kind {
-        //Kind::VertTypoAscenderKw => vhea.vert_typo_ascender = record.metric().parse(),
-        //Kind::VertTypoDescenderKw => vhea.vert_typo_descender = record.metric().parse(),
-        //Kind::VertTypoLineGapKw => vhea.vert_typo_line_gap = record.metric().parse(),
-        //other => panic!("bug in parser, unexpected token '{}'", other),
-        //}
-        //}
-        //self.tables.vhea = Some(vhea);
-
-        //FIXME: add vhea to fonttools
-        let tag = table.tag();
-        self.error(tag.range(), "vhea compilation not implemented");
+        let mut vhea = tables::hvhea::HVhea::default();
+        for record in table.metrics() {
+            let keyword = record.keyword();
+            match keyword.kind {
+                Kind::VertTypoAscenderKw => vhea.ascender = record.metric().parse().into(),
+                Kind::VertTypoDescenderKw => vhea.descender = record.metric().parse().into(),
+                Kind::VertTypoLineGapKw => vhea.line_gap = record.metric().parse().into(),
+                other => panic!("bug in parser, unexpected token '{}'", other),
+            }
+        }
+        self.tables.vhea = Some(vhea);
     }
 
     fn resolve_vmtx(&mut self, table: &typed::VmtxTable) {

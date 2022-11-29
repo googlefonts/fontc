@@ -22,7 +22,7 @@ use crate::types::{GlyphClass, GlyphId};
 pub(crate) struct Tables {
     pub head: Option<head>,
     pub hhea: Option<tables::hvhea::HVhea>,
-    pub vhea: Option<vhea>,
+    pub vhea: Option<tables::hvhea::HVhea>,
     pub vmtx: Option<vmtx>,
     pub name: Option<name>,
     pub GDEF: Option<Gdef>,
@@ -34,23 +34,6 @@ pub(crate) struct Tables {
 #[allow(non_camel_case_types)]
 pub struct head {
     pub font_revision: Fixed,
-}
-
-//#[derive(Clone, Debug, Default)]
-//#[allow(non_camel_case_types)]
-//pub struct hhea {
-//pub caret_offset: i16,
-//pub ascender: i16,
-//pub descender: i16,
-//pub line_gap: i16,
-//}
-
-#[derive(Clone, Debug, Default)]
-#[allow(non_camel_case_types)]
-pub struct vhea {
-    pub vert_typo_ascender: i16,
-    pub vert_typo_descender: i16,
-    pub vert_typo_line_gap: i16,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -286,24 +269,6 @@ impl head {
         head
     }
 }
-
-//impl hhea {
-//pub fn build(&self) -> write_fonts::tables::hhea::Hhea {
-//write_fonts::tables::hhea::Hhea {
-//ascender: FWord::new(self.ascender),
-//descender: FWord::new(self.descender),
-//line_gap: FWord::new(self.line_gap),
-//advance_width_max: UfWord::new(0),
-//min_right_side_bearing: FWord::new(0),
-//min_left_side_bearing: FWord::new(0),
-//x_max_extent: FWord::new(0),
-//caret_slope_run: 0,
-//caret_slope_rise: 0,
-//caret_offset: self.caret_offset,
-//number_of_h_metrics: 0,
-//}
-//}
-//}
 
 impl OS2 {
     pub fn bit_for_code_page(val: u16) -> Option<u8> {

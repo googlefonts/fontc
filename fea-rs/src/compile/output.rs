@@ -60,6 +60,11 @@ impl Compilation {
             builder.add_table(Tag::new(b"hhea"), data);
         }
 
+        if let Some(vhea_raw) = self.tables.vhea.as_ref() {
+            let data = dump_table(vhea_raw).unwrap();
+            builder.add_table(Tag::new(b"vhea"), data);
+        }
+
         //TODO: OS/2
         //if let Some(os2) = self.tables.OS2.as_ref() {
         //let data = dump_table(hhea_raw).unwrap();
