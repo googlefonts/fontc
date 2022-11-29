@@ -98,18 +98,21 @@ impl DesignSpaceIrSource {
     }
 
     // When things like upem may have changed forget incremental and rebuild the whole thing
-    fn global_rebuild_triggers(&self, designspace: &DesignSpaceDocument) -> Result<FileStateSet, Error> {
+    fn global_rebuild_triggers(
+        &self,
+        designspace: &DesignSpaceDocument,
+    ) -> Result<FileStateSet, Error> {
         let mut font_info = FileStateSet::new();
         font_info.insert(&self.designspace_file)?;
         for source in designspace.sources.iter() {
-            let font_info_file = self
-                .designspace_dir
-                .join(&source.filename)
-                .join("fontinfo.plist");
-            if !font_info_file.is_file() {
-                return Err(Error::FileExpected(font_info_file));
+            let ufo_dir = self.designspace_dir.join(&source.filename);
+            for filename in ["fontinfo.plist", "layercontents.plist"] {
+                let font_info_file = ufo_dir.join(filename);
+                if !font_info_file.is_file() {
+                    return Err(Error::FileExpected(font_info_file));
+                }
+                font_info.insert(&font_info_file)?;
             }
-            font_info.insert(&font_info_file)?;
         }
         Ok(font_info)
     }
@@ -174,30 +177,45 @@ impl Source for DesignSpaceIrSource {
             return Err(Error::UnableToCreateGlyphIrWork);
         }
 
-        // TODO feels a bit heavy on the copying
         for glyph_name in glyph_names {
-            let glyph_name = glyph_name.to_string();
-            let fileset = input
-                .glyphs
-                .get(&glyph_name)
-                .ok_or_else(|| Error::NoFilesForGlyph(glyph_name.clone()))?;
-            let mut glif_files = HashMap::new();
-            for glif_file in fileset {
-                let locations = self
-                    .glif_locations
-                    .1
-                    .get(glif_file)
-                    .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;
-                glif_files.insert(glif_file.to_path_buf(), locations.clone());
-            }
-            work.push(Box::from(GlyphIrWork {
-                glyph_name: glyph_name.clone(),
-                glif_files,
-                ir_file: self.ir_paths.glyph_ir_file(&glyph_name),
-            }));
+            work.push(Box::from(
+                self.create_work_for_one_glyph(glyph_name, input)?,
+            ));
         }
 
         Ok(work)
+    }
+}
+
+impl DesignSpaceIrSource {
+    fn create_work_for_one_glyph(
+        &self,
+        glyph_name: &str,
+        input: &Input,
+    ) -> Result<GlyphIrWork, Error> {
+        // A single glif could be used by many source blocks that use the same layer
+        // *gasp*
+        // So resolve each file to 1..N locations in designspace
+
+        let glyph_name = glyph_name.to_string();
+        let fileset = input
+            .glyphs
+            .get(&glyph_name)
+            .ok_or_else(|| Error::NoFilesForGlyph(glyph_name.clone()))?;
+        let mut glif_files = HashMap::new();
+        for glif_file in fileset {
+            let locations = self
+                .glif_locations
+                .1
+                .get(glif_file)
+                .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;
+            glif_files.insert(glif_file.to_path_buf(), locations.clone());
+        }
+        Ok(GlyphIrWork {
+            glyph_name: glyph_name.clone(),
+            glif_files,
+            ir_file: self.ir_paths.glyph_ir_file(&glyph_name),
+        })
     }
 }
 
@@ -221,21 +239,29 @@ impl Work<()> for GlyphIrWork {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::HashMap,
+        collections::{BTreeMap, HashMap},
         path::{Path, PathBuf},
     };
 
-    use norad::designspace::Source;
+    use fontir::source::{Input, Paths, Source};
+    use norad::designspace;
+    use tempfile::tempdir;
 
-    use super::glif_files;
+    use super::{glif_files, DesignSpaceIrSource};
+
+    fn testdata_dir() -> PathBuf {
+        let dir = Path::new("../resources/testdata");
+        assert!(dir.is_dir());
+        dir.to_path_buf()
+    }
 
     fn ufo_dir(filename: &str) -> PathBuf {
-        Path::new("../resources/testdata").join(filename)
+        testdata_dir().join(filename)
     }
 
     fn glifs_for_layer(filename: &str, layer: Option<String>) -> Vec<PathBuf> {
         let mut layer_cache = HashMap::new();
-        let source = Source {
+        let source = designspace::Source {
             filename: filename.to_string(),
             layer,
             ..Default::default()
@@ -267,5 +293,78 @@ mod tests {
         );
     }
 
-    // TODO test that we create work for the appropriate location/file pairs
+    fn test_source(build_dir: &Path) -> (DesignSpaceIrSource, Input) {
+        let paths = Paths::new(build_dir);
+        let mut source =
+            DesignSpaceIrSource::new(testdata_dir().join("wght_var.designspace"), paths);
+        let input = source.inputs().unwrap();
+        (source, input)
+    }
+
+    fn add_location(
+        add_to: &mut HashMap<PathBuf, Vec<BTreeMap<String, i32>>>,
+        glif_file: &str,
+        axis: &str,
+        pos: i32,
+    ) {
+        add_to
+            .entry(testdata_dir().join(glif_file))
+            .or_default()
+            .push(BTreeMap::from([(axis.to_string(), pos)]));
+    }
+
+    #[test]
+    pub fn create_work() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let (ir_source, input) = test_source(build_dir);
+
+        let work = ir_source.create_work_for_one_glyph("bar", &input).unwrap();
+
+        let mut expected_glif_files = HashMap::new();
+        add_location(
+            &mut expected_glif_files,
+            "WghtVar-Regular.ufo/glyphs/bar.glif",
+            "Weight",
+            400,
+        );
+        add_location(
+            &mut expected_glif_files,
+            "WghtVar-Regular.ufo/glyphs.{600}/bar.glif",
+            "Weight",
+            600,
+        );
+        add_location(
+            &mut expected_glif_files,
+            "WghtVar-Bold.ufo/glyphs/bar.glif",
+            "Weight",
+            700,
+        );
+        assert_eq!(expected_glif_files, work.glif_files);
+    }
+
+    #[test]
+    pub fn create_sparse_work() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let (ir_source, input) = test_source(build_dir);
+
+        let work = ir_source.create_work_for_one_glyph("plus", &input).unwrap();
+
+        // Note there is NOT a glyphs.{600} version of plus
+        let mut expected_glif_files = HashMap::new();
+        add_location(
+            &mut expected_glif_files,
+            "WghtVar-Regular.ufo/glyphs/plus.glif",
+            "Weight",
+            400,
+        );
+        add_location(
+            &mut expected_glif_files,
+            "WghtVar-Bold.ufo/glyphs/plus.glif",
+            "Weight",
+            700,
+        );
+        assert_eq!(expected_glif_files, work.glif_files);
+    }
 }
