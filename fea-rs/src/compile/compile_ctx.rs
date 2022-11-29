@@ -26,7 +26,7 @@ use crate::{
 };
 
 use super::{
-    consts, glyph_range,
+    common, glyph_range,
     lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, PreviouslyAssignedClass, SomeLookup},
     output::{Compilation, SizeFeature},
     tables::{ClassId, ScriptRecord, Tables},
@@ -178,7 +178,7 @@ impl<'a> CompilationCtx<'a> {
                 .extend(self.default_lang_systems.iter().cloned());
         } else {
             self.cur_language_systems
-                .extend([(consts::SCRIPT_DFLT_TAG, consts::LANG_DFLT_TAG)]);
+                .extend([(common::SCRIPT_DFLT_TAG, common::LANG_DFLT_TAG)]);
         };
 
         assert!(
@@ -206,7 +206,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn start_lookup_block(&mut self, name: &Token) {
-        if self.cur_feature_name == Some(consts::AALT_TAG) {
+        if self.cur_feature_name == Some(common::AALT_TAG) {
             self.error(name.range(), "no lookups allowed in aalt");
         }
 
@@ -243,7 +243,7 @@ impl<'a> CompilationCtx<'a> {
             self.warning(token.range(), "required is not implemented");
         }
         let language = stmt.tag().to_raw();
-        let script = self.script.unwrap_or(consts::SCRIPT_DFLT_TAG);
+        let script = self.script.unwrap_or(common::SCRIPT_DFLT_TAG);
         self.set_script_language(
             script,
             language,
@@ -256,7 +256,7 @@ impl<'a> CompilationCtx<'a> {
     fn set_script(&mut self, stmt: typed::Script) {
         let script = stmt.tag().to_raw();
         self.script = Some(script);
-        self.set_script_language(script, consts::LANG_DFLT_TAG, false, false, stmt.range());
+        self.set_script_language(script, common::LANG_DFLT_TAG, false, false, stmt.range());
     }
 
     fn set_script_language(
@@ -268,7 +268,7 @@ impl<'a> CompilationCtx<'a> {
         err_range: Range<usize>,
     ) {
         let feature = match self.cur_feature_name {
-            Some(tag @ consts::AALT_TAG | tag @ consts::SIZE_TAG) => {
+            Some(tag @ common::AALT_TAG | tag @ common::SIZE_TAG) => {
                 self.error(
                     err_range,
                     format!("language/script not allowed in '{}' feature", tag),
@@ -937,12 +937,12 @@ impl<'a> CompilationCtx<'a> {
     fn add_feature(&mut self, feature: typed::Feature) {
         let tag = feature.tag();
         let tag_raw = tag.to_raw();
-        if tag_raw == consts::AALT_TAG {
+        if tag_raw == common::AALT_TAG {
             self.warning(tag.range(), "aalt feature is unimplemented");
             return;
         }
         self.start_feature(tag);
-        if tag_raw == consts::SIZE_TAG {
+        if tag_raw == common::SIZE_TAG {
             self.resolve_size_feature(&feature);
         } else {
             for item in feature.statements() {
@@ -985,7 +985,7 @@ impl<'a> CompilationCtx<'a> {
                     .unwrap_or(0);
             }
         }
-        let key = FeatureKey::for_feature(consts::SIZE_TAG);
+        let key = FeatureKey::for_feature(common::SIZE_TAG);
         for (script, lang) in &self.cur_language_systems {
             let key = key.script(*script).language(*lang);
             self.features.entry(key).or_default();

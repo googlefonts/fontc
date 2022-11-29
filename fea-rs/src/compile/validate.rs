@@ -13,7 +13,7 @@ use std::{
 use smol_str::SmolStr;
 use write_fonts::types::Tag;
 
-use super::{glyph_range, tables};
+use super::{common, glyph_range, tables};
 use crate::{
     parse::SourceMap,
     token_tree::{
@@ -431,23 +431,15 @@ impl<'a> ValidationCtx<'a> {
     // special: 'feature', 'parameters', 'featureNames', 'cvParameters', 'sizemenuname'
     fn validate_feature(&mut self, node: &typed::Feature) {
         let tag = node.tag();
-        if tag.text() == "size" {
+        let tag_raw = tag.to_raw();
+        if tag_raw == common::SIZE_TAG {
             return self.validate_size_feature(node);
         }
-        let _is_aalt = tag.text() == "aalt";
+        let _is_aalt = tag_raw == common::AALT_TAG;
         // - must occur before anything it references
 
-        let _is_ss = tag.text().starts_with("ss")
-            && tag.text()[2..]
-                .parse::<u8>()
-                .map(|val| val > 1 && val <= 20)
-                .unwrap_or(false);
-
-        let _is_cv = tag.text().starts_with("cv")
-            && tag.text()[2..]
-                .parse::<u8>()
-                .map(|val| val > 1 && val <= 99)
-                .unwrap_or(false);
+        let _is_ss = common::is_stylistic_set(tag_raw);
+        let _is_cv = common::is_character_variant(tag_raw);
 
         for item in node.statements() {
             if item.kind() == Kind::ScriptNode

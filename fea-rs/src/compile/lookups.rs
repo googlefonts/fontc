@@ -32,7 +32,7 @@ use crate::{
 use self::contextual::{ChainContextBuilder, ReverseChainBuilder};
 
 use super::{
-    consts::{LANG_DFLT_TAG, SCRIPT_DFLT_TAG, SIZE_TAG},
+    common::{LANG_DFLT_TAG, SCRIPT_DFLT_TAG, SIZE_TAG},
     tables::ClassId,
 };
 
