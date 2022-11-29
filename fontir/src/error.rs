@@ -15,3 +15,10 @@ pub enum Error {
     #[error("Illegible source")]
     UnableToLoadSource(Box<dyn error::Error>),
 }
+
+/// An async work error, hence one that must be Send
+#[derive(Debug, Error)]
+pub enum WorkError {
+    #[error("IO failure")]
+    IoError(#[from] io::Error),
+}
