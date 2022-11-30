@@ -17,7 +17,7 @@ pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
     designspace_dir: PathBuf,
     ir_paths: Paths,
-    // A cache of locations, valid provided no font info file changes
+    // A cache of locations, valid provided no global metadata changes
     glif_locations: (FileStateSet, HashMap<PathBuf, Vec<DesignSpaceLocation>>),
 }
 
@@ -97,8 +97,8 @@ impl DesignSpaceIrSource {
             .map_err(|e| Error::UnableToLoadSource(Box::from(e)))
     }
 
-    // font info comes from the designspace and each ufo's fontinfo
-    fn font_info_files(&self, designspace: &DesignSpaceDocument) -> Result<FileStateSet, Error> {
+    // When things like upem may have changed forget incremental and rebuild the whole thing
+    fn global_rebuild_triggers(&self, designspace: &DesignSpaceDocument) -> Result<FileStateSet, Error> {
         let mut font_info = FileStateSet::new();
         font_info.insert(&self.designspace_file)?;
         for source in designspace.sources.iter() {
@@ -118,7 +118,7 @@ impl DesignSpaceIrSource {
 impl Source for DesignSpaceIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         let designspace = self.load_designspace()?;
-        let font_info = self.font_info_files(&designspace)?;
+        let font_info = self.global_rebuild_triggers(&designspace)?;
 
         // glif filenames are not reversible so we need to read contents.plist to figure out groups
         // See https://github.com/unified-font-object/ufo-spec/issues/164.
