@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use fea_rs::{GlyphMap, GlyphName};
-use write_fonts::{read::tables::post::Post, types::GlyphId};
+use write_fonts::types::GlyphId;
 
 /// Attempt to compile features into a font file.
 ///
@@ -76,22 +76,6 @@ fn parse_glyph_order(path: &Path) -> Result<GlyphMap, Error> {
     }
 }
 
-//FIXME: if we support having a font as input, again?
-#[allow(dead_code)]
-fn try_to_make_glyph_map(post: Post) -> Option<GlyphMap> {
-    let Some(num_glyphs) = post.num_glyphs() else {
-        return None;
-    };
-
-    Some(
-        (0..num_glyphs)
-            .map(GlyphId::new)
-            .map(|id| post.glyph_name(id).unwrap())
-            .map(GlyphName::new)
-            .collect(),
-    )
-}
-
 #[derive(Debug, thiserror::Error)]
 enum Error {
     #[error("bad args, pass -h for help '{0}'")]
@@ -137,5 +121,19 @@ mod flags {
                 .as_deref()
                 .unwrap_or_else(|| Path::new("compile-out.ttf"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_glyph_map() {
+        let glyph_map = parse_glyph_order(Path::new("./test-data/simple_glyph_order.txt")).unwrap();
+        assert_eq!(glyph_map.len(), 215);
+        assert_eq!(glyph_map.get("space"), Some(GlyphId::new(1)));
+        assert_eq!(glyph_map.get("e.fina"), Some(GlyphId::new(214)));
+        assert!(!glyph_map.contains("e.nada"));
     }
 }
