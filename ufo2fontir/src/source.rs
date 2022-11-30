@@ -17,8 +17,7 @@ pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
     designspace_dir: PathBuf,
     ir_paths: Paths,
-    // A cache of locations, valid provided no global metadata changes
-    glif_locations: (FileStateSet, HashMap<PathBuf, Vec<DesignSpaceLocation>>),
+    glif_locations: Option<GlifLocationCache>,
 }
 
 impl DesignSpaceIrSource {
@@ -31,8 +30,34 @@ impl DesignSpaceIrSource {
             designspace_file,
             designspace_dir,
             ir_paths,
-            glif_locations: (Default::default(), Default::default()),
+            glif_locations: None,
         }
+    }
+}
+
+// A cache of locations, valid provided no global metadata changes
+struct GlifLocationCache {
+    global_metadata_sources: FileStateSet,
+    locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+}
+
+impl GlifLocationCache {
+    fn new(
+        global_metadata_sources: FileStateSet,
+        locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+    ) -> GlifLocationCache {
+        GlifLocationCache {
+            global_metadata_sources,
+            locations,
+        }
+    }
+
+    fn is_valid_for(&self, global_metadata_sources: &FileStateSet) -> bool {
+        self.global_metadata_sources == *global_metadata_sources
+    }
+
+    fn location_of(&self, glif_file: &Path) -> Option<&Vec<DesignSpaceLocation>> {
+        self.locations.get(glif_file)
     }
 }
 
@@ -155,7 +180,7 @@ impl Source for DesignSpaceIrSource {
             }
         }
 
-        self.glif_locations = (font_info.clone(), glif_locations);
+        self.glif_locations = Some(GlifLocationCache::new(font_info.clone(), glif_locations));
 
         Ok(Input { font_info, glyphs })
     }
@@ -173,7 +198,12 @@ impl Source for DesignSpaceIrSource {
 
         // Do we have the location of glifs written down?
         // TODO: consider just recomputing here instead of failing
-        if input.font_info != self.glif_locations.0 {
+        if !self
+            .glif_locations
+            .as_ref()
+            .map(|gl| gl.is_valid_for(&input.font_info))
+            .unwrap_or(false)
+        {
             return Err(Error::UnableToCreateGlyphIrWork);
         }
 
@@ -203,11 +233,10 @@ impl DesignSpaceIrSource {
             .get(&glyph_name)
             .ok_or_else(|| Error::NoFilesForGlyph(glyph_name.clone()))?;
         let mut glif_files = HashMap::new();
+        let glif_locations = self.glif_locations.as_ref().unwrap();
         for glif_file in fileset {
-            let locations = self
-                .glif_locations
-                .1
-                .get(glif_file)
+            let locations = glif_locations
+                .location_of(glif_file)
                 .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;
             glif_files.insert(glif_file.to_path_buf(), locations.clone());
         }

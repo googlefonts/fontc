@@ -70,6 +70,10 @@ impl FileStateSet {
 }
 
 impl FileStateSet {
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     pub fn contains(&self, path: &Path) -> bool {
         self.entries.contains_key(path)
     }
