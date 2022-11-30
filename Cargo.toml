@@ -2,6 +2,7 @@
 
 members = [
     "fontir",
+    "glyphs2fontir",
     "ufo2fontir",
     "fontc",
 ]
