@@ -11,7 +11,7 @@ pub enum Error {
     #[error("IO failure")]
     IoError(#[from] io::Error),
     #[error("Unable to parse")]
-    ParseError(PathBuf, Box<dyn error::Error>),
+    ParseError(PathBuf, String),
     #[error("Illegible source")]
     UnableToLoadSource(Box<dyn error::Error>),
     #[error("Missing layer")]

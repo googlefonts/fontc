@@ -1,4 +1,4 @@
-use crate::serde::FileStateSetSerdeRepr;
+use crate::serde::StateSetSerdeRepr;
 use filetime::FileTime;
 use serde::{Deserialize, Serialize};
 
@@ -9,17 +9,31 @@ use std::{
     vec,
 };
 
-/// Helps identify changes in a set of files.
+/// Helps to identify changes in a set of stateful things.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
-#[serde(from = "FileStateSetSerdeRepr", into = "FileStateSetSerdeRepr")]
-pub struct FileStateSet {
-    pub(crate) entries: HashMap<PathBuf, FileState>,
+#[serde(from = "StateSetSerdeRepr", into = "StateSetSerdeRepr")]
+pub struct StateSet {
+    pub(crate) entries: HashMap<PathBuf, State>,
+}
+
+// Sometimes state comes from a file, sometimes it comes from a
+// a slice of a string.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum State {
+    File(FileState),
+    Slice(SliceState),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct FileState {
     pub(crate) mtime: FileTime,
     pub(crate) size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SliceState {
+    pub(crate) hash: blake3::Hash,
+    pub(crate) size: usize,
 }
 
 impl FileState {
@@ -32,44 +46,54 @@ impl FileState {
     }
 }
 
-impl FileStateSet {
-    pub fn new() -> FileStateSet {
+impl SliceState {
+    fn of(slice: &str) -> Result<SliceState, io::Error> {
+        let hash = blake3::hash(slice.as_bytes());
+        Ok(SliceState {
+            hash,
+            size: slice.len(),
+        })
+    }
+}
+
+impl StateSet {
+    pub fn new() -> StateSet {
         Default::default()
     }
 }
 
-impl<'a> IntoIterator for &'a FileStateSet {
+impl<'a> IntoIterator for &'a StateSet {
     type Item = &'a Path;
-    type IntoIter = FileStateSetIntoIter<'a>;
+    type IntoIter = StateSetIntoIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        FileStateSetIntoIter {
+        StateSetIntoIter {
             iter: self.entries.keys(),
         }
     }
 }
 
-pub struct FileStateSetIntoIter<'a> {
-    iter: Keys<'a, PathBuf, FileState>,
+pub struct StateSetIntoIter<'a> {
+    iter: Keys<'a, PathBuf, State>,
 }
 
-impl<'a> Iterator for FileStateSetIntoIter<'a> {
+impl<'a> Iterator for StateSetIntoIter<'a> {
     type Item = &'a Path;
     fn next(&mut self) -> Option<&'a Path> {
         self.iter.next().map(|pb| pb.as_path())
     }
 }
 
-impl FileStateSet {
+impl StateSet {
     // For tests.
     #[doc(hidden)]
     pub fn set_state(&mut self, path: &Path, mtime: FileTime, size: u64) {
         self.entries
-            .insert(path.to_path_buf(), FileState { mtime, size });
+            .insert(path.to_path_buf(), State::File(FileState { mtime, size }));
     }
 }
 
-impl FileStateSet {
+impl StateSet {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -79,20 +103,28 @@ impl FileStateSet {
     }
 
     /// Pay attention to path, we'd like to know if it changes.
-    pub fn insert(&mut self, path: &Path) -> Result<(), io::Error> {
-        if !self.entries.contains_key(path) {
-            self.entries
-                .insert(path.to_path_buf(), FileState::of(path)?);
+    pub fn track_file(&mut self, path: &Path) -> Result<(), io::Error> {
+        self.entries
+            .insert(path.to_path_buf(), State::File(FileState::of(path)?));
 
-            // For a dir to register unchanged we need to add it's current contents
-            if path.is_dir() {
-                let mut dirs_visited = HashSet::new();
-                for new_path in self.new_files(&mut dirs_visited, path) {
-                    self.entries
-                        .insert(new_path.clone(), FileState::of(&new_path)?);
-                }
+        // For a dir to register unchanged we need to add it's current contents
+        if path.is_dir() {
+            let mut dirs_visited = HashSet::new();
+            for new_path in self.new_files(&mut dirs_visited, path) {
+                self.entries
+                    .insert(new_path.clone(), State::File(FileState::of(&new_path)?));
             }
         }
+        Ok(())
+    }
+
+    /// Pay attention to slice, we'd quite like to know if it changes
+    ///
+    /// Path is used only as an identifier, invent any scheme you like.
+    /// my_file/my_subsection say.
+    pub fn track_slice(&mut self, path: &Path, slice: &str) -> Result<(), io::Error> {
+        self.entries
+            .insert(path.to_path_buf(), State::Slice(SliceState::of(slice)?));
         Ok(())
     }
 
@@ -128,28 +160,30 @@ impl FileStateSet {
     /// Generate a [Self] for the same files with new file state from filesystem.
     ///
     /// Anything that no longer exists will be missing from the new snapshot.
-    pub fn updated_snapshot(&self) -> Result<FileStateSet, io::Error> {
-        let mut fs = FileStateSet::new();
+    ///
+    /// Only tracked files can be so updated, tracked string slices will never update.
+    pub fn updated_snapshot(&self) -> Result<StateSet, io::Error> {
+        let mut state = StateSet::new();
         for path in self.entries.keys() {
             if !path.exists() {
                 continue;
             }
-            fs.insert(path)?;
+            state.track_file(path)?;
         }
-        Ok(fs)
+        Ok(state)
     }
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-pub struct FileStateDiff {
+pub struct StateDiff {
     pub added: HashSet<PathBuf>,
     pub updated: HashSet<PathBuf>,
     pub removed: HashSet<PathBuf>,
 }
 
-impl FileStateDiff {
-    pub fn new() -> FileStateDiff {
-        FileStateDiff {
+impl StateDiff {
+    pub fn new() -> StateDiff {
+        StateDiff {
             added: HashSet::new(),
             updated: HashSet::new(),
             removed: HashSet::new(),
@@ -157,9 +191,9 @@ impl FileStateDiff {
     }
 }
 
-impl FileStateSet {
+impl StateSet {
     /// We're what's new, Self - old_state; what's changed?
-    pub fn diff(&self, old_state: &FileStateSet) -> Result<FileStateDiff, io::Error> {
+    pub fn diff(&self, old_state: &StateSet) -> Result<StateDiff, io::Error> {
         let old_keys: HashSet<&PathBuf> = old_state.entries.keys().collect();
         let new_keys: HashSet<&PathBuf> = self.entries.keys().collect();
 
@@ -168,7 +202,7 @@ impl FileStateSet {
             .map(|e| e.as_path())
             .collect();
 
-        Ok(FileStateDiff {
+        Ok(StateDiff {
             added: added.iter().map(|e| e.to_path_buf()).collect(),
             updated: new_keys
                 .intersection(&old_keys)
@@ -202,12 +236,33 @@ mod tests {
     use filetime::set_file_mtime;
     use tempfile::{tempdir, TempDir};
 
-    use super::{FileStateDiff, FileStateSet};
+    use super::{StateDiff, StateSet};
 
-    fn assert_no_changes(fs: &FileStateSet) {
+    fn assert_no_file_changes(fs: &StateSet) {
         assert_eq!(
-            FileStateDiff::new(),
+            StateDiff::new(),
             fs.updated_snapshot().unwrap().diff(fs).unwrap(),
+        )
+    }
+
+    #[test]
+    fn detect_slice_change() {
+        let p1 = Path::new("Font.glyphs/glyphs/space");
+        let p2 = Path::new("Font.glyphs/glyphs/hyphen");
+
+        let mut s1 = StateSet::new();
+        s1.track_slice(p1, "this is a glyph").unwrap();
+        s1.track_slice(p2, "another glyph").unwrap();
+
+        let mut s2 = s1.clone();
+        s2.track_slice(p1, "this changes everything").unwrap();
+
+        assert_eq!(
+            StateDiff {
+                updated: HashSet::from([p1.to_path_buf()]),
+                ..Default::default()
+            },
+            s2.diff(&s1).unwrap(),
         )
     }
 
@@ -218,23 +273,23 @@ mod tests {
         let file = temp_dir.path().join("a");
         fs::write(&file, "eh").unwrap();
 
-        let mut fs = FileStateSet::new();
-        fs.insert(&file).unwrap();
+        let mut fs = StateSet::new();
+        fs.track_file(&file).unwrap();
 
-        assert_no_changes(&fs);
+        assert_no_file_changes(&fs);
 
         // Detect changed size
         fs::write(&file, "whoa").unwrap();
         let updated = fs.updated_snapshot().unwrap();
         let diff = updated.diff(&fs).unwrap();
         assert_eq!(
-            FileStateDiff {
+            StateDiff {
                 updated: HashSet::from([file.to_owned()]),
                 ..Default::default()
             },
             diff
         );
-        assert_no_changes(&updated);
+        assert_no_file_changes(&updated);
 
         // Detect changed mtime
         let new_mtime = file
@@ -247,13 +302,13 @@ mod tests {
         let updated = fs.updated_snapshot().unwrap();
         let diff = updated.diff(&fs).unwrap();
         assert_eq!(
-            FileStateDiff {
+            StateDiff {
                 updated: HashSet::from([file]),
                 ..Default::default()
             },
             diff
         );
-        assert_no_changes(&updated);
+        assert_no_file_changes(&updated);
     }
 
     #[test]
@@ -271,13 +326,13 @@ mod tests {
         fs::write(&removed, "eh").unwrap();
 
         // Track the parent dir from it's current state
-        let mut fs = FileStateSet::new();
-        fs.insert(temp_dir.path()).unwrap();
+        let mut fs = StateSet::new();
+        fs.track_file(temp_dir.path()).unwrap();
 
         // Notably, we should NOT report the files temp dir as changed
         // because we added the entire directory as unchanged and nothing
         // in it has changed since then
-        assert_no_changes(&fs);
+        assert_no_file_changes(&fs);
 
         // If we change or add files in the tracked dir that should count
         let added = subdir.join("fileD");
@@ -287,7 +342,7 @@ mod tests {
 
         let diff = fs.updated_snapshot().unwrap().diff(&fs).unwrap();
         assert_eq!(
-            FileStateDiff {
+            StateDiff {
                 added: HashSet::from([added]),
                 updated: HashSet::from([modified]),
                 removed: HashSet::from([removed]),
@@ -302,13 +357,13 @@ mod tests {
         path
     }
 
-    fn one_changed_file_one_not(temp_dir: &TempDir) -> (PathBuf, PathBuf, FileStateSet) {
+    fn one_changed_file_one_not(temp_dir: &TempDir) -> (PathBuf, PathBuf, StateSet) {
         let unchanged = write(temp_dir, Path::new("a"), "eh");
         let changed = write(temp_dir, Path::new("b"), "todo:change");
 
-        let mut fs = FileStateSet::new();
-        fs.insert(&unchanged).unwrap();
-        fs.insert(&changed).unwrap();
+        let mut fs = StateSet::new();
+        fs.track_file(&unchanged).unwrap();
+        fs.track_file(&changed).unwrap();
         write(temp_dir, &changed, "eh");
 
         assert!(fs.contains(&changed));
@@ -318,21 +373,21 @@ mod tests {
     }
 
     #[test]
-    fn diff() {
+    fn file_diff() {
         let temp_dir = tempdir().unwrap();
         let (changed, unchanged, fs) = one_changed_file_one_not(&temp_dir);
         let fs2 = fs.clone();
 
         // Nothing changed
-        assert_eq!(FileStateDiff::new(), fs2.diff(&fs).unwrap());
+        assert_eq!(StateDiff::new(), fs2.diff(&fs).unwrap());
 
         // Some stuff changed!
         let added = write(&temp_dir, Path::new("new"), "meh");
         fs::remove_file(&unchanged).unwrap();
         let mut fs2 = fs.updated_snapshot().unwrap();
-        fs2.insert(&added).unwrap();
+        fs2.track_file(&added).unwrap();
         assert_eq!(
-            FileStateDiff {
+            StateDiff {
                 added: [added].into(),
                 updated: [changed].into(),
                 removed: [unchanged].into(),
@@ -345,10 +400,12 @@ mod tests {
     fn read_write_toml() {
         let temp_dir = tempdir().unwrap();
 
-        let (_, _, fs) = one_changed_file_one_not(&temp_dir);
+        let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
+        fs.track_slice(Path::new("file.glyphs/glyph/glyph_name"), "Hi World!")
+            .unwrap();
 
         let toml = toml::ser::to_string_pretty(&fs).unwrap();
-        let restored: FileStateSet = toml::from_str(&toml).expect(&toml);
+        let restored: StateSet = toml::from_str(&toml).expect(&toml);
         assert_eq!(fs, restored);
     }
 
@@ -356,10 +413,12 @@ mod tests {
     fn read_write_bincode() {
         let temp_dir = tempdir().unwrap();
 
-        let (_, _, fs) = one_changed_file_one_not(&temp_dir);
+        let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
+        fs.track_slice(Path::new("file.glyphs/glyph/glyph_name"), "Hi World!")
+            .unwrap();
 
         let bc = bincode::serialize(&fs).unwrap();
-        let restored: FileStateSet = bincode::deserialize(&bc).unwrap();
+        let restored: StateSet = bincode::deserialize(&bc).unwrap();
         assert_eq!(fs, restored);
     }
 }

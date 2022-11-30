@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{Error, WorkError},
-    filestate::FileStateSet,
+    stateset::StateSet,
 };
 
 /// A unit of work safe to run in parallel
@@ -103,9 +103,9 @@ impl Paths {
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct Input {
     /// The input(s) that inform font_info
-    pub font_info: FileStateSet,
+    pub font_info: StateSet,
     /// The input(s) that inform glyph construction, grouped by gyph name
-    pub glyphs: HashMap<String, FileStateSet>,
+    pub glyphs: HashMap<String, StateSet>,
 }
 
 impl Input {
@@ -124,7 +124,7 @@ mod tests {
 
     use tempfile::{tempdir, TempDir};
 
-    use crate::filestate::FileStateSet;
+    use crate::stateset::StateSet;
 
     use super::Input;
 
@@ -135,17 +135,17 @@ mod tests {
     }
 
     fn create_test_input(temp_dir: &TempDir) -> Input {
-        let mut font_info = FileStateSet::new();
+        let mut font_info = StateSet::new();
         font_info
-            .insert(&write(temp_dir, Path::new("some.designspace"), "blah"))
+            .track_file(&write(temp_dir, Path::new("some.designspace"), "blah"))
             .unwrap();
 
-        let mut glyph = FileStateSet::new();
+        let mut glyph = StateSet::new();
         glyph
-            .insert(&write(temp_dir, Path::new("regular.space.glif"), "blah"))
+            .track_file(&write(temp_dir, Path::new("regular.space.glif"), "blah"))
             .unwrap();
         glyph
-            .insert(&write(temp_dir, Path::new("bold.space.glif"), "blah"))
+            .track_file(&write(temp_dir, Path::new("bold.space.glif"), "blah"))
             .unwrap();
 
         let mut glyphs = HashMap::new();
