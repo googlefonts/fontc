@@ -1,6 +1,6 @@
 //! Serde types for font IR. See TODO:PublicLink.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct StaticMetadata {}
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct GlyphIr {}
+use ordered_float::OrderedFloat;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Axis {
@@ -24,8 +23,28 @@ pub struct Axis {
     pub hidden: bool,
 }
 
-// TODO(https://github.com/googlefonts/fontmake-rs/pull/4) fix this type
-pub type DesignSpaceLocation = BTreeMap<String, i32>;
+// Using BTreeMap instead of HashMap and OrderedFloat instead of f32 so that
+// the location is hashable and can be used as a key in Glyph::sources HashMap
+pub type DesignSpaceLocation = BTreeMap<String, OrderedFloat<f32>>;
+
+/// A variable definition of a single glyph.
+///
+/// Defined in at least once position in designspace. If defined in
+/// many, presumed to vary continuously between positions and required
+/// to have variation compatible structure.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Glyph {
+    pub name: String,
+    pub sources: HashMap<DesignSpaceLocation, GlyphInstance>,
+}
+
+/// A Glyph at a specific position in designspace.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct GlyphInstance {
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    // TODO: outlines, a Vec<Shape>
+}
 
 #[cfg(test)]
 mod tests {

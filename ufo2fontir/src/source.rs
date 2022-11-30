@@ -14,6 +14,8 @@ use fontir::{
 use log::debug;
 use norad::designspace::{self, DesignSpaceDocument};
 
+use crate::toir::to_ir_location;
+
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
     designspace_dir: PathBuf,
@@ -163,11 +165,7 @@ impl Source for DesignSpaceIrSource {
             // The UFO dir *must* exist since we were able to find fontinfo in it earlier
             let ufo_dir = self.designspace_dir.join(&source.filename);
 
-            // TODO less dumbed down version of dim => location mapping
-            let mut location = DesignSpaceLocation::new();
-            source.location.iter().for_each(|dim| {
-                location.insert(dim.name.clone(), dim.xvalue.map(|v| v as i32).unwrap());
-            });
+            let location = to_ir_location(&source.location);
 
             for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, &source)? {
                 if !glif_file.exists() {
@@ -281,12 +279,14 @@ impl Work for GlyphIrWork {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::{BTreeMap, HashMap},
+        collections::HashMap,
         path::{Path, PathBuf},
     };
 
+    use fontir::ir::DesignSpaceLocation;
     use fontir::source::{Input, Paths, Source};
     use norad::designspace;
+    use ordered_float::OrderedFloat;
     use tempfile::tempdir;
 
     use super::{glif_files, DesignSpaceIrSource};
@@ -344,15 +344,18 @@ mod tests {
     }
 
     fn add_location(
-        add_to: &mut HashMap<PathBuf, Vec<BTreeMap<String, i32>>>,
+        add_to: &mut HashMap<PathBuf, Vec<DesignSpaceLocation>>,
         glif_file: &str,
         axis: &str,
-        pos: i32,
+        pos: f32,
     ) {
         add_to
             .entry(testdata_dir().join(glif_file))
             .or_default()
-            .push(BTreeMap::from([(axis.to_string(), pos)]));
+            .push(DesignSpaceLocation::from([(
+                axis.to_string(),
+                OrderedFloat(pos),
+            )]));
     }
 
     #[test]
@@ -368,19 +371,19 @@ mod tests {
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs/bar.glif",
             "Weight",
-            400,
+            400.0,
         );
         add_location(
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs.{600}/bar.glif",
             "Weight",
-            600,
+            600.0,
         );
         add_location(
             &mut expected_glif_files,
             "WghtVar-Bold.ufo/glyphs/bar.glif",
             "Weight",
-            700,
+            700.0,
         );
         assert_eq!(expected_glif_files, work.glif_files);
     }
@@ -399,13 +402,13 @@ mod tests {
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs/plus.glif",
             "Weight",
-            400,
+            400.0,
         );
         add_location(
             &mut expected_glif_files,
             "WghtVar-Bold.ufo/glyphs/plus.glif",
             "Weight",
-            700,
+            700.0,
         );
         assert_eq!(expected_glif_files, work.glif_files);
     }

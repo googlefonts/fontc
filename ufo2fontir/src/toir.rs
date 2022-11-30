@@ -1,7 +1,15 @@
 use fontir::ir;
-use norad::designspace::{self, DesignSpaceDocument};
+use norad::designspace::{self, DesignSpaceDocument, Dimension};
+use ordered_float::OrderedFloat;
 
 use crate::error::Error;
+
+// TODO we will need the ability to map coordinates and a test font that does. Then no unwrap.
+pub(crate) fn to_ir_location(loc: &[Dimension]) -> ir::DesignSpaceLocation {
+    loc.iter()
+        .map(|d| (d.name.clone(), OrderedFloat(d.xvalue.unwrap())))
+        .collect()
+}
 
 pub fn designspace_to_ir(designspace: DesignSpaceDocument) -> Result<Vec<ir::Axis>, Error> {
     // Truly we have done something amazing here today

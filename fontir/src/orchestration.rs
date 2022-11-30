@@ -9,7 +9,7 @@ use std::{
 
 use parking_lot::RwLock;
 
-use crate::ir::{GlyphIr, StaticMetadata};
+use crate::ir;
 
 // Unique identifier of work. If there are no fields work is unique.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -37,8 +37,8 @@ pub struct Context {
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
-    static_metadata: Cache<Option<Arc<StaticMetadata>>>,
-    glyph_ir: Cache<HashMap<u32, Arc<GlyphIr>>>,
+    static_metadata: Cache<Option<Arc<ir::StaticMetadata>>>,
+    glyph_ir: Cache<HashMap<u32, Arc<ir::Glyph>>>,
 }
 
 #[derive(Clone)]
@@ -96,25 +96,25 @@ impl Context {
         }
     }
 
-    pub fn get_static_metadata(&self) -> Arc<StaticMetadata> {
+    pub fn get_static_metadata(&self) -> Arc<ir::StaticMetadata> {
         self.check_read_access(&WorkIdentifier::GlobalMetadata);
         let rl = self.static_metadata.item.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
-    pub fn set_static_metadata(&self, global_metadata: StaticMetadata) {
+    pub fn set_static_metadata(&self, global_metadata: ir::StaticMetadata) {
         self.check_write_access(&WorkIdentifier::GlobalMetadata);
         let mut wl = self.static_metadata.item.write();
         *wl = Some(Arc::from(global_metadata));
     }
 
-    pub fn get_glyph_ir(&self, glyph_order: u32) -> Arc<GlyphIr> {
+    pub fn get_glyph_ir(&self, glyph_order: u32) -> Arc<ir::Glyph> {
         self.check_read_access(&WorkIdentifier::GlyphIr(glyph_order));
         let rl = self.glyph_ir.item.read();
         rl.get(&glyph_order).expect(MISSING_DATA).clone()
     }
 
-    pub fn set_glyph_ir(&self, glyph_order: u32, ir: GlyphIr) {
+    pub fn set_glyph_ir(&self, glyph_order: u32, ir: ir::Glyph) {
         self.check_write_access(&WorkIdentifier::GlyphIr(glyph_order));
         let mut wl = self.glyph_ir.item.write();
         wl.insert(glyph_order, Arc::from(ir));
