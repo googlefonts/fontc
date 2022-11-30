@@ -3,7 +3,7 @@ use filetime::FileTime;
 use serde::{Deserialize, Serialize};
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map::Keys, HashMap, HashSet},
     fs, io,
     path::{Path, PathBuf},
     vec,
@@ -38,6 +38,28 @@ impl FileStateSet {
     }
 }
 
+impl<'a> IntoIterator for &'a FileStateSet {
+    type Item = &'a Path;
+    type IntoIter = FileStateSetIntoIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        FileStateSetIntoIter {
+            iter: self.entries.keys(),
+        }
+    }
+}
+
+pub struct FileStateSetIntoIter<'a> {
+    iter: Keys<'a, PathBuf, FileState>,
+}
+
+impl<'a> Iterator for FileStateSetIntoIter<'a> {
+    type Item = &'a Path;
+    fn next(&mut self) -> Option<&'a Path> {
+        self.iter.next().map(|pb| pb.as_path())
+    }
+}
+
 impl FileStateSet {
     // For tests.
     #[doc(hidden)]
@@ -48,6 +70,10 @@ impl FileStateSet {
 }
 
 impl FileStateSet {
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     pub fn contains(&self, path: &Path) -> bool {
         self.entries.contains_key(path)
     }

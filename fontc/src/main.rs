@@ -154,9 +154,11 @@ fn glyphs_deleted<'a>(current_inputs: &Input, prev_inputs: &'a Input) -> HashSet
         .collect()
 }
 
-fn add_glyph_work(context: &CompileContext, work: &mut Vec<Box<dyn Work<()>>>) {
+fn add_glyph_work(
+    context: &mut CompileContext,
+    work: &mut Vec<Box<dyn Work<()>>>,
+) -> Result<(), Error> {
     // Destroy IR for deleted glyphs
-
     work.extend(
         glyphs_deleted(&context.current_inputs, &context.prev_inputs)
             .iter()
@@ -164,13 +166,13 @@ fn add_glyph_work(context: &CompileContext, work: &mut Vec<Box<dyn Work<()>>>) {
     );
 
     // Generate IR for changed glyphs
-    // You'd think we could do source => work => do-in-|| in one go but that angers the compiler
-    work.extend(glyphs_changed(context).into_iter().map(|glyph_name| {
-        context.ir_source.create_glyph_ir_work(
-            glyph_name,
-            context.current_inputs.glyphs.get(glyph_name).unwrap(),
-        )
-    }));
+    let glyphs_changed = glyphs_changed(context);
+    let glyph_work = context
+        .ir_source
+        .create_glyph_ir_work(&glyphs_changed, &context.current_inputs)?;
+    work.extend(glyph_work);
+
+    Ok(())
 }
 
 fn do_work(work: Vec<Box<dyn Work<()>>>) -> Result<(), Error> {
@@ -211,7 +213,7 @@ impl CompileContext {
         let (config, prev_inputs) = init(&build_dir, args).map_err(Error::IoError)?;
 
         // What sources are we dealing with?
-        let ir_source = ir_source(&config.args.source, paths.clone())?;
+        let mut ir_source = ir_source(&config.args.source, paths.clone())?;
         let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
 
         Ok(CompileContext {
@@ -227,7 +229,7 @@ fn main() -> Result<(), Error> {
     env_logger::init();
 
     let paths = Paths::new(Path::new("build"));
-    let context = CompileContext::new(paths, Args::parse())?;
+    let mut context = CompileContext::new(paths, Args::parse())?;
 
     // TODO: consider making a more explicit model of a graph
     // TODO: Rayon focuses on CPU-bound tasks but we are doing IO too
@@ -236,7 +238,7 @@ fn main() -> Result<(), Error> {
     // Accumulate work for the parts of IR that trivially parallelize
     let mut work: Vec<Box<dyn Work<()>>> = Vec::new();
 
-    add_glyph_work(&context, &mut work);
+    add_glyph_work(&mut context, &mut work)?;
 
     // Try to do the work
     do_work(work)?;
@@ -339,12 +341,12 @@ mod tests {
             source: testdata_dir().join(source),
         };
         let paths = Paths::new(build_dir);
-        let context = CompileContext::new(paths, args).unwrap();
+        let mut context = CompileContext::new(paths, args).unwrap();
         let result = TestCompile::new(&context);
 
         let mut work = Vec::new();
 
-        add_glyph_work(&context, &mut work);
+        add_glyph_work(&mut context, &mut work).unwrap();
 
         // Try to do the work
         for work_item in work {
@@ -361,7 +363,10 @@ mod tests {
         let build_dir = temp_dir.path();
 
         let result = compile(build_dir, "wght_var.designspace");
-        assert_eq!(HashSet::from(["bar".to_string()]), result.glyphs_changed);
+        assert_eq!(
+            HashSet::from(["bar".to_string(), "plus".to_string()]),
+            result.glyphs_changed
+        );
         assert_eq!(HashSet::from([]), result.glyphs_deleted);
 
         let result = compile(build_dir, "wght_var.designspace");
@@ -375,7 +380,10 @@ mod tests {
         let build_dir = temp_dir.path();
 
         let result = compile(build_dir, "wght_var.designspace");
-        assert_eq!(HashSet::from(["bar".to_string()]), result.glyphs_changed);
+        assert_eq!(
+            HashSet::from(["bar".to_string(), "plus".to_string()]),
+            result.glyphs_changed
+        );
         assert_eq!(HashSet::from([]), result.glyphs_deleted);
 
         let bar_ir = build_dir.join("glyph_ir/bar.toml");
