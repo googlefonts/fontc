@@ -13,6 +13,7 @@ pub fn designspace_to_ir(designspace: DesignSpaceDocument) -> Result<Vec<ir::Axi
 
 fn to_ir_axis(axis: designspace::Axis) -> ir::Axis {
     ir::Axis {
+        name: axis.name,
         tag: axis.tag,
         min: axis.minimum.expect("Discrete axes not supported yet"),
         default: axis.default,
@@ -34,6 +35,7 @@ mod tests {
         let ds = DesignSpaceDocument::load(Path::new("testdata/wght_var.designspace")).unwrap();
         assert_eq!(
             vec![ir::Axis {
+                name: "Weight".to_string(),
                 tag: "wght".to_string(),
                 min: 400.,
                 default: 400.,
