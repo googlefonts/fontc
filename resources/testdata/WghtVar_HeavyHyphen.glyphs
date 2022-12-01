@@ -1,0 +1,195 @@
+{
+.appVersion = "3148";
+.formatVersion = 3;
+DisplayStrings = (
+"-",
+"!"
+);
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WghtVar;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+},
+{
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+iconName = Bold;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+metricValues = (
+{
+pos = 800;
+},
+{
+},
+{
+pos = -200;
+},
+{
+pos = 700;
+},
+{
+pos = 500;
+}
+);
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2022-12-01 04:58:12 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 32;
+},
+{
+glyphname = exclam;
+lastChange = "2022-12-01 05:10:49 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(354,183,l),
+(414,585,l),
+(178,585,l),
+(238,182,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(354,0,l),
+(354,107,l),
+(238,107,l),
+(238,0,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(364,176,l),
+(434,605,l),
+(159,605,l),
+(228,174,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(364,-20,l),
+(364,94,l),
+(228,94,l),
+(228,-20,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 33;
+},
+{
+glyphname = hyphen;
+lastChange = "2022-12-01 22:53:02 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(126,240,l),
+(476,240,l),
+(476,340,l),
+(126,340,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(63,210,l),
+(538,210,l),
+(538,370,l),
+(63,370,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 45;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
