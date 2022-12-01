@@ -11,7 +11,7 @@ use std::{
 };
 
 use smol_str::SmolStr;
-use write_fonts::types::Tag;
+use write_fonts::{read::tables::name::Encoding, types::Tag};
 
 use super::{
     common::{self, WIN_PLATFORM_ID},
@@ -352,12 +352,19 @@ impl<'a> ValidationCtx<'a> {
             self.error(range, err);
         }
         if let Some((platspec, language)) = spec.platform_and_language_ids() {
-            if let Err(e) = platspec.parse() {
-                self.error(platspec.range(), e);
-            }
-            if let Err(e) = language.parse() {
-                self.error(language.range(), e);
-            }
+            match (platspec.parse(), language.parse()) {
+                (Ok(a), Ok(_)) if Encoding::new(platform, a) == Encoding::Unknown => {
+                    self.warning(spec.range(), "character encoding unsupported")
+                }
+                (a, b) => {
+                    if let Err(e) = a {
+                        self.error(platspec.range(), e);
+                    }
+                    if let Err(e) = b {
+                        self.error(language.range(), e);
+                    }
+                }
+            };
         }
     }
 

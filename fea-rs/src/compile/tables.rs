@@ -4,7 +4,7 @@ use smol_str::SmolStr;
 use write_fonts::{
     dump_table,
     from_obj::ToOwnedTable,
-    read::{FontRef, TableProvider},
+    read::{tables::name::Encoding, FontRef, TableProvider},
     tables::{
         self,
         gdef::{AttachList, AttachPoint, CaretValue, GlyphClassDef, LigCaretList, LigGlyph},
@@ -296,7 +296,10 @@ impl NameBuilder {
             write_fonts::tables::name::Name::new(
                 self.records
                     .iter()
-                    .map(|(id, spec)| spec.to_otf(*id))
+                    .filter_map(|(id, spec)| {
+                        spec.is_implemented_in_fontations()
+                            .then(|| spec.to_otf(*id))
+                    })
                     .collect(),
             )
         })
@@ -304,6 +307,10 @@ impl NameBuilder {
 }
 
 impl NameSpec {
+    fn is_implemented_in_fontations(&self) -> bool {
+        Encoding::new(self.platform_id, self.encoding_id) != Encoding::Unknown
+    }
+
     pub fn to_otf(&self, name_id: u16) -> write_fonts::tables::name::NameRecord {
         let string = parse_string(self.platform_id, self.string.trim_matches('"'));
         write_fonts::tables::name::NameRecord::new(
