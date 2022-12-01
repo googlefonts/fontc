@@ -191,7 +191,7 @@ impl Compilation {
                 .extend(size.names.iter().map(|n| n.to_otf(name_id)));
             let gpos = gpos.as_mut().unwrap();
             for record in gpos.feature_list.feature_records.iter_mut() {
-                if record.feature_tag == common::SIZE_TAG {
+                if record.feature_tag == common::tags::SIZE {
                     record.feature.feature_params = FeatureParams::Size(size.params.clone()).into();
                 }
             }

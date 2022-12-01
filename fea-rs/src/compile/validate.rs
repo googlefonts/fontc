@@ -432,10 +432,11 @@ impl<'a> ValidationCtx<'a> {
     fn validate_feature(&mut self, node: &typed::Feature) {
         let tag = node.tag();
         let tag_raw = tag.to_raw();
-        if tag_raw == common::SIZE_TAG {
+        if tag_raw == common::tags::SIZE {
             return self.validate_size_feature(node);
         }
-        let _is_aalt = tag_raw == common::AALT_TAG;
+
+        let _is_aalt = tag_raw == common::tags::AALT;
         // - must occur before anything it references
 
         let _is_ss = common::is_stylistic_set(tag_raw);

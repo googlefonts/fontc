@@ -178,7 +178,7 @@ impl<'a> CompilationCtx<'a> {
                 .extend(self.default_lang_systems.iter().cloned());
         } else {
             self.cur_language_systems
-                .extend([(common::SCRIPT_DFLT_TAG, common::LANG_DFLT_TAG)]);
+                .extend([(common::tags::SCRIPT_DFLT, common::tags::LANG_DFLT)]);
         };
 
         assert!(
@@ -206,7 +206,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn start_lookup_block(&mut self, name: &Token) {
-        if self.cur_feature_name == Some(common::AALT_TAG) {
+        if self.cur_feature_name == Some(common::tags::AALT) {
             self.error(name.range(), "no lookups allowed in aalt");
         }
 
@@ -243,7 +243,7 @@ impl<'a> CompilationCtx<'a> {
             self.warning(token.range(), "required is not implemented");
         }
         let language = stmt.tag().to_raw();
-        let script = self.script.unwrap_or(common::SCRIPT_DFLT_TAG);
+        let script = self.script.unwrap_or(common::tags::SCRIPT_DFLT);
         self.set_script_language(
             script,
             language,
@@ -256,7 +256,7 @@ impl<'a> CompilationCtx<'a> {
     fn set_script(&mut self, stmt: typed::Script) {
         let script = stmt.tag().to_raw();
         self.script = Some(script);
-        self.set_script_language(script, common::LANG_DFLT_TAG, false, false, stmt.range());
+        self.set_script_language(script, common::tags::LANG_DFLT, false, false, stmt.range());
     }
 
     fn set_script_language(
@@ -268,7 +268,7 @@ impl<'a> CompilationCtx<'a> {
         err_range: Range<usize>,
     ) {
         let feature = match self.cur_feature_name {
-            Some(tag @ common::AALT_TAG | tag @ common::SIZE_TAG) => {
+            Some(tag @ common::tags::AALT | tag @ common::tags::SIZE) => {
                 self.error(
                     err_range,
                     format!("language/script not allowed in '{}' feature", tag),
@@ -937,12 +937,12 @@ impl<'a> CompilationCtx<'a> {
     fn add_feature(&mut self, feature: typed::Feature) {
         let tag = feature.tag();
         let tag_raw = tag.to_raw();
-        if tag_raw == common::AALT_TAG {
+        if tag_raw == common::tags::AALT {
             self.warning(tag.range(), "aalt feature is unimplemented");
             return;
         }
         self.start_feature(tag);
-        if tag_raw == common::SIZE_TAG {
+        if tag_raw == common::tags::SIZE {
             self.resolve_size_feature(&feature);
         } else {
             for item in feature.statements() {
@@ -985,7 +985,7 @@ impl<'a> CompilationCtx<'a> {
                     .unwrap_or(0);
             }
         }
-        let key = FeatureKey::for_feature(common::SIZE_TAG);
+        let key = FeatureKey::for_feature(common::tags::SIZE);
         for (script, lang) in &self.cur_language_systems {
             let key = key.script(*script).language(*lang);
             self.features.entry(key).or_default();

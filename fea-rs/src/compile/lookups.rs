@@ -31,10 +31,7 @@ use crate::{
 
 use self::contextual::{ChainContextBuilder, ReverseChainBuilder};
 
-use super::{
-    common::{LANG_DFLT_TAG, SCRIPT_DFLT_TAG, SIZE_TAG},
-    tables::ClassId,
-};
+use super::{common, tables::ClassId};
 
 use contextual::{ContextBuilder, ContextualLookupBuilder};
 pub use gpos::PreviouslyAssignedClass;
@@ -423,7 +420,7 @@ impl AllLookups {
                 .position(|x| matches!(x, LookupId::Gsub(_)))
                 .unwrap_or(feature_indices.len());
 
-            if key.feature == SIZE_TAG {
+            if key.feature == common::tags::SIZE {
                 gpos_builder.add(*key, &[]);
                 continue;
             }
@@ -446,8 +443,8 @@ impl FeatureKey {
     pub(crate) fn for_feature(feature: Tag) -> Self {
         FeatureKey {
             feature,
-            script: SCRIPT_DFLT_TAG,
-            language: LANG_DFLT_TAG,
+            script: common::tags::SCRIPT_DFLT,
+            language: common::tags::LANG_DFLT,
         }
     }
 
@@ -747,7 +744,7 @@ where
                 let mut script = Script::default();
                 for (lang_tag, feature_indices) in entry {
                     let sys = LangSys::new(0xffff, feature_indices);
-                    if lang_tag == LANG_DFLT_TAG {
+                    if lang_tag == common::tags::LANG_DFLT {
                         script.default_lang_sys = sys.into();
                     } else {
                         script
