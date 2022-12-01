@@ -22,6 +22,8 @@ pub enum Error {
     NoLocationsForGlyph(String),
     #[error("Asked to create work for something other than the last input we created")]
     UnableToCreateGlyphIrWork,
+    #[error("Unexpected state encountered in a state set")]
+    UnexpectedState,
 }
 
 /// An async work error, hence one that must be Send

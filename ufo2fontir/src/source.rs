@@ -8,7 +8,7 @@ use fontir::{
     error::{Error, WorkError},
     ir::DesignSpaceLocation,
     source::{Input, Paths, Source, Work},
-    stateset::StateSet,
+    stateset::{StateIdentifier, StateSet},
 };
 use log::debug;
 use norad::designspace::{self, DesignSpaceDocument};
@@ -231,13 +231,16 @@ impl DesignSpaceIrSource {
         // So resolve each file to 1..N locations in designspace
 
         let glyph_name = glyph_name.to_string();
-        let fileset = input
+        let stateset = input
             .glyphs
             .get(&glyph_name)
             .ok_or_else(|| Error::NoFilesForGlyph(glyph_name.clone()))?;
         let mut glif_files = HashMap::new();
         let glif_locations = self.glif_locations.as_ref().unwrap();
-        for glif_file in fileset {
+        for state_key in stateset.keys() {
+            let StateIdentifier::File(glif_file) = state_key else {
+                return Err(Error::UnexpectedState);
+            };
             let locations = glif_locations
                 .location_of(glif_file)
                 .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;

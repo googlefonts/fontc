@@ -328,7 +328,7 @@ mod tests {
         let metadata = compiler_location.metadata().unwrap();
         let mut compiler = StateSet::new();
         // size +1, I'd give it all up for just a little more
-        compiler.set_state(
+        compiler.set_file_state(
             &compiler_location,
             FileTime::from_system_time(metadata.modified().unwrap()),
             metadata.len() + 1,
