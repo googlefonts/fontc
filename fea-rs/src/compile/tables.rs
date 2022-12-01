@@ -12,6 +12,7 @@ use write_fonts::{
     },
     types::{Fixed, LongDateTime, Tag},
     validate::ValidationReport,
+    OffsetMarker,
 };
 
 use crate::{
@@ -31,7 +32,7 @@ pub(crate) struct Tables {
     pub GDEF: Option<Gdef>,
     pub BASE: Option<BASE>,
     pub OS2: Option<OS2>,
-    pub STAT: Option<STAT>,
+    pub stat: Option<StatBuilder>,
 }
 #[derive(Clone, Debug, Default)]
 #[allow(non_camel_case_types)]
@@ -124,7 +125,7 @@ pub struct ScriptRecord {
 
 #[derive(Clone, Debug)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
-pub struct STAT {
+pub struct StatBuilder {
     pub name: StatFallbackName,
     pub records: Vec<AxisRecord>,
     pub values: Vec<AxisValue>,
@@ -168,6 +169,85 @@ pub enum AxisLocation {
 pub enum StatFallbackName {
     Id(u16),
     Record(Vec<NameSpec>),
+}
+
+impl StatBuilder {
+    pub(crate) fn build(&self, name_builder: &mut NameBuilder) -> tables::stat::Stat {
+        let elided_fallback_name_id = match &self.name {
+            StatFallbackName::Id(id) if name_builder.contains_id(*id) => *id,
+            StatFallbackName::Id(id) => {
+                panic!("ElidedFallbackNameID '{}' does not exist in font", id)
+            }
+            StatFallbackName::Record(names) => name_builder.add_anon_group(names),
+        };
+
+        let mut design_axes = Vec::new();
+        for record in &self.records {
+            let name_id = name_builder.add_anon_group(&record.name);
+            design_axes.push(tables::stat::AxisRecord {
+                axis_tag: record.tag,
+                axis_name_id: name_id,
+                axis_ordering: record.ordering,
+            });
+        }
+        design_axes.sort_unstable_by_key(|x| x.axis_tag);
+        let axis_indices = design_axes
+            .iter()
+            .enumerate()
+            .map(|(i, val)| (val.axis_tag, i as u16))
+            .collect::<HashMap<_, _>>();
+
+        let axis_values: Vec<OffsetMarker<tables::stat::AxisValue>> = self
+            .values
+            .iter()
+            .map(|axis_value| {
+                let flags = tables::stat::AxisValueTableFlags::from_bits(axis_value.flags).unwrap();
+                let name_id = name_builder.add_anon_group(&axis_value.name);
+                let to_add = match &axis_value.location {
+                    AxisLocation::One { tag, value } => tables::stat::AxisValue::format_1(
+                        //TODO: validate that all referenced tags refer to existing axes
+                        *axis_indices.get(tag).unwrap(),
+                        flags,
+                        name_id,
+                        *value,
+                    ),
+                    AxisLocation::Two {
+                        tag,
+                        nominal,
+                        min,
+                        max,
+                    } => {
+                        let axis_index = *axis_indices.get(tag).unwrap();
+                        tables::stat::AxisValue::format_2(
+                            axis_index, flags, name_id, *nominal, *min, *max,
+                        )
+                    }
+                    AxisLocation::Three { tag, value, linked } => {
+                        let axis_index = *axis_indices.get(tag).unwrap();
+                        tables::stat::AxisValue::format_3(
+                            axis_index, flags, name_id, *value, *linked,
+                        )
+                    }
+                    AxisLocation::Four(values) => {
+                        let mapping = values
+                            .iter()
+                            .map(|(tag, value)| {
+                                tables::stat::AxisValueRecord::new(
+                                    *axis_indices.get(tag).unwrap(),
+                                    *value,
+                                )
+                            })
+                            .collect();
+                        tables::stat::AxisValue::format_4(flags, name_id, mapping)
+                    }
+                };
+                OffsetMarker::new(to_add)
+            })
+            .collect::<Vec<_>>();
+        let mut table = tables::stat::Stat::new(design_axes, axis_values.into());
+        table.elided_fallback_name_id = Some(elided_fallback_name_id);
+        table
+    }
 }
 
 #[derive(Clone, Debug)]

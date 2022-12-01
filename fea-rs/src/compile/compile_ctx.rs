@@ -1109,7 +1109,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_stat(&mut self, table: &typed::StatTable) {
-        let mut stat = super::tables::STAT {
+        let mut stat = super::tables::StatBuilder {
             name: super::tables::StatFallbackName::Id(u16::MAX),
             records: Vec::new(),
             values: Vec::new(),
@@ -1143,7 +1143,7 @@ impl<'a> CompilationCtx<'a> {
                 }
             }
         }
-        self.tables.STAT = Some(stat);
+        self.tables.stat = Some(stat);
     }
 
     fn resolve_stat_axis_value(&mut self, node: &typed::StatAxisValue) -> super::tables::AxisValue {
