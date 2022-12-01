@@ -12,6 +12,9 @@ pub mod tags {
     pub const SCRIPT_DFLT: Tag = Tag::new(b"DFLT");
 }
 
+pub const WIN_PLATFORM_ID: u16 = 3;
+pub const MAC_PLATFORM_ID: u16 = 1;
+
 /// `true` if this tag is ss01-ss20
 pub fn is_stylistic_set(tag: Tag) -> bool {
     is_numbered_tag(tag, b"ss", 1..=20)

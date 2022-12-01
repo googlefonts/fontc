@@ -86,38 +86,19 @@ impl Compilation {
         //records: Vec::new(),
         //});
 
-        let mut name = tables::name::Name::default();
-        if let Some(name_raw) = self.tables.name.as_ref() {
-            name.name_record.extend(
-                name_raw
-                    .records
-                    .iter()
-                    .filter(|record| !(1..=6).contains(&record.name_id))
-                    .map(|record| record.spec.to_otf(record.name_id)),
-            );
-        }
-
+        let mut name_builder = self.tables.name.clone();
         if let Some(stat_raw) = self.tables.STAT.as_ref() {
             let elided_fallback_name_id = match &stat_raw.name {
-                StatFallbackName::Id(id) if name.name_record.iter().any(|r| r.name_id == *id) => {
-                    *id
-                }
+                StatFallbackName::Id(id) if name_builder.contains_id(*id) => *id,
                 StatFallbackName::Id(id) => {
                     panic!("ElidedFallbackNameID '{}' does not exist in font", id)
                 }
-                StatFallbackName::Record(names) => {
-                    let name_id = find_next_name_id(&name);
-                    name.name_record
-                        .extend(names.iter().map(|n| n.to_otf(name_id)));
-                    name_id
-                }
+                StatFallbackName::Record(names) => name_builder.add_anon_group(&names),
             };
 
             let mut design_axes = Vec::new();
             for record in &stat_raw.records {
-                let name_id = find_next_name_id(&name);
-                name.name_record
-                    .extend(record.name.iter().map(|n| n.to_otf(name_id)));
+                let name_id = name_builder.add_anon_group(&record.name);
                 design_axes.push(tables::stat::AxisRecord {
                     axis_tag: record.tag,
                     axis_name_id: name_id,
@@ -137,9 +118,7 @@ impl Compilation {
                 .map(|axis_value| {
                     let flags =
                         tables::stat::AxisValueTableFlags::from_bits(axis_value.flags).unwrap();
-                    let name_id = find_next_name_id(&name);
-                    name.name_record
-                        .extend(axis_value.name.iter().map(|n| n.to_otf(name_id)));
+                    let name_id = name_builder.add_anon_group(&axis_value.name);
                     let to_add = match &axis_value.location {
                         AxisLocation::One { tag, value } => tables::stat::AxisValue::format_1(
                             //TODO: validate that all referenced tags refer to existing axes
@@ -186,9 +165,7 @@ impl Compilation {
         let (gsub, mut gpos) = self.lookups.build(&self.features);
 
         if let Some(size) = self.size.as_ref() {
-            let name_id = find_next_name_id(&name);
-            name.name_record
-                .extend(size.names.iter().map(|n| n.to_otf(name_id)));
+            name_builder.add_anon_group(&size.names);
             let gpos = gpos.as_mut().unwrap();
             for record in gpos.feature_list.feature_records.iter_mut() {
                 if record.feature_tag == common::tags::SIZE {
@@ -205,7 +182,7 @@ impl Compilation {
             builder.add_table(Tag::new(b"GPOS"), dump_table(&gpos).unwrap());
         }
 
-        if !name.name_record.is_empty() {
+        if let Some(name) = name_builder.build() {
             builder.add_table(Tag::new(b"name"), dump_table(&name).unwrap());
         }
 
@@ -218,17 +195,4 @@ impl Compilation {
 
         Ok(builder.build())
     }
-}
-
-fn find_next_name_id(names: &tables::name::Name) -> u16 {
-    const RESERVED_NAMES: u16 = 255;
-    names
-        .name_record
-        .iter()
-        .map(|rec| rec.name_id)
-        .max()
-        .unwrap_or_default()
-        .max(RESERVED_NAMES)
-        .checked_add(1)
-        .expect("ran out of ids in name table")
 }

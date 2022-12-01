@@ -1041,14 +1041,11 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_name(&mut self, table: &typed::NameTable) {
-        let mut name = super::tables::name::default();
         for record in table.statements() {
             let name_id = record.name_id().parse().unwrap();
             let spec = self.resolve_name_spec(&record.entry());
-            name.records
-                .push(super::tables::NameRecord { spec, name_id })
+            self.tables.name.add(name_id, spec);
         }
-        self.tables.name = Some(name);
     }
 
     fn resolve_os2(&mut self, table: &typed::Os2Table) {
@@ -1321,21 +1318,19 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_name_spec(&mut self, node: &typed::NameSpec) -> super::tables::NameSpec {
-        const WIN_PLATFORM: u16 = 3;
-        const MAC_PLATFORM: u16 = 1;
         const WIN_DEFAULT_IDS: (u16, u16) = (1, 0x0409);
         const MAC_DEFAULT_IDS: (u16, u16) = (0, 0);
 
         let platform_id = node
             .platform_id()
             .map(|n| n.parse().unwrap())
-            .unwrap_or(WIN_PLATFORM);
+            .unwrap_or(common::WIN_PLATFORM_ID);
 
         let (encoding_id, language_id) = match node.platform_and_language_ids() {
             Some((platform, language)) => (platform.parse().unwrap(), language.parse().unwrap()),
             None => match platform_id {
-                MAC_PLATFORM => MAC_DEFAULT_IDS,
-                WIN_PLATFORM => WIN_DEFAULT_IDS,
+                common::MAC_PLATFORM_ID => MAC_DEFAULT_IDS,
+                common::WIN_PLATFORM_ID => WIN_DEFAULT_IDS,
                 _ => panic!("missed validation"),
             },
         };

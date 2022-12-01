@@ -13,7 +13,10 @@ use std::{
 use smol_str::SmolStr;
 use write_fonts::types::Tag;
 
-use super::{common, glyph_range, tables};
+use super::{
+    common::{self, WIN_PLATFORM_ID},
+    glyph_range,
+};
 use crate::{
     parse::SourceMap,
     token_tree::{
@@ -343,7 +346,7 @@ impl<'a> ValidationCtx<'a> {
             }
         };
 
-        let platform = platform.unwrap_or(tables::name::WIN_PLATFORM);
+        let platform = platform.unwrap_or(WIN_PLATFORM_ID);
 
         if let Err((range, err)) = validate_name_string_encoding(platform, spec.string()) {
             self.error(range, err);
@@ -1024,7 +1027,7 @@ fn validate_name_string_encoding(
     while !to_scan.is_empty() {
         match to_scan.bytes().position(|b| b == b'\\') {
             None => to_scan = "",
-            Some(pos) if platform == tables::name::WIN_PLATFORM => {
+            Some(pos) if platform == WIN_PLATFORM_ID => {
                 let range_start = token_start + cur_off + pos;
                 if let Some(val) = to_scan.get(pos + 1..pos + 5) {
                     if let Some(idx) = val.bytes().position(|b| !b.is_ascii_hexdigit()) {

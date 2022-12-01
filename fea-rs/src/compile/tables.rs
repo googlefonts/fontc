@@ -14,7 +14,10 @@ use write_fonts::{
     validate::ValidationReport,
 };
 
-use crate::types::{GlyphClass, GlyphId};
+use crate::{
+    compile::common::{MAC_PLATFORM_ID, WIN_PLATFORM_ID},
+    types::{GlyphClass, GlyphId},
+};
 
 /// The explicit tables allowed in a fea file
 #[allow(non_snake_case)]
@@ -24,7 +27,7 @@ pub(crate) struct Tables {
     pub hhea: Option<tables::hvhea::HVhea>,
     pub vhea: Option<tables::hvhea::HVhea>,
     pub vmtx: Option<vmtx>,
-    pub name: Option<name>,
+    pub name: NameBuilder,
     pub GDEF: Option<Gdef>,
     pub BASE: Option<BASE>,
     pub OS2: Option<OS2>,
@@ -41,18 +44,6 @@ pub struct head {
 pub struct vmtx {
     pub origins_y: Vec<(GlyphId, i16)>,
     pub advances_y: Vec<(GlyphId, i16)>,
-}
-
-#[derive(Clone, Debug, Default)]
-#[allow(non_camel_case_types)]
-pub struct name {
-    pub records: Vec<NameRecord>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct NameRecord {
-    pub name_id: u16,
-    pub spec: NameSpec,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -179,9 +170,55 @@ pub enum StatFallbackName {
     Record(Vec<NameSpec>),
 }
 
-impl name {
-    pub const WIN_PLATFORM: u16 = 3;
-    pub const MAC_PLATFORM: u16 = 1;
+#[derive(Clone, Debug)]
+pub struct NameBuilder {
+    records: Vec<(u16, NameSpec)>,
+    last_anon_id: u16,
+}
+
+impl Default for NameBuilder {
+    fn default() -> Self {
+        NameBuilder {
+            records: Vec::new(),
+            last_anon_id: 255,
+        }
+    }
+}
+
+impl NameBuilder {
+    pub(crate) fn add(&mut self, name_id: u16, name_spec: NameSpec) {
+        if !(1..=6).contains(&name_id) {
+            self.last_anon_id = self.last_anon_id.max(name_id);
+            self.records.push((name_id, name_spec));
+        }
+    }
+
+    pub(crate) fn add_anon_group(&mut self, entries: &[NameSpec]) -> u16 {
+        let name_id = self.next_name_id();
+        for name in entries {
+            self.add(name_id, name.clone());
+        }
+        name_id
+    }
+
+    pub(crate) fn contains_id(&self, id: u16) -> bool {
+        self.records.iter().any(|(name_id, _)| name_id == &id)
+    }
+
+    pub(crate) fn next_name_id(&self) -> u16 {
+        self.last_anon_id + 1
+    }
+
+    pub(crate) fn build(&self) -> Option<write_fonts::tables::name::Name> {
+        (!self.records.is_empty()).then(|| {
+            write_fonts::tables::name::Name::new(
+                self.records
+                    .iter()
+                    .map(|(id, spec)| spec.to_otf(*id))
+                    .collect(),
+            )
+        })
+    }
 }
 
 impl NameSpec {
@@ -198,12 +235,12 @@ impl NameSpec {
 }
 
 fn parse_string(platform: u16, s: &str) -> String {
-    debug_assert!(platform == name::WIN_PLATFORM || platform == name::MAC_PLATFORM);
+    debug_assert!(platform == WIN_PLATFORM_ID || platform == MAC_PLATFORM_ID);
     if !s.as_bytes().contains(&b'\\') {
         return s.to_string();
     }
 
-    if platform == name::WIN_PLATFORM {
+    if platform == WIN_PLATFORM_ID {
         parse_win(s)
     } else {
         parse_mac(s)
