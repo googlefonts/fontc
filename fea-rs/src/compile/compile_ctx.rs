@@ -944,12 +944,33 @@ impl<'a> CompilationCtx<'a> {
         self.start_feature(tag);
         if tag_raw == common::tags::SIZE {
             self.resolve_size_feature(&feature);
+        } else if common::is_stylistic_set(tag_raw) {
+            self.resolve_stylistic_set_feature(tag_raw, &feature);
         } else {
             for item in feature.statements() {
                 self.resolve_statement(item);
             }
         }
         self.end_feature();
+    }
+
+    fn resolve_stylistic_set_feature(&mut self, tag: Tag, feature: &typed::Feature) {
+        let mut names = Vec::new();
+        if let Some(feature_name) = feature.stylistic_set_feature_names() {
+            for name_spec in feature_name.statements() {
+                let resolved = self.resolve_name_spec(&name_spec);
+                names.push(resolved);
+            }
+        }
+        if !names.is_empty() {
+            self.tables.stylistic_sets.insert(tag, names);
+        }
+        for item in feature
+            .statements()
+            .filter(|node| node.kind() != Kind::FeatureNamesKw)
+        {
+            self.resolve_statement(item);
+        }
     }
 
     fn resolve_size_feature(&mut self, feature: &typed::Feature) {

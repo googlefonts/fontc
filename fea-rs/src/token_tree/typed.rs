@@ -190,6 +190,7 @@ ast_node!(ValueRecord, Kind::ValueRecordNode);
 ast_node!(Device, Kind::DeviceNode);
 ast_node!(SizeMenuName, Kind::SizeMenuNameNode);
 ast_node!(Parameters, Kind::ParametersNode);
+ast_node!(FeatureNames, Kind::FeatureNamesKw);
 
 ast_node!(HeadTable, Kind::HeadTableNode);
 ast_node!(HheaTable, Kind::HheaTableNode);
@@ -555,6 +556,10 @@ impl Metric {
 impl Feature {
     pub fn tag(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    pub fn stylistic_set_feature_names(&self) -> Option<FeatureNames> {
+        self.statements().next().and_then(FeatureNames::cast)
     }
 
     pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
@@ -1197,6 +1202,12 @@ impl Os2NumberList {
 impl Os2FamilyClass {
     pub fn value(&self) -> DecOctHex {
         self.iter().find_map(DecOctHex::cast).unwrap()
+    }
+}
+
+impl FeatureNames {
+    pub fn statements(&self) -> impl Iterator<Item = NameSpec> + '_ {
+        self.iter().filter_map(NameSpec::cast)
     }
 }
 

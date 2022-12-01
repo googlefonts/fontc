@@ -1,12 +1,15 @@
 //! The result of a compilation
 
-use std::{collections::BTreeMap, convert::TryInto};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryInto,
+};
 
 use write_fonts::{
     dump_table,
     read::{FontData, FontRef, TableProvider},
     tables::{
-        layout::{FeatureParams, SizeParams},
+        layout::{FeatureParams, SizeParams, StylisticSetParams},
         maxp::Maxp,
     },
     types::Tag,
@@ -88,30 +91,48 @@ impl Compilation {
             builder.add_table(Tag::new(b"GDEF"), gdef.build().unwrap());
         }
 
-        //TODO: reuse existing name table if present
-        //let mut name = font
-        //.tables
-        //.name()
-        //.unwrap()
-        //.map(|t| t.into_owned())
-        //.unwrap_or_else(|| tables::name::Name {
-        //records: Vec::new(),
-        //});
-
+        //TODO: reuse any existing names if name table present
         let mut name_builder = self.tables.name.clone();
         if let Some(stat_raw) = self.tables.stat.as_ref() {
             let stat = stat_raw.build(&mut name_builder);
             builder.add_table(Tag::new(b"STAT"), dump_table(&stat).unwrap());
         }
 
-        let (gsub, mut gpos) = self.lookups.build(&self.features);
+        let (mut gsub, mut gpos) = self.lookups.build(&self.features);
 
+        let mut feature_params = HashMap::new();
         if let Some(size) = self.size.as_ref() {
             name_builder.add_anon_group(&size.names);
-            let gpos = gpos.as_mut().unwrap();
-            for record in gpos.feature_list.feature_records.iter_mut() {
-                if record.feature_tag == common::tags::SIZE {
-                    record.feature.feature_params = FeatureParams::Size(size.params.clone()).into();
+            feature_params.insert(
+                (common::tags::GPOS, common::tags::SIZE),
+                FeatureParams::Size(size.params.clone()),
+            );
+        }
+
+        for (tag, names) in self.tables.stylistic_sets.iter() {
+            let id = name_builder.add_anon_group(names);
+            let params = FeatureParams::StylisticSet(StylisticSetParams::new(id));
+            feature_params.insert((common::tags::GSUB, *tag), params);
+        }
+
+        // actually add feature_params as appropriate
+        if !feature_params.is_empty() {
+            if let Some(gsub) = gsub.as_mut() {
+                for record in gsub.feature_list.feature_records.iter_mut() {
+                    if let Some(params) =
+                        feature_params.get(&(common::tags::GSUB, record.feature_tag))
+                    {
+                        record.feature.feature_params = params.clone().into();
+                    }
+                }
+            }
+            if let Some(gpos) = gpos.as_mut() {
+                for record in gpos.feature_list.feature_records.iter_mut() {
+                    if let Some(params) =
+                        feature_params.get(&(common::tags::GPOS, record.feature_tag))
+                    {
+                        record.feature.feature_params = params.clone().into();
+                    }
                 }
             }
         }

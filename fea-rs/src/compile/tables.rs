@@ -29,6 +29,7 @@ pub(crate) struct Tables {
     pub vhea: Option<tables::hvhea::HVhea>,
     pub vmtx: Option<vmtx>,
     pub name: NameBuilder,
+    pub stylistic_sets: HashMap<Tag, Vec<NameSpec>>,
     pub GDEF: Option<Gdef>,
     pub BASE: Option<BASE>,
     pub OS2: Option<OS2>,
@@ -47,6 +48,7 @@ pub struct vmtx {
     pub advances_y: Vec<(GlyphId, i16)>,
 }
 
+// A builder for the name table
 #[derive(Clone, Debug, Default)]
 pub struct NameSpec {
     pub platform_id: u16,

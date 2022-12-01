@@ -23,7 +23,7 @@ use crate::{
         typed::{self, AstNode},
         Token,
     },
-    Diagnostic, GlyphMap, Kind,
+    Diagnostic, GlyphMap, Kind, NodeOrToken,
 };
 
 pub struct ValidationCtx<'a> {
@@ -442,10 +442,17 @@ impl<'a> ValidationCtx<'a> {
         let _is_aalt = tag_raw == common::tags::AALT;
         // - must occur before anything it references
 
-        let _is_ss = common::is_stylistic_set(tag_raw);
-        let _is_cv = common::is_character_variant(tag_raw);
+        let mut statement_iter = node.statements();
 
-        for item in node.statements() {
+        if common::is_stylistic_set(tag_raw) {
+            self.validate_stylistic_set_items(&mut statement_iter);
+        }
+
+        if common::is_character_variant(tag_raw) {
+            self.warning(tag.range(), "cv__ feature validation not implemented");
+        }
+
+        for item in statement_iter {
             if item.kind() == Kind::ScriptNode
                 || item.kind() == Kind::LanguageNode
                 || item.kind() == Kind::SubtableNode
@@ -465,12 +472,27 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_glyph_class_def(&node);
             } else if let Some(node) = typed::MarkClassDef::cast(item) {
                 self.validate_mark_class_def(&node);
+            } else if let Some(_node) = typed::FeatureNames::cast(item) {
+                self.warning(item.range(), "Only one featureNames block is allowed, it must preceed all rules, and it is only valid in features ss01-ss20");
             } else {
                 self.warning(
                     item.range(),
                     format!("unhandled item '{}' in feature", item.kind()),
                 );
             }
+        }
+    }
+
+    fn validate_stylistic_set_items<'b>(
+        &mut self,
+        iter: &mut impl Iterator<Item = &'b NodeOrToken>,
+    ) {
+        let mut iter = iter.peekable();
+        if let Some(node) = iter.peek().and_then(|x| typed::FeatureNames::cast(x)) {
+            for name in node.statements() {
+                self.validate_name_spec(&name);
+            }
+            iter.next();
         }
     }
 
