@@ -441,7 +441,7 @@ mod tests {
         assert_eq!("1000", raw_plist[range.start..range.end].trim());
 
         let Plist::Array(glyphs, _) = plist.get("glyphs").unwrap() else {
-            panic!("upem isn't an int?!");
+            panic!("'glyphs' isn't an array?!");
         };
         let g0_start = glyphs[0].range().start;
         let g0_prefix = "\n{\nglyphname = space;";
