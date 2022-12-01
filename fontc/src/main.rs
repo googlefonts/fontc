@@ -9,8 +9,8 @@ use clap::Parser;
 use fontc::Error;
 use fontir::{
     error::WorkError,
-    filestate::FileStateSet,
     source::{DeleteWork, Input, Paths, Source, Work},
+    stateset::StateSet,
 };
 use log::{debug, error, info, warn};
 use rayon::prelude::*;
@@ -29,13 +29,13 @@ struct Args {
 struct Config {
     args: Args,
     // The compiler previously used so if the compiler changes config invalidates
-    compiler: FileStateSet,
+    compiler: StateSet,
 }
 
 impl Config {
     fn new(args: Args) -> Result<Config, io::Error> {
-        let mut compiler = FileStateSet::new();
-        compiler.insert(&std::env::current_exe()?)?;
+        let mut compiler = StateSet::new();
+        compiler.track_file(&std::env::current_exe()?)?;
         Ok(Config { args, compiler })
     }
 
@@ -258,7 +258,7 @@ mod tests {
     };
 
     use filetime::FileTime;
-    use fontir::{filestate::FileStateSet, source::Paths};
+    use fontir::{source::Paths, stateset::StateSet};
     use tempfile::tempdir;
 
     use crate::{
@@ -326,9 +326,9 @@ mod tests {
 
         let compiler_location = std::env::current_exe().unwrap();
         let metadata = compiler_location.metadata().unwrap();
-        let mut compiler = FileStateSet::new();
+        let mut compiler = StateSet::new();
         // size +1, I'd give it all up for just a little more
-        compiler.set_state(
+        compiler.set_file_state(
             &compiler_location,
             FileTime::from_system_time(metadata.modified().unwrap()),
             metadata.len() + 1,

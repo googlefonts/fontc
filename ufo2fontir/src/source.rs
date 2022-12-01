@@ -6,9 +6,9 @@ use std::{
 
 use fontir::{
     error::{Error, WorkError},
-    filestate::FileStateSet,
     ir::DesignSpaceLocation,
     source::{Input, Paths, Source, Work},
+    stateset::{StateIdentifier, StateSet},
 };
 use log::debug;
 use norad::designspace::{self, DesignSpaceDocument};
@@ -37,13 +37,13 @@ impl DesignSpaceIrSource {
 
 // A cache of locations, valid provided no global metadata changes
 struct GlifLocationCache {
-    global_metadata_sources: FileStateSet,
+    global_metadata_sources: StateSet,
     locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
 }
 
 impl GlifLocationCache {
     fn new(
-        global_metadata_sources: FileStateSet,
+        global_metadata_sources: StateSet,
         locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
     ) -> GlifLocationCache {
         GlifLocationCache {
@@ -52,7 +52,7 @@ impl GlifLocationCache {
         }
     }
 
-    fn is_valid_for(&self, global_metadata_sources: &FileStateSet) -> bool {
+    fn is_valid_for(&self, global_metadata_sources: &StateSet) -> bool {
         self.global_metadata_sources == *global_metadata_sources
     }
 
@@ -77,7 +77,7 @@ fn glif_files<'a>(
         return Err(Error::FileExpected(glyph_list_file));
     }
     let result: BTreeMap<String, PathBuf> = plist::from_file(&glyph_list_file)
-        .map_err(|e| Error::ParseError(glyph_list_file, e.into()))?;
+        .map_err(|e| Error::ParseError(glyph_list_file, e.to_string()))?;
 
     Ok(result
         .into_iter()
@@ -91,7 +91,7 @@ fn layer_contents(ufo_dir: &Path) -> Result<HashMap<String, PathBuf>, Error> {
         return Err(Error::FileExpected(file));
     }
     let contents: Vec<(String, PathBuf)> =
-        plist::from_file(&file).map_err(|e| Error::ParseError(file, e.into()))?;
+        plist::from_file(&file).map_err(|e| Error::ParseError(file, e.to_string()))?;
     Ok(contents.into_iter().collect())
 }
 
@@ -126,9 +126,9 @@ impl DesignSpaceIrSource {
     fn global_rebuild_triggers(
         &self,
         designspace: &DesignSpaceDocument,
-    ) -> Result<FileStateSet, Error> {
-        let mut font_info = FileStateSet::new();
-        font_info.insert(&self.designspace_file)?;
+    ) -> Result<StateSet, Error> {
+        let mut font_info = StateSet::new();
+        font_info.track_file(&self.designspace_file)?;
         for source in designspace.sources.iter() {
             let ufo_dir = self.designspace_dir.join(&source.filename);
             for filename in ["fontinfo.plist", "layercontents.plist"] {
@@ -136,7 +136,7 @@ impl DesignSpaceIrSource {
                 if !font_info_file.is_file() {
                     return Err(Error::FileExpected(font_info_file));
                 }
-                font_info.insert(&font_info_file)?;
+                font_info.track_file(&font_info_file)?;
             }
         }
         Ok(font_info)
@@ -150,7 +150,7 @@ impl Source for DesignSpaceIrSource {
 
         // glif filenames are not reversible so we need to read contents.plist to figure out groups
         // See https://github.com/unified-font-object/ufo-spec/issues/164.
-        let mut glyphs: HashMap<String, FileStateSet> = HashMap::new();
+        let mut glyphs: HashMap<String, StateSet> = HashMap::new();
 
         // UFO filename => map of layer
         let mut layer_cache = HashMap::new();
@@ -173,7 +173,10 @@ impl Source for DesignSpaceIrSource {
                     return Err(Error::FileExpected(glif_file));
                 }
                 let glif_file = glif_file.clone();
-                glyphs.entry(glyph_name).or_default().insert(&glif_file)?;
+                glyphs
+                    .entry(glyph_name)
+                    .or_default()
+                    .track_file(&glif_file)?;
 
                 let glif_locations = glif_locations.entry(glif_file).or_default();
                 glif_locations.push(location.clone());
@@ -228,13 +231,16 @@ impl DesignSpaceIrSource {
         // So resolve each file to 1..N locations in designspace
 
         let glyph_name = glyph_name.to_string();
-        let fileset = input
+        let stateset = input
             .glyphs
             .get(&glyph_name)
             .ok_or_else(|| Error::NoFilesForGlyph(glyph_name.clone()))?;
         let mut glif_files = HashMap::new();
         let glif_locations = self.glif_locations.as_ref().unwrap();
-        for glif_file in fileset {
+        for state_key in stateset.keys() {
+            let StateIdentifier::File(glif_file) = state_key else {
+                return Err(Error::UnexpectedState);
+            };
             let locations = glif_locations
                 .location_of(glif_file)
                 .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;

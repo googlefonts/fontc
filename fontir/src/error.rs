@@ -11,7 +11,7 @@ pub enum Error {
     #[error("IO failure")]
     IoError(#[from] io::Error),
     #[error("Unable to parse")]
-    ParseError(PathBuf, Box<dyn error::Error>),
+    ParseError(PathBuf, String),
     #[error("Illegible source")]
     UnableToLoadSource(Box<dyn error::Error>),
     #[error("Missing layer")]
@@ -22,6 +22,8 @@ pub enum Error {
     NoLocationsForGlyph(String),
     #[error("Asked to create work for something other than the last input we created")]
     UnableToCreateGlyphIrWork,
+    #[error("Unexpected state encountered in a state set")]
+    UnexpectedState,
 }
 
 /// An async work error, hence one that must be Send
