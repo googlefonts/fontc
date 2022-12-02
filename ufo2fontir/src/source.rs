@@ -240,7 +240,7 @@ impl DesignSpaceIrSource {
         let stateset = input
             .glyphs
             .get(&glyph_name)
-            .ok_or_else(|| Error::NoFilesForGlyph(glyph_name.clone()))?;
+            .ok_or_else(|| Error::NoStateForGlyph(glyph_name.clone()))?;
         let mut glif_files = HashMap::new();
         let glif_locations = self.glif_locations.as_ref().unwrap();
         for state_key in stateset.keys() {

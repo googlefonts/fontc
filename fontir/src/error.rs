@@ -17,7 +17,7 @@ pub enum Error {
     #[error("Missing layer")]
     NoSuchLayer(String),
     #[error("No files associated with glyph")]
-    NoFilesForGlyph(String),
+    NoStateForGlyph(String),
     #[error("No design space location(s) associated with glyph")]
     NoLocationsForGlyph(String),
     #[error("Asked to create work for something other than the last input we created")]

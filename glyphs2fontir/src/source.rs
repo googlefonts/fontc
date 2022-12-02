@@ -1,4 +1,4 @@
-use fontir::error::Error;
+use fontir::error::{Error, WorkError};
 use fontir::source::{Input, Paths, Source, Work};
 use fontir::stateset::StateSet;
 use log::debug;
@@ -27,15 +27,21 @@ impl GlyphsIrSource {
 }
 
 struct PlistCache {
-    _global_metadata: StateSet,
+    global_metadata: StateSet,
     _root_dict: HashMap<String, Plist>,
+}
+
+impl PlistCache {
+    fn is_valid_for(&self, global_metadata: &StateSet) -> bool {
+        self.global_metadata == *global_metadata
+    }
 }
 
 fn glyph_identifier(glyph_name: &str) -> String {
     format!("/glyph/{glyph_name}")
 }
 
-fn read_glyphs(glyphs_file: &Path) -> Result<(HashMap<String, Plist>, String), Error> {
+fn read_glyphs_file(glyphs_file: &Path) -> Result<(HashMap<String, Plist>, String), Error> {
     let raw_plist = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
     let plist = Plist::parse(&raw_plist).unwrap();
     let Plist::Dictionary(root_dict, _) = plist else {
@@ -94,21 +100,32 @@ impl GlyphsIrSource {
     // When things like upem may have changed forget incremental and rebuild the whole thing
     fn global_rebuild_triggers(
         &self,
-        _root_dict: &HashMap<String, Plist>,
+        root_dict: &HashMap<String, Plist>,
+        raw_plist: &str,
     ) -> Result<StateSet, Error> {
-        todo!()
+        // Naive mk1: if anything other than glyphs and date changes do a global rebuild
+        // TODO experiment with actual glyphs saves to see what makes sense
+        let mut state = StateSet::new();
+        for (key, plist) in root_dict {
+            if key == "glyphs" || key == "date" {
+                continue;
+            }
+            let r = plist.range();
+            state.track_slice(format!("/{}", key), &raw_plist[r.start..r.end])?;
+        }
+        Ok(state)
     }
 }
 
 impl Source for GlyphsIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         // We have to read the glyphs file then shred it to figure out if anything changed
-        let (root_dict, raw_plist) = read_glyphs(&self.glyphs_file)?;
+        let (root_dict, raw_plist) = read_glyphs_file(&self.glyphs_file)?;
 
         let glyphs = glyphs(&self.glyphs_file, &root_dict, &raw_plist)?;
-        let global_metadata = self.global_rebuild_triggers(&root_dict)?;
+        let global_metadata = self.global_rebuild_triggers(&root_dict, &raw_plist)?;
         self.plist_cache = Some(PlistCache {
-            _global_metadata: global_metadata.clone(),
+            global_metadata: global_metadata.clone(),
             _root_dict: root_dict,
         });
 
@@ -120,10 +137,61 @@ impl Source for GlyphsIrSource {
 
     fn create_glyph_ir_work(
         &self,
-        _glyph_names: &HashSet<&str>,
-        _input: &Input,
+        glyph_names: &HashSet<&str>,
+        input: &Input,
     ) -> Result<Vec<Box<dyn Work<()>>>, fontir::error::Error> {
-        todo!("TODO write glyph IR to {:#?}", self.ir_paths.glyph_ir_dir());
+        let mut work: Vec<Box<dyn Work<()>>> = Vec::new();
+
+        // Do we have a plist cache?
+        // TODO: consider just recomputing here instead of failing
+        if !self
+            .plist_cache
+            .as_ref()
+            .map(|pc| pc.is_valid_for(&input.global_metadata))
+            .unwrap_or(false)
+        {
+            return Err(Error::UnableToCreateGlyphIrWork);
+        }
+
+        for glyph_name in glyph_names {
+            work.push(Box::from(
+                self.create_work_for_one_glyph(glyph_name, input)?,
+            ));
+        }
+
+        Ok(work)
+    }
+}
+
+impl GlyphsIrSource {
+    fn create_work_for_one_glyph(
+        &self,
+        glyph_name: &str,
+        input: &Input,
+    ) -> Result<GlyphIrWork, Error> {
+        let glyph_name = glyph_name.to_string();
+        let _stateset = input
+            .glyphs
+            .get(&glyph_name)
+            .ok_or_else(|| Error::NoStateForGlyph(glyph_name.clone()))?;
+
+        Ok(GlyphIrWork {
+            glyph_name: glyph_name.clone(),
+            ir_file: self.ir_paths.glyph_ir_file(&glyph_name),
+        })
+    }
+}
+
+struct GlyphIrWork {
+    glyph_name: String,
+    ir_file: PathBuf,
+}
+
+impl Work<()> for GlyphIrWork {
+    fn exec(&self) -> Result<(), WorkError> {
+        debug!("Generate {:#?} for {}", self.ir_file, self.glyph_name);
+        fs::write(&self.ir_file, &self.glyph_name).map_err(WorkError::IoError)?;
+        Ok(())
     }
 }
 
@@ -139,7 +207,7 @@ mod tests {
 
     use crate::plist::Plist;
 
-    use super::{glyph_name, glyphs, read_glyphs};
+    use super::{glyph_name, glyphs, read_glyphs_file};
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -149,7 +217,7 @@ mod tests {
 
     fn glyphs_in_file(filename: &str) -> HashMap<String, StateSet> {
         let glyphs_file = testdata_dir().join(filename);
-        let (root_dict, raw_plist) = read_glyphs(&glyphs_file).unwrap();
+        let (root_dict, raw_plist) = read_glyphs_file(&glyphs_file).unwrap();
         glyphs(&glyphs_file, &root_dict, &raw_plist).unwrap()
     }
 
