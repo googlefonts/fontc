@@ -29,7 +29,7 @@ use super::{
     common, glyph_range,
     lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, PreviouslyAssignedClass, SomeLookup},
     output::{Compilation, SizeFeature},
-    tables::{ClassId, ScriptRecord, Tables},
+    tables::{ClassId, CvParams, ScriptRecord, Tables},
 };
 
 pub struct CompilationCtx<'a> {
@@ -946,6 +946,8 @@ impl<'a> CompilationCtx<'a> {
             self.resolve_size_feature(&feature);
         } else if common::is_stylistic_set(tag_raw) {
             self.resolve_stylistic_set_feature(tag_raw, &feature);
+        } else if common::is_character_variant(tag_raw) {
+            self.resolve_character_variant_feature(tag_raw, &feature);
         } else {
             for item in feature.statements() {
                 self.resolve_statement(item);
@@ -968,6 +970,55 @@ impl<'a> CompilationCtx<'a> {
         for item in feature
             .statements()
             .filter(|node| node.kind() != Kind::FeatureNamesKw)
+        {
+            self.resolve_statement(item);
+        }
+    }
+
+    fn resolve_character_variant_feature(&mut self, tag: Tag, feature: &typed::Feature) {
+        if let Some(cv_params) = feature.character_variant_params() {
+            let mut params = CvParams::default();
+            if let Some(node) = cv_params.feat_ui_label_name() {
+                params.feat_ui_label_name = node
+                    .statements()
+                    .map(|x| self.resolve_name_spec(&x))
+                    .collect();
+            }
+            if let Some(node) = cv_params.feat_tooltip_text_name() {
+                params.feat_ui_tooltip_text_name = node
+                    .statements()
+                    .map(|x| self.resolve_name_spec(&x))
+                    .collect();
+            }
+            if let Some(node) = cv_params.sample_text_name() {
+                params.samle_text_name = node
+                    .statements()
+                    .map(|x| self.resolve_name_spec(&x))
+                    .collect();
+            }
+            if let Some(node) = cv_params.sample_text_name() {
+                params.samle_text_name = node
+                    .statements()
+                    .map(|x| self.resolve_name_spec(&x))
+                    .collect();
+            }
+            for node in cv_params.param_ui_label_name() {
+                params.param_ui_label_names.push(
+                    node.statements()
+                        .map(|x| self.resolve_name_spec(&x))
+                        .collect(),
+                );
+            }
+            for c in cv_params.characters() {
+                params.characters.push(c.value().parse_char().unwrap());
+            }
+
+            self.tables.character_variants.insert(tag, params);
+        }
+
+        for item in feature
+            .statements()
+            .filter(|node| node.kind() != Kind::CvParametersKw)
         {
             self.resolve_statement(item);
         }

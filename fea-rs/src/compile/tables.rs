@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    convert::TryInto,
+};
 
 use smol_str::SmolStr;
 use write_fonts::{
@@ -10,7 +13,7 @@ use write_fonts::{
         gdef::{AttachList, AttachPoint, CaretValue, GlyphClassDef, LigCaretList, LigGlyph},
         layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
     },
-    types::{Fixed, LongDateTime, Tag},
+    types::{Fixed, LongDateTime, Tag, Uint24},
     validate::ValidationReport,
     OffsetMarker,
 };
@@ -30,6 +33,7 @@ pub(crate) struct Tables {
     pub vmtx: Option<vmtx>,
     pub name: NameBuilder,
     pub stylistic_sets: HashMap<Tag, Vec<NameSpec>>,
+    pub character_variants: HashMap<Tag, CvParams>,
     pub GDEF: Option<Gdef>,
     pub BASE: Option<BASE>,
     pub OS2: Option<OS2>,
@@ -48,7 +52,15 @@ pub struct vmtx {
     pub advances_y: Vec<(GlyphId, i16)>,
 }
 
-// A builder for the name table
+#[derive(Clone, Debug, Default)]
+pub struct CvParams {
+    pub feat_ui_label_name: Vec<NameSpec>,
+    pub feat_ui_tooltip_text_name: Vec<NameSpec>,
+    pub samle_text_name: Vec<NameSpec>,
+    pub param_ui_label_names: Vec<Vec<NameSpec>>,
+    pub characters: Vec<char>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct NameSpec {
     pub platform_id: u16,
@@ -311,6 +323,7 @@ impl NameSpec {
         Encoding::new(self.platform_id, self.encoding_id) != Encoding::Unknown
     }
 
+    //TODO: rename me to build
     pub fn to_otf(&self, name_id: u16) -> write_fonts::tables::name::NameRecord {
         let string = parse_string(self.platform_id, self.string.trim_matches('"'));
         write_fonts::tables::name::NameRecord::new(
@@ -320,6 +333,39 @@ impl NameSpec {
             name_id,
             string.into(),
         )
+    }
+}
+
+impl CvParams {
+    pub(crate) fn build(
+        &self,
+        names: &mut NameBuilder,
+    ) -> write_fonts::tables::layout::CharacterVariantParams {
+        let mut out = write_fonts::tables::layout::CharacterVariantParams::default();
+        if !self.feat_ui_label_name.is_empty() {
+            out.feat_ui_label_name_id = names.add_anon_group(&self.feat_ui_label_name);
+        }
+        if !self.feat_ui_tooltip_text_name.is_empty() {
+            out.feat_ui_tooltip_text_name_id =
+                names.add_anon_group(&self.feat_ui_tooltip_text_name);
+        }
+
+        if !self.samle_text_name.is_empty() {
+            out.sample_text_name_id = names.add_anon_group(&self.samle_text_name);
+        }
+
+        if let Some((first, rest)) = self.param_ui_label_names.split_first() {
+            out.first_param_ui_label_name_id = names.add_anon_group(first);
+            for item in rest {
+                names.add_anon_group(item);
+            }
+        }
+        out.num_named_parameters = self.param_ui_label_names.len().try_into().unwrap();
+        for c in &self.characters {
+            out.character.push(Uint24::checked_new(*c as _).unwrap());
+        }
+
+        out
     }
 }
 

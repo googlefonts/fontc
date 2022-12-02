@@ -218,7 +218,6 @@ pub enum Kind {
     ScriptNode,
     LanguageNode,
     LookupFlagNode,
-    CvParametersNode,
     SubtableNode,
 
     TableNode,
@@ -256,6 +255,7 @@ pub enum Kind {
     StatAxisValueNode,
     StatAxisValueLocationNode,
     StatAxisValueFlagNode,
+    CvParamsNameNode,
 }
 
 impl Kind {
@@ -473,7 +473,6 @@ impl std::fmt::Display for Kind {
             Self::ScriptNode => write!(f, "ScriptNode"),
             Self::LanguageNode => write!(f, "LanguageNode"),
             Self::LookupFlagNode => write!(f, "LookupFlagNode"),
-            Self::CvParametersNode => write!(f, "cvParametersNode"),
             Self::SubtableNode => write!(f, "SubtableNode"),
             Self::TableNode => write!(f, "TableNode"),
             Self::HeadTableNode => write!(f, "HeadTableNode"),
@@ -510,6 +509,7 @@ impl std::fmt::Display for Kind {
             Self::StringValueNode => write!(f, "StringNode"), // used in os2
             Self::Os2NumberListNode => write!(f, "Os2NumberListNode"),
             Self::Os2FamilyClassNode => write!(f, "Os2FamilyClassNode"),
+            Self::CvParamsNameNode => write!(f, "CvParamsNameNode"),
         }
     }
 }

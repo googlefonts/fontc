@@ -182,15 +182,17 @@ fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
         LexemeKind::FeatUiTooltipTextNameIdKw,
         LexemeKind::SampleTextNameIdKw,
         LexemeKind::ParamUiLabelNameIdKw,
-        LexemeKind::CharacterKw,
     ]);
 
     fn entry(parser: &mut Parser, recovery: TokenSet) {
-        if parser.eat(Kind::CharacterKw) {
-            parser.expect_recover(UNICODE_VALUE, recovery);
-            parser.expect_semi();
+        if parser.matches(0, Kind::CharacterKw) {
+            parser.in_node(Kind::CharacterKw, |parser| {
+                assert!(parser.eat(Kind::CharacterKw));
+                parser.expect_recover(UNICODE_VALUE, recovery);
+                parser.expect_semi();
+            })
         } else if parser.matches(0, PARAM_KEYWORDS) {
-            parser.in_node(parser.nth(0).kind.to_token_kind(), |parser| {
+            parser.in_node(Kind::CvParamsNameNode, |parser| {
                 assert!(parser.eat(PARAM_KEYWORDS));
                 parser.expect_recover(Kind::LBrace, recovery.add(LexemeKind::NameKw));
                 while !parser.at_eof() && !parser.matches(0, recovery) {

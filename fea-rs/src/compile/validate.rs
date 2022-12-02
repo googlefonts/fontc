@@ -456,7 +456,7 @@ impl<'a> ValidationCtx<'a> {
         }
 
         if common::is_character_variant(tag_raw) {
-            self.warning(tag.range(), "cv__ feature validation not implemented");
+            self.validate_character_variant_items(&mut statement_iter);
         }
 
         for item in statement_iter {
@@ -499,6 +499,27 @@ impl<'a> ValidationCtx<'a> {
             for name in node.statements() {
                 self.validate_name_spec(&name);
             }
+            iter.next();
+        }
+    }
+
+    fn validate_character_variant_items<'b>(
+        &mut self,
+        iter: &mut impl Iterator<Item = &'b NodeOrToken>,
+    ) {
+        let mut iter = iter.peekable();
+        if let Some(node) = iter.peek().and_then(|x| typed::CvParameters::cast(x)) {
+            for kind in [
+                Kind::FeatUiLabelNameIdKw,
+                Kind::FeatUiTooltipTextNameIdKw,
+                Kind::SampleTextNameIdKw,
+                Kind::ParamUiLabelNameIdKw,
+            ] {
+                if !node.iter().any(|x| x.kind() == kind) {
+                    self.warning(node.keyword().range(), format!("missing '{kind}' node"));
+                }
+            }
+
             iter.next();
         }
     }

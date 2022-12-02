@@ -115,6 +115,14 @@ impl Compilation {
             feature_params.insert((common::tags::GSUB, *tag), params);
         }
 
+        for (tag, cv_params) in self.tables.character_variants.iter() {
+            let params = cv_params.build(&mut name_builder);
+            feature_params.insert(
+                (common::tags::GSUB, *tag),
+                FeatureParams::CharacterVariant(params),
+            );
+        }
+
         // actually add feature_params as appropriate
         if !feature_params.is_empty() {
             if let Some(gsub) = gsub.as_mut() {

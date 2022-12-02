@@ -191,6 +191,9 @@ ast_node!(Device, Kind::DeviceNode);
 ast_node!(SizeMenuName, Kind::SizeMenuNameNode);
 ast_node!(Parameters, Kind::ParametersNode);
 ast_node!(FeatureNames, Kind::FeatureNamesKw);
+ast_node!(CvParameters, Kind::CvParametersKw);
+ast_node!(CvParametersName, Kind::CvParamsNameNode);
+ast_node!(CvParametersChar, Kind::CharacterKw);
 
 ast_node!(HeadTable, Kind::HeadTableNode);
 ast_node!(HheaTable, Kind::HheaTableNode);
@@ -560,6 +563,10 @@ impl Feature {
 
     pub fn stylistic_set_feature_names(&self) -> Option<FeatureNames> {
         self.statements().next().and_then(FeatureNames::cast)
+    }
+
+    pub fn character_variant_params(&self) -> Option<CvParameters> {
+        self.statements().next().and_then(CvParameters::cast)
     }
 
     pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
@@ -1211,6 +1218,57 @@ impl FeatureNames {
     }
 }
 
+impl CvParameters {
+    pub fn keyword(&self) -> &Token {
+        debug_assert_eq!(self.iter().next().unwrap().kind(), Kind::CvParametersKw);
+        self.iter().next().and_then(|t| t.as_token()).unwrap()
+    }
+
+    pub fn find_node(&self, kind: Kind) -> Option<CvParametersName> {
+        self.iter()
+            .filter_map(CvParametersName::cast)
+            .find(|node| node.keyword().kind == kind)
+    }
+
+    pub fn feat_ui_label_name(&self) -> Option<CvParametersName> {
+        self.find_node(Kind::FeatUiLabelNameIdKw)
+    }
+
+    pub fn feat_tooltip_text_name(&self) -> Option<CvParametersName> {
+        self.find_node(Kind::FeatUiTooltipTextNameIdKw)
+    }
+
+    pub fn sample_text_name(&self) -> Option<CvParametersName> {
+        self.find_node(Kind::SampleTextNameIdKw)
+    }
+
+    pub fn param_ui_label_name(&self) -> impl Iterator<Item = CvParametersName> + '_ {
+        self.iter()
+            .filter_map(CvParametersName::cast)
+            .filter(|node| node.keyword().kind == Kind::ParamUiLabelNameIdKw)
+    }
+
+    pub fn characters(&self) -> impl Iterator<Item = CvParametersChar> + '_ {
+        self.iter().filter_map(CvParametersChar::cast)
+    }
+}
+
+impl CvParametersName {
+    pub fn keyword(&self) -> &Token {
+        self.iter().next().and_then(|t| t.as_token()).unwrap()
+    }
+
+    pub fn statements(&self) -> impl Iterator<Item = NameSpec> + '_ {
+        self.iter().filter_map(NameSpec::cast)
+    }
+}
+
+impl CvParametersChar {
+    pub fn value(&self) -> DecOctHex {
+        self.iter().find_map(DecOctHex::cast).unwrap()
+    }
+}
+
 impl NameTable {
     pub fn statements(&self) -> impl Iterator<Item = NameRecord> + '_ {
         self.iter().filter_map(NameRecord::cast)
@@ -1248,13 +1306,24 @@ impl NameSpec {
 }
 
 impl DecOctHex {
-    pub fn parse(&self) -> Result<u16, String> {
+    fn parse_raw(&self) -> Result<u32, String> {
         match self {
-            DecOctHex::Decimal(num) => num.text().parse::<u16>().map_err(|e| e.to_string()),
-            DecOctHex::Octal(num) => u16::from_str_radix(num.text(), 8).map_err(|e| e.to_string()),
-            DecOctHex::Hex(num) => u16::from_str_radix(num.text().trim_start_matches("0x"), 16)
+            DecOctHex::Decimal(num) => num.text().parse::<u32>().map_err(|e| e.to_string()),
+            DecOctHex::Octal(num) => u32::from_str_radix(num.text(), 8).map_err(|e| e.to_string()),
+            DecOctHex::Hex(num) => u32::from_str_radix(num.text().trim_start_matches("0x"), 16)
                 .map_err(|e| e.to_string()),
         }
+    }
+
+    pub fn parse(&self) -> Result<u16, String> {
+        self.parse_raw()
+            .and_then(|x| u16::try_from(x).map_err(|e| e.to_string()))
+    }
+
+    pub fn parse_char(&self) -> Result<char, String> {
+        self.parse_raw().and_then(|int| {
+            char::from_u32(int).ok_or_else(|| format!("{int} is not a unicode codepoint"))
+        })
     }
 }
 
