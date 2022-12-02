@@ -205,7 +205,7 @@ mod tests {
 
     use fontir::stateset::StateSet;
 
-    use crate::plist::Plist;
+    use crate::openstep_plist::Plist;
 
     use super::{glyph_name, glyphs, read_glyphs_file};
 
