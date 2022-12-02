@@ -246,8 +246,8 @@ mod tests {
 
     #[test]
     fn detect_slice_change() {
-        let p1 = String::from("Font.glyphs/glyphs/layer/space");
-        let p2 = String::from("Font.glyphs/glyphs/layer/hyphen");
+        let p1 = String::from("/glyphs/space");
+        let p2 = String::from("/glyphs/hyphen");
 
         let mut s1 = StateSet::new();
         s1.track_slice(p1.clone(), "this is a glyph").unwrap();
@@ -414,11 +414,8 @@ mod tests {
         let temp_dir = tempdir().unwrap();
 
         let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
-        fs.track_slice(
-            "file.glyphs/glyph/layer/glyph_name".to_string(),
-            "Hi World!",
-        )
-        .unwrap();
+        fs.track_slice("/glyph/glyph_name".to_string(), "Hi World!")
+            .unwrap();
 
         let toml = toml::ser::to_string_pretty(&fs).unwrap();
         let restored: StateSet = toml::from_str(&toml).expect(&toml);
@@ -430,11 +427,8 @@ mod tests {
         let temp_dir = tempdir().unwrap();
 
         let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
-        fs.track_slice(
-            "file.glyphs/glyph/layer/glyph_name".to_string(),
-            "Hi World!",
-        )
-        .unwrap();
+        fs.track_slice("/glyph/glyph_name".to_string(), "Hi World!")
+            .unwrap();
 
         let bc = bincode::serialize(&fs).unwrap();
         let restored: StateSet = bincode::deserialize(&bc).unwrap();

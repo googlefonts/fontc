@@ -1,10 +1,12 @@
-use std::collections::HashSet;
-use std::path::Path;
-use std::{collections::HashMap, fs, path::PathBuf};
-
 use fontir::error::Error;
 use fontir::source::{Input, Paths, Source, Work};
 use fontir::stateset::StateSet;
+use log::debug;
+use std::cmp::min;
+use std::collections::HashSet;
+use std::ops::Range;
+use std::path::Path;
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::openstep_plist::Plist;
 
@@ -42,6 +44,25 @@ fn read_glyphs(glyphs_file: &Path) -> Result<(HashMap<String, Plist>, String), E
     Ok((root_dict, raw_plist))
 }
 
+fn glyph_name(
+    glyphs_file: &Path,
+    glyph: &HashMap<String, Plist>,
+    range: &Range<usize>,
+    raw_plist: &str,
+) -> Result<String, Error> {
+    // In an exciting turn of events it appears there are unquoted names that parse as floats
+    Ok(match glyph.get("glyphname") {
+        Some(Plist::String(glyph_name, _)) => glyph_name.clone(),
+        Some(Plist::Float(_, r)) => String::from(raw_plist[r.start..r.end].trim()),
+        _ => {
+            let (s, e) = (range.start, min(range.start + 8, range.end));
+            let message = format!("Missing glyphname at {:#?}: {}", range, &raw_plist[s..e]);
+            debug!("Parse failed:\n{:#?}", glyph);
+            return Err(Error::ParseError(glyphs_file.to_path_buf(), message));
+        }
+    })
+}
+
 fn glyphs(
     glyphs_file: &Path,
     root_dict: &HashMap<String, Plist>,
@@ -56,15 +77,14 @@ fn glyphs(
         let Plist::Dictionary(glyph, range) = glyph else {
             return Err(Error::ParseError(glyphs_file.to_path_buf(), "Glyphs must be dicts".to_string()));
         };
-        let Some(Plist::String(glyph_name, _)) = glyph.get("glyphname") else {
-            return Err(Error::ParseError(glyphs_file.to_path_buf(), "No glyph name".to_string()));
-        };
+        let glyph_name = glyph_name(glyphs_file, glyph, range, raw_plist)?;
+        debug!("Parse {}", &glyph_name);
         let mut change_tracker = StateSet::new();
         change_tracker.track_slice(
-            glyph_identifier(glyph_name),
+            glyph_identifier(&glyph_name),
             &raw_plist[range.start..range.end],
         )?;
-        glyphs.insert(glyph_name.clone(), change_tracker);
+        glyphs.insert(glyph_name, change_tracker);
     }
 
     Ok(glyphs)
@@ -111,12 +131,15 @@ impl Source for GlyphsIrSource {
 mod tests {
     use std::{
         collections::{HashMap, HashSet},
+        f64::INFINITY,
         path::{Path, PathBuf},
     };
 
     use fontir::stateset::StateSet;
 
-    use super::{glyphs, read_glyphs};
+    use crate::plist::Plist;
+
+    use super::{glyph_name, glyphs, read_glyphs};
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -167,5 +190,41 @@ mod tests {
             })
             .collect::<HashSet<String>>();
         assert_eq!(HashSet::from(["hyphen".to_string()]), changed);
+    }
+
+    #[test]
+    fn access_glyph_name_string() {
+        let mut glyph = HashMap::new();
+        glyph.insert(
+            "glyphname".to_string(),
+            Plist::String("space".to_string(), 0..1),
+        );
+        assert_eq!(
+            "space",
+            glyph_name(
+                Path::new("f.glyphs"),
+                &glyph,
+                &(1usize..12usize),
+                "I'm a plist"
+            )
+            .unwrap()
+        );
+    }
+
+    // glyphname = infinity (unquoted) has a cool trick where it parses as a float
+    #[test]
+    fn access_glyph_name_float() {
+        let mut glyph = HashMap::new();
+        glyph.insert("glyphname".to_string(), Plist::Float(INFINITY, 12..20));
+        assert_eq!(
+            "infinity",
+            glyph_name(
+                Path::new("f.glyphs"),
+                &glyph,
+                &(1usize..12usize),
+                "glyphname = infinity"
+            )
+            .unwrap()
+        );
     }
 }
