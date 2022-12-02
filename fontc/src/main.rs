@@ -12,6 +12,7 @@ use fontir::{
     source::{DeleteWork, Input, Paths, Source, Work},
     stateset::StateSet,
 };
+use glyphs2fontir::source::GlyphsIrSource;
 use log::{debug, error, info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -105,6 +106,7 @@ fn ir_source(source: &Path, paths: Paths) -> Result<Box<dyn Source>, Error> {
             source.to_path_buf(),
             paths,
         ))),
+        "glyphs" => Ok(Box::from(GlyphsIrSource::new(source.to_path_buf(), paths))),
         _ => Err(Error::UnrecognizedSource(source.to_path_buf())),
     }
 }
