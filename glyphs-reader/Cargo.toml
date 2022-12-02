@@ -1,0 +1,13 @@
+[package]
+name = "glyphs-reader"
+version = "0.0.1"
+license = "MIT/Apache-2.0"
+authors = ["Raph Levien <raph.levien@gmail.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+kurbo = "0.5.1"
+plist_derive = { path = "plist_derive" }
+ordered-float = "3.4.0"

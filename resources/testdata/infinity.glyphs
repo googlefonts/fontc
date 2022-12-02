@@ -1,0 +1,9 @@
+{
+glyphs = (
+	{
+		glyphname = infinity;
+		layers = ();
+	}
+);
+fontMaster = ();
+}

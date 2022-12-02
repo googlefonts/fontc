@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map, HashMap, HashSet},
     fs,
-    hash::Hash,
+    hash::{Hash, Hasher},
     io,
     path::{Path, PathBuf},
     vec,
@@ -18,20 +18,18 @@ pub struct StateSet {
     pub(crate) entries: HashMap<StateIdentifier, State>,
 }
 
-// Sometimes state comes from a file, sometimes it comes from a
-// a slice of a string.
+// The key for a stateful thing of some specific type
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum StateIdentifier {
     File(PathBuf),
     Memory(String),
 }
 
-// Sometimes state comes from a file, sometimes it comes from a
-// a slice of a string.
+// A stateful thing of some specific type
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum State {
     File(FileState),
-    Memory(SliceState),
+    Memory(MemoryState),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -41,9 +39,9 @@ pub(crate) struct FileState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SliceState {
+pub struct MemoryState {
     pub(crate) hash: blake3::Hash,
-    pub(crate) size: usize,
+    pub(crate) size: u64,
 }
 
 impl FileState {
@@ -56,13 +54,38 @@ impl FileState {
     }
 }
 
-impl SliceState {
-    fn of(slice: &str) -> Result<SliceState, io::Error> {
-        let hash = blake3::hash(slice.as_bytes());
-        Ok(SliceState {
+impl MemoryState {
+    fn of(thing: impl Hash) -> Result<MemoryState, io::Error> {
+        let mut hasher = Blake3Hasher::new();
+        thing.hash(&mut hasher);
+        let hash = hasher.b3.finalize();
+        Ok(MemoryState {
             hash,
-            size: slice.len(),
+            size: hasher.b3.count(),
         })
+    }
+}
+
+// blake3 doesn't implement std Hasher which makes hashing an impl Hash difficult
+struct Blake3Hasher {
+    b3: blake3::Hasher,
+}
+
+impl Blake3Hasher {
+    fn new() -> Blake3Hasher {
+        Blake3Hasher {
+            b3: blake3::Hasher::new(),
+        }
+    }
+}
+
+impl Hasher for Blake3Hasher {
+    fn finish(&self) -> u64 {
+        panic!("Use .b3.finalize() instead");
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.b3.update(bytes);
     }
 }
 
@@ -133,14 +156,18 @@ impl StateSet {
         Ok(())
     }
 
-    /// Pay attention to slice, we'd quite like to know if it changes
+    /// Pay attention to this hashable thing, we'd quite like to know if it changes
     ///
     /// Identifier can be whatever you like. For file fragments a path-like construct
     /// is suggested, e.g. myfile.glyphs/glyphs/layer/glyph perhaps.
-    pub fn track_slice(&mut self, identifier: String, slice: &str) -> Result<(), io::Error> {
+    pub fn track_memory(
+        &mut self,
+        identifier: String,
+        memory: Box<impl Hash>,
+    ) -> Result<(), io::Error> {
         self.entries.insert(
             StateIdentifier::Memory(identifier),
-            State::Memory(SliceState::of(slice)?),
+            State::Memory(MemoryState::of(memory)?),
         );
         Ok(())
     }
@@ -245,16 +272,17 @@ mod tests {
     }
 
     #[test]
-    fn detect_slice_change() {
+    fn detect_memory_change() {
         let p1 = String::from("/glyphs/space");
         let p2 = String::from("/glyphs/hyphen");
 
         let mut s1 = StateSet::new();
-        s1.track_slice(p1.clone(), "this is a glyph").unwrap();
-        s1.track_slice(p2, "another glyph").unwrap();
+        s1.track_memory(p1.clone(), Box::new("this is a glyph"))
+            .unwrap();
+        s1.track_memory(p2, Box::new("another glyph")).unwrap();
 
         let mut s2 = s1.clone();
-        s2.track_slice(p1.clone(), "this changes everything")
+        s2.track_memory(p1.clone(), Box::new("this changes everything"))
             .unwrap();
 
         assert_eq!(
@@ -414,7 +442,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
 
         let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
-        fs.track_slice("/glyph/glyph_name".to_string(), "Hi World!")
+        fs.track_memory("/glyph/glyph_name".to_string(), Box::new("Hi World!"))
             .unwrap();
 
         let toml = toml::ser::to_string_pretty(&fs).unwrap();
@@ -427,7 +455,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
 
         let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
-        fs.track_slice("/glyph/glyph_name".to_string(), "Hi World!")
+        fs.track_memory("/glyph/glyph_name".to_string(), Box::new("Hi World!"))
             .unwrap();
 
         let bc = bincode::serialize(&fs).unwrap();
