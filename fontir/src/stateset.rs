@@ -137,9 +137,9 @@ impl StateSet {
     ///
     /// Identifier can be whatever you like. For file fragments a path-like construct
     /// is suggested, e.g. myfile.glyphs/glyphs/layer/glyph perhaps.
-    pub fn track_slice(&mut self, identifier: &str, slice: &str) -> Result<(), io::Error> {
+    pub fn track_slice(&mut self, identifier: String, slice: &str) -> Result<(), io::Error> {
         self.entries.insert(
-            StateIdentifier::Memory(identifier.to_string()),
+            StateIdentifier::Memory(identifier),
             State::Memory(SliceState::of(slice)?),
         );
         Ok(())
@@ -246,19 +246,20 @@ mod tests {
 
     #[test]
     fn detect_slice_change() {
-        let p1 = "Font.glyphs/glyphs/layer/space";
-        let p2 = "Font.glyphs/glyphs/layer/hyphen";
+        let p1 = String::from("/glyphs/space");
+        let p2 = String::from("/glyphs/hyphen");
 
         let mut s1 = StateSet::new();
-        s1.track_slice(p1, "this is a glyph").unwrap();
+        s1.track_slice(p1.clone(), "this is a glyph").unwrap();
         s1.track_slice(p2, "another glyph").unwrap();
 
         let mut s2 = s1.clone();
-        s2.track_slice(p1, "this changes everything").unwrap();
+        s2.track_slice(p1.clone(), "this changes everything")
+            .unwrap();
 
         assert_eq!(
             StateDiff {
-                updated: HashSet::from([StateIdentifier::Memory(String::from(p1))]),
+                updated: HashSet::from([StateIdentifier::Memory(p1)]),
                 ..Default::default()
             },
             s2.diff(&s1).unwrap(),
@@ -413,7 +414,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
 
         let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
-        fs.track_slice("file.glyphs/glyph/layer/glyph_name", "Hi World!")
+        fs.track_slice("/glyph/glyph_name".to_string(), "Hi World!")
             .unwrap();
 
         let toml = toml::ser::to_string_pretty(&fs).unwrap();
@@ -426,7 +427,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
 
         let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
-        fs.track_slice("file.glyphs/glyph/layer/glyph_name", "Hi World!")
+        fs.track_slice("/glyph/glyph_name".to_string(), "Hi World!")
             .unwrap();
 
         let bc = bincode::serialize(&fs).unwrap();

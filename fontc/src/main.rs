@@ -118,7 +118,7 @@ fn finish_successfully(context: CompileContext) -> Result<(), Error> {
 }
 
 fn global_change(current_inputs: &Input, prev_inputs: &Input) -> bool {
-    current_inputs.font_info != prev_inputs.font_info
+    current_inputs.global_metadata != prev_inputs.global_metadata
 }
 
 fn glyphs_changed(context: &CompileContext) -> HashSet<&str> {

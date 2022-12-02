@@ -102,8 +102,8 @@ impl Paths {
 /// The files (in future non-file sources?) that drive various parts of IR
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct Input {
-    /// The input(s) that inform font_info
-    pub font_info: StateSet,
+    /// Font-wide metadata, such as upem. Things that should trigger a non-incremental build if they change.
+    pub global_metadata: StateSet,
     /// The input(s) that inform glyph construction, grouped by gyph name
     pub glyphs: HashMap<String, StateSet>,
 }
@@ -151,7 +151,10 @@ mod tests {
         let mut glyphs = HashMap::new();
         glyphs.insert("space".to_string(), glyph);
 
-        Input { font_info, glyphs }
+        Input {
+            global_metadata: font_info,
+            glyphs,
+        }
     }
 
     #[test]
