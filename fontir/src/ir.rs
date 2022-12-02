@@ -13,6 +13,8 @@ pub struct StaticMetadata {}
 
 use ordered_float::OrderedFloat;
 
+use crate::error::Error;
+
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Axis {
     pub name: String,
@@ -36,6 +38,30 @@ pub type DesignSpaceLocation = BTreeMap<String, OrderedFloat<f32>>;
 pub struct Glyph {
     pub name: String,
     pub sources: HashMap<DesignSpaceLocation, GlyphInstance>,
+}
+
+impl Glyph {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            sources: HashMap::new(),
+        }
+    }
+
+    pub fn try_add_source(
+        &mut self,
+        unique_location: &DesignSpaceLocation,
+        source: GlyphInstance,
+    ) -> Result<(), Error> {
+        if self.sources.contains_key(unique_location) {
+            return Err(Error::DuplicateLocation {
+                what: format!("glyph '{}' source", self.name),
+                loc: unique_location.clone(),
+            });
+        }
+        self.sources.insert(unique_location.clone(), source);
+        Ok(())
+    }
 }
 
 /// A Glyph at a specific position in designspace.

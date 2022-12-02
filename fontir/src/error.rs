@@ -2,6 +2,8 @@ use std::{error, io, path::PathBuf};
 
 use thiserror::Error;
 
+use crate::ir::DesignSpaceLocation;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Directory expected")]
@@ -24,6 +26,11 @@ pub enum Error {
     UnableToCreateGlyphIrWork,
     #[error("Unexpected state encountered in a state set")]
     UnexpectedState,
+    #[error("Duplicate location for {what}: {loc:?}")]
+    DuplicateLocation {
+        what: String,
+        loc: DesignSpaceLocation,
+    },
 }
 
 /// An async work error, hence one that must be Send
