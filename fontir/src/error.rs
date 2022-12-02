@@ -38,4 +38,10 @@ pub enum Error {
 pub enum WorkError {
     #[error("IO failure")]
     IoError(#[from] io::Error),
+    // I can't use Box(<dyn error::Error>) here because it's not Send, but
+    // if I convert error to string I lose the backtrace... What to do?
+    #[error("Conversion of glyph '{0}' to IR failed: {1}")]
+    GlyphIrWorkError(String, String),
+    #[error("yaml error")]
+    YamlSerError(#[from] serde_yaml::Error),
 }

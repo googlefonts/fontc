@@ -14,7 +14,7 @@ use fontir::{
 use log::debug;
 use norad::designspace::{self, DesignSpaceDocument};
 
-use crate::toir::to_ir_location;
+use crate::toir::{to_ir_glyph, to_ir_location};
 
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
@@ -271,7 +271,10 @@ impl Work for GlyphIrWork {
             "Generate {:#?} for {} {:#?}",
             self.ir_file, self.glyph_name, self.glif_files
         );
-        fs::write(&self.ir_file, &self.glyph_name).map_err(WorkError::IoError)?;
+        let glyph_ir = to_ir_glyph(&self.glyph_name, &self.glif_files)
+            .map_err(|e| WorkError::GlyphIrWorkError(self.glyph_name.clone(), e.to_string()))?;
+        let glyph_ir_yml = serde_yaml::to_string(&glyph_ir).map_err(WorkError::YamlSerError)?;
+        fs::write(&self.ir_file, glyph_ir_yml).map_err(WorkError::IoError)?;
         Ok(())
     }
 }
