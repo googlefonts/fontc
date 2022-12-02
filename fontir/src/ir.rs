@@ -39,11 +39,63 @@ pub struct Glyph {
 }
 
 /// A Glyph at a specific position in designspace.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct GlyphInstance {
-    pub width: Option<f32>,
-    pub height: Option<f32>,
-    // TODO: outlines, a Vec<Shape>
+    /// Advance width.
+    pub width: f64,
+    /// Advance height; if None, assumed to equal font's ascender - descende.
+    pub height: Option<f64>,
+    /// List of glyph contours.
+    pub contours: Vec<Contour>,
+    /// List of glyph components.
+    pub components: Vec<Component>,
+}
+
+/// A single glyph contour consisting of a list of points.
+pub type Contour = Vec<ContourPoint>;
+
+/// A single point in a glyph contour.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ContourPoint {
+    pub x: f64,
+    pub y: f64,
+    pub typ: PointType,
+}
+
+/// Possible types of a point in a glyph contour, following UFO GLIF semantics.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum PointType {
+    Move,
+    Line,
+    OffCurve,
+    Curve,
+    QCurve,
+}
+
+/// A single glyph component, reference to another glyph.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Component {
+    /// The name of the referenced glyph.
+    pub base: String,
+    /// Affine transformation to apply to the referenced glyph.
+    pub transform: Affine2x3,
+}
+
+/// A 2×3 affine transformation matrix.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Affine2x3 {
+    /// x-component of transformed x-basis vector.
+    pub xx: f64,
+    /// y-component of transformed x-basis vector.
+    pub yx: f64,
+    /// x-component of transformed y-basis vector.
+    pub xy: f64,
+    /// y-component of transformed y-basis vector.
+    pub yy: f64,
+    /// x-component of translation vector.
+    pub dx: f64,
+    /// y-component of translation vector.
+    pub dy: f64,
 }
 
 #[cfg(test)]
