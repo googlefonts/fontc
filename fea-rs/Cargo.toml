@@ -1,6 +1,6 @@
 [package]
 name = "fea-rs"
-version = "0.0.0"
+version = "0.0.1"
 license = "Apache-2.0"
 authors = ["Colin Rofls <colin@cmyr.net>"]
 description = "Tools for working with Adobe OpenType Feature files."
@@ -15,10 +15,9 @@ exclude = ["test-data"]
 [dependencies]
 ansi_term = "0.12.1"
 smol_str = "0.1.18"
-norad = "0.5" # just for use in sample binaries/debugging, remove eventually
-write-fonts = { git = "https://github.com/googlefonts/fontations", rev = "cff792e"}
-#write-fonts = { version = "0.0.3", path = "../../fontations/write-fonts" }
-xflags = "0.2.3"
+norad = "0.7" # just for use in sample binaries/debugging, remove eventually
+write-fonts = "0.0.4"
+xflags = "0.3.1"
 chrono = "0.4.3"
 diff = { version = "0.1.12", optional = true }
 rayon = { version = "1.5", optional = true }
@@ -32,7 +31,7 @@ test = ["diff", "rayon", "serde", "serde_json"]
 [dev-dependencies]
 diff = "0.1.12"
 rayon = "1.5"
-criterion = "0.3"
+criterion = "0.4"
 serde = { version = "1.0.147", features = ["derive"] }
 serde_json = "1.0.87"
 

@@ -9,11 +9,10 @@ use write_fonts::types::GlyphId;
 ///
 /// usage: FONT_PATH FEA_PATH
 fn main() -> Result<(), Error> {
-    let args = flags::Args::from_env()?;
-    if args.help {
-        println!("{}", flags::Args::HELP);
-        return Ok(());
-    }
+    let args = match flags::Args::from_env() {
+        Ok(args) => args,
+        Err(e) => e.exit(),
+    };
 
     let names = parse_glyph_order(args.glyph_order())?;
     let parse = fea_rs::parse_root_file(args.fea(), Some(&names), None).unwrap();
@@ -78,8 +77,6 @@ fn parse_glyph_order(path: &Path) -> Result<GlyphMap, Error> {
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
-    #[error("bad args, pass -h for help '{0}'")]
-    Arguments(#[from] xflags::Error),
     #[error("invalid glyph map: '{0}'")]
     InvalidGlyphMap(String),
     #[error("io error: '{0}'")]
@@ -89,9 +86,8 @@ enum Error {
 mod flags {
     use std::path::{Path, PathBuf};
     xflags::xflags! {
-
         /// Compile a fea file into a source font
-        cmd args
+        cmd args {
             /// Path to the fea file
             required fea: PathBuf
             /// Path to a file containing the glyph order.
@@ -99,11 +95,9 @@ mod flags {
             /// This should be a utf-8 encoded file with one name per line,
             /// sorted in glyphid order.
             required glyphs: PathBuf
-            {
+
                 /// path to write font. Defaults to 'compile-out.ttf'
                 optional -o, --out-path out_path: PathBuf
-                /// Print help
-                optional -h, --help
             }
     }
 

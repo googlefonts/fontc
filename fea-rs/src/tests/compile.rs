@@ -2,11 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-//use fonttools::font::Font;
-
 use write_fonts::{
     from_obj::ToOwnedTable,
-    read::{tables::post::DEFAULT_GLYPH_NAMES, FontData, FontRef, TableProvider},
+    read::{tables::post::DEFAULT_GLYPH_NAMES, FontRef, TableProvider},
     tables::post::Post,
 };
 
@@ -136,7 +134,6 @@ fn good_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
 }
 
 fn make_glyph_map(font_data: &[u8]) -> GlyphMap {
-    let font_data = FontData::new(font_data);
     let font = FontRef::new(font_data).unwrap();
     let post: Post = font.post().unwrap().to_owned_table();
     post.glyph_name_index

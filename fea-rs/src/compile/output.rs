@@ -7,7 +7,7 @@ use std::{
 
 use write_fonts::{
     dump_table,
-    read::{FontData, FontRef, TableProvider},
+    read::{FontRef, TableProvider},
     tables::{
         layout::{FeatureParams, SizeParams, StylisticSetParams},
         maxp::Maxp,
@@ -53,7 +53,7 @@ impl Compilation {
         let maxp = Maxp::new(glyph_map.len().try_into().unwrap());
         builder.add_table(Tag::new(b"maxp"), write_fonts::dump_table(&maxp).unwrap());
         let empty = builder.build();
-        let font = FontRef::new(FontData::new(&empty)).unwrap();
+        let font = FontRef::new(&empty).unwrap();
         self.apply(&font)
     }
 
