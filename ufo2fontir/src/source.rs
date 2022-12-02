@@ -146,7 +146,7 @@ impl DesignSpaceIrSource {
 impl Source for DesignSpaceIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         let designspace = self.load_designspace()?;
-        let font_info = self.global_rebuild_triggers(&designspace)?;
+        let global_metadata = self.global_rebuild_triggers(&designspace)?;
 
         // glif filenames are not reversible so we need to read contents.plist to figure out groups
         // See https://github.com/unified-font-object/ufo-spec/issues/164.
@@ -183,9 +183,15 @@ impl Source for DesignSpaceIrSource {
             }
         }
 
-        self.glif_locations = Some(GlifLocationCache::new(font_info.clone(), glif_locations));
+        self.glif_locations = Some(GlifLocationCache::new(
+            global_metadata.clone(),
+            glif_locations,
+        ));
 
-        Ok(Input { font_info, glyphs })
+        Ok(Input {
+            global_metadata,
+            glyphs,
+        })
     }
 
     fn create_glyph_ir_work(
@@ -204,7 +210,7 @@ impl Source for DesignSpaceIrSource {
         if !self
             .glif_locations
             .as_ref()
-            .map(|gl| gl.is_valid_for(&input.font_info))
+            .map(|gl| gl.is_valid_for(&input.global_metadata))
             .unwrap_or(false)
         {
             return Err(Error::UnableToCreateGlyphIrWork);
