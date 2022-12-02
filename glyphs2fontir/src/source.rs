@@ -3,7 +3,7 @@ use std::{collections::HashSet, fs, path::PathBuf};
 use fontir::error::Error;
 use fontir::source::{Input, Paths, Source, Work};
 
-use crate::plist::Plist;
+use crate::openstep_plist::Plist;
 
 pub struct GlyphsIrSource {
     glyphs_file: PathBuf,

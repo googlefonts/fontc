@@ -1,2 +1,2 @@
-mod plist;
+mod openstep_plist;
 pub mod source;
