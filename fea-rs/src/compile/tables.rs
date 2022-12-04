@@ -194,68 +194,85 @@ impl StatBuilder {
             StatFallbackName::Record(names) => name_builder.add_anon_group(names),
         };
 
-        let mut design_axes = Vec::new();
-        for record in &self.records {
+        //HACK: we jump through a bunch of hoops to ensure our output matches
+        //feaLib's; in particular we want to add our name table entries grouped by
+        //axis.
+        let mut sorted_values = HashMap::<Tag, Vec<_>>::new();
+        let mut sorted_records = self.records.iter().collect::<Vec<_>>();
+        sorted_records.sort_by_key(|x| x.ordering);
+
+        for axis_value in &self.values {
+            match axis_value.location {
+                AxisLocation::One { tag, .. }
+                | AxisLocation::Two { tag, .. }
+                | AxisLocation::Three { tag, .. } => {
+                    sorted_values.entry(tag).or_default().push(axis_value)
+                }
+                AxisLocation::Four(_) => sorted_values
+                    .entry(Tag::default())
+                    .or_default()
+                    .push(axis_value),
+            }
+        }
+
+        let mut design_axes = Vec::with_capacity(self.records.len());
+        let mut axis_values = Vec::with_capacity(self.values.len());
+
+        for (i, record) in self.records.iter().enumerate() {
             let name_id = name_builder.add_anon_group(&record.name);
-            design_axes.push(tables::stat::AxisRecord {
+            let record = tables::stat::AxisRecord {
                 axis_tag: record.tag,
                 axis_name_id: name_id,
                 axis_ordering: record.ordering,
-            });
-        }
-        design_axes.sort_unstable_by_key(|x| x.axis_tag);
-        let axis_indices = design_axes
-            .iter()
-            .enumerate()
-            .map(|(i, val)| (val.axis_tag, i as u16))
-            .collect::<HashMap<_, _>>();
-
-        let axis_values = self
-            .values
-            .iter()
-            .map(|axis_value| {
+            };
+            for axis_value in sorted_values
+                .get(&record.axis_tag)
+                .iter()
+                .flat_map(|x| x.iter())
+            {
                 let flags = tables::stat::AxisValueTableFlags::from_bits(axis_value.flags).unwrap();
                 let name_id = name_builder.add_anon_group(&axis_value.name);
-                match &axis_value.location {
-                    AxisLocation::One { tag, value } => tables::stat::AxisValue::format_1(
+                let value = match &axis_value.location {
+                    AxisLocation::One { value, .. } => tables::stat::AxisValue::format_1(
                         //TODO: validate that all referenced tags refer to existing axes
-                        *axis_indices.get(tag).unwrap(),
-                        flags,
-                        name_id,
-                        *value,
+                        i as u16, flags, name_id, *value,
                     ),
                     AxisLocation::Two {
-                        tag,
-                        nominal,
-                        min,
-                        max,
-                    } => {
-                        let axis_index = *axis_indices.get(tag).unwrap();
-                        tables::stat::AxisValue::format_2(
-                            axis_index, flags, name_id, *nominal, *min, *max,
-                        )
+                        nominal, min, max, ..
+                    } => tables::stat::AxisValue::format_2(
+                        i as _, flags, name_id, *nominal, *min, *max,
+                    ),
+                    AxisLocation::Three { value, linked, .. } => {
+                        tables::stat::AxisValue::format_3(i as _, flags, name_id, *value, *linked)
                     }
-                    AxisLocation::Three { tag, value, linked } => {
-                        let axis_index = *axis_indices.get(tag).unwrap();
-                        tables::stat::AxisValue::format_3(
-                            axis_index, flags, name_id, *value, *linked,
-                        )
-                    }
-                    AxisLocation::Four(values) => {
-                        let mapping = values
-                            .iter()
-                            .map(|(tag, value)| {
-                                tables::stat::AxisValueRecord::new(
-                                    *axis_indices.get(tag).unwrap(),
-                                    *value,
-                                )
-                            })
-                            .collect();
-                        tables::stat::AxisValue::format_4(flags, name_id, mapping)
-                    }
-                }
-            })
-            .collect::<Vec<_>>();
+
+                    AxisLocation::Four(_) => panic!("assigned to separate group"),
+                };
+                axis_values.push(value);
+            }
+
+            design_axes.push(record);
+        }
+
+        let format4 = sorted_values.remove(&Tag::default()).unwrap_or_default().into_iter().map(|format4| {
+            let flags = tables::stat::AxisValueTableFlags::from_bits(format4.flags).unwrap();
+            let name_id = name_builder.add_anon_group(&format4.name);
+            let AxisLocation::Four(values) = &format4.location else { panic!("only format 4 in this group")};
+            let mapping = values
+                .iter()
+                .map(|(tag, value)| {
+                    let axis_index = design_axes
+                        .iter()
+                        .position(|rec| rec.axis_tag == *tag)
+                        .expect("validated");
+                    tables::stat::AxisValueRecord::new(axis_index as _, *value)
+                })
+                .collect();
+            tables::stat::AxisValue::format_4(flags, name_id, mapping)
+        });
+
+        //feaLib puts format4 records first
+        let axis_values = format4.chain(axis_values).collect();
         tables::stat::Stat::new(design_axes, axis_values, elided_fallback_name_id)
     }
 }
