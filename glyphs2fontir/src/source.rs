@@ -197,8 +197,12 @@ mod tests {
         dir.to_path_buf()
     }
 
-    fn glyph_state_for_file(filename: &str) -> HashMap<String, StateSet> {
-        let glyphs_file = testdata_dir().join(filename);
+    fn glyphs3_dir() -> PathBuf {
+        testdata_dir().join("glyphs3")
+    }
+
+    fn glyph_state_for_file(dir: &Path, filename: &str) -> HashMap<String, StateSet> {
+        let glyphs_file = dir.join(filename);
         let font = read_glyphs_file(&glyphs_file).unwrap();
         glyph_states(&font).unwrap()
     }
@@ -208,14 +212,14 @@ mod tests {
         let expected_keys = HashSet::from(["space", "hyphen", "exclam"]);
         assert_eq!(
             expected_keys,
-            glyph_state_for_file("WghtVar.glyphs")
+            glyph_state_for_file(&glyphs3_dir(), "WghtVar.glyphs")
                 .keys()
                 .map(|k| k.as_str())
                 .collect::<HashSet<&str>>()
         );
         assert_eq!(
             expected_keys,
-            glyph_state_for_file("WghtVar_HeavyHyphen.glyphs")
+            glyph_state_for_file(&glyphs3_dir(), "WghtVar_HeavyHyphen.glyphs")
                 .keys()
                 .map(|k| k.as_str())
                 .collect::<HashSet<&str>>()
@@ -226,8 +230,8 @@ mod tests {
     fn detect_changed_glyphs() {
         let keys = HashSet::from(["space", "hyphen", "exclam"]);
 
-        let g1 = glyph_state_for_file("WghtVar.glyphs");
-        let g2 = glyph_state_for_file("WghtVar_HeavyHyphen.glyphs");
+        let g1 = glyph_state_for_file(&glyphs3_dir(), "WghtVar.glyphs");
+        let g2 = glyph_state_for_file(&glyphs3_dir(), "WghtVar_HeavyHyphen.glyphs");
 
         let changed = keys
             .iter()
@@ -247,6 +251,6 @@ mod tests {
     #[test]
     fn survive_unquoted_infinity() {
         // Read a minimal glyphs file that reproduces the error
-        read_glyphs_file(&testdata_dir().join("infinity.glyphs")).unwrap();
+        read_glyphs_file(&glyphs3_dir().join("infinity.glyphs")).unwrap();
     }
 }
