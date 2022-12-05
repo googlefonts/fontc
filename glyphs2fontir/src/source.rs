@@ -78,7 +78,7 @@ fn glyph_states(font: &Font) -> Result<HashMap<String, StateSet>, Error> {
 
     for glyph in font.glyphs.iter() {
         let mut state = StateSet::new();
-        state.track_memory(glyph_identifier(&glyph.glyphname), Box::new(glyph))?;
+        state.track_memory(glyph_identifier(&glyph.glyphname), &glyph)?;
         glyph_states.insert(glyph.glyphname.clone(), state);
     }
 
@@ -91,12 +91,12 @@ impl GlyphsIrSource {
         // Naive mk1: if anything other than glyphs and date changes do a global rebuild
         // TODO experiment with actual glyphs saves to see what makes sense
         let mut state = StateSet::new();
-        state.track_memory("/font_master".to_string(), Box::new(&font.font_master))?;
+        state.track_memory("/font_master".to_string(), &font.font_master)?;
         for (key, plist) in font.other_stuff.iter() {
             if key == "date" {
                 continue;
             }
-            state.track_memory(format!("/{}", key), Box::new(plist))?;
+            state.track_memory(format!("/{}", key), &plist)?;
         }
         Ok(state)
     }

@@ -36,7 +36,6 @@ pub struct Layer {
     pub paths: Option<Vec<Path>>,
     pub components: Option<Vec<Component>>,
     pub anchors: Option<Vec<Anchor>>,
-    pub guide_lines: Option<Vec<GuideLine>>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }

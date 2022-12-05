@@ -163,7 +163,7 @@ impl StateSet {
     pub fn track_memory(
         &mut self,
         identifier: String,
-        memory: Box<impl Hash>,
+        memory: &(impl Hash + ?Sized),
     ) -> Result<(), io::Error> {
         self.entries.insert(
             StateIdentifier::Memory(identifier),
@@ -277,12 +277,11 @@ mod tests {
         let p2 = String::from("/glyphs/hyphen");
 
         let mut s1 = StateSet::new();
-        s1.track_memory(p1.clone(), Box::new("this is a glyph"))
-            .unwrap();
-        s1.track_memory(p2, Box::new("another glyph")).unwrap();
+        s1.track_memory(p1.clone(), "this is a glyph").unwrap();
+        s1.track_memory(p2, "another glyph").unwrap();
 
         let mut s2 = s1.clone();
-        s2.track_memory(p1.clone(), Box::new("this changes everything"))
+        s2.track_memory(p1.clone(), "this changes everything")
             .unwrap();
 
         assert_eq!(
@@ -442,7 +441,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
 
         let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
-        fs.track_memory("/glyph/glyph_name".to_string(), Box::new("Hi World!"))
+        fs.track_memory("/glyph/glyph_name".to_string(), "Hi World!")
             .unwrap();
 
         let toml = toml::ser::to_string_pretty(&fs).unwrap();
@@ -455,7 +454,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
 
         let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
-        fs.track_memory("/glyph/glyph_name".to_string(), Box::new("Hi World!"))
+        fs.track_memory("/glyph/glyph_name".to_string(), "Hi World!")
             .unwrap();
 
         let bc = bincode::serialize(&fs).unwrap();
