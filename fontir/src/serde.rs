@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use filetime::FileTime;
 use serde::{Deserialize, Serialize};
 
-use crate::stateset::{FileState, SliceState, State, StateIdentifier, StateSet};
+use crate::stateset::{FileState, MemoryState, State, StateIdentifier, StateSet};
 
 // Use intermediary structs because toml doesn't much like multiple vecs
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -40,7 +40,7 @@ impl From<StateSetSerdeRepr> for StateSet {
             .chain(from.slices.entries.into_iter().map(|serde_repr| {
                 (
                     StateIdentifier::Memory(serde_repr.identifier),
-                    State::Memory(SliceState {
+                    State::Memory(MemoryState {
                         hash: blake3::Hash::from_hex(serde_repr.hash).unwrap(),
                         size: serde_repr.size,
                     }),
@@ -101,7 +101,7 @@ struct FileStateSerdeRepr {
     size: u64,
 }
 
-/// The serde-friendly representation of a [SliceState].
+/// The serde-friendly representation of a [MemoryState].
 ///
 /// SystemTime lacks a platform independent representation we can
 /// depend on so use FileTime's unix_seconds,nanos.
@@ -109,5 +109,5 @@ struct FileStateSerdeRepr {
 struct SliceStateSerdeRepr {
     identifier: String,
     hash: String,
-    size: usize,
+    size: u64,
 }

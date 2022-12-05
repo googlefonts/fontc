@@ -1,22 +1,16 @@
-/// Copied from https://raw.githubusercontent.com/raphlinus/interp-toy/main/glyphstool/src/plist.rs
-/// at e87f62c0922ce04ea0cee83d624bd9b7d8eafbd8.
-///
-/// Fixed clippy.
-///
-/// Hacked up to capture the region occupied by each Plist entry to facilitate capturing and comparing
-/// checksums of fragments.
 use std::borrow::Cow;
-use std::collections::HashMap;
-use std::ops::Range;
+use std::collections::BTreeMap;
+
+use ordered_float::OrderedFloat;
 
 /// An enum representing a property list.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub enum Plist {
-    Dictionary(HashMap<String, Plist>, Range<usize>),
-    Array(Vec<Plist>, Range<usize>),
-    String(String, Range<usize>),
-    Integer(i64, Range<usize>),
-    Float(f64, Range<usize>),
+    Dictionary(BTreeMap<String, Plist>),
+    Array(Vec<Plist>),
+    String(String),
+    Integer(i64),
+    Float(OrderedFloat<f64>),
 }
 
 #[derive(Debug)]
@@ -37,18 +31,6 @@ enum Token<'a> {
     OpenParen,
     String(Cow<'a, str>),
     Atom(&'a str),
-}
-
-impl Plist {
-    pub(crate) fn range(&self) -> &Range<usize> {
-        match self {
-            Plist::Dictionary(_, r) => r,
-            Plist::Array(_, r) => r,
-            Plist::String(_, r) => r,
-            Plist::Integer(_, r) => r,
-            Plist::Float(_, r) => r,
-        }
-    }
 }
 
 fn is_numeric(b: u8) -> bool {
@@ -123,15 +105,25 @@ fn escape_string(buf: &mut String, s: &str) {
 
 impl Plist {
     pub fn parse(s: &str) -> Result<Plist, Error> {
-        let plist = Plist::parse_rec(s, 0)?;
+        let (plist, _ix) = Plist::parse_rec(s, 0)?;
         // TODO: check that we're actually at eof
         Ok(plist)
     }
 
-    #[allow(unused)]
-    pub fn as_dict(&self) -> Option<&HashMap<String, Plist>> {
+    fn name(&self) -> &'static str {
         match self {
-            Plist::Dictionary(d, _) => Some(d),
+            Plist::Array(..) => "array",
+            Plist::Dictionary(..) => "dictionary",
+            Plist::Float(..) => "float",
+            Plist::Integer(..) => "integer",
+            Plist::String(..) => "string",
+        }
+    }
+
+    #[allow(unused)]
+    pub fn as_dict(&self) -> Option<&BTreeMap<String, Plist>> {
+        match self {
+            Plist::Dictionary(d) => Some(d),
             _ => None,
         }
     }
@@ -139,7 +131,7 @@ impl Plist {
     #[allow(unused)]
     pub fn get(&self, key: &str) -> Option<&Plist> {
         match self {
-            Plist::Dictionary(d, _) => d.get(key),
+            Plist::Dictionary(d) => d.get(key),
             _ => None,
         }
     }
@@ -147,7 +139,7 @@ impl Plist {
     #[allow(unused)]
     pub fn as_array(&self) -> Option<&[Plist]> {
         match self {
-            Plist::Array(a, _) => Some(a),
+            Plist::Array(a) => Some(a),
             _ => None,
         }
     }
@@ -155,63 +147,57 @@ impl Plist {
     #[allow(unused)]
     pub fn as_str(&self) -> Option<&str> {
         match self {
-            Plist::String(s, _) => Some(s),
+            Plist::String(s) => Some(s),
             _ => None,
         }
     }
 
-    #[allow(unused)]
     pub fn as_i64(&self) -> Option<i64> {
         match self {
-            Plist::Integer(i, _) => Some(*i),
+            Plist::Integer(i) => Some(*i),
             _ => None,
         }
     }
 
-    #[allow(unused)]
     pub fn as_f64(&self) -> Option<f64> {
         match self {
-            Plist::Integer(i, _) => Some(*i as f64),
-            Plist::Float(f, _) => Some(*f),
+            Plist::Integer(i) => Some(*i as f64),
+            Plist::Float(f) => Some((*f).into_inner()),
             _ => None,
         }
     }
 
-    #[allow(unused)]
     pub fn into_string(self) -> String {
         match self {
-            Plist::String(s, _) => s,
-            _ => panic!("expected string"),
+            Plist::String(s) => s,
+            _ => panic!("expected string, got {}", self.name()),
         }
     }
 
-    #[allow(unused)]
     pub fn into_vec(self) -> Vec<Plist> {
         match self {
-            Plist::Array(a, _) => a,
-            _ => panic!("expected array"),
+            Plist::Array(a) => a,
+            _ => panic!("expected array, got {}", self.name()),
         }
     }
 
-    #[allow(unused)]
-    pub fn into_hashmap(self) -> HashMap<String, Plist> {
+    pub fn into_btreemap(self) -> BTreeMap<String, Plist> {
         match self {
-            Plist::Dictionary(d, _) => d,
-            _ => panic!("expected dictionary"),
+            Plist::Dictionary(d) => d,
+            _ => panic!("expected dictionary, got {}", self.name()),
         }
     }
 
-    fn parse_rec(s: &str, ix: usize) -> Result<Plist, Error> {
-        let istart = ix;
+    fn parse_rec(s: &str, ix: usize) -> Result<(Plist, usize), Error> {
         let (tok, mut ix) = Token::lex(s, ix)?;
         match tok {
-            Token::Atom(s) => Ok(Plist::parse_atom(s, istart..ix)),
-            Token::String(s) => Ok(Plist::String(s.into(), istart..ix)),
+            Token::Atom(s) => Ok((Plist::parse_atom(s), ix)),
+            Token::String(s) => Ok((Plist::String(s.into()), ix)),
             Token::OpenBrace => {
-                let mut dict = HashMap::new();
+                let mut dict = BTreeMap::new();
                 loop {
                     if let Some(ix) = Token::expect(s, ix, b'}') {
-                        return Ok(Plist::Dictionary(dict, istart..ix));
+                        return Ok((Plist::Dictionary(dict), ix));
                     }
                     let (key, next) = Token::lex(s, ix)?;
                     let key_str = Token::try_into_string(key)?;
@@ -219,8 +205,7 @@ impl Plist {
                     if next.is_none() {
                         return Err(Error::ExpectedEquals);
                     }
-                    let val = Self::parse_rec(s, next.unwrap())?;
-                    let next = val.range().end;
+                    let (val, next) = Self::parse_rec(s, next.unwrap())?;
                     dict.insert(key_str, val);
                     if let Some(next) = Token::expect(s, next, b';') {
                         ix = next;
@@ -232,14 +217,13 @@ impl Plist {
             Token::OpenParen => {
                 let mut list = Vec::new();
                 if let Some(ix) = Token::expect(s, ix, b')') {
-                    return Ok(Plist::Array(list, istart..ix));
+                    return Ok((Plist::Array(list), ix));
                 }
                 loop {
-                    let val = Self::parse_rec(s, ix)?;
-                    let next = val.range().end;
+                    let (val, next) = Self::parse_rec(s, ix)?;
                     list.push(val);
                     if let Some(ix) = Token::expect(s, next, b')') {
-                        return Ok(Plist::Array(list, istart..ix));
+                        return Ok((Plist::Array(list), ix));
                     }
                     if let Some(next) = Token::expect(s, next, b',') {
                         ix = next;
@@ -252,16 +236,16 @@ impl Plist {
         }
     }
 
-    fn parse_atom(s: &str, r: Range<usize>) -> Plist {
+    fn parse_atom(s: &str) -> Plist {
         if numeric_ok(s) {
             if let Ok(num) = s.parse() {
-                return Plist::Integer(num, r);
+                return Plist::Integer(num);
             }
             if let Ok(num) = s.parse() {
-                return Plist::Float(num, r);
+                return Plist::Float(num);
             }
         }
-        Plist::String(s.into(), r)
+        Plist::String(s.into())
     }
 
     #[allow(clippy::inherent_to_string, unused)]
@@ -271,10 +255,9 @@ impl Plist {
         s
     }
 
-    #[allow(unused)]
     fn push_to_string(&self, s: &mut String) {
         match self {
-            Plist::Array(a, _) => {
+            Plist::Array(a) => {
                 s.push('(');
                 let mut delim = "\n";
                 for el in a {
@@ -284,7 +267,7 @@ impl Plist {
                 }
                 s.push_str("\n)");
             }
-            Plist::Dictionary(a, _) => {
+            Plist::Dictionary(a) => {
                 s.push_str("{\n");
                 let mut keys: Vec<_> = a.keys().collect();
                 keys.sort();
@@ -298,11 +281,11 @@ impl Plist {
                 }
                 s.push('}');
             }
-            Plist::String(st, _) => escape_string(s, st),
-            Plist::Integer(i, _) => {
+            Plist::String(st) => escape_string(s, st),
+            Plist::Integer(i) => {
                 s.push_str(&format!("{}", i));
             }
-            Plist::Float(f, _) => {
+            Plist::Float(f) => {
                 s.push_str(&format!("{}", f));
             }
         }
@@ -358,7 +341,9 @@ impl<'a> Token<'a> {
                                         // octal escape
                                         let b1 = s.as_bytes()[ix + 1];
                                         let b2 = s.as_bytes()[ix + 2];
-                                        if (b'0'..=b'7').contains(&b1) {
+                                        if (b'0'..=b'7').contains(&b1)
+                                            && (b'0'..=b'7').contains(&b2)
+                                        {
                                             let oct =
                                                 (b - b'0') * 64 + (b1 - b'0') * 8 + (b2 - b'0');
                                             buf.push(oct as char);
@@ -416,35 +401,32 @@ impl<'a> Token<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::{fs, path::Path};
-
-    use super::Plist;
-
-    fn wghtvar_glyphs_file() -> String {
-        fs::read_to_string(Path::new("../resources/testdata/WghtVar.glyphs")).unwrap()
+impl From<String> for Plist {
+    fn from(x: String) -> Plist {
+        Plist::String(x)
     }
+}
 
-    #[test]
-    fn tracks_slices() {
-        let raw_plist = wghtvar_glyphs_file();
-        let Plist::Dictionary(plist, range) = Plist::parse(&raw_plist).unwrap() else {
-            panic!("Root of .glyphs should be a dict");
-        };
-        assert_eq!(0usize..raw_plist.trim_end().len(), range);
+impl From<i64> for Plist {
+    fn from(x: i64) -> Plist {
+        Plist::Integer(x)
+    }
+}
 
-        let Plist::Integer(upem, range) = plist.get("unitsPerEm").unwrap() else {
-            panic!("upem isn't an int?!");
-        };
-        assert_eq!(*upem, 1000i64);
-        assert_eq!("1000", raw_plist[range.start..range.end].trim());
+impl From<f64> for Plist {
+    fn from(x: f64) -> Plist {
+        Plist::Float(x.into())
+    }
+}
 
-        let Plist::Array(glyphs, _) = plist.get("glyphs").unwrap() else {
-            panic!("'glyphs' isn't an array?!");
-        };
-        let g0_start = glyphs[0].range().start;
-        let g0_prefix = "\n{\nglyphname = space;";
-        assert_eq!(g0_prefix, &raw_plist[g0_start..g0_start + g0_prefix.len()]);
+impl From<Vec<Plist>> for Plist {
+    fn from(x: Vec<Plist>) -> Plist {
+        Plist::Array(x)
+    }
+}
+
+impl From<BTreeMap<String, Plist>> for Plist {
+    fn from(x: BTreeMap<String, Plist>) -> Plist {
+        Plist::Dictionary(x)
     }
 }
