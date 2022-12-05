@@ -6,14 +6,16 @@
 
 use std::collections::BTreeMap;
 use std::hash::Hash;
+use std::{fs, path};
 
 use ordered_float::OrderedFloat;
 
+use crate::error::Error;
 use crate::from_plist::FromPlist;
 use crate::plist::Plist;
 use crate::to_plist::ToPlist;
 
-#[derive(Debug, FromPlist, ToPlist, Hash)]
+#[derive(Debug, FromPlist, ToPlist, PartialEq, Hash)]
 pub struct Font {
     pub glyphs: Vec<Glyph>,
     pub font_master: Vec<FontMaster>,
@@ -21,7 +23,7 @@ pub struct Font {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, Hash)]
+#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Hash)]
 pub struct Glyph {
     pub layers: Vec<Layer>,
     pub glyphname: String,
@@ -29,25 +31,26 @@ pub struct Glyph {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, Hash)]
+#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Hash)]
 pub struct Layer {
     pub layer_id: String,
     pub width: OrderedFloat<f64>,
-    pub paths: Option<Vec<Path>>,
-    pub components: Option<Vec<Component>>,
+    pub shapes: Option<Vec<Path>>,
+    paths: Option<Vec<Path>>, // private, migrated to shapes if present
+    //pub components: Option<Vec<Component>>,
     pub anchors: Option<Vec<Anchor>>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, Hash)]
+#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Hash)]
 pub struct Path {
     pub closed: bool,
     pub nodes: Vec<Node>,
 }
 
 // We do not use kurbo's point because it does not hash
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Point {
     x: OrderedFloat<f64>,
     y: OrderedFloat<f64>,
@@ -63,7 +66,7 @@ impl Point {
 }
 
 // We do not use kurbo's affine because it does not hash
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Affine([OrderedFloat<f64>; 6]);
 
 impl Affine {
@@ -79,7 +82,7 @@ impl Affine {
     }
 }
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Node {
     pub pt: Point,
     pub node_type: NodeType,
@@ -94,7 +97,7 @@ pub enum NodeType {
     CurveSmooth,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, Hash)]
+#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Hash)]
 pub struct Component {
     pub name: String,
     pub transform: Option<Affine>,
@@ -102,19 +105,13 @@ pub struct Component {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, Hash)]
+#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Hash)]
 pub struct Anchor {
     pub name: String,
     pub position: Point,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, Hash)]
-pub struct GuideLine {
-    pub angle: Option<OrderedFloat<f64>>,
-    pub position: Point,
-}
-
-#[derive(Debug, FromPlist, ToPlist, Hash)]
+#[derive(Debug, FromPlist, ToPlist, PartialEq, Hash)]
 pub struct FontMaster {
     pub id: String,
     #[rest]
@@ -145,12 +142,29 @@ impl Glyph {
 
 impl FromPlist for Node {
     fn from_plist(plist: Plist) -> Self {
-        let mut spl = plist.as_str().unwrap().splitn(3, ' ');
-        let x = spl.next().unwrap().parse().unwrap();
-        let y = spl.next().unwrap().parse().unwrap();
-        let pt = Point::new(x, y);
-        let node_type = spl.next().unwrap().parse().unwrap();
-        Node { pt, node_type }
+        match &plist {
+            Plist::String(value) => {
+                let mut spl = value.splitn(3, ' ');
+                let x = spl.next().unwrap().parse().unwrap();
+                let y = spl.next().unwrap().parse().unwrap();
+                let pt = Point::new(x, y);
+                let node_type = spl.next().unwrap().parse().unwrap();
+                Node { pt, node_type }
+            }
+            Plist::Array(value) => {
+                if value.len() != 3 {
+                    panic!("Invalid node content {:?}", plist);
+                };
+                let x = value[0].as_f64().unwrap();
+                let y = value[1].as_f64().unwrap();
+                let pt = Point::new(x, y);
+                let node_type = value[2].as_str().unwrap().parse().unwrap();
+                Node { pt, node_type }
+            }
+            _ => {
+                panic!("Invalid node content {:?}", plist);
+            }
+        }
     }
 }
 
@@ -158,11 +172,18 @@ impl std::str::FromStr for NodeType {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            // Glyphs 2 style
             "LINE" => Ok(NodeType::Line),
             "LINE SMOOTH" => Ok(NodeType::LineSmooth),
             "OFFCURVE" => Ok(NodeType::OffCurve),
             "CURVE" => Ok(NodeType::Curve),
             "CURVE SMOOTH" => Ok(NodeType::CurveSmooth),
+            // Glyphs 3 style
+            "l" => Ok(NodeType::Line),
+            "ls" => Ok(NodeType::LineSmooth),
+            "o" => Ok(NodeType::OffCurve),
+            "c" => Ok(NodeType::Curve),
+            "cs" => Ok(NodeType::CurveSmooth),
             _ => Err(format!("unknown node type {}", s)),
         }
     }
@@ -216,6 +237,7 @@ impl ToPlist for Affine {
 
 impl FromPlist for Point {
     fn from_plist(plist: Plist) -> Self {
+        eprintln!("{:?}", plist);
         let raw = plist.as_str().unwrap();
         let raw = &raw[1..raw.len() - 1];
         let coords: Vec<f64> = raw.split(", ").map(|c| c.parse().unwrap()).collect();
@@ -262,5 +284,173 @@ impl Path {
 
     pub fn reverse(&mut self) {
         self.nodes.reverse();
+    }
+}
+
+fn for_raw_glyphs(
+    glyphs_file: &path::Path,
+    root_dict: &mut BTreeMap<String, Plist>,
+    callback: fn(&mut BTreeMap<String, Plist>) -> Result<(), Error>,
+) -> Result<(), Error> {
+    if !root_dict.contains_key("glyphs") {
+        return Ok(());
+    }
+    let Plist::Array(glyphs) = root_dict.get_mut("glyphs").unwrap() else {
+        return Err(Error::ParseError(glyphs_file.to_path_buf(), "Must have a glyphs array".to_string()));
+    };
+    for glyph in glyphs.iter_mut() {
+        let Plist::Dictionary(glyph) = glyph else {
+            return Err(Error::ParseError(glyphs_file.to_path_buf(), "Glyph must be a dict".to_string()));
+        };
+        callback(glyph)?;
+    }
+    Ok(())
+}
+
+fn fix_glyphs_named_infinity(
+    glyphs_file: &path::Path,
+    root_dict: &mut BTreeMap<String, Plist>,
+) -> Result<(), Error> {
+    for_raw_glyphs(glyphs_file, root_dict, |glyph| {
+        if !glyph.contains_key("glyphname") {
+            return Ok(());
+        }
+        if let Plist::Float(..) = glyph.get("glyphname").unwrap() {
+            glyph.insert(
+                "glyphname".to_string(),
+                Plist::String("infinity".to_string()),
+            );
+        }
+        Ok(())
+    })
+}
+
+impl Font {
+    fn is_v2(&self) -> bool {
+        let mut is_v2 = true;
+        if let Some(Plist::Integer(version)) = self.other_stuff.get(".formatVersion") {
+            is_v2 = *version < 3; // .formatVersion is only present for v3+
+        }
+        is_v2
+    }
+
+    /// See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2
+    fn v2_to_v3(&mut self) -> Result<(), Error> {
+        for glyph in self.glyphs.iter_mut() {
+            // v2 uses single codepoint strings, turn into int to match v3 for now
+            // In time we will likely parse unicode more carefully
+            glyph.other_stuff.entry("unicode".into()).and_modify(|v| {
+                if let Plist::String(val) = v {
+                    *v = Plist::Integer(i64::from_str_radix(val, 16).unwrap())
+                }
+            });
+            for layer in glyph.layers.iter_mut() {
+                let paths = layer.paths.take();
+                if paths.is_some() {
+                    match &mut layer.shapes {
+                        Some(shapes) => {
+                            shapes.extend(paths.unwrap());
+                        }
+                        None => {
+                            layer.shapes = paths;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Font {
+    pub fn read_glyphs_file(glyphs_file: &path::Path) -> Result<Font, Error> {
+        let raw_content = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
+        let mut raw_content = Plist::parse(&raw_content)
+            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), format!("{:#?}", e)))?;
+
+        // Fix any issues with the raw plist
+        let Plist::Dictionary(ref mut root_dict) = raw_content else {
+            return Err(Error::ParseError(glyphs_file.to_path_buf(), "Root must be a dict".to_string()));
+        };
+        fix_glyphs_named_infinity(glyphs_file, root_dict)?;
+
+        // Try to migrate glyphs2 to glyphs3
+        let mut font = Font::from_plist(raw_content);
+        if font.is_v2() {
+            font.v2_to_v3()?
+        }
+
+        Ok(font)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use crate::{Font, FromPlist, Node, Plist};
+
+    use pretty_assertions::assert_eq;
+
+    fn testdata_dir() -> PathBuf {
+        let dir = Path::new("../resources/testdata");
+        assert!(dir.is_dir());
+        dir.to_path_buf()
+    }
+
+    fn glyphs2_dir() -> PathBuf {
+        testdata_dir().join("glyphs2")
+    }
+
+    fn glyphs3_dir() -> PathBuf {
+        testdata_dir().join("glyphs3")
+    }
+
+    #[test]
+    fn test_glyphs3_node() {
+        assert_eq!(
+            Node {
+                node_type: crate::NodeType::Line,
+                pt: super::Point {
+                    x: 354.0.into(),
+                    y: 183.0.into()
+                }
+            },
+            Node::from_plist(Plist::Array(vec![
+                Plist::Integer(354),
+                Plist::Integer(183),
+                Plist::String("l".into()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_glyphs2_node() {
+        assert_eq!(
+            Node {
+                node_type: crate::NodeType::Line,
+                pt: super::Point {
+                    x: 354.0.into(),
+                    y: 183.0.into()
+                }
+            },
+            Node::from_plist(Plist::String("354 183 LINE".into()))
+        );
+    }
+
+    // unquoted infinity likes to parse as a float which is suboptimal for glyph names. Survive.
+    // Observed on Work Sans and Lexend.
+    #[test]
+    fn survive_unquoted_infinity() {
+        // Read a minimal glyphs file that reproduces the error
+        Font::read_glyphs_file(&glyphs3_dir().join("infinity.glyphs")).unwrap();
+    }
+
+    #[test]
+    fn read_2_and_3() {
+        let g2 = Font::read_glyphs_file(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
+        let g3 = Font::read_glyphs_file(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+
+        assert_eq!(g2, g3);
     }
 }

@@ -1,5 +1,6 @@
 //! Lightweight library for reading and writing Glyphs font files.
 
+pub mod error;
 mod font;
 mod from_plist;
 mod plist;

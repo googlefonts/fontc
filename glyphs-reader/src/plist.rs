@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use ordered_float::OrderedFloat;
 
 /// An enum representing a property list.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Plist {
     Dictionary(BTreeMap<String, Plist>),
     Array(Vec<Plist>),

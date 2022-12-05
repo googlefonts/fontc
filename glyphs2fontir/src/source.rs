@@ -1,10 +1,9 @@
 use fontir::error::{Error, WorkError};
 use fontir::source::{Input, Paths, Source, Work};
 use fontir::stateset::StateSet;
-use glyphs_reader::{Font, FromPlist, Plist};
+use glyphs_reader::Font;
 use log::debug;
 use std::collections::HashSet;
-use std::path::Path;
 use std::{collections::HashMap, fs, path::PathBuf};
 
 pub struct GlyphsIrSource {
@@ -32,41 +31,6 @@ impl Cache {
     fn is_valid_for(&self, global_metadata: &StateSet) -> bool {
         self.global_metadata == *global_metadata
     }
-}
-
-fn fix_glyphs_named_infinity(glyphs_file: &Path, plist: &mut Plist) -> Result<(), Error> {
-    let Plist::Dictionary(root_dict) = plist else {
-        return Err(Error::ParseError(glyphs_file.to_path_buf(), "Root must be a dict".to_string()));
-    };
-    if !root_dict.contains_key("glyphs") {
-        return Ok(());
-    }
-    let Plist::Array(glyphs) = root_dict.get_mut("glyphs").unwrap() else {
-        return Err(Error::ParseError(glyphs_file.to_path_buf(), "Must have a glyphs array".to_string()));
-    };
-    for glyph in glyphs.iter_mut() {
-        let Plist::Dictionary(glyph) = glyph else {
-            return Err(Error::ParseError(glyphs_file.to_path_buf(), "Glyph must be a dict".to_string()));
-        };
-        if !glyph.contains_key("glyphname") {
-            continue;
-        }
-        if let Plist::Float(..) = glyph.get("glyphname").unwrap() {
-            glyph.insert(
-                "glyphname".to_string(),
-                Plist::String("infinity".to_string()),
-            );
-        }
-    }
-    Ok(())
-}
-
-fn read_glyphs_file(glyphs_file: &Path) -> Result<Font, Error> {
-    let raw_content = fs::read_to_string(glyphs_file)?;
-    let mut raw_content = Plist::parse(&raw_content)
-        .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), format!("{:#?}", e)))?;
-    fix_glyphs_named_infinity(glyphs_file, &mut raw_content)?;
-    Ok(Font::from_plist(raw_content))
 }
 
 fn glyph_identifier(glyph_name: &str) -> String {
@@ -105,7 +69,12 @@ impl GlyphsIrSource {
 impl Source for GlyphsIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         // We have to read the glyphs file then shred it to figure out if anything changed
-        let font = read_glyphs_file(&self.glyphs_file)?;
+        let font = Font::read_glyphs_file(&self.glyphs_file).map_err(|e| {
+            Error::ParseError(
+                self.glyphs_file.clone(),
+                format!("Unable to read glyphs file: {}", e),
+            )
+        })?;
         let glyphs = glyph_states(&font)?;
         let global_metadata = self.global_rebuild_triggers(&font)?;
 
@@ -188,8 +157,11 @@ mod tests {
     };
 
     use fontir::stateset::StateSet;
+    use glyphs_reader::Font;
 
-    use super::{glyph_states, read_glyphs_file};
+    use super::glyph_states;
+
+    use pretty_assertions::assert_eq;
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -203,7 +175,7 @@ mod tests {
 
     fn glyph_state_for_file(dir: &Path, filename: &str) -> HashMap<String, StateSet> {
         let glyphs_file = dir.join(filename);
-        let font = read_glyphs_file(&glyphs_file).unwrap();
+        let font = Font::read_glyphs_file(&glyphs_file).unwrap();
         glyph_states(&font).unwrap()
     }
 
@@ -244,13 +216,5 @@ mod tests {
             })
             .collect::<HashSet<String>>();
         assert_eq!(HashSet::from(["hyphen".to_string()]), changed);
-    }
-
-    // unquoted infinity likes to parse as a float which is suboptimal for glyph names. Survive.
-    // Observed on Work Sans and Lexend.
-    #[test]
-    fn survive_unquoted_infinity() {
-        // Read a minimal glyphs file that reproduces the error
-        read_glyphs_file(&glyphs3_dir().join("infinity.glyphs")).unwrap();
     }
 }
