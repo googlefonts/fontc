@@ -49,7 +49,10 @@ fn main() -> Result<(), Error> {
     };
 
     let path = args.out_path();
-    let raw_font = compiled.build_raw(&names).expect("ttf compile failed");
+    let raw_font = compiled
+        .build_raw(&names)
+        .expect("ttf compile failed")
+        .build();
     std::fs::write(path, raw_font).map_err(Into::into)
 }
 

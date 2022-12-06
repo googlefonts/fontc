@@ -1,17 +1,11 @@
 //! The result of a compilation
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    convert::TryInto,
-};
+use std::collections::{BTreeMap, HashMap};
 
 use write_fonts::{
     dump_table,
     read::{FontRef, TableProvider},
-    tables::{
-        layout::{FeatureParams, SizeParams, StylisticSetParams},
-        maxp::Maxp,
-    },
+    tables::layout::{FeatureParams, SizeParams, StylisticSetParams},
     types::Tag,
     FontBuilder,
 };
@@ -46,15 +40,8 @@ pub struct SizeFeature {
 impl Compilation {
     /// Compile this output into a new binary font.
     #[allow(clippy::result_unit_err)] //TODO: figure out error reporting
-    pub fn build_raw(&self, glyph_map: &GlyphMap) -> Result<Vec<u8>, ()> {
-        // hack: currently implemented in terms of apply, below, which expects font
-        // as input. So build an empty font with a maxp table, since that is expected:
-        let mut builder = FontBuilder::default();
-        let maxp = Maxp::new(glyph_map.len().try_into().unwrap());
-        builder.add_table(Tag::new(b"maxp"), write_fonts::dump_table(&maxp).unwrap());
-        let empty = builder.build();
-        let font = FontRef::new(&empty).unwrap();
-        self.apply(&font)
+    pub fn build_raw(&self, _glyph_map: &GlyphMap) -> Result<FontBuilder<'static>, ()> {
+        self.apply(None)
     }
 
     /// Attempt to update the provided font with the results of this compilation.
@@ -62,10 +49,11 @@ impl Compilation {
     //expect to have just living in the font by this point? Why can't we just start from a namelist
     //and FEA file, and go from there? maybe let's try?
     #[allow(clippy::result_unit_err)] //TODO: figure out error reporting
-    pub fn apply(&self, font: &FontRef) -> Result<Vec<u8>, ()> {
+    pub fn apply<'a>(&self, font: impl Into<Option<FontRef<'a>>>) -> Result<FontBuilder<'a>, ()> {
+        let font = font.into();
         let mut builder = FontBuilder::default();
         if let Some(head_raw) = &self.tables.head {
-            let head = head_raw.build(font);
+            let head = head_raw.build(font.as_ref());
             builder.add_table(Tag::new(b"head"), dump_table(&head).unwrap());
         }
 
@@ -157,13 +145,15 @@ impl Compilation {
             builder.add_table(Tag::new(b"name"), dump_table(&name).unwrap());
         }
 
-        for record in font.table_directory.table_records() {
-            if !builder.contains(record.tag()) {
-                let data = font.data_for_tag(record.tag()).unwrap();
-                builder.add_table(record.tag(), data);
+        if let Some(font) = font {
+            for record in font.table_directory.table_records() {
+                if !builder.contains(record.tag()) {
+                    let data = font.data_for_tag(record.tag()).unwrap();
+                    builder.add_table(record.tag(), data);
+                }
             }
         }
 
-        Ok(builder.build())
+        Ok(builder)
     }
 }

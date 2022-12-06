@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    convert::TryInto,
     env::temp_dir,
     ffi::OsStr,
     fmt::{Debug, Display, Write},
@@ -15,6 +16,7 @@ use crate::{Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree};
 use ansi_term::Color;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use write_fonts::{tables::maxp::Maxp, types::Tag};
 
 static IGNORED_TESTS: &[&str] = &[
     // ## tests with invalid syntax ## //
@@ -219,7 +221,10 @@ fn run_test(
                 reason: TestResult::CompileFail(stringify_diagnostics(&node, &errs)),
             }),
             Ok(result) => {
-                let font_data = result.build_raw(glyph_map).unwrap();
+                let mut builder = result.build_raw(glyph_map).unwrap();
+                let maxp = Maxp::new(glyph_map.len().try_into().unwrap());
+                builder.add_table(Tag::new(b"maxp"), write_fonts::dump_table(&maxp).unwrap());
+                let font_data = builder.build();
                 compare_ttx(&font_data, &path, reverse_map)
             }
         },

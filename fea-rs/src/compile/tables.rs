@@ -418,21 +418,23 @@ fn parse_mac(s: &str) -> String {
 const DATE_2011_12_13_H11_M22_S33: LongDateTime = LongDateTime::new(1323780153);
 
 impl head {
-    pub(crate) fn build(&self, font: &FontRef) -> write_fonts::tables::head::Head {
+    pub(crate) fn build(&self, font: Option<&FontRef>) -> write_fonts::tables::head::Head {
         // match what python fonttools does
-        let mut head = font.head().map(|x| x.to_owned_table()).unwrap_or_else(|_| {
-            let mut head = write_fonts::tables::head::Head {
-                created: DATE_2011_12_13_H11_M22_S33,
-                modified: DATE_2011_12_13_H11_M22_S33,
-                ..Default::default()
-            };
+        let mut head = font
+            .and_then(|f| f.head().map(|x| x.to_owned_table()).ok())
+            .unwrap_or_else(|| {
+                let mut head = write_fonts::tables::head::Head {
+                    created: DATE_2011_12_13_H11_M22_S33,
+                    modified: DATE_2011_12_13_H11_M22_S33,
+                    ..Default::default()
+                };
 
-            // I think we should still use the known default values but this matches
-            // feaLib tests so :shrug:
-            head.magic_number = 0;
-            head.font_direction_hint = 0;
-            head
-        });
+                // I think we should still use the known default values but this matches
+                // feaLib tests so :shrug:
+                head.magic_number = 0;
+                head.font_direction_hint = 0;
+                head
+            });
         head.font_revision = self.font_revision;
         head
     }
