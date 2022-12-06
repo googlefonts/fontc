@@ -1,6 +1,7 @@
 //! utilities for compiling and comparing ttx
 
 use std::{
+    borrow::Cow,
     collections::HashMap,
     convert::TryInto,
     env::temp_dir,
@@ -16,7 +17,10 @@ use crate::{Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree};
 use ansi_term::Color;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use write_fonts::{tables::maxp::Maxp, types::Tag};
+use write_fonts::{
+    tables::{maxp::Maxp, post::Post},
+    types::Tag,
+};
 
 static IGNORED_TESTS: &[&str] = &[
     // ## tests with invalid syntax ## //
@@ -113,23 +117,12 @@ pub fn assert_has_ttx_executable() {
 /// tests which contain one of the strings in the list will be run.
 pub fn run_all_tests(fonttools_data_dir: impl AsRef<Path>, filter: Option<&String>) -> Report {
     let glyph_map = make_glyph_map();
-    let reverse_map = glyph_map.reverse_map();
-    let reverse_map = reverse_map
-        .into_iter()
-        .map(|(id, glyph)| {
-            (
-                format!("glyph{:05}", id.to_u16()),
-                match glyph {
-                    GlyphIdent::Cid(num) => format!("cid{:05}", num),
-                    GlyphIdent::Name(name) => name.to_string(),
-                },
-            )
-        })
-        .collect::<HashMap<_, _>>();
+    let post = make_post_table(&glyph_map);
+    let post_data = write_fonts::dump_table(&post).unwrap();
 
     let result = iter_compile_tests(fonttools_data_dir.as_ref(), filter)
         .par_bridge()
-        .map(|path| run_test(path, &glyph_map, &reverse_map))
+        .map(|path| run_test(path, &glyph_map, &post_data))
         .collect::<Vec<_>>();
 
     finalize_results(result)
@@ -205,11 +198,7 @@ pub fn try_parse_file(
 }
 
 /// takes a path to a sample ttx file
-fn run_test(
-    path: PathBuf,
-    glyph_map: &GlyphMap,
-    reverse_map: &HashMap<String, String>,
-) -> Result<PathBuf, TestCase> {
+fn run_test(path: PathBuf, glyph_map: &GlyphMap, post_data: &[u8]) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| match try_parse_file(&path, Some(glyph_map)) {
         Err((node, errs)) => Err(TestCase {
             path: path.clone(),
@@ -224,8 +213,9 @@ fn run_test(
                 let mut builder = result.build_raw(glyph_map).unwrap();
                 let maxp = Maxp::new(glyph_map.len().try_into().unwrap());
                 builder.add_table(Tag::new(b"maxp"), write_fonts::dump_table(&maxp).unwrap());
+                builder.add_table(Tag::new(b"post"), post_data);
                 let font_data = builder.build();
-                compare_ttx(&font_data, &path, reverse_map)
+                compare_ttx(&font_data, &path)
             }
         },
     }) {
@@ -274,11 +264,7 @@ fn get_temp_file_name(in_file: &Path) -> PathBuf {
     Path::new(&format!("{stem}_{millis}")).with_extension("ttf")
 }
 
-fn compare_ttx(
-    font_data: &[u8],
-    fea_path: &Path,
-    reverse_map: &HashMap<String, String>,
-) -> Result<(), TestCase> {
+fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestCase> {
     let ttx_path = fea_path.with_extension("ttx");
     let expected_diff_path = fea_path.with_extension("expected_diff");
     assert!(ttx_path.exists());
@@ -312,9 +298,9 @@ fn compare_ttx(
     assert!(ttx_out_path.exists());
 
     let expected = std::fs::read_to_string(ttx_path).unwrap();
-    let expected = rewrite_ttx(&expected, reverse_map);
+    let expected = rewrite_ttx(&expected);
     let result = std::fs::read_to_string(ttx_out_path).unwrap();
-    let result = rewrite_ttx(&result, reverse_map);
+    let result = rewrite_ttx(&result);
 
     if expected_diff_path.exists() {
         let expected_diff = std::fs::read_to_string(&expected_diff_path).unwrap();
@@ -366,33 +352,16 @@ pub fn compare_to_expected_output(
     Ok(())
 }
 // hacky way to make our ttx output match fonttools'
-fn rewrite_ttx(input: &str, reverse_map: &HashMap<String, String>) -> String {
+fn rewrite_ttx(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
 
     for line in input.lines() {
         if line.starts_with("<ttFont") {
             out.push_str("<ttFont>\n");
-            continue;
+        } else {
+            out.push_str(line);
+            out.push('\n')
         }
-        let mut scan = line;
-        loop {
-            let next = scan.find("glyph").unwrap_or(scan.len());
-            out.push_str(&scan[..next]);
-            scan = &scan[next..];
-            if scan.is_empty() {
-                break;
-            }
-            if scan.len() >= 10 {
-                if let Some(replacement) = reverse_map.get(&scan[..10]) {
-                    out.push_str(replacement);
-                    scan = &scan[10..];
-                    continue;
-                }
-            }
-            out.push_str(&scan[..5]);
-            scan = &scan[5..];
-        }
-        out.push('\n');
     }
     out
 }
@@ -509,6 +478,19 @@ static TEST_FONT_GLYPHS: &[&str] = &[
         .map(|name| GlyphIdent::Name(GlyphName::new(*name)))
         .chain((800_u16..=1001).into_iter().map(GlyphIdent::Cid))
         .collect()
+}
+
+fn make_post_table(map: &GlyphMap) -> Post {
+    let reverse = map.reverse_map();
+    let rev_vec = reverse
+        .values()
+        .map(|val| match val {
+            GlyphIdent::Name(s) => Cow::Borrowed(s.as_str()),
+            GlyphIdent::Cid(cid) => Cow::Owned(format!("cid{:05}", *cid)),
+        })
+        .collect::<Vec<_>>();
+
+    Post::new_v2(rev_vec.iter().map(Cow::as_ref))
 }
 
 impl Report {
