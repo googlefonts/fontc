@@ -10,6 +10,19 @@ References
       * [IR notes](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-08-font-compiler-ir.md).
    * Editor perspective [note from Just](https://github.com/googlefonts/oxidize/issues/21)
 
+## Plan
+
+As of 12/6/2022 we intend to:
+
+* Broadly, go depth first
+* Push glyphs & related tables through
+* Insert updated glyph building into fontmake (Python)
+* Wire up feature compilation using https://github.com/cmyr/fea-rs
+* Insert into fontmake
+* Then finish fontc and stop using fontmake :)
+
+Fontmake will then have incremental, parallel, recompilation, delivering user benefit at a time when fontc doesn't yet do 100% of the job.
+
 ## Sources to play with
 
 Google Fonts has lots, you could try https://github.com/rsheeter/google_fonts_sources to get some.
