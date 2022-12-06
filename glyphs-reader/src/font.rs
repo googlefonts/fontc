@@ -17,10 +17,17 @@ use crate::to_plist::ToPlist;
 
 #[derive(Debug, FromPlist, ToPlist, PartialEq, Hash)]
 pub struct Font {
+    pub axes: Option<Vec<Axis>>,
     pub glyphs: Vec<Glyph>,
     pub font_master: Vec<FontMaster>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
+}
+
+#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Hash)]
+pub struct Axis {
+    pub name: String,
+    pub tag: String,
 }
 
 #[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Hash)]
@@ -336,6 +343,32 @@ impl Font {
 
     /// See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2
     fn v2_to_v3(&mut self) -> Result<(), Error> {
+        // Axes migrates from customParameters
+        if let Some(Plist::Array(custom_params)) = self.other_stuff.get_mut("customParameters") {
+            for custom_param in custom_params.iter_mut() {
+                if let Plist::Dictionary(dict) = custom_param {
+                    if Some(&Plist::String("Axes".to_string())) == dict.get("name") {
+                        if self.axes.is_none() {
+                            self.axes = Some(Vec::new());
+                        }
+                        let v3_axes = self.axes.as_mut().unwrap();
+                        let Some(Plist::Array(v2_axes)) = dict.get_mut("value") else {
+                            return Err(Error::StructuralError("No value for Axes custom parameter".into()));
+                        };
+                        for v2_axis in v2_axes {
+                            let Plist::Dictionary(v2_axis) = v2_axis else {
+                                return Err(Error::StructuralError("Axis value must be a dict".into()));
+                            };
+                            v3_axes.push(Axis {
+                                name: v2_axis.get("Name").unwrap().as_str().unwrap().into(),
+                                tag: v2_axis.get("Tag").unwrap().as_str().unwrap().into(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         for glyph in self.glyphs.iter_mut() {
             // v2 uses single codepoint strings, turn into int to match v3 for now
             // In time we will likely parse unicode more carefully
@@ -344,6 +377,9 @@ impl Font {
                     *v = Plist::Integer(i64::from_str_radix(val, 16).unwrap())
                 }
             });
+
+            // Paths and components combine in shapes
+            // TODO components
             for layer in glyph.layers.iter_mut() {
                 let paths = layer.paths.take();
                 if paths.is_some() {

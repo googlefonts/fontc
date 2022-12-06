@@ -8,4 +8,6 @@ pub enum Error {
     IoError(#[from] io::Error),
     #[error("Unable to parse")]
     ParseError(PathBuf, String),
+    #[error("Unexpected file structure")]
+    StructuralError(String),
 }
