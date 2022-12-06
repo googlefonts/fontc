@@ -17,6 +17,7 @@ use crate::to_plist::ToPlist;
 
 #[derive(Debug, FromPlist, ToPlist, PartialEq, Hash)]
 pub struct Font {
+    pub family_name: String,
     pub axes: Option<Vec<Axis>>,
     pub glyphs: Vec<Glyph>,
     pub font_master: Vec<FontMaster>,
@@ -332,6 +333,21 @@ fn fix_glyphs_named_infinity(
     })
 }
 
+fn weight_name(weight: i64) -> &'static str {
+    match weight {
+        100 => "Thing",
+        200 => "Extra-light",
+        300 => "Light",
+        400 => "Regular",
+        500 => "Medium",
+        600 => "Semi-bold",
+        700 => "Bold",
+        800 => "Extra-bold",
+        900 => "Black",
+        _ => panic!("No name for weight {}", weight),
+    }
+}
+
 impl Font {
     fn is_v2(&self) -> bool {
         let mut is_v2 = true;
@@ -341,13 +357,16 @@ impl Font {
         is_v2
     }
 
-    /// See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2
-    fn v2_to_v3(&mut self) -> Result<(), Error> {
-        // Axes migrates from customParameters
+    fn v2_to_v3_axes(&mut self) -> Result<Vec<String>, Error> {
+        let mut tags = Vec::new();
         if let Some(Plist::Array(custom_params)) = self.other_stuff.get_mut("customParameters") {
-            for custom_param in custom_params.iter_mut() {
+            // Axes migrates from customParameters
+            let mut axes_idx = None;
+            for (idx, custom_param) in custom_params.iter_mut().enumerate() {
                 if let Plist::Dictionary(dict) = custom_param {
                     if Some(&Plist::String("Axes".to_string())) == dict.get("name") {
+                        axes_idx = Some(idx);
+
                         if self.axes.is_none() {
                             self.axes = Some(Vec::new());
                         }
@@ -359,16 +378,58 @@ impl Font {
                             let Plist::Dictionary(v2_axis) = v2_axis else {
                                 return Err(Error::StructuralError("Axis value must be a dict".into()));
                             };
+                            let tag = v2_axis.get("Tag").unwrap().as_str().unwrap();
+                            tags.push(tag.to_string()); 
                             v3_axes.push(Axis {
                                 name: v2_axis.get("Name").unwrap().as_str().unwrap().into(),
-                                tag: v2_axis.get("Tag").unwrap().as_str().unwrap().into(),
+                                tag: tag.into(),
                             });
                         }
                     }
                 }
             }
-        }
+            axes_idx.map(|idx| custom_params.remove(idx));
 
+            if custom_params.is_empty() {
+                self.other_stuff.remove("customParameters");
+            }            
+        }
+        Ok(tags)
+    }
+
+    fn v2_to_v3_metrics(&mut self) -> Result<(), Error> {
+        // metrics are in parallel arrays in v3
+        let v3_metric_names = ["ascender".to_string(), "baseline".to_string(), "descender".to_string(), "cap height".to_string(), "x-height".to_string()];
+        let v2_metric_names = ["ascender".to_string(), "baseline".to_string(), "descender".to_string(), "capHeight".to_string(), "xHeight".to_string()];
+        assert!(v2_metric_names.len() == v3_metric_names.len());
+
+        // setup root storage for the basic metrics
+        let mut metrics = Vec::new();
+        for name in v3_metric_names {
+            metrics.push(Plist::Dictionary(BTreeMap::from([("type".to_string(), Plist::String(name.clone()))])));
+        }        
+        self.other_stuff.insert("metrics".into(), Plist::Array(metrics));
+
+        // in each font master setup the parallel array
+        for master in self.font_master.iter_mut() {
+            let mut metric_values = Vec::new();
+            for v2_name in v2_metric_names.iter() {
+                let mut dict = BTreeMap::new();
+                if let Some(Plist::Integer(value)) = master.other_stuff.remove(v2_name) {
+                    // leave blank for 0
+                    if value != 0 {
+                        dict.insert("pos".to_string(), Plist::Integer(value));
+                    }                    
+                }
+                metric_values.push(Plist::Dictionary(dict));
+            }
+            master.other_stuff.insert("metricValues".into(), Plist::Array(metric_values));
+        }
+        Ok(())
+    }
+
+    fn v2_to_v3_shapes(&mut self) -> Result<(), Error> {
+        // shapes in v3 encompasses paths and components in v2
         for glyph in self.glyphs.iter_mut() {
             // v2 uses single codepoint strings, turn into int to match v3 for now
             // In time we will likely parse unicode more carefully
@@ -396,6 +457,34 @@ impl Font {
         }
         Ok(())
     }
+
+    fn v2_to_v3_weight(&mut self, tags: &Vec<String>) -> Result<(), Error> {
+        if tags.len() != 1 || tags[0] != "wght" {
+            return Err(Error::StructuralError("Only wght supported so far".into()));
+        }
+        for master in self.font_master.iter_mut() {
+            let Some(Plist::Integer(wght)) = master.other_stuff.remove("weightValue") else {
+                continue;
+            };
+            master.other_stuff.insert("axesValues".into(), Plist::Array(vec![Plist::Integer(wght)]));
+
+            let name = match master.other_stuff.remove("weight") {
+                Some(Plist::String(name)) => name,
+                _ => weight_name(wght).to_string(),
+            };
+            master.other_stuff.insert("name".into(), Plist::String(name));
+        }        
+        Ok(())
+    }
+
+    /// See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2
+    fn v2_to_v3(&mut self) -> Result<(), Error> {        
+        let tags = self.v2_to_v3_axes()?;
+        self.v2_to_v3_weight(&tags)?;
+        self.v2_to_v3_metrics()?;
+        self.v2_to_v3_shapes()?;
+        Ok(())
+    }
 }
 
 impl Font {
@@ -415,6 +504,9 @@ impl Font {
         if font.is_v2() {
             font.v2_to_v3()?
         }
+
+        font.other_stuff.remove("date");  // exists purely to make diffs fail
+        font.other_stuff.remove(".formatVersion");  // no longer relevent
 
         Ok(font)
     }
@@ -485,7 +577,12 @@ mod tests {
     #[test]
     fn read_2_and_3() {
         let g2 = Font::read_glyphs_file(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
-        let g3 = Font::read_glyphs_file(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        let mut g3 = Font::read_glyphs_file(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+
+        // for test purposes we are nto interested in icon name
+        for master in g3.font_master.iter_mut() {
+            master.other_stuff.remove("iconName");
+        }
 
         assert_eq!(g2, g3);
     }
