@@ -72,7 +72,7 @@ impl Paths {
     pub fn new(build_dir: &Path) -> Paths {
         let build_dir = build_dir.to_path_buf();
         let glyph_ir_dir = build_dir.join("glyph_ir");
-        let ir_input_file = build_dir.join("irinput.toml");
+        let ir_input_file = build_dir.join("irinput.yml");
         Paths {
             build_dir,
             glyph_ir_dir,
@@ -95,7 +95,7 @@ impl Paths {
     pub fn glyph_ir_file(&self, glyph_name: &str) -> PathBuf {
         // TODO handle names that are invalid for the filesystem
         // Ref https://github.com/unified-font-object/ufo-spec/issues/164
-        self.glyph_ir_dir.join(glyph_name.to_owned() + ".toml")
+        self.glyph_ir_dir.join(glyph_name.to_owned() + ".yml")
     }
 }
 
@@ -158,11 +158,11 @@ mod tests {
     }
 
     #[test]
-    fn read_write_toml() {
+    fn read_write_yaml() {
         let temp_dir = tempdir().unwrap();
         let ir_input = create_test_input(&temp_dir);
-        let toml = toml::ser::to_string_pretty(&ir_input).unwrap();
-        let restored: Input = toml::from_str(&toml).unwrap();
+        let yml = serde_yaml::to_string(&ir_input).unwrap();
+        let restored: Input = serde_yaml::from_str(&yml).unwrap();
         assert_eq!(ir_input, restored);
     }
 

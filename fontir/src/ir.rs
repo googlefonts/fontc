@@ -31,10 +31,10 @@ mod tests {
     }
 
     #[test]
-    fn axis_toml() {
+    fn axis_yaml() {
         let test_axis = test_axis();
-        let toml = toml::ser::to_string_pretty(&test_axis).unwrap();
-        assert_eq!(test_axis, toml::from_str(&toml).unwrap());
+        let yml = serde_yaml::to_string(&test_axis).unwrap();
+        assert_eq!(test_axis, serde_yaml::from_str(&yml).unwrap());
     }
 
     #[test]

@@ -5,28 +5,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::stateset::{FileState, MemoryState, State, StateIdentifier, StateSet};
 
-// Use intermediary structs because toml doesn't much like multiple vecs
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct StateSetSerdeRepr {
-    files: FileStatesSerdeRepr,
-    slices: SliceStatesSerdeRepr,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct FileStatesSerdeRepr {
-    entries: Vec<FileStateSerdeRepr>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct SliceStatesSerdeRepr {
-    entries: Vec<SliceStateSerdeRepr>,
+    files: Vec<FileStateSerdeRepr>,
+    slices: Vec<SliceStateSerdeRepr>,
 }
 
 impl From<StateSetSerdeRepr> for StateSet {
     fn from(from: StateSetSerdeRepr) -> Self {
         let entries: HashMap<StateIdentifier, State> = from
             .files
-            .entries
             .into_iter()
             .map(|serde_repr| {
                 (
@@ -37,7 +25,7 @@ impl From<StateSetSerdeRepr> for StateSet {
                     }),
                 )
             })
-            .chain(from.slices.entries.into_iter().map(|serde_repr| {
+            .chain(from.slices.into_iter().map(|serde_repr| {
                 (
                     StateIdentifier::Memory(serde_repr.identifier),
                     State::Memory(MemoryState {
@@ -83,8 +71,6 @@ impl From<StateSet> for StateSetSerdeRepr {
         }
         files.sort_by(|e1, e2| e1.path.cmp(&e2.path));
         slices.sort_by(|e1, e2| e1.identifier.cmp(&e2.identifier));
-        let files = FileStatesSerdeRepr { entries: files };
-        let slices = SliceStatesSerdeRepr { entries: slices };
         StateSetSerdeRepr { files, slices }
     }
 }

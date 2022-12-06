@@ -44,8 +44,8 @@ impl Config {
         if !config_file.is_file() {
             return true;
         }
-        let toml = fs::read_to_string(config_file).expect("Unable to read config");
-        let prior_config = toml::from_str::<Config>(&toml);
+        let yml = fs::read_to_string(config_file).expect("Unable to read config");
+        let prior_config = serde_yaml::from_str::<Config>(&yml);
         if prior_config.is_err() {
             warn!("Unable to parse prior config {:#?}", prior_config);
             return true;
@@ -66,7 +66,7 @@ fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
 }
 
 fn config_file(build_dir: &Path) -> PathBuf {
-    build_dir.join("fontc.toml")
+    build_dir.join("fontc.yml")
 }
 
 fn init(build_dir: &Path, args: Args) -> Result<(Config, Input), io::Error> {
@@ -82,14 +82,14 @@ fn init(build_dir: &Path, args: Args) -> Result<(Config, Input), io::Error> {
         }
         fs::write(
             config_file,
-            toml::to_string_pretty(&config).expect("Unable to make toml for config"),
+            serde_yaml::to_string(&config).expect("Unable to make yaml for config"),
         )
         .expect("Unable to write updated config");
     };
 
     let ir_input = if ir_input_file.exists() {
-        let toml = fs::read_to_string(ir_input_file).expect("Unable to load ir input file");
-        toml::from_str(&toml).expect("Unable to parse ir input file")
+        let yml = fs::read_to_string(ir_input_file).expect("Unable to load ir input file");
+        serde_yaml::from_str(&yml).expect("Unable to parse ir input file")
     } else {
         Input::new()
     };
@@ -113,7 +113,7 @@ fn ir_source(source: &Path, paths: Paths) -> Result<Box<dyn Source>, Error> {
 
 fn finish_successfully(context: CompileContext) -> Result<(), Error> {
     let current_sources =
-        toml::to_string_pretty(&context.current_inputs).map_err(Error::TomlSerError)?;
+        serde_yaml::to_string(&context.current_inputs).map_err(Error::YamlSerError)?;
     fs::write(context.paths.ir_input_file(), current_sources).map_err(Error::IoError)
 }
 
@@ -388,7 +388,7 @@ mod tests {
         );
         assert_eq!(HashSet::from([]), result.glyphs_deleted);
 
-        let bar_ir = build_dir.join("glyph_ir/bar.toml");
+        let bar_ir = build_dir.join("glyph_ir/bar.yml");
         assert!(bar_ir.is_file(), "no file {:#?}", bar_ir);
         fs::remove_file(bar_ir).unwrap();
 

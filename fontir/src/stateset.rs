@@ -437,15 +437,15 @@ mod tests {
     }
 
     #[test]
-    fn read_write_toml() {
+    fn read_write_yaml() {
         let temp_dir = tempdir().unwrap();
 
         let (_, _, mut fs) = one_changed_file_one_not(&temp_dir);
         fs.track_memory("/glyph/glyph_name".to_string(), "Hi World!")
             .unwrap();
 
-        let toml = toml::ser::to_string_pretty(&fs).unwrap();
-        let restored: StateSet = toml::from_str(&toml).expect(&toml);
+        let yml = serde_yaml::to_string(&fs).unwrap();
+        let restored: StateSet = serde_yaml::from_str(&yml).expect(&yml);
         assert_eq!(fs, restored);
     }
 
