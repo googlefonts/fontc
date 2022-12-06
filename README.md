@@ -23,6 +23,8 @@ As of 12/6/2022 we intend to:
 
 Fontmake will then have incremental, parallel, recompilation, delivering user benefit at a time when fontc doesn't yet do 100% of the job.
 
+For context see https://github.com/googlefonts/oxidize/blob/main/text/2022-07-25-PROPOSAL-build-glyphs-in-rust.md and the discussion on https://github.com/googlefonts/oxidize/pull/33.
+
 ## Sources to play with
 
 Google Fonts has lots, you could try https://github.com/rsheeter/google_fonts_sources to get some.
