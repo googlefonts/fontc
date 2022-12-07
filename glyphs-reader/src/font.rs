@@ -10,11 +10,11 @@ use std::{fs, path};
 
 use log::warn;
 use ordered_float::OrderedFloat;
+use regex::Regex;
 
 use crate::error::Error;
 use crate::from_plist::FromPlist;
 use crate::plist::Plist;
-use crate::to_plist::ToPlist;
 
 const V3_METRIC_NAMES: [&str; 5] = [
     "ascender",
@@ -25,7 +25,7 @@ const V3_METRIC_NAMES: [&str; 5] = [
 ];
 const V2_METRIC_NAMES: [&str; 5] = ["ascender", "baseline", "descender", "capHeight", "xHeight"];
 
-#[derive(Debug, FromPlist, ToPlist, PartialEq, Eq, Hash)]
+#[derive(Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Font {
     pub family_name: String,
     pub axes: Option<Vec<Axis>>,
@@ -35,22 +35,22 @@ pub struct Font {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Axis {
     pub name: String,
     pub tag: String,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Glyph {
     pub layers: Vec<Layer>,
     pub glyphname: String,
-    pub unicode: Vec<i64>,
+    pub codepoints: Option<Vec<i64>>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Layer {
     pub layer_id: String,
     pub width: OrderedFloat<f64>,
@@ -62,7 +62,7 @@ pub struct Layer {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Path {
     pub closed: bool,
     pub nodes: Vec<Node>,
@@ -116,7 +116,7 @@ pub enum NodeType {
     CurveSmooth,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Component {
     pub name: String,
     pub transform: Option<Affine>,
@@ -124,13 +124,13 @@ pub struct Component {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, ToPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Anchor {
     pub name: String,
     pub position: Point,
 }
 
-#[derive(Debug, FromPlist, ToPlist, PartialEq, Eq, Hash)]
+#[derive(Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct FontMaster {
     pub id: String,
     #[rest]
@@ -138,12 +138,6 @@ pub struct FontMaster {
 }
 
 impl Font {
-    pub fn load(path: &std::path::Path) -> Result<Font, String> {
-        let contents = std::fs::read_to_string(path).map_err(|e| format!("{:?}", e))?;
-        let plist = Plist::parse(&contents).map_err(|e| format!("{:?}", e))?;
-        Ok(FromPlist::from_plist(plist))
-    }
-
     pub fn get_glyph(&self, glyphname: &str) -> Option<&Glyph> {
         self.glyphs.iter().find(|g| g.glyphname == glyphname)
     }
@@ -208,30 +202,6 @@ impl std::str::FromStr for NodeType {
     }
 }
 
-impl NodeType {
-    fn glyphs_str(&self) -> &'static str {
-        match self {
-            NodeType::Line => "LINE",
-            NodeType::LineSmooth => "LINE SMOOTH",
-            NodeType::OffCurve => "OFFCURVE",
-            NodeType::Curve => "CURVE",
-            NodeType::CurveSmooth => "CURVE SMOOTH",
-        }
-    }
-}
-
-impl ToPlist for Node {
-    fn to_plist(self) -> Plist {
-        format!(
-            "{} {} {}",
-            self.pt.x,
-            self.pt.y,
-            self.node_type.glyphs_str()
-        )
-        .into()
-    }
-}
-
 impl FromPlist for Affine {
     fn from_plist(plist: Plist) -> Self {
         let raw = plist.as_str().unwrap();
@@ -240,17 +210,6 @@ impl FromPlist for Affine {
         Affine::new([
             coords[0], coords[1], coords[2], coords[3], coords[4], coords[5],
         ])
-    }
-}
-
-impl ToPlist for Affine {
-    fn to_plist(self) -> Plist {
-        let c = self.0;
-        format!(
-            "{{{}, {}, {}, {}, {}, {}}}",
-            c[0], c[1], c[2], c[3], c[4], c[5]
-        )
-        .into()
     }
 }
 
@@ -264,21 +223,9 @@ impl FromPlist for Point {
     }
 }
 
-impl ToPlist for Point {
-    fn to_plist(self) -> Plist {
-        format!("{{{}, {}}}", self.x, self.y).into()
-    }
-}
-
 impl FromPlist for OrderedFloat<f64> {
     fn from_plist(plist: Plist) -> Self {
         plist.as_f64().unwrap().into()
-    }
-}
-
-impl ToPlist for OrderedFloat<f64> {
-    fn to_plist(self) -> Plist {
-        Plist::Float(self)
     }
 }
 
@@ -379,6 +326,19 @@ fn custom_param<'a>(
 }
 
 impl Font {
+    fn get_codepoints(&mut self, radix: u32) {
+        for glyph in self.glyphs.iter_mut() {
+            if let Some(Plist::String(val)) = glyph.other_stuff.remove("unicode") {
+                let codepoints: Vec<i64> = val
+                    .split(',')
+                    .into_iter()
+                    .map(|v| i64::from_str_radix(v, radix).unwrap())
+                    .collect();
+                glyph.codepoints = Some(codepoints);
+            };
+        }
+    }
+
     fn is_v2(&self) -> bool {
         let mut is_v2 = true;
         if let Some(Plist::Integer(version)) = self.other_stuff.get(".formatVersion") {
@@ -509,18 +469,6 @@ impl Font {
     fn v2_to_v3_shapes(&mut self) -> Result<(), Error> {
         // shapes in v3 encompasses paths and components in v2
         for glyph in self.glyphs.iter_mut() {
-            // v2 can have unquoted hex *and* quoted sequences of hex
-            glyph.other_stuff.entry("unicode".into()).and_modify(|v| {
-                if let Plist::String(val) = v {
-                    let val: Vec<Plist> = val
-                        .split(',')
-                        .into_iter()
-                        .map(|v| Plist::Integer(i64::from_str_radix(v, 16).unwrap()))
-                        .collect();
-                    *v = Plist::Array(val);
-                }
-            });
-
             // Paths and components combine in shapes
             // TODO components
             for layer in glyph.layers.iter_mut() {
@@ -571,8 +519,17 @@ impl Font {
 }
 
 impl Font {
-    pub fn read_glyphs_file(glyphs_file: &path::Path) -> Result<Font, Error> {
+    pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
         let raw_content = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
+
+        // Glyphs has a wide variety of unicode definitions, not all of them parser friendly
+        // Make unicode always a string, without any wrapping () so we can parse as csv, radix based on format version
+        let re = Regex::new(
+            r#"(?m)^(?P<prefix>\s*unicode\s*=\s*)[(]?(?P<value>[0-9a-zA-Z,]+)[)]?;\s*$"#,
+        )
+        .unwrap();
+        let raw_content = re.replace_all(&raw_content, r#"$prefix"$value";"#);
+
         let mut raw_content = Plist::parse(&raw_content)
             .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), format!("{:#?}", e)))?;
 
@@ -584,9 +541,12 @@ impl Font {
 
         // Try to migrate glyphs2 to glyphs3
         let mut font = Font::from_plist(raw_content);
+        let mut radix = 10;
         if font.is_v2() {
-            font.v2_to_v3()?
+            font.v2_to_v3()?;
+            radix = 16;
         }
+        font.get_codepoints(radix);
 
         font.other_stuff.remove("date"); // exists purely to make diffs fail
         font.other_stuff.remove(".formatVersion"); // no longer relevent
@@ -654,13 +614,13 @@ mod tests {
     #[test]
     fn survive_unquoted_infinity() {
         // Read a minimal glyphs file that reproduces the error
-        Font::read_glyphs_file(&glyphs3_dir().join("infinity.glyphs")).unwrap();
+        Font::load(&glyphs3_dir().join("infinity.glyphs")).unwrap();
     }
 
     #[test]
     fn read_2_and_3() {
-        let g2 = Font::read_glyphs_file(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
-        let mut g3 = Font::read_glyphs_file(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        let g2 = Font::load(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
+        let mut g3 = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
 
         // for test purposes we are nto interested in icon name
         for master in g3.font_master.iter_mut() {
@@ -672,8 +632,7 @@ mod tests {
 
     #[test]
     fn upgrade_2_to_3_with_implicit_axes() {
-        let font =
-            Font::read_glyphs_file(&glyphs2_dir().join("WghtVar_ImplicitAxes.glyphs")).unwrap();
+        let font = Font::load(&glyphs2_dir().join("WghtVar_ImplicitAxes.glyphs")).unwrap();
         assert_eq!(
             font.axes
                 .unwrap()
@@ -686,26 +645,32 @@ mod tests {
 
     #[test]
     fn understand_v2_style_unquoted_hex_unicode() {
-        let font =
-            Font::read_glyphs_file(&glyphs2_dir().join("Unicode-UnquotedHex.glyphs")).unwrap();
+        let font = Font::load(&glyphs2_dir().join("Unicode-UnquotedHex.glyphs")).unwrap();
+        assert_eq!(Some(vec![0x3A2_i64]), font.glyphs[0].codepoints);
+        assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v2_style_quoted_hex_unicode_sequence() {
-        let font = Font::read_glyphs_file(&glyphs2_dir().join("Unicode-QuotedHexSequence.glyphs"))
-            .unwrap();
+        let font = Font::load(&glyphs2_dir().join("Unicode-QuotedHexSequence.glyphs")).unwrap();
+        assert_eq!(
+            Some(vec![0x2044_i64, 0x200D_i64, 0x2215_i64]),
+            font.glyphs[0].codepoints
+        );
+        assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v3_style_unquoted_decimal_unicode() {
-        let font =
-            Font::read_glyphs_file(&glyphs3_dir().join("Unicode-UnquotedDec.glyphs")).unwrap();
+        let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDec.glyphs")).unwrap();
+        assert_eq!(Some(vec![182_i64]), font.glyphs[0].codepoints);
+        assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v3_style_unquoted_decimal_unicode_sequence() {
-        let font =
-            Font::read_glyphs_file(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"))
-                .unwrap();
+        let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs")).unwrap();
+        assert_eq!(Some(vec![1619_i64, 1764_i64]), font.glyphs[0].codepoints);
+        assert_eq!(1, font.glyphs.len());
     }
 }

@@ -69,7 +69,7 @@ impl GlyphsIrSource {
 impl Source for GlyphsIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         // We have to read the glyphs file then shred it to figure out if anything changed
-        let font = Font::read_glyphs_file(&self.glyphs_file).map_err(|e| {
+        let font = Font::load(&self.glyphs_file).map_err(|e| {
             Error::ParseError(
                 self.glyphs_file.clone(),
                 format!("Unable to read glyphs file: {}", e),
@@ -175,7 +175,7 @@ mod tests {
 
     fn glyph_state_for_file(dir: &Path, filename: &str) -> HashMap<String, StateSet> {
         let glyphs_file = dir.join(filename);
-        let font = Font::read_glyphs_file(&glyphs_file).unwrap();
+        let font = Font::load(&glyphs_file).unwrap();
         glyph_states(&font).unwrap()
     }
 
