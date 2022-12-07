@@ -1081,7 +1081,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_base(&mut self, table: &typed::BaseTable) {
-        let mut base = super::tables::BASE::default();
+        let mut base = super::tables::Base::default();
         if let Some(list) = table.horiz_base_tag_list() {
             base.horiz_tag_list = list.tags().map(|t| t.to_raw()).collect();
         }
@@ -1094,6 +1094,8 @@ impl<'a> CompilationCtx<'a> {
                     values: record.values().map(|i| i.parse_signed()).collect(),
                 })
                 .collect();
+            base.horiz_script_list
+                .sort_unstable_by_key(|rec| rec.script);
         }
 
         if let Some(list) = table.vert_base_tag_list() {
@@ -1108,8 +1110,9 @@ impl<'a> CompilationCtx<'a> {
                     values: record.values().map(|i| i.parse_signed()).collect(),
                 })
                 .collect();
+            base.vert_script_list.sort_unstable_by_key(|rec| rec.script);
         }
-        self.tables.BASE = Some(base);
+        self.tables.base = Some(base);
     }
 
     fn resolve_name(&mut self, table: &typed::NameTable) {

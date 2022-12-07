@@ -79,6 +79,11 @@ impl Compilation {
             builder.add_table(Tag::new(b"GDEF"), gdef.build().unwrap());
         }
 
+        if let Some(base) = &self.tables.base {
+            let data = dump_table(&base.build()).unwrap();
+            builder.add_table(Tag::new(b"BASE"), data);
+        }
+
         //TODO: reuse any existing names if name table present
         let mut name_builder = self.tables.name.clone();
         if let Some(stat_raw) = self.tables.stat.as_ref() {

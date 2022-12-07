@@ -34,7 +34,7 @@ pub(crate) struct Tables {
     pub stylistic_sets: HashMap<Tag, Vec<NameSpec>>,
     pub character_variants: HashMap<Tag, CvParams>,
     pub GDEF: Option<Gdef>,
-    pub BASE: Option<BASE>,
+    pub base: Option<Base>,
     pub OS2: Option<OS2>,
     pub stat: Option<StatBuilder>,
 }
@@ -97,7 +97,7 @@ pub struct Gdef {
 
 #[derive(Clone, Debug, Default)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
-pub struct BASE {
+pub struct Base {
     pub horiz_tag_list: Vec<Tag>,
     pub horiz_script_list: Vec<ScriptRecord>,
     pub vert_tag_list: Vec<Tag>,
@@ -274,6 +274,49 @@ impl StatBuilder {
         //feaLib puts format4 records first
         let axis_values = format4.chain(axis_values).collect();
         tables::stat::Stat::new(design_axes, axis_values, elided_fallback_name_id)
+    }
+}
+
+impl Base {
+    pub(crate) fn build(&self) -> tables::base::Base {
+        let mut result = tables::base::Base::default();
+        if !self.horiz_tag_list.is_empty() {
+            assert!(!self.horiz_script_list.is_empty(), "validate this");
+            let haxis = Base::build_axis(&self.horiz_tag_list, &self.horiz_script_list);
+            result.horiz_axis = haxis.into();
+        }
+        if !self.vert_tag_list.is_empty() && !self.vert_script_list.is_empty() {
+            assert!(!self.vert_script_list.is_empty(), "validate this");
+            let vaxis = Base::build_axis(&self.vert_tag_list, &self.vert_script_list);
+            result.vert_axis = vaxis.into();
+        }
+        result
+    }
+
+    fn build_axis(tag_list: &[Tag], script_list: &[ScriptRecord]) -> tables::base::Axis {
+        let records = script_list.iter().map(|rec| {
+            tables::base::BaseScriptRecord::new(
+                rec.script,
+                tables::base::BaseScript::new(
+                    Some(tables::base::BaseValues::new(
+                        tag_list
+                            .iter()
+                            .position(|x| *x == rec.default_baseline_tag)
+                            .expect("validate this") as _,
+                        rec.values
+                            .iter()
+                            .map(|coord| tables::base::BaseCoord::format_1(*coord))
+                            .collect(),
+                    )),
+                    None,
+                    Vec::new(),
+                ),
+            )
+        });
+        tables::base::Axis::new(
+            Some(tables::base::BaseTagList::new(tag_list.to_owned())),
+            tables::base::BaseScriptList::new(records.collect()),
+        )
     }
 }
 

@@ -1091,6 +1091,10 @@ impl BaseTagList {
             .take_while(|t| t.kind() != Kind::Semi)
             .filter_map(Tag::cast)
     }
+
+    pub fn compile(&self) -> write_fonts::tables::base::BaseTagList {
+        write_fonts::tables::base::BaseTagList::new(self.tags().map(|t| t.to_raw()).collect())
+    }
 }
 
 impl BaseScriptList {
