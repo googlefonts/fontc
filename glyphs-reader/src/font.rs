@@ -333,19 +333,16 @@ fn fix_glyphs_named_infinity(
     })
 }
 
-fn weight_name(weight: i64) -> &'static str {
-    match weight {
-        100 => "Thing",
-        200 => "Extra-light",
-        300 => "Light",
-        400 => "Regular",
-        500 => "Medium",
-        600 => "Semi-bold",
-        700 => "Bold",
-        800 => "Extra-bold",
-        900 => "Black",
-        _ => panic!("No name for weight {}", weight),
+fn custom_param<'a>(other_stuff: &'a mut BTreeMap<String, Plist>, key: &str) -> Option<&'a mut Plist> {
+    let custom_params = other_stuff.get_mut("customParameters");
+    if custom_params.is_none() {
+        return None;
     }
+    let Some(Plist::Array(custom_params)) = custom_params else {
+        panic!("customParameters isn't an array, omg omg omg");
+    };
+    
+    None
 }
 
 impl Font {
@@ -470,7 +467,7 @@ impl Font {
 
             let name = match master.other_stuff.remove("weight") {
                 Some(Plist::String(name)) => name,
-                _ => weight_name(wght).to_string(),
+                _ => String::from("Regular"),  // Missing = default = Regular per @anthrotype
             };
             master.other_stuff.insert("name".into(), Plist::String(name));
         }        
