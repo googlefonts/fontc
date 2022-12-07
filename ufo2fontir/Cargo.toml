@@ -14,9 +14,7 @@ categories = ["text-processing", "parsing", "graphics"]
 read-fonts = { git = 'https://github.com/googlefonts/fontations' }
 fontir = { version = "0.0.1", path = "../fontir" }
 
-# TODO use a version of norad with https://github.com/linebender/norad/pull/272 once one exists
-# norad = "0.7.0"
-norad = { git = 'https://github.com/linebender/norad' }
+norad = "0.8.0"
 
 quick-xml = { version = "0.22.0", features = ["serialize"] }
 
