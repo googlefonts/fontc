@@ -11,8 +11,6 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-font-types = { git = 'https://github.com/googlefonts/fontations' }
-read-fonts = { git = 'https://github.com/googlefonts/fontations' }
 fontir = { version = "0.0.1", path = "../fontir" }
 glyphs2fontir = { version = "0.0.1", path = "../glyphs2fontir" }
 ufo2fontir = { version = "0.0.1", path = "../ufo2fontir" }
