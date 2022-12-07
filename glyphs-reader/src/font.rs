@@ -45,6 +45,7 @@ pub struct Axis {
 pub struct Glyph {
     pub layers: Vec<Layer>,
     pub glyphname: String,
+    pub unicode: Vec<i64>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }
@@ -508,11 +509,15 @@ impl Font {
     fn v2_to_v3_shapes(&mut self) -> Result<(), Error> {
         // shapes in v3 encompasses paths and components in v2
         for glyph in self.glyphs.iter_mut() {
-            // v2 uses single codepoint strings, turn into int to match v3 for now
-            // In time we will likely parse unicode more carefully
+            // v2 can have unquoted hex *and* quoted sequences of hex
             glyph.other_stuff.entry("unicode".into()).and_modify(|v| {
                 if let Plist::String(val) = v {
-                    *v = Plist::Integer(i64::from_str_radix(val, 16).unwrap())
+                    let val: Vec<Plist> = val
+                        .split(',')
+                        .into_iter()
+                        .map(|v| Plist::Integer(i64::from_str_radix(v, 16).unwrap()))
+                        .collect();
+                    *v = Plist::Array(val);
                 }
             });
 
@@ -677,5 +682,30 @@ mod tests {
                 .collect::<Vec<&str>>(),
             vec!["wght", "wdth", "XXXX"]
         );
+    }
+
+    #[test]
+    fn understand_v2_style_unquoted_hex_unicode() {
+        let font =
+            Font::read_glyphs_file(&glyphs2_dir().join("Unicode-UnquotedHex.glyphs")).unwrap();
+    }
+
+    #[test]
+    fn understand_v2_style_quoted_hex_unicode_sequence() {
+        let font = Font::read_glyphs_file(&glyphs2_dir().join("Unicode-QuotedHexSequence.glyphs"))
+            .unwrap();
+    }
+
+    #[test]
+    fn understand_v3_style_unquoted_decimal_unicode() {
+        let font =
+            Font::read_glyphs_file(&glyphs3_dir().join("Unicode-UnquotedDec.glyphs")).unwrap();
+    }
+
+    #[test]
+    fn understand_v3_style_unquoted_decimal_unicode_sequence() {
+        let font =
+            Font::read_glyphs_file(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"))
+                .unwrap();
     }
 }
