@@ -1,5 +1,6 @@
-// Helps coordinate the graph execution
-// Eventually has to move outside fontir to let us use for BE work
+//! Helps coordinate the graph execution
+//!
+//! Eventually has to move outside fontir to let us use for BE work
 
 use std::{
     collections::{HashMap, HashSet},
@@ -8,7 +9,7 @@ use std::{
 
 use parking_lot::RwLock;
 
-use crate::ir::{GlobalMetadata, GlyphIr};
+use crate::ir::{GlyphIr, StaticMetadata};
 
 // Unique identifier of work. If there are no fields work is unique.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -36,8 +37,21 @@ pub struct Context {
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
-    global_metadata_cache: Arc<RwLock<Option<Arc<GlobalMetadata>>>>,
-    glyph_ir_cache: Arc<RwLock<HashMap<u32, Arc<GlyphIr>>>>,
+    static_metadata: Cache<Option<Arc<StaticMetadata>>>,
+    glyph_ir: Cache<HashMap<u32, Arc<GlyphIr>>>,
+}
+
+#[derive(Clone)]
+struct Cache<T: Default> {
+    item: Arc<RwLock<T>>,
+}
+
+impl<T: Default> Cache<T> {
+    fn new() -> Cache<T> {
+        Cache {
+            item: Default::default(),
+        }
+    }
 }
 
 impl Context {
@@ -45,8 +59,8 @@ impl Context {
         Context {
             write_mask: None,
             read_mask: None,
-            global_metadata_cache: Arc::from(RwLock::new(None)),
-            glyph_ir_cache: Arc::from(RwLock::new(HashMap::new())),
+            static_metadata: Cache::new(),
+            glyph_ir: Cache::new(),
         }
     }
 }
@@ -60,8 +74,8 @@ impl Context {
         Context {
             write_mask: Some(work_id),
             read_mask: Some(dependencies),
-            global_metadata_cache: self.global_metadata_cache.clone(),
-            glyph_ir_cache: self.glyph_ir_cache.clone(),
+            static_metadata: self.static_metadata.clone(),
+            glyph_ir: self.glyph_ir.clone(),
         }
     }
 
@@ -82,27 +96,27 @@ impl Context {
         }
     }
 
-    pub fn get_global_metadata(&self) -> Arc<GlobalMetadata> {
+    pub fn get_static_metadata(&self) -> Arc<StaticMetadata> {
         self.check_read_access(&WorkIdentifier::GlobalMetadata);
-        let rl = self.global_metadata_cache.read();
+        let rl = self.static_metadata.item.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
-    pub fn set_global_metadata(&self, global_metadata: GlobalMetadata) {
+    pub fn set_static_metadata(&self, global_metadata: StaticMetadata) {
         self.check_write_access(&WorkIdentifier::GlobalMetadata);
-        let mut wl = self.global_metadata_cache.write();
+        let mut wl = self.static_metadata.item.write();
         *wl = Some(Arc::from(global_metadata));
     }
 
     pub fn get_glyph_ir(&self, glyph_order: u32) -> Arc<GlyphIr> {
         self.check_read_access(&WorkIdentifier::GlyphIr(glyph_order));
-        let rl = self.glyph_ir_cache.read();
+        let rl = self.glyph_ir.item.read();
         rl.get(&glyph_order).expect(MISSING_DATA).clone()
     }
 
     pub fn set_glyph_ir(&self, glyph_order: u32, ir: GlyphIr) {
         self.check_write_access(&WorkIdentifier::GlyphIr(glyph_order));
-        let mut wl = self.glyph_ir_cache.write();
+        let mut wl = self.glyph_ir.item.write();
         wl.insert(glyph_order, Arc::from(ir));
     }
 }

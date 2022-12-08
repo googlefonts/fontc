@@ -183,10 +183,9 @@ fn do_work(work: Vec<Box<dyn Work>>) -> Result<(), Error> {
     debug!("{} work units to execute", work_units);
     let root_context = Context::new_root();
     // TODO: https://github.com/googlefonts/fontmake-rs/pull/26 style execution w/task-specific contexts
-    let errors: Vec<Result<(), WorkError>> = work
+    let errors: Vec<WorkError> = work
         .into_par_iter()
-        .map(|work| work.exec(&root_context))
-        .filter(|r| r.is_err())
+        .filter_map(|work| work.exec(&root_context).err())
         .collect();
     for error in errors.iter() {
         warn!("{:#?}", error);

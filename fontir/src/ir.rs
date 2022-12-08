@@ -4,8 +4,12 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+///Global font info that cannot vary.
+///
+/// For example, upem, axis definitions, etc, as distinct from
+/// metadata that varies across design space such as ascender/descender.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct GlobalMetadata {}
+pub struct StaticMetadata {}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct GlyphIr {}
