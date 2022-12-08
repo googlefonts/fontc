@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{Error, WorkError},
+    orchestration::Context,
     stateset::StateSet,
 };
 
@@ -18,8 +19,10 @@ use crate::{
 ///
 /// Naively you'd think we'd just return FnOnce + Send but that didn't want to compile
 /// See <https://github.com/rust-lang/rust/issues/29625>.
-pub trait Work<R>: Send {
-    fn exec(&self) -> Result<R, WorkError>;
+///
+/// Data produced by work is written into [Context].
+pub trait Work: Send {
+    fn exec(&self, context: &Context) -> Result<(), WorkError>;
 }
 
 /// Destroy a file, such as the IR for a deleted glyph
@@ -28,13 +31,13 @@ pub struct DeleteWork {
 }
 
 impl DeleteWork {
-    pub fn create(path: PathBuf) -> Box<dyn Work<()>> {
+    pub fn create(path: PathBuf) -> Box<dyn Work> {
         Box::from(DeleteWork { path })
     }
 }
 
-impl Work<()> for DeleteWork {
-    fn exec(&self) -> Result<(), WorkError> {
+impl Work for DeleteWork {
+    fn exec(&self, _: &Context) -> Result<(), WorkError> {
         debug!("Delete {:#?}", self.path);
         if self.path.exists() {
             fs::remove_file(&self.path).map_err(WorkError::IoError)?
@@ -57,7 +60,7 @@ pub trait Source {
         &self,
         glyph_names: &HashSet<&str>,
         input: &Input,
-    ) -> Result<Vec<Box<dyn Work<()>>>, Error>;
+    ) -> Result<Vec<Box<dyn Work>>, Error>;
 }
 
 /// Where does IR go anyway?

@@ -7,6 +7,7 @@ use std::{
 use fontir::{
     error::{Error, WorkError},
     ir::DesignSpaceLocation,
+    orchestration::Context,
     source::{Input, Paths, Source, Work},
     stateset::{StateIdentifier, StateSet},
 };
@@ -198,12 +199,12 @@ impl Source for DesignSpaceIrSource {
         &self,
         glyph_names: &HashSet<&str>,
         input: &Input,
-    ) -> Result<Vec<Box<dyn Work<()>>>, Error> {
+    ) -> Result<Vec<Box<dyn Work>>, Error> {
         // A single glif could be used by many source blocks that use the same layer
         // *gasp*
         // So resolve each file to 1..N locations in designspace
 
-        let mut work: Vec<Box<dyn Work<()>>> = Vec::new();
+        let mut work: Vec<Box<dyn Work>> = Vec::new();
 
         // Do we have the location of glifs written down?
         // TODO: consider just recomputing here instead of failing
@@ -266,8 +267,8 @@ struct GlyphIrWork {
     ir_file: PathBuf,
 }
 
-impl Work<()> for GlyphIrWork {
-    fn exec(&self) -> Result<(), WorkError> {
+impl Work for GlyphIrWork {
+    fn exec(&self, _: &Context) -> Result<(), WorkError> {
         debug!(
             "Generate {:#?} for {} {:#?}",
             self.ir_file, self.glyph_name, self.glif_files

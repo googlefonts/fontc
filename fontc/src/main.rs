@@ -9,6 +9,7 @@ use clap::Parser;
 use fontc::Error;
 use fontir::{
     error::WorkError,
+    orchestration::Context,
     source::{DeleteWork, Input, Paths, Source, Work},
     stateset::StateSet,
 };
@@ -158,7 +159,7 @@ fn glyphs_deleted<'a>(current_inputs: &Input, prev_inputs: &'a Input) -> HashSet
 
 fn add_glyph_work(
     context: &mut CompileContext,
-    work: &mut Vec<Box<dyn Work<()>>>,
+    work: &mut Vec<Box<dyn Work>>,
 ) -> Result<(), Error> {
     // Destroy IR for deleted glyphs
     work.extend(
@@ -177,13 +178,14 @@ fn add_glyph_work(
     Ok(())
 }
 
-fn do_work(work: Vec<Box<dyn Work<()>>>) -> Result<(), Error> {
+fn do_work(work: Vec<Box<dyn Work>>) -> Result<(), Error> {
     let work_units = work.len();
     debug!("{} work units to execute", work_units);
-    let errors: Vec<Result<(), WorkError>> = work
+    let root_context = Context::new_root();
+    // TODO: https://github.com/googlefonts/fontmake-rs/pull/26 style execution w/task-specific contexts
+    let errors: Vec<WorkError> = work
         .into_par_iter()
-        .map(|work| work.exec())
-        .filter(|r| r.is_err())
+        .filter_map(|work| work.exec(&root_context).err())
         .collect();
     for error in errors.iter() {
         warn!("{:#?}", error);
@@ -238,7 +240,7 @@ fn main() -> Result<(), Error> {
     // perhaps we should do the IO first, e.g. read (but not parse) inputs, etc?
 
     // Accumulate work for the parts of IR that trivially parallelize
-    let mut work: Vec<Box<dyn Work<()>>> = Vec::new();
+    let mut work: Vec<Box<dyn Work>> = Vec::new();
 
     add_glyph_work(&mut context, &mut work)?;
 
@@ -260,7 +262,7 @@ mod tests {
     };
 
     use filetime::FileTime;
-    use fontir::{source::Paths, stateset::StateSet};
+    use fontir::{orchestration::Context, source::Paths, stateset::StateSet};
     use tempfile::tempdir;
 
     use crate::{
@@ -351,8 +353,9 @@ mod tests {
         add_glyph_work(&mut context, &mut work).unwrap();
 
         // Try to do the work
+        let root_context = Context::new_root();
         for work_item in work {
-            work_item.exec().unwrap();
+            work_item.exec(&root_context).unwrap();
         }
 
         finish_successfully(context).unwrap();
