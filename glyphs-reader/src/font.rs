@@ -326,7 +326,7 @@ fn custom_param<'a>(
 }
 
 impl Font {
-    fn get_codepoints(&mut self, radix: u32) {
+    fn parse_codepoints(&mut self, radix: u32) {
         for glyph in self.glyphs.iter_mut() {
             if let Some(Plist::String(val)) = glyph.other_stuff.remove("unicode") {
                 let codepoints: Vec<i64> = val
@@ -546,7 +546,7 @@ impl Font {
             font.v2_to_v3()?;
             radix = 16;
         }
-        font.get_codepoints(radix);
+        font.parse_codepoints(radix);
 
         font.other_stuff.remove("date"); // exists purely to make diffs fail
         font.other_stuff.remove(".formatVersion"); // no longer relevent
@@ -646,7 +646,7 @@ mod tests {
     #[test]
     fn understand_v2_style_unquoted_hex_unicode() {
         let font = Font::load(&glyphs2_dir().join("Unicode-UnquotedHex.glyphs")).unwrap();
-        assert_eq!(Some(vec![0x3A2_i64]), font.glyphs[0].codepoints);
+        assert_eq!(Some(vec![0x1234_i64]), font.glyphs[0].codepoints);
         assert_eq!(1, font.glyphs.len());
     }
 

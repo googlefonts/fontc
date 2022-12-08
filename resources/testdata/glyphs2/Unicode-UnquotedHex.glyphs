@@ -5,7 +5,7 @@ glyphs = (
 	{
 		glyphname = name;
 		layers = ();
-		unicode = 03A2;
+		unicode = 1234;
 	}
 );
 unitsPerEm = 1000;
