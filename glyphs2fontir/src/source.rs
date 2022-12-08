@@ -1,4 +1,5 @@
 use fontir::error::{Error, WorkError};
+use fontir::orchestration::Context;
 use fontir::source::{Input, Paths, Source, Work};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
@@ -93,8 +94,8 @@ impl Source for GlyphsIrSource {
         &self,
         glyph_names: &HashSet<&str>,
         input: &Input,
-    ) -> Result<Vec<Box<dyn Work<()>>>, fontir::error::Error> {
-        let mut work: Vec<Box<dyn Work<()>>> = Vec::new();
+    ) -> Result<Vec<Box<dyn Work>>, fontir::error::Error> {
+        let mut work: Vec<Box<dyn Work>> = Vec::new();
 
         // Do we have a plist cache?
         // TODO: consider just recomputing here instead of failing
@@ -141,8 +142,8 @@ struct GlyphIrWork {
     ir_file: PathBuf,
 }
 
-impl Work<()> for GlyphIrWork {
-    fn exec(&self) -> Result<(), WorkError> {
+impl Work for GlyphIrWork {
+    fn exec(&self, _: &Context) -> Result<(), WorkError> {
         debug!("Generate {:#?} for {}", self.ir_file, self.glyph_name);
         fs::write(&self.ir_file, &self.glyph_name).map_err(WorkError::IoError)?;
         Ok(())

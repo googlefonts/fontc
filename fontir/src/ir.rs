@@ -4,6 +4,12 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct GlobalMetadata {}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct GlyphIr {}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Axis {
     pub tag: String,
