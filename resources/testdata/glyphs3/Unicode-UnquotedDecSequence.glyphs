@@ -1,0 +1,13 @@
+{
+.formatVersion = 3;
+familyName = WghtVar;
+fontMaster = ();
+glyphs = (
+	{
+		glyphname = name;
+		layers = ();
+		unicode = (1619,1764);
+	}
+);
+unitsPerEm = 1000;
+}

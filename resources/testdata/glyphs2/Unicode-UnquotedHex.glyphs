@@ -1,0 +1,12 @@
+{
+familyName = WghtVar;
+fontMaster = ();
+glyphs = (
+	{
+		glyphname = name;
+		layers = ();
+		unicode = 1234;
+	}
+);
+unitsPerEm = 1000;
+}
