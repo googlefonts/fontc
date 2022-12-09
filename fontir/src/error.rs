@@ -31,6 +31,8 @@ pub enum Error {
         what: String,
         loc: DesignSpaceLocation,
     },
+    #[error("Global metadata very bad, very very bad")]
+    InvalidGlobalMetadata,
 }
 
 /// An async work error, hence one that must be Send
@@ -47,5 +49,7 @@ pub enum WorkError {
     #[error("No axes are defined")]
     NoAxisDefinitions,
     #[error("Axis definitions are inconsistent")]
-    InconsistentAxisDefinitions,
+    InconsistentAxisDefinitions(String),
+    #[error("I am the glyph with gid, {0}")]
+    NoGlyphIdForName(String),
 }

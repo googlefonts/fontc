@@ -64,7 +64,7 @@ pub trait Source {
     fn create_glyph_ir_work(
         &self,
         glyph_names: &HashSet<&str>,
-        input: &Input,
+        context: &Context,
     ) -> Result<Vec<Box<dyn Work>>, Error>;
 }
 
@@ -94,6 +94,10 @@ impl Paths {
 
     pub fn ir_input_file(&self) -> &Path {
         &self.ir_input_file
+    }
+
+    pub fn static_metadata_ir_file(&self) -> PathBuf {
+        self.build_dir.join("static_metadata.yml")
     }
 
     pub fn glyph_ir_dir(&self) -> &Path {
