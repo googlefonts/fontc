@@ -1,11 +1,11 @@
-//! Serde types for font IR. See TODO:PublicLink.
+//! Serde types for font IR.
 
 use crate::error::Error;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
-///Global font info that cannot vary.
+/// Global font info that cannot vary.
 ///
 /// For example, upem, axis definitions, etc, as distinct from
 /// metadata that varies across design space such as ascender/descender.
@@ -13,6 +13,15 @@ use std::collections::{BTreeMap, HashMap};
 pub struct StaticMetadata {
     pub axes: Vec<Axis>,
     pub glyph_order: Vec<String>,
+}
+
+impl StaticMetadata {
+    pub fn glyph_id(&self, name: &str) -> Option<u32> {
+        self.glyph_order
+            .iter()
+            .position(|gn| gn == name)
+            .map(|pos| pos as u32)
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
