@@ -53,6 +53,11 @@ pub trait Source {
     /// Mut to permit caching.
     fn inputs(&mut self) -> Result<Input, Error>;
 
+    /// Create a function that could be called to generate [crate::ir::StaticMetadata].
+    ///
+    /// When run work should update [Context] with new [crate::ir::StaticMetadata].
+    fn create_static_metadata_work(&self, context: &Context) -> Result<Box<dyn Work>, Error>;
+
     /// Create a function that could be called to generate IR for glyphs.
     ///
     /// Batched because some formats require IO to figure out the work.

@@ -11,8 +11,8 @@ use std::collections::{BTreeMap, HashMap};
 /// metadata that varies across design space such as ascender/descender.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct StaticMetadata {
-    axes: Vec<Axis>,
-    glyph_order: Vec<String>,
+    pub axes: Vec<Axis>,
+    pub glyph_order: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
