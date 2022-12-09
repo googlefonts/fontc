@@ -1,27 +1,27 @@
 //! Serde types for font IR. See TODO:PublicLink.
 
-use std::collections::{BTreeMap, HashMap};
-
+use crate::error::Error;
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
 
 ///Global font info that cannot vary.
 ///
 /// For example, upem, axis definitions, etc, as distinct from
 /// metadata that varies across design space such as ascender/descender.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct StaticMetadata {}
+pub struct StaticMetadata {
+    axes: Vec<Axis>,
+    glyph_order: Vec<String>,
+}
 
-use ordered_float::OrderedFloat;
-
-use crate::error::Error;
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Axis {
     pub name: String,
     pub tag: String,
-    pub min: f32,
-    pub default: f32,
-    pub max: f32,
+    pub min: OrderedFloat<f32>,
+    pub default: OrderedFloat<f32>,
+    pub max: OrderedFloat<f32>,
     pub hidden: bool,
 }
 
@@ -132,9 +132,9 @@ mod tests {
         Axis {
             name: String::from("Weight"),
             tag: String::from("wght"),
-            min: 100.,
-            default: 400.,
-            max: 900.,
+            min: 100_f32.into(),
+            default: 400_f32.into(),
+            max: 900_f32.into(),
             hidden: false,
         }
     }

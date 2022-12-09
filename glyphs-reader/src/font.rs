@@ -133,6 +133,7 @@ pub struct Anchor {
 #[derive(Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct FontMaster {
     pub id: String,
+    pub axes_values: Option<Vec<OrderedFloat<f64>>>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }
@@ -215,7 +216,6 @@ impl FromPlist for Affine {
 
 impl FromPlist for Point {
     fn from_plist(plist: Plist) -> Self {
-        eprintln!("{:?}", plist);
         let raw = plist.as_str().unwrap();
         let raw = &raw[1..raw.len() - 1];
         let coords: Vec<f64> = raw.split(", ").map(|c| c.parse().unwrap()).collect();
@@ -391,6 +391,43 @@ impl Font {
             });
         }
 
+        // v2 stores values for axes in specific fields, find them and put them into place
+        // "Axis position related properties (e.g. weightValue, widthValue, customValue) have been replaced by the axesValues list which is indexed in parallel with the toplevel axes list."
+        for master in self.font_master.iter_mut() {
+            let mut axis_values = Vec::new();
+            for axis in axes.iter() {
+                let field_name = match axis.tag.as_str() {
+                    "wght" => "weightValue",
+                    "wdth" => "widthValue",
+                    "XXXX" => "customValue",
+                    _ => {
+                        return Err(Error::StructuralError(format!(
+                            "No v2 field known for '{}'",
+                            axis.tag
+                        )))
+                    }
+                };
+                let value = master
+                    .other_stuff
+                    .remove(field_name)
+                    .ok_or_else(|| {
+                        Error::StructuralError(format!(
+                            "Missing '{}' in\n{:#?}",
+                            field_name, master.other_stuff
+                        ))
+                    })?
+                    .as_f64()
+                    .ok_or_else(|| {
+                        Error::StructuralError(format!(
+                            "Invalid '{}' in\n{:#?}",
+                            field_name, master.other_stuff
+                        ))
+                    })?;
+                axis_values.push(value.into());
+            }
+            master.axes_values = Some(axis_values);
+        }
+
         if custom_params(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
             self.other_stuff.remove("customParameters");
         }
@@ -489,14 +526,10 @@ impl Font {
 
     fn v2_to_v3_weight(&mut self) -> Result<(), Error> {
         for master in self.font_master.iter_mut() {
-            let Some(Plist::Integer(wght)) = master.other_stuff.remove("weightValue") else {
+            // Don't remove weightValue, we need it to understand axes
+            let Some(Plist::Integer(..)) = master.other_stuff.get("weightValue") else {
                 continue;
             };
-            master.other_stuff.insert(
-                "axesValues".into(),
-                Plist::Array(vec![Plist::Integer(wght)]),
-            );
-
             let name = match master.other_stuff.remove("weight") {
                 Some(Plist::String(name)) => name,
                 _ => String::from("Regular"), // Missing = default = Regular per @anthrotype
@@ -510,8 +543,8 @@ impl Font {
 
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
     fn v2_to_v3(&mut self) -> Result<(), Error> {
-        self.v2_to_v3_axes()?;
         self.v2_to_v3_weight()?;
+        self.v2_to_v3_axes()?;
         self.v2_to_v3_metrics()?;
         self.v2_to_v3_shapes()?;
         Ok(())

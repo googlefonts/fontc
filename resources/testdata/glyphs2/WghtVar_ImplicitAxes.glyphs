@@ -20,6 +20,8 @@ capHeight = 0;
 descender = -200;
 id = m01;
 weightValue = 400;
+widthValue = 100;
+customValue = 0;
 xHeight = 0;
 },
 {
@@ -29,6 +31,8 @@ descender = -200;
 id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
 weight = Bold;
 weightValue = 700;
+widthValue = 100;
+customValue = 0;
 xHeight = 500;
 }
 );
