@@ -15,7 +15,6 @@ use write_fonts::{
     },
     types::{Fixed, LongDateTime, Tag, Uint24},
     validate::ValidationReport,
-    OffsetMarker,
 };
 
 use crate::{
@@ -28,8 +27,8 @@ use crate::{
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Tables {
     pub head: Option<head>,
-    pub hhea: Option<tables::hvhea::HVhea>,
-    pub vhea: Option<tables::hvhea::HVhea>,
+    pub hhea: Option<tables::hhea::Hhea>,
+    pub vhea: Option<tables::vhea::Vhea>,
     pub vmtx: Option<vmtx>,
     pub name: NameBuilder,
     pub stylistic_sets: HashMap<Tag, Vec<NameSpec>>,
@@ -211,13 +210,13 @@ impl StatBuilder {
             .map(|(i, val)| (val.axis_tag, i as u16))
             .collect::<HashMap<_, _>>();
 
-        let axis_values: Vec<OffsetMarker<tables::stat::AxisValue>> = self
+        let axis_values = self
             .values
             .iter()
             .map(|axis_value| {
                 let flags = tables::stat::AxisValueTableFlags::from_bits(axis_value.flags).unwrap();
                 let name_id = name_builder.add_anon_group(&axis_value.name);
-                let to_add = match &axis_value.location {
+                match &axis_value.location {
                     AxisLocation::One { tag, value } => tables::stat::AxisValue::format_1(
                         //TODO: validate that all referenced tags refer to existing axes
                         *axis_indices.get(tag).unwrap(),
@@ -254,13 +253,10 @@ impl StatBuilder {
                             .collect();
                         tables::stat::AxisValue::format_4(flags, name_id, mapping)
                     }
-                };
-                OffsetMarker::new(to_add)
+                }
             })
             .collect::<Vec<_>>();
-        let mut table = tables::stat::Stat::new(design_axes, axis_values.into());
-        table.elided_fallback_name_id = Some(elided_fallback_name_id);
-        table
+        tables::stat::Stat::new(design_axes, axis_values, elided_fallback_name_id)
     }
 }
 
