@@ -39,6 +39,7 @@ pub struct Font {
 pub struct Axis {
     pub name: String,
     pub tag: String,
+    pub hidden: Option<bool>,
 }
 
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
@@ -291,7 +292,7 @@ fn fix_glyphs_named_infinity(
     })
 }
 
-fn custom_params(other_stuff: &mut BTreeMap<String, Plist>) -> Option<&mut Vec<Plist>> {
+fn custom_params_mut(other_stuff: &mut BTreeMap<String, Plist>) -> Option<&mut Vec<Plist>> {
     let custom_params = other_stuff.get_mut("customParameters");
     custom_params.as_ref()?;
     let Some(Plist::Array(custom_params)) = custom_params else {
@@ -301,11 +302,11 @@ fn custom_params(other_stuff: &mut BTreeMap<String, Plist>) -> Option<&mut Vec<P
     Some(custom_params)
 }
 
-fn custom_param<'a>(
+fn custom_param_mut<'a>(
     other_stuff: &'a mut BTreeMap<String, Plist>,
     key: &str,
 ) -> Option<(usize, &'a mut Plist)> {
-    let Some(custom_params) = custom_params(other_stuff) else {
+    let Some(custom_params) = custom_params_mut(other_stuff) else {
         warn!("customParameters isn't an array, omg omg omg");
         return None;
     };
@@ -343,6 +344,40 @@ fn glyphs_v2_field_name_and_default(nth_axis: usize) -> Result<(&'static str, f6
     })
 }
 
+fn custom_params(other_stuff: &BTreeMap<String, Plist>) -> Option<&Vec<Plist>> {
+    let custom_params = other_stuff.get("customParameters");
+    custom_params.as_ref()?;
+    let Some(Plist::Array(custom_params)) = custom_params else {
+        warn!("customParameters isn't an array, omg omg omg");
+        return None;
+    };
+    Some(custom_params)
+}
+
+fn custom_param<'a>(
+    other_stuff: &'a BTreeMap<String, Plist>,
+    key: &str,
+) -> Option<(usize, &'a Plist)> {
+    let Some(custom_params) = custom_params(other_stuff) else {
+        warn!("customParameters isn't an array, omg omg omg");
+        return None;
+    };
+
+    let name_key = "name".to_string();
+    for (idx, custom_param) in custom_params.iter().enumerate() {
+        let Plist::Dictionary(dict) = custom_param else {
+            continue;
+        };
+        let Some(Plist::String(param_key)) = dict.get(&name_key) else {
+            continue;
+        };
+        if key == param_key {
+            return Some((idx, custom_param));
+        }
+    }
+    None
+}
+
 impl Font {
     fn parse_codepoints(&mut self, radix: u32) {
         for glyph in self.glyphs.iter_mut() {
@@ -370,7 +405,7 @@ impl Font {
         if self.axes.is_none() {
             self.axes = Some(Vec::new());
         }
-        if let Some((axes_idx, custom_param)) = custom_param(&mut self.other_stuff, "Axes") {
+        if let Some((axes_idx, custom_param)) = custom_param_mut(&mut self.other_stuff, "Axes") {
             if let Plist::Dictionary(dict) = custom_param {
                 let v3_axes = self.axes.as_mut().unwrap();
                 let Some(Plist::Array(v2_axes)) = dict.get_mut("value") else {
@@ -385,10 +420,11 @@ impl Font {
                     v3_axes.push(Axis {
                         name: v2_axis.get("Name").unwrap().as_str().unwrap().into(),
                         tag: tag.into(),
+                        hidden: v2_axis.get("hidden").map(|v| v.as_i64() == Some(1)),
                     });
                 }
             }
-            custom_params(&mut self.other_stuff).map(|p| p.remove(axes_idx));
+            custom_params_mut(&mut self.other_stuff).map(|p| p.remove(axes_idx));
         }
 
         // Match the defaults from https://github.com/googlefonts/glyphsLib/blob/f6e9c4a29ce764d34c309caef5118c48c156be36/Lib/glyphsLib/builder/axes.py#L526
@@ -398,14 +434,17 @@ impl Font {
             axes.push(Axis {
                 name: "Weight".into(),
                 tag: "wght".into(),
+                hidden: None,
             });
             axes.push(Axis {
                 name: "Width".into(),
                 tag: "wdth".into(),
+                hidden: None,
             });
             axes.push(Axis {
                 name: "Custom".into(),
                 tag: "XXXX".into(),
+                hidden: None,
             });
         }
 
@@ -440,7 +479,7 @@ impl Font {
             master.axes_values = Some(axis_values);
         }
 
-        if custom_params(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
+        if custom_params_mut(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
             self.other_stuff.remove("customParameters");
         }
         Ok(tags)
@@ -600,6 +639,30 @@ impl Font {
     }
 }
 
+impl Font {
+    pub fn default_master_idx(&self) -> usize {
+        // https://github.com/googlefonts/fontmake-rs/issues/44
+        custom_param(&self.other_stuff, "Variable Font Origin")
+            .map(|(_, param)| match param {
+                Plist::Dictionary(dict) => dict.get("value"),
+                _ => None,
+            })
+            .map(|value| {
+                let Some(Plist::String(origin)) = value else {
+                    warn!("Incomprehensible Variable Font Origin");
+                    return 0;
+                };
+                self.font_master
+                    .iter()
+                    .enumerate()
+                    .find(|(_, master)| &master.id == origin)
+                    .map(|(idx, _)| idx)
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -717,5 +780,49 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs")).unwrap();
         assert_eq!(Some(vec![1619_i64, 1764_i64]), font.glyphs[0].codepoints);
         assert_eq!(1, font.glyphs.len());
+    }
+
+    #[test]
+    fn axes_not_hidden() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        assert_eq!(
+            font.axes
+                .unwrap()
+                .iter()
+                .map(|a| a.hidden)
+                .collect::<Vec<_>>(),
+            vec![None]
+        );
+    }
+
+    #[test]
+    fn axis_hidden() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_3master_CustomOrigin.glyphs")).unwrap();
+        assert_eq!(
+            font.axes
+                .unwrap()
+                .iter()
+                .map(|a| a.hidden)
+                .collect::<Vec<_>>(),
+            vec![Some(true)]
+        );
+    }
+
+    #[test]
+    fn vf_origin_single_axis_default() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        assert_eq!(0, font.default_master_idx());
+    }
+
+    #[test]
+    fn vf_origin_multi_axis_default() {
+        let font = Font::load(&glyphs2_dir().join("WghtVar_ImplicitAxes.glyphs")).unwrap();
+        assert_eq!(0, font.default_master_idx());
+    }
+
+    #[test]
+    fn vf_origin_multi_axis_custom() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_3master_CustomOrigin.glyphs")).unwrap();
+        assert_eq!(2, font.default_master_idx());
     }
 }

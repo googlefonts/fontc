@@ -193,6 +193,10 @@ impl Source for DesignSpaceIrSource {
         })
     }
 
+    fn create_static_metadata_work(&self, context: &Context) -> Result<Box<dyn Work>, Error> {
+        todo!()
+    }
+
     fn create_glyph_ir_work(
         &self,
         glyph_names: &HashSet<&str>,

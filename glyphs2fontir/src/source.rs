@@ -1,10 +1,13 @@
 use fontir::error::{Error, WorkError};
+use fontir::ir::{Axis, StaticMetadata};
 use fontir::orchestration::Context;
 use fontir::source::{Input, Paths, Source, Work};
 use fontir::stateset::StateSet;
-use glyphs_reader::Font;
-use log::debug;
+use glyphs_reader::{Font, Plist};
+use log::{debug, warn};
+use ordered_float::OrderedFloat;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::{collections::HashMap, fs, path::PathBuf};
 
 pub struct GlyphsIrSource {
@@ -25,7 +28,7 @@ impl GlyphsIrSource {
 
 struct Cache {
     global_metadata: StateSet,
-    _font: Font,
+    font: Arc<Font>,
 }
 
 impl Cache {
@@ -81,13 +84,17 @@ impl Source for GlyphsIrSource {
 
         self.cache = Some(Cache {
             global_metadata: global_metadata.clone(),
-            _font: font,
+            font: Arc::from(font),
         });
 
         Ok(Input {
             global_metadata,
             glyphs,
         })
+    }
+
+    fn create_static_metadata_work(&self, context: &Context) -> Result<Box<dyn Work>, Error> {
+        todo!()
     }
 
     fn create_glyph_ir_work(
@@ -134,6 +141,76 @@ impl GlyphsIrSource {
             glyph_name: glyph_name.clone(),
             ir_file: self.ir_paths.glyph_ir_file(&glyph_name),
         })
+    }
+}
+
+struct StaticMetadataWork {
+    font: Arc<Font>,
+}
+
+impl Work for StaticMetadataWork {
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        let font = self.font.as_ref();
+        debug!("Static metadata for {}", font.family_name);
+
+        let mut axis_values = Vec::new();
+        for master in font.font_master.iter() {
+            master
+                .axes_values
+                .as_ref()
+                .ok_or_else(|| WorkError::InconsistentAxisDefinitions)?
+                .iter()
+                .enumerate()
+                .for_each(|(idx, value)| {
+                    while axis_values.len() < idx {
+                        axis_values.push(Vec::new());
+                    }
+                    axis_values[idx].push(value);
+                });
+        }
+
+        let axes = font.axes.as_ref().ok_or(WorkError::NoAxisDefinitions)?;
+        if axes.is_empty() {
+            return Err(WorkError::NoAxisDefinitions);
+        }
+        if axis_values.iter().any(|av| axes.len() != av.len()) {
+            return Err(WorkError::InconsistentAxisDefinitions);
+        }
+
+        let default_master_idx = font.default_master_idx();
+
+        let axes = axes
+            .iter()
+            .enumerate()
+            .map(|(idx, a)| {
+                let min = axis_values[idx]
+                    .iter()
+                    .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
+                    .min()
+                    .unwrap();
+                let max = axis_values[idx]
+                    .iter()
+                    .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
+                    .max()
+                    .unwrap();
+                let default =
+                    OrderedFloat::<f32>(axis_values[default_master_idx][idx].into_inner() as f32);
+
+                Axis {
+                    name: a.name.clone(),
+                    tag: a.tag.clone(),
+                    hidden: a.hidden.unwrap_or(false),
+                    min,
+                    default,
+                    max,
+                }
+            })
+            .collect();
+        context.set_static_metadata(StaticMetadata {
+            axes,
+            glyph_order: Vec::new(), // TODO Glyph Order
+        });
+        Ok(())
     }
 }
 

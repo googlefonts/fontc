@@ -14,7 +14,7 @@ use crate::ir;
 // Unique identifier of work. If there are no fields work is unique.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum WorkIdentifier {
-    GlobalMetadata,
+    StaticMetadata,
     GlyphIr(u32),
     FinishIr,
 }
@@ -97,15 +97,15 @@ impl Context {
     }
 
     pub fn get_static_metadata(&self) -> Arc<ir::StaticMetadata> {
-        self.check_read_access(&WorkIdentifier::GlobalMetadata);
+        self.check_read_access(&WorkIdentifier::StaticMetadata);
         let rl = self.static_metadata.item.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
-    pub fn set_static_metadata(&self, global_metadata: ir::StaticMetadata) {
-        self.check_write_access(&WorkIdentifier::GlobalMetadata);
+    pub fn set_static_metadata(&self, static_metadata: ir::StaticMetadata) {
+        self.check_write_access(&WorkIdentifier::StaticMetadata);
         let mut wl = self.static_metadata.item.write();
-        *wl = Some(Arc::from(global_metadata));
+        *wl = Some(Arc::from(static_metadata));
     }
 
     pub fn get_glyph_ir(&self, glyph_order: u32) -> Arc<ir::Glyph> {

@@ -46,4 +46,6 @@ pub enum WorkError {
     YamlSerError(#[from] serde_yaml::Error),
     #[error("No axes are defined")]
     NoAxisDefinitions,
+    #[error("Axis definitions are inconsistent")]
+    InconsistentAxisDefinitions,
 }
