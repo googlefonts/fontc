@@ -666,12 +666,11 @@ impl Font {
     pub fn default_master_idx(&self) -> usize {
         // https://github.com/googlefonts/fontmake-rs/issues/44
         custom_param(&self.other_stuff, "Variable Font Origin")
-            .map(|(_, param)| match param {
-                Plist::Dictionary(dict) => dict.get("value"),
-                _ => None,
-            })
-            .map(|value| {
-                let Some(Plist::String(origin)) = value else {
+            .map(|(_, param)| {
+                let Plist::Dictionary(dict) = param else {
+                    return 0;
+                };
+                let Some(Plist::String(origin)) = dict.get("value") else {
                     warn!("Incomprehensible Variable Font Origin");
                     return 0;
                 };
@@ -680,9 +679,9 @@ impl Font {
                     .enumerate()
                     .find(|(_, master)| &master.id == origin)
                     .map(|(idx, _)| idx)
-                    .unwrap_or_default()
+                    .unwrap_or(0)
             })
-            .unwrap_or_default()
+            .unwrap_or(0)
     }
 }
 
