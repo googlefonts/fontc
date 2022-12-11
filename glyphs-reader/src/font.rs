@@ -30,6 +30,7 @@ pub struct Font {
     pub family_name: String,
     pub axes: Option<Vec<Axis>>,
     pub glyphs: Vec<Glyph>,
+    pub glyph_order: Option<Vec<String>>,
     pub font_master: Vec<FontMaster>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
@@ -392,6 +393,27 @@ impl Font {
         }
     }
 
+    fn parse_glyph_order(&mut self) {
+        // https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044627972
+        // if there isn't a custom glyph order take the file order
+        self.glyph_order = custom_param(&self.other_stuff, "glyphOrder")
+            .map(|(_, param)| match param {
+                Plist::Dictionary(dict) => {
+                    let Some(Plist::Array(entries)) = dict.get("value") else {
+                        return None;
+                    };
+                    Some(
+                        entries
+                            .iter()
+                            .filter_map(|e| e.as_str().map(|s| s.to_string()))
+                            .collect(),
+                    )
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| Some(self.glyphs.iter().map(|p| p.glyphname.clone()).collect()))
+    }
+
     fn is_v2(&self) -> bool {
         let mut is_v2 = true;
         if let Some(Plist::Integer(version)) = self.other_stuff.get(".formatVersion") {
@@ -631,6 +653,7 @@ impl Font {
             radix = 16;
         }
         font.parse_codepoints(radix);
+        font.parse_glyph_order();
 
         font.other_stuff.remove("date"); // exists purely to make diffs fail
         font.other_stuff.remove(".formatVersion"); // no longer relevent
@@ -824,5 +847,17 @@ mod tests {
     fn vf_origin_multi_axis_custom() {
         let font = Font::load(&glyphs3_dir().join("WghtVar_3master_CustomOrigin.glyphs")).unwrap();
         assert_eq!(2, font.default_master_idx());
+    }
+
+    #[test]
+    fn glyph_order_default_is_file_order() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        assert_eq!(vec!["space", "exclam", "hyphen"], font.glyph_order.unwrap());
+    }
+
+    #[test]
+    fn glyph_order_override_obeyed() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_GlyphOrder.glyphs")).unwrap();
+        assert_eq!(vec!["hyphen", "space", "exclam"], font.glyph_order.unwrap());
     }
 }

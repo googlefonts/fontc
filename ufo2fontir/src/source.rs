@@ -296,24 +296,20 @@ struct StaticMetadataWork {
 impl Work for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
-
-        context.set_static_metadata(StaticMetadata {
-            axes: self
-                .designspace
-                .axes
-                .iter()
-                .map(|a| Axis {
-                    name: a.name.clone(),
-                    tag: a.tag.clone(),
-                    hidden: a.hidden,
-                    min: a.minimum.unwrap().into(),
-                    default: a.default.into(),
-                    max: a.maximum.unwrap().into(),
-                })
-                .collect(),
-            glyph_order: (*self.glyph_order).clone(),
-        });
-
+        let axes = self
+            .designspace
+            .axes
+            .iter()
+            .map(|a| Axis {
+                name: a.name.clone(),
+                tag: a.tag.clone(),
+                hidden: a.hidden,
+                min: a.minimum.unwrap().into(),
+                default: a.default.into(),
+                max: a.maximum.unwrap().into(),
+            })
+            .collect();
+        context.set_static_metadata(StaticMetadata::new(axes, (*self.glyph_order).clone()));
         Ok(())
     }
 }

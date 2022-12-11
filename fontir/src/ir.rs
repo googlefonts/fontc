@@ -1,6 +1,6 @@
 //! Serde types for font IR.
 
-use crate::error::Error;
+use crate::{error::Error, serde::StaticMetadataSerdeRepr};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -9,22 +9,36 @@ use std::collections::{BTreeMap, HashMap};
 ///
 /// For example, upem, axis definitions, etc, as distinct from
 /// metadata that varies across design space such as ascender/descender.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(from = "StaticMetadataSerdeRepr", into = "StaticMetadataSerdeRepr")]
 pub struct StaticMetadata {
     pub axes: Vec<Axis>,
     pub glyph_order: Vec<String>,
+    pub gid_by_name: HashMap<String, u32>,
 }
 
 impl StaticMetadata {
-    pub fn glyph_id(&self, name: &str) -> Option<u32> {
-        self.glyph_order
+    pub fn new(axes: Vec<Axis>, glyph_order: Vec<String>) -> StaticMetadata {
+        let gid_by_name = glyph_order
             .iter()
-            .position(|gn| gn == name)
-            .map(|pos| pos as u32)
+            .enumerate()
+            .map(|(idx, name)| (name.clone(), idx as u32))
+            .collect();
+        StaticMetadata {
+            axes,
+            glyph_order,
+            gid_by_name,
+        }
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+impl StaticMetadata {
+    pub fn glyph_id(&self, name: &String) -> Option<u32> {
+        self.gid_by_name.get(name).copied()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Axis {
     pub name: String,
     pub tag: String,

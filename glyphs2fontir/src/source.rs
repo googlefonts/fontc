@@ -208,7 +208,7 @@ impl Work for StaticMetadataWork {
             .collect();
 
         let glyph_order = font.glyphs.iter().map(|g| g.glyphname.clone()).collect();
-        context.set_static_metadata(StaticMetadata { axes, glyph_order });
+        context.set_static_metadata(StaticMetadata::new(axes, glyph_order));
         Ok(())
     }
 }
