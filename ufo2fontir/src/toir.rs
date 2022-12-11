@@ -1,16 +1,26 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use fontir::ir;
+use fontir::{
+    coords::{
+        temporary_design_to_user_conversion, DesignSpaceCoord, UserSpaceCoord, UserSpaceLocation,
+    },
+    ir,
+};
 use norad::designspace::{self, DesignSpaceDocument, Dimension};
 use ordered_float::OrderedFloat;
 
 use crate::error::Error;
 
 // TODO we will need the ability to map coordinates and a test font that does. Then no unwrap.
-pub(crate) fn to_ir_location(loc: &[Dimension]) -> ir::DesignSpaceLocation {
+pub(crate) fn to_ir_location(loc: &[Dimension]) -> UserSpaceLocation {
     loc.iter()
-        .map(|d| (d.name.clone(), OrderedFloat(d.xvalue.unwrap())))
+        .map(|d| {
+            // TODO: what if d has uservalue (new in DS5.0)
+            let coord = DesignSpaceCoord::new(OrderedFloat(d.xvalue.unwrap()));
+            let coord = temporary_design_to_user_conversion(coord);
+            (d.name.clone(), coord)
+        })
         .collect()
 }
 
@@ -22,19 +32,18 @@ pub fn designspace_to_ir(designspace: DesignSpaceDocument) -> Result<Vec<ir::Axi
     Ok(ir_axes)
 }
 
+fn design_to_user(value: f32) -> UserSpaceCoord {
+    let coord = DesignSpaceCoord::new(OrderedFloat(value));
+    temporary_design_to_user_conversion(coord)
+}
+
 fn to_ir_axis(axis: designspace::Axis) -> ir::Axis {
     ir::Axis {
         name: axis.name,
         tag: axis.tag,
-        min: axis
-            .minimum
-            .expect("Discrete axes not supported yet")
-            .into(),
-        default: axis.default.into(),
-        max: axis
-            .maximum
-            .expect("Discrete axes not supported yet")
-            .into(),
+        min: design_to_user(axis.minimum.expect("Discrete axes not supported yet")),
+        default: design_to_user(axis.default),
+        max: design_to_user(axis.maximum.expect("Discrete axes not supported yet")),
         hidden: axis.hidden,
     }
 }
@@ -86,7 +95,7 @@ fn to_ir_glyph_instance(glyph: &norad::Glyph) -> ir::GlyphInstance {
 
 pub fn to_ir_glyph<S>(
     glyph_name: S,
-    glif_files: &HashMap<PathBuf, Vec<ir::DesignSpaceLocation>>,
+    glif_files: &HashMap<PathBuf, Vec<UserSpaceLocation>>,
 ) -> Result<ir::Glyph, Error>
 where
     S: Into<String>,
@@ -104,10 +113,15 @@ where
 #[cfg(test)]
 mod tests {
     use norad::designspace::DesignSpaceDocument;
+    use ordered_float::OrderedFloat;
     use std::path::Path;
 
     use crate::toir::designspace_to_ir;
-    use fontir::ir;
+    use fontir::{coords::UserSpaceCoord, ir};
+
+    fn user_coord(v: f32) -> UserSpaceCoord {
+        UserSpaceCoord::new(OrderedFloat(v))
+    }
 
     #[test]
     fn simple_wght_variable() {
@@ -116,9 +130,9 @@ mod tests {
             vec![ir::Axis {
                 name: "Weight".to_string(),
                 tag: "wght".to_string(),
-                min: 400_f32.into(),
-                default: 400_f32.into(),
-                max: 700_f32.into(),
+                min: user_coord(400_f32),
+                default: user_coord(400_f32),
+                max: user_coord(700_f32),
                 hidden: false
             }],
             designspace_to_ir(ds).unwrap()

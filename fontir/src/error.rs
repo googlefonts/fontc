@@ -2,7 +2,7 @@ use std::{error, io, path::PathBuf};
 
 use thiserror::Error;
 
-use crate::ir::DesignSpaceLocation;
+use crate::coords::UserSpaceLocation;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -27,9 +27,9 @@ pub enum Error {
     #[error("Unexpected state encountered in a state set")]
     UnexpectedState,
     #[error("Duplicate location for {what}: {loc:?}")]
-    DuplicateLocation {
+    DuplicateUserSpaceLocation {
         what: String,
-        loc: DesignSpaceLocation,
+        loc: UserSpaceLocation,
     },
     #[error("Global metadata very bad, very very bad")]
     InvalidGlobalMetadata,

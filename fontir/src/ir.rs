@@ -1,9 +1,12 @@
 //! Serde types for font IR.
 
-use crate::{error::Error, serde::StaticMetadataSerdeRepr};
-use ordered_float::OrderedFloat;
+use crate::{
+    coords::{UserSpaceCoord, UserSpaceLocation},
+    error::Error,
+    serde::StaticMetadataSerdeRepr,
+};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 /// Global font info that cannot vary.
 ///
@@ -42,15 +45,11 @@ impl StaticMetadata {
 pub struct Axis {
     pub name: String,
     pub tag: String,
-    pub min: OrderedFloat<f32>,
-    pub default: OrderedFloat<f32>,
-    pub max: OrderedFloat<f32>,
+    pub min: UserSpaceCoord,
+    pub default: UserSpaceCoord,
+    pub max: UserSpaceCoord,
     pub hidden: bool,
 }
-
-// Using BTreeMap instead of HashMap and OrderedFloat instead of f32 so that
-// the location is hashable and can be used as a key in Glyph::sources HashMap
-pub type DesignSpaceLocation = BTreeMap<String, OrderedFloat<f32>>;
 
 /// A variable definition of a single glyph.
 ///
@@ -60,7 +59,7 @@ pub type DesignSpaceLocation = BTreeMap<String, OrderedFloat<f32>>;
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Glyph {
     pub name: String,
-    pub sources: HashMap<DesignSpaceLocation, GlyphInstance>,
+    pub sources: HashMap<UserSpaceLocation, GlyphInstance>,
 }
 
 impl Glyph {
@@ -73,11 +72,11 @@ impl Glyph {
 
     pub fn try_add_source(
         &mut self,
-        unique_location: &DesignSpaceLocation,
+        unique_location: &UserSpaceLocation,
         source: GlyphInstance,
     ) -> Result<(), Error> {
         if self.sources.contains_key(unique_location) {
-            return Err(Error::DuplicateLocation {
+            return Err(Error::DuplicateUserSpaceLocation {
                 what: format!("glyph '{}' source", self.name),
                 loc: unique_location.clone(),
             });
@@ -149,15 +148,21 @@ pub struct Affine2x3 {
 
 #[cfg(test)]
 mod tests {
-    use crate::ir::Axis;
+    use ordered_float::OrderedFloat;
+
+    use crate::{coords::UserSpaceCoord, ir::Axis};
+
+    fn user_coord(v: f32) -> UserSpaceCoord {
+        UserSpaceCoord::new(OrderedFloat(v))
+    }
 
     fn test_axis() -> Axis {
         Axis {
             name: String::from("Weight"),
             tag: String::from("wght"),
-            min: 100_f32.into(),
-            default: 400_f32.into(),
-            max: 900_f32.into(),
+            min: user_coord(100_f32),
+            default: user_coord(400_f32),
+            max: user_coord(900_f32),
             hidden: false,
         }
     }

@@ -1,3 +1,4 @@
+use fontir::coords::{temporary_design_to_user_conversion, DesignSpaceCoord};
 use fontir::error::{Error, WorkError};
 use fontir::ir;
 use fontir::ir::{Axis, StaticMetadata};
@@ -195,6 +196,10 @@ impl Work for StaticMetadataWork {
                     .unwrap();
                 let default =
                     OrderedFloat::<f32>(axis_values[default_master_idx][idx].into_inner() as f32);
+
+                let min = temporary_design_to_user_conversion(DesignSpaceCoord::new(min));
+                let max = temporary_design_to_user_conversion(DesignSpaceCoord::new(max));
+                let default = temporary_design_to_user_conversion(DesignSpaceCoord::new(default));
 
                 Axis {
                     name: a.name.clone(),
