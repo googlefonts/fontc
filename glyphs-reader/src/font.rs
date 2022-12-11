@@ -325,6 +325,24 @@ fn custom_param<'a>(
     None
 }
 
+fn glyphs_v2_field_name_and_default(nth_axis: usize) -> Result<(&'static str, f64), Error> {
+    // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
+    // the field to use is based on the order in axes NOT the tag.
+    // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
+    // Defaults per https://github.com/googlefonts/fontmake-rs/pull/42#discussion_r1044415236.
+    Ok(match nth_axis {
+        0 => ("weightValue", 400_f64),
+        1 => ("widthValue", 100_f64),
+        2 => ("customValue", 0_f64),
+        _ => {
+            return Err(Error::StructuralError(format!(
+                "We don't know what field to use for axis {}",
+                nth_axis
+            )))
+        }
+    })
+}
+
 impl Font {
     fn parse_codepoints(&mut self, radix: u32) {
         for glyph in self.glyphs.iter_mut() {
@@ -391,31 +409,25 @@ impl Font {
             });
         }
 
+        if axes.len() > 3 {
+            return Err(Error::StructuralError(
+                "We only understand 0..3 axes for Glyphs v2".into(),
+            ));
+        }
+
         // v2 stores values for axes in specific fields, find them and put them into place
         // "Axis position related properties (e.g. weightValue, widthValue, customValue) have been replaced by the axesValues list which is indexed in parallel with the toplevel axes list."
         for master in self.font_master.iter_mut() {
             let mut axis_values = Vec::new();
-            for axis in axes.iter() {
-                let field_name = match axis.tag.as_str() {
-                    "wght" => "weightValue",
-                    "wdth" => "widthValue",
-                    "XXXX" => "customValue",
-                    _ => {
-                        return Err(Error::StructuralError(format!(
-                            "No v2 field known for '{}'",
-                            axis.tag
-                        )))
-                    }
-                };
+            for idx in 0..axes.len() {
+                // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
+                // the field to use is based on the order in axes NOT the tag.
+                // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
+                let (field_name, default_value) = glyphs_v2_field_name_and_default(idx)?;
                 let value = master
                     .other_stuff
                     .remove(field_name)
-                    .ok_or_else(|| {
-                        Error::StructuralError(format!(
-                            "Missing '{}' in\n{:#?}",
-                            field_name, master.other_stuff
-                        ))
-                    })?
+                    .unwrap_or_else(|| Plist::Float(default_value.into()))
                     .as_f64()
                     .ok_or_else(|| {
                         Error::StructuralError(format!(
