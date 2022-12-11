@@ -12,7 +12,7 @@ pub enum Error {
     FileExpected(PathBuf),
     #[error("IO failure")]
     IoError(#[from] io::Error),
-    #[error("Unable to parse")]
+    #[error("Unable to parse {0:?}: {1}")]
     ParseError(PathBuf, String),
     #[error("Illegible source")]
     UnableToLoadSource(Box<dyn error::Error>),
@@ -33,6 +33,8 @@ pub enum Error {
     },
     #[error("Global metadata very bad, very very bad")]
     InvalidGlobalMetadata,
+    #[error("No default master in {0:?}")]
+    NoDefaultMaster(PathBuf),
 }
 
 /// An async work error, hence one that must be Send
@@ -52,4 +54,8 @@ pub enum WorkError {
     InconsistentAxisDefinitions(String),
     #[error("I am the glyph with gid, {0}")]
     NoGlyphIdForName(String),
+    #[error("File expected: {0:?}")]
+    FileExpected(PathBuf),
+    #[error("Unable to parse {0:?}: {1}")]
+    ParseError(PathBuf, String),
 }
