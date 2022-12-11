@@ -19,6 +19,7 @@ use crate::{
 };
 
 // Unique identifier of work. If there are no fields work is unique.
+// Meant to be small and cheap to copy around.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum WorkIdentifier {
     StaticMetadata,
@@ -147,16 +148,16 @@ impl Context {
         *wl = Some(Arc::from(static_metadata));
     }
 
-    pub fn get_glyph_ir(&self, glyph_order: u32) -> Arc<ir::Glyph> {
-        self.check_read_access(&WorkIdentifier::GlyphIr(glyph_order));
+    pub fn get_glyph_ir(&self, glyph_id: u32) -> Arc<ir::Glyph> {
+        self.check_read_access(&WorkIdentifier::GlyphIr(glyph_id));
         let rl = self.glyph_ir.item.read();
-        rl.get(&glyph_order).expect(MISSING_DATA).clone()
+        rl.get(&glyph_id).expect(MISSING_DATA).clone()
     }
 
-    pub fn set_glyph_ir(&self, glyph_order: u32, ir: ir::Glyph) {
-        self.check_write_access(&WorkIdentifier::GlyphIr(glyph_order));
+    pub fn set_glyph_ir(&self, glyph_id: u32, ir: ir::Glyph) {
+        self.check_write_access(&WorkIdentifier::GlyphIr(glyph_id));
         self.maybe_persist(&self.paths.glyph_ir_file(&ir.name), &ir);
         let mut wl = self.glyph_ir.item.write();
-        wl.insert(glyph_order, Arc::from(ir));
+        wl.insert(glyph_id, Arc::from(ir));
     }
 }

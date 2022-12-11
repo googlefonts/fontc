@@ -3,7 +3,31 @@ use std::{collections::HashMap, path::PathBuf};
 use filetime::FileTime;
 use serde::{Deserialize, Serialize};
 
-use crate::stateset::{FileState, MemoryState, State, StateIdentifier, StateSet};
+use crate::{
+    ir::{Axis, StaticMetadata},
+    stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
+};
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct StaticMetadataSerdeRepr {
+    pub axes: Vec<Axis>,
+    pub glyph_order: Vec<String>,
+}
+
+impl From<StaticMetadataSerdeRepr> for StaticMetadata {
+    fn from(from: StaticMetadataSerdeRepr) -> Self {
+        StaticMetadata::new(from.axes, from.glyph_order)
+    }
+}
+
+impl From<StaticMetadata> for StaticMetadataSerdeRepr {
+    fn from(from: StaticMetadata) -> Self {
+        StaticMetadataSerdeRepr {
+            axes: from.axes,
+            glyph_order: from.glyph_order,
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct StateSetSerdeRepr {
