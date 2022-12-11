@@ -4,7 +4,7 @@
 //! There are lots of other ways this could go, including something serde-like
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
 use std::{fs, path};
 
@@ -394,24 +394,32 @@ impl Font {
     }
 
     fn parse_glyph_order(&mut self) {
-        // https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044627972
-        // if there isn't a custom glyph order take the file order
-        self.glyph_order = custom_param(&self.other_stuff, "glyphOrder")
-            .map(|(_, param)| match param {
-                Plist::Dictionary(dict) => {
-                    let Some(Plist::Array(entries)) = dict.get("value") else {
-                        return None;
-                    };
-                    Some(
-                        entries
-                            .iter()
-                            .filter_map(|e| e.as_str().map(|s| s.to_string()))
-                            .collect(),
-                    )
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| Some(self.glyphs.iter().map(|p| p.glyphname.clone()).collect()))
+        let mut valid_names: HashSet<_> = self.glyphs.iter().map(|g| &g.glyphname).collect();
+        let mut glyph_order = Vec::new();
+
+        // Add all valid glyphOrder entries in order
+        // See https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044627972
+        if let Some((_, Plist::Dictionary(dict))) = custom_param(&self.other_stuff, "glyphOrder") {
+            if let Some(Plist::Array(entries)) = dict.get("value") {
+                entries
+                    .iter()
+                    .filter_map(|e| e.as_str())
+                    .map(|s| s.to_string())
+                    .for_each(|s| {
+                        if valid_names.remove(&s) {
+                            glyph_order.push(s);
+                        }
+                    });
+            };
+        };
+
+        // Add anything left over in file order
+        self.glyphs
+            .iter()
+            .filter(|g| valid_names.contains(&g.glyphname))
+            .for_each(|g| glyph_order.push(g.glyphname.clone()));
+
+        self.glyph_order = Some(glyph_order);
     }
 
     fn is_v2(&self) -> bool {
