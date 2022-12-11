@@ -17,7 +17,7 @@ name = glyphOrder;
 value = (
 hyphen,
 space,
-exclam
+not-a-valid-name
 );
 }
 );
