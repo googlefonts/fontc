@@ -1,4 +1,3 @@
-use std::collections::hash_map;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
@@ -12,8 +11,9 @@ use fontir::{
     source::{Input, Source, Work},
     stateset::{StateIdentifier, StateSet},
 };
-use log::debug;
+use log::{debug, warn};
 use norad::designspace::{self, DesignSpaceDocument};
+use ordered_float::OrderedFloat;
 
 use crate::toir::{to_ir_glyph, to_ir_location};
 
@@ -41,7 +41,7 @@ impl DesignSpaceIrSource {
 struct Cache {
     global_metadata_sources: StateSet,
     locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
-    glyph_order: Arc<Vec<String>>,
+    glyph_names: Arc<HashSet<String>>,
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
 }
@@ -49,14 +49,14 @@ struct Cache {
 impl Cache {
     fn new(
         global_metadata_sources: StateSet,
-        glyph_order: Vec<String>,
+        glyph_names: HashSet<String>,
         locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
         designspace_file: PathBuf,
         designspace: DesignSpaceDocument,
     ) -> Cache {
         Cache {
             global_metadata_sources,
-            glyph_order: Arc::from(glyph_order),
+            glyph_names: Arc::from(glyph_names),
             locations,
             designspace_file,
             designspace: Arc::from(designspace),
@@ -140,10 +140,20 @@ impl DesignSpaceIrSource {
     ) -> Result<StateSet, Error> {
         let mut font_info = StateSet::new();
         font_info.track_file(&self.designspace_file)?;
+        let default_master = default_master(designspace)
+            .ok_or_else(|| Error::NoDefaultMaster(self.designspace_file.clone()))?;
+
         for source in designspace.sources.iter() {
             let ufo_dir = self.designspace_dir.join(&source.filename);
-            for filename in ["fontinfo.plist", "layercontents.plist"] {
+            for filename in ["fontinfo.plist", "layercontents.plist", "lib.plist"] {
+                // Only track lib.plist for the default master
+                if filename == "lib.plist" && source != default_master {
+                    continue;
+                }
+
                 let font_info_file = ufo_dir.join(filename);
+                // TODO: this is incorrect; several of these files are optional
+                // File tracking curently assumes you only track extant files so keep it for now
                 if !font_info_file.is_file() {
                     return Err(Error::FileExpected(font_info_file));
                 }
@@ -180,7 +190,7 @@ impl Source for DesignSpaceIrSource {
         // UFO filename => map of layer
         let mut layer_cache = HashMap::new();
         let mut glif_locations: HashMap<PathBuf, Vec<DesignSpaceLocation>> = HashMap::new();
-        let mut glyph_order = Vec::new();
+        let mut glyph_names = HashSet::new();
 
         for source in designspace.sources.iter() {
             // Track files within each UFO
@@ -193,13 +203,12 @@ impl Source for DesignSpaceIrSource {
                 if !glif_file.exists() {
                     return Err(Error::FileExpected(glif_file));
                 }
+                glyph_names.insert(glyph_name.clone());
                 let glif_file = glif_file.clone();
-                let entry = glyphs.entry(glyph_name.clone());
-                if let hash_map::Entry::Vacant(_) = entry {
-                    glyph_order.push(glyph_name);
-                }
-                entry.or_default().track_file(&glif_file)?;
-
+                glyphs
+                    .entry(glyph_name)
+                    .or_default()
+                    .track_file(&glif_file)?;
                 let glif_locations = glif_locations.entry(glif_file).or_default();
                 glif_locations.push(location.clone());
             }
@@ -207,7 +216,7 @@ impl Source for DesignSpaceIrSource {
 
         self.cache = Some(Cache::new(
             global_metadata.clone(),
-            glyph_order,
+            glyph_names,
             glif_locations,
             self.designspace_file.clone(),
             designspace,
@@ -226,7 +235,7 @@ impl Source for DesignSpaceIrSource {
         Ok(Box::from(StaticMetadataWork {
             designspace_file: cache.designspace_file.clone(),
             designspace: cache.designspace.clone(),
-            glyph_order: cache.glyph_order.clone(),
+            glyph_names: cache.glyph_names.clone(),
         }))
     }
 
@@ -290,7 +299,73 @@ impl DesignSpaceIrSource {
 struct StaticMetadataWork {
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
-    glyph_order: Arc<Vec<String>>,
+    glyph_names: Arc<HashSet<String>>,
+}
+
+fn default_master(designspace: &DesignSpaceDocument) -> Option<&designspace::Source> {
+    // The master at the default location on all axes
+    // TODO: fix me; ref https://github.com/googlefonts/fontmake-rs/issues/22
+    warn!("Using an incorrect algorithm to determine the default master");
+    let default_location: DesignSpaceLocation = designspace
+        .axes
+        .iter()
+        .map(|a| (a.name.clone(), OrderedFloat::from(a.default)))
+        .collect();
+    designspace
+        .sources
+        .iter()
+        .find(|source| to_ir_location(&source.location) == default_location)
+}
+
+fn load_lib_plist(ufo_dir: &Path) -> Result<plist::Dictionary, WorkError> {
+    let lib_plist_file = ufo_dir.join("lib.plist");
+    if !lib_plist_file.is_file() {
+        return Err(WorkError::FileExpected(lib_plist_file));
+    }
+    plist::Value::from_file(&lib_plist_file)
+        .map_err(|e| WorkError::ParseError(lib_plist_file.clone(), format!("{}", e)))?
+        .into_dictionary()
+        .ok_or_else(|| WorkError::ParseError(lib_plist_file, "Not a dictionary".to_string()))
+}
+
+// Per https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044596662
+fn glyph_order(
+    designspace: &DesignSpaceDocument,
+    designspace_dir: &Path,
+    glyph_names: &HashSet<String>,
+) -> Result<Vec<String>, WorkError> {
+    // The UFO at the default master *may* elect to specify a glyph order
+    // That glyph order *may* deign to overlap with the actual glyph set
+    let mut glyph_order = Vec::new();
+    if let Some(source) = default_master(designspace) {
+        let lib_plist = load_lib_plist(&designspace_dir.join(&source.filename))?;
+        if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
+            let mut pending_add: HashSet<_> = glyph_names.iter().map(|s| s.as_str()).collect();
+            // Add names from ufo glyph order union glyph_names in ufo glyph order
+            ufo_order
+                .iter()
+                .filter_map(|v| v.as_string().map(|s| s.to_string()))
+                .filter(|name| glyph_names.contains(name))
+                .for_each(|name| {
+                    glyph_order.push(name.to_string());
+                    pending_add.remove(name.as_str());
+                });
+            // Add anything leftover in sorted order
+            let mut pending_add: Vec<_> = pending_add.into_iter().map(|s| s.to_string()).collect();
+            pending_add.sort();
+            glyph_order.extend(pending_add);
+        }
+    }
+    if glyph_order.is_empty() {
+        if glyph_names.contains(".notdef") {
+            glyph_order.push(".notdef".to_string());
+        }
+        glyph_names
+            .iter()
+            .filter(|name| name.as_str() != ".notdef")
+            .for_each(|name| glyph_order.push(name.clone()));
+    }
+    Ok(glyph_order)
 }
 
 impl Work for StaticMetadataWork {
@@ -309,7 +384,13 @@ impl Work for StaticMetadataWork {
                 max: a.maximum.unwrap().into(),
             })
             .collect();
-        context.set_static_metadata(StaticMetadata::new(axes, (*self.glyph_order).clone()));
+
+        let glyph_order = glyph_order(
+            &self.designspace,
+            self.designspace_file.parent().unwrap(),
+            &self.glyph_names,
+        )?;
+        context.set_static_metadata(StaticMetadata::new(axes, glyph_order));
         Ok(())
     }
 }
@@ -339,7 +420,7 @@ impl Work for GlyphIrWork {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         path::{Path, PathBuf},
     };
 
@@ -348,7 +429,9 @@ mod tests {
     use norad::designspace;
     use ordered_float::OrderedFloat;
 
-    use super::{glif_files, DesignSpaceIrSource};
+    use crate::toir::to_ir_location;
+
+    use super::{default_master, glif_files, glyph_order, DesignSpaceIrSource};
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -464,5 +547,37 @@ mod tests {
             700.0,
         );
         assert_eq!(expected_glif_files, work.glif_files);
+    }
+
+    #[test]
+    pub fn find_default_master() {
+        let (source, _) = test_source();
+        let ds = source.load_designspace().unwrap();
+        let mut expected = DesignSpaceLocation::new();
+        expected.insert("Weight".to_string(), 400_f32.into());
+        assert_eq!(
+            expected,
+            to_ir_location(&default_master(&ds).unwrap().location)
+        );
+    }
+
+    #[test]
+    pub fn builds_glyph_order() {
+        // Only WghtVar-Regular.ufo has a lib.plist, and it only lists a subset of glyphs
+        // Should still work.
+        let (source, _) = test_source();
+        let ds = source.load_designspace().unwrap();
+        let go = glyph_order(
+            &ds,
+            &source.designspace_dir,
+            &HashSet::from([
+                "bar".to_string(),
+                "plus".to_string(),
+                "an-imaginary-one".to_string(),
+            ]),
+        )
+        .unwrap();
+        // lib.plist specifies plus, so plus goes first and then the rest in alphabetical order
+        assert_eq!(vec!["plus", "an-imaginary-one", "bar"], go);
     }
 }
