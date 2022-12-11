@@ -32,7 +32,7 @@ struct Args {
     emit_ir: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Config {
     args: Args,
     // The compiler previously used so if the compiler changes config invalidates
@@ -233,24 +233,17 @@ struct ChangeDetector {
 }
 
 impl ChangeDetector {
-    fn new(paths: Paths, args: Args) -> Result<(Config, ChangeDetector), Error> {
-        let build_dir = require_dir(paths.build_dir())?;
-        require_dir(paths.glyph_ir_dir())?;
-        let (config, prev_inputs) = init(&build_dir, args).map_err(Error::IoError)?;
-
+    fn new(config: Config, paths: Paths, prev_inputs: Input) -> Result<ChangeDetector, Error> {
         // What sources are we dealing with?
         let mut ir_source = ir_source(&config.args.source)?;
         let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
 
-        Ok((
-            config,
-            ChangeDetector {
-                paths,
-                ir_source,
-                prev_inputs,
-                current_inputs,
-            },
-        ))
+        Ok(ChangeDetector {
+            paths,
+            ir_source,
+            prev_inputs,
+            current_inputs,
+        })
     }
 }
 
@@ -258,7 +251,11 @@ fn main() -> Result<(), Error> {
     env_logger::init();
 
     let paths = Paths::new(Path::new("build"));
-    let (config, mut change_detector) = ChangeDetector::new(paths.clone(), Args::parse())?;
+    let build_dir = require_dir(paths.build_dir())?;
+    require_dir(paths.glyph_ir_dir())?;
+    let (config, prev_inputs) = init(&build_dir, Args::parse()).map_err(Error::IoError)?;
+
+    let mut change_detector = ChangeDetector::new(config.clone(), paths.clone(), prev_inputs)?;
     let context = Context::new_root(
         config.args.emit_ir,
         paths,
@@ -303,7 +300,7 @@ mod tests {
 
     use crate::{
         add_glyph_work, add_static_metadata_work, config_file, finish_successfully, glyphs_changed,
-        glyphs_deleted, init, Args, ChangeDetector, Config,
+        glyphs_deleted, init, require_dir, Args, ChangeDetector, Config,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -383,7 +380,12 @@ mod tests {
     fn compile(build_dir: &Path, source: &str) -> TestCompile {
         let args = test_args(source);
         let paths = Paths::new(build_dir);
-        let (config, mut change_detector) = ChangeDetector::new(paths.clone(), args).unwrap();
+        require_dir(paths.glyph_ir_dir()).unwrap();
+
+        let (config, prev_inputs) = init(build_dir, args).unwrap();
+
+        let mut change_detector =
+            ChangeDetector::new(config.clone(), paths.clone(), prev_inputs).unwrap();
         let work_context = Context::new_root(
             config.args.emit_ir,
             paths,
