@@ -4,11 +4,11 @@
 
 use std::collections::BTreeMap;
 
+use crate::piecewise_linear_map::PiecewiseLinearMap;
+use crate::serde::CoordConverterSerdeRepr;
 use log::warn;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
-
-use crate::piecewise_linear_map::PiecewiseLinearMap;
 
 /// A coordinate in some arbitrary space the designer dreamed up.
 ///
@@ -40,15 +40,21 @@ pub type NormalizedLocation = BTreeMap<String, NormalizedCoord>;
 ///
 /// Stores [PiecewiseLinearMap]'s in several directions. Sources
 /// suggest <= 10 mappings is typical, we can afford the bytes.
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(from = "CoordConverterSerdeRepr", into = "CoordConverterSerdeRepr")]
 pub struct CoordConverter {
-    user_to_design: PiecewiseLinearMap,
+    pub(crate) default_idx: usize,
+    pub(crate) user_to_design: PiecewiseLinearMap,
     design_to_user: PiecewiseLinearMap,
     design_to_normalized: PiecewiseLinearMap,
     normalized_to_design: PiecewiseLinearMap,
 }
 
 impl CoordConverter {
+    pub fn nop() -> CoordConverter {
+        CoordConverter::new(Vec::new(), 0)
+    }
+
     /// Initialize a converter from the User:Design examples source files typically provide.
     pub fn new(mut mappings: Vec<(UserCoord, DesignCoord)>, default_idx: usize) -> CoordConverter {
         if mappings.is_empty() {
@@ -80,6 +86,7 @@ impl CoordConverter {
         let normalized_to_design = design_to_normalized.reverse();
 
         CoordConverter {
+            default_idx,
             user_to_design,
             design_to_user,
             design_to_normalized,
@@ -193,7 +200,34 @@ mod tests {
     }
 
     #[test]
-    pub fn lexend_weight_normalization() {
+    pub fn nop() {
+        let converter = CoordConverter::nop();
+        assert_eq!(
+            OrderedFloat(0.0),
+            DesignCoord(0.0.into()).to_normalized(&converter).into_inner()
+        );
+        assert_eq!(
+            OrderedFloat(100.0),
+            DesignCoord(100.0.into())
+                .to_normalized(&converter)
+                .into_inner()
+        );
+        assert_eq!(
+            OrderedFloat(f32::MIN),
+            DesignCoord(f32::MIN.into())
+                .to_normalized(&converter)
+                .into_inner()
+        );
+        assert_eq!(
+            OrderedFloat(f32::MAX),
+            DesignCoord(f32::MAX.into())
+                .to_normalized(&converter)
+                .into_inner()
+        );
+    }
+
+    #[test]
+    pub fn lexend_weight_internal_basics() {
         let (examples, default_idx) = lexend_weight_mapping();
         let converter = CoordConverter::new(examples, default_idx);
         assert_eq!(

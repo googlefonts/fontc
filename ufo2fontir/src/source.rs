@@ -5,8 +5,9 @@ use std::{
 };
 
 use fontir::{
+    coords::{DesignLocation, InternalLocation, UserCoord},
     error::{Error, WorkError},
-    ir::{Axis, DesignSpaceLocation, StaticMetadata},
+    ir::{Axis, StaticMetadata},
     orchestration::Context,
     source::{Input, Source, Work},
     stateset::{StateIdentifier, StateSet},
@@ -15,7 +16,7 @@ use log::{debug, warn};
 use norad::designspace::{self, DesignSpaceDocument};
 use ordered_float::OrderedFloat;
 
-use crate::toir::{to_ir_glyph, to_ir_location};
+use crate::toir::{to_design_location, to_ir_axis, to_ir_glyph};
 
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
@@ -40,7 +41,7 @@ impl DesignSpaceIrSource {
 // A cache of locations, valid provided no global metadata changes
 struct Cache {
     global_metadata_sources: StateSet,
-    locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+    locations: HashMap<PathBuf, Vec<DesignLocation>>,
     glyph_names: Arc<HashSet<String>>,
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
@@ -50,7 +51,7 @@ impl Cache {
     fn new(
         global_metadata_sources: StateSet,
         glyph_names: HashSet<String>,
-        locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+        locations: HashMap<PathBuf, Vec<DesignLocation>>,
         designspace_file: PathBuf,
         designspace: DesignSpaceDocument,
     ) -> Cache {
@@ -67,7 +68,7 @@ impl Cache {
         self.global_metadata_sources == *global_metadata_sources
     }
 
-    fn location_of(&self, glif_file: &Path) -> Option<&Vec<DesignSpaceLocation>> {
+    fn location_of(&self, glif_file: &Path) -> Option<&Vec<DesignLocation>> {
         self.locations.get(glif_file)
     }
 }
@@ -189,7 +190,7 @@ impl Source for DesignSpaceIrSource {
 
         // UFO filename => map of layer
         let mut layer_cache = HashMap::new();
-        let mut glif_locations: HashMap<PathBuf, Vec<DesignSpaceLocation>> = HashMap::new();
+        let mut glif_locations: HashMap<PathBuf, Vec<DesignLocation>> = HashMap::new();
         let mut glyph_names = HashSet::new();
 
         let Some((default_master_idx, default_master)) = default_master(&designspace) else {
@@ -210,7 +211,7 @@ impl Source for DesignSpaceIrSource {
             // The UFO dir *must* exist since we were able to find fontinfo in it earlier
             let ufo_dir = self.designspace_dir.join(&source.filename);
 
-            let location = to_ir_location(&source.location);
+            let location = to_design_location(&source.location);
 
             for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, source)? {
                 if !glif_file.exists() {
@@ -320,19 +321,25 @@ struct StaticMetadataWork {
 }
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
-    // The master at the default location on all axes
-    // TODO: fix me; ref https://github.com/googlefonts/fontmake-rs/issues/22
-    warn!("Using an incorrect algorithm to determine the default master");
-    let default_location: DesignSpaceLocation = designspace
+    let ds_axes = ir_axes(designspace);
+    let axes: HashMap<_, _> = ds_axes.iter().map(|a| (&a.name, a)).collect();
+
+    let default_location: DesignLocation = designspace
         .axes
         .iter()
-        .map(|a| (a.name.clone(), OrderedFloat::from(a.default)))
+        .map(|a| {
+            let converter = &axes.get(&a.name).unwrap().converter;
+            (
+                a.name.clone(),
+                UserCoord::new(OrderedFloat(a.default)).to_design(converter),
+            )
+        })
         .collect();
     designspace
         .sources
         .iter()
         .enumerate()
-        .find(|(_, source)| to_ir_location(&source.location) == default_location)
+        .find(|(_, source)| to_design_location(&source.location) == default_location)
 }
 
 fn load_lib_plist(ufo_dir: &Path) -> Result<plist::Dictionary, WorkError> {
@@ -386,22 +393,15 @@ fn glyph_order(
     Ok(glyph_order)
 }
 
+fn ir_axes(designspace: &DesignSpaceDocument) -> Vec<Axis> {
+    designspace.axes.iter().map(to_ir_axis).collect()
+}
+
 impl Work for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
-        let axes = self
-            .designspace
-            .axes
-            .iter()
-            .map(|a| Axis {
-                name: a.name.clone(),
-                tag: a.tag.clone(),
-                hidden: a.hidden,
-                min: a.minimum.unwrap().into(),
-                default: a.default.into(),
-                max: a.maximum.unwrap().into(),
-            })
-            .collect();
+
+        let axes = ir_axes(&self.designspace);
 
         let glyph_order = glyph_order(
             &self.designspace,
@@ -415,7 +415,7 @@ impl Work for StaticMetadataWork {
 
 struct GlyphIrWork {
     glyph_name: String,
-    glif_files: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+    glif_files: HashMap<PathBuf, Vec<DesignLocation>>,
 }
 
 impl Work for GlyphIrWork {
@@ -428,7 +428,24 @@ impl Work for GlyphIrWork {
         let gid = static_metadata
             .glyph_id(&self.glyph_name)
             .ok_or_else(|| WorkError::NoGlyphIdForName(self.glyph_name.clone()))?;
-        let glyph_ir = to_ir_glyph(&self.glyph_name, &self.glif_files)
+
+        // Migrate glif_files into internal coordinates
+        let axes: HashMap<_, _> = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();
+        let mut glif_files = HashMap::new();
+        for (path, design_locations) in self.glif_files.iter() {
+            let internal_locations: Vec<InternalLocation> = design_locations
+                .iter()
+                .map(|design_location| {
+                    design_location
+                        .iter()
+                        .map(|(an, dl)| (an.clone(), dl.to_user(&axes.get(an).unwrap().converter)))
+                        .collect()
+                })
+                .collect();
+            glif_files.insert(path, internal_locations);
+        }
+
+        let glyph_ir = to_ir_glyph(&self.glyph_name, &glif_files)
             .map_err(|e| WorkError::GlyphIrWorkError(self.glyph_name.clone(), e.to_string()))?;
         context.set_glyph_ir(gid, glyph_ir);
         Ok(())
@@ -442,12 +459,14 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use fontir::ir::DesignSpaceLocation;
-    use fontir::source::{Input, Source};
+    use fontir::{
+        coords::{DesignCoord, DesignLocation},
+        source::{Input, Source},
+    };
     use norad::designspace;
     use ordered_float::OrderedFloat;
 
-    use crate::toir::to_ir_location;
+    use crate::toir::to_design_location;
 
     use super::{default_master, glif_files, glyph_order, DesignSpaceIrSource};
 
@@ -501,8 +520,8 @@ mod tests {
         (source, input)
     }
 
-    fn add_location(
-        add_to: &mut HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+    fn add_design_location(
+        add_to: &mut HashMap<PathBuf, Vec<DesignLocation>>,
         glif_file: &str,
         axis: &str,
         pos: f32,
@@ -510,9 +529,9 @@ mod tests {
         add_to
             .entry(testdata_dir().join(glif_file))
             .or_default()
-            .push(DesignSpaceLocation::from([(
+            .push(DesignLocation::from([(
                 axis.to_string(),
-                OrderedFloat(pos),
+                DesignCoord::new(OrderedFloat(pos)),
             )]));
     }
 
@@ -523,19 +542,19 @@ mod tests {
         let work = ir_source.create_work_for_one_glyph("bar", &input).unwrap();
 
         let mut expected_glif_files = HashMap::new();
-        add_location(
+        add_design_location(
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs/bar.glif",
             "Weight",
             400.0,
         );
-        add_location(
+        add_design_location(
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs.{600}/bar.glif",
             "Weight",
             600.0,
         );
-        add_location(
+        add_design_location(
             &mut expected_glif_files,
             "WghtVar-Bold.ufo/glyphs/bar.glif",
             "Weight",
@@ -552,13 +571,13 @@ mod tests {
 
         // Note there is NOT a glyphs.{600} version of plus
         let mut expected_glif_files = HashMap::new();
-        add_location(
+        add_design_location(
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs/plus.glif",
             "Weight",
             400.0,
         );
-        add_location(
+        add_design_location(
             &mut expected_glif_files,
             "WghtVar-Bold.ufo/glyphs/plus.glif",
             "Weight",
@@ -578,11 +597,11 @@ mod tests {
     pub fn find_default_master() {
         let (source, _) = test_source();
         let ds = source.load_designspace().unwrap();
-        let mut expected = DesignSpaceLocation::new();
-        expected.insert("Weight".to_string(), 400_f32.into());
+        let mut expected = DesignLocation::new();
+        expected.insert("Weight".to_string(), DesignCoord::new(OrderedFloat(400.0)));
         assert_eq!(
             expected,
-            to_ir_location(&default_master(&ds).unwrap().1.location)
+            to_design_location(&default_master(&ds).unwrap().1.location)
         );
     }
 

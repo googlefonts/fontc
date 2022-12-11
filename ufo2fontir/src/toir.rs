@@ -1,42 +1,25 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use fontir::ir;
-use norad::designspace::{self, DesignSpaceDocument, Dimension};
+use fontir::{
+    coords::{CoordConverter, DesignCoord, DesignLocation, UserCoord, UserLocation},
+    ir,
+};
+use norad::designspace::{self, Dimension};
 use ordered_float::OrderedFloat;
 
 use crate::error::Error;
 
-// TODO we will need the ability to map coordinates and a test font that does. Then no unwrap.
-pub(crate) fn to_ir_location(loc: &[Dimension]) -> ir::DesignSpaceLocation {
+pub(crate) fn to_design_location(loc: &[Dimension]) -> DesignLocation {
+    // TODO: what if Dimension uses uservalue? - new in DS5.0
     loc.iter()
-        .map(|d| (d.name.clone(), OrderedFloat(d.xvalue.unwrap())))
+        .map(|d| {
+            (
+                d.name.clone(),
+                DesignCoord::new(OrderedFloat(d.xvalue.unwrap())),
+            )
+        })
         .collect()
-}
-
-pub fn designspace_to_ir(designspace: DesignSpaceDocument) -> Result<Vec<ir::Axis>, Error> {
-    // Truly we have done something amazing here today
-    let ir_axes: Vec<ir::Axis> = designspace.axes.into_iter().map(to_ir_axis).collect();
-
-    // Someday we will return something useful! But ... not today.
-    Ok(ir_axes)
-}
-
-fn to_ir_axis(axis: designspace::Axis) -> ir::Axis {
-    ir::Axis {
-        name: axis.name,
-        tag: axis.tag,
-        min: axis
-            .minimum
-            .expect("Discrete axes not supported yet")
-            .into(),
-        default: axis.default.into(),
-        max: axis
-            .maximum
-            .expect("Discrete axes not supported yet")
-            .into(),
-        hidden: axis.hidden,
-    }
 }
 
 fn to_ir_point_type(typ: &norad::PointType) -> ir::PointType {
@@ -84,9 +67,44 @@ fn to_ir_glyph_instance(glyph: &norad::Glyph) -> ir::GlyphInstance {
     }
 }
 
+pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
+    // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element>
+    let min = UserCoord::new(axis.minimum.unwrap().into());
+    let default = UserCoord::new(axis.default.into());
+    let max = UserCoord::new(axis.maximum.unwrap().into());
+
+    // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#map-element>
+    let converter = if let Some(mappings) = &axis.map {
+        let examples: Vec<_> = mappings
+            .iter()
+            .map(|map| {
+                (
+                    UserCoord::new(OrderedFloat(map.input)),
+                    DesignCoord::new(OrderedFloat(map.output)),
+                )
+            })
+            .collect();
+        let default_idx = examples.iter().position(|(u, _)| *u == default).expect(
+            "We currently require that you have a mapping for the default if you have mappings",
+        );
+        CoordConverter::from_user_to_design_examples(examples, default_idx)
+    } else {
+        CoordConverter::nop()
+    };
+    ir::Axis {
+        name: axis.name.clone(),
+        tag: axis.tag.clone(),
+        hidden: axis.hidden,
+        min,
+        default,
+        max,
+        converter,
+    }
+}
+
 pub fn to_ir_glyph<S>(
     glyph_name: S,
-    glif_files: &HashMap<PathBuf, Vec<ir::DesignSpaceLocation>>,
+    glif_files: &HashMap<&PathBuf, Vec<UserLocation>>,
 ) -> Result<ir::Glyph, Error>
 where
     S: Into<String>,
@@ -102,26 +120,4 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use norad::designspace::DesignSpaceDocument;
-    use std::path::Path;
-
-    use crate::toir::designspace_to_ir;
-    use fontir::ir;
-
-    #[test]
-    fn simple_wght_variable() {
-        let ds = DesignSpaceDocument::load(Path::new("testdata/wght_var.designspace")).unwrap();
-        assert_eq!(
-            vec![ir::Axis {
-                name: "Weight".to_string(),
-                tag: "wght".to_string(),
-                min: 400_f32.into(),
-                default: 400_f32.into(),
-                max: 700_f32.into(),
-                hidden: false
-            }],
-            designspace_to_ir(ds).unwrap()
-        );
-    }
-}
+mod tests {}
