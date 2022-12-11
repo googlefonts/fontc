@@ -5,13 +5,16 @@ use std::{
 };
 
 use fontir::{
+    coords::{
+        temporary_design_to_user_conversion, DesignSpaceCoord, UserSpaceCoord, UserSpaceLocation,
+    },
     error::{Error, WorkError},
-    ir::{Axis, DesignSpaceLocation, StaticMetadata},
+    ir::{Axis, StaticMetadata},
     orchestration::Context,
     source::{Input, Source, Work},
     stateset::{StateIdentifier, StateSet},
 };
-use log::{debug, warn};
+use log::debug;
 use norad::designspace::{self, DesignSpaceDocument};
 use ordered_float::OrderedFloat;
 
@@ -40,7 +43,7 @@ impl DesignSpaceIrSource {
 // A cache of locations, valid provided no global metadata changes
 struct Cache {
     global_metadata_sources: StateSet,
-    locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+    locations: HashMap<PathBuf, Vec<UserSpaceLocation>>,
     glyph_names: Arc<HashSet<String>>,
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
@@ -50,7 +53,7 @@ impl Cache {
     fn new(
         global_metadata_sources: StateSet,
         glyph_names: HashSet<String>,
-        locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+        locations: HashMap<PathBuf, Vec<UserSpaceLocation>>,
         designspace_file: PathBuf,
         designspace: DesignSpaceDocument,
     ) -> Cache {
@@ -67,7 +70,7 @@ impl Cache {
         self.global_metadata_sources == *global_metadata_sources
     }
 
-    fn location_of(&self, glif_file: &Path) -> Option<&Vec<DesignSpaceLocation>> {
+    fn location_of(&self, glif_file: &Path) -> Option<&Vec<UserSpaceLocation>> {
         self.locations.get(glif_file)
     }
 }
@@ -189,7 +192,7 @@ impl Source for DesignSpaceIrSource {
 
         // UFO filename => map of layer
         let mut layer_cache = HashMap::new();
-        let mut glif_locations: HashMap<PathBuf, Vec<DesignSpaceLocation>> = HashMap::new();
+        let mut glif_locations: HashMap<PathBuf, Vec<UserSpaceLocation>> = HashMap::new();
         let mut glyph_names = HashSet::new();
 
         let Some((default_master_idx, default_master)) = default_master(&designspace) else {
@@ -319,14 +322,11 @@ struct StaticMetadataWork {
     glyph_names: Arc<HashSet<String>>,
 }
 
-fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
-    // The master at the default location on all axes
-    // TODO: fix me; ref https://github.com/googlefonts/fontmake-rs/issues/22
-    warn!("Using an incorrect algorithm to determine the default master");
-    let default_location: DesignSpaceLocation = designspace
+fn default_master(designspace: &DesignSpaceDocument) -> Option<&designspace::Source> {
+    let default_location: UserSpaceLocation = designspace
         .axes
         .iter()
-        .map(|a| (a.name.clone(), OrderedFloat::from(a.default)))
+        .map(|a| (a.name.clone(), UserSpaceCoord::new(OrderedFloat(a.default))))
         .collect();
     designspace
         .sources
@@ -386,6 +386,11 @@ fn glyph_order(
     Ok(glyph_order)
 }
 
+fn design_to_user(design_coord: f32) -> UserSpaceCoord {
+    let design_coord = DesignSpaceCoord::new(OrderedFloat(design_coord));
+    temporary_design_to_user_conversion(design_coord)
+}
+
 impl Work for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
@@ -397,9 +402,9 @@ impl Work for StaticMetadataWork {
                 name: a.name.clone(),
                 tag: a.tag.clone(),
                 hidden: a.hidden,
-                min: a.minimum.unwrap().into(),
-                default: a.default.into(),
-                max: a.maximum.unwrap().into(),
+                min: design_to_user(a.minimum.unwrap()),
+                default: design_to_user(a.default),
+                max: design_to_user(a.maximum.unwrap()),
             })
             .collect();
 
@@ -415,7 +420,7 @@ impl Work for StaticMetadataWork {
 
 struct GlyphIrWork {
     glyph_name: String,
-    glif_files: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+    glif_files: HashMap<PathBuf, Vec<UserSpaceLocation>>,
 }
 
 impl Work for GlyphIrWork {
@@ -442,8 +447,10 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use fontir::ir::DesignSpaceLocation;
-    use fontir::source::{Input, Source};
+    use fontir::{
+        coords::{UserSpaceCoord, UserSpaceLocation},
+        source::{Input, Source},
+    };
     use norad::designspace;
     use ordered_float::OrderedFloat;
 
@@ -502,7 +509,7 @@ mod tests {
     }
 
     fn add_location(
-        add_to: &mut HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+        add_to: &mut HashMap<PathBuf, Vec<UserSpaceLocation>>,
         glif_file: &str,
         axis: &str,
         pos: f32,
@@ -510,9 +517,9 @@ mod tests {
         add_to
             .entry(testdata_dir().join(glif_file))
             .or_default()
-            .push(DesignSpaceLocation::from([(
+            .push(UserSpaceLocation::from([(
                 axis.to_string(),
-                OrderedFloat(pos),
+                UserSpaceCoord::new(OrderedFloat(pos)),
             )]));
     }
 
@@ -578,8 +585,11 @@ mod tests {
     pub fn find_default_master() {
         let (source, _) = test_source();
         let ds = source.load_designspace().unwrap();
-        let mut expected = DesignSpaceLocation::new();
-        expected.insert("Weight".to_string(), 400_f32.into());
+        let mut expected = UserSpaceLocation::new();
+        expected.insert(
+            "Weight".to_string(),
+            UserSpaceCoord::new(OrderedFloat(400_f32)),
+        );
         assert_eq!(
             expected,
             to_ir_location(&default_master(&ds).unwrap().1.location)
