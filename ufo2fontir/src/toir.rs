@@ -6,8 +6,9 @@ use fontir::{
         temporary_design_to_user_conversion, DesignSpaceCoord, UserSpaceCoord, UserSpaceLocation,
     },
     ir,
+    piecewise_linear_map::PiecewiseLinearMap,
 };
-use norad::designspace::{self, DesignSpaceDocument, Dimension};
+use norad::designspace::{self, Dimension};
 use ordered_float::OrderedFloat;
 
 use crate::error::Error;
@@ -24,27 +25,30 @@ pub(crate) fn to_ir_location(loc: &[Dimension]) -> UserSpaceLocation {
         .collect()
 }
 
-pub fn designspace_to_ir(designspace: DesignSpaceDocument) -> Result<Vec<ir::Axis>, Error> {
-    // Truly we have done something amazing here today
-    let ir_axes: Vec<ir::Axis> = designspace.axes.into_iter().map(to_ir_axis).collect();
-
-    // Someday we will return something useful! But ... not today.
-    Ok(ir_axes)
+fn to_user(design_to_user: &PiecewiseLinearMap, design_coord: f32) -> UserSpaceCoord {
+    UserSpaceCoord::new(design_to_user.map(OrderedFloat(design_coord)))
 }
 
-fn design_to_user(value: f32) -> UserSpaceCoord {
-    let coord = DesignSpaceCoord::new(OrderedFloat(value));
-    temporary_design_to_user_conversion(coord)
-}
+pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
+    // We're not in designspace anymore Dorothy
+    let design_to_user = if let Some(mappings) = &axis.map {
+        let map = mappings
+            .iter()
+            .map(|m| (OrderedFloat(m.input), OrderedFloat(m.output)))
+            .collect();
+        PiecewiseLinearMap::new(map)
+    } else {
+        PiecewiseLinearMap::nop()
+    };
 
-fn to_ir_axis(axis: designspace::Axis) -> ir::Axis {
     ir::Axis {
-        name: axis.name,
-        tag: axis.tag,
-        min: design_to_user(axis.minimum.expect("Discrete axes not supported yet")),
-        default: design_to_user(axis.default),
-        max: design_to_user(axis.maximum.expect("Discrete axes not supported yet")),
+        name: axis.name.clone(),
+        tag: axis.tag.clone(),
         hidden: axis.hidden,
+        min: to_user(&design_to_user, axis.minimum.unwrap()),
+        default: to_user(&design_to_user, axis.default),
+        max: to_user(&design_to_user, axis.maximum.unwrap()),
+        design_to_user,
     }
 }
 
@@ -114,18 +118,25 @@ where
 mod tests {
     use norad::designspace::DesignSpaceDocument;
     use ordered_float::OrderedFloat;
-    use std::path::Path;
+    use std::path::PathBuf;
 
-    use crate::toir::designspace_to_ir;
-    use fontir::{coords::UserSpaceCoord, ir};
+    use fontir::{coords::UserSpaceCoord, ir, piecewise_linear_map::PiecewiseLinearMap};
+
+    use crate::toir::to_ir_axis;
+
+    use pretty_assertions::assert_eq;
 
     fn user_coord(v: f32) -> UserSpaceCoord {
         UserSpaceCoord::new(OrderedFloat(v))
     }
 
+    fn testdata_dir() -> PathBuf {
+        PathBuf::from("../resources/testdata")
+    }
+
     #[test]
     fn simple_wght_variable() {
-        let ds = DesignSpaceDocument::load(Path::new("testdata/wght_var.designspace")).unwrap();
+        let ds = DesignSpaceDocument::load(testdata_dir().join("wght_var.designspace")).unwrap();
         assert_eq!(
             vec![ir::Axis {
                 name: "Weight".to_string(),
@@ -133,9 +144,58 @@ mod tests {
                 min: user_coord(400_f32),
                 default: user_coord(400_f32),
                 max: user_coord(700_f32),
-                hidden: false
+                hidden: false,
+                design_to_user: PiecewiseLinearMap::nop(),
             }],
-            designspace_to_ir(ds).unwrap()
+            ds.axes.iter().map(to_ir_axis).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn simple_axis_mapping() {
+        let ds = DesignSpaceDocument::load(testdata_dir().join("mapping.designspace")).unwrap();
+        // Norad doesn't seem to give us the value from <labelname xml:lang="en">Weight</labelname> for axes so we get lowercase
+        assert_eq!(
+            vec![
+                ir::Axis {
+                    name: "weight".to_string(),
+                    tag: "wght".to_string(),
+                    min: user_coord(-1.0),
+                    default: user_coord(-0.1),
+                    max: user_coord(1.125),
+                    hidden: false,
+                    design_to_user: PiecewiseLinearMap::new(vec![
+                        (OrderedFloat(100.0), OrderedFloat(-1.0)),
+                        (OrderedFloat(200.0), OrderedFloat(-0.825)),
+                        (OrderedFloat(300.0), OrderedFloat(-0.55)),
+                        (OrderedFloat(400.0), OrderedFloat(-0.1)),
+                        (OrderedFloat(500.0), OrderedFloat(0.35)),
+                        (OrderedFloat(600.0), OrderedFloat(0.54)),
+                        (OrderedFloat(700.0), OrderedFloat(0.73)),
+                        (OrderedFloat(800.0), OrderedFloat(0.9275)),
+                        (OrderedFloat(900.0), OrderedFloat(1.125)),
+                    ]),
+                },
+                ir::Axis {
+                    name: "width".to_string(),
+                    tag: "wdth".to_string(),
+                    min: user_coord(75_f32),
+                    default: user_coord(100_f32),
+                    max: user_coord(100_f32),
+                    hidden: false,
+                    design_to_user: PiecewiseLinearMap::nop(),
+                },
+                ir::Axis {
+                    name: "italic".to_string(),
+                    tag: "ital".to_string(),
+                    min: user_coord(0_f32),
+                    default: user_coord(0_f32),
+                    max: user_coord(1_f32),
+                    hidden: false,
+                    design_to_user: PiecewiseLinearMap::nop(),
+                }
+            ],
+            ds.axes.iter().map(to_ir_axis).collect::<Vec<_>>()
         );
     }
 }

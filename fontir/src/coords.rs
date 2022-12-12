@@ -8,13 +8,13 @@ use serde::{Deserialize, Serialize};
 
 /// A coordinate in some arbitrary space the designer dreamed up.
 ///
-/// In .designspace, an xvalue. https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#dimension-element.
+/// In .designspace, an xvalue. <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#dimension-element>.
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct DesignSpaceCoord(OrderedFloat<f32>);
 
 /// A coordinate in the same space as the axis in the font, e.g. what 'fvar' uses.
 ///
-/// In .designspace, a uservalue. https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#dimension-element.
+/// In .designspace, a uservalue. <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#dimension-element>.
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct UserSpaceCoord(OrderedFloat<f32>);
 

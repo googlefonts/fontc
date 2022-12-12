@@ -5,11 +5,9 @@ use std::{
 };
 
 use fontir::{
-    coords::{
-        temporary_design_to_user_conversion, DesignSpaceCoord, UserSpaceCoord, UserSpaceLocation,
-    },
+    coords::{UserSpaceCoord, UserSpaceLocation},
     error::{Error, WorkError},
-    ir::{Axis, StaticMetadata},
+    ir::StaticMetadata,
     orchestration::Context,
     source::{Input, Source, Work},
     stateset::{StateIdentifier, StateSet},
@@ -18,7 +16,7 @@ use log::debug;
 use norad::designspace::{self, DesignSpaceDocument};
 use ordered_float::OrderedFloat;
 
-use crate::toir::{to_ir_glyph, to_ir_location};
+use crate::toir::{to_ir_axis, to_ir_glyph, to_ir_location};
 
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
@@ -368,27 +366,10 @@ fn glyph_order(
     Ok(glyph_order)
 }
 
-fn design_to_user(design_coord: f32) -> UserSpaceCoord {
-    let design_coord = DesignSpaceCoord::new(OrderedFloat(design_coord));
-    temporary_design_to_user_conversion(design_coord)
-}
-
 impl Work for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
-        let axes = self
-            .designspace
-            .axes
-            .iter()
-            .map(|a| Axis {
-                name: a.name.clone(),
-                tag: a.tag.clone(),
-                hidden: a.hidden,
-                min: design_to_user(a.minimum.unwrap()),
-                default: design_to_user(a.default),
-                max: design_to_user(a.maximum.unwrap()),
-            })
-            .collect();
+        let axes = self.designspace.axes.iter().map(to_ir_axis).collect();
 
         let glyph_order = glyph_order(
             &self.designspace,
@@ -590,4 +571,7 @@ mod tests {
         // lib.plist specifies plus, so plus goes first and then the rest in alphabetical order
         assert_eq!(vec!["plus", "an-imaginary-one", "bar"], go);
     }
+
+    #[test]
+    pub fn maps_to_userspace() {}
 }

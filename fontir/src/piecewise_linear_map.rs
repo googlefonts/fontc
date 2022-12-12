@@ -1,63 +1,83 @@
 //! Remaps values using a series of linear mappings.
-//! 
+//!
 //! Useful for things like designspace : userspace mapping.
 
 use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PiecewiseLinearMap {
-    from: Vec<OrderedFloat<f64>>, // sorted, ||'s to
-    to: Vec<OrderedFloat<f64>>,   // sorted, ||'s from
+    from: Vec<OrderedFloat<f32>>, // sorted, ||'s to
+    to: Vec<OrderedFloat<f32>>,   // sorted, ||'s from
 }
 
 impl PiecewiseLinearMap {
+    /// A mapping where output == input
+    pub fn nop() -> PiecewiseLinearMap {
+        PiecewiseLinearMap {
+            from: vec![OrderedFloat(0_f32)],
+            to: vec![OrderedFloat(0_f32)],
+        }
+    }
+
     /// Create a new map from a series of (from, to) values.
-    pub fn new(mut mappings: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>) -> PiecewiseLinearMap {
+    pub fn new(mut mappings: Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>) -> PiecewiseLinearMap {
         mappings.sort();
         let (from, to): (Vec<_>, Vec<_>) = mappings.into_iter().unzip();
         PiecewiseLinearMap { from, to }
     }
-    
 
     pub fn reverse(&self) -> PiecewiseLinearMap {
-        let mappings = self.to.iter().copied().zip(self.from.iter().copied())
+        let mappings = self
+            .to
+            .iter()
+            .copied()
+            .zip(self.from.iter().copied())
             .collect();
         PiecewiseLinearMap::new(mappings)
     }
 }
 
-fn lerp(a: f64, b: f64, t: f64) -> f64 {
-    assert!(0_f64 <= t && 1_f64 >= t);
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    assert!((0_f32..=1_f32).contains(&t));
+    if (a - b).abs() <= f32::EPSILON {
+        return a;
+    }
     a + t * (b - a)
 }
 
 impl PiecewiseLinearMap {
-    /// Based on https://github.com/fonttools/fonttools/blob/5a0dc4bc8dfaa0c7da146cf902395f748b3cebe5/Lib/fontTools/varLib/models.py#L502
-    pub fn map(&self, value: OrderedFloat<f64>) -> OrderedFloat<f64> {
+    /// Based on <https://github.com/fonttools/fonttools/blob/5a0dc4bc8dfaa0c7da146cf902395f748b3cebe5/Lib/fontTools/varLib/models.py#L502>
+    pub fn map(&self, value: OrderedFloat<f32>) -> OrderedFloat<f32> {
         match self.from.binary_search(&value) {
-            Ok(idx) => self.to[idx],  // This value is just right
+            Ok(idx) => self.to[idx], // This value is just right
             Err(idx) => {
                 // idx is where we would insert from.
                 // Interpolate between the values left/right of it, if any.
                 let value = value.into_inner();
 
                 // This value is too small
-                if idx == 0 {             
-                    // FontTools: take min k and compute v + mapping[k] - k  
+                if idx == 0 {
+                    // FontTools: take min k and compute v + mapping[k] - k
                     return (value + self.to[0].into_inner() - self.from[0].into_inner()).into();
                 }
                 // This value is too big
                 if idx == self.from.len() {
                     // // FontTools: take max k and compute v + mapping[k] - k
-                    return (value + self.to[idx - 1].into_inner() - self.from[idx - 1].into_inner()).into();
+                    return (value + self.to[idx - 1].into_inner()
+                        - self.from[idx - 1].into_inner())
+                    .into();
                 }
 
                 // This value is between two known values and we must lerp
                 let from_lhs = self.from[idx - 1].into_inner();
                 let from_rhs = self.from[idx].into_inner();
                 lerp(
-                    self.to[idx - 1].into_inner(), 
-                    self.to[idx].into_inner(), 
-                    (value - from_lhs) / (from_rhs - from_lhs)).into()
+                    self.to[idx - 1].into_inner(),
+                    self.to[idx].into_inner(),
+                    (value - from_lhs) / (from_rhs - from_lhs),
+                )
+                .into()
             }
         }
     }
@@ -69,36 +89,37 @@ mod tests {
 
     use super::PiecewiseLinearMap;
 
-
     #[test]
     fn single_segment_map() {
         // User likes to map wght 0..1000 onto 0..10
-        let mut from_to: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)> = Vec::new();
-        from_to.push((OrderedFloat(0_f64), OrderedFloat(0_f64)));
-        from_to.push((OrderedFloat(10_f64), OrderedFloat(1000_f64)));
+        let from_to = vec![
+            (OrderedFloat(0_f32), OrderedFloat(0_f32)),
+            (OrderedFloat(10_f32), OrderedFloat(1000_f32)),
+        ];
         let plm = PiecewiseLinearMap::new(from_to);
 
-        assert_eq!(plm.map(OrderedFloat(0_f64)), OrderedFloat(0_f64));
-        assert_eq!(plm.map(OrderedFloat(5_f64)), OrderedFloat(500_f64));
-        assert_eq!(plm.map(OrderedFloat(10_f64)), OrderedFloat(1000_f64));
+        assert_eq!(plm.map(OrderedFloat(0_f32)), OrderedFloat(0_f32));
+        assert_eq!(plm.map(OrderedFloat(5_f32)), OrderedFloat(500_f32));
+        assert_eq!(plm.map(OrderedFloat(10_f32)), OrderedFloat(1000_f32));
 
         // walk off the end, why not
-        assert_eq!(plm.map(OrderedFloat(-1_f64)), OrderedFloat(-1_f64));
-        assert_eq!(plm.map(OrderedFloat(20_f64)), OrderedFloat(1010_f64));
+        assert_eq!(plm.map(OrderedFloat(-1_f32)), OrderedFloat(-1_f32));
+        assert_eq!(plm.map(OrderedFloat(20_f32)), OrderedFloat(1010_f32));
     }
 
     #[test]
     fn multi_segment_map() {
         // We obviously want to map -1..0 to 100.400 and 0..10 to 400..700.
-        let mut from_to: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)> = Vec::new();
-        from_to.push((OrderedFloat(-1_f64), OrderedFloat(100_f64)));
-        from_to.push((OrderedFloat(0_f64), OrderedFloat(400_f64)));
-        from_to.push((OrderedFloat(10_f64), OrderedFloat(700_f64)));
+        let from_to = vec![
+            (OrderedFloat(-1_f32), OrderedFloat(100_f32)),
+            (OrderedFloat(0_f32), OrderedFloat(400_f32)),
+            (OrderedFloat(10_f32), OrderedFloat(700_f32)),
+        ];
         let plm = PiecewiseLinearMap::new(from_to);
 
-        assert_eq!(plm.map(OrderedFloat(-1_f64)), OrderedFloat(100_f64));
-        assert_eq!(plm.map(OrderedFloat(0_f64)), OrderedFloat(400_f64));
-        assert_eq!(plm.map(OrderedFloat(5_f64)), OrderedFloat(550_f64));
-        assert_eq!(plm.map(OrderedFloat(10_f64)), OrderedFloat(700_f64));
+        assert_eq!(plm.map(OrderedFloat(-1_f32)), OrderedFloat(100_f32));
+        assert_eq!(plm.map(OrderedFloat(0_f32)), OrderedFloat(400_f32));
+        assert_eq!(plm.map(OrderedFloat(5_f32)), OrderedFloat(550_f32));
+        assert_eq!(plm.map(OrderedFloat(10_f32)), OrderedFloat(700_f32));
     }
 }

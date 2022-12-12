@@ -3,6 +3,7 @@ use fontir::error::{Error, WorkError};
 use fontir::ir;
 use fontir::ir::{Axis, StaticMetadata};
 use fontir::orchestration::Context;
+use fontir::piecewise_linear_map::PiecewiseLinearMap;
 use fontir::source::{Input, Source, Work};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
@@ -208,6 +209,7 @@ impl Work for StaticMetadataWork {
                     min,
                     default,
                     max,
+                    design_to_user: PiecewiseLinearMap::nop(), // TEMPORARY
                 }
             })
             .collect();

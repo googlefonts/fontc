@@ -3,6 +3,7 @@
 use crate::{
     coords::{UserSpaceCoord, UserSpaceLocation},
     error::Error,
+    piecewise_linear_map::PiecewiseLinearMap,
     serde::StaticMetadataSerdeRepr,
 };
 use serde::{Deserialize, Serialize};
@@ -49,6 +50,7 @@ pub struct Axis {
     pub default: UserSpaceCoord,
     pub max: UserSpaceCoord,
     pub hidden: bool,
+    pub design_to_user: PiecewiseLinearMap,
 }
 
 /// A variable definition of a single glyph.
@@ -150,7 +152,7 @@ pub struct Affine2x3 {
 mod tests {
     use ordered_float::OrderedFloat;
 
-    use crate::{coords::UserSpaceCoord, ir::Axis};
+    use crate::{coords::UserSpaceCoord, ir::Axis, piecewise_linear_map::PiecewiseLinearMap};
 
     fn user_coord(v: f32) -> UserSpaceCoord {
         UserSpaceCoord::new(OrderedFloat(v))
@@ -164,6 +166,7 @@ mod tests {
             default: user_coord(400_f32),
             max: user_coord(900_f32),
             hidden: false,
+            design_to_user: PiecewiseLinearMap::nop(),
         }
     }
 
