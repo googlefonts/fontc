@@ -133,6 +133,7 @@ pub struct Anchor {
 #[derive(Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct FontMaster {
     pub id: String,
+    pub axes_values: Option<Vec<OrderedFloat<f64>>>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }
@@ -215,7 +216,6 @@ impl FromPlist for Affine {
 
 impl FromPlist for Point {
     fn from_plist(plist: Plist) -> Self {
-        eprintln!("{:?}", plist);
         let raw = plist.as_str().unwrap();
         let raw = &raw[1..raw.len() - 1];
         let coords: Vec<f64> = raw.split(", ").map(|c| c.parse().unwrap()).collect();
@@ -325,6 +325,24 @@ fn custom_param<'a>(
     None
 }
 
+fn glyphs_v2_field_name_and_default(nth_axis: usize) -> Result<(&'static str, f64), Error> {
+    // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
+    // the field to use is based on the order in axes NOT the tag.
+    // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
+    // Defaults per https://github.com/googlefonts/fontmake-rs/pull/42#discussion_r1044415236.
+    Ok(match nth_axis {
+        0 => ("weightValue", 100_f64),
+        1 => ("widthValue", 100_f64),
+        2 => ("customValue", 0_f64),
+        _ => {
+            return Err(Error::StructuralError(format!(
+                "We don't know what field to use for axis {}",
+                nth_axis
+            )))
+        }
+    })
+}
+
 impl Font {
     fn parse_codepoints(&mut self, radix: u32) {
         for glyph in self.glyphs.iter_mut() {
@@ -389,6 +407,37 @@ impl Font {
                 name: "Custom".into(),
                 tag: "XXXX".into(),
             });
+        }
+
+        if axes.len() > 3 {
+            return Err(Error::StructuralError(
+                "We only understand 0..3 axes for Glyphs v2".into(),
+            ));
+        }
+
+        // v2 stores values for axes in specific fields, find them and put them into place
+        // "Axis position related properties (e.g. weightValue, widthValue, customValue) have been replaced by the axesValues list which is indexed in parallel with the toplevel axes list."
+        for master in self.font_master.iter_mut() {
+            let mut axis_values = Vec::new();
+            for idx in 0..axes.len() {
+                // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
+                // the field to use is based on the order in axes NOT the tag.
+                // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
+                let (field_name, default_value) = glyphs_v2_field_name_and_default(idx)?;
+                let value = master
+                    .other_stuff
+                    .remove(field_name)
+                    .unwrap_or_else(|| Plist::Float(default_value.into()))
+                    .as_f64()
+                    .ok_or_else(|| {
+                        Error::StructuralError(format!(
+                            "Invalid '{}' in\n{:#?}",
+                            field_name, master.other_stuff
+                        ))
+                    })?;
+                axis_values.push(value.into());
+            }
+            master.axes_values = Some(axis_values);
         }
 
         if custom_params(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
@@ -489,14 +538,10 @@ impl Font {
 
     fn v2_to_v3_weight(&mut self) -> Result<(), Error> {
         for master in self.font_master.iter_mut() {
-            let Some(Plist::Integer(wght)) = master.other_stuff.remove("weightValue") else {
+            // Don't remove weightValue, we need it to understand axes
+            let Some(Plist::Integer(..)) = master.other_stuff.get("weightValue") else {
                 continue;
             };
-            master.other_stuff.insert(
-                "axesValues".into(),
-                Plist::Array(vec![Plist::Integer(wght)]),
-            );
-
             let name = match master.other_stuff.remove("weight") {
                 Some(Plist::String(name)) => name,
                 _ => String::from("Regular"), // Missing = default = Regular per @anthrotype
@@ -510,8 +555,8 @@ impl Font {
 
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
     fn v2_to_v3(&mut self) -> Result<(), Error> {
-        self.v2_to_v3_axes()?;
         self.v2_to_v3_weight()?;
+        self.v2_to_v3_axes()?;
         self.v2_to_v3_metrics()?;
         self.v2_to_v3_shapes()?;
         Ok(())

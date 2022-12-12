@@ -26,9 +26,15 @@ fn to_ir_axis(axis: designspace::Axis) -> ir::Axis {
     ir::Axis {
         name: axis.name,
         tag: axis.tag,
-        min: axis.minimum.expect("Discrete axes not supported yet"),
-        default: axis.default,
-        max: axis.maximum.expect("Discrete axes not supported yet"),
+        min: axis
+            .minimum
+            .expect("Discrete axes not supported yet")
+            .into(),
+        default: axis.default.into(),
+        max: axis
+            .maximum
+            .expect("Discrete axes not supported yet")
+            .into(),
         hidden: axis.hidden,
     }
 }
@@ -110,9 +116,9 @@ mod tests {
             vec![ir::Axis {
                 name: "Weight".to_string(),
                 tag: "wght".to_string(),
-                min: 400.,
-                default: 400.,
-                max: 700.,
+                min: 400_f32.into(),
+                default: 400_f32.into(),
+                max: 700_f32.into(),
                 hidden: false
             }],
             designspace_to_ir(ds).unwrap()

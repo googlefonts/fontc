@@ -44,4 +44,6 @@ pub enum WorkError {
     GlyphIrWorkError(String, String),
     #[error("yaml error")]
     YamlSerError(#[from] serde_yaml::Error),
+    #[error("No axes are defined")]
+    NoAxisDefinitions,
 }
