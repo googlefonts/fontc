@@ -25,29 +25,28 @@ pub(crate) fn to_ir_location(loc: &[Dimension]) -> UserSpaceLocation {
         .collect()
 }
 
-fn to_user(design_to_user: &PiecewiseLinearMap, design_coord: f32) -> UserSpaceCoord {
-    UserSpaceCoord::new(design_to_user.map(OrderedFloat(design_coord)))
-}
-
 pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
-    // We're not in designspace anymore Dorothy
+    // UFO maps "input value (user space coordinate) to output value (designspace coordinate) pairs"
+    // but we want the opposite, hence mapping output:input
+    // https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#map-element
     let design_to_user = if let Some(mappings) = &axis.map {
         let map = mappings
             .iter()
-            .map(|m| (OrderedFloat(m.input), OrderedFloat(m.output)))
+            .map(|m| (OrderedFloat(m.output), OrderedFloat(m.input)))
             .collect();
         PiecewiseLinearMap::new(map)
     } else {
         PiecewiseLinearMap::nop()
     };
-
+    eprintln!("{:#?}", axis);
     ir::Axis {
         name: axis.name.clone(),
         tag: axis.tag.clone(),
         hidden: axis.hidden,
-        min: to_user(&design_to_user, axis.minimum.unwrap()),
-        default: to_user(&design_to_user, axis.default),
-        max: to_user(&design_to_user, axis.maximum.unwrap()),
+        // axis values are already userspace per https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element
+        min: UserSpaceCoord::new(axis.minimum.unwrap().into()),
+        default: UserSpaceCoord::new(axis.default.into()),
+        max: UserSpaceCoord::new(axis.maximum.unwrap().into()),
         design_to_user,
     }
 }
@@ -160,20 +159,20 @@ mod tests {
                 ir::Axis {
                     name: "weight".to_string(),
                     tag: "wght".to_string(),
-                    min: user_coord(-1.0),
-                    default: user_coord(-0.1),
-                    max: user_coord(1.125),
+                    min: user_coord(100.0),
+                    default: user_coord(400.0),
+                    max: user_coord(900.0),
                     hidden: false,
                     design_to_user: PiecewiseLinearMap::new(vec![
-                        (OrderedFloat(100.0), OrderedFloat(-1.0)),
-                        (OrderedFloat(200.0), OrderedFloat(-0.825)),
-                        (OrderedFloat(300.0), OrderedFloat(-0.55)),
-                        (OrderedFloat(400.0), OrderedFloat(-0.1)),
-                        (OrderedFloat(500.0), OrderedFloat(0.35)),
-                        (OrderedFloat(600.0), OrderedFloat(0.54)),
-                        (OrderedFloat(700.0), OrderedFloat(0.73)),
-                        (OrderedFloat(800.0), OrderedFloat(0.9275)),
-                        (OrderedFloat(900.0), OrderedFloat(1.125)),
+                        (OrderedFloat(-1.0), OrderedFloat(100.0)),
+                        (OrderedFloat(-0.825), OrderedFloat(200.0)),
+                        (OrderedFloat(-0.55), OrderedFloat(300.0)),
+                        (OrderedFloat(-0.1), OrderedFloat(400.0)),
+                        (OrderedFloat(0.35), OrderedFloat(500.0)),
+                        (OrderedFloat(0.54), OrderedFloat(600.0)),
+                        (OrderedFloat(0.73), OrderedFloat(700.0)),
+                        (OrderedFloat(0.9275), OrderedFloat(800.0)),
+                        (OrderedFloat(1.125), OrderedFloat(900.0)),
                     ]),
                 },
                 ir::Axis {
