@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use write_fonts::{
     dump_table,
-    read::{FontRef, TableProvider},
+    read::{FontRef, TableProvider, TopLevelTable},
     tables::layout::{FeatureParams, SizeParams, StylisticSetParams},
     types::Tag,
     FontBuilder,
@@ -69,11 +69,11 @@ impl Compilation {
             builder.add_table(Tag::new(b"vhea"), data);
         }
 
-        //TODO: OS/2
-        //if let Some(os2) = self.tables.OS2.as_ref() {
-        //let data = dump_table(hhea_raw).unwrap();
-        //font.add_table(Tag::new(b"hhea"), data);
-        //}
+        if let Some(os2) = self.tables.os2.as_ref() {
+            let table = os2.build();
+            let data = dump_table(&table).unwrap();
+            builder.add_table(write_fonts::tables::os2::Os2::TAG, data);
+        }
 
         if let Some(gdef) = &self.tables.gdef {
             builder.add_table(Tag::new(b"GDEF"), gdef.build().unwrap());

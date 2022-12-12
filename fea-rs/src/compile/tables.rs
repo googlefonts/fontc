@@ -34,7 +34,7 @@ pub(crate) struct Tables {
     pub character_variants: HashMap<Tag, CvParams>,
     pub gdef: Option<GdefBuilder>,
     pub base: Option<Base>,
-    pub os2: Option<OS2>,
+    pub os2: Option<Os2Builder>,
     pub stat: Option<StatBuilder>,
 }
 #[derive(Clone, Debug, Default)]
@@ -103,28 +103,30 @@ pub struct Base {
 }
 
 #[derive(Clone, Debug, Default)]
-#[allow(non_camel_case_types)]
-pub struct OS2 {
+pub struct UnicodeRange([u32; 4]);
+
+#[derive(Clone, Debug, Default)]
+pub struct CodePageRange([u32; 2]);
+
+#[derive(Clone, Debug, Default)]
+pub struct Os2Builder {
+    pub us_weight_class: u16,
+    pub us_width_class: u16,
     pub fs_type: u16,
-    pub panose: [u8; 10],
-    pub unicode_range: u128,
-    pub code_page_range: u64,
-    pub typo_ascender: i16,
-    pub typo_descender: i16,
-    pub typo_line_gap: i16,
-    pub x_height: i16,
-    pub cap_height: i16,
-    pub win_ascent: u16,
-    pub win_descent: u16,
-    pub width_class: u16,
-    pub weight_class: u16,
-    pub vendor_id: SmolStr,
-    pub lower_op_size: Option<u16>,
-    pub upper_op_size: Option<u16>,
-    pub horiz_script_list: Vec<ScriptRecord>,
-    pub vert_tag_list: Vec<Tag>,
-    pub vert_script_list: Vec<ScriptRecord>,
-    pub family_class: i16,
+    pub s_family_class: i16,
+    pub panose_10: [u8; 10],
+    pub unicode_range: UnicodeRange,
+    pub ach_vend_id: Tag,
+    pub us_win_ascent: u16,
+    pub us_win_descent: u16,
+    pub code_page_range: CodePageRange,
+    pub sx_height: i16,
+    pub s_cap_height: i16,
+    pub s_typo_ascender: i16,
+    pub s_typo_descender: i16,
+    pub s_typo_line_gap: i16,
+    pub us_lower_optical_point_size: Option<u16>,
+    pub us_upper_optical_point_size: Option<u16>,
 }
 
 #[derive(Clone, Debug)]
@@ -498,76 +500,70 @@ impl HeadBuilder {
     }
 }
 
-impl OS2 {
-    pub fn bit_for_code_page(val: u16) -> Option<u8> {
+impl UnicodeRange {
+    pub(crate) fn set_bit(&mut self, bit: u8) {
+        set_bit_impl(&mut self.0, bit)
+    }
+}
+
+impl CodePageRange {
+    pub(crate) fn bit_for_code_page(val: u16) -> Option<u8> {
         CODEPAGE_TO_BIT
             .iter()
             .find_map(|(page, bit)| if *page == val { Some(*bit) } else { None })
     }
 
-    //pub fn build(&self) -> () {
-    //pub fn build(&self) -> write_fonts::tables::os2::os2 {
-    //todo!()
-    //const MASK_32: u32 = 0xffff_ffff;
-    //let panose = fonttools::tables::os2::Panose {
-    //panose0: self.panose[0],
-    //panose1: self.panose[1],
-    //panose2: self.panose[2],
-    //panose3: self.panose[3],
-    //panose4: self.panose[4],
-    //panose5: self.panose[5],
-    //panose6: self.panose[6],
-    //panose7: self.panose[7],
-    //panose8: self.panose[8],
-    //panose9: self.panose[9],
-    //};
-    //let mut result = fonttools::tables::os2::os2 {
-    //version: 2,
-    //xAvgCharWidth: 0,
-    //usWeightClass: self.weight_class,
-    //usWidthClass: self.width_class,
-    //fsType: self.fs_type,
-    //ySubscriptXSize: 0,
-    //ySubscriptYSize: 0,
-    //ySubscriptXOffset: 0,
-    //ySubscriptYOffset: 0,
-    //ySuperscriptXSize: 0,
-    //ySuperscriptYSize: 0,
-    //ySuperscriptYOffset: 0,
-    //ySuperscriptXOffset: 0,
-    //yStrikeoutSize: 0,
-    //yStrikeoutPosition: 0,
-    //sFamilyClass: self.family_class,
-    //panose,
-    //ulUnicodeRange1: (self.unicode_range & MASK_32 as u128) as u32,
-    //ulUnicodeRange2: (self.unicode_range >> 32 & MASK_32 as u128) as u32,
-    //ulUnicodeRange3: (self.unicode_range >> 64 & MASK_32 as u128) as u32,
-    //ulUnicodeRange4: (self.unicode_range >> 96 & MASK_32 as u128) as u32,
-    //achVendID: self.vendor_id.parse().unwrap(),
-    //fsSelection: 0,
-    //usFirstCharIndex: 0,
-    //usLastCharIndex: 0,
-    //sTypoAscender: self.typo_ascender,
-    //sTypoDescender: self.typo_descender,
-    //sTypoLineGap: self.typo_line_gap,
-    //usWinAscent: self.win_ascent,
-    //usWinDescent: self.win_descent,
-    //ulCodePageRange1: Some((self.code_page_range & MASK_32 as u64) as u32),
-    //ulCodePageRange2: Some((self.code_page_range >> 32 & MASK_32 as u64) as u32),
-    //sxHeight: Some(self.x_height),
-    //sCapHeight: Some(self.cap_height),
-    //usLowerOpticalPointSize: self.lower_op_size,
-    //usUpperOpticalPointSize: self.upper_op_size,
-    //usDefaultChar: None,
-    //usBreakChar: None,
-    //usMaxContext: None,
-    //};
+    pub(crate) fn add_code_page(&mut self, page: u16) {
+        let bit = Self::bit_for_code_page(page).unwrap();
+        set_bit_impl(&mut self.0, bit)
+    }
+}
 
-    //if result.usLowerOpticalPointSize.is_some() || result.usUpperOpticalPointSize.is_some() {
-    //result.version = 5;
-    //}
-    //result
-    //}
+// shared between the two types above
+fn set_bit_impl<const N: usize>(array: &mut [u32; N], bit: u8) {
+    assert!(bit < (32 * N) as u8);
+    let idx = (bit / 32) as usize;
+    let bit = bit % 32;
+    array[idx] |= 1 << bit;
+}
+
+impl Os2Builder {
+    pub fn build(&self) -> write_fonts::tables::os2::Os2 {
+        let [ul_code_page_range_1, ul_code_page_range_2] = self.code_page_range.0;
+        let [ul_unicode_range_1, ul_unicode_range_2, ul_unicode_range_3, ul_unicode_range_4] =
+            self.unicode_range.0;
+
+        write_fonts::tables::os2::Os2 {
+            us_weight_class: self.us_weight_class,
+            us_width_class: self.us_width_class,
+            fs_type: self.fs_type,
+            s_family_class: self.s_family_class,
+            ul_unicode_range_1,
+            ul_unicode_range_2,
+            ul_unicode_range_3,
+            ul_unicode_range_4,
+            panose_10: self.panose_10,
+            ach_vend_id: self.ach_vend_id,
+            s_typo_ascender: self.s_typo_ascender,
+            s_typo_descender: self.s_typo_descender,
+            s_typo_line_gap: self.s_typo_line_gap,
+            us_win_ascent: self.us_win_ascent,
+            us_win_descent: self.us_win_descent,
+            ul_code_page_range_1: Some(ul_code_page_range_1),
+            ul_code_page_range_2: Some(ul_code_page_range_2),
+            sx_height: Some(self.sx_height),
+            s_cap_height: Some(self.s_cap_height),
+            //TODO: these are defined in fea, but we want them to be present
+            //since other v2 fields are? I assume they get overwritten anyway?
+            us_default_char: Some(0),
+            us_max_context: Some(0),
+            us_break_char: Some(0),
+            //TODO: ensure at validation that if one is present, the other is?
+            us_lower_optical_point_size: self.us_lower_optical_point_size,
+            us_upper_optical_point_size: self.us_upper_optical_point_size,
+            ..Default::default()
+        }
+    }
 }
 
 impl GdefBuilder {

@@ -1124,16 +1124,16 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_os2(&mut self, table: &typed::Os2Table) {
-        let mut os2 = super::tables::OS2::default();
+        let mut os2 = super::tables::Os2Builder::default();
         for item in table.statements() {
             match item {
                 typed::Os2TableItem::Number(val) => {
                     let value = val.number().parse_unsigned().unwrap();
                     match val.keyword().text.as_str() {
-                        "WeightClass" => os2.weight_class = value,
-                        "WidthClass" => os2.width_class = value,
-                        "LowerOpSize" => os2.lower_op_size = Some(value),
-                        "UpperOpSize" => os2.upper_op_size = Some(value),
+                        "WeightClass" => os2.us_weight_class = value,
+                        "WidthClass" => os2.us_width_class = value,
+                        "LowerOpSize" => os2.us_lower_optical_point_size = Some(value),
+                        "UpperOpSize" => os2.us_upper_optical_point_size = Some(value),
                         "FSType" => os2.fs_type = value,
                         _ => unreachable!("checked at parse time"),
                     }
@@ -1141,42 +1141,40 @@ impl<'a> CompilationCtx<'a> {
                 typed::Os2TableItem::Metric(val) => {
                     let value = val.metric().parse();
                     match val.keyword().kind {
-                        Kind::TypoAscenderKw => os2.typo_ascender = value,
-                        Kind::TypoDescenderKw => os2.typo_descender = value,
-                        Kind::TypoLineGapKw => os2.typo_line_gap = value,
-                        Kind::XHeightKw => os2.x_height = value,
-                        Kind::CapHeightKw => os2.cap_height = value,
-                        Kind::WinAscentKw => os2.win_ascent = value as u16,
-                        Kind::WinDescentKw => os2.win_descent = value as u16,
+                        Kind::TypoAscenderKw => os2.s_typo_ascender = value,
+                        Kind::TypoDescenderKw => os2.s_typo_descender = value,
+                        Kind::TypoLineGapKw => os2.s_typo_line_gap = value,
+                        Kind::XHeightKw => os2.sx_height = value,
+                        Kind::CapHeightKw => os2.s_cap_height = value,
+                        Kind::WinAscentKw => os2.us_win_ascent = value as u16,
+                        Kind::WinDescentKw => os2.us_win_descent = value as u16,
                         _ => unreachable!("checked at parse time"),
                     }
                 }
                 typed::Os2TableItem::NumberList(list) => match list.keyword().kind {
                     Kind::PanoseKw => {
                         for (i, val) in list.values().enumerate() {
-                            os2.panose[i] = val.parse_signed() as u8;
+                            os2.panose_10[i] = val.parse_signed() as u8;
                         }
                     }
                     Kind::UnicodeRangeKw => {
                         for val in list.values() {
-                            os2.unicode_range |= 1 << val.parse_signed() as usize;
+                            os2.unicode_range.set_bit(val.parse_signed() as _);
                         }
                     }
                     Kind::CodePageRangeKw => {
                         for val in list.values() {
-                            let bit =
-                                super::tables::OS2::bit_for_code_page(val.parse_signed() as u16)
-                                    .unwrap();
-                            os2.code_page_range |= 1 << bit as usize;
+                            os2.code_page_range
+                                .add_code_page(val.parse_unsigned().unwrap());
                         }
                     }
                     _ => unreachable!("checked at parse time"),
                 },
                 typed::Os2TableItem::Vendor(item) => {
-                    os2.vendor_id = item.value().text.trim_matches('"').into()
+                    os2.ach_vend_id = Tag::new(item.value().text.trim_matches('"').as_bytes());
                 }
                 typed::Os2TableItem::FamilyClass(item) => {
-                    os2.family_class = item.value().parse().unwrap() as i16
+                    os2.s_family_class = item.value().parse().unwrap() as i16
                 }
             }
         }

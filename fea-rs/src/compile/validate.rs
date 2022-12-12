@@ -239,8 +239,10 @@ impl<'a> ValidationCtx<'a> {
                     }
                     Kind::CodePageRangeKw => {
                         for number in item.values() {
-                            if super::tables::OS2::bit_for_code_page(number.parse_signed() as u16)
-                                .is_none()
+                            if super::tables::CodePageRange::bit_for_code_page(
+                                number.parse_signed() as u16,
+                            )
+                            .is_none()
                             {
                                 self.error(number.range(), "not a valid code page");
                             }
