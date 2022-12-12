@@ -75,7 +75,7 @@ impl Compilation {
         //font.add_table(Tag::new(b"hhea"), data);
         //}
 
-        if let Some(gdef) = &self.tables.GDEF {
+        if let Some(gdef) = &self.tables.gdef {
             builder.add_table(Tag::new(b"GDEF"), gdef.build().unwrap());
         }
 

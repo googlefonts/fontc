@@ -122,7 +122,7 @@ impl<'a> CompilationCtx<'a> {
         if self.errors.iter().any(Diagnostic::is_error) {
             return Err(self.errors.clone());
         }
-        if self.tables.GDEF.is_none() {
+        if self.tables.gdef.is_none() {
             self.infer_glyph_classes();
         }
         Ok(Compilation {
@@ -137,7 +137,7 @@ impl<'a> CompilationCtx<'a> {
     // if a GDEF table is not explicitly defined, we are supposed to create one:
     // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#4f-markclass
     fn infer_glyph_classes(&mut self) {
-        let mut gdef = super::tables::Gdef::default();
+        let mut gdef = super::tables::GdefBuilder::default();
         self.lookups.infer_glyph_classes(|glyph, class_id| {
             gdef.glyph_classes.insert(glyph, class_id);
         });
@@ -150,7 +150,7 @@ impl<'a> CompilationCtx<'a> {
             gdef.glyph_classes.insert(glyph, ClassId::Mark);
         }
         if !gdef.glyph_classes.is_empty() {
-            self.tables.GDEF = Some(gdef);
+            self.tables.gdef = Some(gdef);
         }
     }
 
@@ -1180,7 +1180,7 @@ impl<'a> CompilationCtx<'a> {
                 }
             }
         }
-        self.tables.OS2 = Some(os2);
+        self.tables.os2 = Some(os2);
     }
 
     fn resolve_stat(&mut self, table: &typed::StatTable) {
@@ -1310,7 +1310,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_vmtx(&mut self, table: &typed::VmtxTable) {
-        let mut vmtx = super::tables::vmtx::default();
+        let mut vmtx = super::tables::VmtxBuilder::default();
         for item in table.statements() {
             let glyph = self.resolve_glyph(&item.glyph());
             let value = item.value().parse_signed();
@@ -1324,7 +1324,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_gdef(&mut self, table: &typed::GdefTable) {
-        let mut gdef = super::tables::Gdef::default();
+        let mut gdef = super::tables::GdefBuilder::default();
         for statement in table.statements() {
             match statement {
                 typed::GdefTableItem::Attach(rule) => {
@@ -1382,11 +1382,11 @@ impl<'a> CompilationCtx<'a> {
                 }
             }
         }
-        self.tables.GDEF = Some(gdef);
+        self.tables.gdef = Some(gdef);
     }
 
     fn resolve_head(&mut self, table: &typed::HeadTable) {
-        let mut head = super::tables::head::default();
+        let mut head = super::tables::HeadBuilder::default();
         let font_rev = table.statements().last().unwrap().value();
         head.font_revision = font_rev.parse_fixed();
         self.tables.head = Some(head);

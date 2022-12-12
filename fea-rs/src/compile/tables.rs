@@ -23,30 +23,28 @@ use crate::{
 };
 
 /// The explicit tables allowed in a fea file
-#[allow(non_snake_case)]
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Tables {
-    pub head: Option<head>,
+    pub head: Option<HeadBuilder>,
     pub hhea: Option<tables::hhea::Hhea>,
     pub vhea: Option<tables::vhea::Vhea>,
-    pub vmtx: Option<vmtx>,
+    pub vmtx: Option<VmtxBuilder>,
     pub name: NameBuilder,
     pub stylistic_sets: HashMap<Tag, Vec<NameSpec>>,
     pub character_variants: HashMap<Tag, CvParams>,
-    pub GDEF: Option<Gdef>,
+    pub gdef: Option<GdefBuilder>,
     pub base: Option<Base>,
-    pub OS2: Option<OS2>,
+    pub os2: Option<OS2>,
     pub stat: Option<StatBuilder>,
 }
 #[derive(Clone, Debug, Default)]
 #[allow(non_camel_case_types)]
-pub struct head {
+pub struct HeadBuilder {
     pub font_revision: Fixed,
 }
 
 #[derive(Clone, Debug, Default)]
-#[allow(non_camel_case_types)]
-pub struct vmtx {
+pub struct VmtxBuilder {
     pub origins_y: Vec<(GlyphId, i16)>,
     pub advances_y: Vec<(GlyphId, i16)>,
 }
@@ -89,7 +87,7 @@ impl From<ClassId> for GlyphClassDef {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Gdef {
+pub struct GdefBuilder {
     pub glyph_classes: HashMap<GlyphId, ClassId>,
     pub attach: BTreeMap<GlyphId, BTreeSet<u16>>,
     pub ligature_pos: BTreeMap<GlyphId, Vec<CaretValue>>,
@@ -477,7 +475,7 @@ fn parse_mac(s: &str) -> String {
 // this is the value used in python fonttools when writing this table
 const DATE_2011_12_13_H11_M22_S33: LongDateTime = LongDateTime::new(1323780153);
 
-impl head {
+impl HeadBuilder {
     pub(crate) fn build(&self, font: Option<&FontRef>) -> write_fonts::tables::head::Head {
         // match what python fonttools does
         let mut head = font
@@ -572,7 +570,7 @@ impl OS2 {
     //}
 }
 
-impl Gdef {
+impl GdefBuilder {
     pub fn build(&self) -> Result<Vec<u8>, ValidationReport> {
         let table = tables::gdef::Gdef::new(
             self.build_class_def(),
