@@ -6,5 +6,8 @@
     <string>bar.glif</string>
     <key>plus</key>
     <string>plus.glif</string>
+    <!-- should be eliminated as it does not exist in default master -->
+    <key>bonus_bar</key>
+    <string>bonus_bar.glif</string>
   </dict>
 </plist>

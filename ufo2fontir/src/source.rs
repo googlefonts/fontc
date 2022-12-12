@@ -140,14 +140,14 @@ impl DesignSpaceIrSource {
     ) -> Result<StateSet, Error> {
         let mut font_info = StateSet::new();
         font_info.track_file(&self.designspace_file)?;
-        let default_master = default_master(designspace)
+        let (default_master_idx, _) = default_master(designspace)
             .ok_or_else(|| Error::NoDefaultMaster(self.designspace_file.clone()))?;
 
-        for source in designspace.sources.iter() {
+        for (idx, source) in designspace.sources.iter().enumerate() {
             let ufo_dir = self.designspace_dir.join(&source.filename);
             for filename in ["fontinfo.plist", "layercontents.plist", "lib.plist"] {
                 // Only track lib.plist for the default master
-                if filename == "lib.plist" && source != default_master {
+                if filename == "lib.plist" && idx != default_master_idx {
                     continue;
                 }
 
@@ -192,7 +192,20 @@ impl Source for DesignSpaceIrSource {
         let mut glif_locations: HashMap<PathBuf, Vec<DesignSpaceLocation>> = HashMap::new();
         let mut glyph_names = HashSet::new();
 
-        for source in designspace.sources.iter() {
+        let Some((default_master_idx, default_master)) = default_master(&designspace) else {
+            return Err(Error::NoDefaultMaster(self.designspace_file.clone()));
+        };
+        let mut sources_default_first = vec![default_master];
+        sources_default_first.extend(
+            designspace
+                .sources
+                .iter()
+                .enumerate()
+                .filter(|(idx, _)| *idx != default_master_idx)
+                .map(|(_, s)| s),
+        );
+
+        for (idx, source) in sources_default_first.iter().enumerate() {
             // Track files within each UFO
             // The UFO dir *must* exist since we were able to find fontinfo in it earlier
             let ufo_dir = self.designspace_dir.join(&source.filename);
@@ -202,6 +215,10 @@ impl Source for DesignSpaceIrSource {
             for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, source)? {
                 if !glif_file.exists() {
                     return Err(Error::FileExpected(glif_file));
+                }
+                if idx > 0 && !glyph_names.contains(&glyph_name) {
+                    warn!("The glyph name '{}' exists in {} but not in the default master and will be ignored", glyph_name, source.filename);
+                    continue;
                 }
                 glyph_names.insert(glyph_name.clone());
                 let glif_file = glif_file.clone();
@@ -302,7 +319,7 @@ struct StaticMetadataWork {
     glyph_names: Arc<HashSet<String>>,
 }
 
-fn default_master(designspace: &DesignSpaceDocument) -> Option<&designspace::Source> {
+fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
     // The master at the default location on all axes
     // TODO: fix me; ref https://github.com/googlefonts/fontmake-rs/issues/22
     warn!("Using an incorrect algorithm to determine the default master");
@@ -314,7 +331,8 @@ fn default_master(designspace: &DesignSpaceDocument) -> Option<&designspace::Sou
     designspace
         .sources
         .iter()
-        .find(|source| to_ir_location(&source.location) == default_location)
+        .enumerate()
+        .find(|(_, source)| to_ir_location(&source.location) == default_location)
 }
 
 fn load_lib_plist(ufo_dir: &Path) -> Result<plist::Dictionary, WorkError> {
@@ -337,7 +355,7 @@ fn glyph_order(
     // The UFO at the default master *may* elect to specify a glyph order
     // That glyph order *may* deign to overlap with the actual glyph set
     let mut glyph_order = Vec::new();
-    if let Some(source) = default_master(designspace) {
+    if let Some((_, source)) = default_master(designspace) {
         let lib_plist = load_lib_plist(&designspace_dir.join(&source.filename))?;
         if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
             let mut pending_add: HashSet<_> = glyph_names.iter().map(|s| s.as_str()).collect();
@@ -550,6 +568,13 @@ mod tests {
     }
 
     #[test]
+    pub fn only_glyphs_present_in_default() {
+        let (_, inputs) = test_source();
+        // bonus_bar is not present in the default master; should discard
+        assert!(!inputs.glyphs.contains_key("bonus_bar"));
+    }
+
+    #[test]
     pub fn find_default_master() {
         let (source, _) = test_source();
         let ds = source.load_designspace().unwrap();
@@ -557,7 +582,7 @@ mod tests {
         expected.insert("Weight".to_string(), 400_f32.into());
         assert_eq!(
             expected,
-            to_ir_location(&default_master(&ds).unwrap().location)
+            to_ir_location(&default_master(&ds).unwrap().1.location)
         );
     }
 
