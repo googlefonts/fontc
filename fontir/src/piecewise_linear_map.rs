@@ -1,6 +1,8 @@
 //! Remaps values using a series of linear mappings.
 //!
 //! Useful for things like designspace : userspace mapping.
+//! For example, from a <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#location>
+//! xvalue to a userspace (fvar) value.
 
 use ordered_float::OrderedFloat;
 
@@ -78,7 +80,7 @@ mod tests {
 
     #[test]
     fn single_segment_map() {
-        // User likes to map wght 0..1000 onto 0..10
+        // User likes to use 0..10 in their sources to mean wght 0..1000 in userspace
         let from_to = vec![
             (OrderedFloat(0_f32), OrderedFloat(0_f32)),
             (OrderedFloat(10_f32), OrderedFloat(1000_f32)),
