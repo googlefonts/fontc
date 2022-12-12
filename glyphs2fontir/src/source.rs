@@ -43,10 +43,10 @@ fn glyph_identifier(glyph_name: &str) -> String {
 fn glyph_states(font: &Font) -> Result<HashMap<String, StateSet>, Error> {
     let mut glyph_states = HashMap::new();
 
-    for glyph in font.glyphs.iter() {
+    for (glyphname, glyph) in font.glyphs.iter() {
         let mut state = StateSet::new();
-        state.track_memory(glyph_identifier(&glyph.glyphname), &glyph)?;
-        glyph_states.insert(glyph.glyphname.clone(), state);
+        state.track_memory(glyph_identifier(glyphname), glyph)?;
+        glyph_states.insert(glyphname.clone(), state);
     }
 
     Ok(glyph_states)
@@ -55,16 +55,19 @@ fn glyph_states(font: &Font) -> Result<HashMap<String, StateSet>, Error> {
 impl GlyphsIrSource {
     // When things like upem may have changed forget incremental and rebuild the whole thing
     fn global_rebuild_triggers(&self, font: &Font) -> Result<StateSet, Error> {
-        // Naive mk1: if anything other than glyphs and date changes do a global rebuild
-        // TODO experiment with actual glyphs saves to see what makes sense
         let mut state = StateSet::new();
-        state.track_memory("/font_master".to_string(), &font.font_master)?;
-        for (key, plist) in font.other_stuff.iter() {
-            if key == "date" {
-                continue;
-            }
-            state.track_memory(format!("/{}", key), &plist)?;
-        }
+        // Wipe out glyph-related fields, track the rest
+        // Explicitly field by field so if we add more compiler will force us to update here
+        let font = Font {
+            family_name: font.family_name.clone(),
+            axes: font.axes.clone(),
+            font_master: font.font_master.clone(),
+            default_master_idx: font.default_master_idx,
+            glyphs: Default::default(),
+            glyph_order: Default::default(),
+            codepoints: Default::default(),
+        };
+        state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
     }
 
@@ -166,20 +169,17 @@ impl Work for StaticMetadataWork {
                 });
         }
 
-        let axes = font.axes.as_ref().ok_or(WorkError::NoAxisDefinitions)?;
-        if axes.is_empty() {
-            return Err(WorkError::NoAxisDefinitions);
-        }
-        if axes.len() != axis_values.len() || axis_values.iter().any(|v| v.is_empty()) {
+        if font.axes.len() != axis_values.len() || axis_values.iter().any(|v| v.is_empty()) {
             return Err(WorkError::InconsistentAxisDefinitions(format!(
                 "Axes {:?} doesn't match axis values {:?}",
-                axes, axis_values
+                font.axes, axis_values
             )));
         }
 
-        let default_master_idx = font.default_master_idx();
+        let defaults = &axis_values[font.default_master_idx];
 
-        let axes = axes
+        let axes = font
+            .axes
             .iter()
             .enumerate()
             .map(|(idx, a)| {
@@ -193,8 +193,7 @@ impl Work for StaticMetadataWork {
                     .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
                     .max()
                     .unwrap();
-                let default =
-                    OrderedFloat::<f32>(axis_values[default_master_idx][idx].into_inner() as f32);
+                let default = OrderedFloat::<f32>(defaults[idx].into_inner() as f32);
 
                 Axis {
                     name: a.name.clone(),
@@ -207,8 +206,7 @@ impl Work for StaticMetadataWork {
             })
             .collect();
 
-        let glyph_order = font.glyphs.iter().map(|g| g.glyphname.clone()).collect();
-        context.set_static_metadata(StaticMetadata::new(axes, glyph_order));
+        context.set_static_metadata(StaticMetadata::new(axes, font.glyph_order.clone()));
         Ok(())
     }
 }
