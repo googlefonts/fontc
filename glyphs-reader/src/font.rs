@@ -331,7 +331,7 @@ fn glyphs_v2_field_name_and_default(nth_axis: usize) -> Result<(&'static str, f6
     // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
     // Defaults per https://github.com/googlefonts/fontmake-rs/pull/42#discussion_r1044415236.
     Ok(match nth_axis {
-        0 => ("weightValue", 400_f64),
+        0 => ("weightValue", 100_f64),
         1 => ("widthValue", 100_f64),
         2 => ("customValue", 0_f64),
         _ => {
