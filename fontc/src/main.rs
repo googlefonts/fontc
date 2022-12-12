@@ -37,13 +37,23 @@ struct Config {
     args: Args,
     // The compiler previously used so if the compiler changes config invalidates
     compiler: StateSet,
+
+    build_dir: PathBuf,
 }
 
 impl Config {
-    fn new(args: Args) -> Result<Config, io::Error> {
+    fn new(args: Args, build_dir: PathBuf) -> Result<Config, io::Error> {
         let mut compiler = StateSet::new();
         compiler.track_file(&std::env::current_exe()?)?;
-        Ok(Config { args, compiler })
+        Ok(Config {
+            args,
+            compiler,
+            build_dir,
+        })
+    }
+
+    fn file(&self) -> PathBuf {
+        self.build_dir.join("fontc.yml")
     }
 
     fn has_changed(&self, config_file: &Path) -> bool {
@@ -71,15 +81,10 @@ fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     Ok(dir.to_path_buf())
 }
 
-fn config_file(build_dir: &Path) -> PathBuf {
-    build_dir.join("fontc.yml")
-}
+fn init(config: &Config) -> Result<Input, io::Error> {
+    let config_file = config.file();
 
-fn init(build_dir: &Path, args: Args) -> Result<(Config, Input), io::Error> {
-    let config = Config::new(args)?;
-    let config_file = config_file(build_dir);
-
-    let ir_paths = Paths::new(build_dir);
+    let ir_paths = Paths::new(&config.build_dir);
     let ir_input_file = ir_paths.ir_input_file();
     if config.has_changed(&config_file) {
         info!("Config changed, generating a new one");
@@ -99,7 +104,7 @@ fn init(build_dir: &Path, args: Args) -> Result<(Config, Input), io::Error> {
     } else {
         Input::new()
     };
-    Ok((config, ir_input))
+    Ok(ir_input)
 }
 
 fn ir_source(source: &Path) -> Result<Box<dyn Source>, Error> {
@@ -253,7 +258,8 @@ fn main() -> Result<(), Error> {
     let paths = Paths::new(Path::new("build"));
     let build_dir = require_dir(paths.build_dir())?;
     require_dir(paths.glyph_ir_dir())?;
-    let (config, prev_inputs) = init(&build_dir, Args::parse()).map_err(Error::IoError)?;
+    let config = Config::new(Args::parse(), build_dir)?;
+    let prev_inputs = init(&config).map_err(Error::IoError)?;
 
     let mut change_detector = ChangeDetector::new(config.clone(), paths.clone(), prev_inputs)?;
     let context = Context::new_root(
@@ -299,7 +305,7 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::{
-        add_glyph_work, add_static_metadata_work, config_file, finish_successfully, glyphs_changed,
+        add_glyph_work, add_static_metadata_work, finish_successfully, glyphs_changed,
         glyphs_deleted, init, require_dir, Args, ChangeDetector, Config,
     };
 
@@ -343,9 +349,10 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let args = test_args("wght_var.designspace");
+        let config = Config::new(args.clone(), build_dir.to_path_buf()).unwrap();
 
-        init(build_dir, args.clone()).unwrap();
-        let config_file = config_file(build_dir);
+        init(&config).unwrap();
+        let config_file = config.file();
         let paths = Paths::new(build_dir);
         let ir_input_file = paths.ir_input_file();
 
@@ -355,7 +362,9 @@ mod tests {
             "Should not exist: {:#?}",
             ir_input_file
         );
-        assert!(!Config::new(args).unwrap().has_changed(&config_file));
+        assert!(!Config::new(args, build_dir.to_path_buf())
+            .unwrap()
+            .has_changed(&config_file));
     }
 
     #[test]
@@ -363,7 +372,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let args = test_args("wght_var.designspace");
-        init(build_dir, args.clone()).unwrap();
+        let config = Config::new(args.clone(), build_dir.to_path_buf()).unwrap();
 
         let compiler_location = std::env::current_exe().unwrap();
         let metadata = compiler_location.metadata().unwrap();
@@ -374,15 +383,21 @@ mod tests {
             FileTime::from_system_time(metadata.modified().unwrap()),
             metadata.len() + 1,
         );
-        assert!(Config { args, compiler }.has_changed(&config_file(build_dir)));
+        assert!(Config {
+            args,
+            compiler,
+            build_dir: build_dir.to_path_buf()
+        }
+        .has_changed(&config.file()));
     }
 
     fn compile(build_dir: &Path, source: &str) -> TestCompile {
         let args = test_args(source);
         let paths = Paths::new(build_dir);
         require_dir(paths.glyph_ir_dir()).unwrap();
+        let config = Config::new(args, build_dir.to_path_buf()).unwrap();
 
-        let (config, prev_inputs) = init(build_dir, args).unwrap();
+        let prev_inputs = init(&config).unwrap();
 
         let mut change_detector =
             ChangeDetector::new(config.clone(), paths.clone(), prev_inputs).unwrap();
