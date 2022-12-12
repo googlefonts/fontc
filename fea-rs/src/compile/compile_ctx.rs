@@ -44,6 +44,7 @@ pub struct CompilationCtx<'a> {
     cur_mark_filter_set: Option<FilterSetId>,
     cur_language_systems: HashSet<(Tag, Tag)>,
     cur_feature_name: Option<Tag>,
+    vertical_feature: SpecialVerticalFeatureState,
     script: Option<Tag>,
     glyph_class_defs: HashMap<SmolStr, GlyphClass>,
     mark_classes: HashMap<SmolStr, MarkClass>,
@@ -52,6 +53,19 @@ pub struct CompilationCtx<'a> {
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
     size: Option<SizeFeature>,
     //mark_attach_used_glyphs: HashMap<GlyphId, u16>,
+}
+
+/// If we are at the root of one of four magic features, we have special behaviour.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum SpecialVerticalFeatureState {
+    /// we are not in a special vertical feature
+    #[default]
+    Ready,
+    /// we are at the root of a special vertical feature (and so should behave specially)
+    Root,
+    /// we are inside a lookup in a special vertical feature (and so should not
+    /// behave specially)
+    InnerLookup,
 }
 
 struct MarkClass {
@@ -76,6 +90,7 @@ impl<'a> CompilationCtx<'a> {
             cur_mark_filter_set: Default::default(),
             cur_language_systems: Default::default(),
             cur_feature_name: None,
+            vertical_feature: Default::default(),
             script: None,
             mark_attach_class_id: Default::default(),
             mark_filter_sets: Default::default(),
@@ -185,7 +200,9 @@ impl<'a> CompilationCtx<'a> {
             !self.lookups.has_current(),
             "no lookup should be active at start of feature"
         );
-        self.cur_feature_name = Some(feature_name.to_raw());
+        let raw_tag = feature_name.to_raw();
+        self.cur_feature_name = Some(raw_tag);
+        self.vertical_feature.begin_feature(raw_tag);
         self.lookup_flags = LookupFlag::empty();
         self.cur_mark_filter_set = None;
     }
@@ -200,6 +217,7 @@ impl<'a> CompilationCtx<'a> {
         }
         self.cur_feature_name = None;
         self.cur_language_systems.clear();
+        self.vertical_feature.end_feature();
         //self.cur_lookup = None;
         self.lookup_flags = LookupFlag::empty();
         self.cur_mark_filter_set = None;
@@ -222,6 +240,7 @@ impl<'a> CompilationCtx<'a> {
             self.cur_mark_filter_set = None;
         }
 
+        self.vertical_feature.begin_lookup_block();
         self.lookups.start_named(name.text.clone());
     }
 
@@ -235,6 +254,7 @@ impl<'a> CompilationCtx<'a> {
             self.lookup_flags = LookupFlag::empty();
             self.cur_mark_filter_set = None;
         }
+        self.vertical_feature.end_lookup_block();
     }
 
     fn set_language(&mut self, stmt: typed::Language) {
@@ -873,10 +893,16 @@ impl<'a> CompilationCtx<'a> {
             }
         }
 
-        if let Some(x_adv) = record.advance() {
-            //FIXME: whether this is x or y depends on the current feature?
+        if let Some(adv) = record.advance() {
+            let (x_advance, y_advance) = if self.vertical_feature.in_eligible_vertical_feature() {
+                (None, parse(adv))
+            } else {
+                (parse(adv), None)
+            };
+
             return ValueRecord {
-                x_advance: parse(x_adv),
+                x_advance,
+                y_advance,
                 ..Default::default()
             };
         }
@@ -1652,6 +1678,41 @@ impl<'a> CompilationCtx<'a> {
             }
             (_, _) => self.error(range.range(), "Invalid types in glyph range"),
         }
+    }
+}
+
+impl SpecialVerticalFeatureState {
+    const VERTICAL_FEATURES: &[Tag] = &[
+        Tag::new(b"valt"),
+        Tag::new(b"vhal"),
+        Tag::new(b"vkrn"),
+        Tag::new(b"vpal"),
+    ];
+
+    fn begin_feature(&mut self, tag: Tag) {
+        if Self::VERTICAL_FEATURES.contains(&tag) {
+            *self = Self::Root;
+        }
+    }
+
+    fn end_feature(&mut self) {
+        *self = Self::Ready;
+    }
+
+    fn begin_lookup_block(&mut self) {
+        if *self == Self::Root {
+            *self = Self::InnerLookup;
+        }
+    }
+
+    fn end_lookup_block(&mut self) {
+        if *self == Self::InnerLookup {
+            *self = Self::Root;
+        }
+    }
+
+    fn in_eligible_vertical_feature(&self) -> bool {
+        *self == Self::Root
     }
 }
 
