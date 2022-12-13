@@ -25,7 +25,7 @@ enum PossibleSingleSubFormat {
 
 impl SingleSubBuilder {
     pub fn insert(&mut self, target: GlyphId, replacement: GlyphId) {
-        let delta = target.to_u16() as i32 - replacement.to_u16() as i32;
+        let delta = replacement.to_u16() as i32 - target.to_u16() as i32;
         let delta = i16::try_from(delta)
             .map(PossibleSingleSubFormat::Delta)
             .unwrap_or(PossibleSingleSubFormat::Format2);
