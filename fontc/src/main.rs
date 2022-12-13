@@ -9,7 +9,7 @@ use clap::Parser;
 use fontc::Error;
 use fontir::{
     error::WorkError,
-    orchestration::Context,
+    orchestration::{Context, WorkIdentifier},
     source::{DeleteWork, Input, Paths, Source, Work},
     stateset::StateSet,
 };
@@ -25,20 +25,35 @@ struct Args {
     /// A designspace, ufo, or glyphs file
     #[arg(short, long)]
     source: PathBuf,
+
+    /// Whether to write IR to disk. Must be true if you want incremental compilation.
+    #[arg(short, long)]
+    #[clap(default_value = "true")]
+    emit_ir: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Config {
     args: Args,
     // The compiler previously used so if the compiler changes config invalidates
     compiler: StateSet,
+
+    build_dir: PathBuf,
 }
 
 impl Config {
-    fn new(args: Args) -> Result<Config, io::Error> {
+    fn new(args: Args, build_dir: PathBuf) -> Result<Config, io::Error> {
         let mut compiler = StateSet::new();
         compiler.track_file(&std::env::current_exe()?)?;
-        Ok(Config { args, compiler })
+        Ok(Config {
+            args,
+            compiler,
+            build_dir,
+        })
+    }
+
+    fn file(&self) -> PathBuf {
+        self.build_dir.join("fontc.yml")
     }
 
     fn has_changed(&self, config_file: &Path) -> bool {
@@ -66,15 +81,10 @@ fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     Ok(dir.to_path_buf())
 }
 
-fn config_file(build_dir: &Path) -> PathBuf {
-    build_dir.join("fontc.yml")
-}
+fn init(config: &Config) -> Result<Input, io::Error> {
+    let config_file = config.file();
 
-fn init(build_dir: &Path, args: Args) -> Result<(Config, Input), io::Error> {
-    let config = Config::new(args)?;
-    let config_file = config_file(build_dir);
-
-    let ir_paths = Paths::new(build_dir);
+    let ir_paths = Paths::new(&config.build_dir);
     let ir_input_file = ir_paths.ir_input_file();
     if config.has_changed(&config_file) {
         info!("Config changed, generating a new one");
@@ -94,25 +104,22 @@ fn init(build_dir: &Path, args: Args) -> Result<(Config, Input), io::Error> {
     } else {
         Input::new()
     };
-    Ok((config, ir_input))
+    Ok(ir_input)
 }
 
-fn ir_source(source: &Path, paths: Paths) -> Result<Box<dyn Source>, Error> {
+fn ir_source(source: &Path) -> Result<Box<dyn Source>, Error> {
     let ext = source
         .extension()
         .and_then(OsStr::to_str)
         .ok_or_else(|| Error::UnrecognizedSource(source.to_path_buf()))?;
     match ext {
-        "designspace" => Ok(Box::from(DesignSpaceIrSource::new(
-            source.to_path_buf(),
-            paths,
-        ))),
-        "glyphs" => Ok(Box::from(GlyphsIrSource::new(source.to_path_buf(), paths))),
+        "designspace" => Ok(Box::from(DesignSpaceIrSource::new(source.to_path_buf()))),
+        "glyphs" => Ok(Box::from(GlyphsIrSource::new(source.to_path_buf()))),
         _ => Err(Error::UnrecognizedSource(source.to_path_buf())),
     }
 }
 
-fn finish_successfully(context: CompileContext) -> Result<(), Error> {
+fn finish_successfully(context: ChangeDetector) -> Result<(), Error> {
     let current_sources =
         serde_yaml::to_string(&context.current_inputs).map_err(Error::YamlSerError)?;
     fs::write(context.paths.ir_input_file(), current_sources).map_err(Error::IoError)
@@ -122,7 +129,7 @@ fn global_change(current_inputs: &Input, prev_inputs: &Input) -> bool {
     current_inputs.global_metadata != prev_inputs.global_metadata
 }
 
-fn glyphs_changed(context: &CompileContext) -> HashSet<&str> {
+fn glyphs_changed(context: &ChangeDetector) -> HashSet<&str> {
     if global_change(&context.current_inputs, &context.prev_inputs) {
         return context
             .current_inputs
@@ -157,35 +164,55 @@ fn glyphs_deleted<'a>(current_inputs: &Input, prev_inputs: &'a Input) -> HashSet
         .collect()
 }
 
+fn add_static_metadata_work(
+    change_detector: &mut ChangeDetector,
+    context: &Context,
+    work: &mut Vec<Box<dyn Work>>,
+) -> Result<(), Error> {
+    let context = context.copy_for_work(WorkIdentifier::StaticMetadata, None);
+    work.push(
+        change_detector
+            .ir_source
+            .create_static_metadata_work(&context)?,
+    );
+    Ok(())
+}
+
 fn add_glyph_work(
-    context: &mut CompileContext,
+    config: &Config,
+    change_detector: &mut ChangeDetector,
+    context: &Context,
     work: &mut Vec<Box<dyn Work>>,
 ) -> Result<(), Error> {
     // Destroy IR for deleted glyphs
     work.extend(
-        glyphs_deleted(&context.current_inputs, &context.prev_inputs)
-            .iter()
-            .map(|glyph_name| DeleteWork::create(context.paths.glyph_ir_file(glyph_name))),
+        glyphs_deleted(
+            &change_detector.current_inputs,
+            &change_detector.prev_inputs,
+        )
+        .iter()
+        .map(|glyph_name| DeleteWork::create(change_detector.paths.glyph_ir_file(glyph_name))),
     );
 
     // Generate IR for changed glyphs
-    let glyphs_changed = glyphs_changed(context);
-    let glyph_work = context
+    let glyphs_changed = glyphs_changed(change_detector);
+    let glyph_work = change_detector
         .ir_source
-        .create_glyph_ir_work(&glyphs_changed, &context.current_inputs)?;
+        .create_glyph_ir_work(&glyphs_changed, context)?;
+    if config.args.emit_ir {}
     work.extend(glyph_work);
 
     Ok(())
 }
 
-fn do_work(work: Vec<Box<dyn Work>>) -> Result<(), Error> {
+fn do_work(context: &Context, work: Vec<Box<dyn Work>>) -> Result<(), Error> {
     let work_units = work.len();
     debug!("{} work units to execute", work_units);
-    let root_context = Context::new_root();
+
     // TODO: https://github.com/googlefonts/fontmake-rs/pull/26 style execution w/task-specific contexts
     let errors: Vec<WorkError> = work
         .into_par_iter()
-        .filter_map(|work| work.exec(&root_context).err())
+        .filter_map(|work| work.exec(context).err())
         .collect();
     for error in errors.iter() {
         warn!("{:#?}", error);
@@ -203,24 +230,20 @@ fn do_work(work: Vec<Box<dyn Work>>) -> Result<(), Error> {
     Ok(())
 }
 
-struct CompileContext {
+struct ChangeDetector {
     paths: Paths,
     ir_source: Box<dyn Source>,
     prev_inputs: Input,
     current_inputs: Input,
 }
 
-impl CompileContext {
-    fn new(paths: Paths, args: Args) -> Result<CompileContext, Error> {
-        let build_dir = require_dir(paths.build_dir())?;
-        require_dir(paths.glyph_ir_dir())?;
-        let (config, prev_inputs) = init(&build_dir, args).map_err(Error::IoError)?;
-
+impl ChangeDetector {
+    fn new(config: Config, paths: Paths, prev_inputs: Input) -> Result<ChangeDetector, Error> {
         // What sources are we dealing with?
-        let mut ir_source = ir_source(&config.args.source, paths.clone())?;
+        let mut ir_source = ir_source(&config.args.source)?;
         let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
 
-        Ok(CompileContext {
+        Ok(ChangeDetector {
             paths,
             ir_source,
             prev_inputs,
@@ -233,22 +256,38 @@ fn main() -> Result<(), Error> {
     env_logger::init();
 
     let paths = Paths::new(Path::new("build"));
-    let mut context = CompileContext::new(paths, Args::parse())?;
+    let build_dir = require_dir(paths.build_dir())?;
+    require_dir(paths.glyph_ir_dir())?;
+    let config = Config::new(Args::parse(), build_dir)?;
+    let prev_inputs = init(&config).map_err(Error::IoError)?;
+
+    let mut change_detector = ChangeDetector::new(config.clone(), paths.clone(), prev_inputs)?;
+    let context = Context::new_root(
+        config.args.emit_ir,
+        paths,
+        change_detector.current_inputs.clone(),
+    );
 
     // TODO: consider making a more explicit model of a graph
     // TODO: Rayon focuses on CPU-bound tasks but we are doing IO too
     // perhaps we should do the IO first, e.g. read (but not parse) inputs, etc?
 
+    // TODO: enter metadata work onto threadpool, proper dependencies
+    // Pending proper graph processing just run it first
+    let mut work: Vec<Box<dyn Work>> = Vec::new();
+    add_static_metadata_work(&mut change_detector, &context, &mut work)?;
+    do_work(&context, work)?;
+
     // Accumulate work for the parts of IR that trivially parallelize
     let mut work: Vec<Box<dyn Work>> = Vec::new();
 
-    add_glyph_work(&mut context, &mut work)?;
+    add_glyph_work(&config, &mut change_detector, &context, &mut work)?;
 
     // Try to do the work
-    do_work(work)?;
+    do_work(&context, work)?;
 
     // Goodness, it all seems to have worked
-    finish_successfully(context)?;
+    finish_successfully(change_detector)?;
     Ok(())
 }
 
@@ -266,8 +305,8 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::{
-        add_glyph_work, config_file, finish_successfully, glyphs_changed, glyphs_deleted, init,
-        Args, CompileContext, Config,
+        add_glyph_work, add_static_metadata_work, finish_successfully, glyphs_changed,
+        glyphs_deleted, init, require_dir, Args, ChangeDetector, Config,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -278,13 +317,20 @@ mod tests {
         path
     }
 
+    fn test_args(source: &str) -> Args {
+        Args {
+            source: testdata_dir().join(source),
+            emit_ir: true,
+        }
+    }
+
     struct TestCompile {
         glyphs_changed: HashSet<String>,
         glyphs_deleted: HashSet<String>,
     }
 
     impl TestCompile {
-        fn new(context: &CompileContext) -> TestCompile {
+        fn new(context: &ChangeDetector) -> TestCompile {
             TestCompile {
                 glyphs_changed: glyphs_changed(context)
                     .iter()
@@ -302,11 +348,11 @@ mod tests {
     fn init_captures_state() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let args = Args {
-            source: testdata_dir().join("wght_var.designspace"),
-        };
-        init(build_dir, args.clone()).unwrap();
-        let config_file = config_file(build_dir);
+        let args = test_args("wght_var.designspace");
+        let config = Config::new(args.clone(), build_dir.to_path_buf()).unwrap();
+
+        init(&config).unwrap();
+        let config_file = config.file();
         let paths = Paths::new(build_dir);
         let ir_input_file = paths.ir_input_file();
 
@@ -316,17 +362,17 @@ mod tests {
             "Should not exist: {:#?}",
             ir_input_file
         );
-        assert!(!Config::new(args).unwrap().has_changed(&config_file));
+        assert!(!Config::new(args, build_dir.to_path_buf())
+            .unwrap()
+            .has_changed(&config_file));
     }
 
     #[test]
     fn detect_compiler_change() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let args = Args {
-            source: testdata_dir().join("wght_var.designspace"),
-        };
-        init(build_dir, args.clone()).unwrap();
+        let args = test_args("wght_var.designspace");
+        let config = Config::new(args.clone(), build_dir.to_path_buf()).unwrap();
 
         let compiler_location = std::env::current_exe().unwrap();
         let metadata = compiler_location.metadata().unwrap();
@@ -337,28 +383,42 @@ mod tests {
             FileTime::from_system_time(metadata.modified().unwrap()),
             metadata.len() + 1,
         );
-        assert!(Config { args, compiler }.has_changed(&config_file(build_dir)));
+        assert!(Config {
+            args,
+            compiler,
+            build_dir: build_dir.to_path_buf()
+        }
+        .has_changed(&config.file()));
     }
 
     fn compile(build_dir: &Path, source: &str) -> TestCompile {
-        let args = Args {
-            source: testdata_dir().join(source),
-        };
+        let args = test_args(source);
         let paths = Paths::new(build_dir);
-        let mut context = CompileContext::new(paths, args).unwrap();
-        let result = TestCompile::new(&context);
+        require_dir(paths.glyph_ir_dir()).unwrap();
+        let config = Config::new(args, build_dir.to_path_buf()).unwrap();
+
+        let prev_inputs = init(&config).unwrap();
+
+        let mut change_detector =
+            ChangeDetector::new(config.clone(), paths.clone(), prev_inputs).unwrap();
+        let work_context = Context::new_root(
+            config.args.emit_ir,
+            paths,
+            change_detector.current_inputs.clone(),
+        );
+        let result = TestCompile::new(&change_detector);
 
         let mut work = Vec::new();
 
-        add_glyph_work(&mut context, &mut work).unwrap();
+        add_static_metadata_work(&mut change_detector, &work_context, &mut work).unwrap();
+        add_glyph_work(&config, &mut change_detector, &work_context, &mut work).unwrap();
 
         // Try to do the work
-        let root_context = Context::new_root();
         for work_item in work {
-            work_item.exec(&root_context).unwrap();
+            work_item.exec(&work_context).unwrap();
         }
 
-        finish_successfully(context).unwrap();
+        finish_successfully(change_detector).unwrap();
         result
     }
 

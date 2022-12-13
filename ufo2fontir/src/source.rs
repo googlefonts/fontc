@@ -1,30 +1,30 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use fontir::{
     error::{Error, WorkError},
-    ir::DesignSpaceLocation,
+    ir::{Axis, DesignSpaceLocation, StaticMetadata},
     orchestration::Context,
-    source::{Input, Paths, Source, Work},
+    source::{Input, Source, Work},
     stateset::{StateIdentifier, StateSet},
 };
-use log::debug;
+use log::{debug, warn};
 use norad::designspace::{self, DesignSpaceDocument};
+use ordered_float::OrderedFloat;
 
 use crate::toir::{to_ir_glyph, to_ir_location};
 
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
     designspace_dir: PathBuf,
-    ir_paths: Paths,
-    glif_locations: Option<GlifLocationCache>,
+    cache: Option<Cache>,
 }
 
 impl DesignSpaceIrSource {
-    pub fn new(designspace_file: PathBuf, ir_paths: Paths) -> DesignSpaceIrSource {
+    pub fn new(designspace_file: PathBuf) -> DesignSpaceIrSource {
         let designspace_dir = designspace_file
             .parent()
             .expect("designspace file *must* be in a directory")
@@ -32,26 +32,34 @@ impl DesignSpaceIrSource {
         DesignSpaceIrSource {
             designspace_file,
             designspace_dir,
-            ir_paths,
-            glif_locations: None,
+            cache: None,
         }
     }
 }
 
 // A cache of locations, valid provided no global metadata changes
-struct GlifLocationCache {
+struct Cache {
     global_metadata_sources: StateSet,
     locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
+    glyph_names: Arc<HashSet<String>>,
+    designspace_file: PathBuf,
+    designspace: Arc<DesignSpaceDocument>,
 }
 
-impl GlifLocationCache {
+impl Cache {
     fn new(
         global_metadata_sources: StateSet,
+        glyph_names: HashSet<String>,
         locations: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
-    ) -> GlifLocationCache {
-        GlifLocationCache {
+        designspace_file: PathBuf,
+        designspace: DesignSpaceDocument,
+    ) -> Cache {
+        Cache {
             global_metadata_sources,
+            glyph_names: Arc::from(glyph_names),
             locations,
+            designspace_file,
+            designspace: Arc::from(designspace),
         }
     }
 
@@ -132,10 +140,20 @@ impl DesignSpaceIrSource {
     ) -> Result<StateSet, Error> {
         let mut font_info = StateSet::new();
         font_info.track_file(&self.designspace_file)?;
-        for source in designspace.sources.iter() {
+        let (default_master_idx, _) = default_master(designspace)
+            .ok_or_else(|| Error::NoDefaultMaster(self.designspace_file.clone()))?;
+
+        for (idx, source) in designspace.sources.iter().enumerate() {
             let ufo_dir = self.designspace_dir.join(&source.filename);
-            for filename in ["fontinfo.plist", "layercontents.plist"] {
+            for filename in ["fontinfo.plist", "layercontents.plist", "lib.plist"] {
+                // Only track lib.plist for the default master
+                if filename == "lib.plist" && idx != default_master_idx {
+                    continue;
+                }
+
                 let font_info_file = ufo_dir.join(filename);
+                // TODO: this is incorrect; several of these files are optional
+                // File tracking curently assumes you only track extant files so keep it for now
                 if !font_info_file.is_file() {
                     return Err(Error::FileExpected(font_info_file));
                 }
@@ -143,6 +161,20 @@ impl DesignSpaceIrSource {
             }
         }
         Ok(font_info)
+    }
+
+    fn check_global_metadata(&self, global_metadata: &StateSet) -> Result<(), Error> {
+        // Do we have the location of glifs written down?
+        // TODO: consider just recomputing here instead of failing
+        if !self
+            .cache
+            .as_ref()
+            .map(|gl| gl.is_valid_for(global_metadata))
+            .unwrap_or(false)
+        {
+            return Err(Error::InvalidGlobalMetadata);
+        }
+        Ok(())
     }
 }
 
@@ -157,34 +189,54 @@ impl Source for DesignSpaceIrSource {
 
         // UFO filename => map of layer
         let mut layer_cache = HashMap::new();
-
         let mut glif_locations: HashMap<PathBuf, Vec<DesignSpaceLocation>> = HashMap::new();
+        let mut glyph_names = HashSet::new();
 
-        for source in designspace.sources {
+        let Some((default_master_idx, default_master)) = default_master(&designspace) else {
+            return Err(Error::NoDefaultMaster(self.designspace_file.clone()));
+        };
+        let mut sources_default_first = vec![default_master];
+        sources_default_first.extend(
+            designspace
+                .sources
+                .iter()
+                .enumerate()
+                .filter(|(idx, _)| *idx != default_master_idx)
+                .map(|(_, s)| s),
+        );
+
+        for (idx, source) in sources_default_first.iter().enumerate() {
             // Track files within each UFO
             // The UFO dir *must* exist since we were able to find fontinfo in it earlier
             let ufo_dir = self.designspace_dir.join(&source.filename);
 
             let location = to_ir_location(&source.location);
 
-            for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, &source)? {
+            for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, source)? {
                 if !glif_file.exists() {
                     return Err(Error::FileExpected(glif_file));
                 }
+                if idx > 0 && !glyph_names.contains(&glyph_name) {
+                    warn!("The glyph name '{}' exists in {} but not in the default master and will be ignored", glyph_name, source.filename);
+                    continue;
+                }
+                glyph_names.insert(glyph_name.clone());
                 let glif_file = glif_file.clone();
                 glyphs
                     .entry(glyph_name)
                     .or_default()
                     .track_file(&glif_file)?;
-
                 let glif_locations = glif_locations.entry(glif_file).or_default();
                 glif_locations.push(location.clone());
             }
         }
 
-        self.glif_locations = Some(GlifLocationCache::new(
+        self.cache = Some(Cache::new(
             global_metadata.clone(),
+            glyph_names,
             glif_locations,
+            self.designspace_file.clone(),
+            designspace,
         ));
 
         Ok(Input {
@@ -193,31 +245,34 @@ impl Source for DesignSpaceIrSource {
         })
     }
 
+    fn create_static_metadata_work(&self, context: &Context) -> Result<Box<dyn Work>, Error> {
+        self.check_global_metadata(&context.input.global_metadata)?;
+        let cache = self.cache.as_ref().unwrap();
+
+        Ok(Box::from(StaticMetadataWork {
+            designspace_file: cache.designspace_file.clone(),
+            designspace: cache.designspace.clone(),
+            glyph_names: cache.glyph_names.clone(),
+        }))
+    }
+
     fn create_glyph_ir_work(
         &self,
         glyph_names: &HashSet<&str>,
-        input: &Input,
+        context: &Context,
     ) -> Result<Vec<Box<dyn Work>>, Error> {
+        self.check_global_metadata(&context.input.global_metadata)?;
+
         // A single glif could be used by many source blocks that use the same layer
         // *gasp*
         // So resolve each file to 1..N locations in designspace
 
+        let input = context.input.clone();
         let mut work: Vec<Box<dyn Work>> = Vec::new();
-
-        // Do we have the location of glifs written down?
-        // TODO: consider just recomputing here instead of failing
-        if !self
-            .glif_locations
-            .as_ref()
-            .map(|gl| gl.is_valid_for(&input.global_metadata))
-            .unwrap_or(false)
-        {
-            return Err(Error::UnableToCreateGlyphIrWork);
-        }
 
         for glyph_name in glyph_names {
             work.push(Box::from(
-                self.create_work_for_one_glyph(glyph_name, input)?,
+                self.create_work_for_one_glyph(glyph_name, &input)?,
             ));
         }
 
@@ -241,12 +296,12 @@ impl DesignSpaceIrSource {
             .get(&glyph_name)
             .ok_or_else(|| Error::NoStateForGlyph(glyph_name.clone()))?;
         let mut glif_files = HashMap::new();
-        let glif_locations = self.glif_locations.as_ref().unwrap();
+        let cache = self.cache.as_ref().unwrap();
         for state_key in stateset.keys() {
             let StateIdentifier::File(glif_file) = state_key else {
                 return Err(Error::UnexpectedState);
             };
-            let locations = glif_locations
+            let locations = cache
                 .location_of(glif_file)
                 .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;
             glif_files.insert(glif_file.to_path_buf(), locations.clone());
@@ -254,27 +309,128 @@ impl DesignSpaceIrSource {
         Ok(GlyphIrWork {
             glyph_name: glyph_name.clone(),
             glif_files,
-            ir_file: self.ir_paths.glyph_ir_file(&glyph_name),
         })
+    }
+}
+
+struct StaticMetadataWork {
+    designspace_file: PathBuf,
+    designspace: Arc<DesignSpaceDocument>,
+    glyph_names: Arc<HashSet<String>>,
+}
+
+fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
+    // The master at the default location on all axes
+    // TODO: fix me; ref https://github.com/googlefonts/fontmake-rs/issues/22
+    warn!("Using an incorrect algorithm to determine the default master");
+    let default_location: DesignSpaceLocation = designspace
+        .axes
+        .iter()
+        .map(|a| (a.name.clone(), OrderedFloat::from(a.default)))
+        .collect();
+    designspace
+        .sources
+        .iter()
+        .enumerate()
+        .find(|(_, source)| to_ir_location(&source.location) == default_location)
+}
+
+fn load_lib_plist(ufo_dir: &Path) -> Result<plist::Dictionary, WorkError> {
+    let lib_plist_file = ufo_dir.join("lib.plist");
+    if !lib_plist_file.is_file() {
+        return Err(WorkError::FileExpected(lib_plist_file));
+    }
+    plist::Value::from_file(&lib_plist_file)
+        .map_err(|e| WorkError::ParseError(lib_plist_file.clone(), format!("{}", e)))?
+        .into_dictionary()
+        .ok_or_else(|| WorkError::ParseError(lib_plist_file, "Not a dictionary".to_string()))
+}
+
+// Per https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044596662
+fn glyph_order(
+    designspace: &DesignSpaceDocument,
+    designspace_dir: &Path,
+    glyph_names: &HashSet<String>,
+) -> Result<Vec<String>, WorkError> {
+    // The UFO at the default master *may* elect to specify a glyph order
+    // That glyph order *may* deign to overlap with the actual glyph set
+    let mut glyph_order = Vec::new();
+    if let Some((_, source)) = default_master(designspace) {
+        let lib_plist = load_lib_plist(&designspace_dir.join(&source.filename))?;
+        if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
+            let mut pending_add: HashSet<_> = glyph_names.iter().map(|s| s.as_str()).collect();
+            // Add names from ufo glyph order union glyph_names in ufo glyph order
+            ufo_order
+                .iter()
+                .filter_map(|v| v.as_string().map(|s| s.to_string()))
+                .filter(|name| glyph_names.contains(name))
+                .for_each(|name| {
+                    glyph_order.push(name.to_string());
+                    pending_add.remove(name.as_str());
+                });
+            // Add anything leftover in sorted order
+            let mut pending_add: Vec<_> = pending_add.into_iter().map(|s| s.to_string()).collect();
+            pending_add.sort();
+            glyph_order.extend(pending_add);
+        }
+    }
+    if glyph_order.is_empty() {
+        if glyph_names.contains(".notdef") {
+            glyph_order.push(".notdef".to_string());
+        }
+        glyph_names
+            .iter()
+            .filter(|name| name.as_str() != ".notdef")
+            .for_each(|name| glyph_order.push(name.clone()));
+    }
+    Ok(glyph_order)
+}
+
+impl Work for StaticMetadataWork {
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        debug!("Static metadata for {:#?}", self.designspace_file);
+        let axes = self
+            .designspace
+            .axes
+            .iter()
+            .map(|a| Axis {
+                name: a.name.clone(),
+                tag: a.tag.clone(),
+                hidden: a.hidden,
+                min: a.minimum.unwrap().into(),
+                default: a.default.into(),
+                max: a.maximum.unwrap().into(),
+            })
+            .collect();
+
+        let glyph_order = glyph_order(
+            &self.designspace,
+            self.designspace_file.parent().unwrap(),
+            &self.glyph_names,
+        )?;
+        context.set_static_metadata(StaticMetadata::new(axes, glyph_order));
+        Ok(())
     }
 }
 
 struct GlyphIrWork {
     glyph_name: String,
     glif_files: HashMap<PathBuf, Vec<DesignSpaceLocation>>,
-    ir_file: PathBuf,
 }
 
 impl Work for GlyphIrWork {
-    fn exec(&self, _: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!(
-            "Generate {:#?} for {} {:#?}",
-            self.ir_file, self.glyph_name, self.glif_files
+            "Generate glyph IR for {} from {:#?}",
+            self.glyph_name, self.glif_files
         );
+        let static_metadata = context.get_static_metadata();
+        let gid = static_metadata
+            .glyph_id(&self.glyph_name)
+            .ok_or_else(|| WorkError::NoGlyphIdForName(self.glyph_name.clone()))?;
         let glyph_ir = to_ir_glyph(&self.glyph_name, &self.glif_files)
             .map_err(|e| WorkError::GlyphIrWorkError(self.glyph_name.clone(), e.to_string()))?;
-        let glyph_ir_yml = serde_yaml::to_string(&glyph_ir).map_err(WorkError::YamlSerError)?;
-        fs::write(&self.ir_file, glyph_ir_yml).map_err(WorkError::IoError)?;
+        context.set_glyph_ir(gid, glyph_ir);
         Ok(())
     }
 }
@@ -282,17 +438,18 @@ impl Work for GlyphIrWork {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         path::{Path, PathBuf},
     };
 
     use fontir::ir::DesignSpaceLocation;
-    use fontir::source::{Input, Paths, Source};
+    use fontir::source::{Input, Source};
     use norad::designspace;
     use ordered_float::OrderedFloat;
-    use tempfile::tempdir;
 
-    use super::{glif_files, DesignSpaceIrSource};
+    use crate::toir::to_ir_location;
+
+    use super::{default_master, glif_files, glyph_order, DesignSpaceIrSource};
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -338,10 +495,8 @@ mod tests {
         );
     }
 
-    fn test_source(build_dir: &Path) -> (DesignSpaceIrSource, Input) {
-        let paths = Paths::new(build_dir);
-        let mut source =
-            DesignSpaceIrSource::new(testdata_dir().join("wght_var.designspace"), paths);
+    fn test_source() -> (DesignSpaceIrSource, Input) {
+        let mut source = DesignSpaceIrSource::new(testdata_dir().join("wght_var.designspace"));
         let input = source.inputs().unwrap();
         (source, input)
     }
@@ -363,9 +518,7 @@ mod tests {
 
     #[test]
     pub fn create_work() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let (ir_source, input) = test_source(build_dir);
+        let (ir_source, input) = test_source();
 
         let work = ir_source.create_work_for_one_glyph("bar", &input).unwrap();
 
@@ -393,9 +546,7 @@ mod tests {
 
     #[test]
     pub fn create_sparse_work() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let (ir_source, input) = test_source(build_dir);
+        let (ir_source, input) = test_source();
 
         let work = ir_source.create_work_for_one_glyph("plus", &input).unwrap();
 
@@ -414,5 +565,44 @@ mod tests {
             700.0,
         );
         assert_eq!(expected_glif_files, work.glif_files);
+    }
+
+    #[test]
+    pub fn only_glyphs_present_in_default() {
+        let (_, inputs) = test_source();
+        // bonus_bar is not present in the default master; should discard
+        assert!(!inputs.glyphs.contains_key("bonus_bar"));
+    }
+
+    #[test]
+    pub fn find_default_master() {
+        let (source, _) = test_source();
+        let ds = source.load_designspace().unwrap();
+        let mut expected = DesignSpaceLocation::new();
+        expected.insert("Weight".to_string(), 400_f32.into());
+        assert_eq!(
+            expected,
+            to_ir_location(&default_master(&ds).unwrap().1.location)
+        );
+    }
+
+    #[test]
+    pub fn builds_glyph_order() {
+        // Only WghtVar-Regular.ufo has a lib.plist, and it only lists a subset of glyphs
+        // Should still work.
+        let (source, _) = test_source();
+        let ds = source.load_designspace().unwrap();
+        let go = glyph_order(
+            &ds,
+            &source.designspace_dir,
+            &HashSet::from([
+                "bar".to_string(),
+                "plus".to_string(),
+                "an-imaginary-one".to_string(),
+            ]),
+        )
+        .unwrap();
+        // lib.plist specifies plus, so plus goes first and then the rest in alphabetical order
+        assert_eq!(vec!["plus", "an-imaginary-one", "bar"], go);
     }
 }

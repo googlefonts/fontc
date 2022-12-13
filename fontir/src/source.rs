@@ -53,13 +53,18 @@ pub trait Source {
     /// Mut to permit caching.
     fn inputs(&mut self) -> Result<Input, Error>;
 
+    /// Create a function that could be called to generate [crate::ir::StaticMetadata].
+    ///
+    /// When run work should update [Context] with new [crate::ir::StaticMetadata].
+    fn create_static_metadata_work(&self, context: &Context) -> Result<Box<dyn Work>, Error>;
+
     /// Create a function that could be called to generate IR for glyphs.
     ///
     /// Batched because some formats require IO to figure out the work.
     fn create_glyph_ir_work(
         &self,
         glyph_names: &HashSet<&str>,
-        input: &Input,
+        context: &Context,
     ) -> Result<Vec<Box<dyn Work>>, Error>;
 }
 
@@ -89,6 +94,10 @@ impl Paths {
 
     pub fn ir_input_file(&self) -> &Path {
         &self.ir_input_file
+    }
+
+    pub fn static_metadata_ir_file(&self) -> PathBuf {
+        self.build_dir.join("static_metadata.yml")
     }
 
     pub fn glyph_ir_dir(&self) -> &Path {

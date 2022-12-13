@@ -1,23 +1,25 @@
 use fontir::error::{Error, WorkError};
+use fontir::ir;
+use fontir::ir::{Axis, StaticMetadata};
 use fontir::orchestration::Context;
-use fontir::source::{Input, Paths, Source, Work};
+use fontir::source::{Input, Source, Work};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
 use log::debug;
+use ordered_float::OrderedFloat;
 use std::collections::HashSet;
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::sync::Arc;
+use std::{collections::HashMap, path::PathBuf};
 
 pub struct GlyphsIrSource {
     glyphs_file: PathBuf,
-    ir_paths: Paths,
     cache: Option<Cache>,
 }
 
 impl GlyphsIrSource {
-    pub fn new(glyphs_file: PathBuf, ir_paths: Paths) -> GlyphsIrSource {
+    pub fn new(glyphs_file: PathBuf) -> GlyphsIrSource {
         GlyphsIrSource {
             glyphs_file,
-            ir_paths,
             cache: None,
         }
     }
@@ -25,7 +27,7 @@ impl GlyphsIrSource {
 
 struct Cache {
     global_metadata: StateSet,
-    _font: Font,
+    font: Arc<Font>,
 }
 
 impl Cache {
@@ -41,10 +43,10 @@ fn glyph_identifier(glyph_name: &str) -> String {
 fn glyph_states(font: &Font) -> Result<HashMap<String, StateSet>, Error> {
     let mut glyph_states = HashMap::new();
 
-    for glyph in font.glyphs.iter() {
+    for (glyphname, glyph) in font.glyphs.iter() {
         let mut state = StateSet::new();
-        state.track_memory(glyph_identifier(&glyph.glyphname), &glyph)?;
-        glyph_states.insert(glyph.glyphname.clone(), state);
+        state.track_memory(glyph_identifier(glyphname), glyph)?;
+        glyph_states.insert(glyphname.clone(), state);
     }
 
     Ok(glyph_states)
@@ -53,17 +55,34 @@ fn glyph_states(font: &Font) -> Result<HashMap<String, StateSet>, Error> {
 impl GlyphsIrSource {
     // When things like upem may have changed forget incremental and rebuild the whole thing
     fn global_rebuild_triggers(&self, font: &Font) -> Result<StateSet, Error> {
-        // Naive mk1: if anything other than glyphs and date changes do a global rebuild
-        // TODO experiment with actual glyphs saves to see what makes sense
         let mut state = StateSet::new();
-        state.track_memory("/font_master".to_string(), &font.font_master)?;
-        for (key, plist) in font.other_stuff.iter() {
-            if key == "date" {
-                continue;
-            }
-            state.track_memory(format!("/{}", key), &plist)?;
-        }
+        // Wipe out glyph-related fields, track the rest
+        // Explicitly field by field so if we add more compiler will force us to update here
+        let font = Font {
+            family_name: font.family_name.clone(),
+            axes: font.axes.clone(),
+            font_master: font.font_master.clone(),
+            default_master_idx: font.default_master_idx,
+            glyphs: Default::default(),
+            glyph_order: Default::default(),
+            codepoints: Default::default(),
+        };
+        state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
+    }
+
+    fn check_global_metadata(&self, global_metadata: &StateSet) -> Result<(), Error> {
+        // Do we have a plist cache?
+        // TODO: consider just recomputing here instead of failing
+        if !self
+            .cache
+            .as_ref()
+            .map(|pc| pc.is_valid_for(global_metadata))
+            .unwrap_or(false)
+        {
+            return Err(Error::InvalidGlobalMetadata);
+        }
+        Ok(())
     }
 }
 
@@ -81,7 +100,7 @@ impl Source for GlyphsIrSource {
 
         self.cache = Some(Cache {
             global_metadata: global_metadata.clone(),
-            _font: font,
+            font: Arc::from(font),
         });
 
         Ok(Input {
@@ -90,62 +109,124 @@ impl Source for GlyphsIrSource {
         })
     }
 
+    fn create_static_metadata_work(&self, context: &Context) -> Result<Box<dyn Work>, Error> {
+        self.check_global_metadata(&context.input.global_metadata)?;
+        Ok(Box::from(StaticMetadataWork {
+            font: self.cache.as_ref().unwrap().font.clone(),
+        }))
+    }
+
     fn create_glyph_ir_work(
         &self,
         glyph_names: &HashSet<&str>,
-        input: &Input,
+        context: &Context,
     ) -> Result<Vec<Box<dyn Work>>, fontir::error::Error> {
+        self.check_global_metadata(&context.input.global_metadata)?;
+
         let mut work: Vec<Box<dyn Work>> = Vec::new();
-
-        // Do we have a plist cache?
-        // TODO: consider just recomputing here instead of failing
-        if !self
-            .cache
-            .as_ref()
-            .map(|pc| pc.is_valid_for(&input.global_metadata))
-            .unwrap_or(false)
-        {
-            return Err(Error::UnableToCreateGlyphIrWork);
-        }
-
         for glyph_name in glyph_names {
-            work.push(Box::from(
-                self.create_work_for_one_glyph(glyph_name, input)?,
-            ));
+            work.push(Box::from(self.create_work_for_one_glyph(glyph_name)?));
         }
-
         Ok(work)
     }
 }
 
 impl GlyphsIrSource {
-    fn create_work_for_one_glyph(
-        &self,
-        glyph_name: &str,
-        input: &Input,
-    ) -> Result<GlyphIrWork, Error> {
-        let glyph_name = glyph_name.to_string();
-        let _stateset = input
-            .glyphs
-            .get(&glyph_name)
-            .ok_or_else(|| Error::NoStateForGlyph(glyph_name.clone()))?;
-
+    fn create_work_for_one_glyph(&self, glyph_name: &str) -> Result<GlyphIrWork, Error> {
         Ok(GlyphIrWork {
-            glyph_name: glyph_name.clone(),
-            ir_file: self.ir_paths.glyph_ir_file(&glyph_name),
+            glyph_name: glyph_name.to_string(),
         })
+    }
+}
+
+struct StaticMetadataWork {
+    font: Arc<Font>,
+}
+
+impl Work for StaticMetadataWork {
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        let font = self.font.as_ref();
+        debug!("Static metadata for {}", font.family_name);
+
+        let mut axis_values = Vec::new();
+        for master in font.font_master.iter() {
+            master
+                .axes_values
+                .as_ref()
+                .ok_or_else(|| {
+                    WorkError::InconsistentAxisDefinitions(format!(
+                        "No axis values for {}",
+                        master.id
+                    ))
+                })?
+                .iter()
+                .enumerate()
+                .for_each(|(idx, value)| {
+                    while axis_values.len() <= idx {
+                        axis_values.push(Vec::new());
+                    }
+                    axis_values[idx].push(value);
+                });
+        }
+
+        if font.axes.len() != axis_values.len() || axis_values.iter().any(|v| v.is_empty()) {
+            return Err(WorkError::InconsistentAxisDefinitions(format!(
+                "Axes {:?} doesn't match axis values {:?}",
+                font.axes, axis_values
+            )));
+        }
+
+        let defaults = &axis_values[font.default_master_idx];
+
+        let axes = font
+            .axes
+            .iter()
+            .enumerate()
+            .map(|(idx, a)| {
+                let min = axis_values[idx]
+                    .iter()
+                    .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
+                    .min()
+                    .unwrap();
+                let max = axis_values[idx]
+                    .iter()
+                    .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
+                    .max()
+                    .unwrap();
+                let default = OrderedFloat::<f32>(defaults[idx].into_inner() as f32);
+
+                Axis {
+                    name: a.name.clone(),
+                    tag: a.tag.clone(),
+                    hidden: a.hidden.unwrap_or(false),
+                    min,
+                    default,
+                    max,
+                }
+            })
+            .collect();
+
+        context.set_static_metadata(StaticMetadata::new(axes, font.glyph_order.clone()));
+        Ok(())
     }
 }
 
 struct GlyphIrWork {
     glyph_name: String,
-    ir_file: PathBuf,
 }
 
 impl Work for GlyphIrWork {
-    fn exec(&self, _: &Context) -> Result<(), WorkError> {
-        debug!("Generate {:#?} for {}", self.ir_file, self.glyph_name);
-        fs::write(&self.ir_file, &self.glyph_name).map_err(WorkError::IoError)?;
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        debug!("Generate IR for {}", self.glyph_name);
+        let static_metadata = context.get_static_metadata();
+        let gid = static_metadata
+            .glyph_id(&self.glyph_name)
+            .ok_or_else(|| WorkError::NoGlyphIdForName(self.glyph_name.clone()))?;
+        let ir = ir::Glyph {
+            name: self.glyph_name.clone(),
+            sources: HashMap::new(),
+        };
+        context.set_glyph_ir(gid, ir);
         Ok(())
     }
 }
@@ -157,10 +238,14 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use fontir::stateset::StateSet;
+    use fontir::{
+        orchestration::{Context, WorkIdentifier},
+        source::{Paths, Source},
+        stateset::StateSet,
+    };
     use glyphs_reader::Font;
 
-    use super::glyph_states;
+    use super::{glyph_states, GlyphsIrSource};
 
     use pretty_assertions::assert_eq;
 
@@ -217,5 +302,68 @@ mod tests {
             })
             .collect::<HashSet<String>>();
         assert_eq!(HashSet::from(["hyphen".to_string()]), changed);
+    }
+
+    fn context_for(glyphs_file: PathBuf) -> (impl Source, Context) {
+        let mut source = GlyphsIrSource::new(glyphs_file);
+        let input = source.inputs().unwrap();
+        (
+            source,
+            Context::new_root(
+                false,
+                Paths::new(Path::new("/nothing/should/write/here")),
+                input,
+            ),
+        )
+    }
+
+    #[test]
+    fn static_metadata_ir() {
+        let (source, context) = context_for(glyphs3_dir().join("WghtVar.glyphs"));
+        let task_context = context.copy_for_work(WorkIdentifier::StaticMetadata, None);
+        source
+            .create_static_metadata_work(&context)
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+
+        assert_eq!(
+            vec!["wght"],
+            context
+                .get_static_metadata()
+                .axes
+                .iter()
+                .map(|a| &a.tag)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec!["space", "exclam", "hyphen"],
+            context.get_static_metadata().glyph_order
+        );
+    }
+
+    #[test]
+    fn glyph_ir() {
+        let (source, context) = context_for(glyphs3_dir().join("WghtVar.glyphs"));
+        source
+            .create_static_metadata_work(&context)
+            .unwrap()
+            .exec(&context)
+            .unwrap();
+        let work = source
+            .create_glyph_ir_work(&HashSet::from(["exclam"]), &context)
+            .unwrap();
+        assert_eq!(1, work.len());
+        let work = &work[0];
+        work.exec(&context).unwrap();
+
+        let gid = context
+            .get_static_metadata()
+            .glyph_order
+            .iter()
+            .position(|g| g == "exclam")
+            .unwrap();
+        let glyph_ir = context.get_glyph_ir(gid as u32);
+        assert_eq!("exclam", glyph_ir.name);
     }
 }

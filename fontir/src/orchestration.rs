@@ -4,17 +4,25 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    fs::File,
+    io::BufWriter,
+    path::Path,
     sync::Arc,
 };
 
 use parking_lot::RwLock;
+use serde::Serialize;
 
-use crate::ir;
+use crate::{
+    ir,
+    source::{Input, Paths},
+};
 
 // Unique identifier of work. If there are no fields work is unique.
+// Meant to be small and cheap to copy around.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum WorkIdentifier {
-    GlobalMetadata,
+    StaticMetadata,
     GlyphIr(u32),
     FinishIr,
 }
@@ -27,6 +35,15 @@ const MISSING_DATA: &str = "Missing data, dependency management failed us?";
 /// access with spawned tasks. Copies with access control are created to detect bad
 /// execution order / mistakes, not to block actual bad actors.
 pub struct Context {
+    // If set IR will be emitted to disk when written into Context
+    emit_ir: bool,
+
+    paths: Arc<Paths>,
+
+    // The input we're working on. Note that change detection may mean we only process
+    // a subset of the full input.
+    pub input: Arc<Input>,
+
     // If present, the one and only key you are allowed to write to
     // Otherwise you totally get to write whatever you like
     write_mask: Option<WorkIdentifier>,
@@ -55,8 +72,11 @@ impl<T: Default> Cache<T> {
 }
 
 impl Context {
-    pub fn new_root() -> Context {
+    pub fn new_root(emit_ir: bool, paths: Paths, input: Input) -> Context {
         Context {
+            emit_ir,
+            paths: Arc::from(paths),
+            input: Arc::from(input),
             write_mask: None,
             read_mask: None,
             static_metadata: Cache::new(),
@@ -69,11 +89,14 @@ impl Context {
     pub fn copy_for_work(
         &self,
         work_id: WorkIdentifier,
-        dependencies: HashSet<WorkIdentifier>,
+        dependencies: Option<HashSet<WorkIdentifier>>,
     ) -> Context {
         Context {
+            emit_ir: self.emit_ir,
+            paths: self.paths.clone(),
+            input: self.input.clone(),
             write_mask: Some(work_id),
-            read_mask: Some(dependencies),
+            read_mask: dependencies.or_else(|| Some(HashSet::new())),
             static_metadata: self.static_metadata.clone(),
             glyph_ir: self.glyph_ir.clone(),
         }
@@ -96,27 +119,45 @@ impl Context {
         }
     }
 
+    fn maybe_persist<V>(&self, file: &Path, content: &V)
+    where
+        V: ?Sized + Serialize,
+    {
+        if !self.emit_ir {
+            return;
+        }
+        let raw_file = File::create(file)
+            .map_err(|e| panic!("Unable to write {:?} {}", file, e))
+            .unwrap();
+        let buf_io = BufWriter::new(raw_file);
+        serde_yaml::to_writer(buf_io, &content)
+            .map_err(|e| panic!("Unable to serialize to {:?}: {}", file, e))
+            .unwrap();
+    }
+
     pub fn get_static_metadata(&self) -> Arc<ir::StaticMetadata> {
-        self.check_read_access(&WorkIdentifier::GlobalMetadata);
+        self.check_read_access(&WorkIdentifier::StaticMetadata);
         let rl = self.static_metadata.item.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
-    pub fn set_static_metadata(&self, global_metadata: ir::StaticMetadata) {
-        self.check_write_access(&WorkIdentifier::GlobalMetadata);
+    pub fn set_static_metadata(&self, static_metadata: ir::StaticMetadata) {
+        self.check_write_access(&WorkIdentifier::StaticMetadata);
+        self.maybe_persist(&self.paths.static_metadata_ir_file(), &static_metadata);
         let mut wl = self.static_metadata.item.write();
-        *wl = Some(Arc::from(global_metadata));
+        *wl = Some(Arc::from(static_metadata));
     }
 
-    pub fn get_glyph_ir(&self, glyph_order: u32) -> Arc<ir::Glyph> {
-        self.check_read_access(&WorkIdentifier::GlyphIr(glyph_order));
+    pub fn get_glyph_ir(&self, glyph_id: u32) -> Arc<ir::Glyph> {
+        self.check_read_access(&WorkIdentifier::GlyphIr(glyph_id));
         let rl = self.glyph_ir.item.read();
-        rl.get(&glyph_order).expect(MISSING_DATA).clone()
+        rl.get(&glyph_id).expect(MISSING_DATA).clone()
     }
 
-    pub fn set_glyph_ir(&self, glyph_order: u32, ir: ir::Glyph) {
-        self.check_write_access(&WorkIdentifier::GlyphIr(glyph_order));
+    pub fn set_glyph_ir(&self, glyph_id: u32, ir: ir::Glyph) {
+        self.check_write_access(&WorkIdentifier::GlyphIr(glyph_id));
+        self.maybe_persist(&self.paths.glyph_ir_file(&ir.name), &ir);
         let mut wl = self.glyph_ir.item.write();
-        wl.insert(glyph_order, Arc::from(ir));
+        wl.insert(glyph_id, Arc::from(ir));
     }
 }

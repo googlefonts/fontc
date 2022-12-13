@@ -4,7 +4,7 @@
 //! There are lots of other ways this could go, including something serde-like
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
 use std::{fs, path};
 
@@ -25,8 +25,21 @@ const V3_METRIC_NAMES: [&str; 5] = [
 ];
 const V2_METRIC_NAMES: [&str; 5] = ["ascender", "baseline", "descender", "capHeight", "xHeight"];
 
-#[derive(Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Font {
+    pub family_name: String,
+    pub axes: Vec<Axis>,
+    pub font_master: Vec<FontMaster>,
+    pub default_master_idx: usize,
+    pub glyphs: BTreeMap<String, Glyph>,
+    pub glyph_order: Vec<String>,
+    pub codepoints: BTreeMap<Vec<u32>, String>,
+}
+
+// The font you get directly from a plist, minimally modified
+// Types chosen specifically to accomodate plist translation.
+#[derive(Debug, FromPlist, PartialEq, Eq, Hash)]
+struct RawFont {
     pub family_name: String,
     pub axes: Option<Vec<Axis>>,
     pub glyphs: Vec<Glyph>,
@@ -39,13 +52,13 @@ pub struct Font {
 pub struct Axis {
     pub name: String,
     pub tag: String,
+    pub hidden: Option<bool>,
 }
 
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Glyph {
     pub layers: Vec<Layer>,
     pub glyphname: String,
-    pub codepoints: Option<Vec<i64>>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }
@@ -130,22 +143,12 @@ pub struct Anchor {
     pub position: Point,
 }
 
-#[derive(Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
 pub struct FontMaster {
     pub id: String,
     pub axes_values: Option<Vec<OrderedFloat<f64>>>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
-}
-
-impl Font {
-    pub fn get_glyph(&self, glyphname: &str) -> Option<&Glyph> {
-        self.glyphs.iter().find(|g| g.glyphname == glyphname)
-    }
-
-    pub fn get_glyph_mut(&mut self, glyphname: &str) -> Option<&mut Glyph> {
-        self.glyphs.iter_mut().find(|g| g.glyphname == glyphname)
-    }
 }
 
 impl Glyph {
@@ -291,7 +294,7 @@ fn fix_glyphs_named_infinity(
     })
 }
 
-fn custom_params(other_stuff: &mut BTreeMap<String, Plist>) -> Option<&mut Vec<Plist>> {
+fn custom_params_mut(other_stuff: &mut BTreeMap<String, Plist>) -> Option<&mut Vec<Plist>> {
     let custom_params = other_stuff.get_mut("customParameters");
     custom_params.as_ref()?;
     let Some(Plist::Array(custom_params)) = custom_params else {
@@ -301,11 +304,11 @@ fn custom_params(other_stuff: &mut BTreeMap<String, Plist>) -> Option<&mut Vec<P
     Some(custom_params)
 }
 
-fn custom_param<'a>(
+fn custom_param_mut<'a>(
     other_stuff: &'a mut BTreeMap<String, Plist>,
     key: &str,
 ) -> Option<(usize, &'a mut Plist)> {
-    let Some(custom_params) = custom_params(other_stuff) else {
+    let Some(custom_params) = custom_params_mut(other_stuff) else {
         warn!("customParameters isn't an array, omg omg omg");
         return None;
     };
@@ -343,20 +346,41 @@ fn glyphs_v2_field_name_and_default(nth_axis: usize) -> Result<(&'static str, f6
     })
 }
 
-impl Font {
-    fn parse_codepoints(&mut self, radix: u32) {
-        for glyph in self.glyphs.iter_mut() {
-            if let Some(Plist::String(val)) = glyph.other_stuff.remove("unicode") {
-                let codepoints: Vec<i64> = val
-                    .split(',')
-                    .into_iter()
-                    .map(|v| i64::from_str_radix(v, radix).unwrap())
-                    .collect();
-                glyph.codepoints = Some(codepoints);
-            };
+fn custom_params(other_stuff: &BTreeMap<String, Plist>) -> Option<&Vec<Plist>> {
+    let custom_params = other_stuff.get("customParameters");
+    custom_params.as_ref()?;
+    let Some(Plist::Array(custom_params)) = custom_params else {
+        warn!("customParameters isn't an array, omg omg omg");
+        return None;
+    };
+    Some(custom_params)
+}
+
+fn custom_param<'a>(
+    other_stuff: &'a BTreeMap<String, Plist>,
+    key: &str,
+) -> Option<(usize, &'a Plist)> {
+    let Some(custom_params) = custom_params(other_stuff) else {
+        warn!("customParameters isn't an array, omg omg omg");
+        return None;
+    };
+
+    let name_key = "name".to_string();
+    for (idx, custom_param) in custom_params.iter().enumerate() {
+        let Plist::Dictionary(dict) = custom_param else {
+            continue;
+        };
+        let Some(Plist::String(param_key)) = dict.get(&name_key) else {
+            continue;
+        };
+        if key == param_key {
+            return Some((idx, custom_param));
         }
     }
+    None
+}
 
+impl RawFont {
     fn is_v2(&self) -> bool {
         let mut is_v2 = true;
         if let Some(Plist::Integer(version)) = self.other_stuff.get(".formatVersion") {
@@ -370,7 +394,7 @@ impl Font {
         if self.axes.is_none() {
             self.axes = Some(Vec::new());
         }
-        if let Some((axes_idx, custom_param)) = custom_param(&mut self.other_stuff, "Axes") {
+        if let Some((axes_idx, custom_param)) = custom_param_mut(&mut self.other_stuff, "Axes") {
             if let Plist::Dictionary(dict) = custom_param {
                 let v3_axes = self.axes.as_mut().unwrap();
                 let Some(Plist::Array(v2_axes)) = dict.get_mut("value") else {
@@ -385,10 +409,11 @@ impl Font {
                     v3_axes.push(Axis {
                         name: v2_axis.get("Name").unwrap().as_str().unwrap().into(),
                         tag: tag.into(),
+                        hidden: v2_axis.get("hidden").map(|v| v.as_i64() == Some(1)),
                     });
                 }
             }
-            custom_params(&mut self.other_stuff).map(|p| p.remove(axes_idx));
+            custom_params_mut(&mut self.other_stuff).map(|p| p.remove(axes_idx));
         }
 
         // Match the defaults from https://github.com/googlefonts/glyphsLib/blob/f6e9c4a29ce764d34c309caef5118c48c156be36/Lib/glyphsLib/builder/axes.py#L526
@@ -398,14 +423,17 @@ impl Font {
             axes.push(Axis {
                 name: "Weight".into(),
                 tag: "wght".into(),
+                hidden: None,
             });
             axes.push(Axis {
                 name: "Width".into(),
                 tag: "wdth".into(),
+                hidden: None,
             });
             axes.push(Axis {
                 name: "Custom".into(),
                 tag: "XXXX".into(),
+                hidden: None,
             });
         }
 
@@ -440,7 +468,7 @@ impl Font {
             master.axes_values = Some(axis_values);
         }
 
-        if custom_params(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
+        if custom_params_mut(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
             self.other_stuff.remove("customParameters");
         }
         Ok(tags)
@@ -563,6 +591,107 @@ impl Font {
     }
 }
 
+fn parse_glyph_order(raw_font: &RawFont) -> Vec<String> {
+    let mut valid_names: HashSet<_> = raw_font.glyphs.iter().map(|g| &g.glyphname).collect();
+    let mut glyph_order = Vec::new();
+
+    // Add all valid glyphOrder entries in order
+    // See https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044627972
+    if let Some((_, Plist::Dictionary(dict))) = custom_param(&raw_font.other_stuff, "glyphOrder") {
+        if let Some(Plist::Array(entries)) = dict.get("value") {
+            entries
+                .iter()
+                .filter_map(|e| e.as_str())
+                .map(|s| s.to_string())
+                .for_each(|s| {
+                    if valid_names.remove(&s) {
+                        glyph_order.push(s);
+                    }
+                });
+        };
+    };
+
+    // Add anything left over in file order
+    raw_font
+        .glyphs
+        .iter()
+        .filter(|g| valid_names.contains(&g.glyphname))
+        .for_each(|g| glyph_order.push(g.glyphname.clone()));
+
+    glyph_order
+}
+
+fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<Vec<u32>, String> {
+    let mut cp_to_name = BTreeMap::new();
+    for glyph in raw_font.glyphs.iter_mut() {
+        if let Some(Plist::String(val)) = glyph.other_stuff.remove("unicode") {
+            let codepoints = val
+                .split(',')
+                .into_iter()
+                .map(|v| i64::from_str_radix(v, radix).unwrap() as u32)
+                .collect();
+            cp_to_name.insert(codepoints, glyph.glyphname.clone());
+        };
+    }
+    cp_to_name
+}
+
+fn default_master_idx(raw_font: &RawFont) -> usize {
+    // https://github.com/googlefonts/fontmake-rs/issues/44
+    custom_param(&raw_font.other_stuff, "Variable Font Origin")
+        .map(|(_, param)| {
+            let Plist::Dictionary(dict) = param else {
+                return 0;
+            };
+            let Some(Plist::String(origin)) = dict.get("value") else {
+                warn!("Incomprehensible Variable Font Origin");
+                return 0;
+            };
+            raw_font
+                .font_master
+                .iter()
+                .enumerate()
+                .find(|(_, master)| &master.id == origin)
+                .map(|(idx, _)| idx)
+                .unwrap_or(0)
+        })
+        .unwrap_or(0)
+}
+
+impl From<RawFont> for Font {
+    fn from(mut from: RawFont) -> Self {
+        let radix = if from.is_v2() { 16 } else { 10 };
+        from.other_stuff.remove("date"); // exists purely to make diffs fail
+        from.other_stuff.remove(".formatVersion"); // no longer relevent
+
+        let glyph_order = parse_glyph_order(&from);
+        let codepoints = parse_codepoints(&mut from, radix);
+
+        let default_master_idx = default_master_idx(&from);
+
+        for glyph in from.glyphs.iter_mut() {
+            glyph.other_stuff.remove("lastChange");
+        }
+
+        let glyphs = from.glyphs;
+        from.glyphs = Vec::new();
+        let glyphs = glyphs
+            .into_iter()
+            .map(|g| (g.glyphname.clone(), g))
+            .collect();
+
+        Font {
+            family_name: from.family_name,
+            axes: from.axes.unwrap_or_default(),
+            font_master: from.font_master,
+            default_master_idx,
+            glyphs,
+            glyph_order,
+            codepoints,
+        }
+    }
+}
+
 impl Font {
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
         let raw_content = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
@@ -585,18 +714,16 @@ impl Font {
         fix_glyphs_named_infinity(glyphs_file, root_dict)?;
 
         // Try to migrate glyphs2 to glyphs3
-        let mut font = Font::from_plist(raw_content);
-        let mut radix = 10;
-        if font.is_v2() {
-            font.v2_to_v3()?;
-            radix = 16;
+        let mut raw_font = RawFont::from_plist(raw_content);
+        if raw_font.is_v2() {
+            raw_font.v2_to_v3()?;
         }
-        font.parse_codepoints(radix);
 
-        font.other_stuff.remove("date"); // exists purely to make diffs fail
-        font.other_stuff.remove(".formatVersion"); // no longer relevent
+        Ok(raw_font.into())
+    }
 
-        Ok(font)
+    pub fn default_master(&self) -> &FontMaster {
+        &self.font_master[self.default_master_idx]
     }
 }
 
@@ -680,7 +807,6 @@ mod tests {
         let font = Font::load(&glyphs2_dir().join("WghtVar_ImplicitAxes.glyphs")).unwrap();
         assert_eq!(
             font.axes
-                .unwrap()
                 .iter()
                 .map(|a| a.tag.as_str())
                 .collect::<Vec<&str>>(),
@@ -691,31 +817,76 @@ mod tests {
     #[test]
     fn understand_v2_style_unquoted_hex_unicode() {
         let font = Font::load(&glyphs2_dir().join("Unicode-UnquotedHex.glyphs")).unwrap();
-        assert_eq!(Some(vec![0x1234_i64]), font.glyphs[0].codepoints);
+        assert_eq!("name", font.codepoints[&vec![0x1234]]);
         assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v2_style_quoted_hex_unicode_sequence() {
         let font = Font::load(&glyphs2_dir().join("Unicode-QuotedHexSequence.glyphs")).unwrap();
-        assert_eq!(
-            Some(vec![0x2044_i64, 0x200D_i64, 0x2215_i64]),
-            font.glyphs[0].codepoints
-        );
+        assert_eq!("name", font.codepoints[&vec![0x2044, 0x200D, 0x2215]]);
         assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v3_style_unquoted_decimal_unicode() {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDec.glyphs")).unwrap();
-        assert_eq!(Some(vec![182_i64]), font.glyphs[0].codepoints);
+        assert_eq!("name", font.codepoints[&vec![182]]);
         assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v3_style_unquoted_decimal_unicode_sequence() {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs")).unwrap();
-        assert_eq!(Some(vec![1619_i64, 1764_i64]), font.glyphs[0].codepoints);
+        assert_eq!("name", font.codepoints[&vec![1619, 1764]]);
         assert_eq!(1, font.glyphs.len());
+    }
+
+    #[test]
+    fn axes_not_hidden() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        assert_eq!(
+            font.axes.iter().map(|a| a.hidden).collect::<Vec<_>>(),
+            vec![None]
+        );
+    }
+
+    #[test]
+    fn axis_hidden() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_3master_CustomOrigin.glyphs")).unwrap();
+        assert_eq!(
+            font.axes.iter().map(|a| a.hidden).collect::<Vec<_>>(),
+            vec![Some(true)]
+        );
+    }
+
+    #[test]
+    fn vf_origin_single_axis_default() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        assert_eq!(0, font.default_master_idx);
+    }
+
+    #[test]
+    fn vf_origin_multi_axis_default() {
+        let font = Font::load(&glyphs2_dir().join("WghtVar_ImplicitAxes.glyphs")).unwrap();
+        assert_eq!(0, font.default_master_idx);
+    }
+
+    #[test]
+    fn vf_origin_multi_axis_custom() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_3master_CustomOrigin.glyphs")).unwrap();
+        assert_eq!(2, font.default_master_idx);
+    }
+
+    #[test]
+    fn glyph_order_default_is_file_order() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        assert_eq!(vec!["space", "exclam", "hyphen"], font.glyph_order);
+    }
+
+    #[test]
+    fn glyph_order_override_obeyed() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_GlyphOrder.glyphs")).unwrap();
+        assert_eq!(vec!["hyphen", "space", "exclam"], font.glyph_order);
     }
 }
