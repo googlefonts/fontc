@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use fontir::{
-    coords::{
-        temporary_design_to_user_conversion, DesignSpaceCoord, UserSpaceCoord, UserSpaceLocation,
-    },
+    coords::{DesignSpaceCoord, UserSpaceCoord, UserSpaceLocation},
     ir,
     piecewise_linear_map::PiecewiseLinearMap,
 };
@@ -13,13 +11,32 @@ use ordered_float::OrderedFloat;
 
 use crate::error::Error;
 
+pub struct CoordConverter {
+    axes_by_name: HashMap<String, ir::Axis>,
+}
+
+impl CoordConverter {
+    pub fn new<'a>(axes: impl Iterator<Item = &'a designspace::Axis>) -> CoordConverter {
+        CoordConverter {
+            axes_by_name: axes.map(|a| (a.name.clone(), to_ir_axis(a))).collect(),
+        }
+    }
+
+    pub fn to_user(&self, axis_name: &str, value: DesignSpaceCoord) -> Option<UserSpaceCoord> {
+        self.axes_by_name
+            .get(axis_name)
+            .map(|axis| UserSpaceCoord::new(axis.design_to_user.map(value.into_inner())))
+    }
+}
+
 // TODO we will need the ability to map coordinates and a test font that does. Then no unwrap.
-pub(crate) fn to_ir_location(loc: &[Dimension]) -> UserSpaceLocation {
+pub(crate) fn to_ir_location(converter: &CoordConverter, loc: &[Dimension]) -> UserSpaceLocation {
     loc.iter()
         .map(|d| {
             // TODO: what if d has uservalue (new in DS5.0)
-            let coord = DesignSpaceCoord::new(OrderedFloat(d.xvalue.unwrap()));
-            let coord = temporary_design_to_user_conversion(coord);
+            let coord = converter
+                .to_user(&d.name, DesignSpaceCoord::new(d.xvalue.unwrap().into()))
+                .unwrap();
             (d.name.clone(), coord)
         })
         .collect()
@@ -38,7 +55,6 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
     } else {
         PiecewiseLinearMap::nop()
     };
-    eprintln!("{:#?}", axis);
     ir::Axis {
         name: axis.name.clone(),
         tag: axis.tag.clone(),

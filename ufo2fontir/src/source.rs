@@ -12,11 +12,11 @@ use fontir::{
     source::{Input, Source, Work},
     stateset::{StateIdentifier, StateSet},
 };
-use log::debug;
+use log::{debug, warn};
 use norad::designspace::{self, DesignSpaceDocument};
 use ordered_float::OrderedFloat;
 
-use crate::toir::{to_ir_axis, to_ir_glyph, to_ir_location};
+use crate::toir::{to_ir_axis, to_ir_glyph, to_ir_location, CoordConverter};
 
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
@@ -182,6 +182,7 @@ impl DesignSpaceIrSource {
 impl Source for DesignSpaceIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         let designspace = self.load_designspace()?;
+        let converter = CoordConverter::new(designspace.axes.iter());
         let global_metadata = self.global_rebuild_triggers(&designspace)?;
 
         // glif filenames are not reversible so we need to read contents.plist to figure out groups
@@ -198,7 +199,7 @@ impl Source for DesignSpaceIrSource {
             // The UFO dir *must* exist since we were able to find fontinfo in it earlier
             let ufo_dir = self.designspace_dir.join(&source.filename);
 
-            let location = to_ir_location(&source.location);
+            let location = to_ir_location(&converter, &source.location);
 
             for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, source)? {
                 if !glif_file.exists() {
@@ -304,15 +305,22 @@ struct StaticMetadataWork {
 }
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<&designspace::Source> {
+    let converter = CoordConverter::new(designspace.axes.iter());
     let default_location: UserSpaceLocation = designspace
         .axes
         .iter()
         .map(|a| (a.name.clone(), UserSpaceCoord::new(OrderedFloat(a.default))))
         .collect();
-    designspace
+    let result = designspace
         .sources
         .iter()
-        .find(|source| to_ir_location(&source.location) == default_location)
+        .find(|source| to_ir_location(&converter, &source.location) == default_location);
+    if result.is_none() {
+        warn!("No default master at {:#?}", default_location)
+    } else {
+        debug!("Default master {:#?}", result);
+    }
+    result
 }
 
 fn load_lib_plist(ufo_dir: &Path) -> Result<plist::Dictionary, WorkError> {
@@ -417,7 +425,7 @@ mod tests {
     use norad::designspace;
     use ordered_float::OrderedFloat;
 
-    use crate::toir::to_ir_location;
+    use crate::toir::{to_ir_location, CoordConverter};
 
     use super::{default_master, glif_files, glyph_order, DesignSpaceIrSource};
 
@@ -465,8 +473,8 @@ mod tests {
         );
     }
 
-    fn test_source() -> (DesignSpaceIrSource, Input) {
-        let mut source = DesignSpaceIrSource::new(testdata_dir().join("wght_var.designspace"));
+    fn test_source(designspace_file: &str) -> (DesignSpaceIrSource, Input) {
+        let mut source = DesignSpaceIrSource::new(testdata_dir().join(designspace_file));
         let input = source.inputs().unwrap();
         (source, input)
     }
@@ -488,7 +496,7 @@ mod tests {
 
     #[test]
     pub fn create_work() {
-        let (ir_source, input) = test_source();
+        let (ir_source, input) = test_source("wght_var.designspace");
 
         let work = ir_source.create_work_for_one_glyph("bar", &input).unwrap();
 
@@ -516,7 +524,7 @@ mod tests {
 
     #[test]
     pub fn create_sparse_work() {
-        let (ir_source, input) = test_source();
+        let (ir_source, input) = test_source("wght_var.designspace");
 
         let work = ir_source.create_work_for_one_glyph("plus", &input).unwrap();
 
@@ -539,16 +547,38 @@ mod tests {
 
     #[test]
     pub fn find_default_master() {
-        let (source, _) = test_source();
+        let (source, _) = test_source("wght_var.designspace");
         let ds = source.load_designspace().unwrap();
+        let converter = CoordConverter::new(ds.axes.iter());
         let mut expected = UserSpaceLocation::new();
         expected.insert(
             "Weight".to_string(),
-            UserSpaceCoord::new(OrderedFloat(400_f32)),
+            UserSpaceCoord::new(OrderedFloat(400.0)),
         );
         assert_eq!(
             expected,
-            to_ir_location(&default_master(&ds).unwrap().location)
+            to_ir_location(&converter, &default_master(&ds).unwrap().location)
+        );
+    }
+
+    #[test]
+    pub fn find_default_master_with_mapping() {
+        let (source, _) = test_source("mapping.designspace");
+        let ds = source.load_designspace().unwrap();
+        let converter = CoordConverter::new(ds.axes.iter());
+        let mut expected = UserSpaceLocation::new();
+        expected.insert(
+            "weight".to_string(),
+            UserSpaceCoord::new(OrderedFloat(400.0)),
+        );
+        expected.insert(
+            "width".to_string(),
+            UserSpaceCoord::new(OrderedFloat(100.0)),
+        );
+        expected.insert("italic".to_string(), UserSpaceCoord::new(OrderedFloat(0.0)));
+        assert_eq!(
+            expected,
+            to_ir_location(&converter, &default_master(&ds).unwrap().location)
         );
     }
 
@@ -556,7 +586,7 @@ mod tests {
     pub fn builds_glyph_order() {
         // Only WghtVar-Regular.ufo has a lib.plist, and it only lists a subset of glyphs
         // Should still work.
-        let (source, _) = test_source();
+        let (source, _) = test_source("wght_var.designspace");
         let ds = source.load_designspace().unwrap();
         let go = glyph_order(
             &ds,
@@ -571,7 +601,4 @@ mod tests {
         // lib.plist specifies plus, so plus goes first and then the rest in alphabetical order
         assert_eq!(vec!["plus", "an-imaginary-one", "bar"], go);
     }
-
-    #[test]
-    pub fn maps_to_userspace() {}
 }
