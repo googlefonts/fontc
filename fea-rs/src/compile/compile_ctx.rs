@@ -1069,18 +1069,12 @@ impl<'a> CompilationCtx<'a> {
             if let Some(node) = typed::SizeMenuName::cast(statement) {
                 size.names.push(self.resolve_name_spec(&node.spec()));
             } else if let Some(node) = typed::Parameters::cast(statement) {
-                size.params.design_size = resolve_decipoint(&node.design_size());
-                size.params.identifier = node.subfamily().parse_unsigned().unwrap();
-                size.params.range_start = node
-                    .range_start()
-                    .as_ref()
-                    .map(resolve_decipoint)
-                    .unwrap_or(0);
-                size.params.range_end = node
-                    .range_end()
-                    .as_ref()
-                    .map(resolve_decipoint)
-                    .unwrap_or(0);
+                size.design_size = resolve_decipoint(&node.design_size());
+                size.identifier = node.subfamily().parse_unsigned().unwrap();
+                if size.identifier != 0 {
+                    size.range_start = resolve_decipoint(&node.range_start().unwrap());
+                    size.range_end = resolve_decipoint(&node.range_end().unwrap());
+                }
             }
         }
         let key = FeatureKey::for_feature(common::tags::SIZE);

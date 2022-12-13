@@ -13,7 +13,7 @@ use write_fonts::{
 use super::{
     common,
     lookups::{AllLookups, FeatureKey, LookupId},
-    tables::{NameSpec, Tables},
+    tables::{NameBuilder, NameSpec, Tables},
 };
 
 use crate::{Diagnostic, GlyphMap};
@@ -32,8 +32,11 @@ pub struct Compilation {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct SizeFeature {
-    pub params: SizeParams,
+pub(crate) struct SizeFeature {
+    pub design_size: u16,
+    pub identifier: u16,
+    pub range_start: u16,
+    pub range_end: u16,
     pub names: Vec<NameSpec>,
 }
 
@@ -95,10 +98,9 @@ impl Compilation {
 
         let mut feature_params = HashMap::new();
         if let Some(size) = self.size.as_ref() {
-            name_builder.add_anon_group(&size.names);
             feature_params.insert(
                 (common::tags::GPOS, common::tags::SIZE),
-                FeatureParams::Size(size.params.clone()),
+                FeatureParams::Size(size.build(&mut name_builder)),
             );
         }
 
@@ -160,5 +162,24 @@ impl Compilation {
         }
 
         Ok(builder)
+    }
+}
+
+impl SizeFeature {
+    fn build(&self, names: &mut NameBuilder) -> SizeParams {
+        let name_entry = if self.identifier == 0 {
+            assert!(self.names.is_empty());
+            0
+        } else {
+            assert!(!self.names.is_empty());
+            names.add_anon_group(&self.names)
+        };
+        SizeParams {
+            design_size: self.design_size,
+            identifier: self.identifier,
+            name_entry,
+            range_start: self.range_start,
+            range_end: self.range_end,
+        }
     }
 }
