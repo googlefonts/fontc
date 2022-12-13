@@ -9,7 +9,7 @@ There are three main classes of coordinates in fonts:
    * Used by the type designer and design tool
    * Not directly present in the font binary at all
    * For example, [<dimension xvalue/>](https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#dimension) in a .designspace file
-1. User, aka External, coordainates
+1. User, aka External, coordinates
    * The values in [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar), for example Weight 400
    * What you would expose to an end user in a document editor or manipulate via CSS
 1. Internal, or normalized, coordinates
