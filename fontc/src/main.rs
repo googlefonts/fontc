@@ -103,6 +103,9 @@ fn init(build_dir: &Path, args: Args) -> Result<(Config, Input), io::Error> {
 }
 
 fn ir_source(source: &Path) -> Result<Box<dyn Source>, Error> {
+    if !source.exists() {
+        return Err(Error::FileExpected(source.to_path_buf()));
+    }
     let ext = source
         .extension()
         .and_then(OsStr::to_str)
