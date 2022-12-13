@@ -35,6 +35,8 @@ pub enum Error {
     InvalidGlobalMetadata,
     #[error("No default master in {0:?}")]
     NoDefaultMaster(PathBuf),
+    #[error("No formatVersion in {0:?}")]
+    InvalidMetainfo(PathBuf),
 }
 
 /// An async work error, hence one that must be Send

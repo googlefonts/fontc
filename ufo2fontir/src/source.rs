@@ -98,6 +98,10 @@ fn glif_files<'a>(
 }
 
 fn layer_contents(ufo_dir: &Path) -> Result<HashMap<String, PathBuf>, Error> {
+    if ufo_version(ufo_dir)? < 3 {
+        // There is no layer contents file in v2
+        return Ok(HashMap::new());
+    }
     let file = ufo_dir.join("layercontents.plist");
     if !file.is_file() {
         return Err(Error::FileExpected(file));
@@ -128,6 +132,16 @@ pub(crate) fn layer_dir<'a>(
         .ok_or_else(|| Error::NoSuchLayer(source.filename.clone()))
 }
 
+pub(crate) fn ufo_version(ufo_dir: &Path) -> Result<u32, Error> {
+    let metainfo_file = ufo_dir.join("metainfo.plist");
+    let metainfo = load_plist_dict(&metainfo_file)
+        .map_err(|e| Error::ParseError(metainfo_file.clone(), format!("{}", e)))?;
+    let Some(plist::Value::Integer(version)) = metainfo.get("formatVersion") else {
+        return Err(Error::InvalidMetainfo(metainfo_file));
+    };
+    Ok(version.as_unsigned().unwrap() as u32)
+}
+
 impl DesignSpaceIrSource {
     fn load_designspace(&self) -> Result<DesignSpaceDocument, Error> {
         DesignSpaceDocument::load(&self.designspace_file)
@@ -146,9 +160,19 @@ impl DesignSpaceIrSource {
 
         for source in designspace.sources.iter() {
             let ufo_dir = self.designspace_dir.join(&source.filename);
-            for filename in ["fontinfo.plist", "layercontents.plist", "lib.plist"] {
+            let ufo_version = ufo_version(&ufo_dir)?;
+            for filename in [
+                "metainfo.plist",
+                "fontinfo.plist",
+                "layercontents.plist",
+                "lib.plist",
+            ] {
                 // Only track lib.plist for the default master
                 if filename == "lib.plist" && source != default_master {
+                    continue;
+                }
+                // No layercontents.plist until v3
+                if filename == "layercontents.plist" && ufo_version < 3 {
                     continue;
                 }
 
@@ -323,15 +347,14 @@ fn default_master(designspace: &DesignSpaceDocument) -> Option<&designspace::Sou
     result
 }
 
-fn load_lib_plist(ufo_dir: &Path) -> Result<plist::Dictionary, WorkError> {
-    let lib_plist_file = ufo_dir.join("lib.plist");
-    if !lib_plist_file.is_file() {
-        return Err(WorkError::FileExpected(lib_plist_file));
+fn load_plist_dict(file: &Path) -> Result<plist::Dictionary, WorkError> {
+    if !file.is_file() {
+        return Err(WorkError::FileExpected(file.to_path_buf()));
     }
-    plist::Value::from_file(&lib_plist_file)
-        .map_err(|e| WorkError::ParseError(lib_plist_file.clone(), format!("{}", e)))?
+    plist::Value::from_file(file)
+        .map_err(|e| WorkError::ParseError(file.to_path_buf(), format!("{}", e)))?
         .into_dictionary()
-        .ok_or_else(|| WorkError::ParseError(lib_plist_file, "Not a dictionary".to_string()))
+        .ok_or_else(|| WorkError::ParseError(file.to_path_buf(), "Not a dictionary".to_string()))
 }
 
 // Per https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044596662
@@ -344,7 +367,7 @@ fn glyph_order(
     // That glyph order *may* deign to overlap with the actual glyph set
     let mut glyph_order = Vec::new();
     if let Some(source) = default_master(designspace) {
-        let lib_plist = load_lib_plist(&designspace_dir.join(&source.filename))?;
+        let lib_plist = load_plist_dict(&designspace_dir.join(&source.filename).join("lib.plist"))?;
         if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
             let mut pending_add: HashSet<_> = glyph_names.iter().map(|s| s.as_str()).collect();
             // Add names from ufo glyph order union glyph_names in ufo glyph order
