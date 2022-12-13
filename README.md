@@ -9,6 +9,8 @@ References
       * [Why IR?](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-14-why-ir.md)
       * [IR notes](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-08-font-compiler-ir.md).
    * Editor perspective [note from Just](https://github.com/googlefonts/oxidize/issues/21)
+   * [Units](resources/text/units.md)
+      * Fonts have all the best units; distinguishing between them turns out to matter.
 
 ## Plan
 
@@ -33,3 +35,4 @@ Once you have them you could try building them:
 ```shell
 cargo run --package fontc -- --source ../google_fonts_sources/sources/ofl/notosanskayahli/sources/NotoSansKayahLi.designspace
 ```
+
