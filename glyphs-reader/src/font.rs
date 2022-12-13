@@ -33,7 +33,7 @@ pub struct Font {
     pub default_master_idx: usize,
     pub glyphs: BTreeMap<String, Glyph>,
     pub glyph_order: Vec<String>,
-    pub codepoints: BTreeMap<String, Vec<u32>>,
+    pub codepoints: BTreeMap<Vec<u32>, String>,
 }
 
 // The font you get directly from a plist, minimally modified
@@ -621,8 +621,8 @@ fn parse_glyph_order(raw_font: &RawFont) -> Vec<String> {
     glyph_order
 }
 
-fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<String, Vec<u32>> {
-    let mut cp_by_name = BTreeMap::new();
+fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<Vec<u32>, String> {
+    let mut cp_to_name = BTreeMap::new();
     for glyph in raw_font.glyphs.iter_mut() {
         if let Some(Plist::String(val)) = glyph.other_stuff.remove("unicode") {
             let codepoints = val
@@ -630,10 +630,10 @@ fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<String, Vec<
                 .into_iter()
                 .map(|v| i64::from_str_radix(v, radix).unwrap() as u32)
                 .collect();
-            cp_by_name.insert(glyph.glyphname.clone(), codepoints);
+            cp_to_name.insert(codepoints, glyph.glyphname.clone());
         };
     }
-    cp_by_name
+    cp_to_name
 }
 
 fn default_master_idx(raw_font: &RawFont) -> usize {
@@ -817,28 +817,28 @@ mod tests {
     #[test]
     fn understand_v2_style_unquoted_hex_unicode() {
         let font = Font::load(&glyphs2_dir().join("Unicode-UnquotedHex.glyphs")).unwrap();
-        assert_eq!(vec![0x1234], font.codepoints["name"]);
+        assert_eq!("name", font.codepoints[&vec![0x1234]]);
         assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v2_style_quoted_hex_unicode_sequence() {
         let font = Font::load(&glyphs2_dir().join("Unicode-QuotedHexSequence.glyphs")).unwrap();
-        assert_eq!(vec![0x2044, 0x200D, 0x2215], font.codepoints["name"]);
+        assert_eq!("name", font.codepoints[&vec![0x2044, 0x200D, 0x2215]]);
         assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v3_style_unquoted_decimal_unicode() {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDec.glyphs")).unwrap();
-        assert_eq!(vec![182], font.codepoints["name"]);
+        assert_eq!("name", font.codepoints[&vec![182]]);
         assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v3_style_unquoted_decimal_unicode_sequence() {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs")).unwrap();
-        assert_eq!(vec![1619, 1764], font.codepoints["name"]);
+        assert_eq!("name", font.codepoints[&vec![1619, 1764]]);
         assert_eq!(1, font.glyphs.len());
     }
 
