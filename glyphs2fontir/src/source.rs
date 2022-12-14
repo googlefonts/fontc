@@ -177,8 +177,6 @@ impl Work for StaticMetadataWork {
             )));
         }
 
-        let defaults = &axis_values[font.default_master_idx];
-
         let axes = font
             .axes
             .iter()
@@ -194,7 +192,9 @@ impl Work for StaticMetadataWork {
                     .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
                     .max()
                     .unwrap();
-                let default = OrderedFloat::<f32>(defaults[idx].into_inner() as f32);
+                let default = OrderedFloat::<f32>(
+                    axis_values[idx][font.default_master_idx].into_inner() as f32,
+                );
 
                 // Given in user
                 let min = UserCoord::new(min);
@@ -263,6 +263,10 @@ mod tests {
         let dir = Path::new("../resources/testdata");
         assert!(dir.is_dir());
         dir.to_path_buf()
+    }
+
+    fn glyphs2_dir() -> PathBuf {
+        testdata_dir().join("glyphs2")
     }
 
     fn glyphs3_dir() -> PathBuf {
@@ -350,6 +354,18 @@ mod tests {
             vec!["space", "exclam", "hyphen"],
             context.get_static_metadata().glyph_order
         );
+    }
+
+    #[test]
+    fn static_metadata_ir_multi_axis() {
+        // Caused index out of bounds due to transposed master and value indices
+        let (source, context) = context_for(glyphs2_dir().join("BadIndexing.glyphs"));
+        let task_context = context.copy_for_work(WorkIdentifier::StaticMetadata, None);
+        source
+            .create_static_metadata_work(&context)
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
     }
 
     #[test]

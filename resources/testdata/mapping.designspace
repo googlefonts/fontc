@@ -1,0 +1,55 @@
+<?xml version='1.0' encoding='utf-8'?>
+<designspace format="3">
+    <!-- derived from Roboto's designspace, largely by deleting unwanted content -->
+    <axes>
+        <axis default="400" maximum="900" minimum="100" name="weight" tag="wght">
+            <labelname xml:lang="en">Weight</labelname>
+            <map input="100" output="-1" />
+            <map input="200" output="-0.825000" />
+            <map input="300" output="-0.550000" />
+            <map input="400" output="-0.100000" />
+            <map input="500" output="0.350000" />
+            <map input="600" output="0.540000" />
+            <map input="700" output="0.730000" />
+            <map input="800" output="0.9275" />
+            <map input="900" output="1.125000" />
+        </axis>
+        <axis default="100" maximum="100" minimum="75" name="width" tag="wdth">
+            <labelname xml:lang="en">Width</labelname>
+        </axis>
+        <axis default="0" maximum="1" minimum="0" name="italic" tag="ital">
+rsheeter marked this conversation as resolved.
+Show resolved
+            <labelname xml:lang="en">Italic</labelname>
+        </axis>
+    </axes>
+    <sources>
+        <!-- Just use the WghtVar ufo's; we're mostly interested in seeing mapping play out -->
+        <source familyname="Mappy" filename="WghtVar-Regular.ufo" name="Mappy-Regular.ufo" stylename="Regular">
+            <info copy="1" />
+            <location>
+                <dimension name="weight" xvalue="-0.100000" />
+                <dimension name="width" xvalue="100" />
+                <dimension name="italic" xvalue="0" />
+            </location>
+        </source>
+        <source familyname="Mappy" filename="WghtVar-Bold.ufo" name="Mappy-ThinItalic.ufo" stylename="Thin Italic">
+            <location>
+                <dimension name="weight" xvalue="-1" />
+                <dimension name="width" xvalue="100" />
+                <dimension name="italic" xvalue="1" />
+            </location>
+        </source>
+    </sources>
+    <instances>
+        <instance familyname="Mappy" stylename="Regular" filename="WghtVar-Regular.ufo" name="Mappy Regular">
+            <location>
+                <dimension name="weight" xvalue="-0.100000" />
+                <dimension name="width" xvalue="100" />
+                <dimension name="italic" xvalue="0" />
+            </location>
+            <kerning />
+            <info />
+        </instance>
+    </instances>
+</designspace>
