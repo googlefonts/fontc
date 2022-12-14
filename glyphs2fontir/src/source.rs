@@ -1,4 +1,4 @@
-use fontir::coords::{CoordConverter, UserCoord};
+use fontir::coords::{CoordConverter, DesignCoord, UserCoord};
 use fontir::error::{Error, WorkError};
 use fontir::ir;
 use fontir::ir::{Axis, StaticMetadata};
@@ -67,6 +67,7 @@ impl GlyphsIrSource {
             glyphs: Default::default(),
             glyph_order: Default::default(),
             codepoints: Default::default(),
+            axis_mappings: font.axis_mappings.clone(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -196,13 +197,49 @@ impl Work for StaticMetadataWork {
                     axis_values[idx][font.default_master_idx].into_inner() as f32,
                 );
 
-                // Given in user
-                let min = UserCoord::new(min);
-                let max = UserCoord::new(max);
-                let default = UserCoord::new(default);
+                // Given in design coords based on a sample file
+                let default = DesignCoord::new(default);
+                let min = DesignCoord::new(min);
+                let max = DesignCoord::new(max);
 
-                // TODO process .glpyhs coordinate conversions
-                let converter = CoordConverter::unmapped(min, default, max);
+                let converter = if font.axis_mappings.contains_key(&a.tag) {
+                    let mappings: Vec<_> = font
+                        .axis_mappings
+                        .get(&a.tag)
+                        .unwrap()
+                        .iter()
+                        .map(|(u, d)| (UserCoord::new(*u), DesignCoord::new(*d)))
+                        .collect();
+                    let default_idx = mappings
+                        .iter()
+                        .position(|(_, dc)| *dc == default)
+                        .unwrap_or_else(|| {
+                            panic!("Must have a mapping for default {:?} on {}", default, a.tag)
+                        });
+                    mappings
+                        .iter()
+                        .position(|(_, dc)| *dc == min)
+                        .unwrap_or_else(|| {
+                            panic!("Must have a mapping for min {:?} on {}", min, a.tag)
+                        });
+                    mappings
+                        .iter()
+                        .position(|(_, dc)| *dc == max)
+                        .unwrap_or_else(|| {
+                            panic!("Must have a mapping for max {:?} on {}", max, a.tag)
+                        });
+                    CoordConverter::new(mappings, default_idx)
+                } else {
+                    // There is no mapping; design == user
+                    let min = UserCoord::new(min.into_inner());
+                    let max = UserCoord::new(max.into_inner());
+                    let default = UserCoord::new(default.into_inner());
+                    CoordConverter::unmapped(min, default, max)
+                };
+
+                let default = default.to_user(&converter);
+                let min = min.to_user(&converter);
+                let max = max.to_user(&converter);
 
                 Axis {
                     name: a.name.clone(),
@@ -249,6 +286,8 @@ mod tests {
     };
 
     use fontir::{
+        coords::{CoordConverter, DesignCoord, UserCoord},
+        ir,
         orchestration::{Context, WorkIdentifier},
         source::{Paths, Source},
         stateset::StateSet,
@@ -366,6 +405,43 @@ mod tests {
             .unwrap()
             .exec(&task_context)
             .unwrap();
+    }
+
+    #[test]
+    fn loads_axis_mappings_from_glyphs2() {
+        let (source, context) = context_for(glyphs2_dir().join("WghtVar_AxisMappings.glyphs"));
+        let task_context = context.copy_for_work(WorkIdentifier::StaticMetadata, None);
+        source
+            .create_static_metadata_work(&context)
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        let static_metadata = context.get_static_metadata();
+
+        // Did you load the mappings? DID YOU?!
+        assert_eq!(
+            vec![ir::Axis {
+                name: "Weight".into(),
+                tag: "wght".into(),
+                min: UserCoord::new(100.0),
+                default: UserCoord::new(500.0),
+                max: UserCoord::new(700.0),
+                hidden: false,
+                converter: CoordConverter::new(
+                    vec![
+                        (UserCoord::new(100.0), DesignCoord::new(40.0)),
+                        (UserCoord::new(200.0), DesignCoord::new(46.0)),
+                        (UserCoord::new(300.0), DesignCoord::new(51.0)),
+                        (UserCoord::new(400.0), DesignCoord::new(57.0)),
+                        (UserCoord::new(500.0), DesignCoord::new(62.0)), // default
+                        (UserCoord::new(600.0), DesignCoord::new(68.0)),
+                        (UserCoord::new(700.0), DesignCoord::new(73.0)),
+                    ],
+                    4
+                ),
+            }],
+            static_metadata.axes
+        );
     }
 
     #[test]

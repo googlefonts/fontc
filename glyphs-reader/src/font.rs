@@ -25,6 +25,8 @@ const V3_METRIC_NAMES: [&str; 5] = [
 ];
 const V2_METRIC_NAMES: [&str; 5] = ["ascender", "baseline", "descender", "capHeight", "xHeight"];
 
+type RawUserToDesignMapping = Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>;
+
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Font {
     pub family_name: String,
@@ -34,6 +36,8 @@ pub struct Font {
     pub glyphs: BTreeMap<String, Glyph>,
     pub glyph_order: Vec<String>,
     pub codepoints: BTreeMap<Vec<u32>, String>,
+    // tag => (user:design) tuples
+    pub axis_mappings: BTreeMap<String, RawUserToDesignMapping>,
 }
 
 // The font you get directly from a plist, minimally modified
@@ -680,6 +684,26 @@ impl From<RawFont> for Font {
             .map(|g| (g.glyphname.clone(), g))
             .collect();
 
+        let mut axis_mappings: BTreeMap<String, RawUserToDesignMapping> = BTreeMap::new();
+        if let Some((_, axis_map)) = custom_param(&from.other_stuff, "Axis Mappings") {
+            let Plist::Dictionary(axis_map) = axis_map.get("value").unwrap() else {
+                panic!("Incomprehensible axis map");
+            };
+            for (axis_tag, mappings) in axis_map.iter() {
+                let Plist::Dictionary(mappings) = mappings else {
+                    panic!("Incomprehensible mappings");
+                };
+                for (user, design) in mappings.iter() {
+                    let user: f32 = user.parse().unwrap();
+                    let design = design.as_f64().unwrap() as f32;
+                    axis_mappings
+                        .entry(axis_tag.clone())
+                        .or_default()
+                        .push((user.into(), design.into()));
+                }
+            }
+        }
+
         Font {
             family_name: from.family_name,
             axes: from.axes.unwrap_or_default(),
@@ -688,6 +712,7 @@ impl From<RawFont> for Font {
             glyphs,
             glyph_order,
             codepoints,
+            axis_mappings,
         }
     }
 }
@@ -729,9 +754,14 @@ impl Font {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::{
+        collections::BTreeMap,
+        path::{Path, PathBuf},
+    };
 
     use crate::{Font, FromPlist, Node, Plist};
+
+    use ordered_float::OrderedFloat;
 
     use pretty_assertions::assert_eq;
 
@@ -888,5 +918,36 @@ mod tests {
     fn glyph_order_override_obeyed() {
         let font = Font::load(&glyphs3_dir().join("WghtVar_GlyphOrder.glyphs")).unwrap();
         assert_eq!(vec!["hyphen", "space", "exclam"], font.glyph_order);
+    }
+
+    #[test]
+    fn loads_global_axis_mappings_from_glyphs2() {
+        let font = Font::load(&glyphs2_dir().join("WghtVar_AxisMappings.glyphs")).unwrap();
+
+        // Did you load the mappings? DID YOU?!
+        assert_eq!(
+            BTreeMap::from([
+                (
+                    "opsz".to_string(),
+                    vec![
+                        (OrderedFloat(12.0), OrderedFloat(12.0)),
+                        (OrderedFloat(72.0), OrderedFloat(72.0))
+                    ]
+                ),
+                (
+                    "wght".to_string(),
+                    vec![
+                        (OrderedFloat(100.0), OrderedFloat(40.0)),
+                        (OrderedFloat(200.0), OrderedFloat(46.0)),
+                        (OrderedFloat(300.0), OrderedFloat(51.0)),
+                        (OrderedFloat(400.0), OrderedFloat(57.0)),
+                        (OrderedFloat(500.0), OrderedFloat(62.0)),
+                        (OrderedFloat(600.0), OrderedFloat(68.0)),
+                        (OrderedFloat(700.0), OrderedFloat(73.0)),
+                    ]
+                ),
+            ]),
+            font.axis_mappings
+        );
     }
 }
