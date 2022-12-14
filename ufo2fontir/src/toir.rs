@@ -73,8 +73,15 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
             .iter()
             .map(|map| (UserCoord::new(map.input), DesignCoord::new(map.output)))
             .collect();
+        // # mappings is generally small, repeated linear probing is fine
         let default_idx = examples.iter().position(|(u, _)| *u == default).expect(
             "We currently require that you have a mapping for the default if you have mappings",
+        );
+        examples.iter().position(|(u, _)| *u == min).expect(
+            "We currently require that you have a mapping for the min if you have mappings",
+        );
+        examples.iter().position(|(u, _)| *u == max).expect(
+            "We currently require that you have a mapping for the max if you have mappings",
         );
         CoordConverter::new(examples, default_idx)
     } else {
