@@ -1,0 +1,65 @@
+{
+.appVersion = "3148";
+DisplayStrings = (
+"-",
+"!"
+);
+customParameters = (
+{
+name = "Variable Font Origin";
+value = "another_1";
+},
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+},
+{
+Name = Width;
+Tag = wdth;
+}
+);
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WghtVar;
+fontMaster = (
+{
+alignmentZones = (
+"{800, 16}",
+"{0, -16}",
+"{-200, -16}"
+);
+ascender = 800;
+capHeight = 0;
+descender = -200;
+id = m01;
+weightValue = 400;
+xHeight = 0;
+},
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+},
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "another_1";
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+}
+);
+glyphs = ();
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
