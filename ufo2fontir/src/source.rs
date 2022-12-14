@@ -14,7 +14,6 @@ use fontir::{
 };
 use log::{debug, warn};
 use norad::designspace::{self, DesignSpaceDocument};
-use ordered_float::OrderedFloat;
 
 use crate::toir::{to_design_location, to_ir_axis, to_ir_glyph};
 
@@ -331,7 +330,7 @@ fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designsp
             let converter = &axes.get(&a.name).unwrap().converter;
             (
                 a.name.clone(),
-                UserCoord::new(OrderedFloat(a.default)).to_design(converter),
+                UserCoord::new(a.default).to_design(converter),
             )
         })
         .collect();
@@ -469,7 +468,6 @@ mod tests {
         source::{Input, Source},
     };
     use norad::designspace;
-    use ordered_float::OrderedFloat;
 
     use crate::toir::to_design_location;
 
@@ -536,7 +534,7 @@ mod tests {
             .or_default()
             .push(DesignLocation::from([(
                 axis.to_string(),
-                DesignCoord::new(OrderedFloat(pos)),
+                DesignCoord::new(pos),
             )]));
     }
 
@@ -603,7 +601,7 @@ mod tests {
         let (source, _) = test_source();
         let ds = source.load_designspace().unwrap();
         let mut expected = DesignLocation::new();
-        expected.insert("Weight".to_string(), DesignCoord::new(OrderedFloat(400.0)));
+        expected.insert("Weight".to_string(), DesignCoord::new(400.0));
         assert_eq!(
             expected,
             to_design_location(&default_master(&ds).unwrap().1.location)

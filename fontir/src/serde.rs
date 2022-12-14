@@ -1,7 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use filetime::FileTime;
-use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -21,12 +20,7 @@ impl From<CoordConverterSerdeRepr> for CoordConverter {
         let examples = from
             .user_to_design
             .into_iter()
-            .map(|(u, d)| {
-                (
-                    UserCoord::new(OrderedFloat(u)),
-                    DesignCoord::new(OrderedFloat(d)),
-                )
-            })
+            .map(|(u, d)| (UserCoord::new(u), DesignCoord::new(d)))
             .collect();
         CoordConverter::new(examples, from.default_idx)
     }

@@ -6,19 +6,13 @@ use fontir::{
     ir,
 };
 use norad::designspace::{self, Dimension};
-use ordered_float::OrderedFloat;
 
 use crate::error::Error;
 
 pub(crate) fn to_design_location(loc: &[Dimension]) -> DesignLocation {
     // TODO: what if Dimension uses uservalue? - new in DS5.0
     loc.iter()
-        .map(|d| {
-            (
-                d.name.clone(),
-                DesignCoord::new(OrderedFloat(d.xvalue.unwrap())),
-            )
-        })
+        .map(|d| (d.name.clone(), DesignCoord::new(d.xvalue.unwrap())))
         .collect()
 }
 
@@ -69,20 +63,15 @@ fn to_ir_glyph_instance(glyph: &norad::Glyph) -> ir::GlyphInstance {
 
 pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element>
-    let min = UserCoord::new(axis.minimum.unwrap().into());
-    let default = UserCoord::new(axis.default.into());
-    let max = UserCoord::new(axis.maximum.unwrap().into());
+    let min = UserCoord::new(axis.minimum.unwrap());
+    let default = UserCoord::new(axis.default);
+    let max = UserCoord::new(axis.maximum.unwrap());
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#map-element>
     let converter = if let Some(mappings) = &axis.map {
         let examples: Vec<_> = mappings
             .iter()
-            .map(|map| {
-                (
-                    UserCoord::new(OrderedFloat(map.input)),
-                    DesignCoord::new(OrderedFloat(map.output)),
-                )
-            })
+            .map(|map| (UserCoord::new(map.input), DesignCoord::new(map.output)))
             .collect();
         let default_idx = examples.iter().position(|(u, _)| *u == default).expect(
             "We currently require that you have a mapping for the default if you have mappings",

@@ -112,8 +112,8 @@ pub fn temporary_design_to_user_conversion(coord: DesignCoord) -> UserCoord {
 
 impl DesignCoord {
     /// We do *not* provide From because we want conversion to be explicit
-    pub fn new(value: OrderedFloat<f32>) -> DesignCoord {
-        DesignCoord(value)
+    pub fn new(value: impl Into<OrderedFloat<f32>>) -> DesignCoord {
+        DesignCoord(value.into())
     }
 
     pub fn to_user(&self, converter: &CoordConverter) -> UserCoord {
@@ -127,8 +127,8 @@ impl DesignCoord {
 
 impl UserCoord {
     /// We do *not* provide From because we want conversion to be explicit
-    pub fn new(value: OrderedFloat<f32>) -> UserCoord {
-        UserCoord(value)
+    pub fn new(value: impl Into<OrderedFloat<f32>>) -> UserCoord {
+        UserCoord(value.into())
     }
 
     pub fn to_design(&self, converter: &CoordConverter) -> DesignCoord {
@@ -142,8 +142,8 @@ impl UserCoord {
 
 impl NormalizedCoord {
     /// We do *not* provide From because we want conversion to be explicit
-    pub fn new(value: OrderedFloat<f32>) -> NormalizedCoord {
-        NormalizedCoord(value)
+    pub fn new(value: impl Into<OrderedFloat<f32>>) -> NormalizedCoord {
+        NormalizedCoord(value.into())
     }
 
     pub fn to_design(&self, converter: &CoordConverter) -> DesignCoord {

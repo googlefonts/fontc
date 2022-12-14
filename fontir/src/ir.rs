@@ -149,21 +149,16 @@ pub struct Affine2x3 {
 
 #[cfg(test)]
 mod tests {
-    use ordered_float::OrderedFloat;
 
     use crate::{
         coords::{CoordConverter, UserCoord},
         ir::Axis,
     };
 
-    fn user_coord(v: f32) -> UserCoord {
-        UserCoord::new(OrderedFloat(v))
-    }
-
     fn test_axis() -> Axis {
-        let min = user_coord(100.0);
-        let default = user_coord(400.0);
-        let max = user_coord(900.0);
+        let min = UserCoord::new(100.0);
+        let default = UserCoord::new(400.0);
+        let max = UserCoord::new(900.0);
         let converter = CoordConverter::unmapped(min, default, max);
         Axis {
             name: String::from("Weight"),
