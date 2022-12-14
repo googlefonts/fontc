@@ -202,7 +202,7 @@ impl Work for StaticMetadataWork {
                 let default = UserCoord::new(default);
 
                 // TODO process .glpyhs coordinate conversions
-                let converter = CoordConverter::nop();
+                let converter = CoordConverter::unmapped(min, default, max);
 
                 Axis {
                     name: a.name.clone(),

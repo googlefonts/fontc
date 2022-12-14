@@ -51,10 +51,6 @@ pub struct CoordConverter {
 }
 
 impl CoordConverter {
-    pub fn nop() -> CoordConverter {
-        CoordConverter::new(Vec::new(), 0)
-    }
-
     /// Initialize a converter from the User:Design examples source files typically provide.
     pub fn new(mut mappings: Vec<(UserCoord, DesignCoord)>, default_idx: usize) -> CoordConverter {
         if mappings.is_empty() {
@@ -92,6 +88,18 @@ impl CoordConverter {
             design_to_normalized,
             normalized_to_design,
         }
+    }
+
+    /// Initialize a converter from just min/default/max user coords, e.g. a source with no mapping
+    pub fn unmapped(min: UserCoord, default: UserCoord, max: UserCoord) -> CoordConverter {
+        CoordConverter::new(
+            vec![
+                (min, DesignCoord::new(min.into_inner())),
+                (default, DesignCoord::new(default.into_inner())),
+                (max, DesignCoord::new(max.into_inner())),
+            ],
+            1,
+        )
     }
 }
 
@@ -197,33 +205,6 @@ mod tests {
             ],
             2,
         )
-    }
-
-    #[test]
-    pub fn nop() {
-        let converter = CoordConverter::nop();
-        assert_eq!(
-            OrderedFloat(0.0),
-            DesignCoord(0.0.into()).to_normalized(&converter).into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(100.0),
-            DesignCoord(100.0.into())
-                .to_normalized(&converter)
-                .into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(f32::MIN),
-            DesignCoord(f32::MIN.into())
-                .to_normalized(&converter)
-                .into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(f32::MAX),
-            DesignCoord(f32::MAX.into())
-                .to_normalized(&converter)
-                .into_inner()
-        );
     }
 
     #[test]

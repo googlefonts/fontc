@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use fontir::{
-    coords::{CoordConverter, DesignCoord, DesignLocation, UserCoord, UserLocation},
+    coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     ir,
 };
 use norad::designspace::{self, Dimension};
@@ -87,9 +87,9 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
         let default_idx = examples.iter().position(|(u, _)| *u == default).expect(
             "We currently require that you have a mapping for the default if you have mappings",
         );
-        CoordConverter::from_user_to_design_examples(examples, default_idx)
+        CoordConverter::new(examples, default_idx)
     } else {
-        CoordConverter::nop()
+        CoordConverter::unmapped(min, default, max)
     };
     ir::Axis {
         name: axis.name.clone(),
@@ -104,7 +104,7 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
 
 pub fn to_ir_glyph<S>(
     glyph_name: S,
-    glif_files: &HashMap<&PathBuf, Vec<UserLocation>>,
+    glif_files: &HashMap<&PathBuf, Vec<NormalizedLocation>>,
 ) -> Result<ir::Glyph, Error>
 where
     S: Into<String>,

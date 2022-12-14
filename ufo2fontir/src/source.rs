@@ -5,7 +5,7 @@ use std::{
 };
 
 use fontir::{
-    coords::{DesignLocation, InternalLocation, UserCoord},
+    coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
     ir::{Axis, StaticMetadata},
     orchestration::Context,
@@ -433,16 +433,21 @@ impl Work for GlyphIrWork {
         let axes: HashMap<_, _> = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();
         let mut glif_files = HashMap::new();
         for (path, design_locations) in self.glif_files.iter() {
-            let internal_locations: Vec<InternalLocation> = design_locations
+            let normalized_locations: Vec<NormalizedLocation> = design_locations
                 .iter()
                 .map(|design_location| {
                     design_location
                         .iter()
-                        .map(|(an, dl)| (an.clone(), dl.to_user(&axes.get(an).unwrap().converter)))
+                        .map(|(an, dl)| {
+                            (
+                                an.clone(),
+                                dl.to_normalized(&axes.get(an).unwrap().converter),
+                            )
+                        })
                         .collect()
                 })
                 .collect();
-            glif_files.insert(path, internal_locations);
+            glif_files.insert(path, normalized_locations);
         }
 
         let glyph_ir = to_ir_glyph(&self.glyph_name, &glif_files)

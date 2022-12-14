@@ -28,7 +28,7 @@ impl From<CoordConverterSerdeRepr> for CoordConverter {
                 )
             })
             .collect();
-        CoordConverter::from_user_to_design_examples(examples, from.default_idx)
+        CoordConverter::new(examples, from.default_idx)
     }
 }
 

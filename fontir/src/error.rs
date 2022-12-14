@@ -2,7 +2,7 @@ use std::{error, io, path::PathBuf};
 
 use thiserror::Error;
 
-use crate::coords::UserLocation;
+use crate::coords::{NormalizedLocation, UserLocation};
 
 // TODO: eliminate dyn Error and collapse Error/WorkError
 
@@ -29,7 +29,12 @@ pub enum Error {
     #[error("Unexpected state encountered in a state set")]
     UnexpectedState,
     #[error("Duplicate location for {what}: {loc:?}")]
-    DuplicateUserSpaceLocation { what: String, loc: UserLocation },
+    DuplicateUserLocation { what: String, loc: UserLocation },
+    #[error("Duplicate location for {what}: {loc:?}")]
+    DuplicateNormalizedLocation {
+        what: String,
+        loc: NormalizedLocation,
+    },
     #[error("Global metadata very bad, very very bad")]
     InvalidGlobalMetadata,
     #[error("No default master in {0:?}")]

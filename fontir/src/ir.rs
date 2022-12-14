@@ -1,7 +1,7 @@
 //! Serde types for font IR.
 
 use crate::{
-    coords::{CoordConverter, InternalLocation, UserCoord, UserLocation},
+    coords::{CoordConverter, NormalizedLocation, UserCoord},
     error::Error,
     serde::StaticMetadataSerdeRepr,
 };
@@ -60,7 +60,7 @@ pub struct Axis {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Glyph {
     pub name: String,
-    pub sources: HashMap<InternalLocation, GlyphInstance>,
+    pub sources: HashMap<NormalizedLocation, GlyphInstance>,
 }
 
 impl Glyph {
@@ -73,11 +73,11 @@ impl Glyph {
 
     pub fn try_add_source(
         &mut self,
-        unique_location: &UserLocation,
+        unique_location: &NormalizedLocation,
         source: GlyphInstance,
     ) -> Result<(), Error> {
         if self.sources.contains_key(unique_location) {
-            return Err(Error::DuplicateUserSpaceLocation {
+            return Err(Error::DuplicateNormalizedLocation {
                 what: format!("glyph '{}' source", self.name),
                 loc: unique_location.clone(),
             });
@@ -152,7 +152,7 @@ mod tests {
     use ordered_float::OrderedFloat;
 
     use crate::{
-        coords::{CoordConverter, UserCoord},
+        coords::{CoordConverter, DesignCoord, UserCoord},
         ir::Axis,
     };
 
@@ -168,7 +168,23 @@ mod tests {
             default: user_coord(400_f32),
             max: user_coord(900_f32),
             hidden: false,
-            converter: CoordConverter::nop(),
+            converter: CoordConverter::new(
+                vec![
+                    (
+                        UserCoord::new(OrderedFloat(100.0)),
+                        DesignCoord::new(OrderedFloat(100.0)),
+                    ),
+                    (
+                        UserCoord::new(OrderedFloat(400.0)),
+                        DesignCoord::new(OrderedFloat(400.0)),
+                    ),
+                    (
+                        UserCoord::new(OrderedFloat(900.0)),
+                        DesignCoord::new(OrderedFloat(900.0)),
+                    ),
+                ],
+                1,
+            ),
         }
     }
 
