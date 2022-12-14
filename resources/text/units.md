@@ -3,7 +3,7 @@
 Written because the author confused themselves and wanted to be sure they
 now understand.
 
-There are three main classes of coordinates in fonts:
+There are three main classes of variation axis coordinates in variable fonts:
 
 1. Design coordinates
    * Used by the type designer and design tool
