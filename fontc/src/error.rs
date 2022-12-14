@@ -14,4 +14,6 @@ pub enum Error {
     FontIrError(#[from] fontir::error::Error),
     #[error("Unable to produce IR")]
     IrGenerationError,
+    #[error("Does not exist")]
+    FileExpected(PathBuf),
 }
