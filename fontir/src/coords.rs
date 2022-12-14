@@ -26,21 +26,17 @@ pub struct UserCoord(OrderedFloat<f32>);
 ///
 /// Always in [-1, 1].
 ///
-/// In .designspace, a uservalue. <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#dimension-element>.
+/// Not typically used directly in sources.
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct InternalCoord(OrderedFloat<f32>);
+pub struct NormalizedCoord(OrderedFloat<f32>);
 
 // Using BTreeMap instead of HashMap and OrderedFloat instead of f32 so that
 // the location is hashable and can be used as a key in Glyph::sources HashMap
 pub type DesignLocation = BTreeMap<String, DesignCoord>;
 pub type UserLocation = BTreeMap<String, UserCoord>;
-pub type InternalLocation = BTreeMap<String, InternalCoord>;
+pub type NormalizedLocation = BTreeMap<String, NormalizedCoord>;
 
-trait Converter<From, To> {
-    fn convert(&self, from: From) -> To;
-}
-
-/// Converts between Design, User, and Internal coordinates.
+/// Converts between Design, User, and Normalized coordinates.
 ///
 /// Stores [PiecewiseLinearMap]'s in several directions. Sources
 /// suggest <= 10 mappings is typical, we can afford the bytes.
@@ -48,26 +44,24 @@ trait Converter<From, To> {
 pub struct CoordConverter {
     user_to_design: PiecewiseLinearMap,
     design_to_user: PiecewiseLinearMap,
-    design_to_internal: PiecewiseLinearMap,
-    internal_to_design: PiecewiseLinearMap,
+    design_to_normalized: PiecewiseLinearMap,
+    normalized_to_design: PiecewiseLinearMap,
 }
 
 impl CoordConverter {
-    pub fn from_user_to_design_examples(
-        mut examples: Vec<(UserCoord, DesignCoord)>,
-        default_idx: usize,
-    ) -> CoordConverter {
-        if examples.is_empty() {
-            examples.push((UserCoord(0.0.into()), DesignCoord(0.0.into())));
+    /// Initialize a converter from the User:Design examples source files typically provide.
+    pub fn new(mut mappings: Vec<(UserCoord, DesignCoord)>, default_idx: usize) -> CoordConverter {
+        if mappings.is_empty() {
+            mappings.push((UserCoord(0.0.into()), DesignCoord(0.0.into())));
         }
         let user_to_design = PiecewiseLinearMap::new(
-            examples
+            mappings
                 .iter()
                 .map(|(u, d)| (u.into_inner(), d.into_inner()))
                 .collect(),
         );
 
-        let design_coords: Vec<_> = examples.iter().map(|(_, d)| d).collect();
+        let design_coords: Vec<_> = mappings.iter().map(|(_, d)| d).collect();
         let design_min = design_coords.iter().min().unwrap();
         let design_max = design_coords.iter().max().unwrap();
         let design_default = design_coords[default_idx];
@@ -80,16 +74,16 @@ impl CoordConverter {
         if *design_max > design_default {
             examples.push((design_max.into_inner(), 1.0.into())); // right of default *must* be +1
         }
-        let design_to_internal = PiecewiseLinearMap::new(examples);
+        let design_to_normalized = PiecewiseLinearMap::new(examples);
 
         let design_to_user = user_to_design.reverse();
-        let internal_to_design = design_to_internal.reverse();
+        let normalized_to_design = design_to_normalized.reverse();
 
         CoordConverter {
             user_to_design,
             design_to_user,
-            design_to_internal,
-            internal_to_design,
+            design_to_normalized,
+            normalized_to_design,
         }
     }
 }
@@ -111,8 +105,8 @@ impl DesignCoord {
         UserCoord::new(converter.design_to_user.map(self.0))
     }
 
-    pub fn to_internal(&self, converter: &CoordConverter) -> InternalCoord {
-        InternalCoord::new(converter.design_to_internal.map(self.0))
+    pub fn to_normalized(&self, converter: &CoordConverter) -> NormalizedCoord {
+        NormalizedCoord::new(converter.design_to_normalized.map(self.0))
     }
 }
 
@@ -126,19 +120,19 @@ impl UserCoord {
         DesignCoord::new(converter.user_to_design.map(self.0))
     }
 
-    pub fn to_internal(&self, converter: &CoordConverter) -> InternalCoord {
-        self.to_design(converter).to_internal(converter)
+    pub fn to_normalized(&self, converter: &CoordConverter) -> NormalizedCoord {
+        self.to_design(converter).to_normalized(converter)
     }
 }
 
-impl InternalCoord {
+impl NormalizedCoord {
     /// We do *not* provide From because we want conversion to be explicit
-    pub fn new(value: OrderedFloat<f32>) -> InternalCoord {
-        InternalCoord(value)
+    pub fn new(value: OrderedFloat<f32>) -> NormalizedCoord {
+        NormalizedCoord(value)
     }
 
     pub fn to_design(&self, converter: &CoordConverter) -> DesignCoord {
-        DesignCoord::new(converter.internal_to_design.map(self.0))
+        DesignCoord::new(converter.normalized_to_design.map(self.0))
     }
 }
 
@@ -154,7 +148,7 @@ impl UserCoord {
     }
 }
 
-impl InternalCoord {
+impl NormalizedCoord {
     pub fn into_inner(self) -> OrderedFloat<f32> {
         self.0
     }
@@ -199,68 +193,72 @@ mod tests {
     }
 
     #[test]
-    pub fn lexend_weight_internal_basics() {
+    pub fn lexend_weight_normalization() {
         let (examples, default_idx) = lexend_weight_mapping();
-        let converter = CoordConverter::from_user_to_design_examples(examples, default_idx);
+        let converter = CoordConverter::new(examples, default_idx);
         assert_eq!(
             OrderedFloat(-1.0),
             DesignCoord(26.0.into())
-                .to_internal(&converter)
+                .to_normalized(&converter)
                 .into_inner()
         );
         assert_eq!(
             OrderedFloat(0.0),
             DesignCoord(90.0.into())
-                .to_internal(&converter)
+                .to_normalized(&converter)
                 .into_inner()
         );
         assert_eq!(
             OrderedFloat(1.0),
             DesignCoord(190.0.into())
-                .to_internal(&converter)
+                .to_normalized(&converter)
                 .into_inner()
         );
     }
 
     #[test]
-    pub fn design_to_internal_does_not_bend() {
+    pub fn design_to_normalized_does_not_bend() {
         let (examples, default_idx) = bendy_mapping();
-        let converter = CoordConverter::from_user_to_design_examples(examples, default_idx);
+        let converter = CoordConverter::new(examples, default_idx);
 
         // 200 and 500 (user) are pushed way toward the left/right respectively
-        // But design:internal doesn't care, it's linear from default=>max and default=>min
+        // But design:normalized doesn't care, it's linear from default=>max and default=>min
         assert_eq!(
             OrderedFloat(-1.0),
-            DesignCoord(0.0.into()).to_internal(&converter).into_inner()
+            DesignCoord(0.0.into())
+                .to_normalized(&converter)
+                .into_inner()
         );
         assert_eq!(
             OrderedFloat(-0.5),
-            DesignCoord(5.0.into()).to_internal(&converter).into_inner()
+            DesignCoord(5.0.into())
+                .to_normalized(&converter)
+                .into_inner()
         );
         assert_eq!(
             OrderedFloat(0.0),
             DesignCoord(10.0.into())
-                .to_internal(&converter)
+                .to_normalized(&converter)
                 .into_inner()
         );
         assert_eq!(
             OrderedFloat(0.5),
             DesignCoord(15.0.into())
-                .to_internal(&converter)
+                .to_normalized(&converter)
                 .into_inner()
         );
         assert_eq!(
             OrderedFloat(1.0),
             DesignCoord(20.0.into())
-                .to_internal(&converter)
+                .to_normalized(&converter)
                 .into_inner()
         );
     }
 
     #[test]
-    pub fn user_to_design_or_internal_does_bend() {
+    pub fn user_to_design_or_normalized_does_bend() {
         let (examples, default_idx) = bendy_mapping();
-        let converter = CoordConverter::from_user_to_design_examples(examples, default_idx);
+        let converter = CoordConverter::new(examples, default_idx);
 
         // 200 and 500 (user) are pushed way toward the left/right respectively
 
@@ -281,15 +279,21 @@ mod tests {
 
         assert_eq!(
             OrderedFloat(-1.0),
-            UserCoord(100.0.into()).to_internal(&converter).into_inner()
+            UserCoord(100.0.into())
+                .to_normalized(&converter)
+                .into_inner()
         );
         assert_eq!(
             OrderedFloat(-0.95),
-            UserCoord(150.0.into()).to_internal(&converter).into_inner()
+            UserCoord(150.0.into())
+                .to_normalized(&converter)
+                .into_inner()
         );
         assert_eq!(
             OrderedFloat(-0.9),
-            UserCoord(200.0.into()).to_internal(&converter).into_inner()
+            UserCoord(200.0.into())
+                .to_normalized(&converter)
+                .into_inner()
         );
 
         // 200..400 covers a massive slice!
@@ -305,11 +309,15 @@ mod tests {
 
         assert_eq!(
             OrderedFloat(-0.45),
-            UserCoord(300.0.into()).to_internal(&converter).into_inner()
+            UserCoord(300.0.into())
+                .to_normalized(&converter)
+                .into_inner()
         );
         assert_eq!(
             OrderedFloat(0.0),
-            UserCoord(400.0.into()).to_internal(&converter).into_inner()
+            UserCoord(400.0.into())
+                .to_normalized(&converter)
+                .into_inner()
         );
     }
 }
