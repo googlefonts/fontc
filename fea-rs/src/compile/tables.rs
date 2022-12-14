@@ -337,10 +337,8 @@ impl Default for NameBuilder {
 
 impl NameBuilder {
     pub(crate) fn add(&mut self, name_id: u16, name_spec: NameSpec) {
-        if !(1..=6).contains(&name_id) {
-            self.last_anon_id = self.last_anon_id.max(name_id);
-            self.records.push((name_id, name_spec));
-        }
+        self.last_anon_id = self.last_anon_id.max(name_id);
+        self.records.push((name_id, name_spec));
     }
 
     pub(crate) fn add_anon_group(&mut self, entries: &[NameSpec]) -> u16 {

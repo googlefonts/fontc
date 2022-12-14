@@ -327,12 +327,8 @@ impl<'a> ValidationCtx<'a> {
     fn validate_name(&mut self, node: &typed::NameTable) {
         for record in node.statements() {
             let name_id = record.name_id();
-            match name_id.parse() {
-                Err(e) => self.error(name_id.range(), e),
-                Ok(1..=6) => {
-                    self.warning(name_id.range(), "ID's 1-6 are reserved and will be ignored")
-                }
-                _ => (),
+            if let Err(e) = name_id.parse() {
+                self.error(name_id.range(), e);
             }
             self.validate_name_spec(&record.entry());
         }
