@@ -34,7 +34,7 @@ pub struct InternalCoord(OrderedFloat<f32>);
 // the location is hashable and can be used as a key in Glyph::sources HashMap
 pub type DesignLocation = BTreeMap<String, DesignCoord>;
 pub type UserLocation = BTreeMap<String, UserCoord>;
-pub type InternalLocation = BTreeMap<String, UserCoord>;
+pub type InternalLocation = BTreeMap<String, InternalCoord>;
 
 trait Converter<From, To> {
     fn convert(&self, from: From) -> To;
