@@ -152,7 +152,7 @@ mod tests {
     use ordered_float::OrderedFloat;
 
     use crate::{
-        coords::{CoordConverter, DesignCoord, UserCoord},
+        coords::{CoordConverter, UserCoord},
         ir::Axis,
     };
 
@@ -161,30 +161,18 @@ mod tests {
     }
 
     fn test_axis() -> Axis {
+        let min = user_coord(100.0);
+        let default = user_coord(400.0);
+        let max = user_coord(900.0);
+        let converter = CoordConverter::unmapped(min, default, max);
         Axis {
             name: String::from("Weight"),
             tag: String::from("wght"),
-            min: user_coord(100_f32),
-            default: user_coord(400_f32),
-            max: user_coord(900_f32),
+            min,
+            default,
+            max,
             hidden: false,
-            converter: CoordConverter::new(
-                vec![
-                    (
-                        UserCoord::new(OrderedFloat(100.0)),
-                        DesignCoord::new(OrderedFloat(100.0)),
-                    ),
-                    (
-                        UserCoord::new(OrderedFloat(400.0)),
-                        DesignCoord::new(OrderedFloat(400.0)),
-                    ),
-                    (
-                        UserCoord::new(OrderedFloat(900.0)),
-                        DesignCoord::new(OrderedFloat(900.0)),
-                    ),
-                ],
-                1,
-            ),
+            converter,
         }
     }
 
