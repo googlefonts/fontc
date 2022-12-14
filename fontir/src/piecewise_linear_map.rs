@@ -6,10 +6,10 @@
 
 use ordered_float::OrderedFloat;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PiecewiseLinearMap {
-    from: Vec<OrderedFloat<f32>>, // sorted, ||'s to
-    to: Vec<OrderedFloat<f32>>,   // sorted, ||'s from
+    pub(crate) from: Vec<OrderedFloat<f32>>, // sorted, ||'s to
+    pub(crate) to: Vec<OrderedFloat<f32>>,   // sorted, ||'s from
 }
 
 impl PiecewiseLinearMap {

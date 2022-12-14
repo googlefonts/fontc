@@ -2,7 +2,9 @@ use std::{error, io, path::PathBuf};
 
 use thiserror::Error;
 
-use crate::ir::DesignSpaceLocation;
+use crate::coords::{NormalizedLocation, UserLocation};
+
+// TODO: eliminate dyn Error and collapse Error/WorkError
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -27,9 +29,11 @@ pub enum Error {
     #[error("Unexpected state encountered in a state set")]
     UnexpectedState,
     #[error("Duplicate location for {what}: {loc:?}")]
-    DuplicateLocation {
+    DuplicateUserLocation { what: String, loc: UserLocation },
+    #[error("Duplicate location for {what}: {loc:?}")]
+    DuplicateNormalizedLocation {
         what: String,
-        loc: DesignSpaceLocation,
+        loc: NormalizedLocation,
     },
     #[error("Global metadata very bad, very very bad")]
     InvalidGlobalMetadata,
@@ -58,4 +62,6 @@ pub enum WorkError {
     FileExpected(PathBuf),
     #[error("Unable to parse {0:?}: {1}")]
     ParseError(PathBuf, String),
+    #[error("No default master in {0:?}")]
+    NoDefaultMaster(PathBuf),
 }

@@ -1,3 +1,4 @@
+use fontir::coords::{CoordConverter, UserCoord};
 use fontir::error::{Error, WorkError};
 use fontir::ir;
 use fontir::ir::{Axis, StaticMetadata};
@@ -195,6 +196,14 @@ impl Work for StaticMetadataWork {
                     .unwrap();
                 let default = OrderedFloat::<f32>(defaults[idx].into_inner() as f32);
 
+                // Given in user
+                let min = UserCoord::new(min);
+                let max = UserCoord::new(max);
+                let default = UserCoord::new(default);
+
+                // TODO process .glpyhs coordinate conversions
+                let converter = CoordConverter::unmapped(min, default, max);
+
                 Axis {
                     name: a.name.clone(),
                     tag: a.tag.clone(),
@@ -202,6 +211,7 @@ impl Work for StaticMetadataWork {
                     min,
                     default,
                     max,
+                    converter,
                 }
             })
             .collect();

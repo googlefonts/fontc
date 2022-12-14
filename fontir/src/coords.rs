@@ -4,11 +4,11 @@
 
 use std::collections::BTreeMap;
 
+use crate::piecewise_linear_map::PiecewiseLinearMap;
+use crate::serde::CoordConverterSerdeRepr;
 use log::warn;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
-
-use crate::piecewise_linear_map::PiecewiseLinearMap;
 
 /// A coordinate in some arbitrary space the designer dreamed up.
 ///
@@ -40,9 +40,11 @@ pub type NormalizedLocation = BTreeMap<String, NormalizedCoord>;
 ///
 /// Stores [PiecewiseLinearMap]'s in several directions. Sources
 /// suggest <= 10 mappings is typical, we can afford the bytes.
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(from = "CoordConverterSerdeRepr", into = "CoordConverterSerdeRepr")]
 pub struct CoordConverter {
-    user_to_design: PiecewiseLinearMap,
+    pub(crate) default_idx: usize,
+    pub(crate) user_to_design: PiecewiseLinearMap,
     design_to_user: PiecewiseLinearMap,
     design_to_normalized: PiecewiseLinearMap,
     normalized_to_design: PiecewiseLinearMap,
@@ -80,11 +82,24 @@ impl CoordConverter {
         let normalized_to_design = design_to_normalized.reverse();
 
         CoordConverter {
+            default_idx,
             user_to_design,
             design_to_user,
             design_to_normalized,
             normalized_to_design,
         }
+    }
+
+    /// Initialize a converter from just min/default/max user coords, e.g. a source with no mapping
+    pub fn unmapped(min: UserCoord, default: UserCoord, max: UserCoord) -> CoordConverter {
+        CoordConverter::new(
+            vec![
+                (min, DesignCoord::new(min.into_inner())),
+                (default, DesignCoord::new(default.into_inner())),
+                (max, DesignCoord::new(max.into_inner())),
+            ],
+            1,
+        )
     }
 }
 
@@ -97,8 +112,8 @@ pub fn temporary_design_to_user_conversion(coord: DesignCoord) -> UserCoord {
 
 impl DesignCoord {
     /// We do *not* provide From because we want conversion to be explicit
-    pub fn new(value: OrderedFloat<f32>) -> DesignCoord {
-        DesignCoord(value)
+    pub fn new(value: impl Into<OrderedFloat<f32>>) -> DesignCoord {
+        DesignCoord(value.into())
     }
 
     pub fn to_user(&self, converter: &CoordConverter) -> UserCoord {
@@ -112,8 +127,8 @@ impl DesignCoord {
 
 impl UserCoord {
     /// We do *not* provide From because we want conversion to be explicit
-    pub fn new(value: OrderedFloat<f32>) -> UserCoord {
-        UserCoord(value)
+    pub fn new(value: impl Into<OrderedFloat<f32>>) -> UserCoord {
+        UserCoord(value.into())
     }
 
     pub fn to_design(&self, converter: &CoordConverter) -> DesignCoord {
@@ -127,8 +142,8 @@ impl UserCoord {
 
 impl NormalizedCoord {
     /// We do *not* provide From because we want conversion to be explicit
-    pub fn new(value: OrderedFloat<f32>) -> NormalizedCoord {
-        NormalizedCoord(value)
+    pub fn new(value: impl Into<OrderedFloat<f32>>) -> NormalizedCoord {
+        NormalizedCoord(value.into())
     }
 
     pub fn to_design(&self, converter: &CoordConverter) -> DesignCoord {
@@ -193,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    pub fn lexend_weight_normalization() {
+    pub fn lexend_weight_internal_basics() {
         let (examples, default_idx) = lexend_weight_mapping();
         let converter = CoordConverter::new(examples, default_idx);
         assert_eq!(
