@@ -467,6 +467,7 @@ fn parse_mac(s: &str) -> String {
             work = &work[pos + 3..];
         } else {
             out.push_str(work);
+            break;
         }
     }
     out
@@ -677,13 +678,24 @@ static MAC_ROMAN_LOOKUP: &[char] = &[
     '¯', '˘', '˙', '˚', '¸', '˝', '˛', 'ˇ',
 ];
 
-#[test]
-fn smoke_test_conversion() {
-    assert_eq!(MAC_ROMAN_LOOKUP.len(), 128);
-    assert_eq!(mac_roman_to_char(0x20), ' ');
-    assert_eq!(mac_roman_to_char(0x7E), '~');
-    assert_eq!(mac_roman_to_char(0x7F), 0x7f as char);
-    assert_eq!(mac_roman_to_char(0x80), 'Ä');
-    assert_eq!(mac_roman_to_char(0xFF), 'ˇ');
-    assert_eq!(mac_roman_to_char(0x8e), 'é');
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smoke_test_conversion() {
+        assert_eq!(MAC_ROMAN_LOOKUP.len(), 128);
+        assert_eq!(mac_roman_to_char(0x20), ' ');
+        assert_eq!(mac_roman_to_char(0x7E), '~');
+        assert_eq!(mac_roman_to_char(0x7F), 0x7f as char);
+        assert_eq!(mac_roman_to_char(0x80), 'Ä');
+        assert_eq!(mac_roman_to_char(0xFF), 'ˇ');
+        assert_eq!(mac_roman_to_char(0x8e), 'é');
+    }
+
+    #[test]
+    fn parse_mac_str() {
+        let inp = "M\\9fller";
+        assert_eq!(parse_mac(inp), "Müller");
+    }
 }
