@@ -325,7 +325,10 @@ impl Work for GlyphIrWork {
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<String, HashSet<NormalizedCoord>> = HashMap::new();
         for layer in glyph.layers.iter() {
-            let master = &font.font_master[self.master_indices[&layer.layer_id]];
+            let Some(master_idx) = self.master_indices.get(&layer.layer_id) else {
+                panic!("glyph {} references layer id {} but no such master exists", self.glyph_name, layer.layer_id);
+            };
+            let master = &font.font_master[*master_idx];
             let location = to_normalized(axes, &design_location(axes, master));
 
             for (tag, coord) in location.iter() {
