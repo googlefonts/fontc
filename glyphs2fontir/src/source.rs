@@ -311,6 +311,11 @@ impl Work for GlyphIrWork {
 
         let static_metadata = context.get_static_metadata();
         let axes = &static_metadata.axes;
+        let master_locations: HashMap<_, _> = font
+            .font_master
+            .iter()
+            .map(|m| (&m.id, to_normalized(axes, &design_location(axes, m))))
+            .collect();
 
         let gid = static_metadata
             .glyph_id(&self.glyph_name)
@@ -320,16 +325,16 @@ impl Work for GlyphIrWork {
             .get(&self.glyph_name)
             .ok_or_else(|| WorkError::NoGlyphForName(self.glyph_name.clone()))?;
 
-        let mut sources = HashMap::new();
+        let mut ir_glyph = ir::Glyph::new(self.glyph_name.clone());
 
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<String, HashSet<NormalizedCoord>> = HashMap::new();
         for layer in glyph.layers.iter() {
             let Some(master_idx) = self.master_indices.get(&layer.layer_id) else {
-                panic!("glyph {} references layer id {} but no such master exists", self.glyph_name, layer.layer_id);
+                return Err(WorkError::NoLayerForGlyph(self.glyph_name.clone(), layer.layer_id.clone()));
             };
             let master = &font.font_master[*master_idx];
-            let location = to_normalized(axes, &design_location(axes, master));
+            let location = &master_locations[&master.id];
 
             for (tag, coord) in location.iter() {
                 axis_positions
@@ -346,7 +351,16 @@ impl Work for GlyphIrWork {
                 components: Vec::new(),
             };
 
-            sources.insert(location, glyph_instance);
+            ir_glyph
+                .try_add_source(location, glyph_instance)
+                .map_err(|e| {
+                    WorkError::AddGlyphSource(format!(
+                        "Unable to add source to {} at {:?}: {}",
+                        self.glyph_name.clone(),
+                        location,
+                        e
+                    ))
+                })?;
         }
 
         // It's helpful if glyphs are defined at min, default, and max (some of which may be cooincident)
@@ -366,11 +380,7 @@ impl Work for GlyphIrWork {
             }
         }
 
-        let ir = ir::Glyph {
-            name: self.glyph_name.clone(),
-            sources,
-        };
-        context.set_glyph_ir(gid, ir);
+        context.set_glyph_ir(gid, ir_glyph);
         Ok(())
     }
 }
