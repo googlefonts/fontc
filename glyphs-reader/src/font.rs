@@ -365,7 +365,7 @@ fn custom_param<'a>(
     other_stuff: &'a BTreeMap<String, Plist>,
     key: &str,
 ) -> Option<(usize, &'a Plist)> {
-    let Some(custom_params) = custom_params(other_stuff) else {        
+    let Some(custom_params) = custom_params(other_stuff) else {
         return None;
     };
 

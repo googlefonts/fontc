@@ -2,7 +2,7 @@
 //!
 //! See <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
 
-use std::{collections::BTreeMap, fmt::Display};
+use std::collections::BTreeMap;
 
 use crate::piecewise_linear_map::PiecewiseLinearMap;
 use crate::serde::CoordConverterSerdeRepr;
@@ -34,12 +34,6 @@ pub struct NormalizedCoord(OrderedFloat<f32>);
 pub type DesignLocation = BTreeMap<String, DesignCoord>;
 pub type UserLocation = BTreeMap<String, UserCoord>;
 pub type NormalizedLocation = BTreeMap<String, NormalizedCoord>;
-
-// impl Display for DesignLocation {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         todo!()
-//     }
-// }
 
 /// Converts between Design, User, and Normalized coordinates.
 ///
