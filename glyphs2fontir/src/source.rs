@@ -202,6 +202,8 @@ impl Work for StaticMetadataWork {
                 let min = DesignCoord::new(min);
                 let max = DesignCoord::new(max);
 
+                // TODO: support Axis Location (https://glyphsapp.com/learn/creating-a-variable-font#g-axis-mappings-and-locations__option-1-axis-location-parameters)
+
                 let converter = if font.axis_mappings.contains_key(&a.tag) {
                     let mappings: Vec<_> = font
                         .axis_mappings
@@ -230,7 +232,7 @@ impl Work for StaticMetadataWork {
                         });
                     CoordConverter::new(mappings, default_idx)
                 } else {
-                    // There is no mapping; design == user
+                    // There is no mapping that we can understand; let design == user
                     let min = UserCoord::new(min.into_inner());
                     let max = UserCoord::new(max.into_inner());
                     let default = UserCoord::new(default.into_inner());
