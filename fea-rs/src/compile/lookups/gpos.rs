@@ -113,8 +113,8 @@ impl Builder for PairPosBuilder {
         }
 
         split_by_format
-            .into_iter()
-            .map(|(_, map)| {
+            .into_values()
+            .map(|map| {
                 let coverage: CoverageTableBuilder = map.keys().copied().collect();
                 let pair_sets = map.into_values().map(write_gpos::PairSet::new).collect();
                 write_gpos::PairPos::format_1(coverage.build(), pair_sets)

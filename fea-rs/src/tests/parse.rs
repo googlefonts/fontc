@@ -55,7 +55,7 @@ fn run_good_test(path: PathBuf) -> Result<PathBuf, TestCase> {
                 if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
                     let to_write = node.root().simple_parse_tree();
                     let to_path = path.with_extension(GOOD_OUTPUT_EXTENSION);
-                    std::fs::write(&to_path, &to_write).expect("failed to write output");
+                    std::fs::write(to_path, to_write).expect("failed to write output");
                 }
                 if std::env::var(super::VERBOSE).is_ok() {
                     eprintln!("{}", node.root().simple_parse_tree());
@@ -81,7 +81,7 @@ fn run_bad_test(path: PathBuf) -> Result<PathBuf, TestCase> {
             if result.is_err() {
                 if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
                     let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);
-                    std::fs::write(&to_path, &msg).expect("failed to write output");
+                    std::fs::write(to_path, &msg).expect("failed to write output");
                 }
                 if std::env::var(super::VERBOSE).is_ok() {
                     eprintln!("{}", msg);

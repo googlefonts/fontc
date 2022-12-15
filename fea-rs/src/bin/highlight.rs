@@ -4,7 +4,7 @@ use std::{env, ffi::OsStr, path::PathBuf};
 
 fn main() {
     let args = Args::get_from_env_or_exit();
-    let parse = fea_rs::parse_root_file(&args.path, None, None).unwrap();
+    let parse = fea_rs::parse_root_file(args.path, None, None).unwrap();
     let (node, _errors) = parse.get_raw(parse.root_id()).unwrap();
     let mut current_style = Style::new().fg(Colour::White);
     let mut needs_paint = String::new();

@@ -97,7 +97,7 @@ fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
                     }
                     if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
                         let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);
-                        std::fs::write(&to_path, &msg).expect("failed to write output");
+                        std::fs::write(to_path, &msg).expect("failed to write output");
                     }
                 }
                 result
