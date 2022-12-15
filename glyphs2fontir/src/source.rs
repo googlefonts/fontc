@@ -1,11 +1,10 @@
-use fontir::coords::{CoordConverter, DesignCoord, UserCoord};
+use fontir::coords::{CoordConverter, DesignCoord, UserCoord, DesignLocation};
 use fontir::error::{Error, WorkError};
-use fontir::ir;
-use fontir::ir::{Axis, StaticMetadata};
+use fontir::ir::{self, StaticMetadata};
 use fontir::orchestration::Context;
 use fontir::source::{Input, Source, Work};
 use fontir::stateset::StateSet;
-use glyphs_reader::Font;
+use glyphs_reader::{Font, FontMaster};
 use log::debug;
 use ordered_float::OrderedFloat;
 use std::collections::HashSet;
@@ -125,19 +124,24 @@ impl Source for GlyphsIrSource {
     ) -> Result<Vec<Box<dyn Work>>, fontir::error::Error> {
         self.check_global_metadata(&context.input.global_metadata)?;
 
+        let cache = self.cache.as_ref().unwrap();        
+
         let mut work: Vec<Box<dyn Work>> = Vec::new();
         for glyph_name in glyph_names {
-            work.push(Box::from(self.create_work_for_one_glyph(glyph_name)?));
+            work.push(Box::from(self.create_work_for_one_glyph(glyph_name, cache.font.clone())?));
         }
         Ok(work)
     }
 }
 
 impl GlyphsIrSource {
-    fn create_work_for_one_glyph(&self, glyph_name: &str) -> Result<GlyphIrWork, Error> {
-        Ok(GlyphIrWork {
-            glyph_name: glyph_name.to_string(),
-        })
+    fn create_work_for_one_glyph(&self, glyph_name: &str, font: Arc<Font>) -> Result<GlyphIrWork, Error> {
+        let glyph_name = glyph_name.to_string();
+        let master_indices: HashMap<_, _> = font.font_master.iter()
+            .enumerate()
+            .map(|(idx, m)| (m.id.clone(), idx))
+            .collect();
+        Ok(GlyphIrWork { glyph_name, font, master_indices: Arc::from(master_indices)})
     }
 }
 
@@ -243,7 +247,7 @@ impl Work for StaticMetadataWork {
                 let min = min.to_user(&converter);
                 let max = max.to_user(&converter);
 
-                Axis {
+                ir::Axis {
                     name: a.name.clone(),
                     tag: a.tag.clone(),
                     hidden: a.hidden.unwrap_or(false),
@@ -260,17 +264,44 @@ impl Work for StaticMetadataWork {
     }
 }
 
+fn location(axes: &Vec<glyphs_reader::Axis>, master: &FontMaster) -> DesignLocation {
+    axes.iter().zip(master.axes_values.as_ref().unwrap())
+        .map(|(axis, pos)| (axis.tag.clone(), DesignCoord::new(pos.into_inner() as f32)))
+        .collect()    
+}
+
 struct GlyphIrWork {
     glyph_name: String,
+    font: Arc<Font>,
+    master_indices: Arc<HashMap<String, usize>>,
 }
 
 impl Work for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Generate IR for {}", self.glyph_name);
+        let font = self.font.as_ref();
+
         let static_metadata = context.get_static_metadata();
+
         let gid = static_metadata
             .glyph_id(&self.glyph_name)
             .ok_or_else(|| WorkError::NoGlyphIdForName(self.glyph_name.clone()))?;
+
+        let glyph = font.glyphs.get(&self.glyph_name)
+            .ok_or_else(|| WorkError::NoGlyphIdForName(self.glyph_name.clone()))?;    
+
+        // Masters have locations
+
+        
+        // Glyphs have layers that match up with masters, and masters have locations
+        for layer in glyph.layers.iter() {
+            let master = &font.font_master[self.master_indices[&layer.layer_id]];
+            let location = location(&font.axes, &master);
+            
+            todo!("{:#?}\n{}", master, location)
+        }
+        // And so we have shapes at locations
+
         let ir = ir::Glyph {
             name: self.glyph_name.clone(),
             sources: HashMap::new(),

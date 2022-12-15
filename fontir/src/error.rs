@@ -58,6 +58,8 @@ pub enum WorkError {
     InconsistentAxisDefinitions(String),
     #[error("I am the glyph with gid, {0}")]
     NoGlyphIdForName(String),
+    #[error("I am the glyph with gid, {0}")]
+    NoGlyphForName(String),
     #[error("File expected: {0:?}")]
     FileExpected(PathBuf),
     #[error("Unable to parse {0:?}: {1}")]

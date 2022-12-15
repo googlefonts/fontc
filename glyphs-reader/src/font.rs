@@ -42,7 +42,7 @@ pub struct Font {
 
 // The font you get directly from a plist, minimally modified
 // Types chosen specifically to accomodate plist translation.
-#[derive(Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Debug, FromPlist, PartialEq, Eq)]
 struct RawFont {
     pub family_name: String,
     pub axes: Option<Vec<Axis>>,
@@ -302,7 +302,7 @@ fn custom_params_mut(other_stuff: &mut BTreeMap<String, Plist>) -> Option<&mut V
     let custom_params = other_stuff.get_mut("customParameters");
     custom_params.as_ref()?;
     let Some(Plist::Array(custom_params)) = custom_params else {
-        warn!("customParameters isn't an array, omg omg omg");
+        warn!("customParameters isn't an array\n{:#?}", custom_params);
         return None;
     };
     Some(custom_params)
@@ -313,16 +313,17 @@ fn custom_param_mut<'a>(
     key: &str,
 ) -> Option<(usize, &'a mut Plist)> {
     let Some(custom_params) = custom_params_mut(other_stuff) else {
-        warn!("customParameters isn't an array, omg omg omg");
         return None;
     };
 
     let name_key = "name".to_string();
     for (idx, custom_param) in custom_params.iter_mut().enumerate() {
         let Plist::Dictionary(dict) = custom_param else {
+            warn!("custom param isn't a dictionary\n{:#?}", custom_param);
             continue;
         };
         let Some(Plist::String(param_key)) = dict.get(&name_key) else {
+            warn!("custom param has a non-string name\n{:#?}", custom_param);
             continue;
         };
         if key == param_key {
@@ -354,7 +355,7 @@ fn custom_params(other_stuff: &BTreeMap<String, Plist>) -> Option<&Vec<Plist>> {
     let custom_params = other_stuff.get("customParameters");
     custom_params.as_ref()?;
     let Some(Plist::Array(custom_params)) = custom_params else {
-        warn!("customParameters isn't an array, omg omg omg");
+        warn!("customParameters isn't an array\n{:#?}", custom_params);
         return None;
     };
     Some(custom_params)
@@ -364,17 +365,18 @@ fn custom_param<'a>(
     other_stuff: &'a BTreeMap<String, Plist>,
     key: &str,
 ) -> Option<(usize, &'a Plist)> {
-    let Some(custom_params) = custom_params(other_stuff) else {
-        warn!("customParameters isn't an array, omg omg omg");
+    let Some(custom_params) = custom_params(other_stuff) else {        
         return None;
     };
 
     let name_key = "name".to_string();
     for (idx, custom_param) in custom_params.iter().enumerate() {
         let Plist::Dictionary(dict) = custom_param else {
+            warn!("custom param isn't a dictionary\n{:#?}", custom_param);
             continue;
         };
         let Some(Plist::String(param_key)) = dict.get(&name_key) else {
+            warn!("custom param has a non-string name\n{:#?}", custom_param);
             continue;
         };
         if key == param_key {
