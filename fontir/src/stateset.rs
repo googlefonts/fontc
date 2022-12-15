@@ -348,7 +348,7 @@ mod tests {
         let unchanged = temp_dir.path().join("fileA");
         let modified = subdir.join("fileB");
         let removed = subdir.join("fileC");
-        fs::write(&unchanged, "eh").unwrap();
+        fs::write(unchanged, "eh").unwrap();
         fs::write(&modified, "eh").unwrap();
         fs::write(&removed, "eh").unwrap();
 

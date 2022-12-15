@@ -9,7 +9,7 @@ from typing import Tuple
 _TRY_ME = (
     ("https://github.com/Omnibus-Type/Texturina", ("sources/Texturina.glyphs", "sources/Texturina-Italic.glyphs")),
 
-    ("https://github.com/xconsau/KumbhSans", ("sources/KumbhSans.designspace")),
+    ("https://github.com/xconsau/KumbhSans", ("sources/KumbhSans.designspace",)),
 )
 
 def repo_dir(repo_url) -> Path:
@@ -26,12 +26,14 @@ def fontc_command(source) -> Tuple[str, ...]:
         str(source.resolve().relative_to(Path(".").resolve()))
     )
 
-def run(cmd):    
+def run(cmd):
+    print("  " + " ".join(str(c) for c in cmd))
     result = subprocess.run(cmd, text=True, capture_output=True)
     if result.returncode != 0:
-        print(" ".join(str(c) for c in cmd), "failed with code", result.returncode)
+        print("  failed with code", result.returncode)
         print(result.stderr)
         print(result.stdout)
+        
     return result.returncode
 
 
@@ -47,13 +49,16 @@ def main(argv):
             continue
 
         for source_file in source_files:
+            print(f"{repo_url} in {clone_dir}")
             source_file = clone_dir / source_file
-            assert source_file.is_file(), source_file
+            if not source_file.is_file():
+                print("  ", source_file, "FAIL, no such file")
+                continue
 
             if run(fontc_command(source_file)) != 0:
                 continue
 
-            print(f"{repo_url} in {clone_dir}: SUCCESS")
+            print("  SUCCESS")
 
 if __name__ == "__main__":
     app.run(main)

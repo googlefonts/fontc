@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 
 use crate::piecewise_linear_map::PiecewiseLinearMap;
 use crate::serde::CoordConverterSerdeRepr;
-use log::warn;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
@@ -101,13 +100,6 @@ impl CoordConverter {
             1,
         )
     }
-}
-
-// Will be removed once remapping is properly implemented, for now marks where we need to update
-// Tentatively expected to put maps onto StaticMetadata so anyone who wants design:user gets from there
-pub fn temporary_design_to_user_conversion(coord: DesignCoord) -> UserCoord {
-    warn!("Illegal and invalid temporary conversion");
-    UserCoord(coord.into_inner())
 }
 
 impl DesignCoord {
