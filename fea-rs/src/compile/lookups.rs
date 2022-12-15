@@ -5,7 +5,7 @@ mod gpos;
 mod gsub;
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
 };
 
@@ -115,8 +115,8 @@ pub(crate) struct FeatureKey {
 /// A helper for building GSUB/GPOS tables
 pub(crate) struct PosSubBuilder<T> {
     lookups: Vec<T>,
-    scripts: BTreeMap<Tag, BTreeMap<Tag, Vec<u16>>>,
-    features: BTreeMap<(Tag, Vec<u16>), usize>,
+    scripts: BTreeMap<Tag, BTreeMap<Tag, LangSys>>,
+    features: BTreeMap<(Tag, Vec<u16>), u16>,
 }
 
 impl<T: Default> LookupBuilder<T> {
@@ -409,6 +409,7 @@ impl AllLookups {
     pub(crate) fn build(
         &self,
         features: &BTreeMap<FeatureKey, Vec<LookupId>>,
+        required_features: &HashSet<FeatureKey>,
     ) -> (Option<write_gsub::Gsub>, Option<write_gpos::Gpos>) {
         let mut gpos_builder = PosSubBuilder::new(self.gpos.clone());
         let mut gsub_builder = PosSubBuilder::new(self.gsub.clone());
@@ -419,19 +420,20 @@ impl AllLookups {
                 .iter()
                 .position(|x| matches!(x, LookupId::Gsub(_)))
                 .unwrap_or(feature_indices.len());
+            let required = required_features.contains(key);
 
             if key.feature == common::tags::SIZE {
-                gpos_builder.add(*key, &[]);
+                gpos_builder.add(*key, &[], required);
                 continue;
             }
 
             let (gpos_idxes, gsub_idxes) = feature_indices.split_at(split_idx);
             if !gpos_idxes.is_empty() {
-                gpos_builder.add(*key, gpos_idxes);
+                gpos_builder.add(*key, gpos_idxes, required);
             }
 
             if !gsub_idxes.is_empty() {
-                gsub_builder.add(*key, gsub_idxes);
+                gsub_builder.add(*key, gsub_idxes, required);
             }
         }
 
@@ -700,24 +702,35 @@ impl<T> PosSubBuilder<T> {
         }
     }
 
-    fn add(&mut self, key: FeatureKey, lookups: &[LookupId]) {
+    fn add(&mut self, key: FeatureKey, lookups: &[LookupId], required: bool) {
         let lookups = lookups.iter().map(|idx| idx.to_u16_or_die()).collect();
         let feat_key = (key.feature, lookups);
-        let idx = match self.features.get(&feat_key) {
-            Some(idx) => *idx,
-            None => {
-                let idx = self.features.len();
-                self.features.insert(feat_key, idx);
-                idx
-            }
-        };
-        self.scripts
+        let next_feature = self.features.len();
+        let idx = *self
+            .features
+            .entry(feat_key)
+            .or_insert_with(|| next_feature.try_into().expect("ran out of u16s"));
+
+        let lang_sys = self
+            .scripts
             .entry(key.script)
             .or_default()
             .entry(key.language)
-            .or_default()
-            .push(idx.try_into().unwrap());
+            .or_insert_with(temp_default_lang_sys);
+
+        if required {
+            lang_sys.required_feature_index = idx;
+        } else {
+            lang_sys.feature_indices.push(idx);
+        }
     }
+}
+
+//FIXME: remove when https://github.com/googlefonts/fontations/pull/179 has landed
+//(this has probably happened by the time you read this)
+fn temp_default_lang_sys() -> LangSys {
+    const NO_REQUIRED_FEATURE: u16 = 0xffff;
+    LangSys::new(NO_REQUIRED_FEATURE, vec![])
 }
 
 impl<T> PosSubBuilder<T>
@@ -734,7 +747,7 @@ where
         let mut features = Vec::with_capacity(self.features.len());
         features.resize_with(self.features.len(), Default::default);
         for ((tag, lookups), idx) in self.features {
-            features[idx] = FeatureRecord::new(tag, Feature::new(None, lookups));
+            features[idx as usize] = FeatureRecord::new(tag, Feature::new(None, lookups));
         }
 
         let scripts = self
@@ -742,14 +755,13 @@ where
             .into_iter()
             .map(|(script_tag, entry)| {
                 let mut script = Script::default();
-                for (lang_tag, feature_indices) in entry {
-                    let sys = LangSys::new(0xffff, feature_indices);
+                for (lang_tag, lang_sys) in entry {
                     if lang_tag == common::tags::LANG_DFLT {
-                        script.default_lang_sys = sys.into();
+                        script.default_lang_sys = lang_sys.into();
                     } else {
                         script
                             .lang_sys_records
-                            .push(LangSysRecord::new(lang_tag, sys));
+                            .push(LangSysRecord::new(lang_tag, lang_sys));
                     }
                 }
                 ScriptRecord::new(script_tag, script)

@@ -52,6 +52,7 @@ pub struct CompilationCtx<'a> {
     mark_attach_class_id: HashMap<GlyphClass, u16>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
     size: Option<SizeFeature>,
+    required_features: HashSet<FeatureKey>,
     //mark_attach_used_glyphs: HashMap<GlyphId, u16>,
 }
 
@@ -95,6 +96,7 @@ impl<'a> CompilationCtx<'a> {
             mark_attach_class_id: Default::default(),
             mark_filter_sets: Default::default(),
             size: None,
+            required_features: Default::default(),
             //mark_attach_used_glyphs: Default::default(),
         }
     }
@@ -146,6 +148,7 @@ impl<'a> CompilationCtx<'a> {
             features: self.features.clone(),
             tables: self.tables.clone(),
             size: self.size.clone(),
+            required_features: self.required_features.clone(),
         })
     }
 
@@ -258,10 +261,6 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn set_language(&mut self, stmt: typed::Language) {
-        // not currently handled
-        if let Some(token) = stmt.required() {
-            self.warning(token.range(), "required is not implemented");
-        }
         let language = stmt.tag().to_raw();
         let script = self.script.unwrap_or(common::tags::SCRIPT_DFLT);
         self.set_script_language(
@@ -284,7 +283,7 @@ impl<'a> CompilationCtx<'a> {
         script: Tag,
         language: Tag,
         exclude_dflt: bool,
-        _required: bool,
+        required: bool,
         err_range: Range<usize>,
     ) {
         let feature = match self.cur_feature_name {
@@ -320,6 +319,10 @@ impl<'a> CompilationCtx<'a> {
         self.cur_language_systems.clear();
         self.cur_language_systems
             .extend([(real_key.script, real_key.language)]);
+
+        if required {
+            self.required_features.insert(real_key);
+        }
     }
 
     fn set_lookup_flag(&mut self, node: typed::LookupFlag) {

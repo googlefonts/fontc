@@ -1,6 +1,6 @@
 //! The result of a compilation
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use write_fonts::{
     dump_table,
@@ -28,6 +28,7 @@ pub struct Compilation {
     pub(crate) tables: Tables,
     pub(crate) lookups: AllLookups,
     pub(crate) features: BTreeMap<FeatureKey, Vec<LookupId>>,
+    pub(crate) required_features: HashSet<FeatureKey>,
     pub(crate) size: Option<SizeFeature>,
 }
 
@@ -94,7 +95,7 @@ impl Compilation {
             builder.add_table(Tag::new(b"STAT"), dump_table(&stat).unwrap());
         }
 
-        let (mut gsub, mut gpos) = self.lookups.build(&self.features);
+        let (mut gsub, mut gpos) = self.lookups.build(&self.features, &self.required_features);
 
         let mut feature_params = HashMap::new();
         if let Some(size) = self.size.as_ref() {
