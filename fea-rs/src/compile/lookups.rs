@@ -716,7 +716,7 @@ impl<T> PosSubBuilder<T> {
             .entry(key.script)
             .or_default()
             .entry(key.language)
-            .or_insert_with(temp_default_lang_sys);
+            .or_default();
 
         if required {
             lang_sys.required_feature_index = idx;
@@ -724,13 +724,6 @@ impl<T> PosSubBuilder<T> {
             lang_sys.feature_indices.push(idx);
         }
     }
-}
-
-//FIXME: remove when https://github.com/googlefonts/fontations/pull/179 has landed
-//(this has probably happened by the time you read this)
-fn temp_default_lang_sys() -> LangSys {
-    const NO_REQUIRED_FEATURE: u16 = 0xffff;
-    LangSys::new(NO_REQUIRED_FEATURE, vec![])
 }
 
 impl<T> PosSubBuilder<T>
