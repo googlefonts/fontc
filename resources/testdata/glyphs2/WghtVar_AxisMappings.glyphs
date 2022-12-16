@@ -66,7 +66,7 @@ xHeight = 400;
 ascender = 800;
 capHeight = 700;
 descender = -200;
-id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+id = "bold";
 weight = Bold;
 weightValue = 73;
 xHeight = 500;
@@ -82,18 +82,22 @@ layerId = m01;
 width = 200;
 },
 {
-layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+layerId = "medium";
+width = 400;
+},
+{
+layerId = "bold";
 width = 600;
 }
 );
 unicode = 0020;
 },
 {
-glyphname = exclam;
+glyphname = "min-undefined";
 lastChange = "2022-12-01 05:10:49 +0000";
 layers = (
 {
-layerId = m01;
+layerId = medium;
 paths = (
 {
 closed = 1;
@@ -117,7 +121,7 @@ nodes = (
 width = 600;
 },
 {
-layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+layerId = "bold";
 paths = (
 {
 closed = 1;
@@ -163,7 +167,7 @@ nodes = (
 width = 600;
 },
 {
-layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+layerId = "bold";
 paths = (
 {
 closed = 1;

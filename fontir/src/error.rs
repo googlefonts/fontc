@@ -2,7 +2,7 @@ use std::{error, io, path::PathBuf};
 
 use thiserror::Error;
 
-use crate::coords::{NormalizedLocation, UserLocation};
+use crate::coords::{DesignCoord, NormalizedLocation, UserLocation};
 
 // TODO: eliminate dyn Error and collapse Error/WorkError
 
@@ -16,6 +16,10 @@ pub enum Error {
     IoError(#[from] io::Error),
     #[error("Unable to parse {0:?}: {1}")]
     ParseError(PathBuf, String),
+    #[error("Missing required axis values for {0}")]
+    NoAxisDefinitions(String),
+    #[error("Axis definitions are inconsistent")]
+    InconsistentAxisDefinitions(String),
     #[error("Illegible source")]
     UnableToLoadSource(Box<dyn error::Error>),
     #[error("Missing layer")]
@@ -39,6 +43,12 @@ pub enum Error {
     InvalidGlobalMetadata,
     #[error("No default master in {0:?}")]
     NoDefaultMaster(PathBuf),
+    #[error("Missing mapping on {axis} for {field} at {value:?}")]
+    MissingMappingForDesignCoord {
+        axis: String,
+        field: String,
+        value: DesignCoord,
+    },
 }
 
 /// An async work error, hence one that must be Send
@@ -58,10 +68,16 @@ pub enum WorkError {
     InconsistentAxisDefinitions(String),
     #[error("I am the glyph with gid, {0}")]
     NoGlyphIdForName(String),
+    #[error("No Glyph for name {0}")]
+    NoGlyphForName(String),
     #[error("File expected: {0:?}")]
     FileExpected(PathBuf),
     #[error("Unable to parse {0:?}: {1}")]
     ParseError(PathBuf, String),
     #[error("No default master in {0:?}")]
     NoDefaultMaster(PathBuf),
+    #[error("No master {master} exists. Referenced by glyph {glyph}.")]
+    NoMasterForGlyph { master: String, glyph: String },
+    #[error("Failed to add glyph source: {0}")]
+    AddGlyphSource(String),
 }
