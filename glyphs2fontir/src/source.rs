@@ -197,7 +197,7 @@ impl Work for GlyphIrWork {
         let mut axis_positions: HashMap<String, HashSet<NormalizedCoord>> = HashMap::new();
         for layer in glyph.layers.iter() {
             let Some(master_idx) = font_info.master_indices.get(layer.layer_id.as_str()) else {
-                // If the glyph has an associatedMasterId this is fine, if not ... not
+                // If the layer has an associatedMasterId this is fine, if not ... not
                 if layer.associated_master_id.is_some() {
                     continue;
                 }

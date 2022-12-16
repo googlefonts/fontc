@@ -28,7 +28,7 @@ fn to_normalized(axes: &[ir::Axis], design_location: &DesignLocation) -> Normali
         .collect()
 }
 
-fn find_by_user_coord(
+fn find_by_design_coord(
     mappings: &[(UserCoord, DesignCoord)],
     value: DesignCoord,
     axis: &str,
@@ -74,10 +74,10 @@ fn to_ir_axis(
             .iter()
             .map(|(u, d)| (UserCoord::new(*u), DesignCoord::new(*d)))
             .collect();
-        let default_idx = find_by_user_coord(&mappings, default, axis.tag.as_str(), "default")?;
+        let default_idx = find_by_design_coord(&mappings, default, axis.tag.as_str(), "default")?;
         // Make sure we have min and max mappings
-        find_by_user_coord(&mappings, min, axis.tag.as_str(), "min")?;
-        find_by_user_coord(&mappings, max, axis.tag.as_str(), "max")?;
+        find_by_design_coord(&mappings, min, axis.tag.as_str(), "min")?;
+        find_by_design_coord(&mappings, max, axis.tag.as_str(), "max")?;
         CoordConverter::new(mappings, default_idx)
     } else {
         // There is no mapping; design == user

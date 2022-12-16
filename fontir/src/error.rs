@@ -16,7 +16,7 @@ pub enum Error {
     IoError(#[from] io::Error),
     #[error("Unable to parse {0:?}: {1}")]
     ParseError(PathBuf, String),
-    #[error("No axes are defined for master {0}")]
+    #[error("Missing required axis values for {0}")]
     NoAxisDefinitions(String),
     #[error("Axis definitions are inconsistent")]
     InconsistentAxisDefinitions(String),
