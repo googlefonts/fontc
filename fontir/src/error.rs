@@ -76,8 +76,8 @@ pub enum WorkError {
     ParseError(PathBuf, String),
     #[error("No default master in {0:?}")]
     NoDefaultMaster(PathBuf),
-    #[error("No layer {0} exists. Referenced by glyph {1}.")]
-    NoLayerForGlyph(String, String),
+    #[error("No master {master} exists. Referenced by glyph {glyph}.")]
+    NoMasterForGlyph { master: String, glyph: String },
     #[error("Failed to add glyph source: {0}")]
     AddGlyphSource(String),
 }

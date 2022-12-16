@@ -218,7 +218,7 @@ fn do_work(context: &Context, work: Vec<Box<dyn Work>>) -> Result<(), Error> {
         .filter_map(|work| work.exec(context).err())
         .collect();
     for error in errors.iter() {
-        warn!("{:#?}", error);
+        warn!("{}", error);
     }
     if !errors.is_empty() {
         error!(

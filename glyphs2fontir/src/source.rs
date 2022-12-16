@@ -198,10 +198,14 @@ impl Work for GlyphIrWork {
         for layer in glyph.layers.iter() {
             let Some(master_idx) = font_info.master_indices.get(layer.layer_id.as_str()) else {
                 // If the glyph has an associatedMasterId this is fine, if not ... not
-                if glyph.other_stuff.contains_key("associatedMasterId") {
+                if layer.associated_master_id.is_some() {
                     continue;
                 }
-                return Err(WorkError::NoLayerForGlyph(self.glyph_name.clone(), layer.layer_id.clone()));
+
+                return Err(WorkError::NoMasterForGlyph {
+                    master: layer.layer_id.clone(),
+                    glyph: self.glyph_name.clone(),
+                });
             };
             let master = &font.font_master[*master_idx];
             let location = &font_info.master_locations[master.id.as_str()];

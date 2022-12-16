@@ -70,6 +70,7 @@ pub struct Glyph {
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Layer {
     pub layer_id: String,
+    pub associated_master_id: Option<String>,
     pub width: OrderedFloat<f64>,
     pub shapes: Option<Vec<Path>>,
     paths: Option<Vec<Path>>, // private, migrated to shapes if present
