@@ -67,15 +67,33 @@ pub struct Glyph {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
+/// Represents a path OR a component
+///
+/// <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+pub struct Shape {
+    // When I'm a path
+    pub closed: Option<bool>,
+    pub nodes: Option<Vec<Node>>,
+
+    // When I'm a component I have a ref
+    // but it seems to end up other_stuff because r#ref doesn't work
+    pub pos: Option<Vec<OrderedFloat<f64>>>,
+
+    // Always
+    #[rest]
+    pub other_stuff: BTreeMap<String, Plist>,
+}
+
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Layer {
     pub layer_id: String,
     pub associated_master_id: Option<String>,
     pub width: OrderedFloat<f64>,
-    pub shapes: Option<Vec<Path>>,
-    paths: Option<Vec<Path>>, // private, migrated to shapes if present
-    //pub components: Option<Vec<Component>>,
-    pub anchors: Option<Vec<Anchor>>,
+    shapes: Option<Vec<Shape>>, // private, migrated to paths/components if present
+    pub paths: Option<Vec<Path>>,
+    pub components: Option<Vec<Component>>,
+    //pub anchors: Option<Vec<Anchor>>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }
@@ -115,6 +133,28 @@ impl Affine {
             matrix[3].into(),
             matrix[4].into(),
             matrix[5].into(),
+        ])
+    }
+
+    pub fn identity() -> Affine {
+        Affine([
+            1f64.into(),
+            0f64.into(),
+            0f64.into(),
+            1f64.into(),
+            0f64.into(),
+            0f64.into(),
+        ])
+    }
+
+    pub fn translate(x: f64, y: f64) -> Affine {
+        Affine([
+            1f64.into(),
+            0f64.into(),
+            0f64.into(),
+            1f64.into(),
+            x.into(),
+            y.into(),
         ])
     }
 }
@@ -550,20 +590,45 @@ impl RawFont {
         Ok(())
     }
 
-    fn v2_to_v3_shapes(&mut self) -> Result<(), Error> {
+    fn v3_shapes_to_v2_paths_and_components(&mut self) -> Result<(), Error> {
         // shapes in v3 encompasses paths and components in v2
+        // paths and components is closer to what IR wants
+        // so here, unusually, downgrade
         for glyph in self.glyphs.iter_mut() {
             // Paths and components combine in shapes
-            // TODO components
             for layer in glyph.layers.iter_mut() {
-                if let Some(paths) = layer.paths.take() {
-                    match &mut layer.shapes {
-                        Some(shapes) => {
-                            shapes.extend(paths);
-                        }
-                        None => {
-                            layer.shapes = Some(paths);
-                        }
+                let Some(mut shapes) = layer.shapes.take() else {
+                    continue;
+                };
+
+                for shape in shapes.iter_mut() {
+                    if let Some(Plist::String(ref_glyph_name)) = shape.other_stuff.remove("ref") {
+                        // only components use ref
+                        let transform = if let Some(pos) = &shape.pos {
+                            if pos.len() != 2 {
+                                return Err(Error::StructuralError(format!(
+                                    "Strang pos {:?}",
+                                    pos
+                                )));
+                            }
+                            Some(Affine::translate(pos[0].into_inner(), pos[1].into_inner()))
+                        } else {
+                            None
+                        };
+                        layer
+                            .components
+                            .get_or_insert_with(Vec::new)
+                            .push(Component {
+                                name: ref_glyph_name.clone(),
+                                transform,
+                                other_stuff: shape.other_stuff.clone(),
+                            });
+                    } else {
+                        // presume it's a path
+                        layer.paths.get_or_insert_with(Vec::new).push(Path {
+                            closed: shape.closed.unwrap_or_default(),
+                            nodes: shape.nodes.clone().unwrap_or_default(),
+                        });
                     }
                 }
             }
@@ -593,7 +658,6 @@ impl RawFont {
         self.v2_to_v3_weight()?;
         self.v2_to_v3_axes()?;
         self.v2_to_v3_metrics()?;
-        self.v2_to_v3_shapes()?;
         Ok(())
     }
 }
@@ -745,6 +809,8 @@ impl Font {
         let mut raw_font = RawFont::from_plist(raw_content);
         if raw_font.is_v2() {
             raw_font.v2_to_v3()?;
+        } else {
+            raw_font.v3_shapes_to_v2_paths_and_components()?;
         }
 
         Ok(raw_font.into())
@@ -914,7 +980,10 @@ mod tests {
     #[test]
     fn glyph_order_default_is_file_order() {
         let font = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
-        assert_eq!(vec!["space", "exclam", "hyphen"], font.glyph_order);
+        assert_eq!(
+            vec!["space", "exclam", "hyphen", "manual-component"],
+            font.glyph_order
+        );
     }
 
     #[test]

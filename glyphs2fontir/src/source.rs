@@ -302,16 +302,15 @@ mod tests {
 
     #[test]
     fn find_glyphs() {
-        let expected_keys = HashSet::from(["space", "hyphen", "exclam"]);
         assert_eq!(
-            expected_keys,
+            HashSet::from(["space", "hyphen", "exclam", "manual-component"]),
             glyph_state_for_file(&glyphs3_dir(), "WghtVar.glyphs")
                 .keys()
                 .map(|k| k.as_str())
                 .collect::<HashSet<&str>>()
         );
         assert_eq!(
-            expected_keys,
+            HashSet::from(["space", "hyphen", "exclam"]),
             glyph_state_for_file(&glyphs3_dir(), "WghtVar_HeavyHyphen.glyphs")
                 .keys()
                 .map(|k| k.as_str())
@@ -372,7 +371,7 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(
-            vec!["space", "exclam", "hyphen"],
+            vec!["space", "exclam", "hyphen", "manual-component"],
             context.get_static_metadata().glyph_order
         );
     }
