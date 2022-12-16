@@ -27,6 +27,9 @@ const V2_METRIC_NAMES: [&str; 5] = ["ascender", "baseline", "descender", "capHei
 
 type RawUserToDesignMapping = Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>;
 
+/// A tidied up font from a plist.
+///
+/// Normalized representation of Glyphs 2/3 content
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Font {
     pub family_name: String,
@@ -40,13 +43,32 @@ pub struct Font {
     pub axis_mappings: BTreeMap<String, RawUserToDesignMapping>,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct Glyph {
+    pub glyphname: String,
+    pub instances: Vec<GlyphInstance>,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct GlyphInstance {
+    pub layer_id: String,
+    pub width: OrderedFloat<f64>,
+    pub shapes: Vec<Shape>,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum Shape {
+    Path(Path),
+    Component(Component),
+}
+
 // The font you get directly from a plist, minimally modified
 // Types chosen specifically to accomodate plist translation.
 #[derive(Debug, FromPlist, PartialEq, Eq)]
 struct RawFont {
     pub family_name: String,
     pub axes: Option<Vec<Axis>>,
-    pub glyphs: Vec<Glyph>,
+    pub glyphs: Vec<RawGlyph>,
     pub font_master: Vec<FontMaster>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
@@ -60,9 +82,22 @@ pub struct Axis {
 }
 
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
-pub struct Glyph {
+pub struct RawGlyph {
     pub layers: Vec<Layer>,
     pub glyphname: String,
+    #[rest]
+    pub other_stuff: BTreeMap<String, Plist>,
+}
+
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+pub struct Layer {
+    pub layer_id: String,
+    pub associated_master_id: Option<String>,
+    pub width: OrderedFloat<f64>,
+    shapes: Option<Vec<RawShape>>,
+    paths: Option<Vec<Path>>,
+    components: Option<Vec<Component>>,
+    //pub anchors: Option<Vec<Anchor>>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }
@@ -71,7 +106,9 @@ pub struct Glyph {
 ///
 /// <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
-pub struct Shape {
+pub struct RawShape {
+    // TODO: add numerous unsupported attributes
+
     // When I'm a path
     pub closed: Option<bool>,
     pub nodes: Option<Vec<Node>>,
@@ -86,22 +123,17 @@ pub struct Shape {
 }
 
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
-pub struct Layer {
-    pub layer_id: String,
-    pub associated_master_id: Option<String>,
-    pub width: OrderedFloat<f64>,
-    shapes: Option<Vec<Shape>>, // private, migrated to paths/components if present
-    pub paths: Option<Vec<Path>>,
-    pub components: Option<Vec<Component>>,
-    //pub anchors: Option<Vec<Anchor>>,
-    #[rest]
-    pub other_stuff: BTreeMap<String, Plist>,
-}
-
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Path {
     pub closed: bool,
     pub nodes: Vec<Node>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Component {
+    /// The glyph this component references
+    pub glyph_name: String,
+    pub transform: Affine,
+    pub other_stuff: BTreeMap<String, Plist>,
 }
 
 // We do not use kurbo's point because it does not hash
@@ -175,14 +207,6 @@ pub enum NodeType {
 }
 
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
-pub struct Component {
-    pub name: String,
-    pub transform: Option<Affine>,
-    #[rest]
-    pub other_stuff: BTreeMap<String, Plist>,
-}
-
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct Anchor {
     pub name: String,
     pub position: Point,
@@ -196,7 +220,7 @@ pub struct FontMaster {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-impl Glyph {
+impl RawGlyph {
     pub fn get_layer(&self, layer_id: &str) -> Option<&Layer> {
         self.layers.iter().find(|l| l.layer_id == layer_id)
     }
@@ -247,6 +271,43 @@ impl std::str::FromStr for NodeType {
             "c" => Ok(NodeType::Curve),
             "cs" => Ok(NodeType::CurveSmooth),
             _ => Err(format!("unknown node type {}", s)),
+        }
+    }
+}
+
+impl FromPlist for Component {
+    fn from_plist(plist: Plist) -> Self {
+        let Plist::Dictionary(mut dict) = plist else {
+            panic!("Component must be a dict: {:?}", plist);
+        };
+        // Glyphs v3 name has been renamed to ref; look for both
+        let glyph_name = if let Some(Plist::String(glyph_name)) = dict.remove("ref") {
+            glyph_name
+        } else if let Some(Plist::String(glyph_name)) = dict.remove("name") {
+            glyph_name
+        } else {
+            panic!("Neither ref nor name present: {:?}", dict);
+        };
+
+        let transform = if let Some(plist) = dict.remove("transform") {
+            Affine::from_plist(plist)
+        } else {
+            Affine::identity()
+        };
+
+        // TODO scale, angle, etc
+        // See component in <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
+        if let Some(..) = dict.remove("angle") {
+            panic!("Angle not supported yet");
+        }
+        if let Some(..) = dict.remove("scale") {
+            panic!("Scale not supported yet");
+        }
+
+        Component {
+            glyph_name,
+            transform,
+            other_stuff: dict,
         }
     }
 }
@@ -590,52 +651,6 @@ impl RawFont {
         Ok(())
     }
 
-    fn v3_shapes_to_v2_paths_and_components(&mut self) -> Result<(), Error> {
-        // shapes in v3 encompasses paths and components in v2
-        // paths and components is closer to what IR wants
-        // so here, unusually, downgrade
-        for glyph in self.glyphs.iter_mut() {
-            // Paths and components combine in shapes
-            for layer in glyph.layers.iter_mut() {
-                let Some(mut shapes) = layer.shapes.take() else {
-                    continue;
-                };
-
-                for shape in shapes.iter_mut() {
-                    if let Some(Plist::String(ref_glyph_name)) = shape.other_stuff.remove("ref") {
-                        // only components use ref
-                        let transform = if let Some(pos) = &shape.pos {
-                            if pos.len() != 2 {
-                                return Err(Error::StructuralError(format!(
-                                    "Strang pos {:?}",
-                                    pos
-                                )));
-                            }
-                            Some(Affine::translate(pos[0].into_inner(), pos[1].into_inner()))
-                        } else {
-                            None
-                        };
-                        layer
-                            .components
-                            .get_or_insert_with(Vec::new)
-                            .push(Component {
-                                name: ref_glyph_name.clone(),
-                                transform,
-                                other_stuff: shape.other_stuff.clone(),
-                            });
-                    } else {
-                        // presume it's a path
-                        layer.paths.get_or_insert_with(Vec::new).push(Path {
-                            closed: shape.closed.unwrap_or_default(),
-                            nodes: shape.nodes.clone().unwrap_or_default(),
-                        });
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
     fn v2_to_v3_weight(&mut self) -> Result<(), Error> {
         for master in self.font_master.iter_mut() {
             // Don't remove weightValue, we need it to understand axes
@@ -729,8 +744,116 @@ fn default_master_idx(raw_font: &RawFont) -> usize {
         .unwrap_or(0)
 }
 
-impl From<RawFont> for Font {
-    fn from(mut from: RawFont) -> Self {
+fn extract_axis_mappings(from: &RawFont) -> BTreeMap<String, RawUserToDesignMapping> {
+    let mut axis_mappings: BTreeMap<String, RawUserToDesignMapping> = BTreeMap::new();
+    if let Some((_, axis_map)) = custom_param(&from.other_stuff, "Axis Mappings") {
+        let Plist::Dictionary(axis_map) = axis_map.get("value").unwrap() else {
+            panic!("Incomprehensible axis map");
+        };
+        for (axis_tag, mappings) in axis_map.iter() {
+            let Plist::Dictionary(mappings) = mappings else {
+                panic!("Incomprehensible mappings");
+            };
+            for (user, design) in mappings.iter() {
+                let user: f32 = user.parse().unwrap();
+                let design = design.as_f64().unwrap() as f32;
+                axis_mappings
+                    .entry(axis_tag.clone())
+                    .or_default()
+                    .push((user.into(), design.into()));
+            }
+        }
+    }
+    axis_mappings
+}
+
+impl TryFrom<RawShape> for Shape {
+    type Error = Error;
+
+    fn try_from(mut from: RawShape) -> Result<Self, Self::Error> {
+        // TODO: handle numerous unsupported attributes
+        // See <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
+
+        let shape = if let Some(Plist::String(ref_glyph_name)) = from.other_stuff.remove("ref") {
+            // only components use ref
+            let transform = if let Some(pos) = &from.pos {
+                if pos.len() != 2 {
+                    return Err(Error::StructuralError(format!("Strang pos {:?}", pos)));
+                }
+                Affine::translate(pos[0].into_inner(), pos[1].into_inner())
+            } else {
+                Affine::identity()
+            };
+            Shape::Component(Component {
+                glyph_name: ref_glyph_name,
+                transform,
+                other_stuff: from.other_stuff.clone(),
+            })
+        } else {
+            // no ref; presume it's a path
+            Shape::Path(Path {
+                closed: from.closed.unwrap_or_default(),
+                nodes: from.nodes.clone().unwrap_or_default(),
+            })
+        };
+        Ok(shape)
+    }
+}
+
+fn map_and_push_if_present<T, U>(dest: &mut Vec<T>, src: Option<Vec<U>>, map: fn(U) -> T) {
+    let Some(src) = src else {
+        return; // nop
+    };
+    src.into_iter().map(map).for_each(|v| dest.push(v));
+}
+
+fn layer_to_glyph_instance(layer: Layer) -> Result<GlyphInstance, Error> {
+    let mut shapes = Vec::new();
+
+    // Glyphs v2 uses paths and components
+    map_and_push_if_present(&mut shapes, layer.paths, Shape::Path);
+    map_and_push_if_present(&mut shapes, layer.components, Shape::Component);
+
+    // Glyphs v3 uses shapes for both
+    for raw_shape in layer.shapes.unwrap_or_default() {
+        shapes.push(raw_shape.try_into()?);
+    }
+
+    Ok(GlyphInstance {
+        layer_id: layer.layer_id,
+        width: layer.width,
+        shapes,
+    })
+}
+
+impl TryFrom<RawGlyph> for Glyph {
+    type Error = Error;
+
+    fn try_from(from: RawGlyph) -> Result<Self, Self::Error> {
+        let mut instances = Vec::new();
+        for layer in from.layers {
+            // The presence of an associated master indicates this is not a simple instance
+            // It's either a draft or a more complex usage, such as an alternate
+            if layer.associated_master_id.is_some() {
+                continue;
+            }
+            instances.push(layer_to_glyph_instance(layer)?);
+        }
+        Ok(Glyph {
+            glyphname: from.glyphname,
+            instances,
+        })
+    }
+}
+
+impl TryFrom<RawFont> for Font {
+    type Error = Error;
+
+    fn try_from(mut from: RawFont) -> Result<Self, Self::Error> {
+        if from.is_v2() {
+            from.v2_to_v3()?;
+        }
+
         let radix = if from.is_v2() { 16 } else { 10 };
         from.other_stuff.remove("date"); // exists purely to make diffs fail
         from.other_stuff.remove(".formatVersion"); // no longer relevent
@@ -739,39 +862,14 @@ impl From<RawFont> for Font {
         let codepoints = parse_codepoints(&mut from, radix);
 
         let default_master_idx = default_master_idx(&from);
+        let axis_mappings = extract_axis_mappings(&from);
 
-        for glyph in from.glyphs.iter_mut() {
-            glyph.other_stuff.remove("lastChange");
+        let mut glyphs = BTreeMap::new();
+        for raw_glyph in from.glyphs.into_iter() {
+            glyphs.insert(raw_glyph.glyphname.clone(), raw_glyph.try_into()?);
         }
 
-        let glyphs = from.glyphs;
-        from.glyphs = Vec::new();
-        let glyphs = glyphs
-            .into_iter()
-            .map(|g| (g.glyphname.clone(), g))
-            .collect();
-
-        let mut axis_mappings: BTreeMap<String, RawUserToDesignMapping> = BTreeMap::new();
-        if let Some((_, axis_map)) = custom_param(&from.other_stuff, "Axis Mappings") {
-            let Plist::Dictionary(axis_map) = axis_map.get("value").unwrap() else {
-                panic!("Incomprehensible axis map");
-            };
-            for (axis_tag, mappings) in axis_map.iter() {
-                let Plist::Dictionary(mappings) = mappings else {
-                    panic!("Incomprehensible mappings");
-                };
-                for (user, design) in mappings.iter() {
-                    let user: f32 = user.parse().unwrap();
-                    let design = design.as_f64().unwrap() as f32;
-                    axis_mappings
-                        .entry(axis_tag.clone())
-                        .or_default()
-                        .push((user.into(), design.into()));
-                }
-            }
-        }
-
-        Font {
+        Ok(Font {
             family_name: from.family_name,
             axes: from.axes.unwrap_or_default(),
             font_master: from.font_master,
@@ -780,7 +878,7 @@ impl From<RawFont> for Font {
             glyph_order,
             codepoints,
             axis_mappings,
-        }
+        })
     }
 }
 
@@ -805,15 +903,8 @@ impl Font {
         };
         fix_glyphs_named_infinity(glyphs_file, root_dict)?;
 
-        // Try to migrate glyphs2 to glyphs3
-        let mut raw_font = RawFont::from_plist(raw_content);
-        if raw_font.is_v2() {
-            raw_font.v2_to_v3()?;
-        } else {
-            raw_font.v3_shapes_to_v2_paths_and_components()?;
-        }
-
-        Ok(raw_font.into())
+        let raw_font = RawFont::from_plist(raw_content);
+        raw_font.try_into()
     }
 
     pub fn default_master(&self) -> &FontMaster {

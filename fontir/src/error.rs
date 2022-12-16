@@ -2,7 +2,7 @@ use std::{error, io, path::PathBuf};
 
 use thiserror::Error;
 
-use crate::coords::{DesignCoord, NormalizedLocation, UserLocation};
+use crate::coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserLocation};
 
 // TODO: eliminate dyn Error and collapse Error/WorkError
 
@@ -80,4 +80,10 @@ pub enum WorkError {
     NoMasterForGlyph { master: String, glyph: String },
     #[error("Failed to add glyph source: {0}")]
     AddGlyphSource(String),
+    #[error("{glyph_name} undefined on {axis} at required position {pos:?}")]
+    GlyphUndefAtNormalizedPosition {
+        glyph_name: String,
+        axis: String,
+        pos: NormalizedCoord,
+    },
 }
