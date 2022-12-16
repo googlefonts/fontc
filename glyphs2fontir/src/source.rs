@@ -1,17 +1,16 @@
-use fontir::coords::{
-    CoordConverter, DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord,
-};
+use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
 use fontir::ir::{self, GlyphInstance, StaticMetadata};
 use fontir::orchestration::Context;
 use fontir::source::{Input, Source, Work};
 use fontir::stateset::StateSet;
-use glyphs_reader::{Font, FontMaster};
+use glyphs_reader::Font;
 use log::debug;
-use ordered_float::OrderedFloat;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
+
+use crate::toir::FontInfo;
 
 pub struct GlyphsIrSource {
     glyphs_file: PathBuf,
@@ -29,7 +28,7 @@ impl GlyphsIrSource {
 
 struct Cache {
     global_metadata: StateSet,
-    font: Arc<Font>,
+    font_info: Arc<FontInfo>,
 }
 
 impl Cache {
@@ -92,18 +91,20 @@ impl GlyphsIrSource {
 impl Source for GlyphsIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         // We have to read the glyphs file then shred it to figure out if anything changed
-        let font = Font::load(&self.glyphs_file).map_err(|e| {
+        let font_info = FontInfo::try_from(Font::load(&self.glyphs_file).map_err(|e| {
             Error::ParseError(
                 self.glyphs_file.clone(),
                 format!("Unable to read glyphs file: {}", e),
             )
-        })?;
-        let glyphs = glyph_states(&font)?;
-        let global_metadata = self.global_rebuild_triggers(&font)?;
+        })?)?;
+        let font = &font_info.font;
+        let global_metadata = self.global_rebuild_triggers(font)?;
+
+        let glyphs = glyph_states(font)?;
 
         self.cache = Some(Cache {
             global_metadata: global_metadata.clone(),
-            font: Arc::from(font),
+            font_info: Arc::from(font_info),
         });
 
         Ok(Input {
@@ -114,9 +115,8 @@ impl Source for GlyphsIrSource {
 
     fn create_static_metadata_work(&self, context: &Context) -> Result<Box<dyn Work>, Error> {
         self.check_global_metadata(&context.input.global_metadata)?;
-        Ok(Box::from(StaticMetadataWork {
-            font: self.cache.as_ref().unwrap().font.clone(),
-        }))
+        let font_info = self.cache.as_ref().unwrap().font_info.clone();
+        Ok(Box::from(StaticMetadataWork { font_info }))
     }
 
     fn create_glyph_ir_work(
@@ -131,7 +131,7 @@ impl Source for GlyphsIrSource {
         let mut work: Vec<Box<dyn Work>> = Vec::new();
         for glyph_name in glyph_names {
             work.push(Box::from(
-                self.create_work_for_one_glyph(glyph_name, cache.font.clone())?,
+                self.create_work_for_one_glyph(glyph_name, cache.font_info.clone())?,
             ));
         }
         Ok(work)
@@ -142,180 +142,46 @@ impl GlyphsIrSource {
     fn create_work_for_one_glyph(
         &self,
         glyph_name: &str,
-        font: Arc<Font>,
+        font_info: Arc<FontInfo>,
     ) -> Result<GlyphIrWork, Error> {
         let glyph_name = glyph_name.to_string();
-        let master_indices: HashMap<_, _> = font
-            .font_master
-            .iter()
-            .enumerate()
-            .map(|(idx, m)| (m.id.clone(), idx))
-            .collect();
         Ok(GlyphIrWork {
             glyph_name,
-            font,
-            master_indices: Arc::from(master_indices),
+            font_info,
         })
     }
 }
 
 struct StaticMetadataWork {
-    font: Arc<Font>,
+    font_info: Arc<FontInfo>,
 }
 
 impl Work for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        let font = self.font.as_ref();
+        let font_info = self.font_info.as_ref();
+        let font = &font_info.font;
         debug!("Static metadata for {}", font.family_name);
-
-        let mut axis_values = Vec::new();
-        for master in font.font_master.iter() {
-            master
-                .axes_values
-                .as_ref()
-                .ok_or_else(|| {
-                    WorkError::InconsistentAxisDefinitions(format!(
-                        "No axis values for {}",
-                        master.id
-                    ))
-                })?
-                .iter()
-                .enumerate()
-                .for_each(|(idx, value)| {
-                    while axis_values.len() <= idx {
-                        axis_values.push(Vec::new());
-                    }
-                    axis_values[idx].push(value);
-                });
-        }
-
-        if font.axes.len() != axis_values.len() || axis_values.iter().any(|v| v.is_empty()) {
-            return Err(WorkError::InconsistentAxisDefinitions(format!(
-                "Axes {:?} doesn't match axis values {:?}",
-                font.axes, axis_values
-            )));
-        }
-
-        let axes = font
-            .axes
-            .iter()
-            .enumerate()
-            .map(|(idx, a)| {
-                let min = axis_values[idx]
-                    .iter()
-                    .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
-                    .min()
-                    .unwrap();
-                let max = axis_values[idx]
-                    .iter()
-                    .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
-                    .max()
-                    .unwrap();
-                let default = OrderedFloat::<f32>(
-                    axis_values[idx][font.default_master_idx].into_inner() as f32,
-                );
-
-                // Given in design coords based on a sample file
-                let default = DesignCoord::new(default);
-                let min = DesignCoord::new(min);
-                let max = DesignCoord::new(max);
-
-                // TODO: support Axis Location (https://glyphsapp.com/learn/creating-a-variable-font#g-axis-mappings-and-locations__option-1-axis-location-parameters)
-
-                let converter = if font.axis_mappings.contains_key(&a.tag) {
-                    let mappings: Vec<_> = font
-                        .axis_mappings
-                        .get(&a.tag)
-                        .unwrap()
-                        .iter()
-                        .map(|(u, d)| (UserCoord::new(*u), DesignCoord::new(*d)))
-                        .collect();
-                    let default_idx = mappings
-                        .iter()
-                        .position(|(_, dc)| *dc == default)
-                        .unwrap_or_else(|| {
-                            panic!("Must have a mapping for default {:?} on {}", default, a.tag)
-                        });
-                    mappings
-                        .iter()
-                        .position(|(_, dc)| *dc == min)
-                        .unwrap_or_else(|| {
-                            panic!("Must have a mapping for min {:?} on {}", min, a.tag)
-                        });
-                    mappings
-                        .iter()
-                        .position(|(_, dc)| *dc == max)
-                        .unwrap_or_else(|| {
-                            panic!("Must have a mapping for max {:?} on {}", max, a.tag)
-                        });
-                    CoordConverter::new(mappings, default_idx)
-                } else {
-                    // There is no mapping that we can understand; let design == user
-                    let min = UserCoord::new(min.into_inner());
-                    let max = UserCoord::new(max.into_inner());
-                    let default = UserCoord::new(default.into_inner());
-                    CoordConverter::unmapped(min, default, max)
-                };
-
-                let default = default.to_user(&converter);
-                let min = min.to_user(&converter);
-                let max = max.to_user(&converter);
-
-                ir::Axis {
-                    name: a.name.clone(),
-                    tag: a.tag.clone(),
-                    hidden: a.hidden.unwrap_or(false),
-                    min,
-                    default,
-                    max,
-                    converter,
-                }
-            })
-            .collect();
-
-        context.set_static_metadata(StaticMetadata::new(axes, font.glyph_order.clone()));
+        context.set_static_metadata(StaticMetadata::new(
+            font_info.axes.clone(),
+            font.glyph_order.clone(),
+        ));
         Ok(())
     }
 }
 
-fn design_location(axes: &[ir::Axis], master: &FontMaster) -> DesignLocation {
-    axes.iter()
-        .zip(master.axes_values.as_ref().unwrap())
-        .map(|(axis, pos)| (axis.tag.clone(), DesignCoord::new(pos.into_inner() as f32)))
-        .collect()
-}
-
-fn to_normalized(axes: &[ir::Axis], design_location: &DesignLocation) -> NormalizedLocation {
-    let axes: HashMap<_, _> = axes.iter().map(|a| (&a.tag, a)).collect();
-    design_location
-        .iter()
-        .map(|(tag, dc)| {
-            (
-                tag.clone(),
-                dc.to_normalized(&axes.get(tag).unwrap().converter),
-            )
-        })
-        .collect()
-}
-
 struct GlyphIrWork {
     glyph_name: String,
-    font: Arc<Font>,
-    master_indices: Arc<HashMap<String, usize>>,
+    font_info: Arc<FontInfo>,
 }
 
 impl Work for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Generate IR for {}", self.glyph_name);
-        let font = self.font.as_ref();
+        let font_info = self.font_info.as_ref();
+        let font = &font_info.font;
 
         let static_metadata = context.get_static_metadata();
         let axes = &static_metadata.axes;
-        let master_locations: HashMap<_, _> = font
-            .font_master
-            .iter()
-            .map(|m| (&m.id, to_normalized(axes, &design_location(axes, m))))
-            .collect();
 
         let gid = static_metadata
             .glyph_id(&self.glyph_name)
@@ -330,11 +196,15 @@ impl Work for GlyphIrWork {
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<String, HashSet<NormalizedCoord>> = HashMap::new();
         for layer in glyph.layers.iter() {
-            let Some(master_idx) = self.master_indices.get(&layer.layer_id) else {
+            let Some(master_idx) = font_info.master_indices.get(layer.layer_id.as_str()) else {
+                // If the glyph has an associatedMasterId this is fine, if not ... not
+                if glyph.other_stuff.contains_key("associatedMasterId") {
+                    continue;
+                }
                 return Err(WorkError::NoLayerForGlyph(self.glyph_name.clone(), layer.layer_id.clone()));
             };
             let master = &font.font_master[*master_idx];
-            let location = &master_locations[&master.id];
+            let location = &font_info.master_locations[master.id.as_str()];
 
             for (tag, coord) in location.iter() {
                 axis_positions
