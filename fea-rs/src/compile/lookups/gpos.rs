@@ -1,6 +1,6 @@
 //! GPOS subtable builders
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use write_fonts::{
     tables::{
@@ -15,40 +15,21 @@ use super::Builder;
 type MarkClass = u16;
 
 #[derive(Clone, Debug, Default)]
-struct SinglePosSubtable {
-    format: ValueFormat,
-    items: BTreeMap<GlyphId, ValueRecord>,
-}
-
-#[derive(Clone, Debug, Default)]
 pub struct SinglePosBuilder {
-    subtables: Vec<SinglePosSubtable>,
+    items: BTreeMap<GlyphId, ValueRecord>,
 }
 
 impl SinglePosBuilder {
     //TODO: should we track the valueformat here?
     pub fn insert(&mut self, glyph: GlyphId, record: ValueRecord) {
-        self.get_subtable(record.format())
-            .items
-            .insert(glyph, record);
-    }
-
-    fn get_subtable(&mut self, format: ValueFormat) -> &mut SinglePosSubtable {
-        if self.subtables.last().map(|sub| sub.format) != Some(format) {
-            self.subtables.push(SinglePosSubtable {
-                format,
-                items: BTreeMap::new(),
-            });
-        }
-        self.subtables.last_mut().unwrap()
+        self.items.insert(glyph, record);
     }
 
     pub(crate) fn can_add_rule(&self, glyph: GlyphId, value: &ValueRecord) -> bool {
-        self.subtables
-            .iter()
-            .find_map(|sub| sub.items.get(&glyph))
-            .filter(|&record| record == value)
-            .is_some()
+        self.items
+            .get(&glyph)
+            .map(|existing| existing == value)
+            .unwrap_or(true)
     }
 }
 
@@ -56,23 +37,68 @@ impl Builder for SinglePosBuilder {
     type Output = Vec<write_gpos::SinglePos>;
 
     fn build(self) -> Self::Output {
-        self.subtables.into_iter().map(Builder::build).collect()
+        fn build_subtable(items: BTreeMap<GlyphId, &ValueRecord>) -> write_gpos::SinglePos {
+            let first = *items.values().next().unwrap();
+            let use_format_1 = first.format().is_empty() || items.values().all(|val| val == &first);
+            let coverage: CoverageTableBuilder = items.keys().copied().collect();
+            if use_format_1 {
+                write_gpos::SinglePos::format_1(coverage.build(), first.clone())
+            } else {
+                write_gpos::SinglePos::format_2(
+                    coverage.build(),
+                    items.into_values().cloned().collect(),
+                )
+            }
+        }
+        const NEW_SUBTABLE_COST: usize = 10;
+
+        // list of sets of glyph ids which will end up in their own subtables
+        let mut subtables = Vec::new();
+        let mut group_by_record: HashMap<&ValueRecord, BTreeMap<GlyphId, &ValueRecord>> =
+            Default::default();
+
+        // first group by specific record; glyphs that share a record can use
+        // the more efficient format-1 subtable type
+        for (gid, value) in &self.items {
+            group_by_record
+                .entry(value)
+                .or_default()
+                .insert(*gid, value);
+        }
+        let mut group_by_format: HashMap<ValueFormat, BTreeMap<GlyphId, &ValueRecord>> =
+            Default::default();
+        for (value, glyphs) in group_by_record {
+            // if this saves us size, use format 1
+            if glyphs.len() * value.encoded_size() > NEW_SUBTABLE_COST {
+                subtables.push(glyphs);
+                // else split based on value format; each format will be its own
+                // format 2 table
+            } else {
+                group_by_format
+                    .entry(value.format())
+                    .or_default()
+                    .extend(glyphs.into_iter());
+            }
+        }
+        subtables.extend(group_by_format.into_values());
+
+        let mut output = subtables
+            .into_iter()
+            .map(build_subtable)
+            .collect::<Vec<_>>();
+
+        // finally sort the subtables: first in decreasing order of size,
+        // using first glyph id to break ties (matches feaLib)
+        output.sort_unstable_by_key(|table| match table {
+            write_gpos::SinglePos::Format1(table) => cmp_coverage_key(&table.coverage),
+            write_gpos::SinglePos::Format2(table) => cmp_coverage_key(&table.coverage),
+        });
+        output
     }
 }
 
-impl Builder for SinglePosSubtable {
-    type Output = write_gpos::SinglePos;
-
-    fn build(self) -> Self::Output {
-        let first_value = self.items.values().next().unwrap();
-        let format_1 = self.items.values().all(|val| val == first_value);
-        let coverage: CoverageTableBuilder = self.items.keys().copied().collect();
-        if format_1 {
-            write_gpos::SinglePos::format_1(coverage.build(), first_value.to_owned())
-        } else {
-            write_gpos::SinglePos::format_2(coverage.build(), self.items.into_values().collect())
-        }
-    }
+fn cmp_coverage_key(coverage: &CoverageTable) -> impl Ord {
+    (std::cmp::Reverse(coverage.len()), coverage.iter().next())
 }
 
 #[derive(Clone, Debug, Default)]
