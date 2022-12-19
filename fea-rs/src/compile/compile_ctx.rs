@@ -637,14 +637,24 @@ impl<'a> CompilationCtx<'a> {
             .map(|val| self.resolve_value_record(&val))
             .unwrap_or_default();
         let lookup = self.ensure_current_lookup_type(Kind::GposType2);
-        for first in first_ids.iter() {
-            for second in second_ids.iter() {
-                lookup.add_gpos_type_2_specific(
-                    first,
-                    second,
-                    first_value.clone(),
-                    second_value.clone(),
-                );
+
+        if (first_ids.is_class() || second_ids.is_class()) && node.enum_().is_none() {
+            lookup.add_gpos_type_2_class(
+                first_ids.into_class().unwrap(),
+                second_ids.into_class().unwrap(),
+                first_value,
+                second_value,
+            )
+        } else {
+            for first in first_ids.iter() {
+                for second in second_ids.iter() {
+                    lookup.add_gpos_type_2_pair(
+                        first,
+                        second,
+                        first_value.clone(),
+                        second_value.clone(),
+                    );
+                }
             }
         }
     }

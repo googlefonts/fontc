@@ -3,6 +3,7 @@
 mod contextual;
 mod gpos;
 mod gsub;
+mod helpers;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -25,7 +26,7 @@ use write_fonts::{
 
 use crate::{
     compile::lookups::contextual::ChainOrNot,
-    types::{GlyphId, GlyphOrClass},
+    types::{GlyphClass, GlyphId, GlyphOrClass},
     Kind,
 };
 
@@ -40,6 +41,7 @@ use gpos::{
     SinglePosBuilder,
 };
 use gsub::{AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder};
+pub(crate) use helpers::ClassDefBuilder2;
 
 pub trait Builder {
     type Output;
@@ -553,7 +555,7 @@ impl SomeLookup {
         }
     }
 
-    pub(crate) fn add_gpos_type_2_specific(
+    pub(crate) fn add_gpos_type_2_pair(
         &mut self,
         one: GlyphId,
         two: GlyphId,
@@ -562,12 +564,26 @@ impl SomeLookup {
     ) {
         if let SomeLookup::GposLookup(PositionLookup::Pair(table)) = self {
             let subtable = table.last_mut().unwrap();
-            subtable.insert(one, val_one, two, val_two)
+            subtable.insert_pair(one, val_one, two, val_two)
         } else {
             panic!("lookup mismatch");
         }
     }
 
+    pub(crate) fn add_gpos_type_2_class(
+        &mut self,
+        one: GlyphClass,
+        two: GlyphClass,
+        val_one: ValueRecord,
+        val_two: ValueRecord,
+    ) {
+        if let SomeLookup::GposLookup(PositionLookup::Pair(table)) = self {
+            let subtable = table.last_mut().unwrap();
+            subtable.insert_classes(one, val_one, two, val_two)
+        } else {
+            panic!("lookup mismatch");
+        }
+    }
     pub(crate) fn add_gpos_type_3(
         &mut self,
         id: GlyphId,

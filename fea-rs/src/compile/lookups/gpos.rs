@@ -10,7 +10,9 @@ use write_fonts::{
     types::GlyphId,
 };
 
-use super::Builder;
+use crate::types::GlyphClass;
+
+use super::{Builder, ClassDefBuilder2};
 
 type MarkClass = u16;
 
@@ -103,31 +105,120 @@ fn cmp_coverage_key(coverage: &CoverageTable) -> impl Ord {
 
 #[derive(Clone, Debug, Default)]
 pub struct PairPosBuilder {
-    items: BTreeMap<GlyphId, BTreeMap<GlyphId, (ValueRecord, ValueRecord)>>,
+    pairs: GlyphPairPosBuilder,
+    classes: ClassPairPosBuilder,
+}
+
+#[derive(Clone, Debug, Default)]
+struct GlyphPairPosBuilder(BTreeMap<GlyphId, BTreeMap<GlyphId, (ValueRecord, ValueRecord)>>);
+
+#[derive(Clone, Debug)]
+struct ClassPairPosSubtable {
+    items: BTreeMap<GlyphClass, BTreeMap<GlyphClass, (ValueRecord, ValueRecord)>>,
+    classdef_1: ClassDefBuilder2,
+    classdef_2: ClassDefBuilder2,
+}
+
+impl Default for ClassPairPosSubtable {
+    fn default() -> Self {
+        Self {
+            items: Default::default(),
+            classdef_1: ClassDefBuilder2::new(true),
+            classdef_2: Default::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct ClassPairPosBuilder(BTreeMap<(ValueFormat, ValueFormat), Vec<ClassPairPosSubtable>>);
+
+impl ClassPairPosBuilder {
+    fn insert(
+        &mut self,
+        class1: GlyphClass,
+        record1: ValueRecord,
+        class2: GlyphClass,
+        record2: ValueRecord,
+    ) {
+        let key = (record1.format(), record2.format());
+        let entry = self.0.entry(key).or_default();
+        let add_sub = match entry.last() {
+            None => true,
+            Some(subtable) => !subtable.can_add(&class1, &class2),
+        };
+        if add_sub {
+            entry.push(Default::default());
+        }
+        entry
+            .last_mut()
+            .unwrap()
+            .add(class1, class2, record1, record2);
+    }
+}
+
+impl ClassPairPosSubtable {
+    fn can_add(&self, class1: &GlyphClass, class2: &GlyphClass) -> bool {
+        self.classdef_1.can_add(class1) && self.classdef_2.can_add(class2)
+    }
+
+    fn add(
+        &mut self,
+        class1: GlyphClass,
+        class2: GlyphClass,
+        record1: ValueRecord,
+        record2: ValueRecord,
+    ) {
+        self.classdef_1.add(class1.clone());
+        self.classdef_2.add(class2.clone());
+        self.items
+            .entry(class1)
+            .or_default()
+            .insert(class2, (record1, record2));
+    }
 }
 
 impl PairPosBuilder {
-    pub fn insert(
+    pub(crate) fn insert_pair(
         &mut self,
         glyph1: GlyphId,
         record1: ValueRecord,
         glyph2: GlyphId,
         record2: ValueRecord,
     ) {
-        self.items
+        self.pairs
+            .0
             .entry(glyph1)
             .or_default()
             .insert(glyph2, (record1, record2));
+    }
+
+    pub(crate) fn insert_classes(
+        &mut self,
+        class1: GlyphClass,
+        record1: ValueRecord,
+        class2: GlyphClass,
+        record2: ValueRecord,
+    ) {
+        self.classes.insert(class1, record1, class2, record2)
     }
 }
 
 impl Builder for PairPosBuilder {
     type Output = Vec<write_gpos::PairPos>;
 
-    //FIXME: this always uses format 1.
+    fn build(self) -> Self::Output {
+        let mut out = self.pairs.build();
+        out.extend(self.classes.build());
+        out
+    }
+}
+
+impl Builder for GlyphPairPosBuilder {
+    type Output = Vec<write_gpos::PairPos>;
+
     fn build(self) -> Self::Output {
         let mut split_by_format = BTreeMap::<_, BTreeMap<_, Vec<_>>>::default();
-        for (g1, map) in self.items {
+        for (g1, map) in self.0 {
             for (g2, (v1, v2)) in map {
                 split_by_format
                     .entry((v1.format(), v2.format()))
@@ -147,6 +238,91 @@ impl Builder for PairPosBuilder {
             })
             .collect()
     }
+}
+
+impl Builder for ClassPairPosBuilder {
+    type Output = Vec<write_gpos::PairPos>;
+
+    fn build(self) -> Self::Output {
+        self.0
+            .into_values()
+            .flat_map(|subs| subs.into_iter().map(Builder::build))
+            .collect()
+    }
+}
+
+impl Builder for ClassPairPosSubtable {
+    type Output = write_gpos::PairPos;
+
+    fn build(self) -> Self::Output {
+        assert!(!self.items.is_empty(), "filter before here");
+        // we have a set of classes/values with a single valueformat
+
+        // an empty record, if some pair of classes have no entry
+        let empty_record = self
+            .items
+            .values()
+            .next()
+            .and_then(|val| val.values().next())
+            .map(|(v1, v2)| {
+                write_gpos::Class2Record::new(
+                    empty_record_with_format(v1.format()),
+                    empty_record_with_format(v2.format()),
+                )
+            })
+            .unwrap();
+
+        let (class1def, class1map) = self.classdef_1.build();
+        let (class2def, class2map) = self.classdef_2.build();
+
+        let coverage = self
+            .items
+            .keys()
+            .flat_map(GlyphClass::iter)
+            .collect::<CoverageTableBuilder>()
+            .build();
+
+        let mut out = vec![write_gpos::Class1Record::default(); self.items.len()];
+        for (cls1, stuff) in self.items {
+            let idx = class1map.get(&cls1).unwrap();
+            let mut records = vec![empty_record.clone(); class2map.len() + 1];
+            for (class, (v1, v2)) in stuff {
+                let idx = class2map.get(&class).unwrap();
+                records[*idx as usize] = write_gpos::Class2Record::new(v1.clone(), v2.clone());
+            }
+            out[*idx as usize] = write_gpos::Class1Record::new(records);
+        }
+        write_gpos::PairPos::format_2(coverage, class1def, class2def, out)
+    }
+}
+
+fn empty_record_with_format(format: ValueFormat) -> ValueRecord {
+    let mut result = ValueRecord::default();
+    if format.contains(ValueFormat::X_PLACEMENT) {
+        result.x_placement = Some(0);
+    }
+    if format.contains(ValueFormat::Y_PLACEMENT) {
+        result.y_placement = Some(0);
+    }
+    if format.contains(ValueFormat::X_ADVANCE) {
+        result.x_advance = Some(0);
+    }
+    if format.contains(ValueFormat::Y_ADVANCE) {
+        result.y_advance = Some(0);
+    }
+    if format.intersects(
+        ValueFormat::X_PLACEMENT_DEVICE
+            | ValueFormat::Y_PLACEMENT_DEVICE
+            | ValueFormat::X_ADVANCE_DEVICE
+            | ValueFormat::Y_ADVANCE_DEVICE,
+    ) {
+        //FIXME idk here. I think we need to update code in write-fonts so that
+        // we take value format into account when deciding what we write,
+        // instead of just ignoring null values
+        panic!("writing explicit null offsets is currently broken, sorry")
+    }
+
+    result
 }
 
 #[derive(Clone, Debug, Default)]
