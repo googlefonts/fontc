@@ -230,7 +230,7 @@ impl Work for GlyphIrWork {
 
             // TODO actually populate fields
             let glyph_instance = GlyphInstance {
-                width: 0_f64,
+                width: instance.width.into_inner(),
                 height: None,
                 contours: Vec::new(),
                 components: Vec::new(),
