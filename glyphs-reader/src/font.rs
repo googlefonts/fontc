@@ -46,11 +46,11 @@ pub struct Font {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Glyph {
     pub glyphname: String,
-    pub instances: Vec<GlyphInstance>,
+    pub layers: Vec<Layer>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct GlyphInstance {
+pub struct Layer {
     pub layer_id: String,
     pub width: OrderedFloat<f64>,
     pub shapes: Vec<Shape>,
@@ -83,14 +83,14 @@ pub struct Axis {
 
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct RawGlyph {
-    pub layers: Vec<Layer>,
+    pub layers: Vec<RawLayer>,
     pub glyphname: String,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
-pub struct Layer {
+pub struct RawLayer {
     pub layer_id: String,
     pub associated_master_id: Option<String>,
     pub width: OrderedFloat<f64>,
@@ -113,9 +113,8 @@ pub struct RawShape {
     pub closed: Option<bool>,
     pub nodes: Option<Vec<Node>>,
 
-    // When I'm a component I have a ref
-    // but it seems to end up other_stuff because r#ref doesn't work
-    pub pos: Option<Vec<OrderedFloat<f64>>>,
+    // When I'm a component I specifically want all my attributes to end up in other_stuff
+    // My Component'ness can be detected by presence of a ref (Glyphs3) or name(Glyphs2) attribute
 
     // Always
     #[rest]
@@ -221,7 +220,7 @@ pub struct FontMaster {
 }
 
 impl RawGlyph {
-    pub fn get_layer(&self, layer_id: &str) -> Option<&Layer> {
+    pub fn get_layer(&self, layer_id: &str) -> Option<&RawLayer> {
         self.layers.iter().find(|l| l.layer_id == layer_id)
     }
 }
@@ -275,26 +274,42 @@ impl std::str::FromStr for NodeType {
     }
 }
 
-impl FromPlist for Component {
-    fn from_plist(plist: Plist) -> Self {
-        let Plist::Dictionary(mut dict) = plist else {
-            panic!("Component must be a dict: {:?}", plist);
-        };
+fn try_f64(plist: &Plist) -> Result<f64, Error> {
+    plist
+        .as_f64()
+        .ok_or_else(|| Error::StructuralError(format!("Bad f64:{:?}", plist)))
+}
+
+impl TryFrom<BTreeMap<String, Plist>> for Component {
+    type Error = Error;
+
+    fn try_from(mut dict: BTreeMap<String, Plist>) -> Result<Self, Self::Error> {
         // Glyphs v3 name has been renamed to ref; look for both
         let glyph_name = if let Some(Plist::String(glyph_name)) = dict.remove("ref") {
             glyph_name
         } else if let Some(Plist::String(glyph_name)) = dict.remove("name") {
             glyph_name
         } else {
-            panic!("Neither ref nor name present: {:?}", dict);
+            return Err(Error::StructuralError(format!(
+                "Neither ref nor name present: {:?}",
+                dict
+            )));
         };
 
-        let transform = if let Some(plist) = dict.remove("transform") {
+        // V3 vs v2: The transform entry has been replaced by angle, pos and scale entries.
+        let mut transform = if let Some(plist) = dict.remove("transform") {
             Affine::from_plist(plist)
         } else {
             Affine::identity()
         };
 
+        if let Some(Plist::Array(pos)) = dict.remove("pos") {
+            assert!(transform == Affine::identity());
+            if pos.len() != 2 {
+                return Err(Error::StructuralError(format!("Bad pos: {:?}", pos)));
+            }
+            transform = Affine::translate(try_f64(&pos[0])?, try_f64(&pos[1])?);
+        }
         // TODO scale, angle, etc
         // See component in <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
         if let Some(..) = dict.remove("angle") {
@@ -304,11 +319,20 @@ impl FromPlist for Component {
             panic!("Scale not supported yet");
         }
 
-        Component {
+        Ok(Component {
             glyph_name,
             transform,
             other_stuff: dict,
-        }
+        })
+    }
+}
+
+impl FromPlist for Component {
+    fn from_plist(plist: Plist) -> Self {
+        let Plist::Dictionary(dict) = plist else {
+            panic!("Component must be a dict: {:?}", plist);
+        };
+        dict.try_into().expect("Unable to parse Component")
     }
 }
 
@@ -770,25 +794,13 @@ fn extract_axis_mappings(from: &RawFont) -> BTreeMap<String, RawUserToDesignMapp
 impl TryFrom<RawShape> for Shape {
     type Error = Error;
 
-    fn try_from(mut from: RawShape) -> Result<Self, Self::Error> {
+    fn try_from(from: RawShape) -> Result<Self, Self::Error> {
         // TODO: handle numerous unsupported attributes
         // See <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
 
-        let shape = if let Some(Plist::String(ref_glyph_name)) = from.other_stuff.remove("ref") {
-            // only components use ref
-            let transform = if let Some(pos) = &from.pos {
-                if pos.len() != 2 {
-                    return Err(Error::StructuralError(format!("Strang pos {:?}", pos)));
-                }
-                Affine::translate(pos[0].into_inner(), pos[1].into_inner())
-            } else {
-                Affine::identity()
-            };
-            Shape::Component(Component {
-                glyph_name: ref_glyph_name,
-                transform,
-                other_stuff: from.other_stuff.clone(),
-            })
+        let shape = if let Some(Plist::String(..)) = from.other_stuff.get("ref") {
+            // only components use ref in Glyphs 3
+            Shape::Component(from.other_stuff.try_into()?)
         } else {
             // no ref; presume it's a path
             Shape::Path(Path {
@@ -807,23 +819,27 @@ fn map_and_push_if_present<T, U>(dest: &mut Vec<T>, src: Option<Vec<U>>, map: fn
     src.into_iter().map(map).for_each(|v| dest.push(v));
 }
 
-fn layer_to_glyph_instance(layer: Layer) -> Result<GlyphInstance, Error> {
-    let mut shapes = Vec::new();
+impl TryFrom<RawLayer> for Layer {
+    type Error = Error;
 
-    // Glyphs v2 uses paths and components
-    map_and_push_if_present(&mut shapes, layer.paths, Shape::Path);
-    map_and_push_if_present(&mut shapes, layer.components, Shape::Component);
+    fn try_from(from: RawLayer) -> Result<Self, Self::Error> {
+        let mut shapes = Vec::new();
 
-    // Glyphs v3 uses shapes for both
-    for raw_shape in layer.shapes.unwrap_or_default() {
-        shapes.push(raw_shape.try_into()?);
+        // Glyphs v2 uses paths and components
+        map_and_push_if_present(&mut shapes, from.paths, Shape::Path);
+        map_and_push_if_present(&mut shapes, from.components, Shape::Component);
+
+        // Glyphs v3 uses shapes for both
+        for raw_shape in from.shapes.unwrap_or_default() {
+            shapes.push(raw_shape.try_into()?);
+        }
+
+        Ok(Layer {
+            layer_id: from.layer_id,
+            width: from.width,
+            shapes,
+        })
     }
-
-    Ok(GlyphInstance {
-        layer_id: layer.layer_id,
-        width: layer.width,
-        shapes,
-    })
 }
 
 impl TryFrom<RawGlyph> for Glyph {
@@ -837,11 +853,11 @@ impl TryFrom<RawGlyph> for Glyph {
             if layer.associated_master_id.is_some() {
                 continue;
             }
-            instances.push(layer_to_glyph_instance(layer)?);
+            instances.push(layer.try_into()?);
         }
         Ok(Glyph {
             glyphname: from.glyphname,
-            instances,
+            layers: instances,
         })
     }
 }

@@ -211,7 +211,7 @@ impl Work for GlyphIrWork {
 
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<String, HashSet<NormalizedCoord>> = HashMap::new();
-        for instance in glyph.instances.iter() {
+        for instance in glyph.layers.iter() {
             let Some(master_idx) = font_info.master_indices.get(instance.layer_id.as_str()) else {
                 return Err(WorkError::NoMasterForGlyph {
                     master: instance.layer_id.clone(),
