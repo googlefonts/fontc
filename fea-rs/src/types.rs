@@ -89,6 +89,13 @@ impl GlyphOrClass {
         }
     }
 
+    pub(crate) fn as_glyph(&self) -> Option<GlyphId> {
+        match self {
+            GlyphOrClass::Glyph(gid) => Some(*gid),
+            _ => None,
+        }
+    }
+
     pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
         let mut idx = 0;
         std::iter::from_fn(move || {

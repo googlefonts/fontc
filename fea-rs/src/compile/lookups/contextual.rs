@@ -1,6 +1,9 @@
 //! Contextual lookup builders
 
-use std::{collections::BTreeMap, convert::TryInto};
+use std::{
+    collections::{BTreeMap, HashMap},
+    convert::TryInto,
+};
 
 use write_fonts::{
     tables::{
@@ -10,6 +13,8 @@ use write_fonts::{
         layout::{self as write_layout, CoverageTableBuilder, LookupFlag},
     },
     types::GlyphId,
+    validate::Validate,
+    FontWrite,
 };
 
 use crate::types::GlyphOrClass;
@@ -226,11 +231,42 @@ impl ContextBuilder {
     fn is_chain_rule(&self) -> bool {
         self.rules.iter().any(ContextRule::is_chain_rule)
     }
+
+    fn has_glyph_classes(&self) -> bool {
+        self.rules.iter().any(ContextRule::has_glyph_classes)
+    }
 }
 
 impl ContextRule {
     fn is_chain_rule(&self) -> bool {
         !self.backtrack.is_empty() || !self.lookahead.is_empty()
+    }
+
+    fn has_glyph_classes(&self) -> bool {
+        self.backtrack
+            .iter()
+            .chain(self.lookahead.iter())
+            .chain(self.context.iter().map(|(glyphs, _)| glyphs))
+            .any(|x| x.is_class())
+    }
+
+    fn first_input_sequence_item(&self) -> &GlyphOrClass {
+        &self.context.first().unwrap().0
+    }
+
+    fn lookup_records(&self) -> Vec<write_layout::SequenceLookupRecord> {
+        self.context
+            .iter()
+            .enumerate()
+            .flat_map(|(i, (_, lookups))| {
+                lookups.iter().map(move |lookup_id| {
+                    write_layout::SequenceLookupRecord::new(
+                        i.try_into().unwrap(),
+                        lookup_id.to_u16_or_die(),
+                    )
+                })
+            })
+            .collect()
     }
 }
 
@@ -249,19 +285,7 @@ impl Builder for ContextBuilder {
                     .iter()
                     .map(|(seq, _)| seq.iter().collect::<CoverageTableBuilder>().build())
                     .collect();
-                let seq_lookups = rule
-                    .context
-                    .into_iter()
-                    .enumerate()
-                    .flat_map(|(i, (_, lookups))| {
-                        lookups.into_iter().map(move |lookup_id| {
-                            write_layout::SequenceLookupRecord::new(
-                                i.try_into().unwrap(),
-                                lookup_id.to_u16_or_die(),
-                            )
-                        })
-                    })
-                    .collect();
+                let seq_lookups = rule.lookup_records();
 
                 write_layout::SequenceContext::format_3(cov_tables, seq_lookups)
             })
@@ -269,11 +293,61 @@ impl Builder for ContextBuilder {
     }
 }
 
+impl ChainContextBuilder {
+    fn build_format_1(&self) -> Option<Vec<write_layout::ChainedSequenceContext>> {
+        if self.0.has_glyph_classes() {
+            return None;
+        }
+        let coverage = self
+            .0
+            .rules
+            .iter()
+            .map(|rule| rule.first_input_sequence_item().as_glyph().unwrap())
+            .collect::<CoverageTableBuilder>()
+            .build();
+
+        let mut rule_sets = HashMap::<_, Vec<_>>::new();
+
+        for rule in &self.0.rules {
+            let key = rule.first_input_sequence_item().as_glyph().unwrap();
+            let seq_lookups = rule.lookup_records();
+            let rule = write_layout::ChainedSequenceRule::new(
+                rule.backtrack.iter().flat_map(|cls| cls.iter()).collect(),
+                rule.context
+                    .iter()
+                    .skip(1)
+                    .flat_map(|(cls, _)| cls.iter())
+                    .collect(),
+                rule.lookahead.iter().flat_map(|cls| cls.iter()).collect(),
+                seq_lookups,
+            );
+
+            rule_sets.entry(key).or_default().push(rule);
+        }
+        let rule_sets = coverage
+            .iter()
+            .map(|gid| {
+                Some(write_layout::ChainedSequenceRuleSet::new(
+                    rule_sets.remove(&gid).unwrap(),
+                ))
+            })
+            .collect();
+
+        Some(vec![write_layout::ChainedSequenceContext::format_1(
+            coverage, rule_sets,
+        )])
+    }
+}
+
 impl Builder for ChainContextBuilder {
     type Output = Vec<write_layout::ChainedSequenceContext>;
 
     fn build(self) -> Self::Output {
-        self.0
+        // do this first, since we take ownership below
+        let maybe_format_1 = self.build_format_1();
+
+        let format_3 = self
+            .0
             .rules
             .into_iter()
             .map(|rule| {
@@ -292,19 +366,7 @@ impl Builder for ChainContextBuilder {
                     .iter()
                     .map(|(seq, _)| seq.iter().collect::<CoverageTableBuilder>().build())
                     .collect();
-                let seq_lookups = rule
-                    .context
-                    .into_iter()
-                    .enumerate()
-                    .flat_map(|(i, (_, lookups))| {
-                        lookups.into_iter().map(move |lookup_id| {
-                            write_layout::SequenceLookupRecord::new(
-                                i.try_into().unwrap(),
-                                lookup_id.to_u16_or_die(),
-                            )
-                        })
-                    })
-                    .collect();
+                let seq_lookups = rule.lookup_records();
 
                 write_layout::ChainedSequenceContext::format_3(
                     backtrack,
@@ -313,8 +375,26 @@ impl Builder for ChainContextBuilder {
                     seq_lookups,
                 )
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        //gross: we try all types we can, and then pick the best one by
+        //actually checking the compiled size
+        if let Some(format_1) = maybe_format_1 {
+            let f1_size = compute_size(&format_1);
+            let f3_size = compute_size(&format_3);
+            if f1_size < f3_size {
+                return format_1;
+            }
+        }
+        format_3
     }
+}
+
+fn compute_size<T: FontWrite + Validate>(items: &[T]) -> usize {
+    items
+        .iter()
+        .map(|item| write_fonts::dump_table(item).map(|x| x.len()).unwrap_or(0))
+        .sum()
 }
 
 impl ReverseChainBuilder {
