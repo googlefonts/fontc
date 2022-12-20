@@ -19,7 +19,10 @@ use write_fonts::{
 
 use crate::types::GlyphOrClass;
 
-use super::{Builder, FilterSetId, LookupBuilder, LookupId, PositionLookup, SubstitutionLookup};
+use super::{
+    Builder, ClassDefBuilder2, FilterSetId, LookupBuilder, LookupId, PositionLookup,
+    SubstitutionLookup,
+};
 
 /// When building a contextual/chaining contextual rule, we also build a
 /// bunch of anonymous lookups.
@@ -235,6 +238,21 @@ impl ContextBuilder {
     fn has_glyph_classes(&self) -> bool {
         self.rules.iter().any(ContextRule::has_glyph_classes)
     }
+
+    /// If the input sequence can be represented as a class def, return it
+    fn input_class_def(&self) -> Option<ClassDefBuilder2> {
+        let mut builder = ClassDefBuilder2::new(false);
+        for class in self
+            .rules
+            .iter()
+            .flat_map(|rule| rule.context.iter().map(|x| &x.0))
+        {
+            if !builder.checked_add(class.to_class().unwrap()) {
+                return None;
+            }
+        }
+        Some(builder)
+    }
 }
 
 impl ContextRule {
@@ -294,7 +312,7 @@ impl Builder for ContextBuilder {
 }
 
 impl ChainContextBuilder {
-    fn build_format_1(&self) -> Option<Vec<write_layout::ChainedSequenceContext>> {
+    fn build_format_1(&self) -> Option<write_layout::ChainedSequenceContext> {
         if self.0.has_glyph_classes() {
             return None;
         }
@@ -302,14 +320,14 @@ impl ChainContextBuilder {
             .0
             .rules
             .iter()
-            .map(|rule| rule.first_input_sequence_item().as_glyph().unwrap())
+            .map(|rule| rule.first_input_sequence_item().to_glyph().unwrap())
             .collect::<CoverageTableBuilder>()
             .build();
 
         let mut rule_sets = HashMap::<_, Vec<_>>::new();
 
         for rule in &self.0.rules {
-            let key = rule.first_input_sequence_item().as_glyph().unwrap();
+            let key = rule.first_input_sequence_item().to_glyph().unwrap();
             let seq_lookups = rule.lookup_records();
             let rule = write_layout::ChainedSequenceRule::new(
                 rule.backtrack.iter().flat_map(|cls| cls.iter()).collect(),
@@ -333,9 +351,98 @@ impl ChainContextBuilder {
             })
             .collect();
 
-        Some(vec![write_layout::ChainedSequenceContext::format_1(
+        Some(write_layout::ChainedSequenceContext::format_1(
             coverage, rule_sets,
-        )])
+        ))
+    }
+
+    /// If all of backtrack, input, and lookahead can be represented as classdefs,
+    /// make them.
+    fn format_2_class_defs(
+        &self,
+    ) -> Option<(ClassDefBuilder2, ClassDefBuilder2, ClassDefBuilder2)> {
+        let input = self.0.input_class_def()?;
+
+        let mut backtrack = ClassDefBuilder2::default();
+        for class in self.0.rules.iter().flat_map(|rule| rule.backtrack.iter()) {
+            if !backtrack.checked_add(class.to_class().unwrap()) {
+                return None;
+            }
+        }
+
+        let mut lookahead = ClassDefBuilder2::default();
+        for class in self.0.rules.iter().flat_map(|rule| rule.lookahead.iter()) {
+            if !lookahead.checked_add(class.to_class().unwrap()) {
+                return None;
+            }
+        }
+
+        Some((backtrack, input, lookahead))
+    }
+
+    /// If this lookup can be expressed as format 2, generate it
+    fn build_format_2(&self) -> Option<write_layout::ChainedSequenceContext> {
+        let (backtrack, input, lookahead) = self.format_2_class_defs()?;
+        let (backtrack_class_def, backtrack_map) = backtrack.build();
+        let (input_class_def, input_map) = input.build();
+        let (lookahead_class_def, lookahead_map) = lookahead.build();
+        let coverage = self
+            .0
+            .rules
+            .iter()
+            .flat_map(|rule| rule.context.first().unwrap().0.iter())
+            .collect::<CoverageTableBuilder>()
+            .build();
+
+        let mut rule_sets = vec![Vec::new(); input_map.len() + 1];
+
+        for rule in &self.0.rules {
+            let cls_idx = *input_map
+                .get(&rule.first_input_sequence_item().to_class().unwrap())
+                .unwrap();
+            let backtrack = rule
+                .backtrack
+                .iter()
+                .map(|cls| backtrack_map.get(&cls.to_class().unwrap()).unwrap())
+                .copied()
+                .collect();
+            let lookahead = rule
+                .lookahead
+                .iter()
+                .map(|cls| lookahead_map.get(&cls.to_class().unwrap()).unwrap())
+                .copied()
+                .collect();
+            let input = rule
+                .context
+                .iter()
+                .skip(1)
+                .map(|(cls, _)| input_map.get(&cls.to_class().unwrap()).unwrap())
+                .copied()
+                .collect();
+
+            rule_sets.get_mut(cls_idx as usize).unwrap().push(
+                write_layout::ChainedClassSequenceRule::new(
+                    backtrack,
+                    input,
+                    lookahead,
+                    rule.lookup_records(),
+                ),
+            )
+        }
+        let rule_sets = rule_sets
+            .into_iter()
+            .map(|rules| {
+                (!rules.is_empty()).then_some(write_layout::ChainedClassSequenceRuleSet::new(rules))
+            })
+            .collect();
+
+        Some(write_layout::ChainedSequenceContext::format_2(
+            coverage,
+            backtrack_class_def,
+            input_class_def,
+            lookahead_class_def,
+            rule_sets,
+        ))
     }
 }
 
@@ -345,6 +452,7 @@ impl Builder for ChainContextBuilder {
     fn build(self) -> Self::Output {
         // do this first, since we take ownership below
         let maybe_format_1 = self.build_format_1();
+        let maybe_format_2 = self.build_format_2();
 
         let format_3 = self
             .0
@@ -379,22 +487,34 @@ impl Builder for ChainContextBuilder {
 
         //gross: we try all types we can, and then pick the best one by
         //actually checking the compiled size
-        if let Some(format_1) = maybe_format_1 {
-            let f1_size = compute_size(&format_1);
-            let f3_size = compute_size(&format_3);
-            if f1_size < f3_size {
-                return format_1;
-            }
+        let f1_size = maybe_format_1.as_ref().map(compute_size);
+        let f2_size = maybe_format_2.as_ref().map(compute_size);
+
+        if f1_size.is_none() && f2_size.is_none() {
+            return format_3;
         }
-        format_3
+
+        let (candidate, candidate_size) =
+            if f1_size.unwrap_or(usize::MAX) < f2_size.unwrap_or(usize::MAX) {
+                (maybe_format_1, f1_size.unwrap())
+            } else {
+                (maybe_format_2, f2_size.unwrap())
+            };
+
+        let f3_size = compute_size(&format_3);
+
+        if f3_size < candidate_size {
+            format_3
+        } else {
+            vec![candidate.unwrap()]
+        }
     }
 }
 
-fn compute_size<T: FontWrite + Validate>(items: &[T]) -> usize {
-    items
-        .iter()
-        .map(|item| write_fonts::dump_table(item).map(|x| x.len()).unwrap_or(0))
-        .sum()
+fn compute_size<T: FontWrite + Validate>(item: &T) -> usize {
+    write_fonts::dump_table(item)
+        .map(|x| x.len())
+        .unwrap_or(usize::MIN)
 }
 
 impl ReverseChainBuilder {

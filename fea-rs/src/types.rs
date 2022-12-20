@@ -81,15 +81,15 @@ impl GlyphOrClass {
         matches!(self, GlyphOrClass::Class(_))
     }
 
-    pub(crate) fn into_class(self) -> Option<GlyphClass> {
+    pub(crate) fn to_class(&self) -> Option<GlyphClass> {
         match self {
-            GlyphOrClass::Glyph(gid) => Some(gid.into()),
-            GlyphOrClass::Class(class) => Some(class),
+            GlyphOrClass::Glyph(gid) => Some((*gid).into()),
+            GlyphOrClass::Class(class) => Some(class.clone()),
             GlyphOrClass::Null => None,
         }
     }
 
-    pub(crate) fn as_glyph(&self) -> Option<GlyphId> {
+    pub(crate) fn to_glyph(&self) -> Option<GlyphId> {
         match self {
             GlyphOrClass::Glyph(gid) => Some(*gid),
             _ => None,

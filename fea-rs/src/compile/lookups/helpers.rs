@@ -41,9 +41,17 @@ impl ClassDefBuilder2 {
         self.classes.contains(cls) || cls.iter().all(|gid| !self.glyphs.contains(&gid))
     }
 
-    pub(crate) fn add(&mut self, cls: GlyphClass) {
-        self.glyphs.extend(cls.iter());
-        self.classes.insert(cls);
+    /// Check that this class can be added to this classdef, and add it if so.
+    ///
+    /// returns `true` if the class is added, and `false` otherwise.
+    pub(crate) fn checked_add(&mut self, cls: GlyphClass) -> bool {
+        if self.can_add(&cls) {
+            self.glyphs.extend(cls.iter());
+            self.classes.insert(cls);
+            true
+        } else {
+            false
+        }
     }
 
     /// Returns a compiled glyphclass, as well as a mapping from our class objects
@@ -84,12 +92,12 @@ mod tests {
     #[test]
     fn smoke_test_class_builder() {
         let mut builder = ClassDefBuilder2::new(false);
-        builder.add(make_glyph_class([6, 10]));
+        builder.checked_add(make_glyph_class([6, 10]));
         let (cls, _) = builder.build();
         assert_eq!(cls.get(GlyphId::new(6)), 1);
 
         let mut builder = ClassDefBuilder2::new(true);
-        builder.add(make_glyph_class([6, 10]));
+        builder.checked_add(make_glyph_class([6, 10]));
         let (cls, _) = builder.build();
         assert_eq!(cls.get(GlyphId::new(6)), 0);
         assert_eq!(cls.get(GlyphId::new(10)), 0);

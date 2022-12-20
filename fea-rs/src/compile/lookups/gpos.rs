@@ -168,8 +168,8 @@ impl ClassPairPosSubtable {
         record1: ValueRecord,
         record2: ValueRecord,
     ) {
-        self.classdef_1.add(class1.clone());
-        self.classdef_2.add(class2.clone());
+        self.classdef_1.checked_add(class1.clone());
+        self.classdef_2.checked_add(class2.clone());
         self.items
             .entry(class1)
             .or_default()

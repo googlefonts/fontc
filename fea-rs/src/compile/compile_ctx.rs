@@ -640,8 +640,8 @@ impl<'a> CompilationCtx<'a> {
 
         if (first_ids.is_class() || second_ids.is_class()) && node.enum_().is_none() {
             lookup.add_gpos_type_2_class(
-                first_ids.into_class().unwrap(),
-                second_ids.into_class().unwrap(),
+                first_ids.to_class().unwrap(),
+                second_ids.to_class().unwrap(),
                 first_value,
                 second_value,
             )
