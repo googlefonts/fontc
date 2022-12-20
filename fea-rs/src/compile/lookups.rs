@@ -323,7 +323,8 @@ impl AllLookups {
             match current {
                 SomeLookup::GsubLookup(lookup) => lookup.force_subtable_break(),
                 SomeLookup::GposLookup(lookup) => lookup.force_subtable_break(),
-                _ => (),
+                SomeLookup::GposContextual(lookup) => lookup.force_subtable_break(),
+                SomeLookup::GsubContextual(lookup) => lookup.force_subtable_break(),
             }
             true
         } else {

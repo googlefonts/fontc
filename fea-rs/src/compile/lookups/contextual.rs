@@ -33,6 +33,7 @@ pub(crate) struct ContextualLookupBuilder<T> {
     subtables: Vec<ContextBuilder>,
     anon_lookups: Vec<T>,
     pub(super) root_id: LookupId,
+    force_subtable_break: bool,
 }
 
 // while building we use a common representation, but when compiling we will
@@ -50,6 +51,7 @@ impl<T> ContextualLookupBuilder<T> {
             anon_lookups: Vec::new(),
             subtables: vec![Default::default()],
             root_id: LookupId::Empty,
+            force_subtable_break: false,
         }
     }
 
@@ -78,16 +80,23 @@ impl<T> ContextualLookupBuilder<T> {
         self.subtables.last_mut().unwrap()
     }
 
-    //pub fn force_subtable_break(&mut self) {
-    //self.subtables.push(Default::default())
-    //}
+    pub fn force_subtable_break(&mut self) {
+        self.subtables.push(Default::default());
+        self.force_subtable_break = true;
+    }
 
     fn add_new_lookup_if_necessary(
         &mut self,
         check_fn: impl FnOnce(&T) -> bool,
         new_fn: impl FnOnce(LookupFlag, Option<FilterSetId>) -> T,
     ) {
-        if self.anon_lookups.last().map(check_fn).unwrap_or(true) {
+        if self
+            .anon_lookups
+            .last()
+            .map(|lookup| self.force_subtable_break || check_fn(lookup))
+            .unwrap_or(true)
+        {
+            self.force_subtable_break = false;
             let lookup = new_fn(self.flags, self.mark_set);
             self.anon_lookups.push(lookup);
         }
