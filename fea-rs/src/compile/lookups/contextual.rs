@@ -253,6 +253,47 @@ impl ContextBuilder {
         }
         Some(builder)
     }
+
+    fn format_1_coverage(&self) -> Option<CoverageTableBuilder> {
+        if self.has_glyph_classes() {
+            return None;
+        }
+        Some(
+            self.rules
+                .iter()
+                .map(|rule| rule.first_input_sequence_item().to_glyph().unwrap())
+                .collect::<CoverageTableBuilder>(),
+        )
+    }
+
+    fn build_format_1(&self) -> Option<write_layout::SequenceContext> {
+        let coverage = self.format_1_coverage()?.build();
+        let mut rule_sets = HashMap::<_, Vec<_>>::new();
+        for rule in &self.rules {
+            let key = rule.first_input_sequence_item().to_glyph().unwrap();
+            let seq_lookups = rule.lookup_records();
+            let rule = write_layout::SequenceRule::new(
+                rule.context
+                    .iter()
+                    .skip(1)
+                    .map(|(cls, _)| cls.to_glyph().unwrap())
+                    .collect(),
+                seq_lookups,
+            );
+
+            rule_sets.entry(key).or_default().push(rule);
+        }
+        let rule_sets = coverage
+            .iter()
+            .map(|gid| {
+                Some(write_layout::SequenceRuleSet::new(
+                    rule_sets.remove(&gid).unwrap(),
+                ))
+            })
+            .collect();
+
+        Some(write_layout::SequenceContext::format_1(coverage, rule_sets))
+    }
 }
 
 impl ContextRule {
@@ -293,9 +334,11 @@ impl Builder for ContextBuilder {
 
     fn build(self) -> Self::Output {
         assert!(self.rules.iter().all(|rule| !rule.is_chain_rule()));
-        // for now we are going to just... always use coverage tables (format 3)
-        // TODO: figure out how to decide what tables to use?
-        self.rules
+        let format_1 = self.build_format_1();
+        //TODO: I'm skipping format_2 because it seems consistently larger
+        // than format 3? but I have no verified this.
+        let format_3 = self
+            .rules
             .into_iter()
             .map(|rule| {
                 let cov_tables = rule
@@ -307,25 +350,17 @@ impl Builder for ContextBuilder {
 
                 write_layout::SequenceContext::format_3(cov_tables, seq_lookups)
             })
-            .collect()
+            .collect();
+
+        pick_best_format([format_1.map(|x| vec![x]), None, Some(format_3)])
     }
 }
 
 impl ChainContextBuilder {
     fn build_format_1(&self) -> Option<write_layout::ChainedSequenceContext> {
-        if self.0.has_glyph_classes() {
-            return None;
-        }
-        let coverage = self
-            .0
-            .rules
-            .iter()
-            .map(|rule| rule.first_input_sequence_item().to_glyph().unwrap())
-            .collect::<CoverageTableBuilder>()
-            .build();
+        let coverage = self.0.format_1_coverage()?.build();
 
         let mut rule_sets = HashMap::<_, Vec<_>>::new();
-
         for rule in &self.0.rules {
             let key = rule.first_input_sequence_item().to_glyph().unwrap();
             let seq_lookups = rule.lookup_records();
@@ -487,34 +522,37 @@ impl Builder for ChainContextBuilder {
 
         //gross: we try all types we can, and then pick the best one by
         //actually checking the compiled size
-        let f1_size = maybe_format_1.as_ref().map(compute_size);
-        let f2_size = maybe_format_2.as_ref().map(compute_size);
-
-        if f1_size.is_none() && f2_size.is_none() {
-            return format_3;
-        }
-
-        let (candidate, candidate_size) =
-            if f1_size.unwrap_or(usize::MAX) < f2_size.unwrap_or(usize::MAX) {
-                (maybe_format_1, f1_size.unwrap())
-            } else {
-                (maybe_format_2, f2_size.unwrap())
-            };
-
-        let f3_size = compute_size(&format_3);
-
-        if f3_size < candidate_size {
-            format_3
-        } else {
-            vec![candidate.unwrap()]
-        }
+        pick_best_format([
+            maybe_format_1.map(|x| vec![x]),
+            maybe_format_2.map(|x| vec![x]),
+            Some(format_3),
+        ])
     }
 }
 
-fn compute_size<T: FontWrite + Validate>(item: &T) -> usize {
-    write_fonts::dump_table(item)
+// invariant: at least one item must be Some
+fn pick_best_format<T: FontWrite + Validate>(tables: [Option<T>; 3]) -> T {
+    // this is written in a sort of funny style so that it's easy to println
+    // the computed sizes for debugging
+    tables
+        .into_iter()
+        .enumerate()
+        .map(|(i, table)| (i, compute_size(table.as_ref()), table))
+        .inspect(|(_i, _size, _table)| {
+            //eprintln!("format {} size {_size:?}", _i + 1);
+        })
+        .min_by_key(|(_, size, _)| size.unwrap_or(usize::MAX))
+        .unwrap()
+        .2
+        .unwrap()
+}
+
+fn compute_size<T: FontWrite + Validate>(item: Option<&T>) -> Option<usize> {
+    item.map(write_fonts::dump_table)
+        .transpose()
+        .ok()
+        .flatten()
         .map(|x| x.len())
-        .unwrap_or(usize::MIN)
 }
 
 impl ReverseChainBuilder {
