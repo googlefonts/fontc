@@ -174,6 +174,22 @@ struct GlyphIrWork {
     font_info: Arc<FontInfo>,
 }
 
+fn check_pos(
+    glyph_name: &str,
+    positions: &HashSet<NormalizedCoord>,
+    axis: &ir::Axis,
+    pos: &NormalizedCoord,
+) -> Result<(), WorkError> {
+    if !positions.contains(pos) {
+        return Err(WorkError::GlyphUndefAtNormalizedPosition {
+            glyph_name: glyph_name.to_string(),
+            axis: axis.tag.clone(),
+            pos: *pos,
+        });
+    }
+    Ok(())
+}
+
 impl Work for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Generate IR for {}", self.glyph_name);
@@ -195,15 +211,10 @@ impl Work for GlyphIrWork {
 
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<String, HashSet<NormalizedCoord>> = HashMap::new();
-        for layer in glyph.layers.iter() {
-            let Some(master_idx) = font_info.master_indices.get(layer.layer_id.as_str()) else {
-                // If the layer has an associatedMasterId this is fine, if not ... not
-                if layer.associated_master_id.is_some() {
-                    continue;
-                }
-
+        for instance in glyph.layers.iter() {
+            let Some(master_idx) = font_info.master_indices.get(instance.layer_id.as_str()) else {
                 return Err(WorkError::NoMasterForGlyph {
-                    master: layer.layer_id.clone(),
+                    master: instance.layer_id.clone(),
                     glyph: self.glyph_name.clone(),
                 });
             };
@@ -219,7 +230,7 @@ impl Work for GlyphIrWork {
 
             // TODO actually populate fields
             let glyph_instance = GlyphInstance {
-                width: 0_f64,
+                width: instance.width.into_inner(),
                 height: None,
                 contours: Vec::new(),
                 components: Vec::new(),
@@ -243,15 +254,9 @@ impl Work for GlyphIrWork {
             let max = axis.max.to_normalized(&axis.converter);
             let default = axis.max.to_normalized(&axis.converter);
             let positions = axis_positions.get(&axis.tag).unwrap();
-            if !positions.contains(&min) {
-                panic!("{} is undefined at {} min", self.glyph_name, axis.tag);
-            }
-            if !positions.contains(&max) {
-                panic!("{} is undefined at {} max", self.glyph_name, axis.tag);
-            }
-            if !positions.contains(&default) {
-                panic!("{} is undefined at {} default", self.glyph_name, axis.tag);
-            }
+            check_pos(&self.glyph_name, positions, axis, &min)?;
+            check_pos(&self.glyph_name, positions, axis, &default)?;
+            check_pos(&self.glyph_name, positions, axis, &max)?;
         }
 
         context.set_glyph_ir(gid, ir_glyph);
@@ -269,6 +274,7 @@ mod tests {
 
     use fontir::{
         coords::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord},
+        error::WorkError,
         ir::{self, Glyph},
         orchestration::{Context, WorkIdentifier},
         source::{Paths, Source},
@@ -302,16 +308,15 @@ mod tests {
 
     #[test]
     fn find_glyphs() {
-        let expected_keys = HashSet::from(["space", "hyphen", "exclam"]);
         assert_eq!(
-            expected_keys,
+            HashSet::from(["space", "hyphen", "exclam", "manual-component"]),
             glyph_state_for_file(&glyphs3_dir(), "WghtVar.glyphs")
                 .keys()
                 .map(|k| k.as_str())
                 .collect::<HashSet<&str>>()
         );
         assert_eq!(
-            expected_keys,
+            HashSet::from(["space", "hyphen", "exclam"]),
             glyph_state_for_file(&glyphs3_dir(), "WghtVar_HeavyHyphen.glyphs")
                 .keys()
                 .map(|k| k.as_str())
@@ -372,7 +377,7 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(
-            vec!["space", "exclam", "hyphen"],
+            vec!["space", "exclam", "hyphen", "manual-component"],
             context.get_static_metadata().glyph_order
         );
     }
@@ -437,23 +442,27 @@ mod tests {
         (source, context)
     }
 
-    fn build_glyphs<'a>(source: &impl Source, context: &Context, glyph_names: Vec<&'a String>) {
+    fn build_glyphs<'a>(
+        source: &impl Source,
+        context: &Context,
+        glyph_names: Vec<&'a String>,
+    ) -> Result<(), WorkError> {
         for glyph_name in glyph_names {
             let static_metadata = context.get_static_metadata();
             let glyph_id = static_metadata.glyph_id(glyph_name).unwrap();
 
-            source
+            let work_items = source
                 .create_glyph_ir_work(&HashSet::from([glyph_name.as_str()]), context)
-                .unwrap()
-                .iter()
-                .for_each(|work| {
-                    let task_context = context.copy_for_work(
-                        WorkIdentifier::GlyphIr(glyph_id),
-                        Some(HashSet::from([WorkIdentifier::StaticMetadata])),
-                    );
-                    work.exec(&task_context).unwrap();
-                });
+                .unwrap();
+            for work in work_items.iter() {
+                let task_context = context.copy_for_work(
+                    WorkIdentifier::GlyphIr(glyph_id),
+                    Some(HashSet::from([WorkIdentifier::StaticMetadata])),
+                );
+                work.exec(&task_context)?;
+            }
         }
+        Ok(())
     }
 
     fn glyph_ir(context: &Context, glyph_name: &String) -> Arc<Glyph> {
@@ -467,7 +476,7 @@ mod tests {
         let glyph_name = "space".to_string();
         let (source, context) =
             build_static_metadata(glyphs2_dir().join("WghtVar_AxisMappings.glyphs"));
-        build_glyphs(&source, &context, vec![&glyph_name]); // we dont' care about geometry
+        build_glyphs(&source, &context, vec![&glyph_name]).unwrap(); // we dont' care about geometry
 
         assert_eq!(
             HashSet::from([
@@ -483,11 +492,17 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "min-undefined is undefined at wght min")]
     fn glyph_must_define_min() {
         let glyph_name = "min-undefined".to_string();
         let (source, context) =
             build_static_metadata(glyphs2_dir().join("WghtVar_AxisMappings.glyphs"));
-        build_glyphs(&source, &context, vec![&glyph_name]);
+        let result = build_glyphs(&source, &context, vec![&glyph_name]);
+        assert!(result.is_err());
+        let Err(WorkError::GlyphUndefAtNormalizedPosition { glyph_name, axis, pos }) =  result else {
+            panic!("Wrong error");
+        };
+        assert_eq!("min-undefined", glyph_name);
+        assert_eq!("wght", axis);
+        assert_eq!(NormalizedCoord::new(-1.0), pos);
     }
 }

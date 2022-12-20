@@ -7,13 +7,21 @@ import sys
 from typing import Tuple
 
 _TRY_ME = (
+    # Glyphs 2
     ("https://github.com/Omnibus-Type/Texturina", ("sources/Texturina.glyphs", "sources/Texturina-Italic.glyphs")),
-
+    # Glyphs 3
+    ("https://github.com/googlefonts/lexend", ("sources/Lexend.glyphs",)),
+    # .designspace + UFO
     ("https://github.com/xconsau/KumbhSans", ("sources/KumbhSans.designspace",)),
 )
 
+def curr_dir() -> Path:
+    return Path(".").resolve()
+
+
 def repo_dir(repo_url) -> Path:
-    return Path(__file__).parent / "build" / repo_url.split("/")[-1].lower()
+    return curr_dir() / "build" / repo_url.split("/")[-1].lower()
+
 
 def fontc_command(source) -> Tuple[str, ...]:
     return (
@@ -23,8 +31,9 @@ def fontc_command(source) -> Tuple[str, ...]:
         "fontc",
         "--",
         "--source",
-        str(source.resolve().relative_to(Path(".").resolve()))
+        str(source)
     )
+
 
 def run(cmd):
     print("  " + " ".join(str(c) for c in cmd))
@@ -39,7 +48,9 @@ def run(cmd):
 
 def main(argv):
     for (repo_url, source_files) in _TRY_ME:
-        clone_dir = repo_dir(repo_url)
+        clone_dir = repo_dir(repo_url).relative_to(curr_dir())
+        print(f"{repo_url} in {clone_dir}")
+        
         if (clone_dir / ".git").is_dir():
             git_cmd = ("git", "-C", clone_dir, "pull")
         else:
@@ -48,11 +59,10 @@ def main(argv):
         if run(git_cmd) != 0:
             continue
 
-        for source_file in source_files:
-            print(f"{repo_url} in {clone_dir}")
+        for source_file in source_files:            
             source_file = clone_dir / source_file
             if not source_file.is_file():
-                print("  ", source_file, "FAIL, no such file")
+                print(f"  {source_file} FAIL, no such file")
                 continue
 
             if run(fontc_command(source_file)) != 0:

@@ -148,6 +148,39 @@ width = 600;
 }
 );
 unicode = 002D;
+},
+{
+glyphname = manual-component;
+lastChange = "2022-12-01 04:57:39 +0000";
+layers = (
+{
+components = (
+{
+name = hyphen;
+transform = "{1, 0, 0, 1, 0, 100}";
+},
+{
+name = hyphen;
+}
+);
+layerId = m01;
+width = 600;
+},
+{
+components = (
+{
+name = hyphen;
+transform = "{1, 0, 0, 1, 0, 100}";
+},
+{
+name = hyphen;
+}
+);
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 003D;
 }
 );
 unitsPerEm = 1000;
