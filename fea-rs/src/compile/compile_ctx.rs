@@ -450,12 +450,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_single_sub(&mut self, node: &typed::Gsub1) {
-        let target = node.target();
-        let replace = node.replacement();
-
-        if let Some((target, replacement)) =
-            self.validate_single_sub_inputs(&target, Some(&replace))
-        {
+        if let Some((target, replacement)) = self.resolve_single_sub_glyphs(node) {
             if replacement.is_null() {
                 // when the replacement is null, it means we are 'deleting' a glyph
                 // which uses a trick: we represent it as a multiple substitution
@@ -476,6 +471,12 @@ impl<'a> CompilationCtx<'a> {
         }
     }
 
+    fn resolve_single_sub_glyphs(
+        &mut self,
+        node: &typed::Gsub1,
+    ) -> Option<(GlyphOrClass, GlyphOrClass)> {
+        self.validate_single_sub_inputs(&node.target(), Some(&node.replacement()))
+    }
     //TODO: this should be in validate, but we don't have access to resolved
     //glyphs there right now :(
     fn validate_single_sub_inputs(
