@@ -39,6 +39,8 @@ pub struct ValidationCtx<'a> {
     mark_class_used: Option<Token>,
     anchor_defs: HashMap<SmolStr, Token>,
     value_record_defs: HashMap<SmolStr, Token>,
+    // tags referenced in aalt, plus whether we saw them at the end
+    aalt_referenced_features: HashMap<Tag, (typed::Tag, bool)>,
 }
 
 impl<'a> ValidationCtx<'a> {
@@ -55,6 +57,7 @@ impl<'a> ValidationCtx<'a> {
             mark_class_used: None,
             anchor_defs: Default::default(),
             value_record_defs: Default::default(),
+            aalt_referenced_features: Default::default(),
         }
     }
 
@@ -91,6 +94,22 @@ impl<'a> ValidationCtx<'a> {
             } else if item.kind() == Kind::AnonKw {
                 unimplemented!("anon")
             }
+        }
+        self.finalize();
+    }
+
+    /// perform any analysis required after seeing all items
+    fn finalize(&mut self) {
+        // get around the borrow checker
+        let bad = self
+            .aalt_referenced_features
+            .values()
+            .filter_map(|(tag, seen)| (!seen).then(|| tag.clone()))
+            .collect::<Vec<_>>();
+
+        for tag in bad {
+            //TODO: spec says this is not allowed, but it seems to be common?
+            self.warning(tag.range(), "referenced feature not found. All features in 'aalt' must come after the aalt table itself.");
         }
     }
 
@@ -440,12 +459,18 @@ impl<'a> ValidationCtx<'a> {
     fn validate_feature(&mut self, node: &typed::Feature) {
         let tag = node.tag();
         let tag_raw = tag.to_raw();
+
+        if let Some((_, seen)) = self.aalt_referenced_features.get_mut(&tag_raw) {
+            *seen = true;
+        }
+
         if tag_raw == common::tags::SIZE {
             return self.validate_size_feature(node);
         }
 
-        let _is_aalt = tag_raw == common::tags::AALT;
-        // - must occur before anything it references
+        if tag_raw == common::tags::AALT {
+            return self.validate_aalt_feature(node);
+        }
 
         let mut statement_iter = node.statements();
 
@@ -519,6 +544,35 @@ impl<'a> ValidationCtx<'a> {
             }
 
             iter.next();
+        }
+    }
+
+    fn validate_aalt_feature(&mut self, node: &typed::Feature) {
+        for item in node.statements() {
+            if let Some(node) = typed::GsubStatement::cast(item) {
+                match node {
+                    typed::GsubStatement::Type1(_) | typed::GsubStatement::Type3(_) => {
+                        self.validate_gsub_statement(&node)
+                    }
+                    _ => self.error(
+                        node.range(),
+                        "only Single and Alternate rules allowed in aalt feature",
+                    ),
+                }
+            } else if let Some(node) = typed::AaltFeature::cast(item) {
+                let tag = node.feature();
+                let range = tag.range();
+                let raw_tag = tag.to_raw();
+                if self
+                    .aalt_referenced_features
+                    .insert(raw_tag, (tag, false))
+                    .is_some()
+                {
+                    self.warning(range, "feature already declared")
+                }
+            } else if !item.kind().is_trivia() {
+                self.error(item.range(), format!("unexpected item '{}'", item.kind()));
+            }
         }
     }
 
