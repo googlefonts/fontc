@@ -102,9 +102,11 @@ fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
         Kind::FeatureKw => {
             // aalt only
             if parser.matches(1, TokenSet::TAG_LIKE) && parser.matches(2, Kind::Semi) {
-                assert!(parser.eat(Kind::FeatureKw));
-                parser.expect_tag(TokenSet::EMPTY);
-                assert!(parser.eat(Kind::Semi));
+                parser.in_node(Kind::AaltFeatureNode, |parser| {
+                    assert!(parser.eat(Kind::FeatureKw));
+                    parser.expect_tag(TokenSet::EMPTY);
+                    parser.expect_recover(Kind::Semi, recovery);
+                });
             }
         }
         Kind::ParametersKw => metrics::parameters(parser, recovery),

@@ -283,6 +283,8 @@ ast_enum!(StatAxisValueItem {
     Location(StatAxisLocation),
 });
 
+ast_node!(AaltFeature, Kind::AaltFeatureNode);
+
 ast_node!(Gsub1, Kind::GsubType1);
 ast_node!(Gsub2, Kind::GsubType2);
 ast_node!(Gsub3, Kind::GsubType3);
@@ -1552,5 +1554,11 @@ impl Parameters {
 
     pub fn range_end(&self) -> Option<FloatLike> {
         self.iter().filter_map(FloatLike::cast).nth(3)
+    }
+}
+
+impl AaltFeature {
+    pub fn feature(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
     }
 }

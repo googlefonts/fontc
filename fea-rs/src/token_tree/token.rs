@@ -256,6 +256,7 @@ pub enum Kind {
     StatAxisValueLocationNode,
     StatAxisValueFlagNode,
     CvParamsNameNode,
+    AaltFeatureNode,
 }
 
 impl Kind {
@@ -510,6 +511,7 @@ impl std::fmt::Display for Kind {
             Self::Os2NumberListNode => write!(f, "Os2NumberListNode"),
             Self::Os2FamilyClassNode => write!(f, "Os2FamilyClassNode"),
             Self::CvParamsNameNode => write!(f, "CvParamsNameNode"),
+            Self::AaltFeatureNode => write!(f, "AaltFeatureNode"),
         }
     }
 }
