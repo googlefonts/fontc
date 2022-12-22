@@ -38,7 +38,7 @@ pub struct CompilationCtx<'a> {
     pub errors: Vec<Diagnostic>,
     tables: Tables,
     features: BTreeMap<FeatureKey, Vec<LookupId>>,
-    default_lang_systems: HashSet<(Tag, Tag)>,
+    default_lang_systems: DefaultLanguageSystems,
     lookups: AllLookups,
     lookup_flags: LookupFlag,
     cur_mark_filter_set: Option<FilterSetId>,
@@ -54,6 +54,24 @@ pub struct CompilationCtx<'a> {
     size: Option<SizeFeature>,
     aalt: Option<AaltFeature>,
     required_features: HashSet<FeatureKey>,
+}
+
+/// Track languagesystem statements
+///
+/// Seeing no statements is the same as seeing 'DFLT dflt'.
+#[derive(Clone, Debug)]
+struct DefaultLanguageSystems {
+    has_explicit_entry: bool,
+    items: HashSet<(Tag, Tag)>,
+}
+
+impl Default for DefaultLanguageSystems {
+    fn default() -> Self {
+        Self {
+            has_explicit_entry: false,
+            items: HashSet::from_iter([(common::tags::SCRIPT_DFLT, common::tags::LANG_DFLT)]),
+        }
+    }
 }
 
 /// State required to generate the aalt feature.
@@ -192,7 +210,7 @@ impl<'a> CompilationCtx<'a> {
             .for_each(|id| id.adjust_if_gsub(aalt_lookup_indices.len()));
 
         // finally add the aalt feature to all the default language systems
-        for (script, language) in self.default_lang_systems.iter().copied() {
+        for (script, language) in self.default_lang_systems.iter() {
             self.features.insert(
                 FeatureKey {
                     feature: common::tags::AALT,
@@ -263,13 +281,8 @@ impl<'a> CompilationCtx<'a> {
 
     fn start_feature(&mut self, feature_name: typed::Tag) {
         assert!(self.cur_language_systems.is_empty());
-        if !self.default_lang_systems.is_empty() {
-            self.cur_language_systems
-                .extend(self.default_lang_systems.iter().cloned());
-        } else {
-            self.cur_language_systems
-                .extend([(common::tags::SCRIPT_DFLT, common::tags::LANG_DFLT)]);
-        };
+        self.cur_language_systems
+            .extend(self.default_lang_systems.iter());
 
         assert!(
             !self.lookups.has_current(),
@@ -1802,6 +1815,20 @@ impl Extend<(GlyphId, GlyphId)> for AaltFeature {
         for (target, alt) in iter.into_iter() {
             self.add(target, alt)
         }
+    }
+}
+
+impl DefaultLanguageSystems {
+    fn insert(&mut self, system: (Tag, Tag)) {
+        if !self.has_explicit_entry {
+            self.items.clear();
+            self.has_explicit_entry = true;
+        }
+        self.items.insert(system);
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (Tag, Tag)> + '_ {
+        self.items.iter().copied()
     }
 }
 
