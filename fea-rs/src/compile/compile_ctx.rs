@@ -52,8 +52,21 @@ pub struct CompilationCtx<'a> {
     mark_attach_class_id: HashMap<GlyphClass, u16>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
     size: Option<SizeFeature>,
+    aalt: Option<AaltFeature>,
     required_features: HashSet<FeatureKey>,
-    //mark_attach_used_glyphs: HashMap<GlyphId, u16>,
+}
+
+/// State required to generate the aalt feature.
+///
+/// This is a special and annoying case. We create this object when we encounter
+/// the aalt feature block, and then we use this to generate the aalt lookups
+/// once we've finished processing the input.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct AaltFeature {
+    aalt_features: Vec<Tag>,
+    all_alts: HashMap<GlyphId, Vec<GlyphId>>,
+    // to avoid duplicates
+    all_pairs: HashSet<(GlyphId, GlyphId)>,
 }
 
 /// If we are at the root of one of four magic features, we have special behaviour.
@@ -97,7 +110,7 @@ impl<'a> CompilationCtx<'a> {
             mark_filter_sets: Default::default(),
             size: None,
             required_features: Default::default(),
-            //mark_attach_used_glyphs: Default::default(),
+            aalt: Default::default(),
         }
     }
 
@@ -133,6 +146,64 @@ impl<'a> CompilationCtx<'a> {
                 self.error(span, format!("unhandled top-level item: '{}'", item.kind()));
             }
         }
+
+        self.finalize_aalt();
+    }
+
+    fn finalize_aalt(&mut self) {
+        let Some(mut aalt) = self.aalt.take() else { return };
+        // add all the relevant lookups from the referenced features
+        let mut lookups = vec![vec![]; aalt.aalt_features.len()];
+        // first sort all lookups by the order of the tags in the aalt table:
+        for (key, lookup_ids) in &self.features {
+            let Some(feat_idx) = aalt.aalt_features.iter().position(|tag| *tag == key.feature) else { continue };
+            lookups[feat_idx].extend(
+                lookup_ids
+                    .iter()
+                    .flat_map(|idx| self.lookups.iter_aalt_lookups(idx)),
+            )
+        }
+
+        // now go through the lookups, ordered by appearance of feature in aalt
+        for lookup in lookups.iter().flat_map(|x| x.iter()) {
+            match lookup {
+                super::lookups::SubstitutionLookup::Single(lookup) => {
+                    aalt.extend(lookup.iter_subtables().flat_map(|sub| sub.iter_pairs()))
+                }
+                super::lookups::SubstitutionLookup::Alternate(lookup) => {
+                    aalt.extend(lookup.iter_subtables().flat_map(|sub| sub.iter_pairs()))
+                }
+                _ => (),
+            }
+        }
+
+        // now we have all of our referenced lookups, and so we want to use that
+        // to construct the aalt lookups:
+        let aalt_lookup_indices = self
+            .lookups
+            .insert_aalt_lookups(std::mem::take(&mut aalt.all_alts));
+
+        // now adjust our previously set lookupids, which are now invalid,
+        // since we're going to insert the aalt lookups in front of the lookup
+        // list:
+        self.features
+            .values_mut()
+            .flat_map(|x| x.iter_mut())
+            .for_each(|id| id.adjust_if_gsub(aalt_lookup_indices.len()));
+
+        // finally add the aalt feature to all the default language systems
+        for (script, language) in self.default_lang_systems.iter().copied() {
+            self.features.insert(
+                FeatureKey {
+                    feature: common::tags::AALT,
+                    script,
+                    language,
+                },
+                aalt_lookup_indices.clone(),
+            );
+        }
+
+        self.aalt = Some(aalt);
     }
 
     pub(crate) fn build(&mut self) -> Result<Compilation, Vec<Diagnostic>> {
@@ -142,6 +213,7 @@ impl<'a> CompilationCtx<'a> {
         if self.tables.gdef.is_none() {
             self.infer_glyph_classes();
         }
+
         Ok(Compilation {
             warnings: self.errors.clone(),
             lookups: self.lookups.clone(),
@@ -990,12 +1062,10 @@ impl<'a> CompilationCtx<'a> {
     fn add_feature(&mut self, feature: typed::Feature) {
         let tag = feature.tag();
         let tag_raw = tag.to_raw();
-        if tag_raw == common::tags::AALT {
-            self.warning(tag.range(), "aalt feature is unimplemented");
-            return;
-        }
         self.start_feature(tag);
-        if tag_raw == common::tags::SIZE {
+        if tag_raw == common::tags::AALT {
+            self.resolve_aalt_feature(&feature);
+        } else if tag_raw == common::tags::SIZE {
             self.resolve_size_feature(&feature);
         } else if common::is_stylistic_set(tag_raw) {
             self.resolve_stylistic_set_feature(tag_raw, &feature);
@@ -1007,6 +1077,23 @@ impl<'a> CompilationCtx<'a> {
             }
         }
         self.end_feature();
+    }
+
+    fn resolve_aalt_feature(&mut self, feature: &typed::Feature) {
+        let mut aalt = AaltFeature::default();
+        for item in feature.statements() {
+            if let Some(node) = typed::Gsub1::cast(item) {
+                let Some((target, replacement)) = self.resolve_single_sub_glyphs(&node) else { continue };
+                aalt.extend(target.iter().zip(replacement.into_iter_for_target()))
+            } else if let Some(node) = typed::Gsub3::cast(item) {
+                let target = self.resolve_glyph(&node.target());
+                let alts = self.resolve_glyph_class(&node.alternates());
+                aalt.extend(std::iter::repeat(target).zip(alts.iter()));
+            } else if let Some(feature) = typed::AaltFeature::cast(item) {
+                aalt.aalt_features.push(feature.feature().to_raw());
+            }
+        }
+        self.aalt = Some(aalt);
     }
 
     fn resolve_stylistic_set_feature(&mut self, tag: Tag, feature: &typed::Feature) {
@@ -1698,6 +1785,22 @@ impl<'a> CompilationCtx<'a> {
                 }
             }
             (_, _) => self.error(range.range(), "Invalid types in glyph range"),
+        }
+    }
+}
+
+impl AaltFeature {
+    fn add(&mut self, target: GlyphId, alt: GlyphId) {
+        if self.all_pairs.insert((target, alt)) {
+            self.all_alts.entry(target).or_default().push(alt);
+        }
+    }
+}
+
+impl Extend<(GlyphId, GlyphId)> for AaltFeature {
+    fn extend<T: IntoIterator<Item = (GlyphId, GlyphId)>>(&mut self, iter: T) {
+        for (target, alt) in iter.into_iter() {
+            self.add(target, alt)
         }
     }
 }

@@ -240,6 +240,13 @@ impl ContextBuilder {
         })
     }
 
+    // for adjusting ids if we insert aalt at the front
+    pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
+        self.rules
+            .iter_mut()
+            .for_each(|rule| rule.bump_all_lookup_ids(by))
+    }
+
     fn is_chain_rule(&self) -> bool {
         self.rules.iter().any(ContextRule::is_chain_rule)
     }
@@ -306,6 +313,13 @@ impl ContextBuilder {
 }
 
 impl ContextRule {
+    pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
+        for (_, lookups) in &mut self.context {
+            lookups
+                .iter_mut()
+                .for_each(|x| *x = LookupId::Gsub(x.to_raw() + by))
+        }
+    }
     fn is_chain_rule(&self) -> bool {
         !self.backtrack.is_empty() || !self.lookahead.is_empty()
     }
@@ -366,6 +380,10 @@ impl Builder for ContextBuilder {
 }
 
 impl ChainContextBuilder {
+    pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
+        self.0.bump_all_lookup_ids(by)
+    }
+
     fn build_format_1(&self) -> Option<write_layout::ChainedSequenceContext> {
         let coverage = self.0.format_1_coverage()?.build();
 

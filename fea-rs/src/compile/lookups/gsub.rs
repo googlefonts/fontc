@@ -35,6 +35,15 @@ impl SingleSubBuilder {
     pub fn contains_target(&self, target: GlyphId) -> bool {
         self.items.contains_key(&target)
     }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    // used when compiling aalt
+    pub(crate) fn iter_pairs(&self) -> impl Iterator<Item = (GlyphId, GlyphId)> + '_ {
+        self.items.iter().map(|(target, (alt, _))| (*target, *alt))
+    }
 }
 
 impl Builder for SingleSubBuilder {
@@ -165,6 +174,17 @@ pub struct AlternateSubBuilder {
 impl AlternateSubBuilder {
     pub fn insert(&mut self, target: GlyphId, replacement: Vec<GlyphId>) {
         self.items.insert(target, replacement);
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    // used when compiling aalt
+    pub(crate) fn iter_pairs(&self) -> impl Iterator<Item = (GlyphId, GlyphId)> + '_ {
+        self.items
+            .iter()
+            .flat_map(|(target, alt)| alt.iter().map(|alt| (*target, *alt)))
     }
 }
 

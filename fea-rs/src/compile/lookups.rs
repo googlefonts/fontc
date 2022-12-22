@@ -30,11 +30,11 @@ use crate::{
     Kind,
 };
 
-use self::contextual::{ChainContextBuilder, ReverseChainBuilder};
-
 use super::{common, tables::ClassId};
 
-use contextual::{ContextBuilder, ContextualLookupBuilder};
+use contextual::{
+    ChainContextBuilder, ContextBuilder, ContextualLookupBuilder, ReverseChainBuilder,
+};
 pub use gpos::PreviouslyAssignedClass;
 use gpos::{
     CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder,
@@ -57,6 +57,8 @@ pub(crate) struct AllLookups {
     gpos: Vec<PositionLookup>,
     gsub: Vec<SubstitutionLookup>,
     named: HashMap<SmolStr, LookupId>,
+    // we track these here so that we can find them when compiling aalt
+    anon_single_sub_lookups: HashMap<LookupId, Vec<LookupId>>,
 }
 
 #[derive(Clone, Debug)]
@@ -149,6 +151,10 @@ impl<T: Default> LookupBuilder<T> {
 
     pub fn force_subtable_break(&mut self) {
         self.subtables.push(Default::default())
+    }
+
+    pub(crate) fn iter_subtables(&self) -> impl Iterator<Item = &T> + '_ {
+        self.subtables.iter()
     }
 }
 
@@ -293,6 +299,17 @@ impl AllLookups {
                         .gsub
                         .push(SubstitutionLookup::ChainedContextual(lookup)),
                 }
+                let anon_single_sub_ids = anon_lookups
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, lookup)| {
+                        matches!(lookup, SubstitutionLookup::Single(_)).then_some(i)
+                    })
+                    .map(|i| LookupId::Gsub(id.to_raw() + i + 1))
+                    .collect::<Vec<_>>();
+                if !anon_single_sub_ids.is_empty() {
+                    self.anon_single_sub_lookups.insert(id, anon_single_sub_ids);
+                }
                 self.gsub.extend(anon_lookups);
                 id
             }
@@ -409,6 +426,92 @@ impl AllLookups {
         //TODO: the spec says to do gsub too, but fonttools doesn't?
     }
 
+    /// Iterate over the aalt-relevant lookups for this lookup Id.
+    ///
+    /// If lookup is GSUB type 1 or 3, return a single lookup.
+    /// If contextual, returns any referenced single-sub lookups.
+    pub(crate) fn iter_aalt_lookups(
+        &self,
+        id: &LookupId,
+    ) -> impl Iterator<Item = &SubstitutionLookup> + '_ {
+        let lookup = self.get_gsub_lookup(id);
+
+        let (lookup, anon_lookups) = match lookup {
+            Some(SubstitutionLookup::Single(_) | SubstitutionLookup::Alternate(_)) => {
+                (lookup, None)
+            }
+            Some(SubstitutionLookup::Contextual(_) | SubstitutionLookup::ChainedContextual(_)) => {
+                (None, self.anon_single_sub_lookups.get(id))
+            }
+            _ => (None, None),
+        };
+
+        anon_lookups
+            .into_iter()
+            .flat_map(|x| x.iter().map(|id| self.get_gsub_lookup(id).unwrap()))
+            .chain(lookup)
+    }
+
+    fn get_gsub_lookup(&self, id: &LookupId) -> Option<&SubstitutionLookup> {
+        match id {
+            LookupId::Gsub(idx) => self.gsub.get(*idx),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn insert_aalt_lookups(
+        &mut self,
+        all_alts: HashMap<GlyphId, Vec<GlyphId>>,
+    ) -> Vec<LookupId> {
+        let mut single = SingleSubBuilder::default();
+        let mut alt = AlternateSubBuilder::default();
+
+        for (target, alts) in all_alts {
+            if alts.len() == 1 {
+                single.insert(target, alts[0]);
+            } else {
+                alt.insert(target, alts);
+            }
+        }
+        let one = (!single.is_empty()).then(|| {
+            SubstitutionLookup::Single(LookupBuilder::new_with_lookups(
+                LookupFlag::empty(),
+                None,
+                vec![single],
+            ))
+        });
+        let two = (!alt.is_empty()).then(|| {
+            SubstitutionLookup::Alternate(LookupBuilder::new_with_lookups(
+                LookupFlag::empty(),
+                None,
+                vec![alt],
+            ))
+        });
+
+        let lookups = one.into_iter().chain(two).collect::<Vec<_>>();
+        let lookup_ids = (0..lookups.len()).map(LookupId::Gsub).collect();
+
+        // now we need to insert these lookups at the front of our gsub lookups,
+        // and bump all of their ids:
+
+        self.gsub.iter_mut().for_each(|lookup| match lookup {
+            SubstitutionLookup::Contextual(lookup) => lookup
+                .subtables
+                .iter_mut()
+                .for_each(|sub| sub.bump_all_lookup_ids(lookups.len())),
+            SubstitutionLookup::ChainedContextual(lookup) => lookup
+                .subtables
+                .iter_mut()
+                .for_each(|sub| sub.bump_all_lookup_ids(lookups.len())),
+            _ => (),
+        });
+
+        let prev_lookups = std::mem::replace(&mut self.gsub, lookups);
+        self.gsub.extend(prev_lookups);
+
+        lookup_ids
+    }
+
     pub(crate) fn build(
         &self,
         features: &BTreeMap<FeatureKey, Vec<LookupId>>,
@@ -470,6 +573,12 @@ impl LookupId {
             LookupId::Gpos(idx) => idx,
             LookupId::Gsub(idx) => idx,
             LookupId::Empty => usize::MAX,
+        }
+    }
+
+    pub(crate) fn adjust_if_gsub(&mut self, value: usize) {
+        if let LookupId::Gsub(idx) = self {
+            *idx += value;
         }
     }
 
@@ -720,7 +829,11 @@ impl<T> PosSubBuilder<T> {
     }
 
     fn add(&mut self, key: FeatureKey, lookups: &[LookupId], required: bool) {
-        let lookups = lookups.iter().map(|idx| idx.to_u16_or_die()).collect();
+        let lookups = lookups
+            .iter()
+            // if we have aalt lookups, they go first, so we bump other indices
+            .map(|idx| idx.to_u16_or_die())
+            .collect();
         let feat_key = (key.feature, lookups);
         let next_feature = self.features.len();
         let idx = *self
@@ -754,8 +867,7 @@ where
         }
 
         // push empty items so we can insert by index
-        let mut features = Vec::with_capacity(self.features.len());
-        features.resize_with(self.features.len(), Default::default);
+        let mut features = vec![Default::default(); self.features.len()];
         for ((tag, lookups), idx) in self.features {
             features[idx as usize] = FeatureRecord::new(tag, Feature::new(None, lookups));
         }
