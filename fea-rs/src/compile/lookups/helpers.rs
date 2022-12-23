@@ -59,10 +59,10 @@ impl ClassDefBuilder2 {
     pub(crate) fn build(self) -> (ClassDef, HashMap<GlyphClass, u16>) {
         let mut classes = self.classes.into_iter().collect::<Vec<_>>();
         classes.sort_unstable_by_key(|cls| {
-            (
-                std::cmp::Reverse(cls.len()),
-                cls.iter().next().unwrap_or_default(),
-            )
+            (std::cmp::Reverse((
+                cls.len(),
+                cls.iter().next().unwrap_or_default().to_u16(),
+            )),)
         });
         classes.dedup();
         let add_one = u16::from(!self.use_class_0);
@@ -101,5 +101,22 @@ mod tests {
         let (cls, _) = builder.build();
         assert_eq!(cls.get(GlyphId::new(6)), 0);
         assert_eq!(cls.get(GlyphId::new(10)), 0);
+    }
+
+    #[test]
+    fn classdef_assign_order() {
+        // - longer classes before short ones
+        // - if tied, lowest glyph id first
+
+        let mut builder = ClassDefBuilder2::default();
+        builder.checked_add(make_glyph_class([7, 8, 9]));
+        builder.checked_add(make_glyph_class([12, 1]));
+        builder.checked_add(make_glyph_class([3, 4]));
+        let (cls, _) = builder.build();
+        assert_eq!(cls.get(GlyphId::new(9)), 1);
+        assert_eq!(cls.get(GlyphId::new(1)), 2);
+        assert_eq!(cls.get(GlyphId::new(4)), 3);
+        // notdef
+        assert_eq!(cls.get(GlyphId::new(5)), 0);
     }
 }
