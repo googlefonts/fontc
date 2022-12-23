@@ -81,6 +81,10 @@ impl GlyphOrClass {
         matches!(self, GlyphOrClass::Class(_))
     }
 
+    pub(crate) fn is_null(&self) -> bool {
+        matches!(self, GlyphOrClass::Null)
+    }
+
     pub(crate) fn to_class(&self) -> Option<GlyphClass> {
         match self {
             GlyphOrClass::Glyph(gid) => Some((*gid).into()),

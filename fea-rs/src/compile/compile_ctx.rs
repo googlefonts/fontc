@@ -456,9 +456,22 @@ impl<'a> CompilationCtx<'a> {
         if let Some((target, replacement)) =
             self.validate_single_sub_inputs(&target, Some(&replace))
         {
-            let lookup = self.ensure_current_lookup_type(Kind::GsubType1);
-            for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
-                lookup.add_gsub_type_1(target, replacement);
+            if replacement.is_null() {
+                // when the replacement is null, it means we are 'deleting' a glyph
+                // which uses a trick: we represent it as a multiple substitution
+                // rule, with the target sequence being empty.
+                // This is explicitly forbidden in the OpenType spec, and
+                // explicitly encouraged in the FEA spec, and everyone else does it.
+                // see https://github.com/adobe-type-tools/afdko/issues/1438
+                let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
+                for target in target.iter() {
+                    lookup.add_gsub_type_2(target, vec![]);
+                }
+            } else {
+                let lookup = self.ensure_current_lookup_type(Kind::GsubType1);
+                for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
+                    lookup.add_gsub_type_1(target, replacement);
+                }
             }
         }
     }
