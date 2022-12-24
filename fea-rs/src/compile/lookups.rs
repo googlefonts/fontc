@@ -112,8 +112,8 @@ pub(crate) enum LookupId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct FeatureKey {
     pub(crate) feature: Tag,
-    pub(crate) script: Tag,
     pub(crate) language: Tag,
+    pub(crate) script: Tag,
 }
 
 /// A helper for building GSUB/GPOS tables
