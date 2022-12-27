@@ -8,6 +8,7 @@ mod common;
 mod compile_ctx;
 mod features;
 mod glyph_range;
+mod language_system;
 mod lookups;
 mod output;
 mod tables;

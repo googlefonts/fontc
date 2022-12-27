@@ -29,6 +29,7 @@ use super::{
     common,
     features::{AaltFeature, SizeFeature, SpecialVerticalFeatureState},
     glyph_range,
+    language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, PreviouslyAssignedClass, SomeLookup},
     output::Compilation,
     tables::{ClassId, CvParams, ScriptRecord, Tables},
@@ -44,7 +45,7 @@ pub struct CompilationCtx<'a> {
     lookups: AllLookups,
     lookup_flags: LookupFlag,
     cur_mark_filter_set: Option<FilterSetId>,
-    cur_language_systems: HashSet<(Tag, Tag)>,
+    cur_language_systems: HashSet<LanguageSystem>,
     cur_feature_name: Option<Tag>,
     vertical_feature: SpecialVerticalFeatureState,
     script: Option<Tag>,
@@ -56,24 +57,6 @@ pub struct CompilationCtx<'a> {
     size: Option<SizeFeature>,
     aalt: Option<AaltFeature>,
     required_features: HashSet<FeatureKey>,
-}
-
-/// Track languagesystem statements
-///
-/// Seeing no statements is the same as seeing 'DFLT dflt'.
-#[derive(Clone, Debug)]
-struct DefaultLanguageSystems {
-    has_explicit_entry: bool,
-    items: HashSet<(Tag, Tag)>,
-}
-
-impl Default for DefaultLanguageSystems {
-    fn default() -> Self {
-        Self {
-            has_explicit_entry: false,
-            items: HashSet::from_iter([(common::tags::SCRIPT_DFLT, common::tags::LANG_DFLT)]),
-        }
-    }
 }
 
 struct MarkClass {
@@ -186,13 +169,9 @@ impl<'a> CompilationCtx<'a> {
             .for_each(|id| id.adjust_if_gsub(aalt_lookup_indices.len()));
 
         // finally add the aalt feature to all the default language systems
-        for (script, language) in self.default_lang_systems.iter() {
+        for sys in self.default_lang_systems.iter() {
             self.features.insert(
-                FeatureKey {
-                    feature: common::tags::AALT,
-                    script,
-                    language,
-                },
+                sys.to_feature_key(common::tags::AALT),
                 aalt_lookup_indices.clone(),
             );
         }
@@ -249,10 +228,10 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_language_system(&mut self, language_system: typed::LanguageSystem) {
-        let script = language_system.script();
-        let language = language_system.language();
+        let script = language_system.script().to_raw();
+        let language = language_system.language().to_raw();
         self.default_lang_systems
-            .insert((script.to_raw(), language.to_raw()));
+            .insert(LanguageSystem { script, language });
     }
 
     fn start_feature(&mut self, feature_name: typed::Tag) {
@@ -379,7 +358,7 @@ impl<'a> CompilationCtx<'a> {
 
         self.cur_language_systems.clear();
         self.cur_language_systems
-            .extend([(real_key.script, real_key.language)]);
+            .insert(real_key.to_language_system());
 
         if required {
             self.required_features.insert(real_key);
@@ -477,9 +456,8 @@ impl<'a> CompilationCtx<'a> {
         if lookup == LookupId::Empty {
             return;
         }
-        let key = FeatureKey::for_feature(feature);
-        for (script, lang) in &self.cur_language_systems {
-            let key = key.script(*script).language(*lang);
+        for sys in &self.cur_language_systems {
+            let key = sys.to_feature_key(feature);
             self.features.entry(key).or_default().push(lookup);
         }
     }
@@ -1180,9 +1158,8 @@ impl<'a> CompilationCtx<'a> {
                 }
             }
         }
-        let key = FeatureKey::for_feature(common::tags::SIZE);
-        for (script, lang) in &self.cur_language_systems {
-            let key = key.script(*script).language(*lang);
+        for sys in &self.cur_language_systems {
+            let key = sys.to_feature_key(common::tags::SIZE);
             self.features.entry(key).or_default();
         }
         self.size = Some(size);
@@ -1775,20 +1752,6 @@ impl<'a> CompilationCtx<'a> {
             }
             (_, _) => self.error(range.range(), "Invalid types in glyph range"),
         }
-    }
-}
-
-impl DefaultLanguageSystems {
-    fn insert(&mut self, system: (Tag, Tag)) {
-        if !self.has_explicit_entry {
-            self.items.clear();
-            self.has_explicit_entry = true;
-        }
-        self.items.insert(system);
-    }
-
-    fn iter(&self) -> impl Iterator<Item = (Tag, Tag)> + '_ {
-        self.items.iter().copied()
     }
 }
 
