@@ -26,9 +26,11 @@ use crate::{
 };
 
 use super::{
-    common, glyph_range,
+    common,
+    features::{AaltFeature, SizeFeature, SpecialVerticalFeatureState},
+    glyph_range,
     lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, PreviouslyAssignedClass, SomeLookup},
-    output::{Compilation, SizeFeature},
+    output::Compilation,
     tables::{ClassId, CvParams, ScriptRecord, Tables},
 };
 
@@ -72,32 +74,6 @@ impl Default for DefaultLanguageSystems {
             items: HashSet::from_iter([(common::tags::SCRIPT_DFLT, common::tags::LANG_DFLT)]),
         }
     }
-}
-
-/// State required to generate the aalt feature.
-///
-/// This is a special and annoying case. We create this object when we encounter
-/// the aalt feature block, and then we use this to generate the aalt lookups
-/// once we've finished processing the input.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct AaltFeature {
-    aalt_features: Vec<Tag>,
-    all_alts: HashMap<GlyphId, Vec<GlyphId>>,
-    // to avoid duplicates
-    all_pairs: HashSet<(GlyphId, GlyphId)>,
-}
-
-/// If we are at the root of one of four magic features, we have special behaviour.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum SpecialVerticalFeatureState {
-    /// we are not in a special vertical feature
-    #[default]
-    Ready,
-    /// we are at the root of a special vertical feature (and so should behave specially)
-    Root,
-    /// we are inside a lookup in a special vertical feature (and so should not
-    /// behave specially)
-    InnerLookup,
 }
 
 struct MarkClass {
@@ -171,10 +147,10 @@ impl<'a> CompilationCtx<'a> {
     fn finalize_aalt(&mut self) {
         let Some(mut aalt) = self.aalt.take() else { return };
         // add all the relevant lookups from the referenced features
-        let mut lookups = vec![vec![]; aalt.aalt_features.len()];
+        let mut lookups = vec![vec![]; aalt.features().len()];
         // first sort all lookups by the order of the tags in the aalt table:
         for (key, lookup_ids) in &self.features {
-            let Some(feat_idx) = aalt.aalt_features.iter().position(|tag| *tag == key.feature) else { continue };
+            let Some(feat_idx) = aalt.features().iter().position(|tag| *tag == key.feature) else { continue };
             lookups[feat_idx].extend(
                 lookup_ids
                     .iter()
@@ -1103,7 +1079,7 @@ impl<'a> CompilationCtx<'a> {
                 let alts = self.resolve_glyph_class(&node.alternates());
                 aalt.extend(std::iter::repeat(target).zip(alts.iter()));
             } else if let Some(feature) = typed::AaltFeature::cast(item) {
-                aalt.aalt_features.push(feature.feature().to_raw());
+                aalt.add_feature_reference(feature.feature().to_raw());
             }
         }
         self.aalt = Some(aalt);
@@ -1802,22 +1778,6 @@ impl<'a> CompilationCtx<'a> {
     }
 }
 
-impl AaltFeature {
-    fn add(&mut self, target: GlyphId, alt: GlyphId) {
-        if self.all_pairs.insert((target, alt)) {
-            self.all_alts.entry(target).or_default().push(alt);
-        }
-    }
-}
-
-impl Extend<(GlyphId, GlyphId)> for AaltFeature {
-    fn extend<T: IntoIterator<Item = (GlyphId, GlyphId)>>(&mut self, iter: T) {
-        for (target, alt) in iter.into_iter() {
-            self.add(target, alt)
-        }
-    }
-}
-
 impl DefaultLanguageSystems {
     fn insert(&mut self, system: (Tag, Tag)) {
         if !self.has_explicit_entry {
@@ -1829,41 +1789,6 @@ impl DefaultLanguageSystems {
 
     fn iter(&self) -> impl Iterator<Item = (Tag, Tag)> + '_ {
         self.items.iter().copied()
-    }
-}
-
-impl SpecialVerticalFeatureState {
-    const VERTICAL_FEATURES: &[Tag] = &[
-        Tag::new(b"valt"),
-        Tag::new(b"vhal"),
-        Tag::new(b"vkrn"),
-        Tag::new(b"vpal"),
-    ];
-
-    fn begin_feature(&mut self, tag: Tag) {
-        if Self::VERTICAL_FEATURES.contains(&tag) {
-            *self = Self::Root;
-        }
-    }
-
-    fn end_feature(&mut self) {
-        *self = Self::Ready;
-    }
-
-    fn begin_lookup_block(&mut self) {
-        if *self == Self::Root {
-            *self = Self::InnerLookup;
-        }
-    }
-
-    fn end_lookup_block(&mut self) {
-        if *self == Self::InnerLookup {
-            *self = Self::Root;
-        }
-    }
-
-    fn in_eligible_vertical_feature(&self) -> bool {
-        *self == Self::Root
     }
 }
 

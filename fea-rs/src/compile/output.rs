@@ -5,15 +5,16 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use write_fonts::{
     dump_table,
     read::{FontRef, TableProvider, TopLevelTable},
-    tables::layout::{FeatureParams, SizeParams, StylisticSetParams},
+    tables::layout::{FeatureParams, StylisticSetParams},
     types::Tag,
     FontBuilder,
 };
 
 use super::{
     common,
+    features::SizeFeature,
     lookups::{AllLookups, FeatureKey, LookupId},
-    tables::{NameBuilder, NameSpec, Tables},
+    tables::Tables,
 };
 
 use crate::{Diagnostic, GlyphMap};
@@ -30,15 +31,6 @@ pub struct Compilation {
     pub(crate) features: BTreeMap<FeatureKey, Vec<LookupId>>,
     pub(crate) required_features: HashSet<FeatureKey>,
     pub(crate) size: Option<SizeFeature>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct SizeFeature {
-    pub design_size: u16,
-    pub identifier: u16,
-    pub range_start: u16,
-    pub range_end: u16,
-    pub names: Vec<NameSpec>,
 }
 
 impl Compilation {
@@ -163,24 +155,5 @@ impl Compilation {
         }
 
         Ok(builder)
-    }
-}
-
-impl SizeFeature {
-    fn build(&self, names: &mut NameBuilder) -> SizeParams {
-        let name_entry = if self.identifier == 0 {
-            assert!(self.names.is_empty());
-            0
-        } else {
-            assert!(!self.names.is_empty());
-            names.add_anon_group(&self.names)
-        };
-        SizeParams {
-            design_size: self.design_size,
-            identifier: self.identifier,
-            name_entry,
-            range_start: self.range_start,
-            range_end: self.range_end,
-        }
     }
 }

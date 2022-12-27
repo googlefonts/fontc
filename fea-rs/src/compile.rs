@@ -6,6 +6,7 @@ pub use output::Compilation;
 
 mod common;
 mod compile_ctx;
+mod features;
 mod glyph_range;
 mod lookups;
 mod output;
