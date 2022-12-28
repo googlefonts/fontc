@@ -30,7 +30,7 @@ use crate::{
     Kind,
 };
 
-use super::{common, language_system::LanguageSystem, tables::ClassId};
+use super::{common, tables::ClassId};
 
 use contextual::{
     ChainContextBuilder, ContextBuilder, ContextualLookupBuilder, ReverseChainBuilder,
@@ -544,33 +544,6 @@ impl AllLookups {
         }
 
         (gsub_builder.build(), gpos_builder.build())
-    }
-}
-
-impl FeatureKey {
-    pub(crate) fn for_feature(feature: Tag) -> Self {
-        FeatureKey {
-            feature,
-            script: common::tags::SCRIPT_DFLT,
-            language: common::tags::LANG_DFLT,
-        }
-    }
-
-    pub(crate) fn script(mut self, script: Tag) -> Self {
-        self.script = script;
-        self
-    }
-
-    pub(crate) fn language(mut self, language: Tag) -> Self {
-        self.language = language;
-        self
-    }
-
-    pub(crate) fn to_language_system(self) -> LanguageSystem {
-        LanguageSystem {
-            script: self.script,
-            language: self.language,
-        }
     }
 }
 

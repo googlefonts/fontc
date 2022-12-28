@@ -27,7 +27,7 @@ use crate::{
 
 use super::{
     common,
-    features::{AaltFeature, SizeFeature, SpecialVerticalFeatureState},
+    features::{AaltFeature, ActiveFeature, SizeFeature, SpecialVerticalFeatureState},
     glyph_range,
     language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, PreviouslyAssignedClass, SomeLookup},
@@ -45,8 +45,7 @@ pub struct CompilationCtx<'a> {
     lookups: AllLookups,
     lookup_flags: LookupFlag,
     cur_mark_filter_set: Option<FilterSetId>,
-    cur_language_systems: HashSet<LanguageSystem>,
-    cur_feature_name: Option<Tag>,
+    active_feature: Option<ActiveFeature>,
     vertical_feature: SpecialVerticalFeatureState,
     script: Option<Tag>,
     glyph_class_defs: HashMap<SmolStr, GlyphClass>,
@@ -79,8 +78,7 @@ impl<'a> CompilationCtx<'a> {
             anchor_defs: Default::default(),
             lookup_flags: Default::default(),
             cur_mark_filter_set: Default::default(),
-            cur_language_systems: Default::default(),
-            cur_feature_name: None,
+            active_feature: None,
             vertical_feature: Default::default(),
             script: None,
             mark_attach_class_id: Default::default(),
@@ -235,16 +233,15 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn start_feature(&mut self, feature_name: typed::Tag) {
-        assert!(self.cur_language_systems.is_empty());
-        self.cur_language_systems
-            .extend(self.default_lang_systems.iter());
-
         assert!(
             !self.lookups.has_current(),
             "no lookup should be active at start of feature"
         );
         let raw_tag = feature_name.to_raw();
-        self.cur_feature_name = Some(raw_tag);
+        self.active_feature = Some(ActiveFeature::new(
+            raw_tag,
+            self.default_lang_systems.clone(),
+        ));
         self.vertical_feature.begin_feature(raw_tag);
         self.lookup_flags = LookupFlag::empty();
         self.cur_mark_filter_set = None;
@@ -256,29 +253,22 @@ impl<'a> CompilationCtx<'a> {
                 _name.is_none(),
                 "lookup blocks are finished before feature blocks"
             );
-            self.add_lookup_to_feature(id, self.cur_feature_name.unwrap());
+            self.add_lookup_to_current_feature_if_present(id);
         }
-        self.cur_feature_name = None;
-        self.cur_language_systems.clear();
+        let active = self.active_feature.take().expect("always present");
+        active.add_to_features(&mut self.features);
         self.vertical_feature.end_feature();
-        //self.cur_lookup = None;
         self.lookup_flags = LookupFlag::empty();
         self.cur_mark_filter_set = None;
     }
 
     fn start_lookup_block(&mut self, name: &Token) {
-        if self.cur_feature_name == Some(common::tags::AALT) {
-            self.error(name.range(), "no lookups allowed in aalt");
-        }
-
         if let Some((id, _name)) = self.lookups.finish_current() {
             assert!(_name.is_none(), "lookup blocks cannot be nested");
-            if let Some(feature) = self.cur_feature_name {
-                self.add_lookup_to_feature(id, feature);
-            }
+            self.add_lookup_to_current_feature_if_present(id);
         }
 
-        if self.cur_feature_name.is_none() {
+        if self.active_feature.is_none() {
             self.lookup_flags = LookupFlag::empty();
             self.cur_mark_filter_set = None;
         }
@@ -288,11 +278,14 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn end_lookup_block(&mut self) {
+        // end first, regardless of whether we're in an active feature
         let current = self.lookups.finish_current();
-        if let Some(feature) = self.cur_feature_name {
+        // if this lookup is inside a feature block, it gets added to the feature
+        if self.active_feature.is_some() {
             if let Some((id, _)) = current {
-                self.add_lookup_to_feature(id, feature);
+                self.add_lookup_to_current_feature_if_present(id);
             }
+        // and if not, we clear these flags
         } else {
             self.lookup_flags = LookupFlag::empty();
             self.cur_mark_filter_set = None;
@@ -308,14 +301,13 @@ impl<'a> CompilationCtx<'a> {
             language,
             stmt.exclude_dflt().is_some(),
             stmt.required().is_some(),
-            stmt.range(),
         );
     }
 
     fn set_script(&mut self, stmt: typed::Script) {
         let script = stmt.tag().to_raw();
         self.script = Some(script);
-        self.set_script_language(script, common::tags::LANG_DFLT, false, false, stmt.range());
+        self.set_script_language(script, common::tags::LANG_DFLT, false, false);
     }
 
     fn set_script_language(
@@ -324,44 +316,19 @@ impl<'a> CompilationCtx<'a> {
         language: Tag,
         exclude_dflt: bool,
         required: bool,
-        err_range: Range<usize>,
     ) {
-        let feature = match self.cur_feature_name {
-            Some(tag @ common::tags::AALT | tag @ common::tags::SIZE) => {
-                self.error(
-                    err_range,
-                    format!("language/script not allowed in '{}' feature", tag),
-                );
-                return;
-            }
-            Some(tag) => tag,
-            None => {
-                self.error(err_range, "language/script only allowed in feature block");
-                return;
-            }
-        };
-
+        let system = LanguageSystem { script, language };
         if let Some((id, _name)) = self.lookups.finish_current() {
-            self.add_lookup_to_feature(id, feature);
+            self.add_lookup_to_current_feature_if_present(id);
         }
-
-        let dflt_key = FeatureKey::for_feature(feature).language(language);
-        let real_key = dflt_key.script(script);
-
-        let wants_dflt = dflt_key.language == "dflt" && !exclude_dflt;
-
-        let lookups = wants_dflt
-            .then(|| self.features.get(&dflt_key).cloned())
-            .flatten()
-            .unwrap_or_default();
-        self.features.insert(real_key, lookups);
-
-        self.cur_language_systems.clear();
-        self.cur_language_systems
-            .insert(real_key.to_language_system());
+        let key = self
+            .active_feature
+            .as_mut()
+            .unwrap()
+            .set_system(system, exclude_dflt);
 
         if required {
-            self.required_features.insert(real_key);
+            self.required_features.insert(key);
         }
     }
 
@@ -446,19 +413,17 @@ impl<'a> CompilationCtx<'a> {
                 self.lookups
                     .start_lookup(kind, self.lookup_flags, self.cur_mark_filter_set)
             {
-                self.add_lookup_to_feature(lookup, self.cur_feature_name.unwrap());
+                self.add_lookup_to_current_feature_if_present(lookup);
             }
         }
         self.lookups.current_mut().expect("we just created it")
     }
 
-    fn add_lookup_to_feature(&mut self, lookup: LookupId, feature: Tag) {
-        if lookup == LookupId::Empty {
-            return;
-        }
-        for sys in &self.cur_language_systems {
-            let key = sys.to_feature_key(feature);
-            self.features.entry(key).or_default().push(lookup);
+    fn add_lookup_to_current_feature_if_present(&mut self, lookup: LookupId) {
+        if lookup != LookupId::Empty {
+            if let Some(active) = self.active_feature.as_mut() {
+                active.add_lookup(lookup);
+            }
         }
     }
 
@@ -1158,7 +1123,7 @@ impl<'a> CompilationCtx<'a> {
                 }
             }
         }
-        for sys in &self.cur_language_systems {
+        for sys in self.default_lang_systems.iter() {
             let key = sys.to_feature_key(common::tags::SIZE);
             self.features.entry(key).or_default();
         }
@@ -1520,13 +1485,7 @@ impl<'a> CompilationCtx<'a> {
             .lookups
             .get_named(&lookup.label().text)
             .expect("checked in validation pass");
-        match self.cur_feature_name {
-            Some(feature) => self.add_lookup_to_feature(id, feature),
-            None => self.warning(
-                lookup.range(),
-                "lookup reference outside of feature does nothing",
-            ),
-        }
+        self.add_lookup_to_current_feature_if_present(id);
     }
 
     fn resolve_lookup_block(&mut self, lookup: typed::LookupBlock) {
