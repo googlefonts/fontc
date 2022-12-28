@@ -88,7 +88,7 @@ impl<'a> ValidationCtx<'a> {
             } else if let Some(table) = typed::Table::cast(item) {
                 self.validate_table(&table);
             } else if let Some(lookup) = typed::LookupBlock::cast(item) {
-                self.validate_lookup_block(&lookup, true);
+                self.validate_lookup_block(&lookup, None);
             } else if let Some(_value_record_def) = typed::ValueRecordDef::cast(item) {
                 unimplemented!("valueRecordDef")
             } else if item.kind() == Kind::AnonKw {
@@ -491,7 +491,7 @@ impl<'a> ValidationCtx<'a> {
             } else if let Some(node) = typed::LookupRef::cast(item) {
                 self.validate_lookup_ref(&node);
             } else if let Some(node) = typed::LookupBlock::cast(item) {
-                self.validate_lookup_block(&node, false);
+                self.validate_lookup_block(&node, Some(tag_raw));
             } else if let Some(node) = typed::LookupFlag::cast(item) {
                 self.validate_lookupflag(&node);
             } else if let Some(node) = typed::GsubStatement::cast(item) {
@@ -620,8 +620,11 @@ impl<'a> ValidationCtx<'a> {
         }
     }
 
-    fn validate_lookup_block(&mut self, node: &typed::LookupBlock, top_level: bool) {
+    fn validate_lookup_block(&mut self, node: &typed::LookupBlock, in_feature: Option<Tag>) {
         let name = node.label();
+        if in_feature == Some(common::tags::AALT) {
+            self.error(name.range(), "lookups are not allowed in 'aalt' feature");
+        }
         let mut kind = None;
         if let Some(_prev) = self.lookup_defs.insert(name.text.clone(), name.clone()) {
             //TODO: annotate with previous location
@@ -642,22 +645,33 @@ impl<'a> ValidationCtx<'a> {
                 }
             }
             if item.kind() == Kind::ScriptNode || item.kind() == Kind::LanguageNode {
-                if top_level {
-                    self.error(
+                match in_feature {
+                    None => self.error(
                         item.range(),
                         "script and language statements not allowed in standalone lookup blocks",
-                    );
+                    ),
+                    Some(tag @ common::tags::AALT | tag @ common::tags::SIZE) => self.error(
+                        item.range(),
+                        format!("language/script not allowed in '{tag}' feature"),
+                    ),
+                    _ => (),
                 }
             } else if item.kind() == Kind::SubtableNode {
                 // lgtm
             } else if let Some(node) = typed::LookupRef::cast(item) {
+                if in_feature.is_none() {
+                    //TODO: verify that this is accurate
+                    self.warning(
+                        node.range(),
+                        "lookup reference outside of feature is ignored",
+                    );
+                }
                 self.validate_lookup_ref(&node);
             } else if let Some(node) = typed::LookupBlock::cast(item) {
                 self.error(
                     node.keyword().range(),
                     "lookup blocks cannot contain other blocks",
                 );
-                //self.validate_lookup_block(&node, false);
             } else if let Some(node) = typed::LookupFlag::cast(item) {
                 self.validate_lookupflag(&node);
             } else if let Some(node) = typed::GsubStatement::cast(item) {
