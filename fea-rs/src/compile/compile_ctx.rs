@@ -123,6 +123,7 @@ impl<'a> CompilationCtx<'a> {
             }
         }
 
+        self.finalize_gdef_table();
         self.finalize_aalt();
     }
 
@@ -182,9 +183,6 @@ impl<'a> CompilationCtx<'a> {
         if self.errors.iter().any(Diagnostic::is_error) {
             return Err(self.errors.clone());
         }
-        if self.tables.gdef.is_none() {
-            self.infer_glyph_classes();
-        }
 
         Ok(Compilation {
             warnings: self.errors.clone(),
@@ -196,22 +194,53 @@ impl<'a> CompilationCtx<'a> {
         })
     }
 
-    // if a GDEF table is not explicitly defined, we are supposed to create one:
-    // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#4f-markclass
-    fn infer_glyph_classes(&mut self) {
-        let mut gdef = super::tables::GdefBuilder::default();
-        self.lookups.infer_glyph_classes(|glyph, class_id| {
-            gdef.glyph_classes.insert(glyph, class_id);
-        });
-        for glyph in self
-            .mark_classes
-            .values()
-            .flat_map(|class| class.members.iter().map(|(cls, _)| cls.iter()))
-            .flatten()
-        {
-            gdef.glyph_classes.insert(glyph, ClassId::Mark);
+    /// Infer/update GDEF table as required.
+    ///
+    /// If a GDEF table is not explicitly defined, we are supposed to create one,
+    /// and even if a GDEF table *is* defined, we are supposed to compute certain
+    /// of its subtables based on other items encountered in the feature file
+    ///
+    /// References:
+    ///
+    /// <http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#4f-markclass>
+    /// <http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#9b-gdef-table>
+    fn finalize_gdef_table(&mut self) {
+        // if the FEA included a GDEF block, use that, otherwise create an empty table
+        let mut gdef = self.tables.gdef.take().unwrap_or_default();
+        // infer glyph classes, if they were not declared explicitly
+        if gdef.glyph_classes.is_empty() {
+            self.lookups.infer_glyph_classes(|glyph, class_id| {
+                gdef.glyph_classes.insert(glyph, class_id);
+            });
+            for glyph in self
+                .mark_classes
+                .values()
+                .flat_map(|class| class.members.iter().map(|(cls, _)| cls.iter()))
+                .flatten()
+            {
+                gdef.glyph_classes.insert(glyph, ClassId::Mark);
+            }
         }
-        if !gdef.glyph_classes.is_empty() {
+
+        if !self.mark_attach_class_id.is_empty() {
+            gdef.mark_attach_class.extend(
+                self.mark_attach_class_id
+                    .iter()
+                    .flat_map(|(cls, id)| cls.iter().map(|gid| (gid, *id))),
+            );
+        }
+
+        if !self.mark_filter_sets.is_empty() {
+            let mut sorted = self
+                .mark_filter_sets
+                .iter()
+                .map(|(cls, id)| (*id, cls.clone()))
+                .collect::<Vec<_>>();
+            sorted.sort_unstable();
+            gdef.mark_glyph_sets = sorted.into_iter().map(|(_, cls)| cls).collect();
+        }
+
+        if !gdef.is_empty() {
             self.tables.gdef = Some(gdef);
         }
     }
@@ -400,7 +429,7 @@ impl<'a> CompilationCtx<'a> {
     fn resolve_mark_filter_set(&mut self, glyphs: &typed::GlyphClass) -> u16 {
         let glyphs = self.resolve_glyph_class(glyphs);
         let set = glyphs.sort_and_dedupe();
-        let id = self.mark_filter_sets.len() + 1;
+        let id = self.mark_filter_sets.len();
         *self
             .mark_filter_sets
             .entry(set)

@@ -10,7 +10,10 @@ use write_fonts::{
     read::{tables::name::Encoding, FontRef, TableProvider},
     tables::{
         self,
-        gdef::{AttachList, AttachPoint, CaretValue, GlyphClassDef, LigCaretList, LigGlyph},
+        gdef::{
+            AttachList, AttachPoint, CaretValue, GlyphClassDef, LigCaretList, LigGlyph,
+            MarkGlyphSets,
+        },
         layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
     },
     types::{Fixed, LongDateTime, Tag, Uint24},
@@ -91,6 +94,8 @@ pub struct GdefBuilder {
     pub glyph_classes: HashMap<GlyphId, ClassId>,
     pub attach: BTreeMap<GlyphId, BTreeSet<u16>>,
     pub ligature_pos: BTreeMap<GlyphId, Vec<CaretValue>>,
+    pub mark_attach_class: BTreeMap<GlyphId, u16>,
+    pub mark_glyph_sets: Vec<GlyphClass>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -567,12 +572,14 @@ impl Os2Builder {
 
 impl GdefBuilder {
     pub fn build(&self) -> Result<Vec<u8>, ValidationReport> {
-        let table = tables::gdef::Gdef::new(
+        let mut table = tables::gdef::Gdef::new(
             self.build_class_def(),
             self.build_attach_list(),
             self.build_lig_caret_list(),
-            None,
+            self.build_mark_attach_class_def(),
         );
+
+        table.mark_glyph_sets_def = self.build_mark_glyph_sets().into();
         dump_table(&table)
     }
 
@@ -606,10 +613,39 @@ impl GdefBuilder {
         (!lig_glyphs.is_empty()).then(|| LigCaretList::new(coverage.build(), lig_glyphs))
     }
 
+    fn build_mark_glyph_sets(&self) -> Option<MarkGlyphSets> {
+        (!self.mark_glyph_sets.is_empty()).then(|| {
+            MarkGlyphSets::new(
+                self.mark_glyph_sets
+                    .iter()
+                    .map(|cls| cls.iter().collect::<CoverageTableBuilder>().build())
+                    .collect(),
+            )
+        })
+    }
+
+    fn build_mark_attach_class_def(&self) -> Option<ClassDef> {
+        (!self.mark_attach_class.is_empty()).then(|| {
+            self.mark_attach_class
+                .iter()
+                .map(|(a, b)| (*a, *b))
+                .collect::<ClassDefBuilder>()
+                .build()
+        })
+    }
+
     pub fn add_glyph_class(&mut self, glyphs: GlyphClass, class: ClassId) {
         for glyph in glyphs.iter() {
             self.glyph_classes.insert(glyph, class);
         }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.glyph_classes.is_empty()
+            && self.attach.is_empty()
+            && self.ligature_pos.is_empty()
+            && self.mark_attach_class.is_empty()
+            && self.mark_glyph_sets.is_empty()
     }
 }
 
