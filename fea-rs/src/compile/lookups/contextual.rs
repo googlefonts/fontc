@@ -251,6 +251,13 @@ impl ContextBuilder {
         self.rules.iter().any(ContextRule::is_chain_rule)
     }
 
+    /// Force this ContextBuilder into a ChainContextBuilder.
+    ///
+    /// Only useful so we can optionally choose to only build chain rules
+    pub(crate) fn into_chain_rule(self) -> ChainContextBuilder {
+        ChainContextBuilder(self)
+    }
+
     fn has_glyph_classes(&self) -> bool {
         self.rules.iter().any(ContextRule::has_glyph_classes)
     }

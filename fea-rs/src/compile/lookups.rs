@@ -76,6 +76,8 @@ pub(crate) enum PositionLookup {
     MarkToBase(LookupBuilder<MarkToBaseBuilder>),
     MarkToLig(LookupBuilder<MarkToLigBuilder>),
     MarkToMark(LookupBuilder<MarkToMarkBuilder>),
+    // currently unused, matching feaLib: <https://github.com/fonttools/fonttools/issues/2539>
+    #[allow(dead_code)]
     Contextual(LookupBuilder<ContextBuilder>),
     ChainedContextual(LookupBuilder<ChainContextBuilder>),
 }
@@ -155,6 +157,24 @@ impl<T: Default> LookupBuilder<T> {
 
     pub(crate) fn iter_subtables(&self) -> impl Iterator<Item = &T> + '_ {
         self.subtables.iter()
+    }
+}
+
+impl LookupBuilder<ContextBuilder> {
+    fn into_chain_rule(self) -> LookupBuilder<ChainContextBuilder> {
+        let LookupBuilder {
+            flags,
+            mark_set,
+            subtables,
+        } = self;
+        LookupBuilder {
+            flags,
+            mark_set,
+            subtables: subtables
+                .into_iter()
+                .map(ContextBuilder::into_chain_rule)
+                .collect(),
+        }
     }
 }
 
@@ -277,9 +297,11 @@ impl AllLookups {
                 assert_eq!(id, lookup.root_id); // sanity check
                 let (lookup, anon_lookups) = lookup.into_lookups();
                 match lookup {
-                    ChainOrNot::Context(lookup) => {
-                        self.gpos.push(PositionLookup::Contextual(lookup))
-                    }
+                    ChainOrNot::Context(lookup) => self
+                        .gpos
+                        //NOTE: we currently force all GPOS7 into GPOS8, to match
+                        //the behaviour of fonttools.
+                        .push(PositionLookup::ChainedContextual(lookup.into_chain_rule())),
                     ChainOrNot::Chain(lookup) => {
                         self.gpos.push(PositionLookup::ChainedContextual(lookup))
                     }
