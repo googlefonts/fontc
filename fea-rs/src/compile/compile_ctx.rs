@@ -307,7 +307,15 @@ impl<'a> CompilationCtx<'a> {
 
     fn set_script(&mut self, stmt: typed::Script) {
         let script = stmt.tag().to_raw();
+        if Some(script) == self.script {
+            return;
+        }
+
         self.script = Some(script);
+
+        self.lookup_flags = LookupFlag::empty();
+        self.cur_mark_filter_set = None;
+
         self.set_script_language(script, common::tags::LANG_DFLT, false, false);
     }
 
