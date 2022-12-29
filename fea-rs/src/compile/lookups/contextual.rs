@@ -247,6 +247,14 @@ impl ContextBuilder {
             .for_each(|rule| rule.bump_all_lookup_ids(by))
     }
 
+    /// Iterate all referenced lookups
+    pub(crate) fn iter_lookups(&self) -> impl Iterator<Item = LookupId> + '_ {
+        self.rules
+            .iter()
+            .flat_map(|x| x.context.iter().flat_map(|(_, id)| id.iter()))
+            .copied()
+    }
+
     fn is_chain_rule(&self) -> bool {
         self.rules.iter().any(ContextRule::is_chain_rule)
     }
@@ -389,6 +397,10 @@ impl Builder for ContextBuilder {
 impl ChainContextBuilder {
     pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
         self.0.bump_all_lookup_ids(by)
+    }
+
+    pub(crate) fn iter_lookups(&self) -> impl Iterator<Item = LookupId> + '_ {
+        self.0.iter_lookups()
     }
 
     fn build_format_1(&self) -> Option<write_layout::ChainedSequenceContext> {

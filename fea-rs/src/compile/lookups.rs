@@ -57,8 +57,6 @@ pub(crate) struct AllLookups {
     gpos: Vec<PositionLookup>,
     gsub: Vec<SubstitutionLookup>,
     named: HashMap<SmolStr, LookupId>,
-    // we track these here so that we can find them when compiling aalt
-    anon_single_sub_lookups: HashMap<LookupId, Vec<LookupId>>,
 }
 
 #[derive(Clone, Debug)]
@@ -321,17 +319,6 @@ impl AllLookups {
                         .gsub
                         .push(SubstitutionLookup::ChainedContextual(lookup)),
                 }
-                let anon_single_sub_ids = anon_lookups
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, lookup)| {
-                        matches!(lookup, SubstitutionLookup::Single(_)).then_some(i)
-                    })
-                    .map(|i| LookupId::Gsub(id.to_raw() + i + 1))
-                    .collect::<Vec<_>>();
-                if !anon_single_sub_ids.is_empty() {
-                    self.anon_single_sub_lookups.insert(id, anon_single_sub_ids);
-                }
                 self.gsub.extend(anon_lookups);
                 id
             }
@@ -448,30 +435,37 @@ impl AllLookups {
         //TODO: the spec says to do gsub too, but fonttools doesn't?
     }
 
-    /// Iterate over the aalt-relevant lookups for this lookup Id.
+    /// Return the aalt-relevant lookups for this lookup Id.
     ///
     /// If lookup is GSUB type 1 or 3, return a single lookup.
     /// If contextual, returns any referenced single-sub lookups.
-    pub(crate) fn iter_aalt_lookups(
-        &self,
-        id: &LookupId,
-    ) -> impl Iterator<Item = &SubstitutionLookup> + '_ {
-        let lookup = self.get_gsub_lookup(id);
+    pub(crate) fn aalt_lookups(&self, id: LookupId) -> Vec<&SubstitutionLookup> {
+        let lookup = self.get_gsub_lookup(&id);
 
-        let (lookup, anon_lookups) = match lookup {
-            Some(SubstitutionLookup::Single(_) | SubstitutionLookup::Alternate(_)) => {
-                (lookup, None)
+        match lookup {
+            Some(sub @ SubstitutionLookup::Single(_) | sub @ SubstitutionLookup::Alternate(_)) => {
+                vec![sub]
             }
-            Some(SubstitutionLookup::Contextual(_) | SubstitutionLookup::ChainedContextual(_)) => {
-                (None, self.anon_single_sub_lookups.get(id))
-            }
-            _ => (None, None),
-        };
-
-        anon_lookups
-            .into_iter()
-            .flat_map(|x| x.iter().map(|id| self.get_gsub_lookup(id).unwrap()))
-            .chain(lookup)
+            Some(SubstitutionLookup::Contextual(lookup)) => lookup
+                .subtables
+                .iter()
+                .flat_map(|sub| sub.iter_lookups())
+                .filter_map(|id| match self.get_gsub_lookup(&id) {
+                    Some(sub @ SubstitutionLookup::Single(_)) => Some(sub),
+                    _ => None,
+                })
+                .collect(),
+            Some(SubstitutionLookup::ChainedContextual(lookup)) => lookup
+                .subtables
+                .iter()
+                .flat_map(|sub| sub.iter_lookups())
+                .filter_map(|id| match self.get_gsub_lookup(&id) {
+                    Some(sub @ SubstitutionLookup::Single(_)) => Some(sub),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
     }
 
     fn get_gsub_lookup(&self, id: &LookupId) -> Option<&SubstitutionLookup> {

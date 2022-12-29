@@ -136,7 +136,7 @@ impl<'a> CompilationCtx<'a> {
             lookups[feat_idx].extend(
                 lookup_ids
                     .iter()
-                    .flat_map(|idx| self.lookups.iter_aalt_lookups(idx)),
+                    .flat_map(|idx| self.lookups.aalt_lookups(*idx)),
             )
         }
 
