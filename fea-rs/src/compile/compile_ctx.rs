@@ -1,3 +1,4 @@
+use crate::compile::valuerecordext::ValueRecordExt;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
@@ -647,13 +648,19 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_pair_pos(&mut self, node: &typed::Gpos2) {
+        let in_vert_feature = self.vertical_feature.in_eligible_vertical_feature();
+
         let first_ids = self.resolve_glyph_or_class(&node.first_item());
         let second_ids = self.resolve_glyph_or_class(&node.second_item());
-        let first_value = self.resolve_value_record(&node.first_value());
+        let first_value = self
+            .resolve_value_record_raw(&node.first_value())
+            .for_pair_pos(in_vert_feature);
         let second_value = node
             .second_value()
-            .map(|val| self.resolve_value_record(&val))
-            .unwrap_or_default();
+            .map(|val| self.resolve_value_record_raw(&val))
+            .unwrap_or_default()
+            .for_pair_pos(in_vert_feature);
+
         let lookup = self.ensure_current_lookup_type(Kind::GposType2);
 
         if (first_ids.is_class() || second_ids.is_class()) && node.enum_().is_none() {
@@ -915,20 +922,28 @@ impl<'a> CompilationCtx<'a> {
         lookup.add_contextual_rule(backtrack, context, lookahead);
     }
 
+    /// Resolve a value record, ignoring zero values
+    ///
+    /// This is the default behaviour; a value record of '0' or <0 0 0 0> has
+    /// format zero.
     fn resolve_value_record(&mut self, record: &typed::ValueRecord) -> ValueRecord {
-        // in the context of value records, we treat 0 as null
-        fn parse(value: typed::Number) -> Option<i16> {
-            match value.parse_signed() {
-                0 => None,
-                other => Some(other),
-            }
+        self.resolve_value_record_raw(record).clear_zeros()
+    }
+
+    /// Resolve a value record, leaving zeros in place
+    ///
+    /// This is exposed to handle PairPos, which has special semantics for how
+    /// to interpret and handle zeros.
+    fn resolve_value_record_raw(&mut self, record: &typed::ValueRecord) -> ValueRecord {
+        if record.null().is_some() {
+            return ValueRecord::default();
         }
 
-        if let Some(adv) = record.advance() {
+        if let Some(adv) = record.advance().map(|x| x.parse_signed()) {
             let (x_advance, y_advance) = if self.vertical_feature.in_eligible_vertical_feature() {
-                (None, parse(adv))
+                (None, Some(adv))
             } else {
-                (parse(adv), None)
+                (Some(adv), None)
             };
 
             return ValueRecord {
@@ -939,10 +954,10 @@ impl<'a> CompilationCtx<'a> {
         }
         if let Some([x_place, y_place, x_adv, y_adv]) = record.placement() {
             let mut result = ValueRecord {
-                x_advance: parse(x_adv),
-                y_advance: parse(y_adv),
-                x_placement: parse(x_place),
-                y_placement: parse(y_place),
+                x_advance: Some(x_adv.parse_signed()),
+                y_advance: Some(y_adv.parse_signed()),
+                x_placement: Some(x_place.parse_signed()),
+                y_placement: Some(y_place.parse_signed()),
                 ..Default::default()
             };
             if let Some([x_place_dev, y_place_dev, x_adv_dev, y_adv_dev]) = record.device() {

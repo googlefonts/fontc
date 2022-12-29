@@ -13,6 +13,7 @@ mod lookups;
 mod output;
 mod tables;
 mod validate;
+mod valuerecordext;
 
 /// Run the validation pass, returning any diagnostics.
 pub fn validate(node: &ParseTree, glyph_map: &GlyphMap) -> Vec<Diagnostic> {
