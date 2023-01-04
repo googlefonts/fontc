@@ -109,6 +109,13 @@ pub(crate) enum LookupId {
     Empty,
 }
 
+/// Tracks the current lookupflags state
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct LookupFlagInfo {
+    pub(crate) flags: LookupFlag,
+    pub(crate) mark_filter_set: Option<FilterSetId>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct FeatureKey {
     pub(crate) feature: Tag,
@@ -363,14 +370,9 @@ impl AllLookups {
         self.current_name = Some(name);
     }
 
-    pub(crate) fn start_lookup(
-        &mut self,
-        kind: Kind,
-        flags: LookupFlag,
-        mark_set: Option<FilterSetId>,
-    ) -> Option<LookupId> {
+    pub(crate) fn start_lookup(&mut self, kind: Kind, flags: LookupFlagInfo) -> Option<LookupId> {
         let finished_id = self.current.take().map(|lookup| self.push(lookup));
-        let mut new_one = SomeLookup::new(kind, flags, mark_set);
+        let mut new_one = SomeLookup::new(kind, flags.flags, flags.mark_filter_set);
 
         let new_id = if is_gpos_rule(kind) {
             LookupId::Gpos(self.gpos.len())
@@ -580,6 +582,20 @@ impl LookupId {
 
     pub(crate) fn to_u16_or_die(self) -> u16 {
         self.to_raw().try_into().unwrap()
+    }
+}
+
+impl LookupFlagInfo {
+    pub(crate) fn new(flags: LookupFlag, mark_filter_set: Option<FilterSetId>) -> Self {
+        LookupFlagInfo {
+            flags,
+            mark_filter_set,
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.flags = LookupFlag::empty();
+        self.mark_filter_set = None;
     }
 }
 

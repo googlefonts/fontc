@@ -31,7 +31,10 @@ use super::{
     features::{AaltFeature, ActiveFeature, SizeFeature, SpecialVerticalFeatureState},
     glyph_range,
     language_system::{DefaultLanguageSystems, LanguageSystem},
-    lookups::{AllLookups, FeatureKey, FilterSetId, LookupId, PreviouslyAssignedClass, SomeLookup},
+    lookups::{
+        AllLookups, FeatureKey, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass,
+        SomeLookup,
+    },
     output::Compilation,
     tables::{ClassId, CvParams, ScriptRecord, Tables},
 };
@@ -44,8 +47,7 @@ pub struct CompilationCtx<'a> {
     features: BTreeMap<FeatureKey, Vec<LookupId>>,
     default_lang_systems: DefaultLanguageSystems,
     lookups: AllLookups,
-    lookup_flags: LookupFlag,
-    cur_mark_filter_set: Option<FilterSetId>,
+    lookup_flags: LookupFlagInfo,
     active_feature: Option<ActiveFeature>,
     vertical_feature: SpecialVerticalFeatureState,
     script: Option<Tag>,
@@ -78,7 +80,6 @@ impl<'a> CompilationCtx<'a> {
             mark_classes: Default::default(),
             anchor_defs: Default::default(),
             lookup_flags: Default::default(),
-            cur_mark_filter_set: Default::default(),
             active_feature: None,
             vertical_feature: Default::default(),
             script: None,
@@ -273,8 +274,7 @@ impl<'a> CompilationCtx<'a> {
             self.default_lang_systems.clone(),
         ));
         self.vertical_feature.begin_feature(raw_tag);
-        self.lookup_flags = LookupFlag::empty();
-        self.cur_mark_filter_set = None;
+        self.lookup_flags.clear();
     }
 
     fn end_feature(&mut self) {
@@ -288,8 +288,7 @@ impl<'a> CompilationCtx<'a> {
         let active = self.active_feature.take().expect("always present");
         active.add_to_features(&mut self.features);
         self.vertical_feature.end_feature();
-        self.lookup_flags = LookupFlag::empty();
-        self.cur_mark_filter_set = None;
+        self.lookup_flags.clear();
     }
 
     fn start_lookup_block(&mut self, name: &Token) {
@@ -299,8 +298,7 @@ impl<'a> CompilationCtx<'a> {
         }
 
         if self.active_feature.is_none() {
-            self.lookup_flags = LookupFlag::empty();
-            self.cur_mark_filter_set = None;
+            self.lookup_flags.clear();
         }
 
         self.vertical_feature.begin_lookup_block();
@@ -317,8 +315,7 @@ impl<'a> CompilationCtx<'a> {
             }
         // and if not, we clear these flags
         } else {
-            self.lookup_flags = LookupFlag::empty();
-            self.cur_mark_filter_set = None;
+            self.lookup_flags.clear();
         }
         self.vertical_feature.end_lookup_block();
     }
@@ -341,9 +338,7 @@ impl<'a> CompilationCtx<'a> {
         }
 
         self.script = Some(script);
-
-        self.lookup_flags = LookupFlag::empty();
-        self.cur_mark_filter_set = None;
+        self.lookup_flags.clear();
 
         self.set_script_language(script, common::tags::LANG_DFLT, false, false);
     }
@@ -372,11 +367,13 @@ impl<'a> CompilationCtx<'a> {
 
     fn set_lookup_flag(&mut self, node: typed::LookupFlag) {
         if let Some(number) = node.number() {
-            self.lookup_flags = LookupFlag::from_bits_truncate(number.parse_unsigned().unwrap());
+            self.lookup_flags.flags =
+                LookupFlag::from_bits_truncate(number.parse_unsigned().unwrap());
             return;
         }
 
         let mut flags = LookupFlag::empty();
+        let mut mark_filter_set = None;
 
         let mut iter = node.values();
         while let Some(next) = iter.next() {
@@ -404,12 +401,12 @@ impl<'a> CompilationCtx<'a> {
                         .expect("validated");
                     let filter_set = self.resolve_mark_filter_set(&node);
                     flags.set_use_mark_filtering_set(true);
-                    self.cur_mark_filter_set = Some(filter_set);
+                    mark_filter_set = Some(filter_set);
                 }
                 other => unreachable!("mark statements have been validated: '{:?}'", other),
             }
         }
-        self.lookup_flags = flags;
+        self.lookup_flags = LookupFlagInfo::new(flags, mark_filter_set);
     }
 
     fn resolve_mark_attach_class(&mut self, glyphs: &typed::GlyphClass) -> u16 {
@@ -447,10 +444,7 @@ impl<'a> CompilationCtx<'a> {
             //FIXME: find another way of ensuring that named lookup blocks don't
             //contain mismatched rules
             //assert!(!self.lookups.is_named(), "ensure rule type in validation");
-            if let Some(lookup) =
-                self.lookups
-                    .start_lookup(kind, self.lookup_flags, self.cur_mark_filter_set)
-            {
+            if let Some(lookup) = self.lookups.start_lookup(kind, self.lookup_flags) {
                 self.add_lookup_to_current_feature_if_present(lookup);
             }
         }
