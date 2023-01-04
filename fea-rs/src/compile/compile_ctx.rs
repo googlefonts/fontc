@@ -1,4 +1,3 @@
-use crate::compile::valuerecordext::ValueRecordExt;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
@@ -37,6 +36,7 @@ use super::{
     },
     output::Compilation,
     tables::{ClassId, CvParams, ScriptRecord, Tables},
+    valuerecordext::ValueRecordExt,
 };
 
 pub struct CompilationCtx<'a> {
@@ -61,8 +61,8 @@ pub struct CompilationCtx<'a> {
     required_features: HashSet<FeatureKey>,
 }
 
+#[derive(Clone, Debug, Default)]
 struct MarkClass {
-    id: u16,
     members: Vec<(GlyphClass, Option<AnchorTable>)>,
 }
 
@@ -732,10 +732,10 @@ impl<'a> CompilationCtx<'a> {
         let _ = self.ensure_current_lookup_type(Kind::GposType4);
         for mark in node.attachments() {
             let base_anchor = self.resolve_anchor(&mark.anchor());
-            // ensure we're in the right lookup but drop the reference
 
             let mark_class_node = mark.mark_class_name().expect("checked in validation");
-            let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
+            let class_name = mark_class_node.text().to_owned();
+            let mark_class = self.mark_classes.get(&class_name).unwrap();
 
             // access the lookup through the field, so the borrow checker
             // doesn't think we're borrowing all of self
@@ -751,14 +751,13 @@ impl<'a> CompilationCtx<'a> {
                             .as_ref()
                             .expect("no null anchors in mark-to-base (check validation)");
                         for glyph in glyphs.iter() {
-                            // validate here that classes are disjoint
-                            subtable.insert_mark(glyph, mark_class.id, anchor.clone())?;
+                            subtable.insert_mark(glyph, class_name.clone(), anchor.clone())?;
                         }
                     }
                     for base in base_ids.iter() {
                         subtable.insert_base(
                             base,
-                            mark_class.id,
+                            &class_name,
                             base_anchor
                                 .clone()
                                 .expect("no null anchors in mark-to-base"),
@@ -786,8 +785,6 @@ impl<'a> CompilationCtx<'a> {
             let mut anchor_records = BTreeMap::new();
             for attachment in component.attachments() {
                 let component_anchor = self.resolve_anchor(&attachment.anchor());
-                // ensure we're in the right lookup but drop the reference
-
                 let mark_class_node = match attachment.mark_class_name() {
                     Some(node) => node,
                     None => {
@@ -799,13 +796,14 @@ impl<'a> CompilationCtx<'a> {
                     }
                 };
                 let component_anchor = component_anchor.unwrap();
-                let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
+                let class_name = mark_class_node.text();
+                let mark_class = self.mark_classes.get(class_name).unwrap();
 
                 // access the lookup through the field, so the borrow checker
                 // doesn't think we're borrowing all of self
                 //TODO: we do validation here because our validation pass isn't smart
                 //enough. We need to not just validate a rule, but every rule in a lookup.
-                anchor_records.insert(mark_class.id, component_anchor);
+                anchor_records.insert(class_name.clone(), component_anchor);
                 let maybe_err = self
                     .lookups
                     .current_mut()
@@ -816,8 +814,7 @@ impl<'a> CompilationCtx<'a> {
                                 .as_ref()
                                 .expect("no null anchors on marks (check validation)");
                             for glyph in glyphs.iter() {
-                                // validate here that classes are disjoint
-                                subtable.insert_mark(glyph, mark_class.id, anchor.clone())?;
+                                subtable.insert_mark(glyph, class_name.clone(), anchor.clone())?;
                             }
                         }
                         Ok(())
@@ -845,13 +842,10 @@ impl<'a> CompilationCtx<'a> {
         let _ = self.ensure_current_lookup_type(Kind::GposType6);
         for mark in node.attachments() {
             let base_anchor = self.resolve_anchor(&mark.anchor());
-            // ensure we're in the right lookup but drop the reference
-
             let mark_class_node = mark.mark_class_name().expect("checked in validation");
+            let class_name = mark_class_node.text();
             let mark_class = self.mark_classes.get(mark_class_node.text()).unwrap();
 
-            // access the lookup through the field, so the borrow checker
-            // doesn't think we're borrowing all of self
             //TODO: we do validation here because our validation pass isn't smart
             //enough. We need to not just validate a rule, but every rule in a lookup.
             let maybe_err = self
@@ -864,13 +858,13 @@ impl<'a> CompilationCtx<'a> {
                             .as_ref()
                             .expect("no null anchors in mark-to-mark (check validation)");
                         for glyph in glyphs.iter() {
-                            subtable.insert_mark(glyph, mark_class.id, anchor.clone())?;
+                            subtable.insert_mark(glyph, class_name.clone(), anchor.clone())?;
                         }
                     }
                     for base in base_ids.iter() {
                         subtable.insert_base(
                             base,
-                            mark_class.id,
+                            class_name,
                             base_anchor
                                 .clone()
                                 .expect("no null anchors in mark-to-mark"),
@@ -887,22 +881,12 @@ impl<'a> CompilationCtx<'a> {
         range: Range<usize>,
         maybe_err: Option<PreviouslyAssignedClass>,
     ) {
-        let Some(PreviouslyAssignedClass { class, .. }) = maybe_err else {
-            return;
+        if let Some(PreviouslyAssignedClass { class, .. }) = maybe_err {
+            self.error(
+                range,
+                format!("mark class includes glyph in class '{class}', already used in lookup.",),
+            );
         };
-
-        let prev_class_name = self
-            .mark_classes
-            .iter()
-            .find_map(|(name, cls)| (cls.id == class).then(|| name.clone()))
-            .unwrap();
-        self.error(
-            range,
-            format!(
-                "mark class includes glyph in class '{}', already used in lookup.",
-                prev_class_name
-            ),
-        );
     }
 
     fn add_contextual_pos_rule(&mut self, node: &typed::Gpos8) {
@@ -1026,15 +1010,11 @@ impl<'a> CompilationCtx<'a> {
 
         let anchor = self.resolve_anchor(&class_decl.anchor());
         let class_name = class_decl.mark_class_name();
-        if let Some(class) = self.mark_classes.get_mut(class_name.text()) {
-            class.members.push((class_items, anchor));
-        } else {
-            let class = MarkClass {
-                id: self.mark_classes.len().try_into().unwrap(),
-                members: vec![(class_items, anchor)],
-            };
-            self.mark_classes.insert(class_name.text().clone(), class);
-        }
+        self.mark_classes
+            .entry(class_name.text().clone())
+            .or_default()
+            .members
+            .push((class_items, anchor));
     }
 
     fn add_feature(&mut self, feature: typed::Feature) {

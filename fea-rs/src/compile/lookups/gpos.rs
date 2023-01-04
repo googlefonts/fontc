@@ -1,7 +1,8 @@
 //! GPOS subtable builders
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
+use smol_str::SmolStr;
 use write_fonts::{
     tables::{
         gpos::{self as write_gpos, AnchorTable, MarkRecord, ValueFormat, ValueRecord},
@@ -13,8 +14,6 @@ use write_fonts::{
 use crate::types::GlyphClass;
 
 use super::{Builder, ClassDefBuilder2};
-
-type MarkClass = u16;
 
 #[derive(Clone, Debug, Default)]
 pub struct SinglePosBuilder {
@@ -357,30 +356,52 @@ impl Builder for CursivePosBuilder {
 
 // shared between several tables
 #[derive(Clone, Debug, Default)]
-struct MarkList(BTreeMap<GlyphId, MarkRecord>);
+struct MarkList {
+    glyphs: BTreeMap<GlyphId, MarkRecord>,
+    // map class names to their idx for this table
+    classes: HashMap<SmolStr, u16>,
+}
 
 impl MarkList {
+    /// If this glyph is already part of another class, return the previous class name
+    ///
+    /// Otherwise return the u16 id for this class, in this lookup.
     fn insert(
         &mut self,
         glyph: GlyphId,
-        class: MarkClass,
+        class: SmolStr,
         anchor: AnchorTable,
-    ) -> Result<(), PreviouslyAssignedClass> {
-        match self
-            .0
-            .insert(glyph, MarkRecord::new(class, anchor))
-            .map(|rec| rec.mark_class)
+    ) -> Result<u16, PreviouslyAssignedClass> {
+        let next_id = self.classes.len().try_into().unwrap();
+        let id = *self.classes.entry(class).or_insert(next_id);
+        if let Some(prev) = self
+            .glyphs
+            .insert(glyph, MarkRecord::new(id, anchor))
+            .filter(|prev| prev.mark_class != id)
         {
-            Some(old_class) if old_class != class => Err(PreviouslyAssignedClass {
+            let class = self
+                .classes
+                .iter()
+                .find_map(|(name, idx)| (*idx == prev.mark_class).then(|| name.clone()))
+                .unwrap();
+
+            return Err(PreviouslyAssignedClass {
                 glyph_id: glyph,
-                class: old_class,
-            }),
-            _ => Ok(()),
+                class,
+            });
         }
+        Ok(id)
     }
 
     fn glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
-        self.0.keys().copied()
+        self.glyphs.keys().copied()
+    }
+
+    fn get_class(&self, class_name: &SmolStr) -> u16 {
+        *self
+            .classes
+            .get(class_name)
+            .expect("marks added before bases")
     }
 }
 
@@ -388,8 +409,8 @@ impl Builder for MarkList {
     type Output = (CoverageTable, write_gpos::MarkArray);
 
     fn build(self) -> Self::Output {
-        let coverage = self.0.keys().copied().collect::<CoverageTableBuilder>();
-        let array = write_gpos::MarkArray::new(self.0.into_values().collect());
+        let coverage = self.glyphs().collect::<CoverageTableBuilder>();
+        let array = write_gpos::MarkArray::new(self.glyphs.into_values().collect());
         (coverage.build(), array)
     }
 }
@@ -397,14 +418,13 @@ impl Builder for MarkList {
 #[derive(Clone, Debug, Default)]
 pub struct MarkToBaseBuilder {
     marks: MarkList,
-    mark_classes: BTreeSet<MarkClass>,
-    bases: BTreeMap<GlyphId, Vec<(MarkClass, AnchorTable)>>,
+    bases: BTreeMap<GlyphId, Vec<(u16, AnchorTable)>>,
 }
 
 /// An error indicating a given glyph is has be
 pub struct PreviouslyAssignedClass {
     pub glyph_id: GlyphId,
-    pub class: MarkClass,
+    pub class: SmolStr,
 }
 
 impl MarkToBaseBuilder {
@@ -415,14 +435,14 @@ impl MarkToBaseBuilder {
     pub fn insert_mark(
         &mut self,
         glyph: GlyphId,
-        class: MarkClass,
+        class: SmolStr,
         anchor: AnchorTable,
-    ) -> Result<(), PreviouslyAssignedClass> {
-        self.mark_classes.insert(class);
+    ) -> Result<u16, PreviouslyAssignedClass> {
         self.marks.insert(glyph, class, anchor)
     }
 
-    pub fn insert_base(&mut self, glyph: GlyphId, class: MarkClass, anchor: AnchorTable) {
+    pub fn insert_base(&mut self, glyph: GlyphId, class: &SmolStr, anchor: AnchorTable) {
+        let class = self.marks.get_class(class);
         self.bases.entry(glyph).or_default().push((class, anchor))
     }
 
@@ -439,22 +459,17 @@ impl Builder for MarkToBaseBuilder {
     type Output = Vec<write_gpos::MarkBasePosFormat1>;
 
     fn build(self) -> Self::Output {
-        let MarkToBaseBuilder {
-            marks,
-            bases,
-            mark_classes,
-        } = self;
+        let MarkToBaseBuilder { marks, bases } = self;
+        let n_classes = marks.classes.len();
 
         let (mark_coverage, mark_array) = marks.build();
         let base_coverage = bases.keys().copied().collect::<CoverageTableBuilder>();
         let base_records = bases
             .into_values()
             .map(|anchors| {
-                let mut anchor_offsets: Vec<Option<AnchorTable>> = Vec::new();
-                anchor_offsets.resize(mark_classes.len(), None);
+                let mut anchor_offsets = vec![None; n_classes];
                 for (class, anchor) in anchors {
-                    let class_idx = mark_classes.iter().position(|c| c == &class).unwrap();
-                    anchor_offsets[class_idx] = Some(anchor);
+                    anchor_offsets[class as usize] = Some(anchor);
                 }
                 write_gpos::BaseRecord::new(anchor_offsets)
             })
@@ -472,22 +487,20 @@ impl Builder for MarkToBaseBuilder {
 #[derive(Clone, Debug, Default)]
 pub struct MarkToLigBuilder {
     marks: MarkList,
-    mark_classes: BTreeSet<MarkClass>,
-    ligatures: BTreeMap<GlyphId, Vec<BTreeMap<MarkClass, AnchorTable>>>,
+    ligatures: BTreeMap<GlyphId, Vec<BTreeMap<SmolStr, AnchorTable>>>,
 }
 
 impl MarkToLigBuilder {
     pub fn insert_mark(
         &mut self,
         glyph: GlyphId,
-        class: MarkClass,
+        class: SmolStr,
         anchor: AnchorTable,
-    ) -> Result<(), PreviouslyAssignedClass> {
-        self.mark_classes.insert(class);
+    ) -> Result<u16, PreviouslyAssignedClass> {
         self.marks.insert(glyph, class, anchor)
     }
 
-    pub fn add_lig(&mut self, glyph: GlyphId, components: Vec<BTreeMap<MarkClass, AnchorTable>>) {
+    pub fn add_lig(&mut self, glyph: GlyphId, components: Vec<BTreeMap<SmolStr, AnchorTable>>) {
         self.ligatures.insert(glyph, components);
     }
 
@@ -504,13 +517,9 @@ impl Builder for MarkToLigBuilder {
     type Output = Vec<write_gpos::MarkLigPosFormat1>;
 
     fn build(self) -> Self::Output {
-        let MarkToLigBuilder {
-            marks,
-            mark_classes,
-            ligatures,
-        } = self;
+        let MarkToLigBuilder { marks, ligatures } = self;
+        let n_classes = marks.classes.len();
 
-        let (mark_coverage, mark_array) = marks.build();
         // LigArray:
         // - [LigatureAttach] (one per ligature glyph)
         //    - [ComponentRecord] (one per component)
@@ -522,11 +531,10 @@ impl Builder for MarkToLigBuilder {
                 let comp_records = components
                     .into_iter()
                     .map(|anchors| {
-                        let mut anchor_offsets: Vec<Option<AnchorTable>> = Vec::new();
-                        anchor_offsets.resize(mark_classes.len(), None);
+                        let mut anchor_offsets = vec![None; n_classes];
                         for (class, anchor) in anchors {
-                            let class_idx = mark_classes.iter().position(|c| c == &class).unwrap();
-                            anchor_offsets[class_idx] = Some(anchor);
+                            let class_idx = marks.get_class(&class);
+                            anchor_offsets[class_idx as usize] = Some(anchor);
                         }
                         write_gpos::ComponentRecord::new(anchor_offsets)
                     })
@@ -535,6 +543,7 @@ impl Builder for MarkToLigBuilder {
             })
             .collect();
         let ligature_array = write_gpos::LigatureArray::new(ligature_array);
+        let (mark_coverage, mark_array) = marks.build();
         vec![write_gpos::MarkLigPosFormat1::new(
             mark_coverage,
             ligature_coverage.build(),
@@ -547,26 +556,22 @@ impl Builder for MarkToLigBuilder {
 #[derive(Clone, Debug, Default)]
 pub struct MarkToMarkBuilder {
     attaching_marks: MarkList,
-    mark_classes: BTreeSet<MarkClass>,
-    base_marks: BTreeMap<GlyphId, Vec<(MarkClass, AnchorTable)>>,
+    base_marks: BTreeMap<GlyphId, Vec<(u16, AnchorTable)>>,
 }
 
 impl MarkToMarkBuilder {
     pub fn insert_mark(
         &mut self,
         glyph: GlyphId,
-        class: MarkClass,
+        class: SmolStr,
         anchor: AnchorTable,
-    ) -> Result<(), PreviouslyAssignedClass> {
-        self.mark_classes.insert(class);
+    ) -> Result<u16, PreviouslyAssignedClass> {
         self.attaching_marks.insert(glyph, class, anchor)
     }
 
-    pub fn insert_base(&mut self, glyph: GlyphId, class: MarkClass, anchor: AnchorTable) {
-        self.base_marks
-            .entry(glyph)
-            .or_default()
-            .push((class, anchor))
+    pub fn insert_base(&mut self, glyph: GlyphId, class: &SmolStr, anchor: AnchorTable) {
+        let id = self.attaching_marks.get_class(class);
+        self.base_marks.entry(glyph).or_default().push((id, anchor))
     }
 
     pub fn mark1_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
@@ -585,19 +590,17 @@ impl Builder for MarkToMarkBuilder {
         let MarkToMarkBuilder {
             attaching_marks,
             base_marks,
-            mark_classes,
         } = self;
+        let n_classes = attaching_marks.classes.len();
 
         let (mark_coverage, mark_array) = attaching_marks.build();
         let mark2_coverage = base_marks.keys().copied().collect::<CoverageTableBuilder>();
         let mark2_records = base_marks
             .into_values()
             .map(|anchors| {
-                let mut anchor_offsets: Vec<Option<AnchorTable>> = Vec::new();
-                anchor_offsets.resize(mark_classes.len(), None);
+                let mut anchor_offsets = vec![None; n_classes];
                 for (class, anchor) in anchors {
-                    let class_idx = mark_classes.iter().position(|c| c == &class).unwrap();
-                    anchor_offsets[class_idx] = Some(anchor);
+                    anchor_offsets[class as usize] = Some(anchor);
                 }
                 write_gpos::Mark2Record::new(anchor_offsets)
             })
