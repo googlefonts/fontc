@@ -129,7 +129,7 @@ impl Args {
     pub fn get_inputs(&self) -> Result<(PathBuf, GlyphMap), Error> {
         if self.input.extension() == Some("ufo".as_ref()) {
             let request = norad::DataRequest::none().lib(true);
-            let font = norad::Font::load_requested_data(&self.input, &request)?;
+            let font = norad::Font::load_requested_data(&self.input, request)?;
             let glyph_order = get_ufo_glyph_order(&font)?;
             let fea_path = self.input.join("features.fea");
             Ok((fea_path, glyph_order))
