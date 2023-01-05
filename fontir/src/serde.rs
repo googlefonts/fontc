@@ -50,7 +50,7 @@ pub struct StaticMetadataSerdeRepr {
 
 impl From<StaticMetadataSerdeRepr> for StaticMetadata {
     fn from(from: StaticMetadataSerdeRepr) -> Self {
-        StaticMetadata::new(from.axes, from.glyph_order)
+        StaticMetadata::new(from.axes, from.glyph_order.into_iter().collect())
     }
 }
 
@@ -58,7 +58,7 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
     fn from(from: StaticMetadata) -> Self {
         StaticMetadataSerdeRepr {
             axes: from.axes,
-            glyph_order: from.glyph_order,
+            glyph_order: from.glyph_order.into_iter().collect(),
         }
     }
 }

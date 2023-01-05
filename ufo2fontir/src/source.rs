@@ -12,6 +12,7 @@ use fontir::{
     source::{Input, Source, Work},
     stateset::{StateIdentifier, StateSet},
 };
+use indexmap::IndexSet;
 use log::{debug, warn};
 use norad::designspace::{self, DesignSpaceDocument};
 
@@ -357,10 +358,10 @@ fn glyph_order(
     designspace: &DesignSpaceDocument,
     designspace_dir: &Path,
     glyph_names: &HashSet<String>,
-) -> Result<Vec<String>, WorkError> {
+) -> Result<IndexSet<String>, WorkError> {
     // The UFO at the default master *may* elect to specify a glyph order
     // That glyph order *may* deign to overlap with the actual glyph set
-    let mut glyph_order = Vec::new();
+    let mut glyph_order = IndexSet::new();
     if let Some((_, source)) = default_master(designspace) {
         let lib_plist = load_lib_plist(&designspace_dir.join(&source.filename))?;
         if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
@@ -371,7 +372,7 @@ fn glyph_order(
                 .filter_map(|v| v.as_string().map(|s| s.to_string()))
                 .filter(|name| glyph_names.contains(name))
                 .for_each(|name| {
-                    glyph_order.push(name.to_string());
+                    glyph_order.insert(name.to_string());
                     pending_add.remove(name.as_str());
                 });
             // Add anything leftover in sorted order
@@ -382,12 +383,14 @@ fn glyph_order(
     }
     if glyph_order.is_empty() {
         if glyph_names.contains(".notdef") {
-            glyph_order.push(".notdef".to_string());
+            glyph_order.insert(".notdef".to_string());
         }
         glyph_names
             .iter()
             .filter(|name| name.as_str() != ".notdef")
-            .for_each(|name| glyph_order.push(name.clone()));
+            .for_each(|name| {
+                glyph_order.insert(name.clone());
+            });
     }
     Ok(glyph_order)
 }
@@ -467,6 +470,7 @@ mod tests {
         coords::{DesignCoord, DesignLocation},
         source::{Input, Source},
     };
+    use indexmap::IndexSet;
     use norad::designspace;
 
     use crate::toir::to_design_location;
@@ -625,6 +629,10 @@ mod tests {
         )
         .unwrap();
         // lib.plist specifies plus, so plus goes first and then the rest in alphabetical order
-        assert_eq!(vec!["plus", "an-imaginary-one", "bar"], go);
+        let expected: IndexSet<String> = vec!["plus", "an-imaginary-one", "bar"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(expected, go);
     }
 }
