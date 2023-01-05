@@ -7,7 +7,9 @@ use write_fonts::types::GlyphId;
 
 /// Attempt to compile features into a font file.
 ///
-/// usage: FONT_PATH FEA_PATH
+/// usage: FONT_PATH GLYPH_ORDER
+///
+/// where glyph order is a file listing glyphs, one per line, in glyph id order.
 fn main() -> Result<(), Error> {
     let args = match flags::Args::from_env() {
         Ok(args) => args,

@@ -2,8 +2,9 @@
 
 Parsing and compiling [Adobe OpenType feature][spec] files.
 
-**status**: we can parse and compile simple fonts. Current focus is on other
-parts of the rust font compilation pipeline.
+**status**: We should be able to compile most inputs. Some generated tables
+may not be optimal, but should be correct. Obscure syntax may not be supported.
+Please report bugs.
 
 
 ## development
