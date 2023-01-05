@@ -163,7 +163,7 @@ impl Work for StaticMetadataWork {
         debug!("Static metadata for {}", font.family_name);
         context.set_static_metadata(StaticMetadata::new(
             font_info.axes.clone(),
-            font.glyph_order.clone(),
+            font.glyph_order.iter().cloned().collect(),
         ));
         Ok(())
     }
@@ -281,6 +281,7 @@ mod tests {
         stateset::StateSet,
     };
     use glyphs_reader::Font;
+    use indexmap::IndexSet;
 
     use super::{glyph_states, GlyphsIrSource};
 
@@ -376,10 +377,11 @@ mod tests {
                 .map(|a| &a.tag)
                 .collect::<Vec<_>>()
         );
-        assert_eq!(
-            vec!["space", "exclam", "hyphen", "manual-component"],
-            context.get_static_metadata().glyph_order
-        );
+        let expected: IndexSet<String> = vec!["space", "exclam", "hyphen", "manual-component"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(expected, context.get_static_metadata().glyph_order);
     }
 
     #[test]

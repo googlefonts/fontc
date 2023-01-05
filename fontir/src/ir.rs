@@ -5,6 +5,7 @@ use crate::{
     error::Error,
     serde::StaticMetadataSerdeRepr,
 };
+use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -16,28 +17,18 @@ use std::collections::HashMap;
 #[serde(from = "StaticMetadataSerdeRepr", into = "StaticMetadataSerdeRepr")]
 pub struct StaticMetadata {
     pub axes: Vec<Axis>,
-    pub glyph_order: Vec<String>,
-    pub gid_by_name: HashMap<String, u32>,
+    pub glyph_order: IndexSet<String>,
 }
 
 impl StaticMetadata {
-    pub fn new(axes: Vec<Axis>, glyph_order: Vec<String>) -> StaticMetadata {
-        let gid_by_name = glyph_order
-            .iter()
-            .enumerate()
-            .map(|(idx, name)| (name.clone(), idx as u32))
-            .collect();
-        StaticMetadata {
-            axes,
-            glyph_order,
-            gid_by_name,
-        }
+    pub fn new(axes: Vec<Axis>, glyph_order: IndexSet<String>) -> StaticMetadata {
+        StaticMetadata { axes, glyph_order }
     }
 }
 
 impl StaticMetadata {
     pub fn glyph_id(&self, name: &String) -> Option<u32> {
-        self.gid_by_name.get(name).copied()
+        self.glyph_order.get_index_of(name).map(|i| i as u32)
     }
 }
 
