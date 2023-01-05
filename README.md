@@ -6,6 +6,21 @@ Parsing and compiling [Adobe OpenType feature][spec] files.
 may not be optimal, but should be correct. Obscure syntax may not be supported.
 Please report bugs.
 
+## quickstart
+
+To use this tool to compile OpenType features from a UFO file:
+
+```sh
+$ cargo run PATH_TO_FONT.ufo -o my_generated_font.ttf
+```
+
+Alternatively, you can provide a path to a FEA file directly, in which case you
+will also need to pass a path to a file containing the glyph order: one glyph
+per line, in utf-8.
+
+```sh
+$ cargo run features.fea --glyph-order glyph_order.txt -o my_font.ttf
+```
 
 ## development
 
@@ -52,12 +67,8 @@ If validation succeeds, then compilation should always succeed.
 ## Compilation
 
 After validation, we do a final compilation pass, which walks the tree and
-assembles the various tables and lookups. This uses [fonttools-rs][] to generate
+assembles the various tables and lookups. This uses [fontations][] to generate
 tables, which can then be added to a font.
-
-Currently compilation *sort of* works, but additional work is needed upstream to
-support more table types etc.
-
 
 Some general design concepts:
 - in a given 'stage', collect errors as they are encountered and report them at
@@ -70,3 +81,4 @@ errors. In particular, we do not fail immediately when encounter
 [spec]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html
 [rust analyzer]: https://github.com/rust-analyzer/rust-analyzer/
 [rowan ast]: https://github.com/rust-analyzer/rust-analyzer/blob/master/docs/dev/syntax.md#ast
+[fontations]: https://github.com/googlefonts/fontations
