@@ -54,9 +54,9 @@ pub struct SourceLoadError {
 
 impl FileId {
     /// A reserved FileId used during parsing.
-    pub const CURRENT_FILE: FileId = FileId(unsafe { NonZeroU32::new_unchecked(1) });
+    pub(crate) const CURRENT_FILE: FileId = FileId(unsafe { NonZeroU32::new_unchecked(1) });
 
-    pub fn next() -> FileId {
+    pub(crate) fn next() -> FileId {
         use std::sync::atomic;
         static COUNTER: atomic::AtomicU32 = atomic::AtomicU32::new(2);
         FileId(NonZeroU32::new(COUNTER.fetch_add(1, atomic::Ordering::Relaxed)).unwrap())
@@ -94,18 +94,22 @@ impl Source {
         }
     }
 
+    /// The raw text for this source
     pub fn text(&self) -> &str {
         &self.contents
     }
 
+    /// The path of the underlying file, if one exists
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
     }
 
+    /// The [`FileId`] for this source.
     pub fn id(&self) -> FileId {
         self.id
     }
 
+    /// Compute the line and column for a given utf-8 offset.
     pub fn line_col_for_offset(&self, offset: usize) -> (usize, usize) {
         let offset_idx = match self.line_offsets.binary_search(&offset) {
             Ok(x) => x,

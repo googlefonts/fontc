@@ -1,5 +1,6 @@
 /// Kinds of tokens assigned during lexing and parsing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
 #[repr(u16)]
 pub enum Kind {
     Eof, // the end of the input stream
@@ -282,7 +283,7 @@ impl Kind {
         )
     }
 
-    pub fn is_trivia(self) -> bool {
+    pub(crate) fn is_trivia(self) -> bool {
         matches!(self, Kind::Comment | Kind::Whitespace | Kind::Backslash)
     }
 }

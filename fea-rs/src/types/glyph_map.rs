@@ -5,7 +5,13 @@ use std::{
     iter::FromIterator,
 };
 
-//construct with collect() on an iterator of cids or names :shrug:
+/// A glyph map for mapping from raw glyph identifiers to numeral `GlyphId`s.
+///
+/// This is used to map from names or CIDS encountered in a FEA file to the actual
+/// GlyphIds that will be used in the final font.
+///
+/// Currently, the only way to construct this type is by calling `collect()`
+/// on an iterator of cids or names.
 #[derive(Clone, Debug, Default)]
 pub struct GlyphMap {
     names: HashMap<GlyphName, GlyphId>,
@@ -13,15 +19,18 @@ pub struct GlyphMap {
 }
 
 impl GlyphMap {
+    /// The total number of glyphs
     pub fn len(&self) -> usize {
         self.names.len() + self.cids.len()
     }
 
+    /// Returns `true` if this map contains no glyphs
     pub fn is_empty(&self) -> bool {
         self.names.is_empty() && self.cids.is_empty()
     }
 
-    // maybe just for testing?
+    /// Generates a reverse map of ids -> raw identifers (names or CIDs)
+    //  maybe just for testing?
     pub fn reverse_map(&self) -> BTreeMap<GlyphId, GlyphIdent> {
         self.names
             .iter()
@@ -34,6 +43,7 @@ impl GlyphMap {
             .collect()
     }
 
+    /// Return `true` if the map contains the provided `GlyphIdent`.
     pub fn contains<Q: ?Sized + sealed::AsGlyphIdent>(&self, key: &Q) -> bool {
         if let Some(name) = key.named() {
             self.names.contains_key(name)
@@ -44,6 +54,7 @@ impl GlyphMap {
         }
     }
 
+    /// Return the `GlyphId` for the provided `GlyphIdent`
     pub fn get<Q: ?Sized + sealed::AsGlyphIdent>(&self, key: &Q) -> Option<GlyphId> {
         if let Some(name) = key.named() {
             self.names.get(name).copied()

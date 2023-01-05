@@ -25,6 +25,7 @@ use crate::{Diagnostic, GlyphMap};
 /// for generating the various OpenType tables.
 //TODO: ability to generate new errors during this final compilation step
 pub struct Compilation {
+    /// Any warnings that were generated during compilation
     pub warnings: Vec<Diagnostic>,
     pub(crate) tables: Tables,
     pub(crate) lookups: AllLookups,

@@ -44,6 +44,7 @@ static TEMP_DIR_ENV: &str = "TTX_TEMP_DIR";
 /// The combined results of this set of tests
 #[derive(Default, Serialize, Deserialize)]
 pub struct Report {
+    /// All of the test cases for this report
     pub results: Vec<TestCase>,
 }
 
@@ -58,33 +59,43 @@ struct ReportSummary {
     sum_compare_perc: f64,
 }
 
-pub struct ResultsPrinter<'a> {
+struct ResultsPrinter<'a> {
     verbose: bool,
     results: &'a Report,
 }
 
-pub struct ReportComparePrinter<'a> {
+struct ReportComparePrinter<'a> {
     old: &'a Report,
     new: &'a Report,
 }
 
+/// A specific test and its result
 #[derive(Serialize, Deserialize)]
 pub struct TestCase {
+    /// The path of the input file
     pub path: PathBuf,
+    /// The result of running the test
     pub reason: TestResult,
 }
 
+/// The result of a ttx test
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum TestResult {
+    /// The output exactly matched the expectation
     Success,
+    /// A panic occured somewhere during compilation
     Panic,
+    /// The input could not be parsed
     ParseFail(String),
+    /// The input could not be compiled
     CompileFail(String),
+    /// Compilation succeeded, but shouldn't have
     UnexpectedSuccess,
-    TtxFail {
-        code: Option<i32>,
-        std_err: String,
-    },
+    /// A call to the `ttx` utility failed
+    #[allow(missing_docs)]
+    TtxFail { code: Option<i32>, std_err: String },
+    /// The output did not match the expectation
+    #[allow(missing_docs)]
     CompareFail {
         expected: String,
         result: String,
@@ -92,11 +103,12 @@ pub enum TestResult {
     },
 }
 
-pub struct ReasonPrinter<'a> {
+struct ReasonPrinter<'a> {
     verbose: bool,
     reason: &'a TestResult,
 }
 
+/// Assert that we can find the `ttx` executable
 pub fn assert_has_ttx_executable() {
     assert!(
         Command::new("ttx")
@@ -128,6 +140,7 @@ pub fn run_all_tests(fonttools_data_dir: impl AsRef<Path>, filter: Option<&Strin
     finalize_results(result)
 }
 
+/// Convert a vector of test results into a report.
 pub fn finalize_results(result: Vec<Result<PathBuf, TestCase>>) -> Report {
     let mut result = result
         .into_iter()
@@ -173,6 +186,7 @@ fn iter_compile_tests<'a>(
     })
 }
 
+/// Iterate over all the files in a directory with the 'fea' suffix
 pub fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> + 'static {
     let mut dir = path.as_ref().read_dir().unwrap();
     std::iter::from_fn(move || loop {
@@ -184,6 +198,7 @@ pub fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> +
     })
 }
 
+/// Attempt to parse a feature file
 pub fn try_parse_file(
     path: &Path,
     glyphs: Option<&GlyphMap>,
@@ -231,6 +246,7 @@ fn run_test(path: PathBuf, glyph_map: &GlyphMap, post_data: &[u8]) -> Result<Pat
     Ok(path)
 }
 
+/// Convert diagnostics to a printable string
 pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> String {
     let mut out = String::new();
     for d in diagnostics {
@@ -326,6 +342,7 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestCase> {
     }
 }
 
+/// take some output and compare it to the expected output (saved on disk)
 pub fn compare_to_expected_output(
     output: &str,
     src_path: &Path,
@@ -392,7 +409,7 @@ fn compute_diff_percentage(left: &str, right: &str) -> f64 {
     (perc * PRECISION_SMUDGE).trunc() / PRECISION_SMUDGE
 }
 
-// a simple diff we write to disk
+/// a simple diff (without highlighting) suitable for writing to disk
 pub fn plain_text_diff(left: &str, right: &str) -> String {
     let lines = diff::lines(left, right);
     let mut result = DIFF_PREAMBLE.to_string();
@@ -440,6 +457,9 @@ pub fn plain_text_diff(left: &str, right: &str) -> String {
     result
 }
 
+/// Generate the sample glyph map.
+///
+/// This is the glyph map used in the feaLib test suite.
 pub fn make_glyph_map() -> GlyphMap {
     #[rustfmt::skip]
 static TEST_FONT_GLYPHS: &[&str] = &[
@@ -494,10 +514,14 @@ fn make_post_table(map: &GlyphMap) -> Post {
 }
 
 impl Report {
+    ///  Returns `true` if any tests have failed.
     pub fn has_failures(&self) -> bool {
         self.results.iter().any(|r| !r.reason.is_success())
     }
 
+    /// Convert this type into a Result.
+    ///
+    /// This result type can be returned from a test method.
     pub fn into_error(self) -> Result<(), Self> {
         if self.has_failures() {
             Err(self)
@@ -506,14 +530,16 @@ impl Report {
         }
     }
 
-    pub fn printer(&self, verbose: bool) -> ResultsPrinter {
+    /// Return a type that can print results
+    pub fn printer(&self, verbose: bool) -> impl std::fmt::Debug + '_ {
         ResultsPrinter {
             verbose,
             results: self,
         }
     }
 
-    pub fn compare_printer<'a, 'b: 'a>(&'b self, old: &'a Report) -> ReportComparePrinter<'a> {
+    /// Return a type that can print comparison results
+    pub fn compare_printer<'a, 'b: 'a>(&'b self, old: &'a Report) -> impl std::fmt::Debug + 'a {
         ReportComparePrinter { old, new: self }
     }
 
@@ -563,7 +589,8 @@ impl TestResult {
         matches!(self, Self::Success)
     }
 
-    pub fn printer(&self, verbose: bool) -> ReasonPrinter {
+    /// Return an (optionally verbose) type for printing the result
+    pub fn printer(&self, verbose: bool) -> impl std::fmt::Display + '_ {
         ReasonPrinter {
             reason: self,
             verbose,

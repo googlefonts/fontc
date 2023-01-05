@@ -3,7 +3,7 @@
 //! This is taken directly from the pretty_assertions crate; it always prints
 //! using debug, which escapes newlines. We want newlines.
 //!
-//! source: https://github.com/colin-kiegel/rust-pretty-assertions/blob/main/pretty_assertions/src/lib.rs (MIT/Apache)
+//! source: <https://github.com/colin-kiegel/rust-pretty-assertions/blob/main/pretty_assertions/src/lib.rs> (MIT/Apache)
 
 use std::fmt;
 
@@ -15,6 +15,7 @@ use ansi_term::{
 const SIGN_RIGHT: char = '>'; // + > →
 const SIGN_LEFT: char = '<'; // - < ←
 
+/// Assert two strings are equal, printing a pretty diff on failure.
 #[macro_export]
 macro_rules! assert_eq_str {
     ($left:expr, $right:expr$(,)?) => ({

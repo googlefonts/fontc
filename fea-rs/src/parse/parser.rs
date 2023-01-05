@@ -47,19 +47,12 @@ struct PendingToken {
     token: Lexeme,
 }
 
-/// An error encountered while parsing.
-#[derive(Debug, Clone)]
-pub struct SyntaxError {
-    pub message: String,
-    pub range: Range<usize>,
-}
-
 /// A tag and its range.
 ///
 /// We often want to associate errors with tag locations, so we handle
 /// them specially.
 #[derive(Clone, Debug)]
-pub struct TagToken {
+pub(crate) struct TagToken {
     pub tag: Tag,
     pub range: Range<usize>,
 }

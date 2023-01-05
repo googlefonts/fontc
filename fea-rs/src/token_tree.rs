@@ -20,9 +20,13 @@ pub mod typed;
 use rewrite::ReparseCtx;
 pub use token::Kind;
 
+/// A node in the token tree.
+///
+/// A node is tagged with a `Kind`, and includes any number of child nodes or tokens.
 #[derive(PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct Node {
-    pub kind: Kind,
+    /// The ``Kind` of this node.
+    kind: Kind,
     // start of this node relative to start of parent node.
     // we can use this to more efficiently move to a given offset
     // TODO: remove if unused
@@ -33,24 +37,32 @@ pub struct Node {
     // accessed via a `Cursor`.
     abs_pos: Cell<u32>,
     text_len: u32,
-    // true if an error was encountered in this node. this is not recursive;
-    // it is only true for the direct parent of an error span.
+    /// true if an error was encountered in this node.
+    ///
+    /// This is not recursive; it is only true for the direct parent of an error span.
     pub error: bool,
     //NOTE: children should not be accessed directly, but only via a cursor.
     // this ensures that their positions are updated correctly.
     children: Arc<Vec<NodeOrToken>>,
 }
 
+/// A token
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct Token {
+    /// The [`Kind`] of this token
     pub kind: Kind,
+    /// The absolute position in the source where this token starts
     abs_pos: Cell<u32>,
+    /// The token text
     pub text: SmolStr,
 }
 
+/// Either a [`Node`] or a [`Token`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NodeOrToken {
+    /// A node
     Node(Node),
+    /// A token
     Token(Token),
 }
 
@@ -235,19 +247,20 @@ impl Node {
         }
     }
 
-    pub fn cursor(&self) -> Cursor {
+    /// Construct a new cursor for navigating the node's children
+    pub(crate) fn cursor(&self) -> Cursor {
         Cursor::new(self)
     }
 
     /// Iterate over tokens, descending into child nodes.
     pub fn iter_tokens(&self) -> impl Iterator<Item = &Token> {
-        let mut cursor = Cursor::new(self);
+        let mut cursor = self.cursor();
         std::iter::from_fn(move || cursor.next_token())
     }
 
     /// Iterate over this node's direct children, without descending.
     pub fn iter_children(&self) -> impl Iterator<Item = &NodeOrToken> {
-        let mut cursor = Cursor::new(self);
+        let mut cursor = self.cursor();
         std::iter::from_fn(move || {
             let current = cursor.current();
             cursor.step_over();
@@ -255,10 +268,12 @@ impl Node {
         })
     }
 
+    /// The `Kind` of the node
     pub fn kind(&self) -> Kind {
         self.kind
     }
 
+    /// The total length of all tokens that are descendents of this node.
     pub fn text_len(&self) -> usize {
         self.text_len as usize
     }
@@ -405,14 +420,17 @@ impl NodeOrToken {
         }
     }
 
+    /// `true` if this is a single token.
     pub fn is_token(&self) -> bool {
         matches!(self, NodeOrToken::Token(_))
     }
 
+    /// If this is a single token, return that token's text
     pub fn token_text(&self) -> Option<&str> {
         self.as_token().map(Token::as_str)
     }
 
+    /// The `Kind` of this node or token
     pub fn kind(&self) -> Kind {
         match self {
             NodeOrToken::Node(n) => n.kind,
@@ -420,6 +438,7 @@ impl NodeOrToken {
         }
     }
 
+    /// `true` If this is a glyph name, a CID, or a glyph class (either inline or named)
     pub fn is_glyph_or_glyph_class(&self) -> bool {
         matches!(
             self.kind(),
@@ -437,6 +456,7 @@ impl NodeOrToken {
         }
     }
 
+    /// The length of this token or node's text
     pub fn text_len(&self) -> usize {
         match self {
             NodeOrToken::Node(n) => n.text_len as usize,
@@ -444,6 +464,7 @@ impl NodeOrToken {
         }
     }
 
+    /// If this is a `Node`, return it
     pub fn into_node(self) -> Option<Node> {
         match self {
             NodeOrToken::Node(node) => Some(node),
@@ -451,6 +472,7 @@ impl NodeOrToken {
         }
     }
 
+    /// If this is a `Node`, return a reference to it
     pub fn as_node(&self) -> Option<&Node> {
         match self {
             NodeOrToken::Node(node) => Some(node),
@@ -458,6 +480,7 @@ impl NodeOrToken {
         }
     }
 
+    /// IF this is a token, return a reference to it.
     pub fn as_token(&self) -> Option<&Token> {
         match self {
             NodeOrToken::Node(_) => None,
@@ -487,10 +510,12 @@ impl Token {
         }
     }
 
+    /// The raw text for this token
     pub fn as_str(&self) -> &str {
         &self.text
     }
 
+    /// The position of this token in its source.
     pub fn range(&self) -> Range<usize> {
         self.abs_pos.get() as usize..self.abs_pos.get() as usize + self.text.len()
     }

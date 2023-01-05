@@ -75,8 +75,6 @@ Some general design concepts:
   the end. For instance during parsing we will continue parsing after an error
   has occurred, and report all parse errors once parsing is complete.
 
-A goal of this tool is to focus on providing good diagnostics when encountering
-errors. In particular, we do not fail immediately when encounter
 
 [spec]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html
 [rust analyzer]: https://github.com/rust-analyzer/rust-analyzer/

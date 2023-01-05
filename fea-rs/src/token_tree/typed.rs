@@ -1,4 +1,11 @@
 //! typing for ast nodes. based on rust-analyzer.
+//!
+//! Here, we use macros to generate distinct types for specific AST nodes.
+//! We cast from generic nodes or tokens to these distinct types based on their
+//! location in the tree, and the underlying [`Kind`] of the node.
+//!
+//! This lets us implement useful methods on specific AST nodes, which are
+//! internally working on untyped `NodeOrToken`s.
 
 use std::convert::TryFrom;
 use std::ops::Range;
@@ -10,27 +17,38 @@ use crate::{Kind, Node, NodeOrToken};
 
 use super::Token;
 
+/// A trait for types that exist in the AST.
+///
+/// Implementations of this type are generally generated via macro.
 pub trait AstNode {
+    /// Attempt to cast from some node or token to this type.
     fn cast(node: &NodeOrToken) -> Option<Self>
     where
         Self: Sized;
 
+    /// The range in the source of this item.
+    ///
+    /// This is used for better diagnostic reporting.
     fn range(&self) -> Range<usize>;
 }
 
+/// Create a new AstNode wrapping a token.
 macro_rules! ast_token {
     ($typ:ident, $kind:expr) => {
         #[derive(Clone, Debug)]
+        #[allow(missing_docs)]
         pub struct $typ {
             inner: Token,
         }
 
         impl $typ {
+            /// The raw text for this token
             #[allow(unused)]
             pub fn text(&self) -> &SmolStr {
                 &self.inner.text
             }
 
+            /// The underlying `Token`
             #[allow(unused)]
             pub fn token(&self) -> &Token {
                 &self.inner
@@ -38,7 +56,7 @@ macro_rules! ast_token {
 
             // just used for the ast_enum macro
             #[allow(dead_code)]
-            pub fn node_(&self) -> Option<&Node> {
+            pub(crate) fn node_(&self) -> Option<&Node> {
                 None
             }
         }
@@ -60,15 +78,17 @@ macro_rules! ast_token {
     };
 }
 
+/// Create a new AstNode, wrapping a Node
 macro_rules! ast_node {
     ($typ:ident, $kind:expr) => {
         #[derive(Clone, Debug)]
+        #[allow(missing_docs)]
         pub struct $typ {
             inner: Node,
         }
 
         impl $typ {
-            pub fn try_from_node(node: &Node) -> Option<Self> {
+            pub(crate) fn try_from_node(node: &Node) -> Option<Self> {
                 if node.kind == $kind {
                     return Some(Self {
                         inner: node.clone(),
@@ -78,17 +98,19 @@ macro_rules! ast_node {
             }
 
             #[allow(dead_code)]
-            pub fn find_token(&self, kind: Kind) -> Option<&Token> {
+            pub(crate) fn find_token(&self, kind: Kind) -> Option<&Token> {
                 self.iter()
                     .find(|t| t.kind() == kind)
                     .and_then(NodeOrToken::as_token)
             }
 
+            /// Iterate over this node's children
             #[allow(unused)]
             pub fn iter(&self) -> impl Iterator<Item = &NodeOrToken> {
                 self.inner.iter_children()
             }
 
+            /// Return a reference to the underlying `Node`.
             #[allow(dead_code)]
             pub fn node(&self) -> &Node {
                 &self.inner
@@ -96,7 +118,7 @@ macro_rules! ast_node {
 
             // just used for the ast_enum macro
             #[allow(dead_code)]
-            pub fn node_(&self) -> Option<&Node> {
+            pub(crate) fn node_(&self) -> Option<&Node> {
                 Some(&self.inner)
             }
         }
@@ -123,6 +145,7 @@ macro_rules! ast_node {
 macro_rules! ast_enum {
     ($typ:ident{ $($name:ident($member:ident),)*}) => {
         #[derive(Clone, Debug)]
+        #[allow(missing_docs)]
         pub enum $typ {
             $($name($member)),*
         }
@@ -148,7 +171,8 @@ macro_rules! ast_enum {
         }
 
         impl $typ {
-            pub fn node(&self) -> Option<&Node> {
+            #[allow(unused)]
+            pub(crate) fn node(&self) -> Option<&Node> {
                 match self {
                     $(
                         Self::$name(inner) => inner.node_(),
@@ -354,17 +378,17 @@ ast_enum!(GlyphClass {
 });
 
 impl Root {
-    pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
         self.iter().filter(|t| !t.kind().is_trivia())
     }
 }
 
 impl LanguageSystem {
-    pub fn script(&self) -> Tag {
+    pub(crate) fn script(&self) -> Tag {
         self.inner.iter_children().find_map(Tag::cast).unwrap()
     }
 
-    pub fn language(&self) -> Tag {
+    pub(crate) fn language(&self) -> Tag {
         self.inner
             .iter_children()
             .skip_while(|t| t.kind() != Kind::Tag)
@@ -375,46 +399,43 @@ impl LanguageSystem {
 }
 
 impl Include {
-    pub fn path(&self) -> &Token {
+    pub(crate) fn path(&self) -> &Token {
         self.find_token(Kind::Path).unwrap()
     }
 }
 
 impl Tag {
-    pub fn parse(&self) -> Result<write_fonts::types::Tag, write_fonts::types::InvalidTag> {
+    pub(crate) fn parse(&self) -> Result<write_fonts::types::Tag, write_fonts::types::InvalidTag> {
         self.inner.text.parse()
     }
 
-    pub fn to_raw(&self) -> write_fonts::types::Tag {
-        self.text()
-            //.as_bytes()
-            .parse()
-            .expect("tag is exactly 4 bytes")
+    pub(crate) fn to_raw(&self) -> write_fonts::types::Tag {
+        self.parse().expect("tag is exactly 4 bytes")
     }
 }
 
 impl GlyphClassDef {
-    pub fn class_name(&self) -> GlyphClassName {
+    pub(crate) fn class_name(&self) -> GlyphClassName {
         self.inner
             .iter_children()
             .find_map(GlyphClassName::cast)
             .unwrap()
     }
 
-    pub fn class_alias(&self) -> Option<GlyphClassName> {
+    pub(crate) fn class_alias(&self) -> Option<GlyphClassName> {
         //TODO: ensure this returns non in presence of named glyph class inside class block
         self.iter()
             .skip_while(|t| t.kind() != Kind::Eq)
             .find_map(GlyphClassName::cast)
     }
 
-    pub fn class_def(&self) -> Option<GlyphClassLiteral> {
+    pub(crate) fn class_def(&self) -> Option<GlyphClassLiteral> {
         self.inner.iter_children().find_map(GlyphClassLiteral::cast)
     }
 }
 
 impl GlyphClassLiteral {
-    pub fn items(&self) -> impl Iterator<Item = &NodeOrToken> {
+    pub(crate) fn items(&self) -> impl Iterator<Item = &NodeOrToken> {
         self.iter()
             .skip_while(|t| t.kind() != Kind::LSquare)
             .skip(1)
@@ -424,20 +445,20 @@ impl GlyphClassLiteral {
 }
 
 impl Cid {
-    pub fn parse(&self) -> u16 {
+    pub(crate) fn parse(&self) -> u16 {
         self.inner.text.parse().expect("cid is already validated")
     }
 }
 
 impl GlyphRange {
-    pub fn start(&self) -> &Token {
+    pub(crate) fn start(&self) -> &Token {
         self.iter()
             .find(|i| i.kind() == Kind::Cid || i.kind() == Kind::GlyphName)
             .and_then(NodeOrToken::as_token)
             .unwrap()
     }
 
-    pub fn end(&self) -> &Token {
+    pub(crate) fn end(&self) -> &Token {
         self.iter()
             .skip_while(|t| t.kind() != Kind::Hyphen)
             .find(|i| i.kind() == Kind::Cid || i.kind() == Kind::GlyphName)
@@ -447,25 +468,25 @@ impl GlyphRange {
 }
 
 impl GlyphOrClass {
-    pub fn is_class(&self) -> bool {
+    pub(crate) fn is_class(&self) -> bool {
         matches!(self, GlyphOrClass::Class(_) | GlyphOrClass::NamedClass(_))
     }
 }
 
 impl MarkClassDef {
-    pub fn keyword(&self) -> &Token {
+    pub(crate) fn keyword(&self) -> &Token {
         self.find_token(Kind::MarkClassKw).unwrap()
     }
 
-    pub fn glyph_class(&self) -> GlyphOrClass {
+    pub(crate) fn glyph_class(&self) -> GlyphOrClass {
         self.iter().find_map(GlyphOrClass::cast).expect("validated")
     }
 
-    pub fn anchor(&self) -> Anchor {
+    pub(crate) fn anchor(&self) -> Anchor {
         self.iter().find_map(Anchor::cast).unwrap()
     }
 
-    pub fn mark_class_name(&self) -> GlyphClassName {
+    pub(crate) fn mark_class_name(&self) -> GlyphClassName {
         self.iter()
             .skip_while(|t| t.kind() != Kind::AnchorNode)
             .find_map(GlyphClassName::cast)
@@ -474,17 +495,17 @@ impl MarkClassDef {
 }
 
 impl AnchorDef {
-    pub fn anchor(&self) -> Anchor {
+    pub(crate) fn anchor(&self) -> Anchor {
         self.iter().find_map(Anchor::cast).unwrap()
     }
 
-    pub fn name(&self) -> &Token {
+    pub(crate) fn name(&self) -> &Token {
         self.find_token(Kind::Ident).expect("pre-validated")
     }
 }
 
 impl Anchor {
-    pub fn coords(&self) -> Option<(Metric, Metric)> {
+    pub(crate) fn coords(&self) -> Option<(Metric, Metric)> {
         let tokens = self.iter();
         let mut first = None;
 
@@ -500,78 +521,78 @@ impl Anchor {
         None
     }
 
-    pub fn contourpoint(&self) -> Option<Number> {
+    pub(crate) fn contourpoint(&self) -> Option<Number> {
         self.iter().find_map(Number::cast)
     }
 
-    pub fn devices(&self) -> Option<(Device, Device)> {
+    pub(crate) fn devices(&self) -> Option<(Device, Device)> {
         let mut iter = self.iter().filter_map(Device::cast);
         iter.next()
             .map(|first| (first, iter.next().expect("one device implies another")))
     }
 
-    pub fn null(&self) -> Option<&Token> {
+    pub(crate) fn null(&self) -> Option<&Token> {
         self.find_token(Kind::NullKw)
     }
 
-    pub fn name(&self) -> Option<&Token> {
+    pub(crate) fn name(&self) -> Option<&Token> {
         self.find_token(Kind::Ident)
     }
 }
 
 impl Number {
-    pub fn parse_signed(&self) -> i16 {
+    pub(crate) fn parse_signed(&self) -> i16 {
         self.text().parse().expect("already validated")
     }
 
-    pub fn parse_unsigned(&self) -> Option<u16> {
+    pub(crate) fn parse_unsigned(&self) -> Option<u16> {
         self.text().parse().ok()
     }
 }
 
 impl Float {
-    pub fn parse(&self) -> f32 {
+    pub(crate) fn parse(&self) -> f32 {
         self.text().parse().unwrap()
     }
 
-    pub fn parse_fixed(&self) -> Fixed {
+    pub(crate) fn parse_fixed(&self) -> Fixed {
         Fixed::from_f64(self.parse() as _)
     }
 }
 
 impl FloatLike {
-    pub fn parse(&self) -> f32 {
+    pub(crate) fn parse(&self) -> f32 {
         match self {
             FloatLike::Number(n) => n.parse_signed() as f32,
             FloatLike::Float(n) => n.parse(),
         }
     }
 
-    pub fn parse_fixed(&self) -> Fixed {
+    pub(crate) fn parse_fixed(&self) -> Fixed {
         Fixed::from_f64(self.parse() as _)
     }
 }
 
 impl Metric {
-    pub fn parse(&self) -> i16 {
+    pub(crate) fn parse(&self) -> i16 {
         self.text().parse().expect("already validated")
     }
 }
 
 impl Feature {
-    pub fn tag(&self) -> Tag {
+    pub(crate) fn tag(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
-    pub fn stylistic_set_feature_names(&self) -> Option<FeatureNames> {
+    pub(crate) fn stylistic_set_feature_names(&self) -> Option<FeatureNames> {
         self.statements().next().and_then(FeatureNames::cast)
     }
 
-    pub fn character_variant_params(&self) -> Option<CvParameters> {
+    pub(crate) fn character_variant_params(&self) -> Option<CvParameters> {
         self.statements().next().and_then(CvParameters::cast)
     }
 
-    pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
         self.iter()
             .skip_while(|t| t.kind() != Kind::LBrace)
             .skip(1)
@@ -581,26 +602,28 @@ impl Feature {
 }
 
 impl LookupBlock {
-    pub fn tag(&self) -> &Token {
+    pub(crate) fn tag(&self) -> &Token {
         self.find_token(Kind::Label).unwrap()
     }
 
-    pub fn use_extension(&self) -> Option<&Token> {
+    #[allow(unused)]
+    //TODO: do we want to support this syntax?
+    pub(crate) fn use_extension(&self) -> Option<&Token> {
         self.iter()
             .take_while(|t| t.kind() != Kind::LBrace)
             .find(|t| t.kind() == Kind::UseExtensionKw)
             .and_then(NodeOrToken::as_token)
     }
 
-    pub fn keyword(&self) -> &Token {
+    pub(crate) fn keyword(&self) -> &Token {
         self.find_token(Kind::LookupKw).unwrap()
     }
 
-    pub fn label(&self) -> &Token {
+    pub(crate) fn label(&self) -> &Token {
         self.find_token(Kind::Label).unwrap()
     }
 
-    pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
         self.iter()
             .skip_while(|t| t.kind() != Kind::LBrace)
             .skip(1)
@@ -610,35 +633,37 @@ impl LookupBlock {
 }
 
 impl Script {
-    pub fn tag(&self) -> Tag {
+    pub(crate) fn tag(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
     }
 }
 
 impl Language {
-    pub fn tag(&self) -> Tag {
+    pub(crate) fn tag(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
-    pub fn include_dflt(&self) -> Option<&Token> {
+    //FIXME: I believe this is never meaningful, as it is the default behaviour?
+    #[allow(unused)]
+    pub(crate) fn include_dflt(&self) -> Option<&Token> {
         self.find_token(Kind::IncludeDfltKw)
     }
 
-    pub fn exclude_dflt(&self) -> Option<&Token> {
+    pub(crate) fn exclude_dflt(&self) -> Option<&Token> {
         self.find_token(Kind::ExcludeDfltKw)
     }
 
-    pub fn required(&self) -> Option<&Token> {
+    pub(crate) fn required(&self) -> Option<&Token> {
         self.find_token(Kind::RequiredKw)
     }
 }
 
 impl LookupFlag {
-    pub fn number(&self) -> Option<Number> {
+    pub(crate) fn number(&self) -> Option<Number> {
         self.iter().find_map(Number::cast)
     }
 
-    pub fn values(&self) -> impl Iterator<Item = &NodeOrToken> + '_ {
+    pub(crate) fn values(&self) -> impl Iterator<Item = &NodeOrToken> + '_ {
         self.iter()
             .skip(1)
             .take_while(|t| t.kind() != Kind::Number && t.kind() != Kind::Semi)
@@ -647,17 +672,17 @@ impl LookupFlag {
 }
 
 impl LookupRef {
-    pub fn label(&self) -> &Token {
+    pub(crate) fn label(&self) -> &Token {
         self.find_token(Kind::Ident).unwrap()
     }
 }
 
 impl Gsub1 {
-    pub fn target(&self) -> GlyphOrClass {
+    pub(crate) fn target(&self) -> GlyphOrClass {
         self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
-    pub fn replacement(&self) -> GlyphOrClass {
+    pub(crate) fn replacement(&self) -> GlyphOrClass {
         self.iter()
             .skip_while(|t| t.kind() != Kind::ByKw)
             .find_map(GlyphOrClass::cast)
@@ -666,11 +691,11 @@ impl Gsub1 {
 }
 
 impl Gsub2 {
-    pub fn target(&self) -> Glyph {
+    pub(crate) fn target(&self) -> Glyph {
         self.iter().find_map(Glyph::cast).unwrap()
     }
 
-    pub fn replacement(&self) -> impl Iterator<Item = Glyph> + '_ {
+    pub(crate) fn replacement(&self) -> impl Iterator<Item = Glyph> + '_ {
         self.iter()
             .skip_while(|t| t.kind() != Kind::ByKw)
             .skip(1)
@@ -679,11 +704,11 @@ impl Gsub2 {
 }
 
 impl Gsub3 {
-    pub fn target(&self) -> Glyph {
+    pub(crate) fn target(&self) -> Glyph {
         self.iter().find_map(Glyph::cast).unwrap()
     }
 
-    pub fn alternates(&self) -> GlyphClass {
+    pub(crate) fn alternates(&self) -> GlyphClass {
         self.iter()
             .skip_while(|t| t.kind() != Kind::FromKw)
             .find_map(GlyphClass::cast)
@@ -692,13 +717,13 @@ impl Gsub3 {
 }
 
 impl Gsub4 {
-    pub fn target(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
+    pub(crate) fn target(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
         self.iter()
             .take_while(|t| t.kind() != Kind::ByKw)
             .filter_map(GlyphOrClass::cast)
     }
 
-    pub fn replacement(&self) -> Glyph {
+    pub(crate) fn replacement(&self) -> Glyph {
         self.iter()
             .skip_while(|t| t.kind() != Kind::ByKw)
             .find_map(Glyph::cast)
@@ -707,147 +732,147 @@ impl Gsub4 {
 }
 
 impl Gsub6 {
-    pub fn backtrack(&self) -> BacktrackSequence {
+    pub(crate) fn backtrack(&self) -> BacktrackSequence {
         self.iter().find_map(BacktrackSequence::cast).unwrap()
     }
 
-    pub fn lookahead(&self) -> LookaheadSequence {
+    pub(crate) fn lookahead(&self) -> LookaheadSequence {
         self.iter().find_map(LookaheadSequence::cast).unwrap()
     }
 
-    pub fn input(&self) -> InputSequence {
+    pub(crate) fn input(&self) -> InputSequence {
         self.iter().find_map(InputSequence::cast).unwrap()
     }
 
-    pub fn inline_rule(&self) -> Option<InlineSubRule> {
+    pub(crate) fn inline_rule(&self) -> Option<InlineSubRule> {
         self.iter().find_map(InlineSubRule::cast)
     }
 }
 
 impl Gsub8 {
-    pub fn backtrack(&self) -> BacktrackSequence {
+    pub(crate) fn backtrack(&self) -> BacktrackSequence {
         self.iter().find_map(BacktrackSequence::cast).unwrap()
     }
 
-    pub fn lookahead(&self) -> LookaheadSequence {
+    pub(crate) fn lookahead(&self) -> LookaheadSequence {
         self.iter().find_map(LookaheadSequence::cast).unwrap()
     }
 
-    pub fn input(&self) -> InputSequence {
+    pub(crate) fn input(&self) -> InputSequence {
         self.iter().find_map(InputSequence::cast).unwrap()
     }
 
-    pub fn inline_rule(&self) -> Option<InlineSubRule> {
+    pub(crate) fn inline_rule(&self) -> Option<InlineSubRule> {
         self.iter().find_map(InlineSubRule::cast)
     }
 }
 
 impl GsubIgnore {
-    pub fn rules(&self) -> impl Iterator<Item = IgnoreRule> + '_ {
+    pub(crate) fn rules(&self) -> impl Iterator<Item = IgnoreRule> + '_ {
         self.iter().filter_map(IgnoreRule::cast)
     }
 }
 
 impl IgnoreRule {
-    pub fn backtrack(&self) -> BacktrackSequence {
+    pub(crate) fn backtrack(&self) -> BacktrackSequence {
         self.iter().find_map(BacktrackSequence::cast).unwrap()
     }
 
-    pub fn lookahead(&self) -> LookaheadSequence {
+    pub(crate) fn lookahead(&self) -> LookaheadSequence {
         self.iter().find_map(LookaheadSequence::cast).unwrap()
     }
 
-    pub fn input(&self) -> InputSequence {
+    pub(crate) fn input(&self) -> InputSequence {
         self.iter().find_map(InputSequence::cast).unwrap()
     }
 }
 
 impl BacktrackSequence {
-    pub fn items(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
+    pub(crate) fn items(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
         self.iter().filter_map(GlyphOrClass::cast)
     }
 }
 
 impl LookaheadSequence {
-    pub fn items(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
+    pub(crate) fn items(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
         self.iter().filter_map(GlyphOrClass::cast)
     }
 }
 
 impl InputSequence {
-    pub fn items(&self) -> impl Iterator<Item = InputItem> + '_ {
+    pub(crate) fn items(&self) -> impl Iterator<Item = InputItem> + '_ {
         self.iter().filter_map(InputItem::cast)
     }
 }
 
 impl InputItem {
-    pub fn target(&self) -> GlyphOrClass {
+    pub(crate) fn target(&self) -> GlyphOrClass {
         self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
-    pub fn lookups(&self) -> impl Iterator<Item = LookupRef> + '_ {
+    pub(crate) fn lookups(&self) -> impl Iterator<Item = LookupRef> + '_ {
         self.iter().filter_map(LookupRef::cast)
     }
 
     /// for pos rules only
-    pub fn valuerecord(&self) -> Option<ValueRecord> {
+    pub(crate) fn valuerecord(&self) -> Option<ValueRecord> {
         self.iter().find_map(ValueRecord::cast)
     }
 }
 
 impl InlineSubRule {
-    pub fn replacement_class(&self) -> Option<GlyphClass> {
+    pub(crate) fn replacement_class(&self) -> Option<GlyphClass> {
         self.iter().find_map(GlyphClass::cast)
     }
 
     // if empty, there is a class
-    pub fn replacement_glyphs(&self) -> impl Iterator<Item = Glyph> + '_ {
+    pub(crate) fn replacement_glyphs(&self) -> impl Iterator<Item = Glyph> + '_ {
         self.iter().filter_map(Glyph::cast)
     }
 
     // this overlaps with the other two? i don't know what the best API is.. :/
-    pub fn replacements(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
+    pub(crate) fn replacements(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
         self.iter().filter_map(GlyphOrClass::cast)
     }
 }
 
 impl Gpos1 {
-    pub fn target(&self) -> GlyphOrClass {
+    pub(crate) fn target(&self) -> GlyphOrClass {
         self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
-    pub fn value(&self) -> ValueRecord {
+    pub(crate) fn value(&self) -> ValueRecord {
         self.iter().find_map(ValueRecord::cast).unwrap()
     }
 }
 
 impl Gpos2 {
-    pub fn enum_(&self) -> Option<&Token> {
+    pub(crate) fn enum_(&self) -> Option<&Token> {
         self.iter()
             .take_while(|t| t.kind() != Kind::PosKw)
             .find(|t| t.kind() == Kind::EnumKw)
             .and_then(NodeOrToken::as_token)
     }
 
-    pub fn first_item(&self) -> GlyphOrClass {
+    pub(crate) fn first_item(&self) -> GlyphOrClass {
         self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
-    pub fn second_item(&self) -> GlyphOrClass {
+    pub(crate) fn second_item(&self) -> GlyphOrClass {
         self.iter().filter_map(GlyphOrClass::cast).nth(1).unwrap()
     }
 
-    pub fn first_value(&self) -> ValueRecord {
+    pub(crate) fn first_value(&self) -> ValueRecord {
         self.iter().find_map(ValueRecord::cast).unwrap()
     }
 
-    pub fn second_value(&self) -> Option<ValueRecord> {
+    pub(crate) fn second_value(&self) -> Option<ValueRecord> {
         self.iter().filter_map(ValueRecord::cast).nth(1)
     }
 }
 
 impl Gpos3 {
-    pub fn target(&self) -> GlyphOrClass {
+    pub(crate) fn target(&self) -> GlyphOrClass {
         self.iter()
             .filter(|t| !t.kind().is_trivia())
             .nth(2)
@@ -855,11 +880,11 @@ impl Gpos3 {
             .unwrap()
     }
 
-    pub fn entry(&self) -> Anchor {
+    pub(crate) fn entry(&self) -> Anchor {
         self.iter().skip(3).find_map(Anchor::cast).unwrap()
     }
 
-    pub fn exit(&self) -> Anchor {
+    pub(crate) fn exit(&self) -> Anchor {
         self.iter()
             .skip_while(|t| t.kind() != Kind::AnchorNode)
             .skip(1)
@@ -869,7 +894,7 @@ impl Gpos3 {
 }
 
 impl Gpos4 {
-    pub fn base(&self) -> GlyphOrClass {
+    pub(crate) fn base(&self) -> GlyphOrClass {
         self.iter()
             .filter(|t| !t.kind().is_trivia())
             .nth(2)
@@ -877,13 +902,13 @@ impl Gpos4 {
             .unwrap()
     }
 
-    pub fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
+    pub(crate) fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
         self.iter().skip(3).filter_map(AnchorMark::cast)
     }
 }
 
 impl Gpos5 {
-    pub fn base(&self) -> GlyphOrClass {
+    pub(crate) fn base(&self) -> GlyphOrClass {
         self.iter()
             .filter(|t| !t.kind().is_trivia())
             .nth(2)
@@ -891,13 +916,13 @@ impl Gpos5 {
             .unwrap()
     }
 
-    pub fn ligature_components(&self) -> impl Iterator<Item = LigatureComponent> + '_ {
+    pub(crate) fn ligature_components(&self) -> impl Iterator<Item = LigatureComponent> + '_ {
         self.iter().skip(3).filter_map(LigatureComponent::cast)
     }
 }
 
 impl Gpos6 {
-    pub fn base(&self) -> GlyphOrClass {
+    pub(crate) fn base(&self) -> GlyphOrClass {
         self.iter()
             .filter(|t| !t.kind().is_trivia())
             .nth(2)
@@ -905,66 +930,66 @@ impl Gpos6 {
             .unwrap()
     }
 
-    pub fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
+    pub(crate) fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
         self.iter().skip(3).filter_map(AnchorMark::cast)
     }
 }
 
 //FIXME: move backtrack/lookahead/input into a trait
 impl Gpos8 {
-    pub fn backtrack(&self) -> BacktrackSequence {
+    pub(crate) fn backtrack(&self) -> BacktrackSequence {
         self.iter().find_map(BacktrackSequence::cast).unwrap()
     }
 
-    pub fn lookahead(&self) -> LookaheadSequence {
+    pub(crate) fn lookahead(&self) -> LookaheadSequence {
         self.iter().find_map(LookaheadSequence::cast).unwrap()
     }
 
-    pub fn input(&self) -> InputSequence {
+    pub(crate) fn input(&self) -> InputSequence {
         self.iter().find_map(InputSequence::cast).unwrap()
     }
 }
 
 impl GposIgnore {
-    pub fn rules(&self) -> impl Iterator<Item = IgnoreRule> + '_ {
+    pub(crate) fn rules(&self) -> impl Iterator<Item = IgnoreRule> + '_ {
         self.iter().filter_map(IgnoreRule::cast)
     }
 }
 
 impl LigatureComponent {
     /// If the iterator is empty this is a null anchor
-    pub fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
+    pub(crate) fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
         self.iter().filter_map(AnchorMark::cast)
     }
 }
 
 impl AnchorMark {
-    pub fn anchor(&self) -> Anchor {
+    pub(crate) fn anchor(&self) -> Anchor {
         self.iter().find_map(Anchor::cast).unwrap()
     }
 
-    pub fn mark_class_name(&self) -> Option<GlyphClassName> {
+    pub(crate) fn mark_class_name(&self) -> Option<GlyphClassName> {
         self.iter().find_map(GlyphClassName::cast)
     }
 }
 
 impl ValueRecord {
-    pub fn advance(&self) -> Option<Number> {
+    pub(crate) fn advance(&self) -> Option<Number> {
         self.iter().next().and_then(Number::cast)
     }
 
-    pub fn null(&self) -> Option<&Token> {
+    pub(crate) fn null(&self) -> Option<&Token> {
         self.iter()
             .take(3)
             .find(|t| t.kind() == Kind::NullKw)
             .and_then(NodeOrToken::as_token)
     }
 
-    pub fn named(&self) -> Option<&Token> {
+    pub(crate) fn named(&self) -> Option<&Token> {
         self.find_token(Kind::Ident)
     }
 
-    pub fn placement(&self) -> Option<[Number; 4]> {
+    pub(crate) fn placement(&self) -> Option<[Number; 4]> {
         if self.iter().filter(|t| t.kind() == Kind::Number).count() == 4 {
             let mut iter = self.iter().filter_map(Number::cast);
             return Some([
@@ -977,7 +1002,7 @@ impl ValueRecord {
         None
     }
 
-    pub fn device(&self) -> Option<[Device; 4]> {
+    pub(crate) fn device(&self) -> Option<[Device; 4]> {
         if self.iter().skip(4).any(|t| t.kind() == Kind::DeviceNode) {
             let mut iter = self.iter().filter_map(Device::cast);
             return Some([
@@ -1011,7 +1036,7 @@ impl Device {
         })
     }
 
-    pub fn compile(&self) -> Option<write_fonts::tables::layout::Device> {
+    pub(crate) fn compile(&self) -> Option<write_fonts::tables::layout::Device> {
         if self.null().is_some() {
             return None;
         }
@@ -1043,7 +1068,7 @@ impl Device {
 }
 
 impl Table {
-    pub fn tag(&self) -> Tag {
+    pub(crate) fn tag(&self) -> Tag {
         self.node()
             .unwrap()
             .iter_children()
@@ -1053,25 +1078,25 @@ impl Table {
 }
 
 impl BaseTable {
-    pub fn horiz_base_tag_list(&self) -> Option<BaseTagList> {
+    pub(crate) fn horiz_base_tag_list(&self) -> Option<BaseTagList> {
         self.iter()
             .filter_map(BaseTagList::cast)
             .find(BaseTagList::is_horiz)
     }
 
-    pub fn vert_base_tag_list(&self) -> Option<BaseTagList> {
+    pub(crate) fn vert_base_tag_list(&self) -> Option<BaseTagList> {
         self.iter()
             .filter_map(BaseTagList::cast)
             .find(|b| !b.is_horiz())
     }
 
-    pub fn horiz_base_script_record_list(&self) -> Option<BaseScriptList> {
+    pub(crate) fn horiz_base_script_record_list(&self) -> Option<BaseScriptList> {
         self.iter()
             .filter_map(BaseScriptList::cast)
             .find(BaseScriptList::is_horiz)
     }
 
-    pub fn vert_base_script_record_list(&self) -> Option<BaseScriptList> {
+    pub(crate) fn vert_base_script_record_list(&self) -> Option<BaseScriptList> {
         self.iter()
             .filter_map(BaseScriptList::cast)
             .find(|b| !b.is_horiz())
@@ -1087,15 +1112,11 @@ impl BaseTagList {
         }
     }
 
-    pub fn tags(&self) -> impl Iterator<Item = Tag> + '_ {
+    pub(crate) fn tags(&self) -> impl Iterator<Item = Tag> + '_ {
         self.iter()
             .skip(1)
             .take_while(|t| t.kind() != Kind::Semi)
             .filter_map(Tag::cast)
-    }
-
-    pub fn compile(&self) -> write_fonts::tables::base::BaseTagList {
-        write_fonts::tables::base::BaseTagList::new(self.tags().map(|t| t.to_raw()).collect())
     }
 }
 
@@ -1108,7 +1129,7 @@ impl BaseScriptList {
         }
     }
 
-    pub fn script_records(&self) -> impl Iterator<Item = ScriptRecord> + '_ {
+    pub(crate) fn script_records(&self) -> impl Iterator<Item = ScriptRecord> + '_ {
         self.iter()
             .skip(1)
             .take_while(|t| t.kind() != Kind::Semi)
@@ -1117,186 +1138,178 @@ impl BaseScriptList {
 }
 
 impl ScriptRecord {
-    pub fn script(&self) -> Tag {
+    pub(crate) fn script(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
-    pub fn default_baseline(&self) -> Tag {
+    pub(crate) fn default_baseline(&self) -> Tag {
         self.iter().filter_map(Tag::cast).nth(1).unwrap()
     }
 
-    pub fn values(&self) -> impl Iterator<Item = Number> + '_ {
+    pub(crate) fn values(&self) -> impl Iterator<Item = Number> + '_ {
         self.iter().skip(2).filter_map(Number::cast)
     }
 }
 
 impl HheaTable {
-    pub fn metrics(&self) -> impl Iterator<Item = MetricRecord> + '_ {
+    pub(crate) fn metrics(&self) -> impl Iterator<Item = MetricRecord> + '_ {
         self.iter().filter_map(MetricRecord::cast)
     }
 }
 
 impl VheaTable {
-    pub fn tag(&self) -> Tag {
-        self.iter().find_map(Tag::cast).unwrap()
-    }
-
-    pub fn metrics(&self) -> impl Iterator<Item = MetricRecord> + '_ {
+    pub(crate) fn metrics(&self) -> impl Iterator<Item = MetricRecord> + '_ {
         self.iter().filter_map(MetricRecord::cast)
     }
 }
 
 impl VmtxTable {
-    pub fn statements(&self) -> impl Iterator<Item = VmtxEntry> + '_ {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = VmtxEntry> + '_ {
         self.iter().filter_map(VmtxEntry::cast)
     }
 }
 
 impl VmtxEntry {
-    pub fn keyword(&self) -> &Token {
+    pub(crate) fn keyword(&self) -> &Token {
         self.iter().next().and_then(NodeOrToken::as_token).unwrap()
     }
 
-    pub fn glyph(&self) -> Glyph {
+    pub(crate) fn glyph(&self) -> Glyph {
         self.iter().find_map(Glyph::cast).unwrap()
     }
 
-    pub fn value(&self) -> Number {
+    pub(crate) fn value(&self) -> Number {
         self.iter().find_map(Number::cast).unwrap()
     }
 }
 
 impl MetricRecord {
-    pub fn keyword(&self) -> &Token {
+    pub(crate) fn keyword(&self) -> &Token {
         self.iter().next().and_then(|t| t.as_token()).unwrap()
     }
 
-    pub fn metric(&self) -> Metric {
+    pub(crate) fn metric(&self) -> Metric {
         self.iter().find_map(Metric::cast).unwrap()
     }
 }
 
 impl Os2Table {
-    pub fn statements(&self) -> impl Iterator<Item = Os2TableItem> + '_ {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = Os2TableItem> + '_ {
         self.iter().filter_map(Os2TableItem::cast)
     }
 }
 
 impl NumberRecord {
-    pub fn keyword(&self) -> &Token {
+    pub(crate) fn keyword(&self) -> &Token {
         self.iter().next().and_then(|t| t.as_token()).unwrap()
     }
 
-    pub fn number(&self) -> Number {
+    pub(crate) fn number(&self) -> Number {
         self.iter().find_map(Number::cast).unwrap()
     }
 }
 
 impl VendorRecord {
-    pub fn keyword(&self) -> &Token {
-        self.iter().next().and_then(|t| t.as_token()).unwrap()
-    }
-
-    pub fn value(&self) -> &Token {
+    pub(crate) fn value(&self) -> &Token {
         self.find_token(Kind::String).unwrap()
     }
 }
 
 impl Os2NumberList {
-    pub fn keyword(&self) -> &Token {
+    pub(crate) fn keyword(&self) -> &Token {
         self.iter().next().and_then(|t| t.as_token()).unwrap()
     }
 
-    pub fn values(&self) -> impl Iterator<Item = Number> + '_ {
+    pub(crate) fn values(&self) -> impl Iterator<Item = Number> + '_ {
         self.iter().skip(1).filter_map(Number::cast)
     }
 }
 
 impl Os2FamilyClass {
-    pub fn value(&self) -> DecOctHex {
+    pub(crate) fn value(&self) -> DecOctHex {
         self.iter().find_map(DecOctHex::cast).unwrap()
     }
 }
 
 impl FeatureNames {
-    pub fn statements(&self) -> impl Iterator<Item = NameSpec> + '_ {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = NameSpec> + '_ {
         self.iter().filter_map(NameSpec::cast)
     }
 }
 
 impl CvParameters {
-    pub fn keyword(&self) -> &Token {
+    pub(crate) fn keyword(&self) -> &Token {
         debug_assert_eq!(self.iter().next().unwrap().kind(), Kind::CvParametersKw);
         self.iter().next().and_then(|t| t.as_token()).unwrap()
     }
 
-    pub fn find_node(&self, kind: Kind) -> Option<CvParametersName> {
+    pub(crate) fn find_node(&self, kind: Kind) -> Option<CvParametersName> {
         self.iter()
             .filter_map(CvParametersName::cast)
             .find(|node| node.keyword().kind == kind)
     }
 
-    pub fn feat_ui_label_name(&self) -> Option<CvParametersName> {
+    pub(crate) fn feat_ui_label_name(&self) -> Option<CvParametersName> {
         self.find_node(Kind::FeatUiLabelNameIdKw)
     }
 
-    pub fn feat_tooltip_text_name(&self) -> Option<CvParametersName> {
+    pub(crate) fn feat_tooltip_text_name(&self) -> Option<CvParametersName> {
         self.find_node(Kind::FeatUiTooltipTextNameIdKw)
     }
 
-    pub fn sample_text_name(&self) -> Option<CvParametersName> {
+    pub(crate) fn sample_text_name(&self) -> Option<CvParametersName> {
         self.find_node(Kind::SampleTextNameIdKw)
     }
 
-    pub fn param_ui_label_name(&self) -> impl Iterator<Item = CvParametersName> + '_ {
+    pub(crate) fn param_ui_label_name(&self) -> impl Iterator<Item = CvParametersName> + '_ {
         self.iter()
             .filter_map(CvParametersName::cast)
             .filter(|node| node.keyword().kind == Kind::ParamUiLabelNameIdKw)
     }
 
-    pub fn characters(&self) -> impl Iterator<Item = CvParametersChar> + '_ {
+    pub(crate) fn characters(&self) -> impl Iterator<Item = CvParametersChar> + '_ {
         self.iter().filter_map(CvParametersChar::cast)
     }
 }
 
 impl CvParametersName {
-    pub fn keyword(&self) -> &Token {
+    pub(crate) fn keyword(&self) -> &Token {
         self.iter().next().and_then(|t| t.as_token()).unwrap()
     }
 
-    pub fn statements(&self) -> impl Iterator<Item = NameSpec> + '_ {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = NameSpec> + '_ {
         self.iter().filter_map(NameSpec::cast)
     }
 }
 
 impl CvParametersChar {
-    pub fn value(&self) -> DecOctHex {
+    pub(crate) fn value(&self) -> DecOctHex {
         self.iter().find_map(DecOctHex::cast).unwrap()
     }
 }
 
 impl NameTable {
-    pub fn statements(&self) -> impl Iterator<Item = NameRecord> + '_ {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = NameRecord> + '_ {
         self.iter().filter_map(NameRecord::cast)
     }
 }
 
 impl NameRecord {
-    pub fn name_id(&self) -> DecOctHex {
+    pub(crate) fn name_id(&self) -> DecOctHex {
         self.iter().find_map(DecOctHex::cast).unwrap()
     }
 
-    pub fn entry(&self) -> NameSpec {
+    pub(crate) fn entry(&self) -> NameSpec {
         self.iter().find_map(NameSpec::cast).unwrap()
     }
 }
 
 impl NameSpec {
-    pub fn platform_id(&self) -> Option<DecOctHex> {
+    pub(crate) fn platform_id(&self) -> Option<DecOctHex> {
         self.iter().find_map(DecOctHex::cast)
     }
 
-    pub fn platform_and_language_ids(&self) -> Option<(DecOctHex, DecOctHex)> {
+    pub(crate) fn platform_and_language_ids(&self) -> Option<(DecOctHex, DecOctHex)> {
         let mut iter = self.iter().filter_map(DecOctHex::cast).skip(1);
         if let Some(platform) = iter.next() {
             let language = iter.next().unwrap();
@@ -1306,7 +1319,7 @@ impl NameSpec {
         }
     }
 
-    pub fn string(&self) -> &Token {
+    pub(crate) fn string(&self) -> &Token {
         self.find_token(Kind::String).unwrap()
     }
 }
@@ -1321,12 +1334,12 @@ impl DecOctHex {
         }
     }
 
-    pub fn parse(&self) -> Result<u16, String> {
+    pub(crate) fn parse(&self) -> Result<u16, String> {
         self.parse_raw()
             .and_then(|x| u16::try_from(x).map_err(|e| e.to_string()))
     }
 
-    pub fn parse_char(&self) -> Result<char, String> {
+    pub(crate) fn parse_char(&self) -> Result<char, String> {
         self.parse_raw().and_then(|int| {
             char::from_u32(int).ok_or_else(|| format!("{int} is not a unicode codepoint"))
         })
@@ -1334,7 +1347,7 @@ impl DecOctHex {
 }
 
 impl GdefTable {
-    pub fn statements(&self) -> impl Iterator<Item = GdefTableItem> + '_ {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = GdefTableItem> + '_ {
         self.iter().filter_map(GdefTableItem::cast)
     }
 }
@@ -1351,30 +1364,30 @@ impl GdefClassDef {
             .find_map(GlyphClass::cast)
     }
 
-    pub fn base_glyphs(&self) -> Option<GlyphClass> {
+    pub(crate) fn base_glyphs(&self) -> Option<GlyphClass> {
         self.nth_item(0)
     }
 
-    pub fn ligature_glyphs(&self) -> Option<GlyphClass> {
+    pub(crate) fn ligature_glyphs(&self) -> Option<GlyphClass> {
         self.nth_item(1)
     }
 
-    pub fn mark_glyphs(&self) -> Option<GlyphClass> {
+    pub(crate) fn mark_glyphs(&self) -> Option<GlyphClass> {
         self.nth_item(2)
     }
 
-    pub fn component_glyphs(&self) -> Option<GlyphClass> {
+    pub(crate) fn component_glyphs(&self) -> Option<GlyphClass> {
         self.nth_item(3)
     }
 }
 
 impl GdefAttach {
-    pub fn target(&self) -> GlyphOrClass {
+    pub(crate) fn target(&self) -> GlyphOrClass {
         self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
     /// of a contourpoint
-    pub fn indices(&self) -> impl Iterator<Item = Number> + '_ {
+    pub(crate) fn indices(&self) -> impl Iterator<Item = Number> + '_ {
         self.iter().filter_map(Number::cast)
     }
 }
@@ -1388,11 +1401,11 @@ impl GdefLigatureCaret {
         }
     }
 
-    pub fn target(&self) -> GlyphOrClass {
+    pub(crate) fn target(&self) -> GlyphOrClass {
         self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
-    pub fn values(&self) -> LigatureCaretValue {
+    pub(crate) fn values(&self) -> LigatureCaretValue {
         if self.by_pos() {
             LigatureCaretValue::Pos(LigatureCaretIter(self))
         } else {
@@ -1403,66 +1416,66 @@ impl GdefLigatureCaret {
 
 // some helpers for handling the different caret representations; one is signed,
 // the other unsigned.
-pub struct LigatureCaretIter<'a>(&'a GdefLigatureCaret);
+pub(crate) struct LigatureCaretIter<'a>(&'a GdefLigatureCaret);
 
 impl LigatureCaretIter<'_> {
-    pub fn values(&self) -> impl Iterator<Item = Number> + '_ {
+    pub(crate) fn values(&self) -> impl Iterator<Item = Number> + '_ {
         self.0.iter().filter_map(Number::cast)
     }
 }
 
-pub enum LigatureCaretValue<'a> {
+pub(crate) enum LigatureCaretValue<'a> {
     Pos(LigatureCaretIter<'a>),
     Index(LigatureCaretIter<'a>),
 }
 
 impl HeadTable {
-    pub fn statements(&self) -> impl Iterator<Item = HeadFontRevision> + '_ {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = HeadFontRevision> + '_ {
         self.iter().filter_map(HeadFontRevision::cast)
     }
 }
 
 impl HeadFontRevision {
-    pub fn value(&self) -> Float {
+    pub(crate) fn value(&self) -> Float {
         self.iter().find_map(Float::cast).unwrap()
     }
 }
 
 impl StatTable {
-    pub fn tag(&self) -> Tag {
+    pub(crate) fn tag(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
-    pub fn statements(&self) -> impl Iterator<Item = StatTableItem> + '_ {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = StatTableItem> + '_ {
         self.iter().filter_map(StatTableItem::cast)
     }
 }
 
 impl StatElidedFallbackName {
-    pub fn elided_fallback_name_id(&self) -> Option<Number> {
+    pub(crate) fn elided_fallback_name_id(&self) -> Option<Number> {
         self.iter()
             .take_while(|t| t.kind() != Kind::NameKw)
             .find_map(Number::cast)
     }
 
-    pub fn names(&self) -> impl Iterator<Item = NameSpec> + '_ {
+    pub(crate) fn names(&self) -> impl Iterator<Item = NameSpec> + '_ {
         self.iter().filter_map(NameSpec::cast)
     }
 }
 
 impl StatDesignAxis {
-    pub fn tag(&self) -> Tag {
+    pub(crate) fn tag(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
-    pub fn ordering(&self) -> Number {
+    pub(crate) fn ordering(&self) -> Number {
         self.iter()
             .take_while(|t| t.kind() != Kind::LBrace)
             .find_map(Number::cast)
             .unwrap()
     }
 
-    pub fn names(&self) -> impl Iterator<Item = NameSpec> + '_ {
+    pub(crate) fn names(&self) -> impl Iterator<Item = NameSpec> + '_ {
         self.iter()
             .skip_while(|t| t.kind() != Kind::LBrace)
             .filter_map(NameSpec::cast)
@@ -1470,14 +1483,14 @@ impl StatDesignAxis {
 }
 
 impl StatAxisValue {
-    pub fn statements(&self) -> impl Iterator<Item = StatAxisValueItem> + '_ {
+    pub(crate) fn statements(&self) -> impl Iterator<Item = StatAxisValueItem> + '_ {
         self.iter().skip(2).filter_map(StatAxisValueItem::cast)
     }
 }
 
 impl StatAxisFlag {
     /// iterate bits to be accumulated
-    pub fn bits(&self) -> impl Iterator<Item = u16> + '_ {
+    pub(crate) fn bits(&self) -> impl Iterator<Item = u16> + '_ {
         self.iter()
             .skip(1)
             .take_while(|t| t.kind() != Kind::Semi)
@@ -1491,11 +1504,11 @@ impl StatAxisFlag {
 }
 
 impl StatAxisLocation {
-    pub fn tag(&self) -> Tag {
+    pub(crate) fn tag(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
-    pub fn value(&self) -> LocationValue {
+    pub(crate) fn value(&self) -> LocationValue {
         let mut iter = self.iter().filter_map(FloatLike::cast);
         let first = iter.next().unwrap();
         let second = match iter.next() {
@@ -1516,7 +1529,7 @@ impl StatAxisLocation {
     }
 }
 
-pub enum LocationValue {
+pub(crate) enum LocationValue {
     Value(FloatLike),
     MinMax {
         nominal: FloatLike,
@@ -1530,17 +1543,17 @@ pub enum LocationValue {
 }
 
 impl SizeMenuName {
-    pub fn spec(&self) -> NameSpec {
+    pub(crate) fn spec(&self) -> NameSpec {
         self.iter().find_map(NameSpec::cast).unwrap()
     }
 }
 
 impl Parameters {
-    pub fn design_size(&self) -> FloatLike {
+    pub(crate) fn design_size(&self) -> FloatLike {
         self.iter().find_map(FloatLike::cast).unwrap()
     }
 
-    pub fn subfamily(&self) -> Number {
+    pub(crate) fn subfamily(&self) -> Number {
         self.iter()
             .filter(|t| t.kind() == Kind::Number || t.kind() == Kind::Float)
             .nth(1)
@@ -1548,17 +1561,17 @@ impl Parameters {
             .unwrap()
     }
 
-    pub fn range_start(&self) -> Option<FloatLike> {
+    pub(crate) fn range_start(&self) -> Option<FloatLike> {
         self.iter().filter_map(FloatLike::cast).nth(2)
     }
 
-    pub fn range_end(&self) -> Option<FloatLike> {
+    pub(crate) fn range_end(&self) -> Option<FloatLike> {
         self.iter().filter_map(FloatLike::cast).nth(3)
     }
 }
 
 impl AaltFeature {
-    pub fn feature(&self) -> Tag {
+    pub(crate) fn feature(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
     }
 }

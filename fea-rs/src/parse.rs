@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 pub use context::{parse_src, HardError, IncludeStatement, ParseContext};
 pub use lexer::TokenSet;
-pub use parser::{Parser, SyntaxError};
+pub use parser::Parser;
 pub use source::{FileId, Source};
 pub use tree::ParseTree;
 

@@ -1,4 +1,6 @@
-//! Parsing the Adobe OpenType Feature File format.
+//! Parsing and compiling the Adobe OpenType Feature File format.
+
+#![deny(missing_docs)]
 
 mod compile;
 mod diagnostic;
@@ -12,6 +14,6 @@ mod tests;
 
 pub use compile::{compile, validate, Compilation};
 pub use diagnostic::{Diagnostic, Level};
-pub use parse::{parse_root_file, parse_src, ParseTree, Source, SyntaxError, TokenSet};
-pub use token_tree::{typed, Kind, Node, NodeOrToken};
+pub use parse::{parse_root_file, parse_src, FileId, ParseTree, Source, TokenSet};
+pub use token_tree::{typed, Kind, Node, NodeOrToken, Token};
 pub use types::{GlyphIdent, GlyphMap, GlyphName};

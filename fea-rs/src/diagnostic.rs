@@ -9,13 +9,18 @@ pub struct Span {
     end: u32,
 }
 
+/// A diagnostic level
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
+    /// An unrecoverable error
     Error,
+    /// A warning: something the user may want to address, but which is non-fatal
     Warning,
+    /// Info. unused?
     Info,
 }
 
+/// A message, associated with a location in a file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     pub text: String,
@@ -23,21 +28,26 @@ pub struct Message {
     pub span: Span,
 }
 
+/// A diagnostic, including a message and additional annotations
+//TODO: would this be more useful with additional annotations or a help field?
+//some fancy error reporting crates have these.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic {
+    /// The main message for this diagnostic
     pub message: Message,
+    /// The diagnostic level
     pub level: Level,
-    annotations: Vec<Message>,
-    help: Option<String>,
 }
 
 impl Span {
+    /// Convert this span to a `Range<usize>`
     pub fn range(&self) -> Range<usize> {
         self.start as usize..self.end as usize
     }
 }
 
 impl Diagnostic {
+    /// Create a new diagnostic
     pub fn new(
         level: Level,
         file: FileId,
@@ -54,40 +64,30 @@ impl Diagnostic {
                 file,
             },
             level,
-            annotations: Vec::new(),
-            help: None,
         }
     }
 
+    /// Create a new error, at the provided location
     pub fn error(file: FileId, span: Range<usize>, message: impl Into<String>) -> Self {
         Diagnostic::new(Level::Error, file, span, message)
     }
 
+    /// Create a new warning, at the provided location
     pub fn warning(file: FileId, span: Range<usize>, message: impl Into<String>) -> Self {
         Diagnostic::new(Level::Warning, file, span, message)
     }
 
-    //pub fn annotation(mut self, text: impl Into<String>, span: Range<usize>) -> Self {
-    //self.annotations.push(Message {
-    //text: text.into(),
-    //span: span.into(),
-    //});
-    //self
-    //}
-
-    pub fn help(mut self, help: impl Into<String>) -> Self {
-        self.help = Some(help.into());
-        self
-    }
-
+    /// The diagnostic's message text
     pub fn text(&self) -> &str {
         &self.message.text
     }
 
+    /// The location of the main span, as a `Range<usize>`
     pub fn span(&self) -> Range<usize> {
         self.message.span.range()
     }
 
+    /// `true` if this diagnostic is an error
     pub fn is_error(&self) -> bool {
         matches!(self.level, Level::Error)
     }

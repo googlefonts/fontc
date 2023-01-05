@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 pub struct CanonicalPath(PathBuf);
 
 impl CanonicalPath {
+    /// Create a new canonical path.
     pub fn from_path(path: impl AsRef<Path>) -> std::io::Result<Self> {
         path.as_ref().canonicalize().map(CanonicalPath)
     }

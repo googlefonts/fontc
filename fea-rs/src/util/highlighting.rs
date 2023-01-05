@@ -5,6 +5,7 @@ use std::fmt::Write;
 use crate::{parse::Source, Diagnostic, Kind, Level};
 use ansi_term::{Colour, Style};
 
+/// Return the appropriate visual style for this token kind.
 pub fn style_for_kind(kind: Kind) -> Style {
     match kind {
         Kind::Comment => Style::new().fg(Colour::Yellow).dimmed(),

@@ -10,21 +10,36 @@ mod glyph_map;
 
 pub use glyph_map::GlyphMap;
 
+/// A glyph name
 pub type GlyphName = SmolStr;
 
+/// A glyph class, as used in the FEA spec.
+///
+/// This type is currently somewhat confused; in certain places the spec expects
+/// that a glyoh class is sorted and deduplicated, and in other places it expects
+/// a glyph class to be an arbitrary sequence of glyphs.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlyphClass(Rc<[GlyphId]>);
 
+/// A glyph or glyph class.
+///
+/// Various places in the FEA spec accept either a single glyph or a glyph class.
 #[derive(Debug, Clone)]
 pub enum GlyphOrClass {
+    /// A resolved GlyphId
     Glyph(GlyphId),
+    /// A resolved glyph class
     Class(GlyphClass),
+    /// An explicit <NULL> glyph
     Null,
 }
 
+/// Either a glyph name or a CID
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GlyphIdent {
+    /// A glyph name
     Name(GlyphName),
+    /// a CID
     Cid(u16),
 }
 
