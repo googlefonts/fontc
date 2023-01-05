@@ -1,5 +1,10 @@
 # fea-rs
 
+[![Crates.io](https://img.shields.io/crates/v/fea-rs?style=flat-square)](https://crates.io/crates/fea-rs)
+[![docs.rs](https://img.shields.io/docsrs/fea-rs?style=flat-square)](https://docs.rs/fea-rs)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE-APACHE)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE-MIT)
+
 Parsing and compiling [Adobe OpenType feature][spec] files.
 
 **status**: We should be able to compile most inputs. Some generated tables

@@ -30,7 +30,7 @@ pub enum GlyphOrClass {
     Glyph(GlyphId),
     /// A resolved glyph class
     Class(GlyphClass),
-    /// An explicit <NULL> glyph
+    /// An explicit `<NULL>` glyph
     Null,
 }
 
