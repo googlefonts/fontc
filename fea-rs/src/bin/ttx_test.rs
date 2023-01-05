@@ -1,17 +1,18 @@
 //! Run the compiler against a bunch of inputs, comparing them with
 //! the results of fonttools.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use clap::Parser;
 use fea_rs::util::ttx;
 
 static TEST_DATA: &str = "./fea-rs/test-data/fonttools-tests";
 static WIP_DIFF_DIR: &str = "./wip";
 
 fn main() {
-    let args = flags::Args::from_env().unwrap();
+    let args = Args::parse();
 
-    let results = ttx::run_all_tests(TEST_DATA, args.test.as_ref());
+    let results = ttx::run_all_tests(TEST_DATA, args.test_filter.as_ref());
 
     if let Some(to_compare) = args
         .compare
@@ -60,23 +61,30 @@ fn save_wip_diffs(results: &ttx::Report) {
     }
 }
 
-mod flags {
-    use std::path::PathBuf;
-    xflags::xflags! {
-
-        /// Compile a fea file into a source font
-        cmd args {
-            optional -v, --verbose
-            /// Optional comma separated list of words matching tests to run.
-            ///
-            /// e.g.: -t "spec5,GPOS" matches spec5h1.fea, spec5fi2.fea, GPOS_2.fea, etc
-            optional -t, --test test_filter: String
-            /// Write diffs to a ./wip directory
-            optional -d, --write-diff
-            /// save the results to a file. you can compare runs with the --compare option
-            optional -s, --save save: PathBuf
-            /// compare results against those previously saved
-            optional -c, --compare compare: PathBuf
-        }
-    }
+/// Compare compilation output to expected results
+#[derive(clap::Parser, Debug)]
+#[command(author, version, long_about = None)]
+struct Args {
+    /// Display more information about failures
+    ///
+    /// This includes errors encountered, as well as the generated diffs when
+    /// comparison fails.
+    #[arg(short, long)]
+    verbose: bool,
+    /// Optional comma separated list of words matching tests to run.
+    ///
+    /// e.g.: -t "spec5,GPOS" matches spec5h1.fea, spec5fi2.fea, GPOS_2.fea, etc
+    #[arg(short, long = "test")]
+    test_filter: Option<String>,
+    /// Write diffs to a ./wip directory
+    #[arg(short, long)]
+    write_diff: bool,
+    /// Save the results to a file, for later comparison.
+    ///
+    /// You can compare runs with the --compare option
+    #[arg(short, long)]
+    save: Option<PathBuf>,
+    /// Compare results against those previously saved
+    #[arg(short, long)]
+    compare: Option<PathBuf>,
 }

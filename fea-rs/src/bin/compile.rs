@@ -1,7 +1,8 @@
 //! Compile features into a font file
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use clap::Parser;
 use fea_rs::{GlyphMap, GlyphName};
 use write_fonts::types::GlyphId;
 
@@ -11,13 +12,9 @@ use write_fonts::types::GlyphId;
 ///
 /// where glyph order is a file listing glyphs, one per line, in glyph id order.
 fn main() -> Result<(), Error> {
-    let args = match flags::Args::from_env() {
-        Ok(args) => args,
-        Err(e) => e.exit(),
-    };
-
-    let names = parse_glyph_order(args.glyph_order())?;
-    let parse = fea_rs::parse_root_file(args.fea(), Some(&names), None).unwrap();
+    let args = Args::parse();
+    let names = parse_glyph_order(&args.glyphs)?;
+    let parse = fea_rs::parse_root_file(&args.fea, Some(&names), None).unwrap();
     let (tree, diagnostics) = parse.generate_parse_tree();
     let mut has_error = false;
     for msg in &diagnostics {
@@ -88,38 +85,34 @@ enum Error {
     File(#[from] std::io::Error),
 }
 
-mod flags {
-    use std::path::{Path, PathBuf};
-    xflags::xflags! {
-        /// Compile a fea file into a source font
-        cmd args {
-            /// Path to the fea file
-            required fea: PathBuf
-            /// Path to a file containing the glyph order.
-            ///
-            /// This should be a utf-8 encoded file with one name per line,
-            /// sorted in glyphid order.
-            required glyphs: PathBuf
+/// Compare compilation output to expected results
+#[derive(Parser, Debug)]
+#[command(author, version, long_about = None)]
+struct Args {
+    /// Display more information about failures
+    ///
+    /// This includes errors encountered, as well as the generated diffs when
+    /// comparison fails.
+    #[arg(short, long)]
+    verbose: bool,
+    /// Path to the fea file
+    fea: PathBuf,
+    /// Path to a file containing the glyph order.
+    ///
+    /// This should be a utf-8 encoded file with one name per line,
+    /// sorted in glyphid order.
+    glyphs: PathBuf,
 
-                /// path to write font. Defaults to 'compile-out.ttf'
-                optional -o, --out-path out_path: PathBuf
-            }
-    }
+    /// path to write font. Defaults to 'compile-out.ttf'
+    #[arg(short, long)]
+    out_path: Option<PathBuf>,
+}
 
-    impl Args {
-        pub fn fea(&self) -> &Path {
-            &self.fea
-        }
-
-        pub fn glyph_order(&self) -> &Path {
-            &self.glyphs
-        }
-
-        pub fn out_path(&self) -> &Path {
-            self.out_path
-                .as_deref()
-                .unwrap_or_else(|| Path::new("compile-out.ttf"))
-        }
+impl Args {
+    pub fn out_path(&self) -> &Path {
+        self.out_path
+            .as_deref()
+            .unwrap_or_else(|| Path::new("compile-out.ttf"))
     }
 }
 
