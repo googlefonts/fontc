@@ -2,7 +2,7 @@
 
 use super::{stack::Stack, Kind, Node, NodeOrToken, Token};
 
-pub struct Cursor<'a> {
+pub(crate) struct Cursor<'a> {
     pos: usize,
     // the current root. This is not directly accessible.
     current: NodeRef<'a>,
@@ -109,38 +109,6 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    /// Move the cursor to the token containing the offset `pos`.
-    ///
-    ///// panics if pos is less than the cursor's current pos.
-    pub fn seek(&mut self, pos: usize) {
-        // first ascend until pos is in front of us.
-        self.move_to_start_of_current_node();
-        while pos < self.pos || pos >= self.pos + self.current.node.text_len() {
-            self.ascend();
-            self.move_to_start_of_current_node();
-        }
-
-        // now we want to find the position of the node that contains
-        // this position. if none exists, we're at a token?
-
-        assert_eq!(self.current.idx, 0);
-        loop {
-            let rel_pos = pos - self.pos;
-            let idx = self.current.idx_for_pos(rel_pos);
-            let len: usize = self.current.children()[..idx]
-                .iter()
-                .map(NodeOrToken::text_len)
-                .sum();
-            self.pos += len;
-            self.current.jump(idx);
-            match self.current() {
-                Some(NodeOrToken::Token(_)) => break,
-                Some(NodeOrToken::Node(node)) => self.descend(node),
-                None => unreachable!(),
-            }
-        }
-    }
-
     fn text_len_if_at_token(&self) -> Option<usize> {
         match self.current()? {
             NodeOrToken::Token(t) => Some(t.text.len()),
@@ -192,12 +160,6 @@ impl<'a> Cursor<'a> {
         }
         self.pos -= len;
     }
-
-    fn move_to_start_of_current_node(&mut self) {
-        let len = self.current.prev_items_len();
-        self.current.jump(0);
-        self.pos -= len;
-    }
 }
 
 impl<'a> NodeRef<'a> {
@@ -216,11 +178,6 @@ impl<'a> NodeRef<'a> {
         self.node.children.get(idx)
     }
 
-    fn jump(&mut self, idx: usize) {
-        self.fresh = true;
-        self.idx = idx;
-    }
-
     /// The length of the items previously visited
     fn prev_items_len(&self) -> usize {
         self.children()[..self.idx]
@@ -231,21 +188,6 @@ impl<'a> NodeRef<'a> {
 
     fn is_done(&self) -> bool {
         self.idx >= self.node.children.len()
-    }
-
-    /// return the idx of the child containing `pos`.
-    ///
-    /// `pos` is relative to the current node.
-    fn idx_for_pos(&mut self, pos: usize) -> usize {
-        assert!(pos < self.node.text_len());
-        let mut text_pos = 0;
-        for (i, child) in self.children().iter().enumerate() {
-            if (text_pos..text_pos + child.text_len()).contains(&pos) {
-                return i;
-            }
-            text_pos += child.text_len();
-        }
-        unreachable!()
     }
 }
 
@@ -262,24 +204,6 @@ mod tests {
     use super::*;
 
     static SAMPLE_FEA: &str = include_str!("../../test-data/fonttools-tests/mini.fea");
-
-    #[test]
-    fn seek() {
-        let fea = Source::from_text(SAMPLE_FEA);
-        let (root, _errs, _) = crate::parse_src(&fea, None);
-
-        let mut cursor = root.cursor();
-        cursor.seek(192);
-        assert_eq!(
-            cursor.current().and_then(NodeOrToken::token_text).unwrap(),
-            "DFLT"
-        );
-        cursor.seek(300);
-        assert_eq!(
-            cursor.current().and_then(NodeOrToken::token_text).unwrap(),
-            "substitute"
-        );
-    }
 
     #[test]
     fn abs_positions() {
