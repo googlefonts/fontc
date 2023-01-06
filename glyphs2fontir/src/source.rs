@@ -113,8 +113,8 @@ impl Source for GlyphsIrSource {
         })
     }
 
-    fn create_static_metadata_work(&self, context: &Context) -> Result<Box<dyn Work>, Error> {
-        self.check_global_metadata(&context.input.global_metadata)?;
+    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
+        self.check_global_metadata(&input.global_metadata)?;
         let font_info = self.cache.as_ref().unwrap().font_info.clone();
         Ok(Box::from(StaticMetadataWork { font_info }))
     }
@@ -122,13 +122,13 @@ impl Source for GlyphsIrSource {
     fn create_glyph_ir_work(
         &self,
         glyph_names: &HashSet<&str>,
-        context: &Context,
-    ) -> Result<Vec<Box<dyn Work>>, fontir::error::Error> {
-        self.check_global_metadata(&context.input.global_metadata)?;
+        input: &Input,
+    ) -> Result<Vec<Box<dyn Work + Send>>, fontir::error::Error> {
+        self.check_global_metadata(&input.global_metadata)?;
 
         let cache = self.cache.as_ref().unwrap();
 
-        let mut work: Vec<Box<dyn Work>> = Vec::new();
+        let mut work: Vec<Box<dyn Work + Send>> = Vec::new();
         for glyph_name in glyph_names {
             work.push(Box::from(
                 self.create_work_for_one_glyph(glyph_name, cache.font_info.clone())?,
@@ -199,9 +199,6 @@ impl Work for GlyphIrWork {
         let static_metadata = context.get_static_metadata();
         let axes = &static_metadata.axes;
 
-        let gid = static_metadata
-            .glyph_id(&self.glyph_name)
-            .ok_or_else(|| WorkError::NoGlyphIdForName(self.glyph_name.clone()))?;
         let glyph = font
             .glyphs
             .get(&self.glyph_name)
@@ -259,7 +256,7 @@ impl Work for GlyphIrWork {
             check_pos(&self.glyph_name, positions, axis, &max)?;
         }
 
-        context.set_glyph_ir(gid, ir_glyph);
+        context.set_glyph_ir(&self.glyph_name, ir_glyph);
         Ok(())
     }
 }
@@ -269,13 +266,12 @@ mod tests {
     use std::{
         collections::{HashMap, HashSet},
         path::{Path, PathBuf},
-        sync::Arc,
     };
 
     use fontir::{
         coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
         error::WorkError,
-        ir::{self, Glyph},
+        ir,
         orchestration::{Context, WorkIdentifier},
         source::{Paths, Source},
         stateset::StateSet,
@@ -363,7 +359,7 @@ mod tests {
         let (source, context) = context_for(glyphs3_dir().join("WghtVar.glyphs"));
         let task_context = context.copy_for_work(WorkIdentifier::StaticMetadata, None);
         source
-            .create_static_metadata_work(&context)
+            .create_static_metadata_work(&context.input)
             .unwrap()
             .exec(&task_context)
             .unwrap();
@@ -390,7 +386,7 @@ mod tests {
         let (source, context) = context_for(glyphs2_dir().join("BadIndexing.glyphs"));
         let task_context = context.copy_for_work(WorkIdentifier::StaticMetadata, None);
         source
-            .create_static_metadata_work(&context)
+            .create_static_metadata_work(&context.input)
             .unwrap()
             .exec(&task_context)
             .unwrap();
@@ -401,7 +397,7 @@ mod tests {
         let (source, context) = context_for(glyphs2_dir().join("WghtVar_AxisMappings.glyphs"));
         let task_context = context.copy_for_work(WorkIdentifier::StaticMetadata, None);
         source
-            .create_static_metadata_work(&context)
+            .create_static_metadata_work(&context.input)
             .unwrap()
             .exec(&task_context)
             .unwrap();
@@ -437,7 +433,7 @@ mod tests {
         let (source, context) = context_for(glyphs_file);
         let task_context = context.copy_for_work(WorkIdentifier::StaticMetadata, None);
         source
-            .create_static_metadata_work(&task_context)
+            .create_static_metadata_work(&context.input)
             .unwrap()
             .exec(&task_context)
             .unwrap();
@@ -449,28 +445,19 @@ mod tests {
         context: &Context,
         glyph_names: Vec<&'a String>,
     ) -> Result<(), WorkError> {
-        for glyph_name in glyph_names {
-            let static_metadata = context.get_static_metadata();
-            let glyph_id = static_metadata.glyph_id(glyph_name).unwrap();
-
+        for glyph_name in glyph_names.iter() {
             let work_items = source
-                .create_glyph_ir_work(&HashSet::from([glyph_name.as_str()]), context)
+                .create_glyph_ir_work(&HashSet::from([glyph_name.as_str()]), &context.input)
                 .unwrap();
             for work in work_items.iter() {
                 let task_context = context.copy_for_work(
-                    WorkIdentifier::GlyphIr(glyph_id),
+                    WorkIdentifier::GlyphIr(glyph_name.to_string()),
                     Some(HashSet::from([WorkIdentifier::StaticMetadata])),
                 );
                 work.exec(&task_context)?;
             }
         }
         Ok(())
-    }
-
-    fn glyph_ir(context: &Context, glyph_name: &String) -> Arc<Glyph> {
-        let static_metadata = context.get_static_metadata();
-        let glyph_id = static_metadata.glyph_id(glyph_name).unwrap();
-        context.get_glyph_ir(glyph_id)
     }
 
     #[test]
@@ -486,7 +473,8 @@ mod tests {
                 &NormalizedLocation::on_axis("Weight", NormalizedCoord::new(0.0)),
                 &NormalizedLocation::on_axis("Weight", NormalizedCoord::new(1.0)),
             ]),
-            glyph_ir(&context, &glyph_name)
+            context
+                .get_glyph_ir(&glyph_name)
                 .sources
                 .keys()
                 .collect::<HashSet<_>>()

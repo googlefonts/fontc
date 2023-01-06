@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ffi::OsStr,
     fs, io,
     path::{Path, PathBuf},
@@ -14,9 +14,9 @@ use fontir::{
     stateset::StateSet,
 };
 use glyphs2fontir::source::GlyphsIrSource;
-use log::{debug, error, info, warn};
-use rayon::prelude::*;
+use log::{error, info, log_enabled, trace, warn};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use ufo2fontir::source::DesignSpaceIrSource;
 
 /// What font can we build for you today?
@@ -37,7 +37,6 @@ struct Config {
     args: Args,
     // The compiler previously used so if the compiler changes config invalidates
     compiler: StateSet,
-
     build_dir: PathBuf,
 }
 
@@ -167,69 +166,61 @@ fn glyphs_deleted<'a>(current_inputs: &Input, prev_inputs: &'a Input) -> HashSet
         .collect()
 }
 
-fn add_static_metadata_work(
+fn add_static_metadata_ir_job(
     change_detector: &mut ChangeDetector,
-    context: &Context,
-    work: &mut Vec<Box<dyn Work>>,
+    jobs: &mut HashMap<WorkIdentifier, Job>,
 ) -> Result<(), Error> {
-    let context = context.copy_for_work(WorkIdentifier::StaticMetadata, None);
-    work.push(
-        change_detector
-            .ir_source
-            .create_static_metadata_work(&context)?,
+    // TODO don't recreate static metadata if we don't have to
+    jobs.insert(
+        WorkIdentifier::StaticMetadata,
+        Job {
+            work: change_detector
+                .ir_source
+                .create_static_metadata_work(&change_detector.current_inputs)?,
+            happens_after: HashSet::new(),
+        },
     );
     Ok(())
 }
 
-fn add_glyph_work(
-    config: &Config,
+fn add_glyph_ir_jobs(
     change_detector: &mut ChangeDetector,
-    context: &Context,
-    work: &mut Vec<Box<dyn Work>>,
+    jobs: &mut HashMap<WorkIdentifier, Job>,
 ) -> Result<(), Error> {
-    // Destroy IR for deleted glyphs
-    work.extend(
-        glyphs_deleted(
-            &change_detector.current_inputs,
-            &change_detector.prev_inputs,
-        )
-        .iter()
-        .map(|glyph_name| DeleteWork::create(change_detector.paths.glyph_ir_file(glyph_name))),
-    );
+    // Destroy IR for deleted glyphs. No dependencies.
+    for glyph_name in glyphs_deleted(
+        &change_detector.current_inputs,
+        &change_detector.prev_inputs,
+    )
+    .iter()
+    {
+        jobs.insert(
+            WorkIdentifier::GlyphIrDelete(glyph_name.to_string()),
+            Job {
+                work: DeleteWork::create(change_detector.paths.glyph_ir_file(glyph_name)),
+                happens_after: HashSet::new(),
+            },
+        );
+    }
 
     // Generate IR for changed glyphs
     let glyphs_changed = glyphs_changed(change_detector);
     let glyph_work = change_detector
         .ir_source
-        .create_glyph_ir_work(&glyphs_changed, context)?;
-    if config.args.emit_ir {}
-    work.extend(glyph_work);
+        .create_glyph_ir_work(&glyphs_changed, &change_detector.current_inputs)?;
+    for (glyph_name, work) in glyphs_changed.iter().zip(glyph_work) {
+        let id = WorkIdentifier::GlyphIr(glyph_name.to_string());
+        let happens_after = HashSet::from([WorkIdentifier::StaticMetadata]);
 
-    Ok(())
-}
-
-fn do_work(context: &Context, work: Vec<Box<dyn Work>>) -> Result<(), Error> {
-    let work_units = work.len();
-    debug!("{} work units to execute", work_units);
-
-    // TODO: https://github.com/googlefonts/fontmake-rs/pull/26 style execution w/task-specific contexts
-    let errors: Vec<WorkError> = work
-        .into_par_iter()
-        .filter_map(|work| work.exec(context).err())
-        .collect();
-    for error in errors.iter() {
-        warn!("{}", error);
-    }
-    if !errors.is_empty() {
-        error!(
-            "{}/{} work units failed, details logged at warn",
-            errors.len(),
-            work_units
+        jobs.insert(
+            id,
+            Job {
+                work,
+                happens_after,
+            },
         );
-        return Err(Error::IrGenerationError);
-    } else {
-        debug!("{}/{} work units successful", work_units, work_units);
     }
+
     Ok(())
 }
 
@@ -255,8 +246,63 @@ impl ChangeDetector {
     }
 }
 
+/// A unit of executable work plus the identifiers of work that it depends on
+struct Job {
+    // The actual task
+    work: Box<dyn Work + Send>,
+    // Things that must happen before us, e.g. our dependencies
+    happens_after: HashSet<WorkIdentifier>,
+}
+
+fn create_jobs(
+    change_detector: &mut ChangeDetector,
+) -> Result<HashMap<WorkIdentifier, Job>, Error> {
+    let mut jobs = HashMap::new();
+
+    // FE: f(source) => IR
+    add_static_metadata_ir_job(change_detector, &mut jobs)?;
+    add_glyph_ir_jobs(change_detector, &mut jobs)?;
+
+    // BE: f(IR) => binary
+    // TODO :)
+
+    Ok(jobs)
+}
+
+fn launchable(
+    pending_jobs: &HashMap<WorkIdentifier, Job>,
+    success: &HashSet<WorkIdentifier>,
+) -> Vec<WorkIdentifier> {
+    pending_jobs
+        .iter()
+        .filter_map(|(id, job)| {
+            let can_start = job.happens_after.is_subset(success);
+            if !can_start && log_enabled!(log::Level::Trace) {
+                let mut unfulfilled_deps: Vec<_> =
+                    job.happens_after.difference(success).into_iter().collect();
+                unfulfilled_deps.sort();
+                trace!("Cannot start {:?}, blocked on {:?}", id, unfulfilled_deps);
+            };
+            can_start.then(|| id.clone())
+        })
+        .collect()
+}
+
 fn main() -> Result<(), Error> {
-    env_logger::init();
+    env_logger::builder()
+        .format(|buf, record| {
+            let ts = buf.timestamp_micros();
+            writeln!(
+                buf,
+                "{}: {:?}: {}: {}",
+                ts,
+                std::thread::current().id(),
+                buf.default_level_style(record.level())
+                    .value(record.level()),
+                record.args()
+            )
+        })
+        .init();
 
     let paths = Paths::new(Path::new("build"));
     let build_dir = require_dir(paths.build_dir())?;
@@ -265,31 +311,71 @@ fn main() -> Result<(), Error> {
     let prev_inputs = init(&config).map_err(Error::IoError)?;
 
     let mut change_detector = ChangeDetector::new(config.clone(), paths.clone(), prev_inputs)?;
-    let context = Context::new_root(
-        config.args.emit_ir,
-        paths,
-        change_detector.current_inputs.clone(),
-    );
+    let mut pending_jobs = create_jobs(&mut change_detector)?;
+    let job_count = pending_jobs.len();
 
-    // TODO: consider making a more explicit model of a graph
-    // TODO: Rayon focuses on CPU-bound tasks but we are doing IO too
-    // perhaps we should do the IO first, e.g. read (but not parse) inputs, etc?
+    // Async work will send us it's ID on completion
+    let (send, recv) = crossbeam_channel::unbounded::<(WorkIdentifier, Result<(), WorkError>)>();
+    let mut success = HashSet::new();
+    let mut error = HashSet::new();
+    rayon::in_place_scope(|scope| {
+        let root_context = Context::new_root(
+            config.args.emit_ir,
+            paths,
+            change_detector.current_inputs.clone(),
+        );
 
-    // TODO: enter metadata work onto threadpool, proper dependencies
-    // Pending proper graph processing just run it first
-    let mut work: Vec<Box<dyn Work>> = Vec::new();
-    add_static_metadata_work(&mut change_detector, &context, &mut work)?;
-    do_work(&context, work)?;
+        // Whenever a task completes see if it was the last incomplete dependency of other task(s)
+        // and spawn them if it was
+        // TODO timeout and die it if takes too long to make forward progress or we're spinning w/o progress
+        while success.len() < job_count && error.is_empty() {
+            // Spawn anything that is currently executable (has no unfulfilled dependencies)
+            for id in launchable(&pending_jobs, &success) {
+                info!("Start {:?}", id);
+                let job = pending_jobs.remove(&id).unwrap();
+                let work = job.work;
+                let work_context = root_context.copy_for_work(id.clone(), Some(job.happens_after));
+                let send = send.clone();
+                scope.spawn(move |_| {
+                    let result = work.exec(&work_context);
+                    if let Err(e) = send.send((id.clone(), result)) {
+                        error!("Unable to write {:?} to completion channel: {}", id, e);
+                    }
+                })
+            }
 
-    // Accumulate work for the parts of IR that trivially parallelize
-    let mut work: Vec<Box<dyn Work>> = Vec::new();
+            // Block for things to phone home to say they are done
+            // Then complete everything that has reported since our last check
+            let mut opt_complete = Some(recv.recv().unwrap()); // blocks
+            while let Some((completed_id, result)) = opt_complete.take() {
+                if !match result {
+                    Ok(..) => success.insert(completed_id.clone()),
+                    Err(..) => error.insert(completed_id.clone()),
+                } {
+                    panic!("Repeat signals for completion of {:#?}", completed_id);
+                }
+                info!(
+                    "{}/{} complete, most recently {:?}",
+                    error.len() + success.len(),
+                    pending_jobs.len(),
+                    completed_id
+                );
 
-    add_glyph_work(&config, &mut change_detector, &context, &mut work)?;
+                // See if anything else is complete in case things come in waves
+                if let Ok(completed_id) = recv.try_recv() {
+                    opt_complete = Some(completed_id);
+                }
+            }
+        }
+    });
 
-    // Try to do the work
-    do_work(&context, work)?;
-
-    // Goodness, it all seems to have worked
+    // Did we win?
+    if !error.is_empty() {
+        return Err(Error::TasksFailed);
+    }
+    if success.len() != job_count {
+        panic!("No error but not everything succeeded?!");
+    }
     finish_successfully(change_detector)?;
     Ok(())
 }
@@ -298,7 +384,7 @@ fn main() -> Result<(), Error> {
 mod tests {
 
     use std::{
-        collections::HashSet,
+        collections::{HashMap, HashSet},
         fs,
         path::{Path, PathBuf},
     };
@@ -308,8 +394,8 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::{
-        add_glyph_work, add_static_metadata_work, finish_successfully, glyphs_changed,
-        glyphs_deleted, init, require_dir, Args, ChangeDetector, Config,
+        add_glyph_ir_jobs, add_static_metadata_ir_job, finish_successfully, glyphs_changed,
+        glyphs_deleted, init, launchable, require_dir, Args, ChangeDetector, Config,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -404,23 +490,37 @@ mod tests {
 
         let mut change_detector =
             ChangeDetector::new(config.clone(), paths.clone(), prev_inputs).unwrap();
-        let work_context = Context::new_root(
+        let result = TestCompile::new(&change_detector);
+
+        let mut jobs = HashMap::new();
+
+        add_static_metadata_ir_job(&mut change_detector, &mut jobs).unwrap();
+        add_glyph_ir_jobs(&mut change_detector, &mut jobs).unwrap();
+
+        // Try to do the work
+        // As we currently don't stress dependencies just run one by one
+        // This will likely need to change when we start doing things like glyphs with components
+        let root_context = Context::new_root(
             config.args.emit_ir,
             paths,
             change_detector.current_inputs.clone(),
         );
-        let result = TestCompile::new(&change_detector);
-
-        let mut work = Vec::new();
-
-        add_static_metadata_work(&mut change_detector, &work_context, &mut work).unwrap();
-        add_glyph_work(&config, &mut change_detector, &work_context, &mut work).unwrap();
-
-        // Try to do the work
-        for work_item in work {
-            work_item.exec(&work_context).unwrap();
+        let mut complete = HashSet::new();
+        while !jobs.is_empty() {
+            let launchable = launchable(&jobs, &complete);
+            assert!(
+                !launchable.is_empty(),
+                "Unable to make forward progress, bad graph?"
+            );
+            let id = &launchable[0];
+            let job = jobs.remove(id).unwrap();
+            job.work.exec(&root_context).unwrap();
+            assert!(
+                complete.insert(id.clone()),
+                "We just did {:?} a second time?",
+                id
+            );
         }
-
         finish_successfully(change_detector).unwrap();
         result
     }

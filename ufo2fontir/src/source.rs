@@ -246,8 +246,8 @@ impl Source for DesignSpaceIrSource {
         })
     }
 
-    fn create_static_metadata_work(&self, context: &Context) -> Result<Box<dyn Work>, Error> {
-        self.check_global_metadata(&context.input.global_metadata)?;
+    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
+        self.check_global_metadata(&input.global_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
         Ok(Box::from(StaticMetadataWork {
@@ -260,20 +260,18 @@ impl Source for DesignSpaceIrSource {
     fn create_glyph_ir_work(
         &self,
         glyph_names: &HashSet<&str>,
-        context: &Context,
-    ) -> Result<Vec<Box<dyn Work>>, Error> {
-        self.check_global_metadata(&context.input.global_metadata)?;
+        input: &Input,
+    ) -> Result<Vec<Box<dyn Work + Send>>, Error> {
+        self.check_global_metadata(&input.global_metadata)?;
 
         // A single glif could be used by many source blocks that use the same layer
         // *gasp*
         // So resolve each file to 1..N locations in designspace
-
-        let input = context.input.clone();
-        let mut work: Vec<Box<dyn Work>> = Vec::new();
+        let mut work: Vec<Box<dyn Work + Send>> = Vec::new();
 
         for glyph_name in glyph_names {
             work.push(Box::from(
-                self.create_work_for_one_glyph(glyph_name, &input)?,
+                self.create_work_for_one_glyph(glyph_name, input)?,
             ));
         }
 
@@ -427,9 +425,6 @@ impl Work for GlyphIrWork {
             self.glyph_name, self.glif_files
         );
         let static_metadata = context.get_static_metadata();
-        let gid = static_metadata
-            .glyph_id(&self.glyph_name)
-            .ok_or_else(|| WorkError::NoGlyphIdForName(self.glyph_name.clone()))?;
 
         // Migrate glif_files into internal coordinates
         let axes_by_name = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();
@@ -444,7 +439,7 @@ impl Work for GlyphIrWork {
 
         let glyph_ir = to_ir_glyph(&self.glyph_name, &glif_files)
             .map_err(|e| WorkError::GlyphIrWorkError(self.glyph_name.clone(), e.to_string()))?;
-        context.set_glyph_ir(gid, glyph_ir);
+        context.set_glyph_ir(&self.glyph_name, glyph_ir);
         Ok(())
     }
 }

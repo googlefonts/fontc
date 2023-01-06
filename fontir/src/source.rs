@@ -21,7 +21,7 @@ use crate::{
 /// See <https://github.com/rust-lang/rust/issues/29625>.
 ///
 /// Data produced by work is written into [Context].
-pub trait Work: Send {
+pub trait Work {
     fn exec(&self, context: &Context) -> Result<(), WorkError>;
 }
 
@@ -31,7 +31,7 @@ pub struct DeleteWork {
 }
 
 impl DeleteWork {
-    pub fn create(path: PathBuf) -> Box<dyn Work> {
+    pub fn create(path: PathBuf) -> Box<dyn Work + Send> {
         Box::from(DeleteWork { path })
     }
 }
@@ -56,16 +56,20 @@ pub trait Source {
     /// Create a function that could be called to generate [crate::ir::StaticMetadata].
     ///
     /// When run work should update [Context] with new [crate::ir::StaticMetadata].
-    fn create_static_metadata_work(&self, context: &Context) -> Result<Box<dyn Work>, Error>;
+    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error>;
 
     /// Create a function that could be called to generate IR for glyphs.
     ///
     /// Batched because some formats require IO to figure out the work.
+    /// Expected to return a Vec aligned with the glyph_names input. That is,
+    /// result vec nth entry is the work for the nth glyph name.
+    ///
+    /// When run work should update [Context] with [crate::ir::Glyph] for the glyph name.
     fn create_glyph_ir_work(
         &self,
         glyph_names: &HashSet<&str>,
-        context: &Context,
-    ) -> Result<Vec<Box<dyn Work>>, Error>;
+        input: &Input,
+    ) -> Result<Vec<Box<dyn Work + Send>>, Error>;
 }
 
 /// Where does IR go anyway?
