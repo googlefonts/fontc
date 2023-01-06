@@ -195,6 +195,21 @@ fn add_static_metadata_ir_job(
     Ok(())
 }
 
+fn add_feature_ir_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    // TODO don't recreate features if we don't have to
+    workload.insert(
+        WorkIdentifier::FeatureIr,
+        Job {
+            work: change_detector.ir_source.create_feature_ir_work()?,
+            happens_after: HashSet::from([WorkIdentifier::StaticMetadata]),
+        },
+    );
+    Ok(())
+}
+
 fn add_glyph_ir_jobs(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
@@ -370,6 +385,7 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
 
     // FE: f(source) => IR
     add_static_metadata_ir_job(change_detector, &mut workload)?;
+    add_feature_ir_job(change_detector, &mut workload)?;
     add_glyph_ir_jobs(change_detector, &mut workload)?;
 
     // BE: f(IR) => binary

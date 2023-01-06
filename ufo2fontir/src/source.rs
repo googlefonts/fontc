@@ -277,6 +277,10 @@ impl Source for DesignSpaceIrSource {
 
         Ok(work)
     }
+
+    fn create_feature_ir_work(&self) -> Result<Box<dyn Work + Send>, Error> {
+        todo!()
+    }
 }
 
 impl DesignSpaceIrSource {

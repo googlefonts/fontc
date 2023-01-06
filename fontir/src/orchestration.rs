@@ -20,6 +20,7 @@ pub enum WorkIdentifier {
     StaticMetadata,
     GlyphIr(String),
     GlyphIrDelete(String),
+    FeatureIr,
     FinishIr,
 }
 
@@ -52,6 +53,7 @@ pub struct Context {
     // We create individual caches so we can return typed results from get fns
     static_metadata: Cache<Option<Arc<ir::StaticMetadata>>>,
     glyph_ir: Cache<HashMap<String, Arc<ir::Glyph>>>,
+    feature_ir: Cache<Option<Arc<ir::Features>>>,
 }
 
 #[derive(Clone)]
@@ -77,6 +79,7 @@ impl Context {
             read_mask: None,
             static_metadata: Cache::new(),
             glyph_ir: Cache::new(),
+            feature_ir: Cache::new(),
         }
     }
 }
@@ -95,6 +98,7 @@ impl Context {
             read_mask: dependencies.or_else(|| Some(HashSet::new())),
             static_metadata: self.static_metadata.clone(),
             glyph_ir: self.glyph_ir.clone(),
+            feature_ir: self.feature_ir.clone(),
         }
     }
 
@@ -142,14 +146,14 @@ impl Context {
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
-    pub fn set_static_metadata(&self, static_metadata: ir::StaticMetadata) {
+    pub fn set_static_metadata(&self, ir: ir::StaticMetadata) {
         self.check_write_access(&WorkIdentifier::StaticMetadata);
         self.maybe_persist(
             &self.paths.target_file(&WorkIdentifier::StaticMetadata),
             &static_metadata,
         );
         let mut wl = self.static_metadata.item.write();
-        *wl = Some(Arc::from(static_metadata));
+        *wl = Some(Arc::from(ir));
     }
 
     pub fn get_glyph_ir(&self, glyph_name: &str) -> Arc<ir::Glyph> {
@@ -165,5 +169,18 @@ impl Context {
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         let mut wl = self.glyph_ir.item.write();
         wl.insert(glyph_name.to_string(), Arc::from(ir));
+    }
+
+    pub fn get_features(&self) -> Arc<ir::Features> {
+        self.check_read_access(&WorkIdentifier::FeatureIr);
+        let rl = self.feature_ir.item.read();
+        rl.as_ref().expect(MISSING_DATA).clone()
+    }
+
+    pub fn set_features(&self, ir: ir::Features) {
+        self.check_write_access(&WorkIdentifier::FeatureIr);
+        self.maybe_persist(&self.paths.feature_ir_file(), &ir);
+        let mut wl = self.feature_ir.item.write();
+        *wl = Some(Arc::from(ir));
     }
 }

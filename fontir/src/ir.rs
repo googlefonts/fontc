@@ -43,9 +43,18 @@ pub struct Axis {
     pub converter: CoordConverter,
 }
 
+/// Features (Adobe fea).
+///
+/// In time will split gpos/gsub, have different features for different
+/// locations, etc.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Features {
+    pub features: String,
+}
+
 /// A variable definition of a single glyph.
 ///
-/// Defined in at least once position in designspace. If defined in
+/// Defined in at least one position. If defined in
 /// many, presumed to vary continuously between positions and required
 /// to have variation compatible structure.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]

@@ -71,6 +71,11 @@ pub trait Source {
         glyph_names: &IndexSet<&str>,
         input: &Input,
     ) -> Result<Vec<Box<dyn Work + Send>>, Error>;
+
+    /// Create a function that could be called to generate or identify fea file(s).
+    ///
+    /// When run work should update [Context] with [crate::ir::Features].
+    fn create_feature_ir_work(&self) -> Result<Box<dyn Work + Send>, Error>;
 }
 
 /// The files (in future non-file sources?) that drive various parts of IR
