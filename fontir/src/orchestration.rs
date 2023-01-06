@@ -18,18 +18,6 @@ use crate::{
     source::{Input, Paths},
 };
 
-// /// An identifier for glyph work that is definitely NOT a glyph id (gid).
-// ///
-// /// Never, ever, use this as a gid.
-// #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-// pub struct ArbitraryGlyphIdentifier(usize);
-
-// impl From<usize> for ArbitraryGlyphIdentifier {
-//     fn from(idx: usize) -> Self {
-//         ArbitraryGlyphIdentifier(idx)
-//     }
-// }
-
 // Unique identifier of work. If there are no fields work is unique.
 // Meant to be small and cheap to copy around.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
