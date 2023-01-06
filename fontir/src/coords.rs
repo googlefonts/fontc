@@ -31,12 +31,11 @@ pub struct NormalizedCoord(OrderedFloat<f32>);
 
 /// A set of per-axis coordinates that define a specific location in a coordinate system.
 ///
-/// E.g. a user location is a `Location<UserCoord>`.
+/// E.g. a user location is a `Location<UserCoord>`. Hashable so it can do things like be
+/// the key for a map of sources by location.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Location<T>(pub BTreeMap<String, T>);
+pub struct Location<T>(BTreeMap<String, T>);
 
-// Using BTreeMap instead of HashMap and OrderedFloat instead of f32 so that
-// the location is hashable and can be used as a key in Glyph::sources HashMap
 pub type DesignLocation = Location<DesignCoord>;
 pub type UserLocation = Location<UserCoord>;
 pub type NormalizedLocation = Location<NormalizedCoord>;
@@ -175,6 +174,10 @@ impl<T> Location<T> {
     pub fn on_axis(name: &str, pos: T) -> Location<T> {
         Location(BTreeMap::from([(name.to_string(), pos)]))
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
+        self.0.iter()
+    }
 }
 
 impl DesignLocation {
@@ -182,10 +185,10 @@ impl DesignLocation {
         Location::<NormalizedCoord>(
             self.0
                 .iter()
-                .map(|(tag, dc)| {
+                .map(|(name, dc)| {
                     (
-                        tag.clone(),
-                        dc.to_normalized(&axes.get(tag).unwrap().converter),
+                        name.clone(),
+                        dc.to_normalized(&axes.get(name).unwrap().converter),
                     )
                 })
                 .collect(),

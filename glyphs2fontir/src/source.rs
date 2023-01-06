@@ -221,7 +221,7 @@ impl Work for GlyphIrWork {
             let master = &font.font_master[*master_idx];
             let location = &font_info.master_locations[master.id.as_str()];
 
-            for (tag, coord) in location.0.iter() {
+            for (tag, coord) in location.iter() {
                 axis_positions
                     .entry(tag.clone())
                     .or_default()
@@ -253,7 +253,7 @@ impl Work for GlyphIrWork {
             let min = axis.min.to_normalized(&axis.converter);
             let max = axis.max.to_normalized(&axis.converter);
             let default = axis.max.to_normalized(&axis.converter);
-            let positions = axis_positions.get(&axis.tag).unwrap();
+            let positions = axis_positions.get(&axis.name).unwrap();
             check_pos(&self.glyph_name, positions, axis, &min)?;
             check_pos(&self.glyph_name, positions, axis, &default)?;
             check_pos(&self.glyph_name, positions, axis, &max)?;
@@ -480,9 +480,9 @@ mod tests {
 
         assert_eq!(
             HashSet::from([
-                &NormalizedLocation::on_axis("wght", NormalizedCoord::new(-1.0)),
-                &NormalizedLocation::on_axis("wght", NormalizedCoord::new(0.0)),
-                &NormalizedLocation::on_axis("wght", NormalizedCoord::new(1.0)),
+                &NormalizedLocation::on_axis("Weight", NormalizedCoord::new(-1.0)),
+                &NormalizedLocation::on_axis("Weight", NormalizedCoord::new(0.0)),
+                &NormalizedLocation::on_axis("Weight", NormalizedCoord::new(1.0)),
             ]),
             glyph_ir(&context, &glyph_name)
                 .sources

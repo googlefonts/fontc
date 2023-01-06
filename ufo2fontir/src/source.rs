@@ -431,12 +431,12 @@ impl Work for GlyphIrWork {
             .ok_or_else(|| WorkError::NoGlyphIdForName(self.glyph_name.clone()))?;
 
         // Migrate glif_files into internal coordinates
-        let axes_by_tag = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();
+        let axes_by_name = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();
         let mut glif_files = HashMap::new();
         for (path, design_locations) in self.glif_files.iter() {
             let normalized_locations: Vec<NormalizedLocation> = design_locations
                 .iter()
-                .map(|dl| dl.to_normalized(&axes_by_tag))
+                .map(|dl| dl.to_normalized(&axes_by_name))
                 .collect();
             glif_files.insert(path, normalized_locations);
         }
