@@ -7,7 +7,7 @@ use crate::{
 };
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, fs, io, path::Path};
 
 /// Global font info that cannot vary.
 ///
@@ -50,6 +50,20 @@ pub struct Axis {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Features {
     pub features: String,
+}
+
+impl Features {
+    pub fn empty() -> Features {
+        Features {
+            features: String::from(""),
+        }
+    }
+
+    pub fn from_file(file: &Path) -> Result<Features, io::Error> {
+        Ok(Features {
+            features: fs::read_to_string(file)?,
+        })
+    }
 }
 
 /// A variable definition of a single glyph.

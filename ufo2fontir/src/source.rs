@@ -7,13 +7,13 @@ use std::{
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
-    ir::{Axis, StaticMetadata},
+    ir::{Axis, Features, StaticMetadata},
     orchestration::Context,
     source::{Input, Source, Work},
     stateset::{StateIdentifier, StateSet},
 };
 use indexmap::IndexSet;
-use log::{debug, warn};
+use log::{debug, trace, warn};
 use norad::designspace::{self, DesignSpaceDocument};
 
 use crate::toir::{to_design_location, to_ir_axis, to_ir_glyph};
@@ -45,22 +45,25 @@ struct Cache {
     glyph_names: Arc<HashSet<String>>,
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
+    fea_files: Arc<Vec<PathBuf>>,
 }
 
 impl Cache {
     fn new(
-        global_metadata_sources: StateSet,
+        static_metadata_sources: StateSet,
         glyph_names: HashSet<String>,
         locations: HashMap<PathBuf, Vec<DesignLocation>>,
         designspace_file: PathBuf,
         designspace: DesignSpaceDocument,
+        feature_files: Vec<PathBuf>,
     ) -> Cache {
         Cache {
-            global_metadata_sources,
+            global_metadata_sources: static_metadata_sources,
             glyph_names: Arc::from(glyph_names),
             locations,
             designspace_file,
             designspace: Arc::from(designspace),
+            fea_files: Arc::from(feature_files),
         }
     }
 
@@ -100,7 +103,7 @@ fn glif_files<'a>(
 fn layer_contents(ufo_dir: &Path) -> Result<HashMap<String, PathBuf>, Error> {
     let file = ufo_dir.join("layercontents.plist");
     if !file.is_file() {
-        return Err(Error::FileExpected(file));
+        return Ok(HashMap::new());
     }
     let contents: Vec<(String, PathBuf)> =
         plist::from_file(&file).map_err(|e| Error::ParseError(file, e.to_string()))?;
@@ -146,7 +149,7 @@ impl DesignSpaceIrSource {
 
         for (idx, source) in designspace.sources.iter().enumerate() {
             let ufo_dir = self.designspace_dir.join(&source.filename);
-            for filename in ["fontinfo.plist", "layercontents.plist", "lib.plist"] {
+            for filename in ["fontinfo.plist", "lib.plist"] {
                 // Only track lib.plist for the default master
                 if filename == "lib.plist" && idx != default_master_idx {
                     continue;
@@ -182,7 +185,7 @@ impl DesignSpaceIrSource {
 impl Source for DesignSpaceIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         let designspace = self.load_designspace()?;
-        let global_metadata = self.global_rebuild_triggers(&designspace)?;
+        let static_metadata = self.global_rebuild_triggers(&designspace)?;
 
         // glif filenames are not reversible so we need to read contents.plist to figure out groups
         // See https://github.com/unified-font-object/ufo-spec/issues/164.
@@ -232,22 +235,38 @@ impl Source for DesignSpaceIrSource {
             }
         }
 
+        let ds_dir = self.designspace_file.parent().unwrap();
+        let fea_files: Vec<_> = designspace
+            .sources
+            .iter()
+            .filter_map(|s| {
+                let fea_file = ds_dir.join(&s.filename).join("features.fea");
+                fea_file.is_file().then_some(fea_file)
+            })
+            .collect();
+        let mut features = StateSet::new();
+        for fea_file in fea_files.iter() {
+            features.track_file(fea_file)?;
+        }
+
         self.cache = Some(Cache::new(
-            global_metadata.clone(),
+            static_metadata.clone(),
             glyph_names,
             glif_locations,
             self.designspace_file.clone(),
             designspace,
+            fea_files,
         ));
 
         Ok(Input {
-            global_metadata,
+            static_metadata,
             glyphs,
+            features,
         })
     }
 
     fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
-        self.check_global_metadata(&input.global_metadata)?;
+        self.check_global_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
         Ok(Box::from(StaticMetadataWork {
@@ -257,12 +276,22 @@ impl Source for DesignSpaceIrSource {
         }))
     }
 
+    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
+        self.check_global_metadata(&input.static_metadata)?;
+        let cache = self.cache.as_ref().unwrap();
+
+        Ok(Box::from(FeatureWork {
+            designspace_file: cache.designspace_file.clone(),
+            fea_files: cache.fea_files.clone(),
+        }))
+    }
+
     fn create_glyph_ir_work(
         &self,
         glyph_names: &IndexSet<&str>,
         input: &Input,
     ) -> Result<Vec<Box<dyn Work + Send>>, Error> {
-        self.check_global_metadata(&input.global_metadata)?;
+        self.check_global_metadata(&input.static_metadata)?;
 
         // A single glif could be used by many source blocks that use the same layer
         // *gasp*
@@ -276,10 +305,6 @@ impl Source for DesignSpaceIrSource {
         }
 
         Ok(work)
-    }
-
-    fn create_feature_ir_work(&self) -> Result<Box<dyn Work + Send>, Error> {
-        todo!()
     }
 }
 
@@ -320,6 +345,11 @@ struct StaticMetadataWork {
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
     glyph_names: Arc<HashSet<String>>,
+}
+
+struct FeatureWork {
+    designspace_file: PathBuf,
+    fea_files: Arc<Vec<PathBuf>>,
 }
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
@@ -401,6 +431,21 @@ fn ir_axes(designspace: &DesignSpaceDocument) -> Vec<Axis> {
     designspace.axes.iter().map(to_ir_axis).collect()
 }
 
+fn files_identical(f1: &Path, f2: &Path) -> Result<bool, WorkError> {
+    if !f1.is_file() {
+        return Err(WorkError::FileExpected(f1.to_path_buf()));
+    }
+    if !f2.is_file() {
+        return Err(WorkError::FileExpected(f2.to_path_buf()));
+    }
+    let m1 = f1.metadata().map_err(WorkError::IoError)?;
+    let m2 = f2.metadata().map_err(WorkError::IoError)?;
+    if m1.len() != m2.len() {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
 impl Work for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
@@ -417,6 +462,32 @@ impl Work for StaticMetadataWork {
     }
 }
 
+impl Work for FeatureWork {
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        debug!("Features for {:#?}", self.designspace_file);
+
+        // TODO: support feature files that aren't identical
+        let fea_files = self.fea_files.as_ref();
+        for fea_file in fea_files.iter().skip(1) {
+            if !files_identical(&fea_files[0], fea_file)? {
+                warn!("Bailing out due to non-identical feature files. This is an unnecessary limitation.");
+                return Err(WorkError::FileMismatch(
+                    fea_files[0].to_path_buf(),
+                    fea_file.to_path_buf(),
+                ));
+            }
+        }
+
+        if !fea_files.is_empty() {
+            context.set_features(Features::from_file(&fea_files[0]).map_err(WorkError::IoError)?);
+        } else {
+            context.set_features(Features::empty());
+        }
+
+        Ok(())
+    }
+}
+
 struct GlyphIrWork {
     glyph_name: String,
     glif_files: HashMap<PathBuf, Vec<DesignLocation>>,
@@ -424,9 +495,10 @@ struct GlyphIrWork {
 
 impl Work for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        debug!(
+        trace!(
             "Generate glyph IR for {} from {:#?}",
-            self.glyph_name, self.glif_files
+            self.glyph_name,
+            self.glif_files
         );
         let static_metadata = context.get_static_metadata();
 

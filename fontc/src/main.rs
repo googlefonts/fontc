@@ -135,63 +135,77 @@ fn finish_successfully(context: ChangeDetector) -> Result<(), Error> {
     fs::write(context.paths.ir_input_file(), current_sources).map_err(Error::IoError)
 }
 
-fn global_change(current_inputs: &Input, prev_inputs: &Input) -> bool {
-    current_inputs.global_metadata != prev_inputs.global_metadata
-}
+impl ChangeDetector {
+    fn static_metadata_change(&self) -> bool {
+        self.current_inputs.static_metadata != self.prev_inputs.static_metadata
+            || !self
+                .paths
+                .target_file(&WorkIdentifier::StaticMetadata)
+                .is_file()
+    }
 
-fn glyphs_changed(context: &ChangeDetector) -> IndexSet<&str> {
-    if global_change(&context.current_inputs, &context.prev_inputs) {
-        return context
-            .current_inputs
+    fn feature_change(&self) -> bool {
+        self.static_metadata_change()
+            || self.current_inputs.features != self.prev_inputs.features
+            || !self.paths.target_file(&WorkIdentifier::FeatureIr).is_file()
+    }
+
+    fn glyphs_changed(&self) -> HashSet<&str> {
+        if self.static_metadata_change() {
+            return self
+                .current_inputs
+                .glyphs
+                .keys()
+                .map(|e| e.as_str())
+                .collect();
+        }
+        self.current_inputs
+            .glyphs
+            .iter()
+            .filter(
+                |(glyph_name, curr_state)| match self.prev_inputs.glyphs.get(*glyph_name) {
+                    Some(prev_state) => {
+                        // If the input changed or the output doesn't exist a rebuild is probably in order
+                        prev_state != *curr_state
+                            || !self
+                                .paths
+                                .target_file(&WorkIdentifier::GlyphIr(glyph_name.to_string()))
+                                .exists()
+                    }
+                    None => true,
+                },
+            )
+            .map(|(glyph_name, _)| glyph_name.as_str())
+            .collect()
+    }
+
+    fn glyphs_deleted(&self) -> HashSet<&str> {
+        self.prev_inputs
             .glyphs
             .keys()
+            .filter(|glyph_name| !self.current_inputs.glyphs.contains_key(glyph_name.as_str()))
             .map(|e| e.as_str())
-            .collect();
+            .collect()
     }
-    context
-        .current_inputs
-        .glyphs
-        .iter()
-        .filter(
-            |(glyph_name, curr_state)| match context.prev_inputs.glyphs.get(*glyph_name) {
-                Some(prev_state) => {
-                    // If the input changed or the output doesn't exist a rebuild is probably in order
-                    prev_state != *curr_state
-                        || !context
-                            .paths
-                            .target_file(&WorkIdentifier::GlyphIr(glyph_name.to_string()))
-                            .exists()
-                }
-                None => true,
-            },
-        )
-        .map(|(glyph_name, _)| glyph_name.as_str())
-        .collect()
-}
-
-fn glyphs_deleted<'a>(current_inputs: &Input, prev_inputs: &'a Input) -> HashSet<&'a str> {
-    prev_inputs
-        .glyphs
-        .keys()
-        .filter(|glyph_name| !current_inputs.glyphs.contains_key(glyph_name.as_str()))
-        .map(|e| e.as_str())
-        .collect()
 }
 
 fn add_static_metadata_ir_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
-    // TODO don't recreate static metadata if we don't have to
-    workload.insert(
-        WorkIdentifier::StaticMetadata,
-        Job {
-            work: change_detector
-                .ir_source
-                .create_static_metadata_work(&change_detector.current_inputs)?,
-            dependencies: HashSet::new(),
-        },
-    );
+    if change_detector.static_metadata_change() {
+        workload.insert(
+            WorkIdentifier::StaticMetadata,
+            Job {
+                work: change_detector
+                    .ir_source
+                    .create_static_metadata_work(&change_detector.current_inputs)?,
+                happens_after: HashSet::new(),
+            },
+        );
+    } else {
+        workload.mark_success(WorkIdentifier::StaticMetadata);
+    }
     Ok(())
 }
 
@@ -199,14 +213,19 @@ fn add_feature_ir_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
-    // TODO don't recreate features if we don't have to
-    workload.insert(
-        WorkIdentifier::FeatureIr,
-        Job {
-            work: change_detector.ir_source.create_feature_ir_work()?,
-            happens_after: HashSet::from([WorkIdentifier::StaticMetadata]),
-        },
-    );
+    if change_detector.feature_change() {
+        workload.insert(
+            WorkIdentifier::FeatureIr,
+            Job {
+                work: change_detector
+                    .ir_source
+                    .create_feature_ir_work(&change_detector.current_inputs)?,
+                happens_after: HashSet::new(),
+            },
+        );
+    } else {
+        workload.mark_success(WorkIdentifier::FeatureIr);
+    }
     Ok(())
 }
 
@@ -215,13 +234,8 @@ fn add_glyph_ir_jobs(
     workload: &mut Workload,
 ) -> Result<(), Error> {
     // Destroy IR for deleted glyphs. No dependencies.
-    for glyph_name in glyphs_deleted(
-        &change_detector.current_inputs,
-        &change_detector.prev_inputs,
-    )
-    .iter()
-    {
-        let id = WorkIdentifier::GlyphIrDelete(glyph_name.to_string());
+    for glyph_name in change_detector.glyphs_deleted().iter() {
+        let id = WorkIdentifier::GlyphIr(glyph_name.to_string());
         let path = change_detector.paths.target_file(&id);
         workload.insert(
             id,
@@ -233,7 +247,7 @@ fn add_glyph_ir_jobs(
     }
 
     // Generate IR for changed glyphs
-    let glyphs_changed = glyphs_changed(change_detector);
+    let glyphs_changed = change_detector.glyphs_changed();
     let glyph_work = change_detector
         .ir_source
         .create_glyph_ir_work(&glyphs_changed, &change_detector.current_inputs)?;
@@ -277,18 +291,14 @@ impl ChangeDetector {
 
 /// A set of interdependent jobs to execute.
 struct Workload {
-    jobs: HashMap<WorkIdentifier, Job>,
-}
-
-struct JobResults {
-    #[allow(dead_code)]
     success: HashSet<WorkIdentifier>,
-    error: HashSet<WorkIdentifier>,
+    jobs: HashMap<WorkIdentifier, Job>,
 }
 
 impl Workload {
     fn new() -> Workload {
         Workload {
+            success: HashSet::new(),
             jobs: HashMap::new(),
         }
     }
@@ -296,17 +306,24 @@ impl Workload {
     fn insert(&mut self, id: WorkIdentifier, job: Job) {
         self.jobs.insert(id, job);
     }
+
+    fn mark_success(&mut self, id: WorkIdentifier) {
+        self.success.insert(id);
+    }
 }
 
 impl Workload {
-    fn launchable(&self, success: &HashSet<WorkIdentifier>) -> Vec<WorkIdentifier> {
+    fn launchable(&self) -> Vec<WorkIdentifier> {
         self.jobs
             .iter()
             .filter_map(|(id, job)| {
-                let can_start = job.dependencies.is_subset(success);
+                let can_start = job.happens_after.is_subset(&self.success);
                 if !can_start && log_enabled!(log::Level::Trace) {
-                    let mut unfulfilled_deps: Vec<_> =
-                        job.dependencies.difference(success).into_iter().collect();
+                    let mut unfulfilled_deps: Vec<_> = job
+                        .happens_after
+                        .difference(&self.success)
+                        .into_iter()
+                        .collect();
                     unfulfilled_deps.sort();
                     trace!("Cannot start {:?}, blocked on {:?}", id, unfulfilled_deps);
                 };
@@ -314,21 +331,22 @@ impl Workload {
             })
             .collect()
     }
-    fn exec(mut self, scope: &Scope, root_context: Context) -> Result<JobResults, Error> {
+
+    fn exec(mut self, scope: &Scope, root_context: Context) -> Result<(), Error> {
+        let pre_success = self.success.len(); // not actually executed
         let job_count = self.jobs.len();
 
         // Async work will send us it's ID on completion
         let (send, recv) =
             crossbeam_channel::unbounded::<(WorkIdentifier, Result<(), WorkError>)>();
-        let mut success = HashSet::new();
         let mut error = HashSet::new();
 
         // Whenever a task completes see if it was the last incomplete dependency of other task(s)
         // and spawn them if it was
         // TODO timeout and die it if takes too long to make forward progress or we're spinning w/o progress
-        while success.len() < job_count && error.is_empty() {
+        while self.success.len() < job_count + pre_success && error.is_empty() {
             // Spawn anything that is currently executable (has no unfulfilled dependencies)
-            for id in self.launchable(&success) {
+            for id in self.launchable() {
                 trace!("Start {:?}", id);
                 let job = self.jobs.remove(&id).unwrap();
                 let work = job.work;
@@ -347,14 +365,14 @@ impl Workload {
             let mut opt_complete = Some(recv.recv().unwrap()); // blocks
             while let Some((completed_id, result)) = opt_complete.take() {
                 if !match result {
-                    Ok(..) => success.insert(completed_id.clone()),
+                    Ok(..) => self.success.insert(completed_id.clone()),
                     Err(..) => error.insert(completed_id.clone()),
                 } {
                     panic!("Repeat signals for completion of {:#?}", completed_id);
                 }
                 debug!(
                     "{}/{} complete, most recently {:?}",
-                    error.len() + success.len(),
+                    error.len() + self.success.len() - pre_success,
                     job_count,
                     completed_id
                 );
@@ -365,10 +383,10 @@ impl Workload {
                 }
             }
         }
-        if success.len() != job_count {
-            panic!("No errors but not everything succeeded?!");
+        if !error.is_empty() {
+            return Err(Error::TasksFailed);
         }
-        Ok(JobResults { success, error })
+        Ok(())
     }
 }
 
@@ -389,7 +407,7 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
     add_glyph_ir_jobs(change_detector, &mut workload)?;
 
     // BE: f(IR) => binary
-    // TODO :)
+    //add_feature_be_job(change_detector, &mut workload)?;
 
     Ok(workload)
 }
@@ -420,7 +438,7 @@ fn main() -> Result<(), Error> {
     let mut change_detector = ChangeDetector::new(config.clone(), paths.clone(), prev_inputs)?;
     let workload = create_workload(&mut change_detector)?;
 
-    let result = rayon::in_place_scope(|scope| {
+    rayon::in_place_scope(|scope| {
         let root_context = Context::new_root(
             config.args.emit_ir,
             paths,
@@ -429,10 +447,6 @@ fn main() -> Result<(), Error> {
         workload.exec(scope, root_context)
     })?;
 
-    // Did we win?
-    if !result.error.is_empty() {
-        return Err(Error::TasksFailed);
-    }
     finish_successfully(change_detector)?;
     Ok(())
 }
@@ -447,12 +461,16 @@ mod tests {
     };
 
     use filetime::FileTime;
-    use fontir::{orchestration::Context, paths::Paths as IrPaths, stateset::StateSet};
+    use fontir::{
+        orchestration::{Context, WorkIdentifier},
+        paths::Paths as IrPaths,
+        stateset::StateSet,
+    };
     use tempfile::tempdir;
 
     use crate::{
-        add_glyph_ir_jobs, add_static_metadata_ir_job, finish_successfully, glyphs_changed,
-        glyphs_deleted, init, require_dir, Args, ChangeDetector, Config, Workload,
+        add_feature_ir_job, add_glyph_ir_jobs, add_static_metadata_ir_job, finish_successfully,
+        init, require_dir, Args, ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -472,18 +490,22 @@ mod tests {
     }
 
     struct TestCompile {
+        work_completed: HashSet<WorkIdentifier>,
         glyphs_changed: HashSet<String>,
         glyphs_deleted: HashSet<String>,
     }
 
     impl TestCompile {
-        fn new(context: &ChangeDetector) -> TestCompile {
+        fn new(change_detector: &ChangeDetector) -> TestCompile {
             TestCompile {
-                glyphs_changed: glyphs_changed(context)
+                work_completed: HashSet::new(),
+                glyphs_changed: change_detector
+                    .glyphs_changed()
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                glyphs_deleted: glyphs_deleted(&context.current_inputs, &context.prev_inputs)
+                glyphs_deleted: change_detector
+                    .glyphs_deleted()
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
@@ -548,12 +570,13 @@ mod tests {
 
         let mut change_detector =
             ChangeDetector::new(config.clone(), paths.clone(), prev_inputs).unwrap();
-        let result = TestCompile::new(&change_detector);
+        let mut result = TestCompile::new(&change_detector);
 
         let mut workload = Workload::new();
 
         add_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
         add_glyph_ir_jobs(&mut change_detector, &mut workload).unwrap();
+        add_feature_ir_job(&mut change_detector, &mut workload).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one
@@ -563,24 +586,54 @@ mod tests {
             paths,
             change_detector.current_inputs.clone(),
         );
-        let mut complete = HashSet::new();
+        let pre_success = workload.success.clone();
         while !workload.jobs.is_empty() {
-            let launchable = workload.launchable(&complete);
-            assert!(
-                !launchable.is_empty(),
-                "Unable to make forward progress, bad graph?"
-            );
+            let launchable = workload.launchable();
+            if launchable.is_empty() {
+                eprintln!("Completed:");
+                for id in workload.success.iter() {
+                    eprintln!("  {:?}", id);
+                }
+                eprintln!("Unable to proceed with:");
+                for (id, job) in workload.jobs.iter() {
+                    eprintln!("  {:?}, happens-after {:?}", id, job.happens_after);
+                }
+                assert!(
+                    !launchable.is_empty(),
+                    "Unable to make forward progress, bad graph?"
+                );
+            }
+
             let id = &launchable[0];
             let job = workload.jobs.remove(id).unwrap();
-            job.work.exec(&root_context).unwrap();
+            let context = root_context.copy_for_work(id.clone(), Some(job.happens_after));
+            job.work.exec(&context).unwrap();
             assert!(
-                complete.insert(id.clone()),
+                workload.success.insert(id.clone()),
                 "We just did {:?} a second time?",
                 id
             );
         }
         finish_successfully(change_detector).unwrap();
+        result.work_completed = workload.success.difference(&pre_success).cloned().collect();
         result
+    }
+
+    #[test]
+    fn compile_work() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+
+        let result = compile(build_dir, "wght_var.designspace");
+        assert_eq!(
+            HashSet::from([
+                WorkIdentifier::StaticMetadata,
+                WorkIdentifier::FeatureIr,
+                WorkIdentifier::GlyphIr(String::from("bar")),
+                WorkIdentifier::GlyphIr(String::from("plus")),
+            ]),
+            result.work_completed
+        );
     }
 
     #[test]
@@ -596,8 +649,27 @@ mod tests {
         assert_eq!(HashSet::from([]), result.glyphs_deleted);
 
         let result = compile(build_dir, "wght_var.designspace");
+        assert_eq!(HashSet::new(), result.work_completed);
         assert_eq!(HashSet::from([]), result.glyphs_changed);
         assert_eq!(HashSet::from([]), result.glyphs_deleted);
+    }
+
+    #[test]
+    fn second_compile_only_glyph() {
+        // glyph depends on static metadata, which isn't going to run
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+
+        let result = compile(build_dir, "wght_var.designspace");
+        assert!(result.work_completed.len() > 1);
+
+        fs::remove_file(build_dir.join("glyph_ir/bar.yml")).unwrap();
+
+        let result = compile(build_dir, "wght_var.designspace");
+        assert_eq!(
+            HashSet::from([WorkIdentifier::GlyphIr(String::from("bar")),]),
+            result.work_completed
+        );
     }
 
     #[test]

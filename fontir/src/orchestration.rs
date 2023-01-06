@@ -3,13 +3,13 @@
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
-    io::BufWriter,
+    io::{BufReader, BufWriter},
     path::Path,
     sync::Arc,
 };
 
 use parking_lot::RwLock;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{ir, paths::Paths, source::Input};
 
@@ -140,20 +140,44 @@ impl Context {
             .unwrap();
     }
 
+    fn restore<V>(&self, file: &Path) -> V
+    where
+        V: ?Sized + DeserializeOwned,
+    {
+        let raw_file = File::open(file)
+            .map_err(|e| panic!("Unable to read {:?} {}", file, e))
+            .unwrap();
+        let buf_io = BufReader::new(raw_file);
+        match serde_yaml::from_reader(buf_io) {
+            Ok(v) => v,
+            Err(e) => panic!("Unable to deserialize {:?} {}", file, e),
+        }
+    }
+
+    fn set_cached_static_metadata(&self, ir: ir::StaticMetadata) {
+        let mut wl = self.static_metadata.item.write();
+        *wl = Some(Arc::from(ir));
+    }
+
     pub fn get_static_metadata(&self) -> Arc<ir::StaticMetadata> {
-        self.check_read_access(&WorkIdentifier::StaticMetadata);
+        let id = WorkIdentifier::StaticMetadata;
+        self.check_read_access(&id);
+        {
+            let rl = self.static_metadata.item.read();
+            if rl.is_some() {
+                return rl.as_ref().unwrap().clone();
+            }
+        }
+        self.set_cached_static_metadata(self.restore(&self.paths.target_file(&id)));
         let rl = self.static_metadata.item.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
     pub fn set_static_metadata(&self, ir: ir::StaticMetadata) {
-        self.check_write_access(&WorkIdentifier::StaticMetadata);
-        self.maybe_persist(
-            &self.paths.target_file(&WorkIdentifier::StaticMetadata),
-            &static_metadata,
-        );
-        let mut wl = self.static_metadata.item.write();
-        *wl = Some(Arc::from(ir));
+        let id = WorkIdentifier::StaticMetadata;
+        self.check_write_access(&id);
+        self.maybe_persist(&&self.paths.target_file(&id), &ir);
+        self.set_cached_static_metadata(ir);
     }
 
     pub fn get_glyph_ir(&self, glyph_name: &str) -> Arc<ir::Glyph> {
@@ -178,8 +202,9 @@ impl Context {
     }
 
     pub fn set_features(&self, ir: ir::Features) {
-        self.check_write_access(&WorkIdentifier::FeatureIr);
-        self.maybe_persist(&self.paths.feature_ir_file(), &ir);
+        let id = WorkIdentifier::FeatureIr;
+        self.check_write_access(&id);
+        self.maybe_persist(&self.paths.target_file(&id), &ir);
         let mut wl = self.feature_ir.item.write();
         *wl = Some(Arc::from(ir));
     }

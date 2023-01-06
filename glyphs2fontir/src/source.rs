@@ -5,8 +5,7 @@ use fontir::orchestration::Context;
 use fontir::source::{Input, Source, Work};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
-use indexmap::IndexSet;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
@@ -56,7 +55,7 @@ fn glyph_states(font: &Font) -> Result<HashMap<String, StateSet>, Error> {
 
 impl GlyphsIrSource {
     // When things like upem may have changed forget incremental and rebuild the whole thing
-    fn global_rebuild_triggers(&self, font: &Font) -> Result<StateSet, Error> {
+    fn static_metadata_inputs(&self, font: &Font) -> Result<StateSet, Error> {
         let mut state = StateSet::new();
         // Wipe out glyph-related fields, track the rest
         // Explicitly field by field so if we add more compiler will force us to update here
@@ -99,23 +98,27 @@ impl Source for GlyphsIrSource {
             )
         })?)?;
         let font = &font_info.font;
-        let global_metadata = self.global_rebuild_triggers(font)?;
+        let static_metadata = self.static_metadata_inputs(font)?;
 
         let glyphs = glyph_states(font)?;
 
         self.cache = Some(Cache {
-            global_metadata: global_metadata.clone(),
+            global_metadata: static_metadata.clone(),
             font_info: Arc::from(font_info),
         });
 
+        let features = StateSet::new();
+        // TODO: track fields that feed features in .glyphs files
+
         Ok(Input {
-            global_metadata,
+            static_metadata,
             glyphs,
+            features,
         })
     }
 
     fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
-        self.check_global_metadata(&input.global_metadata)?;
+        self.check_global_metadata(&input.static_metadata)?;
         let font_info = self.cache.as_ref().unwrap().font_info.clone();
         Ok(Box::from(StaticMetadataWork { font_info }))
     }
@@ -125,8 +128,7 @@ impl Source for GlyphsIrSource {
         glyph_names: &IndexSet<&str>,
         input: &Input,
     ) -> Result<Vec<Box<dyn Work + Send>>, fontir::error::Error> {
-        self.check_global_metadata(&input.global_metadata)?;
-
+        self.check_global_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
         let mut work: Vec<Box<dyn Work + Send>> = Vec::new();
@@ -138,8 +140,10 @@ impl Source for GlyphsIrSource {
         Ok(work)
     }
 
-    fn create_feature_ir_work(&self) -> Result<Box<dyn Work + Send>, Error> {
-        todo!()
+    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
+        self.check_global_metadata(&input.static_metadata)?;
+
+        Ok(Box::from(FeatureWork {}))
     }
 }
 
@@ -170,6 +174,16 @@ impl Work for StaticMetadataWork {
             font_info.axes.clone(),
             font.glyph_order.iter().cloned().collect(),
         ));
+        Ok(())
+    }
+}
+
+struct FeatureWork {}
+
+impl Work for FeatureWork {
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        warn!(".glyphs feature ir work is currently a nop");
+        context.set_features(ir::Features::empty());
         Ok(())
     }
 }
