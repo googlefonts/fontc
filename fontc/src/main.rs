@@ -30,6 +30,11 @@ struct Args {
     #[arg(short, long)]
     #[clap(default_value = "true")]
     emit_ir: bool,
+
+    /// Working directory for the build process. If emit-ir is on, written here.
+    #[arg(short, long)]
+    #[clap(default_value = "build")]
+    build_dir: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -258,10 +263,11 @@ impl ChangeDetector {
 fn main() -> Result<(), Error> {
     env_logger::init();
 
-    let paths = Paths::new(Path::new("build"));
+    let args = Args::parse();
+    let paths = Paths::new(&args.build_dir);
     let build_dir = require_dir(paths.build_dir())?;
     require_dir(paths.glyph_ir_dir())?;
-    let config = Config::new(Args::parse(), build_dir)?;
+    let config = Config::new(args, build_dir)?;
     let prev_inputs = init(&config).map_err(Error::IoError)?;
 
     let mut change_detector = ChangeDetector::new(config.clone(), paths.clone(), prev_inputs)?;
@@ -320,10 +326,11 @@ mod tests {
         path
     }
 
-    fn test_args(source: &str) -> Args {
+    fn test_args(source: &str, build_dir: &Path) -> Args {
         Args {
             source: testdata_dir().join(source),
             emit_ir: true,
+            build_dir: build_dir.to_path_buf(),
         }
     }
 
@@ -351,7 +358,7 @@ mod tests {
     fn init_captures_state() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let args = test_args("wght_var.designspace");
+        let args = test_args("wght_var.designspace", build_dir);
         let config = Config::new(args.clone(), build_dir.to_path_buf()).unwrap();
 
         init(&config).unwrap();
@@ -374,7 +381,7 @@ mod tests {
     fn detect_compiler_change() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let args = test_args("wght_var.designspace");
+        let args = test_args("wght_var.designspace", build_dir);
         let config = Config::new(args.clone(), build_dir.to_path_buf()).unwrap();
 
         let compiler_location = std::env::current_exe().unwrap();
@@ -395,7 +402,7 @@ mod tests {
     }
 
     fn compile(build_dir: &Path, source: &str) -> TestCompile {
-        let args = test_args(source);
+        let args = test_args(source, build_dir);
         let paths = Paths::new(build_dir);
         require_dir(paths.glyph_ir_dir()).unwrap();
         let config = Config::new(args, build_dir.to_path_buf()).unwrap();
