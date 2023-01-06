@@ -1,7 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsStr,
-    fs, io,
+    fs,
+    io::{self, Write},
     path::{Path, PathBuf},
 };
 
@@ -15,8 +16,8 @@ use fontir::{
 };
 use glyphs2fontir::source::GlyphsIrSource;
 use log::{debug, error, info, log_enabled, trace, warn};
+use rayon::Scope;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
 use ufo2fontir::source::DesignSpaceIrSource;
 
 /// What font can we build for you today?
@@ -168,10 +169,10 @@ fn glyphs_deleted<'a>(current_inputs: &Input, prev_inputs: &'a Input) -> HashSet
 
 fn add_static_metadata_ir_job(
     change_detector: &mut ChangeDetector,
-    jobs: &mut HashMap<WorkIdentifier, Job>,
+    workload: &mut Workload,
 ) -> Result<(), Error> {
     // TODO don't recreate static metadata if we don't have to
-    jobs.insert(
+    workload.insert(
         WorkIdentifier::StaticMetadata,
         Job {
             work: change_detector
@@ -185,7 +186,7 @@ fn add_static_metadata_ir_job(
 
 fn add_glyph_ir_jobs(
     change_detector: &mut ChangeDetector,
-    jobs: &mut HashMap<WorkIdentifier, Job>,
+    workload: &mut Workload,
 ) -> Result<(), Error> {
     // Destroy IR for deleted glyphs. No dependencies.
     for glyph_name in glyphs_deleted(
@@ -194,7 +195,7 @@ fn add_glyph_ir_jobs(
     )
     .iter()
     {
-        jobs.insert(
+        workload.insert(
             WorkIdentifier::GlyphIrDelete(glyph_name.to_string()),
             Job {
                 work: DeleteWork::create(change_detector.paths.glyph_ir_file(glyph_name)),
@@ -212,7 +213,7 @@ fn add_glyph_ir_jobs(
         let id = WorkIdentifier::GlyphIr(glyph_name.to_string());
         let happens_after = HashSet::from([WorkIdentifier::StaticMetadata]);
 
-        jobs.insert(
+        workload.insert(
             id,
             Job {
                 work,
@@ -246,93 +247,62 @@ impl ChangeDetector {
     }
 }
 
-/// A unit of executable work plus the identifiers of work that it depends on
-struct Job {
-    // The actual task
-    work: Box<dyn Work + Send>,
-    // Things that must happen before us, e.g. our dependencies
-    happens_after: HashSet<WorkIdentifier>,
+/// A set of interdependent jobs to execute.
+struct Workload {
+    jobs: HashMap<WorkIdentifier, Job>,
 }
 
-fn create_jobs(
-    change_detector: &mut ChangeDetector,
-) -> Result<HashMap<WorkIdentifier, Job>, Error> {
-    let mut jobs = HashMap::new();
-
-    // FE: f(source) => IR
-    add_static_metadata_ir_job(change_detector, &mut jobs)?;
-    add_glyph_ir_jobs(change_detector, &mut jobs)?;
-
-    // BE: f(IR) => binary
-    // TODO :)
-
-    Ok(jobs)
+struct JobResults {
+    #[allow(dead_code)]
+    success: HashSet<WorkIdentifier>,
+    error: HashSet<WorkIdentifier>,
 }
 
-fn launchable(
-    pending_jobs: &HashMap<WorkIdentifier, Job>,
-    success: &HashSet<WorkIdentifier>,
-) -> Vec<WorkIdentifier> {
-    pending_jobs
-        .iter()
-        .filter_map(|(id, job)| {
-            let can_start = job.happens_after.is_subset(success);
-            if !can_start && log_enabled!(log::Level::Trace) {
-                let mut unfulfilled_deps: Vec<_> =
-                    job.happens_after.difference(success).into_iter().collect();
-                unfulfilled_deps.sort();
-                trace!("Cannot start {:?}, blocked on {:?}", id, unfulfilled_deps);
-            };
-            can_start.then(|| id.clone())
-        })
-        .collect()
+impl Workload {
+    fn new() -> Workload {
+        Workload {
+            jobs: HashMap::new(),
+        }
+    }
+
+    fn insert(&mut self, id: WorkIdentifier, job: Job) {
+        self.jobs.insert(id, job);
+    }
 }
 
-fn main() -> Result<(), Error> {
-    env_logger::builder()
-        .format(|buf, record| {
-            let ts = buf.timestamp_micros();
-            writeln!(
-                buf,
-                "{}: {:?}: {}: {}",
-                ts,
-                std::thread::current().id(),
-                buf.default_level_style(record.level())
-                    .value(record.level()),
-                record.args()
-            )
-        })
-        .init();
+impl Workload {
+    fn launchable(&self, success: &HashSet<WorkIdentifier>) -> Vec<WorkIdentifier> {
+        self.jobs
+            .iter()
+            .filter_map(|(id, job)| {
+                let can_start = job.happens_after.is_subset(success);
+                if !can_start && log_enabled!(log::Level::Trace) {
+                    let mut unfulfilled_deps: Vec<_> =
+                        job.happens_after.difference(success).into_iter().collect();
+                    unfulfilled_deps.sort();
+                    trace!("Cannot start {:?}, blocked on {:?}", id, unfulfilled_deps);
+                };
+                can_start.then(|| id.clone())
+            })
+            .collect()
+    }
+    fn exec(mut self, scope: &Scope, root_context: Context) -> Result<JobResults, Error> {
+        let job_count = self.jobs.len();
 
-    let paths = Paths::new(Path::new("build"));
-    let build_dir = require_dir(paths.build_dir())?;
-    require_dir(paths.glyph_ir_dir())?;
-    let config = Config::new(Args::parse(), build_dir)?;
-    let prev_inputs = init(&config).map_err(Error::IoError)?;
-
-    let mut change_detector = ChangeDetector::new(config.clone(), paths.clone(), prev_inputs)?;
-    let mut pending_jobs = create_jobs(&mut change_detector)?;
-    let job_count = pending_jobs.len();
-
-    // Async work will send us it's ID on completion
-    let (send, recv) = crossbeam_channel::unbounded::<(WorkIdentifier, Result<(), WorkError>)>();
-    let mut success = HashSet::new();
-    let mut error = HashSet::new();
-    rayon::in_place_scope(|scope| {
-        let root_context = Context::new_root(
-            config.args.emit_ir,
-            paths,
-            change_detector.current_inputs.clone(),
-        );
+        // Async work will send us it's ID on completion
+        let (send, recv) =
+            crossbeam_channel::unbounded::<(WorkIdentifier, Result<(), WorkError>)>();
+        let mut success = HashSet::new();
+        let mut error = HashSet::new();
 
         // Whenever a task completes see if it was the last incomplete dependency of other task(s)
         // and spawn them if it was
         // TODO timeout and die it if takes too long to make forward progress or we're spinning w/o progress
         while success.len() < job_count && error.is_empty() {
             // Spawn anything that is currently executable (has no unfulfilled dependencies)
-            for id in launchable(&pending_jobs, &success) {
+            for id in self.launchable(&success) {
                 trace!("Start {:?}", id);
-                let job = pending_jobs.remove(&id).unwrap();
+                let job = self.jobs.remove(&id).unwrap();
                 let work = job.work;
                 let work_context = root_context.copy_for_work(id.clone(), Some(job.happens_after));
                 let send = send.clone();
@@ -367,14 +337,71 @@ fn main() -> Result<(), Error> {
                 }
             }
         }
-    });
+        if success.len() != job_count {
+            panic!("No errors but not everything succeeded?!");
+        }
+        Ok(JobResults { success, error })
+    }
+}
+
+/// A unit of executable work plus the identifiers of work that it depends on
+struct Job {
+    // The actual task
+    work: Box<dyn Work + Send>,
+    // Things that must happen before us, e.g. our dependencies
+    happens_after: HashSet<WorkIdentifier>,
+}
+
+fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Error> {
+    let mut workload = Workload::new();
+
+    // FE: f(source) => IR
+    add_static_metadata_ir_job(change_detector, &mut workload)?;
+    add_glyph_ir_jobs(change_detector, &mut workload)?;
+
+    // BE: f(IR) => binary
+    // TODO :)
+
+    Ok(workload)
+}
+
+fn main() -> Result<(), Error> {
+    env_logger::builder()
+        .format(|buf, record| {
+            let ts = buf.timestamp_micros();
+            writeln!(
+                buf,
+                "{}: {:?}: {}: {}",
+                ts,
+                std::thread::current().id(),
+                buf.default_level_style(record.level())
+                    .value(record.level()),
+                record.args()
+            )
+        })
+        .init();
+
+    let paths = Paths::new(Path::new("build"));
+    let build_dir = require_dir(paths.build_dir())?;
+    require_dir(paths.glyph_ir_dir())?;
+    let config = Config::new(Args::parse(), build_dir)?;
+    let prev_inputs = init(&config).map_err(Error::IoError)?;
+
+    let mut change_detector = ChangeDetector::new(config.clone(), paths.clone(), prev_inputs)?;
+    let workload = create_workload(&mut change_detector)?;
+
+    let result = rayon::in_place_scope(|scope| {
+        let root_context = Context::new_root(
+            config.args.emit_ir,
+            paths,
+            change_detector.current_inputs.clone(),
+        );
+        workload.exec(scope, root_context)
+    })?;
 
     // Did we win?
-    if !error.is_empty() {
+    if !result.error.is_empty() {
         return Err(Error::TasksFailed);
-    }
-    if success.len() != job_count {
-        panic!("No error but not everything succeeded?!");
     }
     finish_successfully(change_detector)?;
     Ok(())
@@ -384,7 +411,7 @@ fn main() -> Result<(), Error> {
 mod tests {
 
     use std::{
-        collections::{HashMap, HashSet},
+        collections::HashSet,
         fs,
         path::{Path, PathBuf},
     };
@@ -395,7 +422,7 @@ mod tests {
 
     use crate::{
         add_glyph_ir_jobs, add_static_metadata_ir_job, finish_successfully, glyphs_changed,
-        glyphs_deleted, init, launchable, require_dir, Args, ChangeDetector, Config,
+        glyphs_deleted, init, require_dir, Args, ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -492,10 +519,10 @@ mod tests {
             ChangeDetector::new(config.clone(), paths.clone(), prev_inputs).unwrap();
         let result = TestCompile::new(&change_detector);
 
-        let mut jobs = HashMap::new();
+        let mut workload = Workload::new();
 
-        add_static_metadata_ir_job(&mut change_detector, &mut jobs).unwrap();
-        add_glyph_ir_jobs(&mut change_detector, &mut jobs).unwrap();
+        add_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
+        add_glyph_ir_jobs(&mut change_detector, &mut workload).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one
@@ -506,14 +533,14 @@ mod tests {
             change_detector.current_inputs.clone(),
         );
         let mut complete = HashSet::new();
-        while !jobs.is_empty() {
-            let launchable = launchable(&jobs, &complete);
+        while !workload.jobs.is_empty() {
+            let launchable = workload.launchable(&complete);
             assert!(
                 !launchable.is_empty(),
                 "Unable to make forward progress, bad graph?"
             );
             let id = &launchable[0];
-            let job = jobs.remove(id).unwrap();
+            let job = workload.jobs.remove(id).unwrap();
             job.work.exec(&root_context).unwrap();
             assert!(
                 complete.insert(id.clone()),
