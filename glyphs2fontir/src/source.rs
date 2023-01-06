@@ -253,7 +253,7 @@ impl Work for GlyphIrWork {
             let min = axis.min.to_normalized(&axis.converter);
             let max = axis.max.to_normalized(&axis.converter);
             let default = axis.max.to_normalized(&axis.converter);
-            let positions = axis_positions.get(&axis.tag).unwrap();
+            let positions = axis_positions.get(&axis.name).unwrap();
             check_pos(&self.glyph_name, positions, axis, &min)?;
             check_pos(&self.glyph_name, positions, axis, &default)?;
             check_pos(&self.glyph_name, positions, axis, &max)?;
@@ -267,13 +267,13 @@ impl Work for GlyphIrWork {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::{BTreeMap, HashMap, HashSet},
+        collections::{HashMap, HashSet},
         path::{Path, PathBuf},
         sync::Arc,
     };
 
     use fontir::{
-        coords::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord},
+        coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
         error::WorkError,
         ir::{self, Glyph},
         orchestration::{Context, WorkIdentifier},
@@ -482,9 +482,9 @@ mod tests {
 
         assert_eq!(
             HashSet::from([
-                &BTreeMap::from([("wght".to_string(), NormalizedCoord::new(-1.0))]),
-                &BTreeMap::from([("wght".to_string(), NormalizedCoord::new(0.0))]),
-                &BTreeMap::from([("wght".to_string(), NormalizedCoord::new(1.0))]),
+                &NormalizedLocation::on_axis("Weight", NormalizedCoord::new(-1.0)),
+                &NormalizedLocation::on_axis("Weight", NormalizedCoord::new(0.0)),
+                &NormalizedLocation::on_axis("Weight", NormalizedCoord::new(1.0)),
             ]),
             glyph_ir(&context, &glyph_name)
                 .sources

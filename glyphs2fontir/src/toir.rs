@@ -11,20 +11,7 @@ use ordered_float::OrderedFloat;
 fn design_location(axes: &[ir::Axis], master: &FontMaster) -> DesignLocation {
     axes.iter()
         .zip(master.axes_values.as_ref().unwrap())
-        .map(|(axis, pos)| (axis.tag.clone(), DesignCoord::new(pos.into_inner() as f32)))
-        .collect()
-}
-
-fn to_normalized(axes: &[ir::Axis], design_location: &DesignLocation) -> NormalizedLocation {
-    let axes: HashMap<_, _> = axes.iter().map(|a| (&a.tag, a)).collect();
-    design_location
-        .iter()
-        .map(|(tag, dc)| {
-            (
-                tag.clone(),
-                dc.to_normalized(&axes.get(tag).unwrap().converter),
-            )
-        })
+        .map(|(axis, pos)| (axis.name.clone(), DesignCoord::new(pos.into_inner() as f32)))
         .collect()
 }
 
@@ -159,13 +146,14 @@ impl TryFrom<Font> for FontInfo {
             .map(|(idx, a)| (a.tag.clone(), idx))
             .collect();
 
+        let axes_by_name = axes.iter().map(|a| (&a.name, a)).collect();
         let master_locations: HashMap<_, _> = font
             .font_master
             .iter()
             .map(|m| {
                 (
                     m.id.clone(),
-                    to_normalized(&axes, &design_location(&axes, m)),
+                    design_location(&axes, m).to_normalized(&axes_by_name),
                 )
             })
             .collect();

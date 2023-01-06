@@ -2,10 +2,10 @@
 //!
 //! See <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
-use crate::piecewise_linear_map::PiecewiseLinearMap;
 use crate::serde::CoordConverterSerdeRepr;
+use crate::{ir::Axis, piecewise_linear_map::PiecewiseLinearMap};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
@@ -29,11 +29,16 @@ pub struct UserCoord(OrderedFloat<f32>);
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NormalizedCoord(OrderedFloat<f32>);
 
-// Using BTreeMap instead of HashMap and OrderedFloat instead of f32 so that
-// the location is hashable and can be used as a key in Glyph::sources HashMap
-pub type DesignLocation = BTreeMap<String, DesignCoord>;
-pub type UserLocation = BTreeMap<String, UserCoord>;
-pub type NormalizedLocation = BTreeMap<String, NormalizedCoord>;
+/// A set of per-axis coordinates that define a specific location in a coordinate system.
+///
+/// E.g. a user location is a `Location<UserCoord>`. Hashable so it can do things like be
+/// the key for a map of sources by location.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Location<T>(BTreeMap<String, T>);
+
+pub type DesignLocation = Location<DesignCoord>;
+pub type UserLocation = Location<UserCoord>;
+pub type NormalizedLocation = Location<NormalizedCoord>;
 
 /// Converts between Design, User, and Normalized coordinates.
 ///
@@ -158,6 +163,38 @@ impl UserCoord {
 impl NormalizedCoord {
     pub fn into_inner(self) -> OrderedFloat<f32> {
         self.0
+    }
+}
+
+impl<T> FromIterator<(String, T)> for Location<T> {
+    fn from_iter<I: IntoIterator<Item = (String, T)>>(iter: I) -> Self {
+        Location(BTreeMap::from_iter(iter))
+    }
+}
+
+impl<T> Location<T> {
+    pub fn on_axis(name: &str, pos: T) -> Location<T> {
+        Location(BTreeMap::from([(name.to_string(), pos)]))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
+        self.0.iter()
+    }
+}
+
+impl DesignLocation {
+    pub fn to_normalized(&self, axes: &HashMap<&String, &Axis>) -> NormalizedLocation {
+        Location::<NormalizedCoord>(
+            self.0
+                .iter()
+                .map(|(name, dc)| {
+                    (
+                        name.clone(),
+                        dc.to_normalized(&axes.get(name).unwrap().converter),
+                    )
+                })
+                .collect(),
+        )
     }
 }
 
