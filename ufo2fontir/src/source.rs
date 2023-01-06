@@ -323,19 +323,17 @@ fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designsp
     let ds_axes = ir_axes(designspace);
     let axes: HashMap<_, _> = ds_axes.iter().map(|a| (&a.name, a)).collect();
 
-    let default_location = DesignLocation::new(
-        designspace
-            .axes
-            .iter()
-            .map(|a| {
-                let converter = &axes.get(&a.name).unwrap().converter;
-                (
-                    a.name.clone(),
-                    UserCoord::new(a.default).to_design(converter),
-                )
-            })
-            .collect(),
-    );
+    let default_location = designspace
+        .axes
+        .iter()
+        .map(|a| {
+            let converter = &axes.get(&a.name).unwrap().converter;
+            (
+                a.name.clone(),
+                UserCoord::new(a.default).to_design(converter),
+            )
+        })
+        .collect();
     designspace
         .sources
         .iter()

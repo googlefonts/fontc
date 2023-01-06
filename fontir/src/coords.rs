@@ -166,11 +166,13 @@ impl NormalizedCoord {
     }
 }
 
-impl<T> Location<T> {
-    pub fn new(positions: BTreeMap<String, T>) -> Location<T> {
-        Location(positions)
+impl<T> FromIterator<(String, T)> for Location<T> {
+    fn from_iter<I: IntoIterator<Item = (String, T)>>(iter: I) -> Self {
+        Location(BTreeMap::from_iter(iter))
     }
+}
 
+impl<T> Location<T> {
     pub fn on_axis(name: &str, pos: T) -> Location<T> {
         Location(BTreeMap::from([(name.to_string(), pos)]))
     }

@@ -9,12 +9,10 @@ use glyphs_reader::{Font, FontMaster};
 use ordered_float::OrderedFloat;
 
 fn design_location(axes: &[ir::Axis], master: &FontMaster) -> DesignLocation {
-    DesignLocation::new(
-        axes.iter()
-            .zip(master.axes_values.as_ref().unwrap())
-            .map(|(axis, pos)| (axis.name.clone(), DesignCoord::new(pos.into_inner() as f32)))
-            .collect(),
-    )
+    axes.iter()
+        .zip(master.axes_values.as_ref().unwrap())
+        .map(|(axis, pos)| (axis.name.clone(), DesignCoord::new(pos.into_inner() as f32)))
+        .collect()
 }
 
 fn find_by_design_coord(
