@@ -5,7 +5,7 @@ use fontir::orchestration::Context;
 use fontir::source::{Input, Source, Work};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
-use log::debug;
+use log::{debug, trace};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
@@ -192,7 +192,7 @@ fn check_pos(
 
 impl Work for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        debug!("Generate IR for {}", self.glyph_name);
+        trace!("Generate IR for {}", self.glyph_name);
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 

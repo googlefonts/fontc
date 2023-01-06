@@ -14,7 +14,7 @@ use fontir::{
     stateset::StateSet,
 };
 use glyphs2fontir::source::GlyphsIrSource;
-use log::{error, info, log_enabled, trace, warn};
+use log::{debug, error, info, log_enabled, trace, warn};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use ufo2fontir::source::DesignSpaceIrSource;
@@ -331,7 +331,7 @@ fn main() -> Result<(), Error> {
         while success.len() < job_count && error.is_empty() {
             // Spawn anything that is currently executable (has no unfulfilled dependencies)
             for id in launchable(&pending_jobs, &success) {
-                info!("Start {:?}", id);
+                trace!("Start {:?}", id);
                 let job = pending_jobs.remove(&id).unwrap();
                 let work = job.work;
                 let work_context = root_context.copy_for_work(id.clone(), Some(job.happens_after));
@@ -354,10 +354,10 @@ fn main() -> Result<(), Error> {
                 } {
                     panic!("Repeat signals for completion of {:#?}", completed_id);
                 }
-                info!(
+                debug!(
                     "{}/{} complete, most recently {:?}",
                     error.len() + success.len(),
-                    pending_jobs.len(),
+                    job_count,
                     completed_id
                 );
 
