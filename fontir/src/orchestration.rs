@@ -20,10 +20,11 @@ use crate::{
 
 // Unique identifier of work. If there are no fields work is unique.
 // Meant to be small and cheap to copy around.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkIdentifier {
     StaticMetadata,
-    GlyphIr(u32),
+    GlyphIr(String),
+    GlyphIrDelete(String),
     FinishIr,
 }
 
@@ -55,7 +56,7 @@ pub struct Context {
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
     static_metadata: Cache<Option<Arc<ir::StaticMetadata>>>,
-    glyph_ir: Cache<HashMap<u32, Arc<ir::Glyph>>>,
+    glyph_ir: Cache<HashMap<String, Arc<ir::Glyph>>>,
 }
 
 #[derive(Clone)]
@@ -114,8 +115,13 @@ impl Context {
     }
 
     fn check_write_access(&self, id: &WorkIdentifier) {
-        if !self.write_mask.map(|mask| mask == *id).unwrap_or(true) {
-            panic!("Illegal access");
+        if !self
+            .write_mask
+            .as_ref()
+            .map(|mask| mask == id)
+            .unwrap_or(true)
+        {
+            panic!("Illegal access to {:?}", id);
         }
     }
 
@@ -148,16 +154,16 @@ impl Context {
         *wl = Some(Arc::from(static_metadata));
     }
 
-    pub fn get_glyph_ir(&self, glyph_id: u32) -> Arc<ir::Glyph> {
-        self.check_read_access(&WorkIdentifier::GlyphIr(glyph_id));
+    pub fn get_glyph_ir(&self, glyph_name: &str) -> Arc<ir::Glyph> {
+        self.check_read_access(&WorkIdentifier::GlyphIr(glyph_name.to_string()));
         let rl = self.glyph_ir.item.read();
-        rl.get(&glyph_id).expect(MISSING_DATA).clone()
+        rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
 
-    pub fn set_glyph_ir(&self, glyph_id: u32, ir: ir::Glyph) {
-        self.check_write_access(&WorkIdentifier::GlyphIr(glyph_id));
+    pub fn set_glyph_ir(&self, glyph_name: &str, ir: ir::Glyph) {
+        self.check_write_access(&WorkIdentifier::GlyphIr(glyph_name.to_string()));
         self.maybe_persist(&self.paths.glyph_ir_file(&ir.name), &ir);
         let mut wl = self.glyph_ir.item.write();
-        wl.insert(glyph_id, Arc::from(ir));
+        wl.insert(glyph_name.to_string(), Arc::from(ir));
     }
 }

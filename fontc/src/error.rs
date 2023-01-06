@@ -16,4 +16,6 @@ pub enum Error {
     IrGenerationError,
     #[error("Does not exist")]
     FileExpected(PathBuf),
+    #[error("At least one work item failed")]
+    TasksFailed,
 }
