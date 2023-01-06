@@ -323,17 +323,19 @@ fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designsp
     let ds_axes = ir_axes(designspace);
     let axes: HashMap<_, _> = ds_axes.iter().map(|a| (&a.name, a)).collect();
 
-    let default_location: DesignLocation = designspace
-        .axes
-        .iter()
-        .map(|a| {
-            let converter = &axes.get(&a.name).unwrap().converter;
-            (
-                a.name.clone(),
-                UserCoord::new(a.default).to_design(converter),
-            )
-        })
-        .collect();
+    let default_location = DesignLocation::new(
+        designspace
+            .axes
+            .iter()
+            .map(|a| {
+                let converter = &axes.get(&a.name).unwrap().converter;
+                (
+                    a.name.clone(),
+                    UserCoord::new(a.default).to_design(converter),
+                )
+            })
+            .collect(),
+    );
     designspace
         .sources
         .iter()
@@ -429,22 +431,12 @@ impl Work for GlyphIrWork {
             .ok_or_else(|| WorkError::NoGlyphIdForName(self.glyph_name.clone()))?;
 
         // Migrate glif_files into internal coordinates
-        let axes: HashMap<_, _> = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();
+        let axes_by_tag = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();
         let mut glif_files = HashMap::new();
         for (path, design_locations) in self.glif_files.iter() {
             let normalized_locations: Vec<NormalizedLocation> = design_locations
                 .iter()
-                .map(|design_location| {
-                    design_location
-                        .iter()
-                        .map(|(an, dl)| {
-                            (
-                                an.clone(),
-                                dl.to_normalized(&axes.get(an).unwrap().converter),
-                            )
-                        })
-                        .collect()
-                })
+                .map(|dl| dl.to_normalized(&axes_by_tag))
                 .collect();
             glif_files.insert(path, normalized_locations);
         }
@@ -532,10 +524,7 @@ mod tests {
         add_to
             .entry(testdata_dir().join(glif_file))
             .or_default()
-            .push(DesignLocation::from([(
-                axis.to_string(),
-                DesignCoord::new(pos),
-            )]));
+            .push(DesignLocation::on_axis(axis, DesignCoord::new(pos)));
     }
 
     #[test]
@@ -600,10 +589,8 @@ mod tests {
     pub fn find_default_master() {
         let (source, _) = test_source();
         let ds = source.load_designspace().unwrap();
-        let mut expected = DesignLocation::new();
-        expected.insert("Weight".to_string(), DesignCoord::new(400.0));
         assert_eq!(
-            expected,
+            DesignLocation::on_axis("Weight", DesignCoord::new(400.0)),
             to_design_location(&default_master(&ds).unwrap().1.location)
         );
     }

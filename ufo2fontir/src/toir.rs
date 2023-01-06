@@ -11,9 +11,11 @@ use crate::error::Error;
 
 pub(crate) fn to_design_location(loc: &[Dimension]) -> DesignLocation {
     // TODO: what if Dimension uses uservalue? - new in DS5.0
-    loc.iter()
-        .map(|d| (d.name.clone(), DesignCoord::new(d.xvalue.unwrap())))
-        .collect()
+    DesignLocation::new(
+        loc.iter()
+            .map(|d| (d.name.clone(), DesignCoord::new(d.xvalue.unwrap())))
+            .collect(),
+    )
 }
 
 fn to_ir_point_type(typ: &norad::PointType) -> ir::PointType {

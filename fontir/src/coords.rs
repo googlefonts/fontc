@@ -2,10 +2,10 @@
 //!
 //! See <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
-use crate::piecewise_linear_map::PiecewiseLinearMap;
 use crate::serde::CoordConverterSerdeRepr;
+use crate::{ir::Axis, piecewise_linear_map::PiecewiseLinearMap};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
@@ -29,11 +29,17 @@ pub struct UserCoord(OrderedFloat<f32>);
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NormalizedCoord(OrderedFloat<f32>);
 
+/// A set of per-axis coordinates that define a specific location in a coordinate system.
+///
+/// E.g. a user location is a `Location<UserCoord>`.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Location<T>(pub BTreeMap<String, T>);
+
 // Using BTreeMap instead of HashMap and OrderedFloat instead of f32 so that
 // the location is hashable and can be used as a key in Glyph::sources HashMap
-pub type DesignLocation = BTreeMap<String, DesignCoord>;
-pub type UserLocation = BTreeMap<String, UserCoord>;
-pub type NormalizedLocation = BTreeMap<String, NormalizedCoord>;
+pub type DesignLocation = Location<DesignCoord>;
+pub type UserLocation = Location<UserCoord>;
+pub type NormalizedLocation = Location<NormalizedCoord>;
 
 /// Converts between Design, User, and Normalized coordinates.
 ///
@@ -158,6 +164,32 @@ impl UserCoord {
 impl NormalizedCoord {
     pub fn into_inner(self) -> OrderedFloat<f32> {
         self.0
+    }
+}
+
+impl<T> Location<T> {
+    pub fn new(positions: BTreeMap<String, T>) -> Location<T> {
+        Location(positions)
+    }
+
+    pub fn on_axis(name: &str, pos: T) -> Location<T> {
+        Location(BTreeMap::from([(name.to_string(), pos)]))
+    }
+}
+
+impl DesignLocation {
+    pub fn to_normalized(&self, axes: &HashMap<&String, &Axis>) -> NormalizedLocation {
+        Location::<NormalizedCoord>(
+            self.0
+                .iter()
+                .map(|(tag, dc)| {
+                    (
+                        tag.clone(),
+                        dc.to_normalized(&axes.get(tag).unwrap().converter),
+                    )
+                })
+                .collect(),
+        )
     }
 }
 

@@ -221,7 +221,7 @@ impl Work for GlyphIrWork {
             let master = &font.font_master[*master_idx];
             let location = &font_info.master_locations[master.id.as_str()];
 
-            for (tag, coord) in location.iter() {
+            for (tag, coord) in location.0.iter() {
                 axis_positions
                     .entry(tag.clone())
                     .or_default()
@@ -267,13 +267,13 @@ impl Work for GlyphIrWork {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::{BTreeMap, HashMap, HashSet},
+        collections::{HashMap, HashSet},
         path::{Path, PathBuf},
         sync::Arc,
     };
 
     use fontir::{
-        coords::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord},
+        coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
         error::WorkError,
         ir::{self, Glyph},
         orchestration::{Context, WorkIdentifier},
@@ -480,9 +480,9 @@ mod tests {
 
         assert_eq!(
             HashSet::from([
-                &BTreeMap::from([("wght".to_string(), NormalizedCoord::new(-1.0))]),
-                &BTreeMap::from([("wght".to_string(), NormalizedCoord::new(0.0))]),
-                &BTreeMap::from([("wght".to_string(), NormalizedCoord::new(1.0))]),
+                &NormalizedLocation::on_axis("wght", NormalizedCoord::new(-1.0)),
+                &NormalizedLocation::on_axis("wght", NormalizedCoord::new(0.0)),
+                &NormalizedLocation::on_axis("wght", NormalizedCoord::new(1.0)),
             ]),
             glyph_ir(&context, &glyph_name)
                 .sources
