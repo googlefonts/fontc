@@ -5,7 +5,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use write_fonts::{
     dump_table,
     read::{FontRef, TableProvider, TopLevelTable},
-    tables::layout::{FeatureParams, StylisticSetParams},
+    tables::{
+        layout::{FeatureParams, StylisticSetParams},
+        maxp::Maxp,
+    },
     types::Tag,
     FontBuilder,
 };
@@ -37,8 +40,13 @@ pub struct Compilation {
 impl Compilation {
     /// Compile this output into a new binary font.
     #[allow(clippy::result_unit_err)] //TODO: figure out error reporting
-    pub fn build_raw(&self, _glyph_map: &GlyphMap) -> Result<FontBuilder<'static>, ()> {
-        self.apply(None)
+    pub fn build_raw(&self, glyph_map: &GlyphMap) -> Result<FontBuilder<'static>, ()> {
+        let mut builder = self.apply(None)?;
+        // because we often inspect our output with ttx, and ttx fails if maxp is
+        // missing, we create a maxp table.
+        let maxp = Maxp::new(glyph_map.len().try_into().unwrap());
+        builder.add_table(Tag::new(b"maxp"), dump_table(&maxp).unwrap());
+        Ok(builder)
     }
 
     /// Attempt to update the provided font with the results of this compilation.
