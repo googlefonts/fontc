@@ -1,9 +1,7 @@
 //! utilities for compiling and comparing ttx
 
 use std::{
-    borrow::Cow,
     collections::HashMap,
-    convert::TryInto,
     env::temp_dir,
     ffi::OsStr,
     fmt::{Debug, Display, Write},
@@ -12,15 +10,14 @@ use std::{
     time::SystemTime,
 };
 
-use crate::{compile, Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree};
+use crate::{
+    compile::{self, Opts},
+    Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree,
+};
 
 use ansi_term::Color;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use write_fonts::{
-    tables::{maxp::Maxp, post::Post},
-    types::Tag,
-};
 
 static IGNORED_TESTS: &[&str] = &[
     // ## tests with invalid syntax ## //
@@ -129,12 +126,10 @@ pub fn assert_has_ttx_executable() {
 /// tests which contain one of the strings in the list will be run.
 pub fn run_all_tests(fonttools_data_dir: impl AsRef<Path>, filter: Option<&String>) -> Report {
     let glyph_map = make_glyph_map();
-    let post = make_post_table(&glyph_map);
-    let post_data = write_fonts::dump_table(&post).unwrap();
 
     let result = iter_compile_tests(fonttools_data_dir.as_ref(), filter)
         .par_bridge()
-        .map(|path| run_test(path, &glyph_map, &post_data))
+        .map(|path| run_test(path, &glyph_map))
         .collect::<Vec<_>>();
 
     finalize_results(result)
@@ -213,7 +208,7 @@ pub fn try_parse_file(
 }
 
 /// takes a path to a sample ttx file
-fn run_test(path: PathBuf, glyph_map: &GlyphMap, post_data: &[u8]) -> Result<PathBuf, TestCase> {
+fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| match try_parse_file(&path, Some(glyph_map)) {
         Err((node, errs)) => Err(TestCase {
             path: path.clone(),
@@ -225,10 +220,8 @@ fn run_test(path: PathBuf, glyph_map: &GlyphMap, post_data: &[u8]) -> Result<Pat
                 reason: TestResult::CompileFail(stringify_diagnostics(&node, &errs)),
             }),
             Ok(result) => {
-                let mut builder = result.build_raw(glyph_map).unwrap();
-                let maxp = Maxp::new(glyph_map.len().try_into().unwrap());
-                builder.add_table(Tag::new(b"maxp"), write_fonts::dump_table(&maxp).unwrap());
-                builder.add_table(Tag::new(b"post"), post_data);
+                let opts = Opts::new().make_post_table(true);
+                let mut builder = result.build_raw(glyph_map, opts).unwrap();
                 let font_data = builder.build();
                 compare_ttx(&font_data, &path)
             }
@@ -498,19 +491,6 @@ static TEST_FONT_GLYPHS: &[&str] = &[
         .map(|name| GlyphIdent::Name(GlyphName::new(*name)))
         .chain((800_u16..=1001).into_iter().map(GlyphIdent::Cid))
         .collect()
-}
-
-fn make_post_table(map: &GlyphMap) -> Post {
-    let reverse = map.reverse_map();
-    let rev_vec = reverse
-        .values()
-        .map(|val| match val {
-            GlyphIdent::Name(s) => Cow::Borrowed(s.as_str()),
-            GlyphIdent::Cid(cid) => Cow::Owned(format!("cid{:05}", *cid)),
-        })
-        .collect::<Vec<_>>();
-
-    Post::new_v2(rev_vec.iter().map(Cow::as_ref))
 }
 
 impl Report {

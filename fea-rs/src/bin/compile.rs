@@ -3,7 +3,10 @@
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use fea_rs::{compile, GlyphMap, GlyphName};
+use fea_rs::{
+    compile::{self, Opts},
+    GlyphMap, GlyphName,
+};
 use write_fonts::types::GlyphId;
 
 /// Attempt to compile features into a font file.
@@ -51,8 +54,9 @@ fn main() -> Result<(), Error> {
     };
 
     let path = args.out_path();
+    let opts = Opts::new().make_post_table(args.post);
     let raw_font = compiled
-        .build_raw(&glyph_names)
+        .build_raw(&glyph_names, opts)
         .expect("ttf compile failed")
         .build();
 
@@ -129,6 +133,10 @@ struct Args {
     /// path to write the generated font. Defaults to 'compile-out.ttf'
     #[arg(short, long)]
     out_path: Option<PathBuf>,
+
+    /// Optionally write a post table to the generated font
+    #[arg(short, long)]
+    post: bool,
 }
 
 impl Args {

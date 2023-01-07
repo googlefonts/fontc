@@ -18,6 +18,7 @@ use super::{
     features::SizeFeature,
     lookups::{AllLookups, FeatureKey, LookupId},
     tables::Tables,
+    Opts,
 };
 
 use crate::{Diagnostic, GlyphMap};
@@ -40,12 +41,16 @@ pub struct Compilation {
 impl Compilation {
     /// Compile this output into a new binary font.
     #[allow(clippy::result_unit_err)] //TODO: figure out error reporting
-    pub fn build_raw(&self, glyph_map: &GlyphMap) -> Result<FontBuilder<'static>, ()> {
+    pub fn build_raw(&self, glyph_map: &GlyphMap, opts: Opts) -> Result<FontBuilder<'static>, ()> {
         let mut builder = self.apply(None)?;
         // because we often inspect our output with ttx, and ttx fails if maxp is
         // missing, we create a maxp table.
         let maxp = Maxp::new(glyph_map.len().try_into().unwrap());
         builder.add_table(Tag::new(b"maxp"), dump_table(&maxp).unwrap());
+        if opts.make_post_table {
+            let post = glyph_map.make_post_table();
+            builder.add_table(Tag::new(b"post"), dump_table(&post).unwrap());
+        }
         Ok(builder)
     }
 

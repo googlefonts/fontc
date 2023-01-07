@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    compile,
+    compile::{self, Opts},
     util::ttx::{self as test_utils, Report, TestCase, TestResult},
     GlyphMap,
 };
@@ -120,7 +120,9 @@ fn good_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
         }),
         Ok(node) => match compile::compile(&node, glyph_map) {
             Ok(thing) => {
-                let mut x = thing.build_raw(glyph_map).unwrap();
+                let mut x = thing
+                    .build_raw(glyph_map, Opts::new().make_post_table(true))
+                    .unwrap();
                 x.build();
                 Ok(())
             }

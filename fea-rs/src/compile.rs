@@ -4,6 +4,7 @@ use crate::{parse::ParseTree, Diagnostic, GlyphMap, GlyphName};
 
 use self::{compile_ctx::CompilationCtx, validate::ValidationCtx};
 
+pub use opts::Opts;
 pub use output::Compilation;
 
 mod common;
@@ -12,6 +13,7 @@ mod features;
 mod glyph_range;
 mod language_system;
 mod lookups;
+mod opts;
 mod output;
 mod tables;
 mod validate;
@@ -23,6 +25,14 @@ pub fn validate(node: &ParseTree, glyph_map: &GlyphMap) -> Vec<Diagnostic> {
 }
 
 /// Run the compilation pass (including validation)
+///
+/// On success, the output of this method is a [`Compilation`] object, which
+/// can be used to build a binary font.
+///
+/// # Note:
+///
+/// If you're trying to compile a font, you are better off running the main
+/// binary, which lives at src/bin/compile.rs.
 pub fn compile(node: &ParseTree, glyph_map: &GlyphMap) -> Result<Compilation, Vec<Diagnostic>> {
     let ctx = validate_impl(node, glyph_map);
     if ctx.errors.iter().any(Diagnostic::is_error) {

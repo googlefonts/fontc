@@ -1,5 +1,8 @@
+use write_fonts::tables::post::Post;
+
 use super::{GlyphId, GlyphIdent, GlyphName};
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap},
     convert::TryInto,
     iter::FromIterator,
@@ -63,6 +66,20 @@ impl GlyphMap {
         } else {
             unreachable!()
         }
+    }
+
+    /// Generate a post table from this glyph map
+    pub fn make_post_table(&self) -> Post {
+        let reverse = self.reverse_map();
+        let rev_vec = reverse
+            .values()
+            .map(|val| match val {
+                GlyphIdent::Name(s) => Cow::Borrowed(s.as_str()),
+                GlyphIdent::Cid(cid) => Cow::Owned(format!("cid{:05}", *cid)),
+            })
+            .collect::<Vec<_>>();
+
+        Post::new_v2(rev_vec.iter().map(Cow::as_ref))
     }
 }
 
