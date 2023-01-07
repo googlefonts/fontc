@@ -81,7 +81,7 @@ pub(crate) fn write_diagnostic(
     )
     .unwrap();
     write!(writer, "{}{} |{} ", blue.prefix(), line_n, blue.suffix()).unwrap();
-    writeln!(writer, "{}{}", ellipsis, &text[trim_start..],).unwrap();
+    writeln!(writer, "{ellipsis}{text}").unwrap();
     let n_spaces = (span.start - line_start) - trim_start;
     // use the whitespace at the front of the line first, so that
     // we don't replace tabs with spaces
@@ -174,4 +174,19 @@ static CARETS: &str = "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 pub(crate) fn decimal_digits(n: usize) -> usize {
     (n as f64).log10().floor() as usize + 1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn highlight_long_line() {
+        static A_BAD_LINE: &str = "@COMBINING_MARKS = [ candrabindu-kannada nukta-kannada ssa-kannada.below.kssa ra-kannada.below rVocalicMatra-kannada rrVocalicMatra-kannada ailength-kannada ka-kannada.below kha-kannada.below ga-kannada.below gha-kannada.below nga-kannada.below ca-kannada.below cha-kannada.below ja-kannada.below jha-kannada.below nya-kannada.below tta-kannada.below ttha-kannada.below dda-kannada.below ddha-kannada.below nna-kannada.below ta-kannada.below tha-kannada.below da-kannada.below dha-kannada.below na-kannada.below pa-kannada.below pha-kannada.below ba-kannada.below bha-kannada.below ma-kannada.below ya-kannada.below la-kannada.below va-kannada.below sha-kannada.below ssa-kannada.below sa-kannada.below ha-kannada.below rra-kannada.below lla-kannada.below fa-kannada.below ka_ssa-kannada.below ta_ra-kannada.below ra-kannada.below.following rVocalicMatra-kannada.following rrVocalicMatra-kannada.following ailength-kannada.following ka-kannada.below.following kha-kannada.below.following ga-kannada.below.following gha-kannada.below.following nga-kannada.below.following ca-kannada.below.following cha-kannada.below.following ja-kannada.below.following jha-kannada.below.following nya-kannada.below.following tta-kannada.below.following ttha-kannada.below.following dda-kannada.below.following ddha-kannada.below.following nna-kannada.below.following ta-kannada.below.following tha-kannada.below.following da-kannada.below.following dha-kannada.below.following na-kannada.below.following pa-kannada.below.following pha-kannada.below.following ba-kannada.below.following bha-kannada.below.following ma-kannada.below.following ya-kannada.below.following la-kannada.below.following va-kannada.below.following sha-kannada.below.following ssa-kannada.below.following sa-kannada.below.following ha-kannada.below.following rra-kannada.below.following lla-kannada.below.following fa-kannada.below.following ka_ssa-kannada.below.following ta_ra-kannada.below.following ];";
+
+        let source = Source::from_text(A_BAD_LINE);
+        let err = Diagnostic::warning(source.id(), 200..220, "bad!");
+        let mut write_to = String::new();
+        write_diagnostic(&mut write_to, &err, &source, None);
+    }
 }
