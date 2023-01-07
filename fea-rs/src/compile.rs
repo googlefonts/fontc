@@ -62,3 +62,29 @@ pub fn get_ufo_glyph_order(font: &norad::Font) -> Option<GlyphMap> {
                 .collect()
         })
 }
+
+/// A helper function for extracting glyph order from a font with a 'post' table
+///
+/// If 'post' is missing or malformed, this will return `None`.
+pub fn get_post_glyph_order(font_data: &[u8]) -> Option<GlyphMap> {
+    use write_fonts::{
+        from_obj::ToOwnedTable,
+        read::{tables::post::DEFAULT_GLYPH_NAMES, FontRef, TableProvider},
+        tables::post::Post,
+    };
+    let font = FontRef::new(font_data).ok()?;
+    let post: Post = font.post().ok()?.to_owned_table();
+    post.glyph_name_index
+        .as_ref()?
+        .iter()
+        .map(|name_idx| match *name_idx {
+            i @ 0..=257 => Some(GlyphName::new(DEFAULT_GLYPH_NAMES[i as usize])),
+            i => post
+                .string_data
+                .as_ref()
+                .unwrap()
+                .get((i - 258) as usize)
+                .map(GlyphName::new),
+        })
+        .collect()
+}

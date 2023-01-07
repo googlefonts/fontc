@@ -2,16 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-use write_fonts::{
-    from_obj::ToOwnedTable,
-    read::{tables::post::DEFAULT_GLYPH_NAMES, FontRef, TableProvider},
-    tables::post::Post,
-};
-
 use crate::{
     compile,
     util::ttx::{self as test_utils, Report, TestCase, TestResult},
-    GlyphMap, GlyphName,
+    GlyphMap,
 };
 
 static ROOT_TEST_DIR: &str = "./test-data/compile-tests";
@@ -25,7 +19,7 @@ fn should_fail() -> Result<(), Report> {
     let mut results = Vec::new();
     for (font, tests) in iter_test_groups(BAD_DIR) {
         let font_data = std::fs::read(font).unwrap();
-        let glyph_map = make_glyph_map(&font_data);
+        let glyph_map = compile::get_post_glyph_order(&font_data).unwrap();
         results.extend(tests.into_iter().map(|path| run_bad_test(path, &glyph_map)));
     }
     test_utils::finalize_results(results).into_error()
@@ -36,7 +30,7 @@ fn should_pass() -> Result<(), Report> {
     let mut results = Vec::new();
     for (font, tests) in iter_test_groups(GOOD_DIR) {
         let font_data = std::fs::read(font).unwrap();
-        let glyph_map = make_glyph_map(&font_data);
+        let glyph_map = compile::get_post_glyph_order(&font_data).unwrap();
         results.extend(
             tests
                 .into_iter()
@@ -125,31 +119,15 @@ fn good_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
             reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
         }),
         Ok(node) => match compile::compile(&node, glyph_map) {
-            Ok(_thing) => Ok(()),
+            Ok(thing) => {
+                let mut x = thing.build_raw(glyph_map).unwrap();
+                x.build();
+                Ok(())
+            }
             Err(errs) => Err(TestCase {
                 path: path.to_owned(),
                 reason: TestResult::CompileFail(test_utils::stringify_diagnostics(&node, &errs)),
             }),
         },
     }
-}
-
-fn make_glyph_map(font_data: &[u8]) -> GlyphMap {
-    let font = FontRef::new(font_data).unwrap();
-    let post: Post = font.post().unwrap().to_owned_table();
-    post.glyph_name_index
-        .as_ref()
-        .unwrap()
-        .iter()
-        .map(|name_idx| match *name_idx {
-            i @ 0..=257 => GlyphName::new(DEFAULT_GLYPH_NAMES[i as usize]),
-            i => GlyphName::new(
-                post.string_data
-                    .as_ref()
-                    .unwrap()
-                    .get((i - 258) as usize)
-                    .unwrap(),
-            ),
-        })
-        .collect()
 }
