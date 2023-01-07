@@ -1,5 +1,6 @@
 use std::{io, path::PathBuf};
 
+use fontir::orchestration::WorkIdentifier;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -17,5 +18,5 @@ pub enum Error {
     #[error("Does not exist")]
     FileExpected(PathBuf),
     #[error("At least one work item failed")]
-    TasksFailed,
+    TasksFailed(Vec<(WorkIdentifier, String)>),
 }

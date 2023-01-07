@@ -47,7 +47,6 @@ impl Paths {
             WorkIdentifier::GlyphIr(name) => self.glyph_ir_file(name),
             WorkIdentifier::GlyphIrDelete(name) => self.glyph_ir_file(name),
             WorkIdentifier::FeatureIr => self.build_dir.join("features.yml"),
-            WorkIdentifier::FinishIr => self.build_dir.join("finish_ir.yml"),
         }
     }
 }

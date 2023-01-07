@@ -479,7 +479,7 @@ impl Work for FeatureWork {
         }
 
         if !fea_files.is_empty() {
-            context.set_features(Features::from_file(&fea_files[0]).map_err(WorkError::IoError)?);
+            context.set_features(Features::from_file(&fea_files[0]));
         } else {
             context.set_features(Features::empty());
         }

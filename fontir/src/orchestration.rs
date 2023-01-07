@@ -21,7 +21,6 @@ pub enum WorkIdentifier {
     GlyphIr(String),
     GlyphIrDelete(String),
     FeatureIr,
-    FinishIr,
 }
 
 const MISSING_DATA: &str = "Missing data, dependency management failed us?";
@@ -195,8 +194,21 @@ impl Context {
         wl.insert(glyph_name.to_string(), Arc::from(ir));
     }
 
+    fn set_cached_features(&self, ir: ir::Features) {
+        let mut wl = self.feature_ir.item.write();
+        *wl = Some(Arc::from(ir));
+    }
+
     pub fn get_features(&self) -> Arc<ir::Features> {
-        self.check_read_access(&WorkIdentifier::FeatureIr);
+        let id = WorkIdentifier::FeatureIr;
+        self.check_read_access(&id);
+        {
+            let rl = self.feature_ir.item.read();
+            if rl.is_some() {
+                return rl.as_ref().unwrap().clone();
+            }
+        }
+        self.set_cached_static_metadata(self.restore(&&self.paths.target_file(&id)));
         let rl = self.feature_ir.item.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
@@ -205,7 +217,6 @@ impl Context {
         let id = WorkIdentifier::FeatureIr;
         self.check_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
-        let mut wl = self.feature_ir.item.write();
-        *wl = Some(Arc::from(ir));
+        self.set_cached_features(ir);
     }
 }

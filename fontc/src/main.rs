@@ -7,7 +7,8 @@ use std::{
 };
 
 use clap::Parser;
-use fontc::Error;
+use crossbeam_channel::{Receiver, TryRecvError};
+use fontc::{be, Error};
 use fontir::{
     error::WorkError,
     orchestration::{Context, WorkIdentifier},
@@ -18,7 +19,6 @@ use fontir::{
 use glyphs2fontir::source::GlyphsIrSource;
 use indexmap::IndexSet;
 use log::{debug, error, info, log_enabled, trace, warn};
-use rayon::Scope;
 use serde::{Deserialize, Serialize};
 use ufo2fontir::source::DesignSpaceIrSource;
 
@@ -136,8 +136,9 @@ fn finish_successfully(context: ChangeDetector) -> Result<(), Error> {
 }
 
 impl ChangeDetector {
-    fn static_metadata_change(&self) -> bool {
+    fn static_metadata_ir_change(&self) -> bool {
         self.current_inputs.static_metadata != self.prev_inputs.static_metadata
+<<<<<<< HEAD
             || !self
                 .paths
                 .target_file(&WorkIdentifier::StaticMetadata)
@@ -148,10 +149,23 @@ impl ChangeDetector {
         self.static_metadata_change()
             || self.current_inputs.features != self.prev_inputs.features
             || !self.paths.target_file(&WorkIdentifier::FeatureIr).is_file()
+=======
+            || !self.paths.static_metadata_ir_file().is_file()
+    }
+
+    fn feature_ir_change(&self) -> bool {
+        self.static_metadata_ir_change()
+            || self.current_inputs.features != self.prev_inputs.features
+            || !self.paths.feature_ir_file().is_file()
+    }
+
+    fn feature_be_change(&self) -> bool {
+        self.feature_ir_change() || !self.paths.feature_be_file().is_file()
+>>>>>>> 951ffab (Run the fea-rs parser)
     }
 
     fn glyphs_changed(&self) -> HashSet<&str> {
-        if self.static_metadata_change() {
+        if self.static_metadata_ir_change() {
             return self
                 .current_inputs
                 .glyphs
@@ -193,7 +207,7 @@ fn add_static_metadata_ir_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
-    if change_detector.static_metadata_change() {
+    if change_detector.static_metadata_ir_change() {
         workload.insert(
             WorkIdentifier::StaticMetadata,
             Job {
@@ -213,7 +227,7 @@ fn add_feature_ir_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
-    if change_detector.feature_change() {
+    if change_detector.feature_ir_change() {
         workload.insert(
             WorkIdentifier::FeatureIr,
             Job {
@@ -225,6 +239,27 @@ fn add_feature_ir_job(
         );
     } else {
         workload.mark_success(WorkIdentifier::FeatureIr);
+    }
+    Ok(())
+}
+
+fn add_feature_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.feature_be_change() {
+        workload.insert(
+            WorkIdentifier::FeatureBe,
+            Job {
+                work: be::create_feature_work(&change_detector.paths)?,
+                happens_after: HashSet::from([
+                    WorkIdentifier::StaticMetadata,
+                    WorkIdentifier::FeatureIr,
+                ]),
+            },
+        );
+    } else {
+        workload.mark_success(WorkIdentifier::FeatureBe);
     }
     Ok(())
 }
@@ -289,32 +324,45 @@ impl ChangeDetector {
     }
 }
 
+enum RecvType {
+    Blocking,
+    NonBlocking,
+}
+
 /// A set of interdependent jobs to execute.
 struct Workload {
+    pre_success: usize,
+    job_count: usize,
     success: HashSet<WorkIdentifier>,
-    jobs: HashMap<WorkIdentifier, Job>,
+    error: Vec<(WorkIdentifier, String)>,
+    jobs_pending: HashMap<WorkIdentifier, Job>,
 }
 
 impl Workload {
     fn new() -> Workload {
         Workload {
+            pre_success: 0,
+            job_count: 0,
             success: HashSet::new(),
-            jobs: HashMap::new(),
+            error: Vec::new(),
+            jobs_pending: HashMap::new(),
         }
     }
 
     fn insert(&mut self, id: WorkIdentifier, job: Job) {
-        self.jobs.insert(id, job);
+        self.jobs_pending.insert(id, job);
     }
 
     fn mark_success(&mut self, id: WorkIdentifier) {
-        self.success.insert(id);
+        if self.success.insert(id) {
+            self.pre_success += 1;
+        }
     }
 }
 
 impl Workload {
     fn launchable(&self) -> Vec<WorkIdentifier> {
-        self.jobs
+        self.jobs_pending
             .iter()
             .filter_map(|(id, job)| {
                 let can_start = job.happens_after.is_subset(&self.success);
@@ -332,59 +380,89 @@ impl Workload {
             .collect()
     }
 
-    fn exec(mut self, scope: &Scope, root_context: Context) -> Result<(), Error> {
-        let pre_success = self.success.len(); // not actually executed
-        let job_count = self.jobs.len();
+    fn exec(mut self, root_context: Context) -> Result<(), Error> {
+        self.job_count = self.jobs_pending.len();
 
         // Async work will send us it's ID on completion
         let (send, recv) =
             crossbeam_channel::unbounded::<(WorkIdentifier, Result<(), WorkError>)>();
-        let mut error = HashSet::new();
 
-        // Whenever a task completes see if it was the last incomplete dependency of other task(s)
-        // and spawn them if it was
-        // TODO timeout and die it if takes too long to make forward progress or we're spinning w/o progress
-        while self.success.len() < job_count + pre_success && error.is_empty() {
-            // Spawn anything that is currently executable (has no unfulfilled dependencies)
-            for id in self.launchable() {
-                trace!("Start {:?}", id);
-                let job = self.jobs.remove(&id).unwrap();
-                let work = job.work;
-                let work_context = root_context.copy_for_work(id.clone(), Some(job.dependencies));
-                let send = send.clone();
-                scope.spawn(move |_| {
-                    let result = work.exec(&work_context);
-                    if let Err(e) = send.send((id.clone(), result)) {
-                        error!("Unable to write {:?} to completion channel: {}", id, e);
-                    }
-                })
+        rayon::in_place_scope(|scope| {
+            // Whenever a task completes see if it was the last incomplete dependency of other task(s)
+            // and spawn them if it was
+            // TODO timeout and die it if takes too long to make forward progress or we're spinning w/o progress
+            while self.success.len() < self.job_count + self.pre_success {
+                // Spawn anything that is currently executable (has no unfulfilled dependencies)
+                for id in self.launchable() {
+                    trace!("Start {:?}", id);
+                    let job = self.jobs_pending.remove(&id).unwrap();
+                    let work = job.work;
+                    let work_context =
+                        root_context.copy_for_work(id.clone(), Some(job.happens_after));
+                    let send = send.clone();
+                    scope.spawn(move |_| {
+                        let result = work.exec(&work_context);
+                        if let Err(e) = send.send((id.clone(), result)) {
+                            error!("Unable to write {:?} to completion channel: {}", id, e);
+                        }
+                    })
+                }
+
+                // Block for things to phone home to say they are done
+                // Then complete everything that has reported since our last check
+                self.read_completions(&recv, RecvType::Blocking)?;
             }
+            Ok::<(), Error>(())
+        })?;
 
-            // Block for things to phone home to say they are done
-            // Then complete everything that has reported since our last check
-            let mut opt_complete = Some(recv.recv().unwrap()); // blocks
-            while let Some((completed_id, result)) = opt_complete.take() {
-                if !match result {
-                    Ok(..) => self.success.insert(completed_id.clone()),
-                    Err(..) => error.insert(completed_id.clone()),
-                } {
-                    panic!("Repeat signals for completion of {:#?}", completed_id);
-                }
-                debug!(
-                    "{}/{} complete, most recently {:?}",
-                    error.len() + self.success.len() - pre_success,
-                    job_count,
-                    completed_id
-                );
+        // If ^ exited due to error the scope awaited any live tasks; capture their results
+        self.read_completions(&recv, RecvType::NonBlocking)?;
 
-                // See if anything else is complete in case things come in waves
-                if let Ok(completed_id) = recv.try_recv() {
-                    opt_complete = Some(completed_id);
+        Ok(())
+    }
+
+    fn read_completions(
+        &mut self,
+        recv: &Receiver<(WorkIdentifier, Result<(), WorkError>)>,
+        initial_read: RecvType,
+    ) -> Result<(), Error> {
+        let mut opt_complete = match initial_read {
+            RecvType::Blocking => match recv.recv() {
+                Ok(completed) => Some(completed),
+                Err(e) => panic!("Blocking read failed: {}", e),
+            },
+            RecvType::NonBlocking => match recv.try_recv() {
+                Ok(completed) => Some(completed),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Disconnected) => {
+                    panic!("Channel closed before reading completed")
                 }
+            },
+        };
+        while let Some((completed_id, result)) = opt_complete.take() {
+            if !match result {
+                Ok(..) => self.success.insert(completed_id.clone()),
+                Err(e) => {
+                    self.error.push((completed_id.clone(), format!("{}", e)));
+                    true
+                }
+            } {
+                panic!("Repeat signals for completion of {:#?}", completed_id);
+            }
+            debug!(
+                "{}/{} complete, most recently {:?}",
+                self.error.len() + self.success.len() - self.pre_success,
+                self.job_count,
+                completed_id
+            );
+
+            // See if anything else is complete in case things come in waves
+            if let Ok(completed_id) = recv.try_recv() {
+                opt_complete = Some(completed_id);
             }
         }
-        if !error.is_empty() {
-            return Err(Error::TasksFailed);
+        if !self.error.is_empty() {
+            return Err(Error::TasksFailed(self.error.clone()));
         }
         Ok(())
     }
@@ -407,7 +485,7 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
     add_glyph_ir_jobs(change_detector, &mut workload)?;
 
     // BE: f(IR) => binary
-    //add_feature_be_job(change_detector, &mut workload)?;
+    add_feature_be_job(change_detector, &mut workload)?;
 
     Ok(workload)
 }
@@ -438,14 +516,12 @@ fn main() -> Result<(), Error> {
     let mut change_detector = ChangeDetector::new(config.clone(), paths.clone(), prev_inputs)?;
     let workload = create_workload(&mut change_detector)?;
 
-    rayon::in_place_scope(|scope| {
-        let root_context = Context::new_root(
-            config.args.emit_ir,
-            paths,
-            change_detector.current_inputs.clone(),
-        );
-        workload.exec(scope, root_context)
-    })?;
+    let root_context = Context::new_root(
+        config.args.emit_ir,
+        paths,
+        change_detector.current_inputs.clone(),
+    );
+    workload.exec(root_context)?;
 
     finish_successfully(change_detector)?;
     Ok(())
@@ -587,7 +663,7 @@ mod tests {
             change_detector.current_inputs.clone(),
         );
         let pre_success = workload.success.clone();
-        while !workload.jobs.is_empty() {
+        while !workload.jobs_pending.is_empty() {
             let launchable = workload.launchable();
             if launchable.is_empty() {
                 eprintln!("Completed:");
@@ -595,7 +671,7 @@ mod tests {
                     eprintln!("  {:?}", id);
                 }
                 eprintln!("Unable to proceed with:");
-                for (id, job) in workload.jobs.iter() {
+                for (id, job) in workload.jobs_pending.iter() {
                     eprintln!("  {:?}, happens-after {:?}", id, job.happens_after);
                 }
                 assert!(
@@ -605,7 +681,7 @@ mod tests {
             }
 
             let id = &launchable[0];
-            let job = workload.jobs.remove(id).unwrap();
+            let job = workload.jobs_pending.remove(id).unwrap();
             let context = root_context.copy_for_work(id.clone(), Some(job.happens_after));
             job.work.exec(&context).unwrap();
             assert!(

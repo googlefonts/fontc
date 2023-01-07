@@ -7,7 +7,10 @@ use crate::{
 };
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, io, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 /// Global font info that cannot vary.
 ///
@@ -49,20 +52,17 @@ pub struct Axis {
 /// locations, etc.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Features {
-    pub features: String,
+    pub fea_file: Option<PathBuf>,
 }
 
 impl Features {
     pub fn empty() -> Features {
-        Features {
-            features: String::from(""),
-        }
+        Features { fea_file: None }
     }
-
-    pub fn from_file(file: &Path) -> Result<Features, io::Error> {
-        Ok(Features {
-            features: fs::read_to_string(file)?,
-        })
+    pub fn from_file(file: &Path) -> Features {
+        Features {
+            fea_file: Some(file.to_path_buf()),
+        }
     }
 }
 
