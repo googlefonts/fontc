@@ -6,6 +6,7 @@ mod gsub;
 mod helpers;
 
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
 };
@@ -539,11 +540,6 @@ impl AllLookups {
         let mut gsub_builder = PosSubBuilder::new(self.gsub.clone());
 
         for (key, feature_indices) in features {
-            assert!(crate::util::is_sorted(feature_indices));
-            let split_idx = feature_indices
-                .iter()
-                .position(|x| matches!(x, LookupId::Gsub(_)))
-                .unwrap_or(feature_indices.len());
             let required = required_features.contains(key);
 
             if key.feature == common::tags::SIZE {
@@ -551,18 +547,59 @@ impl AllLookups {
                 continue;
             }
 
-            let (gpos_idxes, gsub_idxes) = feature_indices.split_at(split_idx);
+            let (gpos_idxes, gsub_idxes) = split_lookups(feature_indices);
             if !gpos_idxes.is_empty() {
-                gpos_builder.add(*key, gpos_idxes, required);
+                gpos_builder.add(*key, &gpos_idxes, required);
             }
 
             if !gsub_idxes.is_empty() {
-                gsub_builder.add(*key, gsub_idxes, required);
+                gsub_builder.add(*key, &gsub_idxes, required);
             }
         }
 
         (gsub_builder.build(), gpos_builder.build())
     }
+}
+
+/// Given a slice of lookupids, split them into (GPOS, GSUB)
+///
+/// In general, a feature only has either GSUB or GPOS lookups, but this is not
+/// a requirement, and in the wild we will encounter features that contain mixed
+/// lookups.
+fn split_lookups(lookups: &[LookupId]) -> (Cow<[LookupId]>, Cow<[LookupId]>) {
+    const EMPTY: Cow<[LookupId]> = Cow::Borrowed(&[]);
+    if lookups.is_empty() {
+        return (EMPTY.clone(), EMPTY.clone());
+    }
+
+    // in the majority of cases, a given feature only has lookups of one kind,
+    // so that is the fast path.
+    let is_gpos = matches!(lookups.first(), Some(LookupId::Gpos(_)));
+    if lookups
+        .iter()
+        .all(|x| matches!(x, LookupId::Gpos(_)) == is_gpos)
+    {
+        if is_gpos {
+            return (lookups.into(), EMPTY);
+        } else {
+            return (EMPTY, lookups.into());
+        }
+    }
+
+    // the uncommon case, where we have mixed lookups;
+    // here we will spit them into two new buffers
+
+    let mut gpos = Vec::new();
+    let mut gsub = Vec::new();
+    for lookup in lookups {
+        match lookup {
+            LookupId::Gpos(_) => gpos.push(*lookup),
+            LookupId::Gsub(_) => gsub.push(*lookup),
+            LookupId::Empty => (),
+        }
+    }
+
+    (gpos.into(), gsub.into())
 }
 
 impl LookupId {
