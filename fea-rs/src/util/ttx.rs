@@ -12,7 +12,7 @@ use std::{
     time::SystemTime,
 };
 
-use crate::{Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree};
+use crate::{compile, Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree};
 
 use ansi_term::Color;
 use rayon::prelude::*;
@@ -219,7 +219,7 @@ fn run_test(path: PathBuf, glyph_map: &GlyphMap, post_data: &[u8]) -> Result<Pat
             path: path.clone(),
             reason: TestResult::ParseFail(stringify_diagnostics(&node, &errs)),
         }),
-        Ok(node) => match crate::compile(&node, glyph_map) {
+        Ok(node) => match compile::compile(&node, glyph_map) {
             Err(errs) => Err(TestCase {
                 path: path.clone(),
                 reason: TestResult::CompileFail(stringify_diagnostics(&node, &errs)),
