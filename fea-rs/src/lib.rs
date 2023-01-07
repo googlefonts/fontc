@@ -2,7 +2,7 @@
 
 #![deny(missing_docs)]
 
-mod compile;
+pub mod compile;
 mod diagnostic;
 mod parse;
 mod token_tree;
@@ -12,7 +12,7 @@ pub mod util;
 #[cfg(test)]
 mod tests;
 
-pub use compile::{compile, validate, Compilation};
+pub use compile::Compilation;
 pub use diagnostic::{Diagnostic, Level};
 pub use parse::{parse_root_file, parse_src, FileId, ParseTree, Source, TokenSet};
 pub use token_tree::{typed, Kind, Node, NodeOrToken, Token};

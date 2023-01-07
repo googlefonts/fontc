@@ -9,6 +9,7 @@ use write_fonts::{
 };
 
 use crate::{
+    compile,
     util::ttx::{self as test_utils, Report, TestCase, TestResult},
     GlyphMap, GlyphName,
 };
@@ -82,7 +83,7 @@ fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
             path: path.to_owned(),
             reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
         }),
-        Ok(node) => match crate::compile(&node, glyph_map) {
+        Ok(node) => match compile::compile(&node, glyph_map) {
             Ok(_) => Err(TestCase {
                 path: path.to_owned(),
                 reason: TestResult::UnexpectedSuccess,
@@ -123,7 +124,7 @@ fn good_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
             path: path.to_owned(),
             reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
         }),
-        Ok(node) => match crate::compile(&node, glyph_map) {
+        Ok(node) => match compile::compile(&node, glyph_map) {
             Ok(_thing) => Ok(()),
             Err(errs) => Err(TestCase {
                 path: path.to_owned(),

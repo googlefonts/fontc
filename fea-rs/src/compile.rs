@@ -1,4 +1,6 @@
-use crate::{parse::ParseTree, Diagnostic, GlyphMap};
+//! Compiling OpenType Layout tables
+
+use crate::{parse::ParseTree, Diagnostic, GlyphMap, GlyphName};
 
 use self::{compile_ctx::CompilationCtx, validate::ValidationCtx};
 
@@ -41,4 +43,22 @@ fn compile_impl<'a>(node: &'a ParseTree, glyph_map: &'a GlyphMap) -> Compilation
     let mut ctx = CompilationCtx::new(glyph_map, node.source_map());
     ctx.compile(&node.typed_root());
     ctx
+}
+
+static GLYPH_ORDER_KEY: &str = "public.glyphOrder";
+
+/// A helper function for extracting the glyph order from a UFO
+///
+/// If the public.glyphOrder key is missing, or the glyphOrder is malformed,
+/// this will return `None`.
+pub fn get_ufo_glyph_order(font: &norad::Font) -> Option<GlyphMap> {
+    font.lib
+        .get(GLYPH_ORDER_KEY)
+        .and_then(|val| val.as_array())
+        .and_then(|name_array| {
+            name_array
+                .iter()
+                .map(|val| val.as_string().map(GlyphName::new))
+                .collect()
+        })
 }

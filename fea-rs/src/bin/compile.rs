@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use fea_rs::{GlyphMap, GlyphName};
+use fea_rs::{compile, GlyphMap, GlyphName};
 use write_fonts::types::GlyphId;
 
 /// Attempt to compile features into a font file.
@@ -28,7 +28,7 @@ fn main() -> Result<(), Error> {
         std::process::exit(1);
     }
 
-    let compiled = match fea_rs::compile(&tree, &glyph_names) {
+    let compiled = match compile::compile(&tree, &glyph_names) {
         Ok(compilation) => {
             for warning in &compilation.warnings {
                 eprintln!("{}", tree.format_diagnostic(warning));
@@ -130,7 +130,7 @@ impl Args {
         if self.input.extension() == Some("ufo".as_ref()) {
             let request = norad::DataRequest::none().lib(true);
             let font = norad::Font::load_requested_data(&self.input, request)?;
-            let glyph_order = get_ufo_glyph_order(&font)?;
+            let glyph_order = compile::get_ufo_glyph_order(&font).ok_or(Error::UfoBadGlyphOrder)?;
             let fea_path = self.input.join("features.fea");
             Ok((fea_path, glyph_order))
         } else {
@@ -151,25 +151,6 @@ impl Args {
             .as_deref()
             .unwrap_or_else(|| Path::new("compile-out.ttf"))
     }
-}
-
-static GLYPH_ORDER_KEY: &str = "public.glyphOrder";
-
-fn get_ufo_glyph_order(font: &norad::Font) -> Result<GlyphMap, Error> {
-    font.lib
-        .get(GLYPH_ORDER_KEY)
-        .and_then(|val| val.as_array())
-        .ok_or(Error::UfoBadGlyphOrder)
-        .and_then(|name_array| {
-            name_array
-                .iter()
-                .map(|val| {
-                    val.as_string()
-                        .map(GlyphName::new)
-                        .ok_or(Error::UfoBadGlyphOrder)
-                })
-                .collect()
-        })
 }
 
 impl From<norad::error::FontLoadError> for Error {
