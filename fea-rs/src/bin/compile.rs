@@ -92,6 +92,8 @@ enum Error {
     Ufo(Box<norad::error::FontLoadError>),
     #[error("UFO is missing public.glyphOrder key, or the value is not an array of strings")]
     UfoBadGlyphOrder,
+    #[error("The font's 'post' table is missing or malformed")]
+    FontBadPostTable,
     #[error("The provided feature file is empty")]
     EmptyFeatureFile,
     #[error("No glyph order provided")]
@@ -117,8 +119,12 @@ struct Args {
     ///
     /// This should be a utf-8 encoded file with one name per line,
     /// sorted in glyphid order.
-    #[arg(short, long)]
+    #[arg(short, long, group = "glyph_source")]
     glyph_order: Option<PathBuf>,
+
+    /// Path to a font file to be used to calculate glyph order.
+    #[arg(short, long, group = "glyph_source")]
+    font: Option<PathBuf>,
 
     /// path to write the generated font. Defaults to 'compile-out.ttf'
     #[arg(short, long)]
@@ -134,11 +140,15 @@ impl Args {
             let fea_path = self.input.join("features.fea");
             Ok((fea_path, glyph_order))
         } else {
-            let glyph_order = self
-                .glyph_order()
-                .ok_or(Error::MissingGlyphOrder)
-                .and_then(parse_glyph_order)?;
-            Ok((self.input.clone(), glyph_order))
+            let order = if let Some(path) = self.glyph_order() {
+                parse_glyph_order(path)?
+            } else if let Some(path) = self.font.as_deref() {
+                let bytes = std::fs::read(path)?;
+                compile::get_post_glyph_order(&bytes).ok_or(Error::FontBadPostTable)?
+            } else {
+                return Err(Error::MissingGlyphOrder);
+            };
+            Ok((self.input.clone(), order))
         }
     }
 
