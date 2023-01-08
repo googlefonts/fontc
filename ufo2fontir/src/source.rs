@@ -4,12 +4,13 @@ use std::{
     sync::Arc,
 };
 
+use fontdrasil::orchestration::Work;
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
     ir::{Axis, StaticMetadata},
-    orchestration::Context,
-    source::{Input, Source, Work},
+    orchestration::{Context, IrWork},
+    source::{Input, Source},
     stateset::{StateIdentifier, StateSet},
 };
 use indexmap::IndexSet;
@@ -40,7 +41,7 @@ impl DesignSpaceIrSource {
 
 // A cache of locations, valid provided no global metadata changes
 struct Cache {
-    global_metadata_sources: StateSet,
+    static_metadata: StateSet,
     locations: HashMap<PathBuf, Vec<DesignLocation>>,
     glyph_names: Arc<HashSet<String>>,
     designspace_file: PathBuf,
@@ -49,14 +50,14 @@ struct Cache {
 
 impl Cache {
     fn new(
-        global_metadata_sources: StateSet,
+        static_metadata: StateSet,
         glyph_names: HashSet<String>,
         locations: HashMap<PathBuf, Vec<DesignLocation>>,
         designspace_file: PathBuf,
         designspace: DesignSpaceDocument,
     ) -> Cache {
         Cache {
-            global_metadata_sources,
+            static_metadata,
             glyph_names: Arc::from(glyph_names),
             locations,
             designspace_file,
@@ -64,8 +65,8 @@ impl Cache {
         }
     }
 
-    fn is_valid_for(&self, global_metadata_sources: &StateSet) -> bool {
-        self.global_metadata_sources == *global_metadata_sources
+    fn is_valid_for(&self, static_metadata: &StateSet) -> bool {
+        self.static_metadata == *static_metadata
     }
 
     fn location_of(&self, glif_file: &Path) -> Option<&Vec<DesignLocation>> {
@@ -135,10 +136,7 @@ impl DesignSpaceIrSource {
     }
 
     // When things like upem may have changed forget incremental and rebuild the whole thing
-    fn global_rebuild_triggers(
-        &self,
-        designspace: &DesignSpaceDocument,
-    ) -> Result<StateSet, Error> {
+    fn static_metadata_state(&self, designspace: &DesignSpaceDocument) -> Result<StateSet, Error> {
         let mut font_info = StateSet::new();
         font_info.track_file(&self.designspace_file)?;
         let (default_master_idx, _) = default_master(designspace)
@@ -164,7 +162,7 @@ impl DesignSpaceIrSource {
         Ok(font_info)
     }
 
-    fn check_global_metadata(&self, global_metadata: &StateSet) -> Result<(), Error> {
+    fn check_static_metadata(&self, global_metadata: &StateSet) -> Result<(), Error> {
         // Do we have the location of glifs written down?
         // TODO: consider just recomputing here instead of failing
         if !self
@@ -182,7 +180,7 @@ impl DesignSpaceIrSource {
 impl Source for DesignSpaceIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         let designspace = self.load_designspace()?;
-        let global_metadata = self.global_rebuild_triggers(&designspace)?;
+        let static_metadata = self.static_metadata_state(&designspace)?;
 
         // glif filenames are not reversible so we need to read contents.plist to figure out groups
         // See https://github.com/unified-font-object/ufo-spec/issues/164.
@@ -233,7 +231,7 @@ impl Source for DesignSpaceIrSource {
         }
 
         self.cache = Some(Cache::new(
-            global_metadata.clone(),
+            static_metadata.clone(),
             glyph_names,
             glif_locations,
             self.designspace_file.clone(),
@@ -241,13 +239,13 @@ impl Source for DesignSpaceIrSource {
         ));
 
         Ok(Input {
-            global_metadata,
+            static_metadata,
             glyphs,
         })
     }
 
-    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
-        self.check_global_metadata(&input.global_metadata)?;
+    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
+        self.check_static_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
         Ok(Box::from(StaticMetadataWork {
@@ -261,13 +259,13 @@ impl Source for DesignSpaceIrSource {
         &self,
         glyph_names: &IndexSet<&str>,
         input: &Input,
-    ) -> Result<Vec<Box<dyn Work + Send>>, Error> {
-        self.check_global_metadata(&input.global_metadata)?;
+    ) -> Result<Vec<Box<IrWork>>, Error> {
+        self.check_static_metadata(&input.static_metadata)?;
 
         // A single glif could be used by many source blocks that use the same layer
         // *gasp*
         // So resolve each file to 1..N locations in designspace
-        let mut work: Vec<Box<dyn Work + Send>> = Vec::new();
+        let mut work: Vec<Box<IrWork>> = Vec::new();
 
         for glyph_name in glyph_names {
             work.push(Box::from(
@@ -397,7 +395,7 @@ fn ir_axes(designspace: &DesignSpaceDocument) -> Vec<Axis> {
     designspace.axes.iter().map(to_ir_axis).collect()
 }
 
-impl Work for StaticMetadataWork {
+impl Work<Context, WorkError> for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
 
@@ -418,7 +416,7 @@ struct GlyphIrWork {
     glif_files: HashMap<PathBuf, Vec<DesignLocation>>,
 }
 
-impl Work for GlyphIrWork {
+impl Work<Context, WorkError> for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!(
             "Generate glyph IR for {} from {:#?}",

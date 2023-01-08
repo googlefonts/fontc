@@ -10,8 +10,9 @@ use clap::Parser;
 use fontc::Error;
 use fontir::{
     error::WorkError,
-    orchestration::{Context, WorkIdentifier},
-    source::{DeleteWork, Input, Paths, Source, Work},
+    orchestration::{Context, IrWork, WorkIdentifier},
+    paths::Paths,
+    source::{DeleteWork, Input, Source},
     stateset::StateSet,
 };
 use glyphs2fontir::source::GlyphsIrSource;
@@ -134,12 +135,12 @@ fn finish_successfully(context: ChangeDetector) -> Result<(), Error> {
     fs::write(context.paths.ir_input_file(), current_sources).map_err(Error::IoError)
 }
 
-fn global_change(current_inputs: &Input, prev_inputs: &Input) -> bool {
-    current_inputs.global_metadata != prev_inputs.global_metadata
+fn static_metadata_change(current_inputs: &Input, prev_inputs: &Input) -> bool {
+    current_inputs.static_metadata != prev_inputs.static_metadata
 }
 
 fn glyphs_changed(context: &ChangeDetector) -> IndexSet<&str> {
-    if global_change(&context.current_inputs, &context.prev_inputs) {
+    if static_metadata_change(&context.current_inputs, &context.prev_inputs) {
         return context
             .current_inputs
             .glyphs
@@ -155,7 +156,11 @@ fn glyphs_changed(context: &ChangeDetector) -> IndexSet<&str> {
             |(glyph_name, curr_state)| match context.prev_inputs.glyphs.get(*glyph_name) {
                 Some(prev_state) => {
                     // If the input changed or the output doesn't exist a rebuild is probably in order
-                    prev_state != *curr_state || !context.paths.glyph_ir_file(glyph_name).exists()
+                    prev_state != *curr_state
+                        || !context
+                            .paths
+                            .target_file(&WorkIdentifier::Glyph(glyph_name.to_string()))
+                            .exists()
                 }
                 None => true,
             },
@@ -201,10 +206,12 @@ fn add_glyph_ir_jobs(
     )
     .iter()
     {
+        let id = WorkIdentifier::GlyphIrDelete(glyph_name.to_string());
+        let path = change_detector.paths.target_file(&id);
         workload.insert(
-            WorkIdentifier::GlyphIrDelete(glyph_name.to_string()),
+            id,
             Job {
-                work: DeleteWork::create(change_detector.paths.glyph_ir_file(glyph_name)),
+                work: DeleteWork::create(path),
                 dependencies: HashSet::new(),
             },
         );
@@ -216,7 +223,7 @@ fn add_glyph_ir_jobs(
         .ir_source
         .create_glyph_ir_work(&glyphs_changed, &change_detector.current_inputs)?;
     for (glyph_name, work) in glyphs_changed.iter().zip(glyph_work) {
-        let id = WorkIdentifier::GlyphIr(glyph_name.to_string());
+        let id = WorkIdentifier::Glyph(glyph_name.to_string());
         let happens_after = HashSet::from([WorkIdentifier::StaticMetadata]);
 
         workload.insert(
@@ -353,7 +360,7 @@ impl Workload {
 /// A unit of executable work plus the identifiers of work that it depends on
 struct Job {
     // The actual task
-    work: Box<dyn Work + Send>,
+    work: Box<IrWork>,
     // Things that must happen before we execute, probably because we use their output
     dependencies: HashSet<WorkIdentifier>,
 }
@@ -424,7 +431,7 @@ mod tests {
     };
 
     use filetime::FileTime;
-    use fontir::{orchestration::Context, source::Paths, stateset::StateSet};
+    use fontir::{orchestration::Context, paths::Paths, stateset::StateSet};
     use tempfile::tempdir;
 
     use crate::{
@@ -549,7 +556,8 @@ mod tests {
             );
             let id = &launchable[0];
             let job = workload.jobs.remove(id).unwrap();
-            job.work.exec(&root_context).unwrap();
+            let context = root_context.copy_for_work(id.clone(), Some(job.dependencies));
+            job.work.exec(&context).unwrap();
             assert!(
                 complete.insert(id.clone()),
                 "We just did {:?} a second time?",

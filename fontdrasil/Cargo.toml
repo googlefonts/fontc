@@ -1,0 +1,18 @@
+[package]
+name = "fontdrasil"
+version = "0.0.1"
+edition = "2021"
+license = "MIT/Apache-2.0"
+description = "Common aspects of FE and BE font compilation; the world tree that connects all layers"
+repository = "https://github.com/googlefonts/fontmake-rs"
+readme = "README.md"
+categories = ["text-processing", "parsing", "graphics"]
+
+[features]
+
+[dependencies]
+
+[dev-dependencies]
+diff = "0.1.12"
+ansi_term = "0.12.1"
+tempfile = "3.3.0"

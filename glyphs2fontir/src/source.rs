@@ -1,8 +1,9 @@
+use fontdrasil::orchestration::Work;
 use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
 use fontir::ir::{self, GlyphInstance, StaticMetadata};
-use fontir::orchestration::Context;
-use fontir::source::{Input, Source, Work};
+use fontir::orchestration::{Context, IrWork};
+use fontir::source::{Input, Source};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
 use indexmap::IndexSet;
@@ -74,7 +75,7 @@ impl GlyphsIrSource {
         Ok(state)
     }
 
-    fn check_global_metadata(&self, global_metadata: &StateSet) -> Result<(), Error> {
+    fn check_static_metadata(&self, global_metadata: &StateSet) -> Result<(), Error> {
         // Do we have a plist cache?
         // TODO: consider just recomputing here instead of failing
         if !self
@@ -99,23 +100,23 @@ impl Source for GlyphsIrSource {
             )
         })?)?;
         let font = &font_info.font;
-        let global_metadata = self.global_rebuild_triggers(font)?;
+        let static_metadata = self.global_rebuild_triggers(font)?;
 
         let glyphs = glyph_states(font)?;
 
         self.cache = Some(Cache {
-            global_metadata: global_metadata.clone(),
+            global_metadata: static_metadata.clone(),
             font_info: Arc::from(font_info),
         });
 
         Ok(Input {
-            global_metadata,
+            static_metadata,
             glyphs,
         })
     }
 
-    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
-        self.check_global_metadata(&input.global_metadata)?;
+    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
+        self.check_static_metadata(&input.static_metadata)?;
         let font_info = self.cache.as_ref().unwrap().font_info.clone();
         Ok(Box::from(StaticMetadataWork { font_info }))
     }
@@ -124,12 +125,12 @@ impl Source for GlyphsIrSource {
         &self,
         glyph_names: &IndexSet<&str>,
         input: &Input,
-    ) -> Result<Vec<Box<dyn Work + Send>>, fontir::error::Error> {
-        self.check_global_metadata(&input.global_metadata)?;
+    ) -> Result<Vec<Box<IrWork>>, fontir::error::Error> {
+        self.check_static_metadata(&input.static_metadata)?;
 
         let cache = self.cache.as_ref().unwrap();
 
-        let mut work: Vec<Box<dyn Work + Send>> = Vec::new();
+        let mut work: Vec<Box<IrWork>> = Vec::new();
         for glyph_name in glyph_names {
             work.push(Box::from(
                 self.create_work_for_one_glyph(glyph_name, cache.font_info.clone())?,
@@ -157,7 +158,7 @@ struct StaticMetadataWork {
     font_info: Arc<FontInfo>,
 }
 
-impl Work for StaticMetadataWork {
+impl Work<Context, WorkError> for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
@@ -191,7 +192,7 @@ fn check_pos(
     Ok(())
 }
 
-impl Work for GlyphIrWork {
+impl Work<Context, WorkError> for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!("Generate IR for {}", self.glyph_name);
         let font_info = self.font_info.as_ref();
@@ -274,7 +275,8 @@ mod tests {
         error::WorkError,
         ir,
         orchestration::{Context, WorkIdentifier},
-        source::{Paths, Source},
+        paths::Paths,
+        source::Source,
         stateset::StateSet,
     };
     use glyphs_reader::Font;
@@ -452,7 +454,7 @@ mod tests {
                 .unwrap();
             for work in work_items.iter() {
                 let task_context = context.copy_for_work(
-                    WorkIdentifier::GlyphIr(glyph_name.to_string()),
+                    WorkIdentifier::Glyph(glyph_name.to_string()),
                     Some(HashSet::from([WorkIdentifier::StaticMetadata])),
                 );
                 work.exec(&task_context)?;
