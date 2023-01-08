@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use fontdrasil::orchestration::glyph_file;
+
 use crate::orchestration::WorkIdentifier;
 
 #[derive(Debug, Clone)]
@@ -35,18 +37,16 @@ impl Paths {
         &self.ir_input_file
     }
 
-    fn glyph_ir_file(&self, glyph_name: &str) -> PathBuf {
-        // TODO handle names that are invalid for the filesystem
-        // Ref https://github.com/unified-font-object/ufo-spec/issues/164
-        self.glyph_ir_dir.join(glyph_name.to_owned() + ".yml")
+    fn glyph_ir_file(&self, name: &str) -> PathBuf {
+        self.glyph_ir_dir.join(glyph_file(name, ".yml"))
     }
 
     pub fn target_file(&self, id: &WorkIdentifier) -> PathBuf {
         match id {
             WorkIdentifier::StaticMetadata => self.build_dir.join("static_metadata.yml"),
-            WorkIdentifier::GlyphIr(name) => self.glyph_ir_file(name),
+            WorkIdentifier::Glyph(name) => self.glyph_ir_file(name),
             WorkIdentifier::GlyphIrDelete(name) => self.glyph_ir_file(name),
-            WorkIdentifier::FeatureIr => self.build_dir.join("features.yml"),
+            WorkIdentifier::Features => self.build_dir.join("features.yml"),
         }
     }
 }

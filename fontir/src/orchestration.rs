@@ -8,22 +8,22 @@ use std::{
     sync::Arc,
 };
 
-use parking_lot::RwLock;
+use fontdrasil::orchestration::{Acl, Cache, Work, MISSING_DATA};
 use serde::{de::DeserializeOwned, Serialize};
 
-use crate::{ir, paths::Paths, source::Input};
+use crate::{error::WorkError, ir, paths::Paths, source::Input};
 
 // Unique identifier of work. If there are no fields work is unique.
 // Meant to be small and cheap to copy around.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkIdentifier {
     StaticMetadata,
-    GlyphIr(String),
+    Glyph(String),
     GlyphIrDelete(String),
-    FeatureIr,
+    Features,
 }
 
-const MISSING_DATA: &str = "Missing data, dependency management failed us?";
+pub type IrWork = dyn Work<Context, WorkError> + Send;
 
 /// Read/write access to data for async work.
 ///
@@ -40,13 +40,7 @@ pub struct Context {
     // a subset of the full input.
     pub input: Arc<Input>,
 
-    // If present, the one and only key you are allowed to write to
-    // Otherwise you totally get to write whatever you like
-    write_mask: Option<WorkIdentifier>,
-
-    // If present, what you can access through this context
-    // Intent is root has None, task-specific Context only allows access to dependencies
-    read_mask: Option<HashSet<WorkIdentifier>>,
+    acl: Acl<WorkIdentifier>,
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
@@ -55,74 +49,45 @@ pub struct Context {
     feature_ir: Cache<Option<Arc<ir::Features>>>,
 }
 
-#[derive(Clone)]
-struct Cache<T: Default> {
-    item: Arc<RwLock<T>>,
-}
-
-impl<T: Default> Cache<T> {
-    fn new() -> Cache<T> {
-        Cache {
-            item: Default::default(),
-        }
-    }
-}
-
 impl Context {
-    pub fn new_root(emit_ir: bool, paths: Paths, input: Input) -> Context {
-        Context {
-            emit_ir,
-            paths: Arc::from(paths),
-            input: Arc::from(input),
-            write_mask: None,
-            read_mask: None,
-            static_metadata: Cache::new(),
-            glyph_ir: Cache::new(),
-            feature_ir: Cache::new(),
-        }
-    }
-}
-
-impl Context {
-    pub fn copy_for_work(
-        &self,
-        work_id: WorkIdentifier,
-        dependencies: Option<HashSet<WorkIdentifier>>,
-    ) -> Context {
+    fn copy(&self, acl: Acl<WorkIdentifier>) -> Context {
         Context {
             emit_ir: self.emit_ir,
             paths: self.paths.clone(),
             input: self.input.clone(),
-            write_mask: Some(work_id),
-            read_mask: dependencies.or_else(|| Some(HashSet::new())),
+            acl,
             static_metadata: self.static_metadata.clone(),
             glyph_ir: self.glyph_ir.clone(),
             feature_ir: self.feature_ir.clone(),
         }
     }
 
-    fn check_read_access(&self, id: &WorkIdentifier) {
-        if !self
-            .read_mask
-            .as_ref()
-            .map(|mask| mask.contains(id))
-            .unwrap_or(true)
-        {
-            panic!("Illegal access");
+    pub fn new_root(emit_ir: bool, paths: Paths, input: Input) -> Context {
+        Context {
+            emit_ir,
+            paths: Arc::from(paths),
+            input: Arc::from(input),
+            acl: Acl::read_only(),
+            static_metadata: Cache::new(),
+            glyph_ir: Cache::new(),
+            feature_ir: Cache::new(),
         }
     }
 
-    fn check_write_access(&self, id: &WorkIdentifier) {
-        if !self
-            .write_mask
-            .as_ref()
-            .map(|mask| mask == id)
-            .unwrap_or(true)
-        {
-            panic!("Illegal access to {:?}", id);
-        }
+    pub fn copy_for_work(
+        &self,
+        work_id: WorkIdentifier,
+        dependencies: Option<HashSet<WorkIdentifier>>,
+    ) -> Context {
+        self.copy(Acl::read_write(dependencies.unwrap_or_default(), work_id))
     }
 
+    pub fn read_only(&self) -> Context {
+        self.copy(Acl::read_only())
+    }
+}
+
+impl Context {
     fn maybe_persist<V>(&self, file: &Path, content: &V)
     where
         V: ?Sized + Serialize,
@@ -154,68 +119,68 @@ impl Context {
     }
 
     fn set_cached_static_metadata(&self, ir: ir::StaticMetadata) {
-        let mut wl = self.static_metadata.item.write();
+        let mut wl = self.static_metadata.item.write().unwrap();
         *wl = Some(Arc::from(ir));
     }
 
     pub fn get_static_metadata(&self) -> Arc<ir::StaticMetadata> {
         let id = WorkIdentifier::StaticMetadata;
-        self.check_read_access(&id);
+        self.acl.check_read_access(&id);
         {
-            let rl = self.static_metadata.item.read();
+            let rl = self.static_metadata.item.read().unwrap();
             if rl.is_some() {
                 return rl.as_ref().unwrap().clone();
             }
         }
         self.set_cached_static_metadata(self.restore(&self.paths.target_file(&id)));
-        let rl = self.static_metadata.item.read();
+        let rl = self.static_metadata.item.read().unwrap();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
     pub fn set_static_metadata(&self, ir: ir::StaticMetadata) {
         let id = WorkIdentifier::StaticMetadata;
-        self.check_write_access(&id);
+        self.acl.check_write_access(&id);
         self.maybe_persist(&&self.paths.target_file(&id), &ir);
         self.set_cached_static_metadata(ir);
     }
 
     pub fn get_glyph_ir(&self, glyph_name: &str) -> Arc<ir::Glyph> {
-        let id = WorkIdentifier::GlyphIr(glyph_name.to_string());
-        self.check_read_access(&id);
-        let rl = self.glyph_ir.item.read();
+        let id = WorkIdentifier::Glyph(glyph_name.to_string());
+        self.acl.check_read_access(&id);
+        let rl = self.glyph_ir.item.read().unwrap();
         rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
 
     pub fn set_glyph_ir(&self, glyph_name: &str, ir: ir::Glyph) {
-        let id = WorkIdentifier::GlyphIr(glyph_name.to_string());
-        self.check_write_access(&id);
+        let id = WorkIdentifier::Glyph(glyph_name.to_string());
+        self.acl.check_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
-        let mut wl = self.glyph_ir.item.write();
+        let mut wl = self.glyph_ir.item.write().unwrap();
         wl.insert(glyph_name.to_string(), Arc::from(ir));
     }
 
     fn set_cached_features(&self, ir: ir::Features) {
-        let mut wl = self.feature_ir.item.write();
+        let mut wl = self.feature_ir.item.write().unwrap();
         *wl = Some(Arc::from(ir));
     }
 
     pub fn get_features(&self) -> Arc<ir::Features> {
-        let id = WorkIdentifier::FeatureIr;
-        self.check_read_access(&id);
+        let id = WorkIdentifier::Features;
+        self.acl.check_read_access(&id);
         {
-            let rl = self.feature_ir.item.read();
+            let rl = self.feature_ir.item.read().unwrap();
             if rl.is_some() {
                 return rl.as_ref().unwrap().clone();
             }
         }
-        self.set_cached_static_metadata(self.restore(&&self.paths.target_file(&id)));
-        let rl = self.feature_ir.item.read();
+        self.set_cached_features(self.restore(&&self.paths.target_file(&id)));
+        let rl = self.feature_ir.item.read().unwrap();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
     pub fn set_features(&self, ir: ir::Features) {
-        let id = WorkIdentifier::FeatureIr;
-        self.check_write_access(&id);
+        let id = WorkIdentifier::Features;
+        self.acl.check_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         self.set_cached_features(ir);
     }

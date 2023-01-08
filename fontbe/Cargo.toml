@@ -11,13 +11,25 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
+fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 fontir = { version = "0.0.1", path = "../fontir" }
 
-bitflags = "1.3"
+serde = {version = "1.0", features = ["derive"] }
+serde_yaml = "0.9.14"
+
+thiserror = "1.0.37"
+ordered-float = { version = "3.4.0", features = ["serde"] }
+indexmap = "1.9.2"
 
 log = "0.4"
 env_logger = "0.9.0"
-thiserror = "1.0.37"
+
+parking_lot = "0.12.1"
+
+read-fonts = { version = "0.0.5" }
+write-fonts = { version = "0.0.5" }
+fea-rs = { git = "https://github.com/cmyr/fea-rs" }
+smol_str = "0.1.18"
 
 [dev-dependencies]
 diff = "0.1.12"

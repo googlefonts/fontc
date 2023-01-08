@@ -90,6 +90,4 @@ pub enum WorkError {
         axis: String,
         pos: NormalizedCoord,
     },
-    #[error("Bad fea: {0}")]
-    FeaError(String),
 }

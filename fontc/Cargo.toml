@@ -11,6 +11,7 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
+fontbe = { version = "0.0.1", path = "../fontbe" }
 fontir = { version = "0.0.1", path = "../fontir" }
 glyphs2fontir = { version = "0.0.1", path = "../glyphs2fontir" }
 ufo2fontir = { version = "0.0.1", path = "../ufo2fontir" }
@@ -26,10 +27,6 @@ thiserror = "1.0.37"
 
 rayon = "1.6.0"
 crossbeam-channel = "0.5.6"
-
-indexmap = "1.9.2"
-fea-rs = { git = "https://github.com/cmyr/fea-rs" }
-smol_str = "0.1.18"
 
 [dev-dependencies]
 diff = "0.1.12"

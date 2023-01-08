@@ -1,8 +1,9 @@
+use fontdrasil::orchestration::Work;
 use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
 use fontir::ir::{self, GlyphInstance, StaticMetadata};
-use fontir::orchestration::Context;
-use fontir::source::{Input, Source, Work};
+use fontir::orchestration::{Context, IrWork};
+use fontir::source::{Input, Source};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
 use log::{debug, trace, warn};
@@ -117,7 +118,7 @@ impl Source for GlyphsIrSource {
         })
     }
 
-    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
+    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
         self.check_global_metadata(&input.static_metadata)?;
         let font_info = self.cache.as_ref().unwrap().font_info.clone();
         Ok(Box::from(StaticMetadataWork { font_info }))
@@ -127,11 +128,11 @@ impl Source for GlyphsIrSource {
         &self,
         glyph_names: &IndexSet<&str>,
         input: &Input,
-    ) -> Result<Vec<Box<dyn Work + Send>>, fontir::error::Error> {
+    ) -> Result<Vec<Box<IrWork>>, fontir::error::Error> {
         self.check_global_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
-        let mut work: Vec<Box<dyn Work + Send>> = Vec::new();
+        let mut work: Vec<Box<IrWork>> = Vec::new();
         for glyph_name in glyph_names {
             work.push(Box::from(
                 self.create_work_for_one_glyph(glyph_name, cache.font_info.clone())?,
@@ -140,7 +141,7 @@ impl Source for GlyphsIrSource {
         Ok(work)
     }
 
-    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
+    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
         self.check_global_metadata(&input.static_metadata)?;
 
         Ok(Box::from(FeatureWork {}))
@@ -165,7 +166,7 @@ struct StaticMetadataWork {
     font_info: Arc<FontInfo>,
 }
 
-impl Work for StaticMetadataWork {
+impl Work<Context, WorkError> for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
@@ -180,7 +181,7 @@ impl Work for StaticMetadataWork {
 
 struct FeatureWork {}
 
-impl Work for FeatureWork {
+impl Work<Context, WorkError> for FeatureWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         warn!(".glyphs feature ir work is currently a nop");
         context.set_features(ir::Features::empty());
@@ -209,7 +210,7 @@ fn check_pos(
     Ok(())
 }
 
-impl Work for GlyphIrWork {
+impl Work<Context, WorkError> for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!("Generate IR for {}", self.glyph_name);
         let font_info = self.font_info.as_ref();
@@ -471,7 +472,7 @@ mod tests {
                 .unwrap();
             for work in work_items.iter() {
                 let task_context = context.copy_for_work(
-                    WorkIdentifier::GlyphIr(glyph_name.to_string()),
+                    WorkIdentifier::Glyph(glyph_name.to_string()),
                     Some(HashSet::from([WorkIdentifier::StaticMetadata])),
                 );
                 work.exec(&task_context)?;

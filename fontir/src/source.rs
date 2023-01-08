@@ -10,21 +10,13 @@ use indexmap::IndexSet;
 use log::debug;
 use serde::{Deserialize, Serialize};
 
+use fontdrasil::orchestration::Work;
+
 use crate::{
     error::{Error, WorkError},
-    orchestration::Context,
+    orchestration::{Context, IrWork},
     stateset::StateSet,
 };
-
-/// A unit of work safe to run in parallel
-///
-/// Naively you'd think we'd just return FnOnce + Send but that didn't want to compile
-/// See <https://github.com/rust-lang/rust/issues/29625>.
-///
-/// Data produced by work is written into [Context].
-pub trait Work {
-    fn exec(&self, context: &Context) -> Result<(), WorkError>;
-}
 
 /// Destroy a file, such as the IR for a deleted glyph
 pub struct DeleteWork {
@@ -32,12 +24,12 @@ pub struct DeleteWork {
 }
 
 impl DeleteWork {
-    pub fn create(path: PathBuf) -> Box<dyn Work + Send> {
+    pub fn create(path: PathBuf) -> Box<IrWork> {
         Box::from(DeleteWork { path })
     }
 }
 
-impl Work for DeleteWork {
+impl Work<Context, WorkError> for DeleteWork {
     fn exec(&self, _: &Context) -> Result<(), WorkError> {
         debug!("Delete {:#?}", self.path);
         if self.path.exists() {
@@ -57,7 +49,7 @@ pub trait Source {
     /// Create a function that could be called to generate [crate::ir::StaticMetadata].
     ///
     /// When run work should update [Context] with new [crate::ir::StaticMetadata].
-    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error>;
+    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
 
     /// Create a function that could be called to generate IR for glyphs.
     ///
@@ -70,12 +62,12 @@ pub trait Source {
         &self,
         glyph_names: &IndexSet<&str>,
         input: &Input,
-    ) -> Result<Vec<Box<dyn Work + Send>>, Error>;
+    ) -> Result<Vec<Box<IrWork>>, Error>;
 
     /// Create a function that could be called to generate or identify fea file(s).
     ///
     /// When run work should update [Context] with [crate::ir::Features].
-    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error>;
+    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
 }
 
 /// The files (in future non-file sources?) that drive various parts of IR

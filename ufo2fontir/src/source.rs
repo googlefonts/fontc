@@ -4,12 +4,13 @@ use std::{
     sync::Arc,
 };
 
+use fontdrasil::orchestration::Work;
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
     ir::{Axis, Features, StaticMetadata},
-    orchestration::Context,
-    source::{Input, Source, Work},
+    orchestration::{Context, IrWork},
+    source::{Input, Source},
     stateset::{StateIdentifier, StateSet},
 };
 use indexmap::IndexSet;
@@ -265,7 +266,7 @@ impl Source for DesignSpaceIrSource {
         })
     }
 
-    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
+    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
         self.check_global_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
@@ -276,7 +277,7 @@ impl Source for DesignSpaceIrSource {
         }))
     }
 
-    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error> {
+    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
         self.check_global_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
@@ -290,13 +291,13 @@ impl Source for DesignSpaceIrSource {
         &self,
         glyph_names: &IndexSet<&str>,
         input: &Input,
-    ) -> Result<Vec<Box<dyn Work + Send>>, Error> {
+    ) -> Result<Vec<Box<IrWork>>, Error> {
         self.check_global_metadata(&input.static_metadata)?;
 
         // A single glif could be used by many source blocks that use the same layer
         // *gasp*
         // So resolve each file to 1..N locations in designspace
-        let mut work: Vec<Box<dyn Work + Send>> = Vec::new();
+        let mut work: Vec<Box<IrWork>> = Vec::new();
 
         for glyph_name in glyph_names {
             work.push(Box::from(
@@ -446,7 +447,7 @@ fn files_identical(f1: &Path, f2: &Path) -> Result<bool, WorkError> {
     Ok(true)
 }
 
-impl Work for StaticMetadataWork {
+impl Work<Context, WorkError> for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
 
@@ -462,7 +463,7 @@ impl Work for StaticMetadataWork {
     }
 }
 
-impl Work for FeatureWork {
+impl Work<Context, WorkError> for FeatureWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Features for {:#?}", self.designspace_file);
 
@@ -493,7 +494,7 @@ struct GlyphIrWork {
     glif_files: HashMap<PathBuf, Vec<DesignLocation>>,
 }
 
-impl Work for GlyphIrWork {
+impl Work<Context, WorkError> for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!(
             "Generate glyph IR for {} from {:#?}",
