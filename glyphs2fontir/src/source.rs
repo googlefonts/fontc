@@ -7,7 +7,7 @@ use fontir::source::{Input, Source};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
 use indexmap::IndexSet;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
@@ -57,7 +57,7 @@ fn glyph_states(font: &Font) -> Result<HashMap<String, StateSet>, Error> {
 
 impl GlyphsIrSource {
     // When things like upem may have changed forget incremental and rebuild the whole thing
-    fn global_rebuild_triggers(&self, font: &Font) -> Result<StateSet, Error> {
+    fn static_metadata_inputs(&self, font: &Font) -> Result<StateSet, Error> {
         let mut state = StateSet::new();
         // Wipe out glyph-related fields, track the rest
         // Explicitly field by field so if we add more compiler will force us to update here
@@ -100,7 +100,7 @@ impl Source for GlyphsIrSource {
             )
         })?)?;
         let font = &font_info.font;
-        let static_metadata = self.global_rebuild_triggers(font)?;
+        let static_metadata = self.static_metadata_inputs(font)?;
 
         let glyphs = glyph_states(font)?;
 
@@ -109,9 +109,13 @@ impl Source for GlyphsIrSource {
             font_info: Arc::from(font_info),
         });
 
+        let features = StateSet::new();
+        // TODO: track fields that feed features in .glyphs files
+
         Ok(Input {
             static_metadata,
             glyphs,
+            features,
         })
     }
 
@@ -137,6 +141,12 @@ impl Source for GlyphsIrSource {
             ));
         }
         Ok(work)
+    }
+
+    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
+        self.check_static_metadata(&input.static_metadata)?;
+
+        Ok(Box::from(FeatureWork {}))
     }
 }
 
@@ -167,6 +177,16 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             font_info.axes.clone(),
             font.glyph_order.iter().cloned().collect(),
         ));
+        Ok(())
+    }
+}
+
+struct FeatureWork {}
+
+impl Work<Context, WorkError> for FeatureWork {
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        warn!(".glyphs feature ir work is currently a nop");
+        context.set_features(ir::Features::empty());
         Ok(())
     }
 }

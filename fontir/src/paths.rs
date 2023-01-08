@@ -46,6 +46,7 @@ impl Paths {
             WorkIdentifier::StaticMetadata => self.build_dir.join("static_metadata.yml"),
             WorkIdentifier::Glyph(name) => self.glyph_ir_file(name),
             WorkIdentifier::GlyphIrDelete(name) => self.glyph_ir_file(name),
+            WorkIdentifier::Features => self.build_dir.join("features.yml"),
         }
     }
 }

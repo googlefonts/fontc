@@ -22,6 +22,7 @@ pub enum WorkIdentifier {
     StaticMetadata,
     Glyph(String),
     GlyphIrDelete(String),
+    Features,
 }
 
 pub type IrWork = dyn Work<Context, WorkError> + Send;
@@ -47,6 +48,7 @@ pub struct Context {
     // We create individual caches so we can return typed results from get fns
     static_metadata: Arc<RwLock<Option<Arc<ir::StaticMetadata>>>>,
     glyph_ir: Arc<RwLock<HashMap<String, Arc<ir::Glyph>>>>,
+    feature_ir: Arc<RwLock<Option<Arc<ir::Features>>>>,
 }
 
 impl Context {
@@ -58,6 +60,7 @@ impl Context {
             acl,
             static_metadata: self.static_metadata.clone(),
             glyph_ir: self.glyph_ir.clone(),
+            feature_ir: self.feature_ir.clone(),
         }
     }
 
@@ -69,6 +72,7 @@ impl Context {
             acl: AccessControlList::read_only(),
             static_metadata: Arc::from(RwLock::new(None)),
             glyph_ir: Arc::from(RwLock::new(HashMap::new())),
+            feature_ir: Arc::from(RwLock::new(None)),
         }
     }
 
@@ -158,5 +162,31 @@ impl Context {
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         let mut wl = self.glyph_ir.write();
         wl.insert(glyph_name.to_string(), Arc::from(ir));
+    }
+
+    fn set_cached_features(&self, ir: ir::Features) {
+        let mut wl = self.feature_ir.write();
+        *wl = Some(Arc::from(ir));
+    }
+
+    pub fn get_features(&self) -> Arc<ir::Features> {
+        let id = WorkIdentifier::Features;
+        self.acl.check_read_access(&id);
+        {
+            let rl = self.feature_ir.read();
+            if rl.is_some() {
+                return rl.as_ref().unwrap().clone();
+            }
+        }
+        self.set_cached_features(self.restore(&self.paths.target_file(&id)));
+        let rl = self.feature_ir.read();
+        rl.as_ref().expect(MISSING_DATA).clone()
+    }
+
+    pub fn set_features(&self, ir: ir::Features) {
+        let id = WorkIdentifier::Features;
+        self.acl.check_write_access(&id);
+        self.maybe_persist(&self.paths.target_file(&id), &ir);
+        self.set_cached_features(ir);
     }
 }

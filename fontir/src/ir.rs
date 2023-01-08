@@ -3,11 +3,14 @@
 use crate::{
     coords::{CoordConverter, NormalizedLocation, UserCoord},
     error::Error,
-    serde::StaticMetadataSerdeRepr,
+    serde::{GlyphSerdeRepr, StaticMetadataSerdeRepr},
 };
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 /// Global font info that cannot vary.
 ///
@@ -43,12 +46,33 @@ pub struct Axis {
     pub converter: CoordConverter,
 }
 
+/// Features (Adobe fea).
+///
+/// In time will split gpos/gsub, have different features for different
+/// locations, etc.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct Features {
+    pub fea_file: Option<PathBuf>,
+}
+
+impl Features {
+    pub fn empty() -> Features {
+        Features { fea_file: None }
+    }
+    pub fn from_file(file: &Path) -> Features {
+        Features {
+            fea_file: Some(file.to_path_buf()),
+        }
+    }
+}
+
 /// A variable definition of a single glyph.
 ///
-/// Defined in at least once position in designspace. If defined in
+/// Defined in at least one position. If defined in
 /// many, presumed to vary continuously between positions and required
 /// to have variation compatible structure.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(from = "GlyphSerdeRepr", into = "GlyphSerdeRepr")]
 pub struct Glyph {
     pub name: String,
     pub sources: HashMap<NormalizedLocation, GlyphInstance>,

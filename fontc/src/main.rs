@@ -9,7 +9,8 @@ use std::{
 use clap::Parser;
 use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::{
-    orchestration::{AnyWorkId, Context as BeContext},
+    features::FeatureWork,
+    orchestration::{AnyWorkId, Context as BeContext, WorkIdentifier as BeWorkIdentifier},
     paths::Paths as BePaths,
 };
 use fontc::{
@@ -150,6 +151,23 @@ impl ChangeDetector {
                 .is_file()
     }
 
+    fn feature_ir_change(&self) -> bool {
+        self.static_metadata_ir_change()
+            || self.current_inputs.features != self.prev_inputs.features
+            || !self
+                .ir_paths
+                .target_file(&FeWorkIdentifier::Features)
+                .is_file()
+    }
+
+    fn feature_be_change(&self) -> bool {
+        self.feature_ir_change()
+            || !self
+                .be_paths
+                .target_file(&BeWorkIdentifier::Features)
+                .is_file()
+    }
+
     fn glyphs_changed(&self) -> IndexSet<&str> {
         if self.static_metadata_ir_change() {
             return self
@@ -210,6 +228,48 @@ fn add_static_metadata_ir_job(
     Ok(())
 }
 
+fn add_feature_ir_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.feature_ir_change() {
+        workload.insert(
+            FeWorkIdentifier::Features.into(),
+            Job {
+                work: change_detector
+                    .ir_source
+                    .create_feature_ir_work(&change_detector.current_inputs)?
+                    .into(),
+                dependencies: HashSet::new(),
+            },
+        );
+    } else {
+        workload.mark_success(FeWorkIdentifier::Features.into());
+    }
+    Ok(())
+}
+
+fn add_feature_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.feature_be_change() {
+        workload.insert(
+            BeWorkIdentifier::Features.into(),
+            Job {
+                work: FeatureWork::create(change_detector.ir_paths.build_dir()).into(),
+                dependencies: HashSet::from([
+                    FeWorkIdentifier::StaticMetadata.into(),
+                    FeWorkIdentifier::Features.into(),
+                ]),
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::Features.into());
+    }
+    Ok(())
+}
+
 fn add_glyph_ir_jobs(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
@@ -248,6 +308,7 @@ struct ChangeDetector {
     ir_source: Box<dyn Source>,
     prev_inputs: Input,
     current_inputs: Input,
+    be_paths: BePaths,
 }
 
 impl ChangeDetector {
@@ -255,12 +316,14 @@ impl ChangeDetector {
         // What sources are we dealing with?
         let mut ir_source = ir_source(&config.args.source)?;
         let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
+        let be_paths = BePaths::new(ir_paths.build_dir());
 
         Ok(ChangeDetector {
             ir_paths,
             ir_source,
             prev_inputs,
             current_inputs,
+            be_paths,
         })
     }
 }
@@ -422,10 +485,11 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
 
     // FE: f(source) => IR
     add_static_metadata_ir_job(change_detector, &mut workload)?;
+    add_feature_ir_job(change_detector, &mut workload)?;
     add_glyph_ir_jobs(change_detector, &mut workload)?;
 
     // BE: f(IR) => binary
-    // TODO
+    add_feature_be_job(change_detector, &mut workload)?;
 
     Ok(workload)
 }
@@ -480,7 +544,7 @@ mod tests {
 
     use filetime::FileTime;
     use fontbe::{
-        orchestration::{AnyWorkId, Context as BeContext},
+        orchestration::{AnyWorkId, Context as BeContext, WorkIdentifier as BeWorkIdentifier},
         paths::Paths as BePaths,
     };
     use fontc::work::AnyContext;
@@ -492,8 +556,8 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::{
-        add_glyph_ir_jobs, add_static_metadata_ir_job, finish_successfully, init, require_dir,
-        Args, ChangeDetector, Config, Workload,
+        add_feature_be_job, add_feature_ir_job, add_glyph_ir_jobs, add_static_metadata_ir_job,
+        finish_successfully, init, require_dir, Args, ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -602,6 +666,8 @@ mod tests {
 
         add_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
         add_glyph_ir_jobs(&mut change_detector, &mut workload).unwrap();
+        add_feature_ir_job(&mut change_detector, &mut workload).unwrap();
+        add_feature_be_job(&mut change_detector, &mut workload).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one
@@ -655,8 +721,10 @@ mod tests {
         assert_eq!(
             HashSet::from([
                 FeWorkIdentifier::StaticMetadata.into(),
+                FeWorkIdentifier::Features.into(),
                 FeWorkIdentifier::Glyph(String::from("bar")).into(),
                 FeWorkIdentifier::Glyph(String::from("plus")).into(),
+                BeWorkIdentifier::Features.into(),
             ]),
             result.work_completed
         );
@@ -717,5 +785,27 @@ mod tests {
         let result = compile(build_dir, "wght_var.designspace");
         assert_eq!(HashSet::from(["bar".to_string()]), result.glyphs_changed);
         assert_eq!(HashSet::from([]), result.glyphs_deleted);
+    }
+
+    #[test]
+    fn compile_fea() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+
+        let result = compile(build_dir, "static.designspace");
+        assert!(
+            result
+                .work_completed
+                .contains(&BeWorkIdentifier::Features.into()),
+            "Missing BE feature work in {:?}",
+            result.work_completed
+        );
+
+        let feature_ttf = build_dir.join("features.ttf");
+        assert!(
+            feature_ttf.is_file(),
+            "Should have written {:?}",
+            feature_ttf
+        );
     }
 }
