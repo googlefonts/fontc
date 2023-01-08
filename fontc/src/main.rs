@@ -11,7 +11,8 @@ use fontc::Error;
 use fontir::{
     error::WorkError,
     orchestration::{Context, WorkIdentifier},
-    source::{DeleteWork, Input, Paths, Source, Work},
+    paths::Paths as IrPaths,
+    source::{DeleteWork, Input, Source, Work},
     stateset::StateSet,
 };
 use glyphs2fontir::source::GlyphsIrSource;
@@ -90,7 +91,7 @@ fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
 fn init(config: &Config) -> Result<Input, io::Error> {
     let config_file = config.file();
 
-    let ir_paths = Paths::new(&config.build_dir);
+    let ir_paths = IrPaths::new(&config.build_dir);
     let ir_input_file = ir_paths.ir_input_file();
     if config.has_changed(&config_file) {
         info!("Config changed, generating a new one");
@@ -155,7 +156,11 @@ fn glyphs_changed(context: &ChangeDetector) -> IndexSet<&str> {
             |(glyph_name, curr_state)| match context.prev_inputs.glyphs.get(*glyph_name) {
                 Some(prev_state) => {
                     // If the input changed or the output doesn't exist a rebuild is probably in order
-                    prev_state != *curr_state || !context.paths.glyph_ir_file(glyph_name).exists()
+                    prev_state != *curr_state
+                        || !context
+                            .paths
+                            .target_file(&WorkIdentifier::GlyphIr(glyph_name.to_string()))
+                            .exists()
                 }
                 None => true,
             },
@@ -201,11 +206,13 @@ fn add_glyph_ir_jobs(
     )
     .iter()
     {
+        let id = WorkIdentifier::GlyphIrDelete(glyph_name.to_string());
+        let path = change_detector.paths.target_file(&id);
         workload.insert(
-            WorkIdentifier::GlyphIrDelete(glyph_name.to_string()),
+            id,
             Job {
-                work: DeleteWork::create(change_detector.paths.glyph_ir_file(glyph_name)),
-                dependencies: HashSet::new(),
+                work: DeleteWork::create(path),
+                happens_after: HashSet::new(),
             },
         );
     }
@@ -232,14 +239,14 @@ fn add_glyph_ir_jobs(
 }
 
 struct ChangeDetector {
-    paths: Paths,
+    paths: IrPaths,
     ir_source: Box<dyn Source>,
     prev_inputs: Input,
     current_inputs: Input,
 }
 
 impl ChangeDetector {
-    fn new(config: Config, paths: Paths, prev_inputs: Input) -> Result<ChangeDetector, Error> {
+    fn new(config: Config, paths: IrPaths, prev_inputs: Input) -> Result<ChangeDetector, Error> {
         // What sources are we dealing with?
         let mut ir_source = ir_source(&config.args.source)?;
         let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
@@ -388,7 +395,7 @@ fn main() -> Result<(), Error> {
         .init();
 
     let args = Args::parse();
-    let paths = Paths::new(&args.build_dir);
+    let paths = IrPaths::new(&args.build_dir);
     let build_dir = require_dir(paths.build_dir())?;
     require_dir(paths.glyph_ir_dir())?;
     let config = Config::new(args, build_dir)?;
@@ -424,7 +431,7 @@ mod tests {
     };
 
     use filetime::FileTime;
-    use fontir::{orchestration::Context, source::Paths, stateset::StateSet};
+    use fontir::{orchestration::Context, paths::Paths as IrPaths, stateset::StateSet};
     use tempfile::tempdir;
 
     use crate::{
@@ -477,7 +484,7 @@ mod tests {
 
         init(&config).unwrap();
         let config_file = config.file();
-        let paths = Paths::new(build_dir);
+        let paths = IrPaths::new(build_dir);
         let ir_input_file = paths.ir_input_file();
 
         assert!(config_file.exists(), "Should exist: {:#?}", config_file);
@@ -517,7 +524,7 @@ mod tests {
 
     fn compile(build_dir: &Path, source: &str) -> TestCompile {
         let args = test_args(source, build_dir);
-        let paths = Paths::new(build_dir);
+        let paths = IrPaths::new(build_dir);
         require_dir(paths.glyph_ir_dir()).unwrap();
         let config = Config::new(args, build_dir.to_path_buf()).unwrap();
 

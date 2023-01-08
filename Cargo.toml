@@ -1,9 +1,10 @@
 [workspace]
 
-members = [
+members = [    
     "fontir",
+    "glyphs-reader",
     "glyphs2fontir",
     "ufo2fontir",
-    "fontc",
-    "glyphs-reader",
+    "fontbe",
+    "fontc",    
 ]

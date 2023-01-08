@@ -1,6 +1,4 @@
-//! Helps coordinate the graph execution
-//!
-//! Eventually has to move outside fontir to let us use for BE work
+//! Helps coordinate the graph execution for IR
 
 use std::{
     collections::{HashMap, HashSet},
@@ -13,10 +11,7 @@ use std::{
 use parking_lot::RwLock;
 use serde::Serialize;
 
-use crate::{
-    ir,
-    source::{Input, Paths},
-};
+use crate::{ir, paths::Paths, source::Input};
 
 // Unique identifier of work. If there are no fields work is unique.
 // Meant to be small and cheap to copy around.
@@ -149,20 +144,25 @@ impl Context {
 
     pub fn set_static_metadata(&self, static_metadata: ir::StaticMetadata) {
         self.check_write_access(&WorkIdentifier::StaticMetadata);
-        self.maybe_persist(&self.paths.static_metadata_ir_file(), &static_metadata);
+        self.maybe_persist(
+            &self.paths.target_file(&WorkIdentifier::StaticMetadata),
+            &static_metadata,
+        );
         let mut wl = self.static_metadata.item.write();
         *wl = Some(Arc::from(static_metadata));
     }
 
     pub fn get_glyph_ir(&self, glyph_name: &str) -> Arc<ir::Glyph> {
-        self.check_read_access(&WorkIdentifier::GlyphIr(glyph_name.to_string()));
+        let id = WorkIdentifier::GlyphIr(glyph_name.to_string());
+        self.check_read_access(&id);
         let rl = self.glyph_ir.item.read();
         rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
 
     pub fn set_glyph_ir(&self, glyph_name: &str, ir: ir::Glyph) {
-        self.check_write_access(&WorkIdentifier::GlyphIr(glyph_name.to_string()));
-        self.maybe_persist(&self.paths.glyph_ir_file(&ir.name), &ir);
+        let id = WorkIdentifier::GlyphIr(glyph_name.to_string());
+        self.check_write_access(&id);
+        self.maybe_persist(&self.paths.target_file(&id), &ir);
         let mut wl = self.glyph_ir.item.write();
         wl.insert(glyph_name.to_string(), Arc::from(ir));
     }

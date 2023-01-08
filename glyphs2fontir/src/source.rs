@@ -274,7 +274,8 @@ mod tests {
         error::WorkError,
         ir,
         orchestration::{Context, WorkIdentifier},
-        source::{Paths, Source},
+        paths::Paths,
+        source::Source,
         stateset::StateSet,
     };
     use glyphs_reader::Font;
