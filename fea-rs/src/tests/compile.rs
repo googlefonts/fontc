@@ -5,21 +5,19 @@ use std::path::{Path, PathBuf};
 use crate::{
     compile::{self, Opts},
     util::ttx::{self as test_utils, Report, TestCase, TestResult},
-    GlyphMap,
+    GlyphMap, GlyphName,
 };
 
 static ROOT_TEST_DIR: &str = "./test-data/compile-tests";
 static GOOD_DIR: &str = "good";
 static BAD_DIR: &str = "bad";
-static FONT_FILE: &str = "font.ttf";
+static GLYPH_ORDER: &str = "glyph_order.txt";
 static BAD_OUTPUT_EXTENSION: &str = "ERR";
 
 #[test]
 fn should_fail() -> Result<(), Report> {
     let mut results = Vec::new();
-    for (font, tests) in iter_test_groups(BAD_DIR) {
-        let font_data = std::fs::read(font).unwrap();
-        let glyph_map = compile::get_post_glyph_order(&font_data).unwrap();
+    for (glyph_map, tests) in iter_test_groups(BAD_DIR) {
         results.extend(tests.into_iter().map(|path| run_bad_test(path, &glyph_map)));
     }
     test_utils::finalize_results(results).into_error()
@@ -28,9 +26,7 @@ fn should_fail() -> Result<(), Report> {
 #[test]
 fn should_pass() -> Result<(), Report> {
     let mut results = Vec::new();
-    for (font, tests) in iter_test_groups(GOOD_DIR) {
-        let font_data = std::fs::read(font).unwrap();
-        let glyph_map = compile::get_post_glyph_order(&font_data).unwrap();
+    for (glyph_map, tests) in iter_test_groups(GOOD_DIR) {
         results.extend(
             tests
                 .into_iter()
@@ -40,12 +36,15 @@ fn should_pass() -> Result<(), Report> {
     test_utils::finalize_results(results).into_error()
 }
 
-fn iter_test_groups(test_dir: &str) -> impl Iterator<Item = (PathBuf, Vec<PathBuf>)> + '_ {
+fn iter_test_groups(test_dir: &str) -> impl Iterator<Item = (GlyphMap, Vec<PathBuf>)> + '_ {
     iter_test_group_dirs(ROOT_TEST_DIR).map(move |dir| {
-        let font_path = dir.join(FONT_FILE);
+        let glyph_order_path = dir.join(GLYPH_ORDER);
+        let glyph_order =
+            std::fs::read_to_string(glyph_order_path).expect("failed to read glyph order");
+        let glyph_map = glyph_order.lines().map(GlyphName::new).collect();
         let tests_dir = dir.join(test_dir);
         let tests = test_utils::iter_fea_files(tests_dir).collect::<Vec<_>>();
-        (font_path, tests)
+        (glyph_map, tests)
     })
 }
 
@@ -73,10 +72,15 @@ fn run_bad_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, TestCase> {
 
 fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
     match test_utils::try_parse_file(path, Some(glyph_map)) {
-        Err((node, errs)) => Err(TestCase {
-            path: path.to_owned(),
-            reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
-        }),
+        Err((node, errs)) => {
+            if std::env::var(super::VERBOSE).is_ok() {
+                eprintln!("{}", test_utils::stringify_diagnostics(&node, &errs));
+            }
+            Err(TestCase {
+                path: path.to_owned(),
+                reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
+            })
+        }
         Ok(node) => match compile::compile(&node, glyph_map) {
             Ok(_) => Err(TestCase {
                 path: path.to_owned(),
