@@ -259,7 +259,7 @@ impl Source for DesignSpaceIrSource {
 
     fn create_glyph_ir_work(
         &self,
-        glyph_names: &HashSet<&str>,
+        glyph_names: &IndexSet<&str>,
         input: &Input,
     ) -> Result<Vec<Box<dyn Work + Send>>, Error> {
         self.check_global_metadata(&input.global_metadata)?;

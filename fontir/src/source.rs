@@ -1,11 +1,12 @@
 //! Generic model of font sources.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
 
+use indexmap::IndexSet;
 use log::debug;
 use serde::{Deserialize, Serialize};
 
@@ -67,7 +68,7 @@ pub trait Source {
     /// When run work should update [Context] with [crate::ir::Glyph] for the glyph name.
     fn create_glyph_ir_work(
         &self,
-        glyph_names: &HashSet<&str>,
+        glyph_names: &IndexSet<&str>,
         input: &Input,
     ) -> Result<Vec<Box<dyn Work + Send>>, Error>;
 }
