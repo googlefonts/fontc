@@ -634,10 +634,20 @@ impl GdefBuilder {
         })
     }
 
-    pub fn add_glyph_class(&mut self, glyphs: GlyphClass, class: ClassId) {
+    /// Errors if the class contains a glyph that is already in an existing class.
+    pub fn add_glyph_class(
+        &mut self,
+        glyphs: GlyphClass,
+        class: ClassId,
+    ) -> Result<(), (GlyphId, ClassId)> {
         for glyph in glyphs.iter() {
-            self.glyph_classes.insert(glyph, class);
+            if let Some(prev_class) = self.glyph_classes.insert(glyph, class) {
+                if prev_class != class {
+                    return Err((glyph, prev_class));
+                }
+            }
         }
+        Ok(())
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -646,6 +656,17 @@ impl GdefBuilder {
             && self.ligature_pos.is_empty()
             && self.mark_attach_class.is_empty()
             && self.mark_glyph_sets.is_empty()
+    }
+}
+
+impl std::fmt::Display for ClassId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ClassId::Base => write!(f, "Base"),
+            ClassId::Ligature => write!(f, "Ligature"),
+            ClassId::Mark => write!(f, "Mark"),
+            ClassId::Component => write!(f, "Component"),
+        }
     }
 }
 

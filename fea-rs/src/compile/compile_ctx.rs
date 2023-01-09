@@ -22,7 +22,7 @@ use crate::{
         Token,
     },
     types::{GlyphClass, GlyphId, GlyphOrClass},
-    Diagnostic, GlyphMap, Kind, NodeOrToken,
+    Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken,
 };
 
 use super::{
@@ -41,6 +41,7 @@ use super::{
 
 pub struct CompilationCtx<'a> {
     glyph_map: &'a GlyphMap,
+    reverse_glyph_map: BTreeMap<GlyphId, GlyphIdent>,
     source_map: &'a SourceMap,
     pub errors: Vec<Diagnostic>,
     tables: Tables,
@@ -70,6 +71,7 @@ impl<'a> CompilationCtx<'a> {
     pub(crate) fn new(glyph_map: &'a GlyphMap, source_map: &'a SourceMap) -> Self {
         CompilationCtx {
             glyph_map,
+            reverse_glyph_map: glyph_map.reverse_map(),
             source_map,
             errors: Vec::new(),
             tables: Tables::default(),
@@ -1456,17 +1458,19 @@ impl<'a> CompilationCtx<'a> {
                 }
 
                 typed::GdefTableItem::ClassDef(rule) => {
-                    if let Some(glyphs) = rule.base_glyphs() {
-                        gdef.add_glyph_class(self.resolve_glyph_class(&glyphs), ClassId::Base);
-                    }
-                    if let Some(glyphs) = rule.ligature_glyphs() {
-                        gdef.add_glyph_class(self.resolve_glyph_class(&glyphs), ClassId::Ligature);
-                    }
-                    if let Some(glyphs) = rule.mark_glyphs() {
-                        gdef.add_glyph_class(self.resolve_glyph_class(&glyphs), ClassId::Mark);
-                    }
-                    if let Some(glyphs) = rule.component_glyphs() {
-                        gdef.add_glyph_class(self.resolve_glyph_class(&glyphs), ClassId::Component);
+                    for (class, id) in [
+                        (rule.base_glyphs(), ClassId::Base),
+                        (rule.ligature_glyphs(), ClassId::Ligature),
+                        (rule.mark_glyphs(), ClassId::Mark),
+                        (rule.component_glyphs(), ClassId::Component),
+                    ] {
+                        let Some(class) = class else { continue; };
+                        if let Err((bad_glyph, old_class)) =
+                            gdef.add_glyph_class(self.resolve_glyph_class(&class), id)
+                        {
+                            let bad_glyph_name = self.reverse_glyph_map.get(&bad_glyph).unwrap();
+                            self.error(class.range(), format!("class includes glyph '{bad_glyph_name}', already in class {old_class}"));
+                        }
                     }
                 }
             }
