@@ -122,6 +122,25 @@ pub fn assert_has_ttx_executable() {
     )
 }
 
+/// Selectively filter which files to run.
+pub struct Filter<'a>(Vec<&'a str>);
+
+impl<'a> Filter<'a> {
+    /// Create a new filter from a comma-separated list of inputs
+    pub fn new(input: Option<&'a String>) -> Self {
+        Self(
+            input
+                .map(|s| s.split(',').map(|s| s.trim()).collect::<Vec<_>>())
+                .unwrap_or_default(),
+        )
+    }
+
+    /// true if this matches the filter, false if not
+    pub fn filter(&self, item: &str) -> bool {
+        self.0.is_empty() || self.0.iter().any(|needle| item.contains(needle))
+    }
+}
+
 /// Run the fonttools tests.
 ///
 /// This compiles the test files, generates ttx, and compares that with what
@@ -131,6 +150,7 @@ pub fn assert_has_ttx_executable() {
 /// tests which contain one of the strings in the list will be run.
 pub fn run_all_tests(fonttools_data_dir: impl AsRef<Path>, filter: Option<&String>) -> Report {
     let glyph_map = make_glyph_map();
+    let filter = Filter::new(filter);
 
     let result = iter_compile_tests(fonttools_data_dir.as_ref(), filter)
         .par_bridge()
@@ -162,27 +182,17 @@ pub fn finalize_results(result: Vec<Result<PathBuf, TestCase>>) -> Report {
 
 fn iter_compile_tests<'a>(
     path: &'a Path,
-    filter: Option<&'a String>,
+    filter: Filter<'a>,
 ) -> impl Iterator<Item = PathBuf> + 'a {
-    let filter_items = filter
-        .map(|s| s.split(',').map(|s| s.trim()).collect::<Vec<_>>())
-        .unwrap_or_default();
-
     iter_fea_files(path).filter(move |p| {
         if p.extension() == Some(OsStr::new("fea")) && p.with_extension("ttx").exists() {
             let path_str = p.file_name().unwrap().to_str().unwrap();
             if IGNORED_TESTS.contains(&path_str) {
                 return false;
             }
-            if !filter_items.is_empty() && !filter_items.iter().any(|item| path_str.contains(item))
-            {
-                return false;
-            }
-            return true;
+            return filter.filter(path_str);
         }
-        {
-            false
-        }
+        false
     })
 }
 
