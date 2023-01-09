@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use fea_rs::{Diagnostic, GlyphMap, GlyphName};
-use log::{debug, warn};
+use log::{debug, trace, warn};
 use write_fonts::FontBuilder;
 
 use fontdrasil::orchestration::Work;
@@ -18,7 +18,7 @@ pub struct FeatureWork {
 }
 
 impl FeatureWork {
-    pub fn new(build_dir: &Path) -> Box<BeWork> {
+    pub fn create(build_dir: &Path) -> Box<BeWork> {
         let build_dir = build_dir.to_path_buf();
         Box::from(FeatureWork { build_dir })
     }
@@ -33,10 +33,10 @@ fn check_diagnostics(
     let mut err = false;
     for diagnostic in diagnostics {
         if diagnostic.is_error() {
-            warn!("{:?} {} error {}", fea_file, op, formatter(&diagnostic));
+            warn!("{:?} {} error {}", fea_file, op, formatter(diagnostic));
             err = true;
         } else {
-            debug!("{:?} {} {}", fea_file, op, formatter(&diagnostic));
+            debug!("{:?} {} {}", fea_file, op, formatter(diagnostic));
         }
     }
     if err {
@@ -63,7 +63,7 @@ impl FeatureWork {
                 check_diagnostics(fea_file, "compile", &compilation.warnings, |d| {
                     tree.format_diagnostic(d)
                 })?;
-                debug!("Compiled {:?} successfully", fea_file);
+                trace!("Compiled {:?} successfully", fea_file);
                 compilation
             }
             Err(errors) => {
@@ -74,12 +74,14 @@ impl FeatureWork {
 
         // Capture the binary tables we got from the features for future merge into final font
         // TODO do we want to do the whole blob or to emit table-by-table?
-        let font = compilation.build_raw(&glyph_order).map_err(|_| {
-            Error::FeaError(format!(
-                "{:?} build_raw failed; no useful diagnostic available",
-                fea_file
-            ))
-        })?;
+        let font = compilation
+            .build_raw(&glyph_order, Default::default())
+            .map_err(|_| {
+                Error::FeaError(format!(
+                    "{:?} build_raw failed; no useful diagnostic available",
+                    fea_file
+                ))
+            })?;
         Ok(font)
     }
 }
@@ -90,17 +92,17 @@ impl Work<Context, Error> for FeatureWork {
         let fea_file = match &features.fea_file {
             Some(file) => file,
             None => {
-                debug!("No fea file; nop");
+                // set a default in place so subsequent compiles skip this step
+                trace!("No fea file, dull compile");
+                context.set_features(FontBuilder::default());
                 return Ok(());
             }
         };
-        let glyph_map = context
-            .ir
-            .get_static_metadata()
-            .glyph_order
-            .iter()
-            .map(Into::<GlyphName>::into)
-            .collect();
+        let glyph_order = &context.ir.get_static_metadata().glyph_order;
+        if glyph_order.is_empty() {
+            warn!("Glyph order is empty; feature compile improbable");
+        }
+        let glyph_map = glyph_order.iter().map(Into::<GlyphName>::into).collect();
         let font = self.compile(fea_file, glyph_map)?;
         context.set_features(font);
         Ok(())

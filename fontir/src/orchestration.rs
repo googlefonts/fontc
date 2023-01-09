@@ -2,6 +2,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Debug,
     fs::File,
     io::{BufReader, BufWriter},
     path::Path,
@@ -90,7 +91,7 @@ impl Context {
 impl Context {
     fn maybe_persist<V>(&self, file: &Path, content: &V)
     where
-        V: ?Sized + Serialize,
+        V: ?Sized + Serialize + Debug,
     {
         if !self.emit_ir {
             return;
@@ -100,7 +101,7 @@ impl Context {
             .unwrap();
         let buf_io = BufWriter::new(raw_file);
         serde_yaml::to_writer(buf_io, &content)
-            .map_err(|e| panic!("Unable to serialize to {:?}: {}", file, e))
+            .map_err(|e| panic!("Unable to serialize\n{:#?}\nto {:?}: {}", content, file, e))
             .unwrap();
     }
 
@@ -140,7 +141,7 @@ impl Context {
     pub fn set_static_metadata(&self, ir: ir::StaticMetadata) {
         let id = WorkIdentifier::StaticMetadata;
         self.acl.check_write_access(&id);
-        self.maybe_persist(&&self.paths.target_file(&id), &ir);
+        self.maybe_persist(&self.paths.target_file(&id), &ir);
         self.set_cached_static_metadata(ir);
     }
 
@@ -173,7 +174,7 @@ impl Context {
                 return rl.as_ref().unwrap().clone();
             }
         }
-        self.set_cached_features(self.restore(&&self.paths.target_file(&id)));
+        self.set_cached_features(self.restore(&self.paths.target_file(&id)));
         let rl = self.feature_ir.item.read().unwrap();
         rl.as_ref().expect(MISSING_DATA).clone()
     }

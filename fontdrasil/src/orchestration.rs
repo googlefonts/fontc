@@ -14,7 +14,7 @@ pub const MISSING_DATA: &str = "Missing data, dependency management failed us?";
 /// Naively you'd think we'd just return FnOnce + Send but that didn't want to compile
 /// See <https://github.com/rust-lang/rust/issues/29625>.
 ///
-/// Data produced by work is written into [Context].
+/// Data produced by work is written into a Context (type parameter C).
 pub trait Work<C, E> {
     fn exec(&self, context: &C) -> Result<(), E>;
 }
@@ -29,6 +29,12 @@ impl<T: Default> Cache<T> {
         Cache {
             item: Default::default(),
         }
+    }
+}
+
+impl<T: Default> Default for Cache<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -51,17 +57,17 @@ where
 
 impl<I: Eq + Hash + Debug> Acl<I> {
     pub fn read_only() -> Acl<I> {
-        return Acl {
+        Acl {
             write_mask: None,
             read_mask: None,
-        };
+        }
     }
 
     pub fn read_write(read: HashSet<I>, write: I) -> Acl<I> {
-        return Acl {
+        Acl {
             write_mask: Some(write),
             read_mask: Some(read),
-        };
+        }
     }
 }
 
@@ -92,5 +98,5 @@ impl<I: Eq + Hash + Debug> Acl<I> {
 pub fn glyph_file(glyph_name: &str, suffix: &str) -> String {
     // TODO handle names that are invalid for the filesystem
     // Ref https://github.com/unified-font-object/ufo-spec/issues/164
-    return glyph_name.to_owned() + suffix;
+    glyph_name.to_owned() + suffix
 }

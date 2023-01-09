@@ -257,7 +257,7 @@ fn add_feature_be_job(
         workload.insert(
             BeWorkIdentifier::Features.into(),
             Job {
-                work: FeatureWork::new(change_detector.ir_paths.build_dir()).into(),
+                work: FeatureWork::create(change_detector.ir_paths.build_dir()).into(),
                 happens_after: HashSet::from([
                     FeWorkIdentifier::StaticMetadata.into(),
                     FeWorkIdentifier::Features.into(),
@@ -549,20 +549,20 @@ mod tests {
 
     use filetime::FileTime;
     use fontbe::{
-        orchestration::{AnyWorkId, Context as BeContext},
+        orchestration::{AnyWorkId, Context as BeContext, WorkIdentifier as BeWorkIdentifier},
         paths::Paths as BePaths,
     };
     use fontc::work::AnyContext;
     use fontir::{
-        orchestration::{Context as FeContext, WorkIdentifier},
+        orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier},
         paths::Paths as IrPaths,
         stateset::StateSet,
     };
     use tempfile::tempdir;
 
     use crate::{
-        add_feature_ir_job, add_glyph_ir_jobs, add_static_metadata_ir_job, finish_successfully,
-        init, require_dir, Args, ChangeDetector, Config, Workload,
+        add_feature_be_job, add_feature_ir_job, add_glyph_ir_jobs, add_static_metadata_ir_job,
+        finish_successfully, init, require_dir, Args, ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -653,6 +653,8 @@ mod tests {
     }
 
     fn compile(build_dir: &Path, source: &str) -> TestCompile {
+        let _ = env_logger::builder().is_test(true).try_init();
+
         let args = test_args(source, build_dir);
         let ir_paths = IrPaths::new(build_dir);
         let be_paths = BePaths::new(build_dir);
@@ -670,10 +672,12 @@ mod tests {
         add_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
         add_glyph_ir_jobs(&mut change_detector, &mut workload).unwrap();
         add_feature_ir_job(&mut change_detector, &mut workload).unwrap();
+        add_feature_be_job(&mut change_detector, &mut workload).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one
         // This will likely need to change when we start doing things like glyphs with components
+
         let fe_root = FeContext::new_root(
             config.args.emit_ir,
             ir_paths,
@@ -721,10 +725,11 @@ mod tests {
         let result = compile(build_dir, "wght_var.designspace");
         assert_eq!(
             HashSet::from([
-                WorkIdentifier::StaticMetadata.into(),
-                WorkIdentifier::Features.into(),
-                WorkIdentifier::Glyph(String::from("bar")).into(),
-                WorkIdentifier::Glyph(String::from("plus")).into(),
+                FeWorkIdentifier::StaticMetadata.into(),
+                FeWorkIdentifier::Features.into(),
+                FeWorkIdentifier::Glyph(String::from("bar")).into(),
+                FeWorkIdentifier::Glyph(String::from("plus")).into(),
+                BeWorkIdentifier::Features.into(),
             ]),
             result.work_completed
         );
@@ -761,7 +766,7 @@ mod tests {
 
         let result = compile(build_dir, "wght_var.designspace");
         assert_eq!(
-            HashSet::from([WorkIdentifier::Glyph(String::from("bar")).into(),]),
+            HashSet::from([FeWorkIdentifier::Glyph(String::from("bar")).into(),]),
             result.work_completed
         );
     }
@@ -785,5 +790,27 @@ mod tests {
         let result = compile(build_dir, "wght_var.designspace");
         assert_eq!(HashSet::from(["bar".to_string()]), result.glyphs_changed);
         assert_eq!(HashSet::from([]), result.glyphs_deleted);
+    }
+
+    #[test]
+    fn compile_fea() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+
+        let result = compile(build_dir, "static.designspace");
+        assert!(
+            result
+                .work_completed
+                .contains(&BeWorkIdentifier::Features.into()),
+            "Missing BE feature work in {:?}",
+            result.work_completed
+        );
+
+        let feature_ttf = build_dir.join("features.ttf");
+        assert!(
+            feature_ttf.is_file(),
+            "Should have written {:?}",
+            feature_ttf
+        );
     }
 }

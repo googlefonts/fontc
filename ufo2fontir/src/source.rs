@@ -93,7 +93,11 @@ fn glif_files<'a>(
         return Err(Error::FileExpected(glyph_list_file));
     }
     let result: BTreeMap<String, PathBuf> = plist::from_file(&glyph_list_file)
-        .map_err(|e| Error::ParseError(glyph_list_file, e.to_string()))?;
+        .map_err(|e| Error::ParseError(glyph_list_file.clone(), e.to_string()))?;
+
+    if result.is_empty() {
+        warn!("{:?} is empty", glyph_list_file);
+    }
 
     Ok(result
         .into_iter()
@@ -234,6 +238,12 @@ impl Source for DesignSpaceIrSource {
                 let glif_locations = glif_locations.entry(glif_file).or_default();
                 glif_locations.push(location.clone());
             }
+        }
+
+        if glyph_names.is_empty() {
+            warn!("No glyphs identified");
+        } else {
+            debug!("{} glyphs identified", glyph_names.len());
         }
 
         let ds_dir = self.designspace_file.parent().unwrap();
@@ -670,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    pub fn builds_glyph_order() {
+    pub fn builds_glyph_order_for_wght_var() {
         // Only WghtVar-Regular.ufo has a lib.plist, and it only lists a subset of glyphs
         // Should still work.
         let (source, _) = test_source();

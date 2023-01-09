@@ -140,7 +140,7 @@ impl Context {
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
-    pub fn set_features<'a>(&self, mut font: FontBuilder<'a>) {
+    pub fn set_features(&self, mut font: FontBuilder) {
         let id = WorkIdentifier::Features;
         self.acl.check_write_access(&id.clone().into());
         let font = font.build();
