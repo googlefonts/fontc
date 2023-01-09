@@ -1,10 +1,6 @@
 //! Generic model of font sources.
 
-use std::{
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use indexmap::IndexSet;
 use log::debug;

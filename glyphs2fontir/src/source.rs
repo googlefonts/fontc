@@ -6,6 +6,7 @@ use fontir::orchestration::{Context, IrWork};
 use fontir::source::{Input, Source};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
+use indexmap::IndexSet;
 use log::{debug, trace, warn};
 use std::collections::HashSet;
 use std::sync::Arc;

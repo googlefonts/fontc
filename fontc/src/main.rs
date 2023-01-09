@@ -168,7 +168,7 @@ impl ChangeDetector {
                 .is_file()
     }
 
-    fn glyphs_changed(&self) -> HashSet<&str> {
+    fn glyphs_changed(&self) -> IndexSet<&str> {
         if self.static_metadata_ir_change() {
             return self
                 .current_inputs
