@@ -39,8 +39,8 @@ pub struct ValidationCtx<'a> {
     mark_class_used: Option<Token>,
     anchor_defs: HashMap<SmolStr, Token>,
     value_record_defs: HashMap<SmolStr, Token>,
-    // tags referenced in aalt, plus whether we saw them at the end
-    aalt_referenced_features: HashMap<Tag, (typed::Tag, bool)>,
+    aalt_referenced_features: HashMap<Tag, typed::Tag>,
+    all_features: HashSet<Tag>,
 }
 
 impl<'a> ValidationCtx<'a> {
@@ -58,6 +58,7 @@ impl<'a> ValidationCtx<'a> {
             anchor_defs: Default::default(),
             value_record_defs: Default::default(),
             aalt_referenced_features: Default::default(),
+            all_features: Default::default(),
         }
     }
 
@@ -100,16 +101,20 @@ impl<'a> ValidationCtx<'a> {
 
     /// perform any analysis required after seeing all items
     fn finalize(&mut self) {
-        // get around the borrow checker
+        self.finalize_aalt();
+    }
+
+    fn finalize_aalt(&mut self) {
+        // get around borrowck
         let bad = self
             .aalt_referenced_features
-            .values()
-            .filter_map(|(tag, seen)| (!seen).then(|| tag.clone()))
+            .iter()
+            .filter_map(|(tag, tag_node)| {
+                (!self.all_features.contains(tag)).then(|| tag_node.clone())
+            })
             .collect::<Vec<_>>();
-
         for tag in bad {
-            //TODO: spec says this is not allowed, but it seems to be common?
-            self.warning(tag.range(), "referenced feature not found. All features in 'aalt' must come after the aalt table itself.");
+            self.error(tag.range(), "Referenced feature not found.");
         }
     }
 
@@ -459,10 +464,7 @@ impl<'a> ValidationCtx<'a> {
     fn validate_feature(&mut self, node: &typed::Feature) {
         let tag = node.tag();
         let tag_raw = tag.to_raw();
-
-        if let Some((_, seen)) = self.aalt_referenced_features.get_mut(&tag_raw) {
-            *seen = true;
-        }
+        self.all_features.insert(tag_raw);
 
         if tag_raw == common::tags::SIZE {
             return self.validate_size_feature(node);
@@ -504,8 +506,13 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_mark_class_def(&node);
             } else if let Some(_node) = typed::FeatureNames::cast(item) {
                 self.warning(item.range(), "Only one featureNames block is allowed, it must preceed all rules, and it is only valid in features ss01-ss20");
+            } else if let Some(node) = typed::FeatureRef::cast(item) {
+                self.error(
+                    node.keyword().range(),
+                    "feature reference only valid in 'aalt' feature",
+                );
             } else {
-                self.warning(
+                self.error(
                     item.range(),
                     format!("unhandled item '{}' in feature", item.kind()),
                 );
@@ -559,19 +566,18 @@ impl<'a> ValidationCtx<'a> {
                         "only Single and Alternate rules allowed in aalt feature",
                     ),
                 }
-            } else if let Some(node) = typed::AaltFeature::cast(item) {
+            } else if let Some(node) = typed::FeatureRef::cast(item) {
                 let tag = node.feature();
                 let range = tag.range();
                 let raw_tag = tag.to_raw();
-                if self
-                    .aalt_referenced_features
-                    .insert(raw_tag, (tag, false))
-                    .is_some()
-                {
+                if self.aalt_referenced_features.insert(raw_tag, tag).is_some() {
                     self.warning(range, "feature already declared")
                 }
             } else if !item.kind().is_trivia() {
-                self.error(item.range(), format!("unexpected item '{}'", item.kind()));
+                self.error(
+                    item.range(),
+                    "aalt can only contain feature names and single or alternate sub rules.",
+                );
             }
         }
     }
@@ -594,7 +600,7 @@ impl<'a> ValidationCtx<'a> {
             } else if !item.kind().is_trivia() {
                 self.error(
                     item.range(),
-                    format!("unexpected item in size feature '{}'", item.kind()),
+                    "size can only contain feature names and single or alternate sub rules.",
                 );
             }
         }
@@ -622,8 +628,14 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_lookup_block(&mut self, node: &typed::LookupBlock, in_feature: Option<Tag>) {
         let name = node.label();
-        if in_feature == Some(common::tags::AALT) {
-            self.error(name.range(), "lookups are not allowed in 'aalt' feature");
+        if in_feature == Some(common::tags::AALT) || in_feature == Some(common::tags::SIZE) {
+            self.error(
+                name.range(),
+                format!(
+                    "lookups are not allowed in '{}' feature",
+                    in_feature.unwrap()
+                ),
+            );
         }
         let mut kind = None;
         if let Some(_prev) = self.lookup_defs.insert(name.text.clone(), name.clone()) {
@@ -645,16 +657,11 @@ impl<'a> ValidationCtx<'a> {
                 }
             }
             if item.kind() == Kind::ScriptNode || item.kind() == Kind::LanguageNode {
-                match in_feature {
-                    None => self.error(
+                if in_feature.is_none() {
+                    self.error(
                         item.range(),
                         "script and language statements not allowed in standalone lookup blocks",
-                    ),
-                    Some(tag @ common::tags::AALT | tag @ common::tags::SIZE) => self.error(
-                        item.range(),
-                        format!("language/script not allowed in '{tag}' feature"),
-                    ),
-                    _ => (),
+                    );
                 }
             } else if item.kind() == Kind::SubtableNode {
                 // lgtm
@@ -683,7 +690,7 @@ impl<'a> ValidationCtx<'a> {
             } else if let Some(node) = typed::MarkClassDef::cast(item) {
                 self.validate_mark_class_def(&node);
             } else {
-                self.warning(
+                self.error(
                     item.range(),
                     format!("unhandled item {} in lookup block", item.kind()),
                 );

@@ -1047,7 +1047,7 @@ impl<'a> CompilationCtx<'a> {
                 let target = self.resolve_glyph(&node.target());
                 let alts = self.resolve_glyph_class(&node.alternates());
                 aalt.extend(std::iter::repeat(target).zip(alts.iter()));
-            } else if let Some(feature) = typed::AaltFeature::cast(item) {
+            } else if let Some(feature) = typed::FeatureRef::cast(item) {
                 aalt.add_feature_reference(feature.feature().to_raw());
             }
         }

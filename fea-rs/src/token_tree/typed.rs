@@ -307,7 +307,7 @@ ast_enum!(StatAxisValueItem {
     Location(StatAxisLocation),
 });
 
-ast_node!(AaltFeature, Kind::AaltFeatureNode);
+ast_node!(FeatureRef, Kind::AaltFeatureNode);
 
 ast_node!(Gsub1, Kind::GsubType1);
 ast_node!(Gsub2, Kind::GsubType2);
@@ -1570,7 +1570,11 @@ impl Parameters {
     }
 }
 
-impl AaltFeature {
+impl FeatureRef {
+    pub(crate) fn keyword(&self) -> &Token {
+        self.find_token(Kind::FeatureKw).unwrap()
+    }
+
     pub(crate) fn feature(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
     }
