@@ -5,6 +5,7 @@ use fontir::orchestration::Context;
 use fontir::source::{Input, Source, Work};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
+use indexmap::IndexSet;
 use log::{debug, trace};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -121,7 +122,7 @@ impl Source for GlyphsIrSource {
 
     fn create_glyph_ir_work(
         &self,
-        glyph_names: &HashSet<&str>,
+        glyph_names: &IndexSet<&str>,
         input: &Input,
     ) -> Result<Vec<Box<dyn Work + Send>>, fontir::error::Error> {
         self.check_global_metadata(&input.global_metadata)?;
@@ -447,7 +448,7 @@ mod tests {
     ) -> Result<(), WorkError> {
         for glyph_name in glyph_names.iter() {
             let work_items = source
-                .create_glyph_ir_work(&HashSet::from([glyph_name.as_str()]), &context.input)
+                .create_glyph_ir_work(&IndexSet::from([glyph_name.as_str()]), &context.input)
                 .unwrap();
             for work in work_items.iter() {
                 let task_context = context.copy_for_work(

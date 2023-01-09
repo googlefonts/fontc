@@ -15,6 +15,7 @@ use fontir::{
     stateset::StateSet,
 };
 use glyphs2fontir::source::GlyphsIrSource;
+use indexmap::IndexSet;
 use log::{debug, error, info, log_enabled, trace, warn};
 use rayon::Scope;
 use serde::{Deserialize, Serialize};
@@ -137,7 +138,7 @@ fn global_change(current_inputs: &Input, prev_inputs: &Input) -> bool {
     current_inputs.global_metadata != prev_inputs.global_metadata
 }
 
-fn glyphs_changed(context: &ChangeDetector) -> HashSet<&str> {
+fn glyphs_changed(context: &ChangeDetector) -> IndexSet<&str> {
     if global_change(&context.current_inputs, &context.prev_inputs) {
         return context
             .current_inputs
@@ -183,7 +184,7 @@ fn add_static_metadata_ir_job(
             work: change_detector
                 .ir_source
                 .create_static_metadata_work(&change_detector.current_inputs)?,
-            happens_after: HashSet::new(),
+            dependencies: HashSet::new(),
         },
     );
     Ok(())
@@ -204,7 +205,7 @@ fn add_glyph_ir_jobs(
             WorkIdentifier::GlyphIrDelete(glyph_name.to_string()),
             Job {
                 work: DeleteWork::create(change_detector.paths.glyph_ir_file(glyph_name)),
-                happens_after: HashSet::new(),
+                dependencies: HashSet::new(),
             },
         );
     }
@@ -222,7 +223,7 @@ fn add_glyph_ir_jobs(
             id,
             Job {
                 work,
-                happens_after,
+                dependencies: happens_after,
             },
         );
     }
@@ -280,10 +281,10 @@ impl Workload {
         self.jobs
             .iter()
             .filter_map(|(id, job)| {
-                let can_start = job.happens_after.is_subset(success);
+                let can_start = job.dependencies.is_subset(success);
                 if !can_start && log_enabled!(log::Level::Trace) {
                     let mut unfulfilled_deps: Vec<_> =
-                        job.happens_after.difference(success).into_iter().collect();
+                        job.dependencies.difference(success).into_iter().collect();
                     unfulfilled_deps.sort();
                     trace!("Cannot start {:?}, blocked on {:?}", id, unfulfilled_deps);
                 };
@@ -309,7 +310,7 @@ impl Workload {
                 trace!("Start {:?}", id);
                 let job = self.jobs.remove(&id).unwrap();
                 let work = job.work;
-                let work_context = root_context.copy_for_work(id.clone(), Some(job.happens_after));
+                let work_context = root_context.copy_for_work(id.clone(), Some(job.dependencies));
                 let send = send.clone();
                 scope.spawn(move |_| {
                     let result = work.exec(&work_context);
@@ -353,8 +354,8 @@ impl Workload {
 struct Job {
     // The actual task
     work: Box<dyn Work + Send>,
-    // Things that must happen before us, e.g. our dependencies
-    happens_after: HashSet<WorkIdentifier>,
+    // Things that must happen before we execute, probably because we use their output
+    dependencies: HashSet<WorkIdentifier>,
 }
 
 fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Error> {
