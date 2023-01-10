@@ -680,6 +680,12 @@ impl<'a> ValidationCtx<'a> {
                     "lookup blocks cannot contain other blocks",
                 );
             } else if let Some(node) = typed::LookupFlag::cast(item) {
+                if kind.is_some() {
+                    self.error(
+                        node.range(),
+                        "all rules in named lookup must have same lookup flags",
+                    );
+                }
                 self.validate_lookupflag(&node);
             } else if let Some(node) = typed::GsubStatement::cast(item) {
                 self.validate_gsub_statement(&node);
