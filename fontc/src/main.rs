@@ -444,6 +444,7 @@ impl Workload {
             if !match result {
                 Ok(..) => self.success.insert(completed_id.clone()),
                 Err(e) => {
+                    error!("{:?} failed {}", completed_id, e);
                     self.error.push((completed_id.clone(), format!("{}", e)));
                     true
                 }
@@ -464,6 +465,9 @@ impl Workload {
         }
         if !self.error.is_empty() {
             return Err(Error::TasksFailed(self.error.clone()));
+        }
+        if self.error.is_empty() && self.success.len() != self.job_count {
+            panic!("No errors but not everything succeeded?!");
         }
         Ok(())
     }
