@@ -640,7 +640,10 @@ impl<'a> ValidationCtx<'a> {
         let mut kind = None;
         if let Some(_prev) = self.lookup_defs.insert(name.text.clone(), name.clone()) {
             //TODO: annotate with previous location
-            self.warning(name.range(), "layout label already defined");
+            self.error(
+                name.range(),
+                format!("A lookup named '{}' has already been defined", name.text),
+            );
         }
         for item in node.statements() {
             if item.kind().is_rule() {
