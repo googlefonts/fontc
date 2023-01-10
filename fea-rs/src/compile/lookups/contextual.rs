@@ -204,6 +204,13 @@ pub(crate) struct ContextBuilder {
     rules: Vec<ContextRule>,
 }
 
+// we use separate types here to ensure we don't mix lookups
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PosContextBuilder(ContextBuilder);
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SubContextBuilder(ContextBuilder);
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ReverseChainBuilder {
     rules: Vec<ReverseSubRule>,
@@ -218,6 +225,12 @@ struct ReverseSubRule {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ChainContextBuilder(ContextBuilder);
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PosChainContextBuilder(ChainContextBuilder);
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SubChainContextBuilder(ChainContextBuilder);
 
 #[derive(Clone, Debug)]
 struct ContextRule {
@@ -248,7 +261,7 @@ impl ContextBuilder {
     }
 
     /// Iterate all referenced lookups
-    pub(crate) fn iter_lookups(&self) -> impl Iterator<Item = LookupId> + '_ {
+    fn iter_lookups(&self) -> impl Iterator<Item = LookupId> + '_ {
         self.rules
             .iter()
             .flat_map(|x| x.context.iter().flat_map(|(_, id)| id.iter()))
@@ -257,13 +270,6 @@ impl ContextBuilder {
 
     fn is_chain_rule(&self) -> bool {
         self.rules.iter().any(ContextRule::is_chain_rule)
-    }
-
-    /// Force this ContextBuilder into a ChainContextBuilder.
-    ///
-    /// Only useful so we can optionally choose to only build chain rules
-    pub(crate) fn into_chain_rule(self) -> ChainContextBuilder {
-        ChainContextBuilder(self)
     }
 
     fn has_glyph_classes(&self) -> bool {
@@ -297,12 +303,12 @@ impl ContextBuilder {
         )
     }
 
-    fn build_format_1(&self) -> Option<write_layout::SequenceContext> {
+    fn build_format_1(&self, in_gpos: bool) -> Option<write_layout::SequenceContext> {
         let coverage = self.format_1_coverage()?.build();
         let mut rule_sets = HashMap::<_, Vec<_>>::new();
         for rule in &self.rules {
             let key = rule.first_input_sequence_item().to_glyph().unwrap();
-            let seq_lookups = rule.lookup_records();
+            let seq_lookups = rule.lookup_records(in_gpos);
             let rule = write_layout::SequenceRule::new(
                 rule.context
                     .iter()
@@ -324,6 +330,12 @@ impl ContextBuilder {
             .collect();
 
         Some(write_layout::SequenceContext::format_1(coverage, rule_sets))
+    }
+}
+
+impl SubContextBuilder {
+    pub(crate) fn iter_lookups(&self) -> impl Iterator<Item = LookupId> + '_ {
+        self.0.iter_lookups()
     }
 }
 
@@ -351,28 +363,42 @@ impl ContextRule {
         &self.context.first().unwrap().0
     }
 
-    fn lookup_records(&self) -> Vec<write_layout::SequenceLookupRecord> {
+    fn lookup_records(&self, in_gpos: bool) -> Vec<write_layout::SequenceLookupRecord> {
         self.context
             .iter()
             .enumerate()
             .flat_map(|(i, (_, lookups))| {
                 lookups.iter().map(move |lookup_id| {
-                    write_layout::SequenceLookupRecord::new(
-                        i.try_into().unwrap(),
-                        lookup_id.to_u16_or_die(),
-                    )
+                    let lookup_id = in_gpos
+                        .then(|| lookup_id.to_gpos_id_or_die())
+                        .unwrap_or_else(|| lookup_id.to_gsub_id_or_die());
+                    write_layout::SequenceLookupRecord::new(i.try_into().unwrap(), lookup_id)
                 })
             })
             .collect()
     }
 }
 
-impl Builder for ContextBuilder {
+impl Builder for PosContextBuilder {
     type Output = Vec<write_layout::SequenceContext>;
 
     fn build(self) -> Self::Output {
+        self.0.build(true)
+    }
+}
+
+impl Builder for SubContextBuilder {
+    type Output = Vec<write_layout::SequenceContext>;
+
+    fn build(self) -> Self::Output {
+        self.0.build(false)
+    }
+}
+
+impl ContextBuilder {
+    fn build(self, in_gpos: bool) -> Vec<write_layout::SequenceContext> {
         assert!(self.rules.iter().all(|rule| !rule.is_chain_rule()));
-        let format_1 = self.build_format_1();
+        let format_1 = self.build_format_1(in_gpos);
         //TODO: I'm skipping format_2 because it seems consistently larger
         // than format 3? but I have no verified this.
         let format_3 = self
@@ -384,7 +410,7 @@ impl Builder for ContextBuilder {
                     .iter()
                     .map(|(seq, _)| seq.iter().collect::<CoverageTableBuilder>().build())
                     .collect();
-                let seq_lookups = rule.lookup_records();
+                let seq_lookups = rule.lookup_records(in_gpos);
 
                 write_layout::SequenceContext::format_3(cov_tables, seq_lookups)
             })
@@ -395,21 +421,17 @@ impl Builder for ContextBuilder {
 }
 
 impl ChainContextBuilder {
-    pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
-        self.0.bump_all_lookup_ids(by)
-    }
-
     pub(crate) fn iter_lookups(&self) -> impl Iterator<Item = LookupId> + '_ {
         self.0.iter_lookups()
     }
 
-    fn build_format_1(&self) -> Option<write_layout::ChainedSequenceContext> {
+    fn build_format_1(&self, in_gpos: bool) -> Option<write_layout::ChainedSequenceContext> {
         let coverage = self.0.format_1_coverage()?.build();
 
         let mut rule_sets = HashMap::<_, Vec<_>>::new();
         for rule in &self.0.rules {
             let key = rule.first_input_sequence_item().to_glyph().unwrap();
-            let seq_lookups = rule.lookup_records();
+            let seq_lookups = rule.lookup_records(in_gpos);
             let rule = write_layout::ChainedSequenceRule::new(
                 rule.backtrack.iter().flat_map(|cls| cls.iter()).collect(),
                 rule.context
@@ -462,7 +484,7 @@ impl ChainContextBuilder {
     }
 
     /// If this lookup can be expressed as format 2, generate it
-    fn build_format_2(&self) -> Option<write_layout::ChainedSequenceContext> {
+    fn build_format_2(&self, in_gpos: bool) -> Option<write_layout::ChainedSequenceContext> {
         let (backtrack, input, lookahead) = self.format_2_class_defs()?;
         let (backtrack_class_def, backtrack_map) = backtrack.build();
         let (input_class_def, input_map) = input.build();
@@ -506,7 +528,7 @@ impl ChainContextBuilder {
                     backtrack,
                     input,
                     lookahead,
-                    rule.lookup_records(),
+                    rule.lookup_records(in_gpos),
                 ),
             )
         }
@@ -527,13 +549,42 @@ impl ChainContextBuilder {
     }
 }
 
-impl Builder for ChainContextBuilder {
+impl SubContextBuilder {
+    pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
+        self.0.bump_all_lookup_ids(by)
+    }
+}
+impl SubChainContextBuilder {
+    pub(crate) fn bump_all_lookup_ids(&mut self, by: usize) {
+        self.0 .0.bump_all_lookup_ids(by)
+    }
+
+    pub(crate) fn iter_lookups(&self) -> impl Iterator<Item = LookupId> + '_ {
+        self.0.iter_lookups()
+    }
+}
+
+impl Builder for PosChainContextBuilder {
     type Output = Vec<write_layout::ChainedSequenceContext>;
 
     fn build(self) -> Self::Output {
+        self.0.build(true)
+    }
+}
+
+impl Builder for SubChainContextBuilder {
+    type Output = Vec<write_layout::ChainedSequenceContext>;
+
+    fn build(self) -> Self::Output {
+        self.0.build(false)
+    }
+}
+
+impl ChainContextBuilder {
+    fn build(self, in_gpos: bool) -> Vec<write_layout::ChainedSequenceContext> {
         // do this first, since we take ownership below
-        let maybe_format_1 = self.build_format_1();
-        let maybe_format_2 = self.build_format_2();
+        let maybe_format_1 = self.build_format_1(in_gpos);
+        let maybe_format_2 = self.build_format_2(in_gpos);
 
         let format_3 = self
             .0
@@ -555,7 +606,7 @@ impl Builder for ChainContextBuilder {
                     .iter()
                     .map(|(seq, _)| seq.iter().collect::<CoverageTableBuilder>().build())
                     .collect();
-                let seq_lookups = rule.lookup_records();
+                let seq_lookups = rule.lookup_records(in_gpos);
 
                 write_layout::ChainedSequenceContext::format_3(
                     backtrack,
@@ -648,5 +699,35 @@ impl Builder for ReverseChainBuilder {
                 )
             })
             .collect()
+    }
+}
+
+impl From<ContextBuilder> for PosContextBuilder {
+    fn from(src: ContextBuilder) -> PosContextBuilder {
+        PosContextBuilder(src)
+    }
+}
+
+impl From<ContextBuilder> for SubContextBuilder {
+    fn from(src: ContextBuilder) -> SubContextBuilder {
+        SubContextBuilder(src)
+    }
+}
+
+impl From<ChainContextBuilder> for PosChainContextBuilder {
+    fn from(src: ChainContextBuilder) -> PosChainContextBuilder {
+        PosChainContextBuilder(src)
+    }
+}
+
+impl From<ContextBuilder> for PosChainContextBuilder {
+    fn from(src: ContextBuilder) -> PosChainContextBuilder {
+        PosChainContextBuilder(ChainContextBuilder(src))
+    }
+}
+
+impl From<ChainContextBuilder> for SubChainContextBuilder {
+    fn from(src: ChainContextBuilder) -> SubChainContextBuilder {
+        SubChainContextBuilder(src)
     }
 }

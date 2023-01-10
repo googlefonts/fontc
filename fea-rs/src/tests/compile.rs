@@ -82,10 +82,13 @@ fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
             })
         }
         Ok(node) => match compile::compile(&node, glyph_map) {
-            Ok(_) => Err(TestCase {
-                path: path.to_owned(),
-                reason: TestResult::UnexpectedSuccess,
-            }),
+            Ok(thing) => {
+                let _ = thing.build_raw(glyph_map, Default::default()).unwrap();
+                Err(TestCase {
+                    path: path.to_owned(),
+                    reason: TestResult::UnexpectedSuccess,
+                })
+            }
             Err(errs) => {
                 let msg = test_utils::stringify_diagnostics(&node, &errs);
                 let result =

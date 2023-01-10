@@ -635,8 +635,14 @@ impl<'a> CompilationCtx<'a> {
                 }
 
                 for lookup in item.lookups() {
-                    let lookup = self.lookups.get_named(&lookup.label().text).unwrap(); // validated already
-                    lookups.push(lookup);
+                    let id = self.lookups.get_named(&lookup.label().text).unwrap(); // validated already
+                    if matches!(id, LookupId::Gpos(_)) {
+                        self.error(
+                            lookup.label().range(),
+                            "Invalid lookup: expected GSUB, found GPOS",
+                        );
+                    }
+                    lookups.push(id);
                 }
                 (glyphs, lookups)
             })
@@ -911,6 +917,12 @@ impl<'a> CompilationCtx<'a> {
 
                 for lookup in item.lookups() {
                     let id = self.lookups.get_named(&lookup.label().text).unwrap();
+                    if matches!(id, LookupId::Gsub(_)) {
+                        self.error(
+                            lookup.label().range(),
+                            "Invalid lookup type: expected GPOS, found GSUB",
+                        );
+                    }
                     lookups.push(id);
                 }
 

@@ -6,7 +6,6 @@ mod gsub;
 mod helpers;
 
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryInto,
 };
@@ -34,7 +33,8 @@ use crate::{
 use super::{common, tables::ClassId};
 
 use contextual::{
-    ChainContextBuilder, ContextBuilder, ContextualLookupBuilder, ReverseChainBuilder,
+    ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,
+    SubChainContextBuilder, SubContextBuilder,
 };
 pub use gpos::PreviouslyAssignedClass;
 use gpos::{
@@ -77,8 +77,8 @@ pub(crate) enum PositionLookup {
     MarkToMark(LookupBuilder<MarkToMarkBuilder>),
     // currently unused, matching feaLib: <https://github.com/fonttools/fonttools/issues/2539>
     #[allow(dead_code)]
-    Contextual(LookupBuilder<ContextBuilder>),
-    ChainedContextual(LookupBuilder<ChainContextBuilder>),
+    Contextual(LookupBuilder<PosContextBuilder>),
+    ChainedContextual(LookupBuilder<PosChainContextBuilder>),
 }
 
 #[derive(Clone, Debug)]
@@ -87,8 +87,8 @@ pub(crate) enum SubstitutionLookup {
     Multiple(LookupBuilder<MultipleSubBuilder>),
     Alternate(LookupBuilder<AlternateSubBuilder>),
     Ligature(LookupBuilder<LigatureSubBuilder>),
-    Contextual(LookupBuilder<ContextBuilder>),
-    ChainedContextual(LookupBuilder<ChainContextBuilder>),
+    Contextual(LookupBuilder<SubContextBuilder>),
+    ChainedContextual(LookupBuilder<SubChainContextBuilder>),
     Reverse(LookupBuilder<ReverseChainBuilder>),
 }
 
@@ -166,8 +166,9 @@ impl<T: Default> LookupBuilder<T> {
     }
 }
 
-impl LookupBuilder<ContextBuilder> {
-    fn into_chain_rule(self) -> LookupBuilder<ChainContextBuilder> {
+impl<U> LookupBuilder<U> {
+    /// A helper method for converting from (say) ContextBuilder to PosContextBuilder
+    fn convert<T: From<U>>(self) -> LookupBuilder<T> {
         let LookupBuilder {
             flags,
             mark_set,
@@ -176,10 +177,7 @@ impl LookupBuilder<ContextBuilder> {
         LookupBuilder {
             flags,
             mark_set,
-            subtables: subtables
-                .into_iter()
-                .map(ContextBuilder::into_chain_rule)
-                .collect(),
+            subtables: subtables.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -307,10 +305,10 @@ impl AllLookups {
                         .gpos
                         //NOTE: we currently force all GPOS7 into GPOS8, to match
                         //the behaviour of fonttools.
-                        .push(PositionLookup::ChainedContextual(lookup.into_chain_rule())),
-                    ChainOrNot::Chain(lookup) => {
-                        self.gpos.push(PositionLookup::ChainedContextual(lookup))
-                    }
+                        .push(PositionLookup::ChainedContextual(lookup.convert())),
+                    ChainOrNot::Chain(lookup) => self
+                        .gpos
+                        .push(PositionLookup::ChainedContextual(lookup.convert())),
                 }
                 self.gpos.extend(anon_lookups);
                 id
@@ -320,12 +318,12 @@ impl AllLookups {
                 assert_eq!(id, lookup.root_id); // sanity check
                 let (lookup, anon_lookups) = lookup.into_lookups();
                 match lookup {
-                    ChainOrNot::Context(lookup) => {
-                        self.gsub.push(SubstitutionLookup::Contextual(lookup))
-                    }
+                    ChainOrNot::Context(lookup) => self
+                        .gsub
+                        .push(SubstitutionLookup::Contextual(lookup.convert())),
                     ChainOrNot::Chain(lookup) => self
                         .gsub
-                        .push(SubstitutionLookup::ChainedContextual(lookup)),
+                        .push(SubstitutionLookup::ChainedContextual(lookup.convert())),
                 }
                 self.gsub.extend(anon_lookups);
                 id
@@ -543,17 +541,17 @@ impl AllLookups {
             let required = required_features.contains(key);
 
             if key.feature == common::tags::SIZE {
-                gpos_builder.add(*key, &[], required);
+                gpos_builder.add(*key, Vec::new(), required);
                 continue;
             }
 
             let (gpos_idxes, gsub_idxes) = split_lookups(feature_indices);
             if !gpos_idxes.is_empty() {
-                gpos_builder.add(*key, &gpos_idxes, required);
+                gpos_builder.add(*key, gpos_idxes, required);
             }
 
             if !gsub_idxes.is_empty() {
-                gsub_builder.add(*key, &gsub_idxes, required);
+                gsub_builder.add(*key, gsub_idxes, required);
             }
         }
 
@@ -566,10 +564,9 @@ impl AllLookups {
 /// In general, a feature only has either GSUB or GPOS lookups, but this is not
 /// a requirement, and in the wild we will encounter features that contain mixed
 /// lookups.
-fn split_lookups(lookups: &[LookupId]) -> (Cow<[LookupId]>, Cow<[LookupId]>) {
-    const EMPTY: Cow<[LookupId]> = Cow::Borrowed(&[]);
+fn split_lookups(lookups: &[LookupId]) -> (Vec<u16>, Vec<u16>) {
     if lookups.is_empty() {
-        return (EMPTY.clone(), EMPTY.clone());
+        return (Vec::new(), Vec::new());
     }
 
     // in the majority of cases, a given feature only has lookups of one kind,
@@ -580,9 +577,15 @@ fn split_lookups(lookups: &[LookupId]) -> (Cow<[LookupId]>, Cow<[LookupId]>) {
         .all(|x| matches!(x, LookupId::Gpos(_)) == is_gpos)
     {
         if is_gpos {
-            return (lookups.into(), EMPTY);
+            return (
+                lookups.iter().map(|x| x.to_gpos_id_or_die()).collect(),
+                Vec::new(),
+            );
         } else {
-            return (EMPTY, lookups.into());
+            return (
+                Vec::new(),
+                lookups.iter().map(|x| x.to_gsub_id_or_die()).collect(),
+            );
         }
     }
 
@@ -593,13 +596,13 @@ fn split_lookups(lookups: &[LookupId]) -> (Cow<[LookupId]>, Cow<[LookupId]>) {
     let mut gsub = Vec::new();
     for lookup in lookups {
         match lookup {
-            LookupId::Gpos(_) => gpos.push(*lookup),
-            LookupId::Gsub(_) => gsub.push(*lookup),
+            LookupId::Gpos(_) => gpos.push(lookup.to_gpos_id_or_die()),
+            LookupId::Gsub(_) => gsub.push(lookup.to_gsub_id_or_die()),
             LookupId::Empty => (),
         }
     }
 
-    (gpos.into(), gsub.into())
+    (gpos, gsub)
 }
 
 impl LookupId {
@@ -617,8 +620,14 @@ impl LookupId {
         }
     }
 
-    pub(crate) fn to_u16_or_die(self) -> u16 {
-        self.to_raw().try_into().unwrap()
+    pub(crate) fn to_gpos_id_or_die(self) -> u16 {
+        let LookupId::Gpos(x) = self else { panic!("this *really* shouldn't happen") };
+        x.try_into().unwrap()
+    }
+
+    pub(crate) fn to_gsub_id_or_die(self) -> u16 {
+        let LookupId::Gsub(x) = self else { panic!("this *really* shouldn't happen") };
+        x.try_into().unwrap()
     }
 }
 
@@ -877,12 +886,7 @@ impl<T> PosSubBuilder<T> {
         }
     }
 
-    fn add(&mut self, key: FeatureKey, lookups: &[LookupId], required: bool) {
-        let lookups = lookups
-            .iter()
-            // if we have aalt lookups, they go first, so we bump other indices
-            .map(|idx| idx.to_u16_or_die())
-            .collect();
+    fn add(&mut self, key: FeatureKey, lookups: Vec<u16>, required: bool) {
         let feat_key = (key.feature, lookups);
         let next_feature = self.features.len();
         let idx = *self
