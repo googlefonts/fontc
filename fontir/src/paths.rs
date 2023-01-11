@@ -41,11 +41,11 @@ impl Paths {
         self.glyph_ir_dir.join(glyph_file(name, ".yml"))
     }
 
-    pub fn target_file(&self, id: &WorkIdentifier) -> PathBuf {
+    pub fn target_file(&self, id: WorkIdentifier) -> PathBuf {
         match id {
             WorkIdentifier::StaticMetadata => self.build_dir.join("static_metadata.yml"),
-            WorkIdentifier::Glyph(name) => self.glyph_ir_file(name),
-            WorkIdentifier::GlyphIrDelete(name) => self.glyph_ir_file(name),
+            WorkIdentifier::Glyph(name) => self.glyph_ir_file(name.as_str()),
+            WorkIdentifier::GlyphIrDelete() => self.build_dir.join("delete.yml"),
             WorkIdentifier::Features => self.build_dir.join("features.yml"),
         }
     }

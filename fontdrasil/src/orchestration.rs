@@ -20,7 +20,7 @@ pub trait Work<C, E> {
 /// because the result of mistaken concurrent access can be confusing to track down.
 pub struct AccessControlList<I>
 where
-    I: Eq + Hash + Debug,
+    I: Copy + Eq + Hash + Debug,
 {
     // If present, the one and only key you are allowed to write to
     // None means we're read-only
@@ -31,7 +31,7 @@ where
     read_mask: Option<HashSet<I>>,
 }
 
-impl<I: Eq + Hash + Debug> AccessControlList<I> {
+impl<I: Copy + Eq + Hash + Debug> AccessControlList<I> {
     pub fn read_only() -> AccessControlList<I> {
         AccessControlList {
             write_mask: None,
@@ -47,20 +47,20 @@ impl<I: Eq + Hash + Debug> AccessControlList<I> {
     }
 }
 
-impl<I: Eq + Hash + Debug> AccessControlList<I> {
-    pub fn check_read_access(&self, id: &I) {
+impl<I: Copy + Eq + Hash + Debug> AccessControlList<I> {
+    pub fn check_read_access(&self, id: I) {
         if !self
             .read_mask
             .as_ref()
-            .map(|mask| mask.contains(id))
+            .map(|mask| mask.contains(&id))
             .unwrap_or(true)
         {
             panic!("Illegal access");
         }
     }
 
-    pub fn check_write_access(&self, id: &I) {
-        if self.write_mask.as_ref() != Some(id) {
+    pub fn check_write_access(&self, id: I) {
+        if self.write_mask.as_ref() != Some(&id) {
             panic!("Illegal access to {:?}", id);
         }
     }

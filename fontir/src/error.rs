@@ -1,5 +1,6 @@
 use std::{error, io, path::PathBuf};
 
+use fontdrasil::types::GlyphName;
 use thiserror::Error;
 
 use crate::coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserLocation};
@@ -25,9 +26,9 @@ pub enum Error {
     #[error("Missing layer")]
     NoSuchLayer(String),
     #[error("No files associated with glyph")]
-    NoStateForGlyph(String),
+    NoStateForGlyph(GlyphName),
     #[error("No design space location(s) associated with glyph")]
-    NoLocationsForGlyph(String),
+    NoLocationsForGlyph(GlyphName),
     #[error("Asked to create work for something other than the last input we created")]
     UnableToCreateGlyphIrWork,
     #[error("Unexpected state encountered in a state set")]
@@ -58,8 +59,8 @@ pub enum WorkError {
     IoError(#[from] io::Error),
     // I can't use Box(<dyn error::Error>) here because it's not Send, but
     // if I convert error to string I lose the backtrace... What to do?
-    #[error("Conversion of glyph '{0}' to IR failed: {1}")]
-    GlyphIrWorkError(String, String),
+    #[error("Conversion of glyph '{0:?}' to IR failed: {1}")]
+    GlyphIrWorkError(GlyphName, String),
     #[error("yaml error")]
     YamlSerError(#[from] serde_yaml::Error),
     #[error("No axes are defined")]
@@ -68,8 +69,8 @@ pub enum WorkError {
     InconsistentAxisDefinitions(String),
     #[error("I am the glyph with gid, {0}")]
     NoGlyphIdForName(String),
-    #[error("No Glyph for name {0}")]
-    NoGlyphForName(String),
+    #[error("No Glyph for name {0:?}")]
+    NoGlyphForName(GlyphName),
     #[error("File expected: {0:?}")]
     FileExpected(PathBuf),
     #[error("Expected to match: {0:?}, {1:?}")]
@@ -80,13 +81,13 @@ pub enum WorkError {
     ParseError(PathBuf, String),
     #[error("No default master in {0:?}")]
     NoDefaultMaster(PathBuf),
-    #[error("No master {master} exists. Referenced by glyph {glyph}.")]
-    NoMasterForGlyph { master: String, glyph: String },
+    #[error("No master {master} exists. Referenced by glyph {glyph:?}.")]
+    NoMasterForGlyph { master: String, glyph: GlyphName },
     #[error("Failed to add glyph source: {0}")]
     AddGlyphSource(String),
-    #[error("{glyph_name} undefined on {axis} at required position {pos:?}")]
+    #[error("{glyph_name:?} undefined on {axis} at required position {pos:?}")]
     GlyphUndefAtNormalizedPosition {
-        glyph_name: String,
+        glyph_name: GlyphName,
         axis: String,
         pos: NormalizedCoord,
     },

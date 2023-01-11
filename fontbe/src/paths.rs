@@ -33,7 +33,7 @@ impl Paths {
     pub fn target_file(&self, id: &WorkIdentifier) -> PathBuf {
         match id {
             WorkIdentifier::Features => self.build_dir.join("features.ttf"),
-            WorkIdentifier::Glyph(name) => self.glyph_file(name),
+            WorkIdentifier::Glyph(name) => self.glyph_file(name.as_str()),
             WorkIdentifier::GlyphMerge => self.build_dir.join("all_glyphs.ttf"),
             WorkIdentifier::FinalMerge => self.build_dir.join("font.ttf"),
         }

@@ -50,7 +50,10 @@ pub struct StaticMetadataSerdeRepr {
 
 impl From<StaticMetadataSerdeRepr> for StaticMetadata {
     fn from(from: StaticMetadataSerdeRepr) -> Self {
-        StaticMetadata::new(from.axes, from.glyph_order.into_iter().collect())
+        StaticMetadata::new(
+            from.axes,
+            from.glyph_order.into_iter().map(|s| s.into()).collect(),
+        )
     }
 }
 
@@ -58,7 +61,11 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
     fn from(from: StaticMetadata) -> Self {
         StaticMetadataSerdeRepr {
             axes: from.axes,
-            glyph_order: from.glyph_order.into_iter().collect(),
+            glyph_order: from
+                .glyph_order
+                .into_iter()
+                .map(|n| n.as_str().to_string())
+                .collect(),
         }
     }
 }
@@ -79,7 +86,7 @@ pub struct GlyphSerdeRepr {
 impl From<GlyphSerdeRepr> for Glyph {
     fn from(from: GlyphSerdeRepr) -> Self {
         Glyph {
-            name: from.name,
+            name: from.name.into(),
             sources: from
                 .instances
                 .into_iter()
@@ -92,7 +99,7 @@ impl From<GlyphSerdeRepr> for Glyph {
 impl From<Glyph> for GlyphSerdeRepr {
     fn from(from: Glyph) -> Self {
         GlyphSerdeRepr {
-            name: from.name,
+            name: from.name.as_str().to_string(),
             instances: from
                 .sources
                 .into_iter()

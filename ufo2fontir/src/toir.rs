@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use fontdrasil::types::GlyphName;
 use fontir::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     ir,
@@ -98,14 +99,11 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
     }
 }
 
-pub fn to_ir_glyph<S>(
-    glyph_name: S,
+pub fn to_ir_glyph(
+    glyph_name: GlyphName,
     glif_files: &HashMap<&PathBuf, Vec<NormalizedLocation>>,
-) -> Result<ir::Glyph, Error>
-where
-    S: Into<String>,
-{
-    let mut glyph = ir::Glyph::new(glyph_name.into());
+) -> Result<ir::Glyph, Error> {
+    let mut glyph = ir::Glyph::new(glyph_name);
     for (glif_file, locations) in glif_files {
         let norad_glyph = norad::Glyph::load(glif_file).map_err(Error::GlifLoadError)?;
         for location in locations {

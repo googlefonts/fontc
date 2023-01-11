@@ -76,24 +76,15 @@ impl AnyContext {
     pub fn for_work(
         fe_root: &FeContext,
         be_root: &BeContext,
-        id: &AnyWorkId,
+        id: AnyWorkId,
         happens_after: HashSet<AnyWorkId>,
     ) -> AnyContext {
         match id {
-            AnyWorkId::Be(id) => {
-                AnyContext::Be(be_root.copy_for_work(id.clone(), Some(happens_after)))
-            }
-            AnyWorkId::Fe(id) => AnyContext::Fe(
-                fe_root.copy_for_work(
-                    id.clone(),
-                    Some(
-                        happens_after
-                            .into_iter()
-                            .map(|a| a.unwrap_fe().clone())
-                            .collect(),
-                    ),
-                ),
-            ),
+            AnyWorkId::Be(id) => AnyContext::Be(be_root.copy_for_work(id, Some(happens_after))),
+            AnyWorkId::Fe(id) => AnyContext::Fe(fe_root.copy_for_work(
+                id,
+                Some(happens_after.into_iter().map(|a| a.unwrap_fe()).collect()),
+            )),
         }
     }
 }

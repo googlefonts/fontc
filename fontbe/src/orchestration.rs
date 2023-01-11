@@ -2,7 +2,10 @@
 
 use std::{collections::HashSet, fs, path::Path, sync::Arc};
 
-use fontdrasil::orchestration::{AccessControlList, Work, MISSING_DATA};
+use fontdrasil::{
+    orchestration::{AccessControlList, Work, MISSING_DATA},
+    types::GlyphName,
+};
 use fontir::orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier};
 use parking_lot::RwLock;
 use write_fonts::FontBuilder;
@@ -13,33 +16,33 @@ use crate::{error::Error, paths::Paths};
 ///
 /// If there are no fields work is unique.
 /// Meant to be small and cheap to copy around.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkIdentifier {
     Features,
-    Glyph(String),
+    Glyph(GlyphName),
     GlyphMerge,
     FinalMerge,
 }
 
 // Identifies work of any type, FE, BE, ... future optimization passes, w/e.
 // Useful because BE work can very reasonably depend on FE work
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AnyWorkId {
     Fe(FeWorkIdentifier),
     Be(WorkIdentifier),
 }
 
 impl AnyWorkId {
-    pub fn unwrap_be(&self) -> &WorkIdentifier {
+    pub fn unwrap_be(&self) -> WorkIdentifier {
         match self {
             AnyWorkId::Fe(..) => panic!("Not a BE identifier"),
-            AnyWorkId::Be(id) => id,
+            AnyWorkId::Be(id) => *id,
         }
     }
 
-    pub fn unwrap_fe(&self) -> &FeWorkIdentifier {
+    pub fn unwrap_fe(&self) -> FeWorkIdentifier {
         match self {
-            AnyWorkId::Fe(id) => id,
+            AnyWorkId::Fe(id) => *id,
             AnyWorkId::Be(..) => panic!("Not a FE identifier"),
         }
     }
@@ -129,7 +132,7 @@ impl Context {
 
     pub fn get_features(&self) -> Arc<Vec<u8>> {
         let id = WorkIdentifier::Features;
-        self.acl.check_read_access(&id.clone().into());
+        self.acl.check_read_access(id.into());
         {
             let rl = self.features.read();
             if rl.is_some() {
@@ -144,7 +147,7 @@ impl Context {
 
     pub fn set_features(&self, mut font: FontBuilder) {
         let id = WorkIdentifier::Features;
-        self.acl.check_write_access(&id.clone().into());
+        self.acl.check_write_access(id.into());
         let font = font.build();
         self.maybe_persist(&self.paths.target_file(&id), &font);
         self.set_cached_features(font);

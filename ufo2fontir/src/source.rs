@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use fontdrasil::orchestration::Work;
+use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
@@ -43,7 +43,7 @@ impl DesignSpaceIrSource {
 struct Cache {
     static_metadata: StateSet,
     locations: HashMap<PathBuf, Vec<DesignLocation>>,
-    glyph_names: Arc<HashSet<String>>,
+    glyph_names: Arc<HashSet<GlyphName>>,
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
     fea_files: Arc<Vec<PathBuf>>,
@@ -52,7 +52,7 @@ struct Cache {
 impl Cache {
     fn new(
         static_metadata: StateSet,
-        glyph_names: HashSet<String>,
+        glyph_names: HashSet<GlyphName>,
         locations: HashMap<PathBuf, Vec<DesignLocation>>,
         designspace_file: PathBuf,
         designspace: DesignSpaceDocument,
@@ -79,9 +79,9 @@ impl Cache {
 
 fn glif_files<'a>(
     ufo_dir: &Path,
-    layer_cache: &'a mut HashMap<String, HashMap<String, PathBuf>>,
+    layer_cache: &'a mut HashMap<String, HashMap<GlyphName, PathBuf>>,
     source: &designspace::Source,
-) -> Result<BTreeMap<String, PathBuf>, Error> {
+) -> Result<BTreeMap<GlyphName, PathBuf>, Error> {
     let layer_name = layer_dir(ufo_dir, layer_cache, source)?;
     let glyph_dir = ufo_dir.join(layer_name);
     if !glyph_dir.is_dir() {
@@ -101,23 +101,23 @@ fn glif_files<'a>(
 
     Ok(result
         .into_iter()
-        .map(|(glyph_name, path)| (glyph_name, glyph_dir.join(path)))
+        .map(|(glyph_name, path)| (glyph_name.into(), glyph_dir.join(path)))
         .collect())
 }
 
-fn layer_contents(ufo_dir: &Path) -> Result<HashMap<String, PathBuf>, Error> {
+fn layer_contents(ufo_dir: &Path) -> Result<HashMap<GlyphName, PathBuf>, Error> {
     let file = ufo_dir.join("layercontents.plist");
     if !file.is_file() {
         return Ok(HashMap::new());
     }
     let contents: Vec<(String, PathBuf)> =
         plist::from_file(&file).map_err(|e| Error::ParseError(file, e.to_string()))?;
-    Ok(contents.into_iter().collect())
+    Ok(contents.into_iter().map(|(k, v)| (k.into(), v)).collect())
 }
 
 pub(crate) fn layer_dir<'a>(
     ufo_dir: &Path,
-    layer_cache: &'a mut HashMap<String, HashMap<String, PathBuf>>,
+    layer_cache: &'a mut HashMap<String, HashMap<GlyphName, PathBuf>>,
     source: &designspace::Source,
 ) -> Result<&'a PathBuf, Error> {
     if !layer_cache.contains_key(&source.filename) {
@@ -127,12 +127,16 @@ pub(crate) fn layer_dir<'a>(
     let name_to_path = layer_cache.get_mut(&source.filename).unwrap();
 
     // No answer means dir is glyphs, which we'll stuff in under an empty string so the lifetime checks out
-    let default_name = String::new();
+    let glyph_name = source
+        .layer
+        .as_ref()
+        .map_or_else(|| "".into(), |l| l.into());
     if source.layer.is_none() {
-        name_to_path.insert(default_name.clone(), PathBuf::from("glyphs"));
+        name_to_path.insert(glyph_name, PathBuf::from("glyphs"));
     }
+
     name_to_path
-        .get(source.layer.as_ref().unwrap_or(&default_name))
+        .get(&glyph_name)
         .ok_or_else(|| Error::NoSuchLayer(source.filename.clone()))
 }
 
@@ -191,12 +195,12 @@ impl Source for DesignSpaceIrSource {
 
         // glif filenames are not reversible so we need to read contents.plist to figure out groups
         // See https://github.com/unified-font-object/ufo-spec/issues/164.
-        let mut glyphs: HashMap<String, StateSet> = HashMap::new();
+        let mut glyphs: HashMap<GlyphName, StateSet> = HashMap::new();
 
         // UFO filename => map of layer
         let mut layer_cache = HashMap::new();
         let mut glif_locations: HashMap<PathBuf, Vec<DesignLocation>> = HashMap::new();
-        let mut glyph_names = HashSet::new();
+        let mut glyph_names: HashSet<GlyphName> = HashSet::new();
 
         let Some((default_master_idx, default_master)) = default_master(&designspace) else {
             return Err(Error::NoDefaultMaster(self.designspace_file.clone()));
@@ -223,10 +227,10 @@ impl Source for DesignSpaceIrSource {
                     return Err(Error::FileExpected(glif_file));
                 }
                 if idx > 0 && !glyph_names.contains(&glyph_name) {
-                    warn!("The glyph name '{}' exists in {} but not in the default master and will be ignored", glyph_name, source.filename);
+                    warn!("The glyph name '{:?}' exists in {} but not in the default master and will be ignored", glyph_name, source.filename);
                     continue;
                 }
-                glyph_names.insert(glyph_name.clone());
+                glyph_names.insert(glyph_name);
                 let glif_file = glif_file.clone();
                 glyphs
                     .entry(glyph_name)
@@ -296,7 +300,7 @@ impl Source for DesignSpaceIrSource {
 
     fn create_glyph_ir_work(
         &self,
-        glyph_names: &IndexSet<&str>,
+        glyph_names: &IndexSet<GlyphName>,
         input: &Input,
     ) -> Result<Vec<Box<IrWork>>, Error> {
         self.check_static_metadata(&input.static_metadata)?;
@@ -308,7 +312,7 @@ impl Source for DesignSpaceIrSource {
 
         for glyph_name in glyph_names {
             work.push(Box::from(
-                self.create_work_for_one_glyph(glyph_name, input)?,
+                self.create_work_for_one_glyph(*glyph_name, input)?,
             ));
         }
 
@@ -319,18 +323,17 @@ impl Source for DesignSpaceIrSource {
 impl DesignSpaceIrSource {
     fn create_work_for_one_glyph(
         &self,
-        glyph_name: &str,
+        glyph_name: GlyphName,
         input: &Input,
     ) -> Result<GlyphIrWork, Error> {
         // A single glif could be used by many source blocks that use the same layer
         // *gasp*
         // So resolve each file to 1..N locations in designspace
 
-        let glyph_name = glyph_name.to_string();
         let stateset = input
             .glyphs
             .get(&glyph_name)
-            .ok_or_else(|| Error::NoStateForGlyph(glyph_name.clone()))?;
+            .ok_or_else(|| Error::NoStateForGlyph(glyph_name))?;
         let mut glif_files = HashMap::new();
         let cache = self.cache.as_ref().unwrap();
         for state_key in stateset.keys() {
@@ -339,11 +342,11 @@ impl DesignSpaceIrSource {
             };
             let locations = cache
                 .location_of(glif_file)
-                .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;
+                .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name))?;
             glif_files.insert(glif_file.to_path_buf(), locations.clone());
         }
         Ok(GlyphIrWork {
-            glyph_name: glyph_name.clone(),
+            glyph_name,
             glif_files,
         })
     }
@@ -352,7 +355,7 @@ impl DesignSpaceIrSource {
 struct StaticMetadataWork {
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
-    glyph_names: Arc<HashSet<String>>,
+    glyph_names: Arc<HashSet<GlyphName>>,
 }
 
 struct FeatureWork {
@@ -397,39 +400,40 @@ fn load_lib_plist(ufo_dir: &Path) -> Result<plist::Dictionary, WorkError> {
 fn glyph_order(
     designspace: &DesignSpaceDocument,
     designspace_dir: &Path,
-    glyph_names: &HashSet<String>,
-) -> Result<IndexSet<String>, WorkError> {
+    glyph_names: &HashSet<GlyphName>,
+) -> Result<IndexSet<GlyphName>, WorkError> {
     // The UFO at the default master *may* elect to specify a glyph order
     // That glyph order *may* deign to overlap with the actual glyph set
     let mut glyph_order = IndexSet::new();
     if let Some((_, source)) = default_master(designspace) {
         let lib_plist = load_lib_plist(&designspace_dir.join(&source.filename))?;
         if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
-            let mut pending_add: HashSet<_> = glyph_names.iter().map(|s| s.as_str()).collect();
+            let mut pending_add: HashSet<_> = glyph_names.clone();
             // Add names from ufo glyph order union glyph_names in ufo glyph order
             ufo_order
                 .iter()
-                .filter_map(|v| v.as_string().map(|s| s.to_string()))
+                .filter_map(|v| v.as_string().map(|s| s.into()))
                 .filter(|name| glyph_names.contains(name))
                 .for_each(|name| {
-                    glyph_order.insert(name.to_string());
-                    pending_add.remove(name.as_str());
+                    glyph_order.insert(name);
+                    pending_add.remove(&name);
                 });
             // Add anything leftover in sorted order
-            let mut pending_add: Vec<_> = pending_add.into_iter().map(|s| s.to_string()).collect();
+            let mut pending_add: Vec<_> = pending_add.into_iter().collect();
             pending_add.sort();
             glyph_order.extend(pending_add);
         }
     }
     if glyph_order.is_empty() {
-        if glyph_names.contains(".notdef") {
-            glyph_order.insert(".notdef".to_string());
+        let notdef = ".notdef".into();
+        if glyph_names.contains(&notdef) {
+            glyph_order.insert(notdef);
         }
         glyph_names
             .iter()
             .filter(|name| name.as_str() != ".notdef")
             .for_each(|name| {
-                glyph_order.insert(name.clone());
+                glyph_order.insert(*name);
             });
     }
     Ok(glyph_order)
@@ -497,14 +501,14 @@ impl Work<Context, WorkError> for FeatureWork {
 }
 
 struct GlyphIrWork {
-    glyph_name: String,
+    glyph_name: GlyphName,
     glif_files: HashMap<PathBuf, Vec<DesignLocation>>,
 }
 
 impl Work<Context, WorkError> for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!(
-            "Generate glyph IR for {} from {:#?}",
+            "Generate glyph IR for {:?} from {:#?}",
             self.glyph_name,
             self.glif_files
         );
@@ -521,9 +525,9 @@ impl Work<Context, WorkError> for GlyphIrWork {
             glif_files.insert(path, normalized_locations);
         }
 
-        let glyph_ir = to_ir_glyph(&self.glyph_name, &glif_files)
-            .map_err(|e| WorkError::GlyphIrWorkError(self.glyph_name.clone(), e.to_string()))?;
-        context.set_glyph_ir(&self.glyph_name, glyph_ir);
+        let glyph_ir = to_ir_glyph(self.glyph_name, &glif_files)
+            .map_err(|e| WorkError::GlyphIrWorkError(self.glyph_name, e.to_string()))?;
+        context.set_glyph_ir(self.glyph_name, glyph_ir);
         Ok(())
     }
 }
@@ -535,6 +539,7 @@ mod tests {
         path::{Path, PathBuf},
     };
 
+    use fontdrasil::types::GlyphName;
     use fontir::{
         coords::{DesignCoord, DesignLocation},
         source::{Input, Source},
@@ -612,7 +617,9 @@ mod tests {
     pub fn create_work() {
         let (ir_source, input) = test_source();
 
-        let work = ir_source.create_work_for_one_glyph("bar", &input).unwrap();
+        let work = ir_source
+            .create_work_for_one_glyph("bar".into(), &input)
+            .unwrap();
 
         let mut expected_glif_files = HashMap::new();
         add_design_location(
@@ -640,7 +647,9 @@ mod tests {
     pub fn create_sparse_work() {
         let (ir_source, input) = test_source();
 
-        let work = ir_source.create_work_for_one_glyph("plus", &input).unwrap();
+        let work = ir_source
+            .create_work_for_one_glyph("plus".into(), &input)
+            .unwrap();
 
         // Note there is NOT a glyphs.{600} version of plus
         let mut expected_glif_files = HashMap::new();
@@ -663,7 +672,7 @@ mod tests {
     pub fn only_glyphs_present_in_default() {
         let (_, inputs) = test_source();
         // bonus_bar is not present in the default master; should discard
-        assert!(!inputs.glyphs.contains_key("bonus_bar"));
+        assert!(!inputs.glyphs.contains_key(&"bonus_bar".into()));
     }
 
     #[test]
@@ -685,17 +694,13 @@ mod tests {
         let go = glyph_order(
             &ds,
             &source.designspace_dir,
-            &HashSet::from([
-                "bar".to_string(),
-                "plus".to_string(),
-                "an-imaginary-one".to_string(),
-            ]),
+            &HashSet::from(["bar".into(), "plus".into(), "an-imaginary-one".into()]),
         )
         .unwrap();
         // lib.plist specifies plus, so plus goes first and then the rest in alphabetical order
-        let expected: IndexSet<String> = vec!["plus", "an-imaginary-one", "bar"]
+        let expected: IndexSet<GlyphName> = vec!["plus", "an-imaginary-one", "bar"]
             .iter()
-            .map(|s| s.to_string())
+            .map(|s| (*s).into())
             .collect();
         assert_eq!(expected, go);
     }
