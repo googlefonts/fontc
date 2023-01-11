@@ -5,6 +5,7 @@ use crate::{
     error::Error,
     serde::{GlyphSerdeRepr, StaticMetadataSerdeRepr},
 };
+use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -20,17 +21,17 @@ use std::{
 #[serde(from = "StaticMetadataSerdeRepr", into = "StaticMetadataSerdeRepr")]
 pub struct StaticMetadata {
     pub axes: Vec<Axis>,
-    pub glyph_order: IndexSet<String>,
+    pub glyph_order: IndexSet<GlyphName>,
 }
 
 impl StaticMetadata {
-    pub fn new(axes: Vec<Axis>, glyph_order: IndexSet<String>) -> StaticMetadata {
+    pub fn new(axes: Vec<Axis>, glyph_order: IndexSet<GlyphName>) -> StaticMetadata {
         StaticMetadata { axes, glyph_order }
     }
 }
 
 impl StaticMetadata {
-    pub fn glyph_id(&self, name: &String) -> Option<u32> {
+    pub fn glyph_id(&self, name: &GlyphName) -> Option<u32> {
         self.glyph_order.get_index_of(name).map(|i| i as u32)
     }
 }
@@ -74,12 +75,12 @@ impl Features {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(from = "GlyphSerdeRepr", into = "GlyphSerdeRepr")]
 pub struct Glyph {
-    pub name: String,
+    pub name: GlyphName,
     pub sources: HashMap<NormalizedLocation, GlyphInstance>,
 }
 
 impl Glyph {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: GlyphName) -> Self {
         Self {
             name,
             sources: HashMap::new(),
@@ -93,7 +94,7 @@ impl Glyph {
     ) -> Result<(), Error> {
         if self.sources.contains_key(unique_location) {
             return Err(Error::DuplicateNormalizedLocation {
-                what: format!("glyph '{}' source", self.name),
+                what: format!("glyph '{}' source", self.name.as_str()),
                 loc: unique_location.clone(),
             });
         }

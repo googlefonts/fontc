@@ -17,6 +17,7 @@ use fontc::{
     work::{AnyContext, AnyWork, AnyWorkError},
     Error,
 };
+use fontdrasil::types::GlyphName;
 use fontir::{
     orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier},
     paths::Paths as IrPaths,
@@ -168,14 +169,9 @@ impl ChangeDetector {
                 .is_file()
     }
 
-    fn glyphs_changed(&self) -> IndexSet<&str> {
+    fn glyphs_changed(&self) -> IndexSet<GlyphName> {
         if self.static_metadata_ir_change() {
-            return self
-                .current_inputs
-                .glyphs
-                .keys()
-                .map(|e| e.as_str())
-                .collect();
+            return self.current_inputs.glyphs.keys().cloned().collect();
         }
         self.current_inputs
             .glyphs
@@ -187,22 +183,23 @@ impl ChangeDetector {
                         (prev_state != curr_state
                             || !self
                                 .ir_paths
-                                .target_file(&FeWorkIdentifier::Glyph(glyph_name.to_string()))
+                                .target_file(&FeWorkIdentifier::Glyph(glyph_name.clone()))
                                 .exists())
-                        .then_some(glyph_name.as_str())
+                        .then_some(glyph_name)
                     }
-                    None => Some(glyph_name.as_str()),
+                    None => Some(glyph_name),
                 },
             )
+            .cloned()
             .collect()
     }
 
-    fn glyphs_deleted(&self) -> IndexSet<&str> {
+    fn glyphs_deleted(&self) -> IndexSet<GlyphName> {
         self.prev_inputs
             .glyphs
             .keys()
-            .filter(|glyph_name| !self.current_inputs.glyphs.contains_key(glyph_name.as_str()))
-            .map(|e| e.as_str())
+            .filter(|glyph_name| !self.current_inputs.glyphs.contains_key(glyph_name))
+            .cloned()
             .collect()
     }
 }
@@ -276,7 +273,7 @@ fn add_glyph_ir_jobs(
 ) -> Result<(), Error> {
     // Destroy IR for deleted glyphs. No dependencies.
     for glyph_name in change_detector.glyphs_deleted().iter() {
-        let id = FeWorkIdentifier::Glyph(glyph_name.to_string());
+        let id = FeWorkIdentifier::Glyph(glyph_name.clone());
         let path = change_detector.ir_paths.target_file(&id);
         workload.insert(
             id.into(),
@@ -293,7 +290,7 @@ fn add_glyph_ir_jobs(
         .ir_source
         .create_glyph_ir_work(&glyphs_changed, &change_detector.current_inputs)?;
     for (glyph_name, work) in glyphs_changed.iter().zip(glyph_work) {
-        let id = FeWorkIdentifier::Glyph(glyph_name.to_string());
+        let id = FeWorkIdentifier::Glyph(glyph_name.clone());
         let work = work.into();
         let dependencies = HashSet::from([FeWorkIdentifier::StaticMetadata.into()]);
 
@@ -548,11 +545,13 @@ mod tests {
         paths::Paths as BePaths,
     };
     use fontc::work::AnyContext;
+    use fontdrasil::types::GlyphName;
     use fontir::{
         orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier},
         paths::Paths as IrPaths,
         stateset::StateSet,
     };
+    use indexmap::IndexSet;
     use tempfile::tempdir;
 
     use crate::{
@@ -578,24 +577,16 @@ mod tests {
 
     struct TestCompile {
         work_completed: HashSet<AnyWorkId>,
-        glyphs_changed: HashSet<String>,
-        glyphs_deleted: HashSet<String>,
+        glyphs_changed: IndexSet<GlyphName>,
+        glyphs_deleted: IndexSet<GlyphName>,
     }
 
     impl TestCompile {
         fn new(change_detector: &ChangeDetector) -> TestCompile {
             TestCompile {
                 work_completed: HashSet::new(),
-                glyphs_changed: change_detector
-                    .glyphs_changed()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
-                glyphs_deleted: change_detector
-                    .glyphs_deleted()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
+                glyphs_changed: change_detector.glyphs_changed(),
+                glyphs_deleted: change_detector.glyphs_deleted(),
             }
         }
     }
@@ -722,8 +713,8 @@ mod tests {
             HashSet::from([
                 FeWorkIdentifier::StaticMetadata.into(),
                 FeWorkIdentifier::Features.into(),
-                FeWorkIdentifier::Glyph(String::from("bar")).into(),
-                FeWorkIdentifier::Glyph(String::from("plus")).into(),
+                FeWorkIdentifier::Glyph("bar".into()).into(),
+                FeWorkIdentifier::Glyph("plus".into()).into(),
                 BeWorkIdentifier::Features.into(),
             ]),
             result.work_completed
@@ -737,15 +728,15 @@ mod tests {
 
         let result = compile(build_dir, "wght_var.designspace");
         assert_eq!(
-            HashSet::from(["bar".to_string(), "plus".to_string()]),
+            IndexSet::from(["bar".into(), "plus".into()]),
             result.glyphs_changed
         );
-        assert_eq!(HashSet::from([]), result.glyphs_deleted);
+        assert_eq!(IndexSet::new(), result.glyphs_deleted);
 
         let result = compile(build_dir, "wght_var.designspace");
         assert_eq!(HashSet::new(), result.work_completed);
-        assert_eq!(HashSet::from([]), result.glyphs_changed);
-        assert_eq!(HashSet::from([]), result.glyphs_deleted);
+        assert_eq!(IndexSet::new(), result.glyphs_changed);
+        assert_eq!(IndexSet::new(), result.glyphs_deleted);
     }
 
     #[test]
@@ -761,7 +752,7 @@ mod tests {
 
         let result = compile(build_dir, "wght_var.designspace");
         assert_eq!(
-            HashSet::from([FeWorkIdentifier::Glyph(String::from("bar")).into(),]),
+            HashSet::from([FeWorkIdentifier::Glyph("bar".into()).into(),]),
             result.work_completed
         );
     }
@@ -773,18 +764,18 @@ mod tests {
 
         let result = compile(build_dir, "wght_var.designspace");
         assert_eq!(
-            HashSet::from(["bar".to_string(), "plus".to_string()]),
+            IndexSet::from(["bar".into(), "plus".into()]),
             result.glyphs_changed
         );
-        assert_eq!(HashSet::from([]), result.glyphs_deleted);
+        assert_eq!(IndexSet::new(), result.glyphs_deleted);
 
         let bar_ir = build_dir.join("glyph_ir/bar.yml");
         assert!(bar_ir.is_file(), "no file {:#?}", bar_ir);
         fs::remove_file(bar_ir).unwrap();
 
         let result = compile(build_dir, "wght_var.designspace");
-        assert_eq!(HashSet::from(["bar".to_string()]), result.glyphs_changed);
-        assert_eq!(HashSet::from([]), result.glyphs_deleted);
+        assert_eq!(IndexSet::from(["bar".into()]), result.glyphs_changed);
+        assert_eq!(IndexSet::new(), result.glyphs_deleted);
     }
 
     #[test]

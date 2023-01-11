@@ -2,7 +2,10 @@
 
 use std::{collections::HashSet, fs, path::Path, sync::Arc};
 
-use fontdrasil::orchestration::{AccessControlList, Work, MISSING_DATA};
+use fontdrasil::{
+    orchestration::{AccessControlList, Work, MISSING_DATA},
+    types::GlyphName,
+};
 use fontir::orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier};
 use parking_lot::RwLock;
 use write_fonts::FontBuilder;
@@ -16,7 +19,7 @@ use crate::{error::Error, paths::Paths};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkIdentifier {
     Features,
-    Glyph(String),
+    Glyph(GlyphName),
     GlyphMerge,
     FinalMerge,
 }

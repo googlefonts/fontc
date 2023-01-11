@@ -9,7 +9,10 @@ use std::{
     sync::Arc,
 };
 
-use fontdrasil::orchestration::{AccessControlList, Work, MISSING_DATA};
+use fontdrasil::{
+    orchestration::{AccessControlList, Work, MISSING_DATA},
+    types::GlyphName,
+};
 use parking_lot::RwLock;
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -20,8 +23,8 @@ use crate::{error::WorkError, ir, paths::Paths, source::Input};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkIdentifier {
     StaticMetadata,
-    Glyph(String),
-    GlyphIrDelete(String),
+    Glyph(GlyphName),
+    GlyphIrDelete(),
     Features,
 }
 
@@ -47,7 +50,7 @@ pub struct Context {
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
     static_metadata: Arc<RwLock<Option<Arc<ir::StaticMetadata>>>>,
-    glyph_ir: Arc<RwLock<HashMap<String, Arc<ir::Glyph>>>>,
+    glyph_ir: Arc<RwLock<HashMap<GlyphName, Arc<ir::Glyph>>>>,
     feature_ir: Arc<RwLock<Option<Arc<ir::Features>>>>,
 }
 
@@ -149,19 +152,19 @@ impl Context {
         self.set_cached_static_metadata(ir);
     }
 
-    pub fn get_glyph_ir(&self, glyph_name: &str) -> Arc<ir::Glyph> {
-        let id = WorkIdentifier::Glyph(glyph_name.to_string());
+    pub fn get_glyph_ir(&self, glyph_name: &GlyphName) -> Arc<ir::Glyph> {
+        let id = WorkIdentifier::Glyph(glyph_name.clone());
         self.acl.check_read_access(&id);
         let rl = self.glyph_ir.read();
         rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
 
-    pub fn set_glyph_ir(&self, glyph_name: &str, ir: ir::Glyph) {
-        let id = WorkIdentifier::Glyph(glyph_name.to_string());
+    pub fn set_glyph_ir(&self, glyph_name: GlyphName, ir: ir::Glyph) {
+        let id = WorkIdentifier::Glyph(glyph_name.clone());
         self.acl.check_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         let mut wl = self.glyph_ir.write();
-        wl.insert(glyph_name.to_string(), Arc::from(ir));
+        wl.insert(glyph_name, Arc::from(ir));
     }
 
     fn set_cached_features(&self, ir: ir::Features) {
