@@ -13,6 +13,15 @@ static GOOD_DIR: &str = "good";
 static BAD_DIR: &str = "bad";
 static GLYPH_ORDER: &str = "glyph_order.txt";
 static BAD_OUTPUT_EXTENSION: &str = "ERR";
+static FONTTOOLS_TESTS: &str = "./test-data/fonttools-tests";
+
+// tests taken directly from fonttools; these require some special handling.
+#[test]
+#[ignore = "disabled so we can use CI"]
+fn fonttools_tests() -> Result<(), Report> {
+    test_utils::assert_has_ttx_executable();
+    test_utils::run_all_tests(FONTTOOLS_TESTS, None).into_error()
+}
 
 #[test]
 fn should_fail() -> Result<(), Report> {
