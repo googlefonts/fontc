@@ -25,9 +25,9 @@ pub enum Error {
     UnableToLoadSource(Box<dyn error::Error>),
     #[error("Missing layer")]
     NoSuchLayer(String),
-    #[error("No files associated with glyph")]
+    #[error("No files associated with glyph {0}")]
     NoStateForGlyph(GlyphName),
-    #[error("No design space location(s) associated with glyph")]
+    #[error("No design space location(s) associated with glyph {0}")]
     NoLocationsForGlyph(GlyphName),
     #[error("Asked to create work for something other than the last input we created")]
     UnableToCreateGlyphIrWork,
@@ -85,7 +85,7 @@ pub enum WorkError {
     NoMasterForGlyph { master: String, glyph: GlyphName },
     #[error("Failed to add glyph source: {0}")]
     AddGlyphSource(String),
-    #[error("{glyph_name:?} undefined on {axis} at required position {pos:?}")]
+    #[error("{glyph_name} undefined on {axis} at required position {pos:?}")]
     GlyphUndefAtNormalizedPosition {
         glyph_name: GlyphName,
         axis: String,

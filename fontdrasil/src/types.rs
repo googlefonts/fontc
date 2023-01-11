@@ -2,6 +2,8 @@
 //!
 //! Particularly types where it's nice for FE and BE to match.
 
+use std::fmt::{Display, Debug};
+
 use arraystring::ArrayString;
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +51,7 @@ enum StackString {
     L32(ArrayString<typenum::U32>),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(from = "GlyphNameSerdeRepr", into = "GlyphNameSerdeRepr")]
 pub struct GlyphName(StackString);
 
@@ -149,6 +151,18 @@ impl From<&str> for GlyphName {
             32 => GlyphName(StackString::L32(ArrayString::from_str_truncate(value))),
             _ => panic!("StackString cannot accomodate {}", value),
         }
+    }
+}
+
+impl Debug for GlyphName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Display for GlyphName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

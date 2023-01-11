@@ -352,6 +352,9 @@ mod tests {
         let g1 = glyph_state_for_file(&glyphs3_dir(), "WghtVar.glyphs");
         let g2 = glyph_state_for_file(&glyphs3_dir(), "WghtVar_HeavyHyphen.glyphs");
 
+        eprintln!("G1\n{:#?}", g1);
+        eprintln!("G2\n{:#?}", g2);
+
         let changed = keys
             .into_iter()
             .filter(|key| g1.get(key).unwrap() == g2.get(key).unwrap())
