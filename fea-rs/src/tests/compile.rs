@@ -14,6 +14,7 @@ static BAD_DIR: &str = "bad";
 static GLYPH_ORDER: &str = "glyph_order.txt";
 static BAD_OUTPUT_EXTENSION: &str = "ERR";
 static FONTTOOLS_TESTS: &str = "./test-data/fonttools-tests";
+static IMPORT_RESOLUTION_TEST: &str = "./test-data/include-resolution-tests/dir1/test1.fea";
 
 // tests taken directly from fonttools; these require some special handling.
 #[test]
@@ -30,6 +31,16 @@ fn should_fail() -> Result<(), Report> {
         results.extend(tests.into_iter().map(|path| run_bad_test(path, &glyph_map)));
     }
     test_utils::finalize_results(results).into_error()
+}
+
+#[test]
+fn import_resolution() {
+    let glyph_map = test_utils::make_glyph_map();
+    let path = PathBuf::from(IMPORT_RESOLUTION_TEST);
+    match test_utils::run_test(path, &glyph_map) {
+        Ok(_) => (),
+        Err(e) => panic!("{:?}", e.reason),
+    }
 }
 
 #[test]

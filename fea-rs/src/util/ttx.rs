@@ -775,7 +775,7 @@ impl Display for ReasonPrinter<'_> {
 
 impl Debug for TestResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.printer(false).fmt(f)
+        self.printer(std::env::var(super::VERBOSE).is_ok()).fmt(f)
     }
 }
 

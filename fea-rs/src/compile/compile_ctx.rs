@@ -111,8 +111,6 @@ impl<'a> CompilationCtx<'a> {
                 // noop
             } else if let Some(table) = typed::Table::cast(item) {
                 self.resolve_table(table);
-
-                //TODO: includes, eh? maybe resolved before now?
             } else if !item.kind().is_trivia() {
                 let span = match item {
                     NodeOrToken::Token(t) => t.range(),
