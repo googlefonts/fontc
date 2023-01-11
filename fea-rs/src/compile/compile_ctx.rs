@@ -128,6 +128,18 @@ impl<'a> CompilationCtx<'a> {
 
         self.finalize_gdef_table();
         self.finalize_aalt();
+        self.sort_and_dedupe_lookups();
+    }
+
+    fn sort_and_dedupe_lookups(&mut self) {
+        // if any duplicate lookups have made their way into our features, remove them;
+        // they will be ignored by the shaper anyway.
+        for lookup in self.features.values_mut() {
+            // note that the order of lookups in a feature doesn't matter, they
+            // are processed in the order that they appear in the lookup list.
+            lookup.sort_unstable();
+            lookup.dedup();
+        }
     }
 
     fn finalize_aalt(&mut self) {
