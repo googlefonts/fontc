@@ -72,6 +72,10 @@ pub enum WorkError {
     NoGlyphForName(String),
     #[error("File expected: {0:?}")]
     FileExpected(PathBuf),
+    #[error("Expected to match: {0:?}, {1:?}")]
+    FileMismatch(PathBuf, PathBuf),
+    #[error("Metadata access expected: {0:?}")]
+    MetadataFailed(PathBuf),
     #[error("Unable to parse {0:?}: {1}")]
     ParseError(PathBuf, String),
     #[error("No default master in {0:?}")]

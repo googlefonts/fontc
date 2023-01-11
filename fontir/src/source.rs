@@ -59,6 +59,11 @@ pub trait Source {
         glyph_names: &IndexSet<&str>,
         input: &Input,
     ) -> Result<Vec<Box<IrWork>>, Error>;
+
+    /// Create a function that could be called to generate or identify fea file(s).
+    ///
+    /// When run work should update [Context] with [crate::ir::Features].
+    fn create_feature_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
 }
 
 /// The files (in future non-file sources?) that drive various parts of IR
@@ -70,6 +75,9 @@ pub struct Input {
 
     /// The input(s) that inform glyph IR construction, grouped by gyph name
     pub glyphs: HashMap<String, StateSet>,
+
+    /// The input(s) that inform feature IR construction
+    pub features: StateSet,
 }
 
 impl Input {
@@ -115,9 +123,15 @@ mod tests {
         let mut glyphs = HashMap::new();
         glyphs.insert("space".to_string(), glyph);
 
+        let mut features = StateSet::new();
+        features
+            .track_file(&write(temp_dir, Path::new("features.fea"), "blah"))
+            .unwrap();
+
         Input {
             static_metadata: font_info,
             glyphs,
+            features,
         }
     }
 
