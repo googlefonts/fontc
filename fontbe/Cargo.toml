@@ -1,5 +1,5 @@
 [package]
-name = "fontc"
+name = "fontbe"
 version = "0.0.1"
 edition = "2021"
 license = "MIT/Apache-2.0"
@@ -11,24 +11,25 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-fontbe = { version = "0.0.1", path = "../fontbe" }
+fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 fontir = { version = "0.0.1", path = "../fontir" }
-glyphs2fontir = { version = "0.0.1", path = "../glyphs2fontir" }
-ufo2fontir = { version = "0.0.1", path = "../ufo2fontir" }
-bitflags = "1.3"
+
 serde = {version = "1.0", features = ["derive"] }
 serde_yaml = "0.9.14"
-bincode = "1.3.3"
-filetime = "0.2.18"
-clap = { version = "4.0.32", features = ["derive"] }
+
+thiserror = "1.0.37"
+ordered-float = { version = "3.4.0", features = ["serde"] }
+indexmap = "1.9.2"
+
 log = "0.4"
 env_logger = "0.9.0"
-thiserror = "1.0.37"
 
-rayon = "1.6.0"
-crossbeam-channel = "0.5.6"
+parking_lot = "0.12.1"
 
-indexmap = "1.9.2"
+read-fonts = "0.0.5"
+write-fonts = "0.0.5"
+fea-rs = "0.1.0"
+smol_str = "0.1.18"
 
 [dev-dependencies]
 diff = "0.1.12"

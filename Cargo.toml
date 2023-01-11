@@ -2,6 +2,7 @@
 
 members = [
     "fontdrasil",
+    "fontbe",
     "fontir",
     "glyphs-reader",
     "glyphs2fontir",
