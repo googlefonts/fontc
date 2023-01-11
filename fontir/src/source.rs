@@ -1,30 +1,18 @@
 //! Generic model of font sources.
 
-use std::{
-    collections::HashMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use indexmap::IndexSet;
 use log::debug;
 use serde::{Deserialize, Serialize};
 
+use fontdrasil::orchestration::Work;
+
 use crate::{
     error::{Error, WorkError},
-    orchestration::Context,
+    orchestration::{Context, IrWork},
     stateset::StateSet,
 };
-
-/// A unit of work safe to run in parallel
-///
-/// Naively you'd think we'd just return FnOnce + Send but that didn't want to compile
-/// See <https://github.com/rust-lang/rust/issues/29625>.
-///
-/// Data produced by work is written into [Context].
-pub trait Work {
-    fn exec(&self, context: &Context) -> Result<(), WorkError>;
-}
 
 /// Destroy a file, such as the IR for a deleted glyph
 pub struct DeleteWork {
@@ -32,12 +20,12 @@ pub struct DeleteWork {
 }
 
 impl DeleteWork {
-    pub fn create(path: PathBuf) -> Box<dyn Work + Send> {
+    pub fn create(path: PathBuf) -> Box<IrWork> {
         Box::from(DeleteWork { path })
     }
 }
 
-impl Work for DeleteWork {
+impl Work<Context, WorkError> for DeleteWork {
     fn exec(&self, _: &Context) -> Result<(), WorkError> {
         debug!("Delete {:#?}", self.path);
         if self.path.exists() {
@@ -57,7 +45,7 @@ pub trait Source {
     /// Create a function that could be called to generate [crate::ir::StaticMetadata].
     ///
     /// When run work should update [Context] with new [crate::ir::StaticMetadata].
-    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<dyn Work + Send>, Error>;
+    fn create_static_metadata_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
 
     /// Create a function that could be called to generate IR for glyphs.
     ///
@@ -70,58 +58,17 @@ pub trait Source {
         &self,
         glyph_names: &IndexSet<&str>,
         input: &Input,
-    ) -> Result<Vec<Box<dyn Work + Send>>, Error>;
-}
-
-/// Where does IR go anyway?
-#[derive(Debug, Clone)]
-pub struct Paths {
-    build_dir: PathBuf,
-    glyph_ir_dir: PathBuf,
-    ir_input_file: PathBuf,
-}
-
-impl Paths {
-    pub fn new(build_dir: &Path) -> Paths {
-        let build_dir = build_dir.to_path_buf();
-        let glyph_ir_dir = build_dir.join("glyph_ir");
-        let ir_input_file = build_dir.join("irinput.yml");
-        Paths {
-            build_dir,
-            glyph_ir_dir,
-            ir_input_file,
-        }
-    }
-
-    pub fn build_dir(&self) -> &Path {
-        &self.build_dir
-    }
-
-    pub fn ir_input_file(&self) -> &Path {
-        &self.ir_input_file
-    }
-
-    pub fn static_metadata_ir_file(&self) -> PathBuf {
-        self.build_dir.join("static_metadata.yml")
-    }
-
-    pub fn glyph_ir_dir(&self) -> &Path {
-        &self.glyph_ir_dir
-    }
-
-    pub fn glyph_ir_file(&self, glyph_name: &str) -> PathBuf {
-        // TODO handle names that are invalid for the filesystem
-        // Ref https://github.com/unified-font-object/ufo-spec/issues/164
-        self.glyph_ir_dir.join(glyph_name.to_owned() + ".yml")
-    }
+    ) -> Result<Vec<Box<IrWork>>, Error>;
 }
 
 /// The files (in future non-file sources?) that drive various parts of IR
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct Input {
     /// Font-wide metadata, such as upem. Things that should trigger a non-incremental build if they change.
-    pub global_metadata: StateSet,
-    /// The input(s) that inform glyph construction, grouped by gyph name
+    /// Files that contribute to [crate::ir::StaticMetadata].
+    pub static_metadata: StateSet,
+
+    /// The input(s) that inform glyph IR construction, grouped by gyph name
     pub glyphs: HashMap<String, StateSet>,
 }
 
@@ -169,7 +116,7 @@ mod tests {
         glyphs.insert("space".to_string(), glyph);
 
         Input {
-            global_metadata: font_info,
+            static_metadata: font_info,
             glyphs,
         }
     }

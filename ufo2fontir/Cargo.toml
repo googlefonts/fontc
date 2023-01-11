@@ -11,6 +11,7 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
+fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 fontir = { version = "0.0.1", path = "../fontir" }
 
 norad = "0.8.0"
