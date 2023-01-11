@@ -9,7 +9,8 @@ use std::{
     sync::Arc,
 };
 
-use fontdrasil::orchestration::{Acl, Cache, Work, MISSING_DATA};
+use fontdrasil::orchestration::{AccessControlList, Work, MISSING_DATA};
+use parking_lot::RwLock;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{error::WorkError, ir, paths::Paths, source::Input};
@@ -40,16 +41,16 @@ pub struct Context {
     // a subset of the full input.
     pub input: Arc<Input>,
 
-    acl: Acl<WorkIdentifier>,
+    acl: AccessControlList<WorkIdentifier>,
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
-    static_metadata: Cache<Option<Arc<ir::StaticMetadata>>>,
-    glyph_ir: Cache<HashMap<String, Arc<ir::Glyph>>>,
+    static_metadata: Arc<RwLock<Option<Arc<ir::StaticMetadata>>>>,
+    glyph_ir: Arc<RwLock<HashMap<String, Arc<ir::Glyph>>>>,
 }
 
 impl Context {
-    fn copy(&self, acl: Acl<WorkIdentifier>) -> Context {
+    fn copy(&self, acl: AccessControlList<WorkIdentifier>) -> Context {
         Context {
             emit_ir: self.emit_ir,
             paths: self.paths.clone(),
@@ -65,9 +66,9 @@ impl Context {
             emit_ir,
             paths: Arc::from(paths),
             input: Arc::from(input),
-            acl: Acl::read_only(),
-            static_metadata: Cache::new(),
-            glyph_ir: Cache::new(),
+            acl: AccessControlList::read_only(),
+            static_metadata: Arc::from(RwLock::new(None)),
+            glyph_ir: Arc::from(RwLock::new(HashMap::new())),
         }
     }
 
@@ -76,11 +77,14 @@ impl Context {
         work_id: WorkIdentifier,
         dependencies: Option<HashSet<WorkIdentifier>>,
     ) -> Context {
-        self.copy(Acl::read_write(dependencies.unwrap_or_default(), work_id))
+        self.copy(AccessControlList::read_write(
+            dependencies.unwrap_or_default(),
+            work_id,
+        ))
     }
 
     pub fn read_only(&self) -> Context {
-        self.copy(Acl::read_only())
+        self.copy(AccessControlList::read_only())
     }
 }
 
@@ -116,7 +120,7 @@ impl Context {
     }
 
     fn set_cached_static_metadata(&self, ir: ir::StaticMetadata) {
-        let mut wl = self.static_metadata.item.write().unwrap();
+        let mut wl = self.static_metadata.write();
         *wl = Some(Arc::from(ir));
     }
 
@@ -124,13 +128,13 @@ impl Context {
         let id = WorkIdentifier::StaticMetadata;
         self.acl.check_read_access(&id);
         {
-            let rl = self.static_metadata.item.read().unwrap();
+            let rl = self.static_metadata.read();
             if rl.is_some() {
                 return rl.as_ref().unwrap().clone();
             }
         }
         self.set_cached_static_metadata(self.restore(&self.paths.target_file(&id)));
-        let rl = self.static_metadata.item.read().unwrap();
+        let rl = self.static_metadata.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
@@ -144,7 +148,7 @@ impl Context {
     pub fn get_glyph_ir(&self, glyph_name: &str) -> Arc<ir::Glyph> {
         let id = WorkIdentifier::Glyph(glyph_name.to_string());
         self.acl.check_read_access(&id);
-        let rl = self.glyph_ir.item.read().unwrap();
+        let rl = self.glyph_ir.read();
         rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
 
@@ -152,7 +156,7 @@ impl Context {
         let id = WorkIdentifier::Glyph(glyph_name.to_string());
         self.acl.check_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
-        let mut wl = self.glyph_ir.item.write().unwrap();
+        let mut wl = self.glyph_ir.write();
         wl.insert(glyph_name.to_string(), Arc::from(ir));
     }
 }

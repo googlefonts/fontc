@@ -1,11 +1,6 @@
 //! Common parts of work orchestration.
 
-use std::{
-    collections::HashSet,
-    fmt::Debug,
-    hash::Hash,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashSet, fmt::Debug, hash::Hash};
 
 pub const MISSING_DATA: &str = "Missing data, dependency management failed us?";
 
@@ -19,30 +14,11 @@ pub trait Work<C, E> {
     fn exec(&self, context: &C) -> Result<(), E>;
 }
 
-#[derive(Clone)]
-pub struct Cache<T: Default> {
-    pub item: Arc<RwLock<T>>,
-}
-
-impl<T: Default> Cache<T> {
-    pub fn new() -> Cache<T> {
-        Cache {
-            item: Default::default(),
-        }
-    }
-}
-
-impl<T: Default> Default for Cache<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Tracks what parts of a context we can read/write.
+/// Access control for context
 ///
 /// Not meant to prevent malicious access, merely to detect mistakes
-/// as the result of mistaken concurrent access can be confusing to track down.
-pub struct Acl<I>
+/// because the result of mistaken concurrent access can be confusing to track down.
+pub struct AccessControlList<I>
 where
     I: Eq + Hash + Debug,
 {
@@ -55,23 +31,23 @@ where
     read_mask: Option<HashSet<I>>,
 }
 
-impl<I: Eq + Hash + Debug> Acl<I> {
-    pub fn read_only() -> Acl<I> {
-        Acl {
+impl<I: Eq + Hash + Debug> AccessControlList<I> {
+    pub fn read_only() -> AccessControlList<I> {
+        AccessControlList {
             write_mask: None,
             read_mask: None,
         }
     }
 
-    pub fn read_write(read: HashSet<I>, write: I) -> Acl<I> {
-        Acl {
+    pub fn read_write(read: HashSet<I>, write: I) -> AccessControlList<I> {
+        AccessControlList {
             write_mask: Some(write),
             read_mask: Some(read),
         }
     }
 }
 
-impl<I: Eq + Hash + Debug> Acl<I> {
+impl<I: Eq + Hash + Debug> AccessControlList<I> {
     pub fn check_read_access(&self, id: &I) {
         if !self
             .read_mask
@@ -84,19 +60,8 @@ impl<I: Eq + Hash + Debug> Acl<I> {
     }
 
     pub fn check_write_access(&self, id: &I) {
-        if !self
-            .write_mask
-            .as_ref()
-            .map(|mask| mask == id)
-            .unwrap_or(false)
-        {
+        if self.write_mask.as_ref() != Some(id) {
             panic!("Illegal access to {:?}", id);
         }
     }
-}
-
-pub fn glyph_file(glyph_name: &str, suffix: &str) -> String {
-    // TODO handle names that are invalid for the filesystem
-    // Ref https://github.com/unified-font-object/ufo-spec/issues/164
-    glyph_name.to_owned() + suffix
 }
