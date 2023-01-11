@@ -42,6 +42,7 @@ fn parse_bad() -> Result<(), Report> {
 }
 
 fn run_good_test(path: PathBuf) -> Result<PathBuf, TestCase> {
+    let verbose = std::env::var(crate::util::VERBOSE).is_ok();
     match std::panic::catch_unwind(|| match test_utils::try_parse_file(&path, None) {
         Err((node, errs)) => Err(TestCase {
             path: path.clone(),
@@ -52,12 +53,12 @@ fn run_good_test(path: PathBuf) -> Result<PathBuf, TestCase> {
             let result =
                 test_utils::compare_to_expected_output(&output, &path, GOOD_OUTPUT_EXTENSION);
             if result.is_err() {
-                if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
+                if std::env::var(crate::util::WRITE_RESULTS_VAR).is_ok() {
                     let to_write = node.root().simple_parse_tree();
                     let to_path = path.with_extension(GOOD_OUTPUT_EXTENSION);
                     std::fs::write(to_path, to_write).expect("failed to write output");
                 }
-                if std::env::var(super::VERBOSE).is_ok() {
+                if verbose {
                     eprintln!("{}", node.root().simple_parse_tree());
                 }
             }
@@ -78,14 +79,9 @@ fn run_bad_test(path: PathBuf) -> Result<PathBuf, TestCase> {
         Err((node, errs)) => {
             let msg = test_utils::stringify_diagnostics(&node, &errs);
             let result = test_utils::compare_to_expected_output(&msg, &path, BAD_OUTPUT_EXTENSION);
-            if result.is_err() {
-                if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
-                    let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);
-                    std::fs::write(to_path, &msg).expect("failed to write output");
-                }
-                if std::env::var(super::VERBOSE).is_ok() {
-                    eprintln!("{}", msg);
-                }
+            if result.is_err() && std::env::var(crate::util::WRITE_RESULTS_VAR).is_ok() {
+                let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);
+                std::fs::write(to_path, &msg).expect("failed to write output");
             }
             result
         }

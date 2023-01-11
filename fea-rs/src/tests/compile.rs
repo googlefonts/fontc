@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    compile::{self, Opts},
+    compile,
     util::ttx::{self as test_utils, Report, TestCase, TestResult},
     GlyphMap, GlyphName,
 };
@@ -30,7 +30,7 @@ fn should_pass() -> Result<(), Report> {
         results.extend(
             tests
                 .into_iter()
-                .map(|path| run_good_test(path, &glyph_map)),
+                .map(|path| test_utils::run_test(path, &glyph_map)),
         );
     }
     test_utils::finalize_results(results).into_error()
@@ -72,15 +72,10 @@ fn run_bad_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, TestCase> {
 
 fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
     match test_utils::try_parse_file(path, Some(glyph_map)) {
-        Err((node, errs)) => {
-            if std::env::var(super::VERBOSE).is_ok() {
-                eprintln!("{}", test_utils::stringify_diagnostics(&node, &errs));
-            }
-            Err(TestCase {
-                path: path.to_owned(),
-                reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
-            })
-        }
+        Err((node, errs)) => Err(TestCase {
+            path: path.to_owned(),
+            reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
+        }),
         Ok(node) => match compile::compile(&node, glyph_map) {
             Ok(thing) => {
                 let _ = thing.build_raw(glyph_map, Default::default()).unwrap();
@@ -93,50 +88,12 @@ fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
                 let msg = test_utils::stringify_diagnostics(&node, &errs);
                 let result =
                     test_utils::compare_to_expected_output(&msg, path, BAD_OUTPUT_EXTENSION);
-                if result.is_err() {
-                    if std::env::var(super::VERBOSE).is_ok() {
-                        eprintln!("{}", &msg);
-                    }
-                    if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
-                        let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);
-                        std::fs::write(to_path, &msg).expect("failed to write output");
-                    }
+                if result.is_err() && std::env::var(crate::util::WRITE_RESULTS_VAR).is_ok() {
+                    let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);
+                    std::fs::write(to_path, &msg).expect("failed to write output");
                 }
                 result
             }
-        },
-    }
-}
-
-fn run_good_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, TestCase> {
-    match std::panic::catch_unwind(|| good_test_body(&path, map)) {
-        Err(_) => Err(TestCase {
-            path,
-            reason: TestResult::Panic,
-        }),
-        Ok(Err(e)) => Err(e),
-        Ok(_) => Ok(path),
-    }
-}
-
-fn good_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
-    match test_utils::try_parse_file(path, Some(glyph_map)) {
-        Err((node, errs)) => Err(TestCase {
-            path: path.to_owned(),
-            reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
-        }),
-        Ok(node) => match compile::compile(&node, glyph_map) {
-            Ok(thing) => {
-                let mut x = thing
-                    .build_raw(glyph_map, Opts::new().make_post_table(true))
-                    .unwrap();
-                x.build();
-                Ok(())
-            }
-            Err(errs) => Err(TestCase {
-                path: path.to_owned(),
-                reason: TestResult::CompileFail(test_utils::stringify_diagnostics(&node, &errs)),
-            }),
         },
     }
 }

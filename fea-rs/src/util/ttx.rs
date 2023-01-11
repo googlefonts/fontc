@@ -223,7 +223,7 @@ pub fn try_parse_file(
 }
 
 /// takes a path to a sample ttx file
-fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase> {
+pub fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| match try_parse_file(&path, Some(glyph_map)) {
         Err((node, errs)) => Err(TestCase {
             path: path.clone(),
@@ -291,7 +291,6 @@ fn get_temp_file_name(in_file: &Path) -> PathBuf {
 fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestCase> {
     let ttx_path = fea_path.with_extension("ttx");
     let expected_diff_path = fea_path.with_extension("expected_diff");
-    assert!(ttx_path.exists());
     let temp_path = get_temp_dir().join(get_temp_file_name(fea_path));
     std::fs::write(&temp_path, font_data).unwrap();
 
@@ -321,10 +320,15 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestCase> {
     let ttx_out_path = temp_path.with_extension("ttx");
     assert!(ttx_out_path.exists());
 
-    let expected = std::fs::read_to_string(ttx_path).unwrap();
-    let expected = rewrite_ttx(&expected);
     let result = std::fs::read_to_string(ttx_out_path).unwrap();
+
     let result = rewrite_ttx(&result);
+
+    let expected = ttx_path
+        .exists()
+        .then(|| std::fs::read_to_string(&ttx_path).unwrap())
+        .unwrap_or_default();
+    let expected = rewrite_ttx(&expected);
 
     if expected_diff_path.exists() {
         let expected_diff = std::fs::read_to_string(&expected_diff_path).unwrap();
@@ -334,6 +338,9 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestCase> {
         }
     }
 
+    if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
+        std::fs::write(&ttx_path, &result).unwrap();
+    }
     let diff_percent = compute_diff_percentage(&expected, &result);
 
     if expected != result {
@@ -525,6 +532,11 @@ impl Report {
         }
     }
 
+    // a printer that uses FEA_VERBOSE to set verbosity
+    fn printer_from_env(&self) -> impl std::fmt::Debug + '_ {
+        self.printer(std::env::var(super::VERBOSE).is_ok())
+    }
+
     /// Return a type that can print results
     pub fn printer(&self, verbose: bool) -> impl std::fmt::Debug + '_ {
         ResultsPrinter {
@@ -705,13 +717,16 @@ fn debug_impl(
     if let Some(old_summary) = old.map(Report::summary) {
         writeln!(f, "old: {old_summary}")?;
     }
+    if !verbose {
+        writeln!(f, "Set FEA_VERBOSE=1 for detailed output.")?;
+    }
 
     Ok(())
 }
 
 impl std::fmt::Debug for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.printer(false).fmt(f)
+        self.printer_from_env().fmt(f)
     }
 }
 

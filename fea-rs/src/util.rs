@@ -1,6 +1,5 @@
 //! helpers and utilties (mostly for testing/debugging?)
 
-//pub mod debug;
 pub(crate) mod highlighting;
 pub mod paths;
 #[cfg(any(test, feature = "diff"))]
@@ -14,3 +13,7 @@ pub use pretty_diff::write_line_diff;
 
 #[doc(hidden)]
 pub static SPACES: &str = "                                                                                                                                                                                    ";
+#[cfg(any(test, feature = "test"))]
+pub(crate) static WRITE_RESULTS_VAR: &str = "FEA_WRITE_TEST_OUTPUT";
+#[cfg(any(test, feature = "test"))]
+pub(crate) static VERBOSE: &str = "FEA_VERBOSE";
