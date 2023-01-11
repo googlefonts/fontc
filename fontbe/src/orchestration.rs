@@ -7,8 +7,10 @@ use write_fonts::FontBuilder;
 
 use crate::{error::Error, paths::Paths};
 
-// Unique identifier of work. If there are no fields work is unique.
-// Meant to be small and cheap to copy around.
+/// Unique identifier of work.
+///
+/// If there are no fields work is unique.
+/// Meant to be small and cheap to copy around.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkIdentifier {
     Features,
