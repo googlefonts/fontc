@@ -171,7 +171,7 @@ impl ChangeDetector {
                                 .ir_paths
                                 .target_file(&FeWorkIdentifier::Glyph(glyph_name.to_string()))
                                 .exists())
-                        .then(|| glyph_name.as_str())
+                        .then_some(glyph_name.as_str())
                     }
                     None => Some(glyph_name.as_str()),
                 },

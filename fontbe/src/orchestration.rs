@@ -2,8 +2,9 @@
 
 use std::{collections::HashSet, fs, path::Path, sync::Arc};
 
-use fontdrasil::orchestration::{Acl, Cache, Work, MISSING_DATA};
+use fontdrasil::orchestration::{AccessControlList, Work, MISSING_DATA};
 use fontir::orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier};
+use parking_lot::RwLock;
 use write_fonts::FontBuilder;
 
 use crate::{error::Error, paths::Paths};
@@ -72,11 +73,11 @@ pub struct Context {
     // The final, fully populated, read-only FE context
     pub ir: Arc<FeContext>,
 
-    acl: Acl<AnyWorkId>,
+    acl: AccessControlList<AnyWorkId>,
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
-    features: Cache<Option<Arc<Vec<u8>>>>,
+    features: Arc<RwLock<Option<Arc<Vec<u8>>>>>,
 }
 
 impl Context {
@@ -85,8 +86,8 @@ impl Context {
             emit_ir,
             paths: Arc::from(paths),
             ir: Arc::from(ir.read_only()),
-            acl: Acl::read_only(),
-            features: Cache::new(),
+            acl: AccessControlList::read_only(),
+            features: Arc::from(RwLock::new(None)),
         }
     }
 
@@ -99,7 +100,7 @@ impl Context {
             emit_ir: self.emit_ir,
             paths: self.paths.clone(),
             ir: self.ir.clone(),
-            acl: Acl::read_write(dependencies.unwrap_or_default(), work_id.into()),
+            acl: AccessControlList::read_write(dependencies.unwrap_or_default(), work_id.into()),
             features: self.features.clone(),
         }
     }
@@ -122,7 +123,7 @@ impl Context {
     }
 
     fn set_cached_features(&self, font: Vec<u8>) {
-        let mut wl = self.features.item.write().unwrap();
+        let mut wl = self.features.write();
         *wl = Some(Arc::from(font));
     }
 
@@ -130,14 +131,14 @@ impl Context {
         let id = WorkIdentifier::Features;
         self.acl.check_read_access(&id.clone().into());
         {
-            let rl = self.features.item.read().unwrap();
+            let rl = self.features.read();
             if rl.is_some() {
                 return rl.as_ref().unwrap().clone();
             }
         }
         let font = self.restore(&self.paths.target_file(&id));
         self.set_cached_features(font);
-        let rl = self.features.item.read().unwrap();
+        let rl = self.features.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 

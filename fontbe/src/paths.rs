@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use fontdrasil::orchestration::glyph_file;
+use fontdrasil::paths::glyph_file;
 
 use crate::orchestration::WorkIdentifier;
 
