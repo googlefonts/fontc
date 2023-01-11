@@ -21,11 +21,8 @@ use serde::{Deserialize, Serialize};
 
 static IGNORED_TESTS: &[&str] = &[
     // ## tests with invalid syntax ## //
-    "GSUB_5_formats.fea",
     "AlternateChained.fea",
     "GSUB_6.fea",
-    // https://github.com/adobe-type-tools/afdko/issues/1415
-    "bug509.fea",
     //
     // ## tests that should be revisited ## //
     //
