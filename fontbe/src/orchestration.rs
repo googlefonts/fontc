@@ -3,6 +3,7 @@
 use std::{collections::HashSet, fs, path::Path, sync::Arc};
 
 use fontdrasil::orchestration::{Acl, Cache, Work, MISSING_DATA};
+use fontir::orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier};
 use write_fonts::FontBuilder;
 
 use crate::{error::Error, paths::Paths};
@@ -18,8 +19,6 @@ pub enum WorkIdentifier {
     GlyphMerge,
     FinalMerge,
 }
-
-use fontir::orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier};
 
 // Identifies work of any type, FE, BE, ... future optimization passes, w/e.
 // Useful because BE work can very reasonably depend on FE work

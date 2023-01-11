@@ -162,20 +162,20 @@ impl ChangeDetector {
         self.current_inputs
             .glyphs
             .iter()
-            .filter(
-                |(glyph_name, curr_state)| match self.prev_inputs.glyphs.get(*glyph_name) {
+            .filter_map(
+                |(glyph_name, curr_state)| match self.prev_inputs.glyphs.get(glyph_name) {
                     Some(prev_state) => {
                         // If the input changed or the output doesn't exist a rebuild is probably in order
-                        prev_state != *curr_state
+                        (prev_state != curr_state
                             || !self
                                 .ir_paths
                                 .target_file(&FeWorkIdentifier::Glyph(glyph_name.to_string()))
-                                .exists()
+                                .exists())
+                        .then(|| glyph_name.as_str())
                     }
-                    None => true,
+                    None => Some(glyph_name.as_str()),
                 },
             )
-            .map(|(glyph_name, _)| glyph_name.as_str())
             .collect()
     }
 
