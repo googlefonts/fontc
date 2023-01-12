@@ -524,7 +524,7 @@ impl<'a> CompilationCtx<'a> {
         &mut self,
         node: &typed::Gsub1,
     ) -> Option<(GlyphOrClass, GlyphOrClass)> {
-        self.validate_single_sub_inputs(&node.target(), Some(&node.replacement()))
+        self.validate_single_sub_inputs(&node.target(), node.replacement().as_ref())
     }
     //TODO: this should be in validate, but we don't have access to resolved
     //glyphs there right now :(

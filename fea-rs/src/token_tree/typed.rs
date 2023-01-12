@@ -711,11 +711,10 @@ impl Gsub1 {
         self.iter().find_map(GlyphOrClass::cast).unwrap()
     }
 
-    pub(crate) fn replacement(&self) -> GlyphOrClass {
+    pub(crate) fn replacement(&self) -> Option<GlyphOrClass> {
         self.iter()
             .skip_while(|t| t.kind() != Kind::ByKw)
             .find_map(GlyphOrClass::cast)
-            .unwrap()
     }
 }
 

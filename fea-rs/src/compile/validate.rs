@@ -832,7 +832,9 @@ impl<'a> ValidationCtx<'a> {
             typed::GsubStatement::Type1(rule) => {
                 //TODO: ensure equal lengths, other requirements
                 self.validate_glyph_or_class(&rule.target());
-                self.validate_glyph_or_class(&rule.replacement());
+                if let Some(replacement) = rule.replacement() {
+                    self.validate_glyph_or_class(&replacement);
+                }
             }
             typed::GsubStatement::Type2(rule) => {
                 self.validate_glyph(&rule.target());
