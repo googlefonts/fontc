@@ -278,9 +278,15 @@ impl<'a> ValidationCtx<'a> {
                 typed::Os2TableItem::FamilyClass(item) => {
                     let val = item.value();
                     match val.parse() {
-                        Ok(_val) => {
-                            //FIXME: check if valid, and warn if not? makeotf
-                            // does not validate
+                        Ok(raw_val) => {
+                            if let Err((cls, sub)) = validate_os2_family_class(raw_val) {
+                                self.warning(
+                                    val.range(),
+                                    format!(
+                                        "Class {cls}, subclass {sub} is not a known sFamilyClass"
+                                    ),
+                                )
+                            }
                         }
                         Err(e) => self.error(val.range(), e),
                     };
@@ -1212,4 +1218,37 @@ fn validate_name_string_encoding(
         }
     }
     Ok(())
+}
+
+/// adapted from <https://learn.microsoft.com/en-us/typography/opentype/spec/ibmfc>
+fn validate_os2_family_class(raw: u16) -> Result<u16, (u8, u8)> {
+    let [cls, subcls] = raw.to_be_bytes();
+    match (cls, subcls) {
+        (0, _) => Ok(raw),
+        (1, 0..=8 | 15) => Ok(raw),
+        (2, 0..=2 | 15) => Ok(raw),
+        (3, 0..=2 | 15) => Ok(raw),
+        (4, 0..=7 | 15) => Ok(raw),
+        (5, 0..=5 | 15) => Ok(raw),
+        (7, 0..=1 | 15) => Ok(raw),
+        (8, 0..=6 | 9 | 10 | 15) => Ok(raw),
+        (9, 0..=4 | 15) => Ok(raw),
+        (10, 0..=8 | 15) => Ok(raw),
+        (12, 0 | 3 | 6 | 7 | 15) => Ok(raw),
+        _ => Err((cls, subcls)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn os2_family_class() {
+        assert!(validate_os2_family_class(0x0108).is_ok());
+        assert!(validate_os2_family_class(0x0008).is_ok());
+        assert!(validate_os2_family_class(0x0202).is_ok());
+        assert!(validate_os2_family_class(0x0203).is_err());
+        assert!(validate_os2_family_class(0x0600).is_err());
+    }
 }
