@@ -58,11 +58,6 @@ struct ReportSummary {
     sum_compare_perc: f64,
 }
 
-struct ResultsPrinter<'a> {
-    verbose: bool,
-    results: &'a Report,
-}
-
 struct ReportComparePrinter<'a> {
     old: &'a Report,
     new: &'a Report,
@@ -215,6 +210,7 @@ pub fn try_parse_file(
     if errs.iter().any(Diagnostic::is_error) {
         Err((tree, errs))
     } else {
+        print_diagnostics_if_verbose(&tree, &errs);
         Ok(tree)
     }
 }
@@ -232,6 +228,7 @@ pub fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase
                 reason: TestResult::CompileFail(stringify_diagnostics(&node, &errs)),
             }),
             Ok(result) => {
+                print_diagnostics_if_verbose(&node, &result.warnings);
                 let opts = Opts::new().make_post_table(true);
                 let mut builder = result.build_raw(glyph_map, opts).unwrap();
                 let font_data = builder.build();
@@ -261,6 +258,12 @@ pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> St
         out.push_str(&root.format_diagnostic(d));
     }
     out
+}
+
+fn print_diagnostics_if_verbose(root: &ParseTree, diagnostics: &[Diagnostic]) {
+    if std::env::var(super::VERBOSE).is_ok() && !diagnostics.is_empty() {
+        eprintln!("{}", stringify_diagnostics(root, diagnostics));
+    }
 }
 
 fn get_temp_dir() -> PathBuf {
@@ -529,19 +532,6 @@ impl Report {
         }
     }
 
-    // a printer that uses FEA_VERBOSE to set verbosity
-    fn printer_from_env(&self) -> impl std::fmt::Debug + '_ {
-        self.printer(std::env::var(super::VERBOSE).is_ok())
-    }
-
-    /// Return a type that can print results
-    pub fn printer(&self, verbose: bool) -> impl std::fmt::Debug + '_ {
-        ResultsPrinter {
-            verbose,
-            results: self,
-        }
-    }
-
     /// Return a type that can print comparison results
     pub fn compare_printer<'a, 'b: 'a>(&'b self, old: &'a Report) -> impl std::fmt::Debug + 'a {
         ReportComparePrinter { old, new: self }
@@ -599,12 +589,6 @@ impl TestResult {
             reason: self,
             verbose,
         }
-    }
-}
-
-impl std::fmt::Debug for ResultsPrinter<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        debug_impl(f, self.results, None, self.verbose)
     }
 }
 
@@ -723,7 +707,8 @@ fn debug_impl(
 
 impl std::fmt::Debug for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.printer_from_env().fmt(f)
+        let verbose = std::env::var(super::VERBOSE).is_ok();
+        debug_impl(f, self, None, verbose)
     }
 }
 

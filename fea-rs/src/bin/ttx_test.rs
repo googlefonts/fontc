@@ -24,7 +24,7 @@ fn main() {
         let old_result: ttx::Report = serde_json::from_slice(&to_compare).unwrap();
         eprintln!("{:?}", results.compare_printer(&old_result));
     } else {
-        eprintln!("{:?}", results.printer(args.verbose));
+        eprintln!("{results:?}",);
     }
 
     if let Some(path) = args.save {
@@ -65,12 +65,6 @@ fn save_wip_diffs(results: &ttx::Report) {
 #[derive(clap::Parser, Debug)]
 #[command(author, version, long_about = None)]
 struct Args {
-    /// Display more information about failures
-    ///
-    /// This includes errors encountered, as well as the generated diffs when
-    /// comparison fails.
-    #[arg(short, long)]
-    verbose: bool,
     /// Optional comma separated list of words matching tests to run.
     ///
     /// e.g.: -t "spec5,GPOS" matches spec5h1.fea, spec5fi2.fea, GPOS_2.fea, etc
