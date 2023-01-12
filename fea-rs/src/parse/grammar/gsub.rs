@@ -179,6 +179,12 @@ fn parse_rsub(parser: &mut Parser, recovery: TokenSet) -> AstKind {
         return AstKind::GsubNode;
     }
     if parser.eat(Kind::ByKw) {
+        if parser.matches(0, Kind::NullKw) {
+            parser.err("Although explicitly part of the FEA spec, 'by NULL' in rsub rules is meaningless.\nSee https://github.com/fonttools/fonttools/issues/2952 for more information");
+            parser.eat_until(recovery);
+            parser.expect_semi();
+            return AstKind::GsubNode;
+        }
         glyph::expect_glyph_or_glyph_class(parser, recovery);
     }
     parser.expect_semi();

@@ -937,10 +937,6 @@ impl<'a> ValidationCtx<'a> {
                             self.error(class.range(), "class can only substitute another class");
                         }
                     } else if let Some(glyph) = inline.replacement_glyphs().next() {
-                        if input_class {
-                            //FIXME: what does everyone else do?
-                            self.error(glyph.range(), "glyph cannot replace class");
-                        }
                         self.validate_glyph(&glyph);
                     }
                 }
