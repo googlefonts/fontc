@@ -264,11 +264,9 @@ fn eat_ignore_statement_item(parser: &mut Parser, recovery: TokenSet) -> bool {
         continue;
     }
 
-    // expect a marked glyph
-    if !parser.eat(Kind::SingleQuote) {
-        parser.err_recover("Ignore statement must include one marked glyph", recovery);
-    } else {
-        // eat all marked glyphs
+    // expect a marked glyph.
+    // if this is omitted we will continue parsing, and warn when we rewrite.
+    if parser.eat(Kind::SingleQuote) {
         loop {
             glyph::eat_glyph_or_glyph_class(parser, recovery);
             if !parser.eat(Kind::SingleQuote) {

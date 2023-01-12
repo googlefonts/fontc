@@ -5,7 +5,7 @@
 //! lookahead. Instead, when we encounter a mark glyph we parse the statement
 //! naively, and then reparse it again afterwards.
 
-use crate::{parse::FileId, Diagnostic, NodeOrToken};
+use crate::{parse::FileId, Diagnostic, Level, NodeOrToken};
 
 use super::{AstSink, Kind};
 
@@ -90,10 +90,18 @@ impl<'a, 'b> ReparseCtx<'a, 'b> {
     }
 
     fn error(&mut self, message: impl Into<String>) {
+        self.add_diagnostic(Level::Error, message);
+    }
+
+    fn warn(&mut self, message: impl Into<String>) {
+        self.add_diagnostic(Level::Warning, message);
+    }
+
+    fn add_diagnostic(&mut self, level: Level, message: impl Into<String>) {
         self.eat_trivia();
         let cur_len = self.nth(0).map(NodeOrToken::text_len).unwrap_or(0);
         let range = self.text_pos..self.text_pos + cur_len;
-        let error = Diagnostic::error(FileId::CURRENT_FILE, range, message);
+        let error = Diagnostic::new(level, FileId::CURRENT_FILE, range, message);
         self.sink.error(error)
     }
 
@@ -213,21 +221,42 @@ fn reparse_ignore_rule(rewriter: &mut ReparseCtx) {
 }
 
 fn expect_ignore_rule_statement(rewriter: &mut ReparseCtx) {
-    rewriter.in_node(Kind::IgnoreRuleStatementNode, |rewriter| {
-        eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
-        rewriter.in_node(Kind::ContextSequence, |rewriter| loop {
-            if !at_glyph_or_glyph_class(rewriter.nth_kind(0))
-                || !rewriter.matches(1, Kind::SingleQuote)
-            {
-                break;
-            }
-            rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
-                expect_glyph_or_glyph_class(rewriter);
-                rewriter.expect(Kind::SingleQuote);
-            })
+    let has_mark_glyph = rewriter
+        .in_buf
+        .iter()
+        .any(|n| n.kind() == Kind::SingleQuote);
+
+    // the common, well-formed case where there is an actual mark glyph
+    if has_mark_glyph {
+        rewriter.in_node(Kind::IgnoreRuleStatementNode, |rewriter| {
+            eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
+            rewriter.in_node(Kind::ContextSequence, |rewriter| loop {
+                if !at_glyph_or_glyph_class(rewriter.nth_kind(0))
+                    || !rewriter.matches(1, Kind::SingleQuote)
+                {
+                    break;
+                }
+                rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
+                    expect_glyph_or_glyph_class(rewriter);
+                    rewriter.expect(Kind::SingleQuote);
+                })
+            });
+            eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
         });
-        eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
-    });
+        // the degen case, where there are no mark glyphs and so we just make
+        // the first non-marked glyph be the input sequence:
+    } else {
+        rewriter.warn("No marked glyphs in sequence. This glyph will be treated as input, all others as lookahead.");
+        rewriter.in_node(Kind::IgnoreRuleStatementNode, |rewriter| {
+            rewriter.in_node(Kind::BacktrackSequence, |_| {}); // empty backtrack
+            rewriter.in_node(Kind::ContextSequence, |rewriter| {
+                rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
+                    expect_glyph_or_glyph_class(rewriter);
+                })
+            });
+            eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
+        })
+    }
 }
 
 // impl common to eating backtrack or lookahead
