@@ -99,18 +99,17 @@ impl IncludeStatement {
     /// The path part of the statement.
     ///
     /// For the statement `include(file.fea)`, this is `file.fea`.
-    pub fn path(&self) -> &str {
+    fn path(&self) -> &str {
         &self.0.path().text
     }
 
     /// The range of the entire include statement.
-    pub fn stmt_range(&self) -> Range<usize> {
+    fn stmt_range(&self) -> Range<usize> {
         self.0.range()
     }
 
     /// The range of just the path text.
-    //FIXME: is this accurate? has it seen a cursor yet?
-    pub fn path_range(&self) -> Range<usize> {
+    fn path_range(&self) -> Range<usize> {
         self.0.path().range()
     }
 }
