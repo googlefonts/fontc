@@ -15,7 +15,7 @@ use write_fonts::types::Fixed;
 
 use crate::{Kind, Node, NodeOrToken};
 
-use super::Token;
+use super::{ChildIter, Token};
 
 /// A trait for types that exist in the AST.
 ///
@@ -30,6 +30,11 @@ pub trait AstNode {
     ///
     /// This is used for better diagnostic reporting.
     fn range(&self) -> Range<usize>;
+
+    /// If this is a node, iterate over its children
+    fn iter(&self) -> ChildIter {
+        Default::default()
+    }
 }
 
 /// Create a new AstNode wrapping a token.
@@ -104,12 +109,6 @@ macro_rules! ast_node {
                     .and_then(NodeOrToken::as_token)
             }
 
-            /// Iterate over this node's children
-            #[allow(unused)]
-            pub fn iter(&self) -> impl Iterator<Item = &NodeOrToken> {
-                self.inner.iter_children()
-            }
-
             /// Return a reference to the underlying `Node`.
             #[allow(dead_code)]
             pub fn node(&self) -> &Node {
@@ -133,6 +132,10 @@ macro_rules! ast_node {
 
             fn range(&self) -> std::ops::Range<usize> {
                 self.inner.range()
+            }
+
+            fn iter(&self) -> ChildIter {
+                self.inner.iter_children()
             }
         }
     };
@@ -376,6 +379,32 @@ ast_enum!(GlyphClass {
     Named(GlyphClassName),
     Literal(GlyphClassLiteral),
 });
+
+/// A trait for contextual and chain contextual rule nodes.
+///
+/// These types share a common implementation, and this lets us reuse code
+/// when processing those types.
+pub trait ContextualRuleNode: AstNode {
+    /// The backtrack sequence
+    fn backtrack(&self) -> BacktrackSequence {
+        self.iter().find_map(BacktrackSequence::cast).unwrap()
+    }
+
+    /// The lookahead sequence
+    fn lookahead(&self) -> LookaheadSequence {
+        self.iter().find_map(LookaheadSequence::cast).unwrap()
+    }
+
+    /// The input sequence
+    fn input(&self) -> InputSequence {
+        self.iter().find_map(InputSequence::cast).unwrap()
+    }
+}
+
+impl ContextualRuleNode for Gpos8 {}
+impl ContextualRuleNode for Gsub6 {}
+impl ContextualRuleNode for Gsub8 {}
+impl ContextualRuleNode for IgnoreRule {}
 
 impl Root {
     pub(crate) fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
@@ -732,36 +761,12 @@ impl Gsub4 {
 }
 
 impl Gsub6 {
-    pub(crate) fn backtrack(&self) -> BacktrackSequence {
-        self.iter().find_map(BacktrackSequence::cast).unwrap()
-    }
-
-    pub(crate) fn lookahead(&self) -> LookaheadSequence {
-        self.iter().find_map(LookaheadSequence::cast).unwrap()
-    }
-
-    pub(crate) fn input(&self) -> InputSequence {
-        self.iter().find_map(InputSequence::cast).unwrap()
-    }
-
     pub(crate) fn inline_rule(&self) -> Option<InlineSubRule> {
         self.iter().find_map(InlineSubRule::cast)
     }
 }
 
 impl Gsub8 {
-    pub(crate) fn backtrack(&self) -> BacktrackSequence {
-        self.iter().find_map(BacktrackSequence::cast).unwrap()
-    }
-
-    pub(crate) fn lookahead(&self) -> LookaheadSequence {
-        self.iter().find_map(LookaheadSequence::cast).unwrap()
-    }
-
-    pub(crate) fn input(&self) -> InputSequence {
-        self.iter().find_map(InputSequence::cast).unwrap()
-    }
-
     pub(crate) fn inline_rule(&self) -> Option<InlineSubRule> {
         self.iter().find_map(InlineSubRule::cast)
     }
@@ -770,20 +775,6 @@ impl Gsub8 {
 impl GsubIgnore {
     pub(crate) fn rules(&self) -> impl Iterator<Item = IgnoreRule> + '_ {
         self.iter().filter_map(IgnoreRule::cast)
-    }
-}
-
-impl IgnoreRule {
-    pub(crate) fn backtrack(&self) -> BacktrackSequence {
-        self.iter().find_map(BacktrackSequence::cast).unwrap()
-    }
-
-    pub(crate) fn lookahead(&self) -> LookaheadSequence {
-        self.iter().find_map(LookaheadSequence::cast).unwrap()
-    }
-
-    pub(crate) fn input(&self) -> InputSequence {
-        self.iter().find_map(InputSequence::cast).unwrap()
     }
 }
 
@@ -932,21 +923,6 @@ impl Gpos6 {
 
     pub(crate) fn attachments(&self) -> impl Iterator<Item = AnchorMark> + '_ {
         self.iter().skip(3).filter_map(AnchorMark::cast)
-    }
-}
-
-//FIXME: move backtrack/lookahead/input into a trait
-impl Gpos8 {
-    pub(crate) fn backtrack(&self) -> BacktrackSequence {
-        self.iter().find_map(BacktrackSequence::cast).unwrap()
-    }
-
-    pub(crate) fn lookahead(&self) -> LookaheadSequence {
-        self.iter().find_map(LookaheadSequence::cast).unwrap()
-    }
-
-    pub(crate) fn input(&self) -> InputSequence {
-        self.iter().find_map(InputSequence::cast).unwrap()
     }
 }
 

@@ -21,6 +21,7 @@ use crate::{
         typed::{self, AstNode},
         Token,
     },
+    typed::ContextualRuleNode,
     types::{GlyphClass, GlyphId, GlyphOrClass},
     Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken,
 };

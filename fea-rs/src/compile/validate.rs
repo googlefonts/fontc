@@ -23,6 +23,7 @@ use crate::{
         typed::{self, AstNode},
         Token,
     },
+    typed::ContextualRuleNode,
     Diagnostic, GlyphMap, Kind, NodeOrToken,
 };
 

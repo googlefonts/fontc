@@ -88,6 +88,14 @@ pub(crate) struct AstSink<'a> {
     cur_node_contains_error: bool,
 }
 
+//NOTE: the inner type is option because we reuse this in the `typed` module,
+//and there we want to be able to easily return an empty iterator when iter() is
+//called on a token.
+//
+/// An iterator over the children of a node.
+#[derive(Default)]
+pub struct ChildIter<'a>(Option<Cursor<'a>>);
+
 impl<'a> AstSink<'a> {
     pub fn new(text: &'a str, file_id: FileId, glyph_map: Option<&'a GlyphMap>) -> Self {
         AstSink {
@@ -259,13 +267,8 @@ impl Node {
     }
 
     /// Iterate over this node's direct children, without descending.
-    pub fn iter_children(&self) -> impl Iterator<Item = &NodeOrToken> {
-        let mut cursor = self.cursor();
-        std::iter::from_fn(move || {
-            let current = cursor.current();
-            cursor.step_over();
-            current
-        })
+    pub fn iter_children(&self) -> ChildIter {
+        ChildIter(Some(self.cursor()))
     }
 
     /// The `Kind` of the node
@@ -372,6 +375,16 @@ impl Node {
             }
         }
         Ok(())
+    }
+}
+
+impl<'a> Iterator for ChildIter<'a> {
+    type Item = &'a NodeOrToken;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.0.as_ref()?.current();
+        self.0.as_mut()?.step_over();
+        current
     }
 }
 
