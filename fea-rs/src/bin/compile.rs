@@ -4,10 +4,13 @@ use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use fea_rs::{
-    compile::{self, Opts},
-    GlyphMap, GlyphName,
+    compile::{
+        self,
+        error::{FontGlyphOrderError, GlyphOrderError, UfoGlyphOrderError},
+        Opts,
+    },
+    GlyphMap,
 };
-use write_fonts::types::GlyphId;
 
 /// Attempt to compile features into a font file.
 ///
@@ -64,40 +67,18 @@ fn main() -> Result<(), Error> {
     std::fs::write(path, raw_font).map_err(Into::into)
 }
 
-fn parse_glyph_order(path: &Path) -> Result<GlyphMap, Error> {
-    let contents = std::fs::read_to_string(path)?;
-    let map: GlyphMap = contents
-        .lines()
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(|line| {
-            if line.bytes().any(|b| b.is_ascii_whitespace()) {
-                Err(Error::InvalidGlyphMap(format!(
-                    "name {line:?} contains whitespace"
-                )))
-            } else {
-                Ok(GlyphName::new(line))
-            }
-        })
-        .collect::<Result<_, _>>()?;
-    if map.get(".notdef") != Some(GlyphId::NOTDEF) {
-        Err(Error::InvalidGlyphMap("first glyph must be .notdef".into()))
-    } else {
-        Ok(map)
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 enum Error {
-    #[error("invalid glyph map: '{0}'")]
-    InvalidGlyphMap(String),
     #[error("io error: '{0}'")]
     File(#[from] std::io::Error),
     #[error("Couldn't read UFO: '{0}'")]
     Ufo(Box<norad::error::FontLoadError>),
-    #[error("UFO is missing public.glyphOrder key, or the value is not an array of strings")]
-    UfoBadGlyphOrder,
-    #[error("The font's 'post' table is missing or malformed")]
-    FontBadPostTable,
+    #[error("invalid glyph map: '{0}'")]
+    InvalidGlyphMap(#[from] GlyphOrderError),
+    #[error("Couldn't get glyph order from UFO: '{0}'")]
+    UfoBadGlyphOrder(#[from] UfoGlyphOrderError),
+    #[error("Couldn't get glyph order from font: '{0}")]
+    FontBadGlyphOrder(#[from] FontGlyphOrderError),
     #[error("The provided feature file is empty")]
     EmptyFeatureFile,
     #[error("No glyph order provided")]
@@ -144,15 +125,16 @@ impl Args {
         if self.input.extension() == Some("ufo".as_ref()) {
             let request = norad::DataRequest::none().lib(true);
             let font = norad::Font::load_requested_data(&self.input, request)?;
-            let glyph_order = compile::get_ufo_glyph_order(&font).ok_or(Error::UfoBadGlyphOrder)?;
+            let glyph_order = compile::get_ufo_glyph_order(&font)?;
             let fea_path = self.input.join("features.fea");
             Ok((fea_path, glyph_order))
         } else {
             let order = if let Some(path) = self.glyph_order() {
-                parse_glyph_order(path)?
+                let contents = std::fs::read_to_string(&path)?;
+                compile::parse_glyph_order(&contents)?
             } else if let Some(path) = self.font.as_deref() {
                 let bytes = std::fs::read(path)?;
-                compile::get_post_glyph_order(&bytes).ok_or(Error::FontBadPostTable)?
+                compile::get_post_glyph_order(&bytes)?
             } else {
                 return Err(Error::MissingGlyphOrder);
             };
@@ -174,19 +156,5 @@ impl Args {
 impl From<norad::error::FontLoadError> for Error {
     fn from(src: norad::error::FontLoadError) -> Error {
         Error::Ufo(Box::new(src))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn load_glyph_map() {
-        let glyph_map = parse_glyph_order(Path::new("./test-data/simple_glyph_order.txt")).unwrap();
-        assert_eq!(glyph_map.len(), 215);
-        assert_eq!(glyph_map.get("space"), Some(GlyphId::new(1)));
-        assert_eq!(glyph_map.get("e.fina"), Some(GlyphId::new(214)));
-        assert!(!glyph_map.contains("e.nada"));
     }
 }
