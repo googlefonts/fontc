@@ -24,6 +24,8 @@ serde = { version = "1.0.147", features = ["derive"], optional = true }
 serde_json = {version = "1.0.87", optional = true }
 thiserror = "1.0.37"
 clap = { version = "4.0.32", features = ["derive"] }
+log = "0.4"
+env_logger = "0.9.0"
 
 [features]
 test = ["diff", "rayon", "serde", "serde_json"]

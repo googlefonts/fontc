@@ -55,7 +55,7 @@ fn save_wip_diffs(results: &ttx::Report) {
                 .join(file_name)
                 .with_extension("expected_diff");
             let diff = ttx::plain_text_diff(expected, result);
-            eprintln!("saved diff to {}", out_path.display());
+            log::info!("saved diff to {}", out_path.display());
             std::fs::write(out_path, diff).unwrap();
         }
     }

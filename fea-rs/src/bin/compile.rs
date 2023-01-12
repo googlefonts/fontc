@@ -18,6 +18,7 @@ use fea_rs::{
 ///
 /// where glyph order is a file listing glyphs, one per line, in glyph id order.
 fn main() -> Result<(), Error> {
+    env_logger::init();
     let args = Args::parse();
     let (fea, glyph_names) = args.get_inputs()?;
     if !fea.exists() {
@@ -36,6 +37,12 @@ fn main() -> Result<(), Error> {
 
     let compiled = match compile::compile(&tree, &glyph_names) {
         Ok(compilation) => {
+            if !compilation.warnings.is_empty() {
+                log::warn!(
+                    "Compilation produced {} warnings",
+                    compilation.warnings.len()
+                );
+            }
             for warning in &compilation.warnings {
                 eprintln!("{}", tree.format_diagnostic(warning));
             }
@@ -51,7 +58,7 @@ fn main() -> Result<(), Error> {
                 }
             }
             let warning_count = errors.len() - err_count;
-            println!("{} errors, {} warnings", err_count, warning_count);
+            log::info!("{} errors, {} warnings", err_count, warning_count);
             std::process::exit(1);
         }
     };
@@ -63,7 +70,7 @@ fn main() -> Result<(), Error> {
         .expect("ttf compile failed")
         .build();
 
-    println!("writing {} bytes to {}", raw_font.len(), path.display());
+    log::info!("writing {} bytes to {}", raw_font.len(), path.display());
     std::fs::write(path, raw_font).map_err(Into::into)
 }
 

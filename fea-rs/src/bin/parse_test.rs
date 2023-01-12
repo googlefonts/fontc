@@ -36,7 +36,7 @@ fn directory_arg(path: &Path) -> std::io::Result<()> {
         let path = entry.path();
         if path.extension() == Some(OsStr::new("fea")) {
             seen += 1;
-            eprintln!("parsing '{}'", path.display());
+            log::info!("parsing '{}'", path.display());
             match std::panic::catch_unwind(|| try_parse_file(&path)) {
                 Err(_) => failures.push((path, true)),
                 Ok((_, errs)) if errs.iter().any(|e| e.is_error()) => failures.push((path, false)),
