@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use fontdrasil::paths::glyph_file;
 
-use crate::orchestration::WorkIdentifier;
+use crate::orchestration::WorkId;
 
 #[derive(Debug, Clone)]
 pub struct Paths {
@@ -41,12 +41,12 @@ impl Paths {
         self.glyph_ir_dir.join(glyph_file(name, ".yml"))
     }
 
-    pub fn target_file(&self, id: &WorkIdentifier) -> PathBuf {
+    pub fn target_file(&self, id: &WorkId) -> PathBuf {
         match id {
-            WorkIdentifier::StaticMetadata => self.build_dir.join("static_metadata.yml"),
-            WorkIdentifier::Glyph(name) => self.glyph_ir_file(name),
-            WorkIdentifier::GlyphIrDelete(name) => self.glyph_ir_file(name),
-            WorkIdentifier::Features => self.build_dir.join("features.yml"),
+            WorkId::StaticMetadata => self.build_dir.join("static_metadata.yml"),
+            WorkId::Glyph(name) => self.glyph_ir_file(name.as_str()),
+            WorkId::GlyphIrDelete => self.build_dir.join("delete.yml"),
+            WorkId::Features => self.build_dir.join("features.yml"),
         }
     }
 }

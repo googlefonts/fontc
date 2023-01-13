@@ -77,17 +77,17 @@ impl AnyContext {
         fe_root: &FeContext,
         be_root: &BeContext,
         id: &AnyWorkId,
-        happens_after: HashSet<AnyWorkId>,
+        dependencies: HashSet<AnyWorkId>,
     ) -> AnyContext {
         match id {
             AnyWorkId::Be(id) => {
-                AnyContext::Be(be_root.copy_for_work(id.clone(), Some(happens_after)))
+                AnyContext::Be(be_root.copy_for_work(id.clone(), Some(dependencies)))
             }
             AnyWorkId::Fe(id) => AnyContext::Fe(
                 fe_root.copy_for_work(
                     id.clone(),
                     Some(
-                        happens_after
+                        dependencies
                             .into_iter()
                             .map(|a| a.unwrap_fe().clone())
                             .collect(),

@@ -6,7 +6,7 @@ use indexmap::IndexSet;
 use log::debug;
 use serde::{Deserialize, Serialize};
 
-use fontdrasil::orchestration::Work;
+use fontdrasil::{orchestration::Work, types::GlyphName};
 
 use crate::{
     error::{Error, WorkError},
@@ -21,7 +21,7 @@ pub struct DeleteWork {
 
 impl DeleteWork {
     pub fn create(path: PathBuf) -> Box<IrWork> {
-        Box::from(DeleteWork { path })
+        Box::new(DeleteWork { path })
     }
 }
 
@@ -56,7 +56,7 @@ pub trait Source {
     /// When run work should update [Context] with [crate::ir::Glyph] for the glyph name.
     fn create_glyph_ir_work(
         &self,
-        glyph_names: &IndexSet<&str>,
+        glyph_names: &IndexSet<GlyphName>,
         input: &Input,
     ) -> Result<Vec<Box<IrWork>>, Error>;
 
@@ -74,7 +74,7 @@ pub struct Input {
     pub static_metadata: StateSet,
 
     /// The input(s) that inform glyph IR construction, grouped by gyph name
-    pub glyphs: HashMap<String, StateSet>,
+    pub glyphs: HashMap<GlyphName, StateSet>,
 
     /// The input(s) that inform feature IR construction
     pub features: StateSet,
@@ -121,7 +121,7 @@ mod tests {
             .unwrap();
 
         let mut glyphs = HashMap::new();
-        glyphs.insert("space".to_string(), glyph);
+        glyphs.insert("space".into(), glyph);
 
         let mut features = StateSet::new();
         features

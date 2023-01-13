@@ -9,7 +9,10 @@ use std::{
     sync::Arc,
 };
 
-use fontdrasil::orchestration::{AccessControlList, Work, MISSING_DATA};
+use fontdrasil::{
+    orchestration::{AccessControlList, Work, MISSING_DATA},
+    types::GlyphName,
+};
 use parking_lot::RwLock;
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -18,10 +21,10 @@ use crate::{error::WorkError, ir, paths::Paths, source::Input};
 // Unique identifier of work. If there are no fields work is unique.
 // Meant to be small and cheap to copy around.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum WorkIdentifier {
+pub enum WorkId {
     StaticMetadata,
-    Glyph(String),
-    GlyphIrDelete(String),
+    Glyph(GlyphName),
+    GlyphIrDelete,
     Features,
 }
 
@@ -42,17 +45,17 @@ pub struct Context {
     // a subset of the full input.
     pub input: Arc<Input>,
 
-    acl: AccessControlList<WorkIdentifier>,
+    acl: AccessControlList<WorkId>,
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
     static_metadata: Arc<RwLock<Option<Arc<ir::StaticMetadata>>>>,
-    glyph_ir: Arc<RwLock<HashMap<String, Arc<ir::Glyph>>>>,
+    glyph_ir: Arc<RwLock<HashMap<GlyphName, Arc<ir::Glyph>>>>,
     feature_ir: Arc<RwLock<Option<Arc<ir::Features>>>>,
 }
 
 impl Context {
-    fn copy(&self, acl: AccessControlList<WorkIdentifier>) -> Context {
+    fn copy(&self, acl: AccessControlList<WorkId>) -> Context {
         Context {
             emit_ir: self.emit_ir,
             paths: self.paths.clone(),
@@ -76,11 +79,7 @@ impl Context {
         }
     }
 
-    pub fn copy_for_work(
-        &self,
-        work_id: WorkIdentifier,
-        dependencies: Option<HashSet<WorkIdentifier>>,
-    ) -> Context {
+    pub fn copy_for_work(&self, work_id: WorkId, dependencies: Option<HashSet<WorkId>>) -> Context {
         self.copy(AccessControlList::read_write(
             dependencies.unwrap_or_default(),
             work_id,
@@ -129,7 +128,7 @@ impl Context {
     }
 
     pub fn get_static_metadata(&self) -> Arc<ir::StaticMetadata> {
-        let id = WorkIdentifier::StaticMetadata;
+        let id = WorkId::StaticMetadata;
         self.acl.check_read_access(&id);
         {
             let rl = self.static_metadata.read();
@@ -143,25 +142,25 @@ impl Context {
     }
 
     pub fn set_static_metadata(&self, ir: ir::StaticMetadata) {
-        let id = WorkIdentifier::StaticMetadata;
+        let id = WorkId::StaticMetadata;
         self.acl.check_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         self.set_cached_static_metadata(ir);
     }
 
-    pub fn get_glyph_ir(&self, glyph_name: &str) -> Arc<ir::Glyph> {
-        let id = WorkIdentifier::Glyph(glyph_name.to_string());
+    pub fn get_glyph_ir(&self, glyph_name: &GlyphName) -> Arc<ir::Glyph> {
+        let id = WorkId::Glyph(glyph_name.clone());
         self.acl.check_read_access(&id);
         let rl = self.glyph_ir.read();
         rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
 
-    pub fn set_glyph_ir(&self, glyph_name: &str, ir: ir::Glyph) {
-        let id = WorkIdentifier::Glyph(glyph_name.to_string());
+    pub fn set_glyph_ir(&self, glyph_name: GlyphName, ir: ir::Glyph) {
+        let id = WorkId::Glyph(glyph_name.clone());
         self.acl.check_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         let mut wl = self.glyph_ir.write();
-        wl.insert(glyph_name.to_string(), Arc::from(ir));
+        wl.insert(glyph_name, Arc::from(ir));
     }
 
     fn set_cached_features(&self, ir: ir::Features) {
@@ -170,7 +169,7 @@ impl Context {
     }
 
     pub fn get_features(&self) -> Arc<ir::Features> {
-        let id = WorkIdentifier::Features;
+        let id = WorkId::Features;
         self.acl.check_read_access(&id);
         {
             let rl = self.feature_ir.read();
@@ -184,7 +183,7 @@ impl Context {
     }
 
     pub fn set_features(&self, ir: ir::Features) {
-        let id = WorkIdentifier::Features;
+        let id = WorkId::Features;
         self.acl.check_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         self.set_cached_features(ir);

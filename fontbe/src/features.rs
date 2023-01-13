@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use fea_rs::{Diagnostic, GlyphMap, GlyphName};
+use fea_rs::{Diagnostic, GlyphMap, GlyphName as FeaRsGlyphName};
 use log::{debug, trace, warn};
 use write_fonts::FontBuilder;
 
@@ -20,7 +20,7 @@ pub struct FeatureWork {
 impl FeatureWork {
     pub fn create(build_dir: &Path) -> Box<BeWork> {
         let build_dir = build_dir.to_path_buf();
-        Box::from(FeatureWork { build_dir })
+        Box::new(FeatureWork { build_dir })
     }
 }
 
@@ -102,7 +102,10 @@ impl Work<Context, Error> for FeatureWork {
         if glyph_order.is_empty() {
             warn!("Glyph order is empty; feature compile improbable");
         }
-        let glyph_map = glyph_order.iter().map(Into::<GlyphName>::into).collect();
+        let glyph_map = glyph_order
+            .iter()
+            .map(|n| Into::<FeaRsGlyphName>::into(n.as_str()))
+            .collect();
         let font = self.compile(fea_file, glyph_map)?;
         context.set_features(font);
         Ok(())

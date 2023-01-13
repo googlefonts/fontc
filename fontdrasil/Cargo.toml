@@ -11,6 +11,9 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
+smol_str = "0.1.14"
+
+serde = {version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 diff = "0.1.12"
