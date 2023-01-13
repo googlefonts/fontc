@@ -296,7 +296,7 @@ impl Node {
     /// without their parent nodes. (we use this when resolving includes
     ///
     /// range start/end just fall on token boundaries.
-    pub fn edit(&self, edits: Vec<(Range<usize>, Node)>, skip_parent: bool) -> Node {
+    pub(crate) fn edit(&self, edits: Vec<(Range<usize>, Node)>, skip_parent: bool) -> Node {
         edit::apply_edits(self, edits, skip_parent)
     }
 

@@ -119,7 +119,6 @@ fn gpos_mark_to_(parser: &mut Parser, recovery: TokenSet) {
         parser,
         recovery.union(TokenSet::new(&[Kind::LAngle, Kind::AnchorKw])),
     );
-    //FIXME: pass in more recovery?
     super::greedy(anchor_mark)(parser, recovery);
     parser.expect_semi();
 }

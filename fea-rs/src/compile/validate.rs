@@ -83,8 +83,6 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_mark_class_def(&mark_def);
             } else if let Some(anchor_def) = typed::AnchorDef::cast(item) {
                 self.validate_anchor_def(&anchor_def);
-            } else if let Some(_include) = typed::Include::cast(item) {
-                //TODO: includes, eh? maybe resolved before now?
             } else if let Some(feature) = typed::Feature::cast(item) {
                 self.validate_feature(&feature);
             } else if let Some(table) = typed::Table::cast(item) {

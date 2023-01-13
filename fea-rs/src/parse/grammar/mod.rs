@@ -5,10 +5,13 @@ use crate::token_tree::Kind as AstKind;
 mod feature;
 mod glyph;
 mod gpos;
-//FIXME: figure out what to expose here, and how.
-pub mod gsub;
+mod gsub;
 mod metrics;
 mod table;
+
+#[cfg(test)]
+// we use this in a test in edit.rs
+pub(crate) use gsub::gsub as parse_gsub;
 
 /// Entry point for parsing a FEA file.
 pub fn root(parser: &mut Parser) {

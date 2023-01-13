@@ -351,7 +351,6 @@ impl AllLookups {
     // `false` if we didn't have an active lookup
     pub(crate) fn add_subtable_break(&mut self) -> bool {
         if let Some(current) = self.current.as_mut() {
-            //FIXME
             match current {
                 SomeLookup::GsubLookup(lookup) => lookup.force_subtable_break(),
                 SomeLookup::GposLookup(lookup) => lookup.force_subtable_break(),
@@ -708,8 +707,6 @@ impl SomeLookup {
                 PositionLookup::MarkToMark(_) => Kind::GposType6,
                 PositionLookup::Contextual(_) => Kind::GposType7,
                 PositionLookup::ChainedContextual(_) => Kind::GposType8,
-                //FIXME: should be a kind? idk
-                //PositionLookup::Extension => Kind::GposNode,
             },
         }
     }
