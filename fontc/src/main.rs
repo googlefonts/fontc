@@ -10,7 +10,7 @@ use clap::Parser;
 use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::{
     features::FeatureWork,
-    orchestration::{AnyWorkId, Context as BeContext, WorkIdentifier as BeWorkIdentifier},
+    orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
     paths::Paths as BePaths,
 };
 use fontc::{
@@ -19,7 +19,7 @@ use fontc::{
 };
 use fontdrasil::types::GlyphName;
 use fontir::{
-    orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier},
+    orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     paths::Paths as IrPaths,
     source::{DeleteWork, Input, Source},
     stateset::StateSet,
@@ -131,8 +131,8 @@ fn ir_source(source: &Path) -> Result<Box<dyn Source>, Error> {
         .and_then(OsStr::to_str)
         .ok_or_else(|| Error::UnrecognizedSource(source.to_path_buf()))?;
     match ext {
-        "designspace" => Ok(Box::from(DesignSpaceIrSource::new(source.to_path_buf()))),
-        "glyphs" => Ok(Box::from(GlyphsIrSource::new(source.to_path_buf()))),
+        "designspace" => Ok(Box::new(DesignSpaceIrSource::new(source.to_path_buf()))),
+        "glyphs" => Ok(Box::new(GlyphsIrSource::new(source.to_path_buf()))),
         _ => Err(Error::UnrecognizedSource(source.to_path_buf())),
     }
 }
@@ -541,13 +541,13 @@ mod tests {
 
     use filetime::FileTime;
     use fontbe::{
-        orchestration::{AnyWorkId, Context as BeContext, WorkIdentifier as BeWorkIdentifier},
+        orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
         paths::Paths as BePaths,
     };
     use fontc::work::AnyContext;
     use fontdrasil::types::GlyphName;
     use fontir::{
-        orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier},
+        orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
         paths::Paths as IrPaths,
         stateset::StateSet,
     };

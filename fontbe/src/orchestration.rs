@@ -6,7 +6,7 @@ use fontdrasil::{
     orchestration::{AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
 };
-use fontir::orchestration::{Context as FeContext, WorkIdentifier as FeWorkIdentifier};
+use fontir::orchestration::{Context as FeContext, WorkId as FeWorkIdentifier};
 use parking_lot::RwLock;
 use write_fonts::FontBuilder;
 
@@ -17,7 +17,7 @@ use crate::{error::Error, paths::Paths};
 /// If there are no fields work is unique.
 /// Meant to be small and cheap to copy around.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum WorkIdentifier {
+pub enum WorkId {
     Features,
     Glyph(GlyphName),
     GlyphMerge,
@@ -29,11 +29,11 @@ pub enum WorkIdentifier {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AnyWorkId {
     Fe(FeWorkIdentifier),
-    Be(WorkIdentifier),
+    Be(WorkId),
 }
 
 impl AnyWorkId {
-    pub fn unwrap_be(&self) -> &WorkIdentifier {
+    pub fn unwrap_be(&self) -> &WorkId {
         match self {
             AnyWorkId::Fe(..) => panic!("Not a BE identifier"),
             AnyWorkId::Be(id) => id,
@@ -54,8 +54,8 @@ impl From<FeWorkIdentifier> for AnyWorkId {
     }
 }
 
-impl From<WorkIdentifier> for AnyWorkId {
-    fn from(id: WorkIdentifier) -> Self {
+impl From<WorkId> for AnyWorkId {
+    fn from(id: WorkId) -> Self {
         AnyWorkId::Be(id)
     }
 }
@@ -96,7 +96,7 @@ impl Context {
 
     pub fn copy_for_work(
         &self,
-        work_id: WorkIdentifier,
+        work_id: WorkId,
         dependencies: Option<HashSet<AnyWorkId>>,
     ) -> Context {
         Context {
@@ -131,7 +131,7 @@ impl Context {
     }
 
     pub fn get_features(&self) -> Arc<Vec<u8>> {
-        let id = WorkIdentifier::Features;
+        let id = WorkId::Features;
         self.acl.check_read_access(&id.clone().into());
         {
             let rl = self.features.read();
@@ -146,7 +146,7 @@ impl Context {
     }
 
     pub fn set_features(&self, mut font: FontBuilder) {
-        let id = WorkIdentifier::Features;
+        let id = WorkId::Features;
         self.acl.check_write_access(&id.clone().into());
         let font = font.build();
         self.maybe_persist(&self.paths.target_file(&id), &font);

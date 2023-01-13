@@ -21,7 +21,7 @@ pub struct DeleteWork {
 
 impl DeleteWork {
     pub fn create(path: PathBuf) -> Box<IrWork> {
-        Box::from(DeleteWork { path })
+        Box::new(DeleteWork { path })
     }
 }
 

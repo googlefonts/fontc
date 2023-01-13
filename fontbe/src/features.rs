@@ -20,7 +20,7 @@ pub struct FeatureWork {
 impl FeatureWork {
     pub fn create(build_dir: &Path) -> Box<BeWork> {
         let build_dir = build_dir.to_path_buf();
-        Box::from(FeatureWork { build_dir })
+        Box::new(FeatureWork { build_dir })
     }
 }
 

@@ -143,7 +143,7 @@ pub(crate) fn layer_dir<'a>(
 impl DesignSpaceIrSource {
     fn load_designspace(&self) -> Result<DesignSpaceDocument, Error> {
         DesignSpaceDocument::load(&self.designspace_file)
-            .map_err(|e| Error::UnableToLoadSource(Box::from(e)))
+            .map_err(|e| Error::UnableToLoadSource(Box::new(e)))
     }
 
     // When things like upem may have changed forget incremental and rebuild the whole thing
@@ -281,7 +281,7 @@ impl Source for DesignSpaceIrSource {
         self.check_static_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
-        Ok(Box::from(StaticMetadataWork {
+        Ok(Box::new(StaticMetadataWork {
             designspace_file: cache.designspace_file.clone(),
             designspace: cache.designspace.clone(),
             glyph_names: cache.glyph_names.clone(),
@@ -292,7 +292,7 @@ impl Source for DesignSpaceIrSource {
         self.check_static_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
-        Ok(Box::from(FeatureWork {
+        Ok(Box::new(FeatureWork {
             designspace_file: cache.designspace_file.clone(),
             fea_files: cache.fea_files.clone(),
         }))
@@ -311,9 +311,7 @@ impl Source for DesignSpaceIrSource {
         let mut work: Vec<Box<IrWork>> = Vec::new();
 
         for glyph_name in glyph_names {
-            work.push(Box::from(
-                self.create_work_for_one_glyph(glyph_name, input)?,
-            ));
+            work.push(Box::new(self.create_work_for_one_glyph(glyph_name, input)?));
         }
 
         Ok(work)
