@@ -8,12 +8,12 @@ use fontir::source::{Input, Source};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
 use indexmap::IndexSet;
-use log::{debug, trace, warn};
+use log::{debug, trace};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::toir::FontInfo;
+use crate::toir::{to_ir_features, FontInfo};
 
 pub struct GlyphsIrSource {
     glyphs_file: PathBuf,
@@ -57,6 +57,12 @@ fn glyph_states(font: &Font) -> Result<HashMap<GlyphName, StateSet>, Error> {
 }
 
 impl GlyphsIrSource {
+    fn feature_inputs(&self, font: &Font) -> Result<StateSet, Error> {
+        let mut state = StateSet::new();
+        state.track_memory("/features".to_string(), &font.features)?;
+        Ok(state)
+    }
+
     // When things like upem may have changed forget incremental and rebuild the whole thing
     fn static_metadata_inputs(&self, font: &Font) -> Result<StateSet, Error> {
         let mut state = StateSet::new();
@@ -71,6 +77,7 @@ impl GlyphsIrSource {
             glyph_order: Default::default(),
             codepoints: Default::default(),
             axis_mappings: font.axis_mappings.clone(),
+            features: Default::default(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -102,16 +109,13 @@ impl Source for GlyphsIrSource {
         })?)?;
         let font = &font_info.font;
         let static_metadata = self.static_metadata_inputs(font)?;
-
+        let features = self.feature_inputs(font)?;
         let glyphs = glyph_states(font)?;
 
         self.cache = Some(Cache {
             global_metadata: static_metadata.clone(),
-            font_info: Arc::from(font_info),
+            font_info: Arc::new(font_info),
         });
-
-        let features = StateSet::new();
-        // TODO: track fields that feed features in .glyphs files
 
         Ok(Input {
             static_metadata,
@@ -148,7 +152,11 @@ impl Source for GlyphsIrSource {
     fn create_feature_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
         self.check_static_metadata(&input.static_metadata)?;
 
-        Ok(Box::new(FeatureWork {}))
+        let cache = self.cache.as_ref().unwrap();
+
+        Ok(Box::new(FeatureWork {
+            font_info: cache.font_info.clone(),
+        }))
     }
 }
 
@@ -182,12 +190,17 @@ impl Work<Context, WorkError> for StaticMetadataWork {
     }
 }
 
-struct FeatureWork {}
+struct FeatureWork {
+    font_info: Arc<FontInfo>,
+}
 
 impl Work<Context, WorkError> for FeatureWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        warn!(".glyphs feature ir work is currently a nop");
-        context.set_features(ir::Features::empty());
+        trace!("Generate features");
+        let font_info = self.font_info.as_ref();
+        let font = &font_info.font;
+
+        context.set_features(to_ir_features(&font.features)?);
         Ok(())
     }
 }

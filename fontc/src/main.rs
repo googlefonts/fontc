@@ -419,6 +419,14 @@ impl Workload {
         // If ^ exited due to error the scope awaited any live tasks; capture their results
         self.read_completions(&recv, RecvType::NonBlocking)?;
 
+        if self.error.is_empty() && self.success.len() != self.job_count + self.pre_success {
+            panic!(
+                "No errors but only {}/{} succeeded?!",
+                self.success.len(),
+                self.job_count + self.pre_success
+            );
+        }
+
         Ok(())
     }
 
@@ -465,9 +473,6 @@ impl Workload {
         }
         if !self.error.is_empty() {
             return Err(Error::TasksFailed(self.error.clone()));
-        }
-        if self.error.is_empty() && self.success.len() != self.job_count {
-            panic!("No errors but not everything succeeded?!");
         }
         Ok(())
     }
@@ -516,6 +521,11 @@ fn main() -> Result<(), Error> {
     let be_paths = BePaths::new(&args.build_dir);
     let build_dir = require_dir(ir_paths.build_dir())?;
     require_dir(ir_paths.glyph_ir_dir())?;
+    // It's confusing to have leftover debug files
+    if be_paths.debug_dir().is_dir() {
+        fs::remove_dir_all(be_paths.debug_dir()).map_err(Error::IoError)?;
+    }
+    require_dir(be_paths.debug_dir())?;
     let config = Config::new(args, build_dir)?;
     let prev_inputs = init(&config).map_err(Error::IoError)?;
 

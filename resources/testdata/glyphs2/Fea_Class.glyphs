@@ -1,0 +1,51 @@
+{
+.appVersion = "3148";
+classes = (
+{
+automatic = 1;
+code = "A B C";
+name = Uppercase;
+},
+{
+code = "a b c";
+name = Lowercase;
+}
+);
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+},
+{
+name = "Variable Font Origin";
+value = "regular";
+}
+);
+familyName = Fea;
+fontMaster = (
+{
+id = thin;
+weightValue = 200;
+},
+{
+id = "regular";
+weightValue = 400;
+}
+);
+glyphs = (
+{
+glyphname = "g";
+layers = (
+  { layerId = thin; paths = (); width = 400; },
+  { layerId = "regular"; paths = (); width = 600; }
+);
+unicode = 0021;
+}
+);
+unitsPerEm = 1000;
+}

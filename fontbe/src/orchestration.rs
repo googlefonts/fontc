@@ -69,7 +69,7 @@ pub type BeWork = dyn Work<Context, Error> + Send;
 /// execution order / mistakes, not to block actual bad actors.
 pub struct Context {
     // If set artifacts prior to final binary will be emitted to disk when written into Context
-    emit_ir: bool,
+    pub emit_ir: bool,
 
     paths: Arc<Paths>,
 
@@ -110,6 +110,11 @@ impl Context {
 }
 
 impl Context {
+    /// A reasonable place to write extra files to help someone debugging
+    pub fn debug_dir(&self) -> &Path {
+        self.paths.debug_dir()
+    }
+
     fn maybe_persist(&self, file: &Path, content: &[u8]) {
         if !self.emit_ir {
             return;

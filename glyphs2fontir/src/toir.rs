@@ -2,11 +2,19 @@ use std::collections::HashMap;
 
 use fontir::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
-    error::Error,
+    error::{Error, WorkError},
     ir,
 };
-use glyphs_reader::{Font, FontMaster};
+use glyphs_reader::{FeatureSnippet, Font, FontMaster};
 use ordered_float::OrderedFloat;
+
+pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features, WorkError> {
+    // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L74
+    // TODO: token expansion
+    // TODO: implement notes and labels
+    let fea_snippets: Vec<String> = features.iter().map(|f| f.as_str().to_string()).collect();
+    Ok(ir::Features::Memory(fea_snippets.join("\n\n")))
+}
 
 fn design_location(axes: &[ir::Axis], master: &FontMaster) -> DesignLocation {
     axes.iter()
