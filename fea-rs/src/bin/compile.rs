@@ -130,7 +130,7 @@ impl Args {
             Ok((fea_path, glyph_order))
         } else {
             let order = if let Some(path) = self.glyph_order() {
-                let contents = std::fs::read_to_string(&path)?;
+                let contents = std::fs::read_to_string(path)?;
                 compile::parse_glyph_order(&contents)?
             } else if let Some(path) = self.font.as_deref() {
                 let bytes = std::fs::read(path)?;
