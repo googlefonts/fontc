@@ -42,6 +42,11 @@ struct Args {
     #[clap(default_value = "true")]
     emit_ir: bool,
 
+    /// Whether to write additional debug files to disk.
+    #[arg(long)]
+    #[clap(default_value = "false")]
+    emit_debug: bool,
+
     /// Working directory for the build process. If emit-ir is on, written here.
     #[arg(short, long)]
     #[clap(default_value = "build")]
@@ -534,10 +539,16 @@ fn main() -> Result<(), Error> {
 
     let fe_root = FeContext::new_root(
         config.args.emit_ir,
+        config.args.emit_debug,
         ir_paths,
         change_detector.current_inputs.clone(),
     );
-    let be_root = BeContext::new_root(config.args.emit_ir, be_paths, &fe_root);
+    let be_root = BeContext::new_root(
+        config.args.emit_ir,
+        config.args.emit_debug,
+        be_paths,
+        &fe_root,
+    );
     workload.exec(fe_root, be_root)?;
 
     finish_successfully(change_detector)?;
@@ -585,6 +596,7 @@ mod tests {
         Args {
             source: testdata_dir().join(source),
             emit_ir: true,
+            emit_debug: false,
             build_dir: build_dir.to_path_buf(),
         }
     }
@@ -680,10 +692,16 @@ mod tests {
 
         let fe_root = FeContext::new_root(
             config.args.emit_ir,
+            config.args.emit_debug,
             ir_paths,
             change_detector.current_inputs.clone(),
         );
-        let be_root = BeContext::new_root(config.args.emit_ir, be_paths, &fe_root.read_only());
+        let be_root = BeContext::new_root(
+            config.args.emit_ir,
+            config.args.emit_debug,
+            be_paths,
+            &fe_root.read_only(),
+        );
         let pre_success = workload.success.clone();
         while !workload.jobs_pending.is_empty() {
             let launchable = workload.launchable();

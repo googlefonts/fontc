@@ -71,6 +71,9 @@ pub struct Context {
     // If set artifacts prior to final binary will be emitted to disk when written into Context
     pub emit_ir: bool,
 
+    // If set additional debug files will be emitted to disk
+    pub emit_debug: bool,
+
     paths: Arc<Paths>,
 
     // The final, fully populated, read-only FE context
@@ -84,9 +87,15 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new_root(emit_ir: bool, paths: Paths, ir: &fontir::orchestration::Context) -> Context {
+    pub fn new_root(
+        emit_ir: bool,
+        emit_debug: bool,
+        paths: Paths,
+        ir: &fontir::orchestration::Context,
+    ) -> Context {
         Context {
             emit_ir,
+            emit_debug,
             paths: Arc::from(paths),
             ir: Arc::from(ir.read_only()),
             acl: AccessControlList::read_only(),
@@ -101,6 +110,7 @@ impl Context {
     ) -> Context {
         Context {
             emit_ir: self.emit_ir,
+            emit_debug: self.emit_debug,
             paths: self.paths.clone(),
             ir: self.ir.clone(),
             acl: AccessControlList::read_write(dependencies.unwrap_or_default(), work_id.into()),

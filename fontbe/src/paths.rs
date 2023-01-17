@@ -16,7 +16,7 @@ pub struct Paths {
 impl Paths {
     pub fn new(build_dir: &Path) -> Paths {
         let glyph_dir = build_dir.join("glyphs");
-        let debug_dir = build_dir.join("_debug");
+        let debug_dir = build_dir.join("debug");
         let build_dir = build_dir.to_path_buf();
         Paths {
             build_dir,

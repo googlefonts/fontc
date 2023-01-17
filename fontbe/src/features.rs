@@ -165,7 +165,7 @@ impl Work<Context, Error> for FeatureWork {
             Features::File(fea_file) => self.compile_file(fea_file, glyph_map)?,
             Features::Memory(fea_content) => {
                 let result = self.compile_memory(context, fea_content, glyph_map);
-                if result.is_err() || context.emit_ir {
+                if result.is_err() || context.emit_debug {
                     write_debug_fea(context, result.is_err(), "fea compile failed", fea_content);
                 }
                 result?

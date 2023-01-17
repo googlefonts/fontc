@@ -39,6 +39,9 @@ pub struct Context {
     // If set IR will be emitted to disk when written into Context
     emit_ir: bool,
 
+    // If set additional debug files will be emitted to disk
+    emit_debug: bool,
+
     paths: Arc<Paths>,
 
     // The input we're working on. Note that change detection may mean we only process
@@ -58,6 +61,7 @@ impl Context {
     fn copy(&self, acl: AccessControlList<WorkId>) -> Context {
         Context {
             emit_ir: self.emit_ir,
+            emit_debug: self.emit_debug,
             paths: self.paths.clone(),
             input: self.input.clone(),
             acl,
@@ -67,9 +71,10 @@ impl Context {
         }
     }
 
-    pub fn new_root(emit_ir: bool, paths: Paths, input: Input) -> Context {
+    pub fn new_root(emit_ir: bool, emit_debug: bool, paths: Paths, input: Input) -> Context {
         Context {
             emit_ir,
+            emit_debug,
             paths: Arc::from(paths),
             input: Arc::from(input),
             acl: AccessControlList::read_only(),
