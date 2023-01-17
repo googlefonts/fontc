@@ -52,18 +52,21 @@ pub struct Axis {
 /// In time will split gpos/gsub, have different features for different
 /// locations, etc.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct Features {
-    pub fea_file: Option<PathBuf>,
+pub enum Features {
+    Empty,
+    File(PathBuf),
+    Memory(String),
 }
 
 impl Features {
     pub fn empty() -> Features {
-        Features { fea_file: None }
+        Features::Empty
     }
     pub fn from_file(file: &Path) -> Features {
-        Features {
-            fea_file: Some(file.to_path_buf()),
-        }
+        Features::File(file.to_path_buf())
+    }
+    pub fn from_string(fea_content: String) -> Features {
+        Features::Memory(fea_content)
     }
 }
 

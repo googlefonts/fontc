@@ -41,6 +41,16 @@ pub struct Font {
     pub codepoints: BTreeMap<Vec<u32>, String>,
     // tag => (user:design) tuples
     pub axis_mappings: BTreeMap<String, RawUserToDesignMapping>,
+    pub features: Vec<FeatureSnippet>,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct FeatureSnippet(String);
+
+impl FeatureSnippet {
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -70,6 +80,20 @@ struct RawFont {
     pub axes: Option<Vec<Axis>>,
     pub glyphs: Vec<RawGlyph>,
     pub font_master: Vec<FontMaster>,
+    pub feature_prefixes: Option<Vec<RawFeature>>,
+    pub features: Option<Vec<RawFeature>>,
+    pub classes: Option<Vec<RawFeature>>,
+
+    #[rest]
+    pub other_stuff: BTreeMap<String, Plist>,
+}
+
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+pub struct RawFeature {
+    pub automatic: Option<i64>,
+    pub name: Option<String>,
+    pub code: String,
+
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
 }
@@ -953,6 +977,58 @@ impl TryFrom<RawGlyph> for Glyph {
     }
 }
 
+impl RawFeature {
+    // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L43
+    fn autostr(&self) -> String {
+        match self.automatic {
+            Some(1) => "# automatic\n".to_string(),
+            _ => "".to_string(),
+        }
+    }
+
+    fn name(&self) -> Result<String, Error> {
+        match &self.name {
+            Some(name) => Ok(name.clone()),
+            None => Err(Error::StructuralError(format!("{:?} missing name", self))),
+        }
+    }
+}
+
+// https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L90
+fn prefix_to_feature(prefix: RawFeature) -> Result<FeatureSnippet, Error> {
+    let name = match &prefix.name {
+        Some(name) => name.as_str(),
+        None => "",
+    };
+    let code = format!("# Prefix: {}\n{}{}", name, prefix.autostr(), prefix.code);
+    Ok(FeatureSnippet(code))
+}
+
+// https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L101
+fn class_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> {
+    let name = feature.name()?;
+    let code = format!(
+        "{}{}{} = [ {}\n];",
+        feature.autostr(),
+        if name.starts_with('@') { "" } else { "@" },
+        name,
+        feature.code
+    );
+    Ok(FeatureSnippet(code))
+}
+
+// https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L113
+fn raw_feature_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> {
+    let name = feature.name()?;
+    let code = format!(
+        "feature {0} {{\n{1}{2}\n}} {0};",
+        name,
+        feature.autostr(),
+        feature.code
+    );
+    Ok(FeatureSnippet(code))
+}
+
 impl TryFrom<RawFont> for Font {
     type Error = Error;
 
@@ -976,6 +1052,17 @@ impl TryFrom<RawFont> for Font {
             glyphs.insert(raw_glyph.glyphname.clone(), raw_glyph.try_into()?);
         }
 
+        let mut features = Vec::new();
+        for class in from.classes.unwrap_or_default().into_iter() {
+            features.push(class_to_feature(class)?);
+        }
+        for prefix in from.feature_prefixes.unwrap_or_default().into_iter() {
+            features.push(prefix_to_feature(prefix)?);
+        }
+        for feature in from.features.unwrap_or_default().into_iter() {
+            features.push(raw_feature_to_feature(feature)?);
+        }
+
         Ok(Font {
             family_name: from.family_name,
             axes: from.axes.unwrap_or_default(),
@@ -985,6 +1072,7 @@ impl TryFrom<RawFont> for Font {
             glyph_order,
             codepoints,
             axis_mappings,
+            features,
         })
     }
 }
@@ -1237,5 +1325,74 @@ mod tests {
             ),]),
             font.axis_mappings
         );
+    }
+
+    #[test]
+    fn fea_for_class() {
+        let font = Font::load(&glyphs2_dir().join("Fea_Class.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                concat!("# automatic\n", "@Uppercase = [ A B C\n", "];",),
+                concat!("@Lowercase = [ a b c\n", "];",),
+            ],
+            font.features.iter().map(|f| f.as_str()).collect::<Vec<_>>()
+        )
+    }
+
+    #[test]
+    fn fea_for_prefix() {
+        let font = Font::load(&glyphs2_dir().join("Fea_Prefix.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                concat!(
+                    "# Prefix: Languagesystems\n",
+                    "# automatic\n",
+                    "languagesystem DFLT dflt;\n\n",
+                    "languagesystem latn dflt;\n",
+                    "and more;\n",
+                ),
+                concat!("# Prefix: \n# automatic\nthanks for all the fish;",),
+            ],
+            font.features.iter().map(|f| f.as_str()).collect::<Vec<_>>()
+        )
+    }
+
+    #[test]
+    fn fea_for_feature() {
+        let font = Font::load(&glyphs2_dir().join("Fea_Feature.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                concat!(
+                    "feature aalt {\n",
+                    "feature locl;\n",
+                    "feature tnum;\n",
+                    "} aalt;",
+                ),
+                concat!(
+                    "feature ccmp {\n",
+                    "# automatic\n",
+                    "lookup ccmp_Other_2 {\n",
+                    "  sub @Markscomb' @MarkscombCase by @MarkscombCase;\n",
+                    "  sub @MarkscombCase @Markscomb' by @MarkscombCase;\n",
+                    "} ccmp_Other_2;\n\n",
+                    "etc;\n",
+                    "} ccmp;",
+                ),
+            ],
+            font.features.iter().map(|f| f.as_str()).collect::<Vec<_>>()
+        )
+    }
+
+    #[test]
+    fn fea_order() {
+        let font = Font::load(&glyphs2_dir().join("Fea_Order.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                "@class_first = [ meh\n];",
+                "# Prefix: second\nmeh",
+                "feature third {\nmeh\n} third;",
+            ],
+            font.features.iter().map(|f| f.as_str()).collect::<Vec<_>>()
+        )
     }
 }

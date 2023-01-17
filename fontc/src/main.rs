@@ -42,6 +42,11 @@ struct Args {
     #[clap(default_value = "true")]
     emit_ir: bool,
 
+    /// Whether to write additional debug files to disk.
+    #[arg(long)]
+    #[clap(default_value = "false")]
+    emit_debug: bool,
+
     /// Working directory for the build process. If emit-ir is on, written here.
     #[arg(short, long)]
     #[clap(default_value = "build")]
@@ -419,6 +424,14 @@ impl Workload {
         // If ^ exited due to error the scope awaited any live tasks; capture their results
         self.read_completions(&recv, RecvType::NonBlocking)?;
 
+        if self.error.is_empty() && self.success.len() != self.job_count + self.pre_success {
+            panic!(
+                "No errors but only {}/{} succeeded?!",
+                self.success.len(),
+                self.job_count + self.pre_success
+            );
+        }
+
         Ok(())
     }
 
@@ -465,9 +478,6 @@ impl Workload {
         }
         if !self.error.is_empty() {
             return Err(Error::TasksFailed(self.error.clone()));
-        }
-        if self.error.is_empty() && self.success.len() != self.job_count {
-            panic!("No errors but not everything succeeded?!");
         }
         Ok(())
     }
@@ -516,6 +526,11 @@ fn main() -> Result<(), Error> {
     let be_paths = BePaths::new(&args.build_dir);
     let build_dir = require_dir(ir_paths.build_dir())?;
     require_dir(ir_paths.glyph_ir_dir())?;
+    // It's confusing to have leftover debug files
+    if be_paths.debug_dir().is_dir() {
+        fs::remove_dir_all(be_paths.debug_dir()).map_err(Error::IoError)?;
+    }
+    require_dir(be_paths.debug_dir())?;
     let config = Config::new(args, build_dir)?;
     let prev_inputs = init(&config).map_err(Error::IoError)?;
 
@@ -524,10 +539,16 @@ fn main() -> Result<(), Error> {
 
     let fe_root = FeContext::new_root(
         config.args.emit_ir,
+        config.args.emit_debug,
         ir_paths,
         change_detector.current_inputs.clone(),
     );
-    let be_root = BeContext::new_root(config.args.emit_ir, be_paths, &fe_root);
+    let be_root = BeContext::new_root(
+        config.args.emit_ir,
+        config.args.emit_debug,
+        be_paths,
+        &fe_root,
+    );
     workload.exec(fe_root, be_root)?;
 
     finish_successfully(change_detector)?;
@@ -575,6 +596,7 @@ mod tests {
         Args {
             source: testdata_dir().join(source),
             emit_ir: true,
+            emit_debug: false,
             build_dir: build_dir.to_path_buf(),
         }
     }
@@ -670,10 +692,16 @@ mod tests {
 
         let fe_root = FeContext::new_root(
             config.args.emit_ir,
+            config.args.emit_debug,
             ir_paths,
             change_detector.current_inputs.clone(),
         );
-        let be_root = BeContext::new_root(config.args.emit_ir, be_paths, &fe_root.read_only());
+        let be_root = BeContext::new_root(
+            config.args.emit_ir,
+            config.args.emit_debug,
+            be_paths,
+            &fe_root.read_only(),
+        );
         let pre_success = workload.success.clone();
         while !workload.jobs_pending.is_empty() {
             let launchable = workload.launchable();

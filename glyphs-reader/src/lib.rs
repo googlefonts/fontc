@@ -6,7 +6,9 @@ mod from_plist;
 mod plist;
 mod to_plist;
 
-pub use font::{Axis, Component, Font, FontMaster, Glyph, Layer, Node, NodeType, Path};
+pub use font::{
+    Axis, Component, FeatureSnippet, Font, FontMaster, Glyph, Layer, Node, NodeType, Path,
+};
 pub use from_plist::FromPlist;
 pub use plist::Plist;
 pub use to_plist::ToPlist;

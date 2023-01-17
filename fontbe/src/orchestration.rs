@@ -69,7 +69,10 @@ pub type BeWork = dyn Work<Context, Error> + Send;
 /// execution order / mistakes, not to block actual bad actors.
 pub struct Context {
     // If set artifacts prior to final binary will be emitted to disk when written into Context
-    emit_ir: bool,
+    pub emit_ir: bool,
+
+    // If set additional debug files will be emitted to disk
+    pub emit_debug: bool,
 
     paths: Arc<Paths>,
 
@@ -84,9 +87,15 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new_root(emit_ir: bool, paths: Paths, ir: &fontir::orchestration::Context) -> Context {
+    pub fn new_root(
+        emit_ir: bool,
+        emit_debug: bool,
+        paths: Paths,
+        ir: &fontir::orchestration::Context,
+    ) -> Context {
         Context {
             emit_ir,
+            emit_debug,
             paths: Arc::from(paths),
             ir: Arc::from(ir.read_only()),
             acl: AccessControlList::read_only(),
@@ -101,6 +110,7 @@ impl Context {
     ) -> Context {
         Context {
             emit_ir: self.emit_ir,
+            emit_debug: self.emit_debug,
             paths: self.paths.clone(),
             ir: self.ir.clone(),
             acl: AccessControlList::read_write(dependencies.unwrap_or_default(), work_id.into()),
@@ -110,6 +120,11 @@ impl Context {
 }
 
 impl Context {
+    /// A reasonable place to write extra files to help someone debugging
+    pub fn debug_dir(&self) -> &Path {
+        self.paths.debug_dir()
+    }
+
     fn maybe_persist(&self, file: &Path, content: &[u8]) {
         if !self.emit_ir {
             return;

@@ -1,0 +1,57 @@
+{
+.appVersion = "3148";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+},
+{
+name = "Variable Font Origin";
+value = "regular";
+}
+);
+features = (
+{
+code = "feature locl;
+feature tnum;";
+name = aalt;
+},
+{
+automatic = 1;
+code = "lookup ccmp_Other_2 {
+  sub @Markscomb' @MarkscombCase by @MarkscombCase;
+  sub @MarkscombCase @Markscomb' by @MarkscombCase;
+} ccmp_Other_2;
+
+etc;";
+name = ccmp;
+}
+);
+familyName = Fea;
+fontMaster = (
+{
+id = thin;
+weightValue = 200;
+},
+{
+id = "regular";
+weightValue = 400;
+}
+);
+glyphs = (
+{
+glyphname = "g";
+layers = (
+  { layerId = thin; paths = (); width = 400; },
+  { layerId = "regular"; paths = (); width = 600; }
+);
+unicode = 0021;
+}
+);
+unitsPerEm = 1000;
+}
