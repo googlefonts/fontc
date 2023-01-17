@@ -102,6 +102,7 @@ impl FeatureWork {
 
     fn compile_memory(
         &self,
+        context: &Context,
         fea_content: &String,
         glyph_order: GlyphMap,
     ) -> Result<FontBuilder, Error> {
@@ -109,7 +110,11 @@ impl FeatureWork {
 
         // TODO write out the feature content on failure
         let parse = fea_rs::parse_from_memory(fea_content, Some(&glyph_order))
-            .map_err(|e| Error::FeaError(format!("{:?} parsing in-memory feature content", e)))?;
+            .map_err(|e| Error::FeaError(format!("{:?} parsing in-memory feature content", e)));
+        if parse.is_err() {
+            write_debug_fea(context, parse.is_err(), "fea parse failed", fea_content);
+        }
+        let parse = parse?;
         self.compile_parse("Memory", parse, glyph_order)
     }
 
@@ -122,6 +127,20 @@ impl FeatureWork {
 
         self.compile_parse(fea_file.to_str().unwrap_or_default(), parse, glyph_order)
     }
+}
+
+fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &String) {
+    let debug_file = context.debug_dir().join("glyphs.fea");
+    match fs::write(&debug_file, fea_content) {
+        Ok(..) => {
+            if is_error {
+                warn!("{}; fea written to {:?}", why, debug_file)
+            } else {
+                debug!("fea written to {:?}", debug_file);
+            }
+        }
+        Err(e) => error!("{}; failed to write fea to {:?}: {}", why, debug_file, e),
+    };
 }
 
 impl Work<Context, Error> for FeatureWork {
@@ -145,22 +164,9 @@ impl Work<Context, Error> for FeatureWork {
         let font = match &*features {
             Features::File(fea_file) => self.compile_file(fea_file, glyph_map)?,
             Features::Memory(fea_content) => {
-                let result = self.compile_memory(fea_content, glyph_map);
+                let result = self.compile_memory(context, fea_content, glyph_map);
                 if result.is_err() || context.emit_ir {
-                    let debug_file = context.debug_dir().join("glyphs.fea");
-                    match fs::write(&debug_file, fea_content) {
-                        Ok(..) => {
-                            if result.is_err() {
-                                warn!("fea compile failed; fea written to {:?}", debug_file)
-                            } else {
-                                debug!("fea written to {:?}", debug_file);
-                            }
-                        }
-                        Err(e) => error!(
-                            "fea compile failed; failed to write fea to {:?}: {}",
-                            debug_file, e
-                        ),
-                    };
+                    write_debug_fea(context, result.is_err(), "fea compile failed", fea_content);
                 }
                 result?
             }

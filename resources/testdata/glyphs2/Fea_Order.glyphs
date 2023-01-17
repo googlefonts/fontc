@@ -1,16 +1,5 @@
 {
 .appVersion = "3148";
-classes = (
-{
-automatic = 1;
-code = "A B C";
-name = Uppercase;
-},
-{
-code = "a b c";
-name = Lowercase;
-}
-);
 customParameters = (
 {
 name = Axes;

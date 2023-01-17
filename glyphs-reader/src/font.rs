@@ -5,7 +5,6 @@
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
 use std::collections::{BTreeMap, HashSet};
-use std::fmt::Debug;
 use std::hash::Hash;
 use std::{fs, path};
 
@@ -978,21 +977,20 @@ impl TryFrom<RawGlyph> for Glyph {
     }
 }
 
-// https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L43
-fn autostr(feature: &RawFeature) -> String {
-    match feature.automatic {
-        Some(1) => "# automatic\n".to_string(),
-        _ => "".to_string(),
+impl RawFeature {
+    // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L43
+    fn autostr(&self) -> String {
+        match self.automatic {
+            Some(1) => "# automatic\n".to_string(),
+            _ => "".to_string(),
+        }
     }
-}
 
-fn name(feature: &RawFeature) -> Result<String, Error> {
-    match &feature.name {
-        Some(name) => Ok(name.clone()),
-        None => Err(Error::StructuralError(format!(
-            "{:?} missing name",
-            feature
-        ))),
+    fn name(&self) -> Result<String, Error> {
+        match &self.name {
+            Some(name) => Ok(name.clone()),
+            None => Err(Error::StructuralError(format!("{:?} missing name", self))),
+        }
     }
 }
 
@@ -1002,16 +1000,16 @@ fn prefix_to_feature(prefix: RawFeature) -> Result<FeatureSnippet, Error> {
         Some(name) => name.as_str(),
         None => "",
     };
-    let code = format!("# Prefix: {}\n{}{}", name, autostr(&prefix), prefix.code);
+    let code = format!("# Prefix: {}\n{}{}", name, prefix.autostr(), prefix.code);
     Ok(FeatureSnippet(code))
 }
 
 // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L101
 fn class_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> {
-    let name = name(&feature)?;
+    let name = feature.name()?;
     let code = format!(
         "{}{}{} = [ {}\n];",
-        autostr(&feature),
+        feature.autostr(),
         if name.starts_with('@') { "" } else { "@" },
         name,
         feature.code
@@ -1021,11 +1019,11 @@ fn class_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> {
 
 // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L113
 fn raw_feature_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> {
-    let name = name(&feature)?;
+    let name = feature.name()?;
     let code = format!(
         "feature {0} {{\n{1}{2}\n}} {0};",
         name,
-        autostr(&feature),
+        feature.autostr(),
         feature.code
     );
     Ok(FeatureSnippet(code))
