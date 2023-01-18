@@ -4,7 +4,7 @@
 
 pub mod compile;
 mod diagnostic;
-mod parse;
+pub mod parse;
 mod token_tree;
 mod types;
 pub mod util;
@@ -14,6 +14,6 @@ mod tests;
 
 pub use compile::Compilation;
 pub use diagnostic::{Diagnostic, Level};
-pub use parse::{parse_root_file, parse_src, FileId, ParseTree, Source, TokenSet};
+pub use parse::{ParseTree, TokenSet};
 pub use token_tree::{typed, Kind, Node, NodeOrToken, Token};
 pub use types::{GlyphIdent, GlyphMap, GlyphName};

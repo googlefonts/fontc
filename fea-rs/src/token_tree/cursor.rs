@@ -199,16 +199,13 @@ impl std::fmt::Debug for NodeRef<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::parse::Source;
-
     use super::*;
 
     static SAMPLE_FEA: &str = include_str!("../../test-data/fonttools-tests/mini.fea");
 
     #[test]
     fn abs_positions() {
-        let fea = Source::from_text(SAMPLE_FEA);
-        let (root, errs, _) = crate::parse_src(&fea, None);
+        let (root, errs) = crate::parse::parse_string(SAMPLE_FEA);
         assert!(errs.is_empty());
         let mut last_end = 0;
         for token in root.iter_tokens() {
@@ -225,8 +222,7 @@ mod tests {
 
     #[test]
     fn ascend_jump() {
-        let fea = Source::from_text(SAMPLE_FEA);
-        let (root, _errs, _) = crate::parse_src(&fea, None);
+        let (root, _errs) = crate::parse::parse_string(SAMPLE_FEA);
         let mut cursor = root.cursor();
         cursor.advance();
         cursor.advance();
@@ -262,8 +258,7 @@ mod tests {
 
     #[test]
     fn advance() {
-        let fea = Source::from_text("feature kern { pos a b -20; }kern;");
-        let (root, errs, _) = crate::parse_src(&fea, None);
+        let (root, errs) = crate::parse::parse_string("feature kern { pos a b -20; }kern;");
         assert!(errs.is_empty());
         let mut cursor = root.cursor();
         assert!(

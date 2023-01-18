@@ -1,6 +1,6 @@
 use std::{ops::Range, sync::Mutex};
 
-use fea_rs::{Kind, Source};
+use fea_rs::Kind;
 use lspower::lsp::{
     Diagnostic, DiagnosticSeverity, Position, Range as UghRange, SemanticToken, SemanticTokenType,
     SemanticTokens,
@@ -164,8 +164,7 @@ fn compute_offsets(text: &str) -> Vec<usize> {
 }
 
 fn parse(text: &str) -> (Vec<(Kind, Range<usize>)>, Vec<fea_rs::Diagnostic>) {
-    let src = Source::from_text(text);
-    let (root, errors, _) = fea_rs::parse_src(&src, None);
+    let (root, errors) = fea_rs::parse::parse_string(text);
     let result = root.iter_tokens().map(|t| (t.kind, t.range())).collect();
     (result, errors)
 }

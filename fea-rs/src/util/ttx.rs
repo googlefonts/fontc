@@ -205,7 +205,7 @@ pub fn try_parse_file(
     path: &Path,
     glyphs: Option<&GlyphMap>,
 ) -> Result<ParseTree, (ParseTree, Vec<Diagnostic>)> {
-    let ctx = crate::parse_root_file(path, glyphs, None).unwrap();
+    let ctx = crate::parse::parse_root_file(path, glyphs, None).unwrap();
     let (tree, errs) = ctx.generate_parse_tree();
     if errs.iter().any(Diagnostic::is_error) {
         Err((tree, errs))

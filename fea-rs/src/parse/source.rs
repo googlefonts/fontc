@@ -2,9 +2,12 @@
 
 use std::{
     collections::HashMap,
+    ffi::{OsStr, OsString},
+    fmt::Debug,
     num::NonZeroU32,
     ops::Range,
     path::{Path, PathBuf},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -21,8 +24,8 @@ pub struct FileId(NonZeroU32);
 #[derive(Clone, Debug)]
 pub struct Source {
     id: FileId,
-    /// The non-canonical path to this source, suitable for printing.
-    path: Option<PathBuf>,
+    /// The non-canonicalized path to this source, suitable for printing.
+    path: OsString,
     contents: Arc<str>,
     /// The index of each newline character, for efficiently fetching lines
     /// (for error reporting, e.g.)
@@ -32,9 +35,8 @@ pub struct Source {
 /// A list of sources in a project.
 #[derive(Clone, Debug)]
 pub struct SourceList {
-    project_root: PathBuf,
-    root_id: FileId,
-    ids: HashMap<util::paths::CanonicalPath, FileId>,
+    resolver: Rc<dyn SourceResolver>,
+    ids: HashMap<OsString, FileId>,
     sources: HashMap<FileId, Source>,
 }
 
@@ -47,9 +49,108 @@ pub struct SourceMap {
 }
 
 /// An error that occurs when trying to read a file from disk.
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("Failed to load source at '{}': '{cause}'", Path::new(.path.as_os_str()).display())]
 pub struct SourceLoadError {
-    pub(crate) cause: std::io::Error,
-    pub(crate) path: PathBuf,
+    #[source]
+    cause: Rc<dyn std::error::Error>,
+    path: OsString,
+}
+
+/// A trait that abstracts resolving a path.
+///
+/// In general, paths are resolved through the filesystem; however if you are
+/// doing something fancy (such as keeping your source files in memory) you
+/// can pass a closure or another custom implementation of this trait into the
+/// appropriate parse functions.
+///
+/// If you need a custom resolver, you can either implement this trait for some
+/// custom type, or you can use a closure with the signature,
+/// `|&OsStr| -> Result<String, SourceLoadError>`.
+pub trait SourceResolver {
+    /// Return the contents of the utf-8 encoded file at the provided path.
+    fn get_contents(&self, path: &OsStr) -> Result<String, SourceLoadError>;
+
+    /// Given a raw path (the `$path` in `include($path)`), return the path to load.
+    ///
+    /// See [fncluding files][] for more information. This method is only
+    /// relevant when working with the file system.
+    ///
+    /// The default implementation returns the `path` argument, unchanged.
+    ///
+    /// [including files]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#3-including-files
+    fn resolve_raw_path(&self, path: &OsStr, _included_from: Option<&OsStr>) -> OsString {
+        path.to_owned()
+    }
+
+    /// If necessary, canonicalize this path.
+    ///
+    /// There are an unbounded number of ways to represent a given path;
+    /// fot instance, the path `./features.fea` may be equivalent to the path
+    /// `./some_folder/../features.fea` or to `../../my/font/features.fea`.
+    /// This method is an opportunity to specify the canonical representaiton
+    /// of a path.
+    fn canonicalize(&self, path: &OsStr) -> Result<OsString, SourceLoadError> {
+        Ok(path.to_owned())
+    }
+
+    /// A convenience method for creating a `Source` after loading a path.
+    fn resolve(&self, path: &OsStr) -> Result<Source, SourceLoadError> {
+        let contents = self.get_contents(path)?;
+        Ok(Source::new(path.to_owned(), contents.into()))
+    }
+
+    // a little helper used in our debug impl
+    #[doc(hidden)]
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+}
+
+impl std::fmt::Debug for dyn SourceResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.type_name().fmt(f)
+    }
+}
+
+impl<F> SourceResolver for F
+where
+    F: Fn(&OsStr) -> Result<String, SourceLoadError>,
+{
+    fn get_contents(&self, path: &OsStr) -> Result<String, SourceLoadError> {
+        (self)(path)
+    }
+}
+
+/// An implementation of [`SourceResolver`] for the local file system.
+///
+/// This is the common case.
+pub(crate) struct FileSystemResolver {
+    project_root: PathBuf,
+}
+
+impl FileSystemResolver {
+    pub(crate) fn new(project_root: PathBuf) -> Self {
+        Self { project_root }
+    }
+}
+
+impl SourceResolver for FileSystemResolver {
+    fn get_contents(&self, path: &OsStr) -> Result<String, SourceLoadError> {
+        std::fs::read_to_string(path).map_err(|cause| SourceLoadError::new(path.into(), cause))
+    }
+
+    fn resolve_raw_path(&self, path: &OsStr, included_from: Option<&OsStr>) -> OsString {
+        let path = Path::new(path);
+        let included_from = included_from.map(Path::new).and_then(Path::parent);
+        util::paths::resolve_path(path, &self.project_root, included_from).into_os_string()
+    }
+
+    fn canonicalize(&self, path: &OsStr) -> Result<OsString, SourceLoadError> {
+        std::fs::canonicalize(path)
+            .map_err(|io_err| SourceLoadError::new(path.into(), io_err))
+            .map(PathBuf::into_os_string)
+    }
 }
 
 impl FileId {
@@ -64,32 +165,12 @@ impl FileId {
 }
 
 impl Source {
-    /// Attempts to generate a `Source` from the contents of the provided path.
-    pub fn from_path(path: impl Into<PathBuf>) -> Result<Self, SourceLoadError> {
-        let path = path.into();
-        let contents = std::fs::read_to_string(&path).map_err(|cause| SourceLoadError {
-            path: path.clone(),
-            cause,
-        })?;
-        let line_offsets = line_offsets(&contents);
-        Ok(Source {
-            path: Some(path),
-            id: FileId::next(),
-            contents: contents.into(),
-            line_offsets,
-        })
-    }
-
-    /// Create a source from a string.
-    ///
-    /// This is useful for things like testing.
-    pub fn from_text(contents: impl Into<Arc<str>>) -> Source {
-        let contents = contents.into();
+    pub(crate) fn new(path: impl Into<OsString>, contents: Arc<str>) -> Self {
         let line_offsets = line_offsets(&contents);
         Source {
+            path: path.into(),
             id: FileId::next(),
             contents,
-            path: None,
             line_offsets,
         }
     }
@@ -99,9 +180,13 @@ impl Source {
         &self.contents
     }
 
-    /// The path of the underlying file, if one exists
-    pub fn path(&self) -> Option<&Path> {
-        self.path.as_deref()
+    /// The source's path.
+    ///
+    /// If the source is a file, this will be the *resolved* file path. In other
+    /// cases the exact behaviour depends on the implementation of the current
+    /// [`SourceResolver`].
+    pub fn path(&self) -> &OsStr {
+        &self.path
     }
 
     /// The [`FileId`] for this source.
@@ -183,69 +268,53 @@ impl SourceMap {
 }
 
 impl SourceList {
-    pub(crate) fn new(root: Source, project_root: Option<PathBuf>) -> Self {
-        // if root has no source it means we're testing, and project_root can
-        // be empty? (future me: if this caused a bug, I'm sorry.
-        // it looked harmless.)
-        let project_root = project_root.unwrap_or_else(|| match root.path() {
-            // if path is real, it should exist and have a parent
-            Some(path) => path.parent().unwrap().to_owned(),
-            None => PathBuf::new(),
-        });
-        let root_id = root.id;
-        let canonical = match root.path() {
-            Some(path) => util::paths::CanonicalPath::from_path(path).unwrap(),
-            None => util::paths::CanonicalPath::fake(format!("path/to/{}.fea", root_id.0)),
-        };
-
-        let mut myself = SourceList {
-            project_root,
-            root_id,
+    pub(crate) fn new(resolver: impl SourceResolver + 'static) -> Self {
+        SourceList {
             ids: Default::default(),
             sources: Default::default(),
-        };
-
-        myself.ids.insert(canonical, root.id);
-        myself.sources.insert(root.id, root);
-        myself
-    }
-
-    pub(crate) fn project_root(&self) -> &Path {
-        &self.project_root
-    }
-
-    pub(crate) fn root_id(&self) -> FileId {
-        self.root_id
-    }
-
-    #[cfg(test)]
-    pub(crate) fn add_source(&mut self, source: Source) {
-        self.sources.insert(source.id, source);
+            resolver: Rc::new(resolver),
+        }
     }
 
     pub(crate) fn get(&self, id: &FileId) -> Option<&Source> {
         self.sources.get(id)
     }
 
-    /// Attempt to load the source at `path`.
+    /// Attempt to load the source at the provided path.
     ///
-    /// If an error occurs whe loading the file, returns an Error.
+    /// This uses the [`SourceResolver`] that was passed in at construction time,
+    /// and is used to load both the root source as well as any sources that are
+    /// referenced by `include($path)` statements. In this case, the `path` argument
+    /// is the literal (e.g. unresolved and uncanonicalized) `$path` in the
+    /// include.
     ///
-    /// `path` should have already been normalized with `util::paths::resolve_path`.
-    pub(crate) fn source_for_path(&mut self, path: PathBuf) -> Result<FileId, SourceLoadError> {
-        let canonical =
-            util::paths::CanonicalPath::from_path(&path).map_err(|cause| SourceLoadError {
-                cause,
-                path: path.clone(),
-            })?;
+    /// If the source cannot be resolved, returns an error.
+    pub(crate) fn source_for_path(
+        &mut self,
+        path: &dyn AsRef<OsStr>,
+        included_by: Option<FileId>,
+    ) -> Result<FileId, SourceLoadError> {
+        let included_by = included_by.map(|id| self.sources.get(&id).unwrap().path.as_os_str());
+        let path = self.resolver.resolve_raw_path(path.as_ref(), included_by);
+        let canonical = self.resolver.canonicalize(&path)?;
+
         if let Some(src) = self.ids.get(&canonical) {
             return Ok(*src);
         }
 
-        let source = Source::from_path(path)?;
+        let source = self.resolver.resolve(&path)?;
         let id = source.id;
         self.ids.insert(canonical, id);
         self.sources.insert(id, source);
         Ok(id)
+    }
+}
+
+impl SourceLoadError {
+    pub(crate) fn new(path: OsString, cause: impl std::error::Error + 'static) -> Self {
+        Self {
+            cause: Rc::new(cause),
+            path,
+        }
     }
 }

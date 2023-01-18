@@ -4,8 +4,8 @@ use std::{env, ffi::OsStr, path::PathBuf};
 
 fn main() {
     let args = Args::get_from_env_or_exit();
-    let parse = fea_rs::parse_root_file(args.path, None, None).unwrap();
-    let (node, _errors) = parse.get_raw(parse.root_id()).unwrap();
+    let raw_fea = std::fs::read_to_string(args.path).unwrap();
+    let (node, _errors) = fea_rs::parse::parse_string(raw_fea);
     let mut current_style = Style::new().fg(Colour::White);
     let mut needs_paint = String::new();
 

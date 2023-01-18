@@ -2,33 +2,12 @@
 
 use std::path::{Path, PathBuf};
 
-// this is a fancy way of ensuring by construction that this is
-// actually canonicalized.
-/// A canonical path.
-///
-/// By construction, this is always canonicalized if the original path exists.
-/// If not, the original path is untouched.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CanonicalPath(PathBuf);
-
-impl CanonicalPath {
-    /// Create a new canonical path.
-    pub fn from_path(path: impl AsRef<Path>) -> std::io::Result<Self> {
-        path.as_ref().canonicalize().map(CanonicalPath)
-    }
-
-    /// Make a fake path, if using a source with no path (as in a test)
-    pub(crate) fn fake(path: impl Into<PathBuf>) -> Self {
-        CanonicalPath(path.into())
-    }
-}
-
 /// Attempt to normalize a path relative to a base path.
 ///
 /// This cannot always work perfectly. The main goal is just to avoid the situation
 /// where you have duplicate paths of the form 'font/includes/features.fea' and
 /// 'font/includes/../../font/includes/features.fea'.
-pub fn rebase_path(path: &Path, base: &Path) -> PathBuf {
+fn rebase_path(path: &Path, base: &Path) -> PathBuf {
     use std::path::Component;
     #[cfg(not(test))]
     {
@@ -65,10 +44,13 @@ pub fn rebase_path(path: &Path, base: &Path) -> PathBuf {
     })
 }
 
-/// Given a relative path, resolve it to a specific path per [the spec][]
+/// Given a relative path, resolve it to a specific path per [the spec][].
+///
+/// The second argument is the root of the project, and the third argument is the
+/// path to the *including* file, if one exists.
 ///
 /// [the spec]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#3-including-files
-pub fn resolve_path(path: &Path, root: &Path, parent: Option<&Path>) -> PathBuf {
+pub(crate) fn resolve_path(path: &Path, root: &Path, parent: Option<&Path>) -> PathBuf {
     if root.join(path).exists() {
         return rebase_path(path, root);
     }

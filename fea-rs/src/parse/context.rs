@@ -2,16 +2,16 @@
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use super::source::Source;
+use super::source::{Source, SourceLoadError, SourceResolver};
 use super::{FileId, ParseTree, Parser, SourceList, SourceMap};
 use crate::{
     token_tree::{
         typed::{self, AstNode as _},
         AstSink,
     },
-    util, Diagnostic, GlyphMap, Node,
+    Diagnostic, GlyphMap, Node,
 };
 
 const MAX_INCLUDE_DEPTH: usize = 50;
@@ -49,7 +49,9 @@ const MAX_INCLUDE_DEPTH: usize = 50;
 /// an intermediate type for generating a `ParseTree`.
 ///
 /// [`generate_parse_tree`]: ParseContext::generate_parse_tree
+#[derive(Debug)]
 pub struct ParseContext {
+    root_id: FileId,
     sources: SourceList,
     parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
     graph: IncludeGraph,
@@ -64,19 +66,6 @@ pub struct ParseContext {
 struct IncludeGraph {
     // source file -> (destination file, span-in-source-for-error)
     nodes: HashMap<FileId, Vec<(FileId, Range<usize>)>>,
-}
-
-/// An unrecoverable error that occurs during parsing.
-///
-/// This is in contrast with things like syntax errors, which we collect
-/// and report when we're finished parsing.
-#[derive(Debug)]
-pub enum HardError {
-    /// A file could not be found or could not be read.
-    IoError {
-        path: PathBuf,
-        cause: std::io::Error,
-    },
 }
 
 /// An include statement in a source file.
@@ -127,14 +116,11 @@ impl ParseContext {
     pub fn parse_from_root(
         path: PathBuf,
         glyph_map: Option<&GlyphMap>,
-        project_root: Option<PathBuf>,
-    ) -> Result<Self, HardError> {
-        let source = Source::from_path(path).map_err(|e| HardError::IoError {
-            path: e.path,
-            cause: e.cause,
-        })?;
-        let mut sources = SourceList::new(source, project_root);
-        let mut queue = vec![sources.root_id()];
+        resolver: impl SourceResolver + 'static,
+    ) -> Result<Self, SourceLoadError> {
+        let mut sources = SourceList::new(resolver);
+        let root_id = sources.source_for_path(&path, None)?;
+        let mut queue = vec![root_id];
         let mut parsed_files = HashMap::new();
         let mut includes = IncludeGraph::default();
 
@@ -153,17 +139,10 @@ impl ParseContext {
             }
 
             // we need to drop `source` so we can mutate source_map below
-            let source_path = source.path().map(PathBuf::from);
+            let source_id = source.id();
 
             for include in &include_stmts {
-                let path = Path::new(include.path());
-                let path = util::paths::resolve_path(
-                    path,
-                    sources.project_root(),
-                    source_path.as_ref().and_then(|p| p.parent()),
-                );
-
-                match sources.source_for_path(path) {
+                match sources.source_for_path(&include.path(), Some(source_id)) {
                     Ok(included_id) => {
                         includes.add_edge(id, (included_id, include.stmt_range()));
                         queue.push(included_id);
@@ -173,7 +152,7 @@ impl ParseContext {
                         parsed_files.get_mut(&id).unwrap().1.push(Diagnostic::error(
                             id,
                             range,
-                            format!("Unable to resolve import: '{}'", e.cause),
+                            e.to_string(),
                         ));
                     }
                 }
@@ -181,18 +160,15 @@ impl ParseContext {
         }
 
         Ok(ParseContext {
+            root_id,
             sources,
             parsed_files,
             graph: includes,
         })
     }
 
-    pub fn root_id(&self) -> FileId {
-        self.sources.root_id()
-    }
-
-    pub fn get_raw(&self, file: FileId) -> Option<&(Node, Vec<Diagnostic>)> {
-        self.parsed_files.get(&file)
+    pub(crate) fn root_id(&self) -> FileId {
+        self.root_id
     }
 
     /// Construct a `ParseTree`, and return any diagnostics.
@@ -205,7 +181,7 @@ impl ParseContext {
             .flat_map(|(_, (_, errs))| errs.iter())
             .cloned()
             .collect::<Vec<_>>();
-        let include_errors = self.graph.validate(self.sources.root_id());
+        let include_errors = self.graph.validate(self.root_id());
         // record any errors:
         for IncludeError {
             file, range, kind, ..
@@ -220,7 +196,7 @@ impl ParseContext {
         }
 
         let mut map = SourceMap::default();
-        let root = self.generate_recurse(self.sources.root_id(), &include_errors, &mut map, 0);
+        let root = self.generate_recurse(self.root_id(), &include_errors, &mut map, 0);
         (
             ParseTree {
                 root,
@@ -335,7 +311,7 @@ impl IncludeGraph {
 }
 
 /// Parse a single source file.
-pub fn parse_src(
+pub(crate) fn parse_src(
     src: &Source,
     glyph_map: Option<&GlyphMap>,
 ) -> (Node, Vec<Diagnostic>, Vec<IncludeStatement>) {
@@ -349,7 +325,8 @@ pub fn parse_src(
 
 #[cfg(test)]
 mod tests {
-    use std::iter::FromIterator;
+
+    use std::ffi::OsStr;
 
     use super::*;
     use crate::{
@@ -392,79 +369,53 @@ mod tests {
 
     #[test]
     fn skip_cycle_in_build() {
-        let file_a = Source::from_text("include(bb);");
-        let file_b = Source::from_text("include(a)");
-        let (a, b) = (file_a.id(), file_b.id());
-        let a_len = file_a.text().len();
-
-        let (node_a, er, includes_a) = parse_src(&file_a, None);
-        assert!(er.is_empty());
-        let (node_b, er, includes_b) = parse_src(&file_b, None);
-        assert!(!er.is_empty());
-        let mut graph = IncludeGraph::default();
-        graph.add_edge(a, (b, includes_a[0].path_range()));
-        graph.add_edge(b, (a, includes_b[0].path_range()));
-
-        let mut sources = SourceList::new(file_a, None);
-        sources.add_source(file_b);
-
-        let parse = ParseContext {
-            sources,
-            parsed_files: HashMap::from_iter([(a, (node_a, vec![])), (b, (node_b, vec![]))]),
-            graph,
-        };
-
+        let parse = ParseContext::parse_from_root(PathBuf::from("a"), None, |path: &OsStr| {
+            match path.to_str().unwrap() {
+                "a" => Ok("include(bb);".to_owned()),
+                "bb" => Ok("include(a);".to_owned()),
+                _ => Err(SourceLoadError::new(
+                    path.to_owned(),
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "oh no"),
+                )),
+            }
+        })
+        .unwrap();
         let (resolved, errs) = parse.generate_parse_tree();
         assert_eq!(errs.len(), 1);
-        assert_eq!(resolved.root.text_len(), a_len);
+        assert_eq!(resolved.root.text_len(), "include(bb);".len());
     }
 
     #[test]
     fn assembly_basic() {
-        let file_a = Source::from_text(
-            "\
+        let file_a = "\
         include(b);\n\
         # hmm\n\
-        include(c);",
-        );
-        let file_b = Source::from_text("languagesystem dflt DFLT;\n");
-        let file_c = Source::from_text("feature kern {\n pos a b 20;\n } kern;");
+        include(c);";
+        let file_b = "languagesystem dflt DFLT;\n";
+        let file_c = "feature kern {\n pos a b 20;\n } kern;";
 
-        let (a, b, c) = (file_a.id(), file_b.id(), file_c.id());
-        let b_len = file_b.text().len();
-        let c_len = file_c.text().len();
+        let b_len = file_b.len();
+        let c_len = file_c.len();
 
-        let (node_a, er, includes) = parse_src(&file_a, None);
-        assert!(er.is_empty());
-        let (node_b, er, _) = parse_src(&file_b, None);
-        assert!(er.is_empty());
-        let (node_c, er, _) = parse_src(&file_c, None);
-        assert!(er.is_empty());
-        let mut graph = IncludeGraph::default();
-        for include in includes {
-            match include.path() {
-                "b" => graph.add_edge(a, (b, include.stmt_range())),
-                "c" => graph.add_edge(a, (c, include.stmt_range())),
-                other => panic!("unexpectd include '{}'", other),
+        let mut parse = ParseContext::parse_from_root("file_a".into(), None, |path: &OsStr| {
+            match path.to_str().unwrap() {
+                "file_a" => Ok(file_a.to_string()),
+                "b" => Ok(file_b.to_string()),
+                "c" => Ok(file_c.to_string()),
+                _ => Err(SourceLoadError::new(
+                    path.into(),
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "oh no"),
+                )),
             }
-        }
+        })
+        .unwrap();
 
-        let mut sources = SourceList::new(file_a, None);
-        sources.add_source(file_b);
-        sources.add_source(file_c);
-
-        let parse = ParseContext {
-            sources,
-            parsed_files: HashMap::from_iter([
-                (a, (node_a, vec![])),
-                (b, (node_b, vec![])),
-                (c, (node_c, vec![])),
-            ]),
-            graph,
-        };
+        let a_id = parse.sources.source_for_path(&"file_a", None).unwrap();
+        let b_id = parse.sources.source_for_path(&"b", Some(a_id)).unwrap();
+        let c_id = parse.sources.source_for_path(&"c", Some(b_id)).unwrap();
 
         let (resolved, errs) = parse.generate_parse_tree();
-        assert!(errs.is_empty());
+        assert!(errs.is_empty(), "{errs:?}");
         let top_level_nodes = resolved
             .root
             .iter_children()
@@ -482,8 +433,8 @@ mod tests {
         assert_eq!(top_level_nodes[1].kind(), Kind::FeatureNode);
 
         resolved.root.debug_print_structure(true);
-        assert_eq!(resolved.map.resolve_range(10..15), (b, 10..15));
-        assert_eq!(resolved.map.resolve_range(29..33), (a, 14..18));
-        assert_eq!(resolved.map.resolve_range(49..52), (c, 16..19));
+        assert_eq!(resolved.map.resolve_range(10..15), (b_id, 10..15));
+        assert_eq!(resolved.map.resolve_range(29..33), (a_id, 14..18));
+        assert_eq!(resolved.map.resolve_range(49..52), (c_id, 16..19));
     }
 }
