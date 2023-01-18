@@ -1,8 +1,10 @@
 //! parsing and resolving includes
 
-use std::collections::{HashMap, HashSet};
-use std::ops::Range;
-use std::path::PathBuf;
+use std::{
+    collections::{HashMap, HashSet},
+    ffi::OsString,
+    ops::Range,
+};
 
 use super::source::{Source, SourceLoadError, SourceResolver};
 use super::{FileId, ParseTree, Parser, SourceList, SourceMap};
@@ -50,7 +52,7 @@ const MAX_INCLUDE_DEPTH: usize = 50;
 ///
 /// [`generate_parse_tree`]: ParseContext::generate_parse_tree
 #[derive(Debug)]
-pub struct ParseContext {
+pub(crate) struct ParseContext {
     root_id: FileId,
     sources: SourceList,
     parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
@@ -113,8 +115,8 @@ impl ParseContext {
     /// a unified parse tree suitable for compilation.
     ///
     /// [`generate_parse_tree`]: ParseContext::generate_parse_tree
-    pub fn parse_from_root(
-        path: PathBuf,
+    pub(crate) fn parse(
+        path: OsString,
         glyph_map: Option<&GlyphMap>,
         resolver: impl SourceResolver + 'static,
     ) -> Result<Self, SourceLoadError> {
@@ -174,7 +176,7 @@ impl ParseContext {
     /// Construct a `ParseTree`, and return any diagnostics.
     ///
     /// This method also performs validation of include statements.
-    pub fn generate_parse_tree(&self) -> (ParseTree, Vec<Diagnostic>) {
+    pub(crate) fn generate_parse_tree(&self) -> (ParseTree, Vec<Diagnostic>) {
         let mut all_errors = self
             .parsed_files
             .iter()
@@ -369,7 +371,7 @@ mod tests {
 
     #[test]
     fn skip_cycle_in_build() {
-        let parse = ParseContext::parse_from_root(PathBuf::from("a"), None, |path: &OsStr| {
+        let parse = ParseContext::parse("a".into(), None, |path: &OsStr| {
             match path.to_str().unwrap() {
                 "a" => Ok("include(bb);".to_owned()),
                 "bb" => Ok("include(a);".to_owned()),
@@ -397,7 +399,7 @@ mod tests {
         let b_len = file_b.len();
         let c_len = file_c.len();
 
-        let mut parse = ParseContext::parse_from_root("file_a".into(), None, |path: &OsStr| {
+        let mut parse = ParseContext::parse("file_a".into(), None, |path: &OsStr| {
             match path.to_str().unwrap() {
                 "file_a" => Ok(file_a.to_string()),
                 "b" => Ok(file_b.to_string()),

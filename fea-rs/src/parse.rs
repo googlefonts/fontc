@@ -12,12 +12,12 @@ mod tree;
 
 use std::{ffi::OsString, path::PathBuf, rc::Rc};
 
-pub use context::{IncludeStatement, ParseContext};
 pub use lexer::TokenSet;
 pub use parser::Parser;
 pub use source::{Source, SourceLoadError, SourceResolver};
 pub use tree::ParseTree;
 
+pub(crate) use context::IncludeStatement;
 pub(crate) use source::{FileId, SourceList, SourceMap};
 
 use crate::{Diagnostic, GlyphMap, Node};
@@ -41,7 +41,7 @@ pub fn parse_root_file(
     path: impl Into<PathBuf>,
     glyph_map: Option<&GlyphMap>,
     project_root: Option<PathBuf>,
-) -> Result<ParseContext, SourceLoadError> {
+) -> Result<(ParseTree, Vec<Diagnostic>), SourceLoadError> {
     let path = path.into();
     let project_root =
         project_root.unwrap_or_else(|| path.parent().map(PathBuf::from).unwrap_or_default());
@@ -64,8 +64,8 @@ pub fn parse_root(
     path: OsString,
     glyph_map: Option<&GlyphMap>,
     resolver: impl SourceResolver + 'static,
-) -> Result<ParseContext, SourceLoadError> {
-    ParseContext::parse_from_root(path.into(), glyph_map, resolver)
+) -> Result<(ParseTree, Vec<Diagnostic>), SourceLoadError> {
+    context::ParseContext::parse(path, glyph_map, resolver).map(|ctx| ctx.generate_parse_tree())
 }
 
 /// Convenience method to parse a block of FEA from memory.

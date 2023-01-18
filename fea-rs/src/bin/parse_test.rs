@@ -75,8 +75,7 @@ fn single_file_arg(path: &Path, print_tree: bool) {
 
 /// returns the tree and any errors
 fn try_parse_file(path: &Path) -> (ParseTree, Vec<Diagnostic>) {
-    let parse = fea_rs::parse::parse_root_file(path, None, None).unwrap();
-    parse.generate_parse_tree()
+    fea_rs::parse::parse_root_file(path, None, None).unwrap()
 }
 
 fn look_at_nodes_if_you_want(nodes: &[(PathBuf, ParseTree)]) {

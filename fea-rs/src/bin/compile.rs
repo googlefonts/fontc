@@ -24,8 +24,8 @@ fn main() -> Result<(), Error> {
     if !fea.exists() {
         return Err(Error::EmptyFeatureFile);
     }
-    let parse = fea_rs::parse::parse_root_file(&fea, Some(&glyph_names), None).unwrap();
-    let (tree, diagnostics) = parse.generate_parse_tree();
+    let (tree, diagnostics) =
+        fea_rs::parse::parse_root_file(&fea, Some(&glyph_names), None).unwrap();
     let mut has_error = false;
     for msg in &diagnostics {
         eprintln!("{}", tree.format_diagnostic(msg));
