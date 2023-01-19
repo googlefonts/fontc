@@ -2,18 +2,18 @@
 
 #![deny(missing_docs)]
 
+mod common;
 pub mod compile;
 mod diagnostic;
 pub mod parse;
 mod token_tree;
-mod types;
 pub mod util;
 
 #[cfg(test)]
 mod tests;
 
+pub use common::{GlyphIdent, GlyphMap, GlyphName};
 pub use compile::Compilation;
 pub use diagnostic::{Diagnostic, Level};
 pub use parse::{ParseTree, TokenSet};
 pub use token_tree::{typed, Kind, Node, NodeOrToken, Token};
-pub use types::{GlyphIdent, GlyphMap, GlyphName};

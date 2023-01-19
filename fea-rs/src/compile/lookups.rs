@@ -25,8 +25,8 @@ use write_fonts::{
 };
 
 use crate::{
+    common::{GlyphClass, GlyphId, GlyphOrClass},
     compile::lookups::contextual::ChainOrNot,
-    types::{GlyphClass, GlyphId, GlyphOrClass},
     Kind,
 };
 

@@ -1,3 +1,5 @@
+//! Types and helpers shared across modules
+
 use std::{
     fmt::{Display, Formatter},
     rc::Rc,
@@ -16,7 +18,7 @@ pub type GlyphName = SmolStr;
 /// A glyph class, as used in the FEA spec.
 ///
 /// This type is currently somewhat confused; in certain places the spec expects
-/// that a glyoh class is sorted and deduplicated, and in other places it expects
+/// that a glyph class is sorted and deduplicated, and in other places it expects
 /// a glyph class to be an arbitrary sequence of glyphs.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlyphClass(Rc<[GlyphId]>);

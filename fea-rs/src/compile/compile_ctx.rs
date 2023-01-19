@@ -16,13 +16,13 @@ use write_fonts::{
 };
 
 use crate::{
+    common::{GlyphClass, GlyphId, GlyphOrClass},
     parse::SourceMap,
     token_tree::{
         typed::{self, AstNode},
         Token,
     },
     typed::ContextualRuleNode,
-    types::{GlyphClass, GlyphId, GlyphOrClass},
     Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken,
 };
 

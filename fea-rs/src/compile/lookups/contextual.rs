@@ -17,7 +17,7 @@ use write_fonts::{
     FontWrite,
 };
 
-use crate::types::GlyphOrClass;
+use crate::common::GlyphOrClass;
 
 use super::{
     Builder, ClassDefBuilder2, FilterSetId, LookupBuilder, LookupId, PositionLookup,

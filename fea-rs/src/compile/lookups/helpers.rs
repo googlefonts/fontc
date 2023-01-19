@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use write_fonts::tables::layout::{ClassDef, ClassDefBuilder};
 
-use crate::types::{GlyphClass, GlyphId};
+use crate::common::{GlyphClass, GlyphId};
 
 // There is a ClassDef builder in write-fonts, but it's a bit anemic.
 //

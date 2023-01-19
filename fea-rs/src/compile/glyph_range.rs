@@ -131,9 +131,9 @@ fn get_diff_range(one: &str, two: &str) -> Range<usize> {
 #[cfg(test)]
 mod tests {
     use crate::{
+        common::GlyphIdent,
         token_tree::TreeBuilder,
         typed::{self, AstNode},
-        types::GlyphIdent,
         GlyphMap, Kind, Node,
     };
 

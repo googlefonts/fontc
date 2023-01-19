@@ -11,7 +11,7 @@ use write_fonts::{
     types::GlyphId,
 };
 
-use crate::types::GlyphClass;
+use crate::common::GlyphClass;
 
 use super::{Builder, ClassDefBuilder2};
 

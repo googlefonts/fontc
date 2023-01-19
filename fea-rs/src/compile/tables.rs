@@ -21,8 +21,8 @@ use write_fonts::{
 };
 
 use crate::{
+    common::{GlyphClass, GlyphId},
     compile::common::{MAC_PLATFORM_ID, WIN_PLATFORM_ID},
-    types::{GlyphClass, GlyphId},
 };
 
 /// The explicit tables allowed in a fea file
