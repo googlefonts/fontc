@@ -8,7 +8,6 @@ use std::{
     ops::Range,
     path::{Path, PathBuf},
     rc::Rc,
-    sync::Arc,
 };
 
 use crate::util;
@@ -26,10 +25,10 @@ pub struct Source {
     id: FileId,
     /// The non-canonicalized path to this source, suitable for printing.
     path: OsString,
-    contents: Arc<str>,
+    contents: Rc<str>,
     /// The index of each newline character, for efficiently fetching lines
     /// (for error reporting, e.g.)
-    line_offsets: Arc<[usize]>,
+    line_offsets: Rc<[usize]>,
 }
 
 /// A list of sources in a project.
@@ -165,7 +164,7 @@ impl FileId {
 }
 
 impl Source {
-    pub(crate) fn new(path: impl Into<OsString>, contents: Arc<str>) -> Self {
+    pub(crate) fn new(path: impl Into<OsString>, contents: Rc<str>) -> Self {
         let line_offsets = line_offsets(&contents);
         Source {
             path: path.into(),
@@ -232,7 +231,7 @@ impl Source {
     }
 }
 
-fn line_offsets(text: &str) -> Arc<[usize]> {
+fn line_offsets(text: &str) -> Rc<[usize]> {
     // we could use memchar for this; benefits would require benchmarking
     let mut result = vec![0];
     result.extend(
