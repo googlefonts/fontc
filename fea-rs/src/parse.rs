@@ -65,7 +65,8 @@ pub fn parse_root(
     glyph_map: Option<&GlyphMap>,
     resolver: impl SourceResolver + 'static,
 ) -> Result<(ParseTree, Vec<Diagnostic>), SourceLoadError> {
-    context::ParseContext::parse(path, glyph_map, resolver).map(|ctx| ctx.generate_parse_tree())
+    context::ParseContext::parse(path, glyph_map, Box::new(resolver))
+        .map(|ctx| ctx.generate_parse_tree())
 }
 
 /// Convenience method to parse a block of FEA from memory.

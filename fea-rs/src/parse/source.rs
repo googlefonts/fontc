@@ -32,11 +32,15 @@ pub struct Source {
 }
 
 /// A list of sources in a project.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct SourceList {
-    resolver: Rc<dyn SourceResolver>,
     ids: HashMap<OsString, FileId>,
     sources: HashMap<FileId, Source>,
+}
+
+pub(crate) struct SourceLoader {
+    sources: SourceList,
+    resolver: Box<dyn SourceResolver>,
 }
 
 /// A map from positions in a resolved token tree (which may contain the
@@ -124,12 +128,16 @@ where
 /// An implementation of [`SourceResolver`] for the local file system.
 ///
 /// This is the common case.
-pub(crate) struct FileSystemResolver {
+pub struct FileSystemResolver {
     project_root: PathBuf,
 }
 
 impl FileSystemResolver {
-    pub(crate) fn new(project_root: PathBuf) -> Self {
+    /// Create a new resolver with the provided root directory.
+    ///
+    /// If compiling from a UFO, the root directory is the UFO directory. In other
+    /// cases, it is likely the directory containing the root feature file.
+    pub fn new(project_root: PathBuf) -> Self {
         Self { project_root }
     }
 }
@@ -266,13 +274,16 @@ impl SourceMap {
     }
 }
 
-impl SourceList {
-    pub(crate) fn new(resolver: impl SourceResolver + 'static) -> Self {
-        SourceList {
-            ids: Default::default(),
+impl SourceLoader {
+    pub(crate) fn new(resolver: Box<dyn SourceResolver>) -> Self {
+        Self {
             sources: Default::default(),
-            resolver: Rc::new(resolver),
+            resolver,
         }
+    }
+
+    pub(crate) fn into_inner(self) -> Rc<SourceList> {
+        Rc::new(self.sources)
     }
 
     pub(crate) fn get(&self, id: &FileId) -> Option<&Source> {
@@ -297,15 +308,30 @@ impl SourceList {
         let path = self.resolver.resolve_raw_path(path.as_ref(), included_by);
         let canonical = self.resolver.canonicalize(&path)?;
 
-        if let Some(src) = self.ids.get(&canonical) {
-            return Ok(*src);
+        match self.sources.id_for_path(&canonical) {
+            Some(id) => Ok(id),
+            None => {
+                let source = self.resolver.resolve(&path)?;
+                let id = source.id;
+                self.sources.add(canonical, source);
+                Ok(id)
+            }
         }
+    }
+}
 
-        let source = self.resolver.resolve(&path)?;
-        let id = source.id;
-        self.ids.insert(canonical, id);
-        self.sources.insert(id, source);
-        Ok(id)
+impl SourceList {
+    pub(crate) fn id_for_path(&self, path: impl AsRef<OsStr>) -> Option<FileId> {
+        self.ids.get(path.as_ref()).copied()
+    }
+
+    pub(crate) fn get(&self, id: &FileId) -> Option<&Source> {
+        self.sources.get(id)
+    }
+
+    fn add(&mut self, canonical_path: OsString, source: Source) {
+        self.ids.insert(canonical_path, source.id);
+        self.sources.insert(source.id, source);
     }
 }
 

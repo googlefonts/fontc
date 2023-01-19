@@ -4,9 +4,10 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     ops::Range,
+    rc::Rc,
 };
 
-use super::source::{Source, SourceLoadError, SourceResolver};
+use super::source::{Source, SourceLoadError, SourceLoader, SourceResolver};
 use super::{FileId, ParseTree, Parser, SourceList, SourceMap};
 use crate::{
     token_tree::{
@@ -54,7 +55,7 @@ const MAX_INCLUDE_DEPTH: usize = 50;
 #[derive(Debug)]
 pub(crate) struct ParseContext {
     root_id: FileId,
-    sources: SourceList,
+    sources: Rc<SourceList>,
     parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
     graph: IncludeGraph,
 }
@@ -118,9 +119,9 @@ impl ParseContext {
     pub(crate) fn parse(
         path: OsString,
         glyph_map: Option<&GlyphMap>,
-        resolver: impl SourceResolver + 'static,
+        resolver: Box<dyn SourceResolver>,
     ) -> Result<Self, SourceLoadError> {
-        let mut sources = SourceList::new(resolver);
+        let mut sources = SourceLoader::new(resolver);
         let root_id = sources.source_for_path(&path, None)?;
         let mut queue = vec![root_id];
         let mut parsed_files = HashMap::new();
@@ -163,7 +164,7 @@ impl ParseContext {
 
         Ok(ParseContext {
             root_id,
-            sources,
+            sources: sources.into_inner(),
             parsed_files,
             graph: includes,
         })
@@ -176,7 +177,7 @@ impl ParseContext {
     /// Construct a `ParseTree`, and return any diagnostics.
     ///
     /// This method also performs validation of include statements.
-    pub(crate) fn generate_parse_tree(&self) -> (ParseTree, Vec<Diagnostic>) {
+    pub(crate) fn generate_parse_tree(self) -> (ParseTree, Vec<Diagnostic>) {
         let mut all_errors = self
             .parsed_files
             .iter()
@@ -202,8 +203,8 @@ impl ParseContext {
         (
             ParseTree {
                 root,
-                map,
-                sources: self.sources.clone(),
+                map: Rc::new(map),
+                sources: self.sources,
             },
             all_errors,
         )
@@ -371,16 +372,18 @@ mod tests {
 
     #[test]
     fn skip_cycle_in_build() {
-        let parse = ParseContext::parse("a".into(), None, |path: &OsStr| {
-            match path.to_str().unwrap() {
+        let parse = ParseContext::parse(
+            "a".into(),
+            None,
+            Box::new(|path: &OsStr| match path.to_str().unwrap() {
                 "a" => Ok("include(bb);".to_owned()),
                 "bb" => Ok("include(a);".to_owned()),
                 _ => Err(SourceLoadError::new(
                     path.to_owned(),
                     std::io::Error::new(std::io::ErrorKind::NotFound, "oh no"),
                 )),
-            }
-        })
+            }),
+        )
         .unwrap();
         let (resolved, errs) = parse.generate_parse_tree();
         assert_eq!(errs.len(), 1);
@@ -399,8 +402,10 @@ mod tests {
         let b_len = file_b.len();
         let c_len = file_c.len();
 
-        let mut parse = ParseContext::parse("file_a".into(), None, |path: &OsStr| {
-            match path.to_str().unwrap() {
+        let parse = ParseContext::parse(
+            "file_a".into(),
+            None,
+            Box::new(|path: &OsStr| match path.to_str().unwrap() {
                 "file_a" => Ok(file_a.to_string()),
                 "b" => Ok(file_b.to_string()),
                 "c" => Ok(file_c.to_string()),
@@ -408,13 +413,13 @@ mod tests {
                     path.into(),
                     std::io::Error::new(std::io::ErrorKind::NotFound, "oh no"),
                 )),
-            }
-        })
+            }),
+        )
         .unwrap();
 
-        let a_id = parse.sources.source_for_path(&"file_a", None).unwrap();
-        let b_id = parse.sources.source_for_path(&"b", Some(a_id)).unwrap();
-        let c_id = parse.sources.source_for_path(&"c", Some(b_id)).unwrap();
+        let a_id = parse.sources.id_for_path(&"file_a").unwrap();
+        let b_id = parse.sources.id_for_path(&"b").unwrap();
+        let c_id = parse.sources.id_for_path(&"c").unwrap();
 
         let (resolved, errs) = parse.generate_parse_tree();
         assert!(errs.is_empty(), "{errs:?}");

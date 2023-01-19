@@ -1,14 +1,23 @@
 //! the result of a parsing operation
 
+use std::rc::Rc;
+
 use super::source::Source;
 use super::{FileId, SourceList, SourceMap};
 use crate::{token_tree::typed, Diagnostic, Node};
 
 /// A fully parsed feature file, with attached imports and a sourcemap.
+///
+/// As well as representing the entire AST, this type also allows mapping tokens
+/// and other spans back to a position in a particular source file.
+///
+/// This is cheap to clone, so it can be attached to diagnostics, allowing them
+/// to print themselves where needed.
+#[derive(Clone, Debug)]
 pub struct ParseTree {
     pub(crate) root: Node,
-    pub(crate) sources: SourceList,
-    pub(crate) map: SourceMap,
+    pub(crate) sources: Rc<SourceList>,
+    pub(crate) map: Rc<SourceMap>,
 }
 
 impl ParseTree {
