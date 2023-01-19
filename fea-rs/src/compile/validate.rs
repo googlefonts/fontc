@@ -14,8 +14,8 @@ use smol_str::SmolStr;
 use write_fonts::{read::tables::name::Encoding, types::Tag};
 
 use super::{
-    common::{self, WIN_PLATFORM_ID},
     glyph_range,
+    tags::{self, WIN_PLATFORM_ID},
 };
 use crate::{
     parse::SourceMap,
@@ -471,21 +471,21 @@ impl<'a> ValidationCtx<'a> {
         let tag_raw = tag.to_raw();
         self.all_features.insert(tag_raw);
 
-        if tag_raw == common::tags::SIZE {
+        if tag_raw == tags::SIZE {
             return self.validate_size_feature(node);
         }
 
-        if tag_raw == common::tags::AALT {
+        if tag_raw == tags::AALT {
             return self.validate_aalt_feature(node);
         }
 
         let mut statement_iter = node.statements();
 
-        if common::is_stylistic_set(tag_raw) {
+        if tags::is_stylistic_set(tag_raw) {
             self.validate_stylistic_set_items(&mut statement_iter);
         }
 
-        if common::is_character_variant(tag_raw) {
+        if tags::is_character_variant(tag_raw) {
             self.validate_character_variant_items(&mut statement_iter);
         }
 
@@ -633,7 +633,7 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_lookup_block(&mut self, node: &typed::LookupBlock, in_feature: Option<Tag>) {
         let name = node.label();
-        if in_feature == Some(common::tags::AALT) || in_feature == Some(common::tags::SIZE) {
+        if in_feature == Some(tags::AALT) || in_feature == Some(tags::SIZE) {
             self.error(
                 name.range(),
                 format!(

@@ -4,7 +4,7 @@ use std::{collections::HashSet, rc::Rc};
 
 use write_fonts::types::Tag;
 
-use super::{common, lookups::FeatureKey};
+use super::{lookups::FeatureKey, tags};
 
 /// A script/language pair
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -55,8 +55,8 @@ impl LanguageSystem {
 impl Default for LanguageSystem {
     fn default() -> Self {
         Self {
-            script: common::tags::SCRIPT_DFLT,
-            language: common::tags::LANG_DFLT,
+            script: tags::SCRIPT_DFLT,
+            language: tags::LANG_DFLT,
         }
     }
 }

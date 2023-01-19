@@ -30,7 +30,7 @@ use crate::{
     Kind,
 };
 
-use super::{common, tables::ClassId};
+use super::{tables::ClassId, tags};
 
 use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,
@@ -539,7 +539,7 @@ impl AllLookups {
         for (key, feature_indices) in features {
             let required = required_features.contains(key);
 
-            if key.feature == common::tags::SIZE {
+            if key.feature == tags::SIZE {
                 gpos_builder.add(*key, Vec::new(), required);
                 continue;
             }
@@ -928,7 +928,7 @@ where
             .map(|(script_tag, entry)| {
                 let mut script = Script::default();
                 for (lang_tag, lang_sys) in entry {
-                    if lang_tag == common::tags::LANG_DFLT {
+                    if lang_tag == tags::LANG_DFLT {
                         script.default_lang_sys = lang_sys.into();
                     } else {
                         script

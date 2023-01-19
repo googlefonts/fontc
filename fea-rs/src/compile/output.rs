@@ -14,11 +14,10 @@ use write_fonts::{
 };
 
 use super::{
-    common,
     features::SizeFeature,
     lookups::{AllLookups, FeatureKey, LookupId},
     tables::Tables,
-    Opts,
+    tags, Opts,
 };
 
 use crate::{Diagnostic, GlyphMap};
@@ -106,7 +105,7 @@ impl Compilation {
         let mut feature_params = HashMap::new();
         if let Some(size) = self.size.as_ref() {
             feature_params.insert(
-                (common::tags::GPOS, common::tags::SIZE),
+                (tags::GPOS, tags::SIZE),
                 FeatureParams::Size(size.build(&mut name_builder)),
             );
         }
@@ -114,33 +113,26 @@ impl Compilation {
         for (tag, names) in self.tables.stylistic_sets.iter() {
             let id = name_builder.add_anon_group(names);
             let params = FeatureParams::StylisticSet(StylisticSetParams::new(id));
-            feature_params.insert((common::tags::GSUB, *tag), params);
+            feature_params.insert((tags::GSUB, *tag), params);
         }
 
         for (tag, cv_params) in self.tables.character_variants.iter() {
             let params = cv_params.build(&mut name_builder);
-            feature_params.insert(
-                (common::tags::GSUB, *tag),
-                FeatureParams::CharacterVariant(params),
-            );
+            feature_params.insert((tags::GSUB, *tag), FeatureParams::CharacterVariant(params));
         }
 
         // actually add feature_params as appropriate
         if !feature_params.is_empty() {
             if let Some(gsub) = gsub.as_mut() {
                 for record in gsub.feature_list.feature_records.iter_mut() {
-                    if let Some(params) =
-                        feature_params.get(&(common::tags::GSUB, record.feature_tag))
-                    {
+                    if let Some(params) = feature_params.get(&(tags::GSUB, record.feature_tag)) {
                         record.feature.feature_params = params.clone().into();
                     }
                 }
             }
             if let Some(gpos) = gpos.as_mut() {
                 for record in gpos.feature_list.feature_records.iter_mut() {
-                    if let Some(params) =
-                        feature_params.get(&(common::tags::GPOS, record.feature_tag))
-                    {
+                    if let Some(params) = feature_params.get(&(tags::GPOS, record.feature_tag)) {
                         record.feature.feature_params = params.clone().into();
                     }
                 }

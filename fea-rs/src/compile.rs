@@ -13,7 +13,6 @@ use self::{
 pub use opts::Opts;
 pub use output::Compilation;
 
-mod common;
 mod compile_ctx;
 pub mod error;
 mod features;
@@ -23,6 +22,7 @@ mod lookups;
 mod opts;
 mod output;
 mod tables;
+mod tags;
 mod validate;
 mod valuerecordext;
 

@@ -27,7 +27,6 @@ use crate::{
 };
 
 use super::{
-    common,
     features::{AaltFeature, ActiveFeature, SizeFeature, SpecialVerticalFeatureState},
     glyph_range,
     language_system::{DefaultLanguageSystems, LanguageSystem},
@@ -37,6 +36,7 @@ use super::{
     },
     output::Compilation,
     tables::{ClassId, CvParams, ScriptRecord, Tables},
+    tags,
     valuerecordext::ValueRecordExt,
 };
 
@@ -184,10 +184,8 @@ impl<'a> CompilationCtx<'a> {
 
         // finally add the aalt feature to all the default language systems
         for sys in self.default_lang_systems.iter() {
-            self.features.insert(
-                sys.to_feature_key(common::tags::AALT),
-                aalt_lookup_indices.clone(),
-            );
+            self.features
+                .insert(sys.to_feature_key(tags::AALT), aalt_lookup_indices.clone());
         }
 
         self.aalt = Some(aalt);
@@ -335,7 +333,7 @@ impl<'a> CompilationCtx<'a> {
 
     fn set_language(&mut self, stmt: typed::Language) {
         let language = stmt.tag().to_raw();
-        let script = self.script.unwrap_or(common::tags::SCRIPT_DFLT);
+        let script = self.script.unwrap_or(tags::SCRIPT_DFLT);
         self.set_script_language(
             script,
             language,
@@ -353,7 +351,7 @@ impl<'a> CompilationCtx<'a> {
         self.script = Some(script);
         self.lookup_flags.clear();
 
-        self.set_script_language(script, common::tags::LANG_DFLT, false, false);
+        self.set_script_language(script, tags::LANG_DFLT, false, false);
     }
 
     fn set_script_language(
@@ -1046,13 +1044,13 @@ impl<'a> CompilationCtx<'a> {
         let tag = feature.tag();
         let tag_raw = tag.to_raw();
         self.start_feature(tag);
-        if tag_raw == common::tags::AALT {
+        if tag_raw == tags::AALT {
             self.resolve_aalt_feature(&feature);
-        } else if tag_raw == common::tags::SIZE {
+        } else if tag_raw == tags::SIZE {
             self.resolve_size_feature(&feature);
-        } else if common::is_stylistic_set(tag_raw) {
+        } else if tags::is_stylistic_set(tag_raw) {
             self.resolve_stylistic_set_feature(tag_raw, &feature);
-        } else if common::is_character_variant(tag_raw) {
+        } else if tags::is_character_variant(tag_raw) {
             self.resolve_character_variant_feature(tag_raw, &feature);
         } else {
             for item in feature.statements() {
@@ -1175,7 +1173,7 @@ impl<'a> CompilationCtx<'a> {
             }
         }
         for sys in self.default_lang_systems.iter() {
-            let key = sys.to_feature_key(common::tags::SIZE);
+            let key = sys.to_feature_key(tags::SIZE);
             self.features.entry(key).or_default();
         }
         self.size = Some(size);
@@ -1515,13 +1513,13 @@ impl<'a> CompilationCtx<'a> {
         let platform_id = node
             .platform_id()
             .map(|n| n.parse().unwrap())
-            .unwrap_or(common::WIN_PLATFORM_ID);
+            .unwrap_or(tags::WIN_PLATFORM_ID);
 
         let (encoding_id, language_id) = match node.platform_and_language_ids() {
             Some((platform, language)) => (platform.parse().unwrap(), language.parse().unwrap()),
             None => match platform_id {
-                common::MAC_PLATFORM_ID => MAC_DEFAULT_IDS,
-                common::WIN_PLATFORM_ID => WIN_DEFAULT_IDS,
+                tags::MAC_PLATFORM_ID => MAC_DEFAULT_IDS,
+                tags::WIN_PLATFORM_ID => WIN_DEFAULT_IDS,
                 _ => panic!("missed validation"),
             },
         };

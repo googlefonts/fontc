@@ -22,7 +22,7 @@ use write_fonts::{
 
 use crate::{
     common::{GlyphClass, GlyphId},
-    compile::common::{MAC_PLATFORM_ID, WIN_PLATFORM_ID},
+    compile::tags::{MAC_PLATFORM_ID, WIN_PLATFORM_ID},
 };
 
 /// The explicit tables allowed in a fea file

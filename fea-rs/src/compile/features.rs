@@ -8,10 +8,10 @@ use write_fonts::{
 };
 
 use super::{
-    common,
     language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{FeatureKey, LookupId},
     tables::{NameBuilder, NameSpec},
+    tags,
 };
 
 /// Tracking lookups in a feature block
@@ -87,12 +87,12 @@ impl ActiveFeature {
 
         // but if this is a fully-resolved language system, we add the default
         // lookups now, when we have access to the 'exclude_dflt' flag.
-        if system.language != common::tags::LANG_DFLT {
+        if system.language != tags::LANG_DFLT {
             let mut lookups = Vec::new();
             if !exclude_dflt {
                 let script_dflt = LanguageSystem {
                     script: system.script,
-                    language: common::tags::LANG_DFLT,
+                    language: tags::LANG_DFLT,
                 };
                 // if *either* this is an explicit default, or this is part of
                 // a script where script/dflt is an explicit default, and we have
@@ -127,7 +127,7 @@ impl ActiveFeature {
         // an explicit 'DFLT' script in the lookup block.
         let is_script_default = match self.current_lang_sys {
             None => false,
-            Some(sys) => sys.language == common::tags::LANG_DFLT,
+            Some(sys) => sys.language == tags::LANG_DFLT,
         };
 
         if is_script_default {
