@@ -10,7 +10,8 @@ pub struct Span {
 }
 
 /// A diagnostic level
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
 pub enum Level {
     /// An unrecoverable error
     Error,

@@ -13,10 +13,10 @@ mod tree;
 use std::{ffi::OsString, path::PathBuf, rc::Rc};
 
 pub use lexer::TokenSet;
-pub use source::{SourceLoadError, SourceResolver};
+pub use source::{FileSystemResolver, SourceLoadError, SourceResolver};
 pub use tree::ParseTree;
 
-pub(crate) use context::IncludeStatement;
+pub(crate) use context::{IncludeStatement, ParseContext};
 pub(crate) use parser::Parser;
 pub(crate) use source::{FileId, Source, SourceList, SourceMap};
 

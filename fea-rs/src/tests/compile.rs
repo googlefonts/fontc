@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    compile,
+    compile::{error::CompilerError, Compiler},
     util::ttx::{self as test_utils, Report, TestCase, TestResult},
     GlyphMap, GlyphName,
 };
@@ -85,35 +85,31 @@ fn run_bad_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, TestCase> {
             path,
             reason: TestResult::Panic,
         }),
-        Ok(Err(e)) => Err(e),
+        Ok(Err(reason)) => Err(TestCase { path, reason }),
         Ok(_) => Ok(path),
     }
 }
 
-fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestCase> {
-    match test_utils::try_parse_file(path, Some(glyph_map)) {
-        Err((node, errs)) => Err(TestCase {
-            path: path.to_owned(),
-            reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
-        }),
-        Ok(node) => match compile::compile(&node, glyph_map) {
-            Ok(thing) => {
-                let _ = thing.build_raw(glyph_map, Default::default()).unwrap();
-                Err(TestCase {
-                    path: path.to_owned(),
-                    reason: TestResult::UnexpectedSuccess,
-                })
+fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestResult> {
+    match Compiler::new(path, glyph_map)
+        .verbose(std::env::var(crate::util::VERBOSE).is_ok())
+        .compile()
+    {
+        Ok(thing) => {
+            let _ = thing.build_raw(glyph_map, Default::default()).unwrap();
+            Err(TestResult::UnexpectedSuccess)
+        }
+        // this means we have a test case that doesn't exist or something weird
+        Err(CompilerError::SourceLoad(err)) => panic!("{err}"),
+        Err(CompilerError::ParseFail(errs)) => Err(TestResult::ParseFail(errs.to_string())),
+        Err(CompilerError::ValidationFail(errs) | CompilerError::CompilationFail(errs)) => {
+            let msg = errs.to_string();
+            let result = test_utils::compare_to_expected_output(&msg, path, BAD_OUTPUT_EXTENSION);
+            if result.is_err() && std::env::var(crate::util::WRITE_RESULTS_VAR).is_ok() {
+                let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);
+                std::fs::write(to_path, &msg).expect("failed to write output");
             }
-            Err(errs) => {
-                let msg = test_utils::stringify_diagnostics(&node, &errs);
-                let result =
-                    test_utils::compare_to_expected_output(&msg, path, BAD_OUTPUT_EXTENSION);
-                if result.is_err() && std::env::var(crate::util::WRITE_RESULTS_VAR).is_ok() {
-                    let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);
-                    std::fs::write(to_path, &msg).expect("failed to write output");
-                }
-                result
-            }
-        },
+            result.map_err(|e| e.reason)
+        }
     }
 }

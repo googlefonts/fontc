@@ -11,7 +11,10 @@ use std::{
 };
 
 use crate::{
-    compile::{self, Opts},
+    compile::{
+        error::{CompilerError, DiagnosticSet},
+        Compiler, Opts,
+    },
     Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree,
 };
 
@@ -214,26 +217,25 @@ pub fn try_parse_file(
     }
 }
 
-/// takes a path to a sample ttx file
 pub fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase> {
-    match std::panic::catch_unwind(|| match try_parse_file(&path, Some(glyph_map)) {
-        Err((node, errs)) => Err(TestCase {
-            path: path.clone(),
-            reason: TestResult::ParseFail(stringify_diagnostics(&node, &errs)),
-        }),
-        Ok(node) => match compile::compile(&node, glyph_map) {
-            Err(errs) => Err(TestCase {
-                path: path.clone(),
-                reason: TestResult::CompileFail(stringify_diagnostics(&node, &errs)),
-            }),
+    match std::panic::catch_unwind(|| {
+        match Compiler::new(&path, glyph_map)
+            .verbose(std::env::var(super::VERBOSE).is_ok())
+            .compile()
+        {
+            // this means we have a test case that doesn't exist or something weird
+            Err(CompilerError::SourceLoad(err)) => panic!("{err}"),
+            Err(CompilerError::ParseFail(errs)) => Err(TestResult::ParseFail(errs.to_string())),
+            Err(CompilerError::ValidationFail(errs) | CompilerError::CompilationFail(errs)) => {
+                Err(TestResult::CompileFail(errs.to_string()))
+            }
             Ok(result) => {
-                print_diagnostics_if_verbose(&node, &result.warnings);
                 let opts = Opts::new().make_post_table(true);
                 let mut builder = result.build_raw(glyph_map, opts).unwrap();
                 let font_data = builder.build();
                 compare_ttx(&font_data, &path)
             }
-        },
+        }
     }) {
         Err(_) => {
             return Err(TestCase {
@@ -241,7 +243,7 @@ pub fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase
                 reason: TestResult::Panic,
             })
         }
-        Ok(Err(e)) => return Err(e),
+        Ok(Err(reason)) => return Err(TestCase { path, reason }),
         Ok(Ok(_)) => (),
     };
     Ok(path)
@@ -249,14 +251,11 @@ pub fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase
 
 /// Convert diagnostics to a printable string
 pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> String {
-    let mut out = String::new();
-    for d in diagnostics {
-        if !out.is_empty() {
-            out.push('\n');
-        }
-        out.push_str(&root.format_diagnostic(d));
+    DiagnosticSet {
+        tree: root.to_owned(),
+        messages: diagnostics.to_owned(),
     }
-    out
+    .to_string()
 }
 
 fn print_diagnostics_if_verbose(root: &ParseTree, diagnostics: &[Diagnostic]) {
@@ -287,7 +286,7 @@ fn get_temp_file_name(in_file: &Path) -> PathBuf {
     Path::new(&format!("{stem}_{millis}")).with_extension("ttf")
 }
 
-fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestCase> {
+fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestResult> {
     let ttx_path = fea_path.with_extension("ttx");
     let expected_diff_path = fea_path.with_extension("expected_diff");
     let temp_path = get_temp_dir().join(get_temp_file_name(fea_path));
@@ -307,12 +306,9 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestCase> {
         .unwrap_or_else(|_| panic!("failed to execute for path {}", fea_path.display()));
     if !status.status.success() {
         let std_err = String::from_utf8_lossy(&status.stderr).into_owned();
-        return Err(TestCase {
-            path: fea_path.into(),
-            reason: TestResult::TtxFail {
-                code: status.status.code(),
-                std_err,
-            },
+        return Err(TestResult::TtxFail {
+            code: status.status.code(),
+            std_err,
         });
     }
 
@@ -343,13 +339,10 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestCase> {
     let diff_percent = compute_diff_percentage(&expected, &result);
 
     if expected != result {
-        Err(TestCase {
-            path: fea_path.into(),
-            reason: TestResult::CompareFail {
-                expected,
-                result,
-                diff_percent,
-            },
+        Err(TestResult::CompareFail {
+            expected,
+            result,
+            diff_percent,
         })
     } else {
         Ok(())

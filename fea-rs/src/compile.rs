@@ -7,13 +7,14 @@ use crate::{parse::ParseTree, Diagnostic, GlyphMap, GlyphName};
 use self::{
     compile_ctx::CompilationCtx,
     error::{FontGlyphOrderError, GlyphOrderError, UfoGlyphOrderError},
-    validate::ValidationCtx,
 };
 
+pub use compiler::Compiler;
 pub use opts::Opts;
 pub use output::Compilation;
 
 mod compile_ctx;
+mod compiler;
 pub mod error;
 mod features;
 mod glyph_range;
@@ -27,39 +28,10 @@ mod validate;
 mod valuerecordext;
 
 /// Run the validation pass, returning any diagnostics.
-pub fn validate(node: &ParseTree, glyph_map: &GlyphMap) -> Vec<Diagnostic> {
-    validate_impl(node, glyph_map).errors
-}
-
-/// Run the compilation pass (including validation)
-///
-/// On success, the output of this method is a [`Compilation`] object, which
-/// can be used to build a binary font.
-///
-/// # Note:
-///
-/// If you're trying to compile a font, you are better off running the main
-/// binary, which lives at src/bin/compile.rs.
-pub fn compile(node: &ParseTree, glyph_map: &GlyphMap) -> Result<Compilation, Vec<Diagnostic>> {
-    let ctx = validate_impl(node, glyph_map);
-    if ctx.errors.iter().any(Diagnostic::is_error) {
-        return Err(ctx.errors);
-    }
-
-    let mut ctx = compile_impl(node, glyph_map);
-    ctx.build()
-}
-
-fn validate_impl<'a>(node: &'a ParseTree, glyph_map: &'a GlyphMap) -> ValidationCtx<'a> {
+pub(crate) fn validate(node: &ParseTree, glyph_map: &GlyphMap) -> Vec<Diagnostic> {
     let mut ctx = validate::ValidationCtx::new(glyph_map, node.source_map());
     ctx.validate_root(&node.typed_root());
-    ctx
-}
-
-fn compile_impl<'a>(node: &'a ParseTree, glyph_map: &'a GlyphMap) -> CompilationCtx<'a> {
-    let mut ctx = CompilationCtx::new(glyph_map, node.source_map());
-    ctx.compile(&node.typed_root());
-    ctx
+    ctx.errors
 }
 
 static GLYPH_ORDER_KEY: &str = "public.glyphOrder";

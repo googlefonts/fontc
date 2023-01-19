@@ -7,7 +7,7 @@ use fea_rs::{
     compile::{
         self,
         error::{FontGlyphOrderError, GlyphOrderError, UfoGlyphOrderError},
-        Opts,
+        Compiler, Opts,
     },
     GlyphMap,
 };
@@ -24,44 +24,9 @@ fn main() -> Result<(), Error> {
     if !fea.exists() {
         return Err(Error::EmptyFeatureFile);
     }
-    let (tree, diagnostics) =
-        fea_rs::parse::parse_root_file(&fea, Some(&glyph_names), None).unwrap();
-    let mut has_error = false;
-    for msg in &diagnostics {
-        eprintln!("{}", tree.format_diagnostic(msg));
-        has_error |= msg.is_error();
-    }
-    if has_error {
-        std::process::exit(1);
-    }
-
-    let compiled = match compile::compile(&tree, &glyph_names) {
-        Ok(compilation) => {
-            if !compilation.warnings.is_empty() {
-                log::warn!(
-                    "Compilation produced {} warnings",
-                    compilation.warnings.len()
-                );
-            }
-            for warning in &compilation.warnings {
-                eprintln!("{}", tree.format_diagnostic(warning));
-            }
-            compilation
-        }
-
-        Err(errors) => {
-            let mut err_count = 0;
-            for msg in &errors {
-                eprintln!("{}", tree.format_diagnostic(msg));
-                if msg.is_error() {
-                    err_count += 1;
-                }
-            }
-            let warning_count = errors.len() - err_count;
-            log::info!("{} errors, {} warnings", err_count, warning_count);
-            std::process::exit(1);
-        }
-    };
+    let compiled = Compiler::new(fea, &glyph_names)
+        .with_opts(Opts::new().make_post_table(args.post))
+        .compile()?;
 
     let path = args.out_path();
     let opts = Opts::new().make_post_table(args.post);
@@ -90,6 +55,8 @@ enum Error {
     EmptyFeatureFile,
     #[error("No glyph order provided")]
     MissingGlyphOrder,
+    #[error("{0}")]
+    CompileFail(#[from] compile::error::CompilerError),
 }
 
 /// Compile FEA files
