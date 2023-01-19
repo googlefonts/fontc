@@ -13,12 +13,12 @@ mod tree;
 use std::{ffi::OsString, path::PathBuf, rc::Rc};
 
 pub use lexer::TokenSet;
-pub use parser::Parser;
-pub use source::{Source, SourceLoadError, SourceResolver};
+pub use source::{SourceLoadError, SourceResolver};
 pub use tree::ParseTree;
 
 pub(crate) use context::IncludeStatement;
-pub(crate) use source::{FileId, SourceList, SourceMap};
+pub(crate) use parser::Parser;
+pub(crate) use source::{FileId, Source, SourceList, SourceMap};
 
 use crate::{Diagnostic, GlyphMap, Node};
 
