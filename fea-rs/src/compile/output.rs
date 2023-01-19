@@ -14,6 +14,7 @@ use write_fonts::{
 };
 
 use super::{
+    error::BinaryCompilationError,
     features::SizeFeature,
     lookups::{AllLookups, FeatureKey, LookupId},
     tables::Tables,
@@ -38,9 +39,14 @@ pub struct Compilation {
 }
 
 impl Compilation {
-    /// Compile this output into a new binary font.
-    #[allow(clippy::result_unit_err)] //TODO: figure out error reporting
-    pub fn build_raw(&self, glyph_map: &GlyphMap, opts: Opts) -> Result<FontBuilder<'static>, ()> {
+    /// Generate all the final tables and add them to a builder.
+    ///
+    /// This builder can be used to get generate the final binary.
+    pub fn assemble(
+        &self,
+        glyph_map: &GlyphMap,
+        opts: Opts,
+    ) -> Result<FontBuilder<'static>, BinaryCompilationError> {
         let mut builder = self.apply(None)?;
         // because we often inspect our output with ttx, and ttx fails if maxp is
         // missing, we create a maxp table.
@@ -53,12 +59,12 @@ impl Compilation {
         Ok(builder)
     }
 
-    /// Attempt to update the provided font with the results of this compilation.
-    //TODO: I hate it? we should figure out what a rational approach to this is. What stuff do we
-    //expect to have just living in the font by this point? Why can't we just start from a namelist
-    //and FEA file, and go from there? maybe let's try?
-    #[allow(clippy::result_unit_err)] //TODO: figure out error reporting
-    pub fn apply<'a>(&self, font: impl Into<Option<FontRef<'a>>>) -> Result<FontBuilder<'a>, ()> {
+    //FIXME: this is left over from a previous API. `font` is always none.
+    //This should be removed and merged with `build_raw`, above.
+    fn apply<'a>(
+        &self,
+        font: impl Into<Option<FontRef<'a>>>,
+    ) -> Result<FontBuilder<'a>, BinaryCompilationError> {
         let font = font.into();
         let mut builder = FontBuilder::default();
         if let Some(head_raw) = &self.tables.head {
@@ -69,27 +75,27 @@ impl Compilation {
         //TODO: can this contain some subset of keys? should we preserve
         //existing values in this case?
         if let Some(hhea_raw) = self.tables.hhea.as_ref() {
-            let data = dump_table(hhea_raw).unwrap();
+            let data = dump_table(hhea_raw)?;
             builder.add_table(Tag::new(b"hhea"), data);
         }
 
         if let Some(vhea_raw) = self.tables.vhea.as_ref() {
-            let data = dump_table(vhea_raw).unwrap();
+            let data = dump_table(vhea_raw)?;
             builder.add_table(Tag::new(b"vhea"), data);
         }
 
         if let Some(os2) = self.tables.os2.as_ref() {
             let table = os2.build();
-            let data = dump_table(&table).unwrap();
+            let data = dump_table(&table)?;
             builder.add_table(write_fonts::tables::os2::Os2::TAG, data);
         }
 
         if let Some(gdef) = &self.tables.gdef {
-            builder.add_table(Tag::new(b"GDEF"), gdef.build().unwrap());
+            builder.add_table(Tag::new(b"GDEF"), gdef.build()?);
         }
 
         if let Some(base) = &self.tables.base {
-            let data = dump_table(&base.build()).unwrap();
+            let data = dump_table(&base.build())?;
             builder.add_table(Tag::new(b"BASE"), data);
         }
 
@@ -97,7 +103,7 @@ impl Compilation {
         let mut name_builder = self.tables.name.clone();
         if let Some(stat_raw) = self.tables.stat.as_ref() {
             let stat = stat_raw.build(&mut name_builder);
-            builder.add_table(Tag::new(b"STAT"), dump_table(&stat).unwrap());
+            builder.add_table(Tag::new(b"STAT"), dump_table(&stat)?);
         }
 
         let (mut gsub, mut gpos) = self.lookups.build(&self.features, &self.required_features);
@@ -140,15 +146,15 @@ impl Compilation {
         }
 
         if let Some(gsub) = gsub {
-            builder.add_table(Tag::new(b"GSUB"), dump_table(&gsub).unwrap());
+            builder.add_table(Tag::new(b"GSUB"), dump_table(&gsub)?);
         }
 
         if let Some(gpos) = gpos {
-            builder.add_table(Tag::new(b"GPOS"), dump_table(&gpos).unwrap());
+            builder.add_table(Tag::new(b"GPOS"), dump_table(&gpos)?);
         }
 
         if let Some(name) = name_builder.build() {
-            builder.add_table(Tag::new(b"name"), dump_table(&name).unwrap());
+            builder.add_table(Tag::new(b"name"), dump_table(&name)?);
         }
 
         if let Some(font) = font {

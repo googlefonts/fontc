@@ -98,6 +98,7 @@ pub trait SourceResolver {
     }
 
     /// A convenience method for creating a `Source` after loading a path.
+    #[doc(hidden)]
     fn resolve(&self, path: &OsStr) -> Result<Source, SourceLoadError> {
         let contents = self.get_contents(path)?;
         Ok(Source::new(path.to_owned(), contents.into()))
@@ -196,7 +197,7 @@ impl Source {
         &self.path
     }
 
-    /// The [`FileId`] for this source.
+    /// The `FileId` for this source.
     pub fn id(&self) -> FileId {
         self.id
     }

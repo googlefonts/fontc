@@ -1,6 +1,6 @@
 //! Error types related to compilation
 
-use write_fonts::read::ReadError;
+use write_fonts::{read::ReadError, validate::ValidationReport};
 
 use crate::{parse::SourceLoadError, Diagnostic, ParseTree};
 
@@ -43,7 +43,7 @@ pub enum GlyphOrderError {
 }
 
 /// An error reported by the compiler
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum CompilerError {
     #[error("{0}")]
@@ -58,7 +58,14 @@ pub enum CompilerError {
     ValidationFail(DiagnosticSet),
     #[error("Compilation failed with {} errors\n{0}", .0.messages.len())]
     CompilationFail(DiagnosticSet),
+    #[error("Binary generation failed: '{0}'")]
+    WriteFail(#[from] BinaryCompilationError),
 }
+
+/// An error that occured when generating the binary font
+#[derive(Debug, thiserror::Error)]
+#[error("Binary generation failed: '{0}'")]
+pub struct BinaryCompilationError(ValidationReport);
 
 /// A set of diagnostics with the associated source info
 #[derive(Clone)]
@@ -87,5 +94,11 @@ impl std::fmt::Debug for DiagnosticSet {
             .field("messages", &self.messages)
             .field("tree", &"ParseTree")
             .finish()
+    }
+}
+
+impl From<ValidationReport> for BinaryCompilationError {
+    fn from(src: ValidationReport) -> BinaryCompilationError {
+        BinaryCompilationError(src)
     }
 }

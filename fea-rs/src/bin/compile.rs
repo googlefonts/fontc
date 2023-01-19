@@ -31,7 +31,7 @@ fn main() -> Result<(), Error> {
     let path = args.out_path();
     let opts = Opts::new().make_post_table(args.post);
     let raw_font = compiled
-        .build_raw(&glyph_names, opts)
+        .assemble(&glyph_names, opts)
         .expect("ttf compile failed")
         .build();
 

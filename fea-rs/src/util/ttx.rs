@@ -217,36 +217,29 @@ pub fn try_parse_file(
     }
 }
 
+/// Run the test case at the provided path.
 pub fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| {
         match Compiler::new(&path, glyph_map)
             .verbose(std::env::var(super::VERBOSE).is_ok())
-            .compile()
+            .with_opts(Opts::new().make_post_table(true))
+            .compile_binary()
         {
             // this means we have a test case that doesn't exist or something weird
             Err(CompilerError::SourceLoad(err)) => panic!("{err}"),
+            Err(CompilerError::WriteFail(err)) => panic!("{err}"),
             Err(CompilerError::ParseFail(errs)) => Err(TestResult::ParseFail(errs.to_string())),
             Err(CompilerError::ValidationFail(errs) | CompilerError::CompilationFail(errs)) => {
                 Err(TestResult::CompileFail(errs.to_string()))
             }
-            Ok(result) => {
-                let opts = Opts::new().make_post_table(true);
-                let mut builder = result.build_raw(glyph_map, opts).unwrap();
-                let font_data = builder.build();
-                compare_ttx(&font_data, &path)
-            }
+            Ok(result) => compare_ttx(&result, &path),
         }
     }) {
-        Err(_) => {
-            return Err(TestCase {
-                path,
-                reason: TestResult::Panic,
-            })
-        }
-        Ok(Err(reason)) => return Err(TestCase { path, reason }),
-        Ok(Ok(_)) => (),
-    };
-    Ok(path)
+        Err(_) => Err(TestResult::Panic),
+        Ok(Err(reason)) => Err(reason),
+        Ok(Ok(_)) => return Ok(path),
+    }
+    .map_err(|reason| TestCase { reason, path })
 }
 
 /// Convert diagnostics to a printable string

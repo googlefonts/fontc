@@ -1,4 +1,7 @@
 //! Parsing and compiling the Adobe OpenType Feature File format.
+//!
+//! The main entry point for this crate is the [`Compiler`] struct, which provides
+//! a builder-like interface for compiliing from source.
 
 #![deny(missing_docs)]
 

@@ -417,9 +417,9 @@ mod tests {
         )
         .unwrap();
 
-        let a_id = parse.sources.id_for_path(&"file_a").unwrap();
-        let b_id = parse.sources.id_for_path(&"b").unwrap();
-        let c_id = parse.sources.id_for_path(&"c").unwrap();
+        let a_id = parse.sources.id_for_path("file_a").unwrap();
+        let b_id = parse.sources.id_for_path("b").unwrap();
+        let c_id = parse.sources.id_for_path("c").unwrap();
 
         let (resolved, errs) = parse.generate_parse_tree();
         assert!(errs.is_empty(), "{errs:?}");

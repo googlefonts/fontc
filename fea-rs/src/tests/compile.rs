@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    compile::{error::CompilerError, Compiler},
+    compile::{error::CompilerError, Compiler, Opts},
     util::ttx::{self as test_utils, Report, TestCase, TestResult},
     GlyphMap, GlyphName,
 };
@@ -93,14 +93,13 @@ fn run_bad_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, TestCase> {
 fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestResult> {
     match Compiler::new(path, glyph_map)
         .verbose(std::env::var(crate::util::VERBOSE).is_ok())
-        .compile()
+        .with_opts(Opts::new().make_post_table(true))
+        .compile_binary()
     {
-        Ok(thing) => {
-            let _ = thing.build_raw(glyph_map, Default::default()).unwrap();
-            Err(TestResult::UnexpectedSuccess)
-        }
+        Ok(_) => Err(TestResult::UnexpectedSuccess),
         // this means we have a test case that doesn't exist or something weird
         Err(CompilerError::SourceLoad(err)) => panic!("{err}"),
+        Err(CompilerError::WriteFail(err)) => panic!("{err}"),
         Err(CompilerError::ParseFail(errs)) => Err(TestResult::ParseFail(errs.to_string())),
         Err(CompilerError::ValidationFail(errs) | CompilerError::CompilationFail(errs)) => {
             let msg = errs.to_string();

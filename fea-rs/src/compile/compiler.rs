@@ -1,6 +1,5 @@
 //! The main public API for compilation
 
-#![allow(dead_code)]
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -8,15 +7,26 @@ use std::{
 
 use crate::{
     parse::{FileSystemResolver, SourceResolver},
-    Compilation, Diagnostic, GlyphMap, ParseTree,
+    Diagnostic, GlyphMap, ParseTree,
 };
 
 use super::{
     error::{CompilerError, DiagnosticSet},
-    Opts,
+    Compilation, Opts,
 };
 
-/// A builder-style entry point for the compiler
+/// A builder-style entry point for the compiler.
+///
+/// This is intended as the principal public API for this crate.
+///
+/// ```no_run
+/// # use fea_rs::Compiler;
+/// # fn make_glyph_map() -> fea_rs::GlyphMap { todo!() }
+/// let glyph_map = make_glyph_map();
+/// let my_font_bytes = Compiler::new("path/to/features.fea", &glyph_map)
+///     .verbose(true)
+///     .compile_binary().unwrap();
+/// ```
 #[derive(Debug)]
 pub struct Compiler<'a> {
     root_path: OsString,
@@ -31,9 +41,11 @@ impl<'a> Compiler<'a> {
     /// Configure a new compilation run with a root source and a glyph map.
     ///
     /// In the general case, `root_path` will be a path to a feature file on disk;
-    /// however you may compile from memory by passing a custom `[SourceResolver`]
+    /// however you may compile from memory by passing a custom [`SourceResolver`]
     /// to the [`with_resolver`] method, in which case `root_path` can be any
     /// identifier that your resolver will resolve.
+    ///
+    /// [`with_resolver`]: Self::with_resolver
     pub fn new(root_path: impl Into<OsString>, glyph_map: &'a GlyphMap) -> Self {
         Compiler {
             root_path: root_path.into(),
@@ -75,6 +87,12 @@ impl<'a> Compiler<'a> {
     }
 
     /// Parse, validate and compile this source.
+    ///
+    /// This returns a `Compilation` object that contains all of the features
+    /// and lookups generated during compilation. If you would like to go directly
+    /// to a binary font, you can use [`compile_binary`] instead.
+    ///
+    /// [`compile_binary`]: Self::compile_binary
     pub fn compile(self) -> Result<Compilation, CompilerError> {
         let resolver = self.resolver.unwrap_or_else(|| {
             let project_root = self.project_root.unwrap_or_else(|| {
@@ -102,6 +120,13 @@ impl<'a> Compiler<'a> {
         print_warnings_return_errors(std::mem::take(&mut ctx.errors), &tree, self.verbose)
             .map_err(CompilerError::CompilationFail)?;
         Ok(ctx.build().unwrap()) // we've taken the errors, so this can't fail
+    }
+
+    /// Compile to a binary font.
+    pub fn compile_binary(self) -> Result<Vec<u8>, CompilerError> {
+        let opts = self.opts.clone();
+        let glyph_map = self.glyph_map;
+        Ok(self.compile()?.assemble(glyph_map, opts)?.build())
     }
 }
 
