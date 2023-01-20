@@ -28,9 +28,9 @@ parking_lot = "0.12.1"
 
 read-fonts = "0.0.5"
 write-fonts = "0.0.5"
-# TODO: go back to released fea-rs once 
+# TODO: go back to released fea-rs once api released
 #fea-rs = "0.1.0"
-fea-rs = { git = "https://github.com/rsheeter/fea-rs.git", branch = "mvp" }
+fea-rs = { git = "https://github.com/cmyr/fea-rs.git", branch = "compile-api" }
 #fea-rs = { path= "../../fea-rs/fea-rs" }
 smol_str = "0.1.18"
 
