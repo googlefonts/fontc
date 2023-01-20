@@ -5,6 +5,7 @@
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
 use std::collections::{BTreeMap, HashSet};
+use std::fmt::{Display, Write};
 use std::hash::Hash;
 use std::{fs, path};
 
@@ -179,6 +180,11 @@ impl Point {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Affine([OrderedFloat<f64>; 6]);
 
+fn round(value: OrderedFloat<f64>, digits: u8) -> OrderedFloat<f64> {
+    let m = 10f64.powi(digits as i32);
+    ((value.into_inner() * m).round() / m).into()
+}
+
 impl Affine {
     pub fn new(matrix: [f64; 6]) -> Affine {
         Affine([
@@ -202,15 +208,69 @@ impl Affine {
         ])
     }
 
-    pub fn translate(x: f64, y: f64) -> Affine {
+    /// Round each field of the transform to specified # of digits.
+    ///
+    /// <https://github.com/googlefonts/picosvg/blob/69cbfec486eca35a46187405abc39f608d3b2963/src/picosvg/svg_transform.py#L195>
+    pub fn round(&self, digits: u8) -> Affine {
+        let mut matrix = self.0;
+        for item in &mut matrix {
+            *item = round(*item, digits);
+        }
+        Affine(matrix)
+    }
+
+    /// Returns the product of self x other. Order matters.
+    ///
+    /// The combined affine matrix can be thought of mapping by other before applying self.
+    /// Beware, this can have counter-intuitive results.
+    ///
+    /// <https://github.com/googlefonts/picosvg/blob/69cbfec486eca35a46187405abc39f608d3b2963/src/picosvg/svg_transform.py#L82>
+    /// <https://en.wikipedia.org/wiki/Matrix_multiplication>
+    pub fn mul(&self, other: Affine) -> Affine {
+        let [sa, sb, sc, sd, se, sf] = self.0;
+        let [oa, ob, oc, od, oe, of] = other.0;
         Affine([
-            1f64.into(),
-            0f64.into(),
-            0f64.into(),
-            1f64.into(),
-            x.into(),
-            y.into(),
+            sa * oa + sc * ob,
+            sb * oa + sd * ob,
+            sa * oc + sc * od,
+            sb * oc + sd * od,
+            sa * oe + sc * of + se,
+            sb * oe + sd * of + sf,
         ])
+    }
+
+    /// Rotate around 0,0
+    pub fn rotate(&self, angle_rads: f64) -> Affine {
+        // https://en.wikipedia.org/wiki/Transformation_matrix#/media/File:2D_affine_transformation_matrix.svg
+        let cos = angle_rads.cos().into();
+        let sin = angle_rads.sin().into();
+        self.mul(Affine([cos, sin, -sin, cos, 0.0.into(), 0.0.into()]))
+    }
+
+    /// Move it!
+    pub fn translate(&self, dx: f64, dy: f64) -> Affine {
+        // https://en.wikipedia.org/wiki/Transformation_matrix#/media/File:2D_affine_transformation_matrix.svg
+        self.mul(Affine([
+            1.0.into(),
+            0.0.into(),
+            0.0.into(),
+            1.0.into(),
+            dx.into(),
+            dy.into(),
+        ]))
+    }
+
+    /// Scale around 0,0.
+    pub fn scale(&self, sx: f64, sy: f64) -> Affine {
+        // https://en.wikipedia.org/wiki/Transformation_matrix#/media/File:2D_affine_transformation_matrix.svg
+        self.mul(Affine([
+            sx.into(),
+            0.0.into(),
+            0.0.into(),
+            sy.into(),
+            0.0.into(),
+            0.0.into(),
+        ]))
     }
 
     pub fn x_basis(&self) -> (f64, f64) {
@@ -224,17 +284,19 @@ impl Affine {
     pub fn translation(&self) -> (f64, f64) {
         (self.0[4].into_inner(), self.0[5].into_inner())
     }
+}
 
-    /// Directly overwrite the scale fields of the matrix
-    pub fn set_scale(&mut self, sx: f64, sy: f64) {
-        self.0[0] = sx.into();
-        self.0[3] = sy.into();
-    }
-
-    /// Directly overwrite the translate fields of the matrix
-    pub fn set_translate(&mut self, dx: f64, dy: f64) {
-        self.0[4] = dx.into();
-        self.0[5] = dy.into();
+impl Display for Affine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('{')?;
+        for (i, v) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            f.write_fmt(format_args!("{:.4}", v.into_inner()))?;
+        }
+        f.write_char('}')?;
+        Ok(())
     }
 }
 
@@ -351,24 +413,30 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
             Affine::identity()
         };
 
+        // Glyphs 3 gives us {angle, pos, scale}. Glyphs 2 gives us the standard 2x3 matrix.
+        // The matrix is more general and less ambiguous (what order do you apply the angle, pos, scale?)
+        // so convert Glyphs 3 to that. Order based on saving the same transformed comonent as
+        // Glyphs 2 and Glyphs 3 then trying to convert one to the other.
+
+        // Translate
         if let Some(Plist::Array(pos)) = dict.remove("pos") {
             if pos.len() != 2 {
                 return Err(Error::StructuralError(format!("Bad pos: {:?}", pos)));
             }
-            transform.set_translate(try_f64(&pos[0])?, try_f64(&pos[1])?);
+            transform = transform.translate(try_f64(&pos[0])?, try_f64(&pos[1])?);
         }
-        // TODO angle. It's mildly weird that angle is broken out from scale given that
-        // they share transform fields. Might want to try converting 2=>3 in Glyphs to see
-        // how it handles this.
-        // See component in <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
-        if let Some(..) = dict.remove("angle") {
-            panic!("Angle not supported yet");
-        }
+
+        // Scale
         if let Some(Plist::Array(scale)) = dict.remove("scale") {
             if scale.len() != 2 {
                 return Err(Error::StructuralError(format!("Bad scale: {:?}", scale)));
             }
-            transform.set_scale(try_f64(&scale[0])?, try_f64(&scale[1])?);
+            transform = transform.scale(try_f64(&scale[0])?, try_f64(&scale[1])?);
+        }
+
+        // Rotate
+        if let Some(angle) = dict.remove("angle") {
+            transform = transform.rotate(try_f64(&angle)?.to_radians());
         }
 
         Ok(Component {
@@ -689,6 +757,9 @@ impl RawFont {
             }
             // "alignmentZones is now a set of over (overshoot) properties attached to metrics"
             if let Some(Plist::Array(zones)) = master.other_stuff.get("alignmentZones") {
+                while metric_dicts.len() < zones.len() {
+                    metric_dicts.push(BTreeMap::new());
+                }
                 for (idx, zone) in zones.iter().enumerate() {
                     let Plist::String(zone) = zone else {
                         warn!("Non-string alignment zone, skipping");
@@ -1142,11 +1213,13 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use crate::{Font, FromPlist, Node, Plist};
+    use crate::{Font, FromPlist, Node, Plist, Shape};
 
     use ordered_float::OrderedFloat;
 
     use pretty_assertions::assert_eq;
+
+    use super::Affine;
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -1203,16 +1276,52 @@ mod tests {
     }
 
     #[test]
-    fn read_2_and_3() {
+    fn read_wght_var_2_and_3() {
         let g2 = Font::load(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
         let mut g3 = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
 
-        // for test purposes we are nto interested in icon name
+        // for test purposes we are not interested in icon name
         for master in g3.font_master.iter_mut() {
             master.other_stuff.remove("iconName");
         }
 
         assert_eq!(g2, g3);
+    }
+
+    fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {
+        let glyph = font.glyphs.get(glyph_name).unwrap();
+        assert_eq!(1, glyph.layers.len());
+        assert_eq!(1, glyph.layers[0].shapes.len());
+        &glyph.layers[0].shapes[0]
+    }
+
+    #[test]
+    fn read_transformed_component_2_and_3() {
+        let g2 = Font::load(&glyphs2_dir().join("Component.glyphs")).unwrap();
+        let g3 = Font::load(&glyphs3_dir().join("Component.glyphs")).unwrap();
+
+        // We're exclusively interested in the transform
+        let g2_shape = only_shape_in_only_layer(&g2, "comma");
+        let g3_shape = only_shape_in_only_layer(&g3, "comma");
+
+        let Shape::Component(g2_shape) = g2_shape else {
+            panic!("{:?} should be a component", g2_shape);
+        };
+        let Shape::Component(g3_shape) = g3_shape else {
+            panic!("{:?} should be a component", g3_shape);
+        };
+
+        let expected = Affine([
+            1.6655.into(),
+            1.1611.into(),
+            (-1.1611).into(),
+            1.6655.into(),
+            (-233.0).into(),
+            (-129.0).into(),
+        ]);
+
+        assert_eq!(expected, g2_shape.transform.round(4));
+        assert_eq!(expected, g3_shape.transform.round(4));
     }
 
     #[test]
