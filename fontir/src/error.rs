@@ -91,4 +91,9 @@ pub enum WorkError {
         axis: String,
         pos: NormalizedCoord,
     },
+    #[error("{glyph_name} invalid {message}")]
+    InvalidSourceGlyph {
+        glyph_name: GlyphName,
+        message: String,
+    },
 }

@@ -170,7 +170,7 @@ width = 600;
 components = (
 {
 name = hyphen;
-transform = "{1, 0, 0, 1, 0, 100}";
+transform = "{1.15, 0, 0, 1.25, 10, 100}";
 },
 {
 name = hyphen;

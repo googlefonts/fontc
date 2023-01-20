@@ -192,7 +192,8 @@ width = 600;
 layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
 shapes = (
 {
-pos = (0, 100);
+pos = (10, 100);
+scale = (1.15, 1.25);
 ref = hyphen;
 },
 {

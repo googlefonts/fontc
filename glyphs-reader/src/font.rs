@@ -162,8 +162,8 @@ pub struct Component {
 // We do not use kurbo's point because it does not hash
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Point {
-    x: OrderedFloat<f64>,
-    y: OrderedFloat<f64>,
+    pub x: OrderedFloat<f64>,
+    pub y: OrderedFloat<f64>,
 }
 
 impl Point {
@@ -211,6 +211,30 @@ impl Affine {
             x.into(),
             y.into(),
         ])
+    }
+
+    pub fn x_basis(&self) -> (f64, f64) {
+        (self.0[0].into_inner(), self.0[1].into_inner())
+    }
+
+    pub fn y_basis(&self) -> (f64, f64) {
+        (self.0[2].into_inner(), self.0[3].into_inner())
+    }
+
+    pub fn translation(&self) -> (f64, f64) {
+        (self.0[4].into_inner(), self.0[5].into_inner())
+    }
+
+    /// Directly overwrite the scale fields of the matrix
+    pub fn set_scale(&mut self, sx: f64, sy: f64) {
+        self.0[0] = sx.into();
+        self.0[3] = sy.into();
+    }
+
+    /// Directly overwrite the translate fields of the matrix
+    pub fn set_translate(&mut self, dx: f64, dy: f64) {
+        self.0[4] = dx.into();
+        self.0[5] = dy.into();
     }
 }
 
@@ -328,19 +352,23 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
         };
 
         if let Some(Plist::Array(pos)) = dict.remove("pos") {
-            assert!(transform == Affine::identity());
             if pos.len() != 2 {
                 return Err(Error::StructuralError(format!("Bad pos: {:?}", pos)));
             }
-            transform = Affine::translate(try_f64(&pos[0])?, try_f64(&pos[1])?);
+            transform.set_translate(try_f64(&pos[0])?, try_f64(&pos[1])?);
         }
-        // TODO scale, angle, etc
+        // TODO angle. It's mildly weird that angle is broken out from scale given that
+        // they share transform fields. Might want to try converting 2=>3 in Glyphs to see
+        // how it handles this.
         // See component in <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
         if let Some(..) = dict.remove("angle") {
             panic!("Angle not supported yet");
         }
-        if let Some(..) = dict.remove("scale") {
-            panic!("Scale not supported yet");
+        if let Some(Plist::Array(scale)) = dict.remove("scale") {
+            if scale.len() != 2 {
+                return Err(Error::StructuralError(format!("Bad scale: {:?}", scale)));
+            }
+            transform.set_scale(try_f64(&scale[0])?, try_f64(&scale[1])?);
         }
 
         Ok(Component {
