@@ -1,0 +1,70 @@
+{
+.appVersion = "3151";
+DisplayStrings = (
+".",
+","
+);
+date = "2023-01-20 20:20:30 +0000";
+familyName = "New Font";
+fontMaster = (
+{
+alignmentZones = (
+"{800, 16}",
+"{700, 16}",
+"{500, 16}",
+"{0, -16}",
+"{0, -16}",
+"{-200, -16}"
+);
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = m01;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = period;
+lastChange = "2023-01-20 20:20:51 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"238 0 LINE",
+"362 0 LINE",
+"362 112 LINE",
+"238 112 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 002E;
+},
+{
+glyphname = comma;
+lastChange = "2023-01-20 20:22:39 +0000";
+layers = (
+{
+components = (
+{
+name = period;
+transform = "{1.66552, 1.16109, -1.16109, 1.66552, -233, -129}";
+}
+);
+layerId = m01;
+width = 600;
+}
+);
+unicode = 002C;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
