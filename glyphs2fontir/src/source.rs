@@ -13,7 +13,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::toir::{to_ir_contours_and_components, to_ir_features, FontInfo};
+use crate::toir::{to_ir_features, FontInfo};
 
 pub struct GlyphsIrSource {
     glyphs_file: PathBuf,
@@ -261,14 +261,12 @@ impl Work<Context, WorkError> for GlyphIrWork {
                     .insert(*coord);
             }
 
-            // TODO populate width and height properly
-            let (contours, components) =
-                to_ir_contours_and_components(&self.glyph_name, &instance.shapes)?;
+            // TODO actually populate fields
             let glyph_instance = GlyphInstance {
                 width: instance.width.into_inner(),
                 height: None,
-                contours,
-                components,
+                contours: Vec::new(),
+                components: Vec::new(),
             };
 
             ir_glyph

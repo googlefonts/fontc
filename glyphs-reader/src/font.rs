@@ -5,10 +5,10 @@
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
 use std::collections::{BTreeMap, HashSet};
-use std::fmt::{Display, Write};
 use std::hash::Hash;
 use std::{fs, path};
 
+use kurbo::{Affine, Point};
 use log::warn;
 use ordered_float::OrderedFloat;
 use regex::Regex;
@@ -31,7 +31,7 @@ type RawUserToDesignMapping = Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>;
 /// A tidied up font from a plist.
 ///
 /// Normalized representation of Glyphs 2/3 content
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Hash)]
 pub struct Font {
     pub family_name: String,
     pub axes: Vec<Axis>,
@@ -54,20 +54,20 @@ impl FeatureSnippet {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Hash)]
 pub struct Glyph {
     pub glyphname: String,
     pub layers: Vec<Layer>,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Hash)]
 pub struct Layer {
     pub layer_id: String,
     pub width: OrderedFloat<f64>,
     pub shapes: Vec<Shape>,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Hash)]
 pub enum Shape {
     Path(Path),
     Component(Component),
@@ -106,7 +106,7 @@ pub struct Axis {
     pub hidden: Option<bool>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq)]
 pub struct RawGlyph {
     pub layers: Vec<RawLayer>,
     pub glyphname: String,
@@ -114,7 +114,7 @@ pub struct RawGlyph {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq)]
 pub struct RawLayer {
     pub layer_id: String,
     pub associated_master_id: Option<String>,
@@ -130,7 +130,7 @@ pub struct RawLayer {
 /// Represents a path OR a component
 ///
 /// <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq)]
 pub struct RawShape {
     // TODO: add numerous unsupported attributes
 
@@ -152,7 +152,7 @@ pub struct Path {
     pub nodes: Vec<Node>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct Component {
     /// The glyph this component references
     pub glyph_name: String,
@@ -160,150 +160,44 @@ pub struct Component {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-// We do not use kurbo's point because it does not hash
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Point {
-    pub x: OrderedFloat<f64>,
-    pub y: OrderedFloat<f64>,
-}
-
-impl Point {
-    pub fn new(x: f64, y: f64) -> Point {
-        Point {
-            x: x.into(),
-            y: y.into(),
-        }
+impl PartialEq for Component {
+    fn eq(&self, other: &Self) -> bool {
+        self.glyph_name == other.glyph_name
+            && Into::<AffineForEqAndHash>::into(self.transform) == other.transform.into()
+            && self.other_stuff == other.other_stuff
     }
 }
 
-// We do not use kurbo's affine because it does not hash
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Affine([OrderedFloat<f64>; 6]);
+impl Eq for Component {}
 
-fn round(value: OrderedFloat<f64>, digits: u8) -> OrderedFloat<f64> {
-    let m = 10f64.powi(digits as i32);
-    ((value.into_inner() * m).round() / m).into()
-}
-
-impl Affine {
-    pub fn new(matrix: [f64; 6]) -> Affine {
-        Affine([
-            matrix[0].into(),
-            matrix[1].into(),
-            matrix[2].into(),
-            matrix[3].into(),
-            matrix[4].into(),
-            matrix[5].into(),
-        ])
-    }
-
-    pub fn identity() -> Affine {
-        Affine([
-            1f64.into(),
-            0f64.into(),
-            0f64.into(),
-            1f64.into(),
-            0f64.into(),
-            0f64.into(),
-        ])
-    }
-
-    /// Round each field of the transform to specified # of digits.
-    ///
-    /// <https://github.com/googlefonts/picosvg/blob/69cbfec486eca35a46187405abc39f608d3b2963/src/picosvg/svg_transform.py#L195>
-    pub fn round(&self, digits: u8) -> Affine {
-        let mut matrix = self.0;
-        for item in &mut matrix {
-            *item = round(*item, digits);
-        }
-        Affine(matrix)
-    }
-
-    /// Returns the product of self x other. Order matters.
-    ///
-    /// The combined affine matrix can be thought of mapping by other before applying self.
-    /// Beware, this can have counter-intuitive results.
-    ///
-    /// <https://github.com/googlefonts/picosvg/blob/69cbfec486eca35a46187405abc39f608d3b2963/src/picosvg/svg_transform.py#L82>
-    /// <https://en.wikipedia.org/wiki/Matrix_multiplication>
-    pub fn mul(&self, other: Affine) -> Affine {
-        let [sa, sb, sc, sd, se, sf] = self.0;
-        let [oa, ob, oc, od, oe, of] = other.0;
-        Affine([
-            sa * oa + sc * ob,
-            sb * oa + sd * ob,
-            sa * oc + sc * od,
-            sb * oc + sd * od,
-            sa * oe + sc * of + se,
-            sb * oe + sd * of + sf,
-        ])
-    }
-
-    /// Rotate around 0,0
-    pub fn rotate(&self, angle_rads: f64) -> Affine {
-        // https://en.wikipedia.org/wiki/Transformation_matrix#/media/File:2D_affine_transformation_matrix.svg
-        let cos = angle_rads.cos().into();
-        let sin = angle_rads.sin().into();
-        self.mul(Affine([cos, sin, -sin, cos, 0.0.into(), 0.0.into()]))
-    }
-
-    /// Move it!
-    pub fn translate(&self, dx: f64, dy: f64) -> Affine {
-        // https://en.wikipedia.org/wiki/Transformation_matrix#/media/File:2D_affine_transformation_matrix.svg
-        self.mul(Affine([
-            1.0.into(),
-            0.0.into(),
-            0.0.into(),
-            1.0.into(),
-            dx.into(),
-            dy.into(),
-        ]))
-    }
-
-    /// Scale around 0,0.
-    pub fn scale(&self, sx: f64, sy: f64) -> Affine {
-        // https://en.wikipedia.org/wiki/Transformation_matrix#/media/File:2D_affine_transformation_matrix.svg
-        self.mul(Affine([
-            sx.into(),
-            0.0.into(),
-            0.0.into(),
-            sy.into(),
-            0.0.into(),
-            0.0.into(),
-        ]))
-    }
-
-    pub fn x_basis(&self) -> (f64, f64) {
-        (self.0[0].into_inner(), self.0[1].into_inner())
-    }
-
-    pub fn y_basis(&self) -> (f64, f64) {
-        (self.0[2].into_inner(), self.0[3].into_inner())
-    }
-
-    pub fn translation(&self) -> (f64, f64) {
-        (self.0[4].into_inner(), self.0[5].into_inner())
+impl Hash for Component {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.glyph_name.hash(state);
+        Into::<AffineForEqAndHash>::into(self.transform).hash(state);
+        self.other_stuff.hash(state);
     }
 }
 
-impl Display for Affine {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_char('{')?;
-        for (i, v) in self.0.iter().enumerate() {
-            if i > 0 {
-                f.write_str(", ")?;
-            }
-            f.write_fmt(format_args!("{:.4}", v.into_inner()))?;
-        }
-        f.write_char('}')?;
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct Node {
     pub pt: Point,
     pub node_type: NodeType,
+}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        Into::<PointForEqAndHash>::into(self.pt) == other.pt.into()
+            && self.node_type == other.node_type
+    }
+}
+
+impl Eq for Node {}
+
+impl Hash for Node {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        PointForEqAndHash::new(self.pt).hash(state);
+        self.node_type.hash(state);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -315,7 +209,7 @@ pub enum NodeType {
     CurveSmooth,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq)]
 pub struct Anchor {
     pub name: String,
     pub position: Point,
@@ -410,7 +304,7 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
         let mut transform = if let Some(plist) = dict.remove("transform") {
             Affine::from_plist(plist)
         } else {
-            Affine::identity()
+            Default::default()
         };
 
         // Glyphs 3 gives us {angle, pos, scale}. Glyphs 2 gives us the standard 2x3 matrix.
@@ -423,7 +317,7 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
             if pos.len() != 2 {
                 return Err(Error::StructuralError(format!("Bad pos: {:?}", pos)));
             }
-            transform = transform.translate(try_f64(&pos[0])?, try_f64(&pos[1])?);
+            transform *= Affine::translate((try_f64(&pos[0])?, try_f64(&pos[1])?));
         }
 
         // Scale
@@ -431,12 +325,12 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
             if scale.len() != 2 {
                 return Err(Error::StructuralError(format!("Bad scale: {:?}", scale)));
             }
-            transform = transform.scale(try_f64(&scale[0])?, try_f64(&scale[1])?);
+            transform *= Affine::scale_non_uniform(try_f64(&scale[0])?, try_f64(&scale[1])?);
         }
 
         // Rotate
         if let Some(angle) = dict.remove("angle") {
-            transform = transform.rotate(try_f64(&angle)?.to_radians());
+            transform *= Affine::rotate(try_f64(&angle)?.to_radians());
         }
 
         Ok(Component {
@@ -1206,6 +1100,43 @@ impl Font {
     }
 }
 
+/// Convert [kurbo::Point] to this for eq and hash/
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct PointForEqAndHash {
+    x: OrderedFloat<f64>,
+    y: OrderedFloat<f64>,
+}
+
+impl PointForEqAndHash {
+    fn new(point: Point) -> PointForEqAndHash {
+        point.into()
+    }
+}
+
+impl From<Point> for PointForEqAndHash {
+    fn from(value: Point) -> Self {
+        PointForEqAndHash {
+            x: value.x.into(),
+            y: value.y.into(),
+        }
+    }
+}
+
+/// Convert [kurbo::Affine] to this for eq and hash/
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct AffineForEqAndHash([OrderedFloat<f64>; 6]);
+
+impl From<Affine> for AffineForEqAndHash {
+    fn from(value: Affine) -> Self {
+        let coeffs = value.as_coeffs();
+        let mut ordered_float_coeffs = [OrderedFloat::<f64>::from(0.0); 6];
+        for i in 0..6 {
+            ordered_float_coeffs[i] = coeffs[i].into();
+        }
+        AffineForEqAndHash(ordered_float_coeffs)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -1219,7 +1150,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    use super::Affine;
+    use kurbo::Affine;
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -1235,15 +1166,21 @@ mod tests {
         testdata_dir().join("glyphs3")
     }
 
+    fn round(transform: Affine, digits: u8) -> Affine {
+        let m = 10f64.powi(digits as i32);
+        let mut coeffs = transform.as_coeffs();
+        for c in coeffs.iter_mut() {
+            *c = (*c * m).round() / m;
+        }
+        Affine::new(coeffs)
+    }
+
     #[test]
     fn test_glyphs3_node() {
         assert_eq!(
             Node {
                 node_type: crate::NodeType::Line,
-                pt: super::Point {
-                    x: 354.0.into(),
-                    y: 183.0.into()
-                }
+                pt: super::Point { x: 354.0, y: 183.0 }
             },
             Node::from_plist(Plist::Array(vec![
                 Plist::Integer(354),
@@ -1258,10 +1195,7 @@ mod tests {
         assert_eq!(
             Node {
                 node_type: crate::NodeType::Line,
-                pt: super::Point {
-                    x: 354.0.into(),
-                    y: 183.0.into()
-                }
+                pt: super::Point { x: 354.0, y: 183.0 }
             },
             Node::from_plist(Plist::String("354 183 LINE".into()))
         );
@@ -1311,17 +1245,10 @@ mod tests {
             panic!("{:?} should be a component", g3_shape);
         };
 
-        let expected = Affine([
-            1.6655.into(),
-            1.1611.into(),
-            (-1.1611).into(),
-            1.6655.into(),
-            (-233.0).into(),
-            (-129.0).into(),
-        ]);
+        let expected = Affine::new([1.6655, 1.1611, -1.1611, 1.6655, -233.0, -129.0]);
 
-        assert_eq!(expected, g2_shape.transform.round(4));
-        assert_eq!(expected, g3_shape.transform.round(4));
+        assert_eq!(expected, round(g2_shape.transform, 4));
+        assert_eq!(expected, round(g3_shape.transform, 4));
     }
 
     #[test]

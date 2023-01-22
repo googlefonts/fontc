@@ -7,6 +7,7 @@ use crate::{
 };
 use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
+use kurbo::Affine;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -146,24 +147,7 @@ pub struct Component {
     /// The name of the referenced glyph.
     pub base: String,
     /// Affine transformation to apply to the referenced glyph.
-    pub transform: Affine2x3,
-}
-
-/// A 2×3 affine transformation matrix.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Affine2x3 {
-    /// x-component of transformed x-basis vector.
-    pub xx: f64,
-    /// y-component of transformed x-basis vector.
-    pub yx: f64,
-    /// x-component of transformed y-basis vector.
-    pub xy: f64,
-    /// y-component of transformed y-basis vector.
-    pub yy: f64,
-    /// x-component of translation vector.
-    pub dx: f64,
-    /// y-component of translation vector.
-    pub dy: f64,
+    pub transform: Affine,
 }
 
 #[cfg(test)]

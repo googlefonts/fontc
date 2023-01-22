@@ -6,6 +6,7 @@ use fontir::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     ir,
 };
+use kurbo::Affine;
 use norad::designspace::{self, Dimension};
 
 use crate::error::Error;
@@ -42,14 +43,14 @@ fn to_ir_contour(contour: &norad::Contour) -> ir::Contour {
 fn to_ir_component(component: &norad::Component) -> ir::Component {
     ir::Component {
         base: component.base.to_string(),
-        transform: ir::Affine2x3 {
-            xx: component.transform.x_scale,
-            yx: component.transform.yx_scale,
-            xy: component.transform.xy_scale,
-            yy: component.transform.y_scale,
-            dx: component.transform.x_offset,
-            dy: component.transform.y_offset,
-        },
+        transform: Affine::new([
+            component.transform.x_scale,
+            component.transform.yx_scale,
+            component.transform.xy_scale,
+            component.transform.y_scale,
+            component.transform.x_offset,
+            component.transform.y_offset,
+        ]),
     }
 }
 
