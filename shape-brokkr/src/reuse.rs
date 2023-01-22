@@ -52,6 +52,27 @@ fn vectors(path: &BezPath) -> Vec<Vec2> {
     vecs
 }
 
+/// Build a version of shape that will compare == to other shapes even if offset, scaled, rotated, etc.
+/// 
+/// Intended use is to normalize multiple shapes to identify opportunity for reuse.
+/// <https://github.com/googlefonts/picosvg/blob/69cbfec486eca35a46187405abc39f608d3b2963/src/picosvg/svg_reuse.py#L240>
+/// 
+/// At time of writing does *not* produce the same result for equivalent shapes with different point order
+/// or drawing commands.
+pub fn normalize(path: &BezPath) -> Result<BezPath, Error> {
+    // Always start at 0,0
+    let path = move_to_origin(path)?;
+
+    // Switch to vectors, which are intrinsically relative
+    let path = vectors(&path);
+
+    // TODO: Normalize first activity to [1 0]; eliminates rotation and uniform scaling
+        
+    // TODO: Normalize first y activity to 1.0; eliminates mirroring and non-uniform scaling
+
+    todo!()
+}
+
 #[cfg(test)]
 mod tests {
     use kurbo::{BezPath, Vec2};
