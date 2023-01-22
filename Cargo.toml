@@ -38,6 +38,7 @@ temp-env = "0.3.3"
 [workspace]
 
 members = [
+    "shape-brokkr",
     "fontdrasil",
     "fontbe",
     "fontir",
