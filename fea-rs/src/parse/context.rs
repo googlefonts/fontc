@@ -376,8 +376,8 @@ mod tests {
             "a".into(),
             None,
             Box::new(|path: &OsStr| match path.to_str().unwrap() {
-                "a" => Ok("include(bb);".to_owned()),
-                "bb" => Ok("include(a);".to_owned()),
+                "a" => Ok("include(bb);".into()),
+                "bb" => Ok("include(a);".into()),
                 _ => Err(SourceLoadError::new(
                     path.to_owned(),
                     std::io::Error::new(std::io::ErrorKind::NotFound, "oh no"),
@@ -406,9 +406,9 @@ mod tests {
             "file_a".into(),
             None,
             Box::new(|path: &OsStr| match path.to_str().unwrap() {
-                "file_a" => Ok(file_a.to_string()),
-                "b" => Ok(file_b.to_string()),
-                "c" => Ok(file_c.to_string()),
+                "file_a" => Ok(file_a.into()),
+                "b" => Ok(file_b.into()),
+                "c" => Ok(file_c.into()),
                 _ => Err(SourceLoadError::new(
                     path.into(),
                     std::io::Error::new(std::io::ErrorKind::NotFound, "oh no"),

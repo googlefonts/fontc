@@ -44,14 +44,14 @@ pub(crate) struct SourceLoader {
 }
 
 /// A map from positions in a resolved token tree (which may contain the
-/// contents of multiple files) to locations in specific files.
+/// contents of multiple sources) to locations in specific sources.
 #[derive(Clone, Debug, Default)]
 pub struct SourceMap {
     /// sorted vec of (offset_in_combined_tree, (file_id, offest_in_source_file));
     offsets: Vec<(Range<usize>, (FileId, usize))>,
 }
 
-/// An error that occurs when trying to read a file from disk.
+/// An error that occurs when trying .to load a source.
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("Failed to load source at '{}': '{cause}'", Path::new(.path.as_os_str()).display())]
 pub struct SourceLoadError {
@@ -72,12 +72,14 @@ pub struct SourceLoadError {
 /// `|&OsStr| -> Result<String, SourceLoadError>`.
 pub trait SourceResolver {
     /// Return the contents of the utf-8 encoded file at the provided path.
-    fn get_contents(&self, path: &OsStr) -> Result<String, SourceLoadError>;
+    fn get_contents(&self, path: &OsStr) -> Result<Rc<str>, SourceLoadError>;
 
     /// Given a raw path (the `$path` in `include($path)`), return the path to load.
+    /// The final path may differ based on which file the include statement occurs
+    /// in; the path of the including file (if this is not the root source) is
+    /// passed as the second argument.
     ///
-    /// See [fncluding files][] for more information. This method is only
-    /// relevant when working with the file system.
+    /// See [including files][] for more information.
     ///
     /// The default implementation returns the `path` argument, unchanged.
     ///
@@ -101,7 +103,7 @@ pub trait SourceResolver {
     #[doc(hidden)]
     fn resolve(&self, path: &OsStr) -> Result<Source, SourceLoadError> {
         let contents = self.get_contents(path)?;
-        Ok(Source::new(path.to_owned(), contents.into()))
+        Ok(Source::new(path.to_owned(), contents))
     }
 
     // a little helper used in our debug impl
@@ -119,9 +121,9 @@ impl std::fmt::Debug for dyn SourceResolver {
 
 impl<F> SourceResolver for F
 where
-    F: Fn(&OsStr) -> Result<String, SourceLoadError>,
+    F: Fn(&OsStr) -> Result<Rc<str>, SourceLoadError>,
 {
-    fn get_contents(&self, path: &OsStr) -> Result<String, SourceLoadError> {
+    fn get_contents(&self, path: &OsStr) -> Result<Rc<str>, SourceLoadError> {
         (self)(path)
     }
 }
@@ -144,8 +146,10 @@ impl FileSystemResolver {
 }
 
 impl SourceResolver for FileSystemResolver {
-    fn get_contents(&self, path: &OsStr) -> Result<String, SourceLoadError> {
-        std::fs::read_to_string(path).map_err(|cause| SourceLoadError::new(path.into(), cause))
+    fn get_contents(&self, path: &OsStr) -> Result<Rc<str>, SourceLoadError> {
+        std::fs::read_to_string(path)
+            .map(Into::into)
+            .map_err(|cause| SourceLoadError::new(path.into(), cause))
     }
 
     fn resolve_raw_path(&self, path: &OsStr, included_from: Option<&OsStr>) -> OsString {
@@ -337,7 +341,11 @@ impl SourceList {
 }
 
 impl SourceLoadError {
-    pub(crate) fn new(path: OsString, cause: impl std::error::Error + 'static) -> Self {
+    /// Create a new [`SourceLoadError`].
+    ///
+    /// The `cause` argument should be some error type that communicates the
+    /// cause of the failure.
+    pub fn new(path: OsString, cause: impl std::error::Error + 'static) -> Self {
         Self {
             cause: Rc::new(cause),
             path,
