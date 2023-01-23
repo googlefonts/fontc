@@ -35,7 +35,9 @@ fn to_ir_contour(glyph_name: &str, contour: &norad::Contour) -> Result<BezPath, 
         }
     }
 
-    if norad::PointType::Move == contour.points[0].typ {
+    // "A closed contour does not start with a move"
+    // https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
+    if norad::PointType::Move != contour.points[0].typ {
         path_builder.close_path()?;
     }
 
@@ -131,4 +133,46 @@ pub fn to_ir_glyph(
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use norad::ContourPoint;
+
+    use super::to_ir_contour;
+
+    fn contour_point(x: f64, y: f64, typ: norad::PointType) -> ContourPoint {
+        ContourPoint::new(x, y, typ, false, None, None, None)
+    }
+
+    // https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
+    // observes if a contour does *not* start with a move it is cyclic.
+    // real fonts use this, such as to open with a curve command and end with
+    // dangling offcurves
+    #[test]
+    fn closed_contour_box() {
+        let points = vec![
+            contour_point(1.0, 1.0, norad::PointType::Line),
+            contour_point(9.0, 1.0, norad::PointType::Line),
+            contour_point(9.0, 2.0, norad::PointType::Line),
+            contour_point(1.0, 2.0, norad::PointType::Line),
+        ];
+        let contour = norad::Contour::new(points, None, None);
+        let bez = to_ir_contour("test", &contour).unwrap();
+        assert_eq!("M1 1L9 1L9 2L1 2Z", bez.to_svg());
+    }
+
+    // https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
+    // observes if a contour does *not* start with a move it is cyclic.
+    // real fonts use this, such as to open with a curve command and end with
+    // dangling offcurves
+    #[test]
+    fn closed_contour_single_cubic() {
+        // Cubic teardrop
+        let points = vec![
+            contour_point(32.0, 32.0, norad::PointType::Curve),
+            contour_point(64.0, 64.0, norad::PointType::OffCurve),
+            contour_point(64.0, 0.0, norad::PointType::OffCurve),
+        ];
+        let contour = norad::Contour::new(points, None, None);
+        let bez = to_ir_contour("test", &contour).unwrap();
+        assert_eq!("M32 32C64 64 64 0 32 32Z", bez.to_svg());
+    }
+}
