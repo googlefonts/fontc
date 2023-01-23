@@ -51,6 +51,11 @@ fn rebase_path(path: &Path, base: &Path) -> PathBuf {
 ///
 /// [the spec]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#3-including-files
 pub(crate) fn resolve_path(path: &Path, root: &Path, parent: Option<&Path>) -> PathBuf {
+    if path.is_absolute() {
+        log::info!("path {} is absolute", path.display());
+        return path.to_path_buf();
+    }
+
     if root.join(path).exists() {
         return rebase_path(path, root);
     }
