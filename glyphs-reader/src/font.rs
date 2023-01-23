@@ -1128,12 +1128,7 @@ struct AffineForEqAndHash([OrderedFloat<f64>; 6]);
 
 impl From<Affine> for AffineForEqAndHash {
     fn from(value: Affine) -> Self {
-        let coeffs = value.as_coeffs();
-        let mut ordered_float_coeffs = [OrderedFloat::<f64>::from(0.0); 6];
-        for i in 0..6 {
-            ordered_float_coeffs[i] = coeffs[i].into();
-        }
-        AffineForEqAndHash(ordered_float_coeffs)
+        Self(value.as_coeffs().map(|coeff| coeff.into()))
     }
 }
 
