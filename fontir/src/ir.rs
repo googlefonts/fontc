@@ -11,6 +11,7 @@ use kurbo::{Affine, BezPath, Point};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    fmt::Debug,
     path::{Path, PathBuf},
 };
 
@@ -133,10 +134,12 @@ pub struct Component {
 ///
 /// Source formats tend to use streams of point-of-type. Curve manipulation is
 /// often easier on bezier path, so provide a mechanism to convert.
+#[derive(Debug)]
 pub struct GlyphPathBuilder<'a> {
     glyph_name: &'a str,
     offcurve: Vec<Point>,
     path: BezPath,
+    last_move_to: Point,
 }
 
 impl<'a> GlyphPathBuilder<'a> {
@@ -145,6 +148,8 @@ impl<'a> GlyphPathBuilder<'a> {
             glyph_name,
             offcurve: Vec::new(),
             path: BezPath::new(),
+            // kurbo *requires* subpaths start with move so this isn't going to get used
+            last_move_to: Point::ZERO,
         }
     }
 
@@ -163,19 +168,21 @@ impl<'a> GlyphPathBuilder<'a> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.offcurve.is_empty() && self.path.is_empty()
+        self.offcurve.is_empty() && self.path.elements().is_empty()
     }
 
     pub fn move_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
         self.check_num_offcurve(|v| v == 0)?;
+        let p = p.into();
         self.path.move_to(p);
+        self.last_move_to = p;
         Ok(())
     }
 
     pub fn line_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
         self.check_num_offcurve(|v| v == 0)?;
         if self.is_empty() {
-            self.path.move_to(p);
+            self.move_to(p)?;
         } else {
             self.path.line_to(p);
         }
@@ -190,15 +197,19 @@ impl<'a> GlyphPathBuilder<'a> {
     ///
     /// <https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types>
     pub fn curve_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
-        match self.offcurve.len() {
-            0 => self.path.line_to(p),
-            1 => self.path.quad_to(self.offcurve[0], p.into()),
-            2 => self
-                .path
-                .curve_to(self.offcurve[0], self.offcurve[1], p.into()),
-            _ => self.check_num_offcurve(|v| v < 3)?,
+        if !self.is_empty() {
+            match self.offcurve.len() {
+                0 => self.path.line_to(p),
+                1 => self.path.quad_to(self.offcurve[0], p.into()),
+                2 => self
+                    .path
+                    .curve_to(self.offcurve[0], self.offcurve[1], p.into()),
+                _ => self.check_num_offcurve(|v| v < 3)?,
+            }
+            self.offcurve.clear();
+        } else {
+            self.move_to(p)?;
         }
-        self.offcurve.clear();
         Ok(())
     }
 
@@ -208,7 +219,10 @@ impl<'a> GlyphPathBuilder<'a> {
     }
 
     pub fn close_path(&mut self) -> Result<(), WorkError> {
-        self.check_num_offcurve(|v| v == 0)?;
+        // Take dangling off-curves to imply a curve back to sub-path start
+        if !self.offcurve.is_empty() {
+            self.curve_to(self.last_move_to)?;
+        }
         self.path.close_path();
         Ok(())
     }
