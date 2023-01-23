@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::hash::Hash;
 use std::{fs, path};
 
+use kurbo::{Affine, Point};
 use log::warn;
 use ordered_float::OrderedFloat;
 use regex::Regex;
@@ -30,7 +31,7 @@ type RawUserToDesignMapping = Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>;
 /// A tidied up font from a plist.
 ///
 /// Normalized representation of Glyphs 2/3 content
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Hash)]
 pub struct Font {
     pub family_name: String,
     pub axes: Vec<Axis>,
@@ -53,20 +54,20 @@ impl FeatureSnippet {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Hash)]
 pub struct Glyph {
     pub glyphname: String,
     pub layers: Vec<Layer>,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Hash)]
 pub struct Layer {
     pub layer_id: String,
     pub width: OrderedFloat<f64>,
     pub shapes: Vec<Shape>,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Hash)]
 pub enum Shape {
     Path(Path),
     Component(Component),
@@ -105,7 +106,7 @@ pub struct Axis {
     pub hidden: Option<bool>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq)]
 pub struct RawGlyph {
     pub layers: Vec<RawLayer>,
     pub glyphname: String,
@@ -113,7 +114,7 @@ pub struct RawGlyph {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq)]
 pub struct RawLayer {
     pub layer_id: String,
     pub associated_master_id: Option<String>,
@@ -129,7 +130,7 @@ pub struct RawLayer {
 /// Represents a path OR a component
 ///
 /// <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq)]
 pub struct RawShape {
     // TODO: add numerous unsupported attributes
 
@@ -151,7 +152,7 @@ pub struct Path {
     pub nodes: Vec<Node>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct Component {
     /// The glyph this component references
     pub glyph_name: String,
@@ -159,65 +160,44 @@ pub struct Component {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-// We do not use kurbo's point because it does not hash
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Point {
-    x: OrderedFloat<f64>,
-    y: OrderedFloat<f64>,
-}
-
-impl Point {
-    pub fn new(x: f64, y: f64) -> Point {
-        Point {
-            x: x.into(),
-            y: y.into(),
-        }
+impl PartialEq for Component {
+    fn eq(&self, other: &Self) -> bool {
+        self.glyph_name == other.glyph_name
+            && Into::<AffineForEqAndHash>::into(self.transform) == other.transform.into()
+            && self.other_stuff == other.other_stuff
     }
 }
 
-// We do not use kurbo's affine because it does not hash
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Affine([OrderedFloat<f64>; 6]);
+impl Eq for Component {}
 
-impl Affine {
-    pub fn new(matrix: [f64; 6]) -> Affine {
-        Affine([
-            matrix[0].into(),
-            matrix[1].into(),
-            matrix[2].into(),
-            matrix[3].into(),
-            matrix[4].into(),
-            matrix[5].into(),
-        ])
-    }
-
-    pub fn identity() -> Affine {
-        Affine([
-            1f64.into(),
-            0f64.into(),
-            0f64.into(),
-            1f64.into(),
-            0f64.into(),
-            0f64.into(),
-        ])
-    }
-
-    pub fn translate(x: f64, y: f64) -> Affine {
-        Affine([
-            1f64.into(),
-            0f64.into(),
-            0f64.into(),
-            1f64.into(),
-            x.into(),
-            y.into(),
-        ])
+impl Hash for Component {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.glyph_name.hash(state);
+        Into::<AffineForEqAndHash>::into(self.transform).hash(state);
+        self.other_stuff.hash(state);
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct Node {
     pub pt: Point,
     pub node_type: NodeType,
+}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        Into::<PointForEqAndHash>::into(self.pt) == other.pt.into()
+            && self.node_type == other.node_type
+    }
+}
+
+impl Eq for Node {}
+
+impl Hash for Node {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        PointForEqAndHash::new(self.pt).hash(state);
+        self.node_type.hash(state);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -229,7 +209,7 @@ pub enum NodeType {
     CurveSmooth,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, FromPlist, PartialEq)]
 pub struct Anchor {
     pub name: String,
     pub position: Point,
@@ -324,23 +304,33 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
         let mut transform = if let Some(plist) = dict.remove("transform") {
             Affine::from_plist(plist)
         } else {
-            Affine::identity()
+            Affine::IDENTITY
         };
 
+        // Glyphs 3 gives us {angle, pos, scale}. Glyphs 2 gives us the standard 2x3 matrix.
+        // The matrix is more general and less ambiguous (what order do you apply the angle, pos, scale?)
+        // so convert Glyphs 3 to that. Order based on saving the same transformed comonent as
+        // Glyphs 2 and Glyphs 3 then trying to convert one to the other.
+
+        // Translate
         if let Some(Plist::Array(pos)) = dict.remove("pos") {
-            assert!(transform == Affine::identity());
             if pos.len() != 2 {
                 return Err(Error::StructuralError(format!("Bad pos: {:?}", pos)));
             }
-            transform = Affine::translate(try_f64(&pos[0])?, try_f64(&pos[1])?);
+            transform *= Affine::translate((try_f64(&pos[0])?, try_f64(&pos[1])?));
         }
-        // TODO scale, angle, etc
-        // See component in <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
-        if let Some(..) = dict.remove("angle") {
-            panic!("Angle not supported yet");
+
+        // Scale
+        if let Some(Plist::Array(scale)) = dict.remove("scale") {
+            if scale.len() != 2 {
+                return Err(Error::StructuralError(format!("Bad scale: {:?}", scale)));
+            }
+            transform *= Affine::scale_non_uniform(try_f64(&scale[0])?, try_f64(&scale[1])?);
         }
-        if let Some(..) = dict.remove("scale") {
-            panic!("Scale not supported yet");
+
+        // Rotate
+        if let Some(angle) = dict.remove("angle") {
+            transform *= Affine::rotate(try_f64(&angle)?.to_radians());
         }
 
         Ok(Component {
@@ -661,6 +651,9 @@ impl RawFont {
             }
             // "alignmentZones is now a set of over (overshoot) properties attached to metrics"
             if let Some(Plist::Array(zones)) = master.other_stuff.get("alignmentZones") {
+                while metric_dicts.len() < zones.len() {
+                    metric_dicts.push(BTreeMap::new());
+                }
                 for (idx, zone) in zones.iter().enumerate() {
                     let Plist::String(zone) = zone else {
                         warn!("Non-string alignment zone, skipping");
@@ -1107,6 +1100,38 @@ impl Font {
     }
 }
 
+/// Convert [kurbo::Point] to this for eq and hash/
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct PointForEqAndHash {
+    x: OrderedFloat<f64>,
+    y: OrderedFloat<f64>,
+}
+
+impl PointForEqAndHash {
+    fn new(point: Point) -> PointForEqAndHash {
+        point.into()
+    }
+}
+
+impl From<Point> for PointForEqAndHash {
+    fn from(value: Point) -> Self {
+        PointForEqAndHash {
+            x: value.x.into(),
+            y: value.y.into(),
+        }
+    }
+}
+
+/// Convert [kurbo::Affine] to this for eq and hash/
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct AffineForEqAndHash([OrderedFloat<f64>; 6]);
+
+impl From<Affine> for AffineForEqAndHash {
+    fn from(value: Affine) -> Self {
+        Self(value.as_coeffs().map(|coeff| coeff.into()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -1114,11 +1139,13 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use crate::{Font, FromPlist, Node, Plist};
+    use crate::{Font, FromPlist, Node, Plist, Shape};
 
     use ordered_float::OrderedFloat;
 
     use pretty_assertions::assert_eq;
+
+    use kurbo::Affine;
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -1134,15 +1161,21 @@ mod tests {
         testdata_dir().join("glyphs3")
     }
 
+    fn round(transform: Affine, digits: u8) -> Affine {
+        let m = 10f64.powi(digits as i32);
+        let mut coeffs = transform.as_coeffs();
+        for c in coeffs.iter_mut() {
+            *c = (*c * m).round() / m;
+        }
+        Affine::new(coeffs)
+    }
+
     #[test]
     fn test_glyphs3_node() {
         assert_eq!(
             Node {
                 node_type: crate::NodeType::Line,
-                pt: super::Point {
-                    x: 354.0.into(),
-                    y: 183.0.into()
-                }
+                pt: super::Point { x: 354.0, y: 183.0 }
             },
             Node::from_plist(Plist::Array(vec![
                 Plist::Integer(354),
@@ -1157,10 +1190,7 @@ mod tests {
         assert_eq!(
             Node {
                 node_type: crate::NodeType::Line,
-                pt: super::Point {
-                    x: 354.0.into(),
-                    y: 183.0.into()
-                }
+                pt: super::Point { x: 354.0, y: 183.0 }
             },
             Node::from_plist(Plist::String("354 183 LINE".into()))
         );
@@ -1175,16 +1205,45 @@ mod tests {
     }
 
     #[test]
-    fn read_2_and_3() {
+    fn read_wght_var_2_and_3() {
         let g2 = Font::load(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
         let mut g3 = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
 
-        // for test purposes we are nto interested in icon name
+        // for test purposes we are not interested in icon name
         for master in g3.font_master.iter_mut() {
             master.other_stuff.remove("iconName");
         }
 
         assert_eq!(g2, g3);
+    }
+
+    fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {
+        let glyph = font.glyphs.get(glyph_name).unwrap();
+        assert_eq!(1, glyph.layers.len());
+        assert_eq!(1, glyph.layers[0].shapes.len());
+        &glyph.layers[0].shapes[0]
+    }
+
+    #[test]
+    fn read_transformed_component_2_and_3() {
+        let g2 = Font::load(&glyphs2_dir().join("Component.glyphs")).unwrap();
+        let g3 = Font::load(&glyphs3_dir().join("Component.glyphs")).unwrap();
+
+        // We're exclusively interested in the transform
+        let g2_shape = only_shape_in_only_layer(&g2, "comma");
+        let g3_shape = only_shape_in_only_layer(&g3, "comma");
+
+        let Shape::Component(g2_shape) = g2_shape else {
+            panic!("{:?} should be a component", g2_shape);
+        };
+        let Shape::Component(g3_shape) = g3_shape else {
+            panic!("{:?} should be a component", g3_shape);
+        };
+
+        let expected = Affine::new([1.6655, 1.1611, -1.1611, 1.6655, -233.0, -129.0]);
+
+        assert_eq!(expected, round(g2_shape.transform, 4));
+        assert_eq!(expected, round(g3_shape.transform, 4));
     }
 
     #[test]

@@ -1,12 +1,103 @@
 use std::collections::HashMap;
 
+use fontdrasil::types::GlyphName;
 use fontir::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
     ir,
 };
-use glyphs_reader::{FeatureSnippet, Font, FontMaster};
+use glyphs_reader::{Component, FeatureSnippet, Font, FontMaster, Node, NodeType, Path, Shape};
+use log::trace;
 use ordered_float::OrderedFloat;
+
+pub(crate) fn to_ir_contours_and_components(
+    glyph_name: &GlyphName,
+    shapes: &[Shape],
+) -> Result<(Vec<ir::Contour>, Vec<ir::Component>), WorkError> {
+    let mut contours = Vec::new();
+    let mut components = Vec::new();
+
+    for shape in shapes.iter() {
+        match shape {
+            Shape::Component(component) => components.push(to_ir_component(glyph_name, component)),
+            Shape::Path(path) => contours.push(to_ir_contour(glyph_name, path)?),
+        }
+    }
+
+    Ok((contours, components))
+}
+
+fn to_ir_component(glyph_name: &GlyphName, component: &Component) -> ir::Component {
+    trace!(
+        "{} reuses {} with transform {:?}",
+        glyph_name,
+        component.glyph_name,
+        component.transform
+    );
+    ir::Component {
+        base: component.glyph_name.clone(),
+        transform: component.transform,
+    }
+}
+
+fn to_ir_contour(glyph_name: &GlyphName, path: &Path) -> Result<ir::Contour, WorkError> {
+    // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/paths.py#L20
+    // See also https://github.com/fonttools/ufoLib2/blob/4d8a9600148b670b0840120658d9aab0b38a9465/src/ufoLib2/pointPens/glyphPointPen.py#L16
+    let mut contour = ir::Contour::new();
+    if path.nodes.is_empty() {
+        return Ok(contour);
+    }
+
+    let mut nodes = &path.nodes[..];
+    if !path.closed {
+        let (first, elements) = nodes
+            .split_first()
+            .expect("Not empty and no first is a good trick");
+        nodes = elements;
+        if first.node_type != NodeType::Line {
+            return Err(WorkError::InvalidSourceGlyph {
+                glyph_name: glyph_name.clone(),
+                message: String::from("Open path starts with off-curve points"),
+            });
+        }
+        let mut pt = to_ir_point(first);
+        pt.typ = ir::PointType::Move;
+        contour.push(pt);
+    } else {
+        // In Glyphs.app, the starting node of a closed contour is always
+        // stored at the end of the nodes list.
+        let (last, elements) = nodes
+            .split_last()
+            .expect("Not empty and no last is a good trick");
+        nodes = elements;
+        contour.push(to_ir_point(last));
+    }
+
+    contour.extend(nodes.iter().map(to_ir_point));
+
+    trace!("Built a {} entry contour for {}", contour.len(), glyph_name);
+    Ok(contour)
+}
+
+fn to_ir_point(node: &Node) -> ir::ContourPoint {
+    ir::ContourPoint {
+        x: node.pt.x,
+        y: node.pt.y,
+        typ: to_ir_point_type(node.node_type),
+    }
+}
+
+fn to_ir_point_type(node_type: NodeType) -> ir::PointType {
+    // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/pens.py#L92
+    // Convert XSmooth to X because Smooth is only relevant to editor behavior
+    match node_type {
+        NodeType::Line => ir::PointType::Line,
+        NodeType::Curve => ir::PointType::Curve,
+        NodeType::LineSmooth => ir::PointType::Line,
+        NodeType::CurveSmooth => ir::PointType::Curve,
+        NodeType::OffCurve => ir::PointType::OffCurve,
+    }
+}
 
 pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features, WorkError> {
     // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L74
