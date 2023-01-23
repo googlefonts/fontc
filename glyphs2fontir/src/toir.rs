@@ -50,8 +50,10 @@ fn to_ir_contour(glyph_name: &GlyphName, path: &Path) -> Result<ir::Contour, Wor
 
     let mut nodes = &path.nodes[..];
     if !path.closed {
-        let first = &nodes[0];
-        nodes = &nodes[1..];
+        let (first, elements) = nodes
+            .split_first()
+            .expect("Not empty and no first is a good trick");
+        nodes = elements;
         if first.node_type != NodeType::Line {
             return Err(WorkError::InvalidSourceGlyph {
                 glyph_name: glyph_name.clone(),
@@ -64,14 +66,14 @@ fn to_ir_contour(glyph_name: &GlyphName, path: &Path) -> Result<ir::Contour, Wor
     } else {
         // In Glyphs.app, the starting node of a closed contour is always
         // stored at the end of the nodes list.
-        let Some((last, elements)) = nodes.split_last() else {
-            unreachable!("Not empty and no last is a good trick");
-        };
+        let (last, elements) = nodes
+            .split_last()
+            .expect("Not empty and no last is a good trick");
         nodes = elements;
         contour.push(to_ir_point(last));
     }
 
-    nodes.iter().map(to_ir_point).for_each(|p| contour.push(p));
+    contour.extend(nodes.iter().map(to_ir_point));
 
     trace!("Built a {} entry contour for {}", contour.len(), glyph_name);
     Ok(contour)

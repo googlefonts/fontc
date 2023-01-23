@@ -304,7 +304,7 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
         let mut transform = if let Some(plist) = dict.remove("transform") {
             Affine::from_plist(plist)
         } else {
-            Default::default()
+            Affine::IDENTITY
         };
 
         // Glyphs 3 gives us {angle, pos, scale}. Glyphs 2 gives us the standard 2x3 matrix.
