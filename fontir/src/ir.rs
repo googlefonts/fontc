@@ -2,12 +2,12 @@
 
 use crate::{
     coords::{CoordConverter, NormalizedLocation, UserCoord},
-    error::Error,
+    error::WorkError,
     serde::{GlyphSerdeRepr, StaticMetadataSerdeRepr},
 };
 use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
-use kurbo::Affine;
+use kurbo::{Affine, BezPath, Point};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -95,9 +95,9 @@ impl Glyph {
         &mut self,
         unique_location: &NormalizedLocation,
         source: GlyphInstance,
-    ) -> Result<(), Error> {
+    ) -> Result<(), WorkError> {
         if self.sources.contains_key(unique_location) {
-            return Err(Error::DuplicateNormalizedLocation {
+            return Err(WorkError::DuplicateNormalizedLocation {
                 what: format!("glyph '{}' source", self.name.as_str()),
                 loc: unique_location.clone(),
             });
@@ -115,39 +115,107 @@ pub struct GlyphInstance {
     /// Advance height; if None, assumed to equal font's ascender - descende.
     pub height: Option<f64>,
     /// List of glyph contours.
-    pub contours: Vec<Contour>,
+    pub contours: Vec<BezPath>,
     /// List of glyph components.
     pub components: Vec<Component>,
-}
-
-/// A single glyph contour consisting of a list of points.
-pub type Contour = Vec<ContourPoint>;
-
-/// A single point in a glyph contour.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct ContourPoint {
-    pub x: f64,
-    pub y: f64,
-    pub typ: PointType,
-}
-
-/// Possible types of a point in a glyph contour, following UFO GLIF semantics.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub enum PointType {
-    Move,
-    Line,
-    OffCurve,
-    Curve,
-    QCurve,
 }
 
 /// A single glyph component, reference to another glyph.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Component {
     /// The name of the referenced glyph.
-    pub base: String,
+    pub base: GlyphName,
     /// Affine transformation to apply to the referenced glyph.
     pub transform: Affine,
+}
+
+/// Helps convert points-of-type to a bezier path.
+///
+/// Source formats tend to use streams of point-of-type. Curve manipulation is
+/// often easier on bezier path, so provide a mechanism to convert.
+pub struct GlyphPathBuilder<'a> {
+    glyph_name: &'a str,
+    offcurve: Vec<Point>,
+    path: BezPath,
+}
+
+impl<'a> GlyphPathBuilder<'a> {
+    pub fn new(glyph_name: &'a str) -> GlyphPathBuilder {
+        GlyphPathBuilder {
+            glyph_name,
+            offcurve: Vec::new(),
+            path: BezPath::new(),
+        }
+    }
+
+    fn check_num_offcurve(&self, expected: impl Fn(usize) -> bool) -> Result<(), WorkError> {
+        if !expected(self.offcurve.len()) {
+            return Err(WorkError::InvalidSourceGlyph {
+                glyph_name: self.glyph_name.into(),
+                message: format!(
+                    "{} unexpected consecutive offcurve points {:?}",
+                    self.offcurve.len(),
+                    self.offcurve
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.offcurve.is_empty() && self.path.is_empty()
+    }
+
+    pub fn move_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
+        self.check_num_offcurve(|v| v == 0)?;
+        self.path.move_to(p);
+        Ok(())
+    }
+
+    pub fn line_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
+        self.check_num_offcurve(|v| v == 0)?;
+        if self.is_empty() {
+            self.path.move_to(p);
+        } else {
+            self.path.line_to(p);
+        }
+        Ok(())
+    }
+
+    pub fn qcurve_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
+        todo!("Support qcurve to {}", p.into());
+    }
+
+    /// Type of curve depends on accumulated off-curves
+    ///
+    /// <https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types>
+    pub fn curve_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
+        match self.offcurve.len() {
+            0 => self.path.line_to(p),
+            1 => self.path.quad_to(self.offcurve[0], p.into()),
+            2 => self
+                .path
+                .curve_to(self.offcurve[0], self.offcurve[1], p.into()),
+            _ => self.check_num_offcurve(|v| v < 3)?,
+        }
+        self.offcurve.clear();
+        Ok(())
+    }
+
+    pub fn offcurve(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
+        self.offcurve.push(p.into());
+        Ok(())
+    }
+
+    pub fn close_path(&mut self) -> Result<(), WorkError> {
+        self.check_num_offcurve(|v| v == 0)?;
+        self.path.close_path();
+        Ok(())
+    }
+
+    pub fn build(self) -> BezPath {
+        self.path
+    }
 }
 
 #[cfg(test)]

@@ -35,11 +35,6 @@ pub enum Error {
     UnexpectedState,
     #[error("Duplicate location for {what}: {loc:?}")]
     DuplicateUserLocation { what: String, loc: UserLocation },
-    #[error("Duplicate location for {what}: {loc:?}")]
-    DuplicateNormalizedLocation {
-        what: String,
-        loc: NormalizedLocation,
-    },
     #[error("Global metadata very bad, very very bad")]
     InvalidGlobalMetadata,
     #[error("No default master in {0:?}")]
@@ -90,6 +85,11 @@ pub enum WorkError {
         glyph_name: GlyphName,
         axis: String,
         pos: NormalizedCoord,
+    },
+    #[error("Duplicate location for {what}: {loc:?}")]
+    DuplicateNormalizedLocation {
+        what: String,
+        loc: NormalizedLocation,
     },
     #[error("{glyph_name} invalid {message}")]
     InvalidSourceGlyph {

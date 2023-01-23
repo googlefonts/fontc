@@ -4,12 +4,12 @@ use std::path::PathBuf;
 use fontdrasil::types::GlyphName;
 use fontir::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
-    ir,
+    error::WorkError,
+    ir::{self, GlyphPathBuilder},
 };
-use kurbo::Affine;
+use kurbo::{Affine, BezPath};
+use log::trace;
 use norad::designspace::{self, Dimension};
-
-use crate::error::Error;
 
 pub(crate) fn to_design_location(loc: &[Dimension]) -> DesignLocation {
     // TODO: what if Dimension uses uservalue? - new in DS5.0
@@ -18,31 +18,39 @@ pub(crate) fn to_design_location(loc: &[Dimension]) -> DesignLocation {
         .collect()
 }
 
-fn to_ir_point_type(typ: &norad::PointType) -> ir::PointType {
-    match typ {
-        norad::PointType::Move => ir::PointType::Move,
-        norad::PointType::Line => ir::PointType::Line,
-        norad::PointType::OffCurve => ir::PointType::OffCurve,
-        norad::PointType::QCurve => ir::PointType::QCurve,
-        norad::PointType::Curve => ir::PointType::Curve,
+fn to_ir_contour(glyph_name: &str, contour: &norad::Contour) -> Result<BezPath, WorkError> {
+    let mut path_builder = GlyphPathBuilder::new(glyph_name);
+    if contour.points.is_empty() {
+        return Ok(path_builder.build());
     }
-}
 
-fn to_ir_contour_point(point: &norad::ContourPoint) -> ir::ContourPoint {
-    ir::ContourPoint {
-        x: point.x,
-        y: point.y,
-        typ: to_ir_point_type(&point.typ),
+    // Walk through the remaining points, accumulating off-curve points until we see an on-curve
+    for node in contour.points.iter() {
+        match node.typ {
+            norad::PointType::Move => path_builder.move_to((node.x, node.y))?,
+            norad::PointType::Line => path_builder.line_to((node.x, node.y))?,
+            norad::PointType::QCurve => path_builder.qcurve_to((node.x, node.y))?,
+            norad::PointType::Curve => path_builder.curve_to((node.x, node.y))?,
+            norad::PointType::OffCurve => path_builder.offcurve((node.x, node.y))?,
+        }
     }
-}
 
-fn to_ir_contour(contour: &norad::Contour) -> ir::Contour {
-    contour.points.iter().map(to_ir_contour_point).collect()
+    if norad::PointType::Move == contour.points[0].typ {
+        path_builder.close_path()?;
+    }
+
+    let path = path_builder.build();
+    trace!(
+        "Built a {} entry path for {}",
+        path.elements().len(),
+        glyph_name
+    );
+    Ok(path)
 }
 
 fn to_ir_component(component: &norad::Component) -> ir::Component {
     ir::Component {
-        base: component.base.to_string(),
+        base: component.base.as_str().into(),
         transform: Affine::new([
             component.transform.x_scale,
             component.transform.yx_scale,
@@ -54,13 +62,17 @@ fn to_ir_component(component: &norad::Component) -> ir::Component {
     }
 }
 
-fn to_ir_glyph_instance(glyph: &norad::Glyph) -> ir::GlyphInstance {
-    ir::GlyphInstance {
+fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, WorkError> {
+    let mut contours = Vec::new();
+    for contour in glyph.contours.iter() {
+        contours.push(to_ir_contour(glyph.name().as_str(), contour)?);
+    }
+    Ok(ir::GlyphInstance {
         width: glyph.width,
         height: Some(glyph.height),
-        contours: glyph.contours.iter().map(to_ir_contour).collect(),
+        contours,
         components: glyph.components.iter().map(to_ir_component).collect(),
-    }
+    })
 }
 
 pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
@@ -103,12 +115,16 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
 pub fn to_ir_glyph(
     glyph_name: GlyphName,
     glif_files: &HashMap<&PathBuf, Vec<NormalizedLocation>>,
-) -> Result<ir::Glyph, Error> {
+) -> Result<ir::Glyph, WorkError> {
     let mut glyph = ir::Glyph::new(glyph_name);
     for (glif_file, locations) in glif_files {
-        let norad_glyph = norad::Glyph::load(glif_file).map_err(Error::GlifLoadError)?;
+        let norad_glyph =
+            norad::Glyph::load(glif_file).map_err(|e| WorkError::InvalidSourceGlyph {
+                glyph_name: glyph.name.clone(),
+                message: format!("glif load failed due to {}", e),
+            })?;
         for location in locations {
-            glyph.try_add_source(location, to_ir_glyph_instance(&norad_glyph))?;
+            glyph.try_add_source(location, to_ir_glyph_instance(&norad_glyph)?)?;
         }
     }
     Ok(glyph)
