@@ -61,13 +61,12 @@ fn to_ir_path(glyph_name: &GlyphName, src_path: &Path) -> Result<BezPath, WorkEr
     } else {
         // In Glyphs.app, the starting node of a closed contour is always
         // stored at the end of the nodes list.
-        let (last, elements) = nodes
+        let (last, _) = nodes
             .split_last()
             .expect("Not empty and no last is a good trick");
-        nodes = elements;
         last
     };
-    if first.node_type != NodeType::Line {
+    if first.node_type == NodeType::OffCurve {
         return Err(WorkError::InvalidSourceGlyph {
             glyph_name: glyph_name.clone(),
             message: String::from("Open path starts with off-curve points"),
@@ -268,5 +267,35 @@ impl TryFrom<Font> for FontInfo {
             axes,
             axis_indices,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glyphs_reader::{Node, Path};
+
+    use super::to_ir_path;
+
+    #[test]
+    fn the_last_of_a_closed_contour_is_first() {
+        // In glyph's if we start with off-curve points that means start at the *last* point
+        let mut path = Path::new(true);
+
+        // A sort of teardrop thing drawn with a single cubic
+        // Offcurve, Offcurve, Oncurve should be taken to start and end at the closing Oncurve.
+        path.nodes.push(Node {
+            pt: (64.0, 64.0).into(),
+            node_type: glyphs_reader::NodeType::OffCurve,
+        });
+        path.nodes.push(Node {
+            pt: (64.0, 0.0).into(),
+            node_type: glyphs_reader::NodeType::OffCurve,
+        });
+        path.nodes.push(Node {
+            pt: (32.0, 32.0).into(),
+            node_type: glyphs_reader::NodeType::Curve,
+        });
+        let bez = to_ir_path(&"test".into(), &path).unwrap();
+        assert_eq!("M32 32C64 64 64 0 32 32Z", bez.to_svg());
     }
 }
