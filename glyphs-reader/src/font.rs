@@ -93,6 +93,7 @@ struct RawFont {
 pub struct RawFeature {
     pub automatic: Option<i64>,
     pub name: Option<String>,
+    pub tag: Option<String>,
     pub code: String,
 
     #[rest]
@@ -980,9 +981,13 @@ impl RawFeature {
     }
 
     fn name(&self) -> Result<String, Error> {
-        match &self.name {
-            Some(name) => Ok(name.clone()),
-            None => Err(Error::StructuralError(format!("{:?} missing name", self))),
+        match (&self.name, &self.tag) {
+            (Some(name), _) => Ok(name.clone()),
+            (None, Some(tag)) => Ok(tag.clone()),
+            (None, None) => Err(Error::StructuralError(format!(
+                "{:?} missing name and tag",
+                self
+            ))),
         }
     }
 }
@@ -1139,7 +1144,7 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use crate::{Font, FromPlist, Node, Plist, Shape};
+    use crate::{font::RawFeature, Font, FromPlist, Node, Plist, Shape};
 
     use ordered_float::OrderedFloat;
 
@@ -1453,5 +1458,17 @@ mod tests {
             ],
             font.features.iter().map(|f| f.as_str()).collect::<Vec<_>>()
         )
+    }
+
+    #[test]
+    fn tags_make_excellent_names() {
+        let raw = RawFeature {
+            name: None,
+            tag: Some("aalt".to_string()),
+            automatic: None,
+            code: "blah".to_string(),
+            other_stuff: BTreeMap::new(),
+        };
+        assert_eq!("aalt", raw.name().unwrap());
     }
 }
