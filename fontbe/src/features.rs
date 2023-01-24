@@ -2,7 +2,9 @@
 
 use std::{
     ffi::{OsStr, OsString},
+    fmt::Display,
     fs,
+    rc::Rc,
 };
 
 use fea_rs::{
@@ -34,16 +36,40 @@ impl FeatureWork {
 // I do find the need to lament
 struct CursedClosures {
     content_path: OsString,
-    content: String,
+    content: Rc<str>,
 }
 
 impl SourceResolver for CursedClosures {
-    fn get_contents(&self, path: &OsStr) -> Result<String, SourceLoadError> {
+    fn get_contents(&self, path: &OsStr) -> Result<Rc<str>, SourceLoadError> {
         if path == &*self.content_path {
             return Ok(self.content.clone());
         }
-        // I don't think I can actually construct this given private fields and pub(crate) new
-        todo!("Construct a SourceLoadError")
+        Err(SourceLoadError::new(
+            path.to_os_string(),
+            NotSupportedError::new(),
+        ))
+    }
+}
+
+#[derive(Debug)]
+struct NotSupportedError {}
+
+impl NotSupportedError {
+    fn new() -> NotSupportedError {
+        NotSupportedError {}
+    }
+}
+
+impl std::error::Error for NotSupportedError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
+
+impl Display for NotSupportedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Not supported")?;
+        Ok(())
     }
 }
 
@@ -60,7 +86,7 @@ impl FeatureWork {
         if let Features::Memory(fea_content) = features {
             let resolver = CursedClosures {
                 content_path: root_path.clone(),
-                content: fea_content.clone(),
+                content: Rc::from(fea_content.as_str()),
             };
             compiler = compiler.with_resolver(resolver);
         }
@@ -76,7 +102,7 @@ impl FeatureWork {
     }
 }
 
-fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &String) {
+fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &str) {
     let debug_file = context.debug_dir().join("glyphs.fea");
     match fs::write(&debug_file, fea_content) {
         Ok(..) => {
@@ -108,7 +134,7 @@ impl Work<Context, Error> for FeatureWork {
             .map(|n| Into::<FeaRsGlyphName>::into(n.as_str()))
             .collect();
 
-        let result = self.compile(&*features, glyph_map);
+        let result = self.compile(&features, glyph_map);
         if result.is_err() || context.emit_debug {
             if let Features::Memory(fea_content) = &*features {
                 write_debug_fea(context, result.is_err(), "compile failed", fea_content);
