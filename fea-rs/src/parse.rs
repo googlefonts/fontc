@@ -10,7 +10,7 @@ mod parser;
 mod source;
 mod tree;
 
-use std::{ffi::OsString, path::PathBuf, rc::Rc};
+use std::{ffi::OsString, path::PathBuf, sync::Arc};
 
 pub use lexer::TokenSet;
 pub use source::{FileSystemResolver, SourceLoadError, SourceResolver};
@@ -74,8 +74,8 @@ pub fn parse_root(
 /// This is useful for things like testing or syntax highlighting of a single file,
 /// but it cannot handle imports, or handle ambiguous glyph names.
 ///
-/// The input text can be any of `&str`, `String`, or `Rc<str>`.
-pub fn parse_string(text: impl Into<Rc<str>>) -> (Node, Vec<Diagnostic>) {
+/// The input text can be any of `&str`, `String`, or `Arc<str>`.
+pub fn parse_string(text: impl Into<Arc<str>>) -> (Node, Vec<Diagnostic>) {
     let source = source::Source::new("<parse::parse_string>", text.into());
     let (node, errs, _) = context::parse_src(&source, None);
     (node, errs)

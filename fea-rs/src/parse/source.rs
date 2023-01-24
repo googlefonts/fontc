@@ -7,7 +7,7 @@ use std::{
     num::NonZeroU32,
     ops::Range,
     path::{Path, PathBuf},
-    rc::Rc,
+    sync::Arc,
 };
 
 use crate::util;
@@ -20,15 +20,18 @@ pub struct FileId(NonZeroU32);
 ///
 /// We keep hold of all sources used in a given compilation so that we can
 /// do error reporting.
+///
+/// Note: this type uses `Arc` internally so that it can be safely sent across
+/// threads.
 #[derive(Clone, Debug)]
 pub struct Source {
     id: FileId,
     /// The non-canonicalized path to this source, suitable for printing.
     path: OsString,
-    contents: Rc<str>,
+    contents: Arc<str>,
     /// The index of each newline character, for efficiently fetching lines
     /// (for error reporting, e.g.)
-    line_offsets: Rc<[usize]>,
+    line_offsets: Arc<[usize]>,
 }
 
 /// A list of sources in a project.
@@ -56,7 +59,7 @@ pub struct SourceMap {
 #[error("Failed to load source at '{}': '{cause}'", Path::new(.path.as_os_str()).display())]
 pub struct SourceLoadError {
     #[source]
-    cause: Rc<dyn std::error::Error>,
+    cause: Arc<dyn std::error::Error>,
     path: OsString,
 }
 
@@ -72,7 +75,7 @@ pub struct SourceLoadError {
 /// `|&OsStr| -> Result<String, SourceLoadError>`.
 pub trait SourceResolver {
     /// Return the contents of the utf-8 encoded file at the provided path.
-    fn get_contents(&self, path: &OsStr) -> Result<Rc<str>, SourceLoadError>;
+    fn get_contents(&self, path: &OsStr) -> Result<Arc<str>, SourceLoadError>;
 
     /// Given a raw path (the `$path` in `include($path)`), return the path to load.
     /// The final path may differ based on which file the include statement occurs
@@ -121,9 +124,9 @@ impl std::fmt::Debug for dyn SourceResolver {
 
 impl<F> SourceResolver for F
 where
-    F: Fn(&OsStr) -> Result<Rc<str>, SourceLoadError>,
+    F: Fn(&OsStr) -> Result<Arc<str>, SourceLoadError>,
 {
-    fn get_contents(&self, path: &OsStr) -> Result<Rc<str>, SourceLoadError> {
+    fn get_contents(&self, path: &OsStr) -> Result<Arc<str>, SourceLoadError> {
         (self)(path)
     }
 }
@@ -146,7 +149,7 @@ impl FileSystemResolver {
 }
 
 impl SourceResolver for FileSystemResolver {
-    fn get_contents(&self, path: &OsStr) -> Result<Rc<str>, SourceLoadError> {
+    fn get_contents(&self, path: &OsStr) -> Result<Arc<str>, SourceLoadError> {
         std::fs::read_to_string(path)
             .map(Into::into)
             .map_err(|cause| SourceLoadError::new(path.into(), cause))
@@ -177,7 +180,7 @@ impl FileId {
 }
 
 impl Source {
-    pub(crate) fn new(path: impl Into<OsString>, contents: Rc<str>) -> Self {
+    pub(crate) fn new(path: impl Into<OsString>, contents: Arc<str>) -> Self {
         let line_offsets = line_offsets(&contents);
         Source {
             path: path.into(),
@@ -244,7 +247,7 @@ impl Source {
     }
 }
 
-fn line_offsets(text: &str) -> Rc<[usize]> {
+fn line_offsets(text: &str) -> Arc<[usize]> {
     // we could use memchar for this; benefits would require benchmarking
     let mut result = vec![0];
     result.extend(
@@ -287,8 +290,8 @@ impl SourceLoader {
         }
     }
 
-    pub(crate) fn into_inner(self) -> Rc<SourceList> {
-        Rc::new(self.sources)
+    pub(crate) fn into_inner(self) -> Arc<SourceList> {
+        Arc::new(self.sources)
     }
 
     pub(crate) fn get(&self, id: &FileId) -> Option<&Source> {
@@ -347,7 +350,7 @@ impl SourceLoadError {
     /// cause of the failure.
     pub fn new(path: OsString, cause: impl std::error::Error + 'static) -> Self {
         Self {
-            cause: Rc::new(cause),
+            cause: Arc::new(cause),
             path,
         }
     }

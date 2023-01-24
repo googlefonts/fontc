@@ -4,7 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     ops::Range,
-    rc::Rc,
+    sync::Arc,
 };
 
 use super::source::{Source, SourceLoadError, SourceLoader, SourceResolver};
@@ -55,7 +55,7 @@ const MAX_INCLUDE_DEPTH: usize = 50;
 #[derive(Debug)]
 pub(crate) struct ParseContext {
     root_id: FileId,
-    sources: Rc<SourceList>,
+    sources: Arc<SourceList>,
     parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
     graph: IncludeGraph,
 }
@@ -203,7 +203,7 @@ impl ParseContext {
         (
             ParseTree {
                 root,
-                map: Rc::new(map),
+                map: Arc::new(map),
                 sources: self.sources,
             },
             all_errors,

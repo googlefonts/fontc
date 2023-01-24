@@ -1,6 +1,6 @@
 //! the result of a parsing operation
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use super::source::Source;
 use super::{FileId, SourceList, SourceMap};
@@ -16,8 +16,9 @@ use crate::{token_tree::typed, Diagnostic, Node};
 #[derive(Clone, Debug)]
 pub struct ParseTree {
     pub(crate) root: Node,
-    pub(crate) sources: Rc<SourceList>,
-    pub(crate) map: Rc<SourceMap>,
+    // Arc so we can send across threads
+    pub(crate) sources: Arc<SourceList>,
+    pub(crate) map: Arc<SourceMap>,
 }
 
 impl ParseTree {
