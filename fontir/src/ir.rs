@@ -189,7 +189,28 @@ impl GlyphPathBuilder {
     }
 
     pub fn qcurve_to(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
-        todo!("Support qcurve to {}", p.into());
+        // https://github.com/googlefonts/fontmake-rs/issues/110
+        // Guard clauses: degenerate cases
+        if self.is_empty() {
+            return self.move_to(p);
+        }
+        if self.offcurve.is_empty() {
+            return self.line_to(p);
+        }
+
+        // Insert an implied oncurve between every pair of offcurve points
+        for window in self.offcurve.windows(2) {
+            let curr = window[0];
+            let next = window[1];
+            // current offcurve to halfway to the next one
+            let implied = Point::new((curr.x + next.x) / 2.0, (curr.y + next.y) / 2.0);
+            self.path.quad_to(curr, implied);
+        }
+        // last but not least, the last offcurve to the provided point
+        self.path.quad_to(*self.offcurve.last().unwrap(), p.into());
+        self.offcurve.clear();
+
+        Ok(())
     }
 
     /// Type of curve depends on accumulated off-curves
@@ -241,6 +262,8 @@ mod tests {
         ir::Axis,
     };
 
+    use super::GlyphPathBuilder;
+
     fn test_axis() -> Axis {
         let min = UserCoord::new(100.0);
         let default = UserCoord::new(400.0);
@@ -269,5 +292,32 @@ mod tests {
         let test_axis = test_axis();
         let bin = bincode::serialize(&test_axis).unwrap();
         assert_eq!(test_axis, bincode::deserialize(&bin).unwrap());
+    }
+
+    #[test]
+    fn a_qcurve_with_no_offcurve_is_a_line() {
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.qcurve_to((4.0, 2.0)).unwrap();
+        assert_eq!("M2 2L4 2", builder.build().to_svg());
+    }
+
+    #[test]
+    fn a_qcurve_with_one_offcurve_is_a_single_quad_to() {
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.offcurve((3.0, 0.0)).unwrap();
+        builder.qcurve_to((4.0, 2.0)).unwrap();
+        assert_eq!("M2 2Q3 0 4 2", builder.build().to_svg());
+    }
+
+    #[test]
+    fn a_qcurve_with_two_offcurve_is_two_quad_to() {
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.offcurve((3.0, 0.0)).unwrap();
+        builder.offcurve((5.0, 4.0)).unwrap();
+        builder.qcurve_to((6.0, 2.0)).unwrap();
+        assert_eq!("M2 2Q3 0 4 2Q5 4 6 2", builder.build().to_svg());
     }
 }
