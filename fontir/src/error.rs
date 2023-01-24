@@ -1,6 +1,7 @@
 use std::{error, io, path::PathBuf};
 
 use fontdrasil::types::GlyphName;
+use kurbo::Point;
 use thiserror::Error;
 
 use crate::coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserLocation};
@@ -35,11 +36,6 @@ pub enum Error {
     UnexpectedState,
     #[error("Duplicate location for {what}: {loc:?}")]
     DuplicateUserLocation { what: String, loc: UserLocation },
-    #[error("Duplicate location for {what}: {loc:?}")]
-    DuplicateNormalizedLocation {
-        what: String,
-        loc: NormalizedLocation,
-    },
     #[error("Global metadata very bad, very very bad")]
     InvalidGlobalMetadata,
     #[error("No default master in {0:?}")]
@@ -91,9 +87,27 @@ pub enum WorkError {
         axis: String,
         pos: NormalizedCoord,
     },
+    #[error("Duplicate location for {what}: {loc:?}")]
+    DuplicateNormalizedLocation {
+        what: String,
+        loc: NormalizedLocation,
+    },
     #[error("{glyph_name} invalid {message}")]
     InvalidSourceGlyph {
         glyph_name: GlyphName,
         message: String,
+    },
+    #[error("Path conversion error")]
+    PathConversionError(#[from] PathConversionError),
+}
+
+/// An async work error, hence one that must be Send
+#[derive(Debug, Error)]
+pub enum PathConversionError {
+    #[error("{glyph_name} has {num_offcurve} consecutive offcurve points {points:?}")]
+    TooManyOffcurvePoints {
+        glyph_name: GlyphName,
+        num_offcurve: usize,
+        points: Vec<Point>,
     },
 }

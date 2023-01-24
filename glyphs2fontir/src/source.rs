@@ -263,7 +263,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
 
             // TODO populate width and height properly
             let (contours, components) =
-                to_ir_contours_and_components(&self.glyph_name, &instance.shapes)?;
+                to_ir_contours_and_components(self.glyph_name.clone(), &instance.shapes)?;
             let glyph_instance = GlyphInstance {
                 width: instance.width.into_inner(),
                 height: None,

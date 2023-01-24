@@ -4,30 +4,33 @@ use fontdrasil::types::GlyphName;
 use fontir::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
-    ir,
+    ir::{self, GlyphPathBuilder},
 };
-use glyphs_reader::{Component, FeatureSnippet, Font, FontMaster, Node, NodeType, Path, Shape};
+use glyphs_reader::{Component, FeatureSnippet, Font, FontMaster, NodeType, Path, Shape};
+use kurbo::BezPath;
 use log::trace;
 use ordered_float::OrderedFloat;
 
 pub(crate) fn to_ir_contours_and_components(
-    glyph_name: &GlyphName,
+    glyph_name: GlyphName,
     shapes: &[Shape],
-) -> Result<(Vec<ir::Contour>, Vec<ir::Component>), WorkError> {
+) -> Result<(Vec<BezPath>, Vec<ir::Component>), WorkError> {
     let mut contours = Vec::new();
     let mut components = Vec::new();
 
     for shape in shapes.iter() {
         match shape {
-            Shape::Component(component) => components.push(to_ir_component(glyph_name, component)),
-            Shape::Path(path) => contours.push(to_ir_contour(glyph_name, path)?),
+            Shape::Component(component) => {
+                components.push(to_ir_component(glyph_name.clone(), component))
+            }
+            Shape::Path(path) => contours.push(to_ir_path(glyph_name.clone(), path)?),
         }
     }
 
     Ok((contours, components))
 }
 
-fn to_ir_component(glyph_name: &GlyphName, component: &Component) -> ir::Component {
+fn to_ir_component(glyph_name: GlyphName, component: &Component) -> ir::Component {
     trace!(
         "{} reuses {} with transform {:?}",
         glyph_name,
@@ -35,68 +38,72 @@ fn to_ir_component(glyph_name: &GlyphName, component: &Component) -> ir::Compone
         component.transform
     );
     ir::Component {
-        base: component.glyph_name.clone(),
+        base: component.glyph_name.as_str().into(),
         transform: component.transform,
     }
 }
 
-fn to_ir_contour(glyph_name: &GlyphName, path: &Path) -> Result<ir::Contour, WorkError> {
+fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkError> {
     // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/paths.py#L20
     // See also https://github.com/fonttools/ufoLib2/blob/4d8a9600148b670b0840120658d9aab0b38a9465/src/ufoLib2/pointPens/glyphPointPen.py#L16
-    let mut contour = ir::Contour::new();
-    if path.nodes.is_empty() {
-        return Ok(contour);
+    let mut path_builder = GlyphPathBuilder::new(glyph_name.clone());
+    if src_path.nodes.is_empty() {
+        return Ok(path_builder.build());
     }
 
-    let mut nodes = &path.nodes[..];
-    if !path.closed {
+    let mut nodes = &src_path.nodes[..];
+
+    // First is a delicate butterfly
+    let first = if !src_path.closed {
         let (first, elements) = nodes
             .split_first()
             .expect("Not empty and no first is a good trick");
         nodes = elements;
-        if first.node_type != NodeType::Line {
-            return Err(WorkError::InvalidSourceGlyph {
-                glyph_name: glyph_name.clone(),
-                message: String::from("Open path starts with off-curve points"),
-            });
-        }
-        let mut pt = to_ir_point(first);
-        pt.typ = ir::PointType::Move;
-        contour.push(pt);
+        first
     } else {
         // In Glyphs.app, the starting node of a closed contour is always
         // stored at the end of the nodes list.
-        let (last, elements) = nodes
+        let (last, _) = nodes
             .split_last()
             .expect("Not empty and no last is a good trick");
-        nodes = elements;
-        contour.push(to_ir_point(last));
+        last
+    };
+    if first.node_type == NodeType::OffCurve {
+        return Err(WorkError::InvalidSourceGlyph {
+            glyph_name,
+            message: String::from("Open path starts with off-curve points"),
+        });
     }
+    path_builder.move_to((first.pt.x, first.pt.y))?;
 
-    contour.extend(nodes.iter().map(to_ir_point));
-
-    trace!("Built a {} entry contour for {}", contour.len(), glyph_name);
-    Ok(contour)
-}
-
-fn to_ir_point(node: &Node) -> ir::ContourPoint {
-    ir::ContourPoint {
-        x: node.pt.x,
-        y: node.pt.y,
-        typ: to_ir_point_type(node.node_type),
-    }
-}
-
-fn to_ir_point_type(node_type: NodeType) -> ir::PointType {
+    // Walk through the remaining points, accumulating off-curve points until we see an on-curve
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/pens.py#L92
-    // Convert XSmooth to X because Smooth is only relevant to editor behavior
-    match node_type {
-        NodeType::Line => ir::PointType::Line,
-        NodeType::Curve => ir::PointType::Curve,
-        NodeType::LineSmooth => ir::PointType::Line,
-        NodeType::CurveSmooth => ir::PointType::Curve,
-        NodeType::OffCurve => ir::PointType::OffCurve,
+    for node in nodes {
+        // Smooth is only relevant to editors so ignore here
+        match node.node_type {
+            NodeType::Line | NodeType::LineSmooth => path_builder
+                .line_to((node.pt.x, node.pt.y))
+                .map_err(WorkError::PathConversionError)?,
+            NodeType::Curve | NodeType::CurveSmooth => path_builder
+                .curve_to((node.pt.x, node.pt.y))
+                .map_err(WorkError::PathConversionError)?,
+            NodeType::OffCurve => path_builder
+                .offcurve((node.pt.x, node.pt.y))
+                .map_err(WorkError::PathConversionError)?,
+        }
     }
+
+    if src_path.closed {
+        path_builder.close_path()?;
+    }
+
+    let path = path_builder.build();
+    trace!(
+        "Built a {} entry path for {}",
+        path.elements().len(),
+        glyph_name
+    );
+    Ok(path)
 }
 
 pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features, WorkError> {
@@ -264,5 +271,35 @@ impl TryFrom<Font> for FontInfo {
             axes,
             axis_indices,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glyphs_reader::{Node, Path};
+
+    use super::to_ir_path;
+
+    #[test]
+    fn the_last_of_a_closed_contour_is_first() {
+        // In glyph's if we start with off-curve points that means start at the *last* point
+        let mut path = Path::new(true);
+
+        // A sort of teardrop thing drawn with a single cubic
+        // Offcurve, Offcurve, Oncurve should be taken to start and end at the closing Oncurve.
+        path.nodes.push(Node {
+            pt: (64.0, 64.0).into(),
+            node_type: glyphs_reader::NodeType::OffCurve,
+        });
+        path.nodes.push(Node {
+            pt: (64.0, 0.0).into(),
+            node_type: glyphs_reader::NodeType::OffCurve,
+        });
+        path.nodes.push(Node {
+            pt: (32.0, 32.0).into(),
+            node_type: glyphs_reader::NodeType::Curve,
+        });
+        let bez = to_ir_path("test".into(), &path).unwrap();
+        assert_eq!("M32 32C64 64 64 0 32 32Z", bez.to_svg());
     }
 }
