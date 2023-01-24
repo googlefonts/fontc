@@ -47,9 +47,6 @@ impl ParseTree {
     /// This associates the message with the appropriate source location and
     /// syntax highlighting.
     pub fn format_diagnostic(&self, err: &Diagnostic) -> String {
-        let mut s = String::new();
-        let source = self.get_source(err.message.file).unwrap();
-        crate::util::highlighting::write_diagnostic(&mut s, err, source, None);
-        s
+        self.sources.format_diagnostic(err)
     }
 }

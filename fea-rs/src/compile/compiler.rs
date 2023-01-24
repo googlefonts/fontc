@@ -151,7 +151,7 @@ fn print_warnings_return_errors(
     } else {
         Err(DiagnosticSet {
             messages: diagnostics,
-            tree: tree.clone(),
+            sources: tree.sources.clone(),
         })
     }
 }

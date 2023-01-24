@@ -245,7 +245,7 @@ pub fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase
 /// Convert diagnostics to a printable string
 pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> String {
     DiagnosticSet {
-        tree: root.to_owned(),
+        sources: root.sources.clone(),
         messages: diagnostics.to_owned(),
     }
     .to_string()

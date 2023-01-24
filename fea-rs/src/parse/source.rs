@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::util;
+use crate::{util, Diagnostic};
 
 /// Uniquely identifies a source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -58,8 +58,7 @@ pub struct SourceMap {
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("Failed to load source at '{}': '{cause}'", Path::new(.path.as_os_str()).display())]
 pub struct SourceLoadError {
-    #[source]
-    cause: Arc<dyn std::error::Error>,
+    cause: Arc<str>,
     path: OsString,
 }
 
@@ -341,6 +340,17 @@ impl SourceList {
         self.ids.insert(canonical_path, source.id);
         self.sources.insert(source.id, source);
     }
+
+    /// Generate a string suitable for presenting a [`Diagnostic`] to the user.
+    ///
+    /// This associates the message with the appropriate source location and
+    /// syntax highlighting.
+    pub(crate) fn format_diagnostic(&self, err: &Diagnostic) -> String {
+        let mut s = String::new();
+        let source = self.get(&err.message.file).unwrap();
+        crate::util::highlighting::write_diagnostic(&mut s, err, source, None);
+        s
+    }
 }
 
 impl SourceLoadError {
@@ -348,9 +358,9 @@ impl SourceLoadError {
     ///
     /// The `cause` argument should be some error type that communicates the
     /// cause of the failure.
-    pub fn new(path: OsString, cause: impl std::error::Error + 'static) -> Self {
+    pub fn new(path: OsString, cause: impl std::fmt::Display) -> Self {
         Self {
-            cause: Arc::new(cause),
+            cause: cause.to_string().into(),
             path,
         }
     }

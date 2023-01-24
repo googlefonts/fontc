@@ -1,8 +1,13 @@
 //! Error types related to compilation
 
+use std::sync::Arc;
+
 use write_fonts::{read::ReadError, validate::ValidationReport};
 
-use crate::{parse::SourceLoadError, Diagnostic, ParseTree};
+use crate::{
+    parse::{SourceList, SourceLoadError},
+    Diagnostic,
+};
 
 /// An error that occurs when extracting a glyph order from a UFO.
 #[derive(Clone, Debug, thiserror::Error)]
@@ -71,7 +76,7 @@ pub struct BinaryCompilationError(ValidationReport);
 #[derive(Clone)]
 pub struct DiagnosticSet {
     pub(crate) messages: Vec<Diagnostic>,
-    pub(crate) tree: ParseTree,
+    pub(crate) sources: Arc<SourceList>,
 }
 
 impl std::fmt::Display for DiagnosticSet {
@@ -81,7 +86,7 @@ impl std::fmt::Display for DiagnosticSet {
             if !first {
                 writeln!(f)?;
             }
-            write!(f, "{}", self.tree.format_diagnostic(err))?;
+            write!(f, "{}", self.sources.format_diagnostic(err))?;
             first = false;
         }
         Ok(())
@@ -100,5 +105,16 @@ impl std::fmt::Debug for DiagnosticSet {
 impl From<ValidationReport> for BinaryCompilationError {
     fn from(src: ValidationReport) -> BinaryCompilationError {
         BinaryCompilationError(src)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn assert_compiler_error_is_send() {
+        fn send_me_baby<T: Send>() {}
+        send_me_baby::<CompilerError>();
     }
 }
