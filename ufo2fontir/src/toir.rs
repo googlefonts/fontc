@@ -18,8 +18,8 @@ pub(crate) fn to_design_location(loc: &[Dimension]) -> DesignLocation {
         .collect()
 }
 
-fn to_ir_contour(glyph_name: &str, contour: &norad::Contour) -> Result<BezPath, WorkError> {
-    let mut path_builder = GlyphPathBuilder::new(glyph_name);
+fn to_ir_contour(glyph_name: GlyphName, contour: &norad::Contour) -> Result<BezPath, WorkError> {
+    let mut path_builder = GlyphPathBuilder::new(glyph_name.clone());
     if contour.points.is_empty() {
         return Ok(path_builder.build());
     }
@@ -45,7 +45,7 @@ fn to_ir_contour(glyph_name: &str, contour: &norad::Contour) -> Result<BezPath, 
     trace!(
         "Built a {} entry path for {}",
         path.elements().len(),
-        glyph_name
+        glyph_name,
     );
     Ok(path)
 }
@@ -67,7 +67,7 @@ fn to_ir_component(component: &norad::Component) -> ir::Component {
 fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, WorkError> {
     let mut contours = Vec::new();
     for contour in glyph.contours.iter() {
-        contours.push(to_ir_contour(glyph.name().as_str(), contour)?);
+        contours.push(to_ir_contour(glyph.name().as_str().into(), contour)?);
     }
     Ok(ir::GlyphInstance {
         width: glyph.width,
@@ -155,7 +155,7 @@ mod tests {
             contour_point(1.0, 2.0, norad::PointType::Line),
         ];
         let contour = norad::Contour::new(points, None, None);
-        let bez = to_ir_contour("test", &contour).unwrap();
+        let bez = to_ir_contour("test".into(), &contour).unwrap();
         assert_eq!("M1 1L9 1L9 2L1 2Z", bez.to_svg());
     }
 
@@ -172,7 +172,7 @@ mod tests {
             contour_point(64.0, 0.0, norad::PointType::OffCurve),
         ];
         let contour = norad::Contour::new(points, None, None);
-        let bez = to_ir_contour("test", &contour).unwrap();
+        let bez = to_ir_contour("test".into(), &contour).unwrap();
         assert_eq!("M32 32C64 64 64 0 32 32Z", bez.to_svg());
     }
 }

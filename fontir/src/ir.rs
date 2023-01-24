@@ -2,7 +2,7 @@
 
 use crate::{
     coords::{CoordConverter, NormalizedLocation, UserCoord},
-    error::WorkError,
+    error::{PathConversionError, WorkError},
     serde::{GlyphSerdeRepr, StaticMetadataSerdeRepr},
 };
 use fontdrasil::types::GlyphName;
@@ -135,33 +135,32 @@ pub struct Component {
 /// Source formats tend to use streams of point-of-type. Curve manipulation is
 /// often easier on bezier path, so provide a mechanism to convert.
 #[derive(Debug)]
-pub struct GlyphPathBuilder<'a> {
-    glyph_name: &'a str,
+pub struct GlyphPathBuilder {
+    glyph_name: GlyphName,
     offcurve: Vec<Point>,
     path: BezPath,
-    last_move_to: Point,
+    last_move_to: Option<Point>,
 }
 
-impl<'a> GlyphPathBuilder<'a> {
-    pub fn new(glyph_name: &'a str) -> GlyphPathBuilder {
+impl GlyphPathBuilder {
+    pub fn new(glyph_name: GlyphName) -> GlyphPathBuilder {
         GlyphPathBuilder {
             glyph_name,
             offcurve: Vec::new(),
             path: BezPath::new(),
-            // kurbo *requires* subpaths start with move so this isn't going to get used
-            last_move_to: Point::ZERO,
+            last_move_to: None,
         }
     }
 
-    fn check_num_offcurve(&self, expected: impl Fn(usize) -> bool) -> Result<(), WorkError> {
+    fn check_num_offcurve(
+        &self,
+        expected: impl Fn(usize) -> bool,
+    ) -> Result<(), PathConversionError> {
         if !expected(self.offcurve.len()) {
-            return Err(WorkError::InvalidSourceGlyph {
-                glyph_name: self.glyph_name.into(),
-                message: format!(
-                    "{} unexpected consecutive offcurve points {:?}",
-                    self.offcurve.len(),
-                    self.offcurve
-                ),
+            return Err(PathConversionError::TooManyOffcurvePoints {
+                glyph_name: self.glyph_name.clone(),
+                num_offcurve: self.offcurve.len(),
+                points: self.offcurve.clone(),
             });
         }
         Ok(())
@@ -171,15 +170,15 @@ impl<'a> GlyphPathBuilder<'a> {
         self.offcurve.is_empty() && self.path.elements().is_empty()
     }
 
-    pub fn move_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
+    pub fn move_to(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         self.check_num_offcurve(|v| v == 0)?;
         let p = p.into();
         self.path.move_to(p);
-        self.last_move_to = p;
+        self.last_move_to = Some(p);
         Ok(())
     }
 
-    pub fn line_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
+    pub fn line_to(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         self.check_num_offcurve(|v| v == 0)?;
         if self.is_empty() {
             self.move_to(p)?;
@@ -189,14 +188,14 @@ impl<'a> GlyphPathBuilder<'a> {
         Ok(())
     }
 
-    pub fn qcurve_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
+    pub fn qcurve_to(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         todo!("Support qcurve to {}", p.into());
     }
 
     /// Type of curve depends on accumulated off-curves
     ///
     /// <https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types>
-    pub fn curve_to(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
+    pub fn curve_to(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         if !self.is_empty() {
             match self.offcurve.len() {
                 0 => self.path.line_to(p),
@@ -213,17 +212,19 @@ impl<'a> GlyphPathBuilder<'a> {
         Ok(())
     }
 
-    pub fn offcurve(&mut self, p: impl Into<Point>) -> Result<(), WorkError> {
+    pub fn offcurve(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         self.offcurve.push(p.into());
         Ok(())
     }
 
-    pub fn close_path(&mut self) -> Result<(), WorkError> {
+    pub fn close_path(&mut self) -> Result<(), PathConversionError> {
         // Take dangling off-curves to imply a curve back to sub-path start
-        if !self.offcurve.is_empty() {
-            self.curve_to(self.last_move_to)?;
+        if let Some(last_move) = self.last_move_to {
+            if !self.offcurve.is_empty() {
+                self.curve_to(last_move)?;
+            }
+            self.path.close_path();
         }
-        self.path.close_path();
         Ok(())
     }
 

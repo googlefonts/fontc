@@ -12,7 +12,7 @@ use log::trace;
 use ordered_float::OrderedFloat;
 
 pub(crate) fn to_ir_contours_and_components(
-    glyph_name: &GlyphName,
+    glyph_name: GlyphName,
     shapes: &[Shape],
 ) -> Result<(Vec<BezPath>, Vec<ir::Component>), WorkError> {
     let mut contours = Vec::new();
@@ -20,15 +20,17 @@ pub(crate) fn to_ir_contours_and_components(
 
     for shape in shapes.iter() {
         match shape {
-            Shape::Component(component) => components.push(to_ir_component(glyph_name, component)),
-            Shape::Path(path) => contours.push(to_ir_path(glyph_name, path)?),
+            Shape::Component(component) => {
+                components.push(to_ir_component(glyph_name.clone(), component))
+            }
+            Shape::Path(path) => contours.push(to_ir_path(glyph_name.clone(), path)?),
         }
     }
 
     Ok((contours, components))
 }
 
-fn to_ir_component(glyph_name: &GlyphName, component: &Component) -> ir::Component {
+fn to_ir_component(glyph_name: GlyphName, component: &Component) -> ir::Component {
     trace!(
         "{} reuses {} with transform {:?}",
         glyph_name,
@@ -41,10 +43,10 @@ fn to_ir_component(glyph_name: &GlyphName, component: &Component) -> ir::Compone
     }
 }
 
-fn to_ir_path(glyph_name: &GlyphName, src_path: &Path) -> Result<BezPath, WorkError> {
+fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkError> {
     // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/paths.py#L20
     // See also https://github.com/fonttools/ufoLib2/blob/4d8a9600148b670b0840120658d9aab0b38a9465/src/ufoLib2/pointPens/glyphPointPen.py#L16
-    let mut path_builder = GlyphPathBuilder::new(glyph_name.as_str());
+    let mut path_builder = GlyphPathBuilder::new(glyph_name.clone());
     if src_path.nodes.is_empty() {
         return Ok(path_builder.build());
     }
@@ -68,7 +70,7 @@ fn to_ir_path(glyph_name: &GlyphName, src_path: &Path) -> Result<BezPath, WorkEr
     };
     if first.node_type == NodeType::OffCurve {
         return Err(WorkError::InvalidSourceGlyph {
-            glyph_name: glyph_name.clone(),
+            glyph_name,
             message: String::from("Open path starts with off-curve points"),
         });
     }
@@ -79,13 +81,15 @@ fn to_ir_path(glyph_name: &GlyphName, src_path: &Path) -> Result<BezPath, WorkEr
     for node in nodes {
         // Smooth is only relevant to editors so ignore here
         match node.node_type {
-            NodeType::Line | NodeType::LineSmooth => {
-                path_builder.line_to((node.pt.x, node.pt.y))?
-            }
-            NodeType::Curve | NodeType::CurveSmooth => {
-                path_builder.curve_to((node.pt.x, node.pt.y))?
-            }
-            NodeType::OffCurve => path_builder.offcurve((node.pt.x, node.pt.y))?,
+            NodeType::Line | NodeType::LineSmooth => path_builder
+                .line_to((node.pt.x, node.pt.y))
+                .map_err(WorkError::PathConversionError)?,
+            NodeType::Curve | NodeType::CurveSmooth => path_builder
+                .curve_to((node.pt.x, node.pt.y))
+                .map_err(WorkError::PathConversionError)?,
+            NodeType::OffCurve => path_builder
+                .offcurve((node.pt.x, node.pt.y))
+                .map_err(WorkError::PathConversionError)?,
         }
     }
 
@@ -295,7 +299,7 @@ mod tests {
             pt: (32.0, 32.0).into(),
             node_type: glyphs_reader::NodeType::Curve,
         });
-        let bez = to_ir_path(&"test".into(), &path).unwrap();
+        let bez = to_ir_path("test".into(), &path).unwrap();
         assert_eq!("M32 32C64 64 64 0 32 32Z", bez.to_svg());
     }
 }
