@@ -34,12 +34,12 @@ impl FeatureWork {
 // I did not want to clone the content
 // I do not like this construct
 // I do find the need to lament
-struct CursedClosures {
+struct InMemoryResolver {
     content_path: OsString,
     content: Rc<str>,
 }
 
-impl SourceResolver for CursedClosures {
+impl SourceResolver for InMemoryResolver {
     fn get_contents(&self, path: &OsStr) -> Result<Rc<str>, SourceLoadError> {
         if path == &*self.content_path {
             return Ok(self.content.clone());
@@ -76,15 +76,13 @@ impl Display for NotSupportedError {
 impl FeatureWork {
     fn compile(&self, features: &Features, glyph_order: GlyphMap) -> Result<FontBuilder, Error> {
         let root_path = if let Features::File(file) = features {
-            eprintln!("ROOT: {:?}", file);
             OsString::from(file)
         } else {
             OsString::new()
         };
-        eprintln!("ROOT: {:?}", root_path);
         let mut compiler = Compiler::new(root_path.clone(), &glyph_order);
         if let Features::Memory(fea_content) = features {
-            let resolver = CursedClosures {
+            let resolver = InMemoryResolver {
                 content_path: root_path.clone(),
                 content: Rc::from(fea_content.as_str()),
             };
