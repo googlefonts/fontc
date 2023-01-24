@@ -83,20 +83,16 @@ impl FeatureWork {
         let mut compiler = Compiler::new(root_path.clone(), &glyph_order);
         if let Features::Memory(fea_content) = features {
             let resolver = InMemoryResolver {
-                content_path: root_path.clone(),
+                content_path: root_path,
                 content: Rc::from(fea_content.as_str()),
             };
             compiler = compiler.with_resolver(resolver);
         }
-        match compiler.compile() {
-            Ok(compilation) => compilation
-                .assemble(&glyph_order, Default::default())
-                .map_err(|e| Error::FeaError(format!("{:?} assembling {:?}", e, root_path))),
-            Err(e) => Err(Error::FeaError(format!(
-                "{:?} compiling {:?}",
-                e, root_path
-            ))),
-        }
+        compiler
+            .compile()
+            .map_err(|e| Error::FeaCompileError(format!("{}", e)))?
+            .assemble(&glyph_order, Default::default())
+            .map_err(Error::FeaAssembleError)
     }
 }
 
