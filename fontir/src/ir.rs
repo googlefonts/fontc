@@ -199,12 +199,12 @@ impl GlyphPathBuilder {
         }
 
         // Insert an implied oncurve between every pair of offcurve points
-        for i in 0..(self.offcurve.len() - 1) {
+        for window in self.offcurve.windows(2) {
+            let curr = window[0];
+            let next = window[1];
             // current offcurve to halfway to the next one
-            let lhs = self.offcurve[i];
-            let rhs = self.offcurve[i + 1];
-            let on = Point::new((lhs.x + rhs.x) / 2.0, (lhs.y + rhs.y) / 2.0);
-            self.path.quad_to(lhs, on);
+            let implied = Point::new((curr.x + next.x) / 2.0, (curr.y + next.y) / 2.0);
+            self.path.quad_to(curr, implied);
         }
         // last but not least, the last offcurve to the provided point
         self.path.quad_to(*self.offcurve.last().unwrap(), p.into());
