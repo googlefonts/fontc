@@ -321,17 +321,17 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
             transform *= Affine::translate((try_f64(&pos[0])?, try_f64(&pos[1])?));
         }
 
+        // Rotate
+        if let Some(angle) = dict.remove("angle") {
+            transform *= Affine::rotate(try_f64(&angle)?.to_radians());
+        }
+
         // Scale
         if let Some(Plist::Array(scale)) = dict.remove("scale") {
             if scale.len() != 2 {
                 return Err(Error::StructuralError(format!("Bad scale: {:?}", scale)));
             }
             transform *= Affine::scale_non_uniform(try_f64(&scale[0])?, try_f64(&scale[1])?);
-        }
-
-        // Rotate
-        if let Some(angle) = dict.remove("angle") {
-            transform *= Affine::rotate(try_f64(&angle)?.to_radians());
         }
 
         Ok(Component {
@@ -1229,14 +1229,13 @@ mod tests {
         &glyph.layers[0].shapes[0]
     }
 
-    #[test]
-    fn read_transformed_component_2_and_3() {
-        let g2 = Font::load(&glyphs2_dir().join("Component.glyphs")).unwrap();
-        let g3 = Font::load(&glyphs3_dir().join("Component.glyphs")).unwrap();
+    fn check_v2_to_v3_transform(glyphs_file: &str, glyph_name: &str, expected: Affine) {
+        let g2 = Font::load(&glyphs2_dir().join(glyphs_file)).unwrap();
+        let g3 = Font::load(&glyphs3_dir().join(glyphs_file)).unwrap();
 
         // We're exclusively interested in the transform
-        let g2_shape = only_shape_in_only_layer(&g2, "comma");
-        let g3_shape = only_shape_in_only_layer(&g3, "comma");
+        let g2_shape = only_shape_in_only_layer(&g2, glyph_name);
+        let g3_shape = only_shape_in_only_layer(&g3, glyph_name);
 
         let Shape::Component(g2_shape) = g2_shape else {
             panic!("{:?} should be a component", g2_shape);
@@ -1245,10 +1244,20 @@ mod tests {
             panic!("{:?} should be a component", g3_shape);
         };
 
-        let expected = Affine::new([1.6655, 1.1611, -1.1611, 1.6655, -233.0, -129.0]);
-
         assert_eq!(expected, round(g2_shape.transform, 4));
         assert_eq!(expected, round(g3_shape.transform, 4));
+    }
+
+    #[test]
+    fn read_transformed_component_2_and_3_uniform_scale() {
+        let expected = Affine::new([1.6655, 1.1611, -1.1611, 1.6655, -233.0, -129.0]);
+        check_v2_to_v3_transform("Component.glyphs", "comma", expected);
+    }
+
+    #[test]
+    fn read_transformed_component_2_and_3_nonuniform_scale() {
+        let expected = Affine::new([0.8452, 0.5892, -1.1611, 1.6655, -233.0, -129.0]);
+        check_v2_to_v3_transform("Component.glyphs", "non_uniform_scale", expected);
     }
 
     #[test]
