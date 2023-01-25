@@ -259,7 +259,7 @@ fn add_feature_be_job(
         workload.insert(
             BeWorkIdentifier::Features.into(),
             Job {
-                work: FeatureWork::create(change_detector.ir_paths.build_dir()).into(),
+                work: FeatureWork::create().into(),
                 dependencies: HashSet::from([
                     FeWorkIdentifier::StaticMetadata.into(),
                     FeWorkIdentifier::Features.into(),

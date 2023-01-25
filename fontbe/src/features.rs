@@ -1,12 +1,16 @@
 //! Feature binary compilation.
 
 use std::{
-    fmt::Debug,
+    ffi::{OsStr, OsString},
+    fmt::Display,
     fs,
-    path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use fea_rs::{Diagnostic, GlyphMap, GlyphName as FeaRsGlyphName, ParseContext};
+use fea_rs::{
+    parse::{SourceLoadError, SourceResolver},
+    Compiler, GlyphMap, GlyphName as FeaRsGlyphName,
+};
 use fontir::ir::Features;
 use log::{debug, error, trace, warn};
 use write_fonts::FontBuilder;
@@ -18,118 +22,81 @@ use crate::{
     orchestration::{BeWork, Context},
 };
 
-pub struct FeatureWork {
-    build_dir: PathBuf,
-}
+pub struct FeatureWork {}
 
 impl FeatureWork {
-    pub fn create(build_dir: &Path) -> Box<BeWork> {
-        let build_dir = build_dir.to_path_buf();
-        Box::new(FeatureWork { build_dir })
+    pub fn create() -> Box<BeWork> {
+        Box::new(FeatureWork {})
     }
 }
 
-fn check_diagnostics(
-    feature_source: impl Debug,
-    op: &str,
-    diagnostics: &Vec<Diagnostic>,
-    formatter: impl Fn(&Diagnostic) -> String,
-) -> Result<(), Error> {
-    let mut err = false;
-    for diagnostic in diagnostics {
-        if diagnostic.is_error() {
-            warn!(
-                "{:?} {} error {}",
-                feature_source,
-                op,
-                formatter(diagnostic)
-            );
-            err = true;
+// I did not want to make a struct
+// I did not want to clone the content
+// I do not like this construct
+// I do find the need to lament
+struct InMemoryResolver {
+    content_path: OsString,
+    content: Arc<str>,
+}
+
+impl SourceResolver for InMemoryResolver {
+    fn get_contents(&self, path: &OsStr) -> Result<Arc<str>, SourceLoadError> {
+        if path == &*self.content_path {
+            return Ok(self.content.clone());
+        }
+        Err(SourceLoadError::new(
+            path.to_os_string(),
+            NotSupportedError::new(),
+        ))
+    }
+}
+
+#[derive(Debug)]
+struct NotSupportedError {}
+
+impl NotSupportedError {
+    fn new() -> NotSupportedError {
+        NotSupportedError {}
+    }
+}
+
+impl std::error::Error for NotSupportedError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
+
+impl Display for NotSupportedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Not supported")?;
+        Ok(())
+    }
+}
+
+impl FeatureWork {
+    fn compile(&self, features: &Features, glyph_order: GlyphMap) -> Result<FontBuilder, Error> {
+        let root_path = if let Features::File(file) = features {
+            OsString::from(file)
         } else {
-            debug!("{:?} {} {}", feature_source, op, formatter(diagnostic));
-        }
-    }
-    if err {
-        return Err(Error::FeaError(format!(
-            "{:?} {} failed",
-            feature_source, op
-        )));
-    }
-    Ok(())
-}
-
-impl FeatureWork {
-    fn compile_parse(
-        &self,
-        feature_source: &str,
-        parse: ParseContext,
-        glyph_order: GlyphMap,
-    ) -> Result<FontBuilder, Error> {
-        let (tree, diagnostics) = parse.generate_parse_tree();
-        check_diagnostics(feature_source, "generate parse tree", &diagnostics, |d| {
-            format!("{:?}", d)
-        })?;
-
-        // Maybe even compile?
-        let compilation = match fea_rs::compile::compile(&tree, &glyph_order) {
-            Ok(compilation) => {
-                check_diagnostics(feature_source, "compile", &compilation.warnings, |d| {
-                    tree.format_diagnostic(d)
-                })?;
-                trace!("Compiled {} successfully", feature_source);
-                compilation
-            }
-            Err(errors) => {
-                check_diagnostics(feature_source, "compile", &errors, |d| {
-                    tree.format_diagnostic(d)
-                })?;
-                unreachable!("errors aren't ... errors?!");
-            }
+            OsString::new()
         };
-
-        // Capture the binary tables we got from the features for future merge into final font
-        // TODO do we want to do the whole blob or to emit table-by-table?
-        let font = compilation
-            .build_raw(&glyph_order, Default::default())
-            .map_err(|_| {
-                Error::FeaError(format!(
-                    "{} build_raw failed; no useful diagnostic available",
-                    feature_source
-                ))
-            })?;
-        Ok(font)
-    }
-
-    fn compile_memory(
-        &self,
-        context: &Context,
-        fea_content: &String,
-        glyph_order: GlyphMap,
-    ) -> Result<FontBuilder, Error> {
-        // Will you not parse?!
-
-        // TODO write out the feature content on failure
-        let parse = fea_rs::parse_from_memory(fea_content, Some(&glyph_order))
-            .map_err(|e| Error::FeaError(format!("{:?} parsing in-memory feature content", e)));
-        if parse.is_err() {
-            write_debug_fea(context, parse.is_err(), "fea parse failed", fea_content);
+        let mut compiler = Compiler::new(root_path.clone(), &glyph_order);
+        if let Features::Memory(fea_content) = features {
+            let resolver = InMemoryResolver {
+                content_path: root_path,
+                content: Arc::from(fea_content.as_str()),
+            };
+            compiler = compiler.with_resolver(resolver);
         }
-        let parse = parse?;
-        self.compile_parse("Memory", parse, glyph_order)
-    }
-
-    /// Inspired by (as in shameless copy of) how the fea-rs binary flows.
-    fn compile_file(&self, fea_file: &Path, glyph_order: GlyphMap) -> Result<FontBuilder, Error> {
-        // Will you not parse?!
-        let parse =
-            fea_rs::parse_root_file(fea_file, Some(&glyph_order), Some(self.build_dir.clone()))
-                .map_err(|e| Error::FeaError(format!("{:?} parsing {:?}", e, fea_file)))?;
-
-        self.compile_parse(fea_file.to_str().unwrap_or_default(), parse, glyph_order)
+        compiler
+            .compile()
+            .map_err(Error::FeaCompileError)?
+            .assemble(&glyph_order, Default::default())
+            .map_err(Error::FeaAssembleError)
     }
 }
 
-fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &String) {
+fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &str) {
     let debug_file = context.debug_dir().join("glyphs.fea");
     match fs::write(&debug_file, fea_content) {
         Ok(..) => {
@@ -161,18 +128,13 @@ impl Work<Context, Error> for FeatureWork {
             .map(|n| Into::<FeaRsGlyphName>::into(n.as_str()))
             .collect();
 
-        let font = match &*features {
-            Features::File(fea_file) => self.compile_file(fea_file, glyph_map)?,
-            Features::Memory(fea_content) => {
-                let result = self.compile_memory(context, fea_content, glyph_map);
-                if result.is_err() || context.emit_debug {
-                    write_debug_fea(context, result.is_err(), "fea compile failed", fea_content);
-                }
-                result?
+        let result = self.compile(&features, glyph_map);
+        if result.is_err() || context.emit_debug {
+            if let Features::Memory(fea_content) = &*features {
+                write_debug_fea(context, result.is_err(), "compile failed", fea_content);
             }
-            Features::Empty => unreachable!("Empty exits early"),
-        };
-
+        }
+        let font = result?;
         context.set_features(font);
         Ok(())
     }
