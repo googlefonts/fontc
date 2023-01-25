@@ -4,7 +4,7 @@ use std::{
     ffi::{OsStr, OsString},
     fmt::Display,
     fs,
-    rc::Rc,
+    sync::Arc,
 };
 
 use fea_rs::{
@@ -36,11 +36,11 @@ impl FeatureWork {
 // I do find the need to lament
 struct InMemoryResolver {
     content_path: OsString,
-    content: Rc<str>,
+    content: Arc<str>,
 }
 
 impl SourceResolver for InMemoryResolver {
-    fn get_contents(&self, path: &OsStr) -> Result<Rc<str>, SourceLoadError> {
+    fn get_contents(&self, path: &OsStr) -> Result<Arc<str>, SourceLoadError> {
         if path == &*self.content_path {
             return Ok(self.content.clone());
         }
@@ -84,13 +84,13 @@ impl FeatureWork {
         if let Features::Memory(fea_content) = features {
             let resolver = InMemoryResolver {
                 content_path: root_path,
-                content: Rc::from(fea_content.as_str()),
+                content: Arc::from(fea_content.as_str()),
             };
             compiler = compiler.with_resolver(resolver);
         }
         compiler
             .compile()
-            .map_err(|e| Error::FeaCompileError(format!("{}", e)))?
+            .map_err(Error::FeaCompileError)?
             .assemble(&glyph_order, Default::default())
             .map_err(Error::FeaAssembleError)
     }
