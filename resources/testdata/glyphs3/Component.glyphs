@@ -71,6 +71,25 @@ shapes = (
 angle = 34.88155;
 pos = (-233,-129);
 ref = period;
+scale = (2.0303,2.0303);
+}
+);
+width = 600;
+}
+);
+unicode = 44;
+},
+{
+glyphname = non_uniform_scale;
+lastChange = "2023-01-20 20:22:39 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+angle = 34.88155;
+pos = (-233,-129);
+ref = period;
 scale = (1.0303,2.0303);
 }
 );
