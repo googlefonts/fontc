@@ -321,17 +321,17 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
             transform *= Affine::translate((try_f64(&pos[0])?, try_f64(&pos[1])?));
         }
 
+        // Rotate
+        if let Some(angle) = dict.remove("angle") {
+            transform *= Affine::rotate(try_f64(&angle)?.to_radians());
+        }
+
         // Scale
         if let Some(Plist::Array(scale)) = dict.remove("scale") {
             if scale.len() != 2 {
                 return Err(Error::StructuralError(format!("Bad scale: {:?}", scale)));
             }
             transform *= Affine::scale_non_uniform(try_f64(&scale[0])?, try_f64(&scale[1])?);
-        }
-
-        // Rotate
-        if let Some(angle) = dict.remove("angle") {
-            transform *= Affine::rotate(try_f64(&angle)?.to_radians());
         }
 
         Ok(Component {
@@ -1245,7 +1245,7 @@ mod tests {
             panic!("{:?} should be a component", g3_shape);
         };
 
-        let expected = Affine::new([1.6655, 1.1611, -1.1611, 1.6655, -233.0, -129.0]);
+        let expected = Affine::new([0.8452, 0.5892, -1.1611, 1.6655, -233.0, -129.0]);
 
         assert_eq!(expected, round(g2_shape.transform, 4));
         assert_eq!(expected, round(g3_shape.transform, 4));

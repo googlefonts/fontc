@@ -71,7 +71,7 @@ shapes = (
 angle = 34.88155;
 pos = (-233,-129);
 ref = period;
-scale = (2.0303,2.0303);
+scale = (1.0303,2.0303);
 }
 );
 width = 600;
