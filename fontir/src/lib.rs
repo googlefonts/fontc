@@ -7,3 +7,4 @@ pub mod piecewise_linear_map;
 pub(crate) mod serde;
 pub mod source;
 pub mod stateset;
+pub mod variations;

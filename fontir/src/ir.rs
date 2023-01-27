@@ -4,6 +4,7 @@ use crate::{
     coords::{CoordConverter, NormalizedLocation, UserCoord},
     error::{PathConversionError, WorkError},
     serde::{GlyphSerdeRepr, StaticMetadataSerdeRepr},
+    variations::VariationModel,
 };
 use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
@@ -24,11 +25,16 @@ use std::{
 pub struct StaticMetadata {
     pub axes: Vec<Axis>,
     pub glyph_order: IndexSet<GlyphName>,
+    pub variation_model: VariationModel,
 }
 
 impl StaticMetadata {
     pub fn new(axes: Vec<Axis>, glyph_order: IndexSet<GlyphName>) -> StaticMetadata {
-        StaticMetadata { axes, glyph_order }
+        StaticMetadata {
+            axes,
+            glyph_order,
+            variation_model: VariationModel::empty(),
+        }
     }
 }
 
