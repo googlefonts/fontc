@@ -182,10 +182,13 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
         debug!("Static metadata for {}", font.family_name);
-        context.set_static_metadata(StaticMetadata::new(
-            font_info.axes.clone(),
-            font.glyph_order.iter().map(|s| s.into()).collect(),
-        ));
+        let axes = font_info.axes.clone();
+        let glyph_locations = font_info.master_locations.values().cloned().collect();
+        let glyph_order = font.glyph_order.iter().map(|s| s.into()).collect();
+        context.set_static_metadata(
+            StaticMetadata::new(axes, glyph_order, glyph_locations)
+                .map_err(WorkError::VariationModelError)?,
+        );
         Ok(())
     }
 }

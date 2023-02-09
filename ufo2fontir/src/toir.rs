@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use fontdrasil::types::GlyphName;
@@ -75,6 +75,21 @@ fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, WorkE
         contours,
         components: glyph.components.iter().map(to_ir_component).collect(),
     })
+}
+
+pub fn to_normalized_locations(
+    axes: &[ir::Axis],
+    sources: &[designspace::Source],
+) -> HashSet<NormalizedLocation> {
+    let axes = axes.iter().map(|a| (&a.name, a)).collect();
+    sources
+        .iter()
+        .map(|s| to_design_location(&s.location).to_normalized(&axes))
+        .collect()
+}
+
+pub fn to_ir_axes(axes: &[designspace::Axis]) -> Vec<ir::Axis> {
+    axes.iter().map(to_ir_axis).collect()
 }
 
 pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {

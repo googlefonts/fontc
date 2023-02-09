@@ -8,7 +8,7 @@ use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
-    ir::{Axis, Features, StaticMetadata},
+    ir::{Features, StaticMetadata},
     orchestration::{Context, IrWork},
     source::{Input, Source},
     stateset::{StateIdentifier, StateSet},
@@ -17,7 +17,7 @@ use indexmap::IndexSet;
 use log::{debug, trace, warn};
 use norad::designspace::{self, DesignSpaceDocument};
 
-use crate::toir::{to_design_location, to_ir_axis, to_ir_glyph};
+use crate::toir::{to_design_location, to_ir_axes, to_ir_glyph, to_normalized_locations};
 
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
@@ -362,7 +362,7 @@ struct FeatureWork {
 }
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
-    let ds_axes = ir_axes(designspace);
+    let ds_axes = to_ir_axes(&designspace.axes);
     let axes: HashMap<_, _> = ds_axes.iter().map(|a| (&a.name, a)).collect();
 
     let default_location = designspace
@@ -437,10 +437,6 @@ fn glyph_order(
     Ok(glyph_order)
 }
 
-fn ir_axes(designspace: &DesignSpaceDocument) -> Vec<Axis> {
-    designspace.axes.iter().map(to_ir_axis).collect()
-}
-
 fn files_identical(f1: &Path, f2: &Path) -> Result<bool, WorkError> {
     if !f1.is_file() {
         return Err(WorkError::FileExpected(f1.to_path_buf()));
@@ -460,14 +456,18 @@ impl Work<Context, WorkError> for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
 
-        let axes = ir_axes(&self.designspace);
+        let axes = to_ir_axes(&self.designspace.axes);
+        let glyph_locations = to_normalized_locations(&axes, &self.designspace.sources);
 
         let glyph_order = glyph_order(
             &self.designspace,
             self.designspace_file.parent().unwrap(),
             &self.glyph_names,
         )?;
-        context.set_static_metadata(StaticMetadata::new(axes, glyph_order));
+        context.set_static_metadata(
+            StaticMetadata::new(axes, glyph_order, glyph_locations)
+                .map_err(WorkError::VariationModelError)?,
+        );
         Ok(())
     }
 }

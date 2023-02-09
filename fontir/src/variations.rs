@@ -97,6 +97,10 @@ impl VariationModel {
             delta_weights: Vec::new(),
         }
     }
+
+    pub fn locations(&self) -> impl Iterator<Item = &NormalizedLocation> {
+        self.locations.iter()
+    }
 }
 
 /// Gryffindor!

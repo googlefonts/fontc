@@ -2,7 +2,7 @@
 
 use crate::{
     coords::{CoordConverter, NormalizedLocation, UserCoord},
-    error::{PathConversionError, WorkError},
+    error::{PathConversionError, VariationModelError, WorkError},
     serde::{GlyphSerdeRepr, StaticMetadataSerdeRepr},
     variations::VariationModel,
 };
@@ -11,7 +11,7 @@ use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, Point};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     path::{Path, PathBuf},
 };
@@ -29,12 +29,18 @@ pub struct StaticMetadata {
 }
 
 impl StaticMetadata {
-    pub fn new(axes: Vec<Axis>, glyph_order: IndexSet<GlyphName>) -> StaticMetadata {
-        StaticMetadata {
+    pub fn new(
+        axes: Vec<Axis>,
+        glyph_order: IndexSet<GlyphName>,
+        glyph_locations: HashSet<NormalizedLocation>,
+    ) -> Result<StaticMetadata, VariationModelError> {
+        let axis_names = axes.iter().map(|a| a.name.clone()).collect();
+        let variation_model = VariationModel::new(glyph_locations, axis_names)?;
+        Ok(StaticMetadata {
             axes,
             glyph_order,
-            variation_model: VariationModel::empty(),
-        }
+            variation_model,
+        })
     }
 }
 
