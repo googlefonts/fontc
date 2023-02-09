@@ -130,13 +130,13 @@ impl Context {
             return;
         }
         fs::write(file, content)
-            .map_err(|e| panic!("Unable to write {:?} {}", file, e))
+            .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
     }
 
     fn restore(&self, file: &Path) -> Vec<u8> {
         fs::read(file)
-            .map_err(|e| panic!("Unable to read {:?} {}", file, e))
+            .map_err(|e| panic!("Unable to read {file:?} {e}"))
             .unwrap()
     }
 

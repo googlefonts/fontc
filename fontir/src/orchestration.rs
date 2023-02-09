@@ -105,11 +105,11 @@ impl Context {
             return;
         }
         let raw_file = File::create(file)
-            .map_err(|e| panic!("Unable to write {:?} {}", file, e))
+            .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
         let buf_io = BufWriter::new(raw_file);
         serde_yaml::to_writer(buf_io, &content)
-            .map_err(|e| panic!("Unable to serialize\n{:#?}\nto {:?}: {}", content, file, e))
+            .map_err(|e| panic!("Unable to serialize\n{content:#?}\nto {file:?}: {e}"))
             .unwrap();
     }
 
@@ -118,12 +118,12 @@ impl Context {
         V: ?Sized + DeserializeOwned,
     {
         let raw_file = File::open(file)
-            .map_err(|e| panic!("Unable to read {:?} {}", file, e))
+            .map_err(|e| panic!("Unable to read {file:?} {e}"))
             .unwrap();
         let buf_io = BufReader::new(raw_file);
         match serde_yaml::from_reader(buf_io) {
             Ok(v) => v,
-            Err(e) => panic!("Unable to deserialize {:?} {}", file, e),
+            Err(e) => panic!("Unable to deserialize {file:?} {e}"),
         }
     }
 

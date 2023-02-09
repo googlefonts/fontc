@@ -93,7 +93,7 @@ impl Config {
 
 fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     if dir.exists() && !dir.is_dir() {
-        panic!("{:#?} is taken by something that isn't a directory", dir);
+        panic!("{dir:#?} is taken by something that isn't a directory");
     }
     if !dir.exists() {
         fs::create_dir(dir)?
@@ -443,7 +443,7 @@ impl Workload {
         let mut opt_complete = match initial_read {
             RecvType::Blocking => match recv.recv() {
                 Ok(completed) => Some(completed),
-                Err(e) => panic!("Blocking read failed: {}", e),
+                Err(e) => panic!("Blocking read failed: {e}"),
             },
             RecvType::NonBlocking => match recv.try_recv() {
                 Ok(completed) => Some(completed),
@@ -458,11 +458,11 @@ impl Workload {
                 Ok(..) => self.success.insert(completed_id.clone()),
                 Err(e) => {
                     error!("{:?} failed {}", completed_id, e);
-                    self.error.push((completed_id.clone(), format!("{}", e)));
+                    self.error.push((completed_id.clone(), format!("{e}")));
                     true
                 }
             } {
-                panic!("Repeat signals for completion of {:#?}", completed_id);
+                panic!("Repeat signals for completion of {completed_id:#?}");
             }
             debug!(
                 "{}/{} complete, most recently {:?}",
@@ -588,7 +588,7 @@ mod tests {
         let path = PathBuf::from("../resources/testdata")
             .canonicalize()
             .unwrap();
-        assert!(path.is_dir(), "{:#?} isn't a dir", path);
+        assert!(path.is_dir(), "{path:#?} isn't a dir");
         path
     }
 
@@ -629,11 +629,10 @@ mod tests {
         let paths = IrPaths::new(build_dir);
         let ir_input_file = paths.ir_input_file();
 
-        assert!(config_file.exists(), "Should exist: {:#?}", config_file);
+        assert!(config_file.exists(), "Should exist: {config_file:#?}");
         assert!(
             !ir_input_file.exists(),
-            "Should not exist: {:#?}",
-            ir_input_file
+            "Should not exist: {ir_input_file:#?}"
         );
         assert!(!Config::new(args, build_dir.to_path_buf())
             .unwrap()
@@ -708,7 +707,7 @@ mod tests {
             if launchable.is_empty() {
                 eprintln!("Completed:");
                 for id in workload.success.iter() {
-                    eprintln!("  {:?}", id);
+                    eprintln!("  {id:?}");
                 }
                 eprintln!("Unable to proceed with:");
                 for (id, job) in workload.jobs_pending.iter() {
@@ -726,8 +725,7 @@ mod tests {
             job.work.exec(context).unwrap();
             assert!(
                 workload.success.insert(id.clone()),
-                "We just did {:?} a second time?",
-                id
+                "We just did {id:?} a second time?"
             );
         }
         finish_successfully(change_detector).unwrap();
@@ -802,7 +800,7 @@ mod tests {
         assert_eq!(IndexSet::new(), result.glyphs_deleted);
 
         let bar_ir = build_dir.join("glyph_ir/bar.yml");
-        assert!(bar_ir.is_file(), "no file {:#?}", bar_ir);
+        assert!(bar_ir.is_file(), "no file {bar_ir:#?}");
         fs::remove_file(bar_ir).unwrap();
 
         let result = compile(build_dir, "wght_var.designspace");
@@ -825,10 +823,6 @@ mod tests {
         );
 
         let feature_ttf = build_dir.join("features.ttf");
-        assert!(
-            feature_ttf.is_file(),
-            "Should have written {:?}",
-            feature_ttf
-        );
+        assert!(feature_ttf.is_file(), "Should have written {feature_ttf:?}");
     }
 }

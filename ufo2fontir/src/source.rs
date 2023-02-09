@@ -77,9 +77,9 @@ impl Cache {
     }
 }
 
-fn glif_files<'a>(
+fn glif_files(
     ufo_dir: &Path,
-    layer_cache: &'a mut HashMap<String, HashMap<GlyphName, PathBuf>>,
+    layer_cache: &mut HashMap<String, HashMap<GlyphName, PathBuf>>,
     source: &designspace::Source,
 ) -> Result<BTreeMap<GlyphName, PathBuf>, Error> {
     let layer_name = layer_dir(ufo_dir, layer_cache, source)?;
@@ -389,7 +389,7 @@ fn load_lib_plist(ufo_dir: &Path) -> Result<plist::Dictionary, WorkError> {
         return Err(WorkError::FileExpected(lib_plist_file));
     }
     plist::Value::from_file(&lib_plist_file)
-        .map_err(|e| WorkError::ParseError(lib_plist_file.clone(), format!("{}", e)))?
+        .map_err(|e| WorkError::ParseError(lib_plist_file.clone(), format!("{e}")))?
         .into_dictionary()
         .ok_or_else(|| WorkError::ParseError(lib_plist_file, "Not a dictionary".to_string()))
 }
