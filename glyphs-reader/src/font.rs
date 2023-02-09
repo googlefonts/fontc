@@ -243,7 +243,7 @@ impl FromPlist for Node {
             }
             Plist::Array(value) => {
                 if value.len() != 3 {
-                    panic!("Invalid node content {:?}", plist);
+                    panic!("Invalid node content {plist:?}");
                 };
                 let x = value[0].as_f64().unwrap();
                 let y = value[1].as_f64().unwrap();
@@ -252,7 +252,7 @@ impl FromPlist for Node {
                 Node { pt, node_type }
             }
             _ => {
-                panic!("Invalid node content {:?}", plist);
+                panic!("Invalid node content {plist:?}");
             }
         }
     }
@@ -274,7 +274,7 @@ impl std::str::FromStr for NodeType {
             "o" => Ok(NodeType::OffCurve),
             "c" => Ok(NodeType::Curve),
             "cs" => Ok(NodeType::CurveSmooth),
-            _ => Err(format!("unknown node type {}", s)),
+            _ => Err(format!("unknown node type {s}")),
         }
     }
 }
@@ -282,7 +282,7 @@ impl std::str::FromStr for NodeType {
 fn try_f64(plist: &Plist) -> Result<f64, Error> {
     plist
         .as_f64()
-        .ok_or_else(|| Error::StructuralError(format!("Bad f64:{:?}", plist)))
+        .ok_or_else(|| Error::StructuralError(format!("Bad f64:{plist:?}")))
 }
 
 impl TryFrom<BTreeMap<String, Plist>> for Component {
@@ -296,8 +296,7 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
             glyph_name
         } else {
             return Err(Error::StructuralError(format!(
-                "Neither ref nor name present: {:?}",
-                dict
+                "Neither ref nor name present: {dict:?}"
             )));
         };
 
@@ -316,7 +315,7 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
         // Translate
         if let Some(Plist::Array(pos)) = dict.remove("pos") {
             if pos.len() != 2 {
-                return Err(Error::StructuralError(format!("Bad pos: {:?}", pos)));
+                return Err(Error::StructuralError(format!("Bad pos: {pos:?}")));
             }
             transform *= Affine::translate((try_f64(&pos[0])?, try_f64(&pos[1])?));
         }
@@ -329,7 +328,7 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
         // Scale
         if let Some(Plist::Array(scale)) = dict.remove("scale") {
             if scale.len() != 2 {
-                return Err(Error::StructuralError(format!("Bad scale: {:?}", scale)));
+                return Err(Error::StructuralError(format!("Bad scale: {scale:?}")));
             }
             transform *= Affine::scale_non_uniform(try_f64(&scale[0])?, try_f64(&scale[1])?);
         }
@@ -345,7 +344,7 @@ impl TryFrom<BTreeMap<String, Plist>> for Component {
 impl FromPlist for Component {
     fn from_plist(plist: Plist) -> Self {
         let Plist::Dictionary(dict) = plist else {
-            panic!("Component must be a dict: {:?}", plist);
+            panic!("Component must be a dict: {plist:?}");
         };
         dict.try_into().expect("Unable to parse Component")
     }
@@ -485,8 +484,7 @@ fn glyphs_v2_field_name_and_default(nth_axis: usize) -> Result<(&'static str, f6
         2 => ("customValue", 0_f64),
         _ => {
             return Err(Error::StructuralError(format!(
-                "We don't know what field to use for axis {}",
-                nth_axis
+                "We don't know what field to use for axis {nth_axis}"
             )))
         }
     })
@@ -805,15 +803,15 @@ fn user_to_design_from_axis_mapping(
         return None;
     };
     let Plist::Dictionary(axis_map) = axis_map.get("value").unwrap() else {
-        panic!("Incomprehensible axis map {:?}", axis_map);
+        panic!("Incomprehensible axis map {axis_map:?}");
     };
     let mut axis_mappings: BTreeMap<String, RawUserToDesignMapping> = BTreeMap::new();
     for (axis_tag, mappings) in axis_map.iter() {
         let Plist::Dictionary(mappings) = mappings else {
-            panic!("Incomprehensible mappings {:?}", mappings);
+            panic!("Incomprehensible mappings {mappings:?}");
         };
         let Some(axis_index) = axis_index(from, |a| &a.tag == axis_tag) else {
-            panic!("No such axes: {:?}", axis_tag);
+            panic!("No such axes: {axis_tag:?}");
         };
         // We could not have found an axis index if there are no axes
         let axis_name = &from.axes.as_ref().unwrap().get(axis_index).unwrap().name;
@@ -853,26 +851,26 @@ fn user_to_design_from_axis_location(
     let mut axis_mappings: BTreeMap<String, RawUserToDesignMapping> = BTreeMap::new();
     for (master, axis_locations) in from.font_master.iter().zip(&master_locations) {
         let Plist::Dictionary(axis_locations) = axis_locations else {
-            panic!("Axis Location must be a dict {:?}", axis_locations);
+            panic!("Axis Location must be a dict {axis_locations:?}");
         };
         let Some(Plist::Array(axis_locations)) = axis_locations.get("value") else {
-            panic!("Value must be a dict {:?}", axis_locations);
+            panic!("Value must be a dict {axis_locations:?}");
         };
         for axis_location in axis_locations {
             let Some(Plist::String(axis_name)) = axis_location.get("Axis") else {
-                panic!("Axis name must be a string {:?}", axis_location);
+                panic!("Axis name must be a string {axis_location:?}");
             };
             let Some(user) = axis_location.get("Location") else {
-                panic!("Incomprehensible axis location {:?}", axis_location);
+                panic!("Incomprehensible axis location {axis_location:?}");
             };
             let Some(user) = user.as_f64() else {
-                panic!("Incomprehensible axis location {:?}", axis_location);
+                panic!("Incomprehensible axis location {axis_location:?}");
             };
             let Some(axis_index) = axis_index(from, |a| &a.name == axis_name) else {
-                panic!("Axis has no index {:?}", axis_location);
+                panic!("Axis has no index {axis_location:?}");
             };
             let Some(axis_values) = master.axes_values.as_ref() else {
-                panic!("Master has no axis values {:?}", master);
+                panic!("Master has no axis values {master:?}");
             };
             let user = user as f32;
             let design = axis_values[axis_index].into_inner() as f32;
@@ -985,8 +983,7 @@ impl RawFeature {
             (Some(name), _) => Ok(name.clone()),
             (None, Some(tag)) => Ok(tag.clone()),
             (None, None) => Err(Error::StructuralError(format!(
-                "{:?} missing name and tag",
-                self
+                "{self:?} missing name and tag"
             ))),
         }
     }
@@ -1088,7 +1085,7 @@ impl Font {
         let raw_content = re.replace_all(&raw_content, r#"$prefix"$value";"#);
 
         let mut raw_content = Plist::parse(&raw_content)
-            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), format!("{:#?}", e)))?;
+            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), format!("{e:#?}")))?;
 
         // Fix any issues with the raw plist
         let Plist::Dictionary(ref mut root_dict) = raw_content else {
@@ -1238,10 +1235,10 @@ mod tests {
         let g3_shape = only_shape_in_only_layer(&g3, glyph_name);
 
         let Shape::Component(g2_shape) = g2_shape else {
-            panic!("{:?} should be a component", g2_shape);
+            panic!("{g2_shape:?} should be a component");
         };
         let Shape::Component(g3_shape) = g3_shape else {
-            panic!("{:?} should be a component", g3_shape);
+            panic!("{g3_shape:?} should be a component");
         };
 
         assert_eq!(expected, round(g2_shape.transform, 4));

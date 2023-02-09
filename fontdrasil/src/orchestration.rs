@@ -61,7 +61,7 @@ impl<I: Eq + Hash + Debug> AccessControlList<I> {
 
     pub fn check_write_access(&self, id: &I) {
         if self.write_mask.as_ref() != Some(id) {
-            panic!("Illegal access to {:?}", id);
+            panic!("Illegal access to {id:?}");
         }
     }
 }

@@ -123,7 +123,7 @@ pub fn to_ir_glyph(
         let norad_glyph =
             norad::Glyph::load(glif_file).map_err(|e| WorkError::InvalidSourceGlyph {
                 glyph_name: glyph.name.clone(),
-                message: format!("glif load failed due to {}", e),
+                message: format!("glif load failed due to {e}"),
             })?;
         for location in locations {
             glyph.try_add_source(location, to_ir_glyph_instance(&norad_glyph)?)?;

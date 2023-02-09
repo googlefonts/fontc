@@ -104,7 +104,7 @@ impl Source for GlyphsIrSource {
         let font_info = FontInfo::try_from(Font::load(&self.glyphs_file).map_err(|e| {
             Error::ParseError(
                 self.glyphs_file.clone(),
-                format!("Unable to read glyphs file: {}", e),
+                format!("Unable to read glyphs file: {e}"),
             )
         })?)?;
         let font = &font_info.font;

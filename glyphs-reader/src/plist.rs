@@ -283,10 +283,10 @@ impl Plist {
             }
             Plist::String(st) => escape_string(s, st),
             Plist::Integer(i) => {
-                s.push_str(&format!("{}", i));
+                s.push_str(&format!("{i}"));
             }
             Plist::Float(f) => {
-                s.push_str(&format!("{}", f));
+                s.push_str(&format!("{f}"));
             }
         }
     }
