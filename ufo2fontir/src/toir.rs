@@ -171,7 +171,7 @@ mod tests {
         ];
         let contour = norad::Contour::new(points, None, None);
         let bez = to_ir_contour("test".into(), &contour).unwrap();
-        assert_eq!("M1 1L9 1L9 2L1 2Z", bez.to_svg());
+        assert_eq!("M1,1 L9,1 L9,2 L1,2 Z", bez.to_svg());
     }
 
     // https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
@@ -188,6 +188,6 @@ mod tests {
         ];
         let contour = norad::Contour::new(points, None, None);
         let bez = to_ir_contour("test".into(), &contour).unwrap();
-        assert_eq!("M32 32C64 64 64 0 32 32Z", bez.to_svg());
+        assert_eq!("M32,32 C64,64 64,0 32,32 Z", bez.to_svg());
     }
 }

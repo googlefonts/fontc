@@ -300,6 +300,6 @@ mod tests {
             node_type: glyphs_reader::NodeType::Curve,
         });
         let bez = to_ir_path("test".into(), &path).unwrap();
-        assert_eq!("M32 32C64 64 64 0 32 32Z", bez.to_svg());
+        assert_eq!("M32,32 C64,64 64,0 32,32 Z", bez.to_svg());
     }
 }
