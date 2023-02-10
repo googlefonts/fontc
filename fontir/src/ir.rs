@@ -23,8 +23,13 @@ use std::{
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(from = "StaticMetadataSerdeRepr", into = "StaticMetadataSerdeRepr")]
 pub struct StaticMetadata {
+    /// Every axis used by the font being compiled
     pub axes: Vec<Axis>,
+    /// The name of every glyph, in the order it will be emitted
+    ///
+    /// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
     pub glyph_order: IndexSet<GlyphName>,
+    /// A model of how the space defined by [Self::axes] is split into regions that have deltas.
     pub variation_model: VariationModel,
 }
 
