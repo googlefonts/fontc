@@ -1,6 +1,6 @@
 //! Common parts of work orchestration.
 
-use std::{collections::HashSet, fmt::Debug, hash::Hash};
+use std::{collections::HashSet, fmt::Debug, hash::Hash, sync::Arc};
 
 pub const MISSING_DATA: &str = "Missing data, dependency management failed us?";
 
@@ -22,9 +22,8 @@ pub struct AccessControlList<I>
 where
     I: Eq + Hash + Debug,
 {
-    // If present, the one and only key you are allowed to write to
-    // None means we're read-only
-    write_mask: Option<I>,
+    // Returns true if you can write to the provided id
+    write_access: Arc<dyn Fn(&I) -> bool + Send + Sync>,
 
     // If present, what you can access through this context
     // Intent is root has None, task-specific Context only allows access to dependencies
@@ -34,20 +33,44 @@ where
 impl<I: Eq + Hash + Debug> AccessControlList<I> {
     pub fn read_only() -> AccessControlList<I> {
         AccessControlList {
-            write_mask: None,
+            write_access: Arc::new(|_| false),
             read_mask: None,
         }
     }
 
-    pub fn read_write(read: HashSet<I>, write: I) -> AccessControlList<I> {
+    pub fn read_write(
+        read: HashSet<I>,
+        write_access: Arc<dyn Fn(&I) -> bool + Send + Sync>,
+    ) -> AccessControlList<I> {
         AccessControlList {
-            write_mask: Some(write),
+            write_access,
             read_mask: Some(read),
         }
     }
 }
 
+pub fn access_one<I: Debug + Eq + Send + Sync + 'static>(
+    id: I,
+) -> Arc<dyn Fn(&I) -> bool + Send + Sync> {
+    Arc::new(move |id2| id == *id2)
+}
+
+pub fn access_none<I: Eq + Send + Sync + 'static>() -> Arc<dyn Fn(&I) -> bool + Send + Sync> {
+    Arc::new(move |_| false)
+}
+
 impl<I: Eq + Hash + Debug> AccessControlList<I> {
+    pub fn check_read_access_to_any(&self, ids: &[I]) {
+        if self.read_mask.is_none() {
+            return;
+        }
+        let read_mask = self.read_mask.as_ref().unwrap();
+
+        if !ids.iter().any(|id| read_mask.contains(id)) {
+            panic!("Illegal access to {ids:?}");
+        }
+    }
+
     pub fn check_read_access(&self, id: &I) {
         if !self
             .read_mask
@@ -55,12 +78,18 @@ impl<I: Eq + Hash + Debug> AccessControlList<I> {
             .map(|mask| mask.contains(id))
             .unwrap_or(true)
         {
-            panic!("Illegal access");
+            panic!("Illegal access to {id:?}");
+        }
+    }
+
+    pub fn check_write_access_to_any(&self, ids: &[I]) {
+        if !ids.iter().any(|id| (self.write_access)(id)) {
+            panic!("Illegal access to {ids:?}");
         }
     }
 
     pub fn check_write_access(&self, id: &I) {
-        if self.write_mask.as_ref() != Some(id) {
+        if !(self.write_access)(id) {
             panic!("Illegal access to {id:?}");
         }
     }

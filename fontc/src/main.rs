@@ -4,6 +4,7 @@ use std::{
     fs,
     io::{self, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use clap::Parser;
@@ -17,8 +18,12 @@ use fontc::{
     work::{AnyContext, AnyWork, AnyWorkError},
     Error,
 };
-use fontdrasil::types::GlyphName;
+use fontdrasil::{
+    orchestration::{access_none, access_one},
+    types::GlyphName,
+};
 use fontir::{
+    glyph::create_finalize_static_metadata_work,
     orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     paths::Paths as IrPaths,
     source::{DeleteWork, Input, Source},
@@ -153,7 +158,7 @@ impl ChangeDetector {
         self.current_inputs.static_metadata != self.prev_inputs.static_metadata
             || !self
                 .ir_paths
-                .target_file(&FeWorkIdentifier::StaticMetadata)
+                .target_file(&FeWorkIdentifier::InitStaticMetadata)
                 .is_file()
     }
 
@@ -209,23 +214,60 @@ impl ChangeDetector {
     }
 }
 
-fn add_static_metadata_ir_job(
+fn add_init_static_metadata_ir_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
     if change_detector.static_metadata_ir_change() {
+        let id: AnyWorkId = FeWorkIdentifier::InitStaticMetadata.into();
+        let write_access = access_one(id.clone());
         workload.insert(
-            FeWorkIdentifier::StaticMetadata.into(),
+            id,
             Job {
                 work: change_detector
                     .ir_source
                     .create_static_metadata_work(&change_detector.current_inputs)?
                     .into(),
                 dependencies: HashSet::new(),
+                write_access,
             },
         );
     } else {
-        workload.mark_success(FeWorkIdentifier::StaticMetadata.into());
+        workload.mark_success(FeWorkIdentifier::InitStaticMetadata.into());
+    }
+    Ok(())
+}
+
+fn add_finalize_static_metadata_ir_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.static_metadata_ir_change() {
+        let mut dependencies: HashSet<_> = change_detector
+            .glyphs_changed()
+            .iter()
+            .map(|gn| FeWorkIdentifier::Glyph(gn.clone()).into())
+            .collect();
+        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
+
+        // Grant write to any glyph including ones we've never seen before so job can create them
+        let write_access = Arc::new(|an_id: &AnyWorkId| {
+            matches!(
+                an_id,
+                AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
+                    | AnyWorkId::Fe(FeWorkIdentifier::FinalizeStaticMetadata)
+            )
+        });
+        workload.insert(
+            FeWorkIdentifier::FinalizeStaticMetadata.into(),
+            Job {
+                work: create_finalize_static_metadata_work().into(),
+                dependencies,
+                write_access,
+            },
+        );
+    } else {
+        workload.mark_success(FeWorkIdentifier::FinalizeStaticMetadata.into());
     }
     Ok(())
 }
@@ -235,14 +277,17 @@ fn add_feature_ir_job(
     workload: &mut Workload,
 ) -> Result<(), Error> {
     if change_detector.feature_ir_change() {
+        let id: AnyWorkId = FeWorkIdentifier::Features.into();
+        let write_access = access_one(id.clone());
         workload.insert(
-            FeWorkIdentifier::Features.into(),
+            id,
             Job {
                 work: change_detector
                     .ir_source
                     .create_feature_ir_work(&change_detector.current_inputs)?
                     .into(),
                 dependencies: HashSet::new(),
+                write_access,
             },
         );
     } else {
@@ -256,14 +301,17 @@ fn add_feature_be_job(
     workload: &mut Workload,
 ) -> Result<(), Error> {
     if change_detector.feature_be_change() {
+        let id: AnyWorkId = BeWorkIdentifier::Features.into();
+        let write_access = access_one(id.clone());
         workload.insert(
-            BeWorkIdentifier::Features.into(),
+            id,
             Job {
                 work: FeatureWork::create().into(),
                 dependencies: HashSet::from([
-                    FeWorkIdentifier::StaticMetadata.into(),
+                    FeWorkIdentifier::FinalizeStaticMetadata.into(),
                     FeWorkIdentifier::Features.into(),
                 ]),
+                write_access,
             },
         );
     } else {
@@ -285,6 +333,7 @@ fn add_glyph_ir_jobs(
             Job {
                 work: DeleteWork::create(path).into(),
                 dependencies: HashSet::new(),
+                write_access: access_none(),
             },
         );
     }
@@ -297,9 +346,18 @@ fn add_glyph_ir_jobs(
     for (glyph_name, work) in glyphs_changed.iter().zip(glyph_work) {
         let id = FeWorkIdentifier::Glyph(glyph_name.clone());
         let work = work.into();
-        let dependencies = HashSet::from([FeWorkIdentifier::StaticMetadata.into()]);
+        let dependencies = HashSet::from([FeWorkIdentifier::InitStaticMetadata.into()]);
 
-        workload.insert(id.into(), Job { work, dependencies });
+        let id: AnyWorkId = id.into();
+        let write_access = access_one(id.clone());
+        workload.insert(
+            id,
+            Job {
+                work,
+                dependencies,
+                write_access,
+            },
+        );
     }
 
     Ok(())
@@ -357,6 +415,7 @@ impl Workload {
 
     fn insert(&mut self, id: AnyWorkId, job: Job) {
         self.jobs_pending.insert(id, job);
+        self.job_count += 1;
     }
 
     fn mark_success(&mut self, id: AnyWorkId) {
@@ -387,8 +446,6 @@ impl Workload {
     }
 
     fn exec(mut self, fe_root: FeContext, be_root: BeContext) -> Result<(), Error> {
-        self.job_count = self.jobs_pending.len();
-
         // Async work will send us it's ID on completion
         let (send, recv) = crossbeam_channel::unbounded::<(AnyWorkId, Result<(), AnyWorkError>)>();
 
@@ -402,8 +459,13 @@ impl Workload {
                     trace!("Start {:?}", id);
                     let job = self.jobs_pending.remove(&id).unwrap();
                     let work = job.work;
-                    let work_context =
-                        AnyContext::for_work(&fe_root, &be_root, &id, job.dependencies);
+                    let work_context = AnyContext::for_work(
+                        &fe_root,
+                        &be_root,
+                        &id,
+                        job.dependencies,
+                        job.write_access,
+                    );
 
                     let send = send.clone();
                     scope.spawn(move |_| {
@@ -440,6 +502,7 @@ impl Workload {
         recv: &Receiver<(AnyWorkId, Result<(), AnyWorkError>)>,
         initial_read: RecvType,
     ) -> Result<(), Error> {
+        let mut successes = Vec::new();
         let mut opt_complete = match initial_read {
             RecvType::Blocking => match recv.recv() {
                 Ok(completed) => Some(completed),
@@ -455,7 +518,13 @@ impl Workload {
         };
         while let Some((completed_id, result)) = opt_complete.take() {
             if !match result {
-                Ok(..) => self.success.insert(completed_id.clone()),
+                Ok(..) => {
+                    let inserted = self.success.insert(completed_id.clone());
+                    if inserted {
+                        successes.push(completed_id.clone());
+                    }
+                    inserted
+                }
                 Err(e) => {
                     error!("{:?} failed {}", completed_id, e);
                     self.error.push((completed_id.clone(), format!("{e}")));
@@ -487,17 +556,20 @@ impl Workload {
 struct Job {
     // The actual task
     work: AnyWork,
-    // Things that must happen before we execute
+    // Things that must happen before we execute. Our  task can read these things.
     dependencies: HashSet<AnyWorkId>,
+    // Things our job needs write access to
+    write_access: Arc<dyn Fn(&AnyWorkId) -> bool + Send + Sync>,
 }
 
 fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Error> {
     let mut workload = Workload::new();
 
     // FE: f(source) => IR
-    add_static_metadata_ir_job(change_detector, &mut workload)?;
+    add_init_static_metadata_ir_job(change_detector, &mut workload)?;
     add_feature_ir_job(change_detector, &mut workload)?;
     add_glyph_ir_jobs(change_detector, &mut workload)?;
+    add_finalize_static_metadata_ir_job(change_detector, &mut workload)?;
 
     // BE: f(IR) => binary
     add_feature_be_job(change_detector, &mut workload)?;
@@ -580,8 +652,9 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::{
-        add_feature_be_job, add_feature_ir_job, add_glyph_ir_jobs, add_static_metadata_ir_job,
-        finish_successfully, init, require_dir, Args, ChangeDetector, Config, Workload,
+        add_feature_be_job, add_feature_ir_job, add_finalize_static_metadata_ir_job,
+        add_glyph_ir_jobs, add_init_static_metadata_ir_job, finish_successfully, init, require_dir,
+        Args, ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -680,7 +753,8 @@ mod tests {
 
         let mut workload = Workload::new();
 
-        add_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
+        add_init_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
+        add_finalize_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
         add_glyph_ir_jobs(&mut change_detector, &mut workload).unwrap();
         add_feature_ir_job(&mut change_detector, &mut workload).unwrap();
         add_feature_be_job(&mut change_detector, &mut workload).unwrap();
@@ -721,7 +795,8 @@ mod tests {
 
             let id = &launchable[0];
             let job = workload.jobs_pending.remove(id).unwrap();
-            let context = AnyContext::for_work(&fe_root, &be_root, id, job.dependencies);
+            let context =
+                AnyContext::for_work(&fe_root, &be_root, id, job.dependencies, job.write_access);
             job.work.exec(context).unwrap();
             assert!(
                 workload.success.insert(id.clone()),
@@ -741,7 +816,8 @@ mod tests {
         let result = compile(build_dir, "wght_var.designspace");
         assert_eq!(
             HashSet::from([
-                FeWorkIdentifier::StaticMetadata.into(),
+                FeWorkIdentifier::InitStaticMetadata.into(),
+                FeWorkIdentifier::FinalizeStaticMetadata.into(),
                 FeWorkIdentifier::Features.into(),
                 FeWorkIdentifier::Glyph("bar".into()).into(),
                 FeWorkIdentifier::Glyph("plus".into()).into(),

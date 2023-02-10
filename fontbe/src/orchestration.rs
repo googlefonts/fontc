@@ -3,7 +3,7 @@
 use std::{collections::HashSet, fs, path::Path, sync::Arc};
 
 use fontdrasil::{
-    orchestration::{AccessControlList, Work, MISSING_DATA},
+    orchestration::{access_one, AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
 };
 use fontir::orchestration::{Context as FeContext, WorkId as FeWorkIdentifier};
@@ -113,7 +113,10 @@ impl Context {
             emit_debug: self.emit_debug,
             paths: self.paths.clone(),
             ir: self.ir.clone(),
-            acl: AccessControlList::read_write(dependencies.unwrap_or_default(), work_id.into()),
+            acl: AccessControlList::read_write(
+                dependencies.unwrap_or_default(),
+                access_one(work_id.into()),
+            ),
             features: self.features.clone(),
         }
     }

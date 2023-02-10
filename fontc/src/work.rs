@@ -2,7 +2,7 @@
 //!
 //! Basically enums that can be a FeWhatever or a BeWhatever.
 
-use std::{collections::HashSet, fmt::Display};
+use std::{collections::HashSet, fmt::Display, sync::Arc};
 
 use fontbe::{
     error::Error as BeError,
@@ -78,20 +78,21 @@ impl AnyContext {
         be_root: &BeContext,
         id: &AnyWorkId,
         dependencies: HashSet<AnyWorkId>,
+        write_access: Arc<dyn Fn(&AnyWorkId) -> bool + Send + Sync>,
     ) -> AnyContext {
         match id {
             AnyWorkId::Be(id) => {
                 AnyContext::Be(be_root.copy_for_work(id.clone(), Some(dependencies)))
             }
-            AnyWorkId::Fe(id) => AnyContext::Fe(
+            AnyWorkId::Fe(..) => AnyContext::Fe(
                 fe_root.copy_for_work(
-                    id.clone(),
                     Some(
                         dependencies
                             .into_iter()
                             .map(|a| a.unwrap_fe().clone())
                             .collect(),
                     ),
+                    Arc::new(move |id| (write_access)(&AnyWorkId::Fe(id.clone()))),
                 ),
             ),
         }

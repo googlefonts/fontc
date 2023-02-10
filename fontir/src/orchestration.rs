@@ -22,9 +22,15 @@ use crate::{error::WorkError, ir, paths::Paths, source::Input};
 // Meant to be small and cheap to copy around.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkId {
-    StaticMetadata,
+    /// Build the initial static metadata.
+    InitStaticMetadata,
     Glyph(GlyphName),
     GlyphIrDelete,
+    /// Update static metadata based on what we learned from IR
+    ///
+    /// Notably, IR glyphs with both components and paths may split into multiple
+    /// BE glyphs.
+    FinalizeStaticMetadata,
     Features,
 }
 
@@ -84,10 +90,14 @@ impl Context {
         }
     }
 
-    pub fn copy_for_work(&self, work_id: WorkId, dependencies: Option<HashSet<WorkId>>) -> Context {
+    pub fn copy_for_work(
+        &self,
+        dependencies: Option<HashSet<WorkId>>,
+        write_access: Arc<dyn Fn(&WorkId) -> bool + Send + Sync>,
+    ) -> Context {
         self.copy(AccessControlList::read_write(
             dependencies.unwrap_or_default(),
-            work_id,
+            write_access,
         ))
     }
 
@@ -133,23 +143,23 @@ impl Context {
     }
 
     pub fn get_static_metadata(&self) -> Arc<ir::StaticMetadata> {
-        let id = WorkId::StaticMetadata;
-        self.acl.check_read_access(&id);
+        let ids = [WorkId::InitStaticMetadata, WorkId::FinalizeStaticMetadata];
+        self.acl.check_read_access_to_any(&ids);
         {
             let rl = self.static_metadata.read();
             if rl.is_some() {
                 return rl.as_ref().unwrap().clone();
             }
         }
-        self.set_cached_static_metadata(self.restore(&self.paths.target_file(&id)));
+        self.set_cached_static_metadata(self.restore(&self.paths.target_file(&ids[0])));
         let rl = self.static_metadata.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
     pub fn set_static_metadata(&self, ir: ir::StaticMetadata) {
-        let id = WorkId::StaticMetadata;
-        self.acl.check_write_access(&id);
-        self.maybe_persist(&self.paths.target_file(&id), &ir);
+        let ids = [WorkId::InitStaticMetadata, WorkId::FinalizeStaticMetadata];
+        self.acl.check_write_access_to_any(&ids);
+        self.maybe_persist(&self.paths.target_file(&ids[0]), &ir);
         self.set_cached_static_metadata(ir);
     }
 
