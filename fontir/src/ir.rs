@@ -30,6 +30,10 @@ pub struct StaticMetadata {
     /// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
     pub glyph_order: IndexSet<GlyphName>,
     /// A model of how the space defined by [Self::axes] is split into regions that have deltas.
+    ///
+    /// This copy includes all locations used in the entire font. Users, such as glyph BE, may wish
+    /// to narrow (submodel in FontTools terms) to the set of locations they actually use. Use of a
+    /// location not in the global model is an error.
     pub variation_model: VariationModel,
 }
 
