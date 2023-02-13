@@ -3,6 +3,8 @@
 //! See <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
 
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::{Debug, Write};
+use std::ops::Sub;
 
 use crate::serde::CoordConverterSerdeRepr;
 use crate::{ir::Axis, piecewise_linear_map::PiecewiseLinearMap};
@@ -26,15 +28,19 @@ pub struct UserCoord(OrderedFloat<f32>);
 /// Always in [-1, 1].
 ///
 /// Not typically used directly in sources.
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Serialize, Deserialize, Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 pub struct NormalizedCoord(OrderedFloat<f32>);
 
 /// A set of per-axis coordinates that define a specific location in a coordinate system.
 ///
 /// E.g. a user location is a `Location<UserCoord>`. Hashable so it can do things like be
 /// the key for a map of sources by location.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Location<T>(BTreeMap<String, T>);
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub struct Location<T>(BTreeMap<String, T>)
+where
+    T: Copy;
 
 pub type DesignLocation = Location<DesignCoord>;
 pub type UserLocation = Location<UserCoord>;
@@ -170,13 +176,21 @@ impl NormalizedCoord {
     }
 }
 
-impl<T> FromIterator<(String, T)> for Location<T> {
+impl Sub<NormalizedCoord> for NormalizedCoord {
+    type Output = NormalizedCoord;
+
+    fn sub(self, rhs: NormalizedCoord) -> Self::Output {
+        NormalizedCoord::new(self.0 - rhs.0)
+    }
+}
+
+impl<T: Copy> FromIterator<(String, T)> for Location<T> {
     fn from_iter<I: IntoIterator<Item = (String, T)>>(iter: I) -> Self {
         Location(BTreeMap::from_iter(iter))
     }
 }
 
-impl<T> Location<T> {
+impl<T: Copy> Location<T> {
     pub fn new() -> Location<T> {
         Location(BTreeMap::new())
     }
@@ -189,9 +203,21 @@ impl<T> Location<T> {
     pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
         self.0.iter()
     }
+
+    pub fn axis_names(&self) -> impl Iterator<Item = &String> {
+        self.0.keys()
+    }
+
+    pub fn has(&self, axis_name: &String) -> bool {
+        self.0.contains_key(axis_name)
+    }
+
+    pub fn get(&self, axis_name: &String) -> Option<T> {
+        self.0.get(axis_name).copied()
+    }
 }
 
-impl<T> Default for Location<T> {
+impl<T: Copy> Default for Location<T> {
     fn default() -> Self {
         Self::new()
     }
@@ -226,6 +252,50 @@ impl NormalizedLocation {
                 })
                 .collect(),
         )
+    }
+}
+
+impl NormalizedLocation {
+    pub fn has_non_zero(&self, axis_name: &String) -> bool {
+        self.get(axis_name).unwrap_or_default().into_inner() != OrderedFloat(0.0)
+    }
+}
+
+fn format_location<'a, 'b>(
+    name: &str,
+    f: &mut std::fmt::Formatter<'a>,
+    items: impl Iterator<Item = (&'b String, OrderedFloat<f32>)>,
+) -> std::fmt::Result {
+    f.write_str(name)?;
+    f.write_str(" {")?;
+    for (i, (axis_name, value)) in items.enumerate() {
+        if i > 0 {
+            f.write_str(", ")?;
+        }
+        f.write_str(axis_name)?;
+        f.write_fmt(format_args!(": {value:.02}"))?;
+    }
+    f.write_char('}')
+}
+
+impl Debug for DesignLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let it = self.0.iter().map(|(n, v)| (n, v.into_inner()));
+        format_location("Design", f, it)
+    }
+}
+
+impl Debug for UserLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let it = self.0.iter().map(|(n, v)| (n, v.into_inner()));
+        format_location("User", f, it)
+    }
+}
+
+impl Debug for NormalizedLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let it = self.0.iter().map(|(n, v)| (n, v.into_inner()));
+        format_location("Normalized", f, it)
     }
 }
 

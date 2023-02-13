@@ -111,3 +111,12 @@ pub enum PathConversionError {
         points: Vec<Point>,
     },
 }
+
+#[derive(Debug, Error)]
+pub enum VariationModelError {
+    #[error("{axis_names:?} in {location:?} have no assigned order")]
+    AxesWithoutAssignedOrder {
+        axis_names: Vec<String>,
+        location: NormalizedLocation,
+    },
+}
