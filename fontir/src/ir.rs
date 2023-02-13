@@ -2,7 +2,7 @@
 
 use crate::{
     coords::{CoordConverter, NormalizedLocation, UserCoord},
-    error::{PathConversionError, WorkError},
+    error::{PathConversionError, VariationModelError, WorkError},
     serde::{GlyphSerdeRepr, StaticMetadataSerdeRepr},
     variations::VariationModel,
 };
@@ -11,7 +11,7 @@ use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, Point};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     path::{Path, PathBuf},
 };
@@ -23,18 +23,33 @@ use std::{
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(from = "StaticMetadataSerdeRepr", into = "StaticMetadataSerdeRepr")]
 pub struct StaticMetadata {
+    /// Every axis used by the font being compiled
     pub axes: Vec<Axis>,
+    /// The name of every glyph, in the order it will be emitted
+    ///
+    /// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
     pub glyph_order: IndexSet<GlyphName>,
+    /// A model of how the space defined by [Self::axes] is split into regions that have deltas.
+    ///
+    /// This copy includes all locations used in the entire font. Users, such as glyph BE, may wish
+    /// to narrow (submodel in FontTools terms) to the set of locations they actually use. Use of a
+    /// location not in the global model is an error.
     pub variation_model: VariationModel,
 }
 
 impl StaticMetadata {
-    pub fn new(axes: Vec<Axis>, glyph_order: IndexSet<GlyphName>) -> StaticMetadata {
-        StaticMetadata {
+    pub fn new(
+        axes: Vec<Axis>,
+        glyph_order: IndexSet<GlyphName>,
+        glyph_locations: HashSet<NormalizedLocation>,
+    ) -> Result<StaticMetadata, VariationModelError> {
+        let axis_names = axes.iter().map(|a| a.name.clone()).collect();
+        let variation_model = VariationModel::new(glyph_locations, axis_names)?;
+        Ok(StaticMetadata {
             axes,
             glyph_order,
-            variation_model: VariationModel::empty(),
-        }
+            variation_model,
+        })
     }
 }
 

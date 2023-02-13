@@ -46,6 +46,7 @@ impl From<CoordConverter> for CoordConverterSerdeRepr {
 pub struct StaticMetadataSerdeRepr {
     pub axes: Vec<Axis>,
     pub glyph_order: Vec<String>,
+    pub glyph_locations: Vec<NormalizedLocation>,
 }
 
 impl From<StaticMetadataSerdeRepr> for StaticMetadata {
@@ -53,7 +54,9 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
         StaticMetadata::new(
             from.axes,
             from.glyph_order.into_iter().map(|s| s.into()).collect(),
+            from.glyph_locations.into_iter().collect(),
         )
+        .unwrap()
     }
 }
 
@@ -66,6 +69,7 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
                 .into_iter()
                 .map(|n| n.as_str().to_string())
                 .collect(),
+            glyph_locations: from.variation_model.locations().cloned().collect(),
         }
     }
 }

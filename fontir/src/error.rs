@@ -99,6 +99,8 @@ pub enum WorkError {
     },
     #[error("Path conversion error")]
     PathConversionError(#[from] PathConversionError),
+    #[error("Variation model error")]
+    VariationModelError(#[from] VariationModelError),
 }
 
 /// An async work error, hence one that must be Send
