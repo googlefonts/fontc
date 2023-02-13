@@ -40,7 +40,7 @@ pub struct NormalizedCoord(OrderedFloat<f32>);
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct Location<T>(BTreeMap<String, T>)
 where
-    T: Clone;
+    T: Copy;
 
 pub type DesignLocation = Location<DesignCoord>;
 pub type UserLocation = Location<UserCoord>;
@@ -184,13 +184,13 @@ impl Sub<NormalizedCoord> for NormalizedCoord {
     }
 }
 
-impl<T: Clone> FromIterator<(String, T)> for Location<T> {
+impl<T: Copy> FromIterator<(String, T)> for Location<T> {
     fn from_iter<I: IntoIterator<Item = (String, T)>>(iter: I) -> Self {
         Location(BTreeMap::from_iter(iter))
     }
 }
 
-impl<T: Clone> Location<T> {
+impl<T: Copy> Location<T> {
     pub fn new() -> Location<T> {
         Location(BTreeMap::new())
     }
@@ -213,11 +213,11 @@ impl<T: Clone> Location<T> {
     }
 
     pub fn get(&self, axis_name: &String) -> Option<T> {
-        self.0.get(axis_name).cloned()
+        self.0.get(axis_name).copied()
     }
 }
 
-impl<T: Clone> Default for Location<T> {
+impl<T: Copy> Default for Location<T> {
     fn default() -> Self {
         Self::new()
     }

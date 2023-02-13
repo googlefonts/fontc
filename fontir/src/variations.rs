@@ -171,6 +171,8 @@ impl LocationSortingHat {
                 rank += 1;
 
                 // Score more than the max allowable axes for any axis with non-zero value that has no user-specified order
+                // This shouldn't hapen because it's an AxesWithoutAssignedOrder error in ctor, retained
+                // because I want key_for to be infallible.
                 if !self.axis_order.contains(axis_name) {
                     known_axes.push(0x10000);
                 }
@@ -336,9 +338,7 @@ impl Tent {
         }
         Tent { lower, peak, upper }
     }
-}
 
-impl Tent {
     /// OT-specific validation of whether we could have any influence
     ///
     /// (0,0,0) IS valid, meaning apply my deltas at full scale always
@@ -377,6 +377,16 @@ impl Display for Tent {
             comment
         ))?;
         Ok(())
+    }
+}
+
+impl From<(f32, f32, f32)> for Tent {
+    fn from(value: (f32, f32, f32)) -> Self {
+        Tent::new(
+            NormalizedCoord::new(value.0),
+            NormalizedCoord::new(value.1),
+            NormalizedCoord::new(value.2),
+        )
     }
 }
 
@@ -435,10 +445,9 @@ fn master_influence(regions: Vec<VariationRegion>) -> Vec<VariationRegion> {
                 continue;
             }
             // If prev doesn't overlap current we aren't interested
-            let overlap = region.0.iter().all(|(axis, axis_region)| {
-                let prev_peak = prev_region.0[axis].peak;
-                prev_peak == axis_region.peak
-                    || (axis_region.lower < prev_peak && prev_peak < axis_region.upper)
+            let overlap = region.0.iter().all(|(axis_name, tent)| {
+                let prev_peak = prev_region.0[axis_name].peak;
+                prev_peak == tent.peak || (tent.lower < prev_peak && prev_peak < tent.upper)
             });
             if !overlap {
                 continue;
@@ -534,25 +543,16 @@ mod tests {
 
     use crate::{
         coords::{NormalizedCoord, NormalizedLocation},
-        variations::{Tent, ONE},
+        variations::ONE,
     };
 
     use super::{VariationModel, VariationRegion};
 
     fn norm_loc(positions: &[(&str, f32)]) -> NormalizedLocation {
-        let mut loc = NormalizedLocation::new();
-        for (axis, value) in positions {
-            loc.set_pos(axis.to_owned(), NormalizedCoord::new(*value));
-        }
-        loc
-    }
-
-    fn tent(lower: f32, peak: f32, upper: f32) -> Tent {
-        Tent {
-            lower: NormalizedCoord::new(lower),
-            peak: NormalizedCoord::new(peak),
-            upper: NormalizedCoord::new(upper),
-        }
+        positions
+            .iter()
+            .map(|(axis_name, value)| (axis_name.to_string(), NormalizedCoord::new(*value)))
+            .collect()
     }
 
     fn default_master_weight() -> Vec<(usize, OrderedFloat<f32>)> {
@@ -585,7 +585,9 @@ mod tests {
     fn scalar_at_off_default_for_simple_weight() {
         let loc = norm_loc(&[("Weight", 0.2)]);
         let mut region = VariationRegion::new();
-        region.0.insert("Weight".to_string(), tent(0.0, 2.0, 3.0));
+        region
+            .0
+            .insert("Weight".to_string(), (0.0, 2.0, 3.0).into());
         assert_eq!(OrderedFloat(0.1), region.scalar_at(&loc));
     }
 
@@ -596,7 +598,9 @@ mod tests {
     fn scalar_at_for_weight() {
         let loc = norm_loc(&[("Weight", 2.5)]);
         let mut region = VariationRegion::new();
-        region.0.insert("Weight".to_string(), tent(0.0, 2.0, 4.0));
+        region
+            .0
+            .insert("Weight".to_string(), (0.0, 2.0, 4.0).into());
         assert_eq!(OrderedFloat(0.75), region.scalar_at(&loc));
     }
 
@@ -608,8 +612,12 @@ mod tests {
     fn scalar_at_for_weight_width_fixup() {
         let loc = norm_loc(&[("Weight", 2.5), ("Width", 0.0)]);
         let mut region = VariationRegion::new();
-        region.0.insert("Weight".to_string(), tent(0.0, 2.0, 4.0));
-        region.0.insert("Width".to_string(), tent(-1.0, 0.0, 1.0));
+        region
+            .0
+            .insert("Weight".to_string(), (0.0, 2.0, 4.0).into());
+        region
+            .0
+            .insert("Width".to_string(), (-1.0, 0.0, 1.0).into());
         assert_eq!(OrderedFloat(0.75), region.scalar_at(&loc));
     }
 
@@ -620,7 +628,9 @@ mod tests {
     fn scalar_at_for_weight_width_corner() {
         let loc = norm_loc(&[("Weight", 1.0), ("Width", 1.0)]);
         let mut region = VariationRegion::new();
-        region.0.insert("Weight".to_string(), tent(0.0, 1.0, 1.0));
+        region
+            .0
+            .insert("Weight".to_string(), (0.0, 1.0, 1.0).into());
         assert_eq!(OrderedFloat(1.0), region.scalar_at(&loc));
     }
 
@@ -787,6 +797,177 @@ mod tests {
                 vec![(0_usize, OrderedFloat(1.0))],
                 vec![(0_usize, OrderedFloat(1.0))],
                 vec![(0_usize, OrderedFloat(1.0))],
+                vec![(0_usize, OrderedFloat(1.0))],
+            ],
+            model.delta_weights
+        );
+    }
+
+    /// A scenario from models_test.py::test_init
+    ///
+    /// <https://github.com/fonttools/fonttools/blob/bf265ce49e0cae6f032420a4c80c31d8e16285b8/Tests/varLib/models_test.py#L199>
+    #[test]
+    fn delta_weights_for_many_master_weight_width_family() {
+        let locations = HashSet::from([
+            norm_loc(&[("Weight", 0.55), ("Width", 0.0)]),
+            norm_loc(&[("Weight", -0.55), ("Width", 0.0)]),
+            norm_loc(&[("Weight", -1.0), ("Width", 0.0)]),
+            norm_loc(&[("Weight", 0.0), ("Width", 1.0)]),
+            norm_loc(&[("Weight", 0.66), ("Width", 1.0)]),
+            norm_loc(&[("Weight", 0.66), ("Width", 0.66)]),
+            norm_loc(&[("Weight", 0.0), ("Width", 0.0)]),
+            norm_loc(&[("Weight", 1.0), ("Width", 1.0)]),
+            norm_loc(&[("Weight", 1.0), ("Width", 0.0)]),
+        ]);
+        let axis_order = vec!["Weight".to_string(), "Width".to_string()];
+        let model = VariationModel::new(locations, axis_order).unwrap();
+
+        assert_eq!(
+            vec![
+                norm_loc(&[("Weight", 0.0), ("Width", 0.0)]),
+                norm_loc(&[("Weight", -0.55), ("Width", 0.0)]),
+                norm_loc(&[("Weight", -1.0), ("Width", 0.0)]),
+                norm_loc(&[("Weight", 0.55), ("Width", 0.0)]),
+                norm_loc(&[("Weight", 1.0), ("Width", 0.0)]),
+                norm_loc(&[("Weight", 0.0), ("Width", 1.0)]),
+                norm_loc(&[("Weight", 1.0), ("Width", 1.0)]),
+                norm_loc(&[("Weight", 0.66), ("Width", 1.0)]),
+                norm_loc(&[("Weight", 0.66), ("Width", 0.66)]),
+            ],
+            model.locations
+        );
+
+        assert_eq!(
+            vec![
+                default_master_weight(),
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![
+                    (0_usize, OrderedFloat(1.0)),
+                    (4_usize, OrderedFloat(1.0)),
+                    (5_usize, OrderedFloat(1.0))
+                ],
+                vec![
+                    (0_usize, OrderedFloat(1.0)),
+                    (3_usize, OrderedFloat(0.7555555)),
+                    (4_usize, OrderedFloat(0.24444449)),
+                    (5_usize, OrderedFloat(1.0)),
+                    (6_usize, OrderedFloat(0.66))
+                ],
+                vec![
+                    (0_usize, OrderedFloat(1.0)),
+                    (3_usize, OrderedFloat(0.7555555)),
+                    (4_usize, OrderedFloat(0.24444449)),
+                    (5_usize, OrderedFloat(0.66)),
+                    (6_usize, OrderedFloat(0.43560004)),
+                    (7_usize, OrderedFloat(0.66))
+                ],
+            ],
+            model.delta_weights
+        );
+    }
+
+    /// A scenario from models_test.py::test_init
+    ///
+    /// <https://github.com/fonttools/fonttools/blob/bf265ce49e0cae6f032420a4c80c31d8e16285b8/Tests/varLib/models_test.py#L259>
+    #[test]
+    fn delta_weights_for_foo_bar_family_case_1() {
+        let locations = HashSet::from([
+            norm_loc(&[("foo", 0.0), ("bar", 0.0)]),
+            norm_loc(&[("foo", 0.0), ("bar", 0.5)]),
+            norm_loc(&[("foo", 0.0), ("bar", 1.0)]),
+            norm_loc(&[("foo", 1.0), ("bar", 0.0)]),
+            norm_loc(&[("foo", 1.0), ("bar", 0.5)]),
+            norm_loc(&[("foo", 1.0), ("bar", 1.0)]),
+        ]);
+        let axis_order = vec!["bar".to_string(), "foo".to_string()];
+        let model = VariationModel::new(locations, axis_order).unwrap();
+
+        assert_eq!(
+            vec![
+                norm_loc(&[("foo", 0.0), ("bar", 0.0)]),
+                norm_loc(&[("foo", 0.0), ("bar", 0.5)]),
+                norm_loc(&[("foo", 0.0), ("bar", 1.0)]),
+                norm_loc(&[("foo", 1.0), ("bar", 0.0)]),
+                norm_loc(&[("foo", 1.0), ("bar", 0.5)]),
+                norm_loc(&[("foo", 1.0), ("bar", 1.0)]),
+            ],
+            model.locations
+        );
+        assert_eq!(
+            vec![
+                default_master_weight(),
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![
+                    (0_usize, OrderedFloat(1.0)),
+                    (1_usize, OrderedFloat(1.0)),
+                    (3_usize, OrderedFloat(1.0))
+                ],
+                vec![
+                    (0_usize, OrderedFloat(1.0)),
+                    (2_usize, OrderedFloat(1.0)),
+                    (3_usize, OrderedFloat(1.0))
+                ],
+            ],
+            model.delta_weights
+        );
+    }
+
+    /// A scenario from models_test.py::test_init
+    ///
+    /// <https://github.com/fonttools/fonttools/blob/bf265ce49e0cae6f032420a4c80c31d8e16285b8/Tests/varLib/models_test.py#L294>
+    #[test]
+    fn delta_weights_for_foo_bar_family_case_2() {
+        let locations = HashSet::from([
+            norm_loc(&[("foo", 0.0), ("bar", 0.0)]),
+            norm_loc(&[("foo", 0.25), ("bar", 0.0)]),
+            norm_loc(&[("foo", 0.5), ("bar", 0.0)]),
+            norm_loc(&[("foo", 0.75), ("bar", 0.0)]),
+            norm_loc(&[("foo", 1.0), ("bar", 0.0)]),
+            norm_loc(&[("foo", 0.0), ("bar", 0.25)]),
+            norm_loc(&[("foo", 0.0), ("bar", 0.75)]),
+            norm_loc(&[("foo", 0.0), ("bar", 1.0)]),
+        ]);
+        let axis_order = vec!["bar".to_string(), "foo".to_string()];
+        let model = VariationModel::new(locations, axis_order).unwrap();
+
+        assert_eq!(
+            vec![
+                norm_loc(&[("foo", 0.0), ("bar", 0.0)]),
+                norm_loc(&[("foo", 0.0), ("bar", 0.25)]),
+                norm_loc(&[("foo", 0.0), ("bar", 0.75)]),
+                norm_loc(&[("foo", 0.0), ("bar", 1.0)]),
+                norm_loc(&[("foo", 0.25), ("bar", 0.0)]),
+                norm_loc(&[("foo", 0.5), ("bar", 0.0)]),
+                norm_loc(&[("foo", 0.75), ("bar", 0.0)]),
+                norm_loc(&[("foo", 1.0), ("bar", 0.0)]),
+            ],
+            model.locations
+        );
+        assert_eq!(
+            vec![
+                default_master_weight(),
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![
+                    (0_usize, OrderedFloat(1.0)),
+                    (1_usize, OrderedFloat(0.33333334))
+                ],
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![(0_usize, OrderedFloat(1.0))],
+                vec![
+                    (0_usize, OrderedFloat(1.0)),
+                    (4_usize, OrderedFloat(0.6666667))
+                ],
+                vec![
+                    (0_usize, OrderedFloat(1.0)),
+                    (4_usize, OrderedFloat(0.33333334)),
+                    (5_usize, OrderedFloat(0.5))
+                ],
                 vec![(0_usize, OrderedFloat(1.0))],
             ],
             model.delta_weights
