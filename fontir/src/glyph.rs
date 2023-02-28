@@ -3,10 +3,13 @@
 //! Notably includes splitting glyphs with contours and components into one new glyph with
 //! the contours and one updated glyph with no contours that references the new gyph as a component.
 
+use std::collections::{BTreeSet, HashSet};
+
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use indexmap::IndexSet;
 use kurbo::Affine;
-use log::debug;
+use log::{debug, trace};
+use ordered_float::OrderedFloat;
 
 use crate::{
     error::WorkError,
@@ -26,7 +29,7 @@ struct FinalizeStaticMetadataWork {}
 /// composite glyph that references the simple glyph as a component.
 ///
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
-fn should_split(glyph: &Glyph) -> bool {
+fn has_components_and_contours(glyph: &Glyph) -> bool {
     glyph
         .sources
         .values()
@@ -69,6 +72,127 @@ fn split_glyph(glyph_order: &IndexSet<GlyphName>, original: &Glyph) -> (Glyph, G
     (simple_glyph, composite_glyph)
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct HashableComponent {
+    base: GlyphName,
+    transform: [OrderedFloat<f64>; 6],
+}
+
+impl From<&Component> for HashableComponent {
+    fn from(value: &Component) -> Self {
+        let mut transform = [OrderedFloat(0.0f64); 6];
+        transform
+            .iter_mut()
+            .zip(value.transform.as_coeffs())
+            .for_each(|(of, f)| *of = f.into());
+        HashableComponent {
+            base: value.base.clone(),
+            transform,
+        }
+    }
+}
+
+/// Returns a Vec of Components transformed by transform.
+///
+/// If glyph components are not the same for all instances, panics.
+fn consistent_components(glyph: &Glyph, transform: Affine) -> Vec<Component> {
+    if glyph.sources.is_empty() {
+        return Vec::new();
+    }
+
+    // Kerplode if the set of unique components is inconsistent across sources
+    let unique_components: HashSet<_> = glyph
+        .sources
+        .values()
+        .map(|inst| {
+            inst.components
+                .iter()
+                .map(HashableComponent::from)
+                .collect::<BTreeSet<_>>()
+        })
+        .collect();
+    if unique_components.len() != 1 {
+        panic!(
+            "'{}' has {} unique sets of components; must have exactly 1",
+            glyph.name,
+            unique_components.len()
+        );
+    }
+
+    // We have at least 1 source and all sources have the same components
+    // so take the components from the first source
+    glyph
+        .sources
+        .values()
+        .take(1)
+        .flat_map(|inst| inst.components.iter())
+        .map(|c| {
+            Component {
+                base: c.base.clone(),
+                transform: transform * c.transform, // TODO is this, as is traditional, backwards
+            }
+        })
+        .collect()
+}
+
+/// Convert a glyph with contours and components to a contour-only, aka simple, glyph
+///
+/// At time of writing we only support this if every instance uses the same set of components.
+///
+/// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L165>
+fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<Glyph, WorkError> {
+    // Component until you can't component no more
+    let mut frontier: Vec<_> = consistent_components(original, Affine::IDENTITY);
+
+    let mut components = Vec::new();
+    let mut visited: HashSet<HashableComponent> = HashSet::new();
+    while let Some(component) = frontier.pop() {
+        let hashable = HashableComponent::from(&component);
+        if !visited.insert(hashable) {
+            continue;
+        }
+
+        let referenced_glyph = context.get_glyph_ir(&component.base);
+        frontier.extend(
+            consistent_components(&referenced_glyph, component.transform)
+                .iter()
+                .cloned(),
+        );
+
+        trace!("'{0}' retains {component:?}", original.name);
+        components.push(component);
+    }
+
+    // Now we know which contours and transforms, go fetch the corresponding contours at every source location
+    // For now just fail if the component source locations don't match ours, don't try to interpolate
+    let mut simple = original.clone();
+    for (loc, inst) in simple.sources.iter_mut() {
+        inst.components.clear();
+
+        for component in components.iter() {
+            let ref_glyph = context.get_glyph_ir(&component.base);
+            let ref_inst = ref_glyph.sources.get(loc).ok_or_else(|| {
+                WorkError::GlyphUndefAtNormalizedLocation {
+                    glyph_name: component.base.clone(),
+                    pos: loc.clone(),
+                }
+            })?;
+
+            if !ref_inst.components.is_empty() {
+                todo!("Nested components");
+            }
+
+            for contour in ref_inst.contours.iter() {
+                let mut contour = contour.clone();
+                contour.apply_affine(component.transform);
+                inst.contours.push(contour);
+            }
+        }
+    }
+
+    Ok(simple)
+}
+
 impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         // We should now have access to *all* the glyph IR
@@ -78,25 +202,37 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
         let mut new_glyph_order = current_metadata.glyph_order.clone();
 
         // Glyphs with paths and components need to push their paths to a new glyph that is a component
-        for glyph_to_split in current_metadata
+        // OR to collapse such glyphs into a simple (contour-only) glyph to match existing fontmake behavior.
+        for glyph_to_fix in current_metadata
             .glyph_order
             .iter()
             .map(|gn| context.get_glyph_ir(gn))
-            .filter(|glyph| should_split(glyph))
+            .filter(|glyph| has_components_and_contours(glyph))
         {
-            debug!(
-                "Splitting '{0}' because it has contours and components",
-                glyph_to_split.name
-            );
-            let (simple, composite) = split_glyph(&new_glyph_order, &glyph_to_split);
+            if context.match_legacy {
+                debug!(
+                    "Coalescing'{0}' into a simple glyph because it has contours and components and that's how fontmake handles it",
+                    glyph_to_fix.name
+                );
+                let simple = convert_components_to_contours(context, &glyph_to_fix)?;
+                debug_assert!(simple.name != glyph_to_fix.name);
+                context.set_glyph_ir(simple);
+            } else {
+                // We don't have to match fontmake; prefer to retain components than to collapse to simple glyph
+                debug!(
+                    "Splitting '{0}' because it has contours and components and we don't have to match legacy",
+                    glyph_to_fix.name
+                );
+                let (simple, composite) = split_glyph(&new_glyph_order, &glyph_to_fix);
 
-            // Capture the updated/new IR and update glyph order
-            debug_assert!(composite.name == glyph_to_split.name);
-            debug_assert!(simple.name != glyph_to_split.name);
+                // Capture the updated/new IR and update glyph order
+                debug_assert!(composite.name == glyph_to_fix.name);
+                debug_assert!(simple.name != glyph_to_fix.name);
 
-            new_glyph_order.insert(simple.name.clone());
-            context.set_glyph_ir(simple.name.clone(), simple);
-            context.set_glyph_ir(composite.name.clone(), composite);
+                new_glyph_order.insert(simple.name.clone());
+                context.set_glyph_ir(simple);
+                context.set_glyph_ir(composite);
+            }
         }
 
         Ok(())
@@ -105,7 +241,11 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::{
+        collections::{HashMap, HashSet},
+        path::Path,
+        sync::Arc,
+    };
 
     use fontdrasil::types::GlyphName;
     use indexmap::IndexSet;
@@ -114,9 +254,15 @@ mod tests {
     use crate::{
         coords::{NormalizedCoord, NormalizedLocation},
         ir::{Component, Glyph, GlyphInstance},
+        orchestration::{Context, WorkId},
+        paths::Paths,
+        source::Input,
     };
 
-    use super::{name_for_derivative, should_split, split_glyph};
+    use super::{
+        convert_components_to_contours, has_components_and_contours, name_for_derivative,
+        split_glyph,
+    };
 
     fn norm_loc(positions: &[(&str, f32)]) -> NormalizedLocation {
         positions
@@ -128,16 +274,22 @@ mod tests {
     fn component_instance() -> GlyphInstance {
         GlyphInstance {
             components: vec![Component {
-                base: "my_component".into(),
-                transform: Affine::IDENTITY,
+                base: "component".into(),
+                transform: Affine::translate((3.0, 3.0)),
             }],
             ..Default::default()
         }
     }
 
     fn contour_instance() -> GlyphInstance {
+        let mut path = BezPath::new();
+        path.move_to((1.0, 1.0));
+        path.line_to((2.0, 1.0));
+        path.line_to((2.0, 2.0));
+        path.close_path();
+
         GlyphInstance {
-            contours: vec![BezPath::new()],
+            contours: vec![path],
             ..Default::default()
         }
     }
@@ -151,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn contours_xor_components_nop() {
+    fn has_components_and_contours_false() {
         let glyph = Glyph {
             name: "duck".into(),
             sources: HashMap::from([
@@ -161,16 +313,16 @@ mod tests {
                 (norm_loc(&[("W", 1.0)]), contour_instance()),
             ]),
         };
-        assert!(!should_split(&glyph));
+        assert!(!has_components_and_contours(&glyph));
     }
 
     #[test]
-    fn contours_and_components_split() {
+    fn has_components_and_contours_true() {
         let glyph = Glyph {
             name: "duck".into(),
             sources: HashMap::from([(norm_loc(&[("W", 0.0)]), contour_and_component_instance())]),
         };
-        assert!(should_split(&glyph));
+        assert!(has_components_and_contours(&glyph));
     }
 
     #[test]
@@ -190,15 +342,34 @@ mod tests {
         );
     }
 
-    #[test]
-    fn split_a_glyph() {
-        let split_me = Glyph {
-            name: "duck".into(),
+    fn contour_glyph(name: &str) -> Glyph {
+        Glyph {
+            name: name.into(),
+            sources: HashMap::from([
+                (norm_loc(&[("W", 0.0)]), contour_instance()),
+                (norm_loc(&[("W", 1.0)]), contour_instance()),
+            ]),
+        }
+    }
+
+    fn contour_and_component_weight_glyph(name: &str) -> Glyph {
+        Glyph {
+            name: name.into(),
             sources: HashMap::from([
                 (norm_loc(&[("W", 0.0)]), contour_and_component_instance()),
                 (norm_loc(&[("W", 1.0)]), contour_and_component_instance()),
             ]),
-        };
+        }
+    }
+
+    fn assert_simple(glyph: &Glyph) {
+        assert!(glyph.sources.values().all(|gi| gi.components.is_empty()));
+        assert!(glyph.sources.values().all(|gi| !gi.contours.is_empty()));
+    }
+
+    #[test]
+    fn split_a_glyph() {
+        let split_me = contour_and_component_weight_glyph("glyphname");
         let (simple, composite) = split_glyph(&IndexSet::new(), &split_me);
 
         let expected_locs = split_me.sources.keys().collect::<HashSet<_>>();
@@ -208,12 +379,58 @@ mod tests {
             composite.sources.keys().collect::<HashSet<_>>()
         );
 
-        assert!(simple.sources.values().all(|gi| gi.components.is_empty()));
-        assert!(simple.sources.values().all(|gi| !gi.contours.is_empty()));
+        assert_simple(&simple);
         assert!(composite.sources.values().all(|gi| gi.contours.is_empty()));
         assert!(composite
             .sources
             .values()
             .all(|gi| !gi.components.is_empty()));
+    }
+
+    #[test]
+    fn components_to_contours_shallow() {
+        let coalesce_me = contour_and_component_weight_glyph("coalesce_me");
+
+        let context = Context::new_root(
+            false,
+            false,
+            true,
+            Paths::new(Path::new("/fake/path")),
+            Input::new(),
+        )
+        .copy_for_work(
+            Some(HashSet::from([WorkId::Glyph("component".into())])),
+            Arc::new(|_| true),
+        );
+        context.set_glyph_ir(contour_glyph("component"));
+
+        let simple = convert_components_to_contours(&context, &coalesce_me).unwrap();
+        assert_simple(&simple);
+
+        // Our sample is unimaginative; both weights are identical
+        for (loc, inst) in simple.sources.iter() {
+            assert_eq!(
+                // The original shape, and the original shape shifted
+                vec!["M1 1L2 1L2 2Z", "M4 4L5 4L5 5Z",],
+                inst.contours
+                    .iter()
+                    .map(|bez| bez.to_svg())
+                    .collect::<Vec<_>>(),
+                "At {:?}",
+                loc
+            );
+        }
+    }
+
+    #[test]
+    fn components_to_contours_deep() {
+        todo!("We must go deeper")
+    }
+
+    #[test]
+    fn components_to_contours_retains_direction() {
+        // A transform with a negative determinant changes contour direction
+        // Our contour conversion should reverse the contour when this occurs
+        todo!("We must go deeper")
     }
 }

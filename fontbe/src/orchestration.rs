@@ -74,6 +74,9 @@ pub struct Context {
     // If set additional debug files will be emitted to disk
     pub emit_debug: bool,
 
+    // If set seek to match fontmake (python) behavior even at cost of abandoning optimizations
+    match_legacy: bool,
+
     paths: Arc<Paths>,
 
     // The final, fully populated, read-only FE context
@@ -90,12 +93,14 @@ impl Context {
     pub fn new_root(
         emit_ir: bool,
         emit_debug: bool,
+        match_legacy: bool,
         paths: Paths,
         ir: &fontir::orchestration::Context,
     ) -> Context {
         Context {
             emit_ir,
             emit_debug,
+            match_legacy,
             paths: Arc::from(paths),
             ir: Arc::from(ir.read_only()),
             acl: AccessControlList::read_only(),
@@ -111,6 +116,7 @@ impl Context {
         Context {
             emit_ir: self.emit_ir,
             emit_debug: self.emit_debug,
+            match_legacy: self.match_legacy,
             paths: self.paths.clone(),
             ir: self.ir.clone(),
             acl: AccessControlList::read_write(

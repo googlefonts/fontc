@@ -32,6 +32,8 @@ env_logger = "0.9.0"
 
 parking_lot = "0.12.1"
 
+write-fonts = "0.0.5"  # for pens
+
 [dev-dependencies]
 diff = "0.1.12"
 ansi_term = "0.12.1"

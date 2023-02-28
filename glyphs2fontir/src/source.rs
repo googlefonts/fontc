@@ -295,7 +295,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
             check_pos(&self.glyph_name, positions, axis, &max)?;
         }
 
-        context.set_glyph_ir(self.glyph_name.clone(), ir_glyph);
+        context.set_glyph_ir(ir_glyph);
         Ok(())
     }
 }
@@ -388,6 +388,7 @@ mod tests {
             Context::new_root(
                 false,
                 false,
+                true,
                 Paths::new(Path::new("/nothing/should/write/here")),
                 input,
             ),

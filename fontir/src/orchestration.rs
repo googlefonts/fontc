@@ -48,6 +48,9 @@ pub struct Context {
     // If set additional debug files will be emitted to disk
     emit_debug: bool,
 
+    // If set seek to match fontmake (python) behavior even at cost of abandoning optimizations
+    pub match_legacy: bool,
+
     paths: Arc<Paths>,
 
     // The input we're working on. Note that change detection may mean we only process
@@ -68,6 +71,7 @@ impl Context {
         Context {
             emit_ir: self.emit_ir,
             emit_debug: self.emit_debug,
+            match_legacy: self.match_legacy,
             paths: self.paths.clone(),
             input: self.input.clone(),
             acl,
@@ -77,10 +81,17 @@ impl Context {
         }
     }
 
-    pub fn new_root(emit_ir: bool, emit_debug: bool, paths: Paths, input: Input) -> Context {
+    pub fn new_root(
+        emit_ir: bool,
+        emit_debug: bool,
+        match_legacy: bool,
+        paths: Paths,
+        input: Input,
+    ) -> Context {
         Context {
             emit_ir,
             emit_debug,
+            match_legacy,
             paths: Arc::from(paths),
             input: Arc::from(input),
             acl: AccessControlList::read_only(),
@@ -170,12 +181,12 @@ impl Context {
         rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
 
-    pub fn set_glyph_ir(&self, glyph_name: GlyphName, ir: ir::Glyph) {
-        let id = WorkId::Glyph(glyph_name.clone());
+    pub fn set_glyph_ir(&self, ir: ir::Glyph) {
+        let id = WorkId::Glyph(ir.name.clone());
         self.acl.check_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         let mut wl = self.glyph_ir.write();
-        wl.insert(glyph_name, Arc::from(ir));
+        wl.insert(ir.name.clone(), Arc::from(ir));
     }
 
     fn set_cached_features(&self, ir: ir::Features) {

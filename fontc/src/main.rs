@@ -52,6 +52,14 @@ struct Args {
     #[clap(default_value = "false")]
     emit_debug: bool,
 
+    /// Whether to Try Hard(tm) to match fontmake (Python) behavior in cases where there are other options.
+    ///
+    /// See https://github.com/googlefonts/fontmake-rs/pull/123 for an example of
+    /// where this matters.
+    #[arg(long)]
+    #[clap(default_value = "true")]
+    match_legacy: bool,
+
     /// Working directory for the build process. If emit-ir is on, written here.
     #[arg(short, long)]
     #[clap(default_value = "build")]
@@ -612,12 +620,14 @@ fn main() -> Result<(), Error> {
     let fe_root = FeContext::new_root(
         config.args.emit_ir,
         config.args.emit_debug,
+        config.args.match_legacy,
         ir_paths,
         change_detector.current_inputs.clone(),
     );
     let be_root = BeContext::new_root(
         config.args.emit_ir,
         config.args.emit_debug,
+        config.args.match_legacy,
         be_paths,
         &fe_root,
     );
@@ -671,6 +681,7 @@ mod tests {
             emit_ir: true,
             emit_debug: false,
             build_dir: build_dir.to_path_buf(),
+            match_legacy: true,
         }
     }
 
@@ -766,12 +777,14 @@ mod tests {
         let fe_root = FeContext::new_root(
             config.args.emit_ir,
             config.args.emit_debug,
+            config.args.match_legacy,
             ir_paths,
             change_detector.current_inputs.clone(),
         );
         let be_root = BeContext::new_root(
             config.args.emit_ir,
             config.args.emit_debug,
+            config.args.match_legacy,
             be_paths,
             &fe_root.read_only(),
         );
@@ -900,5 +913,15 @@ mod tests {
 
         let feature_ttf = build_dir.join("features.ttf");
         assert!(feature_ttf.is_file(), "Should have written {feature_ttf:?}");
+    }
+
+    #[test]
+    fn resolve_contour_and_composite_glyph() {
+        todo!()
+    }
+
+    #[test]
+    fn resolve_contour_and_composite_glyph_in_legacy_mode() {
+        todo!()
     }
 }
