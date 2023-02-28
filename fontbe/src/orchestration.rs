@@ -90,6 +90,18 @@ pub struct Context {
 }
 
 impl Context {
+    fn copy(&self, acl: AccessControlList<AnyWorkId>) -> Context {
+        Context {
+            emit_ir: self.emit_ir,
+            emit_debug: self.emit_debug,
+            match_legacy: self.match_legacy,
+            paths: self.paths.clone(),
+            ir: self.ir.clone(),
+            acl,
+            features: self.features.clone(),
+        }
+    }
+
     pub fn new_root(
         emit_ir: bool,
         emit_debug: bool,
@@ -113,18 +125,14 @@ impl Context {
         work_id: WorkId,
         dependencies: Option<HashSet<AnyWorkId>>,
     ) -> Context {
-        Context {
-            emit_ir: self.emit_ir,
-            emit_debug: self.emit_debug,
-            match_legacy: self.match_legacy,
-            paths: self.paths.clone(),
-            ir: self.ir.clone(),
-            acl: AccessControlList::read_write(
-                dependencies.unwrap_or_default(),
-                access_one(work_id.into()),
-            ),
-            features: self.features.clone(),
-        }
+        self.copy(AccessControlList::read_write(
+            dependencies.unwrap_or_default(),
+            access_one(work_id.into()),
+        ))
+    }
+
+    pub fn read_only(&self) -> Context {
+        self.copy(AccessControlList::read_only())
     }
 }
 

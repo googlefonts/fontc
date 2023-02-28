@@ -3,7 +3,7 @@
 //! Notably includes splitting glyphs with contours and components into one new glyph with
 //! the contours and one updated glyph with no contours that references the new gyph as a component.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use indexmap::IndexSet;
@@ -95,9 +95,9 @@ impl From<&Component> for HashableComponent {
 /// Returns a Vec of Components transformed by transform.
 ///
 /// If glyph components are not the same for all instances, panics.
-fn consistent_components(glyph: &Glyph, transform: Affine) -> Vec<Component> {
+fn consistent_components(glyph: &Glyph, transform: Affine) -> VecDeque<Component> {
     if glyph.sources.is_empty() {
-        return Vec::new();
+        return Default::default();
     }
 
     // Kerplode if the set of unique components is inconsistent across sources
@@ -126,11 +126,9 @@ fn consistent_components(glyph: &Glyph, transform: Affine) -> Vec<Component> {
         .values()
         .take(1)
         .flat_map(|inst| inst.components.iter())
-        .map(|c| {
-            Component {
-                base: c.base.clone(),
-                transform: transform * c.transform, // TODO is this, as is traditional, backwards
-            }
+        .map(|c| Component {
+            base: c.base.clone(),
+            transform: transform * c.transform,
         })
         .collect()
 }
@@ -141,12 +139,16 @@ fn consistent_components(glyph: &Glyph, transform: Affine) -> Vec<Component> {
 ///
 /// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L165>
 fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<Glyph, WorkError> {
-    // Component until you can't component no more
-    let mut frontier: Vec<_> = consistent_components(original, Affine::IDENTITY);
+    let mut simple = original.clone();
+    simple
+        .sources
+        .iter_mut()
+        .for_each(|(_, inst)| inst.components.clear());
 
-    let mut components = Vec::new();
+    // Component until you can't component no more
+    let mut frontier: VecDeque<_> = consistent_components(original, Affine::IDENTITY);
     let mut visited: HashSet<HashableComponent> = HashSet::new();
-    while let Some(component) = frontier.pop() {
+    while let Some(component) = frontier.pop_front() {
         let hashable = HashableComponent::from(&component);
         if !visited.insert(hashable) {
             continue;
@@ -159,29 +161,16 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
                 .cloned(),
         );
 
+        // Any contours of the referenced glyph should be kept
+        // For now just fail if the component source locations don't match ours, don't try to interpolate
         trace!("'{0}' retains {component:?}", original.name);
-        components.push(component);
-    }
-
-    // Now we know which contours and transforms, go fetch the corresponding contours at every source location
-    // For now just fail if the component source locations don't match ours, don't try to interpolate
-    let mut simple = original.clone();
-    for (loc, inst) in simple.sources.iter_mut() {
-        inst.components.clear();
-
-        for component in components.iter() {
-            let ref_glyph = context.get_glyph_ir(&component.base);
-            let ref_inst = ref_glyph.sources.get(loc).ok_or_else(|| {
+        for (loc, inst) in simple.sources.iter_mut() {
+            let ref_inst = referenced_glyph.sources.get(loc).ok_or_else(|| {
                 WorkError::GlyphUndefAtNormalizedLocation {
                     glyph_name: component.base.clone(),
                     pos: loc.clone(),
                 }
             })?;
-
-            if !ref_inst.components.is_empty() {
-                todo!("Nested components");
-            }
-
             for contour in ref_inst.contours.iter() {
                 let mut contour = contour.clone();
                 contour.apply_affine(component.transform);
@@ -215,7 +204,12 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
                     glyph_to_fix.name
                 );
                 let simple = convert_components_to_contours(context, &glyph_to_fix)?;
-                debug_assert!(simple.name != glyph_to_fix.name);
+                debug_assert!(
+                    simple.name == glyph_to_fix.name,
+                    "{} != {}",
+                    simple.name,
+                    glyph_to_fix.name
+                );
                 context.set_glyph_ir(simple);
             } else {
                 // We don't have to match fontmake; prefer to retain components than to collapse to simple glyph
@@ -281,15 +275,18 @@ mod tests {
         }
     }
 
-    fn contour_instance() -> GlyphInstance {
+    fn contour() -> BezPath {
         let mut path = BezPath::new();
         path.move_to((1.0, 1.0));
         path.line_to((2.0, 1.0));
         path.line_to((2.0, 2.0));
         path.close_path();
+        path
+    }
 
+    fn contour_instance() -> GlyphInstance {
         GlyphInstance {
-            contours: vec![path],
+            contours: vec![contour()],
             ..Default::default()
         }
     }
@@ -300,6 +297,16 @@ mod tests {
             components: component_instance().components,
             ..Default::default()
         }
+    }
+
+    fn test_root() -> Context {
+        Context::new_root(
+            false,
+            false,
+            true,
+            Paths::new(Path::new("/fake/path")),
+            Input::new(),
+        )
     }
 
     #[test]
@@ -352,6 +359,20 @@ mod tests {
         }
     }
 
+    fn component_glyph(name: &str, base: GlyphName, transform: Affine) -> Glyph {
+        let component = GlyphInstance {
+            components: vec![Component { base, transform }],
+            ..Default::default()
+        };
+        Glyph {
+            name: name.into(),
+            sources: HashMap::from([
+                (norm_loc(&[("W", 0.0)]), component.clone()),
+                (norm_loc(&[("W", 1.0)]), component),
+            ]),
+        }
+    }
+
     fn contour_and_component_weight_glyph(name: &str) -> Glyph {
         Glyph {
             name: name.into(),
@@ -391,14 +412,7 @@ mod tests {
     fn components_to_contours_shallow() {
         let coalesce_me = contour_and_component_weight_glyph("coalesce_me");
 
-        let context = Context::new_root(
-            false,
-            false,
-            true,
-            Paths::new(Path::new("/fake/path")),
-            Input::new(),
-        )
-        .copy_for_work(
+        let context = test_root().copy_for_work(
             Some(HashSet::from([WorkId::Glyph("component".into())])),
             Arc::new(|_| true),
         );
@@ -410,27 +424,93 @@ mod tests {
         // Our sample is unimaginative; both weights are identical
         for (loc, inst) in simple.sources.iter() {
             assert_eq!(
-                // The original shape, and the original shape shifted
+                // The original contour, and the component w/transform
                 vec!["M1 1L2 1L2 2Z", "M4 4L5 4L5 5Z",],
                 inst.contours
                     .iter()
                     .map(|bez| bez.to_svg())
                     .collect::<Vec<_>>(),
-                "At {:?}",
-                loc
+                "At {loc:?}"
             );
         }
     }
 
     #[test]
     fn components_to_contours_deep() {
-        todo!("We must go deeper")
+        // base shape
+        let reuse_me = contour_glyph("shape");
+        // add c1, reusing shape w/90 degrees ccw rotation: x-basis 0,1 y-basis -1,0
+        let c1 = component_glyph(
+            "c1",
+            reuse_me.name.clone(),
+            Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]),
+        );
+        // add c2, reusing c1 w/translation
+        let c2 = component_glyph("c2", c1.name.clone(), Affine::translate((5.0, 0.0)));
+
+        let context = test_root().copy_for_work(
+            Some(HashSet::from([
+                WorkId::Glyph(reuse_me.name.clone()),
+                WorkId::Glyph(c1.name.clone()),
+                WorkId::Glyph(c2.name.clone()),
+            ])),
+            Arc::new(|_| true),
+        );
+        context.set_glyph_ir(reuse_me);
+        context.set_glyph_ir(c1.clone());
+        context.set_glyph_ir(c2.clone());
+
+        let nested_components = Glyph {
+            name: "g".into(),
+            sources: HashMap::from([(
+                norm_loc(&[("W", 0.0)]),
+                GlyphInstance {
+                    components: vec![
+                        Component {
+                            base: c1.name.clone(),
+                            transform: Affine::IDENTITY,
+                        },
+                        Component {
+                            base: c1.name,
+                            transform: Affine::translate((0.0, 2.0)),
+                        },
+                        Component {
+                            base: c2.name,
+                            transform: Affine::translate((0.0, 5.0)),
+                        },
+                    ],
+                    contours: vec![contour()],
+                    ..Default::default()
+                },
+            )]),
+        };
+        let simple = convert_components_to_contours(&context, &nested_components).unwrap();
+        assert_simple(&simple);
+        assert_eq!(1, simple.sources.len());
+        let inst = simple.sources.values().next().unwrap();
+
+        assert_eq!(
+            vec![
+                // The original shape
+                "M1 1L2 1L2 2Z",
+                // c1: shape rotated 90 degrees ccw
+                "M1 -1L1 -2L2 -2Z",
+                // c1 moved by (0, 2)
+                "M1 1L1 0L2 0Z",
+                // c2 moved by (0,5), c2 is c1 moved by (5,0)
+                "M6 4L6 3L7 3Z",
+            ],
+            inst.contours
+                .iter()
+                .map(|bez| bez.to_svg())
+                .collect::<Vec<_>>(),
+        );
     }
 
     #[test]
     fn components_to_contours_retains_direction() {
         // A transform with a negative determinant changes contour direction
         // Our contour conversion should reverse the contour when this occurs
-        todo!("We must go deeper")
+        todo!("reverse contours sometimes maybe")
     }
 }
