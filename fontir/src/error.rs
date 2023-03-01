@@ -106,6 +106,8 @@ pub enum WorkError {
     PathConversionError(#[from] PathConversionError),
     #[error("Variation model error")]
     VariationModelError(#[from] VariationModelError),
+    #[error("Contour reversal error {0}")]
+    ContourReversalError(String),
 }
 
 /// An async work error, hence one that must be Send

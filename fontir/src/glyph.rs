@@ -10,6 +10,7 @@ use indexmap::IndexSet;
 use kurbo::Affine;
 use log::{debug, trace};
 use ordered_float::OrderedFloat;
+use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 
 use crate::{
     error::WorkError,
@@ -174,7 +175,19 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
             for contour in ref_inst.contours.iter() {
                 let mut contour = contour.clone();
                 contour.apply_affine(component.transform);
-                inst.contours.push(contour);
+
+                // See https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L205
+                if component.transform.determinant() < 0.0 {
+                    let mut bez_pen = BezPathPen::new();
+                    let mut rev_pen = ReverseContourPen::new(&mut bez_pen);
+                    write_to_pen(&contour, &mut rev_pen);
+                    rev_pen
+                        .flush()
+                        .map_err(|e| WorkError::ContourReversalError(format!("{e:?}")))?;
+                    inst.contours.push(bez_pen.into_inner());
+                } else {
+                    inst.contours.push(contour);
+                }
             }
         }
     }
@@ -244,6 +257,7 @@ mod tests {
     use fontdrasil::types::GlyphName;
     use indexmap::IndexSet;
     use kurbo::{Affine, BezPath};
+    use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 
     use crate::{
         coords::{NormalizedCoord, NormalizedLocation},
@@ -511,6 +525,53 @@ mod tests {
     fn components_to_contours_retains_direction() {
         // A transform with a negative determinant changes contour direction
         // Our contour conversion should reverse the contour when this occurs
-        todo!("reverse contours sometimes maybe")
+        let the_neg = Affine::new([1.0, 2.0, 2.0, 1.0, 0.0, 0.0]);
+        assert!(the_neg.determinant() < 0.0);
+
+        // base shape
+        let reuse_me = contour_glyph("shape");
+
+        let glyph = Glyph {
+            name: "g".into(),
+            sources: HashMap::from([(
+                norm_loc(&[("W", 0.0)]),
+                GlyphInstance {
+                    components: vec![Component {
+                        base: reuse_me.name.clone(),
+                        transform: the_neg,
+                    }],
+                    ..Default::default()
+                },
+            )]),
+        };
+
+        let context = test_root().copy_for_work(
+            Some(HashSet::from([WorkId::Glyph(reuse_me.name.clone())])),
+            Arc::new(|_| true),
+        );
+        context.set_glyph_ir(reuse_me);
+
+        let simple = convert_components_to_contours(&context, &glyph).unwrap();
+        assert_simple(&simple);
+        assert_eq!(1, simple.sources.len());
+        let inst = simple.sources.values().next().unwrap();
+
+        // what we should get back is the contour with the_neg applied, reversed because
+        // the_neg is notoriously negative in determinant
+        let mut bez_pen = BezPathPen::new();
+        let mut rev_pen = ReverseContourPen::new(&mut bez_pen);
+        let mut expected = contour();
+        expected.apply_affine(the_neg);
+        write_to_pen(&expected, &mut rev_pen);
+        rev_pen.flush().unwrap();
+        let expected = bez_pen.into_inner().to_svg();
+
+        assert_eq!(
+            vec![expected],
+            inst.contours
+                .iter()
+                .map(|bez| bez.to_svg())
+                .collect::<Vec<_>>(),
+        );
     }
 }

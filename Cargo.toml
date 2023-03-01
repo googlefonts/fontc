@@ -1,6 +1,6 @@
 [patch.crates-io]
-read-fonts = { git="https://github.com/googlefonts/fontations.git" }
-write-fonts = { git="https://github.com/googlefonts/fontations.git" }
+read-fonts = { git="https://github.com/googlefonts/fontations.git", branch="pathel" }
+write-fonts = { git="https://github.com/googlefonts/fontations.git", branch="pathel" }
 
 [workspace]
 
