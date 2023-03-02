@@ -13,9 +13,9 @@ use fea_rs::{
 };
 use fontir::{ir::Features, orchestration::Flags};
 use log::{debug, error, trace, warn};
+use write_fonts::FontBuilder;
 
 use fontdrasil::orchestration::Work;
-use write_fonts::FontBuilder;
 
 use crate::{
     error::Error,
@@ -74,11 +74,7 @@ impl Display for NotSupportedError {
 }
 
 impl FeatureWork {
-    fn compile(
-        &self,
-        features: &Features,
-        glyph_order: GlyphMap,
-    ) -> Result<FontBuilder<'static>, Error> {
+    fn compile(&self, features: &Features, glyph_order: GlyphMap) -> Result<FontBuilder, Error> {
         let root_path = if let Features::File(file) = features {
             OsString::from(file)
         } else {

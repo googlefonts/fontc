@@ -1,3 +1,6 @@
+[patch.crates-io]
+kurbo = { git="https://github.com/linebender/kurbo.git" }
+
 [workspace]
 
 members = [

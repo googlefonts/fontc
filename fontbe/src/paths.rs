@@ -33,12 +33,8 @@ impl Paths {
         &self.debug_dir
     }
 
-    pub fn glyph_dir(&self) -> &Path {
-        &self.glyph_dir
-    }
-
     fn glyph_file(&self, name: &str) -> PathBuf {
-        self.glyph_dir.join(glyph_file(name, ".glyph"))
+        self.glyph_dir.join(glyph_file(name, ".ttf"))
     }
 
     pub fn target_file(&self, id: &WorkId) -> PathBuf {

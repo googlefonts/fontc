@@ -81,8 +81,8 @@ impl AnyContext {
         write_access: Arc<dyn Fn(&AnyWorkId) -> bool + Send + Sync>,
     ) -> AnyContext {
         match id {
-            AnyWorkId::Be(..) => {
-                AnyContext::Be(be_root.copy_for_work(Some(dependencies), write_access))
+            AnyWorkId::Be(id) => {
+                AnyContext::Be(be_root.copy_for_work(id.clone(), Some(dependencies)))
             }
             AnyWorkId::Fe(..) => AnyContext::Fe(
                 fe_root.copy_for_work(

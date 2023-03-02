@@ -11,7 +11,6 @@ use clap::Parser;
 use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::{
     features::FeatureWork,
-    glyphs::{create_glyph_merge_work, create_glyph_work},
     orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
     paths::Paths as BePaths,
 };
@@ -119,7 +118,6 @@ fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     if !dir.exists() {
         fs::create_dir(dir)?
     }
-    debug!("require_dir {:?}", dir);
     Ok(dir.to_path_buf())
 }
 
@@ -380,66 +378,6 @@ fn add_glyph_ir_jobs(
     Ok(())
 }
 
-fn add_glyph_merge_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let glyphs_changed = change_detector.glyphs_changed();
-
-    // If no glyph has changed there isn't a lot of merging to do
-    if !glyphs_changed.is_empty() {
-        let mut dependencies: HashSet<_> = glyphs_changed
-            .iter()
-            .map(|gn| BeWorkIdentifier::Glyph(gn.clone()).into())
-            .collect();
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-
-        let id: AnyWorkId = BeWorkIdentifier::GlyphMerge.into();
-        let write_access = access_one(id.clone());
-        workload.insert(
-            id,
-            Job {
-                work: create_glyph_merge_work().into(),
-                dependencies,
-                write_access,
-            },
-        );
-    } else {
-        workload.mark_success(BeWorkIdentifier::GlyphMerge.into());
-    }
-    Ok(())
-}
-
-fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: GlyphName) {
-    let glyph_ir = fe_root.get_glyph_ir(&glyph_name);
-
-    // To build a glyph we need it's components, plus static metadata
-    let mut dependencies: HashSet<_> = glyph_ir
-        .sources
-        .values()
-        .flat_map(|s| &s.components)
-        .map(|c| AnyWorkId::Fe(FeWorkIdentifier::Glyph(c.base.clone())))
-        .collect();
-    dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-
-    let id = AnyWorkId::Be(BeWorkIdentifier::Glyph(glyph_name.clone()));
-
-    // this job should already be a dependency of the glyph merge; if not terrible things will happen
-    if !workload.is_dependency(&BeWorkIdentifier::GlyphMerge.into(), &id) {
-        panic!("BE glyph '{glyph_name}' is being built but not participating in glyph merge",);
-    }
-
-    let write_access = access_one(id.clone());
-    workload.insert(
-        id,
-        Job {
-            work: create_glyph_work(glyph_name).into(),
-            dependencies,
-            write_access,
-        },
-    );
-}
-
 struct ChangeDetector {
     ir_paths: IrPaths,
     ir_source: Box<dyn Source>,
@@ -493,13 +431,6 @@ impl Workload {
     fn insert(&mut self, id: AnyWorkId, job: Job) {
         self.jobs_pending.insert(id, job);
         self.job_count += 1;
-    }
-
-    fn is_dependency(&mut self, id: &AnyWorkId, dep: &AnyWorkId) -> bool {
-        self.jobs_pending
-            .get(id)
-            .map(|job| job.dependencies.contains(dep))
-            .unwrap_or(false)
     }
 
     fn mark_success(&mut self, id: impl Into<AnyWorkId>) {
@@ -562,14 +493,7 @@ impl Workload {
 
                 // Block for things to phone home to say they are done
                 // Then complete everything that has reported since our last check
-                let successes = self.read_completions(&recv, RecvType::Blocking)?;
-
-                // When a glyph finishes register BE work for it
-                for success in successes {
-                    if let AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) = success {
-                        add_glyph_be_job(&mut self, &fe_root, glyph_name);
-                    }
-                }
+                self.read_completions(&recv, RecvType::Blocking)?;
             }
             Ok::<(), Error>(())
         })?;
@@ -592,7 +516,7 @@ impl Workload {
         &mut self,
         recv: &Receiver<(AnyWorkId, Result<(), AnyWorkError>)>,
         initial_read: RecvType,
-    ) -> Result<Vec<AnyWorkId>, Error> {
+    ) -> Result<(), Error> {
         let mut successes = Vec::new();
         let mut opt_complete = match initial_read {
             RecvType::Blocking => match recv.recv() {
@@ -639,7 +563,7 @@ impl Workload {
         if !self.error.is_empty() {
             return Err(Error::TasksFailed(self.error.clone()));
         }
-        Ok(successes)
+        Ok(())
     }
 }
 
@@ -664,7 +588,6 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
 
     // BE: f(IR) => binary
     add_feature_be_job(change_detector, &mut workload)?;
-    add_glyph_merge_be_job(change_detector, &mut workload)?;
 
     Ok(workload)
 }
@@ -695,7 +618,6 @@ fn main() -> Result<(), Error> {
         fs::remove_dir_all(be_paths.debug_dir()).map_err(Error::IoError)?;
     }
     require_dir(be_paths.debug_dir())?;
-    require_dir(be_paths.glyph_dir())?;
     let config = Config::new(args)?;
     let prev_inputs = init(&config).map_err(Error::IoError)?;
 
@@ -741,9 +663,8 @@ mod tests {
 
     use crate::{
         add_feature_be_job, add_feature_ir_job, add_finalize_static_metadata_ir_job,
-        add_glyph_be_job, add_glyph_ir_jobs, add_glyph_merge_be_job,
-        add_init_static_metadata_ir_job, finish_successfully, init, require_dir, Args,
-        ChangeDetector, Config, Workload,
+        add_glyph_ir_jobs, add_init_static_metadata_ir_job, finish_successfully, init, require_dir,
+        Args, ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -833,7 +754,6 @@ mod tests {
         let ir_paths = IrPaths::new(&args.build_dir);
         let be_paths = BePaths::new(&args.build_dir);
         require_dir(ir_paths.glyph_ir_dir()).unwrap();
-        require_dir(be_paths.glyph_dir()).unwrap();
         let config = Config::new(args).unwrap();
 
         let prev_inputs = init(&config).unwrap();
@@ -848,8 +768,6 @@ mod tests {
         add_glyph_ir_jobs(&mut change_detector, &mut workload).unwrap();
         add_feature_ir_job(&mut change_detector, &mut workload).unwrap();
         add_feature_be_job(&mut change_detector, &mut workload).unwrap();
-
-        add_glyph_merge_be_job(&mut change_detector, &mut workload).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one
@@ -894,10 +812,6 @@ mod tests {
                 workload.success.insert(id.clone()),
                 "We just did {id:?} a second time?"
             );
-
-            if let AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) = id {
-                add_glyph_be_job(&mut workload, &fe_root, glyph_name.clone());
-            }
         }
         finish_successfully(change_detector).unwrap();
         result.work_completed = workload.success.difference(&pre_success).cloned().collect();
@@ -918,9 +832,6 @@ mod tests {
                 FeWorkIdentifier::Glyph("bar".into()).into(),
                 FeWorkIdentifier::Glyph("plus".into()).into(),
                 BeWorkIdentifier::Features.into(),
-                BeWorkIdentifier::Glyph("bar".into()).into(),
-                BeWorkIdentifier::Glyph("plus".into()).into(),
-                BeWorkIdentifier::GlyphMerge.into(),
             ]),
             result.work_completed
         );
@@ -957,11 +868,7 @@ mod tests {
 
         let result = compile(test_args(build_dir, "wght_var.designspace"));
         assert_eq!(
-            HashSet::from([
-                FeWorkIdentifier::Glyph("bar".into()).into(),
-                BeWorkIdentifier::Glyph("bar".into()).into(),
-                BeWorkIdentifier::GlyphMerge.into(),
-            ]),
+            HashSet::from([FeWorkIdentifier::Glyph("bar".into()).into(),]),
             result.work_completed
         );
     }
