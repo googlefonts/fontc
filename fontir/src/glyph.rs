@@ -3,7 +3,7 @@
 //! Notably includes splitting glyphs with contours and components into one new glyph with
 //! the contours and one updated glyph with no contours that references the new gyph as a component.
 
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use indexmap::IndexSet;
@@ -13,6 +13,7 @@ use ordered_float::OrderedFloat;
 use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 
 use crate::{
+    coords::NormalizedLocation,
     error::WorkError,
     ir::{Component, Glyph},
     orchestration::{Context, IrWork},
@@ -35,6 +36,11 @@ fn has_components_and_contours(glyph: &Glyph) -> bool {
         .sources
         .values()
         .any(|inst| !inst.components.is_empty() && !inst.contours.is_empty())
+}
+
+/// Does the Glyph uses components whose transform is different at different locations designspace?
+fn has_consistent_component_transforms(glyph: &Glyph) -> bool {
+    distinct_component_seqs(glyph).len() <= 1
 }
 
 fn name_for_derivative(base_name: &GlyphName, names_in_use: &IndexSet<GlyphName>) -> GlyphName {
@@ -93,43 +99,68 @@ impl From<&Component> for HashableComponent {
     }
 }
 
-/// Returns a Vec of Components transformed by transform.
+/// Every distinct sequence of components used at some position in designspace.
 ///
-/// If glyph components are not the same for all instances, panics.
-fn consistent_components(glyph: &Glyph, transform: Affine) -> VecDeque<Component> {
-    if glyph.sources.is_empty() {
-        return Default::default();
-    }
-
-    // Kerplode if the set of unique components is inconsistent across sources
-    let unique_components: HashSet<_> = glyph
+/// The (glyphname, transform) pair is considered for uniqueness.
+///
+/// Primary use is expected to be checking if there is >1 or not.
+fn distinct_component_seqs(glyph: &Glyph) -> HashSet<Vec<HashableComponent>> {
+    glyph
         .sources
         .values()
         .map(|inst| {
             inst.components
                 .iter()
                 .map(HashableComponent::from)
-                .collect::<BTreeSet<_>>()
+                .collect::<Vec<_>>()
         })
-        .collect();
-    if unique_components.len() != 1 {
+        .collect()
+}
+
+/// Every distinct set of components glyph names used at some position in designspace.
+///
+/// Only the glyph name is considered for uniqueness.
+///
+/// Primary use is expected to be checking if there is >1 or not.
+fn distinct_component_glyph_seqs(glyph: &Glyph) -> HashSet<Vec<GlyphName>> {
+    distinct_component_seqs(glyph)
+        .into_iter()
+        .map(|components| components.into_iter().map(|c| c.base).collect::<Vec<_>>())
+        .collect()
+}
+
+/// Returns components transformed by the input transform
+///
+/// Panics if the sequence of glyphs used as components (ignoring transform) is
+/// different at any point in design space.
+fn components(glyph: &Glyph, transform: Affine) -> VecDeque<(NormalizedLocation, Component)> {
+    if glyph.sources.is_empty() {
+        return Default::default();
+    }
+
+    // Kerplode if the set of unique components is inconsistent across sources
+    let component_glyph_seqs = distinct_component_glyph_seqs(glyph);
+    if component_glyph_seqs.len() != 1 {
         panic!(
-            "'{}' has {} unique sets of components; must have exactly 1",
+            "'{}' has {} unique sets of components; must have exactly 1\n{:?}",
             glyph.name,
-            unique_components.len()
+            component_glyph_seqs.len(),
+            component_glyph_seqs
         );
     }
 
-    // We have at least 1 source and all sources have the same components
-    // so take the components from the first source
     glyph
         .sources
-        .values()
-        .take(1)
-        .flat_map(|inst| inst.components.iter())
-        .map(|c| Component {
-            base: c.base.clone(),
-            transform: transform * c.transform,
+        .iter()
+        .flat_map(|(loc, inst)| inst.components.iter().map(|c| (loc.clone(), c)))
+        .map(|(loc, component)| {
+            (
+                loc,
+                Component {
+                    base: component.base.clone(),
+                    transform: transform * component.transform,
+                },
+            )
         })
         .collect()
 }
@@ -147,47 +178,52 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
         .for_each(|(_, inst)| inst.components.clear());
 
     // Component until you can't component no more
-    let mut frontier: VecDeque<_> = consistent_components(original, Affine::IDENTITY);
-    let mut visited: HashSet<HashableComponent> = HashSet::new();
-    while let Some(component) = frontier.pop_front() {
-        let hashable = HashableComponent::from(&component);
-        if !visited.insert(hashable) {
+    let mut frontier: VecDeque<_> = components(original, Affine::IDENTITY);
+    let mut visited: HashSet<(NormalizedLocation, HashableComponent)> = HashSet::new();
+    while let Some((loc, component)) = frontier.pop_front() {
+        if !visited.insert((loc.clone(), HashableComponent::from(&component))) {
             continue;
         }
 
         let referenced_glyph = context.get_glyph_ir(&component.base);
         frontier.extend(
-            consistent_components(&referenced_glyph, component.transform)
+            components(&referenced_glyph, component.transform)
                 .iter()
+                .filter(|(component_loc, _)| *component_loc == loc)
                 .cloned(),
         );
 
-        // Any contours of the referenced glyph should be kept
+        // Any contours of the referenced glyph at this location should be kept
         // For now just fail if the component source locations don't match ours, don't try to interpolate
-        trace!("'{0}' retains {component:?}", original.name);
-        for (loc, inst) in simple.sources.iter_mut() {
-            let ref_inst = referenced_glyph.sources.get(loc).ok_or_else(|| {
-                WorkError::GlyphUndefAtNormalizedLocation {
-                    glyph_name: component.base.clone(),
-                    pos: loc.clone(),
-                }
-            })?;
-            for contour in ref_inst.contours.iter() {
-                let mut contour = contour.clone();
-                contour.apply_affine(component.transform);
+        trace!("'{0}' retains {component:?} at {loc:?}", original.name);
+        let Some(inst) = simple.sources.get_mut(&loc) else {
+            return Err(WorkError::GlyphUndefAtNormalizedLocation {
+                glyph_name: simple.name.clone(),
+                pos: loc.clone(),
+            });
+        };
+        let Some(ref_inst) = referenced_glyph.sources.get(&loc) else {
+            return Err(WorkError::GlyphUndefAtNormalizedLocation {
+                glyph_name: referenced_glyph.name.clone(),
+                pos: loc.clone(),
+            });
+        };
 
-                // See https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L205
-                if component.transform.determinant() < 0.0 {
-                    let mut bez_pen = BezPathPen::new();
-                    let mut rev_pen = ReverseContourPen::new(&mut bez_pen);
-                    write_to_pen(&contour, &mut rev_pen);
-                    rev_pen
-                        .flush()
-                        .map_err(|e| WorkError::ContourReversalError(format!("{e:?}")))?;
-                    inst.contours.push(bez_pen.into_inner());
-                } else {
-                    inst.contours.push(contour);
-                }
+        for contour in ref_inst.contours.iter() {
+            let mut contour = contour.clone();
+            contour.apply_affine(component.transform);
+
+            // See https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L205
+            if component.transform.determinant() < 0.0 {
+                let mut bez_pen = BezPathPen::new();
+                let mut rev_pen = ReverseContourPen::new(&mut bez_pen);
+                write_to_pen(&contour, &mut rev_pen);
+                rev_pen
+                    .flush()
+                    .map_err(|e| WorkError::ContourReversalError(format!("{e:?}")))?;
+                inst.contours.push(bez_pen.into_inner());
+            } else {
+                inst.contours.push(contour);
             }
         }
     }
@@ -203,19 +239,35 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
         let current_metadata = context.get_static_metadata();
         let mut new_glyph_order = current_metadata.glyph_order.clone();
 
-        // Glyphs with paths and components need to push their paths to a new glyph that is a component
-        // OR to collapse such glyphs into a simple (contour-only) glyph to match existing fontmake behavior.
-        for glyph_to_fix in current_metadata
+        // Glyphs with paths and components, and glyphs whose components are transformed vary over designspace
+        // are not directly supported in fonts. To resolve we must do one of:
+        // 1) need to push their paths to a new glyph that is a component
+        // 2) collapse such glyphs into a simple (contour-only) glyph
+        // fontmake (Python) prefers option 2.
+        for (glyph_to_fix, has_consistent_component_transforms) in current_metadata
             .glyph_order
             .iter()
             .map(|gn| context.get_glyph_ir(gn))
-            .filter(|glyph| has_components_and_contours(glyph))
+            .map(|glyph| {
+                let consistent_transforms = has_consistent_component_transforms(&glyph);
+                (glyph, consistent_transforms)
+            })
+            .filter(|(glyph, has_consistent_component_transforms)| {
+                *has_consistent_component_transforms || has_components_and_contours(glyph)
+            })
         {
-            if context.match_legacy {
-                debug!(
-                    "Coalescing'{0}' into a simple glyph because it has contours and components and that's how fontmake handles it",
-                    glyph_to_fix.name
-                );
+            if !has_consistent_component_transforms || context.match_legacy {
+                if !has_consistent_component_transforms {
+                    debug!(
+                        "Coalescing'{0}' into a simple glyph because component transforms vary across the designspace",
+                        glyph_to_fix.name
+                    );
+                } else {
+                    debug!(
+                        "Coalescing'{0}' into a simple glyph because it has contours and components and that's how fontmake handles it",
+                        glyph_to_fix.name
+                    );
+                }
                 let simple = convert_components_to_contours(context, &glyph_to_fix)?;
                 debug_assert!(
                     simple.name == glyph_to_fix.name,
@@ -573,5 +625,57 @@ mod tests {
                 .map(|bez| bez.to_svg())
                 .collect::<Vec<_>>(),
         );
+    }
+
+    fn adjust_transform_for_each_instance(glyph: &Glyph) -> Glyph {
+        assert!(
+            glyph.sources.len() > 1,
+            "this operation is meaningless w/o multiple sources"
+        );
+        let mut glyph = glyph.clone();
+        glyph
+            .sources
+            .values_mut()
+            .enumerate()
+            .for_each(|(i, inst)| {
+                inst.components
+                    .iter_mut()
+                    .for_each(|c| c.transform *= Affine::translate((i as f64, i as f64)));
+            });
+        glyph
+    }
+
+    #[test]
+    fn component_with_varied_transform() {
+        let mut glyph = contour_and_component_weight_glyph("nameless");
+        glyph
+            .sources
+            .values_mut()
+            .for_each(|inst| inst.contours.clear());
+        let glyph = adjust_transform_for_each_instance(&glyph);
+
+        let context = test_root().copy_for_work(
+            Some(HashSet::from([WorkId::Glyph("component".into())])),
+            Arc::new(|_| true),
+        );
+        context.set_glyph_ir(contour_glyph("component"));
+
+        let simple = convert_components_to_contours(&context, &glyph).unwrap();
+        assert_simple(&simple);
+    }
+
+    #[test]
+    fn contour_and_component_with_varied_transform() {
+        let glyph = contour_and_component_weight_glyph("nameless");
+        let glyph = adjust_transform_for_each_instance(&glyph);
+
+        let context = test_root().copy_for_work(
+            Some(HashSet::from([WorkId::Glyph("component".into())])),
+            Arc::new(|_| true),
+        );
+        context.set_glyph_ir(contour_glyph("component"));
+
+        let simple = convert_components_to_contours(&context, &glyph).unwrap();
+        assert_simple(&simple);
     }
 }
