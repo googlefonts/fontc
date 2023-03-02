@@ -15,7 +15,7 @@ use fontbe::{
     paths::Paths as BePaths,
 };
 use fontc::{
-    work::{AnyContext, AnyWork, AnyWorkError},
+    work::{AnyContext, AnyWork, AnyWorkError, ReadAccess},
     Error,
 };
 use fontdrasil::{
@@ -251,6 +251,7 @@ fn add_init_static_metadata_ir_job(
                     .create_static_metadata_work(&change_detector.current_inputs)?
                     .into(),
                 dependencies: HashSet::new(),
+                read_access: ReadAccess::Dependencies,
                 write_access,
             },
         );
@@ -285,6 +286,7 @@ fn add_finalize_static_metadata_ir_job(
             Job {
                 work: create_finalize_static_metadata_work().into(),
                 dependencies,
+                read_access: ReadAccess::Dependencies,
                 write_access,
             },
         );
@@ -309,6 +311,7 @@ fn add_feature_ir_job(
                     .create_feature_ir_work(&change_detector.current_inputs)?
                     .into(),
                 dependencies: HashSet::new(),
+                read_access: ReadAccess::Dependencies,
                 write_access,
             },
         );
@@ -333,6 +336,7 @@ fn add_feature_be_job(
                     FeWorkIdentifier::FinalizeStaticMetadata.into(),
                     FeWorkIdentifier::Features.into(),
                 ]),
+                read_access: ReadAccess::Dependencies,
                 write_access,
             },
         );
@@ -359,6 +363,7 @@ fn add_glyph_ir_jobs(
             Job {
                 work: DeleteWork::create(path).into(),
                 dependencies: HashSet::new(),
+                read_access: ReadAccess::Dependencies,
                 write_access: access_none(),
             },
         );
@@ -381,6 +386,7 @@ fn add_glyph_ir_jobs(
             Job {
                 work,
                 dependencies,
+                read_access: ReadAccess::Dependencies,
                 write_access,
             },
         );
@@ -506,6 +512,7 @@ impl Workload {
                         &be_root,
                         &id,
                         job.dependencies,
+                        job.read_access,
                         job.write_access,
                     );
 
@@ -600,6 +607,8 @@ struct Job {
     work: AnyWork,
     // Things that must happen before we execute. Our  task can read these things.
     dependencies: HashSet<AnyWorkId>,
+    // Things our job needs read access to. Usually all our dependencies.
+    read_access: ReadAccess,
     // Things our job needs write access to
     write_access: AccessFn<AnyWorkId>,
 }
@@ -668,7 +677,7 @@ mod tests {
 
     use std::{
         collections::HashSet,
-        fs,
+        fs::{self},
         path::{Path, PathBuf},
     };
 
@@ -833,8 +842,14 @@ mod tests {
 
             let id = &launchable[0];
             let job = workload.jobs_pending.remove(id).unwrap();
-            let context =
-                AnyContext::for_work(&fe_root, &be_root, id, job.dependencies, job.write_access);
+            let context = AnyContext::for_work(
+                &fe_root,
+                &be_root,
+                id,
+                job.dependencies,
+                job.read_access,
+                job.write_access,
+            );
             job.work.exec(context).unwrap();
             assert!(
                 workload.success.insert(id.clone()),

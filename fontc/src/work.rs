@@ -8,6 +8,7 @@ use fontbe::{
     error::Error as BeError,
     orchestration::{AnyWorkId, BeWork, Context as BeContext},
 };
+use fontdrasil::orchestration::AccessFn;
 use fontir::{
     error::WorkError as FeError,
     orchestration::{Context as FeContext, IrWork},
@@ -72,29 +73,33 @@ pub enum AnyContext {
     Be(BeContext),
 }
 
+pub enum ReadAccess {
+    Dependencies,
+    Custom(AccessFn<AnyWorkId>),
+}
+
 impl AnyContext {
     pub fn for_work(
         fe_root: &FeContext,
         be_root: &BeContext,
-        id: &AnyWorkId,
+        work_id: &AnyWorkId,
         dependencies: HashSet<AnyWorkId>,
+        read_access: ReadAccess,
         write_access: Arc<dyn Fn(&AnyWorkId) -> bool + Send + Sync>,
     ) -> AnyContext {
-        match id {
-            AnyWorkId::Be(id) => {
-                AnyContext::Be(be_root.copy_for_work(id.clone(), Some(dependencies)))
+        let read_access = match read_access {
+            ReadAccess::Dependencies => {
+                let read: AccessFn<AnyWorkId> = Arc::new(move |id| dependencies.contains(id));
+                read
             }
-            AnyWorkId::Fe(..) => AnyContext::Fe(
-                fe_root.copy_for_work(
-                    Some(
-                        dependencies
-                            .into_iter()
-                            .map(|a| a.unwrap_fe().clone())
-                            .collect(),
-                    ),
-                    Arc::new(move |id| (write_access)(&AnyWorkId::Fe(id.clone()))),
-                ),
-            ),
+            ReadAccess::Custom(access_fn) => access_fn,
+        };
+        match work_id {
+            AnyWorkId::Be(..) => AnyContext::Be(be_root.copy_for_work(read_access, write_access)),
+            AnyWorkId::Fe(..) => AnyContext::Fe(fe_root.copy_for_work(
+                Arc::new(move |id| read_access(&AnyWorkId::Fe(id.clone()))),
+                Arc::new(move |id| (write_access)(&AnyWorkId::Fe(id.clone()))),
+            )),
         }
     }
 }

@@ -1,9 +1,9 @@
 //! Helps coordinate the graph execution for BE
 
-use std::{collections::HashSet, fs, path::Path, sync::Arc};
+use std::{fs, path::Path, sync::Arc};
 
 use fontdrasil::{
-    orchestration::{access_one, AccessControlList, Work, MISSING_DATA},
+    orchestration::{AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
 };
 use fontir::orchestration::{Context as FeContext, Flags, WorkId as FeWorkIdentifier};
@@ -105,13 +105,10 @@ impl Context {
 
     pub fn copy_for_work(
         &self,
-        work_id: WorkId,
-        dependencies: Option<HashSet<AnyWorkId>>,
+        read_access: Arc<dyn Fn(&AnyWorkId) -> bool + Send + Sync>,
+        write_access: Arc<dyn Fn(&AnyWorkId) -> bool + Send + Sync>,
     ) -> Context {
-        self.copy(AccessControlList::read_write(
-            dependencies.unwrap_or_default(),
-            access_one(work_id.into()),
-        ))
+        self.copy(AccessControlList::read_write(read_access, write_access))
     }
 
     pub fn copy_read_only(&self) -> Context {
