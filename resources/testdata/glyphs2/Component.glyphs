@@ -34,10 +34,10 @@ paths = (
 {
 closed = 1;
 nodes = (
-"238 0 LINE",
-"362 0 LINE",
-"362 112 LINE",
-"238 112 LINE"
+"250 50 LINE",
+"375 50 LINE",
+"375 100 LINE",
+"250 100 LINE"
 );
 }
 );
@@ -72,6 +72,23 @@ components = (
 {
 name = period;
 transform = "{0.84519, 0.58921, -1.16109, 1.66553, -233, -129}";
+}
+);
+layerId = m01;
+width = 600;
+}
+);
+unicode = 002C;
+},
+{
+glyphname = simple_transform;
+lastChange = "2023-01-20 20:22:39 +0000";
+layers = (
+{
+components = (
+{
+name = period;
+transform = "{2, 0, 0, 1.5, 50, 50}";
 }
 );
 layerId = m01;

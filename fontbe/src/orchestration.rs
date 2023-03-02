@@ -14,6 +14,13 @@ use write_fonts::{from_obj::FromTableRef, tables::glyf::CompositeGlyph};
 
 use crate::{error::Error, paths::Paths};
 
+/// What exactly is being assembled from glyphs?
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum GlyphMerge {
+    Glyf,
+    Loca,
+}
+
 /// Unique identifier of work.
 ///
 /// If there are no fields work is unique.
@@ -22,9 +29,12 @@ use crate::{error::Error, paths::Paths};
 pub enum WorkId {
     Features,
     Glyph(GlyphName),
-    GlyphMerge,
+    GlyphMerge(GlyphMerge),
     FinalMerge,
 }
+
+const GLYF_WORK_ID: WorkId = WorkId::GlyphMerge(GlyphMerge::Glyf);
+const LOCA_WORK_ID: WorkId = WorkId::GlyphMerge(GlyphMerge::Loca);
 
 // Identifies work of any type, FE, BE, ... future optimization passes, w/e.
 // Useful because BE work can very reasonably depend on FE work
@@ -92,6 +102,7 @@ impl Glyph {
 }
 
 pub type BeWork = dyn Work<Context, Error> + Send;
+type GlyfLoca = (Vec<u8>, Vec<u32>);
 
 /// Read/write access to data for async work.
 ///
@@ -114,6 +125,8 @@ pub struct Context {
 
     // TODO: variations
     glyphs: Arc<RwLock<HashMap<GlyphName, Arc<Glyph>>>>,
+
+    glyf_loca: Arc<RwLock<Option<Arc<GlyfLoca>>>>,
 }
 
 impl Context {
@@ -125,6 +138,7 @@ impl Context {
             acl,
             features: self.features.clone(),
             glyphs: self.glyphs.clone(),
+            glyf_loca: self.glyf_loca.clone(),
         }
     }
 
@@ -136,6 +150,7 @@ impl Context {
             acl: AccessControlList::read_only(),
             features: Arc::from(RwLock::new(None)),
             glyphs: Arc::from(RwLock::new(HashMap::new())),
+            glyf_loca: Arc::from(RwLock::new(None)),
         }
     }
 
@@ -231,5 +246,49 @@ impl Context {
         self.acl.assert_write_access(&id.clone().into());
         self.maybe_persist(&self.paths.target_file(&id), &glyph.to_bytes());
         self.set_cached_glyph(glyph_name, glyph);
+    }
+
+    fn set_cached_glyf_loca(&self, glyf_loca: GlyfLoca) {
+        let mut wl = self.glyf_loca.write();
+        *wl = Some(Arc::from(glyf_loca));
+    }
+
+    pub fn get_glyf_loca(&self) -> Arc<GlyfLoca> {
+        let ids = [GLYF_WORK_ID.into(), LOCA_WORK_ID.into()];
+        self.acl.assert_read_access_to_all(&ids);
+        {
+            let rl = self.glyf_loca.read();
+            if rl.is_some() {
+                return rl.as_ref().unwrap().clone();
+            }
+        }
+
+        let loca = self
+            .restore(&self.paths.target_file(&LOCA_WORK_ID))
+            .chunks_exact(std::mem::size_of::<u32>())
+            .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
+            .collect();
+        let glyf = self.restore(&self.paths.target_file(&GLYF_WORK_ID));
+
+        self.set_cached_glyf_loca((glyf, loca));
+        let rl = self.glyf_loca.read();
+        rl.as_ref().expect(MISSING_DATA).clone()
+    }
+
+    pub fn set_glyf_loca(&self, glyf_loca: GlyfLoca) {
+        let ids = [GLYF_WORK_ID.into(), LOCA_WORK_ID.into()];
+        self.acl.assert_write_access_to_all(&ids);
+
+        let (glyf, loca) = glyf_loca;
+        self.maybe_persist(&self.paths.target_file(&GLYF_WORK_ID), &glyf);
+        self.maybe_persist(
+            &self.paths.target_file(&LOCA_WORK_ID),
+            &loca
+                .iter()
+                .flat_map(|v| v.to_be_bytes())
+                .collect::<Vec<u8>>(),
+        );
+
+        self.set_cached_glyf_loca((glyf, loca));
     }
 }

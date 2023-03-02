@@ -11,8 +11,8 @@ use clap::Parser;
 use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::{
     features::FeatureWork,
-    glyphs::create_glyph_work,
-    orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
+    glyphs::{create_glyph_merge_work, create_glyph_work},
+    orchestration::{AnyWorkId, Context as BeContext, GlyphMerge, WorkId as BeWorkIdentifier},
     paths::Paths as BePaths,
 };
 use fontc::{
@@ -396,6 +396,52 @@ fn add_glyph_ir_jobs(
     Ok(())
 }
 
+fn add_glyph_merge_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    let glyphs_changed = change_detector.glyphs_changed();
+
+    // If no glyph has changed there isn't a lot of merging to do
+    if !glyphs_changed.is_empty() {
+        let mut dependencies: HashSet<_> = glyphs_changed
+            .iter()
+            .map(|gn| BeWorkIdentifier::Glyph(gn.clone()).into())
+            .collect();
+        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+
+        let id: AnyWorkId = BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf).into();
+        // Write the merged glyphs and write individual glyphs that are updated, such as composites with bboxes
+        let write_access: AccessFn<_> = Arc::new(|id| {
+            matches!(
+                id,
+                AnyWorkId::Be(BeWorkIdentifier::GlyphMerge(..))
+                    | AnyWorkId::Be(BeWorkIdentifier::Glyph(..))
+            )
+        });
+        workload.insert(
+            id,
+            Job {
+                work: create_glyph_merge_work().into(),
+                dependencies,
+                // We need to read all glyphs, even unchanged ones, plus static metadata
+                read_access: ReadAccess::Custom(Arc::new(|id| {
+                    matches!(
+                        id,
+                        AnyWorkId::Be(BeWorkIdentifier::GlyphMerge(..))
+                            | AnyWorkId::Be(BeWorkIdentifier::Glyph(..))
+                    )
+                })),
+                write_access,
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf));
+        workload.mark_success(BeWorkIdentifier::GlyphMerge(GlyphMerge::Loca));
+    }
+    Ok(())
+}
+
 fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: GlyphName) {
     let glyph_ir = fe_root.get_glyph_ir(&glyph_name);
 
@@ -409,6 +455,11 @@ fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: Gl
     dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
 
     let id = AnyWorkId::Be(BeWorkIdentifier::Glyph(glyph_name.clone()));
+
+    // this job should already be a dependency of the glyph merge; if not terrible things will happen
+    if !workload.is_dependency(&BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf).into(), &id) {
+        panic!("BE glyph '{glyph_name}' is being built but not participating in glyph merge",);
+    }
 
     let write_access = access_one(id.clone());
     workload.insert(
@@ -496,6 +547,13 @@ impl Workload {
         self.job_count += 1;
     }
 
+    fn is_dependency(&mut self, id: &AnyWorkId, dep: &AnyWorkId) -> bool {
+        self.jobs_pending
+            .get(id)
+            .map(|job| job.dependencies.contains(dep))
+            .unwrap_or(false)
+    }
+
     fn mark_success(&mut self, id: impl Into<AnyWorkId>) {
         if self.success.insert(id.into()) {
             self.pre_success += 1;
@@ -522,9 +580,22 @@ impl Workload {
 
                     debug!("Updating graph for new glyph {glyph_name}");
 
+                    self.jobs_pending
+                        .get_mut(&AnyWorkId::Be(BeWorkIdentifier::GlyphMerge(
+                            GlyphMerge::Glyf,
+                        )))
+                        .unwrap()
+                        .dependencies
+                        .insert(id.clone());
+
                     add_glyph_be_job(self, fe_root, glyph_name.clone());
                 }
             }
+
+            // When Glyf merges mark Loca too
+            AnyWorkId::Be(BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf)) => self.mark_success(
+                AnyWorkId::Be(BeWorkIdentifier::GlyphMerge(GlyphMerge::Loca)),
+            ),
             _ => (),
         }
     }
@@ -679,6 +750,7 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
 
     // BE: f(IR) => binary
     add_feature_be_job(change_detector, &mut workload)?;
+    add_glyph_merge_be_job(change_detector, &mut workload)?;
 
     Ok(workload)
 }
@@ -740,7 +812,7 @@ mod tests {
 
     use filetime::FileTime;
     use fontbe::{
-        orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
+        orchestration::{AnyWorkId, Context as BeContext, GlyphMerge, WorkId as BeWorkIdentifier},
         paths::Paths as BePaths,
     };
     use fontc::work::AnyContext;
@@ -753,15 +825,19 @@ mod tests {
     };
     use indexmap::IndexSet;
     use read_fonts::{
-        tables::glyf::{self, SimpleGlyph},
-        FontData, FontRead,
+        tables::{
+            glyf::{self, CompositeGlyph, Glyf, SimpleGlyph},
+            loca::Loca,
+        },
+        types::{F2Dot14, GlyphId},
+        FontData, FontRead, FontReadWithArgs,
     };
     use tempfile::{tempdir, TempDir};
 
     use crate::{
         add_feature_be_job, add_feature_ir_job, add_finalize_static_metadata_ir_job,
-        add_glyph_ir_jobs, add_init_static_metadata_ir_job, finish_successfully, init, require_dir,
-        Args, ChangeDetector, Config, Workload,
+        add_glyph_ir_jobs, add_glyph_merge_be_job, add_init_static_metadata_ir_job,
+        finish_successfully, init, require_dir, Args, ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -784,6 +860,7 @@ mod tests {
     }
 
     struct TestCompile {
+        build_dir: PathBuf,
         work_completed: HashSet<AnyWorkId>,
         glyphs_changed: IndexSet<GlyphName>,
         glyphs_deleted: IndexSet<GlyphName>,
@@ -798,12 +875,27 @@ mod tests {
             be_context: BeContext,
         ) -> TestCompile {
             TestCompile {
+                build_dir: change_detector.be_paths.build_dir().to_path_buf(),
                 work_completed: HashSet::new(),
                 glyphs_changed: change_detector.glyphs_changed(),
                 glyphs_deleted: change_detector.glyphs_deleted(),
                 fe_context,
                 _be_context: be_context,
             }
+        }
+
+        fn get_glyph_index(&self, name: &str) -> u32 {
+            self.fe_context
+                .get_static_metadata()
+                .glyph_id(&name.into())
+                .unwrap()
+        }
+
+        fn raw_glyf_loca(&self) -> (Vec<u8>, Vec<u8>) {
+            (
+                read_file(&self.build_dir.join("glyf.ttf")),
+                read_file(&self.build_dir.join("loca.u32_be")),
+            )
         }
     }
 
@@ -867,6 +959,8 @@ mod tests {
         add_glyph_ir_jobs(&mut change_detector, &mut workload).unwrap();
         add_feature_ir_job(&mut change_detector, &mut workload).unwrap();
         add_feature_be_job(&mut change_detector, &mut workload).unwrap();
+
+        add_glyph_merge_be_job(&mut change_detector, &mut workload).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one
@@ -941,6 +1035,8 @@ mod tests {
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Glyph("bar".into()).into(),
                 BeWorkIdentifier::Glyph("plus".into()).into(),
+                BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf).into(),
+                BeWorkIdentifier::GlyphMerge(GlyphMerge::Loca).into(),
             ]),
             result.work_completed
         );
@@ -980,6 +1076,8 @@ mod tests {
             HashSet::from([
                 FeWorkIdentifier::Glyph("bar".into()).into(),
                 BeWorkIdentifier::Glyph("bar".into()).into(),
+                BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf).into(),
+                BeWorkIdentifier::GlyphMerge(GlyphMerge::Loca).into(),
             ]),
             result.work_completed
         );
@@ -1059,9 +1157,14 @@ mod tests {
     #[test]
     fn resolve_contour_and_composite_glyph_in_non_legacy_mode() {
         let temp_dir = tempdir().unwrap();
-        let (_, inst) = build_contour_and_composite_glyph(&temp_dir, false);
+        let (glyph, inst) = build_contour_and_composite_glyph(&temp_dir, false);
         assert!(inst.contours.is_empty(), "{inst:?}");
         assert_eq!(2, inst.components.len(), "{inst:?}");
+
+        let raw_glyph = glyph_bytes(temp_dir.path(), glyph.name.as_str());
+        let glyph = CompositeGlyph::read(FontData::new(&raw_glyph)).unwrap();
+        // -1: composite, per https://learn.microsoft.com/en-us/typography/opentype/spec/glyf
+        assert_eq!(-1, glyph.number_of_contours());
     }
 
     #[test]
@@ -1092,10 +1195,13 @@ mod tests {
         );
     }
 
-    fn glyphs(build_dir: &Path, glyph_order: &IndexSet<GlyphName>) -> Vec<Vec<u8>> {
-        glyph_order
-            .iter()
-            .map(|name| glyph_bytes(build_dir, name.as_str()))
+    fn glyphs<'a>(raw_glyf: &'a [u8], raw_loca: &'a [u8]) -> Vec<glyf::Glyph<'a>> {
+        let glyf = Glyf::read(FontData::new(raw_glyf)).unwrap();
+        let loca = Loca::read_with_args(FontData::new(raw_loca), &true).unwrap();
+
+        (0..loca.len())
+            .map(|gid| loca.get_glyf(GlyphId::new(gid as u16), &glyf))
+            .map(|r| r.unwrap().unwrap())
             .collect()
     }
 
@@ -1103,25 +1209,115 @@ mod tests {
     fn compile_simple_glyphs_to_glyf_loca() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let result = compile(test_args(build_dir, "static.designspace"));
+        compile(test_args(build_dir, "static.designspace"));
+
+        let raw_glyf = read_file(&build_dir.join("glyf.ttf"));
+        let raw_loca = read_file(&build_dir.join("loca.u32_be"));
 
         // See resources/testdata/Static-Regular.ufo/glyphs
         // bar, 4 points, 1 contour
         // plus, 12 points, 1 contour
         assert_eq!(
             vec![(4, 1), (12, 1)],
-            glyphs(
-                build_dir,
-                &result.fe_context.get_static_metadata().glyph_order
-            )
-            .iter()
-            .map(|raw_glyph| {
-                match glyf::Glyph::read(FontData::new(raw_glyph)).unwrap() {
+            glyphs(&raw_glyf, &raw_loca)
+                .iter()
+                .map(|g| match g {
                     glyf::Glyph::Simple(glyph) => (glyph.num_points(), glyph.number_of_contours()),
                     glyf::Glyph::Composite(glyph) => (0, glyph.number_of_contours()),
-                }
-            })
-            .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn compile_composite_glyphs_has_expected_glyph_types() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(test_args(build_dir, "glyphs2/Component.glyphs"));
+        let (raw_glyf, raw_loca) = result.raw_glyf_loca();
+
+        // Per source, glyphs should be period, comma, non_uniform_scale
+        // Period is simple, the other two use it as a component
+        let glyphs = glyphs(&raw_glyf, &raw_loca);
+        assert!(glyphs.len() > 1, "{glyphs:#?}");
+        let period_idx = result.get_glyph_index("period");
+        assert!(matches!(glyphs[0], glyf::Glyph::Simple(..)), "{glyphs:#?}");
+        for (idx, glyph) in glyphs.iter().enumerate() {
+            if idx == period_idx.try_into().unwrap() {
+                assert!(
+                    matches!(glyphs[idx], glyf::Glyph::Simple(..)),
+                    "glyphs[{idx}] should be simple\n{glyph:#?}\nAll:\n{glyphs:#?}"
+                );
+            } else {
+                assert!(
+                    matches!(glyphs[idx], glyf::Glyph::Composite(..)),
+                    "glyphs[{idx}] should be composite\n{glyph:#?}\nAll:\n{glyphs:#?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn compile_composite_glyphs_to_glyf_loca() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(test_args(build_dir, "glyphs2/Component.glyphs"));
+        let (raw_glyf, raw_loca) = result.raw_glyf_loca();
+
+        // non-uniform scaling of period
+        let period_idx = result.get_glyph_index("period");
+        let comma_idx = result.get_glyph_index("non_uniform_scale");
+        let glyphs = glyphs(&raw_glyf, &raw_loca);
+        let glyf::Glyph::Composite(glyph) = &glyphs[comma_idx as usize] else {
+            panic!("Expected a composite\n{glyphs:#?}");
+        };
+        let component = glyph.components().next().unwrap();
+        assert_eq!(period_idx, component.glyph.to_u16() as u32);
+
+        // If we all work together we're a real transform!
+        assert_eq!(glyf::Anchor::Offset { x: -233, y: -129 }, component.anchor);
+        assert_eq!(
+            glyf::Transform {
+                xx: F2Dot14::from_f32(0.84519),
+                yx: F2Dot14::from_f32(0.58921),
+                xy: F2Dot14::from_f32(-1.16109),
+                yy: F2Dot14::from_f32(1.66553)
+            },
+            component.transform
+        );
+    }
+
+    #[test]
+    fn compile_composite_glyphs_to_glyf_loca_applies_transform() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(test_args(build_dir, "glyphs2/Component.glyphs"));
+        let (raw_glyf, raw_loca) = result.raw_glyf_loca();
+
+        let simple_transform_idx = result.get_glyph_index("simple_transform");
+        let glyphs = glyphs(&raw_glyf, &raw_loca);
+        let glyf::Glyph::Composite(glyph) = &glyphs[simple_transform_idx as usize] else {
+            panic!("Expected a composite\n{glyphs:#?}");
+        };
+
+        let component = glyph.components().next().unwrap();
+        assert_eq!(glyf::Anchor::Offset { x: 50, y: 50 }, component.anchor);
+        assert_eq!(
+            glyf::Transform {
+                xx: F2Dot14::from_f32(2.0),
+                yx: F2Dot14::from_f32(0.0),
+                xy: F2Dot14::from_f32(0.0),
+                yy: F2Dot14::from_f32(1.5)
+            },
+            component.transform
+        );
+
+        // Have ye bbox?
+        // Original period bbox is (250,50) to (375,100), then transform above is applied
+        // Result *should* be [550, 125, 800, 200] but F2Dot14/i16 representation changes it
+        assert_eq!(
+            [549, 125, 799, 200],
+            [glyph.x_min(), glyph.y_min(), glyph.x_max(), glyph.y_max()]
         );
     }
 }
