@@ -1,17 +1,24 @@
 //! 'glyf' Glyph binary compilation
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    cmp,
+    collections::{BTreeSet, HashMap, HashSet},
+};
 
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{coords::NormalizedLocation, ir};
-use kurbo::{cubics_to_quadratic_splines, BezPath, CubicBez, PathEl};
-use log::{error, trace, warn};
+use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Rect};
+use log::{trace, warn};
 
-use write_fonts::tables::glyf::SimpleGlyph;
+use read_fonts::{
+    tables::glyf::{self, Anchor, Transform},
+    types::{F2Dot14, GlyphId},
+};
+use write_fonts::tables::glyf::{Bbox, Component, ComponentFlags, CompositeGlyph, SimpleGlyph};
 
 use crate::{
     error::{Error, GlyphProblem},
-    orchestration::{BeWork, Context},
+    orchestration::{BeWork, Context, Glyph},
 };
 
 struct GlyphWork {
@@ -20,6 +27,86 @@ struct GlyphWork {
 
 pub fn create_glyph_work(glyph_name: GlyphName) -> Box<BeWork> {
     Box::new(GlyphWork { glyph_name })
+}
+
+fn create_component(
+    context: &Context,
+    ref_glyph_name: &GlyphName,
+    transform: &Affine,
+) -> Result<(Component, Bbox), GlyphProblem> {
+    // Obtain glyph id from static metadata
+    let gid = context
+        .ir
+        .get_static_metadata()
+        .glyph_id(ref_glyph_name)
+        .ok_or(GlyphProblem::NotInGlyphOrder)?;
+    let gid = GlyphId::new(gid as u16);
+
+    // No known source does point anchoring so we just our transform into a 2x2 + offset
+    let [a, b, c, d, e, f] = transform.as_coeffs();
+    let component = Component::new(
+        gid,
+        Anchor::Offset {
+            x: e as i16,
+            y: f as i16,
+        },
+        Transform {
+            xx: F2Dot14::from_f32(a as f32),
+            yx: F2Dot14::from_f32(b as f32),
+            xy: F2Dot14::from_f32(c as f32),
+            yy: F2Dot14::from_f32(d as f32),
+        },
+        ComponentFlags::default(),
+    );
+
+    // Bbox computation is postponed to glyph merge to ensure all glyphs are available to query
+    Ok((component, Bbox::default()))
+}
+
+fn create_composite(
+    context: &Context,
+    glyph_name: &GlyphName,
+    default_location: &NormalizedLocation,
+    components: &HashMap<(GlyphName, NormalizedLocation), Affine>,
+) -> Result<CompositeGlyph, Error> {
+    let mut errors = vec![];
+    let components_at_default = components
+        .iter()
+        .filter_map(|((ref_glyph_name, loc), transform)| {
+            if default_location == loc {
+                Some((ref_glyph_name, transform))
+            } else {
+                None
+            }
+        })
+        .filter_map(|(ref_glyph_name, transform)| {
+            create_component(context, ref_glyph_name, transform)
+                .map_err(|problem| {
+                    errors.push(Error::ComponentError {
+                        glyph: glyph_name.clone(),
+                        referenced_glyph: ref_glyph_name.clone(),
+                        problem,
+                    })
+                })
+                .ok()
+        });
+
+    let composite = CompositeGlyph::try_from_iter(components_at_default)
+        .map_err(|_| {
+            errors.push(Error::GlyphError(
+                glyph_name.clone(),
+                GlyphProblem::NoComponents,
+            ))
+        })
+        .ok();
+
+    if !errors.is_empty() {
+        return Err(Error::ComponentErrors {
+            glyph: glyph_name.clone(),
+            errors,
+        });
+    }
+    Ok(composite.unwrap())
 }
 
 impl Work<Context, Error> for GlyphWork {
@@ -38,8 +125,9 @@ impl Work<Context, Error> for GlyphWork {
         // TODO refine (submodel) var model if glyph locations is a subset of var model locations
 
         match glyph {
-            CheckedGlyph::Composite { name, .. } => {
-                error!("setting no glyph for {name}; composites not implemented yet");
+            CheckedGlyph::Composite { name, components } => {
+                let composite = create_composite(context, &name, default_location, &components)?;
+                context.set_glyph(name, composite.into());
             }
             CheckedGlyph::Contour { name, contours } => {
                 // Draw the default outline of our simple glyph
@@ -176,6 +264,7 @@ fn cubics_to_quadratics(glyph: CheckedGlyph) -> CheckedGlyph {
 enum CheckedGlyph {
     Composite {
         name: GlyphName,
+        components: HashMap<(GlyphName, NormalizedLocation), Affine>,
     },
     Contour {
         name: GlyphName,
@@ -264,7 +353,17 @@ impl TryFrom<&ir::Glyph> for CheckedGlyph {
                 .collect();
             CheckedGlyph::Contour { name, contours }
         } else {
-            CheckedGlyph::Composite { name }
+            let components = glyph
+                .sources
+                .iter()
+                .flat_map(|(location, instance)| {
+                    instance
+                        .components
+                        .iter()
+                        .map(|c| ((c.base.clone(), location.clone()), c.transform))
+                })
+                .collect();
+            CheckedGlyph::Composite { name, components }
         })
     }
 }
@@ -276,5 +375,171 @@ fn path_el_type(el: &PathEl) -> &'static str {
         PathEl::QuadTo(..) => "Q",
         PathEl::CurveTo(..) => "C",
         PathEl::ClosePath => "Z",
+    }
+}
+
+fn affine_for(component: &Component) -> Affine {
+    let glyf::Anchor::Offset { x: dx, y: dy} = component.anchor else {
+        panic!("Only offset anchor is supported");
+    };
+    Affine::new([
+        component.transform.xx.to_f32().into(),
+        component.transform.yx.to_f32().into(),
+        component.transform.xy.to_f32().into(),
+        component.transform.yy.to_f32().into(),
+        dx.into(),
+        dy.into(),
+    ])
+}
+
+fn bbox2rect(bbox: Bbox) -> Rect {
+    Rect {
+        x0: bbox.x_min.into(),
+        y0: bbox.y_min.into(),
+        x1: bbox.x_max.into(),
+        y1: bbox.y_max.into(),
+    }
+}
+
+fn rect2bbox(rect: Rect) -> Bbox {
+    Bbox {
+        x_min: rect.min_x() as i16,
+        y_min: rect.min_y() as i16,
+        x_max: rect.max_x() as i16,
+        y_max: rect.max_y() as i16,
+    }
+}
+
+struct GlyphMergeWork {}
+
+pub fn create_glyph_merge_work() -> Box<BeWork> {
+    Box::new(GlyphMergeWork {})
+}
+
+fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
+    let static_metadata = context.ir.get_static_metadata();
+    let glyph_order = &static_metadata.glyph_order;
+
+    let glyphs: HashMap<_, _> = glyph_order
+        .iter()
+        .map(|gn| (gn, context.get_glyph(gn)))
+        .collect();
+
+    // Simple glyphs have bbox set. Composites don't.
+    // Ultimately composites are made up of simple glyphs, lets figure out the boxes
+    let mut bbox_acquired: HashMap<GlyphName, Bbox> = HashMap::new();
+    let mut composites = glyphs
+        .iter()
+        .filter_map(|(name, glyph)| {
+            let glyph = glyph.as_ref();
+            match glyph {
+                Glyph::Composite(composite) => Some(((*name).clone(), composite.clone())),
+                Glyph::Simple(..) => None,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    trace!("Resolve bbox for {} composites", composites.len());
+    while !composites.is_empty() {
+        let pending = composites.len();
+
+        // Hopefully we can figure out some of those bboxes!
+        for (glyph_name, composite) in composites.iter() {
+            let mut missing_boxes = false;
+            let boxes: Vec<Bbox> = composite
+                .components()
+                .filter_map(|c| {
+                    if missing_boxes {
+                        return None; // can't succeed
+                    }
+                    let ref_glyph_name = glyph_order.get_index(c.glyph.to_u16() as usize).unwrap();
+                    let bbox = bbox_acquired.get(ref_glyph_name).copied().or_else(|| {
+                        glyphs
+                            .get(ref_glyph_name)
+                            .map(|g| g.as_ref().clone())
+                            .and_then(|g| match g {
+                                Glyph::Composite(..) => None,
+                                Glyph::Simple(simple_glyph) => Some(simple_glyph.bbox),
+                            })
+                    });
+                    if bbox.is_none() {
+                        trace!("Can't compute bbox for {glyph_name} because bbox for {ref_glyph_name} isn't ready yet");
+                        missing_boxes = true;
+                        return None; // maybe next time?
+                    };
+
+                    // The transform we get here has changed because it got turned into F2Dot14 and i16 parts
+                    // We could go get the "real" transform from IR...?
+                    let affine = affine_for(c);
+                    let transformed_box = affine.transform_rect_bbox(bbox2rect(bbox.unwrap()));
+                    Some(rect2bbox(transformed_box))
+                })
+                .collect();
+            if missing_boxes {
+                trace!("bbox for {glyph_name} not yet resolveable");
+                continue;
+            }
+
+            let bbox = boxes
+                .into_iter()
+                .reduce(|acc, e| Bbox {
+                    x_min: cmp::min(acc.x_min, e.x_min),
+                    y_min: cmp::min(acc.y_min, e.y_min),
+                    x_max: cmp::max(acc.x_max, e.x_max),
+                    y_max: cmp::max(acc.y_max, e.y_max),
+                })
+                .unwrap();
+            trace!("bbox for {glyph_name} {bbox:?}");
+            bbox_acquired.insert(glyph_name.clone(), bbox);
+        }
+
+        // Kerplode if we didn't make any progress this spin
+        composites.retain(|(gn, _)| !bbox_acquired.contains_key(gn));
+        if pending == composites.len() {
+            panic!("Unable to make progress on composite bbox, stuck at\n{composites:?}");
+        }
+    }
+
+    // It'd be a shame to just throw away those nice boxes
+    for (glyph_name, bbox) in bbox_acquired.into_iter() {
+        let mut glyph = (*context.get_glyph(&glyph_name)).clone();
+        let Glyph::Composite(composite) = &mut glyph else {
+            panic!("{glyph_name} is not a composite; we shouldn't be trying to update it");
+        };
+        composite.bbox = bbox;
+        context.set_glyph(glyph_name, glyph);
+    }
+
+    Ok(())
+}
+
+impl Work<Context, Error> for GlyphMergeWork {
+    /// Generate [glyf](https://learn.microsoft.com/en-us/typography/opentype/spec/glyf)
+    /// and [loca](https://learn.microsoft.com/en-us/typography/opentype/spec/loca).
+    ///
+    /// We've already generated all the binary glyphs so all we have to do here is glue everything together.
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        compute_composite_bboxes(context)?;
+
+        let static_metadata = context.ir.get_static_metadata();
+        let glyph_order = &static_metadata.glyph_order;
+
+        // Glue together glyf and loca
+        // This isn't overly memory efficient but ... fonts aren't *that* big (yet?)
+        let mut loca = vec![0];
+        let mut glyf: Vec<u8> = Vec::new();
+        glyf.reserve(1024 * 1024);
+        glyph_order
+            .iter()
+            .map(|gn| context.get_glyph(gn))
+            .for_each(|g| {
+                let bytes = g.to_bytes();
+                loca.push(loca.last().unwrap() + bytes.len() as u32);
+                glyf.extend(bytes);
+            });
+
+        context.set_glyf_loca((glyf, loca));
+
+        Ok(())
     }
 }

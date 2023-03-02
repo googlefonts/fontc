@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use fontdrasil::paths::glyph_file;
 
-use crate::orchestration::WorkId;
+use crate::orchestration::{GlyphMerge, WorkId};
 
 #[derive(Debug, Clone)]
 pub struct Paths {
@@ -45,7 +45,8 @@ impl Paths {
         match id {
             WorkId::Features => self.build_dir.join("features.ttf"),
             WorkId::Glyph(name) => self.glyph_file(name.as_str()),
-            WorkId::GlyphMerge => self.build_dir.join("glyf.ttf"),
+            WorkId::GlyphMerge(GlyphMerge::Glyf) => self.build_dir.join("glyf.ttf"),
+            WorkId::GlyphMerge(GlyphMerge::Loca) => self.build_dir.join("loca.u32_be"),
             WorkId::FinalMerge => self.build_dir.join("font.ttf"),
         }
     }
