@@ -9,6 +9,7 @@ use std::{
     sync::Arc,
 };
 
+use bitflags::bitflags;
 use fontdrasil::{
     orchestration::{AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
@@ -18,13 +19,36 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{error::WorkError, ir, paths::Paths, source::Input};
 
+bitflags! {
+    pub struct Flags: u32 {
+        // If set IR will be emitted to disk when written into Context
+        const EMIT_IR = 0b00000001;
+        // If set additional debug files will be emitted to disk
+        const EMIT_DEBUG = 0b00000010;
+        // If set seek to match fontmake (python) behavior even at cost of abandoning optimizations
+        const MATCH_LEGACY = 0b00000100;
+    }
+}
+
+impl Default for Flags {
+    fn default() -> Self {
+        Flags::MATCH_LEGACY
+    }
+}
+
 // Unique identifier of work. If there are no fields work is unique.
 // Meant to be small and cheap to copy around.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkId {
-    StaticMetadata,
+    /// Build the initial static metadata.
+    InitStaticMetadata,
     Glyph(GlyphName),
     GlyphIrDelete,
+    /// Update static metadata based on what we learned from IR
+    ///
+    /// Notably, IR glyphs with both components and paths may split into multiple
+    /// BE glyphs.
+    FinalizeStaticMetadata,
     Features,
 }
 
@@ -36,11 +60,7 @@ pub type IrWork = dyn Work<Context, WorkError> + Send;
 /// access with spawned tasks. Copies with access control are created to detect bad
 /// execution order / mistakes, not to block actual bad actors.
 pub struct Context {
-    // If set IR will be emitted to disk when written into Context
-    emit_ir: bool,
-
-    // If set additional debug files will be emitted to disk
-    emit_debug: bool,
+    pub flags: Flags,
 
     paths: Arc<Paths>,
 
@@ -60,8 +80,7 @@ pub struct Context {
 impl Context {
     fn copy(&self, acl: AccessControlList<WorkId>) -> Context {
         Context {
-            emit_ir: self.emit_ir,
-            emit_debug: self.emit_debug,
+            flags: self.flags,
             paths: self.paths.clone(),
             input: self.input.clone(),
             acl,
@@ -71,10 +90,9 @@ impl Context {
         }
     }
 
-    pub fn new_root(emit_ir: bool, emit_debug: bool, paths: Paths, input: Input) -> Context {
+    pub fn new_root(flags: Flags, paths: Paths, input: Input) -> Context {
         Context {
-            emit_ir,
-            emit_debug,
+            flags,
             paths: Arc::from(paths),
             input: Arc::from(input),
             acl: AccessControlList::read_only(),
@@ -84,10 +102,14 @@ impl Context {
         }
     }
 
-    pub fn copy_for_work(&self, work_id: WorkId, dependencies: Option<HashSet<WorkId>>) -> Context {
+    pub fn copy_for_work(
+        &self,
+        dependencies: Option<HashSet<WorkId>>,
+        write_access: Arc<dyn Fn(&WorkId) -> bool + Send + Sync>,
+    ) -> Context {
         self.copy(AccessControlList::read_write(
             dependencies.unwrap_or_default(),
-            work_id,
+            write_access,
         ))
     }
 
@@ -101,7 +123,7 @@ impl Context {
     where
         V: ?Sized + Serialize + Debug,
     {
-        if !self.emit_ir {
+        if !self.flags.contains(Flags::EMIT_IR) {
             return;
         }
         let raw_file = File::create(file)
@@ -133,39 +155,39 @@ impl Context {
     }
 
     pub fn get_static_metadata(&self) -> Arc<ir::StaticMetadata> {
-        let id = WorkId::StaticMetadata;
-        self.acl.check_read_access(&id);
+        let ids = [WorkId::InitStaticMetadata, WorkId::FinalizeStaticMetadata];
+        self.acl.assert_read_access_to_any(&ids);
         {
             let rl = self.static_metadata.read();
             if rl.is_some() {
                 return rl.as_ref().unwrap().clone();
             }
         }
-        self.set_cached_static_metadata(self.restore(&self.paths.target_file(&id)));
+        self.set_cached_static_metadata(self.restore(&self.paths.target_file(&ids[0])));
         let rl = self.static_metadata.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
     pub fn set_static_metadata(&self, ir: ir::StaticMetadata) {
-        let id = WorkId::StaticMetadata;
-        self.acl.check_write_access(&id);
-        self.maybe_persist(&self.paths.target_file(&id), &ir);
+        let ids = [WorkId::InitStaticMetadata, WorkId::FinalizeStaticMetadata];
+        self.acl.assert_write_access_to_any(&ids);
+        self.maybe_persist(&self.paths.target_file(&ids[0]), &ir);
         self.set_cached_static_metadata(ir);
     }
 
     pub fn get_glyph_ir(&self, glyph_name: &GlyphName) -> Arc<ir::Glyph> {
         let id = WorkId::Glyph(glyph_name.clone());
-        self.acl.check_read_access(&id);
+        self.acl.assert_read_access(&id);
         let rl = self.glyph_ir.read();
         rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
 
-    pub fn set_glyph_ir(&self, glyph_name: GlyphName, ir: ir::Glyph) {
-        let id = WorkId::Glyph(glyph_name.clone());
-        self.acl.check_write_access(&id);
+    pub fn set_glyph_ir(&self, ir: ir::Glyph) {
+        let id = WorkId::Glyph(ir.name.clone());
+        self.acl.assert_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         let mut wl = self.glyph_ir.write();
-        wl.insert(glyph_name, Arc::from(ir));
+        wl.insert(ir.name.clone(), Arc::from(ir));
     }
 
     fn set_cached_features(&self, ir: ir::Features) {
@@ -175,7 +197,7 @@ impl Context {
 
     pub fn get_features(&self) -> Arc<ir::Features> {
         let id = WorkId::Features;
-        self.acl.check_read_access(&id);
+        self.acl.assert_read_access(&id);
         {
             let rl = self.feature_ir.read();
             if rl.is_some() {
@@ -189,7 +211,7 @@ impl Context {
 
     pub fn set_features(&self, ir: ir::Features) {
         let id = WorkId::Features;
-        self.acl.check_write_access(&id);
+        self.acl.assert_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         self.set_cached_features(ir);
     }

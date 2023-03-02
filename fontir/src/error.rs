@@ -87,6 +87,11 @@ pub enum WorkError {
         axis: String,
         pos: NormalizedCoord,
     },
+    #[error("{glyph_name} undefined at required position {pos:?}")]
+    GlyphUndefAtNormalizedLocation {
+        glyph_name: GlyphName,
+        pos: NormalizedLocation,
+    },
     #[error("Duplicate location for {what}: {loc:?}")]
     DuplicateNormalizedLocation {
         what: String,
@@ -101,6 +106,8 @@ pub enum WorkError {
     PathConversionError(#[from] PathConversionError),
     #[error("Variation model error")]
     VariationModelError(#[from] VariationModelError),
+    #[error("Contour reversal error {0}")]
+    ContourReversalError(String),
 }
 
 /// An async work error, hence one that must be Send

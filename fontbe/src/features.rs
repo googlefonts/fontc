@@ -11,7 +11,7 @@ use fea_rs::{
     parse::{SourceLoadError, SourceResolver},
     Compiler, GlyphMap, GlyphName as FeaRsGlyphName,
 };
-use fontir::ir::Features;
+use fontir::{ir::Features, orchestration::Flags};
 use log::{debug, error, trace, warn};
 use write_fonts::FontBuilder;
 
@@ -129,7 +129,7 @@ impl Work<Context, Error> for FeatureWork {
             .collect();
 
         let result = self.compile(&features, glyph_map);
-        if result.is_err() || context.emit_debug {
+        if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
             if let Features::Memory(fea_content) = &*features {
                 write_debug_fea(context, result.is_err(), "compile failed", fea_content);
             }

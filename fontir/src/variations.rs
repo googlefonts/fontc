@@ -25,6 +25,8 @@ const ONE: OrderedFloat<f32> = OrderedFloat(1.0);
 /// See `class VariationModel` in <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/varLib/models.py>
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct VariationModel {
+    default: NormalizedLocation,
+
     // TODO: why isn't this a Map<Loc, Region>
     // All Vec's have same length and items at the same index refer to the same master
     // Which sounds a *lot* like we should have a Vec or Map of Some Struct.
@@ -47,6 +49,10 @@ impl VariationModel {
         axis_order: Vec<String>,
     ) -> Result<Self, VariationModelError> {
         let axes = axis_order.iter().collect::<HashSet<&String>>();
+        let default = axes
+            .iter()
+            .map(|axis_name| (axis_name.to_string(), NormalizedCoord::new(ZERO)))
+            .collect();
 
         let mut expanded_locations = HashSet::new();
         for mut location in locations.into_iter() {
@@ -84,6 +90,7 @@ impl VariationModel {
         let delta_weights = delta_weights(&locations, &influence);
 
         Ok(VariationModel {
+            default,
             locations,
             influence,
             delta_weights,
@@ -92,6 +99,7 @@ impl VariationModel {
 
     pub fn empty() -> Self {
         VariationModel {
+            default: NormalizedLocation::new(),
             locations: Vec::new(),
             influence: Vec::new(),
             delta_weights: Vec::new(),
@@ -100,6 +108,10 @@ impl VariationModel {
 
     pub fn locations(&self) -> impl Iterator<Item = &NormalizedLocation> {
         self.locations.iter()
+    }
+
+    pub fn default_location(&self) -> &NormalizedLocation {
+        &self.default
     }
 }
 

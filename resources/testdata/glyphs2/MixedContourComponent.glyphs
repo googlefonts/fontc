@@ -1,0 +1,62 @@
+{
+.appVersion = "3151";
+familyName = "New Font";
+fontMaster = (
+{
+id = m01;
+}
+);
+glyphs = (
+{
+glyphname = shape;
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"238 0 LINE",
+"362 0 LINE",
+"362 112 LINE",
+"238 112 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 002E;
+},
+{
+glyphname = contour_and_component;
+layers = (
+{
+paths = (
+{
+closed = 1;
+nodes = (
+"238 0 LINE",
+"362 0 LINE",
+"362 112 LINE",
+"238 112 LINE"
+);
+}
+);
+components = (
+{
+name = shape;
+transform = "{1, 0, 0, 1, 25, 25}";
+}
+);
+layerId = m01;
+width = 600;
+}
+);
+unicode = 002C;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
