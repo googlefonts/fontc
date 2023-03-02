@@ -32,6 +32,7 @@ use fontir::{
 use glyphs2fontir::source::GlyphsIrSource;
 use indexmap::IndexSet;
 use log::{debug, error, info, log_enabled, trace, warn};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ufo2fontir::source::DesignSpaceIrSource;
 
@@ -64,6 +65,11 @@ struct Args {
     #[arg(short, long)]
     #[clap(default_value = "build")]
     build_dir: PathBuf,
+
+    /// Glyph names must match this regex to be processed
+    #[arg(short, long)]
+    #[clap(default_value = None)]
+    glyph_name_filter: Option<String>,
 }
 
 impl Args {
@@ -118,6 +124,7 @@ fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     if !dir.exists() {
         fs::create_dir(dir)?
     }
+    debug!("require_dir {:?}", dir);
     Ok(dir.to_path_buf())
 }
 
@@ -195,12 +202,12 @@ impl ChangeDetector {
     }
 
     fn glyphs_changed(&self) -> IndexSet<GlyphName> {
+        let glyph_iter = self.current_inputs.glyphs.iter();
+
         if self.static_metadata_ir_change() {
-            return self.current_inputs.glyphs.keys().cloned().collect();
+            return glyph_iter.map(|(name, _)| name).cloned().collect();
         }
-        self.current_inputs
-            .glyphs
-            .iter()
+        glyph_iter
             .filter_map(
                 |(glyph_name, curr_state)| match self.prev_inputs.glyphs.get(glyph_name) {
                     Some(prev_state) => {
@@ -315,7 +322,7 @@ fn add_feature_be_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
-    if change_detector.feature_be_change() {
+    if change_detector.feature_be_change() && change_detector.glyph_name_filter.is_none() {
         let id: AnyWorkId = BeWorkIdentifier::Features.into();
         let write_access = access_one(id.clone());
         workload.insert(
@@ -330,6 +337,10 @@ fn add_feature_be_job(
             },
         );
     } else {
+        // Features are extremely prone to not making sense when glyphs are filtered
+        if change_detector.glyph_name_filter.is_some() {
+            warn!("Not processing BE Features because a glyph name filter is active");
+        }
         workload.mark_success(BeWorkIdentifier::Features);
     }
     Ok(())
@@ -379,6 +390,7 @@ fn add_glyph_ir_jobs(
 }
 
 struct ChangeDetector {
+    glyph_name_filter: Option<Regex>,
     ir_paths: IrPaths,
     ir_source: Box<dyn Source>,
     prev_inputs: Input,
@@ -390,10 +402,28 @@ impl ChangeDetector {
     fn new(config: Config, ir_paths: IrPaths, prev_inputs: Input) -> Result<ChangeDetector, Error> {
         // What sources are we dealing with?
         let mut ir_source = ir_source(&config.args.source)?;
-        let current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
+        let mut current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
         let be_paths = BePaths::new(ir_paths.build_dir());
 
+        let glyph_name_filter = config
+            .args
+            .glyph_name_filter
+            .map(|raw_filter| Regex::new(&raw_filter))
+            .transpose()
+            .map_err(Error::BadRegex)?;
+
+        if let Some(regex) = &glyph_name_filter {
+            current_inputs.glyphs.retain(|glyph_name, _| {
+                let result = regex.is_match(glyph_name.as_str());
+                if !result {
+                    trace!("'{glyph_name}' does not match --glyph_name_filter");
+                }
+                result
+            });
+        }
+
         Ok(ChangeDetector {
+            glyph_name_filter,
             ir_paths,
             ir_source,
             prev_inputs,
@@ -541,7 +571,7 @@ impl Workload {
                     inserted
                 }
                 Err(e) => {
-                    error!("{:?} failed {}", completed_id, e);
+                    error!("{:?} failed {:?}", completed_id, e);
                     self.error.push((completed_id.clone(), format!("{e}")));
                     true
                 }
@@ -677,6 +707,7 @@ mod tests {
 
     fn test_args(build_dir: &Path, source: &str) -> Args {
         Args {
+            glyph_name_filter: None,
             source: testdata_dir().join(source),
             emit_ir: true,
             emit_debug: false,
