@@ -11,6 +11,7 @@ use clap::Parser;
 use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::{
     features::FeatureWork,
+    glyphs::create_glyph_work,
     orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
     paths::Paths as BePaths,
 };
@@ -395,6 +396,32 @@ fn add_glyph_ir_jobs(
     Ok(())
 }
 
+fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: GlyphName) {
+    let glyph_ir = fe_root.get_glyph_ir(&glyph_name);
+
+    // To build a glyph we need it's components, plus static metadata
+    let mut dependencies: HashSet<_> = glyph_ir
+        .sources
+        .values()
+        .flat_map(|s| &s.components)
+        .map(|c| AnyWorkId::Fe(FeWorkIdentifier::Glyph(c.base.clone())))
+        .collect();
+    dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+
+    let id = AnyWorkId::Be(BeWorkIdentifier::Glyph(glyph_name.clone()));
+
+    let write_access = access_one(id.clone());
+    workload.insert(
+        id,
+        Job {
+            work: create_glyph_work(glyph_name).into(),
+            dependencies,
+            read_access: ReadAccess::Dependencies,
+            write_access,
+        },
+    );
+}
+
 struct ChangeDetector {
     glyph_name_filter: Option<Regex>,
     ir_paths: IrPaths,
@@ -477,6 +504,31 @@ impl Workload {
 }
 
 impl Workload {
+    fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId) {
+        match success {
+            // When a glyph finishes IR, register BE work for it
+            AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) => {
+                add_glyph_be_job(self, fe_root, glyph_name)
+            }
+
+            // When static metadata finalizes, add BE work for any new glyphs
+            // If anything progresses before we've done this we have a graph bug
+            AnyWorkId::Fe(FeWorkIdentifier::FinalizeStaticMetadata) => {
+                for glyph_name in fe_root.get_static_metadata().glyph_order.iter() {
+                    let id = AnyWorkId::Be(BeWorkIdentifier::Glyph(glyph_name.clone()));
+                    if self.jobs_pending.contains_key(&id) {
+                        continue;
+                    }
+
+                    debug!("Updating graph for new glyph {glyph_name}");
+
+                    add_glyph_be_job(self, fe_root, glyph_name.clone());
+                }
+            }
+            _ => (),
+        }
+    }
+
     fn launchable(&self) -> Vec<AnyWorkId> {
         self.jobs_pending
             .iter()
@@ -527,7 +579,10 @@ impl Workload {
 
                 // Block for things to phone home to say they are done
                 // Then complete everything that has reported since our last check
-                self.read_completions(&recv, RecvType::Blocking)?;
+                let successes = self.read_completions(&recv, RecvType::Blocking)?;
+                successes
+                    .into_iter()
+                    .for_each(|s| self.handle_success(&fe_root, s));
             }
             Ok::<(), Error>(())
         })?;
@@ -550,7 +605,7 @@ impl Workload {
         &mut self,
         recv: &Receiver<(AnyWorkId, Result<(), AnyWorkError>)>,
         initial_read: RecvType,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<AnyWorkId>, Error> {
         let mut successes = Vec::new();
         let mut opt_complete = match initial_read {
             RecvType::Blocking => match recv.recv() {
@@ -597,7 +652,7 @@ impl Workload {
         if !self.error.is_empty() {
             return Err(Error::TasksFailed(self.error.clone()));
         }
-        Ok(())
+        Ok(successes)
     }
 }
 
@@ -654,6 +709,7 @@ fn main() -> Result<(), Error> {
         fs::remove_dir_all(be_paths.debug_dir()).map_err(Error::IoError)?;
     }
     require_dir(be_paths.debug_dir())?;
+    require_dir(be_paths.glyph_dir())?;
     let config = Config::new(args)?;
     let prev_inputs = init(&config).map_err(Error::IoError)?;
 
@@ -677,7 +733,8 @@ mod tests {
 
     use std::{
         collections::HashSet,
-        fs::{self},
+        fs::{self, File},
+        io::Read,
         path::{Path, PathBuf},
     };
 
@@ -689,13 +746,17 @@ mod tests {
     use fontc::work::AnyContext;
     use fontdrasil::types::GlyphName;
     use fontir::{
-        ir::GlyphInstance,
+        ir::{Glyph, GlyphInstance},
         orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
         paths::Paths as IrPaths,
         stateset::StateSet,
     };
     use indexmap::IndexSet;
-    use tempfile::tempdir;
+    use read_fonts::{
+        tables::glyf::{self, SimpleGlyph},
+        FontData, FontRead,
+    };
+    use tempfile::{tempdir, TempDir};
 
     use crate::{
         add_feature_be_job, add_feature_ir_job, add_finalize_static_metadata_ir_job,
@@ -791,6 +852,7 @@ mod tests {
         let ir_paths = IrPaths::new(&args.build_dir);
         let be_paths = BePaths::new(&args.build_dir);
         require_dir(ir_paths.glyph_ir_dir()).unwrap();
+        require_dir(be_paths.glyph_dir()).unwrap();
         let config = Config::new(args).unwrap();
 
         let prev_inputs = init(&config).unwrap();
@@ -855,6 +917,8 @@ mod tests {
                 workload.success.insert(id.clone()),
                 "We just did {id:?} a second time?"
             );
+
+            workload.handle_success(&fe_root, id.clone());
         }
         finish_successfully(change_detector).unwrap();
         result.work_completed = workload.success.difference(&pre_success).cloned().collect();
@@ -875,6 +939,8 @@ mod tests {
                 FeWorkIdentifier::Glyph("bar".into()).into(),
                 FeWorkIdentifier::Glyph("plus".into()).into(),
                 BeWorkIdentifier::Features.into(),
+                BeWorkIdentifier::Glyph("bar".into()).into(),
+                BeWorkIdentifier::Glyph("plus".into()).into(),
             ]),
             result.work_completed
         );
@@ -911,7 +977,10 @@ mod tests {
 
         let result = compile(test_args(build_dir, "wght_var.designspace"));
         assert_eq!(
-            HashSet::from([FeWorkIdentifier::Glyph("bar".into()).into(),]),
+            HashSet::from([
+                FeWorkIdentifier::Glyph("bar".into()).into(),
+                BeWorkIdentifier::Glyph("bar".into()).into(),
+            ]),
             result.work_completed
         );
     }
@@ -955,8 +1024,10 @@ mod tests {
         assert!(feature_ttf.is_file(), "Should have written {feature_ttf:?}");
     }
 
-    fn build_contour_and_composite_glyph(match_legacy: bool) -> GlyphInstance {
-        let temp_dir = tempdir().unwrap();
+    fn build_contour_and_composite_glyph(
+        temp_dir: &TempDir,
+        match_legacy: bool,
+    ) -> (Glyph, GlyphInstance) {
         let build_dir = temp_dir.path();
 
         let mut args = test_args(build_dir, "glyphs2/MixedContourComponent.glyphs");
@@ -968,20 +1039,89 @@ mod tests {
             .get_glyph_ir(&"contour_and_component".into());
 
         assert_eq!(1, glyph.sources.len());
-        glyph.sources.values().next().unwrap().clone()
+        (
+            (*glyph).clone(),
+            glyph.sources.values().next().unwrap().clone(),
+        )
+    }
+
+    fn read_file(path: &Path) -> Vec<u8> {
+        assert!(path.exists(), "{path:?} not found");
+        let mut buf = Vec::new();
+        File::open(path).unwrap().read_to_end(&mut buf).unwrap();
+        buf
+    }
+
+    fn glyph_bytes(build_dir: &Path, name: &str) -> Vec<u8> {
+        read_file(&build_dir.join(format!("glyphs/{name}.glyph")))
     }
 
     #[test]
     fn resolve_contour_and_composite_glyph_in_non_legacy_mode() {
-        let inst = build_contour_and_composite_glyph(false);
+        let temp_dir = tempdir().unwrap();
+        let (_, inst) = build_contour_and_composite_glyph(&temp_dir, false);
         assert!(inst.contours.is_empty(), "{inst:?}");
         assert_eq!(2, inst.components.len(), "{inst:?}");
     }
 
     #[test]
     fn resolve_contour_and_composite_glyph_in_legacy_mode() {
-        let inst = build_contour_and_composite_glyph(true);
+        let temp_dir = tempdir().unwrap();
+        let (glyph, inst) = build_contour_and_composite_glyph(&temp_dir, true);
         assert!(inst.components.is_empty(), "{inst:?}");
         assert_eq!(2, inst.contours.len(), "{inst:?}");
+
+        let raw_glyph = glyph_bytes(temp_dir.path(), glyph.name.as_str());
+        let glyph = SimpleGlyph::read(FontData::new(&raw_glyph)).unwrap();
+        assert_eq!(2, glyph.number_of_contours());
+    }
+
+    #[test]
+    fn compile_simple_binary_glyph() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(test_args(build_dir, "static.designspace"));
+
+        let raw_glyph = glyph_bytes(build_dir, "bar");
+        let glyph = SimpleGlyph::read(FontData::new(&raw_glyph)).unwrap();
+        assert_eq!(1, glyph.number_of_contours());
+        assert_eq!(4, glyph.num_points());
+        assert_eq!(
+            [222, -241, 295, 760],
+            [glyph.x_min(), glyph.y_min(), glyph.x_max(), glyph.y_max()]
+        );
+    }
+
+    fn glyphs(build_dir: &Path, glyph_order: &IndexSet<GlyphName>) -> Vec<Vec<u8>> {
+        glyph_order
+            .iter()
+            .map(|name| glyph_bytes(build_dir, name.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn compile_simple_glyphs_to_glyf_loca() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(test_args(build_dir, "static.designspace"));
+
+        // See resources/testdata/Static-Regular.ufo/glyphs
+        // bar, 4 points, 1 contour
+        // plus, 12 points, 1 contour
+        assert_eq!(
+            vec![(4, 1), (12, 1)],
+            glyphs(
+                build_dir,
+                &result.fe_context.get_static_metadata().glyph_order
+            )
+            .iter()
+            .map(|raw_glyph| {
+                match glyf::Glyph::read(FontData::new(raw_glyph)).unwrap() {
+                    glyf::Glyph::Simple(glyph) => (glyph.num_points(), glyph.number_of_contours()),
+                    glyf::Glyph::Composite(glyph) => (0, glyph.number_of_contours()),
+                }
+            })
+            .collect::<Vec<_>>()
+        );
     }
 }
