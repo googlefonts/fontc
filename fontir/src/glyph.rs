@@ -16,7 +16,7 @@ use crate::{
     coords::NormalizedLocation,
     error::WorkError,
     ir::{Component, Glyph},
-    orchestration::{Context, IrWork},
+    orchestration::{Context, Flags, IrWork},
 };
 
 pub fn create_finalize_static_metadata_work() -> Box<IrWork> {
@@ -38,7 +38,7 @@ fn has_components_and_contours(glyph: &Glyph) -> bool {
         .any(|inst| !inst.components.is_empty() && !inst.contours.is_empty())
 }
 
-/// Does the Glyph uses components whose transform is different at different locations designspace?
+/// Does the Glyph use the same set of components, including transform, for all instances?
 fn has_consistent_component_transforms(glyph: &Glyph) -> bool {
     distinct_component_seqs(glyph).len() <= 1
 }
@@ -55,6 +55,9 @@ fn name_for_derivative(base_name: &GlyphName, names_in_use: &IndexSet<GlyphName>
     }
 }
 
+/// Returns a tuple of (simple glyph, composite glyph).
+///
+/// The former contains all the contours, the latter contains all the components.
 fn split_glyph(glyph_order: &IndexSet<GlyphName>, original: &Glyph) -> (Glyph, Glyph) {
     // Make a simple glyph by erasing the components from it
     let mut simple_glyph = original.clone();
@@ -256,7 +259,7 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
                 *has_consistent_component_transforms || has_components_and_contours(glyph)
             })
         {
-            if !has_consistent_component_transforms || context.match_legacy {
+            if !has_consistent_component_transforms || context.flags.contains(Flags::MATCH_LEGACY) {
                 if !has_consistent_component_transforms {
                     debug!(
                         "Coalescing'{0}' into a simple glyph because component transforms vary across the designspace",
@@ -367,9 +370,7 @@ mod tests {
 
     fn test_root() -> Context {
         Context::new_root(
-            false,
-            false,
-            true,
+            Default::default(),
             Paths::new(Path::new("/fake/path")),
             Input::new(),
         )

@@ -19,12 +19,12 @@ use fontc::{
     Error,
 };
 use fontdrasil::{
-    orchestration::{access_none, access_one},
+    orchestration::{access_none, access_one, AccessFn},
     types::GlyphName,
 };
 use fontir::{
     glyph::create_finalize_static_metadata_work,
-    orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
+    orchestration::{Context as FeContext, Flags, WorkId as FeWorkIdentifier},
     paths::Paths as IrPaths,
     source::{DeleteWork, Input, Source},
     stateset::StateSet,
@@ -64,6 +64,18 @@ struct Args {
     #[arg(short, long)]
     #[clap(default_value = "build")]
     build_dir: PathBuf,
+}
+
+impl Args {
+    fn flags(&self) -> Flags {
+        let mut flags = Flags::default();
+
+        flags.set(Flags::EMIT_IR, self.emit_ir);
+        flags.set(Flags::EMIT_DEBUG, self.emit_debug);
+        flags.set(Flags::MATCH_LEGACY, self.match_legacy);
+
+        flags
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -236,7 +248,7 @@ fn add_init_static_metadata_ir_job(
             },
         );
     } else {
-        workload.mark_success(FeWorkIdentifier::InitStaticMetadata.into());
+        workload.mark_success(FeWorkIdentifier::InitStaticMetadata);
     }
     Ok(())
 }
@@ -270,7 +282,7 @@ fn add_finalize_static_metadata_ir_job(
             },
         );
     } else {
-        workload.mark_success(FeWorkIdentifier::FinalizeStaticMetadata.into());
+        workload.mark_success(FeWorkIdentifier::FinalizeStaticMetadata);
     }
     Ok(())
 }
@@ -294,7 +306,7 @@ fn add_feature_ir_job(
             },
         );
     } else {
-        workload.mark_success(FeWorkIdentifier::Features.into());
+        workload.mark_success(FeWorkIdentifier::Features);
     }
     Ok(())
 }
@@ -318,7 +330,7 @@ fn add_feature_be_job(
             },
         );
     } else {
-        workload.mark_success(BeWorkIdentifier::Features.into());
+        workload.mark_success(BeWorkIdentifier::Features);
     }
     Ok(())
 }
@@ -421,8 +433,8 @@ impl Workload {
         self.job_count += 1;
     }
 
-    fn mark_success(&mut self, id: AnyWorkId) {
-        if self.success.insert(id) {
+    fn mark_success(&mut self, id: impl Into<AnyWorkId>) {
+        if self.success.insert(id.into()) {
             self.pre_success += 1;
         }
     }
@@ -562,7 +574,7 @@ struct Job {
     // Things that must happen before we execute. Our  task can read these things.
     dependencies: HashSet<AnyWorkId>,
     // Things our job needs write access to
-    write_access: Arc<dyn Fn(&AnyWorkId) -> bool + Send + Sync>,
+    write_access: AccessFn<AnyWorkId>,
 }
 
 fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Error> {
@@ -613,19 +625,11 @@ fn main() -> Result<(), Error> {
     let workload = create_workload(&mut change_detector)?;
 
     let fe_root = FeContext::new_root(
-        config.args.emit_ir,
-        config.args.emit_debug,
-        config.args.match_legacy,
+        config.args.flags(),
         ir_paths,
         change_detector.current_inputs.clone(),
     );
-    let be_root = BeContext::new_root(
-        config.args.emit_ir,
-        config.args.emit_debug,
-        config.args.match_legacy,
-        be_paths,
-        &fe_root,
-    );
+    let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root);
     workload.exec(fe_root, be_root)?;
 
     finish_successfully(change_detector)?;
@@ -770,21 +774,16 @@ mod tests {
         // This will likely need to change when we start doing things like glyphs with components
 
         let fe_root = FeContext::new_root(
-            config.args.emit_ir,
-            config.args.emit_debug,
-            config.args.match_legacy,
+            config.args.flags(),
             ir_paths,
             change_detector.current_inputs.clone(),
         );
-        let be_root = BeContext::new_root(
-            config.args.emit_ir,
-            config.args.emit_debug,
-            config.args.match_legacy,
-            be_paths,
-            &fe_root.read_only(),
+        let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root.read_only());
+        let mut result = TestCompile::new(
+            &change_detector,
+            fe_root.read_only(),
+            be_root.copy_read_only(),
         );
-        let mut result =
-            TestCompile::new(&change_detector, fe_root.read_only(), be_root.read_only());
 
         let pre_success = workload.success.clone();
         while !workload.jobs_pending.is_empty() {

@@ -9,6 +9,7 @@ use std::{
     sync::Arc,
 };
 
+use bitflags::bitflags;
 use fontdrasil::{
     orchestration::{AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
@@ -17,6 +18,23 @@ use parking_lot::RwLock;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{error::WorkError, ir, paths::Paths, source::Input};
+
+bitflags! {
+    pub struct Flags: u32 {
+        // If set IR will be emitted to disk when written into Context
+        const EMIT_IR = 0b00000001;
+        // If set additional debug files will be emitted to disk
+        const EMIT_DEBUG = 0b00000010;
+        // If set seek to match fontmake (python) behavior even at cost of abandoning optimizations
+        const MATCH_LEGACY = 0b00000100;
+    }
+}
+
+impl Default for Flags {
+    fn default() -> Self {
+        Flags::MATCH_LEGACY
+    }
+}
 
 // Unique identifier of work. If there are no fields work is unique.
 // Meant to be small and cheap to copy around.
@@ -42,14 +60,7 @@ pub type IrWork = dyn Work<Context, WorkError> + Send;
 /// access with spawned tasks. Copies with access control are created to detect bad
 /// execution order / mistakes, not to block actual bad actors.
 pub struct Context {
-    // If set IR will be emitted to disk when written into Context
-    emit_ir: bool,
-
-    // If set additional debug files will be emitted to disk
-    emit_debug: bool,
-
-    // If set seek to match fontmake (python) behavior even at cost of abandoning optimizations
-    pub match_legacy: bool,
+    pub flags: Flags,
 
     paths: Arc<Paths>,
 
@@ -69,9 +80,7 @@ pub struct Context {
 impl Context {
     fn copy(&self, acl: AccessControlList<WorkId>) -> Context {
         Context {
-            emit_ir: self.emit_ir,
-            emit_debug: self.emit_debug,
-            match_legacy: self.match_legacy,
+            flags: self.flags,
             paths: self.paths.clone(),
             input: self.input.clone(),
             acl,
@@ -81,17 +90,9 @@ impl Context {
         }
     }
 
-    pub fn new_root(
-        emit_ir: bool,
-        emit_debug: bool,
-        match_legacy: bool,
-        paths: Paths,
-        input: Input,
-    ) -> Context {
+    pub fn new_root(flags: Flags, paths: Paths, input: Input) -> Context {
         Context {
-            emit_ir,
-            emit_debug,
-            match_legacy,
+            flags,
             paths: Arc::from(paths),
             input: Arc::from(input),
             acl: AccessControlList::read_only(),
@@ -122,7 +123,7 @@ impl Context {
     where
         V: ?Sized + Serialize + Debug,
     {
-        if !self.emit_ir {
+        if !self.flags.contains(Flags::EMIT_IR) {
             return;
         }
         let raw_file = File::create(file)
@@ -155,7 +156,7 @@ impl Context {
 
     pub fn get_static_metadata(&self) -> Arc<ir::StaticMetadata> {
         let ids = [WorkId::InitStaticMetadata, WorkId::FinalizeStaticMetadata];
-        self.acl.check_read_access_to_any(&ids);
+        self.acl.assert_read_access_to_any(&ids);
         {
             let rl = self.static_metadata.read();
             if rl.is_some() {
@@ -169,21 +170,21 @@ impl Context {
 
     pub fn set_static_metadata(&self, ir: ir::StaticMetadata) {
         let ids = [WorkId::InitStaticMetadata, WorkId::FinalizeStaticMetadata];
-        self.acl.check_write_access_to_any(&ids);
+        self.acl.assert_write_access_to_any(&ids);
         self.maybe_persist(&self.paths.target_file(&ids[0]), &ir);
         self.set_cached_static_metadata(ir);
     }
 
     pub fn get_glyph_ir(&self, glyph_name: &GlyphName) -> Arc<ir::Glyph> {
         let id = WorkId::Glyph(glyph_name.clone());
-        self.acl.check_read_access(&id);
+        self.acl.assert_read_access(&id);
         let rl = self.glyph_ir.read();
         rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
 
     pub fn set_glyph_ir(&self, ir: ir::Glyph) {
         let id = WorkId::Glyph(ir.name.clone());
-        self.acl.check_write_access(&id);
+        self.acl.assert_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         let mut wl = self.glyph_ir.write();
         wl.insert(ir.name.clone(), Arc::from(ir));
@@ -196,7 +197,7 @@ impl Context {
 
     pub fn get_features(&self) -> Arc<ir::Features> {
         let id = WorkId::Features;
-        self.acl.check_read_access(&id);
+        self.acl.assert_read_access(&id);
         {
             let rl = self.feature_ir.read();
             if rl.is_some() {
@@ -210,7 +211,7 @@ impl Context {
 
     pub fn set_features(&self, ir: ir::Features) {
         let id = WorkId::Features;
-        self.acl.check_write_access(&id);
+        self.acl.assert_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
         self.set_cached_features(ir);
     }

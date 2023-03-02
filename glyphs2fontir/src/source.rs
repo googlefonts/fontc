@@ -386,9 +386,7 @@ mod tests {
         (
             source,
             Context::new_root(
-                false,
-                false,
-                true,
+                Default::default(),
                 Paths::new(Path::new("/nothing/should/write/here")),
                 input,
             ),
