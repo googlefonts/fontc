@@ -492,7 +492,7 @@ mod tests {
         for (loc, inst) in simple.sources.iter() {
             assert_eq!(
                 // The original contour, and the component w/transform
-                vec!["M1 1L2 1L2 2Z", "M4 4L5 4L5 5Z",],
+                vec!["M1,1 L2,1 L2,2 Z", "M4,4 L5,4 L5,5 Z",],
                 inst.contours
                     .iter()
                     .map(|bez| bez.to_svg())
@@ -559,13 +559,13 @@ mod tests {
         assert_eq!(
             vec![
                 // The original shape
-                "M1 1L2 1L2 2Z",
+                "M1,1 L2,1 L2,2 Z",
                 // c1: shape rotated 90 degrees ccw
-                "M1 -1L1 -2L2 -2Z",
+                "M1,-1 L1,-2 L2,-2 Z",
                 // c1 moved by (0, 2)
-                "M1 1L1 0L2 0Z",
+                "M1,1 L1,0 L2,0 Z",
                 // c2 moved by (0,5), c2 is c1 moved by (5,0)
-                "M6 4L6 3L7 3Z",
+                "M6,4 L6,3 L7,3 Z",
             ],
             inst.contours
                 .iter()

@@ -320,7 +320,7 @@ mod tests {
         let mut builder = GlyphPathBuilder::new("test".into());
         builder.move_to((2.0, 2.0)).unwrap();
         builder.qcurve_to((4.0, 2.0)).unwrap();
-        assert_eq!("M2 2L4 2", builder.build().to_svg());
+        assert_eq!("M2,2 L4,2", builder.build().to_svg());
     }
 
     #[test]
@@ -329,7 +329,7 @@ mod tests {
         builder.move_to((2.0, 2.0)).unwrap();
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.qcurve_to((4.0, 2.0)).unwrap();
-        assert_eq!("M2 2Q3 0 4 2", builder.build().to_svg());
+        assert_eq!("M2,2 Q3,0 4,2", builder.build().to_svg());
     }
 
     #[test]
@@ -339,6 +339,6 @@ mod tests {
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.offcurve((5.0, 4.0)).unwrap();
         builder.qcurve_to((6.0, 2.0)).unwrap();
-        assert_eq!("M2 2Q3 0 4 2Q5 4 6 2", builder.build().to_svg());
+        assert_eq!("M2,2 Q3,0 4,2 Q5,4 6,2", builder.build().to_svg());
     }
 }
