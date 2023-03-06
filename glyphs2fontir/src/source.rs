@@ -127,7 +127,12 @@ impl Source for GlyphsIrSource {
     fn create_static_metadata_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
         self.check_static_metadata(&input.static_metadata)?;
         let font_info = self.cache.as_ref().unwrap().font_info.clone();
-        Ok(Box::new(StaticMetadataWork { font_info }))
+        let glyph_names = Arc::new(input.glyphs.keys().cloned().collect());
+
+        Ok(Box::new(StaticMetadataWork {
+            font_info,
+            glyph_names,
+        }))
     }
 
     fn create_glyph_ir_work(
@@ -175,6 +180,7 @@ impl GlyphsIrSource {
 
 struct StaticMetadataWork {
     font_info: Arc<FontInfo>,
+    glyph_names: Arc<HashSet<GlyphName>>,
 }
 
 impl Work<Context, WorkError> for StaticMetadataWork {
@@ -184,7 +190,12 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         debug!("Static metadata for {}", font.family_name);
         let axes = font_info.axes.clone();
         let glyph_locations = font_info.master_locations.values().cloned().collect();
-        let glyph_order = font.glyph_order.iter().map(|s| s.into()).collect();
+        let glyph_order = font
+            .glyph_order
+            .iter()
+            .map(|s| s.into())
+            .filter(|gn| self.glyph_names.contains(gn))
+            .collect();
         context.set_static_metadata(
             StaticMetadata::new(axes, glyph_order, glyph_locations)
                 .map_err(WorkError::VariationModelError)?,

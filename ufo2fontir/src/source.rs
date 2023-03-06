@@ -43,7 +43,6 @@ impl DesignSpaceIrSource {
 struct Cache {
     static_metadata: StateSet,
     locations: HashMap<PathBuf, Vec<DesignLocation>>,
-    glyph_names: Arc<HashSet<GlyphName>>,
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
     fea_files: Arc<Vec<PathBuf>>,
@@ -52,7 +51,6 @@ struct Cache {
 impl Cache {
     fn new(
         static_metadata: StateSet,
-        glyph_names: HashSet<GlyphName>,
         locations: HashMap<PathBuf, Vec<DesignLocation>>,
         designspace_file: PathBuf,
         designspace: DesignSpaceDocument,
@@ -60,7 +58,6 @@ impl Cache {
     ) -> Cache {
         Cache {
             static_metadata,
-            glyph_names: Arc::from(glyph_names),
             locations,
             designspace_file,
             designspace: Arc::from(designspace),
@@ -263,7 +260,6 @@ impl Source for DesignSpaceIrSource {
 
         self.cache = Some(Cache::new(
             static_metadata.clone(),
-            glyph_names,
             glif_locations,
             self.designspace_file.clone(),
             designspace,
@@ -281,10 +277,12 @@ impl Source for DesignSpaceIrSource {
         self.check_static_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
+        let glyph_names = Arc::new(input.glyphs.keys().cloned().collect());
+
         Ok(Box::new(StaticMetadataWork {
             designspace_file: cache.designspace_file.clone(),
             designspace: cache.designspace.clone(),
-            glyph_names: cache.glyph_names.clone(),
+            glyph_names,
         }))
     }
 
