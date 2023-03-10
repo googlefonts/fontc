@@ -36,3 +36,6 @@ Once you have them you could try building them:
 cargo run --package fontc -- --source ../google_fonts_sources/sources/ofl/notosanskayahli/sources/NotoSansKayahLi.designspace
 ```
 
+## Releasing
+
+See https://github.com/googlefonts/fontations#releasing
