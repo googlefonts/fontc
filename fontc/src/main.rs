@@ -677,7 +677,7 @@ mod tests {
 
     use std::{
         collections::HashSet,
-        fs::{self},
+        fs,
         path::{Path, PathBuf},
     };
 
