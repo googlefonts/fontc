@@ -34,11 +34,11 @@ enum Token<'a> {
 }
 
 fn is_numeric(b: u8) -> bool {
-    (b'0'..=b'9').contains(&b) || b == b'.' || b == b'-'
+    b.is_ascii_digit() || b == b'.' || b == b'-'
 }
 
 fn is_alnum(b: u8) -> bool {
-    is_numeric(b) || (b'A'..=b'Z').contains(&b) || (b'a'..=b'z').contains(&b) || b == b'_'
+    is_numeric(b) || b.is_ascii_uppercase() || b.is_ascii_lowercase() || b == b'_'
 }
 
 // Used for serialization; make sure UUID's get quoted
@@ -46,12 +46,8 @@ fn is_alnum_strict(b: u8) -> bool {
     is_alnum(b) && b != b'-'
 }
 
-fn is_ascii_digit(b: u8) -> bool {
-    (b'0'..=b'9').contains(&b)
-}
-
 fn is_hex_upper(b: u8) -> bool {
-    (b'0'..=b'9').contains(&b) || (b'A'..=b'F').contains(&b)
+    b.is_ascii_digit() || (b'A'..=b'F').contains(&b)
 }
 
 fn is_ascii_whitespace(b: u8) -> bool {
@@ -63,11 +59,11 @@ fn numeric_ok(s: &str) -> bool {
     if s.is_empty() {
         return false;
     }
-    if s.iter().all(|&b| is_hex_upper(b)) && !s.iter().all(|&b| is_ascii_digit(b)) {
+    if s.iter().all(|&b| is_hex_upper(b)) && !s.iter().all(|&b| b.is_ascii_digit()) {
         return false;
     }
     if s.len() > 1 && s[0] == b'0' {
-        return !s.iter().all(|&b| is_ascii_digit(b));
+        return !s.iter().all(|&b| b.is_ascii_digit());
     }
     true
 }
