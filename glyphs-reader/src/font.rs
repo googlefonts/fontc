@@ -753,7 +753,6 @@ fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<Vec<u32>, St
         if let Some(Plist::String(val)) = glyph.other_stuff.remove("unicode") {
             let codepoints = val
                 .split(',')
-                .into_iter()
                 .map(|v| i64::from_str_radix(v, radix).unwrap() as u32)
                 .collect();
             cp_to_name.insert(codepoints, glyph.glyphname.clone());

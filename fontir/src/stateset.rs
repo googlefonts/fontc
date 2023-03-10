@@ -235,14 +235,12 @@ impl StateSet {
             added: added.iter().map(|e| (*e).clone()).collect(),
             updated: new_keys
                 .intersection(&old_keys)
-                .into_iter()
                 .filter(|e| old_state.entries.get(e).unwrap() != self.entries.get(e).unwrap())
                 .filter(|e| !added.contains(*e))
                 .map(|e| (*e).clone())
                 .collect(),
             removed: old_keys
                 .difference(&new_keys)
-                .into_iter()
                 .map(|e| (*e).clone())
                 .collect(),
         })

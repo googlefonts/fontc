@@ -477,11 +477,8 @@ impl Workload {
             .filter_map(|(id, job)| {
                 let can_start = job.dependencies.is_subset(&self.success);
                 if !can_start && log_enabled!(log::Level::Trace) {
-                    let mut unfulfilled_deps: Vec<_> = job
-                        .dependencies
-                        .difference(&self.success)
-                        .into_iter()
-                        .collect();
+                    let mut unfulfilled_deps: Vec<_> =
+                        job.dependencies.difference(&self.success).collect();
                     unfulfilled_deps.sort();
                     trace!("Cannot start {:?}, blocked on {:?}", id, unfulfilled_deps);
                 };
