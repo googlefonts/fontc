@@ -1,4 +1,9 @@
 /target
 Cargo.lock
 
+.venv
+venv
+
+# a directory colin uses to stash various wip diffs/test inputs
+_experiments
 .DS_Store
