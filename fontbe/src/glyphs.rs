@@ -448,6 +448,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
             let mut missing_boxes = false;
             let boxes: Vec<Bbox> = composite
                 .components()
+                .iter()
                 .filter_map(|c| {
                     if missing_boxes {
                         return None; // can't succeed
