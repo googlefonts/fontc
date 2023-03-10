@@ -15,8 +15,12 @@ pub enum Error {
     FeaCompileError(#[from] CompilerError),
     #[error("'{0}' {1}")]
     GlyphError(GlyphName, GlyphProblem),
-    #[error("'{0}' {1:?} {2}")]
-    KurboError(GlyphName, BadKurbo, String),
+    #[error("'{glyph_name}' {kurbo_problem:?} {context}")]
+    KurboError {
+        glyph_name: GlyphName,
+        kurbo_problem: BadKurbo,
+        context: String,
+    },
     #[error("'{glyph}' references {referenced_glyph}, {problem}")]
     ComponentError {
         glyph: GlyphName,

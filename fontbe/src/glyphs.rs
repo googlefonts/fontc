@@ -46,8 +46,11 @@ impl Work<Context, Error> for GlyphWork {
                 let Some(path) = contours.get(default_location) else {
                     return Err(Error::GlyphError(ir_glyph.name.clone(), GlyphProblem::MissingDefault));
                 };
-                let base_glyph = SimpleGlyph::from_kurbo(path)
-                    .map_err(|e| Error::KurboError(self.glyph_name.clone(), e, path.to_svg()))?;
+                let base_glyph = SimpleGlyph::from_kurbo(path).map_err(|e| Error::KurboError {
+                    glyph_name: self.glyph_name.clone(),
+                    kurbo_problem: e,
+                    context: path.to_svg(),
+                })?;
                 context.set_glyph(name, base_glyph.into());
             }
         }
