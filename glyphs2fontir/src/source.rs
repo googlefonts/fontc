@@ -318,7 +318,10 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use fontdrasil::{orchestration::access_one, types::GlyphName};
+    use fontdrasil::{
+        orchestration::{access_none, access_one},
+        types::GlyphName,
+    };
     use fontir::{
         coords::{
             CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
@@ -407,7 +410,8 @@ mod tests {
     #[test]
     fn static_metadata_ir() {
         let (source, context) = context_for(glyphs3_dir().join("WghtVar.glyphs"));
-        let task_context = context.copy_for_work(None, access_one(WorkId::InitStaticMetadata));
+        let task_context =
+            context.copy_for_work(access_none(), access_one(WorkId::InitStaticMetadata));
         source
             .create_static_metadata_work(&context.input)
             .unwrap()
@@ -434,7 +438,8 @@ mod tests {
     fn static_metadata_ir_multi_axis() {
         // Caused index out of bounds due to transposed master and value indices
         let (source, context) = context_for(glyphs2_dir().join("BadIndexing.glyphs"));
-        let task_context = context.copy_for_work(None, access_one(WorkId::InitStaticMetadata));
+        let task_context =
+            context.copy_for_work(access_none(), access_one(WorkId::InitStaticMetadata));
         source
             .create_static_metadata_work(&context.input)
             .unwrap()
@@ -445,7 +450,8 @@ mod tests {
     #[test]
     fn loads_axis_mappings_from_glyphs2() {
         let (source, context) = context_for(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
-        let task_context = context.copy_for_work(None, access_one(WorkId::InitStaticMetadata));
+        let task_context =
+            context.copy_for_work(access_none(), access_one(WorkId::InitStaticMetadata));
         source
             .create_static_metadata_work(&context.input)
             .unwrap()
@@ -498,7 +504,8 @@ mod tests {
 
     fn build_static_metadata(glyphs_file: PathBuf) -> (impl Source, Context) {
         let (source, context) = context_for(glyphs_file);
-        let task_context = context.copy_for_work(None, access_one(WorkId::InitStaticMetadata));
+        let task_context =
+            context.copy_for_work(access_none(), access_one(WorkId::InitStaticMetadata));
         source
             .create_static_metadata_work(&context.input)
             .unwrap()
@@ -519,7 +526,7 @@ mod tests {
                 .unwrap();
             for work in work_items.iter() {
                 let task_context = context.copy_for_work(
-                    Some(HashSet::from([WorkId::InitStaticMetadata])),
+                    access_one(WorkId::InitStaticMetadata),
                     access_one(WorkId::Glyph(glyph_name.clone())),
                 );
                 work.exec(&task_context)?;

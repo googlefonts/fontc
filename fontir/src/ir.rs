@@ -134,7 +134,7 @@ impl Glyph {
 pub struct GlyphInstance {
     /// Advance width.
     pub width: f64,
-    /// Advance height; if None, assumed to equal font's ascender - descende.
+    /// Advance height; if None, assumed to equal font's ascender - descender.
     pub height: Option<f64>,
     /// List of glyph contours.
     pub contours: Vec<BezPath>,

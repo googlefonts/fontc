@@ -1,7 +1,7 @@
 //! Helps coordinate the graph execution for IR
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::Debug,
     fs::File,
     io::{BufReader, BufWriter},
@@ -104,13 +104,10 @@ impl Context {
 
     pub fn copy_for_work(
         &self,
-        dependencies: Option<HashSet<WorkId>>,
+        read_access: Arc<dyn Fn(&WorkId) -> bool + Send + Sync>,
         write_access: Arc<dyn Fn(&WorkId) -> bool + Send + Sync>,
     ) -> Context {
-        self.copy(AccessControlList::read_write(
-            dependencies.unwrap_or_default(),
-            write_access,
-        ))
+        self.copy(AccessControlList::read_write(read_access, write_access))
     }
 
     pub fn read_only(&self) -> Context {
