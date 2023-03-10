@@ -8,7 +8,7 @@ use std::collections::{HashSet, VecDeque};
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use indexmap::IndexSet;
 use kurbo::Affine;
-use log::{debug, trace};
+use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
 use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 
@@ -256,7 +256,7 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
                 (glyph, consistent_transforms)
             })
             .filter(|(glyph, has_consistent_component_transforms)| {
-                *has_consistent_component_transforms || has_components_and_contours(glyph)
+                !has_consistent_component_transforms || has_components_and_contours(glyph)
             })
         {
             if !has_consistent_component_transforms || context.flags.contains(Flags::MATCH_LEGACY) {
@@ -282,7 +282,7 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
             } else {
                 // We don't have to match fontmake; prefer to retain components than to collapse to simple glyph
                 debug!(
-                    "Splitting '{0}' because it has contours and components and we don't have to match legacy",
+                    "Hoisting the contours from '{0}' into a new component",
                     glyph_to_fix.name
                 );
                 let (simple, composite) = split_glyph(&new_glyph_order, &glyph_to_fix);
@@ -295,6 +295,23 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
                 context.set_glyph_ir(simple);
                 context.set_glyph_ir(composite);
             }
+        }
+
+        // If the glyph order changed try not to forget about it
+        if current_metadata.glyph_order != new_glyph_order {
+            if log_enabled!(log::Level::Trace) {
+                let mut new_glyphs: Vec<_> = new_glyph_order
+                    .difference(&current_metadata.glyph_order)
+                    .collect();
+                new_glyphs.sort();
+                trace!(
+                    "Added {} additional glyphs: {new_glyphs:?}",
+                    new_glyphs.len()
+                )
+            }
+            let mut updated_metadata = (*current_metadata).clone();
+            updated_metadata.glyph_order = new_glyph_order;
+            context.set_static_metadata(updated_metadata);
         }
 
         Ok(())

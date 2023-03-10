@@ -1,6 +1,6 @@
 //! Helps coordinate the graph execution for BE
 
-use std::{fs, path::Path, sync::Arc};
+use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
 use fontdrasil::{
     orchestration::{AccessControlList, Work, MISSING_DATA},
@@ -8,7 +8,9 @@ use fontdrasil::{
 };
 use fontir::orchestration::{Context as FeContext, Flags, WorkId as FeWorkIdentifier};
 use parking_lot::RwLock;
-use write_fonts::FontBuilder;
+use read_fonts::{FontData, FontRead};
+use write_fonts::{dump_table, tables::glyf::SimpleGlyph, FontBuilder};
+use write_fonts::{from_obj::FromTableRef, tables::glyf::CompositeGlyph};
 
 use crate::{error::Error, paths::Paths};
 
@@ -60,6 +62,35 @@ impl From<WorkId> for AnyWorkId {
     }
 }
 
+/// <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
+#[derive(Debug, Clone)]
+pub enum Glyph {
+    Simple(SimpleGlyph),
+    Composite(CompositeGlyph),
+}
+
+impl From<SimpleGlyph> for Glyph {
+    fn from(value: SimpleGlyph) -> Self {
+        Glyph::Simple(value)
+    }
+}
+
+impl From<CompositeGlyph> for Glyph {
+    fn from(value: CompositeGlyph) -> Self {
+        Glyph::Composite(value)
+    }
+}
+
+impl Glyph {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Glyph::Simple(table) => dump_table(table),
+            Glyph::Composite(table) => dump_table(table),
+        }
+        .unwrap()
+    }
+}
+
 pub type BeWork = dyn Work<Context, Error> + Send;
 
 /// Read/write access to data for async work.
@@ -80,6 +111,9 @@ pub struct Context {
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
     features: Arc<RwLock<Option<Arc<Vec<u8>>>>>,
+
+    // TODO: variations
+    glyphs: Arc<RwLock<HashMap<GlyphName, Arc<Glyph>>>>,
 }
 
 impl Context {
@@ -90,6 +124,7 @@ impl Context {
             ir: self.ir.clone(),
             acl,
             features: self.features.clone(),
+            glyphs: self.glyphs.clone(),
         }
     }
 
@@ -100,6 +135,7 @@ impl Context {
             ir: Arc::from(ir.read_only()),
             acl: AccessControlList::read_only(),
             features: Arc::from(RwLock::new(None)),
+            glyphs: Arc::from(RwLock::new(HashMap::new())),
         }
     }
 
@@ -163,5 +199,37 @@ impl Context {
         let font = font.build();
         self.maybe_persist(&self.paths.target_file(&id), &font);
         self.set_cached_features(font);
+    }
+
+    fn set_cached_glyph(&self, glyph_name: GlyphName, glyph: Glyph) {
+        let mut wl = self.glyphs.write();
+        wl.insert(glyph_name, Arc::from(glyph));
+    }
+
+    pub fn get_glyph(&self, glyph_name: &GlyphName) -> Arc<Glyph> {
+        let id = WorkId::Glyph(glyph_name.clone());
+        self.acl.assert_read_access(&id.clone().into());
+        {
+            let rl = self.glyphs.read();
+            if let Some(glyph) = rl.get(glyph_name) {
+                return glyph.clone();
+            }
+        }
+
+        // Vec[u8] => read type => write type == all the right type
+        let glyph = self.restore(&self.paths.target_file(&id));
+        let glyph = read_fonts::tables::glyf::SimpleGlyph::read(FontData::new(&glyph)).unwrap();
+        let glyph = SimpleGlyph::from_table_ref(&glyph);
+
+        self.set_cached_glyph(glyph_name.clone(), glyph.into());
+        let rl = self.glyphs.read();
+        rl.get(glyph_name).expect(MISSING_DATA).clone()
+    }
+
+    pub fn set_glyph(&self, glyph_name: GlyphName, glyph: Glyph) {
+        let id = WorkId::Glyph(glyph_name.clone());
+        self.acl.assert_write_access(&id.clone().into());
+        self.maybe_persist(&self.paths.target_file(&id), &glyph.to_bytes());
+        self.set_cached_glyph(glyph_name, glyph);
     }
 }
