@@ -127,6 +127,7 @@ pub struct Context {
     glyphs: Arc<RwLock<HashMap<GlyphName, Arc<Glyph>>>>,
 
     glyf_loca: Arc<RwLock<Option<Arc<GlyfLoca>>>>,
+    cmap: Arc<RwLock<Option<Arc<Vec<u8>>>>>,
 }
 
 impl Context {
@@ -139,6 +140,7 @@ impl Context {
             features: self.features.clone(),
             glyphs: self.glyphs.clone(),
             glyf_loca: self.glyf_loca.clone(),
+            cmap: self.cmap.clone(),
         }
     }
 
@@ -151,6 +153,7 @@ impl Context {
             features: Arc::from(RwLock::new(None)),
             glyphs: Arc::from(RwLock::new(HashMap::new())),
             glyf_loca: Arc::from(RwLock::new(None)),
+            cmap: Arc::from(RwLock::new(None)),
         }
     }
 
@@ -290,5 +293,32 @@ impl Context {
         );
 
         self.set_cached_glyf_loca((glyf, loca));
+    }
+
+    fn set_cached_cmap(&self, cmap: Vec<u8>) {
+        let mut wl = self.cmap.write();
+        *wl = Some(Arc::from(cmap));
+    }
+
+    pub fn get_cmap(&self) -> Arc<Vec<u8>> {
+        let id = WorkId::Cmap;
+        self.acl.assert_read_access(&id.clone().into());
+        {
+            let rl = self.cmap.read();
+            if rl.is_some() {
+                return rl.as_ref().unwrap().clone();
+            }
+        }
+        let font = self.restore(&self.paths.target_file(&id));
+        self.set_cached_features(font);
+        let rl = self.cmap.read();
+        rl.as_ref().expect(MISSING_DATA).clone()
+    }
+
+    pub fn set_cmap(&self, cmap: Vec<u8>) {
+        let id = WorkId::Cmap;
+        self.acl.assert_write_access(&id.clone().into());
+        self.maybe_persist(&self.paths.target_file(&id), &cmap);
+        self.set_cached_cmap(cmap);
     }
 }

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 use filetime::FileTime;
 use serde::{Deserialize, Serialize};
@@ -84,6 +87,7 @@ pub struct GlyphInstanceSerdeRepr {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GlyphSerdeRepr {
     pub name: String,
+    pub accessors: HashSet<Vec<u32>>,
     pub instances: Vec<GlyphInstanceSerdeRepr>,
 }
 
@@ -91,6 +95,7 @@ impl From<GlyphSerdeRepr> for Glyph {
     fn from(from: GlyphSerdeRepr) -> Self {
         Glyph {
             name: from.name.into(),
+            accessors: from.accessors,
             sources: from
                 .instances
                 .into_iter()
@@ -104,6 +109,7 @@ impl From<Glyph> for GlyphSerdeRepr {
     fn from(from: Glyph) -> Self {
         GlyphSerdeRepr {
             name: from.name.as_str().to_string(),
+            accessors: from.accessors,
             instances: from
                 .sources
                 .into_iter()

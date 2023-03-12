@@ -102,6 +102,7 @@ impl Features {
 #[serde(from = "GlyphSerdeRepr", into = "GlyphSerdeRepr")]
 pub struct Glyph {
     pub name: GlyphName,
+    pub accessors: HashSet<Vec<u32>>, // sequence(s) of unicodes to reach this glyph
     pub sources: HashMap<NormalizedLocation, GlyphInstance>,
 }
 
@@ -109,6 +110,7 @@ impl Glyph {
     pub fn new(name: GlyphName) -> Self {
         Self {
             name,
+            accessors: HashSet::new(),
             sources: HashMap::new(),
         }
     }

@@ -1,3 +1,4 @@
+# TODO remove once https://github.com/googlefonts/fontations/pull/275 in a release
 [patch.crates-io]
 read-fonts = { path="../fontations/read-fonts" }
 write-fonts = { path="../fontations/write-fonts" }

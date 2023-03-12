@@ -78,7 +78,7 @@ layerId = m01;
 width = 600;
 }
 );
-unicode = 002C;
+unicode = 0030;
 },
 {
 glyphname = simple_transform;

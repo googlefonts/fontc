@@ -415,10 +415,10 @@ fn rect2bbox(rect: Rect) -> Bbox {
     }
 }
 
-struct GlyphMergeWork {}
+struct GlyfLocaWork {}
 
-pub fn create_glyph_merge_work() -> Box<BeWork> {
-    Box::new(GlyphMergeWork {})
+pub fn create_glyf_loca_work() -> Box<BeWork> {
+    Box::new(GlyfLocaWork {})
 }
 
 fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
@@ -519,7 +519,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
     Ok(())
 }
 
-impl Work<Context, Error> for GlyphMergeWork {
+impl Work<Context, Error> for GlyfLocaWork {
     /// Generate [glyf](https://learn.microsoft.com/en-us/typography/opentype/spec/glyf)
     /// and [loca](https://learn.microsoft.com/en-us/typography/opentype/spec/loca).
     ///

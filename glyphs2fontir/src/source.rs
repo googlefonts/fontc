@@ -75,7 +75,8 @@ impl GlyphsIrSource {
             default_master_idx: font.default_master_idx,
             glyphs: Default::default(),
             glyph_order: Default::default(),
-            codepoints: Default::default(),
+            codepoints_to_glyph: Default::default(),
+            glyph_to_codepoints: Default::default(),
             axis_mappings: font.axis_mappings.clone(),
             features: Default::default(),
         };
@@ -255,6 +256,12 @@ impl Work<Context, WorkError> for GlyphIrWork {
             .ok_or_else(|| WorkError::NoGlyphForName(self.glyph_name.clone()))?;
 
         let mut ir_glyph = ir::Glyph::new(self.glyph_name.clone());
+
+        if let Some(accessors) = font.glyph_to_codepoints.get(self.glyph_name.as_str()) {
+            accessors.iter().for_each(|accessor| {
+                ir_glyph.accessors.insert(accessor.clone());
+            });
+        }
 
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<String, HashSet<NormalizedCoord>> = HashMap::new();
@@ -637,5 +644,26 @@ mod tests {
                 wght.converter
             );
         }
+    }
+
+    #[test]
+    fn captures_single_codepoints() {
+        let (source, context) = build_static_metadata(glyphs2_dir().join("WghtVar.glyphs"));
+        build_glyphs(&source, &context, &[&"hyphen".into()]).unwrap();
+        assert_eq!(
+            HashSet::from([vec![0x002d]]),
+            context.get_glyph_ir(&"hyphen".into()).accessors
+        );
+    }
+
+    #[test]
+    fn captures_multipl_codepoints() {
+        let (source, context) =
+            build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
+        build_glyphs(&source, &context, &[&"name".into()]).unwrap();
+        assert_eq!(
+            HashSet::from([vec![1619, 1764]]),
+            context.get_glyph_ir(&"name".into()).accessors
+        );
     }
 }
