@@ -12,7 +12,7 @@ use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::{
     features::FeatureWork,
     glyphs::{create_glyph_merge_work, create_glyph_work},
-    orchestration::{AnyWorkId, Context as BeContext, GlyphMerge, WorkId as BeWorkIdentifier},
+    orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
     paths::Paths as BePaths,
 };
 use fontc::{
@@ -396,7 +396,7 @@ fn add_glyph_ir_jobs(
     Ok(())
 }
 
-fn add_glyph_merge_be_job(
+fn add_glyf_loca_be_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
@@ -414,7 +414,8 @@ fn add_glyph_merge_be_job(
         let write_access: AccessFn<_> = Arc::new(|id| {
             matches!(
                 id,
-                AnyWorkId::Be(BeWorkIdentifier::GlyphMerge(..))
+                AnyWorkId::Be(BeWorkIdentifier::Glyf)
+                    | AnyWorkId::Be(BeWorkIdentifier::Loca)
                     | AnyWorkId::Be(BeWorkIdentifier::Glyph(..))
             )
         });
@@ -428,7 +429,8 @@ fn add_glyph_merge_be_job(
                 read_access: ReadAccess::Custom(Arc::new(|id| {
                     matches!(
                         id,
-                        AnyWorkId::Be(BeWorkIdentifier::GlyphMerge(..))
+                        AnyWorkId::Be(BeWorkIdentifier::Glyf)
+                            | AnyWorkId::Be(BeWorkIdentifier::Loca)
                             | AnyWorkId::Be(BeWorkIdentifier::Glyph(..))
                     )
                 })),
@@ -436,8 +438,42 @@ fn add_glyph_merge_be_job(
             },
         );
     } else {
-        workload.mark_success(BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf));
-        workload.mark_success(BeWorkIdentifier::GlyphMerge(GlyphMerge::Loca));
+        workload.mark_success(BeWorkIdentifier::Glyf);
+        workload.mark_success(BeWorkIdentifier::Loca);
+    }
+    Ok(())
+}
+
+fn add_cmap_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    let glyphs_changed = change_detector.glyphs_changed();
+
+    // If no glyph has changed there isn't a lot of merging to do
+    if !glyphs_changed.is_empty() {
+        // let mut dependencies: HashSet<_> = glyphs_changed
+        //     .iter()
+        //     .map(|gn| FeWorkIdentifier::Glyph(gn.clone()).into())
+        //     .collect();
+        // dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+
+        let id: AnyWorkId = BeWorkIdentifier::Cmap.into();
+        // workload.insert(
+        //     id.clone(),
+        //     Job {
+        //         work: create_glyph_merge_work().into(),
+        //         dependencies,
+        //         // We need to read all glyphs, even unchanged ones, plus static metadata
+        //         read_access: ReadAccess::Custom(Arc::new(|id| {
+        //             matches!(id, AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)))
+        //         })),
+        //         write_access: access_one(id),
+        //     },
+        // );
+        eprintln!("TODO {id:?}");
+    } else {
+        workload.mark_success(BeWorkIdentifier::Cmap);
     }
     Ok(())
 }
@@ -457,7 +493,7 @@ fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: Gl
     let id = AnyWorkId::Be(BeWorkIdentifier::Glyph(glyph_name.clone()));
 
     // this job should already be a dependency of the glyph merge; if not terrible things will happen
-    if !workload.is_dependency(&BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf).into(), &id) {
+    if !workload.is_dependency(&BeWorkIdentifier::Glyf.into(), &id) {
         panic!("BE glyph '{glyph_name}' is being built but not participating in glyph merge",);
     }
 
@@ -581,9 +617,7 @@ impl Workload {
                     debug!("Updating graph for new glyph {glyph_name}");
 
                     self.jobs_pending
-                        .get_mut(&AnyWorkId::Be(BeWorkIdentifier::GlyphMerge(
-                            GlyphMerge::Glyf,
-                        )))
+                        .get_mut(&AnyWorkId::Be(BeWorkIdentifier::Glyf))
                         .unwrap()
                         .dependencies
                         .insert(id.clone());
@@ -593,9 +627,9 @@ impl Workload {
             }
 
             // When Glyf merges mark Loca too
-            AnyWorkId::Be(BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf)) => self.mark_success(
-                AnyWorkId::Be(BeWorkIdentifier::GlyphMerge(GlyphMerge::Loca)),
-            ),
+            AnyWorkId::Be(BeWorkIdentifier::Glyf) => {
+                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Loca))
+            }
             _ => (),
         }
     }
@@ -750,7 +784,8 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
 
     // BE: f(IR) => binary
     add_feature_be_job(change_detector, &mut workload)?;
-    add_glyph_merge_be_job(change_detector, &mut workload)?;
+    add_glyf_loca_be_job(change_detector, &mut workload)?;
+    add_cmap_be_job(change_detector, &mut workload)?;
 
     Ok(workload)
 }
@@ -812,7 +847,7 @@ mod tests {
 
     use filetime::FileTime;
     use fontbe::{
-        orchestration::{AnyWorkId, Context as BeContext, GlyphMerge, WorkId as BeWorkIdentifier},
+        orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
         paths::Paths as BePaths,
     };
     use fontc::work::AnyContext;
@@ -835,9 +870,10 @@ mod tests {
     use tempfile::{tempdir, TempDir};
 
     use crate::{
-        add_feature_be_job, add_feature_ir_job, add_finalize_static_metadata_ir_job,
-        add_glyph_ir_jobs, add_glyph_merge_be_job, add_init_static_metadata_ir_job,
-        finish_successfully, init, require_dir, Args, ChangeDetector, Config, Workload,
+        add_cmap_be_job, add_feature_be_job, add_feature_ir_job,
+        add_finalize_static_metadata_ir_job, add_glyf_loca_be_job, add_glyph_ir_jobs,
+        add_init_static_metadata_ir_job, finish_successfully, init, require_dir, Args,
+        ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -960,7 +996,8 @@ mod tests {
         add_feature_ir_job(&mut change_detector, &mut workload).unwrap();
         add_feature_be_job(&mut change_detector, &mut workload).unwrap();
 
-        add_glyph_merge_be_job(&mut change_detector, &mut workload).unwrap();
+        add_glyf_loca_be_job(&mut change_detector, &mut workload).unwrap();
+        add_cmap_be_job(&mut change_detector, &mut workload).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one
@@ -1035,8 +1072,8 @@ mod tests {
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Glyph("bar".into()).into(),
                 BeWorkIdentifier::Glyph("plus".into()).into(),
-                BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf).into(),
-                BeWorkIdentifier::GlyphMerge(GlyphMerge::Loca).into(),
+                BeWorkIdentifier::Glyf.into(),
+                BeWorkIdentifier::Loca.into(),
             ]),
             result.work_completed
         );
@@ -1076,8 +1113,8 @@ mod tests {
             HashSet::from([
                 FeWorkIdentifier::Glyph("bar".into()).into(),
                 BeWorkIdentifier::Glyph("bar".into()).into(),
-                BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf).into(),
-                BeWorkIdentifier::GlyphMerge(GlyphMerge::Loca).into(),
+                BeWorkIdentifier::Glyf.into(),
+                BeWorkIdentifier::Loca.into(),
             ]),
             result.work_completed
         );
