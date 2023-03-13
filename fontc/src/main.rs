@@ -410,7 +410,6 @@ fn add_glyph_merge_be_job(
             .collect();
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
 
-        let id: AnyWorkId = BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf).into();
         // Write the merged glyphs and write individual glyphs that are updated, such as composites with bboxes
         let write_access: AccessFn<_> = Arc::new(|id| {
             matches!(
@@ -419,6 +418,7 @@ fn add_glyph_merge_be_job(
                     | AnyWorkId::Be(BeWorkIdentifier::Glyph(..))
             )
         });
+        let id: AnyWorkId = BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf).into();
         workload.insert(
             id,
             Job {
@@ -1268,55 +1268,61 @@ mod tests {
         let period_idx = result.get_glyph_index("period");
         let non_uniform_scale_idx = result.get_glyph_index("non_uniform_scale");
         let glyphs = glyphs(&raw_glyf, &raw_loca);
-        let glyf::Glyph::Composite(glyph) = &glyphs[comma_idx as usize] else {
+        let glyf::Glyph::Composite(glyph) = &glyphs[non_uniform_scale_idx as usize] else {
             panic!("Expected a composite\n{glyphs:#?}");
         };
         let component = glyph.components().next().unwrap();
         assert_eq!(period_idx, component.glyph.to_u16() as u32);
 
         // If we all work together we're a real transform!
-        assert_eq!(glyf::Anchor::Offset { x: -233, y: -129 }, component.anchor);
+        assert_component_transform(
+            &component,
+            [0.84519, 0.58921, -1.16109, 1.66553, -233.0, -129.0],
+        );
+    }
+
+    fn assert_component_transform(component: &glyf::Component, expected_transform: [f32; 6]) {
+        let [xx, yx, xy, yy, dx, dy] = expected_transform;
+        assert_eq!(
+            glyf::Anchor::Offset {
+                x: dx as i16,
+                y: dy as i16
+            },
+            component.anchor
+        );
         assert_eq!(
             glyf::Transform {
-                xx: F2Dot14::from_f32(0.84519),
-                yx: F2Dot14::from_f32(0.58921),
-                xy: F2Dot14::from_f32(-1.16109),
-                yy: F2Dot14::from_f32(1.66553)
+                xx: F2Dot14::from_f32(xx),
+                yx: F2Dot14::from_f32(yx),
+                xy: F2Dot14::from_f32(xy),
+                yy: F2Dot14::from_f32(yy),
             },
             component.transform
         );
     }
 
     #[test]
-    fn compile_composite_glyphs_to_glyf_loca_applies_transform() {
+    fn compile_composite_glyphs_to_glyf_loca_applies_transforms() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let result = compile(test_args(build_dir, "glyphs2/Component.glyphs"));
         let (raw_glyf, raw_loca) = result.raw_glyf_loca();
 
-        let simple_transform_idx = result.get_glyph_index("simple_transform");
+        let gid = result.get_glyph_index("simple_transform_again");
         let glyphs = glyphs(&raw_glyf, &raw_loca);
-        let glyf::Glyph::Composite(glyph) = &glyphs[simple_transform_idx as usize] else {
+        let glyf::Glyph::Composite(glyph) = &glyphs[gid as usize] else {
             panic!("Expected a composite\n{glyphs:#?}");
         };
 
-        let component = glyph.components().next().unwrap();
-        assert_eq!(glyf::Anchor::Offset { x: 50, y: 50 }, component.anchor);
-        assert_eq!(
-            glyf::Transform {
-                xx: F2Dot14::from_f32(2.0),
-                yx: F2Dot14::from_f32(0.0),
-                xy: F2Dot14::from_f32(0.0),
-                yy: F2Dot14::from_f32(1.5)
-            },
-            component.transform
-        );
+        let components: Vec<_> = glyph.components().collect();
+        assert_eq!(2, components.len(), "{components:#?}");
+        assert_component_transform(&components[0], [2.0, 0.0, 0.0, 1.5, 50.0, 50.0]);
+        assert_component_transform(&components[1], [1.5, 0.0, 0.0, 2.0, 50.0, 50.0]);
 
         // Have ye bbox?
-        // Original period bbox is (250,50) to (375,100), then transform above is applied
-        // Result *should* be [550, 125, 800, 200] but F2Dot14/i16 representation changes it
+        // It should be 425, 125, 800, 250. See
         assert_eq!(
-            [549, 125, 799, 200],
+            [425, 125, 799, 249],
             [glyph.x_min(), glyph.y_min(), glyph.x_max(), glyph.y_max()]
         );
     }

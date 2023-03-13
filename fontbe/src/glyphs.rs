@@ -67,12 +67,12 @@ fn create_composite(
     context: &Context,
     glyph_name: &GlyphName,
     default_location: &NormalizedLocation,
-    components: &HashMap<(GlyphName, NormalizedLocation), Affine>,
+    components: &[(GlyphName, NormalizedLocation, Affine)],
 ) -> Result<CompositeGlyph, Error> {
     let mut errors = vec![];
     let components_at_default = components
         .iter()
-        .filter_map(|((ref_glyph_name, loc), transform)| {
+        .filter_map(|(ref_glyph_name, loc, transform)| {
             if default_location == loc {
                 Some((ref_glyph_name, transform))
             } else {
@@ -264,7 +264,7 @@ fn cubics_to_quadratics(glyph: CheckedGlyph) -> CheckedGlyph {
 enum CheckedGlyph {
     Composite {
         name: GlyphName,
-        components: HashMap<(GlyphName, NormalizedLocation), Affine>,
+        components: Vec<(GlyphName, NormalizedLocation, Affine)>,
     },
     Contour {
         name: GlyphName,
@@ -357,10 +357,11 @@ impl TryFrom<&ir::Glyph> for CheckedGlyph {
                 .sources
                 .iter()
                 .flat_map(|(location, instance)| {
+                    eprintln!("{} {:?}", glyph.name, instance.components);
                     instance
                         .components
                         .iter()
-                        .map(|c| ((c.base.clone(), location.clone()), c.transform))
+                        .map(|c| (c.base.clone(), location.clone(), c.transform))
                 })
                 .collect();
             CheckedGlyph::Composite { name, components }
@@ -526,10 +527,12 @@ impl Work<Context, Error> for GlyphMergeWork {
         let glyph_order = &static_metadata.glyph_order;
 
         // Glue together glyf and loca
+        // We generate a long offset loca here, intent is the final merge can make it small
+        // and update the head.indexToLocFormat if it wishes.
         // This isn't overly memory efficient but ... fonts aren't *that* big (yet?)
         let mut loca = vec![0];
         let mut glyf: Vec<u8> = Vec::new();
-        glyf.reserve(1024 * 1024);
+        glyf.reserve(1024 * 1024); // initial size, will grow as needed
         glyph_order
             .iter()
             .map(|gn| context.get_glyph(gn))

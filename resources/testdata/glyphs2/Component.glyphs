@@ -96,6 +96,27 @@ width = 600;
 }
 );
 unicode = 002C;
+},
+{
+glyphname = simple_transform_again;
+lastChange = "2023-01-20 20:22:39 +0000";
+layers = (
+{
+components = (
+{
+name = period;
+transform = "{2, 0, 0, 1.5, 50, 50}";
+},
+{
+name = period;
+transform = "{1.5, 0, 0, 2.0, 50, 50}";
+}
+);
+layerId = m01;
+width = 600;
+}
+);
+unicode = 002F;
 }
 );
 unitsPerEm = 1000;
