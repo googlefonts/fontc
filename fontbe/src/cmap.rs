@@ -17,10 +17,6 @@ pub fn create_cmap_work() -> Box<BeWork> {
 
 impl Work<Context, Error> for CmapWork {
     /// Generate [cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap)
-    ///
-    /// For the time being just emit emit [format 4](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap#format-4-segment-mapping-to-delta-values) so we can drive towards
-    /// compiling working fonts. In time we may wish to additionally emit format 12 to support
-    /// novel codepoints.
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // cmap only accomodates single codepoint : glyph mappings; collect all of those
         let static_metadata = context.ir.get_static_metadata();
