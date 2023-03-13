@@ -44,6 +44,10 @@ fn create_component(
 
     // No known source does point anchoring so we just our transform into a 2x2 + offset
     let [a, b, c, d, e, f] = transform.as_coeffs();
+    let flags = ComponentFlags {
+        round_xy_to_grid: true, // ufo2ft defaults to this, match it
+        ..Default::default()
+    };
     let component = Component::new(
         gid,
         Anchor::Offset {
@@ -56,7 +60,7 @@ fn create_component(
             xy: F2Dot14::from_f32(c as f32),
             yy: F2Dot14::from_f32(d as f32),
         },
-        ComponentFlags::default(),
+        flags,
     );
 
     // Bbox computation is postponed to glyph merge to ensure all glyphs are available to query
