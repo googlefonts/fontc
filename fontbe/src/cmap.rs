@@ -2,7 +2,7 @@
 
 use fontdrasil::orchestration::Work;
 use read_fonts::types::GlyphId;
-use write_fonts::{dump_table, tables::cmap::Cmap};
+use write_fonts::tables::cmap::Cmap;
 
 use crate::{
     error::Error,
@@ -40,7 +40,6 @@ impl Work<Context, Error> for CmapWork {
             });
 
         let cmap = Cmap::from_mappings(mappings);
-        let cmap = dump_table(&cmap).map_err(Error::CmapGenerationError)?;
         context.set_cmap(cmap);
         Ok(())
     }

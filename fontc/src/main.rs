@@ -15,6 +15,7 @@ use fontbe::{
     glyphs::{create_glyf_loca_work, create_glyph_work},
     orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
     paths::Paths as BePaths,
+    post::create_post_work,
 };
 use fontc::{
     work::{AnyContext, AnyWork, AnyWorkError, ReadAccess},
@@ -201,6 +202,11 @@ impl ChangeDetector {
                 .be_paths
                 .target_file(&BeWorkIdentifier::Features)
                 .is_file()
+    }
+
+    fn post_be_change(&self) -> bool {
+        self.static_metadata_ir_change()
+            || !self.be_paths.target_file(&BeWorkIdentifier::Post).is_file()
     }
 
     fn glyphs_changed(&self) -> IndexSet<GlyphName> {
@@ -474,6 +480,30 @@ fn add_cmap_be_job(
         );
     } else {
         workload.mark_success(BeWorkIdentifier::Cmap);
+    }
+    Ok(())
+}
+
+fn add_post_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.post_be_change() {
+        let mut dependencies = HashSet::new();
+        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+
+        let id: AnyWorkId = BeWorkIdentifier::Post.into();
+        workload.insert(
+            id.clone(),
+            Job {
+                work: create_post_work().into(),
+                dependencies,
+                read_access: ReadAccess::Dependencies,
+                write_access: access_one(id),
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::Post);
     }
     Ok(())
 }
@@ -786,6 +816,7 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
     add_feature_be_job(change_detector, &mut workload)?;
     add_glyf_loca_be_job(change_detector, &mut workload)?;
     add_cmap_be_job(change_detector, &mut workload)?;
+    add_post_be_job(change_detector, &mut workload)?;
 
     Ok(workload)
 }
@@ -873,8 +904,8 @@ mod tests {
     use crate::{
         add_cmap_be_job, add_feature_be_job, add_feature_ir_job,
         add_finalize_static_metadata_ir_job, add_glyf_loca_be_job, add_glyph_ir_jobs,
-        add_init_static_metadata_ir_job, finish_successfully, init, require_dir, Args,
-        ChangeDetector, Config, Workload,
+        add_init_static_metadata_ir_job, add_post_be_job, finish_successfully, init, require_dir,
+        Args, ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -999,6 +1030,7 @@ mod tests {
 
         add_glyf_loca_be_job(&mut change_detector, &mut workload).unwrap();
         add_cmap_be_job(&mut change_detector, &mut workload).unwrap();
+        add_post_be_job(&mut change_detector, &mut workload).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one
@@ -1076,6 +1108,7 @@ mod tests {
                 BeWorkIdentifier::Glyf.into(),
                 BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::Cmap.into(),
+                BeWorkIdentifier::Post.into(),
             ]),
             result.work_completed
         );
