@@ -893,8 +893,8 @@ mod tests {
 
         fn raw_glyf_loca(&self) -> (Vec<u8>, Vec<u8>) {
             (
-                read_file(&self.build_dir.join("glyf.ttf")),
-                read_file(&self.build_dir.join("loca.u32_be")),
+                read_file(&self.build_dir.join("glyf.table")),
+                read_file(&self.build_dir.join("loca.table")),
             )
         }
     }
@@ -1211,8 +1211,8 @@ mod tests {
         let build_dir = temp_dir.path();
         compile(test_args(build_dir, "static.designspace"));
 
-        let raw_glyf = read_file(&build_dir.join("glyf.ttf"));
-        let raw_loca = read_file(&build_dir.join("loca.u32_be"));
+        let raw_glyf = read_file(&build_dir.join("glyf.table"));
+        let raw_loca = read_file(&build_dir.join("loca.table"));
 
         // See resources/testdata/Static-Regular.ufo/glyphs
         // bar, 4 points, 1 contour

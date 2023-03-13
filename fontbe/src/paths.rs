@@ -45,8 +45,8 @@ impl Paths {
         match id {
             WorkId::Features => self.build_dir.join("features.ttf"),
             WorkId::Glyph(name) => self.glyph_file(name.as_str()),
-            WorkId::GlyphMerge(GlyphMerge::Glyf) => self.build_dir.join("glyf.ttf"),
-            WorkId::GlyphMerge(GlyphMerge::Loca) => self.build_dir.join("loca.u32_be"),
+            WorkId::GlyphMerge(GlyphMerge::Glyf) => self.build_dir.join("glyf.table"),
+            WorkId::GlyphMerge(GlyphMerge::Loca) => self.build_dir.join("loca.table"),
             WorkId::FinalMerge => self.build_dir.join("font.ttf"),
         }
     }
