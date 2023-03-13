@@ -1266,7 +1266,7 @@ mod tests {
 
         // non-uniform scaling of period
         let period_idx = result.get_glyph_index("period");
-        let comma_idx = result.get_glyph_index("non_uniform_scale");
+        let non_uniform_scale_idx = result.get_glyph_index("non_uniform_scale");
         let glyphs = glyphs(&raw_glyf, &raw_loca);
         let glyf::Glyph::Composite(glyph) = &glyphs[comma_idx as usize] else {
             panic!("Expected a composite\n{glyphs:#?}");
