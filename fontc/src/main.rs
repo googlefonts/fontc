@@ -420,7 +420,7 @@ fn add_glyf_loca_be_job(
                     | AnyWorkId::Be(BeWorkIdentifier::Glyph(..))
             )
         });
-        let id: AnyWorkId = BeWorkIdentifier::GlyphMerge(GlyphMerge::Glyf).into();
+        let id: AnyWorkId = BeWorkIdentifier::Glyf.into();
         workload.insert(
             id,
             Job {
@@ -1402,7 +1402,13 @@ mod tests {
             })
             .collect();
         assert_eq!(
-            vec![(0x002E, 0), (0x002C, 1), (0x0030, 2), (0x031, 3)],
+            vec![
+                (0x002E, 0),
+                (0x002C, 1),
+                (0x0030, 2),
+                (0x031, 3),
+                (0x032, 4)
+            ],
             cp_and_gid,
             "start {:?}\nend {:?}id_delta {:?}",
             cmap4.start_code(),
