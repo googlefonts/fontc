@@ -462,7 +462,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             self.designspace_file.parent().unwrap(),
             &self.glyph_names,
         )?;
-        context.set_static_metadata(
+        context.set_init_static_metadata(
             StaticMetadata::new(axes, glyph_order, glyph_locations)
                 .map_err(WorkError::VariationModelError)?,
         );
@@ -508,7 +508,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
             self.glyph_name,
             self.glif_files
         );
-        let static_metadata = context.get_static_metadata();
+        let static_metadata = context.get_init_static_metadata();
 
         // Migrate glif_files into internal coordinates
         let axes_by_name = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();

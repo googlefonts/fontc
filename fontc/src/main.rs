@@ -179,7 +179,7 @@ fn finish_successfully(context: ChangeDetector) -> Result<(), Error> {
 }
 
 impl ChangeDetector {
-    fn static_metadata_ir_change(&self) -> bool {
+    fn init_static_metadata_ir_change(&self) -> bool {
         self.current_inputs.static_metadata != self.prev_inputs.static_metadata
             || !self
                 .ir_paths
@@ -187,8 +187,16 @@ impl ChangeDetector {
                 .is_file()
     }
 
+    fn final_static_metadata_ir_change(&self) -> bool {
+        self.current_inputs.static_metadata != self.prev_inputs.static_metadata
+            || !self
+                .ir_paths
+                .target_file(&FeWorkIdentifier::FinalizeStaticMetadata)
+                .is_file()
+    }
+
     fn feature_ir_change(&self) -> bool {
-        self.static_metadata_ir_change()
+        self.final_static_metadata_ir_change()
             || self.current_inputs.features != self.prev_inputs.features
             || !self
                 .ir_paths
@@ -205,14 +213,14 @@ impl ChangeDetector {
     }
 
     fn post_be_change(&self) -> bool {
-        self.static_metadata_ir_change()
+        self.final_static_metadata_ir_change()
             || !self.be_paths.target_file(&BeWorkIdentifier::Post).is_file()
     }
 
     fn glyphs_changed(&self) -> IndexSet<GlyphName> {
         let glyph_iter = self.current_inputs.glyphs.iter();
 
-        if self.static_metadata_ir_change() {
+        if self.init_static_metadata_ir_change() {
             return glyph_iter.map(|(name, _)| name).cloned().collect();
         }
         glyph_iter
@@ -248,7 +256,7 @@ fn add_init_static_metadata_ir_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
-    if change_detector.static_metadata_ir_change() {
+    if change_detector.init_static_metadata_ir_change() {
         let id: AnyWorkId = FeWorkIdentifier::InitStaticMetadata.into();
         let write_access = access_one(id.clone());
         workload.insert(
@@ -273,7 +281,7 @@ fn add_finalize_static_metadata_ir_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
-    if change_detector.static_metadata_ir_change() {
+    if change_detector.final_static_metadata_ir_change() {
         let mut dependencies: HashSet<_> = change_detector
             .glyphs_changed()
             .iter()
@@ -629,6 +637,7 @@ impl Workload {
 
 impl Workload {
     fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId) {
+        trace!("{success:?} successful");
         match success {
             // When a glyph finishes IR, register BE work for it
             AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) => {
@@ -638,7 +647,7 @@ impl Workload {
             // When static metadata finalizes, add BE work for any new glyphs
             // If anything progresses before we've done this we have a graph bug
             AnyWorkId::Fe(FeWorkIdentifier::FinalizeStaticMetadata) => {
-                for glyph_name in fe_root.get_static_metadata().glyph_order.iter() {
+                for glyph_name in fe_root.get_final_static_metadata().glyph_order.iter() {
                     let id = AnyWorkId::Be(BeWorkIdentifier::Glyph(glyph_name.clone()));
                     if self.jobs_pending.contains_key(&id) {
                         continue;
@@ -900,6 +909,7 @@ mod tests {
         FontData, FontRead, FontReadWithArgs,
     };
     use tempfile::{tempdir, TempDir};
+    use write_fonts::dump_table;
 
     use crate::{
         add_cmap_be_job, add_feature_be_job, add_feature_ir_job,
@@ -954,7 +964,7 @@ mod tests {
 
         fn get_glyph_index(&self, name: &str) -> u32 {
             self.fe_context
-                .get_static_metadata()
+                .get_final_static_metadata()
                 .glyph_id(&name.into())
                 .unwrap()
         }
@@ -1406,7 +1416,7 @@ mod tests {
         let build_dir = temp_dir.path();
         let result = compile(test_args(build_dir, "glyphs2/Component.glyphs"));
 
-        let raw_cmap = result.be_context.get_cmap();
+        let raw_cmap = dump_table(&*result.be_context.get_cmap()).unwrap();
         let font_data = FontData::new(&raw_cmap);
         let cmap = Cmap::read(font_data).unwrap();
 

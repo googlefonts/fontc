@@ -119,7 +119,7 @@ impl Work<Context, Error> for FeatureWork {
             context.set_features(FontBuilder::default());
             return Ok(());
         }
-        let glyph_order = &context.ir.get_static_metadata().glyph_order;
+        let glyph_order = &context.ir.get_final_static_metadata().glyph_order;
         if glyph_order.is_empty() {
             warn!("Glyph order is empty; feature compile improbable");
         }
