@@ -1,8 +1,3 @@
-# TODO remove once https://github.com/googlefonts/fontations/pull/275 in a release
-[patch.crates-io]
-read-fonts = { git="https://github.com/googlefonts/fontations.git", branch="cmap2" }
-write-fonts = { git="https://github.com/googlefonts/fontations.git", branch="cmap2"  }
-
 [workspace]
 
 members = [
