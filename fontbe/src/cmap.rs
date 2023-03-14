@@ -28,17 +28,13 @@ impl Work<Context, Error> for CmapWork {
             .enumerate()
             .flat_map(|(gid, glyph)| {
                 glyph
-                    .accessors
+                    .codepoints
                     .iter()
-                    .filter_map(|codepoints| {
-                        if codepoints.len() == 1 {
-                            Some((
-                                char::from_u32(*codepoints.first().unwrap()).unwrap(),
-                                GlyphId::new(gid as u16),
-                            ))
-                        } else {
-                            None
-                        }
+                    .map(|codepoint| {
+                        (
+                            char::from_u32(*codepoint).expect("We have an invalid codepoint!"),
+                            GlyphId::new(gid as u16),
+                        )
                     })
                     .collect::<Vec<_>>()
             });

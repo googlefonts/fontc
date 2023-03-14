@@ -140,11 +140,9 @@ pub fn to_ir_glyph(
                 glyph_name: glyph.name.clone(),
                 message: format!("glif load failed due to {e}"),
             })?;
-        if !norad_glyph.codepoints.is_empty() {
-            glyph
-                .accessors
-                .insert(norad_glyph.codepoints.iter().map(|c| c as u32).collect());
-        }
+        norad_glyph.codepoints.iter().for_each(|cp| {
+            glyph.codepoints.insert(cp as u32);
+        });
         for location in locations {
             glyph.try_add_source(location, to_ir_glyph_instance(&norad_glyph)?)?;
         }
@@ -220,6 +218,6 @@ mod tests {
             )]),
         )
         .unwrap();
-        assert_eq!(HashSet::from([vec![0x007C]]), glyph.accessors)
+        assert_eq!(HashSet::from([0x007C]), glyph.codepoints);
     }
 }

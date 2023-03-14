@@ -1390,12 +1390,12 @@ mod tests {
             .zip(cmap4.end_code())
             .zip(cmap4.id_delta())
             .filter_map(|((start, end), id_delta)| {
-                let start = start.into_inner();
-                let end = end.into_inner();
+                let start = start.get();
+                let end = end.get();
                 if (start, end) == (0xFFFF, 0xFFFF) {
                     return None;
                 }
-                Some((start, end, id_delta.into_inner()))
+                Some((start, end, id_delta.get()))
             })
             .flat_map(|(start, end, id_delta)| {
                 (start..=end).map(move |cp| (cp, (cp as i32 + id_delta as i32).try_into().unwrap()))

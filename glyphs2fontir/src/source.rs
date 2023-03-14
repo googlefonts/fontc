@@ -75,7 +75,6 @@ impl GlyphsIrSource {
             default_master_idx: font.default_master_idx,
             glyphs: Default::default(),
             glyph_order: Default::default(),
-            codepoints_to_glyph: Default::default(),
             glyph_to_codepoints: Default::default(),
             axis_mappings: font.axis_mappings.clone(),
             features: Default::default(),
@@ -257,9 +256,9 @@ impl Work<Context, WorkError> for GlyphIrWork {
 
         let mut ir_glyph = ir::Glyph::new(self.glyph_name.clone());
 
-        if let Some(accessors) = font.glyph_to_codepoints.get(self.glyph_name.as_str()) {
-            accessors.iter().for_each(|accessor| {
-                ir_glyph.accessors.insert(accessor.clone());
+        if let Some(codepoints) = font.glyph_to_codepoints.get(self.glyph_name.as_str()) {
+            codepoints.iter().for_each(|cp| {
+                ir_glyph.codepoints.insert(*cp);
             });
         }
 
@@ -650,10 +649,8 @@ mod tests {
     fn captures_single_codepoints() {
         let (source, context) = build_static_metadata(glyphs2_dir().join("WghtVar.glyphs"));
         build_glyphs(&source, &context, &[&"hyphen".into()]).unwrap();
-        assert_eq!(
-            HashSet::from([vec![0x002d]]),
-            context.get_glyph_ir(&"hyphen".into()).accessors
-        );
+        let glyph = context.get_glyph_ir(&"hyphen".into());
+        assert_eq!(HashSet::from([0x002d]), glyph.codepoints);
     }
 
     #[test]
@@ -661,9 +658,7 @@ mod tests {
         let (source, context) =
             build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
         build_glyphs(&source, &context, &[&"name".into()]).unwrap();
-        assert_eq!(
-            HashSet::from([vec![1619, 1764]]),
-            context.get_glyph_ir(&"name".into()).accessors
-        );
+        let glyph = context.get_glyph_ir(&"name".into());
+        assert_eq!(HashSet::from([1619, 1764]), glyph.codepoints);
     }
 }

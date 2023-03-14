@@ -87,7 +87,7 @@ pub struct GlyphInstanceSerdeRepr {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GlyphSerdeRepr {
     pub name: String,
-    pub accessors: HashSet<Vec<u32>>,
+    pub codepoints: HashSet<u32>,
     pub instances: Vec<GlyphInstanceSerdeRepr>,
 }
 
@@ -95,7 +95,7 @@ impl From<GlyphSerdeRepr> for Glyph {
     fn from(from: GlyphSerdeRepr) -> Self {
         Glyph {
             name: from.name.into(),
-            accessors: from.accessors,
+            codepoints: from.codepoints,
             sources: from
                 .instances
                 .into_iter()
@@ -109,7 +109,7 @@ impl From<Glyph> for GlyphSerdeRepr {
     fn from(from: Glyph) -> Self {
         GlyphSerdeRepr {
             name: from.name.as_str().to_string(),
-            accessors: from.accessors,
+            codepoints: from.codepoints,
             instances: from
                 .sources
                 .into_iter()
