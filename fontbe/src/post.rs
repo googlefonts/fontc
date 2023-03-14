@@ -19,7 +19,10 @@ impl Work<Context, Error> for PostWork {
     /// Generate [post](https://learn.microsoft.com/en-us/typography/opentype/spec/post)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // TODO a more serious post
-        let post = Post { version: Version16Dot16::VERSION_3_0, ..Default::default() };
+        let post = Post {
+            version: Version16Dot16::VERSION_3_0,
+            ..Default::default()
+        };
         context.set_post(post);
         Ok(())
     }
