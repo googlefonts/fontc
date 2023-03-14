@@ -7,9 +7,8 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    get_from_context,
+    context_accessors,
     orchestration::{Context as FeContext, Flags, WorkId as FeWorkIdentifier},
-    set_from_context,
 };
 use parking_lot::RwLock;
 use read_fonts::{FontData, FontRead};
@@ -188,6 +187,14 @@ fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
     *wl = Some(Arc::from(value));
 }
 
+fn from_file<T>(file: &Path) -> T
+where
+    for<'a> T: FontRead<'a>,
+{
+    let buf = read_entire_file(file);
+    T::read(FontData::new(&buf)).unwrap()
+}
+
 fn to_bytes<T>(table: &T) -> Vec<u8>
 where
     T: FontWrite + Validate,
@@ -199,14 +206,6 @@ fn read_entire_file(file: &Path) -> Vec<u8> {
     fs::read(file)
         .map_err(|e| panic!("Unable to read {file:?} {e}"))
         .unwrap()
-}
-
-fn read_cmap(file: &Path) -> Cmap {
-    Cmap::read(FontData::new(&read_entire_file(file))).unwrap()
-}
-
-fn read_post(file: &Path) -> Post {
-    Post::read(FontData::new(&read_entire_file(file))).unwrap()
 }
 
 impl Context {
@@ -321,9 +320,6 @@ impl Context {
         set_cached(&self.glyf_loca, (glyf, loca));
     }
 
-    get_from_context! { get_cmap, cmap, Cmap, WorkId::Cmap, read_cmap }
-    set_from_context! { set_cmap, cmap, Cmap, WorkId::Cmap, to_bytes }
-
-    get_from_context! { get_post, post, Post, WorkId::Post, read_post }
-    set_from_context! { set_post, post, Post, WorkId::Post, to_bytes }
+    context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
+    context_accessors! { get_post, set_post, post, Post, WorkId::Post, from_file, to_bytes }
 }

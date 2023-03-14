@@ -37,8 +37,8 @@ bitflags! {
 ///
 /// <https://veykril.github.io/tlborm/decl-macros/minutiae/fragment-specifiers.html>
 #[macro_export]
-macro_rules! get_from_context {
-    ($getter_name:ident, $lock_name:ident, $value_type:ty, $id:expr, $restore_fn:ident) => {
+macro_rules! context_accessors {
+    ($getter_name:ident, $setter_name:ident, $lock_name:ident, $value_type:ty, $id:expr, $restore_fn:ident, $prepersist_fn:ident) => {
         pub fn $getter_name(&self) -> Arc<$value_type> {
             let id = $id;
             self.acl.assert_read_access(&id.clone().into());
@@ -52,23 +52,12 @@ macro_rules! get_from_context {
             let rl = self.$lock_name.read();
             rl.as_ref().expect(MISSING_DATA).clone()
         }
-    };
-}
 
-/// Generates fn $setter_name(&self, $value_type)
-///
-/// Assumes we are in an impl block for a Context and that
-/// self.$lock_name is an Arc<RwLock<Option<Arc<$value_type>>>>
-///
-/// <https://veykril.github.io/tlborm/decl-macros/minutiae/fragment-specifiers.html>
-#[macro_export]
-macro_rules! set_from_context {
-    ($setter_name:ident, $lock_name:ident, $value_type:ty, $id:expr, $to_bytes:ident) => {
         pub fn $setter_name(&self, value: $value_type) {
             let id = $id;
             self.acl.assert_write_access(&id.clone().into());
             if self.flags.contains(Flags::EMIT_IR) {
-                let buf = $to_bytes(&value);
+                let buf = $prepersist_fn(&value);
                 self.persist(&self.paths.target_file(&id), &buf);
             }
             set_cached(&self.$lock_name, value);
@@ -237,12 +226,7 @@ impl Context {
         self.set_cached_glyph(ir);
     }
 
-    get_from_context! { get_init_static_metadata, init_static_metadata, ir::StaticMetadata, WorkId::InitStaticMetadata, restore }
-    set_from_context! { set_init_static_metadata, init_static_metadata, ir::StaticMetadata, WorkId::InitStaticMetadata, nop }
-
-    get_from_context! { get_final_static_metadata, final_static_metadata, ir::StaticMetadata, WorkId::FinalizeStaticMetadata, restore }
-    set_from_context! { set_final_static_metadata, final_static_metadata, ir::StaticMetadata, WorkId::FinalizeStaticMetadata, nop }
-
-    get_from_context! { get_features, feature_ir, ir::Features, WorkId::Features, restore }
-    set_from_context! { set_features, feature_ir, ir::Features, WorkId::Features, nop }
+    context_accessors! { get_init_static_metadata, set_init_static_metadata, init_static_metadata, ir::StaticMetadata, WorkId::InitStaticMetadata, restore, nop }
+    context_accessors! { get_final_static_metadata, set_final_static_metadata, final_static_metadata, ir::StaticMetadata, WorkId::FinalizeStaticMetadata, restore, nop }
+    context_accessors! { get_features, set_features, feature_ir, ir::Features, WorkId::Features, restore, nop }
 }
