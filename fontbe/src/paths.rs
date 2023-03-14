@@ -48,6 +48,7 @@ impl Paths {
             WorkId::Glyf => self.build_dir.join("glyf.table"),
             WorkId::Loca => self.build_dir.join("loca.table"),
             WorkId::Cmap => self.build_dir.join("cmap.table"),
+            WorkId::Hmtx => self.build_dir.join("hmtx.table"),
             WorkId::Post => self.build_dir.join("post.table"),
             WorkId::FinalMerge => self.build_dir.join("font.ttf"),
         }

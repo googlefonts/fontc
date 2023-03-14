@@ -32,13 +32,11 @@ pub enum Error {
         glyph: GlyphName,
         errors: Vec<Error>,
     },
-    #[error("Generating bytes for cmap failed")]
+    #[error("Generating bytes for table failed")]
     DumpTableError {
         report: ValidationReport,
         context: String,
     },
-    #[error("Generating bytes for post failed")]
-    PostGenerationError(ValidationReport),
 }
 
 #[derive(Debug)]

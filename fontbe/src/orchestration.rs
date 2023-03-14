@@ -14,13 +14,17 @@ use parking_lot::RwLock;
 use read_fonts::{FontData, FontRead};
 use write_fonts::{
     dump_table,
-    tables::{cmap::Cmap, glyf::SimpleGlyph, post::Post},
+    tables::{
+        cmap::Cmap,
+        glyf::{Bbox, SimpleGlyph},
+        post::Post,
+    },
     validate::Validate,
     FontBuilder, FontWrite,
 };
 use write_fonts::{from_obj::FromTableRef, tables::glyf::CompositeGlyph};
 
-use crate::{error::Error, paths::Paths};
+use crate::{error::Error, hmtx::RawHmtx, paths::Paths};
 
 /// What exactly is being assembled from glyphs?
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -38,9 +42,10 @@ pub enum GlyphMerge {
 pub enum WorkId {
     Features,
     Glyph(GlyphName),
-    Glyf,
-    Loca,
     Cmap,
+    Glyf,
+    Hmtx,
+    Loca,
     Post,
     FinalMerge,
 }
@@ -108,6 +113,13 @@ impl Glyph {
         }
         .unwrap()
     }
+
+    pub fn bbox(&self) -> Bbox {
+        match self {
+            Glyph::Simple(table) => table.bbox,
+            Glyph::Composite(table) => table.bbox,
+        }
+    }
 }
 
 pub type BeWork = dyn Work<Context, Error> + Send;
@@ -138,6 +150,7 @@ pub struct Context {
     glyf_loca: ContextItem<GlyfLoca>,
     cmap: ContextItem<Cmap>,
     post: ContextItem<Post>,
+    hmtx: ContextItem<RawHmtx>,
 }
 
 impl Context {
@@ -152,6 +165,7 @@ impl Context {
             glyf_loca: self.glyf_loca.clone(),
             cmap: self.cmap.clone(),
             post: self.post.clone(),
+            hmtx: self.hmtx.clone(),
         }
     }
 
@@ -166,6 +180,7 @@ impl Context {
             glyf_loca: Arc::from(RwLock::new(None)),
             cmap: Arc::from(RwLock::new(None)),
             post: Arc::from(RwLock::new(None)),
+            hmtx: Arc::from(RwLock::new(None)),
         }
     }
 
@@ -322,4 +337,5 @@ impl Context {
 
     context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
     context_accessors! { get_post, set_post, post, Post, WorkId::Post, from_file, to_bytes }
+    context_accessors! { get_hmtx, set_hmtx, hmtx, RawHmtx, WorkId::Hmtx, from_file, hmtx_to_bytes }
 }

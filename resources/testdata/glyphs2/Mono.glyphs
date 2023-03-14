@@ -1,0 +1,74 @@
+{
+familyName = "New Font";
+fontMaster = (
+    {
+        id = m01;
+    }
+);
+glyphs = (
+{
+    glyphname = First;
+    layers = (
+        {
+            layerId = m01;
+            paths = (
+                {
+                    closed = 1;
+                    nodes = (
+                        "175 50 LINE",
+                        "375 50 LINE",
+                        "375 100 LINE",
+                        "250 100 LINE"
+                    );
+                }
+            );
+            width = 425;
+        }
+    );
+    unicode = 0050;
+},
+{
+    glyphname = Second;
+    layers = (
+        {
+            layerId = m01;
+            paths = (
+                {
+                    closed = 1;
+                    nodes = (
+                        "200 50 LINE",
+                        "375 50 LINE",
+                        "375 100 LINE",
+                        "250 100 LINE"
+                    );
+                }
+            );
+            width = 425;
+        }
+    );
+    unicode = 0051;
+},
+{
+    glyphname = Third;
+    layers = (
+        {
+            layerId = m01;
+            paths = (
+                {
+                    closed = 1;
+                    nodes = (
+                        "225 50 LINE",
+                        "375 50 LINE",
+                        "375 100 LINE",
+                        "250 100 LINE"
+                    );
+                }
+            );
+            width = 425;
+        }
+    );
+    unicode = 0052;
+}
+);
+unitsPerEm = 1000;
+}

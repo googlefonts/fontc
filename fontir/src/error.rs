@@ -63,6 +63,8 @@ pub enum WorkError {
     NoAxisDefinitions,
     #[error("Axis definitions are inconsistent")]
     InconsistentAxisDefinitions(String),
+    #[error("'{0}' has no position on {1}")]
+    NoAxisPosition(GlyphName, String),
     #[error("I am the glyph with gid, {0}")]
     NoGlyphIdForName(String),
     #[error("No Glyph for name {0:?}")]
