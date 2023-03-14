@@ -219,6 +219,10 @@ impl Context {
         if !self.flags.contains(Flags::EMIT_IR) {
             return;
         }
+        self.persist(file, content);
+    }
+
+    fn persist(&self, file: &Path, content: &[u8]) {
         fs::write(file, content)
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();

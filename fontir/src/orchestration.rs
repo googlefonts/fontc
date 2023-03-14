@@ -67,8 +67,10 @@ macro_rules! set_from_context {
         pub fn $setter_name(&self, value: $value_type) {
             let id = $id;
             self.acl.assert_write_access(&id.clone().into());
-            let buf = $to_bytes(&value);
-            self.maybe_persist(&self.paths.target_file(&id), &buf);
+            if self.flags.contains(Flags::EMIT_IR) {
+                let buf = $to_bytes(&value);
+                self.persist(&self.paths.target_file(&id), &buf);
+            }
             set_cached(&self.$lock_name, value);
         }
     };
@@ -193,6 +195,13 @@ impl Context {
         if !self.flags.contains(Flags::EMIT_IR) {
             return;
         }
+        self.persist(file, content);
+    }
+
+    fn persist<V>(&self, file: &Path, content: &V)
+    where
+        V: ?Sized + Serialize + Debug,
+    {
         let raw_file = File::create(file)
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
