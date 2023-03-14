@@ -8,7 +8,7 @@ use fontdrasil::{
 };
 use fontir::{
     context_accessors,
-    orchestration::{Context as FeContext, Flags, WorkId as FeWorkIdentifier},
+    orchestration::{Context as FeContext, ContextItem, Flags, WorkId as FeWorkIdentifier},
 };
 use parking_lot::RwLock;
 use read_fonts::{FontData, FontRead};
@@ -135,9 +135,9 @@ pub struct Context {
     // TODO: variations
     glyphs: Arc<RwLock<HashMap<GlyphName, Arc<Glyph>>>>,
 
-    glyf_loca: Arc<RwLock<Option<Arc<GlyfLoca>>>>,
-    cmap: Arc<RwLock<Option<Arc<Cmap>>>>,
-    post: Arc<RwLock<Option<Arc<Post>>>>,
+    glyf_loca: ContextItem<GlyfLoca>,
+    cmap: ContextItem<Cmap>,
+    post: ContextItem<Post>,
 }
 
 impl Context {

@@ -30,10 +30,12 @@ bitflags! {
     }
 }
 
+pub type ContextItem<T> = Arc<RwLock<Option<Arc<T>>>>;
+
 /// Generates fn $getter_name(&self) -> Arc<$value_type>.
 ///
 /// Assumes we are in an impl block for a Context and that
-/// self.$lock_name is an Arc<RwLock<Option<Arc<$ir_type>>>>
+/// self.$lock_name is a ContextItem<$ir_type>
 ///
 /// <https://veykril.github.io/tlborm/decl-macros/minutiae/fragment-specifiers.html>
 #[macro_export]
@@ -107,10 +109,10 @@ pub struct Context {
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
-    init_static_metadata: Arc<RwLock<Option<Arc<ir::StaticMetadata>>>>,
-    final_static_metadata: Arc<RwLock<Option<Arc<ir::StaticMetadata>>>>,
+    init_static_metadata: ContextItem<ir::StaticMetadata>,
+    final_static_metadata: ContextItem<ir::StaticMetadata>,
     glyph_ir: Arc<RwLock<HashMap<GlyphName, Arc<ir::Glyph>>>>,
-    feature_ir: Arc<RwLock<Option<Arc<ir::Features>>>>,
+    feature_ir: ContextItem<ir::Features>,
 }
 
 pub fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
