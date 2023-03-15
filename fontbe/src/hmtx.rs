@@ -3,7 +3,8 @@
 use fontdrasil::orchestration::Work;
 use write_fonts::{
     dump_table,
-    tables::{hmtx::Hmtx, vmtx::LongMetric}, OtRound,
+    tables::{hmtx::Hmtx, vmtx::LongMetric},
+    OtRound,
 };
 
 use crate::{
