@@ -702,7 +702,7 @@ impl Workload {
                     debug!("Updating graph for new glyph {glyph_name}");
 
                     // It would be lovely if our new glyph was in glyf and hmtx
-                    // loca hides with hmtx
+                    // loca hides with glyf
                     for merge_id in [BeWorkIdentifier::Glyf, BeWorkIdentifier::Hmtx] {
                         self.jobs_pending
                             .get_mut(&AnyWorkId::Be(merge_id))

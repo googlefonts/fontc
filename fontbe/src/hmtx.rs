@@ -33,7 +33,7 @@ impl Work<Context, Error> for HmtxWork {
                 let bbox = context.get_glyph(gn).bbox();
                 let ir_glyph = context.ir.get_glyph_ir(gn);
                 let Some(ir_instance) = ir_glyph.sources.get(default_location) else {
-                    panic!("{gn} is not defined at the default location. Unnecessary limitation if it covers the default.");
+                    panic!("{gn} is not defined at the default location.");
                 };
                 let advance: u16 = ir_instance.width as u16;
 
