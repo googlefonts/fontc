@@ -210,6 +210,15 @@ where
     T::read(FontData::new(&buf)).unwrap()
 }
 
+fn raw_hmtx_from_file(file: &Path) -> RawHmtx {
+    let buf = read_entire_file(file);
+    RawHmtx { buf }
+}
+
+fn raw_hmtx_to_bytes(table: &RawHmtx) -> Vec<u8> {
+    table.buf.clone()
+}
+
 fn to_bytes<T>(table: &T) -> Vec<u8>
 where
     T: FontWrite + Validate,
@@ -337,5 +346,5 @@ impl Context {
 
     context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
     context_accessors! { get_post, set_post, post, Post, WorkId::Post, from_file, to_bytes }
-    context_accessors! { get_hmtx, set_hmtx, hmtx, RawHmtx, WorkId::Hmtx, from_file, hmtx_to_bytes }
+    context_accessors! { get_hmtx, set_hmtx, hmtx, RawHmtx, WorkId::Hmtx, raw_hmtx_from_file, raw_hmtx_to_bytes }
 }

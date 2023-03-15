@@ -1519,7 +1519,7 @@ mod tests {
     fn hmtx_of_one() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let result = compile(test_args(build_dir, "glyphs2/OneGlyph.glyphs"));
+        let result = compile(test_args(build_dir, "glyphs2/NotDef.glyphs"));
 
         let raw_hmtx = result.be_context.get_hmtx();
         let hmtx = Hmtx::read_with_args(FontData::new(&raw_hmtx.buf), &(1, 1)).unwrap();

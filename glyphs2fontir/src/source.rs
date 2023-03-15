@@ -668,6 +668,6 @@ mod tests {
     // It's so minimal it's a good test
     #[test]
     fn loads_hmtx_one_glyph() {
-        build_static_metadata(glyphs2_dir().join("OneGlyph.glyphs"));
+        build_static_metadata(glyphs2_dir().join("NotDef.glyphs"));
     }
 }

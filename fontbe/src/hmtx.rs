@@ -28,7 +28,9 @@ impl Work<Context, Error> for HmtxWork {
         let var_model = &static_metadata.variation_model;
         let default_location = var_model.default_location();
 
-        let mut long_metrics: Vec<LongMetric> = static_metadata.glyph_order.iter()
+        let mut long_metrics: Vec<LongMetric> = static_metadata
+            .glyph_order
+            .iter()
             .map(|gn| {
                 let bbox = context.get_glyph(gn).bbox();
                 let ir_glyph = context.ir.get_glyph_ir(gn);
@@ -39,9 +41,10 @@ impl Work<Context, Error> for HmtxWork {
 
                 LongMetric {
                     advance,
-                    side_bearing: bbox.x_min
+                    side_bearing: bbox.x_min,
                 }
-            }).collect();
+            })
+            .collect();
 
         // If there's a run at the end with matching advances we can save some bytes
         let num_lsb_only = if !long_metrics.is_empty() {
