@@ -9,7 +9,11 @@ use fontdrasil::{
 use fontir::orchestration::{Context as FeContext, Flags, WorkId as FeWorkIdentifier};
 use parking_lot::RwLock;
 use read_fonts::{FontData, FontRead};
-use write_fonts::{dump_table, tables::glyf::SimpleGlyph, FontBuilder};
+use write_fonts::{
+    dump_table,
+    tables::{cmap::Cmap, glyf::SimpleGlyph, post::Post},
+    FontBuilder,
+};
 use write_fonts::{from_obj::FromTableRef, tables::glyf::CompositeGlyph};
 
 use crate::{error::Error, paths::Paths};
@@ -33,6 +37,7 @@ pub enum WorkId {
     Glyf,
     Loca,
     Cmap,
+    Post,
     FinalMerge,
 }
 
@@ -128,6 +133,7 @@ pub struct Context {
 
     glyf_loca: Arc<RwLock<Option<Arc<GlyfLoca>>>>,
     cmap: Arc<RwLock<Option<Arc<Vec<u8>>>>>,
+    post: Arc<RwLock<Option<Arc<Vec<u8>>>>>,
 }
 
 impl Context {
@@ -141,6 +147,7 @@ impl Context {
             glyphs: self.glyphs.clone(),
             glyf_loca: self.glyf_loca.clone(),
             cmap: self.cmap.clone(),
+            post: self.post.clone(),
         }
     }
 
@@ -154,6 +161,7 @@ impl Context {
             glyphs: Arc::from(RwLock::new(HashMap::new())),
             glyf_loca: Arc::from(RwLock::new(None)),
             cmap: Arc::from(RwLock::new(None)),
+            post: Arc::from(RwLock::new(None)),
         }
     }
 
@@ -168,6 +176,11 @@ impl Context {
     pub fn copy_read_only(&self) -> Context {
         self.copy(AccessControlList::read_only())
     }
+}
+
+fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
+    let mut wl = lock.write();
+    *wl = Some(Arc::from(value));
 }
 
 impl Context {
@@ -191,11 +204,6 @@ impl Context {
             .unwrap()
     }
 
-    fn set_cached_features(&self, font: Vec<u8>) {
-        let mut wl = self.features.write();
-        *wl = Some(Arc::from(font));
-    }
-
     pub fn get_features(&self) -> Arc<Vec<u8>> {
         let id = WorkId::Features;
         self.acl.assert_read_access(&id.clone().into());
@@ -206,7 +214,7 @@ impl Context {
             }
         }
         let font = self.restore(&self.paths.target_file(&id));
-        self.set_cached_features(font);
+        set_cached(&self.features, font);
         let rl = self.features.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
@@ -216,7 +224,7 @@ impl Context {
         self.acl.assert_write_access(&id.clone().into());
         let font = font.build();
         self.maybe_persist(&self.paths.target_file(&id), &font);
-        self.set_cached_features(font);
+        set_cached(&self.features, font);
     }
 
     fn set_cached_glyph(&self, glyph_name: GlyphName, glyph: Glyph) {
@@ -251,11 +259,6 @@ impl Context {
         self.set_cached_glyph(glyph_name, glyph);
     }
 
-    fn set_cached_glyf_loca(&self, glyf_loca: GlyfLoca) {
-        let mut wl = self.glyf_loca.write();
-        *wl = Some(Arc::from(glyf_loca));
-    }
-
     pub fn get_glyf_loca(&self) -> Arc<GlyfLoca> {
         let ids = [WorkId::Glyf.into(), WorkId::Loca.into()];
         self.acl.assert_read_access_to_all(&ids);
@@ -273,7 +276,7 @@ impl Context {
             .collect();
         let glyf = self.restore(&self.paths.target_file(&WorkId::Glyf));
 
-        self.set_cached_glyf_loca((glyf, loca));
+        set_cached(&self.glyf_loca, (glyf, loca));
         let rl = self.glyf_loca.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
@@ -292,12 +295,7 @@ impl Context {
                 .collect::<Vec<u8>>(),
         );
 
-        self.set_cached_glyf_loca((glyf, loca));
-    }
-
-    fn set_cached_cmap(&self, cmap: Vec<u8>) {
-        let mut wl = self.cmap.write();
-        *wl = Some(Arc::from(cmap));
+        set_cached(&self.glyf_loca, (glyf, loca));
     }
 
     pub fn get_cmap(&self) -> Arc<Vec<u8>> {
@@ -309,16 +307,40 @@ impl Context {
                 return rl.as_ref().unwrap().clone();
             }
         }
-        let font = self.restore(&self.paths.target_file(&id));
-        self.set_cached_features(font);
+        let cmap = self.restore(&self.paths.target_file(&id));
+        set_cached(&self.cmap, cmap);
         let rl = self.cmap.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
-    pub fn set_cmap(&self, cmap: Vec<u8>) {
+    pub fn set_cmap(&self, cmap: Cmap) {
         let id = WorkId::Cmap;
         self.acl.assert_write_access(&id.clone().into());
+        let cmap = dump_table(&cmap).unwrap();
         self.maybe_persist(&self.paths.target_file(&id), &cmap);
-        self.set_cached_cmap(cmap);
+        set_cached(&self.cmap, cmap);
+    }
+
+    pub fn get_post(&self) -> Arc<Vec<u8>> {
+        let id = WorkId::Post;
+        self.acl.assert_read_access(&id.clone().into());
+        {
+            let rl = self.post.read();
+            if rl.is_some() {
+                return rl.as_ref().unwrap().clone();
+            }
+        }
+        let post = self.restore(&self.paths.target_file(&id));
+        set_cached(&self.post, post);
+        let rl = self.post.read();
+        rl.as_ref().expect(MISSING_DATA).clone()
+    }
+
+    pub fn set_post(&self, post: Post) {
+        let id = WorkId::Post;
+        self.acl.assert_write_access(&id.clone().into());
+        let post = dump_table(&post).unwrap();
+        self.maybe_persist(&self.paths.target_file(&id), &post);
+        set_cached(&self.post, post);
     }
 }

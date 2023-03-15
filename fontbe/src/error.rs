@@ -33,7 +33,12 @@ pub enum Error {
         errors: Vec<Error>,
     },
     #[error("Generating bytes for cmap failed")]
-    CmapGenerationError(ValidationReport),
+    DumpTableError {
+        report: ValidationReport,
+        context: String,
+    },
+    #[error("Generating bytes for post failed")]
+    PostGenerationError(ValidationReport),
 }
 
 #[derive(Debug)]
