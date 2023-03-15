@@ -37,7 +37,7 @@ fn create_component(
     // Obtain glyph id from static metadata
     let gid = context
         .ir
-        .get_static_metadata()
+        .get_final_static_metadata()
         .glyph_id(ref_glyph_name)
         .ok_or(GlyphProblem::NotInGlyphOrder)?;
     let gid = GlyphId::new(gid as u16);
@@ -117,7 +117,7 @@ impl Work<Context, Error> for GlyphWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("BE glyph work for {}", self.glyph_name);
 
-        let static_metadata = context.ir.get_static_metadata();
+        let static_metadata = context.ir.get_final_static_metadata();
         let var_model = &static_metadata.variation_model;
         let default_location = var_model.default_location();
         let ir_glyph = &*context.ir.get_glyph_ir(&self.glyph_name);
@@ -422,7 +422,7 @@ pub fn create_glyf_loca_work() -> Box<BeWork> {
 }
 
 fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
-    let static_metadata = context.ir.get_static_metadata();
+    let static_metadata = context.ir.get_final_static_metadata();
     let glyph_order = &static_metadata.glyph_order;
 
     let glyphs: HashMap<_, _> = glyph_order
@@ -527,7 +527,7 @@ impl Work<Context, Error> for GlyfLocaWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         compute_composite_bboxes(context)?;
 
-        let static_metadata = context.ir.get_static_metadata();
+        let static_metadata = context.ir.get_final_static_metadata();
         let glyph_order = &static_metadata.glyph_order;
 
         // Glue together glyf and loca

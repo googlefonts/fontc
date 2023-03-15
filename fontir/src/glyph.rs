@@ -239,7 +239,7 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
         // We should now have access to *all* the glyph IR
         // Some of it may need to be massaged to produce BE glyphs
         // In particular, glyphs with both paths and components need to push the path into a component
-        let current_metadata = context.get_static_metadata();
+        let current_metadata = context.get_init_static_metadata();
         let mut new_glyph_order = current_metadata.glyph_order.clone();
 
         // Glyphs with paths and components, and glyphs whose components are transformed vary over designspace
@@ -311,7 +311,10 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
             }
             let mut updated_metadata = (*current_metadata).clone();
             updated_metadata.glyph_order = new_glyph_order;
-            context.set_static_metadata(updated_metadata);
+            context.set_final_static_metadata(updated_metadata);
+        } else {
+            trace!("No new glyphs; final static metadata is unchanged");
+            context.set_final_static_metadata((*current_metadata).clone());
         }
 
         Ok(())

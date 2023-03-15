@@ -19,7 +19,7 @@ impl Work<Context, Error> for CmapWork {
     /// Generate [cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // cmap only accomodates single codepoint : glyph mappings; collect all of those
-        let static_metadata = context.ir.get_static_metadata();
+        let static_metadata = context.ir.get_final_static_metadata();
 
         let mappings = static_metadata
             .glyph_order

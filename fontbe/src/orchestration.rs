@@ -6,13 +6,17 @@ use fontdrasil::{
     orchestration::{AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
 };
-use fontir::orchestration::{Context as FeContext, Flags, WorkId as FeWorkIdentifier};
+use fontir::{
+    context_accessors,
+    orchestration::{Context as FeContext, ContextItem, Flags, WorkId as FeWorkIdentifier},
+};
 use parking_lot::RwLock;
 use read_fonts::{FontData, FontRead};
 use write_fonts::{
     dump_table,
     tables::{cmap::Cmap, glyf::SimpleGlyph, post::Post},
-    FontBuilder,
+    validate::Validate,
+    FontBuilder, FontWrite,
 };
 use write_fonts::{from_obj::FromTableRef, tables::glyf::CompositeGlyph};
 
@@ -131,9 +135,9 @@ pub struct Context {
     // TODO: variations
     glyphs: Arc<RwLock<HashMap<GlyphName, Arc<Glyph>>>>,
 
-    glyf_loca: Arc<RwLock<Option<Arc<GlyfLoca>>>>,
-    cmap: Arc<RwLock<Option<Arc<Vec<u8>>>>>,
-    post: Arc<RwLock<Option<Arc<Vec<u8>>>>>,
+    glyf_loca: ContextItem<GlyfLoca>,
+    cmap: ContextItem<Cmap>,
+    post: ContextItem<Post>,
 }
 
 impl Context {
@@ -183,6 +187,27 @@ fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
     *wl = Some(Arc::from(value));
 }
 
+fn from_file<T>(file: &Path) -> T
+where
+    for<'a> T: FontRead<'a>,
+{
+    let buf = read_entire_file(file);
+    T::read(FontData::new(&buf)).unwrap()
+}
+
+fn to_bytes<T>(table: &T) -> Vec<u8>
+where
+    T: FontWrite + Validate,
+{
+    dump_table(table).unwrap()
+}
+
+fn read_entire_file(file: &Path) -> Vec<u8> {
+    fs::read(file)
+        .map_err(|e| panic!("Unable to read {file:?} {e}"))
+        .unwrap()
+}
+
 impl Context {
     /// A reasonable place to write extra files to help someone debugging
     pub fn debug_dir(&self) -> &Path {
@@ -193,15 +218,13 @@ impl Context {
         if !self.flags.contains(Flags::EMIT_IR) {
             return;
         }
+        self.persist(file, content);
+    }
+
+    fn persist(&self, file: &Path, content: &[u8]) {
         fs::write(file, content)
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
-    }
-
-    fn restore(&self, file: &Path) -> Vec<u8> {
-        fs::read(file)
-            .map_err(|e| panic!("Unable to read {file:?} {e}"))
-            .unwrap()
     }
 
     pub fn get_features(&self) -> Arc<Vec<u8>> {
@@ -213,7 +236,7 @@ impl Context {
                 return rl.as_ref().unwrap().clone();
             }
         }
-        let font = self.restore(&self.paths.target_file(&id));
+        let font = read_entire_file(&self.paths.target_file(&id));
         set_cached(&self.features, font);
         let rl = self.features.read();
         rl.as_ref().expect(MISSING_DATA).clone()
@@ -243,7 +266,7 @@ impl Context {
         }
 
         // Vec[u8] => read type => write type == all the right type
-        let glyph = self.restore(&self.paths.target_file(&id));
+        let glyph = read_entire_file(&self.paths.target_file(&id));
         let glyph = read_fonts::tables::glyf::SimpleGlyph::read(FontData::new(&glyph)).unwrap();
         let glyph = SimpleGlyph::from_table_ref(&glyph);
 
@@ -269,12 +292,11 @@ impl Context {
             }
         }
 
-        let loca = self
-            .restore(&self.paths.target_file(&WorkId::Loca))
+        let loca = read_entire_file(&self.paths.target_file(&WorkId::Loca))
             .chunks_exact(std::mem::size_of::<u32>())
             .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
             .collect();
-        let glyf = self.restore(&self.paths.target_file(&WorkId::Glyf));
+        let glyf = read_entire_file(&self.paths.target_file(&WorkId::Glyf));
 
         set_cached(&self.glyf_loca, (glyf, loca));
         let rl = self.glyf_loca.read();
@@ -298,49 +320,6 @@ impl Context {
         set_cached(&self.glyf_loca, (glyf, loca));
     }
 
-    pub fn get_cmap(&self) -> Arc<Vec<u8>> {
-        let id = WorkId::Cmap;
-        self.acl.assert_read_access(&id.clone().into());
-        {
-            let rl = self.cmap.read();
-            if rl.is_some() {
-                return rl.as_ref().unwrap().clone();
-            }
-        }
-        let cmap = self.restore(&self.paths.target_file(&id));
-        set_cached(&self.cmap, cmap);
-        let rl = self.cmap.read();
-        rl.as_ref().expect(MISSING_DATA).clone()
-    }
-
-    pub fn set_cmap(&self, cmap: Cmap) {
-        let id = WorkId::Cmap;
-        self.acl.assert_write_access(&id.clone().into());
-        let cmap = dump_table(&cmap).unwrap();
-        self.maybe_persist(&self.paths.target_file(&id), &cmap);
-        set_cached(&self.cmap, cmap);
-    }
-
-    pub fn get_post(&self) -> Arc<Vec<u8>> {
-        let id = WorkId::Post;
-        self.acl.assert_read_access(&id.clone().into());
-        {
-            let rl = self.post.read();
-            if rl.is_some() {
-                return rl.as_ref().unwrap().clone();
-            }
-        }
-        let post = self.restore(&self.paths.target_file(&id));
-        set_cached(&self.post, post);
-        let rl = self.post.read();
-        rl.as_ref().expect(MISSING_DATA).clone()
-    }
-
-    pub fn set_post(&self, post: Post) {
-        let id = WorkId::Post;
-        self.acl.assert_write_access(&id.clone().into());
-        let post = dump_table(&post).unwrap();
-        self.maybe_persist(&self.paths.target_file(&id), &post);
-        set_cached(&self.post, post);
-    }
+    context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
+    context_accessors! { get_post, set_post, post, Post, WorkId::Post, from_file, to_bytes }
 }

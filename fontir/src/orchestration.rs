@@ -30,6 +30,43 @@ bitflags! {
     }
 }
 
+pub type ContextItem<T> = Arc<RwLock<Option<Arc<T>>>>;
+
+/// Generates fn $getter_name(&self) -> Arc<$value_type>.
+///
+/// Assumes we are in an impl block for a Context and that
+/// self.$lock_name is a ContextItem<$ir_type>
+///
+/// <https://veykril.github.io/tlborm/decl-macros/minutiae/fragment-specifiers.html>
+#[macro_export]
+macro_rules! context_accessors {
+    ($getter_name:ident, $setter_name:ident, $lock_name:ident, $value_type:ty, $id:expr, $restore_fn:ident, $prepersist_fn:ident) => {
+        pub fn $getter_name(&self) -> Arc<$value_type> {
+            let id = $id;
+            self.acl.assert_read_access(&id.clone().into());
+            {
+                let rl = self.$lock_name.read();
+                if rl.is_some() {
+                    return rl.as_ref().unwrap().clone();
+                }
+            }
+            set_cached(&self.$lock_name, $restore_fn(&self.paths.target_file(&id)));
+            let rl = self.$lock_name.read();
+            rl.as_ref().expect(MISSING_DATA).clone()
+        }
+
+        pub fn $setter_name(&self, value: $value_type) {
+            let id = $id;
+            self.acl.assert_write_access(&id.clone().into());
+            if self.flags.contains(Flags::EMIT_IR) {
+                let buf = $prepersist_fn(&value);
+                self.persist(&self.paths.target_file(&id), &buf);
+            }
+            set_cached(&self.$lock_name, value);
+        }
+    };
+}
+
 impl Default for Flags {
     fn default() -> Self {
         Flags::MATCH_LEGACY
@@ -72,9 +109,15 @@ pub struct Context {
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
-    static_metadata: Arc<RwLock<Option<Arc<ir::StaticMetadata>>>>,
+    init_static_metadata: ContextItem<ir::StaticMetadata>,
+    final_static_metadata: ContextItem<ir::StaticMetadata>,
     glyph_ir: Arc<RwLock<HashMap<GlyphName, Arc<ir::Glyph>>>>,
-    feature_ir: Arc<RwLock<Option<Arc<ir::Features>>>>,
+    feature_ir: ContextItem<ir::Features>,
+}
+
+pub fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
+    let mut wl = lock.write();
+    *wl = Some(Arc::from(value));
 }
 
 impl Context {
@@ -84,7 +127,8 @@ impl Context {
             paths: self.paths.clone(),
             input: self.input.clone(),
             acl,
-            static_metadata: self.static_metadata.clone(),
+            init_static_metadata: self.init_static_metadata.clone(),
+            final_static_metadata: self.final_static_metadata.clone(),
             glyph_ir: self.glyph_ir.clone(),
             feature_ir: self.feature_ir.clone(),
         }
@@ -96,7 +140,8 @@ impl Context {
             paths: Arc::from(paths),
             input: Arc::from(input),
             acl: AccessControlList::read_only(),
-            static_metadata: Arc::from(RwLock::new(None)),
+            init_static_metadata: Arc::from(RwLock::new(None)),
+            final_static_metadata: Arc::from(RwLock::new(None)),
             glyph_ir: Arc::from(RwLock::new(HashMap::new())),
             feature_ir: Arc::from(RwLock::new(None)),
         }
@@ -115,6 +160,24 @@ impl Context {
     }
 }
 
+fn nop<T>(v: &T) -> &T {
+    v
+}
+
+fn restore<V>(file: &Path) -> V
+where
+    V: ?Sized + DeserializeOwned,
+{
+    let raw_file = File::open(file)
+        .map_err(|e| panic!("Unable to read {file:?} {e}"))
+        .unwrap();
+    let buf_io = BufReader::new(raw_file);
+    match serde_yaml::from_reader(buf_io) {
+        Ok(v) => v,
+        Err(e) => panic!("Unable to deserialize {file:?} {e}"),
+    }
+}
+
 impl Context {
     fn maybe_persist<V>(&self, file: &Path, content: &V)
     where
@@ -123,6 +186,13 @@ impl Context {
         if !self.flags.contains(Flags::EMIT_IR) {
             return;
         }
+        self.persist(file, content);
+    }
+
+    fn persist<V>(&self, file: &Path, content: &V)
+    where
+        V: ?Sized + Serialize + Debug,
+    {
         let raw_file = File::create(file)
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
@@ -130,46 +200,6 @@ impl Context {
         serde_yaml::to_writer(buf_io, &content)
             .map_err(|e| panic!("Unable to serialize\n{content:#?}\nto {file:?}: {e}"))
             .unwrap();
-    }
-
-    fn restore<V>(&self, file: &Path) -> V
-    where
-        V: ?Sized + DeserializeOwned,
-    {
-        let raw_file = File::open(file)
-            .map_err(|e| panic!("Unable to read {file:?} {e}"))
-            .unwrap();
-        let buf_io = BufReader::new(raw_file);
-        match serde_yaml::from_reader(buf_io) {
-            Ok(v) => v,
-            Err(e) => panic!("Unable to deserialize {file:?} {e}"),
-        }
-    }
-
-    fn set_cached_static_metadata(&self, ir: ir::StaticMetadata) {
-        let mut wl = self.static_metadata.write();
-        *wl = Some(Arc::from(ir));
-    }
-
-    pub fn get_static_metadata(&self) -> Arc<ir::StaticMetadata> {
-        let ids = [WorkId::InitStaticMetadata, WorkId::FinalizeStaticMetadata];
-        self.acl.assert_read_access_to_any(&ids);
-        {
-            let rl = self.static_metadata.read();
-            if rl.is_some() {
-                return rl.as_ref().unwrap().clone();
-            }
-        }
-        self.set_cached_static_metadata(self.restore(&self.paths.target_file(&ids[0])));
-        let rl = self.static_metadata.read();
-        rl.as_ref().expect(MISSING_DATA).clone()
-    }
-
-    pub fn set_static_metadata(&self, ir: ir::StaticMetadata) {
-        let ids = [WorkId::InitStaticMetadata, WorkId::FinalizeStaticMetadata];
-        self.acl.assert_write_access_to_any(&ids);
-        self.maybe_persist(&self.paths.target_file(&ids[0]), &ir);
-        self.set_cached_static_metadata(ir);
     }
 
     fn set_cached_glyph(&self, ir: ir::Glyph) {
@@ -186,7 +216,7 @@ impl Context {
                 return glyph.clone();
             }
         }
-        self.set_cached_glyph(self.restore(&self.paths.target_file(&id)));
+        self.set_cached_glyph(restore(&self.paths.target_file(&id)));
         let rl = self.glyph_ir.read();
         rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
@@ -198,29 +228,7 @@ impl Context {
         self.set_cached_glyph(ir);
     }
 
-    fn set_cached_features(&self, ir: ir::Features) {
-        let mut wl = self.feature_ir.write();
-        *wl = Some(Arc::from(ir));
-    }
-
-    pub fn get_features(&self) -> Arc<ir::Features> {
-        let id = WorkId::Features;
-        self.acl.assert_read_access(&id);
-        {
-            let rl = self.feature_ir.read();
-            if rl.is_some() {
-                return rl.as_ref().unwrap().clone();
-            }
-        }
-        self.set_cached_features(self.restore(&self.paths.target_file(&id)));
-        let rl = self.feature_ir.read();
-        rl.as_ref().expect(MISSING_DATA).clone()
-    }
-
-    pub fn set_features(&self, ir: ir::Features) {
-        let id = WorkId::Features;
-        self.acl.assert_write_access(&id);
-        self.maybe_persist(&self.paths.target_file(&id), &ir);
-        self.set_cached_features(ir);
-    }
+    context_accessors! { get_init_static_metadata, set_init_static_metadata, init_static_metadata, ir::StaticMetadata, WorkId::InitStaticMetadata, restore, nop }
+    context_accessors! { get_final_static_metadata, set_final_static_metadata, final_static_metadata, ir::StaticMetadata, WorkId::FinalizeStaticMetadata, restore, nop }
+    context_accessors! { get_features, set_features, feature_ir, ir::Features, WorkId::Features, restore, nop }
 }

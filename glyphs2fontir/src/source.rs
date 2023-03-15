@@ -196,7 +196,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             .map(|s| s.into())
             .filter(|gn| self.glyph_names.contains(gn))
             .collect();
-        context.set_static_metadata(
+        context.set_init_static_metadata(
             StaticMetadata::new(axes, glyph_order, glyph_locations)
                 .map_err(WorkError::VariationModelError)?,
         );
@@ -246,7 +246,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
-        let static_metadata = context.get_static_metadata();
+        let static_metadata = context.get_init_static_metadata();
         let axes = &static_metadata.axes;
 
         let glyph = font
@@ -427,7 +427,7 @@ mod tests {
         assert_eq!(
             vec!["wght"],
             context
-                .get_static_metadata()
+                .get_init_static_metadata()
                 .axes
                 .iter()
                 .map(|a| &a.tag)
@@ -437,7 +437,7 @@ mod tests {
             .iter()
             .map(|s| (*s).into())
             .collect();
-        assert_eq!(expected, context.get_static_metadata().glyph_order);
+        assert_eq!(expected, context.get_init_static_metadata().glyph_order);
     }
 
     #[test]
@@ -463,7 +463,7 @@ mod tests {
             .unwrap()
             .exec(&task_context)
             .unwrap();
-        let static_metadata = context.get_static_metadata();
+        let static_metadata = context.get_init_static_metadata();
 
         // Did you load the mappings? DID YOU?!
         assert_eq!(
@@ -509,6 +509,7 @@ mod tests {
     }
 
     fn build_static_metadata(glyphs_file: PathBuf) -> (impl Source, Context) {
+        let _ = env_logger::builder().is_test(true).try_init();
         let (source, context) = context_for(glyphs_file);
         let task_context =
             context.copy_for_work(access_none(), access_one(WorkId::InitStaticMetadata));
@@ -548,7 +549,7 @@ mod tests {
             build_static_metadata(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
         build_glyphs(&source, &context, &[&glyph_name]).unwrap(); // we dont' care about geometry
 
-        let static_metadata = context.get_static_metadata();
+        let static_metadata = context.get_init_static_metadata();
         let axes = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();
 
         let mut expected_locations = HashSet::new();
@@ -625,7 +626,7 @@ mod tests {
     #[test]
     fn read_axis_location() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar_AxisLocation.glyphs"));
-        let wght = &context.get_static_metadata().axes;
+        let wght = &context.get_init_static_metadata().axes;
         assert_eq!(1, wght.len());
         let wght = &wght[0];
 
