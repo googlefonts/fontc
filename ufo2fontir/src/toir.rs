@@ -140,6 +140,9 @@ pub fn to_ir_glyph(
                 glyph_name: glyph.name.clone(),
                 message: format!("glif load failed due to {e}"),
             })?;
+        norad_glyph.codepoints.iter().for_each(|cp| {
+            glyph.codepoints.insert(cp as u32);
+        });
         for location in locations {
             glyph.try_add_source(location, to_ir_glyph_instance(&norad_glyph)?)?;
         }
@@ -149,9 +152,21 @@ pub fn to_ir_glyph(
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        collections::{HashMap, HashSet},
+        path::{Path, PathBuf},
+    };
+
+    use fontir::coords::{NormalizedCoord, NormalizedLocation};
     use norad::ContourPoint;
 
-    use super::to_ir_contour;
+    use super::{to_ir_contour, to_ir_glyph};
+
+    fn testdata_dir() -> PathBuf {
+        let dir = Path::new("../resources/testdata");
+        assert!(dir.is_dir());
+        dir.to_path_buf()
+    }
 
     fn contour_point(x: f64, y: f64, typ: norad::PointType) -> ContourPoint {
         ContourPoint::new(x, y, typ, false, None, None, None)
@@ -189,5 +204,20 @@ mod tests {
         let contour = norad::Contour::new(points, None, None);
         let bez = to_ir_contour("test".into(), &contour).unwrap();
         assert_eq!("M32,32 C64,64 64,0 32,32 Z", bez.to_svg());
+    }
+
+    #[test]
+    pub fn captures_codepoints() {
+        let mut norm_loc = NormalizedLocation::new();
+        norm_loc.set_pos("Weight", NormalizedCoord::new(0.0));
+        let glyph = to_ir_glyph(
+            "bar".into(),
+            &HashMap::from([(
+                &testdata_dir().join("WghtVar-Regular.ufo/glyphs/bar.glif"),
+                vec![norm_loc],
+            )]),
+        )
+        .unwrap();
+        assert_eq!(HashSet::from([0x007C]), glyph.codepoints);
     }
 }

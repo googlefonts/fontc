@@ -3,7 +3,7 @@ use std::{fmt::Display, io};
 use fea_rs::compile::error::{BinaryCompilationError, CompilerError};
 use fontdrasil::types::GlyphName;
 use thiserror::Error;
-use write_fonts::tables::glyf::BadKurbo;
+use write_fonts::{tables::glyf::BadKurbo, validate::ValidationReport};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -32,6 +32,8 @@ pub enum Error {
         glyph: GlyphName,
         errors: Vec<Error>,
     },
+    #[error("Generating bytes for cmap failed")]
+    CmapGenerationError(ValidationReport),
 }
 
 #[derive(Debug)]

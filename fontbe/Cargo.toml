@@ -26,8 +26,8 @@ env_logger = "0.9.0"
 
 parking_lot = "0.12.1"
 
-read-fonts = "0.1.1"
-write-fonts = "0.1.1"
+read-fonts = "0.1.2"
+write-fonts = "0.1.2"
 
 kurbo = { version = "0.9.1", features = ["serde"] }
 

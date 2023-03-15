@@ -102,6 +102,7 @@ impl Features {
 #[serde(from = "GlyphSerdeRepr", into = "GlyphSerdeRepr")]
 pub struct Glyph {
     pub name: GlyphName,
+    pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     pub sources: HashMap<NormalizedLocation, GlyphInstance>,
 }
 
@@ -109,6 +110,7 @@ impl Glyph {
     pub fn new(name: GlyphName) -> Self {
         Self {
             name,
+            codepoints: HashSet::new(),
             sources: HashMap::new(),
         }
     }

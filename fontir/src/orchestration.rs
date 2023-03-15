@@ -172,9 +172,21 @@ impl Context {
         self.set_cached_static_metadata(ir);
     }
 
+    fn set_cached_glyph(&self, ir: ir::Glyph) {
+        let mut wl = self.glyph_ir.write();
+        wl.insert(ir.name.clone(), Arc::from(ir));
+    }
+
     pub fn get_glyph_ir(&self, glyph_name: &GlyphName) -> Arc<ir::Glyph> {
         let id = WorkId::Glyph(glyph_name.clone());
         self.acl.assert_read_access(&id);
+        {
+            let rl = self.glyph_ir.read();
+            if let Some(glyph) = rl.get(glyph_name) {
+                return glyph.clone();
+            }
+        }
+        self.set_cached_glyph(self.restore(&self.paths.target_file(&id)));
         let rl = self.glyph_ir.read();
         rl.get(glyph_name).expect(MISSING_DATA).clone()
     }
@@ -183,8 +195,7 @@ impl Context {
         let id = WorkId::Glyph(ir.name.clone());
         self.acl.assert_write_access(&id);
         self.maybe_persist(&self.paths.target_file(&id), &ir);
-        let mut wl = self.glyph_ir.write();
-        wl.insert(ir.name.clone(), Arc::from(ir));
+        self.set_cached_glyph(ir);
     }
 
     fn set_cached_features(&self, ir: ir::Features) {

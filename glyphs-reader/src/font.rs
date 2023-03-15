@@ -4,7 +4,7 @@
 //! There are lots of other ways this could go, including something serde-like
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::hash::Hash;
 use std::{fs, path};
 
@@ -39,7 +39,7 @@ pub struct Font {
     pub default_master_idx: usize,
     pub glyphs: BTreeMap<String, Glyph>,
     pub glyph_order: Vec<String>,
-    pub codepoints: BTreeMap<Vec<u32>, String>,
+    pub glyph_to_codepoints: BTreeMap<String, BTreeSet<u32>>,
     // tag => (user:design) tuples
     pub axis_mappings: BTreeMap<String, RawUserToDesignMapping>,
     pub features: Vec<FeatureSnippet>,
@@ -747,18 +747,22 @@ fn parse_glyph_order(raw_font: &RawFont) -> Vec<String> {
     glyph_order
 }
 
-fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<Vec<u32>, String> {
-    let mut cp_to_name = BTreeMap::new();
+/// Returns a map from glyph name to codepoint(s).
+fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<String, BTreeSet<u32>> {
+    let mut name_to_cp: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
     for glyph in raw_font.glyphs.iter_mut() {
         if let Some(Plist::String(val)) = glyph.other_stuff.remove("unicode") {
-            let codepoints = val
-                .split(',')
+            val.split(',')
                 .map(|v| i64::from_str_radix(v, radix).unwrap() as u32)
-                .collect();
-            cp_to_name.insert(codepoints, glyph.glyphname.clone());
+                .for_each(|cp| {
+                    name_to_cp
+                        .entry(glyph.glyphname.clone())
+                        .or_default()
+                        .insert(cp);
+                });
         };
     }
-    cp_to_name
+    name_to_cp
 }
 
 fn default_master_idx(raw_font: &RawFont) -> usize {
@@ -1036,7 +1040,7 @@ impl TryFrom<RawFont> for Font {
         from.other_stuff.remove(".formatVersion"); // no longer relevent
 
         let glyph_order = parse_glyph_order(&from);
-        let codepoints = parse_codepoints(&mut from, radix);
+        let glyph_to_codepoints = parse_codepoints(&mut from, radix);
 
         let default_master_idx = default_master_idx(&from);
         let axis_mappings = extract_axis_mappings(&from);
@@ -1064,7 +1068,7 @@ impl TryFrom<RawFont> for Font {
             default_master_idx,
             glyphs,
             glyph_order,
-            codepoints,
+            glyph_to_codepoints,
             axis_mappings,
             features,
         })
@@ -1136,7 +1140,7 @@ impl From<Affine> for AffineForEqAndHash {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::BTreeMap,
+        collections::{BTreeMap, BTreeSet},
         path::{Path, PathBuf},
     };
 
@@ -1271,28 +1275,40 @@ mod tests {
     #[test]
     fn understand_v2_style_unquoted_hex_unicode() {
         let font = Font::load(&glyphs2_dir().join("Unicode-UnquotedHex.glyphs")).unwrap();
-        assert_eq!("name", font.codepoints[&vec![0x1234]]);
+        assert_eq!(
+            &BTreeSet::from([0x1234]),
+            font.glyph_to_codepoints.get("name").unwrap(),
+        );
         assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v2_style_quoted_hex_unicode_sequence() {
         let font = Font::load(&glyphs2_dir().join("Unicode-QuotedHexSequence.glyphs")).unwrap();
-        assert_eq!("name", font.codepoints[&vec![0x2044, 0x200D, 0x2215]]);
+        assert_eq!(
+            &BTreeSet::from([0x2044, 0x200D, 0x2215]),
+            font.glyph_to_codepoints.get("name").unwrap(),
+        );
         assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v3_style_unquoted_decimal_unicode() {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDec.glyphs")).unwrap();
-        assert_eq!("name", font.codepoints[&vec![182]]);
+        assert_eq!(
+            &BTreeSet::from([182]),
+            font.glyph_to_codepoints.get("name").unwrap()
+        );
         assert_eq!(1, font.glyphs.len());
     }
 
     #[test]
     fn understand_v3_style_unquoted_decimal_unicode_sequence() {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs")).unwrap();
-        assert_eq!("name", font.codepoints[&vec![1619, 1764]]);
+        assert_eq!(
+            &BTreeSet::from([1619, 1764]),
+            font.glyph_to_codepoints.get("name").unwrap(),
+        );
         assert_eq!(1, font.glyphs.len());
     }
 

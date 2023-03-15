@@ -320,11 +320,7 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::{HashMap, HashSet},
-        path::Path,
-        sync::Arc,
-    };
+    use std::{collections::HashSet, path::Path, sync::Arc};
 
     use fontdrasil::{orchestration::access_one, types::GlyphName};
     use indexmap::IndexSet;
@@ -395,24 +391,22 @@ mod tests {
 
     #[test]
     fn has_components_and_contours_false() {
-        let glyph = Glyph {
-            name: "duck".into(),
-            sources: HashMap::from([
-                // Just component
-                (norm_loc(&[("W", 0.0)]), component_instance()),
-                // Just contour
-                (norm_loc(&[("W", 1.0)]), contour_instance()),
-            ]),
-        };
+        let mut glyph = Glyph::new("duck".into());
+        glyph
+            .try_add_source(&norm_loc(&[("W", 0.0)]), component_instance())
+            .unwrap();
+        glyph
+            .try_add_source(&norm_loc(&[("W", 1.0)]), contour_instance())
+            .unwrap();
         assert!(!has_components_and_contours(&glyph));
     }
 
     #[test]
     fn has_components_and_contours_true() {
-        let glyph = Glyph {
-            name: "duck".into(),
-            sources: HashMap::from([(norm_loc(&[("W", 0.0)]), contour_and_component_instance())]),
-        };
+        let mut glyph = Glyph::new("duck".into());
+        glyph
+            .try_add_source(&norm_loc(&[("W", 0.0)]), contour_and_component_instance())
+            .unwrap();
         assert!(has_components_and_contours(&glyph));
     }
 
@@ -434,13 +428,14 @@ mod tests {
     }
 
     fn contour_glyph(name: &str) -> Glyph {
-        Glyph {
-            name: name.into(),
-            sources: HashMap::from([
-                (norm_loc(&[("W", 0.0)]), contour_instance()),
-                (norm_loc(&[("W", 1.0)]), contour_instance()),
-            ]),
-        }
+        let mut glyph = Glyph::new(name.into());
+        glyph
+            .try_add_source(&norm_loc(&[("W", 0.0)]), contour_instance())
+            .unwrap();
+        glyph
+            .try_add_source(&norm_loc(&[("W", 1.0)]), contour_instance())
+            .unwrap();
+        glyph
     }
 
     fn component_glyph(name: &str, base: GlyphName, transform: Affine) -> Glyph {
@@ -448,23 +443,25 @@ mod tests {
             components: vec![Component { base, transform }],
             ..Default::default()
         };
-        Glyph {
-            name: name.into(),
-            sources: HashMap::from([
-                (norm_loc(&[("W", 0.0)]), component.clone()),
-                (norm_loc(&[("W", 1.0)]), component),
-            ]),
-        }
+        let mut glyph = Glyph::new(name.into());
+        glyph
+            .try_add_source(&norm_loc(&[("W", 0.0)]), component.clone())
+            .unwrap();
+        glyph
+            .try_add_source(&norm_loc(&[("W", 1.0)]), component)
+            .unwrap();
+        glyph
     }
 
     fn contour_and_component_weight_glyph(name: &str) -> Glyph {
-        Glyph {
-            name: name.into(),
-            sources: HashMap::from([
-                (norm_loc(&[("W", 0.0)]), contour_and_component_instance()),
-                (norm_loc(&[("W", 1.0)]), contour_and_component_instance()),
-            ]),
-        }
+        let mut glyph = Glyph::new(name.into());
+        glyph
+            .try_add_source(&norm_loc(&[("W", 0.0)]), contour_and_component_instance())
+            .unwrap();
+        glyph
+            .try_add_source(&norm_loc(&[("W", 1.0)]), contour_and_component_instance())
+            .unwrap();
+        glyph
     }
 
     fn assert_simple(glyph: &Glyph) {
@@ -545,10 +542,10 @@ mod tests {
         context.set_glyph_ir(c1.clone());
         context.set_glyph_ir(c2.clone());
 
-        let nested_components = Glyph {
-            name: "g".into(),
-            sources: HashMap::from([(
-                norm_loc(&[("W", 0.0)]),
+        let mut nested_components = Glyph::new("g".into());
+        nested_components
+            .try_add_source(
+                &norm_loc(&[("W", 0.0)]),
                 GlyphInstance {
                     components: vec![
                         Component {
@@ -567,8 +564,8 @@ mod tests {
                     contours: vec![contour()],
                     ..Default::default()
                 },
-            )]),
-        };
+            )
+            .unwrap();
         let simple = convert_components_to_contours(&context, &nested_components).unwrap();
         assert_simple(&simple);
         assert_eq!(1, simple.sources.len());
@@ -602,10 +599,10 @@ mod tests {
         // base shape
         let reuse_me = contour_glyph("shape");
 
-        let glyph = Glyph {
-            name: "g".into(),
-            sources: HashMap::from([(
-                norm_loc(&[("W", 0.0)]),
+        let mut glyph = Glyph::new("g".into());
+        glyph
+            .try_add_source(
+                &norm_loc(&[("W", 0.0)]),
                 GlyphInstance {
                     components: vec![Component {
                         base: reuse_me.name.clone(),
@@ -613,8 +610,8 @@ mod tests {
                     }],
                     ..Default::default()
                 },
-            )]),
-        };
+            )
+            .unwrap();
 
         let context = test_root().copy_for_work(
             access_one(WorkId::Glyph(reuse_me.name.clone())),

@@ -19,6 +19,7 @@ use crate::{error::Error, paths::Paths};
 pub enum GlyphMerge {
     Glyf,
     Loca,
+    Cmap,
 }
 
 /// Unique identifier of work.
@@ -29,12 +30,11 @@ pub enum GlyphMerge {
 pub enum WorkId {
     Features,
     Glyph(GlyphName),
-    GlyphMerge(GlyphMerge),
+    Glyf,
+    Loca,
+    Cmap,
     FinalMerge,
 }
-
-const GLYF_WORK_ID: WorkId = WorkId::GlyphMerge(GlyphMerge::Glyf);
-const LOCA_WORK_ID: WorkId = WorkId::GlyphMerge(GlyphMerge::Loca);
 
 // Identifies work of any type, FE, BE, ... future optimization passes, w/e.
 // Useful because BE work can very reasonably depend on FE work
@@ -127,6 +127,7 @@ pub struct Context {
     glyphs: Arc<RwLock<HashMap<GlyphName, Arc<Glyph>>>>,
 
     glyf_loca: Arc<RwLock<Option<Arc<GlyfLoca>>>>,
+    cmap: Arc<RwLock<Option<Arc<Vec<u8>>>>>,
 }
 
 impl Context {
@@ -139,6 +140,7 @@ impl Context {
             features: self.features.clone(),
             glyphs: self.glyphs.clone(),
             glyf_loca: self.glyf_loca.clone(),
+            cmap: self.cmap.clone(),
         }
     }
 
@@ -151,6 +153,7 @@ impl Context {
             features: Arc::from(RwLock::new(None)),
             glyphs: Arc::from(RwLock::new(HashMap::new())),
             glyf_loca: Arc::from(RwLock::new(None)),
+            cmap: Arc::from(RwLock::new(None)),
         }
     }
 
@@ -254,7 +257,7 @@ impl Context {
     }
 
     pub fn get_glyf_loca(&self) -> Arc<GlyfLoca> {
-        let ids = [GLYF_WORK_ID.into(), LOCA_WORK_ID.into()];
+        let ids = [WorkId::Glyf.into(), WorkId::Loca.into()];
         self.acl.assert_read_access_to_all(&ids);
         {
             let rl = self.glyf_loca.read();
@@ -264,11 +267,11 @@ impl Context {
         }
 
         let loca = self
-            .restore(&self.paths.target_file(&LOCA_WORK_ID))
+            .restore(&self.paths.target_file(&WorkId::Loca))
             .chunks_exact(std::mem::size_of::<u32>())
             .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
             .collect();
-        let glyf = self.restore(&self.paths.target_file(&GLYF_WORK_ID));
+        let glyf = self.restore(&self.paths.target_file(&WorkId::Glyf));
 
         self.set_cached_glyf_loca((glyf, loca));
         let rl = self.glyf_loca.read();
@@ -276,13 +279,13 @@ impl Context {
     }
 
     pub fn set_glyf_loca(&self, glyf_loca: GlyfLoca) {
-        let ids = [GLYF_WORK_ID.into(), LOCA_WORK_ID.into()];
+        let ids = [WorkId::Glyf.into(), WorkId::Loca.into()];
         self.acl.assert_write_access_to_all(&ids);
 
         let (glyf, loca) = glyf_loca;
-        self.maybe_persist(&self.paths.target_file(&GLYF_WORK_ID), &glyf);
+        self.maybe_persist(&self.paths.target_file(&WorkId::Glyf), &glyf);
         self.maybe_persist(
-            &self.paths.target_file(&LOCA_WORK_ID),
+            &self.paths.target_file(&WorkId::Loca),
             &loca
                 .iter()
                 .flat_map(|v| v.to_be_bytes())
@@ -290,5 +293,32 @@ impl Context {
         );
 
         self.set_cached_glyf_loca((glyf, loca));
+    }
+
+    fn set_cached_cmap(&self, cmap: Vec<u8>) {
+        let mut wl = self.cmap.write();
+        *wl = Some(Arc::from(cmap));
+    }
+
+    pub fn get_cmap(&self) -> Arc<Vec<u8>> {
+        let id = WorkId::Cmap;
+        self.acl.assert_read_access(&id.clone().into());
+        {
+            let rl = self.cmap.read();
+            if rl.is_some() {
+                return rl.as_ref().unwrap().clone();
+            }
+        }
+        let font = self.restore(&self.paths.target_file(&id));
+        self.set_cached_features(font);
+        let rl = self.cmap.read();
+        rl.as_ref().expect(MISSING_DATA).clone()
+    }
+
+    pub fn set_cmap(&self, cmap: Vec<u8>) {
+        let id = WorkId::Cmap;
+        self.acl.assert_write_access(&id.clone().into());
+        self.maybe_persist(&self.paths.target_file(&id), &cmap);
+        self.set_cached_cmap(cmap);
     }
 }
