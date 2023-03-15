@@ -570,6 +570,7 @@ fn add_font_be_job(
     if !glyphs_changed.is_empty() || change_detector.feature_be_change() {
         let mut dependencies: HashSet<_> = HashSet::new();
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+        dependencies.insert(BeWorkIdentifier::Features.into());
         dependencies.insert(BeWorkIdentifier::Cmap.into());
         dependencies.insert(BeWorkIdentifier::Glyf.into());
         dependencies.insert(BeWorkIdentifier::Hmtx.into());
