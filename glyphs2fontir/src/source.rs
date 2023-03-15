@@ -306,7 +306,9 @@ impl Work<Context, WorkError> for GlyphIrWork {
             let min = axis.min.to_normalized(&axis.converter);
             let max = axis.max.to_normalized(&axis.converter);
             let default = axis.max.to_normalized(&axis.converter);
-            let positions = axis_positions.get(&axis.name).unwrap();
+            let Some(positions) = axis_positions.get(&axis.name) else {
+                return Err(WorkError::NoAxisPosition(self.glyph_name.clone(), axis.name.clone()));
+            };
             check_pos(&self.glyph_name, positions, axis, &min)?;
             check_pos(&self.glyph_name, positions, axis, &default)?;
             check_pos(&self.glyph_name, positions, axis, &max)?;
@@ -655,11 +657,17 @@ mod tests {
     }
 
     #[test]
-    fn captures_multipl_codepoints() {
+    fn captures_multiple_codepoints() {
         let (source, context) =
             build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
         build_glyphs(&source, &context, &[&"name".into()]).unwrap();
         let glyph = context.get_glyph_ir(&"name".into());
         assert_eq!(HashSet::from([1619, 1764]), glyph.codepoints);
+    }
+
+    // It's so minimal it's a good test
+    #[test]
+    fn loads_hmtx_one_glyph() {
+        build_static_metadata(glyphs2_dir().join("NotDef.glyphs"));
     }
 }

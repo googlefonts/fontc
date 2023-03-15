@@ -13,6 +13,7 @@ use fontbe::{
     cmap::create_cmap_work,
     features::FeatureWork,
     glyphs::{create_glyf_loca_work, create_glyph_work},
+    hmtx::create_hmtx_work,
     orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
     paths::Paths as BePaths,
     post::create_post_work,
@@ -516,6 +517,48 @@ fn add_post_be_job(
     Ok(())
 }
 
+fn add_hmtx_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    let glyphs_changed = change_detector.glyphs_changed();
+
+    // If no glyph has changed there isn't a lot to do
+    if !glyphs_changed.is_empty() {
+        let mut dependencies: HashSet<_> = glyphs_changed
+            .iter()
+            .flat_map(|gn| {
+                [
+                    FeWorkIdentifier::Glyph(gn.clone()).into(),
+                    BeWorkIdentifier::Glyph(gn.clone()).into(),
+                ]
+            })
+            .collect();
+        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+
+        let id: AnyWorkId = BeWorkIdentifier::Hmtx.into();
+        workload.insert(
+            id.clone(),
+            Job {
+                work: create_hmtx_work().into(),
+                dependencies,
+                // We need to read all FE and BE glyphs, even unchanged ones, plus static metadata
+                read_access: ReadAccess::Custom(Arc::new(|id| {
+                    matches!(
+                        id,
+                        AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
+                            | AnyWorkId::Be(BeWorkIdentifier::Glyph(..))
+                    )
+                })),
+                write_access: access_one(id),
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::Hmtx);
+    }
+    Ok(())
+}
+
 fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: GlyphName) {
     let glyph_ir = fe_root.get_glyph_ir(&glyph_name);
 
@@ -530,9 +573,12 @@ fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: Gl
 
     let id = AnyWorkId::Be(BeWorkIdentifier::Glyph(glyph_name.clone()));
 
-    // this job should already be a dependency of the glyph merge; if not terrible things will happen
+    // this job should already be a dependency of glyf and hmtx; if not terrible things will happen
     if !workload.is_dependency(&BeWorkIdentifier::Glyf.into(), &id) {
-        panic!("BE glyph '{glyph_name}' is being built but not participating in glyph merge",);
+        panic!("BE glyph '{glyph_name}' is being built but not participating in glyf",);
+    }
+    if !workload.is_dependency(&BeWorkIdentifier::Hmtx.into(), &id) {
+        panic!("BE glyph '{glyph_name}' is being built but not participating in hmtx",);
     }
 
     let write_access = access_one(id.clone());
@@ -655,11 +701,15 @@ impl Workload {
 
                     debug!("Updating graph for new glyph {glyph_name}");
 
-                    self.jobs_pending
-                        .get_mut(&AnyWorkId::Be(BeWorkIdentifier::Glyf))
-                        .unwrap()
-                        .dependencies
-                        .insert(id.clone());
+                    // It would be lovely if our new glyph was in glyf and hmtx
+                    // loca hides with glyf
+                    for merge_id in [BeWorkIdentifier::Glyf, BeWorkIdentifier::Hmtx] {
+                        self.jobs_pending
+                            .get_mut(&AnyWorkId::Be(merge_id))
+                            .unwrap()
+                            .dependencies
+                            .insert(id.clone());
+                    }
 
                     add_glyph_be_job(self, fe_root, glyph_name.clone());
                 }
@@ -825,6 +875,7 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
     add_feature_be_job(change_detector, &mut workload)?;
     add_glyf_loca_be_job(change_detector, &mut workload)?;
     add_cmap_be_job(change_detector, &mut workload)?;
+    add_hmtx_be_job(change_detector, &mut workload)?;
     add_post_be_job(change_detector, &mut workload)?;
 
     Ok(workload)
@@ -903,6 +954,7 @@ mod tests {
         tables::{
             cmap::{Cmap, CmapSubtable},
             glyf::{self, CompositeGlyph, Glyf, SimpleGlyph},
+            hmtx::Hmtx,
             loca::Loca,
         },
         types::{F2Dot14, GlyphId},
@@ -914,8 +966,8 @@ mod tests {
     use crate::{
         add_cmap_be_job, add_feature_be_job, add_feature_ir_job,
         add_finalize_static_metadata_ir_job, add_glyf_loca_be_job, add_glyph_ir_jobs,
-        add_init_static_metadata_ir_job, add_post_be_job, finish_successfully, init, require_dir,
-        Args, ChangeDetector, Config, Workload,
+        add_hmtx_be_job, add_init_static_metadata_ir_job, add_post_be_job, finish_successfully,
+        init, require_dir, Args, ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -1040,6 +1092,7 @@ mod tests {
 
         add_glyf_loca_be_job(&mut change_detector, &mut workload).unwrap();
         add_cmap_be_job(&mut change_detector, &mut workload).unwrap();
+        add_hmtx_be_job(&mut change_detector, &mut workload).unwrap();
         add_post_be_job(&mut change_detector, &mut workload).unwrap();
 
         // Try to do the work
@@ -1115,9 +1168,10 @@ mod tests {
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Glyph("bar".into()).into(),
                 BeWorkIdentifier::Glyph("plus".into()).into(),
-                BeWorkIdentifier::Glyf.into(),
-                BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::Cmap.into(),
+                BeWorkIdentifier::Glyf.into(),
+                BeWorkIdentifier::Hmtx.into(),
+                BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::Post.into(),
             ]),
             result.work_completed
@@ -1158,9 +1212,10 @@ mod tests {
             HashSet::from([
                 FeWorkIdentifier::Glyph("bar".into()).into(),
                 BeWorkIdentifier::Glyph("bar".into()).into(),
-                BeWorkIdentifier::Glyf.into(),
-                BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::Cmap.into(),
+                BeWorkIdentifier::Glyf.into(),
+                BeWorkIdentifier::Hmtx.into(),
+                BeWorkIdentifier::Loca.into(),
             ]),
             result.work_completed
         );
@@ -1457,6 +1512,48 @@ mod tests {
             cmap4.start_code(),
             cmap4.end_code(),
             cmap4.id_delta()
+        );
+    }
+
+    #[test]
+    fn hmtx_of_one() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(test_args(build_dir, "glyphs2/NotDef.glyphs"));
+
+        let raw_hmtx = result.be_context.get_hmtx();
+        let hmtx = Hmtx::read_with_args(FontData::new(&raw_hmtx.buf), &(1, 1)).unwrap();
+        assert_eq!(
+            vec![(600, 250)],
+            hmtx.h_metrics()
+                .iter()
+                .map(|m| (m.advance.get(), m.side_bearing.get()))
+                .collect::<Vec<_>>()
+        );
+        assert!(hmtx.left_side_bearings().is_empty());
+    }
+
+    #[test]
+    fn hmtx_of_mono() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(test_args(build_dir, "glyphs2/Mono.glyphs"));
+
+        let raw_hmtx = result.be_context.get_hmtx();
+        let hmtx = Hmtx::read_with_args(FontData::new(&raw_hmtx.buf), &(1, 3)).unwrap();
+        assert_eq!(
+            vec![(425, 175)],
+            hmtx.h_metrics()
+                .iter()
+                .map(|m| (m.advance.get(), m.side_bearing.get()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec![200, 225],
+            hmtx.left_side_bearings()
+                .iter()
+                .map(|m| m.get())
+                .collect::<Vec<_>>()
         );
     }
 }
