@@ -3,7 +3,7 @@
 use fontdrasil::orchestration::Work;
 use write_fonts::{
     dump_table,
-    tables::{hmtx::Hmtx, vmtx::LongMetric},
+    tables::{hmtx::Hmtx, vmtx::LongMetric}, OtRound,
 };
 
 use crate::{
@@ -37,7 +37,7 @@ impl Work<Context, Error> for HmtxWork {
                 let Some(ir_instance) = ir_glyph.sources.get(default_location) else {
                     panic!("{gn} is not defined at the default location.");
                 };
-                let advance: u16 = ir_instance.width as u16;
+                let advance: u16 = ir_instance.width.ot_round();
 
                 LongMetric {
                     advance,
