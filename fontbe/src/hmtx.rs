@@ -11,10 +11,6 @@ use crate::{
     orchestration::{BeWork, Bytes, Context},
 };
 
-pub struct Raw {
-    pub buf: Vec<u8>,
-}
-
 struct HmtxWork {}
 
 pub fn create_hmtx_work() -> Box<BeWork> {

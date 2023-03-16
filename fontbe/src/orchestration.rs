@@ -227,6 +227,7 @@ impl Bytes {
     }
 }
 
+// Free fn because that lets it fit into the context_accessors macro.
 fn raw_from_file(file: &Path) -> Bytes {
     let buf = read_entire_file(file);
     Bytes { buf }
