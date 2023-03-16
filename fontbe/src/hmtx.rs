@@ -9,12 +9,8 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context},
+    orchestration::{BeWork, Bytes, Context},
 };
-
-pub struct RawHmtx {
-    pub buf: Vec<u8>,
-}
 
 struct HmtxWork {}
 
@@ -72,12 +68,10 @@ impl Work<Context, Error> for HmtxWork {
             .collect();
 
         let hmtx = Hmtx::new(long_metrics, lsbs);
-        let raw_hmtx = RawHmtx {
-            buf: dump_table(&hmtx).map_err(|report| Error::DumpTableError {
-                report,
-                context: "hmtx".into(),
-            })?,
-        };
+        let raw_hmtx = Bytes::new(dump_table(&hmtx).map_err(|report| Error::DumpTableError {
+            report,
+            context: "hmtx".into(),
+        })?);
         context.set_hmtx(raw_hmtx);
         Ok(())
     }

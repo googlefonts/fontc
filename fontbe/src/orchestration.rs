@@ -1,6 +1,6 @@
 //! Helps coordinate the graph execution for BE
 
-use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, fs, io, path::Path, sync::Arc};
 
 use fontdrasil::{
     orchestration::{AccessControlList, Work, MISSING_DATA},
@@ -24,7 +24,7 @@ use write_fonts::{
 };
 use write_fonts::{from_obj::FromTableRef, tables::glyf::CompositeGlyph};
 
-use crate::{error::Error, hmtx::RawHmtx, paths::Paths};
+use crate::{error::Error, paths::Paths};
 
 /// What exactly is being assembled from glyphs?
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -47,7 +47,7 @@ pub enum WorkId {
     Hmtx,
     Loca,
     Post,
-    FinalMerge,
+    Font,
 }
 
 // Identifies work of any type, FE, BE, ... future optimization passes, w/e.
@@ -150,7 +150,8 @@ pub struct Context {
     glyf_loca: ContextItem<GlyfLoca>,
     cmap: ContextItem<Cmap>,
     post: ContextItem<Post>,
-    hmtx: ContextItem<RawHmtx>,
+    hmtx: ContextItem<Bytes>,
+    font: ContextItem<Bytes>,
 }
 
 impl Context {
@@ -166,6 +167,7 @@ impl Context {
             cmap: self.cmap.clone(),
             post: self.post.clone(),
             hmtx: self.hmtx.clone(),
+            font: self.font.clone(),
         }
     }
 
@@ -181,6 +183,7 @@ impl Context {
             cmap: Arc::from(RwLock::new(None)),
             post: Arc::from(RwLock::new(None)),
             hmtx: Arc::from(RwLock::new(None)),
+            font: Arc::from(RwLock::new(None)),
         }
     }
 
@@ -210,12 +213,27 @@ where
     T::read(FontData::new(&buf)).unwrap()
 }
 
-fn raw_hmtx_from_file(file: &Path) -> RawHmtx {
-    let buf = read_entire_file(file);
-    RawHmtx { buf }
+pub struct Bytes {
+    buf: Vec<u8>,
 }
 
-fn raw_hmtx_to_bytes(table: &RawHmtx) -> Vec<u8> {
+impl Bytes {
+    pub(crate) fn new(buf: Vec<u8>) -> Bytes {
+        Bytes { buf }
+    }
+
+    pub fn get(&self) -> &[u8] {
+        &self.buf
+    }
+}
+
+// Free fn because that lets it fit into the context_accessors macro.
+fn raw_from_file(file: &Path) -> Bytes {
+    let buf = read_entire_file(file);
+    Bytes { buf }
+}
+
+fn raw_to_bytes(table: &Bytes) -> Vec<u8> {
     table.buf.clone()
 }
 
@@ -249,6 +267,11 @@ impl Context {
         fs::write(file, content)
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
+    }
+
+    pub fn read_raw(&self, id: WorkId) -> Result<Vec<u8>, io::Error> {
+        self.acl.assert_read_access(&id.clone().into());
+        fs::read(self.paths.target_file(&id))
     }
 
     pub fn get_features(&self) -> Arc<Vec<u8>> {
@@ -346,5 +369,6 @@ impl Context {
 
     context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
     context_accessors! { get_post, set_post, post, Post, WorkId::Post, from_file, to_bytes }
-    context_accessors! { get_hmtx, set_hmtx, hmtx, RawHmtx, WorkId::Hmtx, raw_hmtx_from_file, raw_hmtx_to_bytes }
+    context_accessors! { get_hmtx, set_hmtx, hmtx, Bytes, WorkId::Hmtx, raw_from_file, raw_to_bytes }
+    context_accessors! { get_font, set_font, font, Bytes, WorkId::Font, raw_from_file, raw_to_bytes }
 }

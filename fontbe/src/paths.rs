@@ -50,7 +50,7 @@ impl Paths {
             WorkId::Cmap => self.build_dir.join("cmap.table"),
             WorkId::Hmtx => self.build_dir.join("hmtx.table"),
             WorkId::Post => self.build_dir.join("post.table"),
-            WorkId::FinalMerge => self.build_dir.join("font.ttf"),
+            WorkId::Font => self.build_dir.join("font.ttf"),
         }
     }
 }

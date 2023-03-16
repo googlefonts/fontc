@@ -12,6 +12,7 @@ use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::{
     cmap::create_cmap_work,
     features::FeatureWork,
+    font::create_font_work,
     glyphs::{create_glyf_loca_work, create_glyph_work},
     hmtx::create_hmtx_work,
     orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
@@ -559,6 +560,38 @@ fn add_hmtx_be_job(
     Ok(())
 }
 
+fn add_font_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    let glyphs_changed = change_detector.glyphs_changed();
+
+    // If glyphs or features changed we better do the thing
+    if !glyphs_changed.is_empty() || change_detector.feature_be_change() {
+        let mut dependencies = HashSet::new();
+        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+        dependencies.insert(BeWorkIdentifier::Features.into());
+        dependencies.insert(BeWorkIdentifier::Cmap.into());
+        dependencies.insert(BeWorkIdentifier::Glyf.into());
+        dependencies.insert(BeWorkIdentifier::Hmtx.into());
+        dependencies.insert(BeWorkIdentifier::Loca.into());
+
+        let id: AnyWorkId = BeWorkIdentifier::Font.into();
+        workload.insert(
+            id.clone(),
+            Job {
+                work: create_font_work().into(),
+                dependencies,
+                read_access: ReadAccess::Dependencies,
+                write_access: access_one(id),
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::Font);
+    }
+    Ok(())
+}
+
 fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: GlyphName) {
     let glyph_ir = fe_root.get_glyph_ir(&glyph_name);
 
@@ -683,7 +716,7 @@ impl Workload {
 
 impl Workload {
     fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId) {
-        trace!("{success:?} successful");
+        debug!("{success:?} successful");
         match success {
             // When a glyph finishes IR, register BE work for it
             AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) => {
@@ -878,6 +911,9 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
     add_hmtx_be_job(change_detector, &mut workload)?;
     add_post_be_job(change_detector, &mut workload)?;
 
+    // Make a damn font
+    add_font_be_job(change_detector, &mut workload)?;
+
     Ok(workload)
 }
 
@@ -950,6 +986,7 @@ mod tests {
         stateset::StateSet,
     };
     use indexmap::IndexSet;
+    use log::debug;
     use read_fonts::{
         tables::{
             cmap::{Cmap, CmapSubtable},
@@ -957,17 +994,17 @@ mod tests {
             hmtx::Hmtx,
             loca::Loca,
         },
-        types::{F2Dot14, GlyphId},
-        FontData, FontRead, FontReadWithArgs,
+        types::{F2Dot14, GlyphId, Tag},
+        FontData, FontRead, FontReadWithArgs, FontRef,
     };
     use tempfile::{tempdir, TempDir};
     use write_fonts::dump_table;
 
     use crate::{
         add_cmap_be_job, add_feature_be_job, add_feature_ir_job,
-        add_finalize_static_metadata_ir_job, add_glyf_loca_be_job, add_glyph_ir_jobs,
-        add_hmtx_be_job, add_init_static_metadata_ir_job, add_post_be_job, finish_successfully,
-        init, require_dir, Args, ChangeDetector, Config, Workload,
+        add_finalize_static_metadata_ir_job, add_font_be_job, add_glyf_loca_be_job,
+        add_glyph_ir_jobs, add_hmtx_be_job, add_init_static_metadata_ir_job, add_post_be_job,
+        finish_successfully, init, require_dir, Args, ChangeDetector, Config, Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -1095,6 +1132,8 @@ mod tests {
         add_hmtx_be_job(&mut change_detector, &mut workload).unwrap();
         add_post_be_job(&mut change_detector, &mut workload).unwrap();
 
+        add_font_be_job(&mut change_detector, &mut workload).unwrap();
+
         // Try to do the work
         // As we currently don't stress dependencies just run one by one
         // This will likely need to change when we start doing things like glyphs with components
@@ -1139,6 +1178,7 @@ mod tests {
                 job.read_access,
                 job.write_access,
             );
+            debug!("Exec {:?}", id);
             job.work.exec(context).unwrap();
             assert!(
                 workload.success.insert(id.clone()),
@@ -1173,6 +1213,7 @@ mod tests {
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::Post.into(),
+                BeWorkIdentifier::Font.into(),
             ]),
             result.work_completed
         );
@@ -1216,6 +1257,7 @@ mod tests {
                 BeWorkIdentifier::Glyf.into(),
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
+                BeWorkIdentifier::Font.into(),
             ]),
             result.work_completed
         );
@@ -1522,7 +1564,7 @@ mod tests {
         let result = compile(test_args(build_dir, "glyphs2/NotDef.glyphs"));
 
         let raw_hmtx = result.be_context.get_hmtx();
-        let hmtx = Hmtx::read_with_args(FontData::new(&raw_hmtx.buf), &(1, 1)).unwrap();
+        let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &(1, 1)).unwrap();
         assert_eq!(
             vec![(600, 250)],
             hmtx.h_metrics()
@@ -1540,7 +1582,7 @@ mod tests {
         let result = compile(test_args(build_dir, "glyphs2/Mono.glyphs"));
 
         let raw_hmtx = result.be_context.get_hmtx();
-        let hmtx = Hmtx::read_with_args(FontData::new(&raw_hmtx.buf), &(1, 3)).unwrap();
+        let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &(1, 3)).unwrap();
         assert_eq!(
             vec![(425, 175)],
             hmtx.h_metrics()
@@ -1553,6 +1595,33 @@ mod tests {
             hmtx.left_side_bearings()
                 .iter()
                 .map(|m| m.get())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn wght_var_has_expected_tables() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(test_args(build_dir, "wght_var.designspace"));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+
+        assert_eq!(
+            vec![
+                Tag::new(b"cmap"),
+                Tag::new(b"glyf"),
+                Tag::new(b"hmtx"),
+                Tag::new(b"loca"),
+            ],
+            font.table_directory
+                .table_records()
+                .iter()
+                .map(|tr| tr.tag())
                 .collect::<Vec<_>>()
         );
     }
