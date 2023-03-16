@@ -15,7 +15,7 @@ pub fn create_head_work() -> Box<BeWork> {
 }
 
 impl Work<Context, Error> for HeadWork {
-    /// Generate [maxp](https://learn.microsoft.com/en-us/typography/opentype/spec/maxp)
+    /// Generate [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_final_static_metadata();
         let head = Head {
