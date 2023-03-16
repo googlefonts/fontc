@@ -1,4 +1,4 @@
-//! Generates a [maxp](https://learn.microsoft.com/en-us/typography/opentype/spec/maxp) table.
+//! Generates a [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head) table.
 
 use fontdrasil::orchestration::Work;
 use write_fonts::tables::head::Head;
