@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf};
+use std::{io, num::TryFromIntError, path::PathBuf};
 
 use thiserror::Error;
 
@@ -10,4 +10,8 @@ pub enum Error {
     ParseError(PathBuf, String),
     #[error("Unexpected file structure {0}")]
     StructuralError(String),
+    #[error("No upem")]
+    NoUnitsPerEm,
+    #[error("Invalid upem")]
+    InvalidUpem(#[from] TryFromIntError),
 }

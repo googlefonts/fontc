@@ -381,8 +381,8 @@ fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designsp
         .find(|(_, source)| to_design_location(&source.location) == default_location)
 }
 
-fn load_lib_plist(ufo_dir: &Path) -> Result<plist::Dictionary, WorkError> {
-    let lib_plist_file = ufo_dir.join("lib.plist");
+fn load_plist(ufo_dir: &Path, name: &str) -> Result<plist::Dictionary, WorkError> {
+    let lib_plist_file = ufo_dir.join(name);
     if !lib_plist_file.is_file() {
         return Err(WorkError::FileExpected(lib_plist_file));
     }
@@ -402,7 +402,7 @@ fn glyph_order(
     // That glyph order *may* deign to overlap with the actual glyph set
     let mut glyph_order = IndexSet::new();
     if let Some((_, source)) = default_master(designspace) {
-        let lib_plist = load_lib_plist(&designspace_dir.join(&source.filename))?;
+        let lib_plist = load_plist(&designspace_dir.join(&source.filename), "lib.plist")?;
         if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
             let mut pending_add: HashSet<_> = glyph_names.clone();
             // Add names from ufo glyph order union glyph_names in ufo glyph order
@@ -435,6 +435,37 @@ fn glyph_order(
     Ok(glyph_order)
 }
 
+fn units_per_em(
+    designspace: &DesignSpaceDocument,
+    designspace_dir: &Path,
+) -> Result<u16, WorkError> {
+    let mut upems: HashSet<u16> = HashSet::new();
+    for source in designspace.sources.iter() {
+        let ufo_dir = designspace_dir.join(&source.filename);
+        if !ufo_dir.join("fontinfo.plist").exists() {
+            continue;
+        }
+        let fontinfo = load_plist(&ufo_dir, "fontinfo.plist")?;
+        let Some(plist::Value::Integer(upem)) = fontinfo.get("unitsPerEm") else {
+            return Err(WorkError::NoUnitsPerEm);
+        };
+        let upem = upem
+            .as_unsigned()
+            .ok_or_else(|| WorkError::InvalidUpem(format!("{upem} outside u64 range")))?;
+        let upem = upem
+            .try_into()
+            .map_err(|e| WorkError::InvalidUpem(format!("{upem} failed into u16: {e}")))?;
+        upems.insert(upem);
+    }
+
+    if upems.len() != 1 {
+        let mut upems: Vec<_> = upems.into_iter().collect();
+        upems.sort();
+        return Err(WorkError::InconsistentUpem(upems));
+    }
+    Ok(*upems.iter().next().unwrap())
+}
+
 fn files_identical(f1: &Path, f2: &Path) -> Result<bool, WorkError> {
     if !f1.is_file() {
         return Err(WorkError::FileExpected(f1.to_path_buf()));
@@ -453,17 +484,16 @@ fn files_identical(f1: &Path, f2: &Path) -> Result<bool, WorkError> {
 impl Work<Context, WorkError> for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
+        let designspace_dir = self.designspace_file.parent().unwrap();
 
+        let units_per_em = units_per_em(&self.designspace, designspace_dir)?;
         let axes = to_ir_axes(&self.designspace.axes);
         let glyph_locations = to_normalized_locations(&axes, &self.designspace.sources);
 
-        let glyph_order = glyph_order(
-            &self.designspace,
-            self.designspace_file.parent().unwrap(),
-            &self.glyph_names,
-        )?;
+        let glyph_order = glyph_order(&self.designspace, designspace_dir, &self.glyph_names)?;
+
         context.set_init_static_metadata(
-            StaticMetadata::new(axes, glyph_order, glyph_locations)
+            StaticMetadata::new(units_per_em, axes, glyph_order, glyph_locations)
                 .map_err(WorkError::VariationModelError)?,
         );
         Ok(())
@@ -545,7 +575,7 @@ mod tests {
 
     use crate::toir::to_design_location;
 
-    use super::{default_master, glif_files, glyph_order, DesignSpaceIrSource};
+    use super::{default_master, glif_files, glyph_order, units_per_em, DesignSpaceIrSource};
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -703,5 +733,14 @@ mod tests {
             .map(|s| (*s).into())
             .collect();
         assert_eq!(expected, go);
+    }
+
+    #[test]
+    pub fn fetches_upem() {
+        let (source, _) = test_source();
+        assert_eq!(
+            1000,
+            units_per_em(&source.load_designspace().unwrap(), &source.designspace_dir).unwrap()
+        );
     }
 }

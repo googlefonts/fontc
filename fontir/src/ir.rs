@@ -23,6 +23,8 @@ use std::{
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(from = "StaticMetadataSerdeRepr", into = "StaticMetadataSerdeRepr")]
 pub struct StaticMetadata {
+    /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/head>.
+    pub units_per_em: u16,
     /// Every axis used by the font being compiled
     pub axes: Vec<Axis>,
     /// The name of every glyph, in the order it will be emitted
@@ -39,6 +41,7 @@ pub struct StaticMetadata {
 
 impl StaticMetadata {
     pub fn new(
+        units_per_em: u16,
         axes: Vec<Axis>,
         glyph_order: IndexSet<GlyphName>,
         glyph_locations: HashSet<NormalizedLocation>,
@@ -46,6 +49,7 @@ impl StaticMetadata {
         let axis_names = axes.iter().map(|a| a.name.clone()).collect();
         let variation_model = VariationModel::new(glyph_locations, axis_names)?;
         Ok(StaticMetadata {
+            units_per_em,
             axes,
             glyph_order,
             variation_model,

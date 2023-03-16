@@ -33,6 +33,7 @@ type RawUserToDesignMapping = Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>;
 /// Normalized representation of Glyphs 2/3 content
 #[derive(Debug, PartialEq, Hash)]
 pub struct Font {
+    pub units_per_em: u16,
     pub family_name: String,
     pub axes: Vec<Axis>,
     pub font_master: Vec<FontMaster>,
@@ -77,6 +78,7 @@ pub enum Shape {
 // Types chosen specifically to accomodate plist translation.
 #[derive(Debug, FromPlist, PartialEq, Eq)]
 struct RawFont {
+    pub units_per_em: Option<i64>,
     pub family_name: String,
     pub axes: Option<Vec<Axis>>,
     pub glyphs: Vec<RawGlyph>,
@@ -1061,7 +1063,13 @@ impl TryFrom<RawFont> for Font {
             features.push(raw_feature_to_feature(feature)?);
         }
 
+        let Some(units_per_em) = from.units_per_em else {
+            return Err(Error::NoUnitsPerEm);
+        };
+        let units_per_em = units_per_em.try_into().map_err(Error::InvalidUpem)?;
+
         Ok(Font {
+            units_per_em,
             family_name: from.family_name,
             axes: from.axes.unwrap_or_default(),
             font_master: from.font_master,
