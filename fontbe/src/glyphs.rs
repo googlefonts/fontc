@@ -1,9 +1,6 @@
 //! 'glyf' Glyph binary compilation
 
-use std::{
-    cmp,
-    collections::{BTreeSet, HashMap, HashSet},
-};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{coords::NormalizedLocation, ir};
@@ -406,15 +403,6 @@ fn bbox2rect(bbox: Bbox) -> Rect {
     }
 }
 
-fn rect2bbox(rect: Rect) -> Bbox {
-    Bbox {
-        x_min: rect.min_x() as i16,
-        y_min: rect.min_y() as i16,
-        x_max: rect.max_x() as i16,
-        y_max: rect.max_y() as i16,
-    }
-}
-
 struct GlyfLocaWork {}
 
 pub fn create_glyf_loca_work() -> Box<BeWork> {
@@ -432,7 +420,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
 
     // Simple glyphs have bbox set. Composites don't.
     // Ultimately composites are made up of simple glyphs, lets figure out the boxes
-    let mut bbox_acquired: HashMap<GlyphName, Bbox> = HashMap::new();
+    let mut bbox_acquired: HashMap<GlyphName, Rect> = HashMap::new();
     let mut composites = glyphs
         .iter()
         .filter_map(|(name, glyph)| {
@@ -451,7 +439,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
         // Hopefully we can figure out some of those bboxes!
         for (glyph_name, composite) in composites.iter() {
             let mut missing_boxes = false;
-            let boxes: Vec<Bbox> = composite
+            let boxes: Vec<_> = composite
                 .components()
                 .iter()
                 .filter_map(|c| {
@@ -465,7 +453,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
                             .map(|g| g.as_ref().clone())
                             .and_then(|g| match g {
                                 Glyph::Composite(..) => None,
-                                Glyph::Simple(simple_glyph) => Some(simple_glyph.bbox),
+                                Glyph::Simple(simple_glyph) => Some(bbox2rect(simple_glyph.bbox)),
                             })
                     });
                     if bbox.is_none() {
@@ -477,8 +465,8 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
                     // The transform we get here has changed because it got turned into F2Dot14 and i16 parts
                     // We could go get the "real" transform from IR...?
                     let affine = affine_for(c);
-                    let transformed_box = affine.transform_rect_bbox(bbox2rect(bbox.unwrap()));
-                    Some(rect2bbox(transformed_box))
+                    let transformed_box = affine.transform_rect_bbox(bbox.unwrap());
+                    Some(transformed_box)
                 })
                 .collect();
             if missing_boxes {
@@ -486,15 +474,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
                 continue;
             }
 
-            let bbox = boxes
-                .into_iter()
-                .reduce(|acc, e| Bbox {
-                    x_min: cmp::min(acc.x_min, e.x_min),
-                    y_min: cmp::min(acc.y_min, e.y_min),
-                    x_max: cmp::max(acc.x_max, e.x_max),
-                    y_max: cmp::max(acc.y_max, e.y_max),
-                })
-                .unwrap();
+            let bbox = boxes.into_iter().reduce(|acc, e| acc.union(e)).unwrap();
             trace!("bbox for {glyph_name} {bbox:?}");
             bbox_acquired.insert(glyph_name.clone(), bbox);
         }
@@ -512,7 +492,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
         let Glyph::Composite(composite) = &mut glyph else {
             panic!("{glyph_name} is not a composite; we shouldn't be trying to update it");
         };
-        composite.bbox = bbox;
+        composite.bbox = bbox.into(); // delay conversion to Bbox to avoid accumulating rounding error
         context.set_glyph(glyph_name, glyph);
     }
 
