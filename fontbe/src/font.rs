@@ -21,6 +21,7 @@ const TABLES_TO_MERGE: &[(WorkId, Tag)] = &[
     (WorkId::Hmtx, Tag::new(b"hmtx")),
     (WorkId::Glyf, Tag::new(b"glyf")),
     (WorkId::Loca, Tag::new(b"loca")),
+    (WorkId::Maxp, Tag::new(b"maxp")),
 ];
 
 impl Work<Context, Error> for FontWork {

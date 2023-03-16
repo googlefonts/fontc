@@ -17,6 +17,7 @@ use write_fonts::{
     tables::{
         cmap::Cmap,
         glyf::{Bbox, SimpleGlyph},
+        maxp::Maxp,
         post::Post,
     },
     validate::Validate,
@@ -46,6 +47,7 @@ pub enum WorkId {
     Glyf,
     Hmtx,
     Loca,
+    Maxp,
     Post,
     Font,
 }
@@ -150,6 +152,7 @@ pub struct Context {
     glyf_loca: ContextItem<GlyfLoca>,
     cmap: ContextItem<Cmap>,
     post: ContextItem<Post>,
+    maxp: ContextItem<Maxp>,
     hmtx: ContextItem<Bytes>,
     font: ContextItem<Bytes>,
 }
@@ -166,6 +169,7 @@ impl Context {
             glyf_loca: self.glyf_loca.clone(),
             cmap: self.cmap.clone(),
             post: self.post.clone(),
+            maxp: self.maxp.clone(),
             hmtx: self.hmtx.clone(),
             font: self.font.clone(),
         }
@@ -182,6 +186,7 @@ impl Context {
             glyf_loca: Arc::from(RwLock::new(None)),
             cmap: Arc::from(RwLock::new(None)),
             post: Arc::from(RwLock::new(None)),
+            maxp: Arc::from(RwLock::new(None)),
             hmtx: Arc::from(RwLock::new(None)),
             font: Arc::from(RwLock::new(None)),
         }
@@ -367,8 +372,12 @@ impl Context {
         set_cached(&self.glyf_loca, (glyf, loca));
     }
 
+    // Lovely little typed accessors
     context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
+    context_accessors! { get_maxp, set_maxp, maxp, Maxp, WorkId::Maxp, from_file, to_bytes }
     context_accessors! { get_post, set_post, post, Post, WorkId::Post, from_file, to_bytes }
+
+    // Accessors where value is raw bytes
     context_accessors! { get_hmtx, set_hmtx, hmtx, Bytes, WorkId::Hmtx, raw_from_file, raw_to_bytes }
     context_accessors! { get_font, set_font, font, Bytes, WorkId::Font, raw_from_file, raw_to_bytes }
 }
