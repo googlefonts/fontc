@@ -49,6 +49,7 @@ impl Paths {
             WorkId::Loca => self.build_dir.join("loca.table"),
             WorkId::Cmap => self.build_dir.join("cmap.table"),
             WorkId::Hmtx => self.build_dir.join("hmtx.table"),
+            WorkId::Maxp => self.build_dir.join("maxp.table"),
             WorkId::Post => self.build_dir.join("post.table"),
             WorkId::Font => self.build_dir.join("font.ttf"),
         }

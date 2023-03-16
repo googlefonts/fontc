@@ -4,6 +4,7 @@ pub mod features;
 pub mod font;
 pub mod glyphs;
 pub mod hmtx;
+pub mod maxp;
 pub mod orchestration;
 pub mod paths;
 pub mod post;

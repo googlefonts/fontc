@@ -15,6 +15,7 @@ use fontbe::{
     font::create_font_work,
     glyphs::{create_glyf_loca_work, create_glyph_work},
     hmtx::create_hmtx_work,
+    maxp::create_maxp_work,
     orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
     paths::Paths as BePaths,
     post::create_post_work,
@@ -518,6 +519,31 @@ fn add_post_be_job(
     Ok(())
 }
 
+fn add_maxp_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    let glyphs_changed = change_detector.glyphs_changed();
+    if !glyphs_changed.is_empty() {
+        let mut dependencies = HashSet::new();
+        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+
+        let id: AnyWorkId = BeWorkIdentifier::Maxp.into();
+        workload.insert(
+            id.clone(),
+            Job {
+                work: create_maxp_work().into(),
+                dependencies,
+                read_access: ReadAccess::Dependencies,
+                write_access: access_one(id),
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::Maxp);
+    }
+    Ok(())
+}
+
 fn add_hmtx_be_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
@@ -575,6 +601,7 @@ fn add_font_be_job(
         dependencies.insert(BeWorkIdentifier::Glyf.into());
         dependencies.insert(BeWorkIdentifier::Hmtx.into());
         dependencies.insert(BeWorkIdentifier::Loca.into());
+        dependencies.insert(BeWorkIdentifier::Maxp.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Font.into();
         workload.insert(
@@ -909,6 +936,7 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
     add_glyf_loca_be_job(change_detector, &mut workload)?;
     add_cmap_be_job(change_detector, &mut workload)?;
     add_hmtx_be_job(change_detector, &mut workload)?;
+    add_maxp_be_job(change_detector, &mut workload)?;
     add_post_be_job(change_detector, &mut workload)?;
 
     // Make a damn font
@@ -1003,8 +1031,9 @@ mod tests {
     use crate::{
         add_cmap_be_job, add_feature_be_job, add_feature_ir_job,
         add_finalize_static_metadata_ir_job, add_font_be_job, add_glyf_loca_be_job,
-        add_glyph_ir_jobs, add_hmtx_be_job, add_init_static_metadata_ir_job, add_post_be_job,
-        finish_successfully, init, require_dir, Args, ChangeDetector, Config, Workload,
+        add_glyph_ir_jobs, add_hmtx_be_job, add_init_static_metadata_ir_job, add_maxp_be_job,
+        add_post_be_job, finish_successfully, init, require_dir, Args, ChangeDetector, Config,
+        Workload,
     };
 
     fn testdata_dir() -> PathBuf {
@@ -1130,6 +1159,7 @@ mod tests {
         add_glyf_loca_be_job(&mut change_detector, &mut workload).unwrap();
         add_cmap_be_job(&mut change_detector, &mut workload).unwrap();
         add_hmtx_be_job(&mut change_detector, &mut workload).unwrap();
+        add_maxp_be_job(&mut change_detector, &mut workload).unwrap();
         add_post_be_job(&mut change_detector, &mut workload).unwrap();
 
         add_font_be_job(&mut change_detector, &mut workload).unwrap();
@@ -1212,6 +1242,7 @@ mod tests {
                 BeWorkIdentifier::Glyf.into(),
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
+                BeWorkIdentifier::Maxp.into(),
                 BeWorkIdentifier::Post.into(),
                 BeWorkIdentifier::Font.into(),
             ]),
@@ -1257,6 +1288,7 @@ mod tests {
                 BeWorkIdentifier::Glyf.into(),
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
+                BeWorkIdentifier::Maxp.into(),
                 BeWorkIdentifier::Font.into(),
             ]),
             result.work_completed
@@ -1617,6 +1649,7 @@ mod tests {
                 Tag::new(b"glyf"),
                 Tag::new(b"hmtx"),
                 Tag::new(b"loca"),
+                Tag::new(b"maxp"),
             ],
             font.table_directory
                 .table_records()
