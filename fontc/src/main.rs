@@ -568,7 +568,7 @@ fn add_font_be_job(
 
     // If glyphs or features changed we better do the thing
     if !glyphs_changed.is_empty() || change_detector.feature_be_change() {
-        let mut dependencies: HashSet<_> = HashSet::new();
+        let mut dependencies = HashSet::new();
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
         dependencies.insert(BeWorkIdentifier::Features.into());
         dependencies.insert(BeWorkIdentifier::Cmap.into());
