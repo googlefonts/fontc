@@ -16,6 +16,7 @@ use fontir::{
 use indexmap::IndexSet;
 use log::{debug, trace, warn};
 use norad::designspace::{self, DesignSpaceDocument};
+use write_fonts::OtRound;
 
 use crate::toir::{to_design_location, to_ir_axes, to_ir_glyph, to_normalized_locations};
 
@@ -381,8 +382,8 @@ fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designsp
         .find(|(_, source)| to_design_location(&source.location) == default_location)
 }
 
-fn load_lib_plist(ufo_dir: &Path) -> Result<plist::Dictionary, WorkError> {
-    let lib_plist_file = ufo_dir.join("lib.plist");
+fn load_plist(ufo_dir: &Path, name: &str) -> Result<plist::Dictionary, WorkError> {
+    let lib_plist_file = ufo_dir.join(name);
     if !lib_plist_file.is_file() {
         return Err(WorkError::FileExpected(lib_plist_file));
     }
@@ -402,7 +403,7 @@ fn glyph_order(
     // That glyph order *may* deign to overlap with the actual glyph set
     let mut glyph_order = IndexSet::new();
     if let Some((_, source)) = default_master(designspace) {
-        let lib_plist = load_lib_plist(&designspace_dir.join(&source.filename))?;
+        let lib_plist = load_plist(&designspace_dir.join(&source.filename), "lib.plist")?;
         if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
             let mut pending_add: HashSet<_> = glyph_names.clone();
             // Add names from ufo glyph order union glyph_names in ufo glyph order
@@ -435,6 +436,33 @@ fn glyph_order(
     Ok(glyph_order)
 }
 
+fn units_per_em(font_infos: &[plist::Dictionary]) -> Result<u16, WorkError> {
+    let mut upems: HashSet<u16> = HashSet::new();
+    for font_info in font_infos.iter() {
+        let raw_upem = font_info.get("unitsPerEm");
+        let upem = match raw_upem {
+            Some(plist::Value::Real(value)) => *value,
+            Some(plist::Value::Integer(value)) => match value.as_unsigned() {
+                Some(value) => value as f64,
+                None => return Err(WorkError::InvalidUpem(format!("{value}"))),
+            },
+            Some(..) => return Err(WorkError::InvalidUpem(format!("{raw_upem:?}"))),
+            _ => return Err(WorkError::NoUnitsPerEm),
+        };
+        if upem > (u16::MAX as f64 + 0.5) {
+            return Err(WorkError::InvalidUpem(format!("{upem} out of bounds")));
+        }
+        upems.insert(upem.ot_round());
+    }
+
+    if upems.len() != 1 {
+        let mut upems: Vec<_> = upems.into_iter().collect();
+        upems.sort();
+        return Err(WorkError::InconsistentUpem(upems));
+    }
+    Ok(*upems.iter().next().unwrap())
+}
+
 fn files_identical(f1: &Path, f2: &Path) -> Result<bool, WorkError> {
     if !f1.is_file() {
         return Err(WorkError::FileExpected(f1.to_path_buf()));
@@ -450,20 +478,35 @@ fn files_identical(f1: &Path, f2: &Path) -> Result<bool, WorkError> {
     Ok(true)
 }
 
+fn font_infos(
+    designspace_dir: &Path,
+    designspace: &DesignSpaceDocument,
+) -> Result<Vec<plist::Dictionary>, WorkError> {
+    let mut results = Vec::new();
+    for source in designspace.sources.iter() {
+        let ufo_dir = designspace_dir.join(&source.filename);
+        if !ufo_dir.join("fontinfo.plist").exists() {
+            continue;
+        }
+        results.push(load_plist(&ufo_dir, "fontinfo.plist")?);
+    }
+    Ok(results)
+}
+
 impl Work<Context, WorkError> for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
+        let designspace_dir = self.designspace_file.parent().unwrap();
 
+        let font_infos = font_infos(designspace_dir, &self.designspace)?;
+        let units_per_em = units_per_em(&font_infos)?;
         let axes = to_ir_axes(&self.designspace.axes);
         let glyph_locations = to_normalized_locations(&axes, &self.designspace.sources);
 
-        let glyph_order = glyph_order(
-            &self.designspace,
-            self.designspace_file.parent().unwrap(),
-            &self.glyph_names,
-        )?;
+        let glyph_order = glyph_order(&self.designspace, designspace_dir, &self.glyph_names)?;
+
         context.set_init_static_metadata(
-            StaticMetadata::new(axes, glyph_order, glyph_locations)
+            StaticMetadata::new(units_per_em, axes, glyph_order, glyph_locations)
                 .map_err(WorkError::VariationModelError)?,
         );
         Ok(())
@@ -543,9 +586,9 @@ mod tests {
     use indexmap::IndexSet;
     use norad::designspace;
 
-    use crate::toir::to_design_location;
+    use crate::{source::font_infos, toir::to_design_location};
 
-    use super::{default_master, glif_files, glyph_order, DesignSpaceIrSource};
+    use super::{default_master, glif_files, glyph_order, units_per_em, DesignSpaceIrSource};
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -591,10 +634,14 @@ mod tests {
         );
     }
 
-    fn test_source() -> (DesignSpaceIrSource, Input) {
-        let mut source = DesignSpaceIrSource::new(testdata_dir().join("wght_var.designspace"));
+    fn load_designspace(name: &str) -> (DesignSpaceIrSource, Input) {
+        let mut source = DesignSpaceIrSource::new(testdata_dir().join(name));
         let input = source.inputs().unwrap();
         (source, input)
+    }
+
+    fn load_wght_var() -> (DesignSpaceIrSource, Input) {
+        load_designspace("wght_var.designspace")
     }
 
     fn add_design_location(
@@ -613,7 +660,7 @@ mod tests {
 
     #[test]
     pub fn create_work() {
-        let (ir_source, input) = test_source();
+        let (ir_source, input) = load_wght_var();
 
         let work = ir_source
             .create_work_for_one_glyph(&"bar".into(), &input)
@@ -643,7 +690,7 @@ mod tests {
 
     #[test]
     pub fn create_sparse_work() {
-        let (ir_source, input) = test_source();
+        let (ir_source, input) = load_wght_var();
 
         let work = ir_source
             .create_work_for_one_glyph(&"plus".into(), &input)
@@ -668,14 +715,14 @@ mod tests {
 
     #[test]
     pub fn only_glyphs_present_in_default() {
-        let (_, inputs) = test_source();
+        let (_, inputs) = load_wght_var();
         // bonus_bar is not present in the default master; should discard
         assert!(!inputs.glyphs.contains_key(&"bonus_bar".into()));
     }
 
     #[test]
     pub fn find_default_master() {
-        let (source, _) = test_source();
+        let (source, _) = load_wght_var();
         let ds = source.load_designspace().unwrap();
         let mut loc = DesignLocation::new();
         loc.set_pos("Weight", DesignCoord::new(400.0));
@@ -689,7 +736,7 @@ mod tests {
     pub fn builds_glyph_order_for_wght_var() {
         // Only WghtVar-Regular.ufo has a lib.plist, and it only lists a subset of glyphs
         // Should still work.
-        let (source, _) = test_source();
+        let (source, _) = load_wght_var();
         let ds = source.load_designspace().unwrap();
         let go = glyph_order(
             &ds,
@@ -703,5 +750,24 @@ mod tests {
             .map(|s| (*s).into())
             .collect();
         assert_eq!(expected, go);
+    }
+
+    #[test]
+    pub fn fetches_upem() {
+        let (source, _) = load_wght_var();
+        let font_infos =
+            font_infos(&source.designspace_dir, &source.load_designspace().unwrap()).unwrap();
+        assert_eq!(1000, units_per_em(&font_infos).unwrap());
+    }
+
+    #[test]
+    pub fn ot_rounds_upem() {
+        let (source, _) = load_designspace("float_upem.designspace");
+        let font_infos =
+            font_infos(&source.designspace_dir, &source.load_designspace().unwrap()).unwrap();
+        assert_eq!(
+            256, // 255.5 rounded toward +infinity
+            units_per_em(&font_infos).unwrap()
+        );
     }
 }

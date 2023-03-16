@@ -8,4 +8,5 @@ glyphs = (
 	}
 );
 fontMaster = ();
+unitsPerEm = 1000;
 }

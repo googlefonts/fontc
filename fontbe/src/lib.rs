@@ -3,6 +3,7 @@ pub mod error;
 pub mod features;
 pub mod font;
 pub mod glyphs;
+pub mod head;
 pub mod hmtx;
 pub mod maxp;
 pub mod orchestration;

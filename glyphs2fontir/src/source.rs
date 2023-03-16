@@ -69,6 +69,7 @@ impl GlyphsIrSource {
         // Wipe out glyph-related fields, track the rest
         // Explicitly field by field so if we add more compiler will force us to update here
         let font = Font {
+            units_per_em: font.units_per_em,
             family_name: font.family_name.clone(),
             axes: font.axes.clone(),
             font_master: font.font_master.clone(),
@@ -197,7 +198,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             .filter(|gn| self.glyph_names.contains(gn))
             .collect();
         context.set_init_static_metadata(
-            StaticMetadata::new(axes, glyph_order, glyph_locations)
+            StaticMetadata::new(font.units_per_em, axes, glyph_order, glyph_locations)
                 .map_err(WorkError::VariationModelError)?,
         );
         Ok(())
@@ -667,7 +668,8 @@ mod tests {
 
     // It's so minimal it's a good test
     #[test]
-    fn loads_hmtx_one_glyph() {
-        build_static_metadata(glyphs2_dir().join("NotDef.glyphs"));
+    fn loads_minimal() {
+        let (_, context) = build_static_metadata(glyphs2_dir().join("NotDef.glyphs"));
+        assert_eq!(1000, context.get_init_static_metadata().units_per_em);
     }
 }

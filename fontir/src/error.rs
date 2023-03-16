@@ -110,6 +110,12 @@ pub enum WorkError {
     VariationModelError(#[from] VariationModelError),
     #[error("Contour reversal error {0}")]
     ContourReversalError(String),
+    #[error("Unable to determine units per em")]
+    NoUnitsPerEm,
+    #[error("Invalid units per em {0}")]
+    InvalidUpem(String),
+    #[error("Must have exactly one units per em, got {0:?}")]
+    InconsistentUpem(Vec<u16>),
 }
 
 /// An async work error, hence one that must be Send

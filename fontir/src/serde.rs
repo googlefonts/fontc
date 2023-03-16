@@ -47,6 +47,7 @@ impl From<CoordConverter> for CoordConverterSerdeRepr {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StaticMetadataSerdeRepr {
+    pub units_per_em: u16,
     pub axes: Vec<Axis>,
     pub glyph_order: Vec<String>,
     pub glyph_locations: Vec<NormalizedLocation>,
@@ -55,6 +56,7 @@ pub struct StaticMetadataSerdeRepr {
 impl From<StaticMetadataSerdeRepr> for StaticMetadata {
     fn from(from: StaticMetadataSerdeRepr) -> Self {
         StaticMetadata::new(
+            from.units_per_em,
             from.axes,
             from.glyph_order.into_iter().map(|s| s.into()).collect(),
             from.glyph_locations.into_iter().collect(),
@@ -66,6 +68,7 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
 impl From<StaticMetadata> for StaticMetadataSerdeRepr {
     fn from(from: StaticMetadata) -> Self {
         StaticMetadataSerdeRepr {
+            units_per_em: from.units_per_em,
             axes: from.axes,
             glyph_order: from
                 .glyph_order
