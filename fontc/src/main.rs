@@ -994,8 +994,8 @@ mod tests {
             hmtx::Hmtx,
             loca::Loca,
         },
-        types::{F2Dot14, GlyphId},
-        FontData, FontRead, FontReadWithArgs,
+        types::{F2Dot14, GlyphId, Tag},
+        FontData, FontRead, FontReadWithArgs, FontRef,
     };
     use tempfile::{tempdir, TempDir};
     use write_fonts::dump_table;
@@ -1595,6 +1595,33 @@ mod tests {
             hmtx.left_side_bearings()
                 .iter()
                 .map(|m| m.get())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn wght_var_has_expected_tables() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(test_args(build_dir, "wght_var.designspace"));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+
+        assert_eq!(
+            vec![
+                Tag::new(b"cmap"),
+                Tag::new(b"glyf"),
+                Tag::new(b"hmtx"),
+                Tag::new(b"loca"),
+            ],
+            font.table_directory
+                .table_records()
+                .iter()
+                .map(|tr| tr.tag())
                 .collect::<Vec<_>>()
         );
     }
