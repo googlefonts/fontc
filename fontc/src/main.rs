@@ -1458,9 +1458,8 @@ mod tests {
         assert_component_transform(&components[1], [1.5, 0.0, 0.0, 2.0, 50.0, 50.0]);
 
         // Have ye bbox?
-        // It should be 425, 125, 800, 250. See
         assert_eq!(
-            [425, 125, 799, 249],
+            [425, 125, 800, 250],
             [glyph.x_min(), glyph.y_min(), glyph.x_max(), glyph.y_max()]
         );
     }
