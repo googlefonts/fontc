@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    ffi::OsStr,
     fs,
     io::{self, Write},
     path::{Path, PathBuf},
@@ -24,7 +23,7 @@ use fontbe::{
 
 use fontc::{
     work::{AnyContext, AnyWork, AnyWorkError, ReadAccess},
-    Args, Config, Error,
+    Args, ChangeDetector, Config, Error,
 };
 use fontdrasil::{
     orchestration::{access_none, access_one, AccessFn},
@@ -34,14 +33,10 @@ use fontir::{
     glyph::create_finalize_static_metadata_work,
     orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     paths::Paths as IrPaths,
-    source::{DeleteWork, Input, Source},
+    source::DeleteWork,
 };
-use glyphs2fontir::source::GlyphsIrSource;
-use indexmap::IndexSet;
-use log::{debug, error, log_enabled, trace, warn};
-use regex::Regex;
 
-use ufo2fontir::source::DesignSpaceIrSource;
+use log::{debug, error, log_enabled, trace, warn};
 
 fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     if dir.exists() && !dir.is_dir() {
@@ -54,101 +49,6 @@ fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     Ok(dir.to_path_buf())
 }
 
-fn ir_source(source: &Path) -> Result<Box<dyn Source>, Error> {
-    if !source.exists() {
-        return Err(Error::FileExpected(source.to_path_buf()));
-    }
-    let ext = source
-        .extension()
-        .and_then(OsStr::to_str)
-        .ok_or_else(|| Error::UnrecognizedSource(source.to_path_buf()))?;
-    match ext {
-        "designspace" => Ok(Box::new(DesignSpaceIrSource::new(source.to_path_buf()))),
-        "glyphs" => Ok(Box::new(GlyphsIrSource::new(source.to_path_buf()))),
-        _ => Err(Error::UnrecognizedSource(source.to_path_buf())),
-    }
-}
-
-fn finish_successfully(context: ChangeDetector) -> Result<(), Error> {
-    let current_sources =
-        serde_yaml::to_string(&context.current_inputs).map_err(Error::YamlSerError)?;
-    fs::write(context.ir_paths.ir_input_file(), current_sources).map_err(Error::IoError)
-}
-
-impl ChangeDetector {
-    fn init_static_metadata_ir_change(&self) -> bool {
-        self.current_inputs.static_metadata != self.prev_inputs.static_metadata
-            || !self
-                .ir_paths
-                .target_file(&FeWorkIdentifier::InitStaticMetadata)
-                .is_file()
-    }
-
-    fn final_static_metadata_ir_change(&self) -> bool {
-        self.current_inputs.static_metadata != self.prev_inputs.static_metadata
-            || !self
-                .ir_paths
-                .target_file(&FeWorkIdentifier::FinalizeStaticMetadata)
-                .is_file()
-    }
-
-    fn feature_ir_change(&self) -> bool {
-        self.final_static_metadata_ir_change()
-            || self.current_inputs.features != self.prev_inputs.features
-            || !self
-                .ir_paths
-                .target_file(&FeWorkIdentifier::Features)
-                .is_file()
-    }
-
-    fn feature_be_change(&self) -> bool {
-        self.feature_ir_change()
-            || !self
-                .be_paths
-                .target_file(&BeWorkIdentifier::Features)
-                .is_file()
-    }
-
-    fn post_be_change(&self) -> bool {
-        self.final_static_metadata_ir_change()
-            || !self.be_paths.target_file(&BeWorkIdentifier::Post).is_file()
-    }
-
-    fn glyphs_changed(&self) -> IndexSet<GlyphName> {
-        let glyph_iter = self.current_inputs.glyphs.iter();
-
-        if self.init_static_metadata_ir_change() {
-            return glyph_iter.map(|(name, _)| name).cloned().collect();
-        }
-        glyph_iter
-            .filter_map(
-                |(glyph_name, curr_state)| match self.prev_inputs.glyphs.get(glyph_name) {
-                    Some(prev_state) => {
-                        // If the input changed or the output doesn't exist a rebuild is probably in order
-                        (prev_state != curr_state
-                            || !self
-                                .ir_paths
-                                .target_file(&FeWorkIdentifier::Glyph(glyph_name.clone()))
-                                .exists())
-                        .then_some(glyph_name)
-                    }
-                    None => Some(glyph_name),
-                },
-            )
-            .cloned()
-            .collect()
-    }
-
-    fn glyphs_deleted(&self) -> IndexSet<GlyphName> {
-        self.prev_inputs
-            .glyphs
-            .keys()
-            .filter(|glyph_name| !self.current_inputs.glyphs.contains_key(glyph_name))
-            .cloned()
-            .collect()
-    }
-}
-
 fn add_init_static_metadata_ir_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
@@ -159,9 +59,13 @@ fn add_init_static_metadata_ir_job(
         workload.insert(
             id,
             Job {
+                //FIXME: it's weird that we call a method on this type, passing
+                //in an argument we also get from this type? In a world where there
+                //is a general trait for 'create work' on Source we can have
+                //a method on change_detector that calls this method with the current inputs?
                 work: change_detector
-                    .ir_source
-                    .create_static_metadata_work(&change_detector.current_inputs)?
+                    .ir_source()
+                    .create_static_metadata_work(change_detector.current_inputs())?
                     .into(),
                 dependencies: HashSet::new(),
                 read_access: ReadAccess::Dependencies,
@@ -220,8 +124,8 @@ fn add_feature_ir_job(
             id,
             Job {
                 work: change_detector
-                    .ir_source
-                    .create_feature_ir_work(&change_detector.current_inputs)?
+                    .ir_source()
+                    .create_feature_ir_work(change_detector.current_inputs())?
                     .into(),
                 dependencies: HashSet::new(),
                 read_access: ReadAccess::Dependencies,
@@ -238,7 +142,7 @@ fn add_feature_be_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
-    if change_detector.feature_be_change() && change_detector.glyph_name_filter.is_none() {
+    if change_detector.feature_be_change() && change_detector.glyph_name_filter().is_none() {
         let id: AnyWorkId = BeWorkIdentifier::Features.into();
         let write_access = access_one(id.clone());
         workload.insert(
@@ -255,7 +159,7 @@ fn add_feature_be_job(
         );
     } else {
         // Features are extremely prone to not making sense when glyphs are filtered
-        if change_detector.glyph_name_filter.is_some() {
+        if change_detector.glyph_name_filter().is_some() {
             warn!("Not processing BE Features because a glyph name filter is active");
         }
         workload.mark_success(BeWorkIdentifier::Features);
@@ -270,7 +174,7 @@ fn add_glyph_ir_jobs(
     // Destroy IR for deleted glyphs. No dependencies.
     for glyph_name in change_detector.glyphs_deleted().iter() {
         let id = FeWorkIdentifier::Glyph(glyph_name.clone());
-        let path = change_detector.ir_paths.target_file(&id);
+        let path = change_detector.ir_paths().target_file(&id);
         workload.insert(
             id.into(),
             Job {
@@ -285,8 +189,8 @@ fn add_glyph_ir_jobs(
     // Generate IR for changed glyphs
     let glyphs_changed = change_detector.glyphs_changed();
     let glyph_work = change_detector
-        .ir_source
-        .create_glyph_ir_work(&glyphs_changed, &change_detector.current_inputs)?;
+        .ir_source()
+        .create_glyph_ir_work(&glyphs_changed, change_detector.current_inputs())?;
     for (glyph_name, work) in glyphs_changed.iter().zip(glyph_work) {
         let id = FeWorkIdentifier::Glyph(glyph_name.clone());
         let work = work.into();
@@ -579,50 +483,6 @@ fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: Gl
     );
 }
 
-struct ChangeDetector {
-    glyph_name_filter: Option<Regex>,
-    ir_paths: IrPaths,
-    ir_source: Box<dyn Source>,
-    prev_inputs: Input,
-    current_inputs: Input,
-    be_paths: BePaths,
-}
-
-impl ChangeDetector {
-    fn new(config: Config, ir_paths: IrPaths, prev_inputs: Input) -> Result<ChangeDetector, Error> {
-        // What sources are we dealing with?
-        let mut ir_source = ir_source(&config.args.source)?;
-        let mut current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
-        let be_paths = BePaths::new(ir_paths.build_dir());
-
-        let glyph_name_filter = config
-            .args
-            .glyph_name_filter
-            .map(|raw_filter| Regex::new(&raw_filter))
-            .transpose()
-            .map_err(Error::BadRegex)?;
-
-        if let Some(regex) = &glyph_name_filter {
-            current_inputs.glyphs.retain(|glyph_name, _| {
-                let result = regex.is_match(glyph_name.as_str());
-                if !result {
-                    trace!("'{glyph_name}' does not match --glyph_name_filter");
-                }
-                result
-            });
-        }
-
-        Ok(ChangeDetector {
-            glyph_name_filter,
-            ir_paths,
-            ir_source,
-            prev_inputs,
-            current_inputs,
-            be_paths,
-        })
-    }
-}
-
 enum RecvType {
     Blocking,
     NonBlocking,
@@ -913,13 +773,12 @@ fn main() -> Result<(), Error> {
     let fe_root = FeContext::new_root(
         config.args.flags(),
         ir_paths,
-        change_detector.current_inputs.clone(),
+        change_detector.current_inputs().clone(),
     );
     let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root);
     workload.exec(fe_root, be_root)?;
 
-    finish_successfully(change_detector)?;
-    Ok(())
+    change_detector.finish_successfully()
 }
 
 #[cfg(test)]
@@ -962,8 +821,7 @@ mod tests {
         add_cmap_be_job, add_feature_be_job, add_feature_ir_job,
         add_finalize_static_metadata_ir_job, add_font_be_job, add_glyf_loca_be_job,
         add_glyph_ir_jobs, add_head_be_job, add_hmetrics_job, add_init_static_metadata_ir_job,
-        add_maxp_be_job, add_post_be_job, finish_successfully, require_dir, Args, ChangeDetector,
-        Config, Workload,
+        add_maxp_be_job, add_post_be_job, require_dir, Args, ChangeDetector, Config, Workload,
     };
 
     struct TestCompile {
@@ -982,7 +840,7 @@ mod tests {
             be_context: BeContext,
         ) -> TestCompile {
             TestCompile {
-                build_dir: change_detector.be_paths.build_dir().to_path_buf(),
+                build_dir: change_detector.be_paths().build_dir().to_path_buf(),
                 work_completed: HashSet::new(),
                 glyphs_changed: change_detector.glyphs_changed(),
                 glyphs_deleted: change_detector.glyphs_deleted(),
@@ -1044,7 +902,7 @@ mod tests {
         let fe_root = FeContext::new_root(
             config.args.flags(),
             ir_paths,
-            change_detector.current_inputs.clone(),
+            change_detector.current_inputs().clone(),
         );
         let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root.read_only());
         let mut result = TestCompile::new(
@@ -1090,7 +948,7 @@ mod tests {
 
             workload.handle_success(&fe_root, id.clone());
         }
-        finish_successfully(change_detector).unwrap();
+        change_detector.finish_successfully().unwrap();
         result.work_completed = workload.success.difference(&pre_success).cloned().collect();
         result
     }
