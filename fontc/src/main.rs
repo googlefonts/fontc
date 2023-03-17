@@ -1016,25 +1016,6 @@ mod tests {
         ChangeDetector, Config, Workload,
     };
 
-    fn testdata_dir() -> PathBuf {
-        let path = PathBuf::from("../resources/testdata")
-            .canonicalize()
-            .unwrap();
-        assert!(path.is_dir(), "{path:#?} isn't a dir");
-        path
-    }
-
-    fn test_args(build_dir: &Path, source: &str) -> Args {
-        Args {
-            glyph_name_filter: None,
-            source: testdata_dir().join(source),
-            emit_ir: true,
-            emit_debug: false,
-            build_dir: build_dir.to_path_buf(),
-            match_legacy: true,
-        }
-    }
-
     struct TestCompile {
         build_dir: PathBuf,
         work_completed: HashSet<AnyWorkId>,
@@ -1079,7 +1060,7 @@ mod tests {
     fn init_captures_state() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let args = test_args(build_dir, "wght_var.designspace");
+        let args = Args::for_test(build_dir, "wght_var.designspace");
         let config = Config::new(args.clone()).unwrap();
 
         init(&config).unwrap();
@@ -1099,7 +1080,7 @@ mod tests {
     fn detect_compiler_change() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let args = test_args(build_dir, "wght_var.designspace");
+        let args = Args::for_test(build_dir, "wght_var.designspace");
         let config = Config::new(args.clone()).unwrap();
 
         let compiler_location = std::env::current_exe().unwrap();
@@ -1208,7 +1189,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
 
-        let result = compile(test_args(build_dir, "wght_var.designspace"));
+        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
         assert_eq!(
             HashSet::from([
                 FeWorkIdentifier::InitStaticMetadata.into(),
@@ -1237,14 +1218,14 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
 
-        let result = compile(test_args(build_dir, "wght_var.designspace"));
+        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
         assert_eq!(
             IndexSet::from(["bar".into(), "plus".into()]),
             result.glyphs_changed
         );
         assert_eq!(IndexSet::new(), result.glyphs_deleted);
 
-        let result = compile(test_args(build_dir, "wght_var.designspace"));
+        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
         assert_eq!(HashSet::new(), result.work_completed);
         assert_eq!(IndexSet::new(), result.glyphs_changed);
         assert_eq!(IndexSet::new(), result.glyphs_deleted);
@@ -1256,12 +1237,12 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
 
-        let result = compile(test_args(build_dir, "wght_var.designspace"));
+        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
         assert!(result.work_completed.len() > 1);
 
         fs::remove_file(build_dir.join("glyph_ir/bar.yml")).unwrap();
 
-        let result = compile(test_args(build_dir, "wght_var.designspace"));
+        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
         assert_eq!(
             HashSet::from([
                 FeWorkIdentifier::Glyph("bar".into()).into(),
@@ -1282,7 +1263,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
 
-        let result = compile(test_args(build_dir, "wght_var.designspace"));
+        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
         assert_eq!(
             IndexSet::from(["bar".into(), "plus".into()]),
             result.glyphs_changed
@@ -1293,7 +1274,7 @@ mod tests {
         assert!(bar_ir.is_file(), "no file {bar_ir:#?}");
         fs::remove_file(bar_ir).unwrap();
 
-        let result = compile(test_args(build_dir, "wght_var.designspace"));
+        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
         assert_eq!(IndexSet::from(["bar".into()]), result.glyphs_changed);
         assert_eq!(IndexSet::new(), result.glyphs_deleted);
     }
@@ -1303,7 +1284,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
 
-        let result = compile(test_args(build_dir, "static.designspace"));
+        let result = compile(Args::for_test(build_dir, "static.designspace"));
         assert!(
             result
                 .work_completed
@@ -1322,7 +1303,7 @@ mod tests {
     ) -> (Glyph, GlyphInstance) {
         let build_dir = temp_dir.path();
 
-        let mut args = test_args(build_dir, "glyphs2/MixedContourComponent.glyphs");
+        let mut args = Args::for_test(build_dir, "glyphs2/MixedContourComponent.glyphs");
         args.match_legacy = match_legacy; // <-- important :)
         let result = compile(args);
 
@@ -1377,7 +1358,7 @@ mod tests {
     fn compile_simple_binary_glyph() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        compile(test_args(build_dir, "static.designspace"));
+        compile(Args::for_test(build_dir, "static.designspace"));
 
         let raw_glyph = glyph_bytes(build_dir, "bar");
         let glyph = SimpleGlyph::read(FontData::new(&raw_glyph)).unwrap();
@@ -1403,7 +1384,7 @@ mod tests {
     fn compile_simple_glyphs_to_glyf_loca() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        compile(test_args(build_dir, "static.designspace"));
+        compile(Args::for_test(build_dir, "static.designspace"));
 
         let raw_glyf = read_file(&build_dir.join("glyf.table"));
         let raw_loca = read_file(&build_dir.join("loca.table"));
@@ -1427,7 +1408,7 @@ mod tests {
     fn compile_composite_glyphs_has_expected_glyph_types() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let result = compile(test_args(build_dir, "glyphs2/Component.glyphs"));
+        let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
         let (raw_glyf, raw_loca) = result.raw_glyf_loca();
 
         // Per source, glyphs should be period, comma, non_uniform_scale
@@ -1455,7 +1436,7 @@ mod tests {
     fn compile_composite_glyphs_to_glyf_loca() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let result = compile(test_args(build_dir, "glyphs2/Component.glyphs"));
+        let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
         let (raw_glyf, raw_loca) = result.raw_glyf_loca();
 
         // non-uniform scaling of period
@@ -1499,7 +1480,7 @@ mod tests {
     fn compile_composite_glyphs_to_glyf_loca_applies_transforms() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let result = compile(test_args(build_dir, "glyphs2/Component.glyphs"));
+        let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
         let (raw_glyf, raw_loca) = result.raw_glyf_loca();
 
         let gid = result.get_glyph_index("simple_transform_again");
@@ -1524,7 +1505,7 @@ mod tests {
     fn writes_cmap() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let result = compile(test_args(build_dir, "glyphs2/Component.glyphs"));
+        let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
 
         let raw_cmap = dump_table(&*result.be_context.get_cmap()).unwrap();
         let font_data = FontData::new(&raw_cmap);
@@ -1574,7 +1555,7 @@ mod tests {
     fn hmtx_of_one() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let result = compile(test_args(build_dir, "glyphs2/NotDef.glyphs"));
+        let result = compile(Args::for_test(build_dir, "glyphs2/NotDef.glyphs"));
 
         let raw_hmtx = result.be_context.get_hmtx();
         let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &(1, 1)).unwrap();
@@ -1592,7 +1573,7 @@ mod tests {
     fn hmtx_of_mono() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        let result = compile(test_args(build_dir, "glyphs2/Mono.glyphs"));
+        let result = compile(Args::for_test(build_dir, "glyphs2/Mono.glyphs"));
 
         let raw_hmtx = result.be_context.get_hmtx();
         let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &(1, 3)).unwrap();
@@ -1616,7 +1597,7 @@ mod tests {
     fn wght_var_has_expected_tables() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        compile(test_args(build_dir, "wght_var.designspace"));
+        compile(Args::for_test(build_dir, "wght_var.designspace"));
 
         let font_file = build_dir.join("font.ttf");
         assert!(font_file.exists());

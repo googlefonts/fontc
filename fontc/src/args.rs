@@ -1,6 +1,6 @@
 //! Command line arguments
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use fontir::orchestration::Flags;
@@ -52,5 +52,25 @@ impl Args {
         flags.set(Flags::MATCH_LEGACY, self.match_legacy);
 
         flags
+    }
+
+    /// Manually create args for testing
+    #[doc(hidden)]
+    pub fn for_test(build_dir: &Path, source: &str) -> Args {
+        fn testdata_dir() -> PathBuf {
+            let path = PathBuf::from("../resources/testdata")
+                .canonicalize()
+                .unwrap();
+            assert!(path.is_dir(), "{path:#?} isn't a dir");
+            path
+        }
+        Args {
+            glyph_name_filter: None,
+            source: testdata_dir().join(source),
+            emit_ir: true,
+            emit_debug: false,
+            build_dir: build_dir.to_path_buf(),
+            match_legacy: true,
+        }
     }
 }
