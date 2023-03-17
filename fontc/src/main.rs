@@ -21,9 +21,10 @@ use fontbe::{
     paths::Paths as BePaths,
     post::create_post_work,
 };
+
 use fontc::{
     work::{AnyContext, AnyWork, AnyWorkError, ReadAccess},
-    Error,
+    Args, Error,
 };
 use fontdrasil::{
     orchestration::{access_none, access_one, AccessFn},
@@ -31,7 +32,7 @@ use fontdrasil::{
 };
 use fontir::{
     glyph::create_finalize_static_metadata_work,
-    orchestration::{Context as FeContext, Flags, WorkId as FeWorkIdentifier},
+    orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     paths::Paths as IrPaths,
     source::{DeleteWork, Input, Source},
     stateset::StateSet,
@@ -42,54 +43,6 @@ use log::{debug, error, info, log_enabled, trace, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ufo2fontir::source::DesignSpaceIrSource;
-
-/// What font can we build for you today?
-#[derive(Serialize, Deserialize, Parser, Debug, Clone, PartialEq)]
-struct Args {
-    /// A designspace, ufo, or glyphs file
-    #[arg(short, long)]
-    source: PathBuf,
-
-    /// Whether to write IR to disk. Must be true if you want incremental compilation.
-    #[arg(short, long)]
-    #[clap(default_value = "true")]
-    emit_ir: bool,
-
-    /// Whether to write additional debug files to disk.
-    #[arg(long)]
-    #[clap(default_value = "false")]
-    emit_debug: bool,
-
-    /// Whether to Try Hard(tm) to match fontmake (Python) behavior in cases where there are other options.
-    ///
-    /// See https://github.com/googlefonts/fontmake-rs/pull/123 for an example of
-    /// where this matters.
-    #[arg(long)]
-    #[clap(default_value = "true")]
-    match_legacy: bool,
-
-    /// Working directory for the build process. If emit-ir is on, written here.
-    #[arg(short, long)]
-    #[clap(default_value = "build")]
-    build_dir: PathBuf,
-
-    /// Glyph names must match this regex to be processed
-    #[arg(short, long)]
-    #[clap(default_value = None)]
-    glyph_name_filter: Option<String>,
-}
-
-impl Args {
-    fn flags(&self) -> Flags {
-        let mut flags = Flags::default();
-
-        flags.set(Flags::EMIT_IR, self.emit_ir);
-        flags.set(Flags::EMIT_DEBUG, self.emit_debug);
-        flags.set(Flags::MATCH_LEGACY, self.match_legacy);
-
-        flags
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Config {
