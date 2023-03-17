@@ -19,6 +19,7 @@ pub fn create_font_work() -> Box<BeWork> {
 const TABLES_TO_MERGE: &[(WorkId, Tag)] = &[
     (WorkId::Cmap, Tag::new(b"cmap")),
     (WorkId::Head, Tag::new(b"head")),
+    (WorkId::Hhea, Tag::new(b"hhea")),
     (WorkId::Hmtx, Tag::new(b"hmtx")),
     (WorkId::Glyf, Tag::new(b"glyf")),
     (WorkId::Loca, Tag::new(b"loca")),

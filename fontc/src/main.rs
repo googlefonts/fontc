@@ -15,7 +15,7 @@ use fontbe::{
     font::create_font_work,
     glyphs::{create_glyf_loca_work, create_glyph_work},
     head::create_head_work,
-    hmtx::create_hmtx_work,
+    hmetrics::create_hmetric_work,
     maxp::create_maxp_work,
     orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
     paths::Paths as BePaths,
@@ -522,7 +522,7 @@ fn add_maxp_be_job(
     Ok(())
 }
 
-fn add_hmtx_be_job(
+fn add_hmetrics_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
@@ -543,9 +543,9 @@ fn add_hmtx_be_job(
 
         let id: AnyWorkId = BeWorkIdentifier::Hmtx.into();
         workload.insert(
-            id.clone(),
+            id,
             Job {
-                work: create_hmtx_work().into(),
+                work: create_hmetric_work().into(),
                 dependencies,
                 // We need to read all FE and BE glyphs, even unchanged ones, plus static metadata
                 read_access: ReadAccess::Custom(Arc::new(|id| {
@@ -555,7 +555,13 @@ fn add_hmtx_be_job(
                             | AnyWorkId::Be(BeWorkIdentifier::Glyph(..))
                     )
                 })),
-                write_access: access_one(id),
+                write_access: Arc::new(|id| {
+                    matches!(
+                        id,
+                        AnyWorkId::Be(BeWorkIdentifier::Hmtx)
+                            | AnyWorkId::Be(BeWorkIdentifier::Hhea)
+                    )
+                }),
             },
         );
     } else {
@@ -578,6 +584,7 @@ fn add_font_be_job(
         dependencies.insert(BeWorkIdentifier::Cmap.into());
         dependencies.insert(BeWorkIdentifier::Glyf.into());
         dependencies.insert(BeWorkIdentifier::Head.into());
+        dependencies.insert(BeWorkIdentifier::Hhea.into());
         dependencies.insert(BeWorkIdentifier::Hmtx.into());
         dependencies.insert(BeWorkIdentifier::Loca.into());
         dependencies.insert(BeWorkIdentifier::Maxp.into());
@@ -754,9 +761,14 @@ impl Workload {
                 }
             }
 
-            // When Glyf merges mark Loca too
+            // Glyf carries Loca along for the ride
             AnyWorkId::Be(BeWorkIdentifier::Glyf) => {
                 self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Loca))
+            }
+
+            // Hmtx carries hhea along for the ride
+            AnyWorkId::Be(BeWorkIdentifier::Hmtx) => {
+                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Hhea))
             }
             _ => (),
         }
@@ -915,7 +927,7 @@ fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Err
     add_glyf_loca_be_job(change_detector, &mut workload)?;
     add_cmap_be_job(change_detector, &mut workload)?;
     add_head_be_job(change_detector, &mut workload)?;
-    add_hmtx_be_job(change_detector, &mut workload)?;
+    add_hmetrics_job(change_detector, &mut workload)?;
     add_maxp_be_job(change_detector, &mut workload)?;
     add_post_be_job(change_detector, &mut workload)?;
 
@@ -1011,7 +1023,7 @@ mod tests {
     use crate::{
         add_cmap_be_job, add_feature_be_job, add_feature_ir_job,
         add_finalize_static_metadata_ir_job, add_font_be_job, add_glyf_loca_be_job,
-        add_glyph_ir_jobs, add_head_be_job, add_hmtx_be_job, add_init_static_metadata_ir_job,
+        add_glyph_ir_jobs, add_head_be_job, add_hmetrics_job, add_init_static_metadata_ir_job,
         add_maxp_be_job, add_post_be_job, finish_successfully, init, require_dir, Args,
         ChangeDetector, Config, Workload,
     };
@@ -1120,7 +1132,7 @@ mod tests {
         add_glyf_loca_be_job(&mut change_detector, &mut workload).unwrap();
         add_cmap_be_job(&mut change_detector, &mut workload).unwrap();
         add_head_be_job(&mut change_detector, &mut workload).unwrap();
-        add_hmtx_be_job(&mut change_detector, &mut workload).unwrap();
+        add_hmetrics_job(&mut change_detector, &mut workload).unwrap();
         add_maxp_be_job(&mut change_detector, &mut workload).unwrap();
         add_post_be_job(&mut change_detector, &mut workload).unwrap();
 
@@ -1203,6 +1215,7 @@ mod tests {
                 BeWorkIdentifier::Cmap.into(),
                 BeWorkIdentifier::Glyf.into(),
                 BeWorkIdentifier::Head.into(),
+                BeWorkIdentifier::Hhea.into(),
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::Maxp.into(),
@@ -1249,6 +1262,7 @@ mod tests {
                 BeWorkIdentifier::Glyph("bar".into()).into(),
                 BeWorkIdentifier::Cmap.into(),
                 BeWorkIdentifier::Glyf.into(),
+                BeWorkIdentifier::Hhea.into(),
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::Maxp.into(),
@@ -1570,13 +1584,27 @@ mod tests {
     }
 
     #[test]
-    fn hmtx_of_mono() {
+    fn hmetrics_of_mono() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/Mono.glyphs"));
 
+        let hhea = result.be_context.get_hhea();
+        assert_eq!(1, hhea.number_of_long_metrics);
+        assert_eq!(175, hhea.min_left_side_bearing.to_i16());
+        assert_eq!(50, hhea.min_right_side_bearing.to_i16());
+        assert_eq!(375, hhea.x_max_extent.to_i16());
+        assert_eq!(425, hhea.advance_width_max.to_u16());
+
+        let maxp = result.be_context.get_maxp();
+        assert_eq!(3, maxp.num_glyphs);
+
         let raw_hmtx = result.be_context.get_hmtx();
-        let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &(1, 3)).unwrap();
+        let hmtx = Hmtx::read_with_args(
+            FontData::new(raw_hmtx.get()),
+            &(hhea.number_of_long_metrics, maxp.num_glyphs),
+        )
+        .unwrap();
         assert_eq!(
             vec![(425, 175)],
             hmtx.h_metrics()
@@ -1610,6 +1638,7 @@ mod tests {
                 Tag::new(b"cmap"),
                 Tag::new(b"glyf"),
                 Tag::new(b"head"),
+                Tag::new(b"hhea"),
                 Tag::new(b"hmtx"),
                 Tag::new(b"loca"),
                 Tag::new(b"maxp"),

@@ -33,7 +33,7 @@ regex = "1.7.1"
 
 indexmap = "1.9.2"
 
-write-fonts = "0.1.1"
+write-fonts = "0.1.4"
 
 [dev-dependencies]
 diff = "0.1.12"

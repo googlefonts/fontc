@@ -37,6 +37,8 @@ pub enum Error {
         report: ValidationReport,
         context: String,
     },
+    #[error("{what} out of bounds: {value}")]
+    OutOfBounds { what: String, value: String },
 }
 
 #[derive(Debug)]
