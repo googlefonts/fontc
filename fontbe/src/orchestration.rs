@@ -18,6 +18,7 @@ use write_fonts::{
         cmap::Cmap,
         glyf::{Bbox, SimpleGlyph},
         head::Head,
+        hhea::Hhea,
         maxp::Maxp,
         post::Post,
     },
@@ -47,6 +48,7 @@ pub enum WorkId {
     Cmap,
     Glyf,
     Head,
+    Hhea,
     Hmtx,
     Loca,
     Maxp,
@@ -124,6 +126,13 @@ impl Glyph {
             Glyph::Composite(table) => table.bbox,
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Glyph::Simple(table) => table.contours().is_empty(),
+            Glyph::Composite(table) => table.components().is_empty(),
+        }
+    }
 }
 
 pub type BeWork = dyn Work<Context, Error> + Send;
@@ -156,6 +165,7 @@ pub struct Context {
     post: ContextItem<Post>,
     maxp: ContextItem<Maxp>,
     head: ContextItem<Head>,
+    hhea: ContextItem<Hhea>,
     hmtx: ContextItem<Bytes>,
     font: ContextItem<Bytes>,
 }
@@ -174,6 +184,7 @@ impl Context {
             post: self.post.clone(),
             maxp: self.maxp.clone(),
             head: self.head.clone(),
+            hhea: self.hhea.clone(),
             hmtx: self.hmtx.clone(),
             font: self.font.clone(),
         }
@@ -192,6 +203,7 @@ impl Context {
             post: Arc::from(RwLock::new(None)),
             maxp: Arc::from(RwLock::new(None)),
             head: Arc::from(RwLock::new(None)),
+            hhea: Arc::from(RwLock::new(None)),
             hmtx: Arc::from(RwLock::new(None)),
             font: Arc::from(RwLock::new(None)),
         }
@@ -382,6 +394,7 @@ impl Context {
     context_accessors! { get_maxp, set_maxp, maxp, Maxp, WorkId::Maxp, from_file, to_bytes }
     context_accessors! { get_post, set_post, post, Post, WorkId::Post, from_file, to_bytes }
     context_accessors! { get_head, set_head, head, Head, WorkId::Head, from_file, to_bytes }
+    context_accessors! { get_hhea, set_hhea, hhea, Hhea, WorkId::Hhea, from_file, to_bytes }
 
     // Accessors where value is raw bytes
     context_accessors! { get_hmtx, set_hmtx, hmtx, Bytes, WorkId::Hmtx, raw_from_file, raw_to_bytes }

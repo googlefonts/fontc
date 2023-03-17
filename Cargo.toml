@@ -1,3 +1,7 @@
+[patch.crates-io]
+read-fonts = { git="https://github.com/googlefonts/fontations.git", branch="contours" }
+write-fonts = { git="https://github.com/googlefonts/fontations.git", branch="contours" }
+
 [workspace]
 
 members = [
