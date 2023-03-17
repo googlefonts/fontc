@@ -279,7 +279,7 @@ impl TryFrom<&ir::Glyph> for CheckedGlyph {
     fn try_from(glyph: &ir::Glyph) -> Result<Self, Self::Error> {
         // every instance must have consistent component glyphs
         let components: HashSet<BTreeSet<GlyphName>> = glyph
-            .sources
+            .sources()
             .values()
             .map(|s| s.components.iter().map(|c| c.base.clone()).collect())
             .collect();
@@ -293,7 +293,7 @@ impl TryFrom<&ir::Glyph> for CheckedGlyph {
 
         // every instance must have consistent path element types
         let path_els: HashSet<String> = glyph
-            .sources
+            .sources()
             .values()
             .map(|s| {
                 s.contours
@@ -332,7 +332,7 @@ impl TryFrom<&ir::Glyph> for CheckedGlyph {
         let name = glyph.name.clone();
         Ok(if components.is_empty() {
             let contours = glyph
-                .sources
+                .sources()
                 .iter()
                 .map(|(location, instance)| {
                     if instance.contours.len() > 1 {
@@ -355,7 +355,7 @@ impl TryFrom<&ir::Glyph> for CheckedGlyph {
             CheckedGlyph::Contour { name, contours }
         } else {
             let components = glyph
-                .sources
+                .sources()
                 .iter()
                 .flat_map(|(location, instance)| {
                     eprintln!("{} {:?}", glyph.name, instance.components);

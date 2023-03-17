@@ -610,7 +610,7 @@ fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: Gl
 
     // To build a glyph we need it's components, plus static metadata
     let mut dependencies: HashSet<_> = glyph_ir
-        .sources
+        .sources()
         .values()
         .flat_map(|s| &s.components)
         .map(|c| AnyWorkId::Fe(FeWorkIdentifier::Glyph(c.base.clone())))
@@ -1000,7 +1000,7 @@ mod tests {
     use fontc::work::AnyContext;
     use fontdrasil::types::GlyphName;
     use fontir::{
-        ir::{Glyph, GlyphInstance},
+        ir,
         orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
         paths::Paths as IrPaths,
         stateset::StateSet,
@@ -1311,10 +1311,7 @@ mod tests {
         assert!(feature_ttf.is_file(), "Should have written {feature_ttf:?}");
     }
 
-    fn build_contour_and_composite_glyph(
-        temp_dir: &TempDir,
-        match_legacy: bool,
-    ) -> (Glyph, GlyphInstance) {
+    fn build_contour_and_composite_glyph(temp_dir: &TempDir, match_legacy: bool) -> ir::Glyph {
         let build_dir = temp_dir.path();
 
         let mut args = Args::for_test(build_dir, "glyphs2/MixedContourComponent.glyphs");
@@ -1325,11 +1322,8 @@ mod tests {
             .fe_context
             .get_glyph_ir(&"contour_and_component".into());
 
-        assert_eq!(1, glyph.sources.len());
-        (
-            (*glyph).clone(),
-            glyph.sources.values().next().unwrap().clone(),
-        )
+        assert_eq!(1, glyph.sources().len());
+        (*glyph).clone()
     }
 
     fn read_file(path: &Path) -> Vec<u8> {
@@ -1346,9 +1340,9 @@ mod tests {
     #[test]
     fn resolve_contour_and_composite_glyph_in_non_legacy_mode() {
         let temp_dir = tempdir().unwrap();
-        let (glyph, inst) = build_contour_and_composite_glyph(&temp_dir, false);
-        assert!(inst.contours.is_empty(), "{inst:?}");
-        assert_eq!(2, inst.components.len(), "{inst:?}");
+        let glyph = build_contour_and_composite_glyph(&temp_dir, false);
+        assert!(glyph.default_instance().contours.is_empty(), "{glyph:?}");
+        assert_eq!(2, glyph.default_instance().components.len(), "{glyph:?}");
 
         let raw_glyph = glyph_bytes(temp_dir.path(), glyph.name.as_str());
         let glyph = CompositeGlyph::read(FontData::new(&raw_glyph)).unwrap();
@@ -1359,9 +1353,9 @@ mod tests {
     #[test]
     fn resolve_contour_and_composite_glyph_in_legacy_mode() {
         let temp_dir = tempdir().unwrap();
-        let (glyph, inst) = build_contour_and_composite_glyph(&temp_dir, true);
-        assert!(inst.components.is_empty(), "{inst:?}");
-        assert_eq!(2, inst.contours.len(), "{inst:?}");
+        let glyph = build_contour_and_composite_glyph(&temp_dir, true);
+        assert!(glyph.default_instance().components.is_empty(), "{glyph:?}");
+        assert_eq!(2, glyph.default_instance().contours.len(), "{glyph:?}");
 
         let raw_glyph = glyph_bytes(temp_dir.path(), glyph.name.as_str());
         let glyph = SimpleGlyph::read(FontData::new(&raw_glyph)).unwrap();

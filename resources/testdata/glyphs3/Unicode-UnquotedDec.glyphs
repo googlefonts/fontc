@@ -1,13 +1,29 @@
 {
 .formatVersion = 3;
-familyName = WghtVar;
-fontMaster = ();
-glyphs = (
+familyName = "Unquoted Dec";
+axes = (
 	{
-		glyphname = name;
-		layers = ();
-		unicode = 182;
+		name = Weight;
+		tag = wght;
 	}
+);
+fontMaster = (
+    {
+        id = m01;
+		axesValues = (400);
+    }
+);
+glyphs = (
+{
+    glyphname = name;
+    layers = (
+        {
+            layerId = m01;
+            width = 420;
+        }
+    );
+    unicode = 182;
+}
 );
 unitsPerEm = 1000;
 }

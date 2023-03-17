@@ -99,18 +99,73 @@ impl Features {
 
 /// A variable definition of a single glyph.
 ///
-/// Defined in at least one position. If defined in
-/// many, presumed to vary continuously between positions and required
-/// to have variation compatible structure.
+/// Guarrantees at least one definition. Currently that must be at
+/// the default location. In theory that limitation is unnecessary,
+/// a variable glyph that covers the default location could compile.
+///
+/// If defined in many locations, presumed to vary continuously
+/// between positions and required to have variation compatible structure.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(from = "GlyphSerdeRepr", into = "GlyphSerdeRepr")]
 pub struct Glyph {
     pub name: GlyphName,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
-    pub sources: HashMap<NormalizedLocation, GlyphInstance>,
+    default_location: NormalizedLocation,
+    sources: HashMap<NormalizedLocation, GlyphInstance>,
 }
 
 impl Glyph {
+    pub fn new(
+        name: GlyphName,
+        codepoints: HashSet<u32>,
+        sources: HashMap<NormalizedLocation, GlyphInstance>,
+    ) -> Result<Self, WorkError> {
+        if sources.is_empty() {
+            return Err(WorkError::InvalidSourceGlyph {
+                glyph_name: name,
+                message: "No sources".into(),
+            });
+        }
+        let defaults: Vec<_> = sources
+            .keys()
+            .filter(|loc| !loc.iter().any(|(_, c)| c.into_inner() != 0.0))
+            .collect();
+        if defaults.len() != 1 {
+            return Err(WorkError::InvalidSourceGlyph {
+                glyph_name: name,
+                message: format!("Must have exactly 1 default, got {defaults:?} from {sources:?}"),
+            });
+        }
+        let default_location = defaults[0].clone();
+        Ok(Glyph {
+            name,
+            codepoints,
+            default_location,
+            sources,
+        })
+    }
+
+    pub fn default_instance(&self) -> &GlyphInstance {
+        self.sources.get(&self.default_location).unwrap()
+    }
+
+    pub fn sources(&self) -> &HashMap<NormalizedLocation, GlyphInstance> {
+        &self.sources
+    }
+}
+
+/// A variable definition of a single glyph.
+///
+/// If defined in many locations, presumed to vary continuously
+/// between positions and required to have variation compatible structure.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GlyphBuilder {
+    pub name: GlyphName,
+    pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
+    pub sources: HashMap<NormalizedLocation, GlyphInstance>,
+}
+
+impl GlyphBuilder {
     pub fn new(name: GlyphName) -> Self {
         Self {
             name,
@@ -132,6 +187,34 @@ impl Glyph {
         }
         self.sources.insert(unique_location.clone(), source);
         Ok(())
+    }
+}
+
+impl TryInto<Glyph> for GlyphBuilder {
+    type Error = WorkError;
+
+    fn try_into(self) -> Result<Glyph, Self::Error> {
+        Glyph::new(self.name, self.codepoints, self.sources)
+    }
+}
+
+impl From<&Glyph> for GlyphBuilder {
+    fn from(value: &Glyph) -> Self {
+        Self {
+            name: value.name.clone(),
+            codepoints: value.codepoints.clone(),
+            sources: value.sources.clone(),
+        }
+    }
+}
+
+impl From<Glyph> for GlyphBuilder {
+    fn from(value: Glyph) -> Self {
+        Self {
+            name: value.name,
+            codepoints: value.codepoints,
+            sources: value.sources,
+        }
     }
 }
 

@@ -26,8 +26,6 @@ impl Work<Context, Error> for HMetricWork {
     /// and [hhea](https://learn.microsoft.com/en-us/typography/opentype/spec/hhea)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_final_static_metadata();
-        let var_model = &static_metadata.variation_model;
-        let default_location = var_model.default_location();
 
         let mut min_left_side_bearing = None;
         let mut min_right_side_bearing = None;
@@ -40,9 +38,7 @@ impl Work<Context, Error> for HMetricWork {
                 let glyph = context.get_glyph(gn);
                 let bbox = glyph.bbox();
                 let ir_glyph = context.ir.get_glyph_ir(gn);
-                let Some(ir_instance) = ir_glyph.sources.get(default_location) else {
-                    panic!("{gn} is not defined at the default location.");
-                };
+                let ir_instance = ir_glyph.default_instance();
                 let advance: u16 = ir_instance.width.ot_round();
                 let left_side_bearing = bbox.x_min;
                 // aw - (lsb + xMax - xMin) ... but if lsb == xMin then just advance - xMax?

@@ -15,7 +15,7 @@ use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 use crate::{
     coords::NormalizedLocation,
     error::WorkError,
-    ir::{Component, Glyph},
+    ir::{Component, Glyph, GlyphBuilder},
     orchestration::{Context, Flags, IrWork},
 };
 
@@ -33,7 +33,7 @@ struct FinalizeStaticMetadataWork {}
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
 fn has_components_and_contours(glyph: &Glyph) -> bool {
     glyph
-        .sources
+        .sources()
         .values()
         .any(|inst| !inst.components.is_empty() && !inst.contours.is_empty())
 }
@@ -58,9 +58,12 @@ fn name_for_derivative(base_name: &GlyphName, names_in_use: &IndexSet<GlyphName>
 /// Returns a tuple of (simple glyph, composite glyph).
 ///
 /// The former contains all the contours, the latter contains all the components.
-fn split_glyph(glyph_order: &IndexSet<GlyphName>, original: &Glyph) -> (Glyph, Glyph) {
+fn split_glyph(
+    glyph_order: &IndexSet<GlyphName>,
+    original: &Glyph,
+) -> Result<(Glyph, Glyph), WorkError> {
     // Make a simple glyph by erasing the components from it
-    let mut simple_glyph = original.clone();
+    let mut simple_glyph: GlyphBuilder = original.into();
     simple_glyph.sources.iter_mut().for_each(|(_, inst)| {
         inst.components.clear();
     });
@@ -70,7 +73,7 @@ fn split_glyph(glyph_order: &IndexSet<GlyphName>, original: &Glyph) -> (Glyph, G
     simple_glyph.name = simple_glyph_name.clone();
 
     // Use the contour glyph as a component in the original glyph and erase it's contours
-    let mut composite_glyph = original.clone();
+    let mut composite_glyph: GlyphBuilder = original.into();
     composite_glyph.sources.iter_mut().for_each(|(_, inst)| {
         inst.contours.clear();
         inst.components.push(Component {
@@ -79,7 +82,7 @@ fn split_glyph(glyph_order: &IndexSet<GlyphName>, original: &Glyph) -> (Glyph, G
         });
     });
 
-    (simple_glyph, composite_glyph)
+    Ok((simple_glyph.try_into()?, composite_glyph.try_into()?))
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -109,7 +112,7 @@ impl From<&Component> for HashableComponent {
 /// Primary use is expected to be checking if there is >1 or not.
 fn distinct_component_seqs(glyph: &Glyph) -> HashSet<Vec<HashableComponent>> {
     glyph
-        .sources
+        .sources()
         .values()
         .map(|inst| {
             inst.components
@@ -137,7 +140,7 @@ fn distinct_component_glyph_seqs(glyph: &Glyph) -> HashSet<Vec<GlyphName>> {
 /// Panics if the sequence of glyphs used as components (ignoring transform) is
 /// different at any point in design space.
 fn components(glyph: &Glyph, transform: Affine) -> VecDeque<(NormalizedLocation, Component)> {
-    if glyph.sources.is_empty() {
+    if glyph.sources().is_empty() {
         return Default::default();
     }
 
@@ -153,7 +156,7 @@ fn components(glyph: &Glyph, transform: Affine) -> VecDeque<(NormalizedLocation,
     }
 
     glyph
-        .sources
+        .sources()
         .iter()
         .flat_map(|(loc, inst)| inst.components.iter().map(|c| (loc.clone(), c)))
         .map(|(loc, component)| {
@@ -174,7 +177,7 @@ fn components(glyph: &Glyph, transform: Affine) -> VecDeque<(NormalizedLocation,
 ///
 /// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L165>
 fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<Glyph, WorkError> {
-    let mut simple = original.clone();
+    let mut simple: GlyphBuilder = original.into();
     simple
         .sources
         .iter_mut()
@@ -205,7 +208,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
                 pos: loc.clone(),
             });
         };
-        let Some(ref_inst) = referenced_glyph.sources.get(&loc) else {
+        let Some(ref_inst) = referenced_glyph.sources().get(&loc) else {
             return Err(WorkError::GlyphUndefAtNormalizedLocation {
                 glyph_name: referenced_glyph.name.clone(),
                 pos: loc.clone(),
@@ -231,7 +234,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
         }
     }
 
-    Ok(simple)
+    simple.try_into()
 }
 
 impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
@@ -285,7 +288,7 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
                     "Hoisting the contours from '{0}' into a new component",
                     glyph_to_fix.name
                 );
-                let (simple, composite) = split_glyph(&new_glyph_order, &glyph_to_fix);
+                let (simple, composite) = split_glyph(&new_glyph_order, &glyph_to_fix)?;
 
                 // Capture the updated/new IR and update glyph order
                 debug_assert!(composite.name == glyph_to_fix.name);
@@ -332,7 +335,7 @@ mod tests {
 
     use crate::{
         coords::{NormalizedCoord, NormalizedLocation},
-        ir::{Component, Glyph, GlyphInstance},
+        ir::{Component, Glyph, GlyphBuilder, GlyphInstance},
         orchestration::{Context, WorkId},
         paths::Paths,
         source::Input,
@@ -394,22 +397,24 @@ mod tests {
 
     #[test]
     fn has_components_and_contours_false() {
-        let mut glyph = Glyph::new("duck".into());
+        let mut glyph = GlyphBuilder::new("duck".into());
         glyph
             .try_add_source(&norm_loc(&[("W", 0.0)]), component_instance())
             .unwrap();
         glyph
             .try_add_source(&norm_loc(&[("W", 1.0)]), contour_instance())
             .unwrap();
+        let glyph = glyph.try_into().unwrap();
         assert!(!has_components_and_contours(&glyph));
     }
 
     #[test]
     fn has_components_and_contours_true() {
-        let mut glyph = Glyph::new("duck".into());
+        let mut glyph = GlyphBuilder::new("duck".into());
         glyph
             .try_add_source(&norm_loc(&[("W", 0.0)]), contour_and_component_instance())
             .unwrap();
+        let glyph = glyph.try_into().unwrap();
         assert!(has_components_and_contours(&glyph));
     }
 
@@ -431,14 +436,14 @@ mod tests {
     }
 
     fn contour_glyph(name: &str) -> Glyph {
-        let mut glyph = Glyph::new(name.into());
+        let mut glyph = GlyphBuilder::new(name.into());
         glyph
             .try_add_source(&norm_loc(&[("W", 0.0)]), contour_instance())
             .unwrap();
         glyph
             .try_add_source(&norm_loc(&[("W", 1.0)]), contour_instance())
             .unwrap();
-        glyph
+        glyph.try_into().unwrap()
     }
 
     fn component_glyph(name: &str, base: GlyphName, transform: Affine) -> Glyph {
@@ -446,48 +451,54 @@ mod tests {
             components: vec![Component { base, transform }],
             ..Default::default()
         };
-        let mut glyph = Glyph::new(name.into());
+        let mut glyph = GlyphBuilder::new(name.into());
         glyph
             .try_add_source(&norm_loc(&[("W", 0.0)]), component.clone())
             .unwrap();
         glyph
             .try_add_source(&norm_loc(&[("W", 1.0)]), component)
             .unwrap();
-        glyph
+        glyph.try_into().unwrap()
     }
 
     fn contour_and_component_weight_glyph(name: &str) -> Glyph {
-        let mut glyph = Glyph::new(name.into());
+        let mut glyph = GlyphBuilder::new(name.into());
         glyph
             .try_add_source(&norm_loc(&[("W", 0.0)]), contour_and_component_instance())
             .unwrap();
         glyph
             .try_add_source(&norm_loc(&[("W", 1.0)]), contour_and_component_instance())
             .unwrap();
-        glyph
+        glyph.try_into().unwrap()
     }
 
     fn assert_simple(glyph: &Glyph) {
-        assert!(glyph.sources.values().all(|gi| gi.components.is_empty()));
-        assert!(glyph.sources.values().all(|gi| !gi.contours.is_empty()));
+        assert!(glyph.sources().values().all(|gi| gi.components.is_empty()));
+        assert!(glyph.sources().values().all(|gi| !gi.contours.is_empty()));
     }
 
     #[test]
     fn split_a_glyph() {
         let split_me = contour_and_component_weight_glyph("glyphname");
-        let (simple, composite) = split_glyph(&IndexSet::new(), &split_me);
+        let (simple, composite) = split_glyph(&IndexSet::new(), &split_me).unwrap();
 
-        let expected_locs = split_me.sources.keys().collect::<HashSet<_>>();
-        assert_eq!(expected_locs, simple.sources.keys().collect::<HashSet<_>>());
+        let expected_locs = split_me.sources().keys().collect::<HashSet<_>>();
         assert_eq!(
             expected_locs,
-            composite.sources.keys().collect::<HashSet<_>>()
+            simple.sources().keys().collect::<HashSet<_>>()
+        );
+        assert_eq!(
+            expected_locs,
+            composite.sources().keys().collect::<HashSet<_>>()
         );
 
         assert_simple(&simple);
-        assert!(composite.sources.values().all(|gi| gi.contours.is_empty()));
         assert!(composite
-            .sources
+            .sources()
+            .values()
+            .all(|gi| gi.contours.is_empty()));
+        assert!(composite
+            .sources()
             .values()
             .all(|gi| !gi.components.is_empty()));
     }
@@ -506,7 +517,7 @@ mod tests {
         assert_simple(&simple);
 
         // Our sample is unimaginative; both weights are identical
-        for (loc, inst) in simple.sources.iter() {
+        for (loc, inst) in simple.sources().iter() {
             assert_eq!(
                 // The original contour, and the component w/transform
                 vec!["M1,1 L2,1 L2,2 Z", "M4,4 L5,4 L5,5 Z",],
@@ -545,7 +556,7 @@ mod tests {
         context.set_glyph_ir(c1.clone());
         context.set_glyph_ir(c2.clone());
 
-        let mut nested_components = Glyph::new("g".into());
+        let mut nested_components = GlyphBuilder::new("g".into());
         nested_components
             .try_add_source(
                 &norm_loc(&[("W", 0.0)]),
@@ -569,10 +580,12 @@ mod tests {
                 },
             )
             .unwrap();
+        let nested_components = nested_components.try_into().unwrap();
+
         let simple = convert_components_to_contours(&context, &nested_components).unwrap();
         assert_simple(&simple);
-        assert_eq!(1, simple.sources.len());
-        let inst = simple.sources.values().next().unwrap();
+        assert_eq!(1, simple.sources().len());
+        let inst = simple.default_instance();
 
         assert_eq!(
             vec![
@@ -602,7 +615,7 @@ mod tests {
         // base shape
         let reuse_me = contour_glyph("shape");
 
-        let mut glyph = Glyph::new("g".into());
+        let mut glyph = GlyphBuilder::new("g".into());
         glyph
             .try_add_source(
                 &norm_loc(&[("W", 0.0)]),
@@ -622,10 +635,11 @@ mod tests {
         );
         context.set_glyph_ir(reuse_me);
 
+        let glyph = glyph.try_into().unwrap();
         let simple = convert_components_to_contours(&context, &glyph).unwrap();
         assert_simple(&simple);
-        assert_eq!(1, simple.sources.len());
-        let inst = simple.sources.values().next().unwrap();
+        assert_eq!(1, simple.sources().len());
+        let inst = simple.sources().values().next().unwrap();
 
         // what we should get back is the contour with the_neg applied, reversed because
         // the_neg is notoriously negative in determinant
@@ -648,10 +662,10 @@ mod tests {
 
     fn adjust_transform_for_each_instance(glyph: &Glyph) -> Glyph {
         assert!(
-            glyph.sources.len() > 1,
+            glyph.sources().len() > 1,
             "this operation is meaningless w/o multiple sources"
         );
-        let mut glyph = glyph.clone();
+        let mut glyph: GlyphBuilder = glyph.into();
         glyph
             .sources
             .values_mut()
@@ -661,17 +675,18 @@ mod tests {
                     .iter_mut()
                     .for_each(|c| c.transform *= Affine::translate((i as f64, i as f64)));
             });
-        glyph
+        glyph.try_into().unwrap()
     }
 
     #[test]
     fn component_with_varied_transform() {
-        let mut glyph = contour_and_component_weight_glyph("nameless");
+        let glyph = contour_and_component_weight_glyph("nameless");
+        let mut glyph: GlyphBuilder = glyph.into();
         glyph
             .sources
             .values_mut()
             .for_each(|inst| inst.contours.clear());
-        let glyph = adjust_transform_for_each_instance(&glyph);
+        let glyph = adjust_transform_for_each_instance(&glyph.try_into().unwrap());
 
         let context = test_root().copy_for_work(
             access_one(WorkId::Glyph("component".into())),

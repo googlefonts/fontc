@@ -564,8 +564,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
             glif_files.insert(path, normalized_locations);
         }
 
-        let glyph_ir = to_ir_glyph(self.glyph_name.clone(), &glif_files)
-            .map_err(|e| WorkError::GlyphIrWorkError(self.glyph_name.clone(), e.to_string()))?;
+        let glyph_ir = to_ir_glyph(self.glyph_name.clone(), &glif_files)?;
         context.set_glyph_ir(glyph_ir);
         Ok(())
     }

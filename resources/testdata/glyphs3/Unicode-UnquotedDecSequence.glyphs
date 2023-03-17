@@ -1,11 +1,27 @@
 {
 .formatVersion = 3;
-familyName = WghtVar;
-fontMaster = ();
+familyName = "Unquoted Dec Sequence";
+axes = (
+	{
+		name = Weight;
+		tag = wght;
+	}
+);
+fontMaster = (
+    {
+        id = m01;
+		axesValues = (400);
+    }
+);
 glyphs = (
 	{
 		glyphname = name;
-		layers = ();
+		layers = (
+			{
+				layerId = m01;
+				width = 420;
+			}
+		);
 		unicode = (1619,1764);
 	}
 );
