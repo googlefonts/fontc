@@ -24,7 +24,7 @@ use fontbe::{
 
 use fontc::{
     work::{AnyContext, AnyWork, AnyWorkError, ReadAccess},
-    Args, Error,
+    Args, Config, Error,
 };
 use fontdrasil::{
     orchestration::{access_none, access_one, AccessFn},
@@ -35,47 +35,13 @@ use fontir::{
     orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     paths::Paths as IrPaths,
     source::{DeleteWork, Input, Source},
-    stateset::StateSet,
 };
 use glyphs2fontir::source::GlyphsIrSource;
 use indexmap::IndexSet;
-use log::{debug, error, info, log_enabled, trace, warn};
+use log::{debug, error, log_enabled, trace, warn};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+
 use ufo2fontir::source::DesignSpaceIrSource;
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-struct Config {
-    args: Args,
-    // The compiler previously used so if the compiler changes config invalidates
-    compiler: StateSet,
-}
-
-impl Config {
-    fn new(args: Args) -> Result<Config, io::Error> {
-        let mut compiler = StateSet::new();
-        compiler.track_file(&std::env::current_exe()?)?;
-        Ok(Config { args, compiler })
-    }
-
-    fn file(&self) -> PathBuf {
-        self.args.build_dir.join("fontc.yml")
-    }
-
-    fn has_changed(&self, config_file: &Path) -> bool {
-        if !config_file.is_file() {
-            return true;
-        }
-        let yml = fs::read_to_string(config_file).expect("Unable to read config");
-        let prior_config = serde_yaml::from_str::<Config>(&yml);
-        if prior_config.is_err() {
-            warn!("Unable to parse prior config {:#?}", prior_config);
-            return true;
-        }
-        let prior_config = prior_config.unwrap();
-        *self != prior_config
-    }
-}
 
 fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     if dir.exists() && !dir.is_dir() {
@@ -86,32 +52,6 @@ fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     }
     debug!("require_dir {:?}", dir);
     Ok(dir.to_path_buf())
-}
-
-fn init(config: &Config) -> Result<Input, io::Error> {
-    let config_file = config.file();
-
-    let ir_paths = IrPaths::new(&config.args.build_dir);
-    let ir_input_file = ir_paths.ir_input_file();
-    if config.has_changed(&config_file) {
-        info!("Config changed, generating a new one");
-        if ir_input_file.exists() {
-            fs::remove_file(ir_input_file).expect("Unable to delete old ir input file");
-        }
-        fs::write(
-            config_file,
-            serde_yaml::to_string(&config).expect("Unable to make yaml for config"),
-        )
-        .expect("Unable to write updated config");
-    };
-
-    let ir_input = if ir_input_file.exists() {
-        let yml = fs::read_to_string(ir_input_file).expect("Unable to load ir input file");
-        serde_yaml::from_str(&yml).expect("Unable to parse ir input file")
-    } else {
-        Input::new()
-    };
-    Ok(ir_input)
 }
 
 fn ir_source(source: &Path) -> Result<Box<dyn Source>, Error> {
@@ -965,7 +905,7 @@ fn main() -> Result<(), Error> {
     require_dir(be_paths.debug_dir())?;
     require_dir(be_paths.glyph_dir())?;
     let config = Config::new(args)?;
-    let prev_inputs = init(&config).map_err(Error::IoError)?;
+    let prev_inputs = config.init().map_err(Error::IoError)?;
 
     let mut change_detector = ChangeDetector::new(config.clone(), ir_paths.clone(), prev_inputs)?;
     let workload = create_workload(&mut change_detector)?;
@@ -992,7 +932,6 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use filetime::FileTime;
     use fontbe::{
         orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
         paths::Paths as BePaths,
@@ -1003,7 +942,6 @@ mod tests {
         ir::{Glyph, GlyphInstance},
         orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
         paths::Paths as IrPaths,
-        stateset::StateSet,
     };
     use indexmap::IndexSet;
     use log::debug;
@@ -1024,8 +962,8 @@ mod tests {
         add_cmap_be_job, add_feature_be_job, add_feature_ir_job,
         add_finalize_static_metadata_ir_job, add_font_be_job, add_glyf_loca_be_job,
         add_glyph_ir_jobs, add_head_be_job, add_hmetrics_job, add_init_static_metadata_ir_job,
-        add_maxp_be_job, add_post_be_job, finish_successfully, init, require_dir, Args,
-        ChangeDetector, Config, Workload,
+        add_maxp_be_job, add_post_be_job, finish_successfully, require_dir, Args, ChangeDetector,
+        Config, Workload,
     };
 
     struct TestCompile {
@@ -1068,45 +1006,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn init_captures_state() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let args = Args::for_test(build_dir, "wght_var.designspace");
-        let config = Config::new(args.clone()).unwrap();
-
-        init(&config).unwrap();
-        let config_file = config.file();
-        let paths = IrPaths::new(build_dir);
-        let ir_input_file = paths.ir_input_file();
-
-        assert!(config_file.exists(), "Should exist: {config_file:#?}");
-        assert!(
-            !ir_input_file.exists(),
-            "Should not exist: {ir_input_file:#?}"
-        );
-        assert!(!Config::new(args).unwrap().has_changed(&config_file));
-    }
-
-    #[test]
-    fn detect_compiler_change() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let args = Args::for_test(build_dir, "wght_var.designspace");
-        let config = Config::new(args.clone()).unwrap();
-
-        let compiler_location = std::env::current_exe().unwrap();
-        let metadata = compiler_location.metadata().unwrap();
-        let mut compiler = StateSet::new();
-        // size +1, I'd give it all up for just a little more
-        compiler.set_file_state(
-            &compiler_location,
-            FileTime::from_system_time(metadata.modified().unwrap()),
-            metadata.len() + 1,
-        );
-        assert!(Config { args, compiler }.has_changed(&config.file()));
-    }
-
     fn compile(args: Args) -> TestCompile {
         let _ = env_logger::builder().is_test(true).try_init();
 
@@ -1116,7 +1015,7 @@ mod tests {
         require_dir(be_paths.glyph_dir()).unwrap();
         let config = Config::new(args).unwrap();
 
-        let prev_inputs = init(&config).unwrap();
+        let prev_inputs = config.init().unwrap();
 
         let mut change_detector =
             ChangeDetector::new(config.clone(), ir_paths.clone(), prev_inputs).unwrap();
