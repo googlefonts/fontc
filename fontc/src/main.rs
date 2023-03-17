@@ -905,7 +905,7 @@ fn main() -> Result<(), Error> {
     require_dir(be_paths.debug_dir())?;
     require_dir(be_paths.glyph_dir())?;
     let config = Config::new(args)?;
-    let prev_inputs = config.init().map_err(Error::IoError)?;
+    let prev_inputs = config.init()?;
 
     let mut change_detector = ChangeDetector::new(config.clone(), ir_paths.clone(), prev_inputs)?;
     let workload = create_workload(&mut change_detector)?;

@@ -8,7 +8,7 @@ use std::{
 use fontir::{paths::Paths as IrPaths, source::Input, stateset::StateSet};
 use serde::{Deserialize, Serialize};
 
-use crate::Args;
+use crate::{Args, Error};
 
 /// The settings and compiler definition of a single compilation run.
 ///
@@ -39,9 +39,7 @@ impl Config {
     ///
     /// This serializes the configuration if necessary, and returns any existing
     /// incremental state for this run if it exists.
-    //FIXME: this returns a Result but it looks like we never actually return
-    //an error?
-    pub fn init(&self) -> Result<Input, io::Error> {
+    pub fn init(&self) -> Result<Input, Error> {
         let config_file = self.file();
 
         let ir_paths = IrPaths::new(&self.args.build_dir);
@@ -49,22 +47,18 @@ impl Config {
         if self.has_changed(&config_file) {
             log::info!("Config changed, generating a new one");
             if ir_input_file.exists() {
-                fs::remove_file(ir_input_file).expect("Unable to delete old ir input file");
+                fs::remove_file(ir_input_file)
+                    .map_err(|_| Error::FileExpected(ir_input_file.to_owned()))?;
             }
-            fs::write(
-                config_file,
-                serde_yaml::to_string(self).expect("Unable to make yaml for config"),
-            )
-            .expect("Unable to write updated config");
+            fs::write(config_file, serde_yaml::to_string(self)?)?;
         };
 
-        let ir_input = if ir_input_file.exists() {
-            let yml = fs::read_to_string(ir_input_file).expect("Unable to load ir input file");
-            serde_yaml::from_str(&yml).expect("Unable to parse ir input file")
-        } else {
-            Input::new()
-        };
-        Ok(ir_input)
+        if !ir_input_file.exists() {
+            return Ok(Input::new());
+        }
+
+        let yml = fs::read_to_string(ir_input_file)?;
+        serde_yaml::from_str(&yml).map_err(Into::into)
     }
 
     /// Compare this config to the saved config at the provided path.
