@@ -1,9 +1,6 @@
 //! State for a (possibly incremental) compiler job
 
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::PathBuf};
 
 use fontir::{paths::Paths as IrPaths, source::Input, stateset::StateSet};
 use serde::{Deserialize, Serialize};
@@ -44,7 +41,7 @@ impl Config {
 
         let ir_paths = IrPaths::new(&self.args.build_dir);
         let ir_input_file = ir_paths.ir_input_file();
-        if self.has_changed(&config_file) {
+        if self.has_changed() {
             log::info!("Config changed, generating a new one");
             if ir_input_file.exists() {
                 fs::remove_file(ir_input_file)
@@ -62,21 +59,19 @@ impl Config {
     }
 
     /// Compare this config to the saved config at the provided path.
-    //
-    //FIXME: code review: does this need to take an external argument? do we
-    //ever want to compare this to any path that is not our own?
-    fn has_changed(&self, config_file: &Path) -> bool {
+    fn has_changed(&self) -> bool {
+        let config_file = self.file();
         if !config_file.is_file() {
             return true;
         }
         let yml = fs::read_to_string(config_file).expect("Unable to read config");
-        let prior_config = serde_yaml::from_str::<Config>(&yml);
-        if prior_config.is_err() {
-            log::warn!("Unable to parse prior config {:#?}", prior_config);
-            return true;
+        match serde_yaml::from_str::<Config>(&yml) {
+            Ok(prior_config) => self != &prior_config,
+            Err(err) => {
+                log::warn!("Unable to parse prior config {err:#?}");
+                true
+            }
         }
-        let prior_config = prior_config.unwrap();
-        *self != prior_config
     }
 }
 
@@ -91,18 +86,17 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let args = Args::for_test(build_dir, "wght_var.designspace");
-        let config = Config::new(args.clone()).unwrap();
+        let mut config = Config::new(args).unwrap();
 
         let compiler_location = std::env::current_exe().unwrap();
         let metadata = compiler_location.metadata().unwrap();
-        let mut compiler = StateSet::new();
         // size +1, I'd give it all up for just a little more
-        compiler.set_file_state(
+        config.compiler.set_file_state(
             &compiler_location,
             FileTime::from_system_time(metadata.modified().unwrap()),
             metadata.len() + 1,
         );
-        assert!(Config { args, compiler }.has_changed(&config.file()));
+        assert!(config.has_changed())
     }
 
     #[test]
@@ -113,15 +107,14 @@ mod tests {
         let config = Config::new(args.clone()).unwrap();
 
         config.init().unwrap();
-        let config_file = config.file();
         let paths = IrPaths::new(build_dir);
         let ir_input_file = paths.ir_input_file();
 
-        assert!(config_file.exists(), "Should exist: {config_file:#?}");
+        assert!(config.file().exists(),);
         assert!(
             !ir_input_file.exists(),
             "Should not exist: {ir_input_file:#?}"
         );
-        assert!(!Config::new(args).unwrap().has_changed(&config_file));
+        assert!(!Config::new(args).unwrap().has_changed());
     }
 }
