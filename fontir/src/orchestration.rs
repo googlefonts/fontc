@@ -20,6 +20,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use crate::{error::WorkError, ir, paths::Paths, source::Input};
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub struct Flags: u32 {
         // If set IR will be emitted to disk when written into Context
         const EMIT_IR = 0b00000001;
