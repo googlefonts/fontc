@@ -813,7 +813,7 @@ impl Workload {
                 self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Loca))
             }
 
-            // Hmtx carries Hmtx along for the ride
+            // Hmtx carries hhea along for the ride
             AnyWorkId::Be(BeWorkIdentifier::Hmtx) => {
                 self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Hhea))
             }
