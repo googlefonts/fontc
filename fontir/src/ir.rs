@@ -25,6 +25,10 @@ use std::{
 pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/head>.
     pub units_per_em: u16,
+
+    /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>.
+    pub names: HashMap<NameKey, String>,
+
     /// Every axis used by the font being compiled
     pub axes: Vec<Axis>,
     /// The name of every glyph, in the order it will be emitted
@@ -42,6 +46,7 @@ pub struct StaticMetadata {
 impl StaticMetadata {
     pub fn new(
         units_per_em: u16,
+        names: HashMap<NameKey, String>,
         axes: Vec<Axis>,
         glyph_order: IndexSet<GlyphName>,
         glyph_locations: HashSet<NormalizedLocation>,
@@ -50,6 +55,7 @@ impl StaticMetadata {
         let variation_model = VariationModel::new(glyph_locations, axis_names)?;
         Ok(StaticMetadata {
             units_per_em,
+            names,
             axes,
             glyph_order,
             variation_model,
@@ -61,6 +67,81 @@ impl StaticMetadata {
     pub fn glyph_id(&self, name: &GlyphName) -> Option<u32> {
         self.glyph_order.get_index_of(name).map(|i| i as u32)
     }
+}
+
+/// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name#name-ids>
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum NameId {
+    Copyright,
+    FamilyName,
+    SubfamilyName,
+    UniqueIdentifier,
+    FullName,
+    Version,
+    PostScriptName,
+    Trademark,
+    ManufacturerName,
+    Designer,
+    Description,
+    UrlOfVendor,
+    UrlOfDesigner,
+    LicenseDescription,
+    LicenseInfoUrl,
+    Reserved15,
+    TypographicFamilyName,
+    TypographicSubfamilyName,
+    MacCompatibleFullName,
+    SampleText,
+    PostScriptCidName,
+    WwsFamilyName,
+    WwsSubfamilyName,
+    LightBackgroundPalette,
+    DarkBackgroundPalette,
+    VariationsPostScriptNamePrefix,
+    Other(u16),
+}
+
+impl From<u16> for NameId {
+    fn from(value: u16) -> Self {
+        match value {
+            0 => NameId::Copyright,
+            1 => NameId::FamilyName,
+            2 => NameId::SubfamilyName,
+            3 => NameId::UniqueIdentifier,
+            4 => NameId::FullName,
+            5 => NameId::Version,
+            6 => NameId::PostScriptName,
+            7 => NameId::Trademark,
+            8 => NameId::ManufacturerName,
+            9 => NameId::Designer,
+            10 => NameId::Description,
+            11 => NameId::UrlOfVendor,
+            12 => NameId::UrlOfDesigner,
+            13 => NameId::LicenseDescription,
+            14 => NameId::LicenseInfoUrl,
+            15 => NameId::Reserved15,
+            16 => NameId::TypographicFamilyName,
+            17 => NameId::TypographicSubfamilyName,
+            18 => NameId::MacCompatibleFullName,
+            19 => NameId::SampleText,
+            20 => NameId::PostScriptCidName,
+            21 => NameId::WwsFamilyName,
+            22 => NameId::WwsSubfamilyName,
+            23 => NameId::LightBackgroundPalette,
+            24 => NameId::DarkBackgroundPalette,
+            25 => NameId::VariationsPostScriptNamePrefix,
+            _ => NameId::Other(value),
+        }
+    }
+}
+
+/// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NameKey {
+    pub name_id: NameId,
+    pub platform_id: u16,
+    pub encoding_id: u16,
+    pub lang_id: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

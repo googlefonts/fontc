@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
-    ir::{Axis, Glyph, GlyphBuilder, GlyphInstance, StaticMetadata},
+    ir::{Axis, Glyph, GlyphBuilder, GlyphInstance, NameKey, StaticMetadata},
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
 
@@ -48,6 +48,7 @@ impl From<CoordConverter> for CoordConverterSerdeRepr {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StaticMetadataSerdeRepr {
     pub units_per_em: u16,
+    pub names: HashMap<NameKey, String>,
     pub axes: Vec<Axis>,
     pub glyph_order: Vec<String>,
     pub glyph_locations: Vec<NormalizedLocation>,
@@ -57,6 +58,7 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
     fn from(from: StaticMetadataSerdeRepr) -> Self {
         StaticMetadata::new(
             from.units_per_em,
+            from.names,
             from.axes,
             from.glyph_order.into_iter().map(|s| s.into()).collect(),
             from.glyph_locations.into_iter().collect(),
@@ -69,6 +71,7 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
     fn from(from: StaticMetadata) -> Self {
         StaticMetadataSerdeRepr {
             units_per_em: from.units_per_em,
+            names: from.names,
             axes: from.axes,
             glyph_order: from
                 .glyph_order

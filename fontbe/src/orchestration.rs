@@ -52,6 +52,7 @@ pub enum WorkId {
     Hmtx,
     Loca,
     Maxp,
+    Name,
     Post,
     Font,
 }

@@ -6,6 +6,7 @@ pub mod glyphs;
 pub mod head;
 pub mod hmetrics;
 pub mod maxp;
+pub mod name;
 pub mod orchestration;
 pub mod paths;
 pub mod post;
