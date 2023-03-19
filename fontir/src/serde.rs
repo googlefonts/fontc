@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
-    ir::{Axis, Glyph, GlyphInstance, StaticMetadata},
+    ir::{Axis, Glyph, GlyphBuilder, GlyphInstance, StaticMetadata},
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
 
@@ -96,7 +96,7 @@ pub struct GlyphSerdeRepr {
 
 impl From<GlyphSerdeRepr> for Glyph {
     fn from(from: GlyphSerdeRepr) -> Self {
-        Glyph {
+        GlyphBuilder {
             name: from.name.into(),
             codepoints: from.codepoints,
             sources: from
@@ -105,11 +105,14 @@ impl From<GlyphSerdeRepr> for Glyph {
                 .map(|g| (g.location, g.instance))
                 .collect(),
         }
+        .try_into()
+        .unwrap()
     }
 }
 
 impl From<Glyph> for GlyphSerdeRepr {
     fn from(from: Glyph) -> Self {
+        let from: GlyphBuilder = from.into();
         GlyphSerdeRepr {
             name: from.name.as_str().to_string(),
             codepoints: from.codepoints,

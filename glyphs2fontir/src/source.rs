@@ -243,7 +243,7 @@ fn check_pos(
 
 impl Work<Context, WorkError> for GlyphIrWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        trace!("Generate IR for {}", self.glyph_name.as_str());
+        trace!("Generate IR for '{}'", self.glyph_name.as_str());
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
@@ -255,7 +255,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
             .get(self.glyph_name.as_str())
             .ok_or_else(|| WorkError::NoGlyphForName(self.glyph_name.clone()))?;
 
-        let mut ir_glyph = ir::Glyph::new(self.glyph_name.clone());
+        let mut ir_glyph = ir::GlyphBuilder::new(self.glyph_name.clone());
 
         if let Some(codepoints) = font.glyph_to_codepoints.get(self.glyph_name.as_str()) {
             codepoints.iter().for_each(|cp| {
@@ -315,7 +315,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
             check_pos(&self.glyph_name, positions, axis, &max)?;
         }
 
-        context.set_glyph_ir(ir_glyph);
+        context.set_glyph_ir(ir_glyph.try_into()?);
         Ok(())
     }
 }
@@ -572,7 +572,7 @@ mod tests {
         }
         let actual_locations = context
             .get_glyph_ir(&glyph_name)
-            .sources
+            .sources()
             .keys()
             .map(|c| c.to_user(&axes))
             .collect::<HashSet<_>>();
@@ -604,7 +604,7 @@ mod tests {
         }
         let actual_locations = context
             .get_glyph_ir(&glyph_name)
-            .sources
+            .sources()
             .keys()
             .cloned()
             .collect::<HashSet<_>>();
@@ -658,7 +658,16 @@ mod tests {
     }
 
     #[test]
-    fn captures_multiple_codepoints() {
+    fn captures_single_codepoints_unquoted_dec() {
+        let (source, context) =
+            build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDec.glyphs"));
+        build_glyphs(&source, &context, &[&"name".into()]).unwrap();
+        let glyph = context.get_glyph_ir(&"name".into());
+        assert_eq!(HashSet::from([182]), glyph.codepoints);
+    }
+
+    #[test]
+    fn captures_multiple_codepoints_unquoted_dec() {
         let (source, context) =
             build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
         build_glyphs(&source, &context, &[&"name".into()]).unwrap();

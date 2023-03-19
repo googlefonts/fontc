@@ -133,7 +133,7 @@ pub fn to_ir_glyph(
     glyph_name: GlyphName,
     glif_files: &HashMap<&PathBuf, Vec<NormalizedLocation>>,
 ) -> Result<ir::Glyph, WorkError> {
-    let mut glyph = ir::Glyph::new(glyph_name);
+    let mut glyph = ir::GlyphBuilder::new(glyph_name);
     for (glif_file, locations) in glif_files {
         let norad_glyph =
             norad::Glyph::load(glif_file).map_err(|e| WorkError::InvalidSourceGlyph {
@@ -147,7 +147,7 @@ pub fn to_ir_glyph(
             glyph.try_add_source(location, to_ir_glyph_instance(&norad_glyph)?)?;
         }
     }
-    Ok(glyph)
+    glyph.try_into()
 }
 
 #[cfg(test)]
