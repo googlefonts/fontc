@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier};
-use fontdrasil::orchestration::AccessFn;
+use fontdrasil::orchestration::Access;
 use fontir::orchestration::{Context as FeContext, WorkId as FeWorkIdentifier};
 
 use crate::{
@@ -31,7 +31,7 @@ pub(crate) struct Job {
     // Things our job needs read access to. Usually all our dependencies.
     pub(crate) read_access: ReadAccess,
     // Things our job needs write access to
-    pub(crate) write_access: AccessFn<AnyWorkId>,
+    pub(crate) write_access: Access<AnyWorkId>,
 }
 
 enum RecvType {

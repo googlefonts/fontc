@@ -3,7 +3,7 @@
 use std::{collections::HashMap, fs, io, path::Path, sync::Arc};
 
 use fontdrasil::{
-    orchestration::{AccessControlList, AccessFn, Work, MISSING_DATA},
+    orchestration::{Access, AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
 };
 use fontir::{
@@ -211,8 +211,8 @@ impl Context {
 
     pub fn copy_for_work(
         &self,
-        read_access: AccessFn<AnyWorkId>,
-        write_access: AccessFn<AnyWorkId>,
+        read_access: Access<AnyWorkId>,
+        write_access: Access<AnyWorkId>,
     ) -> Context {
         self.copy(AccessControlList::read_write(read_access, write_access))
     }
