@@ -61,9 +61,7 @@ impl Workload {
             self.pre_success += 1;
         }
     }
-}
 
-impl Workload {
     fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId) {
         log::debug!("{success:?} successful");
         match success {

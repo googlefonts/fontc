@@ -93,40 +93,13 @@ impl StateSet {
     pub fn new() -> StateSet {
         Default::default()
     }
-}
 
-impl StateSet {
     pub fn keys(&self) -> KeyIterator {
         KeyIterator {
             iter: self.entries.keys(),
         }
     }
-}
 
-pub struct KeyIterator<'a> {
-    iter: hash_map::Keys<'a, StateIdentifier, State>,
-}
-
-impl<'a> Iterator for KeyIterator<'a> {
-    type Item = &'a StateIdentifier;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-impl StateSet {
-    // For tests.
-    #[doc(hidden)]
-    pub fn set_file_state(&mut self, path: &Path, mtime: FileTime, size: u64) {
-        self.entries.insert(
-            StateIdentifier::File(path.to_path_buf()),
-            State::File(FileState { mtime, size }),
-        );
-    }
-}
-
-impl StateSet {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -204,26 +177,7 @@ impl StateSet {
         }
         results
     }
-}
 
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct StateDiff {
-    pub added: HashSet<StateIdentifier>,
-    pub updated: HashSet<StateIdentifier>,
-    pub removed: HashSet<StateIdentifier>,
-}
-
-impl StateDiff {
-    pub fn new() -> StateDiff {
-        StateDiff {
-            added: HashSet::new(),
-            updated: HashSet::new(),
-            removed: HashSet::new(),
-        }
-    }
-}
-
-impl StateSet {
     /// We're what's new, Self - old_state; what's changed?
     pub fn diff(&self, old_state: &StateSet) -> Result<StateDiff, io::Error> {
         let old_keys: HashSet<&StateIdentifier> = old_state.entries.keys().collect();
@@ -244,6 +198,43 @@ impl StateSet {
                 .map(|e| (*e).clone())
                 .collect(),
         })
+    }
+    // For tests.
+    #[doc(hidden)]
+    pub fn set_file_state(&mut self, path: &Path, mtime: FileTime, size: u64) {
+        self.entries.insert(
+            StateIdentifier::File(path.to_path_buf()),
+            State::File(FileState { mtime, size }),
+        );
+    }
+}
+
+pub struct KeyIterator<'a> {
+    iter: hash_map::Keys<'a, StateIdentifier, State>,
+}
+
+impl<'a> Iterator for KeyIterator<'a> {
+    type Item = &'a StateIdentifier;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct StateDiff {
+    pub added: HashSet<StateIdentifier>,
+    pub updated: HashSet<StateIdentifier>,
+    pub removed: HashSet<StateIdentifier>,
+}
+
+impl StateDiff {
+    pub fn new() -> StateDiff {
+        StateDiff {
+            added: HashSet::new(),
+            updated: HashSet::new(),
+            removed: HashSet::new(),
+        }
     }
 }
 

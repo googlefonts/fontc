@@ -220,59 +220,7 @@ impl Context {
     pub fn copy_read_only(&self) -> Context {
         self.copy(AccessControlList::read_only())
     }
-}
 
-fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
-    let mut wl = lock.write();
-    *wl = Some(Arc::from(value));
-}
-
-fn from_file<T>(file: &Path) -> T
-where
-    for<'a> T: FontRead<'a>,
-{
-    let buf = read_entire_file(file);
-    T::read(FontData::new(&buf)).unwrap()
-}
-
-pub struct Bytes {
-    buf: Vec<u8>,
-}
-
-impl Bytes {
-    pub(crate) fn new(buf: Vec<u8>) -> Bytes {
-        Bytes { buf }
-    }
-
-    pub fn get(&self) -> &[u8] {
-        &self.buf
-    }
-}
-
-// Free fn because that lets it fit into the context_accessors macro.
-fn raw_from_file(file: &Path) -> Bytes {
-    let buf = read_entire_file(file);
-    Bytes { buf }
-}
-
-fn raw_to_bytes(table: &Bytes) -> Vec<u8> {
-    table.buf.clone()
-}
-
-fn to_bytes<T>(table: &T) -> Vec<u8>
-where
-    T: FontWrite + Validate,
-{
-    dump_table(table).unwrap()
-}
-
-fn read_entire_file(file: &Path) -> Vec<u8> {
-    fs::read(file)
-        .map_err(|e| panic!("Unable to read {file:?} {e}"))
-        .unwrap()
-}
-
-impl Context {
     /// A reasonable place to write extra files to help someone debugging
     pub fn debug_dir(&self) -> &Path {
         self.paths.debug_dir()
@@ -399,4 +347,54 @@ impl Context {
     // Accessors where value is raw bytes
     context_accessors! { get_hmtx, set_hmtx, hmtx, Bytes, WorkId::Hmtx, raw_from_file, raw_to_bytes }
     context_accessors! { get_font, set_font, font, Bytes, WorkId::Font, raw_from_file, raw_to_bytes }
+}
+
+fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
+    let mut wl = lock.write();
+    *wl = Some(Arc::from(value));
+}
+
+fn from_file<T>(file: &Path) -> T
+where
+    for<'a> T: FontRead<'a>,
+{
+    let buf = read_entire_file(file);
+    T::read(FontData::new(&buf)).unwrap()
+}
+
+pub struct Bytes {
+    buf: Vec<u8>,
+}
+
+impl Bytes {
+    pub(crate) fn new(buf: Vec<u8>) -> Bytes {
+        Bytes { buf }
+    }
+
+    pub fn get(&self) -> &[u8] {
+        &self.buf
+    }
+}
+
+// Free fn because that lets it fit into the context_accessors macro.
+fn raw_from_file(file: &Path) -> Bytes {
+    let buf = read_entire_file(file);
+    Bytes { buf }
+}
+
+fn raw_to_bytes(table: &Bytes) -> Vec<u8> {
+    table.buf.clone()
+}
+
+fn to_bytes<T>(table: &T) -> Vec<u8>
+where
+    T: FontWrite + Validate,
+{
+    dump_table(table).unwrap()
+}
+
+fn read_entire_file(file: &Path) -> Vec<u8> {
+    fs::read(file)
+        .map_err(|e| panic!("Unable to read {file:?} {e}"))
+        .unwrap()
 }

@@ -126,6 +126,10 @@ impl DesignCoord {
     pub fn to_normalized(&self, converter: &CoordConverter) -> NormalizedCoord {
         NormalizedCoord::new(converter.design_to_normalized.map(self.0))
     }
+
+    pub fn into_inner(self) -> OrderedFloat<f32> {
+        self.0
+    }
 }
 
 impl UserCoord {
@@ -140,6 +144,10 @@ impl UserCoord {
 
     pub fn to_normalized(&self, converter: &CoordConverter) -> NormalizedCoord {
         self.to_design(converter).to_normalized(converter)
+    }
+
+    pub fn into_inner(self) -> OrderedFloat<f32> {
+        self.0
     }
 }
 
@@ -156,21 +164,7 @@ impl NormalizedCoord {
     pub fn to_user(&self, converter: &CoordConverter) -> UserCoord {
         self.to_design(converter).to_user(converter)
     }
-}
 
-impl DesignCoord {
-    pub fn into_inner(self) -> OrderedFloat<f32> {
-        self.0
-    }
-}
-
-impl UserCoord {
-    pub fn into_inner(self) -> OrderedFloat<f32> {
-        self.0
-    }
-}
-
-impl NormalizedCoord {
     pub fn into_inner(self) -> OrderedFloat<f32> {
         self.0
     }
@@ -253,9 +247,6 @@ impl NormalizedLocation {
                 .collect(),
         )
     }
-}
-
-impl NormalizedLocation {
     pub fn has_non_zero(&self, axis_name: &String) -> bool {
         self.get(axis_name).unwrap_or_default().into_inner() != OrderedFloat(0.0)
     }

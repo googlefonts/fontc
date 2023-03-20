@@ -29,14 +29,7 @@ impl PiecewiseLinearMap {
             .collect();
         PiecewiseLinearMap::new(mappings)
     }
-}
 
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    assert!((0_f32..=1_f32).contains(&t));
-    a + t * (b - a)
-}
-
-impl PiecewiseLinearMap {
     /// Based on <https://github.com/fonttools/fonttools/blob/5a0dc4bc8dfaa0c7da146cf902395f748b3cebe5/Lib/fontTools/varLib/models.py#L502>
     pub fn map(&self, value: OrderedFloat<f32>) -> OrderedFloat<f32> {
         match self.from.binary_search(&value) {
@@ -71,6 +64,11 @@ impl PiecewiseLinearMap {
             }
         }
     }
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    assert!((0_f32..=1_f32).contains(&t));
+    a + t * (b - a)
 }
 
 #[cfg(test)]

@@ -55,9 +55,7 @@ impl StaticMetadata {
             variation_model,
         })
     }
-}
 
-impl StaticMetadata {
     pub fn glyph_id(&self, name: &GlyphName) -> Option<u32> {
         self.glyph_order.get_index_of(name).map(|i| i as u32)
     }

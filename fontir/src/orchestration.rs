@@ -159,27 +159,7 @@ impl Context {
     pub fn read_only(&self) -> Context {
         self.copy(AccessControlList::read_only())
     }
-}
 
-fn nop<T>(v: &T) -> &T {
-    v
-}
-
-fn restore<V>(file: &Path) -> V
-where
-    V: ?Sized + DeserializeOwned,
-{
-    let raw_file = File::open(file)
-        .map_err(|e| panic!("Unable to read {file:?} {e}"))
-        .unwrap();
-    let buf_io = BufReader::new(raw_file);
-    match serde_yaml::from_reader(buf_io) {
-        Ok(v) => v,
-        Err(e) => panic!("Unable to deserialize {file:?} {e}"),
-    }
-}
-
-impl Context {
     fn maybe_persist<V>(&self, file: &Path, content: &V)
     where
         V: ?Sized + Serialize + Debug,
@@ -232,4 +212,22 @@ impl Context {
     context_accessors! { get_init_static_metadata, set_init_static_metadata, init_static_metadata, ir::StaticMetadata, WorkId::InitStaticMetadata, restore, nop }
     context_accessors! { get_final_static_metadata, set_final_static_metadata, final_static_metadata, ir::StaticMetadata, WorkId::FinalizeStaticMetadata, restore, nop }
     context_accessors! { get_features, set_features, feature_ir, ir::Features, WorkId::Features, restore, nop }
+}
+
+fn nop<T>(v: &T) -> &T {
+    v
+}
+
+fn restore<V>(file: &Path) -> V
+where
+    V: ?Sized + DeserializeOwned,
+{
+    let raw_file = File::open(file)
+        .map_err(|e| panic!("Unable to read {file:?} {e}"))
+        .unwrap();
+    let buf_io = BufReader::new(raw_file);
+    match serde_yaml::from_reader(buf_io) {
+        Ok(v) => v,
+        Err(e) => panic!("Unable to deserialize {file:?} {e}"),
+    }
 }

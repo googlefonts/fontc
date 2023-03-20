@@ -278,9 +278,6 @@ impl VariationRegion {
     fn new() -> Self {
         VariationRegion(HashMap::new())
     }
-}
-
-impl VariationRegion {
     /// The scalar multiplier for the provided location for this region
     ///
     /// Returns None for no influence, Some(non-zero value) for influence.
