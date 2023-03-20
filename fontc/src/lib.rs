@@ -33,7 +33,7 @@ use fontbe::{
     post::create_post_work,
 };
 
-use fontdrasil::{orchestration::AccessFn, types::GlyphName};
+use fontdrasil::{orchestration::Access, types::GlyphName};
 use fontir::{
     glyph::create_finalize_static_metadata_work,
     orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
@@ -59,7 +59,7 @@ fn add_init_static_metadata_ir_job(
 ) -> Result<(), Error> {
     if change_detector.init_static_metadata_ir_change() {
         let id: AnyWorkId = FeWorkIdentifier::InitStaticMetadata.into();
-        let write_access = AccessFn::one(id.clone());
+        let write_access = Access::one(id.clone());
         workload.insert(
             id,
             Job {
@@ -95,7 +95,7 @@ fn add_finalize_static_metadata_ir_job(
         dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
 
         // Grant write to any glyph including ones we've never seen before so job can create them
-        let write_access = AccessFn::new(|an_id: &AnyWorkId| {
+        let write_access = Access::custom(|an_id: &AnyWorkId| {
             matches!(
                 an_id,
                 AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
@@ -123,7 +123,7 @@ fn add_feature_ir_job(
 ) -> Result<(), Error> {
     if change_detector.feature_ir_change() {
         let id: AnyWorkId = FeWorkIdentifier::Features.into();
-        let write_access = AccessFn::one(id.clone());
+        let write_access = Access::one(id.clone());
         workload.insert(
             id,
             Job {
@@ -148,7 +148,7 @@ fn add_feature_be_job(
 ) -> Result<(), Error> {
     if change_detector.feature_be_change() && change_detector.glyph_name_filter().is_none() {
         let id: AnyWorkId = BeWorkIdentifier::Features.into();
-        let write_access = AccessFn::one(id.clone());
+        let write_access = Access::one(id.clone());
         workload.insert(
             id,
             Job {
@@ -185,7 +185,7 @@ fn add_glyph_ir_jobs(
                 work: DeleteWork::create(path).into(),
                 dependencies: HashSet::new(),
                 read_access: ReadAccess::Dependencies,
-                write_access: AccessFn::none(),
+                write_access: Access::none(),
             },
         );
     }
@@ -201,7 +201,7 @@ fn add_glyph_ir_jobs(
         let dependencies = HashSet::from([FeWorkIdentifier::InitStaticMetadata.into()]);
 
         let id: AnyWorkId = id.into();
-        let write_access = AccessFn::one(id.clone());
+        let write_access = Access::one(id.clone());
         workload.insert(
             id,
             Job {
@@ -231,7 +231,7 @@ fn add_glyf_loca_be_job(
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
 
         // Write the merged glyphs and write individual glyphs that are updated, such as composites with bboxes
-        let write_access = AccessFn::new(|id| {
+        let write_access = Access::custom(|id| {
             matches!(
                 id,
                 AnyWorkId::Be(BeWorkIdentifier::Glyf)
@@ -288,7 +288,7 @@ fn add_cmap_be_job(
                 read_access: ReadAccess::custom(|id| {
                     matches!(id, AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)))
                 }),
-                write_access: AccessFn::one(id),
+                write_access: Access::one(id),
             },
         );
     } else {
@@ -312,7 +312,7 @@ fn add_post_be_job(
                 work: create_post_work().into(),
                 dependencies,
                 read_access: ReadAccess::Dependencies,
-                write_access: AccessFn::one(id),
+                write_access: Access::one(id),
             },
         );
     } else {
@@ -336,7 +336,7 @@ fn add_head_be_job(
                 work: create_head_work().into(),
                 dependencies,
                 read_access: ReadAccess::Dependencies,
-                write_access: AccessFn::one(id),
+                write_access: Access::one(id),
             },
         );
     } else {
@@ -361,7 +361,7 @@ fn add_maxp_be_job(
                 work: create_maxp_work().into(),
                 dependencies,
                 read_access: ReadAccess::Dependencies,
-                write_access: AccessFn::one(id),
+                write_access: Access::one(id),
             },
         );
     } else {
@@ -403,7 +403,7 @@ fn add_hmetrics_job(
                             | AnyWorkId::Be(BeWorkIdentifier::Glyph(..))
                     )
                 }),
-                write_access: AccessFn::new(|id| {
+                write_access: Access::custom(|id| {
                     matches!(
                         id,
                         AnyWorkId::Be(BeWorkIdentifier::Hmtx)
@@ -444,7 +444,7 @@ fn add_font_be_job(
                 work: create_font_work().into(),
                 dependencies,
                 read_access: ReadAccess::Dependencies,
-                write_access: AccessFn::one(id),
+                write_access: Access::one(id),
             },
         );
     } else {
@@ -475,7 +475,7 @@ fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: Gl
         panic!("BE glyph '{glyph_name}' is being built but not participating in hmtx",);
     }
 
-    let write_access = AccessFn::one(id.clone());
+    let write_access = Access::one(id.clone());
     workload.insert(
         id,
         Job {

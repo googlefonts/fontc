@@ -8,16 +8,17 @@ use std::{
 
 pub const MISSING_DATA: &str = "Missing data, dependency management failed us?";
 
-/// A type that represents whether access to something is permitted.
+/// A rule that represents whether access to something is permitted.
 #[derive(Clone)]
-pub struct AccessFn<I>(Arc<dyn Fn(&I) -> bool + Send + Sync>);
-
-// deref to a function so that you can use fn call syntax:
-impl<I> std::ops::Deref for AccessFn<I> {
-    type Target = dyn Fn(&I) -> bool + Send + Sync;
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref()
-    }
+pub enum Access<I> {
+    /// No access is permitted
+    None,
+    /// Any access is permitted
+    All,
+    /// Access to one specific resource is permitted
+    One(I),
+    /// A closure is used to determine access
+    Custom(Arc<dyn Fn(&I) -> bool + Send + Sync>),
 }
 
 /// A unit of work safe to run in parallel
@@ -39,21 +40,21 @@ where
     I: Eq + Hash + Debug,
 {
     // Returns true if you can write to the provided id
-    write_access: AccessFn<I>,
+    write_access: Access<I>,
 
     // Returns true if you can read the provided id
-    read_access: AccessFn<I>,
+    read_access: Access<I>,
 }
 
 impl<I: Eq + Hash + Debug + Send + Sync + 'static> AccessControlList<I> {
     pub fn read_only() -> AccessControlList<I> {
         AccessControlList {
-            write_access: AccessFn::none(),
-            read_access: AccessFn::all(),
+            write_access: Access::none(),
+            read_access: Access::all(),
         }
     }
 
-    pub fn read_write(read_access: AccessFn<I>, write_access: AccessFn<I>) -> AccessControlList<I> {
+    pub fn read_write(read_access: Access<I>, write_access: Access<I>) -> AccessControlList<I> {
         AccessControlList {
             write_access,
             read_access,
@@ -61,29 +62,35 @@ impl<I: Eq + Hash + Debug + Send + Sync + 'static> AccessControlList<I> {
     }
 }
 
-impl<I: Eq> AccessFn<I> {
-    /// Create a new `AccessFn` from the provided closer
-    pub fn new<F: Fn(&I) -> bool + Send + Sync + 'static>(func: F) -> Self {
-        AccessFn(Arc::new(func))
+impl<I: Eq> Access<I> {
+    /// Create a new access rule with custom logic
+    pub fn custom<F: Fn(&I) -> bool + Send + Sync + 'static>(func: F) -> Self {
+        Access::Custom(Arc::new(func))
     }
 
     pub fn all() -> Self {
-        Self::new(|_| true)
+        Self::All
     }
 
     pub fn none() -> Self {
-        Self::new(|_| false)
+        Self::None
     }
 
     pub fn one(allow_id: I) -> Self
     where
         I: Eq + Send + Sync + 'static,
     {
-        Self::new(move |id| id == &allow_id)
+        Self::One(allow_id)
     }
 
-    pub fn call(&self, id: &I) -> bool {
-        self.0(id)
+    /// Check whether a given id is allowed per this rule.
+    pub fn check(&self, id: &I) -> bool {
+        match self {
+            Access::None => false,
+            Access::All => true,
+            Access::One(allow) => id == allow,
+            Access::Custom(f) => f(id),
+        }
     }
 }
 
@@ -101,24 +108,23 @@ impl Display for AccessCheck {
     }
 }
 
-#[allow(clippy::redundant_closure)] // a spurious warning
 fn assert_access_many<I: Eq + Hash + Debug>(
     demand: AccessCheck,
-    access_fn: &AccessFn<I>,
+    access: &Access<I>,
     ids: &[I],
     desc: &str,
 ) {
     let allow = match demand {
-        AccessCheck::All => ids.iter().all(|id| access_fn(id)),
-        AccessCheck::Any => ids.iter().any(|id| access_fn(id)),
+        AccessCheck::All => ids.iter().all(|id| access.check(id)),
+        AccessCheck::Any => ids.iter().any(|id| access.check(id)),
     };
     if !allow {
         panic!("Illegal {desc} of {demand} {ids:?}");
     }
 }
 
-fn assert_access_one<I: Eq + Hash + Debug>(access_fn: &AccessFn<I>, id: &I, desc: &str) {
-    let allow = access_fn(id);
+fn assert_access_one<I: Eq + Hash + Debug>(access: &Access<I>, id: &I, desc: &str) {
+    let allow = access.check(id);
     if !allow {
         panic!("Illegal {desc} of {id:?}");
     }

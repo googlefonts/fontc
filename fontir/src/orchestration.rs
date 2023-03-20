@@ -11,7 +11,7 @@ use std::{
 
 use bitflags::bitflags;
 use fontdrasil::{
-    orchestration::{AccessControlList, AccessFn, Work, MISSING_DATA},
+    orchestration::{Access, AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
 };
 use parking_lot::RwLock;
@@ -150,8 +150,8 @@ impl Context {
 
     pub fn copy_for_work(
         &self,
-        read_access: AccessFn<WorkId>,
-        write_access: AccessFn<WorkId>,
+        read_access: Access<WorkId>,
+        write_access: Access<WorkId>,
     ) -> Context {
         self.copy(AccessControlList::read_write(read_access, write_access))
     }

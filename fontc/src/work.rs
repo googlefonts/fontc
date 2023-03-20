@@ -8,7 +8,7 @@ use fontbe::{
     error::Error as BeError,
     orchestration::{AnyWorkId, BeWork, Context as BeContext},
 };
-use fontdrasil::orchestration::AccessFn;
+use fontdrasil::orchestration::Access;
 use fontir::{
     error::WorkError as FeError,
     orchestration::{Context as FeContext, IrWork, WorkId},
@@ -75,12 +75,12 @@ pub enum AnyContext {
 
 pub enum ReadAccess {
     Dependencies,
-    Custom(AccessFn<AnyWorkId>),
+    Custom(Access<AnyWorkId>),
 }
 
 impl ReadAccess {
     pub fn custom(func: impl Fn(&AnyWorkId) -> bool + Send + Sync + 'static) -> Self {
-        Self::Custom(AccessFn::new(func))
+        Self::Custom(Access::custom(func))
     }
 }
 
@@ -91,17 +91,17 @@ impl AnyContext {
         work_id: &AnyWorkId,
         dependencies: HashSet<AnyWorkId>,
         read_access: ReadAccess,
-        write_access: AccessFn<AnyWorkId>,
+        write_access: Access<AnyWorkId>,
     ) -> AnyContext {
         let read_access = match read_access {
-            ReadAccess::Dependencies => AccessFn::new(move |id| dependencies.contains(id)),
+            ReadAccess::Dependencies => Access::custom(move |id| dependencies.contains(id)),
             ReadAccess::Custom(access_fn) => access_fn,
         };
         match work_id {
             AnyWorkId::Be(..) => AnyContext::Be(be_root.copy_for_work(read_access, write_access)),
             AnyWorkId::Fe(..) => AnyContext::Fe(fe_root.copy_for_work(
-                AccessFn::new(move |id: &WorkId| read_access.call(&AnyWorkId::Fe(id.clone()))),
-                AccessFn::new(move |id: &WorkId| write_access.call(&AnyWorkId::Fe(id.clone()))),
+                Access::custom(move |id: &WorkId| read_access.check(&AnyWorkId::Fe(id.clone()))),
+                Access::custom(move |id: &WorkId| write_access.check(&AnyWorkId::Fe(id.clone()))),
             )),
         }
     }

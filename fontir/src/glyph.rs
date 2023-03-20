@@ -328,7 +328,7 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
 mod tests {
     use std::{collections::HashSet, path::Path};
 
-    use fontdrasil::{orchestration::AccessFn, types::GlyphName};
+    use fontdrasil::{orchestration::Access, types::GlyphName};
     use indexmap::IndexSet;
     use kurbo::{Affine, BezPath};
     use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
@@ -508,8 +508,8 @@ mod tests {
         let coalesce_me = contour_and_component_weight_glyph("coalesce_me");
 
         let context = test_root().copy_for_work(
-            AccessFn::one(WorkId::Glyph("component".into())),
-            AccessFn::all(),
+            Access::one(WorkId::Glyph("component".into())),
+            Access::all(),
         );
         context.set_glyph_ir(contour_glyph("component"));
 
@@ -549,8 +549,8 @@ mod tests {
             WorkId::Glyph(c2.name.clone()),
         ]);
         let context = test_root().copy_for_work(
-            AccessFn::new(move |id| allow_access.contains(id)),
-            AccessFn::all(),
+            Access::custom(move |id| allow_access.contains(id)),
+            Access::all(),
         );
         context.set_glyph_ir(reuse_me);
         context.set_glyph_ir(c1.clone());
@@ -630,8 +630,8 @@ mod tests {
             .unwrap();
 
         let context = test_root().copy_for_work(
-            AccessFn::one(WorkId::Glyph(reuse_me.name.clone())),
-            AccessFn::all(),
+            Access::one(WorkId::Glyph(reuse_me.name.clone())),
+            Access::all(),
         );
         context.set_glyph_ir(reuse_me);
 
@@ -689,8 +689,8 @@ mod tests {
         let glyph = adjust_transform_for_each_instance(&glyph.try_into().unwrap());
 
         let context = test_root().copy_for_work(
-            AccessFn::one(WorkId::Glyph("component".into())),
-            AccessFn::all(),
+            Access::one(WorkId::Glyph("component".into())),
+            Access::all(),
         );
         context.set_glyph_ir(contour_glyph("component"));
 
@@ -704,8 +704,8 @@ mod tests {
         let glyph = adjust_transform_for_each_instance(&glyph);
 
         let context = test_root().copy_for_work(
-            AccessFn::one(WorkId::Glyph("component".into())),
-            AccessFn::all(),
+            Access::one(WorkId::Glyph("component".into())),
+            Access::all(),
         );
         context.set_glyph_ir(contour_glyph("component"));
 
