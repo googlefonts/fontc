@@ -8,8 +8,17 @@ use std::{
 
 pub const MISSING_DATA: &str = "Missing data, dependency management failed us?";
 
-/// A function that indicates whether access to something is permitted.
-pub type AccessFn<I> = Arc<dyn Fn(&I) -> bool + Send + Sync>;
+/// A type that represents whether access to something is permitted.
+#[derive(Clone)]
+pub struct AccessFn<I>(Arc<dyn Fn(&I) -> bool + Send + Sync>);
+
+// deref to a function so that you can use fn call syntax:
+impl<I> std::ops::Deref for AccessFn<I> {
+    type Target = dyn Fn(&I) -> bool + Send + Sync;
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
 
 /// A unit of work safe to run in parallel
 ///
@@ -39,8 +48,8 @@ where
 impl<I: Eq + Hash + Debug + Send + Sync + 'static> AccessControlList<I> {
     pub fn read_only() -> AccessControlList<I> {
         AccessControlList {
-            write_access: access_none(),
-            read_access: access_all(),
+            write_access: AccessFn::none(),
+            read_access: AccessFn::all(),
         }
     }
 
@@ -52,16 +61,30 @@ impl<I: Eq + Hash + Debug + Send + Sync + 'static> AccessControlList<I> {
     }
 }
 
-pub fn access_all<I: Eq + Send + Sync + 'static>() -> AccessFn<I> {
-    Arc::new(move |_| true)
-}
+impl<I: Eq> AccessFn<I> {
+    /// Create a new `AccessFn` from the provided closer
+    pub fn new<F: Fn(&I) -> bool + Send + Sync + 'static>(func: F) -> Self {
+        AccessFn(Arc::new(func))
+    }
 
-pub fn access_one<I: Eq + Send + Sync + 'static>(id: I) -> AccessFn<I> {
-    Arc::new(move |id2| id == *id2)
-}
+    pub fn all() -> Self {
+        Self::new(|_| true)
+    }
 
-pub fn access_none<I: Eq + Send + Sync + 'static>() -> AccessFn<I> {
-    Arc::new(move |_| false)
+    pub fn none() -> Self {
+        Self::new(|_| false)
+    }
+
+    pub fn one(allow_id: I) -> Self
+    where
+        I: Eq + Send + Sync + 'static,
+    {
+        Self::new(move |id| id == &allow_id)
+    }
+
+    pub fn call(&self, id: &I) -> bool {
+        self.0(id)
+    }
 }
 
 enum AccessCheck {
@@ -78,6 +101,7 @@ impl Display for AccessCheck {
     }
 }
 
+#[allow(clippy::redundant_closure)] // a spurious warning
 fn assert_access_many<I: Eq + Hash + Debug>(
     demand: AccessCheck,
     access_fn: &AccessFn<I>,
