@@ -2,7 +2,7 @@
 //!
 //! Basically enums that can be a FeWhatever or a BeWhatever.
 
-use std::{collections::HashSet, fmt::Display, sync::Arc};
+use std::{collections::HashSet, fmt::Display};
 
 use fontbe::{
     error::Error as BeError,
@@ -11,7 +11,7 @@ use fontbe::{
 use fontdrasil::orchestration::AccessFn;
 use fontir::{
     error::WorkError as FeError,
-    orchestration::{Context as FeContext, IrWork},
+    orchestration::{Context as FeContext, IrWork, WorkId},
 };
 
 #[derive(Debug)]
@@ -78,6 +78,12 @@ pub enum ReadAccess {
     Custom(AccessFn<AnyWorkId>),
 }
 
+impl ReadAccess {
+    pub fn custom(func: impl Fn(&AnyWorkId) -> bool + Send + Sync + 'static) -> Self {
+        Self::Custom(AccessFn::new(func))
+    }
+}
+
 impl AnyContext {
     pub fn for_work(
         fe_root: &FeContext,
@@ -85,20 +91,17 @@ impl AnyContext {
         work_id: &AnyWorkId,
         dependencies: HashSet<AnyWorkId>,
         read_access: ReadAccess,
-        write_access: Arc<dyn Fn(&AnyWorkId) -> bool + Send + Sync>,
+        write_access: AccessFn<AnyWorkId>,
     ) -> AnyContext {
         let read_access = match read_access {
-            ReadAccess::Dependencies => {
-                let read: AccessFn<AnyWorkId> = Arc::new(move |id| dependencies.contains(id));
-                read
-            }
+            ReadAccess::Dependencies => AccessFn::new(move |id| dependencies.contains(id)),
             ReadAccess::Custom(access_fn) => access_fn,
         };
         match work_id {
             AnyWorkId::Be(..) => AnyContext::Be(be_root.copy_for_work(read_access, write_access)),
             AnyWorkId::Fe(..) => AnyContext::Fe(fe_root.copy_for_work(
-                Arc::new(move |id| read_access(&AnyWorkId::Fe(id.clone()))),
-                Arc::new(move |id| (write_access)(&AnyWorkId::Fe(id.clone()))),
+                AccessFn::new(move |id: &WorkId| read_access.call(&AnyWorkId::Fe(id.clone()))),
+                AccessFn::new(move |id: &WorkId| write_access.call(&AnyWorkId::Fe(id.clone()))),
             )),
         }
     }
