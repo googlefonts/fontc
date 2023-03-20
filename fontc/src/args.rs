@@ -1,6 +1,6 @@
 //! Command line arguments
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Parser;
 use fontir::orchestration::Flags;
@@ -55,8 +55,8 @@ impl Args {
     }
 
     /// Manually create args for testing
-    #[doc(hidden)]
-    pub fn for_test(build_dir: &Path, source: &str) -> Args {
+    #[cfg(test)]
+    pub fn for_test(build_dir: &std::path::Path, source: &str) -> Args {
         fn testdata_dir() -> PathBuf {
             let path = PathBuf::from("../resources/testdata")
                 .canonicalize()
