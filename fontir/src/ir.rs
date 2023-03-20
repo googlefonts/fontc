@@ -70,7 +70,7 @@ impl StaticMetadata {
 }
 
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name#name-ids>
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum NameId {
     Copyright,
     FamilyName,
@@ -83,10 +83,10 @@ pub enum NameId {
     ManufacturerName,
     Designer,
     Description,
-    UrlOfVendor,
-    UrlOfDesigner,
-    LicenseDescription,
-    LicenseInfoUrl,
+    ManufacturerUrl,
+    DesignerUrl,
+    License,
+    LicenseUrl,
     Reserved15,
     TypographicFamilyName,
     TypographicSubfamilyName,
@@ -115,10 +115,10 @@ impl From<u16> for NameId {
             8 => NameId::ManufacturerName,
             9 => NameId::Designer,
             10 => NameId::Description,
-            11 => NameId::UrlOfVendor,
-            12 => NameId::UrlOfDesigner,
-            13 => NameId::LicenseDescription,
-            14 => NameId::LicenseInfoUrl,
+            11 => NameId::ManufacturerUrl,
+            12 => NameId::DesignerUrl,
+            13 => NameId::License,
+            14 => NameId::LicenseUrl,
             15 => NameId::Reserved15,
             16 => NameId::TypographicFamilyName,
             17 => NameId::TypographicSubfamilyName,
@@ -135,13 +135,93 @@ impl From<u16> for NameId {
     }
 }
 
+impl From<NameId> for u16 {
+    fn from(value: NameId) -> Self {
+        match value {
+            NameId::Copyright => 0,
+            NameId::FamilyName => 1,
+            NameId::SubfamilyName => 2,
+            NameId::UniqueIdentifier => 3,
+            NameId::FullName => 4,
+            NameId::Version => 5,
+            NameId::PostScriptName => 6,
+            NameId::Trademark => 7,
+            NameId::ManufacturerName => 8,
+            NameId::Designer => 9,
+            NameId::Description => 10,
+            NameId::ManufacturerUrl => 11,
+            NameId::DesignerUrl => 12,
+            NameId::License => 13,
+            NameId::LicenseUrl => 14,
+            NameId::Reserved15 => 15,
+            NameId::TypographicFamilyName => 16,
+            NameId::TypographicSubfamilyName => 17,
+            NameId::MacCompatibleFullName => 18,
+            NameId::SampleText => 19,
+            NameId::PostScriptCidName => 20,
+            NameId::WwsFamilyName => 21,
+            NameId::WwsSubfamilyName => 22,
+            NameId::LightBackgroundPalette => 23,
+            NameId::DarkBackgroundPalette => 24,
+            NameId::VariationsPostScriptNamePrefix => 25,
+            NameId::Other(value) => value,
+        }
+    }
+}
+
+impl NameId {
+    /// Match fontmake defaults.
+    pub fn default_value(&self) -> Option<&'static str> {
+        match self {
+            // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L352
+            NameId::FamilyName => Some("New Font"),
+            // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L77
+            NameId::SubfamilyName => Some("Regular"),
+            _ => None,
+        }
+    }
+}
+
+/// The encoding for a Windows-platform (which works everywhere) name.
+///
+/// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name#platform-specific-encoding-and-language-ids-windows-platform-platform-id-3>
+fn encoding_for(value: &str) -> u16 {
+    if value.chars().all(|c| (c as u32) < 0xFFFF) {
+        1 // Unicode BMP
+    } else {
+        10 // Unicode full repetoire
+    }
+}
+
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct NameKey {
     pub name_id: NameId,
     pub platform_id: u16,
     pub encoding_id: u16,
     pub lang_id: u16,
+}
+
+impl NameKey {
+    /// Create's a [NameKey] suitable for use with the provided value.
+    ///
+    /// The value matters because if it uses values from outside the Unicode BMP
+    /// the key changes.
+    pub fn new(name_id: NameId, value: &str) -> NameKey {
+        // The spec offers a Unicode platform but fontmake uses Windows because that's more widely supported.
+        // Match that. <https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/outlineCompiler.py#L430-L432>.
+        NameKey {
+            platform_id: 3, // Windows
+            encoding_id: encoding_for(value),
+            // https://learn.microsoft.com/en-us/typography/opentype/spec/name#windows-language-ids
+            lang_id: 0x409, // English, United States.
+            name_id,
+        }
+    }
+
+    pub fn new_bmp_only(name_id: NameId) -> NameKey {
+        Self::new(name_id, "")
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -450,7 +530,7 @@ mod tests {
 
     use crate::{
         coords::{CoordConverter, UserCoord},
-        ir::Axis,
+        ir::{Axis, NameId},
     };
 
     use super::GlyphPathBuilder;
@@ -510,5 +590,15 @@ mod tests {
         builder.offcurve((5.0, 4.0)).unwrap();
         builder.qcurve_to((6.0, 2.0)).unwrap();
         assert_eq!("M2,2 Q3,0 4,2 Q5,4 6,2", builder.build().to_svg());
+    }
+
+    #[test]
+    fn name_id_went_on_a_fieldtrip() {
+        for raw_id in 0..255u16 {
+            let name_id: NameId = raw_id.into();
+            let back_to_raw: u16 = name_id.into();
+            let back_to_name_id: NameId = back_to_raw.into();
+            assert_eq!((raw_id, name_id), (back_to_raw, back_to_name_id));
+        }
     }
 }

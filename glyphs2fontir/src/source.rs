@@ -197,8 +197,9 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             .map(|s| s.into())
             .filter(|gn| self.glyph_names.contains(gn))
             .collect();
+        let names = HashMap::new();
         context.set_init_static_metadata(
-            StaticMetadata::new(font.units_per_em, axes, glyph_order, glyph_locations)
+            StaticMetadata::new(font.units_per_em, names, axes, glyph_order, glyph_locations)
                 .map_err(WorkError::VariationModelError)?,
         );
         Ok(())

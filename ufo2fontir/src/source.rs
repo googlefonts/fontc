@@ -492,28 +492,157 @@ fn font_infos<'a>(
     Ok(results)
 }
 
-fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
-    let mut result = HashMap::new();
+/// Helps accumulate 'name' values.
+///
+/// See <https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/outlineCompiler.py#L367>.
+#[derive(Default)]
+struct NameBuilder {
+    names: HashMap<NameKey, String>,
+    /// Helps lookup entries in name when all we have is a NameId
+    name_to_key: HashMap<NameId, NameKey>,
+}
 
-    let mut insert_if_present = |maybe_value: &Option<String>, name_id: NameId| {
-        if let Some(value) = maybe_value.as_ref() {
-            // For now let's very optimistically emit unicode names only
-            // <https://learn.microsoft.com/en-us/typography/opentype/spec/name#platform-encoding-and-language-ids>
-            result.insert(
-                NameKey {
-                    platform_id: 0, // Unicode
-                    encoding_id: 5, // Unicode full repertoire
-                    lang_id: 0,     // irrelevent for platform=Unicode
-                    name_id,
-                },
-                value.clone(),
-            );
+impl NameBuilder {
+    fn add(&mut self, name_id: NameId, value: String) {
+        let key = NameKey::new(name_id, &value);
+        self.names.insert(key, value);
+        self.name_to_key.insert(name_id, key);
+    }
+
+    fn add_if_present(&mut self, name_id: NameId, value: &Option<String>) {
+        let value = if let Some(value) = value {
+            Some(value.clone())
+        } else {
+            name_id.default_value().map(String::from)
+        };
+        if let Some(value) = value {
+            self.add(name_id, value);
         }
-    };
+    }
 
-    insert_if_present(&font_info.family_name, NameId::FamilyName);
+    fn apply_fallback(&mut self, name_id: NameId, fallbacks: &[NameId]) {
+        if let Some(fallback_id) = fallbacks.iter().find(|n| {
+            let Some(key) = self.name_to_key.get(*n) else {
+                    return false;
+                };
+            self.names.contains_key(key)
+        }) {
+            self.add(name_id, self.names[&self.name_to_key[fallback_id]].clone());
+        }
+    }
 
-    result
+    fn contains_key(&self, name_id: NameId) -> bool {
+        self.name_to_key.contains_key(&name_id)
+    }
+
+    fn get(&self, name_id: NameId) -> Option<&str> {
+        self.name_to_key
+            .get(&name_id)
+            .and_then(|key| self.names.get(key).map(|s| s.as_str()))
+    }
+
+    fn into_inner(self) -> HashMap<NameKey, String> {
+        self.names
+    }
+}
+
+impl From<&norad::FontInfo> for NameBuilder {
+    fn from(font_info: &norad::FontInfo) -> Self {
+        let mut builder = Self::default();
+
+        // Name's that get individual fields
+        builder.add_if_present(NameId::Copyright, &font_info.copyright);
+        builder.add_if_present(NameId::FamilyName, &font_info.style_map_family_name);
+        builder.add_if_present(
+            NameId::SubfamilyName,
+            &font_info.style_map_style_name.as_ref().map(|s| {
+                match s {
+                    norad::fontinfo::StyleMapStyle::Regular => "regular",
+                    norad::fontinfo::StyleMapStyle::Italic => "italic",
+                    norad::fontinfo::StyleMapStyle::Bold => "bold",
+                    norad::fontinfo::StyleMapStyle::BoldItalic => "bold italic",
+                }
+                .into()
+            }),
+        );
+        builder.add_if_present(
+            NameId::UniqueIdentifier,
+            &font_info.open_type_name_unique_id,
+        );
+        builder.add_if_present(NameId::Version, &font_info.open_type_name_version);
+        builder.add_if_present(
+            NameId::TypographicFamilyName,
+            &font_info.open_type_name_preferred_family_name,
+        );
+        builder.add_if_present(NameId::PostScriptName, &font_info.postscript_font_name);
+        builder.add_if_present(NameId::Trademark, &font_info.trademark);
+        builder.add_if_present(
+            NameId::ManufacturerName,
+            &font_info.open_type_name_manufacturer,
+        );
+        builder.add_if_present(NameId::Designer, &font_info.open_type_name_designer);
+        builder.add_if_present(NameId::Description, &font_info.open_type_name_description);
+        builder.add_if_present(
+            NameId::ManufacturerUrl,
+            &font_info.open_type_name_manufacturer_url,
+        );
+        builder.add_if_present(NameId::DesignerUrl, &font_info.open_type_name_designer_url);
+        builder.add_if_present(NameId::License, &font_info.open_type_name_license);
+        builder.add_if_present(NameId::LicenseUrl, &font_info.open_type_name_license_url);
+        builder.add_if_present(
+            NameId::MacCompatibleFullName,
+            &font_info.open_type_name_compatible_full_name,
+        );
+        builder.add_if_present(NameId::SampleText, &font_info.open_type_name_sample_text);
+        builder.add_if_present(
+            NameId::WwsFamilyName,
+            &font_info.open_type_name_wws_family_name,
+        );
+        builder.add_if_present(
+            NameId::WwsSubfamilyName,
+            &font_info.open_type_name_wws_subfamily_name,
+        );
+
+        // After our first pass at getting values, apply fallbacks
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L188
+        builder.apply_fallback(NameId::TypographicFamilyName, &[NameId::FamilyName]);
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L195
+        builder.apply_fallback(NameId::TypographicSubfamilyName, &[NameId::SubfamilyName]);
+
+        // Version has a weird fallback
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L169
+        if !builder.contains_key(NameId::Version) {
+            let major = font_info.version_major.unwrap_or_default();
+            let minor = font_info.version_minor.unwrap_or_default();
+            builder.add(NameId::Version, format!("Version {major}.{minor:0>3}"));
+        }
+
+        // Full name is always based on typographi family
+        builder.add(
+            NameId::FullName,
+            format!(
+                "{} {}",
+                builder
+                    .get(NameId::TypographicFamilyName)
+                    .unwrap_or_default(),
+                builder
+                    .get(NameId::TypographicSubfamilyName)
+                    .unwrap_or_default(),
+            ),
+        );
+
+        // Name's that don't get individual fields
+        if let Some(name_records) = font_info.open_type_name_records.as_ref() {
+            for nr in name_records.iter() {
+                let name_id: u16 = nr.name_id.try_into().unwrap();
+                builder.add(name_id.into(), nr.string.clone());
+            }
+        }
+
+        builder
+    }
 }
 
 impl Work<Context, WorkError> for StaticMetadataWork {
@@ -526,11 +655,12 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
 
         let units_per_em = units_per_em(font_infos.values())?;
-        let names = names(font_infos.get(&default_master.filename).unwrap());
+        let names =
+            NameBuilder::from(font_infos.get(&default_master.filename).unwrap()).into_inner();
         let axes = to_ir_axes(&self.designspace.axes);
         let glyph_locations = to_normalized_locations(&axes, &self.designspace.sources);
 
-        let glyph_order = glyph_order(&default_master, designspace_dir, &self.glyph_names)?;
+        let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;
 
         context.set_init_static_metadata(
             StaticMetadata::new(units_per_em, names, axes, glyph_order, glyph_locations)
@@ -607,14 +737,19 @@ mod tests {
     use fontdrasil::types::GlyphName;
     use fontir::{
         coords::{DesignCoord, DesignLocation},
+        ir::{NameId, NameKey},
         source::{Input, Source},
     };
     use indexmap::IndexSet;
     use norad::designspace;
 
+    use pretty_assertions::assert_eq;
+
     use crate::{source::font_infos, toir::to_design_location};
 
-    use super::{default_master, glif_files, glyph_order, units_per_em, DesignSpaceIrSource};
+    use super::{
+        default_master, glif_files, glyph_order, units_per_em, DesignSpaceIrSource, NameBuilder,
+    };
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -795,6 +930,48 @@ mod tests {
         assert_eq!(
             256, // 255.5 rounded toward +infinity
             units_per_em(font_infos.values()).unwrap()
+        );
+    }
+
+    #[test]
+    pub fn default_names_for_minimal() {
+        let (source, _) = load_designspace("float_upem.designspace");
+        let ds = source.load_designspace().unwrap();
+        let font_info = font_infos(&source.designspace_dir, &ds)
+            .unwrap()
+            .get(&String::from("FloatUpem-Regular.ufo"))
+            .cloned()
+            .unwrap();
+        let names = NameBuilder::from(&font_info).into_inner();
+
+        assert_eq!(
+            HashMap::from([
+                (
+                    NameKey::new_bmp_only(NameId::FamilyName),
+                    String::from("New Font")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::SubfamilyName),
+                    String::from("Regular")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::TypographicFamilyName),
+                    String::from("New Font")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::TypographicSubfamilyName),
+                    String::from("Regular")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::FullName),
+                    String::from("New Font Regular")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::Version),
+                    String::from("Version 0.000")
+                ),
+            ]),
+            names
         );
     }
 }
