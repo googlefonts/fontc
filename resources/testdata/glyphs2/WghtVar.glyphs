@@ -4,6 +4,7 @@ DisplayStrings = (
 "-",
 "!"
 );
+copyright = "Copy!";
 customParameters = (
 {
 name = localizedFamilyName;
@@ -16,6 +17,10 @@ value = "https://example.com/my/font/license";
 {
 name = description;
 value = "The greatest weight var";
+},
+{
+name = versionString;
+value = "New Value";
 },
 {
 name = Axes;
@@ -196,6 +201,6 @@ unicode = 003D;
 }
 );
 unitsPerEm = 1000;
-versionMajor = 1;
-versionMinor = 0;
+versionMajor = 42;
+versionMinor = 42;
 }
