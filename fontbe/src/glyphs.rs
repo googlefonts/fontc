@@ -169,7 +169,11 @@ fn cubics_to_quadratics(glyph: CheckedGlyph) -> CheckedGlyph {
                 new_contours.entry((*loc).clone()).or_default().move_to(p);
                 Some(p)
             }
-            None => None,
+            None => {
+                // keep the empty path for this location, but no start point
+                new_contours.entry((*loc).clone()).or_default();
+                None
+            }
             Some(other) => panic!("'{name}': illegal start of path: {other:?}"),
         })
         .collect();
