@@ -34,7 +34,6 @@ type RawUserToDesignMapping = Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>;
 #[derive(Debug, PartialEq, Hash)]
 pub struct Font {
     pub units_per_em: u16,
-    pub family_name: String,
     pub axes: Vec<Axis>,
     pub font_master: Vec<FontMaster>,
     pub default_master_idx: usize,
@@ -44,6 +43,7 @@ pub struct Font {
     // tag => (user:design) tuples
     pub axis_mappings: BTreeMap<String, RawUserToDesignMapping>,
     pub features: Vec<FeatureSnippet>,
+    pub names: BTreeMap<String, String>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -77,18 +77,40 @@ pub enum Shape {
 // The font you get directly from a plist, minimally modified
 // Types chosen specifically to accomodate plist translation.
 #[derive(Debug, FromPlist, PartialEq, Eq)]
+#[allow(non_snake_case)]
 struct RawFont {
     pub units_per_em: Option<i64>,
     pub family_name: String,
+    pub copyright: Option<String>,
+    pub designer: Option<String>,
+    pub designerURL: Option<String>,
+    pub manufacturer: Option<String>,
+    pub manufacturerURL: Option<String>,
+    pub versionMajor: Option<i64>,
+    pub versionMinor: Option<i64>,
     pub axes: Option<Vec<Axis>>,
     pub glyphs: Vec<RawGlyph>,
     pub font_master: Vec<FontMaster>,
     pub feature_prefixes: Option<Vec<RawFeature>>,
     pub features: Option<Vec<RawFeature>>,
     pub classes: Option<Vec<RawFeature>>,
+    pub properties: Option<Vec<RawName>>,
 
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
+}
+
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+pub struct RawName {
+    pub key: String,
+    pub value: Option<String>,
+    pub values: Option<Vec<RawNameValue>>,
+}
+
+#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+pub struct RawNameValue {
+    pub language: String,
+    pub value: String,
 }
 
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
@@ -527,6 +549,29 @@ fn custom_param<'a>(
     None
 }
 
+fn v2_to_v3_name(properties: &mut Vec<RawName>, v2_prop: &Option<String>, v3_name: &str) {
+    // https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#properties
+    // Keys ending with "s" are localizable that means the second key is values
+    if let Some(value) = v2_prop {
+        properties.push(if v3_name.ends_with('s') {
+            RawName {
+                key: v3_name.into(),
+                value: None,
+                values: Some(vec![RawNameValue {
+                    language: "dflt".into(),
+                    value: value.clone(),
+                }]),
+            }
+        } else {
+            RawName {
+                key: v3_name.into(),
+                value: Some(value.clone()),
+                values: None,
+            }
+        });
+    }
+}
+
 impl RawFont {
     fn is_v2(&self) -> bool {
         let mut is_v2 = true;
@@ -710,11 +755,46 @@ impl RawFont {
         Ok(())
     }
 
+    fn v2_to_v3_names(&mut self) -> Result<(), Error> {
+        // The copyright, designer, designerURL, manufacturer, manufacturerURL top-level entries
+        // have been moved into new top-level properties dictionary and made localizable.
+        let properties = self.properties.get_or_insert_with(|| Default::default());
+
+        v2_to_v3_name(properties, &self.copyright, "copyrights");
+        v2_to_v3_name(properties, &self.designer, "designers");
+        v2_to_v3_name(properties, &self.designerURL, "designerURL");
+        v2_to_v3_name(properties, &self.manufacturer, "manufacturers");
+        v2_to_v3_name(properties, &self.manufacturerURL, "manufacturerURL");
+
+        let mut v2_to_v3_param = |v2_name: &str, v3_name: &str| {
+            eprintln!("{:?}", custom_param(&self.other_stuff, v2_name));
+            if let Some((_, Plist::Dictionary(param))) = custom_param(&self.other_stuff, v2_name) {
+                if let Some(Plist::String(value)) = param.get("value") {
+                    v2_to_v3_name(properties, &Some(value.clone()), v3_name);
+                }
+            }
+        };
+        v2_to_v3_param("description", "descriptions");
+        v2_to_v3_param("licenseURL", "licenseURL");
+        v2_to_v3_param("versionString", "versionString");
+        v2_to_v3_param("compatibleFullName", "compatibleFullNames");
+        v2_to_v3_param("license", "licenses");
+        v2_to_v3_param("uniqueID", "uniqueID");
+        v2_to_v3_param("trademark", "trademarks");
+        v2_to_v3_param("sampleText", "sampleTexts");
+        v2_to_v3_param("postscriptFullName", "postscriptFullName");
+        v2_to_v3_param("postscriptFontName", "postscriptFontName");
+        v2_to_v3_param("WWSFamilyName", "WWSFamilyName");
+
+        Ok(())
+    }
+
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
     fn v2_to_v3(&mut self) -> Result<(), Error> {
         self.v2_to_v3_weight()?;
         self.v2_to_v3_axes()?;
         self.v2_to_v3_metrics()?;
+        self.v2_to_v3_names()?;
         Ok(())
     }
 }
@@ -1068,9 +1148,33 @@ impl TryFrom<RawFont> for Font {
         };
         let units_per_em = units_per_em.try_into().map_err(Error::InvalidUpem)?;
 
+        let mut names = BTreeMap::new();
+        for name in from.properties.unwrap_or_default() {
+            // TODO: we only support dflt, .glyphs l10n names are ignored
+            name.value
+                .or_else(|| {
+                    name.values
+                        .unwrap_or_default()
+                        .iter()
+                        .find(|v| v.language == "dflt")
+                        .map(|v| v.value.clone())
+                })
+                .and_then(|value| names.insert(name.key, value));
+        }
+        names.insert("familyNames".into(), from.family_name);
+        let version_string = names.remove("versionString");
+        let empty_string = String::from("");
+        let version = format!(
+            "{}.{:0>3}{}{}",
+            from.versionMajor.unwrap_or_default(),
+            from.versionMinor.unwrap_or_default(),
+            version_string.as_ref().map(|_| "; ").unwrap_or(""),
+            version_string.as_ref().unwrap_or(&empty_string),
+        );
+        names.insert("version".into(), version);
+
         Ok(Font {
             units_per_em,
-            family_name: from.family_name,
             axes: from.axes.unwrap_or_default(),
             font_master: from.font_master,
             default_master_idx,
@@ -1079,6 +1183,7 @@ impl TryFrom<RawFont> for Font {
             glyph_to_codepoints,
             axis_mappings,
             features,
+            names,
         })
     }
 }
@@ -1499,5 +1604,19 @@ mod tests {
             other_stuff: BTreeMap::new(),
         };
         assert_eq!("aalt", raw.name().unwrap());
+    }
+
+    #[test]
+    fn v2_to_v3_simple_names() {
+        let v2 = Font::load(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
+        let v3 = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        assert_eq!(v3.names, v2.names);
+    }
+
+    #[test]
+    fn v2_to_v3_more_names() {
+        let v2 = Font::load(&glyphs2_dir().join("TheBestNames.glyphs")).unwrap();
+        let v3 = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
+        assert_eq!(v3.names, v2.names);
     }
 }

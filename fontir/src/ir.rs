@@ -67,6 +67,60 @@ impl StaticMetadata {
     }
 }
 
+/// Helps accumulate 'name' values.
+///
+/// See <https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/outlineCompiler.py#L367>.
+#[derive(Default)]
+pub struct NameBuilder {
+    names: HashMap<NameKey, String>,
+    /// Helps lookup entries in name when all we have is a NameId
+    name_to_key: HashMap<NameId, NameKey>,
+}
+
+impl NameBuilder {
+    pub fn add(&mut self, name_id: NameId, value: String) {
+        let key = NameKey::new(name_id, &value);
+        self.names.insert(key, value);
+        self.name_to_key.insert(name_id, key);
+    }
+
+    pub fn add_if_present(&mut self, name_id: NameId, value: &Option<String>) {
+        let value = if let Some(value) = value {
+            Some(value.clone())
+        } else {
+            name_id.default_value().map(String::from)
+        };
+        if let Some(value) = value {
+            self.add(name_id, value);
+        }
+    }
+
+    pub fn apply_fallback(&mut self, name_id: NameId, fallbacks: &[NameId]) {
+        if let Some(fallback_id) = fallbacks.iter().find(|n| {
+            let Some(key) = self.name_to_key.get(*n) else {
+                    return false;
+                };
+            self.names.contains_key(key)
+        }) {
+            self.add(name_id, self.names[&self.name_to_key[fallback_id]].clone());
+        }
+    }
+
+    pub fn contains_key(&self, name_id: NameId) -> bool {
+        self.name_to_key.contains_key(&name_id)
+    }
+
+    pub fn get(&self, name_id: NameId) -> Option<&str> {
+        self.name_to_key
+            .get(&name_id)
+            .and_then(|key| self.names.get(key).map(|s| s.as_str()))
+    }
+
+    pub fn into_inner(self) -> HashMap<NameKey, String> {
+        self.names
+    }
+}
+
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name#name-ids>
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum NameId {
@@ -78,7 +132,7 @@ pub enum NameId {
     Version,
     PostScriptName,
     Trademark,
-    ManufacturerName,
+    Manufacturer,
     Designer,
     Description,
     ManufacturerUrl,
@@ -110,7 +164,7 @@ impl From<u16> for NameId {
             5 => NameId::Version,
             6 => NameId::PostScriptName,
             7 => NameId::Trademark,
-            8 => NameId::ManufacturerName,
+            8 => NameId::Manufacturer,
             9 => NameId::Designer,
             10 => NameId::Description,
             11 => NameId::ManufacturerUrl,
@@ -144,7 +198,7 @@ impl From<NameId> for u16 {
             NameId::Version => 5,
             NameId::PostScriptName => 6,
             NameId::Trademark => 7,
-            NameId::ManufacturerName => 8,
+            NameId::Manufacturer => 8,
             NameId::Designer => 9,
             NameId::Description => 10,
             NameId::ManufacturerUrl => 11,

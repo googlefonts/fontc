@@ -2,13 +2,13 @@ use fontdrasil::orchestration::Work;
 use fontdrasil::types::GlyphName;
 use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
-use fontir::ir::{self, GlyphInstance, StaticMetadata};
+use fontir::ir::{self, GlyphInstance, NameBuilder, NameId, NameKey, StaticMetadata};
 use fontir::orchestration::{Context, IrWork};
 use fontir::source::{Input, Source};
 use fontir::stateset::StateSet;
 use glyphs_reader::Font;
 use indexmap::IndexSet;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
@@ -67,7 +67,6 @@ impl GlyphsIrSource {
         // Explicitly field by field so if we add more compiler will force us to update here
         let font = Font {
             units_per_em: font.units_per_em,
-            family_name: font.family_name.clone(),
             axes: font.axes.clone(),
             font_master: font.font_master.clone(),
             default_master_idx: font.default_master_idx,
@@ -76,6 +75,7 @@ impl GlyphsIrSource {
             glyph_to_codepoints: Default::default(),
             axis_mappings: font.axis_mappings.clone(),
             features: Default::default(),
+            names: Default::default(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -174,6 +174,41 @@ impl Source for GlyphsIrSource {
     }
 }
 
+fn try_name_id(name: &str) -> Option<NameId> {
+    match name {
+        "copyrights" => Some(NameId::Copyright),
+        "familyNames" => Some(NameId::FamilyName),
+        "uniqueID" => Some(NameId::UniqueIdentifier),
+        "postscriptFullName" => Some(NameId::FullName),
+        "version" => Some(NameId::Version),
+        "postscriptFontName" => Some(NameId::PostScriptName),
+        "trademarks" => Some(NameId::Trademark),
+        "manufacturers" => Some(NameId::Manufacturer),
+        "designers" => Some(NameId::Designer),
+        "manufacturerURL" => Some(NameId::ManufacturerUrl),
+        "designerURL" => Some(NameId::DesignerUrl),
+        "licenses" => Some(NameId::License),
+        "licenseURL" => Some(NameId::LicenseUrl),
+        "compatibleFullNames" => Some(NameId::MacCompatibleFullName),
+        "sampleTexts" => Some(NameId::SampleText),
+        "WWSFamilyName" => Some(NameId::WwsFamilyName),
+        _ => {
+            warn!("Unknown 'name' entry {name}");
+            None
+        }
+    }
+}
+
+fn names(font: &Font) -> HashMap<NameKey, String> {
+    let mut builder = NameBuilder::default();
+    for (name, value) in font.names.iter() {
+        if let Some(name_id) = try_name_id(name) {
+            builder.add(name_id, value.clone());
+        }
+    }
+    builder.into_inner()
+}
+
 struct StaticMetadataWork {
     font_info: Arc<FontInfo>,
     glyph_names: Arc<HashSet<GlyphName>>,
@@ -183,7 +218,13 @@ impl Work<Context, WorkError> for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
-        debug!("Static metadata for {}", font.family_name);
+        debug!(
+            "Static metadata for {}",
+            font.names
+                .get("familyNames")
+                .map(|s| s.as_str())
+                .unwrap_or("<nameless family>")
+        );
         let axes = font_info.axes.clone();
         let glyph_locations = font_info.master_locations.values().cloned().collect();
         let glyph_order = font
@@ -192,7 +233,9 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             .map(|s| s.into())
             .filter(|gn| self.glyph_names.contains(gn))
             .collect();
-        let names = HashMap::new();
+
+        let names = names(&font);
+
         context.set_init_static_metadata(
             StaticMetadata::new(font.units_per_em, names, axes, glyph_order, glyph_locations)
                 .map_err(WorkError::VariationModelError)?,
@@ -330,7 +373,7 @@ mod tests {
             UserLocation,
         },
         error::WorkError,
-        ir,
+        ir::{self, NameId, NameKey},
         orchestration::{Context, WorkId},
         paths::Paths,
         source::Source,
@@ -338,6 +381,8 @@ mod tests {
     };
     use glyphs_reader::Font;
     use indexmap::IndexSet;
+
+    use crate::source::names;
 
     use super::{glyph_states, GlyphsIrSource};
 
@@ -673,5 +718,84 @@ mod tests {
     fn loads_minimal() {
         let (_, context) = build_static_metadata(glyphs2_dir().join("NotDef.glyphs"));
         assert_eq!(1000, context.get_init_static_metadata().units_per_em);
+    }
+
+    #[test]
+    fn name_table() {
+        let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
+        let mut names: Vec<_> = names(&font).into_iter().collect();
+        names.sort_by_key(|(id, v)| {
+            let id: u16 = id.name_id.into();
+            (id, v.clone())
+        });
+        assert_eq!(
+            vec![
+                (
+                    NameKey::new_bmp_only(NameId::Copyright),
+                    String::from("Copy!")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::FamilyName),
+                    String::from("FamilyName")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::UniqueIdentifier),
+                    String::from("We are all unique")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::FullName),
+                    String::from("Full of names")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::Version),
+                    String::from("42.042; New Value")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::PostScriptName),
+                    String::from("Postscript Name")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::Trademark),
+                    String::from("A trade in marks")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::Manufacturer),
+                    String::from("Who made you?!")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::Designer),
+                    String::from("Designed by me!")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::ManufacturerUrl),
+                    String::from("https://example.com/manufacturer")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::DesignerUrl),
+                    String::from("https://example.com/designer")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::License),
+                    String::from("Licensed to thrill")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::LicenseUrl),
+                    String::from("https://example.com/my/font/license")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::MacCompatibleFullName),
+                    String::from("For the Mac's only")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::SampleText),
+                    String::from("Sam pull text")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::WwsFamilyName),
+                    String::from("We Will Slant you")
+                ),
+            ],
+            names
+        );
     }
 }
