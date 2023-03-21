@@ -1,10 +1,22 @@
 {
-.appVersion = "3148";
+.appVersion = "3151";
 DisplayStrings = (
 "-",
 "!"
 );
 customParameters = (
+{
+name = localizedFamilyName;
+value = "Spanish;SpanishWghtVar";
+},
+{
+name = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+name = description;
+value = "The greatest weight var";
+},
 {
 name = Axes;
 value = (
@@ -150,7 +162,7 @@ width = 600;
 unicode = 002D;
 },
 {
-glyphname = manual-component;
+glyphname = "manual-component";
 lastChange = "2022-12-01 04:57:39 +0000";
 layers = (
 {

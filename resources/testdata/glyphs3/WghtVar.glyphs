@@ -1,5 +1,5 @@
 {
-.appVersion = "3148";
+.appVersion = "3151";
 .formatVersion = 3;
 DisplayStrings = (
 "-",
@@ -172,14 +172,14 @@ width = 600;
 unicode = 45;
 },
 {
-glyphname = manual-component;
+glyphname = "manual-component";
 lastChange = "2022-12-01 04:57:39 +0000";
 layers = (
 {
 layerId = m01;
 shapes = (
 {
-pos = (0, 100);
+pos = (0,100);
 ref = hyphen;
 },
 {
@@ -192,9 +192,9 @@ width = 600;
 layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
 shapes = (
 {
-pos = (10, 100);
-scale = (1.15, 1.25);
+pos = (10,100);
 ref = hyphen;
+scale = (1.15,1.25);
 },
 {
 ref = hyphen;
@@ -221,6 +221,34 @@ type = "cap height";
 },
 {
 type = "x-height";
+}
+);
+properties = (
+{
+key = familyNames;
+values = (
+{
+language = ESP;
+value = SpanishWghtVar;
+}
+);
+},
+{
+key = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+key = descriptions;
+values = (
+{
+language = dflt;
+value = "The greatest weight var";
+},
+{
+language = ESP;
+value = "The greatest Spanish weight var";
+}
+);
 }
 );
 unitsPerEm = 1000;
