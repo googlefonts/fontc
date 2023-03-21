@@ -26,20 +26,6 @@ pub struct DesignSpaceIrSource {
     cache: Option<Cache>,
 }
 
-impl DesignSpaceIrSource {
-    pub fn new(designspace_file: PathBuf) -> DesignSpaceIrSource {
-        let designspace_dir = designspace_file
-            .parent()
-            .expect("designspace file *must* be in a directory")
-            .to_path_buf();
-        DesignSpaceIrSource {
-            designspace_file,
-            designspace_dir,
-            cache: None,
-        }
-    }
-}
-
 // A cache of locations, valid provided no global metadata changes
 struct Cache {
     static_metadata: StateSet,
@@ -139,6 +125,17 @@ pub(crate) fn layer_dir<'a>(
 }
 
 impl DesignSpaceIrSource {
+    pub fn new(designspace_file: PathBuf) -> DesignSpaceIrSource {
+        let designspace_dir = designspace_file
+            .parent()
+            .expect("designspace file *must* be in a directory")
+            .to_path_buf();
+        DesignSpaceIrSource {
+            designspace_file,
+            designspace_dir,
+            cache: None,
+        }
+    }
     fn load_designspace(&self) -> Result<DesignSpaceDocument, Error> {
         DesignSpaceDocument::load(&self.designspace_file)
             .map_err(|e| Error::UnableToLoadSource(Box::new(e)))
@@ -183,6 +180,36 @@ impl DesignSpaceIrSource {
             return Err(Error::InvalidGlobalMetadata);
         }
         Ok(())
+    }
+
+    fn create_work_for_one_glyph(
+        &self,
+        glyph_name: &GlyphName,
+        input: &Input,
+    ) -> Result<GlyphIrWork, Error> {
+        // A single glif could be used by many source blocks that use the same layer
+        // *gasp*
+        // So resolve each file to 1..N locations in designspace
+
+        let stateset = input
+            .glyphs
+            .get(glyph_name)
+            .ok_or_else(|| Error::NoStateForGlyph(glyph_name.clone()))?;
+        let mut glif_files = HashMap::new();
+        let cache = self.cache.as_ref().unwrap();
+        for state_key in stateset.keys() {
+            let StateIdentifier::File(glif_file) = state_key else {
+                return Err(Error::UnexpectedState);
+            };
+            let locations = cache
+                .location_of(glif_file)
+                .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;
+            glif_files.insert(glif_file.to_path_buf(), locations.clone());
+        }
+        Ok(GlyphIrWork {
+            glyph_name: glyph_name.clone(),
+            glif_files,
+        })
     }
 }
 
@@ -314,38 +341,6 @@ impl Source for DesignSpaceIrSource {
         }
 
         Ok(work)
-    }
-}
-
-impl DesignSpaceIrSource {
-    fn create_work_for_one_glyph(
-        &self,
-        glyph_name: &GlyphName,
-        input: &Input,
-    ) -> Result<GlyphIrWork, Error> {
-        // A single glif could be used by many source blocks that use the same layer
-        // *gasp*
-        // So resolve each file to 1..N locations in designspace
-
-        let stateset = input
-            .glyphs
-            .get(glyph_name)
-            .ok_or_else(|| Error::NoStateForGlyph(glyph_name.clone()))?;
-        let mut glif_files = HashMap::new();
-        let cache = self.cache.as_ref().unwrap();
-        for state_key in stateset.keys() {
-            let StateIdentifier::File(glif_file) = state_key else {
-                return Err(Error::UnexpectedState);
-            };
-            let locations = cache
-                .location_of(glif_file)
-                .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;
-            glif_files.insert(glif_file.to_path_buf(), locations.clone());
-        }
-        Ok(GlyphIrWork {
-            glyph_name: glyph_name.clone(),
-            glif_files,
-        })
     }
 }
 

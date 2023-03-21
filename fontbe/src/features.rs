@@ -24,12 +24,6 @@ use crate::{
 
 pub struct FeatureWork {}
 
-impl FeatureWork {
-    pub fn create() -> Box<BeWork> {
-        Box::new(FeatureWork {})
-    }
-}
-
 // I did not want to make a struct
 // I did not want to clone the content
 // I do not like this construct
@@ -74,6 +68,10 @@ impl Display for NotSupportedError {
 }
 
 impl FeatureWork {
+    pub fn create() -> Box<BeWork> {
+        Box::new(FeatureWork {})
+    }
+
     fn compile(&self, features: &Features, glyph_order: GlyphMap) -> Result<FontBuilder, Error> {
         let root_path = if let Features::File(file) = features {
             OsString::from(file)

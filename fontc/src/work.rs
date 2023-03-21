@@ -105,9 +105,7 @@ impl AnyContext {
             )),
         }
     }
-}
 
-impl AnyContext {
     pub fn unwrap_be(&self) -> &BeContext {
         match self {
             AnyContext::Fe(..) => panic!("Not a BE context"),

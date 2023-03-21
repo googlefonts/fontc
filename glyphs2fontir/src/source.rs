@@ -20,15 +20,6 @@ pub struct GlyphsIrSource {
     cache: Option<Cache>,
 }
 
-impl GlyphsIrSource {
-    pub fn new(glyphs_file: PathBuf) -> GlyphsIrSource {
-        GlyphsIrSource {
-            glyphs_file,
-            cache: None,
-        }
-    }
-}
-
 struct Cache {
     global_metadata: StateSet,
     font_info: Arc<FontInfo>,
@@ -57,6 +48,12 @@ fn glyph_states(font: &Font) -> Result<HashMap<GlyphName, StateSet>, Error> {
 }
 
 impl GlyphsIrSource {
+    pub fn new(glyphs_file: PathBuf) -> GlyphsIrSource {
+        GlyphsIrSource {
+            glyphs_file,
+            cache: None,
+        }
+    }
     fn feature_inputs(&self, font: &Font) -> Result<StateSet, Error> {
         let mut state = StateSet::new();
         state.track_memory("/features".to_string(), &font.features)?;
@@ -96,6 +93,17 @@ impl GlyphsIrSource {
             return Err(Error::InvalidGlobalMetadata);
         }
         Ok(())
+    }
+
+    fn create_work_for_one_glyph(
+        &self,
+        glyph_name: GlyphName,
+        font_info: Arc<FontInfo>,
+    ) -> Result<GlyphIrWork, Error> {
+        Ok(GlyphIrWork {
+            glyph_name,
+            font_info,
+        })
     }
 }
 
@@ -163,19 +171,6 @@ impl Source for GlyphsIrSource {
         Ok(Box::new(FeatureWork {
             font_info: cache.font_info.clone(),
         }))
-    }
-}
-
-impl GlyphsIrSource {
-    fn create_work_for_one_glyph(
-        &self,
-        glyph_name: GlyphName,
-        font_info: Arc<FontInfo>,
-    ) -> Result<GlyphIrWork, Error> {
-        Ok(GlyphIrWork {
-            glyph_name,
-            font_info,
-        })
     }
 }
 
