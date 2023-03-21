@@ -234,11 +234,15 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             .filter(|gn| self.glyph_names.contains(gn))
             .collect();
 
-        let names = names(&font);
-
         context.set_init_static_metadata(
-            StaticMetadata::new(font.units_per_em, names, axes, glyph_order, glyph_locations)
-                .map_err(WorkError::VariationModelError)?,
+            StaticMetadata::new(
+                font.units_per_em,
+                names(font),
+                axes,
+                glyph_order,
+                glyph_locations,
+            )
+            .map_err(WorkError::VariationModelError)?,
         );
         Ok(())
     }

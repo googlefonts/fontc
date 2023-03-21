@@ -758,7 +758,7 @@ impl RawFont {
     fn v2_to_v3_names(&mut self) -> Result<(), Error> {
         // The copyright, designer, designerURL, manufacturer, manufacturerURL top-level entries
         // have been moved into new top-level properties dictionary and made localizable.
-        let properties = self.properties.get_or_insert_with(|| Default::default());
+        let properties = self.properties.get_or_insert_with(Default::default);
 
         v2_to_v3_name(properties, &self.copyright, "copyrights");
         v2_to_v3_name(properties, &self.designer, "designers");
