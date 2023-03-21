@@ -767,7 +767,6 @@ impl RawFont {
         v2_to_v3_name(properties, &self.manufacturerURL, "manufacturerURL");
 
         let mut v2_to_v3_param = |v2_name: &str, v3_name: &str| {
-            eprintln!("{:?}", custom_param(&self.other_stuff, v2_name));
             if let Some((_, Plist::Dictionary(param))) = custom_param(&self.other_stuff, v2_name) {
                 if let Some(Plist::String(value)) = param.get("value") {
                     v2_to_v3_name(properties, &Some(value.clone()), v3_name);
