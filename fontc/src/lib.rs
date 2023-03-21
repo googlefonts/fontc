@@ -462,6 +462,7 @@ fn add_font_be_job(
         dependencies.insert(BeWorkIdentifier::Loca.into());
         dependencies.insert(BeWorkIdentifier::Maxp.into());
         dependencies.insert(BeWorkIdentifier::Name.into());
+        dependencies.insert(BeWorkIdentifier::Post.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Font.into();
         workload.insert(
@@ -1112,6 +1113,7 @@ mod tests {
                 Tag::new(b"loca"),
                 Tag::new(b"maxp"),
                 Tag::new(b"name"),
+                Tag::new(b"post"),
             ],
             font.table_directory
                 .table_records()
