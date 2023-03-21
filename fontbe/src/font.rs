@@ -1,7 +1,14 @@
 //! Merge tables into a font
 
 use fontdrasil::orchestration::Work;
-use read_fonts::types::Tag;
+use read_fonts::{
+    tables::{
+        cmap::Cmap, glyf::Glyf, head::Head, hhea::Hhea, hmtx::Hmtx, loca::Loca, maxp::Maxp,
+        name::Name,
+    },
+    types::Tag,
+    TopLevelTable,
+};
 use write_fonts::FontBuilder;
 
 use crate::{
@@ -17,13 +24,14 @@ pub fn create_font_work() -> Box<BeWork> {
 
 // TODO the tables have the tag, but I'm not sure how to access it
 const TABLES_TO_MERGE: &[(WorkId, Tag)] = &[
-    (WorkId::Cmap, Tag::new(b"cmap")),
-    (WorkId::Head, Tag::new(b"head")),
-    (WorkId::Hhea, Tag::new(b"hhea")),
-    (WorkId::Hmtx, Tag::new(b"hmtx")),
-    (WorkId::Glyf, Tag::new(b"glyf")),
-    (WorkId::Loca, Tag::new(b"loca")),
-    (WorkId::Maxp, Tag::new(b"maxp")),
+    (WorkId::Cmap, Cmap::TAG),
+    (WorkId::Head, Head::TAG),
+    (WorkId::Hhea, Hhea::TAG),
+    (WorkId::Hmtx, Hmtx::TAG),
+    (WorkId::Glyf, Glyf::TAG),
+    (WorkId::Loca, Loca::TAG),
+    (WorkId::Maxp, Maxp::TAG),
+    (WorkId::Name, Name::TAG),
 ];
 
 impl Work<Context, Error> for FontWork {

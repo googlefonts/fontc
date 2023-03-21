@@ -4,5 +4,9 @@
   <dict>
     <key>unitsPerEm</key>
     <integer>1000</integer>
+    <key>familyName</key>
+    <string>Duck</string>
+    <key>styleName</key>
+    <string>Regular</string>
   </dict>
 </plist>

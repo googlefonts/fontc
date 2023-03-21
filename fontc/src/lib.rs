@@ -29,6 +29,7 @@ use fontbe::{
     head::create_head_work,
     hmetrics::create_hmetric_work,
     maxp::create_maxp_work,
+    name::create_name_work,
     orchestration::{AnyWorkId, WorkId as BeWorkIdentifier},
     post::create_post_work,
 };
@@ -370,6 +371,30 @@ fn add_maxp_be_job(
     Ok(())
 }
 
+fn add_name_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.init_static_metadata_ir_change() {
+        let mut dependencies = HashSet::new();
+        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
+
+        let id: AnyWorkId = BeWorkIdentifier::Name.into();
+        workload.insert(
+            id.clone(),
+            Job {
+                work: create_name_work().into(),
+                dependencies,
+                read_access: ReadAccess::Dependencies,
+                write_access: Access::one(id),
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::Name);
+    }
+    Ok(())
+}
+
 fn add_hmetrics_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
@@ -436,6 +461,7 @@ fn add_font_be_job(
         dependencies.insert(BeWorkIdentifier::Hmtx.into());
         dependencies.insert(BeWorkIdentifier::Loca.into());
         dependencies.insert(BeWorkIdentifier::Maxp.into());
+        dependencies.insert(BeWorkIdentifier::Name.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Font.into();
         workload.insert(
@@ -503,6 +529,7 @@ pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload,
     add_cmap_be_job(change_detector, &mut workload)?;
     add_head_be_job(change_detector, &mut workload)?;
     add_hmetrics_job(change_detector, &mut workload)?;
+    add_name_be_job(change_detector, &mut workload)?;
     add_maxp_be_job(change_detector, &mut workload)?;
     add_post_be_job(change_detector, &mut workload)?;
 
@@ -616,6 +643,7 @@ mod tests {
         add_head_be_job(&mut change_detector, &mut workload).unwrap();
         add_hmetrics_job(&mut change_detector, &mut workload).unwrap();
         add_maxp_be_job(&mut change_detector, &mut workload).unwrap();
+        add_name_be_job(&mut change_detector, &mut workload).unwrap();
         add_post_be_job(&mut change_detector, &mut workload).unwrap();
 
         add_font_be_job(&mut change_detector, &mut workload).unwrap();
@@ -665,6 +693,7 @@ mod tests {
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::Maxp.into(),
+                BeWorkIdentifier::Name.into(),
                 BeWorkIdentifier::Post.into(),
                 BeWorkIdentifier::Font.into(),
             ]),
@@ -1082,6 +1111,7 @@ mod tests {
                 Tag::new(b"hmtx"),
                 Tag::new(b"loca"),
                 Tag::new(b"maxp"),
+                Tag::new(b"name"),
             ],
             font.table_directory
                 .table_records()
