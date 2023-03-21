@@ -9,6 +9,7 @@ use crate::{
 use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, Point};
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -136,8 +137,8 @@ impl NameBuilder {
             self.add(NameId::Version, format!("Version {major}.{minor:0>3}"));
         }
 
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L296
         if !self.contains_key(NameId::FullName) {
-            // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L296
             self.add(
                 NameId::FullName,
                 format!(
@@ -148,6 +149,29 @@ impl NameBuilder {
                 ),
             );
         }
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L178-L185
+        if !self.contains_key(NameId::PostScriptName) {
+            let mut value = format!(
+                "{} {}",
+                self.get(NameId::TypographicFamilyName).unwrap_or_default(),
+                self.get(NameId::TypographicSubfamilyName)
+                    .unwrap_or_default(),
+            );
+            normalize_for_postscript(&mut value, false);
+            self.add(NameId::PostScriptName, value);
+        }
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L178-L185
+        if !self.contains_key(NameId::UniqueIdentifier) {
+            let version = self.get(NameId::Version).unwrap().replace("Version ", "");
+            // fontmake pulls the openTypeOS2VendorID but we don't have that (yet)
+            let postscript_name = self.get(NameId::PostScriptName).unwrap();
+            self.add(
+                NameId::UniqueIdentifier,
+                format!("{version};{postscript_name}"),
+            );
+        }
     }
 
     pub fn set_version(&mut self, major: i32, minor: u32) {
@@ -155,6 +179,23 @@ impl NameBuilder {
         self.version_major = major;
         self.version_minor = minor;
     }
+}
+
+/// <https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L263>
+fn normalize_for_postscript(value: &mut String, allow_spaces: bool) {
+    value.retain(|c| {
+        if !allow_spaces && c.is_ascii_whitespace() {
+            return false;
+        }
+        if "[](){}<>/%".contains(c) {
+            return false;
+        }
+        if !(33..127).contains(&(c as u32)) {
+            warn!("fontmake performs decomposition, we just ignore the character");
+            return false;
+        }
+        true
+    });
 }
 
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name#name-ids>

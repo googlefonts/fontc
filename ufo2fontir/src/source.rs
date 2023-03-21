@@ -873,12 +873,20 @@ mod tests {
                     String::from("Regular")
                 ),
                 (
+                    NameKey::new_bmp_only(NameId::UniqueIdentifier),
+                    String::from("0.000;NewFontRegular")
+                ),
+                (
                     NameKey::new_bmp_only(NameId::FullName),
                     String::from("New Font Regular")
                 ),
                 (
                     NameKey::new_bmp_only(NameId::Version),
                     String::from("Version 0.000")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::PostScriptName),
+                    String::from("NewFontRegular")
                 ),
                 (
                     NameKey::new_bmp_only(NameId::TypographicFamilyName),
