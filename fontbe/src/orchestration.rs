@@ -21,6 +21,7 @@ use write_fonts::{
         hhea::Hhea,
         maxp::Maxp,
         name::Name,
+        os2::Os2,
         post::Post,
     },
     validate::Validate,
@@ -54,6 +55,7 @@ pub enum WorkId {
     Loca,
     Maxp,
     Name,
+    Os2,
     Post,
     Font,
 }
@@ -167,6 +169,7 @@ pub struct Context {
     post: ContextItem<Post>,
     maxp: ContextItem<Maxp>,
     name: ContextItem<Name>,
+    os2: ContextItem<Os2>,
     head: ContextItem<Head>,
     hhea: ContextItem<Hhea>,
     hmtx: ContextItem<Bytes>,
@@ -187,6 +190,7 @@ impl Context {
             post: self.post.clone(),
             maxp: self.maxp.clone(),
             name: self.name.clone(),
+            os2: self.os2.clone(),
             head: self.head.clone(),
             hhea: self.hhea.clone(),
             hmtx: self.hmtx.clone(),
@@ -207,6 +211,7 @@ impl Context {
             post: Arc::from(RwLock::new(None)),
             maxp: Arc::from(RwLock::new(None)),
             name: Arc::from(RwLock::new(None)),
+            os2: Arc::from(RwLock::new(None)),
             head: Arc::from(RwLock::new(None)),
             hhea: Arc::from(RwLock::new(None)),
             hmtx: Arc::from(RwLock::new(None)),
@@ -346,6 +351,7 @@ impl Context {
     context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
     context_accessors! { get_maxp, set_maxp, maxp, Maxp, WorkId::Maxp, from_file, to_bytes }
     context_accessors! { get_name, set_name, name, Name, WorkId::Name, from_file, to_bytes }
+    context_accessors! { get_os2, set_os2, os2, Os2, WorkId::Os2, from_file, to_bytes }
     context_accessors! { get_post, set_post, post, Post, WorkId::Post, from_file, to_bytes }
     context_accessors! { get_head, set_head, head, Head, WorkId::Head, from_file, to_bytes }
     context_accessors! { get_hhea, set_hhea, hhea, Hhea, WorkId::Hhea, from_file, to_bytes }
