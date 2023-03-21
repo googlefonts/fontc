@@ -6,5 +6,7 @@
     <string>bar.glif</string>
     <key>plus</key>
     <string>plus.glif</string>
+    <key>space</key>
+    <string>space.glif</string>
   </dict>
 </plist>
