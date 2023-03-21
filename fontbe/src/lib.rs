@@ -8,5 +8,6 @@ pub mod hmetrics;
 pub mod maxp;
 pub mod name;
 pub mod orchestration;
+pub mod os2;
 pub mod paths;
 pub mod post;
