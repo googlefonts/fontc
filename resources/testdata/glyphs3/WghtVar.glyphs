@@ -249,9 +249,22 @@ language = ESP;
 value = "The greatest Spanish weight var";
 }
 );
+},
+{
+key = copyrights;
+values = (
+{
+language = dflt;
+value = "Copy!";
+}
+);
+},
+{
+key = versionString;
+value = "New Value";
 }
 );
 unitsPerEm = 1000;
-versionMajor = 1;
-versionMinor = 0;
+versionMajor = 42;
+versionMinor = 42;
 }
