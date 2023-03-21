@@ -44,6 +44,8 @@ pub struct Font {
     pub axis_mappings: BTreeMap<String, RawUserToDesignMapping>,
     pub features: Vec<FeatureSnippet>,
     pub names: BTreeMap<String, String>,
+    pub version_major: i32,
+    pub version_minor: u32,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -1161,17 +1163,9 @@ impl TryFrom<RawFont> for Font {
                 .and_then(|value| names.insert(name.key, value));
         }
         names.insert("familyNames".into(), from.family_name);
-        let version_string = names.remove("versionString");
-        names.insert(
-            "version".into(),
-            version_string.unwrap_or_else(|| {
-                format!(
-                    "Version {}.{:0>3}",
-                    from.versionMajor.unwrap_or_default(),
-                    from.versionMinor.unwrap_or_default()
-                )
-            }),
-        );
+        if let Some(version) = names.remove("versionString") {
+            names.insert("version".into(), version);
+        }
 
         Ok(Font {
             units_per_em,
@@ -1184,6 +1178,8 @@ impl TryFrom<RawFont> for Font {
             axis_mappings,
             features,
             names,
+            version_major: from.versionMajor.unwrap_or_default() as i32,
+            version_minor: from.versionMinor.unwrap_or_default() as u32,
         })
     }
 }
@@ -1618,23 +1614,5 @@ mod tests {
         let v2 = Font::load(&glyphs2_dir().join("TheBestNames.glyphs")).unwrap();
         let v3 = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
         assert_eq!(v3.names, v2.names);
-    }
-
-    #[test]
-    fn version_with_version_string() {
-        let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
-        assert_eq!("New Value", font.names.get("version").unwrap());
-    }
-
-    #[test]
-    fn version_from_major_minor() {
-        let font = Font::load(&glyphs3_dir().join("VersionMajorMinor.glyphs")).unwrap();
-        assert_eq!("Version 42.043", font.names.get("version").unwrap());
-    }
-
-    #[test]
-    fn version_default() {
-        let font = Font::load(&glyphs3_dir().join("infinity.glyphs")).unwrap();
-        assert_eq!("Version 0.000", font.names.get("version").unwrap());
     }
 }

@@ -490,6 +490,11 @@ fn font_infos<'a>(
 fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
     let mut builder = NameBuilder::default();
 
+    builder.set_version(
+        font_info.version_major.unwrap_or_default(),
+        font_info.version_minor.unwrap_or_default(),
+    );
+
     // Name's that get individual fields
     builder.add_if_present(NameId::Copyright, &font_info.copyright);
     builder.add_if_present(NameId::FamilyName, &font_info.style_map_family_name);
@@ -541,34 +546,7 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
     );
 
     // After our first pass at getting values, apply fallbacks
-
-    // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L188
-    builder.apply_fallback(NameId::TypographicFamilyName, &[NameId::FamilyName]);
-
-    // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L195
-    builder.apply_fallback(NameId::TypographicSubfamilyName, &[NameId::SubfamilyName]);
-
-    // Version has a weird fallback
-    // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L169
-    if !builder.contains_key(NameId::Version) {
-        let major = font_info.version_major.unwrap_or_default();
-        let minor = font_info.version_minor.unwrap_or_default();
-        builder.add(NameId::Version, format!("Version {major}.{minor:0>3}"));
-    }
-
-    // Full name is always based on typographic family
-    builder.add(
-        NameId::FullName,
-        format!(
-            "{} {}",
-            builder
-                .get(NameId::TypographicFamilyName)
-                .unwrap_or_default(),
-            builder
-                .get(NameId::TypographicSubfamilyName)
-                .unwrap_or_default(),
-        ),
-    );
+    builder.apply_default_fallbacks();
 
     // Name's that don't get individual fields
     if let Some(name_records) = font_info.open_type_name_records.as_ref() {
@@ -878,24 +856,20 @@ mod tests {
             .get(&String::from("FloatUpem-Regular.ufo"))
             .cloned()
             .unwrap();
-        let names = names(&font_info);
+        let mut names: Vec<_> = names(&font_info).into_iter().collect();
+        names.sort_by_key(|(id, v)| {
+            let id: u16 = id.name_id.into();
+            (id, v.clone())
+        });
 
         assert_eq!(
-            HashMap::from([
+            vec![
                 (
                     NameKey::new_bmp_only(NameId::FamilyName),
                     String::from("New Font")
                 ),
                 (
                     NameKey::new_bmp_only(NameId::SubfamilyName),
-                    String::from("Regular")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::TypographicFamilyName),
-                    String::from("New Font")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::TypographicSubfamilyName),
                     String::from("Regular")
                 ),
                 (
@@ -906,7 +880,15 @@ mod tests {
                     NameKey::new_bmp_only(NameId::Version),
                     String::from("Version 0.000")
                 ),
-            ]),
+                (
+                    NameKey::new_bmp_only(NameId::TypographicFamilyName),
+                    String::from("New Font")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::TypographicSubfamilyName),
+                    String::from("Regular")
+                ),
+            ],
             names
         );
     }

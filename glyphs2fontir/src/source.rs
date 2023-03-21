@@ -76,6 +76,8 @@ impl GlyphsIrSource {
             axis_mappings: font.axis_mappings.clone(),
             features: Default::default(),
             names: Default::default(),
+            version_major: 0,
+            version_minor: 0,
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -201,11 +203,14 @@ fn try_name_id(name: &str) -> Option<NameId> {
 
 fn names(font: &Font) -> HashMap<NameKey, String> {
     let mut builder = NameBuilder::default();
+    builder.set_version(font.version_major, font.version_minor);
     for (name, value) in font.names.iter() {
         if let Some(name_id) = try_name_id(name) {
             builder.add(name_id, value.clone());
         }
     }
+    builder.apply_default_fallbacks();
+
     builder.into_inner()
 }
 
@@ -787,6 +792,10 @@ mod tests {
                     String::from("https://example.com/my/font/license")
                 ),
                 (
+                    NameKey::new_bmp_only(NameId::TypographicFamilyName),
+                    String::from("FamilyName")
+                ),
+                (
                     NameKey::new_bmp_only(NameId::MacCompatibleFullName),
                     String::from("For the Mac's only")
                 ),
@@ -800,6 +809,39 @@ mod tests {
                 ),
             ],
             names
+        );
+    }
+
+    #[test]
+    fn version_with_version_string() {
+        let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
+        assert_eq!(
+            "New Value",
+            names(&font)
+                .get(&NameKey::new_bmp_only(NameId::Version))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn version_from_major_minor() {
+        let font = Font::load(&glyphs3_dir().join("VersionMajorMinor.glyphs")).unwrap();
+        assert_eq!(
+            "Version 42.043",
+            names(&font)
+                .get(&NameKey::new_bmp_only(NameId::Version))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn version_default() {
+        let font = Font::load(&glyphs3_dir().join("infinity.glyphs")).unwrap();
+        assert_eq!(
+            "Version 0.000",
+            names(&font)
+                .get(&NameKey::new_bmp_only(NameId::Version))
+                .unwrap()
         );
     }
 }

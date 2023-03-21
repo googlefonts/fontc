@@ -75,6 +75,8 @@ pub struct NameBuilder {
     names: HashMap<NameKey, String>,
     /// Helps lookup entries in name when all we have is a NameId
     name_to_key: HashMap<NameId, NameKey>,
+    version_major: i32,
+    version_minor: u32,
 }
 
 impl NameBuilder {
@@ -118,6 +120,40 @@ impl NameBuilder {
 
     pub fn into_inner(self) -> HashMap<NameKey, String> {
         self.names
+    }
+
+    pub fn apply_default_fallbacks(&mut self) {
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L188
+        self.apply_fallback(NameId::TypographicFamilyName, &[NameId::FamilyName]);
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L195
+        self.apply_fallback(NameId::TypographicSubfamilyName, &[NameId::SubfamilyName]);
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L169
+        if !self.contains_key(NameId::Version) {
+            let major = self.version_major;
+            let minor = self.version_minor;
+            self.add(NameId::Version, format!("Version {major}.{minor:0>3}"));
+        }
+
+        if !self.contains_key(NameId::FullName) {
+            // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L296
+            self.add(
+                NameId::FullName,
+                format!(
+                    "{} {}",
+                    self.get(NameId::TypographicFamilyName).unwrap_or_default(),
+                    self.get(NameId::TypographicSubfamilyName)
+                        .unwrap_or_default(),
+                ),
+            );
+        }
+    }
+
+    pub fn set_version(&mut self, major: i32, minor: u32) {
+        eprintln!("versin {major} {minor}");
+        self.version_major = major;
+        self.version_minor = minor;
     }
 }
 
