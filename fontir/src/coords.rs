@@ -38,9 +38,7 @@ pub struct NormalizedCoord(OrderedFloat<f32>);
 /// E.g. a user location is a `Location<UserCoord>`. Hashable so it can do things like be
 /// the key for a map of sources by location.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
-pub struct Location<T>(BTreeMap<String, T>)
-where
-    T: Copy;
+pub struct Location<T>(BTreeMap<String, T>);
 
 pub type DesignLocation = Location<DesignCoord>;
 pub type UserLocation = Location<UserCoord>;

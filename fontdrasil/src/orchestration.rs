@@ -35,10 +35,7 @@ pub trait Work<C, E> {
 ///
 /// Not meant to prevent malicious access, merely to detect mistakes
 /// because the result of mistaken concurrent access can be confusing to track down.
-pub struct AccessControlList<I>
-where
-    I: Eq + Hash + Debug,
-{
+pub struct AccessControlList<I> {
     // Returns true if you can write to the provided id
     write_access: Access<I>,
 
