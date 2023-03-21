@@ -1162,15 +1162,16 @@ impl TryFrom<RawFont> for Font {
         }
         names.insert("familyNames".into(), from.family_name);
         let version_string = names.remove("versionString");
-        let empty_string = String::from("");
-        let version = format!(
-            "{}.{:0>3}{}{}",
-            from.versionMajor.unwrap_or_default(),
-            from.versionMinor.unwrap_or_default(),
-            version_string.as_ref().map(|_| "; ").unwrap_or(""),
-            version_string.as_ref().unwrap_or(&empty_string),
+        names.insert(
+            "version".into(),
+            version_string.unwrap_or_else(|| {
+                format!(
+                    "Version {}.{:0>3}",
+                    from.versionMajor.unwrap_or_default(),
+                    from.versionMinor.unwrap_or_default()
+                )
+            }),
         );
-        names.insert("version".into(), version);
 
         Ok(Font {
             units_per_em,
@@ -1617,5 +1618,23 @@ mod tests {
         let v2 = Font::load(&glyphs2_dir().join("TheBestNames.glyphs")).unwrap();
         let v3 = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
         assert_eq!(v3.names, v2.names);
+    }
+
+    #[test]
+    fn version_with_version_string() {
+        let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
+        assert_eq!("New Value", font.names.get("version").unwrap());
+    }
+
+    #[test]
+    fn version_from_major_minor() {
+        let font = Font::load(&glyphs3_dir().join("VersionMajorMinor.glyphs")).unwrap();
+        assert_eq!("Version 42.043", font.names.get("version").unwrap());
+    }
+
+    #[test]
+    fn version_default() {
+        let font = Font::load(&glyphs3_dir().join("infinity.glyphs")).unwrap();
+        assert_eq!("Version 0.000", font.names.get("version").unwrap());
     }
 }

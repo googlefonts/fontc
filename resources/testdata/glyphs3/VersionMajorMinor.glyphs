@@ -1,0 +1,14 @@
+{
+.formatVersion = 3;
+familyName = "Meh";
+glyphs = (
+	{
+		glyphname = meh;
+		layers = ();
+	}
+);
+fontMaster = ();
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 43;
+}

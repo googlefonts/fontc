@@ -752,7 +752,7 @@ mod tests {
                 ),
                 (
                     NameKey::new_bmp_only(NameId::Version),
-                    String::from("42.042; New Value")
+                    String::from("New Value")
                 ),
                 (
                     NameKey::new_bmp_only(NameId::PostScriptName),
