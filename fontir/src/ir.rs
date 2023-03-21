@@ -165,11 +165,12 @@ impl NameBuilder {
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L178-L185
         if !self.contains_key(NameId::UniqueIdentifier) {
             let version = self.get(NameId::Version).unwrap().replace("Version ", "");
-            // fontmake pulls the openTypeOS2VendorID but we don't have that (yet)
+            // fontmake pulls the openTypeOS2VendorID but we don't have that so just use their default
+            let vendor = "NONE";
             let postscript_name = self.get(NameId::PostScriptName).unwrap();
             self.add(
                 NameId::UniqueIdentifier,
-                format!("{version};{postscript_name}"),
+                format!("{version};{vendor};{postscript_name}"),
             );
         }
     }
