@@ -22,7 +22,6 @@ pub fn create_font_work() -> Box<BeWork> {
     Box::new(FontWork {})
 }
 
-// TODO the tables have the tag, but I'm not sure how to access it
 const TABLES_TO_MERGE: &[(WorkId, Tag)] = &[
     (WorkId::Cmap, Cmap::TAG),
     (WorkId::Head, Head::TAG),

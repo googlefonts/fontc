@@ -9,6 +9,7 @@ use crate::{
 use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, Point};
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -67,6 +68,137 @@ impl StaticMetadata {
     }
 }
 
+/// Helps accumulate 'name' values.
+///
+/// See <https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/outlineCompiler.py#L367>.
+#[derive(Default)]
+pub struct NameBuilder {
+    names: HashMap<NameKey, String>,
+    /// Helps lookup entries in name when all we have is a NameId
+    name_to_key: HashMap<NameId, NameKey>,
+    version_major: i32,
+    version_minor: u32,
+}
+
+impl NameBuilder {
+    pub fn add(&mut self, name_id: NameId, value: String) {
+        let key = NameKey::new(name_id, &value);
+        self.names.insert(key, value);
+        self.name_to_key.insert(name_id, key);
+    }
+
+    pub fn add_if_present(&mut self, name_id: NameId, value: &Option<String>) {
+        let value = if let Some(value) = value {
+            Some(value.clone())
+        } else {
+            name_id.default_value().map(String::from)
+        };
+        if let Some(value) = value {
+            self.add(name_id, value);
+        }
+    }
+
+    pub fn apply_fallback(&mut self, name_id: NameId, fallbacks: &[NameId]) {
+        if let Some(fallback_id) = fallbacks.iter().find(|n| {
+            let Some(key) = self.name_to_key.get(*n) else {
+                    return false;
+                };
+            self.names.contains_key(key)
+        }) {
+            self.add(name_id, self.names[&self.name_to_key[fallback_id]].clone());
+        }
+    }
+
+    pub fn contains_key(&self, name_id: NameId) -> bool {
+        self.name_to_key.contains_key(&name_id)
+    }
+
+    pub fn get(&self, name_id: NameId) -> Option<&str> {
+        self.name_to_key
+            .get(&name_id)
+            .and_then(|key| self.names.get(key).map(|s| s.as_str()))
+    }
+
+    pub fn into_inner(self) -> HashMap<NameKey, String> {
+        self.names
+    }
+
+    pub fn apply_default_fallbacks(&mut self) {
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L188
+        self.apply_fallback(NameId::TypographicFamilyName, &[NameId::FamilyName]);
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L195
+        self.apply_fallback(NameId::TypographicSubfamilyName, &[NameId::SubfamilyName]);
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L169
+        if !self.contains_key(NameId::Version) {
+            let major = self.version_major;
+            let minor = self.version_minor;
+            self.add(NameId::Version, format!("Version {major}.{minor:0>3}"));
+        }
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L296
+        if !self.contains_key(NameId::FullName) {
+            self.add(
+                NameId::FullName,
+                format!(
+                    "{} {}",
+                    self.get(NameId::TypographicFamilyName).unwrap_or_default(),
+                    self.get(NameId::TypographicSubfamilyName)
+                        .unwrap_or_default(),
+                ),
+            );
+        }
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L178-L185
+        if !self.contains_key(NameId::PostScriptName) {
+            let mut value = format!(
+                "{} {}",
+                self.get(NameId::TypographicFamilyName).unwrap_or_default(),
+                self.get(NameId::TypographicSubfamilyName)
+                    .unwrap_or_default(),
+            );
+            normalize_for_postscript(&mut value, false);
+            self.add(NameId::PostScriptName, value);
+        }
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L178-L185
+        if !self.contains_key(NameId::UniqueIdentifier) {
+            let version = self.get(NameId::Version).unwrap().replace("Version ", "");
+            // fontmake pulls the openTypeOS2VendorID but we don't have that so just use their default
+            let vendor = "NONE";
+            let postscript_name = self.get(NameId::PostScriptName).unwrap();
+            self.add(
+                NameId::UniqueIdentifier,
+                format!("{version};{vendor};{postscript_name}"),
+            );
+        }
+    }
+
+    pub fn set_version(&mut self, major: i32, minor: u32) {
+        eprintln!("versin {major} {minor}");
+        self.version_major = major;
+        self.version_minor = minor;
+    }
+}
+
+/// <https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L263>
+fn normalize_for_postscript(value: &mut String, allow_spaces: bool) {
+    value.retain(|c| {
+        if !allow_spaces && c.is_ascii_whitespace() {
+            return false;
+        }
+        if "[](){}<>/%".contains(c) {
+            return false;
+        }
+        if !(33..127).contains(&(c as u32)) {
+            warn!("fontmake performs decomposition, we just ignore the character");
+            return false;
+        }
+        true
+    });
+}
+
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name#name-ids>
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum NameId {
@@ -78,7 +210,7 @@ pub enum NameId {
     Version,
     PostScriptName,
     Trademark,
-    ManufacturerName,
+    Manufacturer,
     Designer,
     Description,
     ManufacturerUrl,
@@ -110,7 +242,7 @@ impl From<u16> for NameId {
             5 => NameId::Version,
             6 => NameId::PostScriptName,
             7 => NameId::Trademark,
-            8 => NameId::ManufacturerName,
+            8 => NameId::Manufacturer,
             9 => NameId::Designer,
             10 => NameId::Description,
             11 => NameId::ManufacturerUrl,
@@ -144,7 +276,7 @@ impl From<NameId> for u16 {
             NameId::Version => 5,
             NameId::PostScriptName => 6,
             NameId::Trademark => 7,
-            NameId::ManufacturerName => 8,
+            NameId::Manufacturer => 8,
             NameId::Designer => 9,
             NameId::Description => 10,
             NameId::ManufacturerUrl => 11,
