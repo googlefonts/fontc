@@ -30,6 +30,8 @@ pub struct StaticMetadata {
 
     pub ascender: OrderedFloat<f32>,
     pub descender: OrderedFloat<f32>,
+    pub cap_height: OrderedFloat<f32>,
+    pub x_height: OrderedFloat<f32>,
 
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>.
     pub names: HashMap<NameKey, String>,
@@ -58,13 +60,21 @@ impl StaticMetadata {
     ) -> Result<StaticMetadata, VariationModelError> {
         let axis_names = axes.iter().map(|a| a.name.clone()).collect();
         let variation_model = VariationModel::new(glyph_locations, axis_names)?;
+
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
         let ascender = (0.8 * units_per_em as f32).into();
         let descender = (-0.2 * units_per_em as f32).into();
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
+        let cap_height = (0.7 * units_per_em as f32).into();
+        let x_height = (0.5 * units_per_em as f32).into();
+
         Ok(StaticMetadata {
             units_per_em,
             ascender,
             descender,
+            cap_height,
+            x_height,
             names,
             axes,
             glyph_order,

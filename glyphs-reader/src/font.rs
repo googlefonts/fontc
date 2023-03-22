@@ -277,6 +277,14 @@ impl FontMaster {
     pub fn descender(&self) -> Option<OrderedFloat<f64>> {
         self.read_metric("descender")
     }
+
+    pub fn x_height(&self) -> Option<OrderedFloat<f64>> {
+        self.read_metric("x-height")
+    }
+
+    pub fn cap_height(&self) -> Option<OrderedFloat<f64>> {
+        self.read_metric("cap height")
+    }
 }
 
 #[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]

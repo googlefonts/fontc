@@ -254,6 +254,12 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         if let Some(descender) = font.default_master().descender() {
             static_metadata.descender = (descender.into_inner() as f32).into();
         }
+        if let Some(cap_height) = font.default_master().cap_height() {
+            static_metadata.cap_height = (cap_height.into_inner() as f32).into();
+        }
+        if let Some(x_height) = font.default_master().x_height() {
+            static_metadata.x_height = (x_height.into_inner() as f32).into();
+        }
 
         context.set_init_static_metadata(static_metadata);
         Ok(())
@@ -861,6 +867,19 @@ mod tests {
             (
                 static_metadata.ascender.into_inner(),
                 static_metadata.descender.into_inner()
+            )
+        );
+    }
+
+    #[test]
+    fn captures_cap_x_height() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar.glyphs"));
+        let static_metadata = &context.get_init_static_metadata();
+        assert_eq!(
+            (702.0, 501.0),
+            (
+                static_metadata.cap_height.into_inner(),
+                static_metadata.x_height.into_inner()
             )
         );
     }
