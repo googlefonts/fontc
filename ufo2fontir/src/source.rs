@@ -435,27 +435,23 @@ fn units_per_em<'a>(
     const MIN_UPEM: f64 = 16.0;
     const MAX_UPEM: f64 = 16384.0;
 
-    let upems: Vec<_> = font_infos
-        .filter_map(|fi| fi.units_per_em)
-        .map(|v| v.as_f64())
-        .collect();
-    for upem in upems.iter() {
-        // Per <https://learn.microsoft.com/en-us/typography/opentype/spec/head>, 16..16384
-        if *upem < MIN_UPEM || *upem > MAX_UPEM {
-            return Err(WorkError::InvalidUpem(format!("{upem}")));
-        }
-    }
-    let upems: HashSet<u16> = upems.into_iter().map(|v| v.ot_round()).collect();
+    let mut upems: Vec<_> = font_infos
+        .filter_map(|fi| match fi.units_per_em.map(|x| x.as_f64()) {
+            None => None,
+            // Per <https://learn.microsoft.com/en-us/typography/opentype/spec/head>, 16..16384
+            Some(val) if (MIN_UPEM..=MAX_UPEM).contains(&val) => Some(Ok(val.ot_round())),
+            Some(bad_val) => Some(Err(WorkError::InvalidUpem(format!("{bad_val}")))),
+        })
+        .collect::<Result<_, _>>()?;
+
+    upems.sort_unstable();
+    upems.dedup();
     // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L359
-    if upems.is_empty() {
-        return Ok(1000);
+    match upems.as_slice() {
+        [] => Ok(1000),
+        [one] => Ok(*one),
+        _multiple => Err(WorkError::InconsistentUpem(upems)),
     }
-    if upems.len() != 1 {
-        let mut upems: Vec<_> = upems.into_iter().collect();
-        upems.sort();
-        return Err(WorkError::InconsistentUpem(upems));
-    }
-    Ok(*upems.iter().next().unwrap())
 }
 
 fn files_identical(f1: &Path, f2: &Path) -> Result<bool, WorkError> {
