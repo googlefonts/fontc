@@ -185,7 +185,6 @@ impl NameBuilder {
     }
 
     pub fn set_version(&mut self, major: i32, minor: u32) {
-        eprintln!("versin {major} {minor}");
         self.version_major = major;
         self.version_minor = minor;
     }

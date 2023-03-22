@@ -4,5 +4,9 @@
   <dict>
     <key>unitsPerEm</key>
     <real>255.5</real>
+    <key>ascender</key>
+    <real>755.25</real>
+    <key>descender</key>
+    <real>-174.5</real>
   </dict>
 </plist>
