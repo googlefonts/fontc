@@ -312,7 +312,7 @@ impl From<font_types::NameId> for NameId {
     fn from(value: font_types::NameId) -> Self {
         NameId::from(value.to_u16())
     }
-} 
+}
 
 impl NameId {
     /// Match fontmake defaults.
