@@ -2,6 +2,44 @@
 
 set -e
 
+
+search_added_rust_lines_with_prints() {
+    # --diff-filter=A is to list only added files, excluding modified/deleted
+    git diff --cached --name-only --diff-filter=A | \
+    grep '\.rs$' | \
+    while read -r file; do
+        # For each file, get a unified diff with no context (-U0)
+        git diff --cached -U0 -- "$file" | \
+        # Strip lines starting with '+++' containing the file name
+        grep -v -E '^\+\+\+' | \
+        # Select only the added lines, i.e. starting with a plus sign
+        grep -E '^\+' | \
+        # Strip the '+' prefix and all inline comments
+        sed -e 's/^\+//' -e 's://.*$::' | \
+        # Prepend the file name and line number to each line
+        awk -v file="$file" '{ printf "%s:%s: %s\n", file, FNR, $0 }' | \
+        # Grep for print statements
+        grep --color=always -E '\b(println!|eprintln!)' || true
+    done
+}
+
+check_rust_prints() {
+    # Check for println! or eprintln! statements in git-added Rust files, ignoring comments.
+
+    matches=$(search_added_rust_lines_with_prints)
+
+    if [ ! -z "$matches" ]; then
+        echo "Error: The following Rust source files contain println! or eprintln! statements:"
+        echo "$matches"
+        echo "Please remove or comment out the println! and eprintln! statements before committing."
+        return 1
+    fi
+
+    return 0
+}
+
+check_rust_prints
+
 cargo fmt --all -- --check
 cargo check --all --no-default-features
 cargo check --all
