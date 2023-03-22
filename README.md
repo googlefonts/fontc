@@ -36,6 +36,25 @@ Once you have them you could try building them:
 cargo run --package fontc -- --source ../google_fonts_sources/sources/ofl/notosanskayahli/sources/NotoSansKayahLi.designspace
 ```
 
+## Contributing
+
+We have included a few git hooks that you may choose to use to ensure that
+patches will pass CI; these are in `resources/githooks`.
+
+To run the pre-push step manually:
+
+```sh
+$ ./resources/githooks/pre-push
+```
+
+If you would like to have these run automatically when you commit or push
+changes, you can set this as your git hooksPath:
+
+```sh
+$ git config core.hooksPath "resources/githooks"
+```
+
+
 ## Releasing
 
 See https://github.com/googlefonts/fontations#releasing
