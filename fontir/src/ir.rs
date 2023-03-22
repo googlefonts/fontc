@@ -10,6 +10,7 @@ use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, Point};
 use log::warn;
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -26,6 +27,9 @@ use std::{
 pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/head>.
     pub units_per_em: u16,
+
+    pub ascender: OrderedFloat<f32>,
+    pub descender: OrderedFloat<f32>,
 
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>.
     pub names: HashMap<NameKey, String>,
@@ -54,8 +58,13 @@ impl StaticMetadata {
     ) -> Result<StaticMetadata, VariationModelError> {
         let axis_names = axes.iter().map(|a| a.name.clone()).collect();
         let variation_model = VariationModel::new(glyph_locations, axis_names)?;
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
+        let ascender = (0.8 * units_per_em as f32).into();
+        let descender = (-0.2 * units_per_em as f32).into();
         Ok(StaticMetadata {
             units_per_em,
+            ascender,
+            descender,
             names,
             axes,
             glyph_order,
@@ -296,6 +305,12 @@ impl From<NameId> for u16 {
             NameId::VariationsPostScriptNamePrefix => 25,
             NameId::Other(value) => value,
         }
+    }
+}
+
+impl From<font_types::NameId> for NameId {
+    fn from(value: font_types::NameId) -> Self {
+        NameId::from(value.to_u16())
     }
 }
 

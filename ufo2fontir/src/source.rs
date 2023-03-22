@@ -446,6 +446,10 @@ fn units_per_em<'a>(
         }
     }
     let upems: HashSet<u16> = upems.into_iter().map(|v| v.ot_round()).collect();
+    // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L359
+    if upems.is_empty() {
+        return Ok(1000);
+    }
     if upems.len() != 1 {
         let mut upems: Vec<_> = upems.into_iter().collect();
         upems.sort();
