@@ -60,7 +60,7 @@ impl StaticMetadata {
         let variation_model = VariationModel::new(glyph_locations, axis_names)?;
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
         let ascender = (0.8 * units_per_em as f32).into();
-        let descender = (0.2 * units_per_em as f32).into();
+        let descender = (-0.2 * units_per_em as f32).into();
         Ok(StaticMetadata {
             units_per_em,
             ascender,
