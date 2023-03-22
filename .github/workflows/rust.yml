@@ -112,7 +112,7 @@ jobs:
           args: --manifest-path=fontc/Cargo.toml --no-default-features
 
   check-ots:
-    name: compile fonts that pass OTS
+    name: resources/scripts/ots_test.sh
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
