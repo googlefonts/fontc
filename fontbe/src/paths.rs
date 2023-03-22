@@ -53,6 +53,7 @@ impl Paths {
             WorkId::Hmtx => self.build_dir.join("hmtx.table"),
             WorkId::Maxp => self.build_dir.join("maxp.table"),
             WorkId::Name => self.build_dir.join("name.table"),
+            WorkId::Os2 => self.build_dir.join("os2.table"),
             WorkId::Post => self.build_dir.join("post.table"),
             WorkId::Font => self.build_dir.join("font.ttf"),
         }

@@ -4,7 +4,7 @@ use fontdrasil::orchestration::Work;
 use read_fonts::{
     tables::{
         cmap::Cmap, glyf::Glyf, head::Head, hhea::Hhea, hmtx::Hmtx, loca::Loca, maxp::Maxp,
-        name::Name, post::Post,
+        name::Name, os2::Os2, post::Post,
     },
     types::Tag,
     TopLevelTable,
@@ -31,6 +31,7 @@ const TABLES_TO_MERGE: &[(WorkId, Tag)] = &[
     (WorkId::Loca, Loca::TAG),
     (WorkId::Maxp, Maxp::TAG),
     (WorkId::Name, Name::TAG),
+    (WorkId::Os2, Os2::TAG),
     (WorkId::Post, Post::TAG),
 ];
 

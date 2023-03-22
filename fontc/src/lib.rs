@@ -31,6 +31,7 @@ use fontbe::{
     maxp::create_maxp_work,
     name::create_name_work,
     orchestration::{AnyWorkId, WorkId as BeWorkIdentifier},
+    os2::create_os2_work,
     post::create_post_work,
 };
 
@@ -395,6 +396,28 @@ fn add_name_be_job(
     Ok(())
 }
 
+fn add_os2_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.init_static_metadata_ir_change() {
+        let dependencies = HashSet::new();
+        let id: AnyWorkId = BeWorkIdentifier::Os2.into();
+        workload.insert(
+            id.clone(),
+            Job {
+                work: create_os2_work().into(),
+                dependencies,
+                read_access: ReadAccess::Dependencies,
+                write_access: Access::one(id),
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::Os2);
+    }
+    Ok(())
+}
+
 fn add_hmetrics_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
@@ -462,6 +485,7 @@ fn add_font_be_job(
         dependencies.insert(BeWorkIdentifier::Loca.into());
         dependencies.insert(BeWorkIdentifier::Maxp.into());
         dependencies.insert(BeWorkIdentifier::Name.into());
+        dependencies.insert(BeWorkIdentifier::Os2.into());
         dependencies.insert(BeWorkIdentifier::Post.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Font.into();
@@ -532,6 +556,7 @@ pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload,
     add_hmetrics_job(change_detector, &mut workload)?;
     add_name_be_job(change_detector, &mut workload)?;
     add_maxp_be_job(change_detector, &mut workload)?;
+    add_os2_be_job(change_detector, &mut workload)?;
     add_post_be_job(change_detector, &mut workload)?;
 
     // Make a damn font
@@ -645,6 +670,7 @@ mod tests {
         add_hmetrics_job(&mut change_detector, &mut workload).unwrap();
         add_maxp_be_job(&mut change_detector, &mut workload).unwrap();
         add_name_be_job(&mut change_detector, &mut workload).unwrap();
+        add_os2_be_job(&mut change_detector, &mut workload).unwrap();
         add_post_be_job(&mut change_detector, &mut workload).unwrap();
 
         add_font_be_job(&mut change_detector, &mut workload).unwrap();
@@ -695,6 +721,7 @@ mod tests {
                 BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::Maxp.into(),
                 BeWorkIdentifier::Name.into(),
+                BeWorkIdentifier::Os2.into(),
                 BeWorkIdentifier::Post.into(),
                 BeWorkIdentifier::Font.into(),
             ]),
@@ -1105,6 +1132,7 @@ mod tests {
 
         assert_eq!(
             vec![
+                Tag::new(b"OS/2"),
                 Tag::new(b"cmap"),
                 Tag::new(b"glyf"),
                 Tag::new(b"head"),
