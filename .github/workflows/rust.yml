@@ -110,3 +110,19 @@ jobs:
         with:
           command: check
           args: --manifest-path=fontc/Cargo.toml --no-default-features
+
+  check-ots:
+    name: resources/scripts/ots_test.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Run resources/scripts/ots_test.sh
+        run:  resources/scripts/ots_test.sh
