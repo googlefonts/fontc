@@ -5,7 +5,7 @@
     <axis tag="wght" name="Weight" minimum="400" maximum="400" default="400"/>
   </axes>
   <sources>
-    <source filename="FloatUpem-Regular.ufo" name="Float Upem Regular" familyname="Float Upem" stylename="Regular">
+    <source filename="Float-Regular.ufo" name="Float Regular" familyname="Float" stylename="Regular">
       <lib copy="1"/>
       <groups copy="1"/>
       <features copy="1"/>
@@ -16,7 +16,7 @@
     </source>
   </sources>
   <instances>
-    <instance name="FloatUpem Regular" familyname="Float Upem" stylename="Regular" filename="instance_ufos/Static-Regular.ufo" stylemapfamilyname="Static" stylemapstylename="regular">
+    <instance name="Float Regular" familyname="Float" stylename="Regular" filename="instance_ufos/Static-Regular.ufo" stylemapfamilyname="Static" stylemapstylename="regular">
       <location>
         <dimension name="Weight" xvalue="400"/>
       </location>

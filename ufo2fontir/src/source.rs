@@ -571,18 +571,29 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             return Err(WorkError::NoDefaultMaster(self.designspace_file.clone()));
         };
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
+        let font_info_at_default = font_infos.get(&default_master.filename).ok_or_else(|| {
+            WorkError::FileExpected(designspace_dir.join(&default_master.filename))
+        })?;
 
         let units_per_em = units_per_em(font_infos.values())?;
-        let names = names(font_infos.get(&default_master.filename).unwrap());
+        let names = names(font_info_at_default);
         let axes = to_ir_axes(&self.designspace.axes);
         let glyph_locations = to_normalized_locations(&axes, &self.designspace.sources);
 
         let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;
 
-        context.set_init_static_metadata(
+        let mut static_metadata =
             StaticMetadata::new(units_per_em, names, axes, glyph_order, glyph_locations)
-                .map_err(WorkError::VariationModelError)?,
-        );
+                .map_err(WorkError::VariationModelError)?;
+
+        if let Some(ascender) = font_info_at_default.ascender {
+            static_metadata.ascender = (ascender as f32).into();
+        }
+        if let Some(descender) = font_info_at_default.descender {
+            static_metadata.descender = (descender as f32).into();
+        }
+
+        context.set_init_static_metadata(static_metadata);
         Ok(())
     }
 }
@@ -651,10 +662,12 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use fontdrasil::types::GlyphName;
+    use fontdrasil::{orchestration::Access, types::GlyphName};
     use fontir::{
         coords::{DesignCoord, DesignLocation},
         ir::{NameId, NameKey},
+        orchestration::{Context, WorkId},
+        paths::Paths,
         source::{Input, Source},
     };
     use indexmap::IndexSet;
@@ -842,7 +855,7 @@ mod tests {
 
     #[test]
     pub fn ot_rounds_upem() {
-        let (source, _) = load_designspace("float_upem.designspace");
+        let (source, _) = load_designspace("float.designspace");
         let ds = source.load_designspace().unwrap();
         let font_infos = font_infos(&source.designspace_dir, &ds).unwrap();
         assert_eq!(
@@ -853,11 +866,11 @@ mod tests {
 
     #[test]
     pub fn default_names_for_minimal() {
-        let (source, _) = load_designspace("float_upem.designspace");
+        let (source, _) = load_designspace("float.designspace");
         let ds = source.load_designspace().unwrap();
         let font_info = font_infos(&source.designspace_dir, &ds)
             .unwrap()
-            .get(&String::from("FloatUpem-Regular.ufo"))
+            .get(&String::from("Float-Regular.ufo"))
             .cloned()
             .unwrap();
         let mut names: Vec<_> = names(&font_info).into_iter().collect();
@@ -902,6 +915,25 @@ mod tests {
                 ),
             ],
             names
+        );
+    }
+
+    #[test]
+    pub fn captures_asc_desc() {
+        let (source, input) = load_designspace("float.designspace");
+        let work = source.create_static_metadata_work(&input).unwrap();
+        let ctx = Context::new_root(
+            Default::default(),
+            Paths::new(Path::new("/fake/path")),
+            input,
+        );
+        work.exec(&ctx.copy_for_work(Access::None, Access::One(WorkId::InitStaticMetadata)))
+            .unwrap();
+
+        assert_eq!(755.25, ctx.get_init_static_metadata().ascender.into_inner());
+        assert_eq!(
+            -174.5,
+            ctx.get_init_static_metadata().descender.into_inner()
         );
     }
 }
