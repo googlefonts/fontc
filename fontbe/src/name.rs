@@ -25,12 +25,15 @@ impl Work<Context, Error> for NameWork {
         let name_records = static_metadata
             .names
             .iter()
-            .map(|(key, value)| NameRecord {
-                name_id: key.name_id.into(),
-                platform_id: key.platform_id,
-                encoding_id: key.encoding_id,
-                language_id: key.lang_id,
-                string: OffsetMarker::new(value.clone()),
+            .map(|(key, value)| {
+                let name_id: u16 = key.name_id.into();
+                NameRecord {
+                    name_id: name_id.into(),
+                    platform_id: key.platform_id,
+                    encoding_id: key.encoding_id,
+                    language_id: key.lang_id,
+                    string: OffsetMarker::new(value.clone()),
+                }
             })
             .collect();
 
