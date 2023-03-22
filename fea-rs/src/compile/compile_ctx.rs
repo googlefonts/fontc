@@ -12,7 +12,7 @@ use write_fonts::{
         gpos::{AnchorTable, ValueRecord},
         layout::LookupFlag,
     },
-    types::Tag,
+    types::{NameId, Tag},
 };
 
 use crate::{
@@ -1231,7 +1231,7 @@ impl<'a> CompilationCtx<'a> {
 
     fn resolve_name(&mut self, table: &typed::NameTable) {
         for record in table.statements() {
-            let name_id = record.name_id().parse().unwrap();
+            let name_id = NameId::new(record.name_id().parse().unwrap());
             let spec = self.resolve_name_spec(&record.entry());
             self.tables.name.add(name_id, spec);
         }
@@ -1297,7 +1297,7 @@ impl<'a> CompilationCtx<'a> {
 
     fn resolve_stat(&mut self, table: &typed::StatTable) {
         let mut stat = super::tables::StatBuilder {
-            name: super::tables::StatFallbackName::Id(u16::MAX),
+            name: super::tables::StatFallbackName::Id(u16::MAX.into()),
             records: Vec::new(),
             values: Vec::new(),
         };
@@ -1307,8 +1307,9 @@ impl<'a> CompilationCtx<'a> {
                 typed::StatTableItem::ElidedFallbackName(name) => {
                     if let Some(id) = name.elided_fallback_name_id() {
                         //FIXME: validate
-                        stat.name =
-                            super::tables::StatFallbackName::Id(id.parse_unsigned().unwrap());
+                        stat.name = super::tables::StatFallbackName::Id(
+                            id.parse_unsigned().unwrap().into(),
+                        );
                     } else {
                         let names = name.names().map(|n| self.resolve_name_spec(&n)).collect();
                         stat.name = super::tables::StatFallbackName::Record(names);

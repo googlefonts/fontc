@@ -496,7 +496,7 @@ static TEST_FONT_GLYPHS: &[&str] = &[
     TEST_FONT_GLYPHS
         .iter()
         .map(|name| GlyphIdent::Name(GlyphName::new(*name)))
-        .chain((800_u16..=1001).into_iter().map(GlyphIdent::Cid))
+        .chain((800_u16..=1001).map(GlyphIdent::Cid))
         .collect()
 }
 

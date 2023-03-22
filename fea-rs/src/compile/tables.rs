@@ -16,7 +16,7 @@ use write_fonts::{
         },
         layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
     },
-    types::{Fixed, LongDateTime, Tag, Uint24},
+    types::{Fixed, LongDateTime, NameId, Tag, Uint24},
     validate::ValidationReport,
 };
 
@@ -185,7 +185,7 @@ pub enum AxisLocation {
 
 #[derive(Clone, Debug)]
 pub enum StatFallbackName {
-    Id(u16),
+    Id(NameId),
     Record(Vec<NameSpec>),
 }
 
@@ -327,7 +327,7 @@ impl Base {
 
 #[derive(Clone, Debug)]
 pub struct NameBuilder {
-    records: Vec<(u16, NameSpec)>,
+    records: Vec<(NameId, NameSpec)>,
     last_anon_id: u16,
 }
 
@@ -341,12 +341,12 @@ impl Default for NameBuilder {
 }
 
 impl NameBuilder {
-    pub(crate) fn add(&mut self, name_id: u16, name_spec: NameSpec) {
-        self.last_anon_id = self.last_anon_id.max(name_id);
+    pub(crate) fn add(&mut self, name_id: NameId, name_spec: NameSpec) {
+        self.last_anon_id = self.last_anon_id.max(name_id.to_u16());
         self.records.push((name_id, name_spec));
     }
 
-    pub(crate) fn add_anon_group(&mut self, entries: &[NameSpec]) -> u16 {
+    pub(crate) fn add_anon_group(&mut self, entries: &[NameSpec]) -> NameId {
         let name_id = self.next_name_id();
         for name in entries {
             self.add(name_id, name.clone());
@@ -354,12 +354,12 @@ impl NameBuilder {
         name_id
     }
 
-    pub(crate) fn contains_id(&self, id: u16) -> bool {
+    pub(crate) fn contains_id(&self, id: NameId) -> bool {
         self.records.iter().any(|(name_id, _)| name_id == &id)
     }
 
-    pub(crate) fn next_name_id(&self) -> u16 {
-        self.last_anon_id + 1
+    pub(crate) fn next_name_id(&self) -> NameId {
+        NameId::new(self.last_anon_id + 1)
     }
 
     pub(crate) fn build(&self) -> Option<write_fonts::tables::name::Name> {
@@ -383,7 +383,7 @@ impl NameSpec {
     }
 
     //TODO: rename me to build
-    pub fn to_otf(&self, name_id: u16) -> write_fonts::tables::name::NameRecord {
+    pub fn to_otf(&self, name_id: NameId) -> write_fonts::tables::name::NameRecord {
         let string = parse_string(self.platform_id, self.string.trim_matches('"'));
         write_fonts::tables::name::NameRecord::new(
             self.platform_id,

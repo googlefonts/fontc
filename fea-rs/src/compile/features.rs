@@ -208,7 +208,7 @@ impl SizeFeature {
             0
         } else {
             assert!(!self.names.is_empty());
-            names.add_anon_group(&self.names)
+            names.add_anon_group(&self.names).to_u16()
         };
         SizeParams {
             design_size: self.design_size,
