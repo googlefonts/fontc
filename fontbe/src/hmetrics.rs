@@ -4,6 +4,7 @@
 use std::cmp::{max, min};
 
 use fontdrasil::orchestration::Work;
+use read_fonts::types::FWord;
 use write_fonts::{
     dump_table,
     tables::{hhea::Hhea, hmtx::Hmtx, vmtx::LongMetric},
@@ -101,6 +102,8 @@ impl Work<Context, Error> for HMetricWork {
         let min_right_side_bearing = min_right_side_bearing.into();
         let x_max_extent = x_max_extent.unwrap_or_default().into();
         let hhea = Hhea {
+            ascender: FWord::new(static_metadata.ascender.into_inner().ot_round()),
+            descender: FWord::new((-1.0 * static_metadata.descender.into_inner()).ot_round()),
             advance_width_max: long_metrics
                 .iter()
                 .map(|m| m.advance)

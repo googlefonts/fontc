@@ -1,3 +1,6 @@
+[patch.crates-io]
+fea-rs = {git="https://github.com/rsheeter/fea-rs.git", branch="NameId"}
+
 [workspace]
 
 members = [
