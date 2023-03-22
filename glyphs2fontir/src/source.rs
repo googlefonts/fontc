@@ -239,16 +239,23 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             .filter(|gn| self.glyph_names.contains(gn))
             .collect();
 
-        context.set_init_static_metadata(
-            StaticMetadata::new(
-                font.units_per_em,
-                names(font),
-                axes,
-                glyph_order,
-                glyph_locations,
-            )
-            .map_err(WorkError::VariationModelError)?,
-        );
+        let mut static_metadata = StaticMetadata::new(
+            font.units_per_em,
+            names(font),
+            axes,
+            glyph_order,
+            glyph_locations,
+        )
+        .map_err(WorkError::VariationModelError)?;
+
+        if let Some(ascender) = font.default_master().ascender {
+            static_metadata.ascender = (ascender.into_inner() as f32).into();
+        }
+        if let Some(descender) = font.default_master().descender {
+            static_metadata.descender = (descender.into_inner() as f32).into();
+        }
+
+        context.set_init_static_metadata(static_metadata);
         Ok(())
     }
 }
@@ -842,6 +849,19 @@ mod tests {
             names(&font)
                 .get(&NameKey::new_bmp_only(NameId::Version))
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn captures_asc_desc() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar.glyphs"));
+        let static_metadata = &context.get_init_static_metadata();
+        assert_eq!(
+            (737.0, -42.0),
+            (
+                static_metadata.ascender.into_inner(),
+                static_metadata.descender.into_inner()
+            )
         );
     }
 }

@@ -17,14 +17,23 @@ use crate::error::Error;
 use crate::from_plist::FromPlist;
 use crate::plist::Plist;
 
-const V3_METRIC_NAMES: [&str; 5] = [
+const V3_METRIC_NAMES: [&str; 6] = [
     "ascender",
-    "baseline",
-    "descender",
     "cap height",
     "x-height",
+    "baseline",
+    "italic angle",
+    "descender",
 ];
-const V2_METRIC_NAMES: [&str; 5] = ["ascender", "baseline", "descender", "capHeight", "xHeight"];
+// Listed in the order Glyphs 3 emits alignmentZones when saving as Glyphs 2
+const V2_METRIC_NAMES: [&str; 6] = [
+    "ascender",
+    "capHeight",
+    "xHeight",
+    "baseline",
+    "italic angle",
+    "descender",
+];
 
 type RawUserToDesignMapping = Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>;
 
@@ -82,6 +91,7 @@ pub enum Shape {
 #[allow(non_snake_case)]
 struct RawFont {
     pub units_per_em: Option<i64>,
+    pub metrics: Option<Vec<RawMetric>>,
     pub family_name: String,
     pub copyright: Option<String>,
     pub designer: Option<String>,
@@ -100,6 +110,11 @@ struct RawFont {
 
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
+}
+
+#[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
+pub struct RawMetric {
+    type_: Option<String>,
 }
 
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
@@ -245,9 +260,21 @@ pub struct Anchor {
 #[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
 pub struct FontMaster {
     pub id: String,
+    pub ascender: Option<OrderedFloat<f64>>,
+    pub descender: Option<OrderedFloat<f64>>,
+    pub baseline: Option<OrderedFloat<f64>>,
+    pub cap_height: Option<OrderedFloat<f64>>,
+    pub x_height: Option<OrderedFloat<f64>>,
     pub axes_values: Option<Vec<OrderedFloat<f64>>>,
+    pub metric_values: Option<Vec<RawMetricValue>>,
     #[rest]
     pub other_stuff: BTreeMap<String, Plist>,
+}
+
+#[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
+pub struct RawMetricValue {
+    pos: Option<OrderedFloat<f64>>,
+    over: Option<OrderedFloat<f64>>,
 }
 
 impl RawGlyph {
@@ -685,23 +712,32 @@ impl RawFont {
 
         // in each font master setup the parallel array
         for master in self.font_master.iter_mut() {
-            let mut metric_dicts = Vec::new();
+            if Some(OrderedFloat(0.0)) == master.cap_height {
+                master.cap_height = None;
+            }
+            if Some(OrderedFloat(0.0)) == master.x_height {
+                master.x_height = None;
+            }
+            let mut metric_values = Vec::new();
             for v2_name in V2_METRIC_NAMES.iter() {
-                let mut dict = BTreeMap::new();
-                if let Some(Plist::Integer(value)) = master.other_stuff.remove(&v2_name.to_string())
-                {
-                    // leave blank for 0
-                    if value != 0 {
-                        dict.insert("pos".to_string(), Plist::Integer(value));
+                let mut pos = None;
+                match master.other_stuff.remove(&v2_name.to_string()) {
+                    Some(Plist::Integer(value)) if value != 0 => {
+                        pos = Some(OrderedFloat(value as f64))
                     }
-                }
-                metric_dicts.push(dict);
+                    Some(Plist::Float(value)) if value != OrderedFloat(0.0) => pos = Some(value),
+                    _ => (),
+                };
+                metric_values.push(RawMetricValue { pos, over: None });
             }
             // "alignmentZones is now a set of over (overshoot) properties attached to metrics"
             if let Some(Plist::Array(zones)) = master.other_stuff.get("alignmentZones") {
-                while metric_dicts.len() < zones.len() {
-                    metric_dicts.push(BTreeMap::new());
-                }
+                assert!(
+                    zones.len() <= metric_values.len(),
+                    "{} should be <= {}",
+                    zones.len(),
+                    metric_values.len()
+                );
                 for (idx, zone) in zones.iter().enumerate() {
                     let Plist::String(zone) = zone else {
                         warn!("Non-string alignment zone, skipping");
@@ -723,19 +759,15 @@ impl RawFont {
                         continue;
                     };
                     if over != 0 {
-                        metric_dicts[idx].insert("over".into(), Plist::Integer(over));
+                        metric_values[idx].over = Some(OrderedFloat(over as f64));
                     }
                 }
             }
             master.other_stuff.remove("alignmentZones");
 
-            let mut metric_plists = Vec::new();
-            for metric_dict in metric_dicts {
-                metric_plists.push(Plist::Dictionary(metric_dict));
-            }
-            master
-                .other_stuff
-                .insert("metricValues".into(), Plist::Array(metric_plists));
+            eprintln!("{}, {:#?}", master.id, metric_values);
+
+            master.metric_values = Some(metric_values);
         }
         Ok(())
     }
@@ -1110,6 +1142,61 @@ fn raw_feature_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> 
     Ok(FeatureSnippet(code))
 }
 
+fn copy_metric_to_masters(
+    font: &mut RawFont,
+    name: &str,
+    set_fn: impl Fn(&mut FontMaster, OrderedFloat<f64>),
+) {
+    let Some(metrics) = &font.metrics else {
+        return;
+    };
+    let Some(idx) = metrics.iter().position(|metric| metric.type_.as_ref().map(|n| n.as_str() == name).unwrap_or_default()) else {
+        eprintln!("no metrics entry for {name}");
+        return;
+    };
+    for master in font.font_master.iter_mut() {
+        eprintln!(
+            "{} {name} [{idx}] from {:#?}",
+            master.id, master.metric_values
+        );
+        let Some(values) = &master.metric_values else {
+            eprintln!("  no metric_values");
+            continue;
+        };
+        let Some(metric) = values.get(idx) else {
+            eprintln!("  no metric_values[{idx}]");
+            continue;
+        };
+        let Some(value) = metric.pos else {
+            eprintln!("  no pos");
+            continue;
+        };
+        eprintln!("  {name} = {value}");
+        set_fn(master, value);
+    }
+}
+
+fn reorg_metric_values(font: &mut RawFont) {
+    copy_metric_to_masters(font, "ascender", |master, v| {
+        master.ascender = Some(v);
+    });
+    copy_metric_to_masters(font, "descender", |master, v| {
+        master.descender = Some(v);
+    });
+    copy_metric_to_masters(font, "baseline", |master, v| {
+        master.baseline = Some(v);
+    });
+    copy_metric_to_masters(font, "cap height", |master, v| {
+        master.cap_height = Some(v);
+    });
+    copy_metric_to_masters(font, "x-height", |master, v| {
+        master.x_height = Some(v);
+    });
+    for master in font.font_master.iter_mut() {
+        master.metric_values = None;
+    }
+}
+
 impl TryFrom<RawFont> for Font {
     type Error = Error;
 
@@ -1117,6 +1204,8 @@ impl TryFrom<RawFont> for Font {
         if from.is_v2() {
             from.v2_to_v3()?;
         }
+
+        reorg_metric_values(&mut from);
 
         let radix = if from.is_v2() { 16 } else { 10 };
         from.other_stuff.remove("date"); // exists purely to make diffs fail
@@ -1248,12 +1337,11 @@ impl From<Affine> for AffineForEqAndHash {
 
 #[cfg(test)]
 mod tests {
+    use crate::{font::RawFeature, Font, FromPlist, Node, Plist, Shape};
     use std::{
         collections::{BTreeMap, BTreeSet},
         path::{Path, PathBuf},
     };
-
-    use crate::{font::RawFeature, Font, FromPlist, Node, Plist, Shape};
 
     use ordered_float::OrderedFloat;
 
@@ -1327,6 +1415,10 @@ mod tests {
         for master in g3.font_master.iter_mut() {
             master.other_stuff.remove("iconName");
         }
+
+        // Handy if troubleshooting
+        // fs::write("/tmp/g2.txt", format!("{g2:#?}")).unwrap();
+        // fs::write("/tmp/g3.txt", format!("{g3:#?}")).unwrap();
 
         assert_eq!(g2, g3);
     }
