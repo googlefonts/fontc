@@ -142,6 +142,7 @@ impl FileSystemResolver {
     ///
     /// If compiling from a UFO, the root directory is the UFO directory. In other
     /// cases, it is likely the directory containing the root feature file.
+    /// If the path is empty (i.e. ""), the current working directory is assumed.
     pub fn new(project_root: PathBuf) -> Self {
         Self { project_root }
     }

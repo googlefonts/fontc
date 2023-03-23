@@ -9,12 +9,19 @@ use std::path::{Path, PathBuf};
 /// 'font/includes/../../font/includes/features.fea'.
 fn rebase_path(path: &Path, base: &Path) -> PathBuf {
     use std::path::Component;
+
+    let mut components: Vec<_> = base.components().collect();
+
     #[cfg(not(test))]
     {
-        assert!(base.is_dir());
+        assert!(components.is_empty() || base.is_dir());
         assert!(path.is_relative());
     }
-    let mut components: Vec<_> = base.components().collect();
+
+    if components.is_empty() {
+        return path.to_path_buf();
+    }
+
     for component in path.components() {
         match component {
             Component::CurDir => (),
@@ -93,6 +100,14 @@ mod tests {
         let path = Path::new("../../font/includes/features.fea");
         assert_eq!(
             rebase_path(path, base),
+            Path::new("font/includes/features.fea")
+        );
+
+        let empty_base = Path::new("");
+        assert!(!empty_base.is_dir());
+        let path = Path::new("font/includes/features.fea");
+        assert_eq!(
+            rebase_path(path, empty_base),
             Path::new("font/includes/features.fea")
         );
     }
