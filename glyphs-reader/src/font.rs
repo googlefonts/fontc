@@ -765,8 +765,6 @@ impl RawFont {
             }
             master.other_stuff.remove("alignmentZones");
 
-            eprintln!("{}, {:#?}", master.id, metric_values);
-
             master.metric_values = Some(metric_values);
         }
         Ok(())
@@ -1151,27 +1149,18 @@ fn copy_metric_to_masters(
         return;
     };
     let Some(idx) = metrics.iter().position(|metric| metric.type_.as_ref().map(|n| n.as_str() == name).unwrap_or_default()) else {
-        eprintln!("no metrics entry for {name}");
         return;
     };
     for master in font.font_master.iter_mut() {
-        eprintln!(
-            "{} {name} [{idx}] from {:#?}",
-            master.id, master.metric_values
-        );
         let Some(values) = &master.metric_values else {
-            eprintln!("  no metric_values");
             continue;
         };
         let Some(metric) = values.get(idx) else {
-            eprintln!("  no metric_values[{idx}]");
             continue;
         };
         let Some(value) = metric.pos else {
-            eprintln!("  no pos");
             continue;
         };
-        eprintln!("  {name} = {value}");
         set_fn(master, value);
     }
 }
