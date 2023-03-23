@@ -68,7 +68,7 @@ impl GlyphsIrSource {
         let font = Font {
             units_per_em: font.units_per_em,
             axes: font.axes.clone(),
-            font_master: font.font_master.clone(),
+            masters: font.masters.clone(),
             default_master_idx: font.default_master_idx,
             glyphs: Default::default(),
             glyph_order: Default::default(),
@@ -248,10 +248,10 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         )
         .map_err(WorkError::VariationModelError)?;
 
-        if let Some(ascender) = font.default_master().ascender {
+        if let Some(ascender) = font.default_master().ascender() {
             static_metadata.ascender = (ascender.into_inner() as f32).into();
         }
-        if let Some(descender) = font.default_master().descender {
+        if let Some(descender) = font.default_master().descender() {
             static_metadata.descender = (descender.into_inner() as f32).into();
         }
 
@@ -327,7 +327,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
                     glyph: self.glyph_name.clone(),
                 });
             };
-            let master = &font.font_master[*master_idx];
+            let master = &font.masters[*master_idx];
             let location = &font_info.master_locations[master.id.as_str()];
 
             for (tag, coord) in location.iter() {

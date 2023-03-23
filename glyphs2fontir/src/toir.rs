@@ -116,7 +116,7 @@ pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features
 
 fn design_location(axes: &[ir::Axis], master: &FontMaster) -> DesignLocation {
     axes.iter()
-        .zip(master.axes_values.as_ref().unwrap())
+        .zip(master.axes_values.iter())
         .map(|(axis, pos)| (axis.name.clone(), DesignCoord::new(pos.into_inner() as f32)))
         .collect()
 }
@@ -193,11 +193,9 @@ fn to_ir_axis(
 
 fn ir_axes(font: &Font) -> Result<Vec<ir::Axis>, Error> {
     let mut axis_values = Vec::new();
-    for master in font.font_master.iter() {
+    for master in font.masters.iter() {
         master
             .axes_values
-            .as_ref()
-            .ok_or_else(|| Error::NoAxisDefinitions(master.id.clone()))?
             .iter()
             .enumerate()
             .for_each(|(idx, value)| {
@@ -239,7 +237,7 @@ impl TryFrom<Font> for FontInfo {
 
     fn try_from(font: Font) -> Result<Self, Self::Error> {
         let master_indices: HashMap<_, _> = font
-            .font_master
+            .masters
             .iter()
             .enumerate()
             .map(|(idx, m)| (m.id.clone(), idx))
@@ -254,7 +252,7 @@ impl TryFrom<Font> for FontInfo {
 
         let axes_by_name = axes.iter().map(|a| (&a.name, a)).collect();
         let master_locations: HashMap<_, _> = font
-            .font_master
+            .masters
             .iter()
             .map(|m| {
                 (
