@@ -32,8 +32,10 @@ over = -16;
 pos = -42;
 },
 {
+pos = 702;
 },
 {
+pos = 501;
 }
 );
 name = Regular;

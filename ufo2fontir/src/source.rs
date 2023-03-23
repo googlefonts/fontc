@@ -588,6 +588,12 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         if let Some(descender) = font_info_at_default.descender {
             static_metadata.descender = (descender as f32).into();
         }
+        if let Some(cap_height) = font_info_at_default.cap_height {
+            static_metadata.cap_height = (cap_height as f32).into();
+        }
+        if let Some(x_height) = font_info_at_default.x_height {
+            static_metadata.x_height = (x_height as f32).into();
+        }
 
         context.set_init_static_metadata(static_metadata);
         Ok(())
@@ -926,10 +932,33 @@ mod tests {
         work.exec(&ctx.copy_for_work(Access::None, Access::One(WorkId::InitStaticMetadata)))
             .unwrap();
 
-        assert_eq!(755.25, ctx.get_init_static_metadata().ascender.into_inner());
         assert_eq!(
-            -174.5,
-            ctx.get_init_static_metadata().descender.into_inner()
+            (755.25, -174.5),
+            (
+                ctx.get_init_static_metadata().ascender.into_inner(),
+                ctx.get_init_static_metadata().descender.into_inner()
+            )
+        );
+    }
+
+    #[test]
+    pub fn captures_cap_x_height() {
+        let (source, input) = load_designspace("static.designspace");
+        let work = source.create_static_metadata_work(&input).unwrap();
+        let ctx = Context::new_root(
+            Default::default(),
+            Paths::new(Path::new("/fake/path")),
+            input,
+        );
+        work.exec(&ctx.copy_for_work(Access::None, Access::One(WorkId::InitStaticMetadata)))
+            .unwrap();
+
+        assert_eq!(
+            (720.0, 510.0),
+            (
+                ctx.get_init_static_metadata().cap_height.into_inner(),
+                ctx.get_init_static_metadata().x_height.into_inner()
+            )
         );
     }
 }

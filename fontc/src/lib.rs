@@ -401,7 +401,9 @@ fn add_os2_be_job(
     workload: &mut Workload,
 ) -> Result<(), Error> {
     if change_detector.init_static_metadata_ir_change() {
-        let dependencies = HashSet::new();
+        let mut dependencies = HashSet::new();
+        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+
         let id: AnyWorkId = BeWorkIdentifier::Os2.into();
         workload.insert(
             id.clone(),

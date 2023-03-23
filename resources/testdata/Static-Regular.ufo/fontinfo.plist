@@ -8,5 +8,9 @@
     <string>Duck</string>
     <key>styleName</key>
     <string>Regular</string>
+    <key>capHeight</key>
+    <real>720</real>
+    <key>xHeight</key>
+    <real>510</real>
   </dict>
 </plist>
