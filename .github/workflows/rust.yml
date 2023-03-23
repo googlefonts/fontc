@@ -8,121 +8,89 @@ on:
 
 name: Continuous integration
 
-jobs:
+# The check, clippy-lint, and test-stable jobs should typically be direct copies from
+# https://github.com/googlefonts/fontations/blob/main/.github/workflows/rust.yml.
+# other than the list of crates for cargo check no std
+
+jobs:  
   check:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-      - run: rustup component add rustfmt
+      - uses: actions/checkout@v3
+
+      - name: install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: rustup component add rustfmt
+        run: rustup component add rustfmt
 
       - name: rustfmt check
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: cargo doc
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --all-features --document-private-items
+        run: cargo doc --all-features --document-private-items --no-deps
 
   clippy-lint:
     name: Clippy lints
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-
+      - uses: actions/checkout@v3
       - name: install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-          profile: minimal
-          override: true
-
-      #- run: git submodule update --init --recursive
+        uses: dtolnay/rust-toolchain@stable
 
       - name: cargo clippy --all-features
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-features --all-targets -- -D warnings
+        run: cargo clippy --all-features --all-targets -- -D warnings
 
-      - name: cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-targets --no-default-features -- -D warnings
+      - name: cargo clippy --no-default-features
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
 
   test-stable:
     name: cargo test stable
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-targets --all-features
+        run: cargo test --all-targets --all-features
 
   check-no-std:
     name: cargo check no std
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
+      - name: cargo check fontdrasil
+        run: cargo check --manifest-path=fontdrasil/Cargo.toml --no-default-features
 
       - name: cargo check fontir
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --manifest-path=fontir/Cargo.toml --no-default-features
+        run: cargo check --manifest-path=fontir/Cargo.toml --no-default-features
 
       - name: cargo check ufo2fontir
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --manifest-path=ufo2fontir/Cargo.toml --no-default-features
+        run: cargo check --manifest-path=ufo2fontir/Cargo.toml --no-default-features
+
+      - name: cargo check glyphs2fontir
+        run: cargo check --manifest-path=glyphs2fontir/Cargo.toml --no-default-features
+
+      - name: cargo check fontbe
+        run: cargo check --manifest-path=fontbe/Cargo.toml --no-default-features
 
       - name: cargo check fontc
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --manifest-path=fontc/Cargo.toml --no-default-features
+        run: cargo check --manifest-path=fontc/Cargo.toml --no-default-features
 
   check-ots:
     name: resources/scripts/ots_test.sh
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-
+      - uses: actions/checkout@v3
       - name: install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Run resources/scripts/ots_test.sh
         run:  resources/scripts/ots_test.sh
