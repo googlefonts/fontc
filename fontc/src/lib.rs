@@ -901,10 +901,11 @@ mod tests {
         let raw_loca = read_file(&build_dir.join("loca.table"));
 
         // See resources/testdata/Static-Regular.ufo/glyphs
+        // space, 0 points, 0 contour
         // bar, 4 points, 1 contour
         // plus, 12 points, 1 contour
         assert_eq!(
-            vec![(4, 1), (12, 1)],
+            vec![(0, 0), (4, 1), (12, 1)],
             glyphs(&raw_glyf, &raw_loca)
                 .iter()
                 .map(|g| match g {
