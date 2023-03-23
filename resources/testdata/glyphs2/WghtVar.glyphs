@@ -41,9 +41,9 @@ alignmentZones = (
 "{0, -16}",
 "{-200, -16}"
 );
-ascender = 800;
+ascender = 737;
 capHeight = 0;
-descender = -200;
+descender = -42;
 id = m01;
 weightValue = 400;
 xHeight = 0;

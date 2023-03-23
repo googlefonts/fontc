@@ -22,14 +22,14 @@ id = m01;
 metricValues = (
 {
 over = 16;
-pos = 800;
+pos = 737;
 },
 {
 over = -16;
 },
 {
 over = -16;
-pos = -200;
+pos = -42;
 },
 {
 },
