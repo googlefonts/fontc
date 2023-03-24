@@ -8,7 +8,7 @@ use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
-    ir::{Features, NameBuilder, NameId, NameKey, StaticMetadata},
+    ir::{Features, Metrics, NameBuilder, NameId, NameKey, StaticMetadata},
     orchestration::{Context, IrWork},
     source::{Input, Source},
     stateset::{StateIdentifier, StateSet},
@@ -18,7 +18,7 @@ use log::{debug, trace, warn};
 use norad::designspace::{self, DesignSpaceDocument};
 use write_fonts::OtRound;
 
-use crate::toir::{to_design_location, to_ir_axes, to_ir_glyph, to_normalized_locations};
+use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph};
 
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
@@ -574,7 +574,8 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         let units_per_em = units_per_em(font_infos.values())?;
         let names = names(font_info_at_default);
         let axes = to_ir_axes(&self.designspace.axes);
-        let glyph_locations = to_normalized_locations(&axes, &self.designspace.sources);
+        let master_locations = master_locations(&axes, &self.designspace.sources);
+        let glyph_locations = master_locations.values().cloned().collect();
 
         let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;
 
@@ -582,17 +583,28 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             StaticMetadata::new(units_per_em, names, axes, glyph_order, glyph_locations)
                 .map_err(WorkError::VariationModelError)?;
 
-        if let Some(ascender) = font_info_at_default.ascender {
-            static_metadata.ascender = (ascender as f32).into();
-        }
-        if let Some(descender) = font_info_at_default.descender {
-            static_metadata.descender = (descender as f32).into();
-        }
-        if let Some(cap_height) = font_info_at_default.cap_height {
-            static_metadata.cap_height = (cap_height as f32).into();
-        }
-        if let Some(x_height) = font_info_at_default.x_height {
-            static_metadata.x_height = (x_height as f32).into();
+        for source in self.designspace.sources.iter() {
+            let font_info = font_infos
+                .get(&source.filename)
+                .ok_or_else(|| WorkError::FileExpected(designspace_dir.join(&source.filename)))?;
+            let location = master_locations.get(&source.filename).unwrap();
+            let metrics = static_metadata
+                .metrics
+                .entry(location.clone())
+                .or_insert_with(|| Metrics::default_for_upem(units_per_em));
+
+            if let Some(ascender) = font_info.ascender {
+                metrics.ascender = (ascender as f32).into();
+            }
+            if let Some(descender) = font_info.descender {
+                metrics.descender = (descender as f32).into();
+            }
+            if let Some(cap_height) = font_info.cap_height {
+                metrics.cap_height = (cap_height as f32).into();
+            }
+            if let Some(x_height) = font_info.x_height {
+                metrics.x_height = (x_height as f32).into();
+            }
         }
 
         context.set_init_static_metadata(static_metadata);
@@ -932,11 +944,13 @@ mod tests {
         work.exec(&ctx.copy_for_work(Access::None, Access::One(WorkId::InitStaticMetadata)))
             .unwrap();
 
+        let static_metadata = ctx.get_init_static_metadata();
+        let default_metrics = static_metadata.default_metrics();
         assert_eq!(
             (755.25, -174.5),
             (
-                ctx.get_init_static_metadata().ascender.into_inner(),
-                ctx.get_init_static_metadata().descender.into_inner()
+                default_metrics.ascender.into_inner(),
+                default_metrics.descender.into_inner()
             )
         );
     }
@@ -953,11 +967,13 @@ mod tests {
         work.exec(&ctx.copy_for_work(Access::None, Access::One(WorkId::InitStaticMetadata)))
             .unwrap();
 
+        let static_metadata = ctx.get_init_static_metadata();
+        let default_metrics = static_metadata.default_metrics();
         assert_eq!(
             (720.0, 510.0),
             (
-                ctx.get_init_static_metadata().cap_height.into_inner(),
-                ctx.get_init_static_metadata().x_height.into_inner()
+                default_metrics.cap_height.into_inner(),
+                default_metrics.x_height.into_inner()
             )
         );
     }

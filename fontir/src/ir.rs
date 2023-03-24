@@ -28,26 +28,28 @@ pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/head>.
     pub units_per_em: u16,
 
-    pub ascender: OrderedFloat<f32>,
-    pub descender: OrderedFloat<f32>,
-    pub cap_height: OrderedFloat<f32>,
-    pub x_height: OrderedFloat<f32>,
-
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>.
     pub names: HashMap<NameKey, String>,
 
     /// Every axis used by the font being compiled
     pub axes: Vec<Axis>,
+
     /// The name of every glyph, in the order it will be emitted
     ///
     /// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
     pub glyph_order: IndexSet<GlyphName>,
+
     /// A model of how the space defined by [Self::axes] is split into regions that have deltas.
     ///
     /// This copy includes all locations used in the entire font. Users, such as glyph BE, may wish
     /// to narrow (submodel in FontTools terms) to the set of locations they actually use. Use of a
     /// location not in the global model is an error.
     pub variation_model: VariationModel,
+
+    /// The values of metrics at various positions in design space.
+    ///
+    /// At a minimum should be defined at the default location.
+    pub metrics: HashMap<NormalizedLocation, Metrics>,
 }
 
 impl StaticMetadata {
@@ -60,21 +62,15 @@ impl StaticMetadata {
     ) -> Result<StaticMetadata, VariationModelError> {
         let axis_names = axes.iter().map(|a| a.name.clone()).collect();
         let variation_model = VariationModel::new(glyph_locations, axis_names)?;
-
-        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
-        let ascender = (0.8 * units_per_em as f32).into();
-        let descender = (-0.2 * units_per_em as f32).into();
-
-        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
-        let cap_height = (0.7 * units_per_em as f32).into();
-        let x_height = (0.5 * units_per_em as f32).into();
+        let mut metrics = HashMap::new();
+        metrics.insert(
+            variation_model.default_location().clone(),
+            Metrics::default_for_upem(units_per_em),
+        );
 
         Ok(StaticMetadata {
             units_per_em,
-            ascender,
-            descender,
-            cap_height,
-            x_height,
+            metrics,
             names,
             axes,
             glyph_order,
@@ -84,6 +80,43 @@ impl StaticMetadata {
 
     pub fn glyph_id(&self, name: &GlyphName) -> Option<u32> {
         self.glyph_order.get_index_of(name).map(|i| i as u32)
+    }
+
+    pub fn default_metrics(&self) -> &Metrics {
+        self.metrics
+            .get(self.variation_model.default_location())
+            .unwrap()
+    }
+
+    pub fn default_metrics_mut(&mut self) -> &mut Metrics {
+        self.metrics
+            .get_mut(self.variation_model.default_location())
+            .unwrap()
+    }
+}
+
+/// Global metrics. Ascender/descender, cap height, etc.
+///
+/// Represents the values of these metrics at a specific position in design space.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Metrics {
+    pub ascender: OrderedFloat<f32>,
+    pub descender: OrderedFloat<f32>,
+    pub cap_height: OrderedFloat<f32>,
+    pub x_height: OrderedFloat<f32>,
+}
+
+impl Metrics {
+    pub fn default_for_upem(units_per_em: u16) -> Metrics {
+        Metrics {
+            // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
+            ascender: (0.8 * units_per_em as f32).into(),
+            descender: (-0.2 * units_per_em as f32).into(),
+
+            // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
+            cap_height: (0.7 * units_per_em as f32).into(),
+            x_height: (0.5 * units_per_em as f32).into(),
+        }
     }
 }
 

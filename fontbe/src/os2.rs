@@ -16,9 +16,10 @@ pub fn create_os2_work() -> Box<BeWork> {
 }
 
 fn build_os2(static_metadata: &StaticMetadata) -> Os2 {
+    let default_metrics = static_metadata.default_metrics();
     Os2 {
-        s_cap_height: Some(static_metadata.cap_height.ot_round()),
-        sx_height: Some(static_metadata.x_height.ot_round()),
+        s_cap_height: Some(default_metrics.cap_height.ot_round()),
+        sx_height: Some(default_metrics.x_height.ot_round()),
 
         // Avoid "field must be present for version 2"
         ul_code_page_range_1: Some(0),
@@ -57,8 +58,8 @@ mod tests {
         )
         .unwrap();
 
-        static_metadata.cap_height = 37.5.into();
-        static_metadata.x_height = 112.2.into();
+        static_metadata.default_metrics_mut().cap_height = 37.5.into();
+        static_metadata.default_metrics_mut().x_height = 112.2.into();
 
         let os2 = build_os2(&static_metadata);
 

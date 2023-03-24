@@ -2,7 +2,7 @@ use fontdrasil::orchestration::Work;
 use fontdrasil::types::GlyphName;
 use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
-use fontir::ir::{self, GlyphInstance, NameBuilder, NameId, NameKey, StaticMetadata};
+use fontir::ir::{self, GlyphInstance, Metrics, NameBuilder, NameId, NameKey, StaticMetadata};
 use fontir::orchestration::{Context, IrWork};
 use fontir::source::{Input, Source};
 use fontir::stateset::StateSet;
@@ -248,17 +248,24 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         )
         .map_err(WorkError::VariationModelError)?;
 
-        if let Some(ascender) = font.default_master().ascender() {
-            static_metadata.ascender = (ascender.into_inner() as f32).into();
-        }
-        if let Some(descender) = font.default_master().descender() {
-            static_metadata.descender = (descender.into_inner() as f32).into();
-        }
-        if let Some(cap_height) = font.default_master().cap_height() {
-            static_metadata.cap_height = (cap_height.into_inner() as f32).into();
-        }
-        if let Some(x_height) = font.default_master().x_height() {
-            static_metadata.x_height = (x_height.into_inner() as f32).into();
+        for master in font.masters.iter() {
+            let location = font_info.master_locations.get(&master.id).unwrap();
+            let metrics = static_metadata
+                .metrics
+                .entry(location.clone())
+                .or_insert_with(|| Metrics::default_for_upem(font.units_per_em));
+            if let Some(ascender) = master.ascender() {
+                metrics.ascender = (ascender.into_inner() as f32).into();
+            }
+            if let Some(descender) = master.descender() {
+                metrics.descender = (descender.into_inner() as f32).into();
+            }
+            if let Some(cap_height) = master.cap_height() {
+                metrics.cap_height = (cap_height.into_inner() as f32).into();
+            }
+            if let Some(x_height) = master.x_height() {
+                metrics.x_height = (x_height.into_inner() as f32).into();
+            }
         }
 
         context.set_init_static_metadata(static_metadata);
@@ -862,11 +869,12 @@ mod tests {
     fn captures_asc_desc() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar.glyphs"));
         let static_metadata = &context.get_init_static_metadata();
+        let default_metrics = static_metadata.default_metrics();
         assert_eq!(
             (737.0, -42.0),
             (
-                static_metadata.ascender.into_inner(),
-                static_metadata.descender.into_inner()
+                default_metrics.ascender.into_inner(),
+                default_metrics.descender.into_inner()
             )
         );
     }
@@ -875,11 +883,12 @@ mod tests {
     fn captures_cap_x_height() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar.glyphs"));
         let static_metadata = &context.get_init_static_metadata();
+        let default_metrics = static_metadata.default_metrics();
         assert_eq!(
             (702.0, 501.0),
             (
-                static_metadata.cap_height.into_inner(),
-                static_metadata.x_height.into_inner()
+                default_metrics.cap_height.into_inner(),
+                default_metrics.x_height.into_inner()
             )
         );
     }
