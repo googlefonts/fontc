@@ -119,6 +119,37 @@ fn add_finalize_static_metadata_ir_job(
     Ok(())
 }
 
+fn add_global_metric_ir_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.global_metrics_ir_change() {
+        let id: AnyWorkId = FeWorkIdentifier::GlobalMetrics.into();
+        let write_access = Access::one(id.clone());
+        let mut dependencies = HashSet::new();
+        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
+        workload.insert(
+            id,
+            Job {
+                //FIXME: it's weird that we call a method on this type, passing
+                //in an argument we also get from this type? In a world where there
+                //is a general trait for 'create work' on Source we can have
+                //a method on change_detector that calls this method with the current inputs?
+                work: change_detector
+                    .ir_source()
+                    .create_global_metric_work(change_detector.current_inputs())?
+                    .into(),
+                dependencies,
+                read_access: ReadAccess::Dependencies,
+                write_access,
+            },
+        );
+    } else {
+        workload.mark_success(FeWorkIdentifier::GlobalMetrics);
+    }
+    Ok(())
+}
+
 fn add_feature_ir_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
@@ -402,7 +433,8 @@ fn add_os2_be_job(
 ) -> Result<(), Error> {
     if change_detector.init_static_metadata_ir_change() {
         let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
+        dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Os2.into();
         workload.insert(
@@ -437,6 +469,7 @@ fn add_hmetrics_job(
                 ]
             })
             .collect();
+        dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Hmtx.into();
@@ -546,6 +579,7 @@ pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload,
 
     // FE: f(source) => IR
     add_init_static_metadata_ir_job(change_detector, &mut workload)?;
+    add_global_metric_ir_job(change_detector, &mut workload)?;
     add_feature_ir_job(change_detector, &mut workload)?;
     add_glyph_ir_jobs(change_detector, &mut workload)?;
     add_finalize_static_metadata_ir_job(change_detector, &mut workload)?;
@@ -661,6 +695,7 @@ mod tests {
         let mut workload = Workload::new();
 
         add_init_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
+        add_global_metric_ir_job(&mut change_detector, &mut workload).unwrap();
         add_finalize_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
         add_glyph_ir_jobs(&mut change_detector, &mut workload).unwrap();
         add_feature_ir_job(&mut change_detector, &mut workload).unwrap();
@@ -708,6 +743,7 @@ mod tests {
         assert_eq!(
             HashSet::from([
                 FeWorkIdentifier::InitStaticMetadata.into(),
+                FeWorkIdentifier::GlobalMetrics.into(),
                 FeWorkIdentifier::FinalizeStaticMetadata.into(),
                 FeWorkIdentifier::Features.into(),
                 FeWorkIdentifier::Glyph("bar".into()).into(),

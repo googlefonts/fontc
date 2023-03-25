@@ -2,7 +2,9 @@ use fontdrasil::orchestration::Work;
 use fontdrasil::types::GlyphName;
 use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
-use fontir::ir::{self, GlyphInstance, Metrics, NameBuilder, NameId, NameKey, StaticMetadata};
+use fontir::ir::{
+    self, GlobalMetric, GlobalMetrics, GlyphInstance, NameBuilder, NameId, NameKey, StaticMetadata,
+};
 use fontir::orchestration::{Context, IrWork};
 use fontir::source::{Input, Source};
 use fontir::stateset::StateSet;
@@ -76,8 +78,31 @@ impl GlyphsIrSource {
             axis_mappings: font.axis_mappings.clone(),
             features: Default::default(),
             names: Default::default(),
-            version_major: 0,
-            version_minor: 0,
+            version_major: Default::default(),
+            version_minor: Default::default(),
+        };
+        state.track_memory("/font_master".to_string(), &font)?;
+        Ok(state)
+    }
+
+    // Things that could change global metrics.
+    fn global_metric_inputs(&self, font: &Font) -> Result<StateSet, Error> {
+        let mut state = StateSet::new();
+        // Wipe out fields that can't impact global metrics.
+        // Explicitly field by field so if we add more compiler will force us to update here
+        let font = Font {
+            units_per_em: font.units_per_em,
+            axes: font.axes.clone(),
+            masters: font.masters.clone(),
+            default_master_idx: font.default_master_idx,
+            glyphs: Default::default(),
+            glyph_order: Default::default(),
+            glyph_to_codepoints: Default::default(),
+            axis_mappings: Default::default(),
+            features: Default::default(),
+            names: Default::default(),
+            version_major: Default::default(),
+            version_minor: Default::default(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -120,6 +145,7 @@ impl Source for GlyphsIrSource {
         })?)?;
         let font = &font_info.font;
         let static_metadata = self.static_metadata_inputs(font)?;
+        let global_metrics = self.global_metric_inputs(font)?;
         let features = self.feature_inputs(font)?;
         let glyphs = glyph_states(font)?;
 
@@ -130,6 +156,7 @@ impl Source for GlyphsIrSource {
 
         Ok(Input {
             static_metadata,
+            global_metrics,
             glyphs,
             features,
         })
@@ -144,6 +171,12 @@ impl Source for GlyphsIrSource {
             font_info,
             glyph_names,
         }))
+    }
+
+    fn create_global_metric_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
+        self.check_static_metadata(&input.static_metadata)?;
+        let font_info = self.cache.as_ref().unwrap().font_info.clone();
+        Ok(Box::new(GlobalMetricWork { font_info }))
     }
 
     fn create_glyph_ir_work(
@@ -239,36 +272,51 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             .filter(|gn| self.glyph_names.contains(gn))
             .collect();
 
-        let mut static_metadata = StaticMetadata::new(
-            font.units_per_em,
-            names(font),
-            axes,
-            glyph_order,
-            glyph_locations,
-        )
-        .map_err(WorkError::VariationModelError)?;
+        context.set_init_static_metadata(
+            StaticMetadata::new(
+                font.units_per_em,
+                names(font),
+                axes,
+                glyph_order,
+                glyph_locations,
+            )
+            .map_err(WorkError::VariationModelError)?,
+        );
+        Ok(())
+    }
+}
+
+struct GlobalMetricWork {
+    font_info: Arc<FontInfo>,
+}
+
+impl Work<Context, WorkError> for GlobalMetricWork {
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        let font_info = self.font_info.as_ref();
+        let font = &font_info.font;
+        debug!(
+            "Global metrics for {}",
+            font.names
+                .get("familyNames")
+                .map(|s| s.as_str())
+                .unwrap_or("<nameless family>")
+        );
+
+        let static_metadata = context.get_init_static_metadata();
+        let mut metrics = GlobalMetrics::new(
+            static_metadata.default_location().clone(),
+            static_metadata.units_per_em,
+        );
 
         for master in font.masters.iter() {
-            let location = font_info.master_locations.get(&master.id).unwrap();
-            let metrics = static_metadata
-                .metrics
-                .entry(location.clone())
-                .or_insert_with(|| Metrics::default_for_upem(font.units_per_em));
-            if let Some(ascender) = master.ascender() {
-                metrics.ascender = (ascender.into_inner() as f32).into();
-            }
-            if let Some(descender) = master.descender() {
-                metrics.descender = (descender.into_inner() as f32).into();
-            }
-            if let Some(cap_height) = master.cap_height() {
-                metrics.cap_height = (cap_height.into_inner() as f32).into();
-            }
-            if let Some(x_height) = master.x_height() {
-                metrics.x_height = (x_height.into_inner() as f32).into();
-            }
+            let pos = font_info.master_locations.get(&master.id).unwrap();
+            metrics.set_if_some(GlobalMetric::Ascender, pos.clone(), master.ascender());
+            metrics.set_if_some(GlobalMetric::Descender, pos.clone(), master.descender());
+            metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), master.cap_height());
+            metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), master.x_height());
         }
 
-        context.set_init_static_metadata(static_metadata);
+        context.set_global_metrics(metrics);
         Ok(())
     }
 }
@@ -402,7 +450,7 @@ mod tests {
             UserLocation,
         },
         error::WorkError,
-        ir::{self, NameId, NameKey},
+        ir::{self, GlobalMetricsInstance, NameId, NameKey},
         orchestration::{Context, WorkId},
         paths::Paths,
         source::Source,
@@ -585,6 +633,20 @@ mod tests {
             context.copy_for_work(Access::none(), Access::one(WorkId::InitStaticMetadata));
         source
             .create_static_metadata_work(&context.input)
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        (source, context)
+    }
+
+    fn build_global_metrics(glyphs_file: PathBuf) -> (impl Source, Context) {
+        let (source, context) = build_static_metadata(glyphs_file);
+        let task_context = context.copy_for_work(
+            Access::one(WorkId::InitStaticMetadata),
+            Access::one(WorkId::GlobalMetrics),
+        );
+        source
+            .create_global_metric_work(&context.input)
             .unwrap()
             .exec(&task_context)
             .unwrap();
@@ -866,30 +928,21 @@ mod tests {
     }
 
     #[test]
-    fn captures_asc_desc() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar.glyphs"));
+    fn captures_global_metrics() {
+        let (_, context) = build_global_metrics(glyphs3_dir().join("WghtVar.glyphs"));
         let static_metadata = &context.get_init_static_metadata();
-        let default_metrics = static_metadata.default_metrics();
+        let default_metrics = context
+            .get_global_metrics()
+            .at(static_metadata.default_location());
         assert_eq!(
-            (737.0, -42.0),
-            (
-                default_metrics.ascender.into_inner(),
-                default_metrics.descender.into_inner()
-            )
-        );
-    }
-
-    #[test]
-    fn captures_cap_x_height() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar.glyphs"));
-        let static_metadata = &context.get_init_static_metadata();
-        let default_metrics = static_metadata.default_metrics();
-        assert_eq!(
-            (702.0, 501.0),
-            (
-                default_metrics.cap_height.into_inner(),
-                default_metrics.x_height.into_inner()
-            )
+            GlobalMetricsInstance {
+                pos: static_metadata.default_location().clone(),
+                ascender: 737.0.into(),
+                descender: (-42.0).into(),
+                cap_height: 702.0.into(),
+                x_height: 501.0.into(),
+            },
+            default_metrics
         );
     }
 }

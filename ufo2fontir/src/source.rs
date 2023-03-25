@@ -8,7 +8,7 @@ use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
-    ir::{Features, Metrics, NameBuilder, NameId, NameKey, StaticMetadata},
+    ir::{Features, GlobalMetric, GlobalMetrics, NameBuilder, NameId, NameKey, StaticMetadata},
     orchestration::{Context, IrWork},
     source::{Input, Source},
     stateset::{StateIdentifier, StateSet},
@@ -156,13 +156,13 @@ impl DesignSpaceIrSource {
                     continue;
                 }
 
-                let font_info_file = ufo_dir.join(filename);
+                let file = ufo_dir.join(filename);
                 // TODO: this is incorrect; several of these files are optional
                 // File tracking curently assumes you only track extant files so keep it for now
-                if !font_info_file.is_file() {
-                    return Err(Error::FileExpected(font_info_file));
+                if !file.is_file() {
+                    return Err(Error::FileExpected(file));
                 }
-                font_info.track_file(&font_info_file)?;
+                font_info.track_file(&file)?;
             }
         }
         Ok(font_info)
@@ -294,8 +294,11 @@ impl Source for DesignSpaceIrSource {
             fea_files,
         ));
 
+        // fontinfo.plist spans static metadata and global metrics.
+        // Just use the same change detection for both.
         Ok(Input {
-            static_metadata,
+            static_metadata: static_metadata.clone(),
+            global_metrics: static_metadata,
             glyphs,
             features,
         })
@@ -311,6 +314,16 @@ impl Source for DesignSpaceIrSource {
             designspace_file: cache.designspace_file.clone(),
             designspace: cache.designspace.clone(),
             glyph_names,
+        }))
+    }
+
+    fn create_global_metric_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
+        self.check_static_metadata(&input.static_metadata)?;
+        let cache = self.cache.as_ref().unwrap();
+
+        Ok(Box::new(GlobalMetricsWork {
+            designspace_file: cache.designspace_file.clone(),
+            designspace: cache.designspace.clone(),
         }))
     }
 
@@ -348,6 +361,11 @@ struct StaticMetadataWork {
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
     glyph_names: Arc<HashSet<GlyphName>>,
+}
+
+struct GlobalMetricsWork {
+    designspace_file: PathBuf,
+    designspace: Arc<DesignSpaceDocument>,
 }
 
 struct FeatureWork {
@@ -576,38 +594,44 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         let axes = to_ir_axes(&self.designspace.axes);
         let master_locations = master_locations(&axes, &self.designspace.sources);
         let glyph_locations = master_locations.values().cloned().collect();
-
         let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;
 
-        let mut static_metadata =
+        context.set_init_static_metadata(
             StaticMetadata::new(units_per_em, names, axes, glyph_order, glyph_locations)
-                .map_err(WorkError::VariationModelError)?;
+                .map_err(WorkError::VariationModelError)?,
+        );
+        Ok(())
+    }
+}
 
+impl Work<Context, WorkError> for GlobalMetricsWork {
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        debug!("Global metrics for {:#?}", self.designspace_file);
+        let static_metadata = context.get_init_static_metadata();
+        let mut metrics = GlobalMetrics::new(
+            static_metadata.default_location().clone(),
+            static_metadata.units_per_em,
+        );
+
+        let designspace_dir = self.designspace_file.parent().unwrap();
+        let font_infos = font_infos(designspace_dir, &self.designspace)?;
+        let master_locations = master_locations(&static_metadata.axes, &self.designspace.sources);
         for source in self.designspace.sources.iter() {
             let font_info = font_infos
                 .get(&source.filename)
                 .ok_or_else(|| WorkError::FileExpected(designspace_dir.join(&source.filename)))?;
-            let location = master_locations.get(&source.filename).unwrap();
-            let metrics = static_metadata
-                .metrics
-                .entry(location.clone())
-                .or_insert_with(|| Metrics::default_for_upem(units_per_em));
+            let pos = master_locations.get(&source.filename).unwrap();
 
-            if let Some(ascender) = font_info.ascender {
-                metrics.ascender = (ascender as f32).into();
-            }
-            if let Some(descender) = font_info.descender {
-                metrics.descender = (descender as f32).into();
-            }
-            if let Some(cap_height) = font_info.cap_height {
-                metrics.cap_height = (cap_height as f32).into();
-            }
-            if let Some(x_height) = font_info.x_height {
-                metrics.x_height = (x_height as f32).into();
-            }
+            metrics.set_if_some(GlobalMetric::Ascender, pos.clone(), font_info.ascender);
+            metrics.set_if_some(GlobalMetric::Descender, pos.clone(), font_info.descender);
+            metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), font_info.cap_height);
+            metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), font_info.x_height);
+
+            eprintln!("{} {pos:?} {font_info:#?}", source.filename);
         }
 
-        context.set_init_static_metadata(static_metadata);
+        trace!("{:#?}", metrics);
+        context.set_global_metrics(metrics);
         Ok(())
     }
 }
@@ -744,6 +768,38 @@ mod tests {
         let mut source = DesignSpaceIrSource::new(testdata_dir().join(name));
         let input = source.inputs().unwrap();
         (source, input)
+    }
+
+    fn build_static_metadata(name: &str) -> (impl Source, Context) {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let (source, input) = load_designspace(name);
+        let context = Context::new_root(
+            Default::default(),
+            Paths::new(Path::new("/nothing/should/write/here")),
+            input,
+        );
+        let task_context =
+            context.copy_for_work(Access::none(), Access::one(WorkId::InitStaticMetadata));
+        source
+            .create_static_metadata_work(&context.input)
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        (source, context)
+    }
+
+    fn build_global_metrics(name: &str) -> (impl Source, Context) {
+        let (source, context) = build_static_metadata(name);
+        let task_context = context.copy_for_work(
+            Access::one(WorkId::InitStaticMetadata),
+            Access::one(WorkId::GlobalMetrics),
+        );
+        source
+            .create_global_metric_work(&context.input)
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        (source, context)
     }
 
     fn load_wght_var() -> (DesignSpaceIrSource, Input) {
@@ -933,48 +989,34 @@ mod tests {
     }
 
     #[test]
-    pub fn captures_asc_desc() {
-        let (source, input) = load_designspace("float.designspace");
-        let work = source.create_static_metadata_work(&input).unwrap();
-        let ctx = Context::new_root(
-            Default::default(),
-            Paths::new(Path::new("/fake/path")),
-            input,
-        );
-        work.exec(&ctx.copy_for_work(Access::None, Access::One(WorkId::InitStaticMetadata)))
-            .unwrap();
-
-        let static_metadata = ctx.get_init_static_metadata();
-        let default_metrics = static_metadata.default_metrics();
-        assert_eq!(
-            (755.25, -174.5),
-            (
-                default_metrics.ascender.into_inner(),
-                default_metrics.descender.into_inner()
-            )
-        );
-    }
-
-    #[test]
-    pub fn captures_cap_x_height() {
-        let (source, input) = load_designspace("static.designspace");
-        let work = source.create_static_metadata_work(&input).unwrap();
-        let ctx = Context::new_root(
-            Default::default(),
-            Paths::new(Path::new("/fake/path")),
-            input,
-        );
-        work.exec(&ctx.copy_for_work(Access::None, Access::One(WorkId::InitStaticMetadata)))
-            .unwrap();
-
-        let static_metadata = ctx.get_init_static_metadata();
-        let default_metrics = static_metadata.default_metrics();
+    fn captures_global_metrics_from_ints() {
+        let (_, context) = build_global_metrics("static.designspace");
+        let static_metadata = &context.get_init_static_metadata();
+        let default_metrics = context
+            .get_global_metrics()
+            .at(static_metadata.default_location());
         assert_eq!(
             (720.0, 510.0),
             (
                 default_metrics.cap_height.into_inner(),
                 default_metrics.x_height.into_inner()
-            )
+            ),
+        );
+    }
+
+    #[test]
+    fn captures_global_metrics_from_floats() {
+        let (_, context) = build_global_metrics("float.designspace");
+        let static_metadata = &context.get_init_static_metadata();
+        let default_metrics = context
+            .get_global_metrics()
+            .at(static_metadata.default_location());
+        assert_eq!(
+            (755.25, -174.5),
+            (
+                default_metrics.ascender.into_inner(),
+                default_metrics.descender.into_inner()
+            ),
         );
     }
 }

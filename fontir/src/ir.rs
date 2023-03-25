@@ -3,7 +3,7 @@
 use crate::{
     coords::{CoordConverter, NormalizedLocation, UserCoord},
     error::{PathConversionError, VariationModelError, WorkError},
-    serde::{GlyphSerdeRepr, StaticMetadataSerdeRepr},
+    serde::{GlobalMetricsSerdeRepr, GlyphSerdeRepr, StaticMetadataSerdeRepr},
     variations::VariationModel,
 };
 use fontdrasil::types::GlyphName;
@@ -45,11 +45,6 @@ pub struct StaticMetadata {
     /// to narrow (submodel in FontTools terms) to the set of locations they actually use. Use of a
     /// location not in the global model is an error.
     pub variation_model: VariationModel,
-
-    /// The values of metrics at various positions in design space.
-    ///
-    /// At a minimum should be defined at the default location.
-    pub metrics: HashMap<NormalizedLocation, Metrics>,
 }
 
 impl StaticMetadata {
@@ -62,15 +57,9 @@ impl StaticMetadata {
     ) -> Result<StaticMetadata, VariationModelError> {
         let axis_names = axes.iter().map(|a| a.name.clone()).collect();
         let variation_model = VariationModel::new(glyph_locations, axis_names)?;
-        let mut metrics = HashMap::new();
-        metrics.insert(
-            variation_model.default_location().clone(),
-            Metrics::default_for_upem(units_per_em),
-        );
 
         Ok(StaticMetadata {
             units_per_em,
-            metrics,
             names,
             axes,
             glyph_order,
@@ -82,42 +71,105 @@ impl StaticMetadata {
         self.glyph_order.get_index_of(name).map(|i| i as u32)
     }
 
-    pub fn default_metrics(&self) -> &Metrics {
-        self.metrics
-            .get(self.variation_model.default_location())
-            .unwrap()
-    }
-
-    pub fn default_metrics_mut(&mut self) -> &mut Metrics {
-        self.metrics
-            .get_mut(self.variation_model.default_location())
-            .unwrap()
+    /// Shorthand for `.variation_model.default_location()`
+    pub fn default_location(&self) -> &NormalizedLocation {
+        self.variation_model.default_location()
     }
 }
 
 /// Global metrics. Ascender/descender, cap height, etc.
 ///
 /// Represents the values of these metrics at a specific position in design space.
+/// At a minimum should be defined at the default location.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct Metrics {
+#[serde(from = "GlobalMetricsSerdeRepr", into = "GlobalMetricsSerdeRepr")]
+pub struct GlobalMetrics(
+    pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f32>>>,
+);
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum GlobalMetric {
+    Ascender,
+    Descender,
+    CapHeight,
+    XHeight,
+}
+
+impl GlobalMetrics {
+    /// Creates a new [GlobalMetrics] with default values at the default location.
+    pub fn new(default_location: NormalizedLocation, units_per_em: u16) -> GlobalMetrics {
+        let mut metrics = GlobalMetrics(HashMap::new());
+        let mut set = |metric, value| metrics.set(metric, default_location.clone(), value);
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
+        set(GlobalMetric::Ascender, 0.8 * units_per_em as f32);
+        set(GlobalMetric::Descender, -0.2 * units_per_em as f32);
+
+        // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
+        set(GlobalMetric::CapHeight, 0.7 * units_per_em as f32);
+        set(GlobalMetric::XHeight, 0.5 * units_per_em as f32);
+
+        metrics
+    }
+
+    fn values(&self, metric: GlobalMetric) -> &HashMap<NormalizedLocation, OrderedFloat<f32>> {
+        // We presume that ctor initializes for every GlobalMetric
+        self.0.get(&metric).unwrap()
+    }
+
+    fn values_mut(
+        &mut self,
+        metric: GlobalMetric,
+    ) -> &mut HashMap<NormalizedLocation, OrderedFloat<f32>> {
+        self.0.entry(metric).or_default()
+    }
+
+    pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f32> {
+        let Some(value) = self.values(metric).get(pos) else {
+            panic!("interpolated metric values are not yet supported");
+        };
+        *value
+    }
+
+    pub fn set(
+        &mut self,
+        metric: GlobalMetric,
+        pos: NormalizedLocation,
+        value: impl Into<OrderedFloat<f32>>,
+    ) {
+        self.values_mut(metric).insert(pos, value.into());
+    }
+
+    pub fn set_if_some(
+        self: &mut GlobalMetrics,
+        metric: GlobalMetric,
+        pos: NormalizedLocation,
+        maybe_value: Option<impl Into<OrderedFloat<f64>>>,
+    ) {
+        if let Some(value) = maybe_value {
+            self.set(metric, pos, value.into().into_inner() as f32);
+        }
+    }
+
+    pub fn at(&self, pos: &NormalizedLocation) -> GlobalMetricsInstance {
+        GlobalMetricsInstance {
+            pos: pos.clone(),
+            ascender: self.get(GlobalMetric::Ascender, pos),
+            descender: self.get(GlobalMetric::Descender, pos),
+            cap_height: self.get(GlobalMetric::CapHeight, pos),
+            x_height: self.get(GlobalMetric::XHeight, pos),
+        }
+    }
+}
+
+/// Metrics at a specific [NormalizedLocation]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalMetricsInstance {
+    pub pos: NormalizedLocation,
     pub ascender: OrderedFloat<f32>,
     pub descender: OrderedFloat<f32>,
     pub cap_height: OrderedFloat<f32>,
     pub x_height: OrderedFloat<f32>,
-}
-
-impl Metrics {
-    pub fn default_for_upem(units_per_em: u16) -> Metrics {
-        Metrics {
-            // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
-            ascender: (0.8 * units_per_em as f32).into(),
-            descender: (-0.2 * units_per_em as f32).into(),
-
-            // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
-            cap_height: (0.7 * units_per_em as f32).into(),
-            x_height: (0.5 * units_per_em as f32).into(),
-        }
-    }
 }
 
 /// Helps accumulate 'name' values.

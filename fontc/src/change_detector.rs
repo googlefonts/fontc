@@ -102,6 +102,14 @@ impl ChangeDetector {
                 .is_file()
     }
 
+    pub fn global_metrics_ir_change(&self) -> bool {
+        self.current_inputs.global_metrics != self.prev_inputs.global_metrics
+            || !self
+                .ir_paths
+                .target_file(&FeWorkIdentifier::GlobalMetrics)
+                .is_file()
+    }
+
     pub fn feature_ir_change(&self) -> bool {
         self.final_static_metadata_ir_change()
             || self.current_inputs.features != self.prev_inputs.features
