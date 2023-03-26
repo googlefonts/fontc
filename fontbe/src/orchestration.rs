@@ -16,6 +16,7 @@ use write_fonts::{
     dump_table,
     tables::{
         cmap::Cmap,
+        fvar::Fvar,
         glyf::{Bbox, SimpleGlyph},
         head::Head,
         hhea::Hhea,
@@ -48,6 +49,7 @@ pub enum WorkId {
     Features,
     Glyph(GlyphName),
     Cmap,
+    Fvar,
     Glyf,
     Head,
     Hhea,
@@ -166,6 +168,7 @@ pub struct Context {
 
     glyf_loca: ContextItem<GlyfLoca>,
     cmap: ContextItem<Cmap>,
+    fvar: ContextItem<Fvar>,
     post: ContextItem<Post>,
     maxp: ContextItem<Maxp>,
     name: ContextItem<Name>,
@@ -187,6 +190,7 @@ impl Context {
             glyphs: self.glyphs.clone(),
             glyf_loca: self.glyf_loca.clone(),
             cmap: self.cmap.clone(),
+            fvar: self.fvar.clone(),
             post: self.post.clone(),
             maxp: self.maxp.clone(),
             name: self.name.clone(),
@@ -208,6 +212,7 @@ impl Context {
             glyphs: Arc::from(RwLock::new(HashMap::new())),
             glyf_loca: Arc::from(RwLock::new(None)),
             cmap: Arc::from(RwLock::new(None)),
+            fvar: Arc::from(RwLock::new(None)),
             post: Arc::from(RwLock::new(None)),
             maxp: Arc::from(RwLock::new(None)),
             name: Arc::from(RwLock::new(None)),
@@ -349,6 +354,7 @@ impl Context {
 
     // Lovely little typed accessors
     context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
+    context_accessors! { get_fvar, set_fvar, fvar, Fvar, WorkId::Fvar, from_file, to_bytes }
     context_accessors! { get_maxp, set_maxp, maxp, Maxp, WorkId::Maxp, from_file, to_bytes }
     context_accessors! { get_name, set_name, name, Name, WorkId::Name, from_file, to_bytes }
     context_accessors! { get_os2, set_os2, os2, Os2, WorkId::Os2, from_file, to_bytes }

@@ -58,6 +58,17 @@ impl StaticMetadata {
         let axis_names = axes.iter().map(|a| a.name.clone()).collect();
         let variation_model = VariationModel::new(glyph_locations, axis_names)?;
 
+        // Claim names for axes
+        let mut name_id_gen = 255;
+        let mut names = names;
+        axes.iter().for_each(|axis| {
+            name_id_gen += 1;
+            names.insert(
+                NameKey::new(name_id_gen.into(), &axis.name),
+                axis.name.clone(),
+            );
+        });
+
         Ok(StaticMetadata {
             units_per_em,
             names,

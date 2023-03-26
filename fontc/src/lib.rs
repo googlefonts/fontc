@@ -25,6 +25,7 @@ use fontbe::{
     cmap::create_cmap_work,
     features::FeatureWork,
     font::create_font_work,
+    fvar::create_fvar_work,
     glyphs::{create_glyf_loca_work, create_glyph_work},
     head::create_head_work,
     hmetrics::create_hmetric_work,
@@ -297,6 +298,30 @@ fn add_glyf_loca_be_job(
     Ok(())
 }
 
+fn add_fvar_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.init_static_metadata_ir_change() {
+        let mut dependencies = HashSet::new();
+        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
+
+        let id: AnyWorkId = BeWorkIdentifier::Fvar.into();
+        workload.insert(
+            id.clone(),
+            Job {
+                work: create_fvar_work().into(),
+                dependencies,
+                read_access: ReadAccess::Dependencies,
+                write_access: Access::one(id),
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::Fvar);
+    }
+    Ok(())
+}
+
 fn add_cmap_be_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
@@ -513,6 +538,7 @@ fn add_font_be_job(
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
         dependencies.insert(BeWorkIdentifier::Features.into());
         dependencies.insert(BeWorkIdentifier::Cmap.into());
+        dependencies.insert(BeWorkIdentifier::Fvar.into());
         dependencies.insert(BeWorkIdentifier::Glyf.into());
         dependencies.insert(BeWorkIdentifier::Head.into());
         dependencies.insert(BeWorkIdentifier::Hhea.into());
@@ -588,6 +614,7 @@ pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload,
     add_feature_be_job(change_detector, &mut workload)?;
     add_glyf_loca_be_job(change_detector, &mut workload)?;
     add_cmap_be_job(change_detector, &mut workload)?;
+    add_fvar_be_job(change_detector, &mut workload)?;
     add_head_be_job(change_detector, &mut workload)?;
     add_hmetrics_job(change_detector, &mut workload)?;
     add_name_be_job(change_detector, &mut workload)?;
@@ -622,7 +649,7 @@ mod tests {
         paths::Paths as IrPaths,
     };
     use indexmap::IndexSet;
-
+    use pretty_assertions::assert_eq;
     use read_fonts::{
         tables::{
             cmap::{Cmap, CmapSubtable},
@@ -703,6 +730,7 @@ mod tests {
 
         add_glyf_loca_be_job(&mut change_detector, &mut workload).unwrap();
         add_cmap_be_job(&mut change_detector, &mut workload).unwrap();
+        add_fvar_be_job(&mut change_detector, &mut workload).unwrap();
         add_head_be_job(&mut change_detector, &mut workload).unwrap();
         add_hmetrics_job(&mut change_detector, &mut workload).unwrap();
         add_maxp_be_job(&mut change_detector, &mut workload).unwrap();
@@ -752,6 +780,7 @@ mod tests {
                 BeWorkIdentifier::Glyph("bar".into()).into(),
                 BeWorkIdentifier::Glyph("plus".into()).into(),
                 BeWorkIdentifier::Cmap.into(),
+                BeWorkIdentifier::Fvar.into(),
                 BeWorkIdentifier::Glyf.into(),
                 BeWorkIdentifier::Head.into(),
                 BeWorkIdentifier::Hhea.into(),
@@ -1173,6 +1202,7 @@ mod tests {
             vec![
                 Tag::new(b"OS/2"),
                 Tag::new(b"cmap"),
+                Tag::new(b"fvar"),
                 Tag::new(b"glyf"),
                 Tag::new(b"head"),
                 Tag::new(b"hhea"),

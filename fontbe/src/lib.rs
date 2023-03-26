@@ -2,6 +2,7 @@ pub mod cmap;
 pub mod error;
 pub mod features;
 pub mod font;
+pub mod fvar;
 pub mod glyphs;
 pub mod head;
 pub mod hmetrics;
