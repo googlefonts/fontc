@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use fontdrasil::orchestration::Work;
 use log::trace;
-use read_fonts::types::{Fixed, MajorMinor, Tag};
+use read_fonts::types::{MajorMinor, Tag};
 use write_fonts::tables::fvar::{AxisInstanceArrays, Fvar, VariationAxisRecord};
 
 use crate::{
@@ -42,11 +42,9 @@ impl Work<Context, Error> for FvarWork {
                     let axis_name_id: u16 = (*reverse_names.get(&ir_axis.name).unwrap()).into();
                     let mut var = VariationAxisRecord {
                         axis_tag: Tag::new(ir_axis.tag.as_bytes()),
-                        min_value: Fixed::from_f64(ir_axis.min.into_inner().into_inner().into()),
-                        default_value: Fixed::from_f64(
-                            ir_axis.default.into_inner().into_inner().into(),
-                        ),
-                        max_value: Fixed::from_f64(ir_axis.max.into_inner().into_inner().into()),
+                        min_value: ir_axis.min.into(),
+                        default_value: ir_axis.default.into(),
+                        max_value: ir_axis.max.into(),
                         axis_name_id: axis_name_id.into(),
                         ..Default::default()
                     };
