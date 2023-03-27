@@ -12,6 +12,8 @@ use crate::{
     orchestration::{BeWork, Context},
 };
 
+const HIDDEN_AXIS: u16 = 0x0001;
+
 struct FvarWork {}
 
 pub fn create_fvar_work() -> Box<BeWork> {
@@ -49,7 +51,7 @@ impl Work<Context, Error> for FvarWork {
                         ..Default::default()
                     };
                     if ir_axis.hidden {
-                        var.flags |= 0x0001;
+                        var.flags |= HIDDEN_AXIS;
                     }
                     var
                 })
