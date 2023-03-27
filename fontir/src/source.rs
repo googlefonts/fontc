@@ -47,6 +47,11 @@ pub trait Source {
     /// When run work should update [Context] with new [crate::ir::StaticMetadata].
     fn create_static_metadata_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
 
+    /// Create a function that could be called to generate [crate::ir::StaticMetadata].
+    ///
+    /// When run work should update [Context] with new [crate::ir::GlobalMetrics].
+    fn create_global_metric_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
+
     /// Create a function that could be called to generate IR for glyphs.
     ///
     /// Batched because some formats require IO to figure out the work.
@@ -72,6 +77,10 @@ pub struct Input {
     /// Font-wide metadata, such as upem. Things that should trigger a non-incremental build if they change.
     /// Files that contribute to [crate::ir::StaticMetadata].
     pub static_metadata: StateSet,
+
+    /// Font-wide metrics, such as ascender.
+    /// Files that contribute to [crate::ir::GlobalMetrics].
+    pub global_metrics: StateSet,
 
     /// The input(s) that inform glyph IR construction, grouped by gyph name
     pub glyphs: HashMap<GlyphName, StateSet>,
@@ -129,7 +138,8 @@ mod tests {
             .unwrap();
 
         Input {
-            static_metadata: font_info,
+            static_metadata: font_info.clone(),
+            global_metrics: font_info,
             glyphs,
             features,
         }

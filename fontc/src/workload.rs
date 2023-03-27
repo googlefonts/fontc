@@ -117,7 +117,6 @@ impl Workload {
                     let mut unfulfilled_deps: Vec<_> =
                         job.dependencies.difference(&self.success).collect();
                     unfulfilled_deps.sort();
-                    log::trace!("Cannot start {:?}, blocked on {:?}", id, unfulfilled_deps);
                 };
                 can_start.then(|| id.clone())
             })

@@ -4,11 +4,15 @@ use std::{
 };
 
 use filetime::FileTime;
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
-    ir::{Axis, Glyph, GlyphBuilder, GlyphInstance, NameKey, StaticMetadata},
+    ir::{
+        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, NameKey,
+        StaticMetadata,
+    },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
 
@@ -80,6 +84,37 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
                 .collect(),
             glyph_locations: from.variation_model.locations().cloned().collect(),
         }
+    }
+}
+
+// The metric maps of HashMap<NormalizedLocation, OrderedFloat> seems to throw serde for a loop
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GlobalMetricsSerdeRepr(Vec<(GlobalMetric, NormalizedLocation, OrderedFloat<f32>)>);
+
+impl From<GlobalMetricsSerdeRepr> for GlobalMetrics {
+    fn from(from: GlobalMetricsSerdeRepr) -> Self {
+        GlobalMetrics(from.0.into_iter().fold(
+            HashMap::<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f32>>>::new(),
+            |mut acc, (metric, pos, value)| {
+                acc.entry(metric).or_default().insert(pos, value);
+                acc
+            },
+        ))
+    }
+}
+
+impl From<GlobalMetrics> for GlobalMetricsSerdeRepr {
+    fn from(from: GlobalMetrics) -> Self {
+        GlobalMetricsSerdeRepr(
+            from.0
+                .into_iter()
+                .flat_map(|(metric, values)| {
+                    values
+                        .into_iter()
+                        .map(move |(pos, value)| (metric, pos, value))
+                })
+                .collect(),
+        )
     }
 }
 

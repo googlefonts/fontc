@@ -80,12 +80,14 @@ impl Default for Flags {
 pub enum WorkId {
     /// Build the initial static metadata.
     InitStaticMetadata,
+    /// Build potentially variable font-wide metrics.
+    GlobalMetrics,
     Glyph(GlyphName),
     GlyphIrDelete,
     /// Update static metadata based on what we learned from IR
     ///
     /// Notably, IR glyphs with both components and paths may split into multiple
-    /// BE glyphs.
+    /// BE glyphs so the glyph order may change.
     FinalizeStaticMetadata,
     Features,
 }
@@ -112,6 +114,7 @@ pub struct Context {
     // We create individual caches so we can return typed results from get fns
     init_static_metadata: ContextItem<ir::StaticMetadata>,
     final_static_metadata: ContextItem<ir::StaticMetadata>,
+    global_metrics: ContextItem<ir::GlobalMetrics>,
     glyph_ir: Arc<RwLock<HashMap<GlyphName, Arc<ir::Glyph>>>>,
     feature_ir: ContextItem<ir::Features>,
 }
@@ -130,6 +133,7 @@ impl Context {
             acl,
             init_static_metadata: self.init_static_metadata.clone(),
             final_static_metadata: self.final_static_metadata.clone(),
+            global_metrics: self.global_metrics.clone(),
             glyph_ir: self.glyph_ir.clone(),
             feature_ir: self.feature_ir.clone(),
         }
@@ -143,6 +147,7 @@ impl Context {
             acl: AccessControlList::read_only(),
             init_static_metadata: Arc::from(RwLock::new(None)),
             final_static_metadata: Arc::from(RwLock::new(None)),
+            global_metrics: Arc::from(RwLock::new(None)),
             glyph_ir: Arc::from(RwLock::new(HashMap::new())),
             feature_ir: Arc::from(RwLock::new(None)),
         }
@@ -211,6 +216,7 @@ impl Context {
 
     context_accessors! { get_init_static_metadata, set_init_static_metadata, init_static_metadata, ir::StaticMetadata, WorkId::InitStaticMetadata, restore, nop }
     context_accessors! { get_final_static_metadata, set_final_static_metadata, final_static_metadata, ir::StaticMetadata, WorkId::FinalizeStaticMetadata, restore, nop }
+    context_accessors! { get_global_metrics, set_global_metrics, global_metrics, ir::GlobalMetrics, WorkId::GlobalMetrics, restore, nop }
     context_accessors! { get_features, set_features, feature_ir, ir::Features, WorkId::Features, restore, nop }
 }
 

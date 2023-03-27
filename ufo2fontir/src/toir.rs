@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use fontdrasil::types::GlyphName;
@@ -77,14 +77,20 @@ fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, WorkE
     })
 }
 
-pub fn to_normalized_locations(
+/// Create a map from source filename (e.g. x.ufo) => normalized location
+pub fn master_locations(
     axes: &[ir::Axis],
     sources: &[designspace::Source],
-) -> HashSet<NormalizedLocation> {
+) -> HashMap<String, NormalizedLocation> {
     let axes = axes.iter().map(|a| (&a.name, a)).collect();
     sources
         .iter()
-        .map(|s| to_design_location(&s.location).to_normalized(&axes))
+        .map(|s| {
+            (
+                s.filename.clone(),
+                to_design_location(&s.location).to_normalized(&axes),
+            )
+        })
         .collect()
 }
 

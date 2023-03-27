@@ -45,6 +45,7 @@ impl Paths {
         match id {
             WorkId::InitStaticMetadata => self.build_dir.join("static_metadata.preliminary.yml"),
             WorkId::FinalizeStaticMetadata => self.build_dir.join("static_metadata.yml"),
+            WorkId::GlobalMetrics => self.build_dir.join("global_metrics.yml"),
             WorkId::Glyph(name) => self.glyph_ir_file(name.as_str()),
             WorkId::GlyphIrDelete => self.build_dir.join("delete.yml"),
             WorkId::Features => self.build_dir.join("features.yml"),
