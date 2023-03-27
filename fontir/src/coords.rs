@@ -8,6 +8,7 @@ use std::ops::Sub;
 
 use crate::serde::CoordConverterSerdeRepr;
 use crate::{ir::Axis, piecewise_linear_map::PiecewiseLinearMap};
+use font_types::Fixed;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
@@ -146,6 +147,12 @@ impl UserCoord {
 
     pub fn into_inner(self) -> OrderedFloat<f32> {
         self.0
+    }
+}
+
+impl From<UserCoord> for Fixed {
+    fn from(value: UserCoord) -> Self {
+        Fixed::from_f64(value.0.into_inner() as f64)
     }
 }
 
