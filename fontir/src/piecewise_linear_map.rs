@@ -20,6 +20,10 @@ impl PiecewiseLinearMap {
         PiecewiseLinearMap { from, to }
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.from.len()
+    }
+
     pub fn reverse(&self) -> PiecewiseLinearMap {
         let mappings = self
             .to

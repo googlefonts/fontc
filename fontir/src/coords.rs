@@ -8,7 +8,7 @@ use std::ops::Sub;
 
 use crate::serde::CoordConverterSerdeRepr;
 use crate::{ir::Axis, piecewise_linear_map::PiecewiseLinearMap};
-use font_types::Fixed;
+use font_types::{F2Dot14, Fixed};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
@@ -110,6 +110,49 @@ impl CoordConverter {
             1,
         )
     }
+
+    /// Walk the vertices of the mappings, viewing the user/design/normalized value at each stop.
+    pub fn iter(&self) -> impl Iterator<Item = (UserCoord, DesignCoord, NormalizedCoord)> + '_ {
+        CoordConverterIter::new(self)
+    }
+
+    /// How many mapping points exist
+    pub fn len(&self) -> usize {
+        self.user_to_design.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.user_to_design.len() == 0
+    }
+}
+
+struct CoordConverterIter<'a> {
+    idx: usize,
+    converter: &'a CoordConverter,
+}
+
+impl<'a> CoordConverterIter<'a> {
+    fn new(converter: &'a CoordConverter) -> Self {
+        CoordConverterIter { idx: 0, converter }
+    }
+}
+
+impl<'a> Iterator for CoordConverterIter<'a> {
+    type Item = (UserCoord, DesignCoord, NormalizedCoord);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx >= self.converter.user_to_design.len() {
+            return None;
+        }
+
+        let user = UserCoord::new(self.converter.user_to_design.from[self.idx]);
+        let design = DesignCoord::new(self.converter.user_to_design.to[self.idx]);
+        let normalized = user.to_normalized(self.converter);
+
+        let result = (user, design, normalized);
+        self.idx += 1;
+        Some(result)
+    }
 }
 
 impl DesignCoord {
@@ -172,6 +215,12 @@ impl NormalizedCoord {
 
     pub fn into_inner(self) -> OrderedFloat<f32> {
         self.0
+    }
+}
+
+impl From<NormalizedCoord> for F2Dot14 {
+    fn from(value: NormalizedCoord) -> Self {
+        F2Dot14::from_f32(value.0.into_inner())
     }
 }
 
