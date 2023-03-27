@@ -61,17 +61,12 @@ impl Work<Context, Error> for FvarWork {
 
         let axis_count = axes_and_instances.axes.len().try_into().unwrap();
         let instance_count = axes_and_instances.instances.len().try_into().unwrap();
-
-        let mut fvar = Fvar::new(
+        context.set_fvar(Fvar::new(
             MajorMinor::VERSION_1_0,
             axes_and_instances,
             axis_count,
             instance_count,
-            0,
-        );
-        fvar.set_instance_size();
-
-        context.set_fvar(fvar);
+        ));
         Ok(())
     }
 }
