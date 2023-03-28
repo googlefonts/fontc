@@ -375,7 +375,7 @@ struct FeatureWork {
 }
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
-    let ds_axes = to_ir_axes(&designspace.axes);
+    let ds_axes = to_ir_axes(&designspace.axes).ok()?;
     let axes: HashMap<_, _> = ds_axes.iter().map(|a| (&a.name, a)).collect();
 
     let default_location = designspace
@@ -592,7 +592,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
 
         let units_per_em = units_per_em(font_infos.values())?;
         let names = names(font_info_at_default);
-        let axes = to_ir_axes(&self.designspace.axes);
+        let axes = to_ir_axes(&self.designspace.axes)?;
         let master_locations = master_locations(&axes, &self.designspace.sources);
         let glyph_locations = master_locations.values().cloned().collect();
         let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;

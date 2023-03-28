@@ -1,5 +1,6 @@
 use std::{error, io, path::PathBuf};
 
+use font_types::{InvalidTag, Tag};
 use fontdrasil::types::GlyphName;
 use kurbo::Point;
 use thiserror::Error;
@@ -46,6 +47,8 @@ pub enum Error {
         field: String,
         value: DesignCoord,
     },
+    #[error("Invalid tag")]
+    InvalidTag(#[from] InvalidTag),
 }
 
 /// An async work error, hence one that must be Send
@@ -86,7 +89,7 @@ pub enum WorkError {
     #[error("{glyph_name} undefined on {axis} at required position {pos:?}")]
     GlyphUndefAtNormalizedPosition {
         glyph_name: GlyphName,
-        axis: String,
+        axis: Tag,
         pos: NormalizedCoord,
     },
     #[error("{glyph_name} undefined at required position {pos:?}")]
@@ -116,6 +119,14 @@ pub enum WorkError {
     InvalidUpem(String),
     #[error("Must have exactly one units per em, got {0:?}")]
     InconsistentUpem(Vec<u16>),
+    #[error("Invalid tag")]
+    InvalidTag(#[from] InvalidTag),
+    #[error("Axis '{0}' must map default if it maps anything")]
+    AxisMustMapDefault(Tag),
+    #[error("Axis '{0}' must map min if it maps anything")]
+    AxisMustMapMin(Tag),
+    #[error("Axis '{0}' must map max if it maps anything")]
+    AxisMustMapMax(Tag),
 }
 
 /// An async work error, hence one that must be Send

@@ -4,12 +4,13 @@ use crate::{
     coords::{CoordConverter, NormalizedLocation, UserCoord},
     error::{PathConversionError, VariationModelError, WorkError},
     serde::{
-        deserialize_name_id, serialize_name_id, GlobalMetricsSerdeRepr, GlyphSerdeRepr,
-        StaticMetadataSerdeRepr,
+        deserialize_name_id, deserialize_tag, serialize_name_id, serialize_tag,
+        GlobalMetricsSerdeRepr, GlyphSerdeRepr, StaticMetadataSerdeRepr,
     },
     variations::VariationModel,
 };
 use font_types::NameId;
+use font_types::Tag;
 use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, Point};
@@ -386,7 +387,9 @@ impl NameKey {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Axis {
     pub name: String,
-    pub tag: String,
+    #[serde(serialize_with = "serialize_tag")]
+    #[serde(deserialize_with = "deserialize_tag")]
+    pub tag: Tag,
     pub min: UserCoord,
     pub default: UserCoord,
     pub max: UserCoord,
@@ -693,6 +696,10 @@ impl GlyphPathBuilder {
 #[cfg(test)]
 mod tests {
 
+    use std::str::FromStr;
+
+    use font_types::Tag;
+
     use crate::{
         coords::{CoordConverter, UserCoord},
         ir::Axis,
@@ -707,7 +714,7 @@ mod tests {
         let converter = CoordConverter::unmapped(min, default, max);
         Axis {
             name: String::from("Weight"),
-            tag: String::from("wght"),
+            tag: Tag::from_str("wght").unwrap(),
             min,
             default,
             max,
