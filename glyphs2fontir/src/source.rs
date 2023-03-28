@@ -351,7 +351,7 @@ fn check_pos(
     if !positions.contains(pos) {
         return Err(WorkError::GlyphUndefAtNormalizedPosition {
             glyph_name: glyph_name.clone(),
-            axis: axis.tag.clone(),
+            axis: axis.tag,
             pos: *pos,
         });
     }
@@ -442,9 +442,11 @@ mod tests {
     use std::{
         collections::{HashMap, HashSet},
         path::{Path, PathBuf},
+        str::FromStr,
     };
 
     use font_types::NameId;
+    use font_types::Tag;
     use fontdrasil::{orchestration::Access, types::GlyphName};
     use fontir::{
         coords::{
@@ -545,12 +547,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            vec!["wght"],
+            vec![Tag::from_str("wght").unwrap()],
             context
                 .get_init_static_metadata()
                 .axes
                 .iter()
-                .map(|a| &a.tag)
+                .map(|a| a.tag)
                 .collect::<Vec<_>>()
         );
         let expected: IndexSet<GlyphName> = vec!["space", "exclam", "hyphen", "manual-component"]
@@ -590,7 +592,7 @@ mod tests {
             vec![
                 ir::Axis {
                     name: "Weight".into(),
-                    tag: "wght".into(),
+                    tag: Tag::from_str("wght").unwrap(),
                     min: UserCoord::new(100.0),
                     default: UserCoord::new(500.0),
                     max: UserCoord::new(700.0),
@@ -610,7 +612,7 @@ mod tests {
                 },
                 ir::Axis {
                     name: "Optical Size".into(),
-                    tag: "opsz".into(),
+                    tag: Tag::from_str("opsz").unwrap(),
                     min: UserCoord::new(12.0),
                     default: UserCoord::new(12.0),
                     max: UserCoord::new(72.0),
@@ -753,7 +755,7 @@ mod tests {
             panic!("Wrong error");
         };
         assert_eq!("min-undefined", glyph_name.as_str());
-        assert_eq!("wght", axis);
+        assert_eq!(Tag::from_str("wght").unwrap(), axis);
         assert_eq!(NormalizedCoord::new(-1.0), pos);
     }
 

@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
+use font_types::Tag;
 use fontdrasil::types::GlyphName;
 use fontir::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
@@ -182,7 +183,7 @@ fn to_ir_axis(
 
     Ok(ir::Axis {
         name: axis.name.clone(),
-        tag: axis.tag.clone(),
+        tag: Tag::from_str(&axis.tag).map_err(Error::InvalidTag)?,
         hidden: axis.hidden.unwrap_or(false),
         min: min.to_user(&converter),
         default: default.to_user(&converter),
@@ -229,7 +230,7 @@ pub struct FontInfo {
     pub master_locations: HashMap<String, NormalizedLocation>,
     pub axes: Vec<ir::Axis>,
     /// Index by tag
-    pub axis_indices: HashMap<String, usize>,
+    pub axis_indices: HashMap<Tag, usize>,
 }
 
 impl TryFrom<Font> for FontInfo {
@@ -247,7 +248,7 @@ impl TryFrom<Font> for FontInfo {
         let axis_indices = axes
             .iter()
             .enumerate()
-            .map(|(idx, a)| (a.tag.clone(), idx))
+            .map(|(idx, a)| (a.tag, idx))
             .collect();
 
         let axes_by_name = axes.iter().map(|a| (&a.name, a)).collect();

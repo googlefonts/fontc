@@ -1,6 +1,7 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
+use std::{collections::HashMap, str::FromStr};
 
+use font_types::Tag;
 use fontdrasil::types::GlyphName;
 use fontir::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
@@ -94,11 +95,13 @@ pub fn master_locations(
         .collect()
 }
 
-pub fn to_ir_axes(axes: &[designspace::Axis]) -> Vec<ir::Axis> {
+pub fn to_ir_axes(axes: &[designspace::Axis]) -> Result<Vec<ir::Axis>, WorkError> {
     axes.iter().map(to_ir_axis).collect()
 }
 
-pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
+pub fn to_ir_axis(axis: &designspace::Axis) -> Result<ir::Axis, WorkError> {
+    let tag = Tag::from_str(&axis.tag).map_err(WorkError::InvalidTag)?;
+
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element>
     let min = UserCoord::new(axis.minimum.unwrap());
     let default = UserCoord::new(axis.default);
@@ -111,28 +114,31 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> ir::Axis {
             .map(|map| (UserCoord::new(map.input), DesignCoord::new(map.output)))
             .collect();
         // # mappings is generally small, repeated linear probing is fine
-        let default_idx = examples.iter().position(|(u, _)| *u == default).expect(
-            "We currently require that you have a mapping for the default if you have mappings",
-        );
-        examples.iter().position(|(u, _)| *u == min).expect(
-            "We currently require that you have a mapping for the min if you have mappings",
-        );
-        examples.iter().position(|(u, _)| *u == max).expect(
-            "We currently require that you have a mapping for the max if you have mappings",
-        );
+        let default_idx = examples
+            .iter()
+            .position(|(u, _)| *u == default)
+            .ok_or_else(|| WorkError::AxisMustMapDefault(tag))?;
+        examples
+            .iter()
+            .position(|(u, _)| *u == min)
+            .ok_or_else(|| WorkError::AxisMustMapMin(tag))?;
+        examples
+            .iter()
+            .position(|(u, _)| *u == max)
+            .ok_or_else(|| WorkError::AxisMustMapMax(tag))?;
         CoordConverter::new(examples, default_idx)
     } else {
         CoordConverter::unmapped(min, default, max)
     };
-    ir::Axis {
+    Ok(ir::Axis {
         name: axis.name.clone(),
-        tag: axis.tag.clone(),
+        tag,
         hidden: axis.hidden,
         min,
         default,
         max,
         converter,
-    }
+    })
 }
 
 pub fn to_ir_glyph(
