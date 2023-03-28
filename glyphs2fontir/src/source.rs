@@ -1,9 +1,10 @@
+use font_types::NameId;
 use fontdrasil::orchestration::Work;
 use fontdrasil::types::GlyphName;
 use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
 use fontir::ir::{
-    self, GlobalMetric, GlobalMetrics, GlyphInstance, NameBuilder, NameId, NameKey, StaticMetadata,
+    self, GlobalMetric, GlobalMetrics, GlyphInstance, NameBuilder, NameKey, StaticMetadata,
 };
 use fontir::orchestration::{Context, IrWork};
 use fontir::source::{Input, Source};
@@ -211,22 +212,22 @@ impl Source for GlyphsIrSource {
 
 fn try_name_id(name: &str) -> Option<NameId> {
     match name {
-        "copyrights" => Some(NameId::Copyright),
-        "familyNames" => Some(NameId::FamilyName),
-        "uniqueID" => Some(NameId::UniqueIdentifier),
-        "postscriptFullName" => Some(NameId::FullName),
-        "version" => Some(NameId::Version),
-        "postscriptFontName" => Some(NameId::PostScriptName),
-        "trademarks" => Some(NameId::Trademark),
-        "manufacturers" => Some(NameId::Manufacturer),
-        "designers" => Some(NameId::Designer),
-        "manufacturerURL" => Some(NameId::ManufacturerUrl),
-        "designerURL" => Some(NameId::DesignerUrl),
-        "licenses" => Some(NameId::License),
-        "licenseURL" => Some(NameId::LicenseUrl),
-        "compatibleFullNames" => Some(NameId::MacCompatibleFullName),
-        "sampleTexts" => Some(NameId::SampleText),
-        "WWSFamilyName" => Some(NameId::WwsFamilyName),
+        "copyrights" => Some(NameId::COPYRIGHT_NOTICE),
+        "familyNames" => Some(NameId::FAMILY_NAME),
+        "uniqueID" => Some(NameId::UNIQUE_ID),
+        "postscriptFullName" => Some(NameId::FULL_NAME),
+        "version" => Some(NameId::VERSION_STRING),
+        "postscriptFontName" => Some(NameId::POSTSCRIPT_NAME),
+        "trademarks" => Some(NameId::TRADEMARK),
+        "manufacturers" => Some(NameId::MANUFACTURER),
+        "designers" => Some(NameId::DESIGNER),
+        "manufacturerURL" => Some(NameId::VENDOR_URL),
+        "designerURL" => Some(NameId::DESIGNER_URL),
+        "licenses" => Some(NameId::LICENSE_DESCRIPTION),
+        "licenseURL" => Some(NameId::LICENSE_URL),
+        "compatibleFullNames" => Some(NameId::COMPATIBLE_FULL_NAME),
+        "sampleTexts" => Some(NameId::SAMPLE_TEXT),
+        "WWSFamilyName" => Some(NameId::WWS_FAMILY_NAME),
         _ => {
             warn!("Unknown 'name' entry {name}");
             None
@@ -443,6 +444,7 @@ mod tests {
         path::{Path, PathBuf},
     };
 
+    use font_types::NameId;
     use fontdrasil::{orchestration::Access, types::GlyphName};
     use fontir::{
         coords::{
@@ -450,7 +452,7 @@ mod tests {
             UserLocation,
         },
         error::WorkError,
-        ir::{self, GlobalMetricsInstance, NameId, NameKey},
+        ir::{self, GlobalMetricsInstance, NameKey},
         orchestration::{Context, WorkId},
         paths::Paths,
         source::Source,
@@ -815,78 +817,75 @@ mod tests {
     fn name_table() {
         let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
         let mut names: Vec<_> = names(&font).into_iter().collect();
-        names.sort_by_key(|(id, v)| {
-            let id: u16 = id.name_id.into();
-            (id, v.clone())
-        });
+        names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
         assert_eq!(
             vec![
                 (
-                    NameKey::new_bmp_only(NameId::Copyright),
+                    NameKey::new_bmp_only(NameId::COPYRIGHT_NOTICE),
                     String::from("Copy!")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::FamilyName),
+                    NameKey::new_bmp_only(NameId::FAMILY_NAME),
                     String::from("FamilyName")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::UniqueIdentifier),
+                    NameKey::new_bmp_only(NameId::UNIQUE_ID),
                     String::from("We are all unique")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::FullName),
+                    NameKey::new_bmp_only(NameId::FULL_NAME),
                     String::from("Full of names")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::Version),
+                    NameKey::new_bmp_only(NameId::VERSION_STRING),
                     String::from("New Value")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::PostScriptName),
+                    NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
                     String::from("Postscript Name")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::Trademark),
+                    NameKey::new_bmp_only(NameId::TRADEMARK),
                     String::from("A trade in marks")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::Manufacturer),
+                    NameKey::new_bmp_only(NameId::MANUFACTURER),
                     String::from("Who made you?!")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::Designer),
+                    NameKey::new_bmp_only(NameId::DESIGNER),
                     String::from("Designed by me!")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::ManufacturerUrl),
+                    NameKey::new_bmp_only(NameId::VENDOR_URL),
                     String::from("https://example.com/manufacturer")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::DesignerUrl),
+                    NameKey::new_bmp_only(NameId::DESIGNER_URL),
                     String::from("https://example.com/designer")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::License),
+                    NameKey::new_bmp_only(NameId::LICENSE_DESCRIPTION),
                     String::from("Licensed to thrill")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::LicenseUrl),
+                    NameKey::new_bmp_only(NameId::LICENSE_URL),
                     String::from("https://example.com/my/font/license")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::TypographicFamilyName),
+                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
                     String::from("FamilyName")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::MacCompatibleFullName),
+                    NameKey::new_bmp_only(NameId::COMPATIBLE_FULL_NAME),
                     String::from("For the Mac's only")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::SampleText),
+                    NameKey::new_bmp_only(NameId::SAMPLE_TEXT),
                     String::from("Sam pull text")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::WwsFamilyName),
+                    NameKey::new_bmp_only(NameId::WWS_FAMILY_NAME),
                     String::from("We Will Slant you")
                 ),
             ],
@@ -900,7 +899,7 @@ mod tests {
         assert_eq!(
             "New Value",
             names(&font)
-                .get(&NameKey::new_bmp_only(NameId::Version))
+                .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
                 .unwrap()
         );
     }
@@ -911,7 +910,7 @@ mod tests {
         assert_eq!(
             "Version 42.043",
             names(&font)
-                .get(&NameKey::new_bmp_only(NameId::Version))
+                .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
                 .unwrap()
         );
     }
@@ -922,7 +921,7 @@ mod tests {
         assert_eq!(
             "Version 0.000",
             names(&font)
-                .get(&NameKey::new_bmp_only(NameId::Version))
+                .get(&NameKey::new_bmp_only(NameId::VERSION_STRING))
                 .unwrap()
         );
     }

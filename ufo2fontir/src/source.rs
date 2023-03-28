@@ -4,11 +4,12 @@ use std::{
     sync::Arc,
 };
 
+use font_types::NameId;
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
-    ir::{Features, GlobalMetric, GlobalMetrics, NameBuilder, NameId, NameKey, StaticMetadata},
+    ir::{Features, GlobalMetric, GlobalMetrics, NameBuilder, NameKey, StaticMetadata},
     orchestration::{Context, IrWork},
     source::{Input, Source},
     stateset::{StateIdentifier, StateSet},
@@ -514,10 +515,10 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
     );
 
     // Name's that get individual fields
-    builder.add_if_present(NameId::Copyright, &font_info.copyright);
-    builder.add_if_present(NameId::FamilyName, &font_info.style_map_family_name);
+    builder.add_if_present(NameId::COPYRIGHT_NOTICE, &font_info.copyright);
+    builder.add_if_present(NameId::FAMILY_NAME, &font_info.style_map_family_name);
     builder.add_if_present(
-        NameId::SubfamilyName,
+        NameId::SUBFAMILY_NAME,
         &font_info.style_map_style_name.as_ref().map(|s| {
             match s {
                 norad::fontinfo::StyleMapStyle::Regular => "regular",
@@ -528,38 +529,38 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
             .into()
         }),
     );
+    builder.add_if_present(NameId::UNIQUE_ID, &font_info.open_type_name_unique_id);
+    builder.add_if_present(NameId::VERSION_STRING, &font_info.open_type_name_version);
     builder.add_if_present(
-        NameId::UniqueIdentifier,
-        &font_info.open_type_name_unique_id,
-    );
-    builder.add_if_present(NameId::Version, &font_info.open_type_name_version);
-    builder.add_if_present(
-        NameId::TypographicFamilyName,
+        NameId::TYPOGRAPHIC_FAMILY_NAME,
         &font_info.open_type_name_preferred_family_name,
     );
-    builder.add_if_present(NameId::PostScriptName, &font_info.postscript_font_name);
-    builder.add_if_present(NameId::Trademark, &font_info.trademark);
-    builder.add_if_present(NameId::Manufacturer, &font_info.open_type_name_manufacturer);
-    builder.add_if_present(NameId::Designer, &font_info.open_type_name_designer);
-    builder.add_if_present(NameId::Description, &font_info.open_type_name_description);
+    builder.add_if_present(NameId::POSTSCRIPT_NAME, &font_info.postscript_font_name);
+    builder.add_if_present(NameId::TRADEMARK, &font_info.trademark);
+    builder.add_if_present(NameId::MANUFACTURER, &font_info.open_type_name_manufacturer);
+    builder.add_if_present(NameId::DESIGNER, &font_info.open_type_name_designer);
+    builder.add_if_present(NameId::DESCRIPTION, &font_info.open_type_name_description);
     builder.add_if_present(
-        NameId::ManufacturerUrl,
+        NameId::VENDOR_URL,
         &font_info.open_type_name_manufacturer_url,
     );
-    builder.add_if_present(NameId::DesignerUrl, &font_info.open_type_name_designer_url);
-    builder.add_if_present(NameId::License, &font_info.open_type_name_license);
-    builder.add_if_present(NameId::LicenseUrl, &font_info.open_type_name_license_url);
+    builder.add_if_present(NameId::DESIGNER_URL, &font_info.open_type_name_designer_url);
     builder.add_if_present(
-        NameId::MacCompatibleFullName,
+        NameId::LICENSE_DESCRIPTION,
+        &font_info.open_type_name_license,
+    );
+    builder.add_if_present(NameId::LICENSE_URL, &font_info.open_type_name_license_url);
+    builder.add_if_present(
+        NameId::COMPATIBLE_FULL_NAME,
         &font_info.open_type_name_compatible_full_name,
     );
-    builder.add_if_present(NameId::SampleText, &font_info.open_type_name_sample_text);
+    builder.add_if_present(NameId::SAMPLE_TEXT, &font_info.open_type_name_sample_text);
     builder.add_if_present(
-        NameId::WwsFamilyName,
+        NameId::WWS_FAMILY_NAME,
         &font_info.open_type_name_wws_family_name,
     );
     builder.add_if_present(
-        NameId::WwsSubfamilyName,
+        NameId::WWS_SUBFAMILY_NAME,
         &font_info.open_type_name_wws_subfamily_name,
     );
 
@@ -703,7 +704,7 @@ mod tests {
     use fontdrasil::{orchestration::Access, types::GlyphName};
     use fontir::{
         coords::{DesignCoord, DesignLocation},
-        ir::{NameId, NameKey},
+        ir::NameKey,
         orchestration::{Context, WorkId},
         paths::Paths,
         source::{Input, Source},
@@ -712,6 +713,7 @@ mod tests {
     use norad::designspace;
 
     use pretty_assertions::assert_eq;
+    use write_fonts::types::NameId;
 
     use crate::{
         source::{font_infos, names},
@@ -944,43 +946,40 @@ mod tests {
             .cloned()
             .unwrap();
         let mut names: Vec<_> = names(&font_info).into_iter().collect();
-        names.sort_by_key(|(id, v)| {
-            let id: u16 = id.name_id.into();
-            (id, v.clone())
-        });
+        names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
 
         assert_eq!(
             vec![
                 (
-                    NameKey::new_bmp_only(NameId::FamilyName),
+                    NameKey::new_bmp_only(NameId::FAMILY_NAME),
                     String::from("New Font")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::SubfamilyName),
+                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
                     String::from("Regular")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::UniqueIdentifier),
+                    NameKey::new_bmp_only(NameId::UNIQUE_ID),
                     String::from("0.000;NONE;NewFontRegular")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::FullName),
+                    NameKey::new_bmp_only(NameId::FULL_NAME),
                     String::from("New Font Regular")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::Version),
+                    NameKey::new_bmp_only(NameId::VERSION_STRING),
                     String::from("Version 0.000")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::PostScriptName),
+                    NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
                     String::from("NewFontRegular")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::TypographicFamilyName),
+                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
                     String::from("New Font")
                 ),
                 (
-                    NameKey::new_bmp_only(NameId::TypographicSubfamilyName),
+                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
                     String::from("Regular")
                 ),
             ],
