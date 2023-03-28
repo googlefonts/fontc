@@ -41,13 +41,12 @@ impl Work<Context, Error> for FvarWork {
                 .axes
                 .iter()
                 .map(|ir_axis| {
-                    let axis_name_id: u16 = (*reverse_names.get(&ir_axis.name).unwrap()).into();
                     let mut var = VariationAxisRecord {
                         axis_tag: Tag::new(ir_axis.tag.as_bytes()),
                         min_value: ir_axis.min.into(),
                         default_value: ir_axis.default.into(),
                         max_value: ir_axis.max.into(),
-                        axis_name_id: axis_name_id.into(),
+                        axis_name_id: *reverse_names.get(&ir_axis.name).unwrap(),
                         ..Default::default()
                     };
                     if ir_axis.hidden {
