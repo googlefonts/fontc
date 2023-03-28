@@ -24,8 +24,14 @@ impl Work<Context, Error> for FvarWork {
     /// Generate [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_init_static_metadata();
+
         // Guard clause: don't produce fvar for a static font
-        if static_metadata.axes.is_empty() {
+        let axes: Vec<_> = static_metadata
+            .axes
+            .iter()
+            .filter(|a| !a.is_static())
+            .collect();
+        if axes.is_empty() {
             trace!("Skip fvar; this is not a variable font");
             return Ok(());
         }
@@ -37,9 +43,7 @@ impl Work<Context, Error> for FvarWork {
             .collect();
 
         let axes_and_instances = AxisInstanceArrays::new(
-            static_metadata
-                .axes
-                .iter()
+            axes.iter()
                 .map(|ir_axis| {
                     let mut var = VariationAxisRecord {
                         axis_tag: ir_axis.tag,
@@ -67,5 +71,38 @@ impl Work<Context, Error> for FvarWork {
             instance_count,
         ));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use fontir::{orchestration::Context as FeContext, source::Input};
+    use fontir::paths::Paths as FePaths;
+
+    use crate::{orchestration::Context, paths::Paths};
+
+    fn test_context() -> Context {
+        let build_dir = Path::new("/no/write/here");
+        Context::new_root(
+            Default::default(),
+            Paths::new(build_dir),
+            &FeContext::new_root(Default::default(), FePaths::new(&build_dir), Input::new()),
+        )
+    }
+    #[test]
+    fn no_fvar_for_no_axes() {        
+        todo!()
+    }
+
+    #[test]
+    fn no_fvar_for_point_axes() {
+        todo!()
+    }
+
+    #[test]
+    fn fvar_includes_only_variable_axes() {
+        todo!()
     }
 }
