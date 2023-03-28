@@ -45,6 +45,7 @@ impl Paths {
         match id {
             WorkId::Features => self.build_dir.join("features.ttf"),
             WorkId::Glyph(name) => self.glyph_file(name.as_str()),
+            WorkId::Avar => self.build_dir.join("avar.table"),
             WorkId::Glyf => self.build_dir.join("glyf.table"),
             WorkId::Loca => self.build_dir.join("loca.table"),
             WorkId::Cmap => self.build_dir.join("cmap.table"),

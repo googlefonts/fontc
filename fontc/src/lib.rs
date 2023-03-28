@@ -22,6 +22,7 @@ use std::{
 };
 
 use fontbe::{
+    avar::create_avar_work,
     cmap::create_cmap_work,
     features::FeatureWork,
     font::create_font_work,
@@ -298,11 +299,35 @@ fn add_glyf_loca_be_job(
     Ok(())
 }
 
+fn add_avar_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.avar_be_change() {
+        let mut dependencies = HashSet::new();
+        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
+
+        let id: AnyWorkId = BeWorkIdentifier::Avar.into();
+        workload.insert(
+            id.clone(),
+            Job {
+                work: create_avar_work().into(),
+                dependencies,
+                read_access: ReadAccess::Dependencies,
+                write_access: Access::one(id),
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::Avar);
+    }
+    Ok(())
+}
+
 fn add_fvar_be_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
-    if change_detector.init_static_metadata_ir_change() {
+    if change_detector.fvar_be_change() {
         let mut dependencies = HashSet::new();
         dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
 
@@ -537,6 +562,7 @@ fn add_font_be_job(
         let mut dependencies = HashSet::new();
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
         dependencies.insert(BeWorkIdentifier::Features.into());
+        dependencies.insert(BeWorkIdentifier::Avar.into());
         dependencies.insert(BeWorkIdentifier::Cmap.into());
         dependencies.insert(BeWorkIdentifier::Fvar.into());
         dependencies.insert(BeWorkIdentifier::Glyf.into());
@@ -613,6 +639,7 @@ pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload,
     // BE: f(IR) => binary
     add_feature_be_job(change_detector, &mut workload)?;
     add_glyf_loca_be_job(change_detector, &mut workload)?;
+    add_avar_be_job(change_detector, &mut workload)?;
     add_cmap_be_job(change_detector, &mut workload)?;
     add_fvar_be_job(change_detector, &mut workload)?;
     add_head_be_job(change_detector, &mut workload)?;
@@ -729,6 +756,7 @@ mod tests {
         add_feature_be_job(&mut change_detector, &mut workload).unwrap();
 
         add_glyf_loca_be_job(&mut change_detector, &mut workload).unwrap();
+        add_avar_be_job(&mut change_detector, &mut workload).unwrap();
         add_cmap_be_job(&mut change_detector, &mut workload).unwrap();
         add_fvar_be_job(&mut change_detector, &mut workload).unwrap();
         add_head_be_job(&mut change_detector, &mut workload).unwrap();
@@ -779,6 +807,7 @@ mod tests {
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Glyph("bar".into()).into(),
                 BeWorkIdentifier::Glyph("plus".into()).into(),
+                BeWorkIdentifier::Avar.into(),
                 BeWorkIdentifier::Cmap.into(),
                 BeWorkIdentifier::Fvar.into(),
                 BeWorkIdentifier::Glyf.into(),

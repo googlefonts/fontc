@@ -29,6 +29,7 @@ enum TableType {
 }
 
 const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
+    (WorkId::Avar, Cmap::TAG, TableType::Variable),
     (WorkId::Cmap, Cmap::TAG, TableType::Static),
     (WorkId::Fvar, Fvar::TAG, TableType::Variable),
     (WorkId::Head, Head::TAG, TableType::Static),

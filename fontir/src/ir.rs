@@ -394,6 +394,12 @@ pub struct Axis {
     pub converter: CoordConverter,
 }
 
+impl Axis {
+    pub fn is_static(&self) -> bool {
+        self.min == self.default && self.max == self.default
+    }
+}
+
 /// Features (Adobe fea).
 ///
 /// In time will split gpos/gsub, have different features for different

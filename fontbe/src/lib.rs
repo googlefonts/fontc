@@ -1,3 +1,4 @@
+pub mod avar;
 pub mod cmap;
 pub mod error;
 pub mod features;

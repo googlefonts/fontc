@@ -15,6 +15,7 @@ use read_fonts::{FontData, FontRead};
 use write_fonts::{
     dump_table,
     tables::{
+        avar::Avar,
         cmap::Cmap,
         fvar::Fvar,
         glyf::{Bbox, SimpleGlyph},
@@ -48,6 +49,7 @@ pub enum GlyphMerge {
 pub enum WorkId {
     Features,
     Glyph(GlyphName),
+    Avar,
     Cmap,
     Fvar,
     Glyf,
@@ -167,6 +169,7 @@ pub struct Context {
     glyphs: Arc<RwLock<HashMap<GlyphName, Arc<Glyph>>>>,
 
     glyf_loca: ContextItem<GlyfLoca>,
+    avar: ContextItem<Avar>,
     cmap: ContextItem<Cmap>,
     fvar: ContextItem<Fvar>,
     post: ContextItem<Post>,
@@ -189,6 +192,7 @@ impl Context {
             features: self.features.clone(),
             glyphs: self.glyphs.clone(),
             glyf_loca: self.glyf_loca.clone(),
+            avar: self.avar.clone(),
             cmap: self.cmap.clone(),
             fvar: self.fvar.clone(),
             post: self.post.clone(),
@@ -211,6 +215,7 @@ impl Context {
             features: Arc::from(RwLock::new(None)),
             glyphs: Arc::from(RwLock::new(HashMap::new())),
             glyf_loca: Arc::from(RwLock::new(None)),
+            avar: Arc::from(RwLock::new(None)),
             cmap: Arc::from(RwLock::new(None)),
             fvar: Arc::from(RwLock::new(None)),
             post: Arc::from(RwLock::new(None)),
@@ -353,6 +358,7 @@ impl Context {
     }
 
     // Lovely little typed accessors
+    context_accessors! { get_avar, set_avar, avar, Avar, WorkId::Avar, from_file, to_bytes }
     context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
     context_accessors! { get_fvar, set_fvar, fvar, Fvar, WorkId::Fvar, from_file, to_bytes }
     context_accessors! { get_maxp, set_maxp, maxp, Maxp, WorkId::Maxp, from_file, to_bytes }
