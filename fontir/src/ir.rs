@@ -91,6 +91,10 @@ impl StaticMetadata {
     pub fn default_location(&self) -> &NormalizedLocation {
         self.variation_model.default_location()
     }
+
+    pub fn is_static(&self) -> bool {
+        self.axes.iter().all(|a| a.is_static())
+    }
 }
 
 /// Global metrics. Ascender/descender, cap height, etc.

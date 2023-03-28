@@ -50,7 +50,7 @@ impl Work<Context, Error> for FontWork {
         let mut builder = FontBuilder::default();
 
         // A fancier implementation would mmap the files. We basic.
-        let is_static = context.ir.get_init_static_metadata().axes.is_empty();
+        let is_static = context.ir.get_init_static_metadata().is_static();
         for (work_id, tag, table_type) in TABLES_TO_MERGE {
             if is_static && matches!(table_type, TableType::Variable) {
                 trace!("Skip {tag} because this is a static font");
