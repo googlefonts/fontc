@@ -77,7 +77,8 @@ mod tests {
         coords::{CoordConverter, DesignCoord, UserCoord},
         ir::Axis,
     };
-    use std::cmp;
+    use read_fonts::types::Tag;
+    use std::{cmp, str::FromStr};
     use write_fonts::tables::avar::SegmentMaps;
 
     use super::to_segment_map;
@@ -86,7 +87,7 @@ mod tests {
         let default_idx = cmp::min(mappings.len() - 1, default_idx);
         Axis {
             name: "Test".to_string(),
-            tag: "TEST".to_string(),
+            tag: Tag::from_str("TEST").unwrap(),
             min: *mappings.iter().map(|(u, _)| u).min().unwrap(),
             default: mappings[default_idx].0,
             max: *mappings.iter().map(|(u, _)| u).max().unwrap(),
