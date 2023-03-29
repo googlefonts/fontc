@@ -628,7 +628,7 @@ impl Work<Context, WorkError> for GlobalMetricsWork {
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), font_info.cap_height);
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), font_info.x_height);
 
-            eprintln!("{} {pos:?} {font_info:#?}", source.filename);
+            trace!("{} {pos:?} {font_info:#?}", source.filename);
         }
 
         trace!("{:#?}", metrics);
