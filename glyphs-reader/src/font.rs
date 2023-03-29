@@ -847,6 +847,7 @@ impl RawFont {
         v2_to_v3_param("postscriptFullName", "postscriptFullName");
         v2_to_v3_param("postscriptFontName", "postscriptFontName");
         v2_to_v3_param("WWSFamilyName", "WWSFamilyName");
+        v2_to_v3_param("vendorID", "vendorID");
 
         Ok(())
     }
