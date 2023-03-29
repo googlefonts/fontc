@@ -23,6 +23,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+const DEFAULT_VENDOR_ID: Tag = Tag::new(b"TBD ");
+
 /// Global font info that cannot vary.
 ///
 /// For example, upem, axis definitions, etc, as distinct from
@@ -32,6 +34,9 @@ use std::{
 pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/head>.
     pub units_per_em: u16,
+
+    /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#achvendid>
+    pub vendor_id: Tag,
 
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>.
     pub names: HashMap<NameKey, String>,
@@ -76,6 +81,7 @@ impl StaticMetadata {
 
         Ok(StaticMetadata {
             units_per_em,
+            vendor_id: DEFAULT_VENDOR_ID,
             names,
             axes,
             glyph_order,

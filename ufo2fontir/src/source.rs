@@ -1,10 +1,11 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
+    str::FromStr,
     sync::Arc,
 };
 
-use font_types::NameId;
+use font_types::{NameId, Tag};
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
@@ -597,10 +598,14 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         let glyph_locations = master_locations.values().cloned().collect();
         let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;
 
-        context.set_init_static_metadata(
+        let mut static_metadata =
             StaticMetadata::new(units_per_em, names, axes, glyph_order, glyph_locations)
-                .map_err(WorkError::VariationModelError)?,
-        );
+                .map_err(WorkError::VariationModelError)?;
+        if let Some(vendor_id) = &font_info_at_default.open_type_os2_vendor_id {
+            static_metadata.vendor_id = Tag::from_str(&vendor_id).map_err(WorkError::InvalidTag)?;
+        }
+
+        context.set_init_static_metadata(static_metadata);
         Ok(())
     }
 }
@@ -701,6 +706,7 @@ mod tests {
         path::{Path, PathBuf},
     };
 
+    use font_types::Tag;
     use fontdrasil::{orchestration::Access, types::GlyphName};
     use fontir::{
         coords::{DesignCoord, DesignLocation},
@@ -1016,6 +1022,15 @@ mod tests {
                 default_metrics.ascender.into_inner(),
                 default_metrics.descender.into_inner()
             ),
+        );
+    }
+
+    #[test]
+    fn captures_os2_properties() {
+        let (_, context) = build_static_metadata("fontinfo.designspace");
+        assert_eq!(
+            Tag::new(b"RODS"),
+            context.get_init_static_metadata().vendor_id
         );
     }
 }

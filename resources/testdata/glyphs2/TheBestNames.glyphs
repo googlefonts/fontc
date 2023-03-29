@@ -11,6 +11,10 @@ name = licenseURL;
 value = "https://example.com/my/font/license";
 },
 {
+name = vendorID;
+value = RODS;
+},
+{
 name = description;
 value = "The greatest weight var";
 },
