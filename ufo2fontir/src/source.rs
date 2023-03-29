@@ -602,7 +602,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             StaticMetadata::new(units_per_em, names, axes, glyph_order, glyph_locations)
                 .map_err(WorkError::VariationModelError)?;
         if let Some(vendor_id) = &font_info_at_default.open_type_os2_vendor_id {
-            static_metadata.vendor_id = Tag::from_str(&vendor_id).map_err(WorkError::InvalidTag)?;
+            static_metadata.vendor_id = Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
 
         context.set_init_static_metadata(static_metadata);
