@@ -238,6 +238,10 @@ key = licenseURL;
 value = "https://example.com/my/font/license";
 },
 {
+key = vendorID;
+value = RODS;
+},
+{
 key = descriptions;
 values = (
 {

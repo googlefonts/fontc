@@ -1,4 +1,4 @@
-use font_types::NameId;
+use font_types::{NameId, Tag};
 use fontdrasil::orchestration::Work;
 use fontdrasil::types::GlyphName;
 use fontir::coords::NormalizedCoord;
@@ -13,6 +13,7 @@ use glyphs_reader::Font;
 use indexmap::IndexSet;
 use log::{debug, trace, warn};
 use std::collections::HashSet;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 
@@ -273,16 +274,19 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             .filter(|gn| self.glyph_names.contains(gn))
             .collect();
 
-        context.set_init_static_metadata(
-            StaticMetadata::new(
-                font.units_per_em,
-                names(font),
-                axes,
-                glyph_order,
-                glyph_locations,
-            )
-            .map_err(WorkError::VariationModelError)?,
-        );
+        let mut static_metadata = StaticMetadata::new(
+            font.units_per_em,
+            names(font),
+            axes,
+            glyph_order,
+            glyph_locations,
+        )
+        .map_err(WorkError::VariationModelError)?;
+        if let Some(vendor_id) = font.names.get("vendorID") {
+            static_metadata.vendor_id = Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
+        }
+
+        context.set_init_static_metadata(static_metadata);
         Ok(())
     }
 }
@@ -944,6 +948,15 @@ mod tests {
                 x_height: 501.0.into(),
             },
             default_metrics
+        );
+    }
+
+    #[test]
+    fn captures_vendor_id() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("TheBestNames.glyphs"));
+        assert_eq!(
+            Tag::new(b"RODS"),
+            context.get_init_static_metadata().vendor_id
         );
     }
 }
