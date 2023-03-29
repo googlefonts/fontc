@@ -2,6 +2,7 @@
 
 use fontdrasil::orchestration::Work;
 use fontir::ir::GlobalMetricsInstance;
+use read_fonts::types::Tag;
 use write_fonts::{tables::os2::Os2, OtRound};
 
 use crate::{
@@ -15,8 +16,10 @@ pub fn create_os2_work() -> Box<BeWork> {
     Box::new(Os2Work {})
 }
 
-fn build_os2(metrics: &GlobalMetricsInstance) -> Os2 {
+fn build_os2(vendor_id: Tag, metrics: &GlobalMetricsInstance) -> Os2 {
     Os2 {
+        ach_vend_id: vendor_id,
+
         s_cap_height: Some(metrics.cap_height.ot_round()),
         sx_height: Some(metrics.x_height.ot_round()),
 
@@ -39,7 +42,7 @@ impl Work<Context, Error> for Os2Work {
             .ir
             .get_global_metrics()
             .at(static_metadata.default_location());
-        context.set_os2(build_os2(&metrics));
+        context.set_os2(build_os2(static_metadata.vendor_id, &metrics));
         Ok(())
     }
 }
@@ -50,6 +53,7 @@ mod tests {
         coords::NormalizedLocation,
         ir::{GlobalMetric, GlobalMetrics},
     };
+    use read_fonts::types::Tag;
 
     use super::build_os2;
 
@@ -61,8 +65,9 @@ mod tests {
         global_metrics.set(GlobalMetric::CapHeight, default_location.clone(), 37.5);
         global_metrics.set(GlobalMetric::XHeight, default_location.clone(), 112.2);
 
-        let os2 = build_os2(&global_metrics.at(&default_location));
+        let os2 = build_os2(Tag::new(b"DUCK"), &global_metrics.at(&default_location));
 
+        assert_eq!(Tag::new(b"DUCK"), os2.ach_vend_id);
         assert_eq!(Some(38), os2.s_cap_height);
         assert_eq!(Some(112), os2.sx_height);
     }

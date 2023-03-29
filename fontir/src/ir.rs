@@ -23,7 +23,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const DEFAULT_VENDOR_ID: Tag = Tag::new(b"TBD ");
+const DEFAULT_VENDOR_ID: Tag = Tag::new(b"NONE");
 
 /// Global font info that cannot vary.
 ///
