@@ -242,13 +242,13 @@ impl Workload {
         while !self.jobs_pending.is_empty() {
             let launchable = self.launchable();
             if launchable.is_empty() {
-                eprintln!("Completed:");
+                log::error!("Completed:");
                 for id in self.success.iter() {
-                    eprintln!("  {id:?}");
+                    log::error!("  {id:?}");
                 }
-                eprintln!("Unable to proceed with:");
+                log::error!("Unable to proceed with:");
                 for (id, job) in self.jobs_pending.iter() {
-                    eprintln!("  {:?}, happens-after {:?}", id, job.dependencies);
+                    log::error!("  {:?}, happens-after {:?}", id, job.dependencies);
                 }
                 assert!(
                     !launchable.is_empty(),

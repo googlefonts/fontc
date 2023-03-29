@@ -362,7 +362,7 @@ impl TryFrom<&ir::Glyph> for CheckedGlyph {
                 .sources()
                 .iter()
                 .flat_map(|(location, instance)| {
-                    eprintln!("{} {:?}", glyph.name, instance.components);
+                    trace!("{} {:?}", glyph.name, instance.components);
                     instance
                         .components
                         .iter()
