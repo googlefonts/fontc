@@ -58,3 +58,5 @@ $ git config core.hooksPath "resources/githooks"
 ## Releasing
 
 See https://github.com/googlefonts/fontations#releasing
+
+And again
