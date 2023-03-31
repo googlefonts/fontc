@@ -385,8 +385,8 @@ fn add_post_be_job(
     workload: &mut Workload,
 ) -> Result<(), Error> {
     if change_detector.post_be_change() {
-        let dependencies = HashSet::new();
-        // No deps for now because it doesn't actually *do* anything :)
+        let mut dependencies = HashSet::new();
+        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Post.into();
         workload.insert(
