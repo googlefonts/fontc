@@ -626,7 +626,7 @@ impl Work<Context, WorkError> for GlobalMetricsWork {
             let font_info = font_infos
                 .get(&source.filename)
                 .ok_or_else(|| WorkError::FileExpected(designspace_dir.join(&source.filename)))?;
-            let pos = master_locations.get(&source.filename).unwrap();
+            let pos = master_locations.get(&source.name).unwrap();
 
             metrics.set_if_some(GlobalMetric::Ascender, pos.clone(), font_info.ascender);
             metrics.set_if_some(GlobalMetric::Descender, pos.clone(), font_info.descender);
@@ -709,7 +709,7 @@ mod tests {
     use font_types::Tag;
     use fontdrasil::{orchestration::Access, types::GlyphName};
     use fontir::{
-        coords::{DesignCoord, DesignLocation},
+        coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
         ir::NameKey,
         orchestration::{Context, WorkId},
         paths::Paths,
@@ -1031,6 +1031,32 @@ mod tests {
         assert_eq!(
             Tag::new(b"RODS"),
             context.get_init_static_metadata().vendor_id
+        );
+    }
+
+    fn only_coord(loc: &NormalizedLocation) -> NormalizedCoord {
+        assert_eq!(1, loc.axis_names().count());
+        *loc.iter().next().unwrap().1
+    }
+
+    // Was tripping up on wght_var having two <source> with the same filename, different name and xvalue
+    #[test]
+    fn glyph_locations() {
+        let (_, context) = build_static_metadata("wght_var.designspace");
+        let static_metadata = &context.get_init_static_metadata();
+        let wght = static_metadata.axes.first().unwrap();
+
+        assert_eq!(
+            vec![
+                (UserCoord::new(400.0), NormalizedCoord::new(0.0)),
+                (UserCoord::new(600.0), NormalizedCoord::new(0.6666667,)),
+                (UserCoord::new(700.0), NormalizedCoord::new(1.0)),
+            ],
+            static_metadata
+                .variation_model
+                .locations()
+                .map(|loc| (only_coord(loc).to_user(&wght.converter), only_coord(loc)))
+                .collect::<Vec<_>>()
         );
     }
 }
