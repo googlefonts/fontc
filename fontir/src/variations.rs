@@ -3,9 +3,9 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
+    ops::{Mul, Sub},
 };
 
-use kurbo::{Point, Vec2};
 use log::{log_enabled, trace};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
@@ -90,13 +90,6 @@ impl VariationModel {
         let influence = master_influence(regions);
         let delta_weights = delta_weights(&locations, &influence);
 
-        let idx_of_location = locations
-            .iter()
-            .cloned()
-            .enumerate()
-            .map(|(idx, loc)| (loc, idx))
-            .collect();
-
         Ok(VariationModel {
             default,
             locations,
@@ -133,14 +126,21 @@ impl VariationModel {
     /// Note that it is NOT required to provide a point sequence for every location known
     /// to the variation model.
     ///
-    /// Returns a delta, in the form of a [Vec2], for every input point. Intended use is to support
+    /// P is the point type, meant to be absolute position in 1 or 2 dimensional space.
+    /// V is the vector type, such as [Vec2].
+    ///
+    /// Returns a delta, as the vector type, for every input point. Intended use is to support
     /// construction of a variation store.
     ///
     /// Rust version of <https://github.com/fonttools/fonttools/blob/3b9a73ff8379ab49d3ce35aaaaf04b3a7d9d1655/Lib/fontTools/varLib/models.py#L449-L461>
-    pub fn deltas(
+    pub fn deltas<P, V>(
         &self,
-        point_seqs: HashMap<NormalizedLocation, Vec<Point>>,
-    ) -> Result<HashMap<NormalizedLocation, Vec<Vec2>>, DeltaError> {
+        point_seqs: &HashMap<NormalizedLocation, Vec<P>>,
+    ) -> Result<HashMap<NormalizedLocation, Vec<V>>, DeltaError>
+    where
+        P: Copy + Default + Sub<P, Output = V>,
+        V: Copy + Mul<f64, Output = V> + Sub<V, Output = V>,
+    {
         let Some(defaults) = point_seqs.get(&self.default) else {
             return Err(DeltaError::DefaultUndefined);
         };
@@ -148,7 +148,7 @@ impl VariationModel {
             return Err(DeltaError::InconsistentNumbersOfPoints);
         }
 
-        let mut result: HashMap<NormalizedLocation, Vec<Vec2>> = HashMap::new();
+        let mut result: HashMap<NormalizedLocation, Vec<V>> = HashMap::new();
         // self.locations is sorted such that[i] is only influenced by[i+1..N]
         // so we know subsequent spins won't invalidate our delta if we go in the same order
         for (loc_idx, points) in self
@@ -161,6 +161,7 @@ impl VariationModel {
 
             let mut deltas = Vec::new();
             for (idx, point) in points.iter().enumerate() {
+                let initial_vector: V = *point - Default::default();
                 deltas.push(
                     // Find other masters that are active (have influence)
                     master_influences
@@ -169,7 +170,7 @@ impl VariationModel {
                         .filter_map(|(loc, w)| result.get(loc).map(|deltas| (deltas, w)))
                         .filter_map(|(deltas, w)| deltas.get(idx).map(|delta| (delta, w)))
                         // Start with a vector to our destination, then subtract away influence from other active masters
-                        .fold(point.to_vec2(), |acc, (other, other_weight)| {
+                        .fold(initial_vector, |acc, (other, other_weight)| {
                             acc - if other_weight != 1.0 {
                                 *other * other_weight.into()
                             } else {
@@ -1089,7 +1090,7 @@ mod tests {
             (max_wght_wdth.clone(), vec![Point::new(14.0, 11.0)]),
         ]);
 
-        let mut deltas: Vec<_> = model.deltas(point_seqs).unwrap().into_iter().collect();
+        let mut deltas: Vec<_> = model.deltas(&point_seqs).unwrap().into_iter().collect();
         deltas.sort_by_key(|(loc, _)| loc.clone());
 
         assert_eq!(
@@ -1107,19 +1108,30 @@ mod tests {
         );
     }
 
-    fn assert_modelling_error(_num_locations: usize, _num_samples: usize) {
-        // TODO: anything whatsoever
-    }
-
-    /// 127, 509 from <https://github.com/fonttools/fonttools/blob/3b9a73ff8379ab49d3ce35aaaaf04b3a7d9d1655/Tests/varLib/models_test.py#L160-L192>
     #[test]
-    fn check_modelling_error_slow() {
-        assert_modelling_error(127, 509);
-    }
+    fn compute_1d_deltas() {
+        let origin = norm_loc(&[("wght", 0.0)]);
+        let max_wght = norm_loc(&[("wght", 1.0)]);
+        let min_wght = norm_loc(&[("wght", -1.0)]);
+        let locations = HashSet::from([origin.clone(), max_wght.clone(), min_wght.clone()]);
+        let axis_order = vec!["wght".to_string()];
+        let model = VariationModel::new(locations, axis_order).unwrap();
 
-    /// 31, 251 from <https://github.com/fonttools/fonttools/blob/3b9a73ff8379ab49d3ce35aaaaf04b3a7d9d1655/Tests/varLib/models_test.py#L160-L192>
-    #[test]
-    fn check_modelling_error_fast() {
-        assert_modelling_error(31, 251);
+        let point_seqs = HashMap::from([
+            (origin.clone(), vec![10.0]),
+            (max_wght.clone(), vec![12.0]),
+            (min_wght.clone(), vec![5.0]),
+        ]);
+
+        let mut deltas: Vec<_> = model.deltas(&point_seqs).unwrap().into_iter().collect();
+        deltas.sort_by_key(|(loc, _)| loc.clone());
+        assert_eq!(
+            vec![
+                (min_wght, vec![-5.0]),
+                (origin, vec![10.0]),
+                (max_wght, vec![2.0]),
+            ],
+            deltas
+        );
     }
 }
