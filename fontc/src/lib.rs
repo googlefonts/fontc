@@ -29,8 +29,8 @@ use fontbe::{
     fvar::create_fvar_work,
     glyphs::{create_glyf_loca_work, create_glyph_work},
     head::create_head_work,
-    hmetrics::create_hmetric_work,
     maxp::create_maxp_work,
+    metrics_and_limits::create_metric_and_limit_work,
     name::create_name_work,
     orchestration::{AnyWorkId, WorkId as BeWorkIdentifier},
     os2::create_os2_work,
@@ -502,7 +502,7 @@ fn add_os2_be_job(
     Ok(())
 }
 
-fn add_hmetrics_job(
+fn add_metric_and_limits_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
 ) -> Result<(), Error> {
@@ -521,12 +521,13 @@ fn add_hmetrics_job(
             .collect();
         dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+        dependencies.insert(BeWorkIdentifier::Maxp.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Hmtx.into();
         workload.insert(
             id,
             Job {
-                work: create_hmetric_work().into(),
+                work: create_metric_and_limit_work().into(),
                 dependencies,
                 // We need to read all FE and BE glyphs, even unchanged ones, plus static metadata
                 read_access: ReadAccess::custom(|id| {
@@ -534,6 +535,7 @@ fn add_hmetrics_job(
                         id,
                         AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
                             | AnyWorkId::Be(BeWorkIdentifier::Glyph(..))
+                            | AnyWorkId::Be(BeWorkIdentifier::Maxp)
                     )
                 }),
                 write_access: Access::custom(|id| {
@@ -541,6 +543,7 @@ fn add_hmetrics_job(
                         id,
                         AnyWorkId::Be(BeWorkIdentifier::Hmtx)
                             | AnyWorkId::Be(BeWorkIdentifier::Hhea)
+                            | AnyWorkId::Be(BeWorkIdentifier::Maxp)
                     )
                 }),
             },
@@ -643,7 +646,7 @@ pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload,
     add_cmap_be_job(change_detector, &mut workload)?;
     add_fvar_be_job(change_detector, &mut workload)?;
     add_head_be_job(change_detector, &mut workload)?;
-    add_hmetrics_job(change_detector, &mut workload)?;
+    add_metric_and_limits_job(change_detector, &mut workload)?;
     add_name_be_job(change_detector, &mut workload)?;
     add_maxp_be_job(change_detector, &mut workload)?;
     add_os2_be_job(change_detector, &mut workload)?;
@@ -760,7 +763,7 @@ mod tests {
         add_cmap_be_job(&mut change_detector, &mut workload).unwrap();
         add_fvar_be_job(&mut change_detector, &mut workload).unwrap();
         add_head_be_job(&mut change_detector, &mut workload).unwrap();
-        add_hmetrics_job(&mut change_detector, &mut workload).unwrap();
+        add_metric_and_limits_job(&mut change_detector, &mut workload).unwrap();
         add_maxp_be_job(&mut change_detector, &mut workload).unwrap();
         add_name_be_job(&mut change_detector, &mut workload).unwrap();
         add_os2_be_job(&mut change_detector, &mut workload).unwrap();
@@ -1178,7 +1181,7 @@ mod tests {
     }
 
     #[test]
-    fn hmetrics_of_mono() {
+    fn metrics_and_limits_of_mono() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/Mono.glyphs"));
@@ -1192,6 +1195,8 @@ mod tests {
 
         let maxp = result.be_context.get_maxp();
         assert_eq!(3, maxp.num_glyphs);
+        assert_eq!(Some(4), maxp.max_points);
+        assert_eq!(Some(1), maxp.max_contours);
 
         let raw_hmtx = result.be_context.get_hmtx();
         let hmtx = Hmtx::read_with_args(
