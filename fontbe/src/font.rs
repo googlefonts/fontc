@@ -61,7 +61,7 @@ impl Work<Context, Error> for FontWork {
             builder.add_table(*tag, bytes);
         }
 
-        context.set_font(Bytes::new(builder.build().map_err(Error::BuildFontError)?));
+        context.set_font(Bytes::new(builder.build()));
         Ok(())
     }
 }

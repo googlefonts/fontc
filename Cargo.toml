@@ -2,7 +2,6 @@
 font-types= { git="https://github.com/googlefonts/fontations.git", branch="ots" }
 read-fonts = { git="https://github.com/googlefonts/fontations.git", branch="ots" }
 write-fonts = { git="https://github.com/googlefonts/fontations.git", branch="ots" }
-fea-rs = { git="https://github.com/rsheeter/fea-rs.git", branch="wf020" }
 
 [workspace]
 
