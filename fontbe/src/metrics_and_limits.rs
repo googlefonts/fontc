@@ -7,7 +7,7 @@ use fontdrasil::orchestration::Work;
 use read_fonts::types::FWord;
 use write_fonts::{
     dump_table,
-    tables::{hhea::Hhea, hmtx::Hmtx, vmtx::LongMetric},
+    tables::{glyf::Contour, hhea::Hhea, hmtx::Hmtx, vmtx::LongMetric},
     OtRound,
 };
 
@@ -27,10 +27,10 @@ struct GlyphLimits {
     min_left_side_bearing: Option<i16>,
     min_right_side_bearing: Option<u16>,
     x_max_extent: Option<i16>,
-    advance_width_max: Option<u16>,
-    max_points: Option<u16>,
-    max_contours: Option<u16>,
-    max_component_elements: Option<u16>,
+    advance_width_max: u16,
+    max_points: u16,
+    max_contours: u16,
+    max_component_elements: u16,
 }
 
 impl GlyphLimits {
@@ -57,35 +57,17 @@ impl GlyphLimits {
             .x_max_extent
             .map(|v| max(v, bbox.x_max))
             .or(Some(bbox.x_max));
-        self.advance_width_max = self
-            .advance_width_max
-            .map(|v| max(v, advance))
-            .or(Some(advance));
+        self.advance_width_max = max(self.advance_width_max, advance);
 
         match glyph {
             Glyph::Simple(simple) => {
-                let max_points = simple
-                    .contours()
-                    .iter()
-                    // TODO: this is stupid, just let me see the damn points
-                    .map(|c| c.clone().into_iter().count())
-                    .max()
-                    .unwrap_or_default() as u16;
-                self.max_points = self
-                    .max_points
-                    .map(|v| max(v, max_points))
-                    .or(Some(max_points));
-                self.max_contours = self
-                    .max_contours
-                    .map(|v| max(v, simple.contours().len() as u16))
-                    .or(Some(0));
+                let points = simple.contours().iter().map(Contour::len).sum::<usize>() as u16;
+                self.max_points = max(self.max_points, points);
+                self.max_contours = max(self.max_contours, simple.contours().len() as u16);
             }
             Glyph::Composite(composite) => {
                 let num_components = composite.components().len() as u16;
-                self.max_component_elements = self
-                    .max_component_elements
-                    .map(|v| max(v, num_components))
-                    .or(Some(num_components));
+                self.max_component_elements = max(self.max_component_elements, num_components);
             }
         };
     }
@@ -166,7 +148,7 @@ impl Work<Context, Error> for MetricAndLimitWork {
         let hhea = Hhea {
             ascender: FWord::new(default_metrics.ascender.into_inner().ot_round()),
             descender: FWord::new(default_metrics.descender.into_inner().ot_round()),
-            advance_width_max: glyph_limits.advance_width_max.unwrap_or_default().into(),
+            advance_width_max: glyph_limits.advance_width_max.into(),
             min_left_side_bearing,
             min_right_side_bearing,
             x_max_extent,
@@ -190,9 +172,9 @@ impl Work<Context, Error> for MetricAndLimitWork {
 
         // Tell maxp a little more about the world
         let mut maxp = (*context.get_maxp()).clone();
-        maxp.max_points = glyph_limits.max_points.or(Some(0));
-        maxp.max_contours = glyph_limits.max_contours.or(Some(0));
-        maxp.max_component_elements = glyph_limits.max_component_elements.or(Some(0));
+        maxp.max_points = Some(glyph_limits.max_points);
+        maxp.max_contours = Some(glyph_limits.max_contours);
+        maxp.max_component_elements = Some(glyph_limits.max_component_elements);
         // TODO: set me properly
         if maxp.max_component_elements.unwrap() > 0 {
             maxp.max_component_depth = Some(1); // it's _at least_ 1 so let's start there for now
