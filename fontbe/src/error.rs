@@ -3,7 +3,7 @@ use std::{fmt::Display, io};
 use fea_rs::compile::error::{BinaryCompilationError, CompilerError};
 use fontdrasil::types::GlyphName;
 use thiserror::Error;
-use write_fonts::{tables::glyf::BadKurbo, validate::ValidationReport};
+use write_fonts::{tables::glyf::BadKurbo, validate::ValidationReport, BuildFontError};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -39,6 +39,8 @@ pub enum Error {
     },
     #[error("{what} out of bounds: {value}")]
     OutOfBounds { what: String, value: String },
+    #[error("Unable to build font {0:?}")]
+    BuildFontError(BuildFontError),
 }
 
 #[derive(Debug)]

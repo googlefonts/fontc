@@ -27,7 +27,7 @@ impl Work<Context, Error> for MaxpWork {
             max_contours: Some(0),
             max_composite_points: Some(0),
             max_composite_contours: Some(0),
-            max_zones: Some(0),
+            max_zones: Some(1),
             max_twilight_points: Some(0),
             max_storage: Some(0),
             max_function_defs: Some(0),

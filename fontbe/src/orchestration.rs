@@ -282,7 +282,7 @@ impl Context {
     pub fn set_features(&self, mut font: FontBuilder) {
         let id = WorkId::Features;
         self.acl.assert_write_access(&id.clone().into());
-        let font = font.build();
+        let font = font.build().unwrap();
         self.maybe_persist(&self.paths.target_file(&id), &font);
         set_cached(&self.features, font);
     }
