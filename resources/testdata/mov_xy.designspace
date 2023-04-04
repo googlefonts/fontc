@@ -1,0 +1,52 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!-- Derived from Noto Sans Adlam -->
+<designspace format="4.1">
+  <axes>
+    <axis tag="movx" name="X" minimum="0" maximum="1000" default="0"/>
+    <axis tag="movy" name="Y" minimum="0" maximum="1000" default="0"/>
+  </axes>
+  <sources>
+    <source filename="Mov-Origin.ufo" name="Mov Origin" familyname="Mov" stylename="Origin">
+      <lib copy="1"/>
+      <groups copy="1"/>
+      <features copy="1"/>
+      <info copy="1"/>
+      <location>
+        <dimension name="X" xvalue="0"/>
+        <dimension name="Y" xvalue="0"/>
+      </location>
+    </source>
+    <source filename="Mov-Max-X.ufo" name="Mov Max X" familyname="Mov" stylename="Max X">
+      <location>
+        <dimension name="X" xvalue="1000"/>
+        <dimension name="Y" xvalue="0"/>
+      </location>
+    </source>
+    <source filename="Mov-Max-Y.ufo" name="Mov Max Y" familyname="Mov" stylename="Max Y">
+      <location>
+        <dimension name="X" xvalue="0"/>
+        <dimension name="Y" xvalue="1000"/>
+      </location>
+    </source>
+  </sources>
+  <instances>
+    <instance name="Mov Origin" familyname="Mov" stylename="Origin" filename="instance_ufos/Mov-Origin.ufo">
+      <location>
+        <dimension name="X" xvalue="0"/>
+        <dimension name="Y" xvalue="0"/>
+      </location>
+    </instance>
+    <instance name="Mov Max X" familyname="Mov" stylename="Max X" filename="instance_ufos/Mov-Max-X.ufo">
+      <location>
+        <dimension name="X" xvalue="1000"/>
+        <dimension name="Y" xvalue="0"/>
+      </location>
+    </instance>
+    <instance name="Mov Max Y" familyname="Mov" stylename="Max Y" filename="instance_ufos/Mov-Max-Y.ufo">
+      <location>
+        <dimension name="X" xvalue="0"/>
+        <dimension name="Y" xvalue="1000"/>
+      </location>
+    </instance>
+  </instances>
+</designspace>
