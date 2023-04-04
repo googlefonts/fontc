@@ -9,9 +9,12 @@ use fontdrasil::{
 use fontir::{
     context_accessors,
     orchestration::{Context as FeContext, ContextItem, Flags, WorkId as FeWorkIdentifier},
+    variations::VariationRegion,
 };
+use kurbo::Vec2;
 use parking_lot::RwLock;
 use read_fonts::{FontData, FontRead};
+use serde::{Deserialize, Serialize};
 use write_fonts::{
     dump_table,
     tables::{
@@ -48,11 +51,13 @@ pub enum GlyphMerge {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkId {
     Features,
-    Glyph(GlyphName),
     Avar,
     Cmap,
     Fvar,
     Glyf,
+    GlyfFragment(GlyphName),
+    Gvar,
+    GvarFragment(GlyphName),
     Head,
     Hhea,
     Hmtx,
@@ -143,6 +148,15 @@ impl Glyph {
     }
 }
 
+/// Unusually we store something other than the binary gvar per glyph.
+///
+///
+/// <https://learn.microsoft.com/en-us/typography/opentype/spec/gvar>
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GvarFragment {
+    pub deltas: Vec<(VariationRegion, Vec<Vec2>)>,
+}
+
 pub type BeWork = dyn Work<Context, Error> + Send;
 type GlyfLoca = (Vec<u8>, Vec<u32>);
 
@@ -165,13 +179,14 @@ pub struct Context {
     // We create individual caches so we can return typed results from get fns
     features: Arc<RwLock<Option<Arc<Vec<u8>>>>>,
 
-    // TODO: variations
     glyphs: Arc<RwLock<HashMap<GlyphName, Arc<Glyph>>>>,
+    gvar_fragments: Arc<RwLock<HashMap<GlyphName, Arc<GvarFragment>>>>,
 
     glyf_loca: ContextItem<GlyfLoca>,
     avar: ContextItem<Avar>,
     cmap: ContextItem<Cmap>,
     fvar: ContextItem<Fvar>,
+    gvar: ContextItem<Bytes>,
     post: ContextItem<Post>,
     maxp: ContextItem<Maxp>,
     name: ContextItem<Name>,
@@ -191,10 +206,12 @@ impl Context {
             acl,
             features: self.features.clone(),
             glyphs: self.glyphs.clone(),
+            gvar_fragments: self.gvar_fragments.clone(),
             glyf_loca: self.glyf_loca.clone(),
             avar: self.avar.clone(),
             cmap: self.cmap.clone(),
             fvar: self.fvar.clone(),
+            gvar: self.gvar.clone(),
             post: self.post.clone(),
             maxp: self.maxp.clone(),
             name: self.name.clone(),
@@ -214,10 +231,12 @@ impl Context {
             acl: AccessControlList::read_only(),
             features: Arc::from(RwLock::new(None)),
             glyphs: Arc::from(RwLock::new(HashMap::new())),
+            gvar_fragments: Arc::from(RwLock::new(HashMap::new())),
             glyf_loca: Arc::from(RwLock::new(None)),
             avar: Arc::from(RwLock::new(None)),
             cmap: Arc::from(RwLock::new(None)),
             fvar: Arc::from(RwLock::new(None)),
+            gvar: Arc::from(RwLock::new(None)),
             post: Arc::from(RwLock::new(None)),
             maxp: Arc::from(RwLock::new(None)),
             name: Arc::from(RwLock::new(None)),
@@ -293,7 +312,7 @@ impl Context {
     }
 
     pub fn get_glyph(&self, glyph_name: &GlyphName) -> Arc<Glyph> {
-        let id = WorkId::Glyph(glyph_name.clone());
+        let id = WorkId::GlyfFragment(glyph_name.clone());
         self.acl.assert_read_access(&id.clone().into());
         {
             let rl = self.glyphs.read();
@@ -313,10 +332,46 @@ impl Context {
     }
 
     pub fn set_glyph(&self, glyph_name: GlyphName, glyph: Glyph) {
-        let id = WorkId::Glyph(glyph_name.clone());
+        let id = WorkId::GlyfFragment(glyph_name.clone());
         self.acl.assert_write_access(&id.clone().into());
-        self.maybe_persist(&self.paths.target_file(&id), &glyph.to_bytes());
+        if self.flags.contains(Flags::EMIT_IR) {
+            self.persist(&self.paths.target_file(&id), &glyph.to_bytes());
+        }
         self.set_cached_glyph(glyph_name, glyph);
+    }
+
+    fn set_cached_gvar_fragment(&self, glyph_name: GlyphName, variations: GvarFragment) {
+        let mut wl = self.gvar_fragments.write();
+        wl.insert(glyph_name, Arc::from(variations));
+    }
+
+    pub fn get_gvar_fragment(&self, glyph_name: &GlyphName) -> Arc<GvarFragment> {
+        let id = WorkId::GvarFragment(glyph_name.clone());
+        self.acl.assert_read_access(&id.clone().into());
+        {
+            let rl = self.gvar_fragments.read();
+            if let Some(variations) = rl.get(glyph_name) {
+                return variations.clone();
+            }
+        }
+
+        let gvar_fragment = read_entire_file(&self.paths.target_file(&id));
+        let variations: GvarFragment = bincode::deserialize(&gvar_fragment).unwrap();
+
+        self.set_cached_gvar_fragment(glyph_name.clone(), variations);
+        let rl = self.gvar_fragments.read();
+        rl.get(glyph_name).expect(MISSING_DATA).clone()
+    }
+
+    pub fn set_gvar_fragment(&self, glyph_name: GlyphName, gvar_fragment: GvarFragment) {
+        let id = WorkId::GvarFragment(glyph_name.clone());
+        self.acl.assert_write_access(&id.clone().into());
+
+        if self.flags.contains(Flags::EMIT_IR) {
+            let bytes = bincode::serialize(&gvar_fragment).unwrap();
+            self.persist(&self.paths.target_file(&id), &bytes);
+        }
+        self.set_cached_gvar_fragment(glyph_name, gvar_fragment);
     }
 
     pub fn get_glyf_loca(&self) -> Arc<GlyfLoca> {
@@ -345,14 +400,16 @@ impl Context {
         self.acl.assert_write_access_to_all(&ids);
 
         let (glyf, loca) = glyf_loca;
-        self.maybe_persist(&self.paths.target_file(&WorkId::Glyf), &glyf);
-        self.maybe_persist(
-            &self.paths.target_file(&WorkId::Loca),
-            &loca
-                .iter()
-                .flat_map(|v| v.to_be_bytes())
-                .collect::<Vec<u8>>(),
-        );
+        if self.flags.contains(Flags::EMIT_IR) {
+            self.persist(&self.paths.target_file(&WorkId::Glyf), &glyf);
+            self.persist(
+                &self.paths.target_file(&WorkId::Loca),
+                &loca
+                    .iter()
+                    .flat_map(|v| v.to_be_bytes())
+                    .collect::<Vec<u8>>(),
+            );
+        }
 
         set_cached(&self.glyf_loca, (glyf, loca));
     }
@@ -369,6 +426,7 @@ impl Context {
     context_accessors! { get_hhea, set_hhea, hhea, Hhea, WorkId::Hhea, from_file, to_bytes }
 
     // Accessors where value is raw bytes
+    context_accessors! { get_gvar, set_gvar, gvar, Bytes, WorkId::Gvar, raw_from_file, raw_to_bytes }
     context_accessors! { get_hmtx, set_hmtx, hmtx, Bytes, WorkId::Hmtx, raw_from_file, raw_to_bytes }
     context_accessors! { get_font, set_font, font, Bytes, WorkId::Font, raw_from_file, raw_to_bytes }
 }

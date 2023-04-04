@@ -37,16 +37,22 @@ impl Paths {
         &self.glyph_dir
     }
 
-    fn glyph_file(&self, name: &str) -> PathBuf {
-        self.glyph_dir.join(glyph_file(name, ".glyph"))
+    fn glyph_glyf_file(&self, name: &str) -> PathBuf {
+        self.glyph_dir.join(glyph_file(name, ".glyf"))
+    }
+
+    fn glyph_gvar_file(&self, name: &str) -> PathBuf {
+        self.glyph_dir.join(glyph_file(name, ".gvar"))
     }
 
     pub fn target_file(&self, id: &WorkId) -> PathBuf {
         match id {
             WorkId::Features => self.build_dir.join("features.ttf"),
-            WorkId::Glyph(name) => self.glyph_file(name.as_str()),
+            WorkId::GlyfFragment(name) => self.glyph_glyf_file(name.as_str()),
+            WorkId::GvarFragment(name) => self.glyph_gvar_file(name.as_str()),
             WorkId::Avar => self.build_dir.join("avar.table"),
             WorkId::Glyf => self.build_dir.join("glyf.table"),
+            WorkId::Gvar => self.build_dir.join("gvar.table"),
             WorkId::Loca => self.build_dir.join("loca.table"),
             WorkId::Cmap => self.build_dir.join("cmap.table"),
             WorkId::Fvar => self.build_dir.join("fvar.table"),

@@ -4,8 +4,8 @@ use fontdrasil::orchestration::Work;
 use log::trace;
 use read_fonts::{
     tables::{
-        cmap::Cmap, fvar::Fvar, glyf::Glyf, head::Head, hhea::Hhea, hmtx::Hmtx, loca::Loca,
-        maxp::Maxp, name::Name, os2::Os2, post::Post,
+        cmap::Cmap, fvar::Fvar, glyf::Glyf, gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx,
+        loca::Loca, maxp::Maxp, name::Name, os2::Os2, post::Post,
     },
     types::Tag,
     TopLevelTable,
@@ -36,6 +36,7 @@ const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
     (WorkId::Hhea, Hhea::TAG, TableType::Static),
     (WorkId::Hmtx, Hmtx::TAG, TableType::Static),
     (WorkId::Glyf, Glyf::TAG, TableType::Static),
+    (WorkId::Gvar, Gvar::TAG, TableType::Variable),
     (WorkId::Loca, Loca::TAG, TableType::Static),
     (WorkId::Maxp, Maxp::TAG, TableType::Static),
     (WorkId::Name, Name::TAG, TableType::Static),

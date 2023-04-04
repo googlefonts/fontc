@@ -216,6 +216,10 @@ impl NormalizedCoord {
     pub fn into_inner(self) -> OrderedFloat<f32> {
         self.0
     }
+
+    pub fn to_f32(&self) -> f32 {
+        self.0.into_inner()
+    }
 }
 
 impl From<NormalizedCoord> for F2Dot14 {
@@ -295,8 +299,13 @@ impl NormalizedLocation {
                 .collect(),
         )
     }
+
     pub fn has_non_zero(&self, axis_name: &String) -> bool {
         self.get(axis_name).unwrap_or_default().into_inner() != OrderedFloat(0.0)
+    }
+
+    pub fn has_any_non_zero(&self) -> bool {
+        self.0.values().any(|v| v.into_inner() != OrderedFloat(0.0))
     }
 }
 

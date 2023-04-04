@@ -2,8 +2,13 @@ use std::{fmt::Display, io};
 
 use fea_rs::compile::error::{BinaryCompilationError, CompilerError};
 use fontdrasil::types::GlyphName;
+use fontir::variations::DeltaError;
+use read_fonts::ReadError;
 use thiserror::Error;
-use write_fonts::{tables::glyf::BadKurbo, validate::ValidationReport};
+use write_fonts::{
+    tables::{glyf::BadKurbo, gvar::GvarInputError},
+    validate::ValidationReport,
+};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -39,6 +44,12 @@ pub enum Error {
     },
     #[error("{what} out of bounds: {value}")]
     OutOfBounds { what: String, value: String },
+    #[error("Unable to compute deltas for {0}: {1}")]
+    GlyphDeltaError(GlyphName, DeltaError),
+    #[error("Unable to assemble gvar")]
+    GvarError(#[from] GvarInputError),
+    #[error("Unable to read")]
+    ReadFontsReadError(#[from] ReadError),
 }
 
 #[derive(Debug)]
