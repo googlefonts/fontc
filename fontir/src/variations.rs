@@ -9,6 +9,7 @@ use std::{
 use log::{log_enabled, trace};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::{
     coords::{NormalizedCoord, NormalizedLocation},
@@ -201,10 +202,13 @@ impl VariationModel {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum DeltaError {
+    #[error("The default must have a point sequence")]
     DefaultUndefined,
+    #[error("Every point sequence must have the same length")]
     InconsistentNumbersOfPoints,
+    #[error("{0:?} is not present in the variation model")]
     UnknownLocation(NormalizedLocation),
 }
 
