@@ -127,7 +127,10 @@ impl VariationModel {
     /// to the variation model.
     ///
     /// P is the point type, meant to be absolute position in 1 or 2 dimensional space.
-    /// V is the vector type, such as [Vec2].
+    /// V is the vector type.
+    ///
+    /// For 2d [kurbo::Point] and [kurbo::Vec2] would be typical choices. For 1d a floating
+    /// point primitive should suffice.
     ///
     /// Returns a delta, as the vector type, for every input point. Intended use is to support
     /// construction of a variation store.
