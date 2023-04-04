@@ -3,11 +3,13 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
+    ops::{Mul, Sub},
 };
 
 use log::{log_enabled, trace};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::{
     coords::{NormalizedCoord, NormalizedLocation},
@@ -113,6 +115,101 @@ impl VariationModel {
     pub fn default_location(&self) -> &NormalizedLocation {
         &self.default
     }
+
+    /// Convert absolute positions at master locations to offsets.
+    ///
+    /// <ul>
+    ///     <li>All keys in points must be known to the variation model.</li>
+    ///     <li>All point vectors must have the same length.</li>
+    ///     <li>A point vector for the default location is required</li>
+    /// </ul>
+    ///
+    /// Note that it is NOT required to provide a point sequence for every location known
+    /// to the variation model.
+    ///
+    /// P is the point type, meant to be absolute position in 1 or 2 dimensional space.
+    /// V is the vector type.
+    ///
+    /// For 2d [kurbo::Point] and [kurbo::Vec2] would be typical choices. For 1d a floating
+    /// point primitive should suffice.
+    ///
+    /// Returns a delta, as the vector type, for every input point. Intended use is to support
+    /// construction of a variation store.
+    ///
+    /// Rust version of <https://github.com/fonttools/fonttools/blob/3b9a73ff8379ab49d3ce35aaaaf04b3a7d9d1655/Lib/fontTools/varLib/models.py#L449-L461>
+    pub fn deltas<P, V>(
+        &self,
+        point_seqs: &HashMap<NormalizedLocation, Vec<P>>,
+    ) -> Result<HashMap<NormalizedLocation, Vec<V>>, DeltaError>
+    where
+        P: Copy + Default + Sub<P, Output = V>,
+        V: Copy + Mul<f64, Output = V> + Sub<V, Output = V>,
+    {
+        let Some(defaults) = point_seqs.get(&self.default) else {
+            return Err(DeltaError::DefaultUndefined);
+        };
+        if point_seqs.values().any(|pts| pts.len() != defaults.len()) {
+            return Err(DeltaError::InconsistentNumbersOfPoints);
+        }
+
+        let mut result: HashMap<NormalizedLocation, Vec<V>> = HashMap::new();
+        // self.locations is sorted such that[i] is only influenced by[i+1..N]
+        // so we know subsequent spins won't invalidate our delta if we go in the same order
+        for (loc, points, master_influences) in
+            self.locations
+                .iter()
+                .enumerate()
+                .filter_map(|(loc_idx, loc)| {
+                    point_seqs
+                        .get(loc)
+                        .map(|points| (loc, points, &self.delta_weights[loc_idx]))
+                })
+        {
+            let mut deltas = Vec::new();
+            for (idx, point) in points.iter().enumerate() {
+                let initial_vector: V = *point - Default::default();
+                deltas.push(
+                    // Find other masters that are active (have influence)
+                    // Any master with influence on us was processed already so we can get that masters
+                    // deltas from the results so far. If we subtract away all such influences what's
+                    // left is the delta to take us to point.
+                    master_influences
+                        .iter()
+                        .map(|(_, master_weight)| master_weight)
+                        .zip(&self.locations)
+                        .filter_map(|(master_weight, master_loc)| {
+                            let Some(master_deltas) = result.get(master_loc) else {
+                                return None;
+                            };
+                            let Some(delta) = master_deltas.get(idx) else {
+                                return None;
+                            };
+                            Some((delta, master_weight.into_inner()))
+                        })
+                        .fold(initial_vector, |acc, (other, other_weight)| {
+                            acc - if other_weight != 1.0 {
+                                *other * other_weight.into()
+                            } else {
+                                *other
+                            }
+                        }),
+                );
+            }
+            result.insert(loc.clone(), deltas);
+        }
+
+        Ok(result)
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum DeltaError {
+    #[error("The default must have a point sequence")]
+    DefaultUndefined,
+    #[error("Every point sequence must have the same length")]
+    InconsistentNumbersOfPoints,
+    #[error("{0:?} is not present in the variation model")]
+    UnknownLocation(NormalizedLocation),
 }
 
 /// Gryffindor!
@@ -550,9 +647,12 @@ fn delta_weights(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
+    use kurbo::{Point, Vec2};
     use ordered_float::OrderedFloat;
+
+    use pretty_assertions::assert_eq;
 
     use crate::{
         coords::{NormalizedCoord, NormalizedLocation},
@@ -984,6 +1084,73 @@ mod tests {
                 vec![(0_usize, OrderedFloat(1.0))],
             ],
             model.delta_weights
+        );
+    }
+
+    #[test]
+    fn compute_simple_delta_corner_masters() {
+        let origin = norm_loc(&[("wght", 0.0), ("wdth", 0.0)]);
+        let max_wght = norm_loc(&[("wght", 1.0), ("wdth", 0.0)]);
+        let max_wdth = norm_loc(&[("wght", 0.0), ("wdth", 1.0)]);
+        let max_wght_wdth = norm_loc(&[("wght", 1.0), ("wdth", 1.0)]);
+        let locations = HashSet::from([
+            origin.clone(),
+            max_wght.clone(),
+            max_wdth.clone(),
+            max_wght_wdth.clone(),
+        ]);
+        let axis_order = vec!["wght".to_string(), "wdth".to_string()];
+        let model = VariationModel::new(locations, axis_order).unwrap();
+
+        let point_seqs = HashMap::from([
+            (origin.clone(), vec![Point::new(10.0, 10.0)]),
+            (max_wght.clone(), vec![Point::new(12.0, 11.0)]),
+            (max_wdth.clone(), vec![Point::new(11.0, 12.0)]),
+            (max_wght_wdth.clone(), vec![Point::new(14.0, 11.0)]),
+        ]);
+
+        let mut deltas: Vec<_> = model.deltas(&point_seqs).unwrap().into_iter().collect();
+        deltas.sort_by_key(|(loc, _)| loc.clone());
+
+        assert_eq!(
+            vec![
+                // default
+                (origin, vec![Vec2::new(10.0, 10.0)]),
+                // at max weight/width no other master has influence so it's just delta from default
+                (max_wght, vec![Vec2::new(2.0, 1.0)]),
+                (max_wdth, vec![Vec2::new(1.0, 2.0)]),
+                // at max wdth and wght the deltas for max_wght and max_wdth are in full effect
+                // so we get (10+2+1, 10+1+2) "for free" and our delta is from there to (14, 11)
+                (max_wght_wdth, vec![Vec2::new(1.0, -2.0)]),
+            ],
+            deltas
+        );
+    }
+
+    #[test]
+    fn compute_1d_deltas() {
+        let origin = norm_loc(&[("wght", 0.0)]);
+        let max_wght = norm_loc(&[("wght", 1.0)]);
+        let min_wght = norm_loc(&[("wght", -1.0)]);
+        let locations = HashSet::from([origin.clone(), max_wght.clone(), min_wght.clone()]);
+        let axis_order = vec!["wght".to_string()];
+        let model = VariationModel::new(locations, axis_order).unwrap();
+
+        let point_seqs = HashMap::from([
+            (origin.clone(), vec![10.0]),
+            (max_wght.clone(), vec![12.0]),
+            (min_wght.clone(), vec![5.0]),
+        ]);
+
+        let mut deltas: Vec<_> = model.deltas(&point_seqs).unwrap().into_iter().collect();
+        deltas.sort_by_key(|(loc, _)| loc.clone());
+        assert_eq!(
+            vec![
+                (min_wght, vec![-5.0]),
+                (origin, vec![10.0]),
+                (max_wght, vec![2.0]),
+            ],
+            deltas
         );
     }
 }
