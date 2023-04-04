@@ -88,7 +88,7 @@ pub fn master_locations(
         .iter()
         .map(|s| {
             (
-                s.filename.clone(),
+                s.name.clone(),
                 to_design_location(&s.location).to_normalized(&axes),
             )
         })
