@@ -154,25 +154,37 @@ impl VariationModel {
         let mut result: HashMap<NormalizedLocation, Vec<V>> = HashMap::new();
         // self.locations is sorted such that[i] is only influenced by[i+1..N]
         // so we know subsequent spins won't invalidate our delta if we go in the same order
-        for (loc_idx, points) in self
-            .locations
-            .iter()
-            .filter_map(|loc| point_seqs.get(loc))
-            .enumerate()
+        for (loc, points, master_influences) in
+            self.locations
+                .iter()
+                .enumerate()
+                .filter_map(|(loc_idx, loc)| {
+                    point_seqs
+                        .get(loc)
+                        .map(|points| (loc, points, &self.delta_weights[loc_idx]))
+                })
         {
-            let master_influences = &self.delta_weights[loc_idx];
-
             let mut deltas = Vec::new();
             for (idx, point) in points.iter().enumerate() {
                 let initial_vector: V = *point - Default::default();
                 deltas.push(
                     // Find other masters that are active (have influence)
+                    // Any master with influence on us was processed already so we can get that masters
+                    // deltas from the results so far. If we subtract away all such influences what's
+                    // left is the delta to take us to point.
                     master_influences
                         .iter()
-                        .map(|(loc_idx, w)| (&self.locations[*loc_idx], w.into_inner()))
-                        .filter_map(|(loc, w)| result.get(loc).map(|deltas| (deltas, w)))
-                        .filter_map(|(deltas, w)| deltas.get(idx).map(|delta| (delta, w)))
-                        // Start with a vector to our destination, then subtract away influence from other active masters
+                        .map(|(_, master_weight)| master_weight)
+                        .zip(&self.locations)
+                        .filter_map(|(master_weight, master_loc)| {
+                            let Some(master_deltas) = result.get(master_loc) else {
+                                return None;
+                            };
+                            let Some(delta) = master_deltas.get(idx) else {
+                                return None;
+                            };
+                            Some((delta, master_weight.into_inner()))
+                        })
                         .fold(initial_vector, |acc, (other, other_weight)| {
                             acc - if other_weight != 1.0 {
                                 *other * other_weight.into()
@@ -182,7 +194,7 @@ impl VariationModel {
                         }),
                 );
             }
-            result.insert(self.locations[loc_idx].clone(), deltas);
+            result.insert(loc.clone(), deltas);
         }
 
         Ok(result)
