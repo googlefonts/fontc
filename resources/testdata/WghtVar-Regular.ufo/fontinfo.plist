@@ -4,5 +4,7 @@
   <dict>
     <key>unitsPerEm</key>
     <integer>1000</integer>
+    <key>ascender</key>
+    <real>799</real>
   </dict>
 </plist>

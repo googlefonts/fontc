@@ -186,6 +186,12 @@ impl GlobalMetrics {
             x_height: self.get(GlobalMetric::XHeight, pos),
         }
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (NormalizedLocation, GlobalMetric, f32)> + '_ {
+        self.0
+            .iter()
+            .flat_map(|(m, values)| values.iter().map(|(l, v)| (l.clone(), *m, v.into_inner())))
+    }
 }
 
 /// Metrics at a specific [NormalizedLocation]

@@ -623,17 +623,25 @@ impl Work<Context, WorkError> for GlobalMetricsWork {
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
         let master_locations = master_locations(&static_metadata.axes, &self.designspace.sources);
         for source in self.designspace.sources.iter() {
+            let pos = master_locations.get(&source.name).unwrap();
+
+            // Sources that use layer= specifically should not contribute metrics, only glyphs
+            if source.layer.is_some() {
+                trace!(
+                    "{} {pos:?} is uses layer=, skipping global metrics",
+                    source.filename
+                );
+                continue;
+            }
+
             let font_info = font_infos
                 .get(&source.filename)
                 .ok_or_else(|| WorkError::FileExpected(designspace_dir.join(&source.filename)))?;
-            let pos = master_locations.get(&source.name).unwrap();
 
             metrics.set_if_some(GlobalMetric::Ascender, pos.clone(), font_info.ascender);
             metrics.set_if_some(GlobalMetric::Descender, pos.clone(), font_info.descender);
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), font_info.cap_height);
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), font_info.x_height);
-
-            trace!("{} {pos:?} {font_info:#?}", source.filename);
         }
 
         trace!("{:#?}", metrics);
@@ -1057,6 +1065,31 @@ mod tests {
                 .locations()
                 .map(|loc| (only_coord(loc).to_user(&wght.converter), only_coord(loc)))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn no_metrics_for_glyph_only_sources() {
+        let (_, context) = build_global_metrics("wght_var.designspace");
+        let static_metadata = &context.get_init_static_metadata();
+        let wght = static_metadata.axes.first().unwrap();
+        let mut metric_locations = context
+            .get_global_metrics()
+            .iter()
+            .map(|(loc, ..)| loc)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .map(|loc| (only_coord(&loc).to_user(&wght.converter), only_coord(&loc)))
+            .collect::<Vec<_>>();
+        metric_locations.sort();
+
+        // Note there are *not* metrics at (600, 0.67)
+        assert_eq!(
+            vec![
+                (UserCoord::new(400.0), NormalizedCoord::new(0.0)),
+                (UserCoord::new(700.0), NormalizedCoord::new(1.0)),
+            ],
+            metric_locations
         );
     }
 }

@@ -187,11 +187,7 @@ impl VariationModel {
                             Some((delta, master_weight.into_inner()))
                         })
                         .fold(initial_vector, |acc, (other, other_weight)| {
-                            acc - if other_weight != 1.0 {
-                                *other * other_weight.into()
-                            } else {
-                                *other
-                            }
+                            acc - *other * other_weight.into()
                         }),
                 );
             }
