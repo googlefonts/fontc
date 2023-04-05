@@ -64,9 +64,10 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkErr
     } else {
         // In Glyphs.app, the starting node of a closed contour is always
         // stored at the end of the nodes list.
-        let (last, _) = nodes
+        let (last, elements) = nodes
             .split_last()
             .expect("Not empty and no last is a good trick");
+        nodes = elements;
         last
     };
     if first.node_type == NodeType::OffCurve {
