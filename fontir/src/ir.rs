@@ -13,7 +13,7 @@ use font_types::NameId;
 use font_types::Tag;
 use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
-use kurbo::{Affine, BezPath, Point};
+use kurbo::{Affine, BezPath, PathEl, Point};
 use log::warn;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
@@ -695,9 +695,22 @@ impl GlyphPathBuilder {
 
     pub fn close_path(&mut self) -> Result<(), PathConversionError> {
         // Take dangling off-curves to imply a curve back to sub-path start
-        if let Some(last_move) = self.last_move_to {
+        if let Some(last_move) = self.last_move_to.take() {
             if !self.offcurve.is_empty() {
                 self.curve_to(last_move)?;
+            }
+            // explicitly output the implied closing line
+            // equivalent to fontTools' PointToSegmentPen(outputImpliedClosingLine=True)
+            match self.path.elements().last() {
+                Some(PathEl::LineTo(_)) => {
+                    self.path.line_to(last_move);
+                }
+                Some(PathEl::QuadTo(_, last_pt)) | Some(PathEl::CurveTo(_, _, last_pt)) => {
+                    if *last_pt != last_move {
+                        self.path.line_to(last_move)
+                    }
+                }
+                _ => (),
             }
             self.path.close_path();
         }
