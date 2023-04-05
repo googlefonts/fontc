@@ -12,6 +12,8 @@ fn rebase_path(path: &Path, base: &Path) -> PathBuf {
 
     let mut components: Vec<_> = base.components().collect();
 
+    // This is disabled for tests so that we can test it using non-existent
+    // paths, which trigger the is_dir assert.
     #[cfg(not(test))]
     {
         assert!(components.is_empty() || base.is_dir());
