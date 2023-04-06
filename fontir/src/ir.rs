@@ -13,7 +13,7 @@ use font_types::NameId;
 use font_types::Tag;
 use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
-use kurbo::{Affine, BezPath, Point};
+use kurbo::{Affine, BezPath, PathEl, Point};
 use log::warn;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
@@ -699,6 +699,19 @@ impl GlyphPathBuilder {
             if !self.offcurve.is_empty() {
                 self.curve_to(last_move)?;
             }
+            // explicitly output the implied closing line
+            // equivalent to fontTools' PointToSegmentPen(outputImpliedClosingLine=True)
+            match self.path.elements().last() {
+                Some(PathEl::LineTo(_)) => {
+                    self.path.line_to(last_move);
+                }
+                Some(PathEl::QuadTo(_, last_pt)) | Some(PathEl::CurveTo(_, _, last_pt)) => {
+                    if *last_pt != last_move {
+                        self.path.line_to(last_move)
+                    }
+                }
+                _ => (),
+            }
             self.path.close_path();
         }
         Ok(())
@@ -778,5 +791,62 @@ mod tests {
         builder.offcurve((5.0, 4.0)).unwrap();
         builder.qcurve_to((6.0, 2.0)).unwrap();
         assert_eq!("M2,2 Q3,0 4,2 Q5,4 6,2", builder.build().to_svg());
+    }
+
+    #[test]
+    fn last_line_always_emit_implied_closing_line() {
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.line_to((4.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        // a closing line is implied by Z, but emit it nonetheless
+        assert_eq!("M2,2 L4,2 L2,2 Z", builder.build().to_svg());
+
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.line_to((4.0, 2.0)).unwrap();
+        // duplicate last point, not to be confused with the closing line implied by Z
+        builder.line_to((2.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        assert_eq!("M2,2 L4,2 L2,2 L2,2 Z", builder.build().to_svg());
+    }
+
+    #[test]
+    fn last_curve_equals_move_no_closing_line() {
+        // if last curve point is equal to move, there's no need to disambiguate it from
+        // the implicit closing line, so we don't emit one
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.offcurve((3.0, 0.0)).unwrap();
+        builder.qcurve_to((2.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        assert_eq!("M2,2 Q3,0 2,2 Z", builder.build().to_svg());
+
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.offcurve((3.0, 0.0)).unwrap();
+        builder.offcurve((0.0, 3.0)).unwrap();
+        builder.curve_to((2.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        assert_eq!("M2,2 C3,0 0,3 2,2 Z", builder.build().to_svg());
+    }
+
+    #[test]
+    fn last_curve_not_equal_move_do_emit_closing_line() {
+        // if last point is different from move, then emit the implied closing line
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.offcurve((3.0, 0.0)).unwrap();
+        builder.qcurve_to((4.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        assert_eq!("M2,2 Q3,0 4,2 L2,2 Z", builder.build().to_svg());
+
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.offcurve((3.0, 0.0)).unwrap();
+        builder.offcurve((0.0, 3.0)).unwrap();
+        builder.curve_to((4.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        assert_eq!("M2,2 C3,0 0,3 4,2 L2,2 Z", builder.build().to_svg());
     }
 }
