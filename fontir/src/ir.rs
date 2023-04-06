@@ -792,4 +792,61 @@ mod tests {
         builder.qcurve_to((6.0, 2.0)).unwrap();
         assert_eq!("M2,2 Q3,0 4,2 Q5,4 6,2", builder.build().to_svg());
     }
+
+    #[test]
+    fn last_line_always_emit_implied_closing_line() {
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.line_to((4.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        // a closing line is implied by Z, but emit it nonetheless
+        assert_eq!("M2,2 L4,2 L2,2 Z", builder.build().to_svg());
+
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.line_to((4.0, 2.0)).unwrap();
+        // duplicate last point, not to be confused with the closing line implied by Z
+        builder.line_to((2.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        assert_eq!("M2,2 L4,2 L2,2 L2,2 Z", builder.build().to_svg());
+    }
+
+    #[test]
+    fn last_curve_equals_move_no_closing_line() {
+        // if last curve point is equal to move, there's no need to disambiguate it from
+        // the implicit closing line, so we don't emit one
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.offcurve((3.0, 0.0)).unwrap();
+        builder.qcurve_to((2.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        assert_eq!("M2,2 Q3,0 2,2 Z", builder.build().to_svg());
+
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.offcurve((3.0, 0.0)).unwrap();
+        builder.offcurve((0.0, 3.0)).unwrap();
+        builder.curve_to((2.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        assert_eq!("M2,2 C3,0 0,3 2,2 Z", builder.build().to_svg());
+    }
+
+    #[test]
+    fn last_curve_not_equal_move_do_emit_closing_line() {
+        // if last point is different from move, then emit the implied closing line
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.offcurve((3.0, 0.0)).unwrap();
+        builder.qcurve_to((4.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        assert_eq!("M2,2 Q3,0 4,2 L2,2 Z", builder.build().to_svg());
+
+        let mut builder = GlyphPathBuilder::new("test".into());
+        builder.move_to((2.0, 2.0)).unwrap();
+        builder.offcurve((3.0, 0.0)).unwrap();
+        builder.offcurve((0.0, 3.0)).unwrap();
+        builder.curve_to((4.0, 2.0)).unwrap();
+        builder.close_path().unwrap();
+        assert_eq!("M2,2 C3,0 0,3 4,2 L2,2 Z", builder.build().to_svg());
+    }
 }
