@@ -695,7 +695,7 @@ impl GlyphPathBuilder {
 
     pub fn close_path(&mut self) -> Result<(), PathConversionError> {
         // Take dangling off-curves to imply a curve back to sub-path start
-        if let Some(last_move) = self.last_move_to.take() {
+        if let Some(last_move) = self.last_move_to {
             if !self.offcurve.is_empty() {
                 self.curve_to(last_move)?;
             }
