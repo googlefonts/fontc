@@ -83,13 +83,14 @@ mod tests {
     #[test]
     fn build_head_simple() {
         // if SOURCE_DATE_EPOCH is not set, use the current time for created/modified
-        assert!(std::env::var("SOURCE_DATE_EPOCH").is_err());
-        let now = timestamp_since_mac_epoch(Utc::now());
-        let head = build_head(1000, 1);
-        assert_eq!(head.units_per_em, 1000);
-        assert_eq!(head.index_to_loc_format, 1);
-        assert_ge!(head.created.as_secs(), now);
-        assert_ge!(head.modified.as_secs(), now);
+        temp_env::with_var_unset("SOURCE_DATE_EPOCH", || {
+            let now = timestamp_since_mac_epoch(Utc::now());
+            let head = build_head(1000, 1);
+            assert_eq!(head.units_per_em, 1000);
+            assert_eq!(head.index_to_loc_format, 1);
+            assert_ge!(head.created.as_secs(), now);
+            assert_ge!(head.modified.as_secs(), now);
+        });
     }
 
     #[test]
