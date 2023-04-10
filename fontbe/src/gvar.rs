@@ -87,15 +87,17 @@ impl Work<Context, Error> for GvarWork {
         // We built the gvar fragments alongside glyphs, now we need to glue them together into a gvar table
         let static_metadata = context.ir.get_final_static_metadata();
 
+        let mut gids_and_deltas = Vec::new();
+
         let variations: Vec<_> = static_metadata
             .glyph_order
             .iter()
             .enumerate()
             .map(|(gid, gn)| {
-                (
-                    GlyphId::new(gid as u16),
-                    to_deltas(&context.get_gvar_fragment(gn)),
-                )
+                let gid = GlyphId::new(gid as u16);
+                let gvar_fragment = context.get_gvar_fragment(gn);
+                gids_and_deltas.push((gid, gvar_fragment.deltas.clone()));
+                (gid, to_deltas(&gvar_fragment))
             })
             .map(|(gid, deltas)| GlyphVariations::new(gid, deltas))
             .collect();

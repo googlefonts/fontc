@@ -252,6 +252,10 @@ impl<T: Copy> Location<T> {
         self
     }
 
+    pub fn rm_pos(&mut self, axis: &str) {
+        self.0.remove(axis);
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
         self.0.iter()
     }

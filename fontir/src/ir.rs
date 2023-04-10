@@ -1,7 +1,7 @@
 //! Serde types for font IR.
 
 use crate::{
-    coords::{CoordConverter, NormalizedLocation, UserCoord},
+    coords::{CoordConverter, NormalizedCoord, NormalizedLocation, UserCoord},
     error::{PathConversionError, VariationModelError, WorkError},
     serde::{
         deserialize_name_id, deserialize_tag, serialize_name_id, serialize_tag,
@@ -41,20 +41,28 @@ pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>.
     pub names: HashMap<NameKey, String>,
 
-    /// Every axis used by the font being compiled
+    /// Every axis used by the font being compiled, including point axes.
     pub axes: Vec<Axis>,
+
+    /// Every variable (non-point) axis used by the font being compiled.
+    ///
+    /// If empty this is a static font.
+    pub variable_axes: Vec<Axis>,
 
     /// The name of every glyph, in the order it will be emitted
     ///
     /// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
     pub glyph_order: IndexSet<GlyphName>,
 
-    /// A model of how the space defined by [Self::axes] is split into regions that have deltas.
+    /// A model of how variation space is split into regions that have deltas.
     ///
-    /// This copy includes all locations used in the entire font. Users, such as glyph BE, may wish
-    /// to narrow (submodel in FontTools terms) to the set of locations they actually use. Use of a
-    /// location not in the global model is an error.
+    /// This copy includes all locations used in the entire font. That is, every
+    /// location any glyph has an instance. Use of a location not in the global model
+    /// is an error.
     pub variation_model: VariationModel,
+
+    axes_default: NormalizedLocation,
+    variable_axes_default: NormalizedLocation,
 }
 
 impl StaticMetadata {
@@ -65,8 +73,8 @@ impl StaticMetadata {
         glyph_order: IndexSet<GlyphName>,
         glyph_locations: HashSet<NormalizedLocation>,
     ) -> Result<StaticMetadata, VariationModelError> {
-        let axis_names = axes.iter().map(|a| a.name.clone()).collect();
-        let variation_model = VariationModel::new(glyph_locations, axis_names)?;
+        // Point axes are less exciting than ranged ones
+        let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
 
         // Claim names for axes
         let mut name_id_gen = 255;
@@ -79,13 +87,27 @@ impl StaticMetadata {
             );
         });
 
+        let variation_model = VariationModel::new(glyph_locations, variable_axes.clone())?;
+
+        let axes_default = axes
+            .iter()
+            .map(|a| (a.name.clone(), NormalizedCoord::new(0.0)))
+            .collect();
+        let variable_axes_default = axes
+            .iter()
+            .map(|a| (a.name.clone(), NormalizedCoord::new(0.0)))
+            .collect();
+
         Ok(StaticMetadata {
             units_per_em,
             vendor_id: DEFAULT_VENDOR_ID,
             names,
             axes,
+            variable_axes,
             glyph_order,
             variation_model,
+            axes_default,
+            variable_axes_default,
         })
     }
 
@@ -93,13 +115,14 @@ impl StaticMetadata {
         self.glyph_order.get_index_of(name).map(|i| i as u32)
     }
 
-    /// Shorthand for `.variation_model.default_location()`
+    /// The default on all known axes.
     pub fn default_location(&self) -> &NormalizedLocation {
-        self.variation_model.default_location()
+        &self.axes_default
     }
 
-    pub fn is_static(&self) -> bool {
-        self.axes.iter().all(|a| a.is_static())
+    /// The default on all variable (non-point) axes.
+    pub fn variable_axes_default(&self) -> &NormalizedLocation {
+        &self.variable_axes_default
     }
 }
 
@@ -414,7 +437,7 @@ pub struct Axis {
 }
 
 impl Axis {
-    pub fn is_static(&self) -> bool {
+    pub fn is_point(&self) -> bool {
         self.min == self.default && self.max == self.default
     }
 }

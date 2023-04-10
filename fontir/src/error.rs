@@ -147,4 +147,6 @@ pub enum VariationModelError {
         axis_names: Vec<String>,
         location: NormalizedLocation,
     },
+    #[error("{0} is is an axis of variation defined only at a single point")]
+    PointAxis(String),
 }
