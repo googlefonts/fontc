@@ -157,10 +157,13 @@ fn point_seqs_for_composite_glyph(ir_glyph: &ir::Glyph) -> HashMap<NormalizedLoc
         .sources()
         .iter()
         .map(|(loc, inst)| {
+            // We need 1 point per component for it's X/Y, plus phantoms
+            // See https://github.com/fonttools/fonttools/blob/1c283756a5e39d69459eea80ed12792adc4922dd/Lib/fontTools/ttLib/tables/_g_v_a_r.py#L243
             let mut points = Vec::new();
-
-            // TODO: composites arguably need more than just phantoms
-
+            for component in inst.components.iter() {
+                let [.., dx, dy] = component.transform.as_coeffs();
+                points.push((dx, dy).into());
+            }
             add_phantom_points(inst.width.ot_round(), &mut points);
 
             (loc.clone(), points)
@@ -174,7 +177,7 @@ impl Work<Context, Error> for GlyphWork {
 
         let static_metadata = context.ir.get_final_static_metadata();
         let var_model = &static_metadata.variation_model;
-        let default_location = var_model.default_location();
+        let default_location = static_metadata.default_location();
         let ir_glyph = &*context.ir.get_glyph_ir(&self.glyph_name);
         let glyph: CheckedGlyph = ir_glyph.try_into()?;
 
@@ -217,6 +220,7 @@ impl Work<Context, Error> for GlyphWork {
         let deltas = var_model
             .deltas(&point_seqs)
             .map_err(|e| Error::GlyphDeltaError(self.glyph_name.clone(), e))?;
+
         context.set_gvar_fragment(name, GvarFragment { deltas });
 
         Ok(())

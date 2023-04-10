@@ -28,7 +28,7 @@ parking_lot = "0.12.1"
 
 font-types = "0.1.4"
 read-fonts = "0.1.4"
-write-fonts = "0.1.9"
+write-fonts = "0.1.11"
 
 kurbo = { version = "0.9.2", features = ["serde"] }
 

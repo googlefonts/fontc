@@ -23,12 +23,7 @@ pub fn create_fvar_work() -> Box<BeWork> {
 
 fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
     // Guard clause: don't produce fvar for a static font
-    let axes: Vec<_> = static_metadata
-        .axes
-        .iter()
-        .filter(|a| !a.is_static())
-        .collect();
-    if axes.is_empty() {
+    if static_metadata.variable_axes.is_empty() {
         trace!("Skip fvar; this is not a variable font");
         return None;
     }
@@ -40,7 +35,9 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
         .collect();
 
     let axes_and_instances = AxisInstanceArrays::new(
-        axes.iter()
+        static_metadata
+            .variable_axes
+            .iter()
             .map(|ir_axis| {
                 let mut var = VariationAxisRecord {
                     axis_tag: ir_axis.tag,
@@ -61,6 +58,7 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
 
     let axis_count = axes_and_instances.axes.len().try_into().unwrap();
     let instance_count = axes_and_instances.instances.len().try_into().unwrap();
+
     Some(Fvar::new(
         MajorMinor::VERSION_1_0,
         axes_and_instances,
