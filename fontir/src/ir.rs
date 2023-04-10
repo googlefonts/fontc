@@ -1,4 +1,4 @@
-//! Serde types for font IR.
+//! Font IR types.
 
 use crate::{
     coords::{CoordConverter, NormalizedCoord, NormalizedLocation, UserCoord},
@@ -14,7 +14,7 @@ use font_types::Tag;
 use fontdrasil::types::GlyphName;
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
-use log::warn;
+use log::{trace, warn};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -70,7 +70,7 @@ impl StaticMetadata {
         units_per_em: u16,
         names: HashMap<NameKey, String>,
         axes: Vec<Axis>,
-        glyph_order: IndexSet<GlyphName>,
+        mut glyph_order: IndexSet<GlyphName>,
         glyph_locations: HashSet<NormalizedLocation>,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
@@ -97,6 +97,15 @@ impl StaticMetadata {
             .iter()
             .map(|a| (a.name.clone(), NormalizedCoord::new(0.0)))
             .collect();
+
+        // cmap has strong beliefs wrt .notdef coming first
+        let notdef: GlyphName = ".notdef".into();
+        if let Some(idx) = glyph_order.get_index_of(&notdef) {
+            if idx > 0 {
+                trace!("Migrate .notdef from {idx} to 0");
+                glyph_order.move_index(idx, 0);
+            }
+        }
 
         Ok(StaticMetadata {
             units_per_em,
