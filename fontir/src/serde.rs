@@ -122,10 +122,10 @@ impl From<CoordConverter> for CoordConverterSerdeRepr {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StaticMetadataSerdeRepr {
     pub units_per_em: u16,
-    pub names: HashMap<NameKey, String>,
     pub axes: Vec<Axis>,
-    pub glyph_order: Vec<String>,
     pub glyph_locations: Vec<NormalizedLocation>,
+    pub names: HashMap<NameKey, String>,
+    pub glyph_order: Vec<String>,
 }
 
 impl From<StaticMetadataSerdeRepr> for StaticMetadata {
@@ -143,16 +143,17 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
 
 impl From<StaticMetadata> for StaticMetadataSerdeRepr {
     fn from(from: StaticMetadata) -> Self {
+        let glyph_locations = from.variation_model.locations().cloned().collect();
         StaticMetadataSerdeRepr {
             units_per_em: from.units_per_em,
-            names: from.names,
             axes: from.axes,
+            glyph_locations,
+            names: from.names,
             glyph_order: from
                 .glyph_order
                 .into_iter()
                 .map(|n| n.as_str().to_string())
                 .collect(),
-            glyph_locations: from.variation_model.locations().cloned().collect(),
         }
     }
 }

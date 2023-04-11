@@ -1,28 +1,34 @@
-//! 'glyf' Glyph binary compilation
+//! 'glyf' and 'gvar' compilation
+//!
+//! Each glyph is built in isolation and then the fragments are collected
+//! and glued together to form a final table.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{coords::NormalizedLocation, ir};
-use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Rect};
+use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect};
 use log::{trace, warn};
 
 use read_fonts::{
     tables::glyf::{self, Anchor, Transform},
     types::{F2Dot14, GlyphId},
 };
-use write_fonts::tables::glyf::{Bbox, Component, ComponentFlags, CompositeGlyph, SimpleGlyph};
+use write_fonts::{
+    tables::glyf::{Bbox, Component, ComponentFlags, CompositeGlyph, SimpleGlyph},
+    OtRound,
+};
 
 use crate::{
     error::{Error, GlyphProblem},
-    orchestration::{BeWork, Context, Glyph},
+    orchestration::{BeWork, Context, Glyph, GvarFragment},
 };
 
 struct GlyphWork {
     glyph_name: GlyphName,
 }
 
-pub fn create_glyph_work(glyph_name: GlyphName) -> Box<BeWork> {
+pub fn create_glyf_work(glyph_name: GlyphName) -> Box<BeWork> {
     Box::new(GlyphWork { glyph_name })
 }
 
@@ -110,46 +116,119 @@ fn create_composite(
     Ok(composite.unwrap())
 }
 
+/// * <https://github.com/fonttools/fonttools/blob/3b9a73ff8379ab49d3ce35aaaaf04b3a7d9d1655/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L335-L367>
+/// * <https://docs.microsoft.com/en-us/typography/opentype/spec/tt_instructing_glyphs#phantoms>
+fn add_phantom_points(advance: u16, points: &mut Vec<Point>) {
+    // FontTools says
+    //      leftSideX = glyph.xMin - leftSideBearing
+    //      rightSideX = leftSideX + horizontalAdvanceWidth
+    // We currently always set lsb to xMin so leftSideX = 0, rightSideX = advance.
+    points.push(Point::new(0.0, 0.0)); // leftSideX, 0
+    points.push(Point::new(advance as f64, 0.0)); // rightSideX, 0
+
+    // TODO: vertical phantom points
+    points.push(Point::new(0.0, 0.0));
+    points.push(Point::new(0.0, 0.0));
+}
+
+fn point_seqs_for_simple_glyph(
+    ir_glyph: &ir::Glyph,
+    instances: HashMap<NormalizedLocation, SimpleGlyph>,
+) -> HashMap<NormalizedLocation, Vec<Point>> {
+    instances
+        .into_iter()
+        .map(|(loc, glyph)| {
+            let mut points = glyph
+                .contours()
+                .iter()
+                .flat_map(|c| c.iter())
+                .map(|cp| Point::new(cp.x as f64, cp.y as f64))
+                .collect();
+
+            add_phantom_points(ir_glyph.sources()[&loc].width.ot_round(), &mut points);
+
+            (loc, points)
+        })
+        .collect()
+}
+
+fn point_seqs_for_composite_glyph(ir_glyph: &ir::Glyph) -> HashMap<NormalizedLocation, Vec<Point>> {
+    ir_glyph
+        .sources()
+        .iter()
+        .map(|(loc, inst)| {
+            // We need 1 point per component for it's X/Y, plus phantoms
+            // See https://github.com/fonttools/fonttools/blob/1c283756a5e39d69459eea80ed12792adc4922dd/Lib/fontTools/ttLib/tables/_g_v_a_r.py#L243
+            let mut points = Vec::new();
+            for component in inst.components.iter() {
+                let [.., dx, dy] = component.transform.as_coeffs();
+                points.push((dx, dy).into());
+            }
+            add_phantom_points(inst.width.ot_round(), &mut points);
+
+            (loc.clone(), points)
+        })
+        .collect()
+}
+
 impl Work<Context, Error> for GlyphWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("BE glyph work for {}", self.glyph_name);
 
         let static_metadata = context.ir.get_final_static_metadata();
         let var_model = &static_metadata.variation_model;
-        let default_location = var_model.default_location();
+        let default_location = static_metadata.default_location();
         let ir_glyph = &*context.ir.get_glyph_ir(&self.glyph_name);
         let glyph: CheckedGlyph = ir_glyph.try_into()?;
 
         // Hopefully in time https://github.com/harfbuzz/boring-expansion-spec means we can drop this
         let glyph = cubics_to_quadratics(glyph);
 
-        // TODO refine (submodel) var model if glyph locations is a subset of var model locations
-
-        match glyph {
+        let (name, point_seqs) = match glyph {
             CheckedGlyph::Composite { name, components } => {
                 let composite = create_composite(context, &name, default_location, &components)?;
-                context.set_glyph(name, composite.into());
+                context.set_glyph(name.clone(), composite.into());
+                (name, point_seqs_for_composite_glyph(ir_glyph))
             }
-            CheckedGlyph::Contour { name, contours } => {
-                // Draw the default outline of our simple glyph
-                let Some(path) = contours.get(default_location) else {
+            CheckedGlyph::Contour { name, paths } => {
+                // Convert paths to SimpleGlyph so we can get consistent point streams
+                let instances = paths
+                    .into_iter()
+                    .map(|(loc, path)| {
+                        match SimpleGlyph::from_kurbo(&path).map_err(|e| Error::KurboError {
+                            glyph_name: self.glyph_name.clone(),
+                            kurbo_problem: e,
+                            context: path.to_svg(),
+                        }) {
+                            Ok(glyph) => Ok((loc, glyph)),
+                            Err(e) => Err(e),
+                        }
+                    })
+                    .collect::<Result<HashMap<_, _>, Error>>()?;
+
+                // Establish the default outline of our simple glyph
+                let Some(base_glyph) = instances.get(default_location) else {
                     return Err(Error::GlyphError(ir_glyph.name.clone(), GlyphProblem::MissingDefault));
                 };
-                let base_glyph = SimpleGlyph::from_kurbo(path).map_err(|e| Error::KurboError {
-                    glyph_name: self.glyph_name.clone(),
-                    kurbo_problem: e,
-                    context: path.to_svg(),
-                })?;
-                context.set_glyph(name, base_glyph.into());
+                context.set_glyph(name.clone(), base_glyph.clone().into());
+
+                (name, point_seqs_for_simple_glyph(ir_glyph, instances))
             }
-        }
+        };
+
+        // Contour (aka Simple) and Composite both need gvar
+        let deltas = var_model
+            .deltas(&point_seqs)
+            .map_err(|e| Error::GlyphDeltaError(self.glyph_name.clone(), e))?;
+
+        context.set_gvar_fragment(name, GvarFragment { deltas });
 
         Ok(())
     }
 }
 
 fn cubics_to_quadratics(glyph: CheckedGlyph) -> CheckedGlyph {
-    let CheckedGlyph::Contour { name, contours } = glyph else {
+    let CheckedGlyph::Contour { name, paths: contours } = glyph else {
         return glyph;  // nop for composite
     };
 
@@ -256,7 +335,7 @@ fn cubics_to_quadratics(glyph: CheckedGlyph) -> CheckedGlyph {
 
     CheckedGlyph::Contour {
         name,
-        contours: new_contours,
+        paths: new_contours,
     }
 }
 
@@ -273,7 +352,7 @@ enum CheckedGlyph {
     },
     Contour {
         name: GlyphName,
-        contours: HashMap<NormalizedLocation, BezPath>,
+        paths: HashMap<NormalizedLocation, BezPath>,
     },
 }
 
@@ -356,7 +435,10 @@ impl TryFrom<&ir::Glyph> for CheckedGlyph {
                     (location.clone(), path)
                 })
                 .collect();
-            CheckedGlyph::Contour { name, contours }
+            CheckedGlyph::Contour {
+                name,
+                paths: contours,
+            }
         } else {
             let components = glyph
                 .sources()

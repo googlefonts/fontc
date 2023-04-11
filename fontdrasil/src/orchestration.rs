@@ -17,6 +17,8 @@ pub enum Access<I> {
     All,
     /// Access to one specific resource is permitted
     One(I),
+    /// Access to two specific resource is permitted
+    Two(I, I),
     /// A closure is used to determine access
     Custom(Arc<dyn Fn(&I) -> bool + Send + Sync>),
 }
@@ -86,6 +88,7 @@ impl<I: Eq> Access<I> {
             Access::None => false,
             Access::All => true,
             Access::One(allow) => id == allow,
+            Access::Two(a1, a2) => id == a1 || id == a2,
             Access::Custom(f) => f(id),
         }
     }

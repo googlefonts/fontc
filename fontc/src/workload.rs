@@ -6,6 +6,7 @@ use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier};
 use fontdrasil::orchestration::Access;
 use fontir::orchestration::{Context as FeContext, WorkId as FeWorkIdentifier};
+use log::debug;
 
 use crate::{
     work::{AnyContext, AnyWork, AnyWorkError, ReadAccess},
@@ -74,25 +75,37 @@ impl Workload {
             // If anything progresses before we've done this we have a graph bug
             AnyWorkId::Fe(FeWorkIdentifier::FinalizeStaticMetadata) => {
                 for glyph_name in fe_root.get_final_static_metadata().glyph_order.iter() {
-                    let id = AnyWorkId::Be(BeWorkIdentifier::Glyph(glyph_name.clone()));
-                    if self.jobs_pending.contains_key(&id) {
+                    let glyph_work_id =
+                        AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name.clone()));
+                    let gvar_work_id =
+                        AnyWorkId::Be(BeWorkIdentifier::GvarFragment(glyph_name.clone()));
+                    if self.jobs_pending.contains_key(&glyph_work_id) {
                         continue;
                     }
 
-                    log::debug!("Updating graph for new glyph {glyph_name}");
+                    debug!("Adding dependencies on {glyph_name}");
 
-                    // It would be lovely if our new glyph was in glyf and hmtx
+                    // It would be lovely if our new glyph was in glyf, gvar, and hmtx
                     // loca hides with glyf
-                    for merge_id in [BeWorkIdentifier::Glyf, BeWorkIdentifier::Hmtx] {
+                    for (merge_work_id, new_dep) in [
+                        (BeWorkIdentifier::Glyf, &glyph_work_id),
+                        (BeWorkIdentifier::Gvar, &gvar_work_id),
+                        (BeWorkIdentifier::Hmtx, &glyph_work_id),
+                    ] {
                         self.jobs_pending
-                            .get_mut(&AnyWorkId::Be(merge_id))
+                            .get_mut(&AnyWorkId::Be(merge_work_id))
                             .unwrap()
                             .dependencies
-                            .insert(id.clone());
+                            .insert(new_dep.clone());
                     }
 
                     super::add_glyph_be_job(self, fe_root, glyph_name.clone());
                 }
+            }
+
+            // GlyfFragment carries GvarFragment along for the ride
+            AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name)) => {
+                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::GvarFragment(glyph_name)))
             }
 
             // Glyf carries Loca along for the ride

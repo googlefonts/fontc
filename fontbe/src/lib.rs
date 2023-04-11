@@ -5,6 +5,7 @@ pub mod features;
 pub mod font;
 pub mod fvar;
 pub mod glyphs;
+pub mod gvar;
 pub mod head;
 pub mod maxp;
 pub mod metrics_and_limits;

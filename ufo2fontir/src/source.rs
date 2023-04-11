@@ -1052,7 +1052,7 @@ mod tests {
     fn glyph_locations() {
         let (_, context) = build_static_metadata("wght_var.designspace");
         let static_metadata = &context.get_init_static_metadata();
-        let wght = static_metadata.axes.first().unwrap();
+        let wght = static_metadata.variable_axes.first().unwrap();
 
         assert_eq!(
             vec![
@@ -1072,7 +1072,7 @@ mod tests {
     fn no_metrics_for_glyph_only_sources() {
         let (_, context) = build_global_metrics("wght_var.designspace");
         let static_metadata = &context.get_init_static_metadata();
-        let wght = static_metadata.axes.first().unwrap();
+        let wght = static_metadata.variable_axes.first().unwrap();
         let mut metric_locations = context
             .get_global_metrics()
             .iter()

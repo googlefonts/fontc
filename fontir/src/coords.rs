@@ -216,6 +216,10 @@ impl NormalizedCoord {
     pub fn into_inner(self) -> OrderedFloat<f32> {
         self.0
     }
+
+    pub fn to_f32(&self) -> f32 {
+        self.0.into_inner()
+    }
 }
 
 impl From<NormalizedCoord> for F2Dot14 {
@@ -248,6 +252,10 @@ impl<T: Copy> Location<T> {
         self
     }
 
+    pub fn rm_pos(&mut self, axis: &str) {
+        self.0.remove(axis);
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
         self.0.iter()
     }
@@ -262,6 +270,10 @@ impl<T: Copy> Location<T> {
 
     pub fn get(&self, axis_name: &String) -> Option<T> {
         self.0.get(axis_name).copied()
+    }
+
+    pub fn retain(&mut self, pred: impl Fn(&String, &mut T) -> bool) {
+        self.0.retain(pred);
     }
 }
 
@@ -295,8 +307,13 @@ impl NormalizedLocation {
                 .collect(),
         )
     }
+
     pub fn has_non_zero(&self, axis_name: &String) -> bool {
         self.get(axis_name).unwrap_or_default().into_inner() != OrderedFloat(0.0)
+    }
+
+    pub fn has_any_non_zero(&self) -> bool {
+        self.0.values().any(|v| v.into_inner() != OrderedFloat(0.0))
     }
 }
 
