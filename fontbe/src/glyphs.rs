@@ -216,7 +216,7 @@ impl Work<Context, Error> for GlyphWork {
             }
         };
 
-        // Everybody loves gvar!
+        // Contour (aka Simple) and Composite both need gvar
         let deltas = var_model
             .deltas(&point_seqs)
             .map_err(|e| Error::GlyphDeltaError(self.glyph_name.clone(), e))?;

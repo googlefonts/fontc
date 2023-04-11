@@ -44,17 +44,6 @@ pub struct VariationModel {
     delta_weights: Vec<Vec<(usize, OrderedFloat<f32>)>>,
 }
 
-fn only_known_axes(
-    axis_names: &HashSet<String>,
-    location: &NormalizedLocation,
-) -> NormalizedLocation {
-    let mut updated = location.clone();
-    for axis in location.axis_names().filter(|n| !axis_names.contains(*n)) {
-        updated.rm_pos(axis);
-    }
-    updated
-}
-
 impl VariationModel {
     /// Create a model of variation space subdivision suitable for delta construction.
     ///
@@ -80,9 +69,9 @@ impl VariationModel {
             .collect();
 
         let mut expanded_locations = HashSet::new();
-        for location in locations.into_iter() {
+        for mut location in locations.into_iter() {
             // Make sure locations are defined on all axes we know of, and only axes we know of
-            let mut location = only_known_axes(&axis_names, &location);
+            location.retain(|axis_name, _| axis_names.contains(axis_name));
 
             // Fill in missing axis positions with 0
             for axis in axes.iter() {
@@ -167,7 +156,11 @@ impl VariationModel {
     {
         let point_seqs: HashMap<_, _> = point_seqs
             .iter()
-            .map(|(loc, seq)| (only_known_axes(&self.axis_names, loc), seq))
+            .map(|(loc, seq)| {
+                let mut loc = loc.clone();
+                loc.retain(|axis_name, _| self.axis_names.contains(axis_name));
+                (loc, seq)
+            })
             .collect();
 
         let Some(defaults) = point_seqs.get(&self.default) else {
@@ -427,9 +420,9 @@ impl VariationRegion {
                     .get(axis_name)
                     .map(|v| v.into_inner())
                     .unwrap_or_default();
-                let lower = tent.lower.into_inner();
+                let min = tent.min.into_inner();
                 let peak = tent.peak.into_inner();
-                let upper = tent.upper.into_inner();
+                let max = tent.max.into_inner();
 
                 // If we're at the peak by definition we have full influence
                 if v == peak {
@@ -437,11 +430,11 @@ impl VariationRegion {
                 }
 
                 // If the Tent is 0,0,0 it's always in full effect
-                if (lower, peak, upper) == (ZERO, ZERO, ZERO) {
+                if (min, peak, max) == (ZERO, ZERO, ZERO) {
                     return scalar; // *= 1
                 }
 
-                if v <= lower || upper <= v {
+                if v <= min || max <= v {
                     trace!(
                         "  {:?} => 0 due to {} {:?} at {:?}",
                         self,
@@ -453,9 +446,9 @@ impl VariationRegion {
                 }
 
                 let subtract_me = if v < peak {
-                    tent.lower.into_inner()
+                    tent.min.into_inner()
                 } else {
-                    tent.upper.into_inner()
+                    tent.max.into_inner()
                 };
                 scalar * (v - subtract_me) / (peak - subtract_me)
             },
@@ -481,24 +474,24 @@ impl VariationRegion {
 
 /// The min/peak/max of a masters influence.
 ///
-/// Visualize as a tent of influence, starting at lower, peaking at peak,
-/// and dropping off to zero at upper.
+/// Visualize as a tent of influence, starting at min, peaking at peak,
+/// and dropping off to zero at max.
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct Tent {
-    pub lower: NormalizedCoord,
+    pub min: NormalizedCoord,
     pub peak: NormalizedCoord,
-    pub upper: NormalizedCoord,
+    pub max: NormalizedCoord,
 }
 
 impl Tent {
-    fn new(mut lower: NormalizedCoord, peak: NormalizedCoord, mut upper: NormalizedCoord) -> Self {
+    fn new(mut min: NormalizedCoord, peak: NormalizedCoord, mut max: NormalizedCoord) -> Self {
         let zero = NormalizedCoord::new(0.0);
         if peak > zero {
-            lower = zero;
+            min = zero;
         } else {
-            upper = zero;
+            max = zero;
         }
-        Tent { lower, peak, upper }
+        Tent { min, peak, max }
     }
 
     /// OT-specific validation of whether we could have any influence
@@ -507,15 +500,15 @@ impl Tent {
     ///
     /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L162>
     fn validate(&self) -> bool {
-        let lower = self.lower.into_inner();
+        let min = self.min.into_inner();
         let peak = self.peak.into_inner();
-        let upper = self.upper.into_inner();
+        let max = self.max.into_inner();
 
-        if lower > peak || peak > upper {
+        if min > peak || peak > max {
             return false;
         }
         // In fonts the influence at zero must be zero so we cannot span zero
-        if lower < ZERO && upper > ZERO {
+        if min < ZERO && max > ZERO {
             return false;
         }
         true
@@ -523,7 +516,7 @@ impl Tent {
 
     pub fn has_non_zero(&self) -> bool {
         let zero = NormalizedCoord::new(0.0);
-        (zero, zero, zero) != (self.lower, self.peak, self.upper)
+        (zero, zero, zero) != (self.min, self.peak, self.max)
     }
 }
 
@@ -538,9 +531,9 @@ impl Display for Tent {
         let comment = if self.validate() { "" } else { " (invalid)" };
         f.write_fmt(format_args!(
             "Tent {{{}, {}, {}{}}}",
-            self.lower.into_inner(),
+            self.min.into_inner(),
             self.peak.into_inner(),
-            self.upper.into_inner(),
+            self.max.into_inner(),
             comment
         ))?;
         Ok(())
@@ -616,7 +609,7 @@ fn master_influence(axis_order: &Vec<String>, regions: &[VariationRegion]) -> Ve
             // If prev doesn't overlap current we aren't interested
             let overlap = region.iter().all(|(axis_name, tent)| {
                 let prev_peak = prev_region.axis_tents[axis_name].peak;
-                prev_peak == tent.peak || (tent.lower < prev_peak && prev_peak < tent.upper)
+                prev_peak == tent.peak || (tent.min < prev_peak && prev_peak < tent.max)
             });
             if !overlap {
                 continue;
@@ -637,13 +630,13 @@ fn master_influence(axis_order: &Vec<String>, regions: &[VariationRegion]) -> Ve
                 match prev_peak.cmp(&axis_region.peak) {
                     Ordering::Less => {
                         ratio = (prev_peak - axis_region.peak).into_inner()
-                            / (axis_region.lower - axis_region.peak).into_inner();
-                        axis_region.lower = prev_peak;
+                            / (axis_region.min - axis_region.peak).into_inner();
+                        axis_region.min = prev_peak;
                     }
                     Ordering::Greater => {
                         ratio = (prev_peak - axis_region.peak).into_inner()
-                            / (axis_region.upper - axis_region.peak).into_inner();
-                        axis_region.upper = prev_peak;
+                            / (axis_region.max - axis_region.peak).into_inner();
+                        axis_region.max = prev_peak;
                     }
                     Ordering::Equal => continue, // can't split in this direction
                 }

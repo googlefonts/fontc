@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, fs, io, path::Path, sync::Arc};
 
+use font_types::F2Dot14;
 use fontdrasil::{
     orchestration::{Access, AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
@@ -12,6 +13,7 @@ use fontir::{
     variations::VariationRegion,
 };
 use kurbo::Vec2;
+use log::trace;
 use parking_lot::RwLock;
 use read_fonts::{FontData, FontRead};
 use serde::{Deserialize, Serialize};
@@ -22,12 +24,14 @@ use write_fonts::{
         cmap::Cmap,
         fvar::Fvar,
         glyf::{Bbox, SimpleGlyph},
+        gvar::GlyphDeltas,
         head::Head,
         hhea::Hhea,
         maxp::Maxp,
         name::Name,
         os2::Os2,
         post::Post,
+        variations::Tuple,
     },
     validate::Validate,
     FontBuilder, FontWrite,
@@ -155,6 +159,64 @@ impl Glyph {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GvarFragment {
     pub deltas: Vec<(VariationRegion, Vec<Vec2>)>,
+}
+
+impl GvarFragment {
+    pub fn to_deltas(&self) -> Vec<GlyphDeltas> {
+        self.deltas
+            .iter()
+            .filter_map(|(region, deltas)| {
+                if region.is_default() {
+                    return None;
+                }
+
+                // Variation of no point has limited entertainment value
+                if deltas.is_empty() {
+                    return None;
+                }
+
+                // TODO: nice rounding on deltas
+                let deltas: Vec<_> = deltas.iter().map(|v| (v.x as i16, v.y as i16)).collect();
+
+                let tuple_builder: TupleBuilder = region.into();
+                let (min, peak, max) = tuple_builder.build();
+                Some(GlyphDeltas::new(peak, deltas, Some((min, max))))
+            })
+            .collect()
+    }
+}
+
+/// <https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview#variation-data>
+#[derive(Debug, Default)]
+struct TupleBuilder {
+    axis_names: Vec<String>,
+    min: Vec<F2Dot14>,
+    peak: Vec<F2Dot14>,
+    max: Vec<F2Dot14>,
+}
+
+impl TupleBuilder {
+    fn build(self) -> (Tuple, Tuple, Tuple) {
+        (
+            Tuple::new(self.min),
+            Tuple::new(self.peak),
+            Tuple::new(self.max),
+        )
+    }
+}
+
+impl From<&VariationRegion> for TupleBuilder {
+    fn from(region: &VariationRegion) -> Self {
+        let mut builder = TupleBuilder::default();
+        for (axis_name, tent) in region.iter() {
+            builder.axis_names.push(axis_name.clone());
+            builder.min.push(F2Dot14::from_f32(tent.min.to_f32()));
+            builder.peak.push(F2Dot14::from_f32(tent.peak.to_f32()));
+            builder.max.push(F2Dot14::from_f32(tent.max.to_f32()));
+        }
+        trace!("{builder:?}");
+        builder
+    }
 }
 
 pub type BeWork = dyn Work<Context, Error> + Send;

@@ -271,6 +271,10 @@ impl<T: Copy> Location<T> {
     pub fn get(&self, axis_name: &String) -> Option<T> {
         self.0.get(axis_name).copied()
     }
+
+    pub fn retain(&mut self, pred: impl Fn(&String, &mut T) -> bool) {
+        self.0.retain(pred);
+    }
 }
 
 impl DesignLocation {
