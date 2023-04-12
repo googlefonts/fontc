@@ -1,11 +1,11 @@
 //! Merge tables into a font
 
 use fontdrasil::orchestration::Work;
-use log::trace;
+use log::debug;
 use read_fonts::{
     tables::{
         cmap::Cmap, fvar::Fvar, glyf::Glyf, gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx,
-        loca::Loca, maxp::Maxp, name::Name, os2::Os2, post::Post,
+        loca::Loca, maxp::Maxp, name::Name, os2::Os2, post::Post, avar::Avar,
     },
     types::Tag,
     TopLevelTable,
@@ -29,7 +29,7 @@ enum TableType {
 }
 
 const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
-    (WorkId::Avar, Cmap::TAG, TableType::Variable),
+    (WorkId::Avar, Avar::TAG, TableType::Variable),
     (WorkId::Cmap, Cmap::TAG, TableType::Static),
     (WorkId::Fvar, Fvar::TAG, TableType::Variable),
     (WorkId::Head, Head::TAG, TableType::Static),
@@ -58,10 +58,10 @@ impl Work<Context, Error> for FontWork {
             .is_empty();
         for (work_id, tag, table_type) in TABLES_TO_MERGE {
             if is_static && matches!(table_type, TableType::Variable) {
-                trace!("Skip {tag} because this is a static font");
+                debug!("Skip {tag} because this is a static font");
                 continue;
             }
-            trace!("Grabbing {tag} for final font");
+            debug!("Grabbing {tag} for final font");
             let bytes = context.read_raw(work_id.clone()).map_err(Error::IoError)?;
             builder.add_table(*tag, bytes);
         }

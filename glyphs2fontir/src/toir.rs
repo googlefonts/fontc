@@ -139,6 +139,9 @@ fn find_by_design_coord(
         })
 }
 
+/// Convert .glyphs axes to IR axes.
+///
+///  See <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L155>
 fn to_ir_axis(
     font: &Font,
     axis_values: &[OrderedFloat<f64>],
@@ -181,6 +184,8 @@ fn to_ir_axis(
         let default = UserCoord::new(default.into_inner());
         CoordConverter::unmapped(min, default, max)
     };
+
+    eprintln!("font.axis_mappings for {} ({min:?}, {default:?}, {max:?}):\n{:#?}", axis.name, font.axis_mappings.get(&axis.name));
 
     Ok(ir::Axis {
         name: axis.name.clone(),

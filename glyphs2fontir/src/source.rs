@@ -80,6 +80,7 @@ impl GlyphsIrSource {
             axis_mappings: font.axis_mappings.clone(),
             features: Default::default(),
             names: Default::default(),
+            instances: font.instances.clone(),
             version_major: Default::default(),
             version_minor: Default::default(),
         };
@@ -103,6 +104,7 @@ impl GlyphsIrSource {
             axis_mappings: Default::default(),
             features: Default::default(),
             names: Default::default(),
+            instances: font.instances.clone(),
             version_major: Default::default(),
             version_minor: Default::default(),
         };
