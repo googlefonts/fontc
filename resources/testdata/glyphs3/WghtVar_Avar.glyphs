@@ -3,7 +3,8 @@
 .formatVersion = 3;
 DisplayStrings = (
 "-",
-"!"
+"!",
+" "
 );
 axes = (
 {
@@ -92,7 +93,7 @@ name = Bold;
 glyphs = (
 {
 glyphname = space;
-lastChange = "2022-12-01 04:58:12 +0000";
+lastChange = "2023-04-12 17:01:58 +0000";
 layers = (
 {
 layerId = m01;
@@ -100,7 +101,11 @@ width = 200;
 },
 {
 layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
-width = 600;
+width = 250;
+},
+{
+layerId = "A7771C0D-4005-44AE-9B1F-ED6CCEC719DA";
+width = 150;
 }
 );
 unicode = 32;
@@ -186,7 +191,7 @@ unicode = 33;
 },
 {
 glyphname = hyphen;
-lastChange = "2023-04-12 16:52:19 +0000";
+lastChange = "2023-04-12 17:01:20 +0000";
 layers = (
 {
 layerId = m01;
@@ -220,6 +225,17 @@ width = 600;
 },
 {
 layerId = "A7771C0D-4005-44AE-9B1F-ED6CCEC719DA";
+shapes = (
+{
+closed = 1;
+nodes = (
+(146,260,l),
+(456,260,l),
+(456,320,l),
+(146,320,l)
+);
+}
+);
 width = 600;
 }
 );
@@ -227,7 +243,7 @@ unicode = 45;
 },
 {
 glyphname = "manual-component";
-lastChange = "2022-12-01 04:57:39 +0000";
+lastChange = "2023-04-12 17:00:55 +0000";
 layers = (
 {
 layerId = m01;
@@ -254,6 +270,10 @@ scale = (1.15,1.25);
 ref = hyphen;
 }
 );
+width = 600;
+},
+{
+layerId = "A7771C0D-4005-44AE-9B1F-ED6CCEC719DA";
 width = 600;
 }
 );
