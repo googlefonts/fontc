@@ -22,7 +22,7 @@ env_logger = "0.10.0"
 
 thiserror = "1.0.37"
 
-kurbo = { version="0.9.2", features=["serde"] }
+kurbo = { version="0.9.3", features=["serde"] }
 ordered-float = "3.4.0"
 indexmap = "1.9.2"
 
