@@ -4,8 +4,8 @@ use fontdrasil::orchestration::Work;
 use log::debug;
 use read_fonts::{
     tables::{
-        cmap::Cmap, fvar::Fvar, glyf::Glyf, gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx,
-        loca::Loca, maxp::Maxp, name::Name, os2::Os2, post::Post, avar::Avar,
+        avar::Avar, cmap::Cmap, fvar::Fvar, glyf::Glyf, gvar::Gvar, head::Head, hhea::Hhea,
+        hmtx::Hmtx, loca::Loca, maxp::Maxp, name::Name, os2::Os2, post::Post,
     },
     types::Tag,
     TopLevelTable,

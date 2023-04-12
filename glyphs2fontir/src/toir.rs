@@ -135,6 +135,7 @@ fn find_by_design_coord(
         .ok_or_else(|| Error::MissingMappingForDesignCoord {
             axis_name: axis_name.to_string(),
             field: field.to_string(),
+            mappings: mappings.to_vec(),
             value,
         })
 }
@@ -145,6 +146,7 @@ fn find_by_design_coord(
 fn to_ir_axis(
     font: &Font,
     axis_values: &[OrderedFloat<f64>],
+    default_idx: usize,
     axis: &glyphs_reader::Axis,
 ) -> Result<ir::Axis, Error> {
     let min = axis_values
@@ -157,7 +159,7 @@ fn to_ir_axis(
         .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
         .max()
         .unwrap();
-    let default = OrderedFloat::<f32>(axis_values[font.default_master_idx].into_inner() as f32);
+    let default = OrderedFloat(axis_values[default_idx].into_inner() as f32);
 
     // Given in design coords based on a sample file
     let default = DesignCoord::new(default);
@@ -185,8 +187,6 @@ fn to_ir_axis(
         CoordConverter::unmapped(min, default, max)
     };
 
-    eprintln!("font.axis_mappings for {} ({min:?}, {default:?}, {max:?}):\n{:#?}", axis.name, font.axis_mappings.get(&axis.name));
-
     Ok(ir::Axis {
         name: axis.name.clone(),
         tag: Tag::from_str(&axis.tag).map_err(Error::InvalidTag)?,
@@ -199,32 +199,24 @@ fn to_ir_axis(
 }
 
 fn ir_axes(font: &Font) -> Result<Vec<ir::Axis>, Error> {
-    let mut axis_values = Vec::new();
+    // Every master should have a value for every axis
     for master in font.masters.iter() {
-        master
-            .axes_values
-            .iter()
-            .enumerate()
-            .for_each(|(idx, value)| {
-                while axis_values.len() <= idx {
-                    axis_values.push(Vec::new());
-                }
-                axis_values[idx].push(*value);
-            });
+        if font.axes.len() != master.axes_values.len() {
+            return Err(Error::InconsistentAxisDefinitions(format!(
+                "Axes {:?} doesn't match axis values {:?}",
+                font.axes, master.axes_values
+            )));
+        }
     }
 
-    if font.axes.len() != axis_values.len() || axis_values.iter().any(|v| v.is_empty()) {
-        return Err(Error::InconsistentAxisDefinitions(format!(
-            "Axes {:?} doesn't match axis values {:?}",
-            font.axes, axis_values
-        )));
-    }
-
-    let mut ir_axes = Vec::new();
-    for (idx, glyphs_axis) in font.axes.iter().enumerate() {
-        ir_axes.push(to_ir_axis(font, &axis_values[idx], glyphs_axis)?);
-    }
-    Ok(ir_axes)
+    font.axes
+        .iter()
+        .enumerate()
+        .map(|(idx, glyphs_axis)| {
+            let axis_values: Vec<_> = font.masters.iter().map(|m| m.axes_values[idx]).collect();
+            to_ir_axis(font, &axis_values, font.default_master_idx, glyphs_axis)
+        })
+        .collect()
 }
 
 /// A [Font] with some prework to convert to IR predone.

@@ -706,6 +706,7 @@ mod tests {
         fs::{self, File},
         io::Read,
         path::{Path, PathBuf},
+        str::FromStr,
     };
 
     use fontbe::{
@@ -1291,6 +1292,7 @@ mod tests {
         assert_eq!(
             vec![
                 Tag::new(b"OS/2"),
+                Tag::new(b"avar"),
                 Tag::new(b"cmap"),
                 Tag::new(b"fvar"),
                 Tag::new(b"glyf"),
@@ -1421,5 +1423,82 @@ mod tests {
         fn close(&mut self) {
             // nop
         }
+    }
+
+    fn axes(font: &FontRef) -> Vec<(Tag, f32, f32, f32)> {
+        font.fvar()
+            .unwrap()
+            .axes()
+            .unwrap()
+            .iter()
+            .map(|a| {
+                (
+                    a.axis_tag(),
+                    a.min_value.get().to_f64() as f32,
+                    a.default_value.get().to_f64() as f32,
+                    a.max_value.get().to_f64() as f32,
+                )
+            })
+            .collect::<Vec<_>>()
+    }
+
+    #[test]
+    fn compile_glyphs_font_with_weight_axis() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, "glyphs2/WghtVar.glyphs"));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+
+        assert_eq!(
+            vec![(Tag::from_str("wght").unwrap(), 400.0, 400.0, 700.0)],
+            axes(&font),
+        );
+    }
+
+    #[test]
+    fn compile_glyphs_font_with_avar() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, "glyphs2/WghtVar_Avar.glyphs"));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+
+        // Default 400 is important, it means we found the index of Regular
+        assert_eq!(
+            vec![(Tag::from_str("wght").unwrap(), 300.0, 400.0, 700.0)],
+            axes(&font),
+        );
+
+        let axis_maps: Vec<_> = font
+            .avar()
+            .unwrap()
+            .axis_segment_maps()
+            .iter()
+            .map(|m| m.unwrap())
+            .map(|m| {
+                m.axis_value_maps()
+                    .iter()
+                    .map(|e| (e.from_coordinate().to_f32(), e.to_coordinate().to_f32()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        // 0 is 400, 7 is 700, .33 => .66 is mapping 500 => 600 as per instance definition
+        assert_eq!(
+            vec![vec![
+                (-1.0, -1.0),
+                (0.0, 0.0),
+                (0.333313, 0.666687),
+                (1.0, 1.0)
+            ]],
+            axis_maps
+        );
     }
 }
