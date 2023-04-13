@@ -57,8 +57,29 @@ jobs:
       - name: install stable toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: cargo test
-        run: cargo test --all-targets --all-features
+      # test all packages individually to ensure deterministic resolution
+      # of dependencies for each package
+      
+      - name: cargo test fontbe
+        run: cargo test -p fontbe --all-targets --all-features
+
+      - name: cargo test fontc
+        run: cargo test -p fontc --all-targets --all-features
+
+      - name: cargo test fontdrasil
+        run: cargo test -p fontdrasil --all-targets --all-features
+
+      - name: cargo test fontir
+        run: cargo test -p fontir --all-targets --all-features
+
+      - name: cargo test glyphs-reader
+        run: cargo test -p glyphs-reader --all-targets --all-features
+
+      - name: cargo test glyphs2fontir
+        run: cargo test -p glyphs2fontir --all-targets --all-features
+
+      - name: cargo test ufo2fontir
+        run: cargo test -p ufo2fontir --all-targets --all-features
 
   check-no-std:
     name: cargo check no std
