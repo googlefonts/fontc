@@ -166,7 +166,7 @@ fn to_ir_axis(
     let min = DesignCoord::new(min);
     let max = DesignCoord::new(max);
 
-    let converter = if font.axis_mappings.contains_key(&axis.name) {
+    let converter = if font.axis_mappings.contains(&axis.name) {
         let mappings: Vec<_> = font
             .axis_mappings
             .get(&axis.name)

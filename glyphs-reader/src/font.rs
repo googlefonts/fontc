@@ -34,7 +34,11 @@ const V2_METRIC_NAMES: [&str; 6] = [
     "italic angle",
 ];
 
-type RawUserToDesignMapping = Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>;
+#[derive(Clone, Debug, Default, PartialEq, Hash)]
+pub struct RawUserToDesignMapping(BTreeMap<String, RawAxisUserToDesignMap>);
+
+#[derive(Clone, Debug, Default, PartialEq, Hash)]
+pub struct RawAxisUserToDesignMap(Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>);
 
 /// A tidied up font from a plist.
 ///
@@ -49,7 +53,7 @@ pub struct Font {
     pub glyph_order: Vec<String>,
     pub glyph_to_codepoints: BTreeMap<String, BTreeSet<u32>>,
     // tag => (user:design) tuples
-    pub axis_mappings: BTreeMap<String, RawUserToDesignMapping>,
+    pub axis_mappings: RawUserToDesignMapping,
     pub features: Vec<FeatureSnippet>,
     pub names: BTreeMap<String, String>,
     pub instances: Vec<Instance>,
@@ -115,6 +119,7 @@ struct RawFont {
 
 #[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
 pub struct RawMetric {
+    // So named to let FromPlist populate it from a field called "type"
     type_: Option<String>,
 }
 
@@ -320,8 +325,9 @@ impl RawGlyph {
 pub struct Instance {
     pub name: String,
     pub active: bool,
+    // So named to let FromPlist populate it from a field called "type"
     pub type_: InstanceType,
-    pub axis_mappings: BTreeMap<String, RawUserToDesignMapping>,
+    pub axis_mappings: BTreeMap<String, RawAxisUserToDesignMap>,
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L150>
@@ -613,9 +619,9 @@ fn glyphs_v2_field_name_and_default(
     // Defaults per https://github.com/googlefonts/fontmake-rs/pull/42#discussion_r1044415236.
     // v2 instances use novel field names so send back several for linear probing.
     Ok(match nth_axis {
-        0 => (&["weightValue", "interpolationWeight"], 100_f64),
-        1 => (&["widthValue", "interpolationWidth"], 100_f64),
-        2 => (&["customValue"], 0_f64),
+        0 => (&["weightValue", "interpolationWeight"], 100.0),
+        1 => (&["widthValue", "interpolationWidth"], 100.0),
+        2 => (&["customValue"], 0.0),
         _ => {
             return Err(Error::StructuralError(format!(
                 "We don't know what field to use for axis {nth_axis}"
@@ -695,16 +701,11 @@ fn v2_to_v3_axis_values(
         let (field_names, default_value) = glyphs_v2_field_name_and_default(idx)?;
         let value = field_names
             .iter()
-            .filter_map(|field_name| other_stuff.remove(*field_name))
-            .next()
-            .unwrap_or_else(|| Plist::Float(default_value.into()))
-            .as_f64()
-            .ok_or_else(|| {
-                Error::StructuralError(format!(
-                    "Invalid '{:?}' in\n{:#?}",
-                    field_names, other_stuff
-                ))
-            })?;
+            .find_map(|field_name| other_stuff.remove(*field_name).and_then(|v| v.as_f64()))
+            .unwrap_or_else(|| {
+                warn!("Invalid '{:?}' in\n{:#?}", field_names, other_stuff);
+                default_value
+            });
         axis_values.push(value.into());
     }
     Ok(axis_values)
@@ -920,7 +921,7 @@ impl RawFont {
                 let Some(Plist::String(value)) = instance.other_stuff.get(*name) else {
                     continue;
                 };
-                let Some(value) = lookup_class_value(tag, &Some(value)) else {
+                let Some(value) = lookup_class_value(tag, value) else {
                     return Err(Error::UnknownValueName(value.clone()));
                 };
                 instance
@@ -1042,7 +1043,7 @@ fn axis_index(from: &RawFont, pred: impl Fn(&Axis) -> bool) -> Option<usize> {
 
 fn user_to_design_from_axis_mapping(
     from: &RawFont,
-) -> Option<BTreeMap<String, RawUserToDesignMapping>> {
+) -> Option<BTreeMap<String, RawAxisUserToDesignMap>> {
     // Fetch mapping from Axis Mappings, if any
     let Some((_, axis_map)) = custom_param(&from.other_stuff, "Axis Mappings") else {
         return None;
@@ -1050,7 +1051,7 @@ fn user_to_design_from_axis_mapping(
     let Plist::Dictionary(axis_map) = axis_map.get("value").unwrap() else {
         panic!("Incomprehensible axis map {axis_map:?}");
     };
-    let mut axis_mappings: BTreeMap<String, RawUserToDesignMapping> = BTreeMap::new();
+    let mut axis_mappings: BTreeMap<String, RawAxisUserToDesignMap> = BTreeMap::new();
     for (axis_tag, mappings) in axis_map.iter() {
         let Plist::Dictionary(mappings) = mappings else {
             panic!("Incomprehensible mappings {mappings:?}");
@@ -1066,7 +1067,7 @@ fn user_to_design_from_axis_mapping(
             axis_mappings
                 .entry(axis_name.clone())
                 .or_default()
-                .push((user.into(), design.into()));
+                .add_if_new(user.into(), design.into());
         }
     }
     Some(axis_mappings)
@@ -1074,7 +1075,7 @@ fn user_to_design_from_axis_mapping(
 
 fn user_to_design_from_axis_location(
     from: &RawFont,
-) -> Option<BTreeMap<String, RawUserToDesignMapping>> {
+) -> Option<BTreeMap<String, RawAxisUserToDesignMap>> {
     // glyphsLib only trusts Axis Location when all masters have it, match that
     // https://github.com/googlefonts/fontmake-rs/pull/83#discussion_r1065814670
     let master_locations: Vec<&Plist> = from
@@ -1093,7 +1094,7 @@ fn user_to_design_from_axis_location(
         return None;
     }
 
-    let mut axis_mappings: BTreeMap<String, RawUserToDesignMapping> = BTreeMap::new();
+    let mut axis_mappings: BTreeMap<String, RawAxisUserToDesignMap> = BTreeMap::new();
     for (master, axis_locations) in from.font_master.iter().zip(&master_locations) {
         let Plist::Dictionary(axis_locations) = axis_locations else {
             panic!("Axis Location must be a dict {axis_locations:?}");
@@ -1123,77 +1124,91 @@ fn user_to_design_from_axis_location(
             axis_mappings
                 .entry(axis_name.clone())
                 .or_default()
-                .push((user.into(), design.into()));
+                .add_if_new(user.into(), design.into());
         }
     }
     Some(axis_mappings)
 }
 
-fn add_mapping_if_new(
-    mappings: &mut RawUserToDesignMapping,
-    user: OrderedFloat<f32>,
-    design: OrderedFloat<f32>,
-) {
-    if mappings.iter().any(|(u, d)| *u == user || *d == design) {
-        return;
+impl RawAxisUserToDesignMap {
+    fn add_any_new(&mut self, incoming: &RawAxisUserToDesignMap) {
+        for (user, design) in incoming.0.iter() {
+            self.add_if_new(*user, *design);
+        }
     }
-    mappings.push((user, design));
+
+    fn add_if_new(&mut self, user: OrderedFloat<f32>, design: OrderedFloat<f32>) {
+        if self.0.iter().any(|(u, d)| *u == user || *d == design) {
+            return;
+        }
+        self.0.push((user, design));
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &(OrderedFloat<f32>, OrderedFloat<f32>)> {
+        self.0.iter()
+    }
 }
 
-/// * <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L128>
-/// * <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L353>
-fn add_mappings_from_instances(
-    instances: &[Instance],
-    mut mappings: BTreeMap<String, RawUserToDesignMapping>,
-) -> BTreeMap<String, RawUserToDesignMapping> {
-    for instance in instances
-        .iter()
-        .filter(|i| i.active && i.type_ == InstanceType::Single)
-    {
-        for (axis_name, inst_mapping) in instance.axis_mappings.iter() {
-            let mappings = mappings.entry(axis_name.clone()).or_default();
-            for (user, design) in inst_mapping.iter() {
-                add_mapping_if_new(mappings, *user, *design);
+impl RawUserToDesignMapping {
+    /// From most to least preferred: Axis Mappings, Axis Location, mappings from instances, assume user == design
+    ///
+    /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L155>
+    fn new(from: &RawFont, instances: &[Instance]) -> Self {
+        let from_axis_mapping = user_to_design_from_axis_mapping(from);
+        let from_axis_location = user_to_design_from_axis_location(from);
+        let (result, add_instance_mappings) = match (from_axis_mapping, from_axis_location) {
+            (Some(from_mapping), Some(..)) => {
+                warn!("Axis Mapping *and* Axis Location are defined; using Axis Mapping");
+                (from_mapping, false)
+            }
+            (Some(from_mapping), None) => (from_mapping, false),
+            (None, Some(from_location)) => (from_location, true),
+            (None, None) => (BTreeMap::new(), true),
+        };
+        let mut result = Self(result);
+        if add_instance_mappings {
+            result.add_instance_mappings_if_new(instances);
+        }
+        result.add_master_mappings_if_new(from);
+        result
+    }
+
+    pub fn contains(&self, axis_name: &str) -> bool {
+        self.0.contains_key(axis_name)
+    }
+
+    pub fn get(&self, axis_name: &str) -> Option<&RawAxisUserToDesignMap> {
+        self.0.get(axis_name)
+    }
+
+    /// * <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L128>
+    /// * <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L353>
+    fn add_instance_mappings_if_new(&mut self, instances: &[Instance]) {
+        for instance in instances
+            .iter()
+            .filter(|i| i.active && i.type_ == InstanceType::Single)
+        {
+            for (axis_name, inst_mapping) in instance.axis_mappings.iter() {
+                self.0
+                    .entry(axis_name.clone())
+                    .or_default()
+                    .add_any_new(inst_mapping);
             }
         }
     }
-    mappings
-}
 
-fn add_mappings_from_masters(
-    from: &RawFont,
-    mut mappings: BTreeMap<String, RawUserToDesignMapping>,
-) -> BTreeMap<String, RawUserToDesignMapping> {
-    for master in from.font_master.iter() {
-        let Some(axes) = from.axes.as_ref() else { continue; };
-        for (axis, value) in axes.iter().zip(master.axes_values.as_ref().unwrap()) {
-            let mappings = mappings.entry(axis.name.clone()).or_default();
-            let value = OrderedFloat(value.0 as f32);
-            add_mapping_if_new(mappings, value, value);
+    fn add_master_mappings_if_new(&mut self, from: &RawFont) {
+        for master in from.font_master.iter() {
+            let Some(axes) = from.axes.as_ref() else { continue; };
+            for (axis, value) in axes.iter().zip(master.axes_values.as_ref().unwrap()) {
+                let value = OrderedFloat(value.0 as f32);
+                self.0
+                    .entry(axis.name.clone())
+                    .or_default()
+                    .add_if_new(value, value);
+            }
         }
     }
-    mappings
-}
-
-/// From most to least preferred: Axis Mappings, Axis Location, mappings from instances, assume user == design
-///
-/// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L155>
-fn create_user_to_design_mappings(
-    from: &RawFont,
-    instances: &[Instance],
-) -> BTreeMap<String, RawUserToDesignMapping> {
-    let from_axis_mapping = user_to_design_from_axis_mapping(from);
-    let from_axis_location = user_to_design_from_axis_location(from);
-    let result = match (from_axis_mapping, from_axis_location) {
-        (Some(from_mapping), Some(..)) => {
-            warn!("Axis Mapping *and* Axis Location are defined; using Axis Mapping");
-            from_mapping
-        }
-        (Some(from_mapping), None) => from_mapping,
-        (None, Some(from_location)) => add_mappings_from_instances(instances, from_location),
-        (None, None) => add_mappings_from_instances(instances, BTreeMap::new()),
-    };
-    add_mappings_from_masters(from, result)
 }
 
 impl TryFrom<RawShape> for Shape {
@@ -1323,14 +1338,14 @@ fn raw_feature_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> 
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L220-L249>
-fn lookup_class_value(axis_tag: &str, user_class: &Option<&String>) -> Option<f32> {
+fn lookup_class_value(axis_tag: &str, user_class: &str) -> Option<f32> {
     let user_class = match user_class {
-        Some(value) => {
+        value if !value.is_empty() => {
             let mut value = value.to_ascii_lowercase();
             value.retain(|c| c != ' ');
             value
         }
-        None => String::from(""),
+        _ => String::from(""),
     };
     match (axis_tag, user_class.as_str()) {
         ("wght", "thin") => Some(100.0),
@@ -1366,11 +1381,11 @@ fn lookup_class_value(axis_tag: &str, user_class: &Option<&String>) -> Option<f3
 }
 
 fn add_mapping_if_present(
-    axis_mappings: &mut BTreeMap<String, RawUserToDesignMapping>,
+    axis_mappings: &mut BTreeMap<String, RawAxisUserToDesignMap>,
     axes: &[Axis],
     axis_tag: &str,
-    axes_values: &Option<Vec<OrderedFloat<f64>>>,
-    value: &Option<&Plist>,
+    axes_values: Option<&Vec<OrderedFloat<f64>>>,
+    value: Option<&Plist>,
 ) {
     let Some(idx) = axes.iter().position(|a| a.tag == axis_tag) else { return; };
     let axis = &axes[idx];
@@ -1379,13 +1394,10 @@ fn add_mapping_if_present(
     let Some(value) = value.and_then(|v| v.as_f64()) else { return; };
     let user = OrderedFloat(value as f32);
 
-    let mappings = axis_mappings.entry(axis.name.clone()).or_default();
-
-    if mappings.iter().any(|(user_entry, _)| *user_entry == user) {
-        return;
-    }
-    mappings.push((user, OrderedFloat(design.into_inner() as f32)));
-    mappings.sort();
+    axis_mappings
+        .entry(axis.name.clone())
+        .or_default()
+        .add_if_new(user, OrderedFloat(design.into_inner() as f32));
 }
 
 impl Instance {
@@ -1402,15 +1414,15 @@ impl Instance {
             &mut axis_mappings,
             axes,
             "wght",
-            &value.axes_values,
-            &value.other_stuff.get("weightClass"),
+            value.axes_values.as_ref(),
+            value.other_stuff.get("weightClass"),
         );
         add_mapping_if_present(
             &mut axis_mappings,
             axes,
             "wdth",
-            &value.axes_values,
-            &value.other_stuff.get("widthClass"),
+            value.axes_values.as_ref(),
+            value.other_stuff.get("widthClass"),
         );
 
         Instance {
@@ -1452,7 +1464,7 @@ impl TryFrom<RawFont> for Font {
         };
 
         let default_master_idx = default_master_idx(&from);
-        let axis_mappings = create_user_to_design_mappings(&from, &instances);
+        let axis_mappings = RawUserToDesignMapping::new(&from, &instances);
 
         let mut glyphs = BTreeMap::new();
         for raw_glyph in from.glyphs.into_iter() {
@@ -1603,7 +1615,10 @@ impl From<Affine> for AffineForEqAndHash {
 
 #[cfg(test)]
 mod tests {
-    use crate::{font::RawFeature, Font, FromPlist, Node, Plist, Shape};
+    use crate::{
+        font::{RawAxisUserToDesignMap, RawFeature, RawUserToDesignMapping},
+        Font, FromPlist, Node, Plist, Shape,
+    };
     use std::{
         collections::{BTreeMap, BTreeSet},
         path::{Path, PathBuf},
@@ -1862,17 +1877,17 @@ mod tests {
 
         // Did you load the mappings? DID YOU?!
         assert_eq!(
-            BTreeMap::from([
+            RawUserToDesignMapping(BTreeMap::from([
                 (
                     "Optical Size".to_string(),
-                    vec![
+                    RawAxisUserToDesignMap(vec![
                         (OrderedFloat(12.0), OrderedFloat(12.0)),
                         (OrderedFloat(72.0), OrderedFloat(72.0))
-                    ]
+                    ])
                 ),
                 (
                     "Weight".to_string(),
-                    vec![
+                    RawAxisUserToDesignMap(vec![
                         (OrderedFloat(100.0), OrderedFloat(40.0)),
                         (OrderedFloat(200.0), OrderedFloat(46.0)),
                         (OrderedFloat(300.0), OrderedFloat(51.0)),
@@ -1880,9 +1895,9 @@ mod tests {
                         (OrderedFloat(500.0), OrderedFloat(62.0)),
                         (OrderedFloat(600.0), OrderedFloat(68.0)),
                         (OrderedFloat(700.0), OrderedFloat(73.0)),
-                    ]
+                    ])
                 ),
-            ]),
+            ])),
             font.axis_mappings
         );
     }
@@ -1893,14 +1908,14 @@ mod tests {
 
         // Did you load the mappings? DID YOU?!
         assert_eq!(
-            BTreeMap::from([(
+            RawUserToDesignMapping(BTreeMap::from([(
                 "Weight".to_string(),
-                vec![
+                RawAxisUserToDesignMap(vec![
                     (OrderedFloat(400.0), OrderedFloat(0.0)),
                     (OrderedFloat(500.0), OrderedFloat(8.0)),
                     (OrderedFloat(700.0), OrderedFloat(10.0)),
-                ]
-            ),]),
+                ])
+            ),])),
             font.axis_mappings
         );
     }

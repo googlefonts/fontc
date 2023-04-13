@@ -1490,7 +1490,7 @@ mod tests {
             })
             .collect();
 
-        // 0 is 400, 7 is 700, .33 => .66 is mapping 500 => 600 as per instance definition
+        // 0 is 400, 1 is 700, .33 => .66 is mapping 500 => 600 as per instance definition
         assert_eq!(
             vec![vec![
                 (-1.0, -1.0),
