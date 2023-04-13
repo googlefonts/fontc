@@ -1,11 +1,11 @@
 extern crate proc_macro;
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields};
 
-#[proc_macro_derive(FromPlist, attributes(rest))]
+#[proc_macro_derive(FromPlist, attributes(fromplist))]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
@@ -25,7 +25,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     proc_macro::TokenStream::from(expanded)
 }
 
-#[proc_macro_derive(ToPlist, attributes(rest))]
+#[proc_macro_derive(ToPlist, attributes(fromplist))]
 pub fn derive_to(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
@@ -134,10 +134,8 @@ fn add_ser_rest(data: &Data) -> TokenStream {
 
 fn is_rest(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|attr| {
-        attr.path
-            .get_ident()
-            .map(|ident| ident == "rest")
-            .unwrap_or(false)
+        matches!((attr.path.get_ident(), attr.parse_args::<Ident>()), 
+            (Some(ident), Ok(arg)) if ident == "fromplist" && arg == "rest")
     })
 }
 
