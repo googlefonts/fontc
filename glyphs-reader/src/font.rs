@@ -1021,16 +1021,12 @@ fn default_master_idx(raw_font: &RawFont) -> usize {
         })
         // TODO: implement searching for "a base style shared between all masters" as FontTools does
         // Still nothing? - just look for one called Regular
-        .unwrap_or_else(|| {
-            raw_font
-                .font_master
-                .iter()
-                .position(|m| match m.other_stuff.get("name") {
-                    Some(Plist::String(name)) => name == "Regular",
-                    _ => false,
-                })
-                .unwrap_or_default()
+        .or_else(|| {
+            raw_font.font_master.iter().position(
+                |m| matches!(m.other_stuff.get("name"), Some(Plist::String(name)) if name == "Regular"),
+            )
         })
+        .unwrap_or_default()
 }
 
 fn axis_index(from: &RawFont, pred: impl Fn(&Axis) -> bool) -> Option<usize> {
