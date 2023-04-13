@@ -113,7 +113,7 @@ struct RawFont {
     pub classes: Option<Vec<RawFeature>>,
     pub properties: Option<Vec<RawName>>,
 
-    #[rest]
+    #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
@@ -143,7 +143,7 @@ pub struct RawFeature {
     pub tag: Option<String>,
     pub code: String,
 
-    #[rest]
+    #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
@@ -158,7 +158,7 @@ pub struct Axis {
 pub struct RawGlyph {
     pub layers: Vec<RawLayer>,
     pub glyphname: String,
-    #[rest]
+    #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
@@ -171,7 +171,7 @@ pub struct RawLayer {
     paths: Option<Vec<Path>>,
     components: Option<Vec<Component>>,
     //pub anchors: Option<Vec<Anchor>>,
-    #[rest]
+    #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
@@ -190,7 +190,7 @@ pub struct RawShape {
     // My Component'ness can be detected by presence of a ref (Glyphs3) or name(Glyphs2) attribute
 
     // Always
-    #[rest]
+    #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
@@ -299,7 +299,7 @@ struct RawFontMaster {
     pub id: String,
     pub axes_values: Option<Vec<OrderedFloat<f64>>>,
     pub metric_values: Option<Vec<RawMetricValue>>,
-    #[rest]
+    #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
@@ -355,7 +355,7 @@ struct RawInstance {
     pub type_: Option<String>,
     pub axes_values: Option<Vec<OrderedFloat<f64>>>,
 
-    #[rest]
+    #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
