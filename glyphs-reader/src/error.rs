@@ -14,4 +14,6 @@ pub enum Error {
     NoUnitsPerEm,
     #[error("Invalid upem")]
     InvalidUpem(#[from] TryFromIntError),
+    #[error("Unrecognized name {0}")]
+    UnknownValueName(String),
 }

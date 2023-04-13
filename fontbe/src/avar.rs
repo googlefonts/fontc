@@ -5,7 +5,7 @@ use fontir::{
     coords::{CoordConverter, DesignCoord},
     ir::Axis,
 };
-use log::trace;
+use log::debug;
 use read_fonts::types::MajorMinor;
 use write_fonts::tables::avar::{Avar, AxisValueMap, SegmentMaps};
 
@@ -60,7 +60,7 @@ impl Work<Context, Error> for AvarWork {
         let static_metadata = context.ir.get_init_static_metadata();
         // Guard clause: don't produce avar for a static font
         if static_metadata.variable_axes.is_empty() {
-            trace!("Skip avar; this is not a variable font");
+            debug!("Skip avar; this is not a variable font");
             return Ok(());
         }
         context.set_avar(Avar::new(

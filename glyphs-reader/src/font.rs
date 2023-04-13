@@ -34,7 +34,11 @@ const V2_METRIC_NAMES: [&str; 6] = [
     "italic angle",
 ];
 
-type RawUserToDesignMapping = Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>;
+#[derive(Clone, Debug, Default, PartialEq, Hash)]
+pub struct RawUserToDesignMapping(BTreeMap<String, RawAxisUserToDesignMap>);
+
+#[derive(Clone, Debug, Default, PartialEq, Hash)]
+pub struct RawAxisUserToDesignMap(Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>);
 
 /// A tidied up font from a plist.
 ///
@@ -49,9 +53,10 @@ pub struct Font {
     pub glyph_order: Vec<String>,
     pub glyph_to_codepoints: BTreeMap<String, BTreeSet<u32>>,
     // tag => (user:design) tuples
-    pub axis_mappings: BTreeMap<String, RawUserToDesignMapping>,
+    pub axis_mappings: RawUserToDesignMapping,
     pub features: Vec<FeatureSnippet>,
     pub names: BTreeMap<String, String>,
+    pub instances: Vec<Instance>,
     pub version_major: i32,
     pub version_minor: u32,
 }
@@ -102,6 +107,7 @@ struct RawFont {
     pub axes: Option<Vec<Axis>>,
     pub glyphs: Vec<RawGlyph>,
     pub font_master: Vec<RawFontMaster>,
+    pub instances: Option<Vec<RawInstance>>,
     pub feature_prefixes: Option<Vec<RawFeature>>,
     pub features: Option<Vec<RawFeature>>,
     pub classes: Option<Vec<RawFeature>>,
@@ -113,6 +119,7 @@ struct RawFont {
 
 #[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
 pub struct RawMetric {
+    // So named to let FromPlist populate it from a field called "type"
     type_: Option<String>,
 }
 
@@ -311,6 +318,52 @@ impl RawMetricValue {
 impl RawGlyph {
     pub fn get_layer(&self, layer_id: &str) -> Option<&RawLayer> {
         self.layers.iter().find(|l| l.layer_id == layer_id)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Hash)]
+pub struct Instance {
+    pub name: String,
+    pub active: bool,
+    // So named to let FromPlist populate it from a field called "type"
+    pub type_: InstanceType,
+    pub axis_mappings: BTreeMap<String, RawAxisUserToDesignMap>,
+}
+
+/// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L150>
+#[derive(Clone, Debug, PartialEq, Hash)]
+pub enum InstanceType {
+    Single,
+    Variable,
+}
+
+impl From<&str> for InstanceType {
+    fn from(value: &str) -> Self {
+        if value.to_ascii_lowercase() == "variable" {
+            InstanceType::Variable
+        } else {
+            InstanceType::Single
+        }
+    }
+}
+
+#[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
+struct RawInstance {
+    pub name: String,
+    pub exports: Option<i64>,
+    pub active: Option<i64>,
+    pub type_: Option<String>,
+    pub axes_values: Option<Vec<OrderedFloat<f64>>>,
+
+    #[rest]
+    pub other_stuff: BTreeMap<String, Plist>,
+}
+
+impl RawInstance {
+    /// Per glyphsLib both "exports=0" and "active=0" mean inactive
+    /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L637>
+    fn is_active(&self) -> bool {
+        self.exports.unwrap_or(1) != 0 && self.active.unwrap_or(1) != 0
     }
 }
 
@@ -557,15 +610,18 @@ fn custom_param_mut<'a>(
     None
 }
 
-fn glyphs_v2_field_name_and_default(nth_axis: usize) -> Result<(&'static str, f64), Error> {
+fn glyphs_v2_field_name_and_default(
+    nth_axis: usize,
+) -> Result<(&'static [&'static str], f64), Error> {
     // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
     // the field to use is based on the order in axes NOT the tag.
     // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
     // Defaults per https://github.com/googlefonts/fontmake-rs/pull/42#discussion_r1044415236.
+    // v2 instances use novel field names so send back several for linear probing.
     Ok(match nth_axis {
-        0 => ("weightValue", 100_f64),
-        1 => ("widthValue", 100_f64),
-        2 => ("customValue", 0_f64),
+        0 => (&["weightValue", "interpolationWeight"], 100.0),
+        1 => (&["widthValue", "interpolationWidth"], 100.0),
+        2 => (&["customValue"], 0.0),
         _ => {
             return Err(Error::StructuralError(format!(
                 "We don't know what field to use for axis {nth_axis}"
@@ -630,6 +686,29 @@ fn v2_to_v3_name(properties: &mut Vec<RawName>, v2_prop: &Option<String>, v3_nam
             }
         });
     }
+}
+
+/// Convert to axesValues, handy for a master or instance
+fn v2_to_v3_axis_values(
+    axes: &Vec<Axis>,
+    other_stuff: &mut BTreeMap<String, Plist>,
+) -> Result<Vec<OrderedFloat<f64>>, Error> {
+    let mut axis_values = Vec::new();
+    for idx in 0..axes.len() {
+        // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
+        // the field to use is based on the order in axes NOT the tag.
+        // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
+        let (field_names, default_value) = glyphs_v2_field_name_and_default(idx)?;
+        let value = field_names
+            .iter()
+            .find_map(|field_name| other_stuff.remove(*field_name).and_then(|v| v.as_f64()))
+            .unwrap_or_else(|| {
+                warn!("Invalid '{:?}' in\n{:#?}", field_names, other_stuff);
+                default_value
+            });
+        axis_values.push(value.into());
+    }
+    Ok(axis_values)
 }
 
 impl RawFont {
@@ -698,26 +777,7 @@ impl RawFont {
         // v2 stores values for axes in specific fields, find them and put them into place
         // "Axis position related properties (e.g. weightValue, widthValue, customValue) have been replaced by the axesValues list which is indexed in parallel with the toplevel axes list."
         for master in self.font_master.iter_mut() {
-            let mut axis_values = Vec::new();
-            for idx in 0..axes.len() {
-                // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
-                // the field to use is based on the order in axes NOT the tag.
-                // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
-                let (field_name, default_value) = glyphs_v2_field_name_and_default(idx)?;
-                let value = master
-                    .other_stuff
-                    .remove(field_name)
-                    .unwrap_or_else(|| Plist::Float(default_value.into()))
-                    .as_f64()
-                    .ok_or_else(|| {
-                        Error::StructuralError(format!(
-                            "Invalid '{}' in\n{:#?}",
-                            field_name, master.other_stuff
-                        ))
-                    })?;
-                axis_values.push(value.into());
-            }
-            master.axes_values = Some(axis_values);
+            master.axes_values = Some(v2_to_v3_axis_values(axes, &mut master.other_stuff)?);
         }
 
         if custom_params_mut(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
@@ -852,12 +912,41 @@ impl RawFont {
         Ok(())
     }
 
+    fn v2_to_v3_instances(&mut self) -> Result<(), Error> {
+        let Some(instances) = self.instances.as_mut() else { return Ok(()); };
+
+        for instance in instances.iter_mut() {
+            // named clases become #s in v3
+            for (tag, name) in &[("wght", "weightClass"), ("wdth", "widthClass")] {
+                let Some(Plist::String(value)) = instance.other_stuff.get(*name) else {
+                    continue;
+                };
+                let Some(value) = lookup_class_value(tag, value) else {
+                    return Err(Error::UnknownValueName(value.clone()));
+                };
+                instance
+                    .other_stuff
+                    .insert(name.to_string(), Plist::Integer(value as i64));
+            }
+
+            // v2 stores values for axes in specific fields, find them and put them into place
+            // "Axis position related properties (e.g. weightValue, widthValue, customValue) have been replaced by the axesValues list which is indexed in parallel with the toplevel axes list."
+            instance.axes_values = Some(v2_to_v3_axis_values(
+                self.axes.as_ref().unwrap(),
+                &mut instance.other_stuff,
+            )?);
+        }
+
+        Ok(())
+    }
+
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
     fn v2_to_v3(&mut self) -> Result<(), Error> {
         self.v2_to_v3_weight()?;
         self.v2_to_v3_axes()?;
         self.v2_to_v3_metrics()?;
         self.v2_to_v3_names()?;
+        self.v2_to_v3_instances()?;
         Ok(())
     }
 }
@@ -910,7 +999,9 @@ fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<String, BTre
     name_to_cp
 }
 
+/// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L578>
 fn default_master_idx(raw_font: &RawFont) -> usize {
+    // Prefer an explicit origin
     // https://github.com/googlefonts/fontmake-rs/issues/44
     custom_param(&raw_font.other_stuff, "Variable Font Origin")
         .map(|(_, param)| {
@@ -929,7 +1020,14 @@ fn default_master_idx(raw_font: &RawFont) -> usize {
                 .map(|(idx, _)| idx)
                 .unwrap_or(0)
         })
-        .unwrap_or(0)
+        // TODO: implement searching for "a base style shared between all masters" as FontTools does
+        // Still nothing? - just look for one called Regular
+        .or_else(|| {
+            raw_font.font_master.iter().position(
+                |m| matches!(m.other_stuff.get("name"), Some(Plist::String(name)) if name == "Regular"),
+            )
+        })
+        .unwrap_or_default()
 }
 
 fn axis_index(from: &RawFont, pred: impl Fn(&Axis) -> bool) -> Option<usize> {
@@ -945,7 +1043,7 @@ fn axis_index(from: &RawFont, pred: impl Fn(&Axis) -> bool) -> Option<usize> {
 
 fn user_to_design_from_axis_mapping(
     from: &RawFont,
-) -> Option<BTreeMap<String, RawUserToDesignMapping>> {
+) -> Option<BTreeMap<String, RawAxisUserToDesignMap>> {
     // Fetch mapping from Axis Mappings, if any
     let Some((_, axis_map)) = custom_param(&from.other_stuff, "Axis Mappings") else {
         return None;
@@ -953,7 +1051,7 @@ fn user_to_design_from_axis_mapping(
     let Plist::Dictionary(axis_map) = axis_map.get("value").unwrap() else {
         panic!("Incomprehensible axis map {axis_map:?}");
     };
-    let mut axis_mappings: BTreeMap<String, RawUserToDesignMapping> = BTreeMap::new();
+    let mut axis_mappings: BTreeMap<String, RawAxisUserToDesignMap> = BTreeMap::new();
     for (axis_tag, mappings) in axis_map.iter() {
         let Plist::Dictionary(mappings) = mappings else {
             panic!("Incomprehensible mappings {mappings:?}");
@@ -969,7 +1067,7 @@ fn user_to_design_from_axis_mapping(
             axis_mappings
                 .entry(axis_name.clone())
                 .or_default()
-                .push((user.into(), design.into()));
+                .add_if_new(user.into(), design.into());
         }
     }
     Some(axis_mappings)
@@ -977,7 +1075,7 @@ fn user_to_design_from_axis_mapping(
 
 fn user_to_design_from_axis_location(
     from: &RawFont,
-) -> Option<BTreeMap<String, RawUserToDesignMapping>> {
+) -> Option<BTreeMap<String, RawAxisUserToDesignMap>> {
     // glyphsLib only trusts Axis Location when all masters have it, match that
     // https://github.com/googlefonts/fontmake-rs/pull/83#discussion_r1065814670
     let master_locations: Vec<&Plist> = from
@@ -996,7 +1094,7 @@ fn user_to_design_from_axis_location(
         return None;
     }
 
-    let mut axis_mappings: BTreeMap<String, RawUserToDesignMapping> = BTreeMap::new();
+    let mut axis_mappings: BTreeMap<String, RawAxisUserToDesignMap> = BTreeMap::new();
     for (master, axis_locations) in from.font_master.iter().zip(&master_locations) {
         let Plist::Dictionary(axis_locations) = axis_locations else {
             panic!("Axis Location must be a dict {axis_locations:?}");
@@ -1026,23 +1124,90 @@ fn user_to_design_from_axis_location(
             axis_mappings
                 .entry(axis_name.clone())
                 .or_default()
-                .push((user.into(), design.into()));
+                .add_if_new(user.into(), design.into());
         }
     }
     Some(axis_mappings)
 }
 
-fn extract_axis_mappings(from: &RawFont) -> BTreeMap<String, RawUserToDesignMapping> {
-    let from_axis_mapping = user_to_design_from_axis_mapping(from);
-    let from_axis_location = user_to_design_from_axis_location(from);
-    match (from_axis_mapping, from_axis_location) {
-        (Some(from_mapping), Some(..)) => {
-            warn!("Axis Mapping *and* Axis Location are defined; using Axis Mapping");
-            from_mapping
+impl RawAxisUserToDesignMap {
+    fn add_any_new(&mut self, incoming: &RawAxisUserToDesignMap) {
+        for (user, design) in incoming.0.iter() {
+            self.add_if_new(*user, *design);
         }
-        (Some(from_mapping), None) => from_mapping,
-        (None, Some(from_location)) => from_location,
-        (None, None) => BTreeMap::new(),
+    }
+
+    fn add_if_new(&mut self, user: OrderedFloat<f32>, design: OrderedFloat<f32>) {
+        if self.0.iter().any(|(u, d)| *u == user || *d == design) {
+            return;
+        }
+        self.0.push((user, design));
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &(OrderedFloat<f32>, OrderedFloat<f32>)> {
+        self.0.iter()
+    }
+}
+
+impl RawUserToDesignMapping {
+    /// From most to least preferred: Axis Mappings, Axis Location, mappings from instances, assume user == design
+    ///
+    /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L155>
+    fn new(from: &RawFont, instances: &[Instance]) -> Self {
+        let from_axis_mapping = user_to_design_from_axis_mapping(from);
+        let from_axis_location = user_to_design_from_axis_location(from);
+        let (result, add_instance_mappings) = match (from_axis_mapping, from_axis_location) {
+            (Some(from_mapping), Some(..)) => {
+                warn!("Axis Mapping *and* Axis Location are defined; using Axis Mapping");
+                (from_mapping, false)
+            }
+            (Some(from_mapping), None) => (from_mapping, false),
+            (None, Some(from_location)) => (from_location, true),
+            (None, None) => (BTreeMap::new(), true),
+        };
+        let mut result = Self(result);
+        if add_instance_mappings {
+            result.add_instance_mappings_if_new(instances);
+        }
+        result.add_master_mappings_if_new(from);
+        result
+    }
+
+    pub fn contains(&self, axis_name: &str) -> bool {
+        self.0.contains_key(axis_name)
+    }
+
+    pub fn get(&self, axis_name: &str) -> Option<&RawAxisUserToDesignMap> {
+        self.0.get(axis_name)
+    }
+
+    /// * <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L128>
+    /// * <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L353>
+    fn add_instance_mappings_if_new(&mut self, instances: &[Instance]) {
+        for instance in instances
+            .iter()
+            .filter(|i| i.active && i.type_ == InstanceType::Single)
+        {
+            for (axis_name, inst_mapping) in instance.axis_mappings.iter() {
+                self.0
+                    .entry(axis_name.clone())
+                    .or_default()
+                    .add_any_new(inst_mapping);
+            }
+        }
+    }
+
+    fn add_master_mappings_if_new(&mut self, from: &RawFont) {
+        for master in from.font_master.iter() {
+            let Some(axes) = from.axes.as_ref() else { continue; };
+            for (axis, value) in axes.iter().zip(master.axes_values.as_ref().unwrap()) {
+                let value = OrderedFloat(value.0 as f32);
+                self.0
+                    .entry(axis.name.clone())
+                    .or_default()
+                    .add_if_new(value, value);
+            }
+        }
     }
 }
 
@@ -1172,6 +1337,107 @@ fn raw_feature_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> 
     Ok(FeatureSnippet(code))
 }
 
+/// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L220-L249>
+fn lookup_class_value(axis_tag: &str, user_class: &str) -> Option<f32> {
+    let user_class = match user_class {
+        value if !value.is_empty() => {
+            let mut value = value.to_ascii_lowercase();
+            value.retain(|c| c != ' ');
+            value
+        }
+        _ => String::from(""),
+    };
+    match (axis_tag, user_class.as_str()) {
+        ("wght", "thin") => Some(100.0),
+        ("wght", "extralight") => Some(200.0),
+        ("wght", "ultralight") => Some(200.0),
+        ("wght", "light") => Some(300.0),
+        ("wght", "") => Some(400.0),
+        ("wght", "normal") => Some(400.0),
+        ("wght", "regular") => Some(400.0),
+        ("wght", "medium") => Some(500.0),
+        ("wght", "demibold") => Some(600.0),
+        ("wght", "semibold") => Some(600.0),
+        ("wght", "bold") => Some(700.0),
+        ("wght", "ultrabold") => Some(800.0),
+        ("wght", "extrabold") => Some(800.0),
+        ("wght", "black") => Some(900.0),
+        ("wght", "heavy") => Some(900.0),
+        ("wdth", "ultracondensed") => Some(50.0),
+        ("wdth", "extracondensed") => Some(62.5),
+        ("wdth", "condensed") => Some(75.0),
+        ("wdth", "semicondensed") => Some(87.5),
+        ("wdth", "") => Some(100.0),
+        ("wdth", "Medium (normal)") => Some(100.0),
+        ("wdth", "semiexpanded") => Some(112.5),
+        ("wdth", "expanded") => Some(125.0),
+        ("wdth", "extraexpanded") => Some(150.0),
+        ("wdth", "ultraexpanded") => Some(200.0),
+        _ => {
+            warn!("Unrecognized ('{axis_tag}', '{user_class}')");
+            None
+        }
+    }
+}
+
+fn add_mapping_if_present(
+    axis_mappings: &mut BTreeMap<String, RawAxisUserToDesignMap>,
+    axes: &[Axis],
+    axis_tag: &str,
+    axes_values: Option<&Vec<OrderedFloat<f64>>>,
+    value: Option<&Plist>,
+) {
+    let Some(idx) = axes.iter().position(|a| a.tag == axis_tag) else { return; };
+    let axis = &axes[idx];
+    let Some(axes_values) = axes_values else { return; };
+    let Some(design) = axes_values.get(idx) else { return; };
+    let Some(value) = value.and_then(|v| v.as_f64()) else { return; };
+    let user = OrderedFloat(value as f32);
+
+    axis_mappings
+        .entry(axis.name.clone())
+        .or_default()
+        .add_if_new(user, OrderedFloat(design.into_inner() as f32));
+}
+
+impl Instance {
+    /// Glyphs 2 instances have fun fields.
+    ///
+    /// Mappings based on
+    /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L3451>
+    fn new(axes: &[Axis], value: &RawInstance) -> Self {
+        let active = value.is_active();
+        let mut axis_mappings = BTreeMap::new();
+
+        // TODO loop over same consts as other usage
+        add_mapping_if_present(
+            &mut axis_mappings,
+            axes,
+            "wght",
+            value.axes_values.as_ref(),
+            value.other_stuff.get("weightClass"),
+        );
+        add_mapping_if_present(
+            &mut axis_mappings,
+            axes,
+            "wdth",
+            value.axes_values.as_ref(),
+            value.other_stuff.get("widthClass"),
+        );
+
+        Instance {
+            name: value.name.clone(),
+            active,
+            type_: value
+                .type_
+                .as_ref()
+                .map(|v| v.as_str().into())
+                .unwrap_or(InstanceType::Single),
+            axis_mappings,
+        }
+    }
+}
+
 impl TryFrom<RawFont> for Font {
     type Error = Error;
 
@@ -1187,8 +1453,18 @@ impl TryFrom<RawFont> for Font {
         let glyph_order = parse_glyph_order(&from);
         let glyph_to_codepoints = parse_codepoints(&mut from, radix);
 
+        let axes = from.axes.clone().unwrap_or_default();
+        let instances: Vec<_> = if let Some(raw_instances) = &from.instances {
+            raw_instances
+                .iter()
+                .map(|ri| Instance::new(&axes, ri))
+                .collect()
+        } else {
+            Default::default()
+        };
+
         let default_master_idx = default_master_idx(&from);
-        let axis_mappings = extract_axis_mappings(&from);
+        let axis_mappings = RawUserToDesignMapping::new(&from, &instances);
 
         let mut glyphs = BTreeMap::new();
         for raw_glyph in from.glyphs.into_iter() {
@@ -1258,7 +1534,7 @@ impl TryFrom<RawFont> for Font {
 
         Ok(Font {
             units_per_em,
-            axes: from.axes.unwrap_or_default(),
+            axes,
             masters,
             default_master_idx,
             glyphs,
@@ -1267,6 +1543,7 @@ impl TryFrom<RawFont> for Font {
             axis_mappings,
             features,
             names,
+            instances,
             version_major: from.versionMajor.unwrap_or_default() as i32,
             version_minor: from.versionMinor.unwrap_or_default() as u32,
         })
@@ -1338,7 +1615,10 @@ impl From<Affine> for AffineForEqAndHash {
 
 #[cfg(test)]
 mod tests {
-    use crate::{font::RawFeature, Font, FromPlist, Node, Plist, Shape};
+    use crate::{
+        font::{RawAxisUserToDesignMap, RawFeature, RawUserToDesignMapping},
+        Font, FromPlist, Node, Plist, Shape,
+    };
     use std::{
         collections::{BTreeMap, BTreeSet},
         path::{Path, PathBuf},
@@ -1423,11 +1703,10 @@ mod tests {
         assert_wght_var_metrics(&Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap());
     }
 
-    #[test]
-    fn read_wght_var_2_and_3() {
+    fn assert_load_v2_matches_load_v3(name: &str) {
         let _ = env_logger::builder().is_test(true).try_init();
-        let g2 = Font::load(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
-        let g3 = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        let g2 = Font::load(&glyphs2_dir().join(name)).unwrap();
+        let g3 = Font::load(&glyphs3_dir().join(name)).unwrap();
 
         // Handy if troubleshooting
         std::fs::write("/tmp/g2.txt", format!("{g2:#?}")).unwrap();
@@ -1439,6 +1718,16 @@ mod tests {
             assert_eq!(g2m, g3m);
         }
         assert_eq!(g2, g3);
+    }
+
+    #[test]
+    fn read_wght_var_2_and_3() {
+        assert_load_v2_matches_load_v3("WghtVar.glyphs");
+    }
+
+    #[test]
+    fn read_wght_var_avar_2_and_3() {
+        assert_load_v2_matches_load_v3("WghtVar_Avar.glyphs");
     }
 
     fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {
@@ -1588,17 +1877,17 @@ mod tests {
 
         // Did you load the mappings? DID YOU?!
         assert_eq!(
-            BTreeMap::from([
+            RawUserToDesignMapping(BTreeMap::from([
                 (
                     "Optical Size".to_string(),
-                    vec![
+                    RawAxisUserToDesignMap(vec![
                         (OrderedFloat(12.0), OrderedFloat(12.0)),
                         (OrderedFloat(72.0), OrderedFloat(72.0))
-                    ]
+                    ])
                 ),
                 (
                     "Weight".to_string(),
-                    vec![
+                    RawAxisUserToDesignMap(vec![
                         (OrderedFloat(100.0), OrderedFloat(40.0)),
                         (OrderedFloat(200.0), OrderedFloat(46.0)),
                         (OrderedFloat(300.0), OrderedFloat(51.0)),
@@ -1606,9 +1895,9 @@ mod tests {
                         (OrderedFloat(500.0), OrderedFloat(62.0)),
                         (OrderedFloat(600.0), OrderedFloat(68.0)),
                         (OrderedFloat(700.0), OrderedFloat(73.0)),
-                    ]
+                    ])
                 ),
-            ]),
+            ])),
             font.axis_mappings
         );
     }
@@ -1619,14 +1908,14 @@ mod tests {
 
         // Did you load the mappings? DID YOU?!
         assert_eq!(
-            BTreeMap::from([(
+            RawUserToDesignMapping(BTreeMap::from([(
                 "Weight".to_string(),
-                vec![
+                RawAxisUserToDesignMap(vec![
                     (OrderedFloat(400.0), OrderedFloat(0.0)),
                     (OrderedFloat(500.0), OrderedFloat(8.0)),
                     (OrderedFloat(700.0), OrderedFloat(10.0)),
-                ]
-            ),]),
+                ])
+            ),])),
             font.axis_mappings
         );
     }
@@ -1724,5 +2013,34 @@ mod tests {
         let v2 = Font::load(&glyphs2_dir().join("TheBestNames.glyphs")).unwrap();
         let v3 = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
         assert_eq!(v3.names, v2.names);
+    }
+
+    fn assert_wghtvar_avar_master_and_axes(glyphs_file: &Path) {
+        let font = Font::load(glyphs_file).unwrap();
+        let wght_idx = font.axes.iter().position(|a| a.tag == "wght").unwrap();
+        assert_eq!(
+            vec![300.0, 400.0, 700.0],
+            font.masters
+                .iter()
+                .map(|m| m.axes_values[wght_idx].into_inner())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            (400.0, 1),
+            (
+                font.default_master().axes_values[wght_idx].into_inner(),
+                font.default_master_idx
+            )
+        );
+    }
+
+    #[test]
+    fn favor_regular_as_origin_glyphs2() {
+        assert_wghtvar_avar_master_and_axes(&glyphs2_dir().join("WghtVar_Avar.glyphs"));
+    }
+
+    #[test]
+    fn favor_regular_as_origin_glyphs3() {
+        assert_wghtvar_avar_master_and_axes(&glyphs3_dir().join("WghtVar_Avar.glyphs"));
     }
 }
