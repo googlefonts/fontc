@@ -272,6 +272,7 @@ fn add_glyf_loca_be_job(
                 id,
                 AnyWorkId::Be(BeWorkIdentifier::Glyf)
                     | AnyWorkId::Be(BeWorkIdentifier::Loca)
+                    | AnyWorkId::Be(BeWorkIdentifier::LocaFormat)
                     | AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..))
             )
         });
@@ -296,6 +297,7 @@ fn add_glyf_loca_be_job(
     } else {
         workload.mark_success(BeWorkIdentifier::Glyf);
         workload.mark_success(BeWorkIdentifier::Loca);
+        workload.mark_success(BeWorkIdentifier::LocaFormat);
     }
     Ok(())
 }
@@ -445,6 +447,8 @@ fn add_head_be_job(
     if change_detector.final_static_metadata_ir_change() {
         let mut dependencies = HashSet::new();
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+        dependencies.insert(BeWorkIdentifier::Glyf.into());
+        dependencies.insert(BeWorkIdentifier::LocaFormat.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Head.into();
         workload.insert(
@@ -655,7 +659,7 @@ fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: Gl
         panic!("BE glyph '{glyph_name}' is being built but not participating in hmtx",);
     }
 
-    let write_access = Access::Two(id.clone(), gvar_id);
+    let write_access = Access::Set(HashSet::from([id.clone(), gvar_id]));
     workload.insert(
         id,
         Job {
@@ -710,7 +714,10 @@ mod tests {
     };
 
     use fontbe::{
-        orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
+        orchestration::{
+            loca_format_from_file, AnyWorkId, Context as BeContext, LocaFormat,
+            WorkId as BeWorkIdentifier,
+        },
         paths::Paths as BePaths,
     };
     use fontdrasil::types::GlyphName;
@@ -757,8 +764,9 @@ mod tests {
             fe_context: FeContext,
             be_context: BeContext,
         ) -> TestCompile {
+            let build_dir = change_detector.be_paths().build_dir().to_path_buf();
             TestCompile {
-                build_dir: change_detector.be_paths().build_dir().to_path_buf(),
+                build_dir,
                 work_completed: HashSet::new(),
                 glyphs_changed: change_detector.glyphs_changed(),
                 glyphs_deleted: change_detector.glyphs_deleted(),
@@ -774,11 +782,37 @@ mod tests {
                 .unwrap()
         }
 
-        fn raw_glyf_loca(&self) -> (Vec<u8>, Vec<u8>) {
-            (
-                read_file(&self.build_dir.join("glyf.table")),
-                read_file(&self.build_dir.join("loca.table")),
+        fn glyphs(&self) -> Glyphs {
+            Glyphs::new(&self.build_dir)
+        }
+    }
+
+    struct Glyphs {
+        loca_format: LocaFormat,
+        raw_glyf: Vec<u8>,
+        raw_loca: Vec<u8>,
+    }
+
+    impl Glyphs {
+        fn new(build_dir: &Path) -> Self {
+            Glyphs {
+                loca_format: loca_format_from_file(&build_dir.join("loca.format")),
+                raw_glyf: read_file(&build_dir.join("glyf.table")),
+                raw_loca: read_file(&build_dir.join("loca.table")),
+            }
+        }
+
+        fn read(&self) -> Vec<glyf::Glyph> {
+            let glyf = Glyf::read(FontData::new(&self.raw_glyf)).unwrap();
+            let loca = Loca::read_with_args(
+                FontData::new(&self.raw_loca),
+                &(self.loca_format == LocaFormat::Long),
             )
+            .unwrap();
+            (0..loca.len())
+                .map(|gid| loca.get_glyf(GlyphId::new(gid as u16), &glyf))
+                .map(|r| r.unwrap().unwrap())
+                .collect()
         }
     }
 
@@ -871,6 +905,7 @@ mod tests {
                 BeWorkIdentifier::Hhea.into(),
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
+                BeWorkIdentifier::LocaFormat.into(),
                 BeWorkIdentifier::Maxp.into(),
                 BeWorkIdentifier::Name.into(),
                 BeWorkIdentifier::Os2.into(),
@@ -924,6 +959,7 @@ mod tests {
                 BeWorkIdentifier::Hhea.into(),
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
+                BeWorkIdentifier::LocaFormat.into(),
                 BeWorkIdentifier::Maxp.into(),
                 BeWorkIdentifier::Font.into(),
             ],
@@ -1037,24 +1073,11 @@ mod tests {
         );
     }
 
-    fn glyphs<'a>(raw_glyf: &'a [u8], raw_loca: &'a [u8]) -> Vec<glyf::Glyph<'a>> {
-        let glyf = Glyf::read(FontData::new(raw_glyf)).unwrap();
-        let loca = Loca::read_with_args(FontData::new(raw_loca), &true).unwrap();
-
-        (0..loca.len())
-            .map(|gid| loca.get_glyf(GlyphId::new(gid as u16), &glyf))
-            .map(|r| r.unwrap().unwrap())
-            .collect()
-    }
-
     #[test]
     fn compile_simple_glyphs_to_glyf_loca() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "static.designspace"));
-
-        let raw_glyf = read_file(&build_dir.join("glyf.table"));
-        let raw_loca = read_file(&build_dir.join("loca.table"));
+        let result = compile(Args::for_test(build_dir, "static.designspace"));
 
         // See resources/testdata/Static-Regular.ufo/glyphs
         // space, 0 points, 0 contour
@@ -1062,7 +1085,9 @@ mod tests {
         // plus, 12 points, 1 contour
         assert_eq!(
             vec![(0, 0), (4, 1), (12, 1)],
-            glyphs(&raw_glyf, &raw_loca)
+            result
+                .glyphs()
+                .read()
                 .iter()
                 .map(|g| match g {
                     glyf::Glyph::Simple(glyph) => (glyph.num_points(), glyph.number_of_contours()),
@@ -1077,11 +1102,11 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
-        let (raw_glyf, raw_loca) = result.raw_glyf_loca();
 
         // Per source, glyphs should be period, comma, non_uniform_scale
         // Period is simple, the other two use it as a component
-        let glyphs = glyphs(&raw_glyf, &raw_loca);
+        let glyph_data = result.glyphs();
+        let glyphs = glyph_data.read();
         assert!(glyphs.len() > 1, "{glyphs:#?}");
         let period_idx = result.get_glyph_index("period");
         assert!(matches!(glyphs[0], glyf::Glyph::Simple(..)), "{glyphs:#?}");
@@ -1105,12 +1130,11 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
-        let (raw_glyf, raw_loca) = result.raw_glyf_loca();
-
         // non-uniform scaling of period
         let period_idx = result.get_glyph_index("period");
         let non_uniform_scale_idx = result.get_glyph_index("non_uniform_scale");
-        let glyphs = glyphs(&raw_glyf, &raw_loca);
+        let glyph_data = result.glyphs();
+        let glyphs = glyph_data.read();
         let glyf::Glyph::Composite(glyph) = &glyphs[non_uniform_scale_idx as usize] else {
             panic!("Expected a composite\n{glyphs:#?}");
         };
@@ -1149,10 +1173,10 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
-        let (raw_glyf, raw_loca) = result.raw_glyf_loca();
 
         let gid = result.get_glyph_index("simple_transform_again");
-        let glyphs = glyphs(&raw_glyf, &raw_loca);
+        let glyph_data = result.glyphs();
+        let glyphs = glyph_data.read();
         let glyf::Glyph::Composite(glyph) = &glyphs[gid as usize] else {
             panic!("Expected a composite\n{glyphs:#?}");
         };
@@ -1456,6 +1480,14 @@ mod tests {
         assert_eq!(
             vec![(Tag::from_str("wght").unwrap(), 400.0, 400.0, 700.0)],
             axes(&font),
+        );
+
+        assert_eq!(
+            (0..4).map(GlyphId::new).collect::<Vec<_>>(),
+            [0x20, 0x21, 0x2d, 0x3d]
+                .iter()
+                .map(|cp| font.cmap().unwrap().map_codepoint(*cp as u32).unwrap())
+                .collect::<Vec<_>>()
         );
     }
 

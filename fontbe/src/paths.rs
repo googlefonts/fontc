@@ -54,6 +54,7 @@ impl Paths {
             WorkId::Glyf => self.build_dir.join("glyf.table"),
             WorkId::Gvar => self.build_dir.join("gvar.table"),
             WorkId::Loca => self.build_dir.join("loca.table"),
+            WorkId::LocaFormat => self.build_dir.join("loca.format"),
             WorkId::Cmap => self.build_dir.join("cmap.table"),
             WorkId::Fvar => self.build_dir.join("fvar.table"),
             WorkId::Head => self.build_dir.join("head.table"),

@@ -105,17 +105,18 @@ impl Workload {
 
             // GlyfFragment carries GvarFragment along for the ride
             AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name)) => {
-                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::GvarFragment(glyph_name)))
+                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::GvarFragment(glyph_name)));
             }
 
             // Glyf carries Loca along for the ride
             AnyWorkId::Be(BeWorkIdentifier::Glyf) => {
-                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Loca))
+                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Loca));
+                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::LocaFormat));
             }
 
             // Hmtx carries hhea along for the ride
             AnyWorkId::Be(BeWorkIdentifier::Hmtx) => {
-                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Hhea))
+                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Hhea));
             }
             _ => (),
         }

@@ -17,6 +17,7 @@ use log::trace;
 use parking_lot::RwLock;
 use read_fonts::{FontData, FontRead};
 use serde::{Deserialize, Serialize};
+
 use write_fonts::{
     dump_table,
     tables::{
@@ -66,6 +67,7 @@ pub enum WorkId {
     Hhea,
     Hmtx,
     Loca,
+    LocaFormat,
     Maxp,
     Name,
     Os2,
@@ -219,8 +221,91 @@ impl From<&VariationRegion> for TupleBuilder {
     }
 }
 
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum LocaFormat {
+    Short = 0,
+    Long = 1,
+}
+
+impl LocaFormat {
+    pub fn new(loca: &[u32]) -> LocaFormat {
+        // https://github.com/fonttools/fonttools/blob/1c283756a5e39d69459eea80ed12792adc4922dd/Lib/fontTools/ttLib/tables/_l_o_c_a.py#L37
+        if loca.last().copied().unwrap_or_default() < 0x20000
+            && loca.iter().all(|offset| offset % 2 == 0)
+        {
+            LocaFormat::Short
+        } else {
+            LocaFormat::Long
+        }
+    }
+}
+
+// Free function of specific form to fit macro
+pub fn loca_format_from_file(file: &Path) -> LocaFormat {
+    let bytes = fs::read(file).unwrap();
+    match bytes.first() {
+        Some(0) => LocaFormat::Short,
+        Some(1) => LocaFormat::Long,
+        _ => panic!("serialized LocaFormat is invalid"),
+    }
+}
+
+// Free function of specific form to fit macro
+fn loca_format_to_bytes(format: &LocaFormat) -> Vec<u8> {
+    vec![*format as u8]
+}
+
 pub type BeWork = dyn Work<Context, Error> + Send;
-type GlyfLoca = (Vec<u8>, Vec<u32>);
+pub struct GlyfLoca {
+    pub glyf: Vec<u8>,
+    pub loca: Vec<u32>,
+}
+
+impl GlyfLoca {
+    pub fn new(glyf: Vec<u8>, loca: Vec<u32>) -> Self {
+        Self { glyf, loca }
+    }
+
+    pub fn read(format: LocaFormat, paths: &Paths) -> Self {
+        let glyf = read_entire_file(&paths.target_file(&WorkId::Glyf));
+        let raw_loca = read_entire_file(&paths.target_file(&WorkId::Loca));
+        let loca = if format == LocaFormat::Short {
+            raw_loca
+                .chunks_exact(std::mem::size_of::<u16>())
+                .map(|bytes| u16::from_be_bytes(bytes.try_into().unwrap()) as u32 * 2)
+                .collect()
+        } else {
+            raw_loca
+                .chunks_exact(std::mem::size_of::<u32>())
+                .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
+                .collect()
+        };
+        Self { glyf, loca }
+    }
+
+    fn write(&self, format: LocaFormat, paths: &Paths) {
+        let loca: Vec<_> = if format == LocaFormat::Short {
+            self.loca
+                .iter()
+                .flat_map(|offset| ((offset >> 1) as u16).to_be_bytes())
+                .collect()
+        } else {
+            self.loca
+                .iter()
+                .flat_map(|offset| offset.to_be_bytes())
+                .collect()
+        };
+        persist(&paths.target_file(&WorkId::Glyf), &self.glyf);
+        persist(&paths.target_file(&WorkId::Loca), &loca);
+    }
+}
+
+fn persist(file: &Path, content: &[u8]) {
+    fs::write(file, content)
+        .map_err(|e| panic!("Unable to write {file:?} {e}"))
+        .unwrap();
+}
 
 /// Read/write access to data for async work.
 ///
@@ -230,7 +315,7 @@ type GlyfLoca = (Vec<u8>, Vec<u32>);
 pub struct Context {
     pub flags: Flags,
 
-    paths: Arc<Paths>,
+    pub paths: Arc<Paths>,
 
     // The final, fully populated, read-only FE context
     pub ir: Arc<FeContext>,
@@ -250,6 +335,7 @@ pub struct Context {
     fvar: ContextItem<Fvar>,
     gvar: ContextItem<Bytes>,
     post: ContextItem<Post>,
+    loca_format: ContextItem<LocaFormat>,
     maxp: ContextItem<Maxp>,
     name: ContextItem<Name>,
     os2: ContextItem<Os2>,
@@ -275,6 +361,7 @@ impl Context {
             fvar: self.fvar.clone(),
             gvar: self.gvar.clone(),
             post: self.post.clone(),
+            loca_format: self.loca_format.clone(),
             maxp: self.maxp.clone(),
             name: self.name.clone(),
             os2: self.os2.clone(),
@@ -300,6 +387,7 @@ impl Context {
             fvar: Arc::from(RwLock::new(None)),
             gvar: Arc::from(RwLock::new(None)),
             post: Arc::from(RwLock::new(None)),
+            loca_format: Arc::from(RwLock::new(None)),
             maxp: Arc::from(RwLock::new(None)),
             name: Arc::from(RwLock::new(None)),
             os2: Arc::from(RwLock::new(None)),
@@ -334,10 +422,9 @@ impl Context {
         self.persist(file, content);
     }
 
+    // we need a self.persist for macros
     fn persist(&self, file: &Path, content: &[u8]) {
-        fs::write(file, content)
-            .map_err(|e| panic!("Unable to write {file:?} {e}"))
-            .unwrap();
+        persist(file, content);
     }
 
     pub fn read_raw(&self, id: WorkId) -> Result<Vec<u8>, io::Error> {
@@ -437,7 +524,11 @@ impl Context {
     }
 
     pub fn get_glyf_loca(&self) -> Arc<GlyfLoca> {
-        let ids = [WorkId::Glyf.into(), WorkId::Loca.into()];
+        let ids = [
+            WorkId::Glyf.into(),
+            WorkId::Loca.into(),
+            WorkId::LocaFormat.into(),
+        ];
         self.acl.assert_read_access_to_all(&ids);
         {
             let rl = self.glyf_loca.read();
@@ -446,40 +537,37 @@ impl Context {
             }
         }
 
-        let loca = read_entire_file(&self.paths.target_file(&WorkId::Loca))
-            .chunks_exact(std::mem::size_of::<u32>())
-            .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
-            .collect();
-        let glyf = read_entire_file(&self.paths.target_file(&WorkId::Glyf));
-
-        set_cached(&self.glyf_loca, (glyf, loca));
+        let format = self.get_loca_format();
+        set_cached(
+            &self.glyf_loca,
+            GlyfLoca::read(*format, self.paths.as_ref()),
+        );
         let rl = self.glyf_loca.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
     pub fn set_glyf_loca(&self, glyf_loca: GlyfLoca) {
-        let ids = [WorkId::Glyf.into(), WorkId::Loca.into()];
+        let ids = [
+            WorkId::Glyf.into(),
+            WorkId::Loca.into(),
+            WorkId::LocaFormat.into(),
+        ];
         self.acl.assert_write_access_to_all(&ids);
 
-        let (glyf, loca) = glyf_loca;
+        let loca_format = LocaFormat::new(&glyf_loca.loca);
         if self.flags.contains(Flags::EMIT_IR) {
-            self.persist(&self.paths.target_file(&WorkId::Glyf), &glyf);
-            self.persist(
-                &self.paths.target_file(&WorkId::Loca),
-                &loca
-                    .iter()
-                    .flat_map(|v| v.to_be_bytes())
-                    .collect::<Vec<u8>>(),
-            );
+            glyf_loca.write(loca_format, self.paths.as_ref());
         }
 
-        set_cached(&self.glyf_loca, (glyf, loca));
+        self.set_loca_format(loca_format);
+        set_cached(&self.glyf_loca, glyf_loca);
     }
 
     // Lovely little typed accessors
     context_accessors! { get_avar, set_avar, avar, Avar, WorkId::Avar, from_file, to_bytes }
     context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
     context_accessors! { get_fvar, set_fvar, fvar, Fvar, WorkId::Fvar, from_file, to_bytes }
+    context_accessors! { get_loca_format, set_loca_format, loca_format, LocaFormat, WorkId::LocaFormat, loca_format_from_file, loca_format_to_bytes }
     context_accessors! { get_maxp, set_maxp, maxp, Maxp, WorkId::Maxp, from_file, to_bytes }
     context_accessors! { get_name, set_name, name, Name, WorkId::Name, from_file, to_bytes }
     context_accessors! { get_os2, set_os2, os2, Os2, WorkId::Os2, from_file, to_bytes }
@@ -541,4 +629,50 @@ fn read_entire_file(file: &Path) -> Vec<u8> {
     fs::read(file)
         .map_err(|e| panic!("Unable to read {file:?} {e}"))
         .unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use crate::{orchestration::LocaFormat, paths::Paths};
+
+    use super::GlyfLoca;
+
+    #[test]
+    fn no_glyphs_is_short() {
+        assert_eq!(LocaFormat::Short, LocaFormat::new(&Vec::new()));
+    }
+
+    #[test]
+    fn some_glyphs_is_short() {
+        assert_eq!(LocaFormat::Short, LocaFormat::new(&[24, 48, 112]));
+    }
+
+    #[test]
+    fn unpadded_glyphs_is_long() {
+        assert_eq!(LocaFormat::Long, LocaFormat::new(&[24, 7, 112]));
+    }
+
+    #[test]
+    fn big_glyphs_is_long() {
+        assert_eq!(
+            LocaFormat::Long,
+            LocaFormat::new(&(0..=32).map(|i| i * 0x1000).collect::<Vec<_>>())
+        );
+    }
+
+    #[test]
+    fn round_trip_glyf_loca() {
+        let glyf = (0..16_u8).collect::<Vec<_>>();
+        let loca = vec![0, 4, 16];
+        let gl = GlyfLoca::new(glyf.clone(), loca.clone());
+        let loca_format = LocaFormat::Short;
+        let tmp = tempdir().unwrap();
+        let paths = Paths::new(tmp.path());
+        gl.write(loca_format, &paths);
+
+        let gl = GlyfLoca::read(loca_format, &paths);
+        assert_eq!((glyf, loca), (gl.glyf, gl.loca));
+    }
 }
