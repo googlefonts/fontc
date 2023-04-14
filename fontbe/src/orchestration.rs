@@ -223,8 +223,8 @@ impl From<&VariationRegion> for TupleBuilder {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum LocaFormat {
-    Short,
-    Long,
+    Short = 0,
+    Long = 1,
 }
 
 impl LocaFormat {
