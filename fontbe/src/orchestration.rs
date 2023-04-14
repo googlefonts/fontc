@@ -66,6 +66,7 @@ pub enum WorkId {
     Hhea,
     Hmtx,
     Loca,
+    LocaFormat,
     Maxp,
     Name,
     Os2,
@@ -219,34 +220,64 @@ impl From<&VariationRegion> for TupleBuilder {
     }
 }
 
-const SHORT_LOCA: u8 = 0;
-const LONG_LOCA: u8 = 1;
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum LocaFormat {
+    Short,
+    Long,
+}
+
+impl LocaFormat {
+    pub fn new(loca: &[u32]) -> LocaFormat {
+        // https://github.com/fonttools/fonttools/blob/1c283756a5e39d69459eea80ed12792adc4922dd/Lib/fontTools/ttLib/tables/_l_o_c_a.py#L37
+        if loca.last().copied().unwrap_or_default() < 0x20000
+            && loca.iter().all(|offset| offset % 2 == 0)
+        {
+            LocaFormat::Short
+        } else {
+            LocaFormat::Long
+        }
+    }
+}
+
+impl TryFrom<u8> for LocaFormat {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, ()> {
+        match value {
+            _ if value == LocaFormat::Short as u8 => Ok(LocaFormat::Short),
+            _ if value == LocaFormat::Long as u8 => Ok(LocaFormat::Short),
+            _ => Err(()),
+        }
+    }
+}
+
+// Free function of specific form to fit macro
+fn loca_format_from_file(file: &Path) -> LocaFormat {
+    let bytes = fs::read(file).unwrap();
+    LocaFormat::try_from(*bytes.first().unwrap()).unwrap()
+}
+
+// Free function of specific form to fit macro
+fn loca_format_to_bytes(format: &LocaFormat) -> Vec<u8> {
+    vec![*format as u8]
+}
 
 pub type BeWork = dyn Work<Context, Error> + Send;
 pub struct GlyfLoca {
     pub glyf: Vec<u8>,
     pub loca: Vec<u32>,
-    pub format: u8,
 }
 
 impl GlyfLoca {
     pub fn new(glyf: Vec<u8>, loca: Vec<u32>) -> Self {
-        // https://github.com/fonttools/fonttools/blob/1c283756a5e39d69459eea80ed12792adc4922dd/Lib/fontTools/ttLib/tables/_l_o_c_a.py#L37
-        let format = if loca.last().copied().unwrap_or_default() < 0x20000
-            && loca.iter().all(|offset| offset % 2 == 0)
-        {
-            SHORT_LOCA
-        } else {
-            LONG_LOCA
-        };
-        Self { glyf, loca, format }
+        Self { glyf, loca }
     }
 
-    pub fn read(paths: &Paths) -> Self {
+    pub fn read(format: LocaFormat, paths: &Paths) -> Self {
         let glyf = read_entire_file(&paths.target_file(&WorkId::Glyf));
         let raw_loca = read_entire_file(&paths.target_file(&WorkId::Loca));
-        let format = raw_loca[0];
-        let loca = if format == SHORT_LOCA {
+        let loca = if format == LocaFormat::Short {
             raw_loca[1..]
                 .chunks_exact(std::mem::size_of::<u16>())
                 .map(|bytes| u16::from_be_bytes(bytes.try_into().unwrap()) as u32 * 2)
@@ -257,19 +288,20 @@ impl GlyfLoca {
                 .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
                 .collect()
         };
-        Self { glyf, loca, format }
+        Self { glyf, loca }
     }
 
-    fn write(&self, paths: &Paths) {
-        let mut loca = vec![self.format];
-        if self.format == SHORT_LOCA {
-            loca.extend(
-                self.loca
-                    .iter()
-                    .flat_map(|offset| ((offset >> 1) as u16).to_be_bytes()),
-            );
+    fn write(&self, format: LocaFormat, paths: &Paths) {
+        let loca: Vec<_> = if format == LocaFormat::Short {
+            self.loca
+                .iter()
+                .flat_map(|offset| ((offset >> 1) as u16).to_be_bytes())
+                .collect()
         } else {
-            loca.extend(self.loca.iter().flat_map(|offset| offset.to_be_bytes()));
+            self.loca
+                .iter()
+                .flat_map(|offset| offset.to_be_bytes())
+                .collect()
         };
         persist(&paths.target_file(&WorkId::Glyf), &self.glyf);
         persist(&paths.target_file(&WorkId::Loca), &loca);
@@ -310,6 +342,7 @@ pub struct Context {
     fvar: ContextItem<Fvar>,
     gvar: ContextItem<Bytes>,
     post: ContextItem<Post>,
+    loca_format: ContextItem<LocaFormat>,
     maxp: ContextItem<Maxp>,
     name: ContextItem<Name>,
     os2: ContextItem<Os2>,
@@ -335,6 +368,7 @@ impl Context {
             fvar: self.fvar.clone(),
             gvar: self.gvar.clone(),
             post: self.post.clone(),
+            loca_format: self.loca_format.clone(),
             maxp: self.maxp.clone(),
             name: self.name.clone(),
             os2: self.os2.clone(),
@@ -360,6 +394,7 @@ impl Context {
             fvar: Arc::from(RwLock::new(None)),
             gvar: Arc::from(RwLock::new(None)),
             post: Arc::from(RwLock::new(None)),
+            loca_format: Arc::from(RwLock::new(None)),
             maxp: Arc::from(RwLock::new(None)),
             name: Arc::from(RwLock::new(None)),
             os2: Arc::from(RwLock::new(None)),
@@ -496,7 +531,11 @@ impl Context {
     }
 
     pub fn get_glyf_loca(&self) -> Arc<GlyfLoca> {
-        let ids = [WorkId::Glyf.into(), WorkId::Loca.into()];
+        let ids = [
+            WorkId::Glyf.into(),
+            WorkId::Loca.into(),
+            WorkId::LocaFormat.into(),
+        ];
         self.acl.assert_read_access_to_all(&ids);
         {
             let rl = self.glyf_loca.read();
@@ -505,19 +544,29 @@ impl Context {
             }
         }
 
-        set_cached(&self.glyf_loca, GlyfLoca::read(self.paths.as_ref()));
+        let format = self.get_loca_format();
+        set_cached(
+            &self.glyf_loca,
+            GlyfLoca::read(*format, self.paths.as_ref()),
+        );
         let rl = self.glyf_loca.read();
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
     pub fn set_glyf_loca(&self, glyf_loca: GlyfLoca) {
-        let ids = [WorkId::Glyf.into(), WorkId::Loca.into()];
+        let ids = [
+            WorkId::Glyf.into(),
+            WorkId::Loca.into(),
+            WorkId::LocaFormat.into(),
+        ];
         self.acl.assert_write_access_to_all(&ids);
 
+        let loca_format = LocaFormat::new(&glyf_loca.loca);
         if self.flags.contains(Flags::EMIT_IR) {
-            glyf_loca.write(self.paths.as_ref());
+            glyf_loca.write(loca_format, self.paths.as_ref());
         }
 
+        self.set_loca_format(loca_format);
         set_cached(&self.glyf_loca, glyf_loca);
     }
 
@@ -525,6 +574,7 @@ impl Context {
     context_accessors! { get_avar, set_avar, avar, Avar, WorkId::Avar, from_file, to_bytes }
     context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
     context_accessors! { get_fvar, set_fvar, fvar, Fvar, WorkId::Fvar, from_file, to_bytes }
+    context_accessors! { get_loca_format, set_loca_format, loca_format, LocaFormat, WorkId::LocaFormat, loca_format_from_file, loca_format_to_bytes }
     context_accessors! { get_maxp, set_maxp, maxp, Maxp, WorkId::Maxp, from_file, to_bytes }
     context_accessors! { get_name, set_name, name, Name, WorkId::Name, from_file, to_bytes }
     context_accessors! { get_os2, set_os2, os2, Os2, WorkId::Os2, from_file, to_bytes }
@@ -590,31 +640,28 @@ fn read_entire_file(file: &Path) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use crate::orchestration::{LONG_LOCA, SHORT_LOCA};
-
-    use super::GlyfLoca;
+    use crate::orchestration::LocaFormat;
 
     #[test]
     fn no_glyphs_is_short() {
-        let gl = GlyfLoca::new(vec![1, 2, 3], Vec::new());
-        assert_eq!(SHORT_LOCA, gl.format);
+        assert_eq!(LocaFormat::Short, LocaFormat::new(&Vec::new()));
     }
 
     #[test]
     fn some_glyphs_is_short() {
-        let gl = GlyfLoca::new(vec![1, 2, 3], vec![24, 48, 112]);
-        assert_eq!(SHORT_LOCA, gl.format);
+        assert_eq!(LocaFormat::Short, LocaFormat::new(&[24, 48, 112]));
     }
 
     #[test]
     fn unpadded_glyphs_is_long() {
-        let gl = GlyfLoca::new(vec![1, 2, 3], vec![24, 7, 112]);
-        assert_eq!(LONG_LOCA, gl.format);
+        assert_eq!(LocaFormat::Long, LocaFormat::new(&[24, 7, 112]));
     }
 
     #[test]
     fn big_glyphs_is_long() {
-        let gl = GlyfLoca::new(vec![1, 2, 3], (0..=32).map(|i| i * 0x1000).collect());
-        assert_eq!(LONG_LOCA, gl.format);
+        assert_eq!(
+            LocaFormat::Long,
+            LocaFormat::new(&(0..=32).map(|i| i * 0x1000).collect::<Vec<_>>())
+        );
     }
 }

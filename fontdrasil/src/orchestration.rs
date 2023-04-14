@@ -1,6 +1,7 @@
 //! Common parts of work orchestration.
 
 use std::{
+    collections::HashSet,
     fmt::{Debug, Display},
     hash::Hash,
     sync::Arc,
@@ -18,7 +19,7 @@ pub enum Access<I> {
     /// Access to one specific resource is permitted
     One(I),
     /// Access to two specific resource is permitted
-    Two(I, I),
+    Set(HashSet<I>),
     /// A closure is used to determine access
     Custom(Arc<dyn Fn(&I) -> bool + Send + Sync>),
 }
@@ -61,7 +62,7 @@ impl<I: Eq + Hash + Debug + Send + Sync + 'static> AccessControlList<I> {
     }
 }
 
-impl<I: Eq> Access<I> {
+impl<I: Eq + Hash> Access<I> {
     /// Create a new access rule with custom logic
     pub fn custom<F: Fn(&I) -> bool + Send + Sync + 'static>(func: F) -> Self {
         Access::Custom(Arc::new(func))
@@ -88,7 +89,7 @@ impl<I: Eq> Access<I> {
             Access::None => false,
             Access::All => true,
             Access::One(allow) => id == allow,
-            Access::Two(a1, a2) => id == a1 || id == a2,
+            Access::Set(ids) => ids.contains(id),
             Access::Custom(f) => f(id),
         }
     }

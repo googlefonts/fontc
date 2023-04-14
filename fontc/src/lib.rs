@@ -272,6 +272,7 @@ fn add_glyf_loca_be_job(
                 id,
                 AnyWorkId::Be(BeWorkIdentifier::Glyf)
                     | AnyWorkId::Be(BeWorkIdentifier::Loca)
+                    | AnyWorkId::Be(BeWorkIdentifier::LocaFormat)
                     | AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..))
             )
         });
@@ -296,6 +297,7 @@ fn add_glyf_loca_be_job(
     } else {
         workload.mark_success(BeWorkIdentifier::Glyf);
         workload.mark_success(BeWorkIdentifier::Loca);
+        workload.mark_success(BeWorkIdentifier::LocaFormat);
     }
     Ok(())
 }
@@ -446,7 +448,7 @@ fn add_head_be_job(
         let mut dependencies = HashSet::new();
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
         dependencies.insert(BeWorkIdentifier::Glyf.into());
-        dependencies.insert(BeWorkIdentifier::Loca.into());
+        dependencies.insert(BeWorkIdentifier::LocaFormat.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Head.into();
         workload.insert(
@@ -657,7 +659,7 @@ fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: Gl
         panic!("BE glyph '{glyph_name}' is being built but not participating in hmtx",);
     }
 
-    let write_access = Access::Two(id.clone(), gvar_id);
+    let write_access = Access::Set(HashSet::from([id.clone(), gvar_id]));
     workload.insert(
         id,
         Job {
@@ -712,7 +714,7 @@ mod tests {
     };
 
     use fontbe::{
-        orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
+        orchestration::{AnyWorkId, Context as BeContext, LocaFormat, WorkId as BeWorkIdentifier},
         paths::Paths as BePaths,
     };
     use fontdrasil::types::GlyphName;
@@ -776,11 +778,12 @@ mod tests {
                 .unwrap()
         }
 
-        fn raw_glyf_loca(&self) -> (Vec<u8>, Vec<u8>, u8) {
-            let mut loca = read_file(&self.build_dir.join("loca.table"));
-            let format = loca[0];
-            loca.drain(0..1);
-            (read_file(&self.build_dir.join("glyf.table")), loca, format)
+        fn raw_glyf_loca(&self) -> (Vec<u8>, Vec<u8>, LocaFormat) {
+            (
+                read_file(&self.build_dir.join("glyf.table")),
+                read_file(&self.build_dir.join("loca.table")),
+                LocaFormat::try_from(read_file(&self.build_dir.join("loca.format"))[0]).unwrap(),
+            )
         }
     }
 
@@ -873,6 +876,7 @@ mod tests {
                 BeWorkIdentifier::Hhea.into(),
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
+                BeWorkIdentifier::LocaFormat.into(),
                 BeWorkIdentifier::Maxp.into(),
                 BeWorkIdentifier::Name.into(),
                 BeWorkIdentifier::Os2.into(),
@@ -926,6 +930,7 @@ mod tests {
                 BeWorkIdentifier::Hhea.into(),
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
+                BeWorkIdentifier::LocaFormat.into(),
                 BeWorkIdentifier::Maxp.into(),
                 BeWorkIdentifier::Font.into(),
             ],
@@ -1039,9 +1044,13 @@ mod tests {
         );
     }
 
-    fn glyphs<'a>(raw_glyf: &'a [u8], raw_loca: &'a [u8], format: u8) -> Vec<glyf::Glyph<'a>> {
+    fn glyphs<'a>(
+        raw_glyf: &'a [u8],
+        raw_loca: &'a [u8],
+        format: LocaFormat,
+    ) -> Vec<glyf::Glyph<'a>> {
         let glyf = Glyf::read(FontData::new(raw_glyf)).unwrap();
-        let is_long = format == 1;
+        let is_long = format == LocaFormat::Long;
         let loca = Loca::read_with_args(FontData::new(raw_loca), &is_long).unwrap();
 
         (0..loca.len())
