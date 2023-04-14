@@ -255,7 +255,11 @@ impl TryFrom<u8> for LocaFormat {
 // Free function of specific form to fit macro
 fn loca_format_from_file(file: &Path) -> LocaFormat {
     let bytes = fs::read(file).unwrap();
-    LocaFormat::try_from(*bytes.first().unwrap()).unwrap()
+    match bytes.first() {
+        Some(0) => LocaFormat::Short,
+        Some(1) => LocaFormat::Long,
+        _ => panic!("serialized LocaFormat is invalid"),
+    }
 }
 
 // Free function of specific form to fit macro
