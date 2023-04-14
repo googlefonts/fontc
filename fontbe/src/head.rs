@@ -63,10 +63,8 @@ impl Work<Context, Error> for HeadWork {
     /// Generate [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_final_static_metadata();
-        let head = build_head(
-            static_metadata.units_per_em,
-            1, // TODO: set index_to_loc_format based on num glyphs
-        );
+        let glyf_loca = context.get_glyf_loca();
+        let head = build_head(static_metadata.units_per_em, glyf_loca.format as i16);
         context.set_head(head);
         Ok(())
     }

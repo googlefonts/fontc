@@ -21,7 +21,7 @@ use write_fonts::{
 
 use crate::{
     error::{Error, GlyphProblem},
-    orchestration::{BeWork, Context, Glyph, GvarFragment},
+    orchestration::{BeWork, Context, GlyfLoca, Glyph, GvarFragment},
 };
 
 struct GlyphWork {
@@ -612,7 +612,7 @@ impl Work<Context, Error> for GlyfLocaWork {
                 glyf.extend(bytes);
             });
 
-        context.set_glyf_loca((glyf, loca));
+        context.set_glyf_loca(GlyfLoca::new(glyf, loca));
 
         Ok(())
     }
