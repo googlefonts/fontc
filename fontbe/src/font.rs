@@ -14,7 +14,7 @@ use write_fonts::FontBuilder;
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Bytes, Context, WorkId},
+    orchestration::{to_bytes, BeWork, Bytes, Context, WorkId},
 };
 
 struct FontWork {}
@@ -44,6 +44,26 @@ const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
     (WorkId::Post, Post::TAG, TableType::Static),
 ];
 
+fn bytes_for(context: &Context, id: WorkId) -> Result<Vec<u8>, Error> {
+    let bytes = match id {
+        WorkId::Avar => to_bytes(context.get_avar().as_ref()),
+        WorkId::Cmap => to_bytes(&*context.get_cmap()),
+        WorkId::Fvar => to_bytes(&*context.get_fvar()),
+        WorkId::Head => to_bytes(&*context.get_head()),
+        WorkId::Hhea => to_bytes(&*context.get_hhea()),
+        WorkId::Hmtx => context.get_hmtx().get().to_vec(),
+        WorkId::Glyf => context.get_glyf_loca().glyf.clone(),
+        WorkId::Gvar => context.get_gvar().get().to_vec(),
+        WorkId::Loca => context.get_glyf_loca().raw_loca.clone(),
+        WorkId::Maxp => to_bytes(&*context.get_maxp()),
+        WorkId::Name => to_bytes(&*context.get_name()),
+        WorkId::Os2 => to_bytes(&*context.get_os2()),
+        WorkId::Post => to_bytes(&*context.get_post()),
+        _ => panic!("Missing a match for {id:?}"),
+    };
+    Ok(bytes)
+}
+
 impl Work<Context, Error> for FontWork {
     /// Glue binary tables into a font
     fn exec(&self, context: &Context) -> Result<(), Error> {
@@ -62,11 +82,13 @@ impl Work<Context, Error> for FontWork {
                 continue;
             }
             debug!("Grabbing {tag} for final font");
-            let bytes = context.read_raw(work_id.clone()).map_err(Error::IoError)?;
+            let bytes = bytes_for(context, work_id.clone())?;
             builder.add_table(*tag, bytes);
         }
 
-        context.set_font(Bytes::new(builder.build()));
+        let font = builder.build();
+        debug!("Assembled {} byte font", font.len());
+        context.set_font(Bytes::new(font));
         Ok(())
     }
 }

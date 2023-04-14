@@ -243,11 +243,14 @@ impl LocaFormat {
 
 // Free function of specific form to fit macro
 pub fn loca_format_from_file(file: &Path) -> LocaFormat {
+    trace!("loca_format_from_file");
     let bytes = fs::read(file).unwrap();
     match bytes.first() {
         Some(0) => LocaFormat::Short,
         Some(1) => LocaFormat::Long,
-        _ => panic!("serialized LocaFormat is invalid"),
+        _ => {
+            panic!("serialized LocaFormat is invalid")
+        }
     }
 }
 
@@ -259,12 +262,30 @@ fn loca_format_to_bytes(format: &LocaFormat) -> Vec<u8> {
 pub type BeWork = dyn Work<Context, Error> + Send;
 pub struct GlyfLoca {
     pub glyf: Vec<u8>,
+    pub raw_loca: Vec<u8>,
     pub loca: Vec<u32>,
+}
+
+fn raw_loca(loca: &[u32]) -> Vec<u8> {
+    let format = LocaFormat::new(loca);
+    if format == LocaFormat::Short {
+        loca.iter()
+            .flat_map(|offset| ((offset >> 1) as u16).to_be_bytes())
+            .collect()
+    } else {
+        loca.iter()
+            .flat_map(|offset| offset.to_be_bytes())
+            .collect()
+    }
 }
 
 impl GlyfLoca {
     pub fn new(glyf: Vec<u8>, loca: Vec<u32>) -> Self {
-        Self { glyf, loca }
+        Self {
+            glyf,
+            raw_loca: raw_loca(&loca),
+            loca,
+        }
     }
 
     pub fn read(format: LocaFormat, paths: &Paths) -> Self {
@@ -281,23 +302,16 @@ impl GlyfLoca {
                 .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
                 .collect()
         };
-        Self { glyf, loca }
+        Self {
+            glyf,
+            raw_loca,
+            loca,
+        }
     }
 
-    fn write(&self, format: LocaFormat, paths: &Paths) {
-        let loca: Vec<_> = if format == LocaFormat::Short {
-            self.loca
-                .iter()
-                .flat_map(|offset| ((offset >> 1) as u16).to_be_bytes())
-                .collect()
-        } else {
-            self.loca
-                .iter()
-                .flat_map(|offset| offset.to_be_bytes())
-                .collect()
-        };
+    fn write(&self, paths: &Paths) {
         persist(&paths.target_file(&WorkId::Glyf), &self.glyf);
-        persist(&paths.target_file(&WorkId::Loca), &loca);
+        persist(&paths.target_file(&WorkId::Loca), &self.raw_loca);
     }
 }
 
@@ -556,7 +570,7 @@ impl Context {
 
         let loca_format = LocaFormat::new(&glyf_loca.loca);
         if self.flags.contains(Flags::EMIT_IR) {
-            glyf_loca.write(loca_format, self.paths.as_ref());
+            glyf_loca.write(self.paths.as_ref());
         }
 
         self.set_loca_format(loca_format);
@@ -582,7 +596,9 @@ impl Context {
 }
 
 fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
+    trace!("  set_cached::begin");
     let mut wl = lock.write();
+    trace!("  set_cached::has write lock");
     *wl = Some(Arc::from(value));
 }
 
@@ -618,7 +634,7 @@ fn raw_to_bytes(table: &Bytes) -> Vec<u8> {
     table.buf.clone()
 }
 
-fn to_bytes<T>(table: &T) -> Vec<u8>
+pub(crate) fn to_bytes<T>(table: &T) -> Vec<u8>
 where
     T: FontWrite + Validate,
 {
@@ -667,12 +683,11 @@ mod tests {
         let glyf = (0..16_u8).collect::<Vec<_>>();
         let loca = vec![0, 4, 16];
         let gl = GlyfLoca::new(glyf.clone(), loca.clone());
-        let loca_format = LocaFormat::Short;
         let tmp = tempdir().unwrap();
         let paths = Paths::new(tmp.path());
-        gl.write(loca_format, &paths);
+        gl.write(&paths);
 
-        let gl = GlyfLoca::read(loca_format, &paths);
+        let gl = GlyfLoca::read(LocaFormat::Short, &paths);
         assert_eq!((glyf, loca), (gl.glyf, gl.loca));
     }
 }

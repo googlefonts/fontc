@@ -1,5 +1,6 @@
 //! Generates a [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar) table.
 
+use font_types::F2Dot14;
 use fontdrasil::orchestration::Work;
 use fontir::{
     coords::{CoordConverter, DesignCoord},
@@ -25,8 +26,14 @@ fn to_segment_map(axis: &Axis) -> SegmentMaps {
     // because, per spec, "If the segment map for a given axis has any value maps,
     // then it must include at least three value maps: -1 to -1, 0 to 0, and 1 to 1"
     // so three value maps *must* produce identity.
+    //
+    // 0 entry avar may confuse some clients so emit a default one
     if axis.converter.len() < 4 {
-        return SegmentMaps::new(Vec::new());
+        return SegmentMaps::new(vec![
+            AxisValueMap::new(F2Dot14::from_f32(-1.0), F2Dot14::from_f32(-1.0)),
+            AxisValueMap::new(F2Dot14::from_f32(0.0), F2Dot14::from_f32(0.0)),
+            AxisValueMap::new(F2Dot14::from_f32(1.0), F2Dot14::from_f32(1.0)),
+        ]);
     }
 
     // default normalization
@@ -69,6 +76,7 @@ impl Work<Context, Error> for AvarWork {
                 .variable_axes
                 .iter()
                 .map(to_segment_map)
+                .filter(|sm| !sm.axis_value_maps.is_empty())
                 .collect(),
         ));
         Ok(())
@@ -123,7 +131,7 @@ mod tests {
         for i in 1..mappings.len() {
             let mappings = mappings[0..i].to_vec();
             let segmap = to_segment_map(&axis(mappings, 1));
-            assert!(segmap.axis_value_maps.is_empty());
+            assert_eq!(vec![(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0),], dump(segmap));
         }
     }
 

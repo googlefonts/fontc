@@ -45,6 +45,10 @@ use fontir::{
     source::DeleteWork,
 };
 
+use fontbe::orchestration::Context as BeContext;
+use fontbe::paths::Paths as BePaths;
+use fontir::paths::Paths as IrPaths;
+
 use log::{debug, warn};
 
 pub fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
@@ -56,6 +60,36 @@ pub fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
     }
     debug!("require_dir {:?}", dir);
     Ok(dir.to_path_buf())
+}
+
+pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
+    let ir_paths = IrPaths::new(&args.build_dir);
+    let be_paths = BePaths::new(&args.build_dir);
+
+    require_dir(ir_paths.build_dir())?;
+    if args.emit_ir {
+        require_dir(ir_paths.glyph_ir_dir())?;
+        require_dir(be_paths.glyph_dir())?;
+    }
+    // It's confusing to have leftover debug files
+    if be_paths.debug_dir().is_dir() {
+        fs::remove_dir_all(be_paths.debug_dir()).map_err(Error::IoError)?;
+    }
+    if args.emit_debug {
+        require_dir(be_paths.debug_dir())?;
+    }
+    Ok((ir_paths, be_paths))
+}
+
+pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
+    // if IR is off the font didn't get written yet, otherwise it's done already
+    let font_file = be_context.paths.target_file(&BeWorkIdentifier::Font);
+    if !args.emit_ir {
+        fs::write(font_file, be_context.get_font().get()).map_err(Error::IoError)?;
+    } else if !font_file.exists() {
+        return Err(Error::FileExpected(font_file));
+    }
+    Ok(())
 }
 
 fn add_init_static_metadata_ir_job(
@@ -612,6 +646,7 @@ fn add_font_be_job(
         dependencies.insert(BeWorkIdentifier::Hhea.into());
         dependencies.insert(BeWorkIdentifier::Hmtx.into());
         dependencies.insert(BeWorkIdentifier::Loca.into());
+        dependencies.insert(BeWorkIdentifier::LocaFormat.into());
         dependencies.insert(BeWorkIdentifier::Maxp.into());
         dependencies.insert(BeWorkIdentifier::Name.into());
         dependencies.insert(BeWorkIdentifier::Os2.into());
@@ -713,21 +748,18 @@ mod tests {
         str::FromStr,
     };
 
-    use fontbe::{
-        orchestration::{
-            loca_format_from_file, AnyWorkId, Context as BeContext, LocaFormat,
-            WorkId as BeWorkIdentifier,
-        },
-        paths::Paths as BePaths,
+    use fontbe::orchestration::{
+        loca_format_from_file, AnyWorkId, Context as BeContext, LocaFormat,
+        WorkId as BeWorkIdentifier,
     };
     use fontdrasil::types::GlyphName;
     use fontir::{
         ir,
         orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
-        paths::Paths as IrPaths,
     };
     use indexmap::IndexSet;
     use kurbo::{Point, Rect};
+    use log::info;
     use pretty_assertions::assert_eq;
 
     use skrifa::{
@@ -819,10 +851,9 @@ mod tests {
     fn compile(args: Args) -> TestCompile {
         let _ = env_logger::builder().is_test(true).try_init();
 
-        let ir_paths = IrPaths::new(&args.build_dir);
-        let be_paths = BePaths::new(&args.build_dir);
-        require_dir(ir_paths.glyph_ir_dir()).unwrap();
-        require_dir(be_paths.glyph_dir()).unwrap();
+        info!("Compile {args:?}");
+
+        let (ir_paths, be_paths) = init_paths(&args).unwrap();
         let config = Config::new(args).unwrap();
 
         let prev_inputs = config.init().unwrap();
@@ -872,6 +903,9 @@ mod tests {
 
         change_detector.finish_successfully().unwrap();
         result.work_completed = completed;
+
+        write_font_file(&config.args, &be_root).unwrap();
+
         result
     }
 
@@ -1532,5 +1566,26 @@ mod tests {
             ]],
             axis_maps
         );
+    }
+
+    #[test]
+    fn compile_without_ir() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let mut args = Args::for_test(build_dir, "glyphs2/WghtVar.glyphs");
+        args.emit_ir = false;
+        compile(args);
+
+        let outputs = fs::read_dir(build_dir)
+            .unwrap()
+            .map(|e| {
+                e.unwrap()
+                    .path()
+                    .strip_prefix(build_dir)
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(vec![Path::new("font.ttf")], outputs);
     }
 }
