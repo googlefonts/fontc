@@ -17,6 +17,7 @@ use log::trace;
 use parking_lot::RwLock;
 use read_fonts::{FontData, FontRead};
 use serde::{Deserialize, Serialize};
+
 use write_fonts::{
     dump_table,
     tables::{
@@ -240,20 +241,8 @@ impl LocaFormat {
     }
 }
 
-impl TryFrom<u8> for LocaFormat {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, ()> {
-        match value {
-            _ if value == LocaFormat::Short as u8 => Ok(LocaFormat::Short),
-            _ if value == LocaFormat::Long as u8 => Ok(LocaFormat::Short),
-            _ => Err(()),
-        }
-    }
-}
-
 // Free function of specific form to fit macro
-fn loca_format_from_file(file: &Path) -> LocaFormat {
+pub fn loca_format_from_file(file: &Path) -> LocaFormat {
     let bytes = fs::read(file).unwrap();
     match bytes.first() {
         Some(0) => LocaFormat::Short,
@@ -282,12 +271,12 @@ impl GlyfLoca {
         let glyf = read_entire_file(&paths.target_file(&WorkId::Glyf));
         let raw_loca = read_entire_file(&paths.target_file(&WorkId::Loca));
         let loca = if format == LocaFormat::Short {
-            raw_loca[1..]
+            raw_loca
                 .chunks_exact(std::mem::size_of::<u16>())
                 .map(|bytes| u16::from_be_bytes(bytes.try_into().unwrap()) as u32 * 2)
                 .collect()
         } else {
-            raw_loca[1..]
+            raw_loca
                 .chunks_exact(std::mem::size_of::<u32>())
                 .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
                 .collect()
@@ -644,7 +633,11 @@ fn read_entire_file(file: &Path) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use crate::orchestration::LocaFormat;
+    use tempfile::tempdir;
+
+    use crate::{orchestration::LocaFormat, paths::Paths};
+
+    use super::GlyfLoca;
 
     #[test]
     fn no_glyphs_is_short() {
@@ -667,5 +660,19 @@ mod tests {
             LocaFormat::Long,
             LocaFormat::new(&(0..=32).map(|i| i * 0x1000).collect::<Vec<_>>())
         );
+    }
+
+    #[test]
+    fn round_trip_glyf_loca() {
+        let glyf = (0..16_u8).collect::<Vec<_>>();
+        let loca = vec![0, 4, 16];
+        let gl = GlyfLoca::new(glyf.clone(), loca.clone());
+        let loca_format = LocaFormat::Short;
+        let tmp = tempdir().unwrap();
+        let paths = Paths::new(tmp.path());
+        gl.write(loca_format, &paths);
+
+        let gl = GlyfLoca::read(loca_format, &paths);
+        assert_eq!((glyf, loca), (gl.glyf, gl.loca));
     }
 }
