@@ -232,12 +232,13 @@ pub struct GlyfLoca {
 impl GlyfLoca {
     pub fn new(glyf: Vec<u8>, loca: Vec<u32>) -> Self {
         // https://github.com/fonttools/fonttools/blob/1c283756a5e39d69459eea80ed12792adc4922dd/Lib/fontTools/ttLib/tables/_l_o_c_a.py#L37
-        let mut format = SHORT_LOCA;
-        if let Some(max_offset) = loca.last() {
-            if *max_offset >= 0x20000 || loca.iter().any(|offset| offset % 2 != 0) {
-                format = LONG_LOCA;
-            }
-        }
+        let format = if loca.last().copied().unwrap_or_default() < 0x20000
+            && loca.iter().all(|offset| offset % 2 == 0)
+        {
+            SHORT_LOCA
+        } else {
+            LONG_LOCA
+        };
         Self { glyf, loca, format }
     }
 
