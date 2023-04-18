@@ -386,6 +386,10 @@ impl TryFrom<&ir::Glyph> for CheckedGlyph {
             })
             .collect();
         if path_els.len() > 1 {
+            warn!(
+                "{} has inconsistent path elements: {path_els:?}",
+                glyph.name
+            );
             return Err(Error::GlyphError(
                 glyph.name.clone(),
                 GlyphProblem::InconsistentPathElements,
