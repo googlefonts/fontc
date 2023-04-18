@@ -529,6 +529,10 @@ impl Glyph {
     pub fn sources(&self) -> &HashMap<NormalizedLocation, GlyphInstance> {
         &self.sources
     }
+
+    pub fn source_mut(&mut self, loc: &NormalizedLocation) -> Option<&mut GlyphInstance> {
+        self.sources.get_mut(loc)
+    }
 }
 
 /// A variable definition of a single glyph.

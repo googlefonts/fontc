@@ -32,6 +32,37 @@ pub fn create_glyf_work(glyph_name: GlyphName) -> Box<BeWork> {
     Box::new(GlyphWork { glyph_name })
 }
 
+/// Can glyph reuse the metrics of other?
+///
+/// To be safe the component should have:
+///
+/// * The same advance width as glyph
+/// * A 2x2 transform that does nothing (basis vectors do not change)
+/// * No x-translation
+///    * y-translation is OK
+///
+/// This forces the composite glyph to use the possibly hinted horizontal
+/// metrics of the sub-glyph, instead of those from the "hmtx" table.
+///
+/// See <https://github.com/googlefonts/ufo2ft/blob/0c0a570b84d1351ab704ba1fa5ae03aeef51179f/Lib/ufo2ft/instructionCompiler.py#L151-L173>
+fn can_reuse_metrics(glyph: &ir::Glyph, component_glyph: &ir::Glyph, transform: &Affine) -> bool {
+    for (loc, inst) in glyph.sources().iter() {
+        // We won't stress whether the interpolated values would match just yet
+        let Some(other_inst) = component_glyph.sources().get(loc) else {
+            return false;
+        };
+
+        let width: u16 = inst.width.ot_round();
+        if width != other_inst.width.ot_round() {
+            return false;
+        }
+    }
+    // transform needs to be identity ignoring dy
+    let mut coeffs = transform.as_coeffs();
+    coeffs[5] = 0.0;
+    coeffs == Affine::IDENTITY.as_coeffs()
+}
+
 fn create_component(
     context: &Context,
     ref_glyph_name: &GlyphName,
@@ -45,7 +76,7 @@ fn create_component(
         .ok_or(GlyphProblem::NotInGlyphOrder)?;
     let gid = GlyphId::new(gid as u16);
 
-    // No known source does point anchoring so we just our transform into a 2x2 + offset
+    // No known source does point anchoring so we just turn transform into a 2x2 + offset
     let [a, b, c, d, e, f] = transform.as_coeffs();
     let flags = ComponentFlags {
         round_xy_to_grid: true, // ufo2ft defaults to this, match it
@@ -72,11 +103,12 @@ fn create_component(
 
 fn create_composite(
     context: &Context,
-    glyph_name: &GlyphName,
+    glyph: &ir::Glyph,
     default_location: &NormalizedLocation,
     components: &[(GlyphName, NormalizedLocation, Affine)],
 ) -> Result<CompositeGlyph, Error> {
     let mut errors = vec![];
+    let mut set_use_my_metrics = false;
     let components_at_default = components
         .iter()
         .filter_map(|(ref_glyph_name, loc, transform)| {
@@ -90,10 +122,20 @@ fn create_composite(
             create_component(context, ref_glyph_name, transform)
                 .map_err(|problem| {
                     errors.push(Error::ComponentError {
-                        glyph: glyph_name.clone(),
+                        glyph: glyph.name.clone(),
                         referenced_glyph: ref_glyph_name.clone(),
                         problem,
                     })
+                })
+                .map(|(mut component, bbox)| {
+                    if !set_use_my_metrics {
+                        let component_glyph = context.ir.get_glyph_ir(ref_glyph_name);
+                        if can_reuse_metrics(glyph, &component_glyph, transform) {
+                            set_use_my_metrics = true;
+                            component.flags.use_my_metrics = true;
+                        }
+                    }
+                    (component, bbox)
                 })
                 .ok()
         });
@@ -101,7 +143,7 @@ fn create_composite(
     let composite = CompositeGlyph::try_from_iter(components_at_default)
         .map_err(|_| {
             errors.push(Error::GlyphError(
-                glyph_name.clone(),
+                glyph.name.clone(),
                 GlyphProblem::NoComponents,
             ))
         })
@@ -109,7 +151,7 @@ fn create_composite(
 
     if !errors.is_empty() {
         return Err(Error::ComponentErrors {
-            glyph: glyph_name.clone(),
+            glyph: glyph.name.clone(),
             errors,
         });
     }
@@ -186,7 +228,7 @@ impl Work<Context, Error> for GlyphWork {
 
         let (name, point_seqs) = match glyph {
             CheckedGlyph::Composite { name, components } => {
-                let composite = create_composite(context, &name, default_location, &components)?;
+                let composite = create_composite(context, ir_glyph, default_location, &components)?;
                 context.set_glyph(name.clone(), composite.into());
                 (name, point_seqs_for_composite_glyph(ir_glyph))
             }
@@ -619,5 +661,105 @@ impl Work<Context, Error> for GlyfLocaWork {
         context.set_glyf_loca(GlyfLoca::new(glyf, loca));
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use fontir::{
+        coords::{NormalizedCoord, NormalizedLocation},
+        ir,
+    };
+    use kurbo::Affine;
+
+    use crate::glyphs::can_reuse_metrics;
+
+    /// Returns a glyph and a glyph that can be it's component
+    fn create_reusable_component() -> (ir::Glyph, ir::Glyph) {
+        let mut default_location = NormalizedLocation::new();
+        default_location.set_pos("wght", NormalizedCoord::new(0.0));
+        let mut other_location = NormalizedLocation::new();
+        other_location.set_pos("wght", NormalizedCoord::new(1.0));
+        let parent = ir::Glyph::new(
+            "parent".into(),
+            Default::default(),
+            HashMap::from([
+                (
+                    default_location.clone(),
+                    ir::GlyphInstance {
+                        width: 42.5,
+                        ..Default::default()
+                    },
+                ),
+                (
+                    other_location.clone(),
+                    ir::GlyphInstance {
+                        width: 62.5,
+                        ..Default::default()
+                    },
+                ),
+            ]),
+        )
+        .unwrap();
+        let child = ir::Glyph::new(
+            "child".into(),
+            Default::default(),
+            HashMap::from([
+                (
+                    default_location.clone(),
+                    ir::GlyphInstance {
+                        width: 42.5,
+                        ..Default::default()
+                    },
+                ),
+                (
+                    other_location.clone(),
+                    ir::GlyphInstance {
+                        width: 62.5,
+                        ..Default::default()
+                    },
+                ),
+            ]),
+        )
+        .unwrap();
+        (parent, child)
+    }
+
+    #[test]
+    fn can_reuse_metrics_no_transform() {
+        let (glyph, component) = create_reusable_component();
+        assert!(can_reuse_metrics(&glyph, &component, &Affine::IDENTITY));
+    }
+
+    #[test]
+    fn cannot_reuse_metrics_if_width_mismatch() {
+        let mut loc = NormalizedLocation::new();
+        loc.set_pos("wght", NormalizedCoord::new(1.0));
+        let (glyph, mut component) = create_reusable_component();
+        component.source_mut(&loc).unwrap().width += 1.0;
+        assert!(!can_reuse_metrics(&glyph, &component, &Affine::IDENTITY));
+    }
+
+    #[test]
+    fn can_reuse_metrics_ignores_dy() {
+        let (glyph, component) = create_reusable_component();
+        assert!(can_reuse_metrics(
+            &glyph,
+            &component,
+            &Affine::translate((0.0, 1.0))
+        ));
+    }
+
+    #[test]
+    fn cannot_reuse_metrics_for_non_dy_transform() {
+        let (glyph, component) = create_reusable_component();
+        // [5], which we don't reach, is dy
+        for i in 0..5 {
+            let mut coeffs = Affine::IDENTITY.as_coeffs();
+            coeffs[i] = 2.0;
+            assert!(!can_reuse_metrics(&glyph, &component, &Affine::new(coeffs)));
+        }
     }
 }
