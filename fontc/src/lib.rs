@@ -1006,11 +1006,14 @@ mod tests {
         assert!(feature_ttf.is_file(), "Should have written {feature_ttf:?}");
     }
 
-    fn build_contour_and_composite_glyph(temp_dir: &TempDir, match_legacy: bool) -> ir::Glyph {
+    fn build_contour_and_composite_glyph(
+        temp_dir: &TempDir,
+        prefer_simple_glyphs: bool,
+    ) -> ir::Glyph {
         let build_dir = temp_dir.path();
 
         let mut args = Args::for_test(build_dir, "glyphs2/MixedContourComponent.glyphs");
-        args.match_legacy = match_legacy; // <-- important :)
+        args.prefer_simple_glyphs = prefer_simple_glyphs; // <-- important :)
         let result = compile(args);
 
         let glyph = result

@@ -300,7 +300,8 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
                 !has_consistent_2x2_transforms || has_components_and_contours(glyph)
             })
         {
-            if !has_consistent_2x2_transforms || context.flags.contains(Flags::MATCH_LEGACY) {
+            if !has_consistent_2x2_transforms || context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS)
+            {
                 if !has_consistent_2x2_transforms {
                     debug!(
                         "Coalescing'{0}' into a simple glyph because component 2x2s vary across the designspace",

@@ -21,12 +21,15 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub emit_debug: bool,
 
-    /// Whether to Try Hard(tm) to match fontmake (Python) behavior in cases where there are other options.
-    ///
-    /// See <https://github.com/googlefonts/fontmake-rs/pull/123> for an example of
-    /// where this matters.
+    /// In cases where a source glyph uses a mixture of components and contours, convert
+    /// all the components to contours.
     #[arg(long, default_value = "true")]
-    pub match_legacy: bool,
+    pub prefer_simple_glyphs: bool,
+
+    /// Eliminate component references to other glyphs using components, emitting only
+    /// component references to simple (contour) glyphs.
+    #[arg(long, default_value = "true")]
+    pub flatten_components: bool,
 
     /// Working directory for the build process. If emit-ir is on, written here.
     #[arg(short, long, default_value = "build")]
@@ -44,7 +47,8 @@ impl Args {
 
         flags.set(Flags::EMIT_IR, self.emit_ir);
         flags.set(Flags::EMIT_DEBUG, self.emit_debug);
-        flags.set(Flags::MATCH_LEGACY, self.match_legacy);
+        flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
+        flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
 
         flags
     }
@@ -65,7 +69,8 @@ impl Args {
             emit_ir: true,
             emit_debug: false,
             build_dir: build_dir.to_path_buf(),
-            match_legacy: true,
+            prefer_simple_glyphs: Flags::default().contains(Flags::PREFER_SIMPLE_GLYPHS),
+            flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
         }
     }
 }
