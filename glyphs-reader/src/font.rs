@@ -1020,7 +1020,7 @@ fn default_master_idx(raw_font: &RawFont) -> usize {
                 .map(|(idx, _)| idx)
                 .unwrap_or(0)
         })
-        // TODO: implement searching for "a base style shared between all masters" as FontTools does
+        // TODO: implement searching for "a base style shared between all masters" as glyphsLib does
         // Still nothing? - just look for one called Regular
         .or_else(|| {
             raw_font.font_master.iter().position(
