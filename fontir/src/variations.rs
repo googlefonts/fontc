@@ -191,6 +191,8 @@ impl VariationModel {
         {
             let master_influences = &self.delta_weights[model_idx];
             let mut deltas = Vec::new();
+            deltas.reserve(points.len());
+
             for (idx, point) in points.iter().enumerate() {
                 let initial_vector: V = *point - Default::default();
                 deltas.push(
