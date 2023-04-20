@@ -434,7 +434,7 @@ mod tests {
         coords::{NormalizedCoord, NormalizedLocation},
         glyph::has_consistent_2x2_transforms,
         ir::{Component, Glyph, GlyphBuilder, GlyphInstance},
-        orchestration::Context,
+        orchestration::{Context, Flags},
         paths::Paths,
         source::Input,
     };
@@ -486,12 +486,10 @@ mod tests {
     }
 
     fn test_context() -> Context {
-        Context::new_root(
-            Default::default(),
-            Paths::new(Path::new("/fake/path")),
-            Input::new(),
-        )
-        .copy_for_work(Access::all(), Access::all())
+        let mut flags = Flags::default();
+        flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
+        Context::new_root(flags, Paths::new(Path::new("/fake/path")), Input::new())
+            .copy_for_work(Access::all(), Access::all())
     }
 
     struct DeepComponent {

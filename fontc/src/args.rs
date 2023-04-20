@@ -74,3 +74,19 @@ impl Args {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+    use fontir::orchestration::Flags;
+
+    use crate::Args;
+
+    // It's awkward to get the Flags::default values into #[arg] so test for consistency
+    #[test]
+    fn arg_default_matches_flags_default() {
+        let arg_default = Args::parse_from(vec!["program", "--source", "dont.care"]).flags();
+        let flags_default = Flags::default();
+        assert_eq!(flags_default.bits(), arg_default.bits());
+    }
+}
