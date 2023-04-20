@@ -28,7 +28,7 @@ pub struct Args {
 
     /// Eliminate component references to other glyphs using components, emitting only
     /// component references to simple (contour) glyphs.
-    #[arg(long, default_value = "true")]
+    #[arg(long, default_value = "false")]
     pub flatten_components: bool,
 
     /// Working directory for the build process. If emit-ir is on, written here.
