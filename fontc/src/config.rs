@@ -47,7 +47,9 @@ impl Config {
                 fs::remove_file(ir_input_file)
                     .map_err(|_| Error::FileExpected(ir_input_file.to_owned()))?;
             }
-            fs::write(config_file, serde_yaml::to_string(self)?)?;
+            if self.args.emit_ir {
+                fs::write(config_file, serde_yaml::to_string(self)?)?;
+            }
         };
 
         if !ir_input_file.exists() {

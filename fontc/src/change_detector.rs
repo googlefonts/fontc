@@ -26,6 +26,7 @@ pub struct ChangeDetector {
     prev_inputs: Input,
     current_inputs: Input,
     be_paths: BePaths,
+    emit_ir: bool,
 }
 
 impl ChangeDetector {
@@ -63,6 +64,7 @@ impl ChangeDetector {
             prev_inputs,
             current_inputs,
             be_paths,
+            emit_ir: config.args.emit_ir,
         })
     }
 
@@ -176,10 +178,14 @@ impl ChangeDetector {
             .collect()
     }
 
-    pub fn finish_successfully(self: ChangeDetector) -> Result<(), Error> {
-        let current_sources =
-            serde_yaml::to_string(&self.current_inputs).map_err(Error::YamlSerError)?;
-        fs::write(self.ir_paths.ir_input_file(), current_sources).map_err(Error::IoError)
+    pub fn finish_successfully(self) -> Result<(), Error> {
+        if self.emit_ir {
+            let current_sources =
+                serde_yaml::to_string(&self.current_inputs).map_err(Error::YamlSerError)?;
+            fs::write(self.ir_paths.ir_input_file(), current_sources).map_err(Error::IoError)
+        } else {
+            Ok(())
+        }
     }
 }
 

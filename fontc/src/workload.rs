@@ -137,7 +137,7 @@ impl Workload {
             .collect()
     }
 
-    pub fn exec(mut self, fe_root: FeContext, be_root: BeContext) -> Result<(), Error> {
+    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<(), Error> {
         // Async work will send us it's ID on completion
         let (send, recv) = crossbeam_channel::unbounded::<(AnyWorkId, Result<(), AnyWorkError>)>();
 
@@ -152,8 +152,8 @@ impl Workload {
                     let job = self.jobs_pending.remove(&id).unwrap();
                     let work = job.work;
                     let work_context = AnyContext::for_work(
-                        &fe_root,
-                        &be_root,
+                        fe_root,
+                        be_root,
                         &id,
                         job.dependencies,
                         job.read_access,
@@ -174,7 +174,7 @@ impl Workload {
                 let successes = self.read_completions(&recv, RecvType::Blocking)?;
                 successes
                     .into_iter()
-                    .for_each(|s| self.handle_success(&fe_root, s));
+                    .for_each(|s| self.handle_success(fe_root, s));
             }
             Ok::<(), Error>(())
         })?;

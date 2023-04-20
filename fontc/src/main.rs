@@ -1,10 +1,10 @@
-use std::{fs, io::Write};
+use std::io::Write;
 
 use clap::Parser;
 
-use fontbe::{orchestration::Context as BeContext, paths::Paths as BePaths};
-use fontc::{Args, ChangeDetector, Config, Error};
-use fontir::{orchestration::Context as FeContext, paths::Paths as IrPaths};
+use fontbe::orchestration::Context as BeContext;
+use fontc::{init_paths, write_font_file, Args, ChangeDetector, Config, Error};
+use fontir::orchestration::Context as FeContext;
 
 fn main() -> Result<(), Error> {
     env_logger::builder()
@@ -23,16 +23,7 @@ fn main() -> Result<(), Error> {
         .init();
 
     let args = Args::parse();
-    let ir_paths = IrPaths::new(&args.build_dir);
-    let be_paths = BePaths::new(&args.build_dir);
-    fontc::require_dir(ir_paths.build_dir())?;
-    fontc::require_dir(ir_paths.glyph_ir_dir())?;
-    // It's confusing to have leftover debug files
-    if be_paths.debug_dir().is_dir() {
-        fs::remove_dir_all(be_paths.debug_dir()).map_err(Error::IoError)?;
-    }
-    fontc::require_dir(be_paths.debug_dir())?;
-    fontc::require_dir(be_paths.glyph_dir())?;
+    let (ir_paths, be_paths) = init_paths(&args)?;
     let config = Config::new(args)?;
     let prev_inputs = config.init()?;
 
@@ -45,7 +36,9 @@ fn main() -> Result<(), Error> {
         change_detector.current_inputs().clone(),
     );
     let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root);
-    workload.exec(fe_root, be_root)?;
+    workload.exec(&fe_root, &be_root)?;
 
-    change_detector.finish_successfully()
+    change_detector.finish_successfully()?;
+
+    write_font_file(&config.args, &be_root)
 }
