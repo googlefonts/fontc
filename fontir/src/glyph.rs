@@ -380,7 +380,7 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
                     convert_components_to_contours(context, &glyph)?;
                 } else if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
                     debug!(
-                        "Coalescing'{0}' into a simple glyph because it has contours and components and prefer simple glyphs is set",
+                        "Coalescing '{0}' into a simple glyph because it has contours and components and prefer simple glyphs is set",
                         glyph.name
                     );
                     convert_components_to_contours(context, &glyph)?;
