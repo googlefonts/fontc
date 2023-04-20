@@ -213,7 +213,7 @@ fn components(glyph: &Glyph, transform: Affine) -> VecDeque<(NormalizedLocation,
 /// At time of writing we only support this if every instance uses the same set of components.
 ///
 /// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L165>
-fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<Glyph, WorkError> {
+fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), WorkError> {
     let mut simple: GlyphBuilder = original.into();
     simple
         .sources
@@ -272,7 +272,87 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
         }
     }
 
-    simple.try_into()
+    let simple: Glyph = simple.try_into()?;
+    debug_assert!(
+        simple.name == original.name,
+        "{} != {}",
+        simple.name,
+        original.name
+    );
+    context.set_glyph_ir(simple);
+    Ok(())
+}
+
+fn move_contours_to_new_component(
+    context: &Context,
+    new_glyph_order: &mut IndexSet<GlyphName>,
+    glyph: &Glyph,
+) -> Result<(), WorkError> {
+    debug!(
+        "Hoisting the contours from '{0}' into a new component",
+        glyph.name
+    );
+    let (simple, composite) = split_glyph(new_glyph_order, glyph)?;
+
+    // Capture the updated/new IR and update glyph order
+    debug_assert!(composite.name == glyph.name);
+    debug_assert!(simple.name != glyph.name);
+
+    new_glyph_order.insert(simple.name.clone());
+    context.set_glyph_ir(simple);
+    context.set_glyph_ir(composite);
+    Ok(())
+}
+
+/// Make sure components only reference simple (contour) glyphs.
+///
+/// Assumed to run after component consistency is checked/fixed so we can assume
+/// that no mixed contour+component glyphs exist.
+///
+/// See <https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/filters/flattenComponents.py>
+fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), WorkError> {
+    // Guard: nothing to see here folks
+    if glyph.default_instance().components.is_empty() {
+        return Ok(());
+    }
+    trace!(
+        "Flatten {} {:?}",
+        glyph.name,
+        glyph.default_instance().components
+    );
+    let mut glyph = glyph.clone();
+    for (loc, inst) in glyph.sources_mut() {
+        let mut simple = Vec::new();
+        let mut frontier = VecDeque::new();
+        frontier.extend(inst.components.split_off(0));
+        while let Some(component) = frontier.pop_front() {
+            let ref_glyph = context.get_glyph_ir(&component.base);
+            let ref_inst = ref_glyph.sources().get(loc).ok_or_else(|| {
+                WorkError::GlyphUndefAtNormalizedLocation {
+                    glyph_name: ref_glyph.name.clone(),
+                    pos: loc.clone(),
+                }
+            })?;
+            if ref_inst.components.is_empty() {
+                simple.push(component.clone());
+            } else {
+                for ref_component in ref_inst.components.iter().rev() {
+                    frontier.push_front(Component {
+                        base: ref_component.base.clone(),
+                        transform: component.transform * ref_component.transform,
+                    });
+                }
+            }
+        }
+        inst.components = simple;
+    }
+    trace!(
+        "Flattened {} to {:?}",
+        glyph.name,
+        glyph.default_instance().components
+    );
+    context.set_glyph_ir(glyph);
+    Ok(())
 }
 
 impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
@@ -288,56 +368,36 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
         // 1) need to push their paths to a new glyph that is a component
         // 2) collapse such glyphs into a simple (contour-only) glyph
         // fontmake (Python) prefers option 2.
-        for (glyph_to_fix, has_consistent_2x2_transforms) in current_metadata
-            .glyph_order
-            .iter()
-            .map(|gn| context.get_glyph_ir(gn))
-            .map(|glyph| {
-                let consistent_transforms = has_consistent_2x2_transforms(&glyph);
-                (glyph, consistent_transforms)
-            })
-            .filter(|(glyph, has_consistent_2x2_transforms)| {
-                !has_consistent_2x2_transforms || has_components_and_contours(glyph)
-            })
-        {
-            if !has_consistent_2x2_transforms || context.flags.contains(Flags::MATCH_LEGACY) {
-                if !has_consistent_2x2_transforms {
+        for glyph_name in current_metadata.glyph_order.iter() {
+            let glyph = context.get_glyph_ir(glyph_name);
+            let inconsistent_components = !has_consistent_2x2_transforms(&glyph);
+            if inconsistent_components || has_components_and_contours(&glyph) {
+                if inconsistent_components {
                     debug!(
                         "Coalescing'{0}' into a simple glyph because component 2x2s vary across the designspace",
-                        glyph_to_fix.name
+                        glyph.name
                     );
-                } else {
+                    convert_components_to_contours(context, &glyph)?;
+                } else if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
                     debug!(
-                        "Coalescing'{0}' into a simple glyph because it has contours and components and that's how fontmake handles it",
-                        glyph_to_fix.name
+                        "Coalescing '{0}' into a simple glyph because it has contours and components and prefer simple glyphs is set",
+                        glyph.name
                     );
+                    convert_components_to_contours(context, &glyph)?;
+                } else {
+                    move_contours_to_new_component(context, &mut new_glyph_order, &glyph)?;
                 }
-                let simple = convert_components_to_contours(context, &glyph_to_fix)?;
-                debug_assert!(
-                    simple.name == glyph_to_fix.name,
-                    "{} != {}",
-                    simple.name,
-                    glyph_to_fix.name
-                );
-                context.set_glyph_ir(simple);
-            } else {
-                // We don't have to match fontmake; prefer to retain components than to collapse to simple glyph
-                debug!(
-                    "Hoisting the contours from '{0}' into a new component",
-                    glyph_to_fix.name
-                );
-                let (simple, composite) = split_glyph(&new_glyph_order, &glyph_to_fix)?;
-
-                // Capture the updated/new IR and update glyph order
-                debug_assert!(composite.name == glyph_to_fix.name);
-                debug_assert!(simple.name != glyph_to_fix.name);
-
-                new_glyph_order.insert(simple.name.clone());
-                context.set_glyph_ir(simple);
-                context.set_glyph_ir(composite);
             }
         }
 
+        if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
+            for glyph_name in new_glyph_order.iter() {
+                let glyph = context.get_glyph_ir(glyph_name);
+                flatten_glyph(context, &glyph)?;
+            }
+        }
+
+        // We now have the final static metadata
         // If the glyph order changed try not to forget about it
         if current_metadata.glyph_order != new_glyph_order {
             if log_enabled!(log::Level::Trace) {
@@ -357,7 +417,6 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
             trace!("No new glyphs; final static metadata is unchanged");
             context.set_final_static_metadata((*current_metadata).clone());
         }
-
         Ok(())
     }
 }
@@ -375,14 +434,14 @@ mod tests {
         coords::{NormalizedCoord, NormalizedLocation},
         glyph::has_consistent_2x2_transforms,
         ir::{Component, Glyph, GlyphBuilder, GlyphInstance},
-        orchestration::{Context, WorkId},
+        orchestration::Context,
         paths::Paths,
         source::Input,
     };
 
     use super::{
-        convert_components_to_contours, has_components_and_contours, name_for_derivative,
-        split_glyph,
+        convert_components_to_contours, flatten_glyph, has_components_and_contours,
+        name_for_derivative, split_glyph,
     };
 
     fn norm_loc(positions: &[(&str, f32)]) -> NormalizedLocation {
@@ -426,12 +485,50 @@ mod tests {
         }
     }
 
-    fn test_root() -> Context {
+    fn test_context() -> Context {
         Context::new_root(
             Default::default(),
             Paths::new(Path::new("/fake/path")),
             Input::new(),
         )
+        .copy_for_work(Access::all(), Access::all())
+    }
+
+    struct DeepComponent {
+        simple_glyph: Glyph,
+        // Reuses simple_glyph
+        shallow_component: Glyph,
+        // Reuses shallow_component
+        deep_component: Glyph,
+    }
+
+    impl DeepComponent {
+        fn write_to(&self, context: &Context) {
+            context.set_glyph_ir(self.simple_glyph.clone());
+            context.set_glyph_ir(self.shallow_component.clone());
+            context.set_glyph_ir(self.deep_component.clone());
+        }
+    }
+
+    fn deep_component() -> DeepComponent {
+        let simple_glyph_name = "shape";
+        let shallow_component_name = "c1";
+        DeepComponent {
+            // base shape
+            simple_glyph: contour_glyph(simple_glyph_name),
+            // add c1, reusing shape w/90 degrees ccw rotation: x-basis 0,1 y-basis -1,0
+            shallow_component: component_glyph(
+                shallow_component_name,
+                simple_glyph_name.into(),
+                Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]),
+            ),
+            // add c2, reusing c1 w/translation
+            deep_component: component_glyph(
+                "c2",
+                shallow_component_name.into(),
+                Affine::translate((5.0, 0.0)),
+            ),
+        }
     }
 
     #[test]
@@ -546,13 +643,11 @@ mod tests {
     fn components_to_contours_shallow() {
         let coalesce_me = contour_and_component_weight_glyph("coalesce_me");
 
-        let context = test_root().copy_for_work(
-            Access::one(WorkId::Glyph("component".into())),
-            Access::all(),
-        );
+        let context = test_context();
         context.set_glyph_ir(contour_glyph("component"));
 
-        let simple = convert_components_to_contours(&context, &coalesce_me).unwrap();
+        convert_components_to_contours(&context, &coalesce_me).unwrap();
+        let simple = context.get_glyph_ir(&coalesce_me.name);
         assert_simple(&simple);
 
         // Our sample is unimaginative; both weights are identical
@@ -571,29 +666,9 @@ mod tests {
 
     #[test]
     fn components_to_contours_deep() {
-        // base shape
-        let reuse_me = contour_glyph("shape");
-        // add c1, reusing shape w/90 degrees ccw rotation: x-basis 0,1 y-basis -1,0
-        let c1 = component_glyph(
-            "c1",
-            reuse_me.name.clone(),
-            Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]),
-        );
-        // add c2, reusing c1 w/translation
-        let c2 = component_glyph("c2", c1.name.clone(), Affine::translate((5.0, 0.0)));
-
-        let allow_access = HashSet::from([
-            WorkId::Glyph(reuse_me.name.clone()),
-            WorkId::Glyph(c1.name.clone()),
-            WorkId::Glyph(c2.name.clone()),
-        ]);
-        let context = test_root().copy_for_work(
-            Access::custom(move |id| allow_access.contains(id)),
-            Access::all(),
-        );
-        context.set_glyph_ir(reuse_me);
-        context.set_glyph_ir(c1.clone());
-        context.set_glyph_ir(c2.clone());
+        let test_data = deep_component();
+        let context = test_context();
+        test_data.write_to(&context);
 
         let mut nested_components = GlyphBuilder::new("g".into());
         nested_components
@@ -602,15 +677,15 @@ mod tests {
                 GlyphInstance {
                     components: vec![
                         Component {
-                            base: c1.name.clone(),
+                            base: test_data.shallow_component.name.clone(),
                             transform: Affine::IDENTITY,
                         },
                         Component {
-                            base: c1.name,
+                            base: test_data.shallow_component.name,
                             transform: Affine::translate((0.0, 2.0)),
                         },
                         Component {
-                            base: c2.name,
+                            base: test_data.deep_component.name,
                             transform: Affine::translate((0.0, 5.0)),
                         },
                     ],
@@ -621,7 +696,8 @@ mod tests {
             .unwrap();
         let nested_components = nested_components.try_into().unwrap();
 
-        let simple = convert_components_to_contours(&context, &nested_components).unwrap();
+        convert_components_to_contours(&context, &nested_components).unwrap();
+        let simple = context.get_glyph_ir(&nested_components.name);
         assert_simple(&simple);
         assert_eq!(1, simple.sources().len());
         let inst = simple.default_instance();
@@ -668,14 +744,12 @@ mod tests {
             )
             .unwrap();
 
-        let context = test_root().copy_for_work(
-            Access::one(WorkId::Glyph(reuse_me.name.clone())),
-            Access::all(),
-        );
+        let context = test_context();
         context.set_glyph_ir(reuse_me);
 
         let glyph = glyph.try_into().unwrap();
-        let simple = convert_components_to_contours(&context, &glyph).unwrap();
+        convert_components_to_contours(&context, &glyph).unwrap();
+        let simple = context.get_glyph_ir(&glyph.name);
         assert_simple(&simple);
         assert_eq!(1, simple.sources().len());
         let inst = simple.sources().values().next().unwrap();
@@ -732,13 +806,11 @@ mod tests {
             Affine::scale(i as f64)
         });
 
-        let context = test_root().copy_for_work(
-            Access::one(WorkId::Glyph("component".into())),
-            Access::all(),
-        );
+        let context = test_context();
         context.set_glyph_ir(contour_glyph("component"));
 
-        let simple = convert_components_to_contours(&context, &glyph).unwrap();
+        convert_components_to_contours(&context, &glyph).unwrap();
+        let simple = context.get_glyph_ir(&glyph.name);
         assert_simple(&simple);
     }
 
@@ -747,13 +819,11 @@ mod tests {
         let glyph = contour_and_component_weight_glyph("nameless");
         let glyph = adjust_transform_for_each_instance(&glyph, |i| Affine::scale(i as f64));
 
-        let context = test_root().copy_for_work(
-            Access::one(WorkId::Glyph("component".into())),
-            Access::all(),
-        );
+        let context = test_context();
         context.set_glyph_ir(contour_glyph("component"));
 
-        let simple = convert_components_to_contours(&context, &glyph).unwrap();
+        convert_components_to_contours(&context, &glyph).unwrap();
+        let simple = context.get_glyph_ir(&glyph.name);
         assert_simple(&simple);
     }
 
@@ -763,5 +833,39 @@ mod tests {
         let glyph =
             adjust_transform_for_each_instance(&glyph, |i| Affine::translate((i as f64, i as f64)));
         assert!(has_consistent_2x2_transforms(&glyph));
+    }
+
+    fn assert_is_flattened_component(context: &Context, glyph_name: GlyphName) {
+        let glyph = context.get_glyph_ir(&glyph_name);
+        for (loc, inst) in glyph.sources().iter() {
+            assert!(!inst.components.is_empty());
+            for component in inst.components.iter() {
+                assert!(context
+                    .get_glyph_ir(&component.base)
+                    .sources()
+                    .get(loc)
+                    .unwrap()
+                    .components
+                    .is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn flatten_shallow_component() {
+        let test_data = deep_component();
+        let context = test_context();
+        test_data.write_to(&context);
+        flatten_glyph(&context, &test_data.shallow_component).unwrap();
+        assert_is_flattened_component(&context, test_data.shallow_component.name);
+    }
+
+    #[test]
+    fn flatten_deep_component() {
+        let test_data = deep_component();
+        let context = test_context();
+        test_data.write_to(&context);
+        flatten_glyph(&context, &test_data.deep_component).unwrap();
+        assert_is_flattened_component(&context, test_data.deep_component.name);
     }
 }

@@ -530,6 +530,12 @@ impl Glyph {
         &self.sources
     }
 
+    pub fn sources_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&NormalizedLocation, &mut GlyphInstance)> {
+        self.sources.iter_mut()
+    }
+
     pub fn source_mut(&mut self, loc: &NormalizedLocation) -> Option<&mut GlyphInstance> {
         self.sources.get_mut(loc)
     }

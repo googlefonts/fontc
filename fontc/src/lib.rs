@@ -133,7 +133,14 @@ fn add_finalize_static_metadata_ir_job(
             .collect();
         dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
 
-        // Grant write to any glyph including ones we've never seen before so job can create them
+        // Finalize may create new glyphs so allow read/write to *all* glyphs
+        let read_access = Access::custom(|an_id: &AnyWorkId| {
+            matches!(
+                an_id,
+                AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
+                    | AnyWorkId::Fe(FeWorkIdentifier::InitStaticMetadata)
+            )
+        });
         let write_access = Access::custom(|an_id: &AnyWorkId| {
             matches!(
                 an_id,
@@ -146,7 +153,7 @@ fn add_finalize_static_metadata_ir_job(
             Job {
                 work: create_finalize_static_metadata_work().into(),
                 dependencies,
-                read_access: ReadAccess::Dependencies,
+                read_access: ReadAccess::Custom(read_access),
                 write_access,
             },
         );
@@ -1040,11 +1047,14 @@ mod tests {
         assert!(feature_ttf.is_file(), "Should have written {feature_ttf:?}");
     }
 
-    fn build_contour_and_composite_glyph(temp_dir: &TempDir, match_legacy: bool) -> ir::Glyph {
+    fn build_contour_and_composite_glyph(
+        temp_dir: &TempDir,
+        prefer_simple_glyphs: bool,
+    ) -> ir::Glyph {
         let build_dir = temp_dir.path();
 
         let mut args = Args::for_test(build_dir, "glyphs2/MixedContourComponent.glyphs");
-        args.match_legacy = match_legacy; // <-- important :)
+        args.prefer_simple_glyphs = prefer_simple_glyphs; // <-- important :)
         let result = compile(args);
 
         let glyph = result

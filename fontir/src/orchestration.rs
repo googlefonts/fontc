@@ -26,8 +26,11 @@ bitflags! {
         const EMIT_IR = 0b00000001;
         // If set additional debug files will be emitted to disk
         const EMIT_DEBUG = 0b00000010;
-        // If set seek to match fontmake (python) behavior even at cost of abandoning optimizations
-        const MATCH_LEGACY = 0b00000100;
+        // If set, a glyph with contours and components will be converted to a simple (contour) glyph
+        const PREFER_SIMPLE_GLYPHS = 0b00000100;
+        // If set, a composite that references another composite will replace that composite with the
+        // glyph(s) it references until only simple (contour) glyphs are referenced
+        const FLATTEN_COMPONENTS = 0b00001000;
     }
 }
 
@@ -69,8 +72,9 @@ macro_rules! context_accessors {
 }
 
 impl Default for Flags {
+    /// Match the way gftools configures fontmake by default
     fn default() -> Self {
-        Flags::MATCH_LEGACY
+        Flags::PREFER_SIMPLE_GLYPHS | Flags::FLATTEN_COMPONENTS
     }
 }
 
