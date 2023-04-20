@@ -14,28 +14,28 @@ categories = ["text-processing", "parsing", "graphics"]
 fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 fontir = { version = "0.0.1", path = "../fontir" }
 
+kurbo.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+
+log.workspace = true
+env_logger.workspace = true
+
+thiserror.workspace = true
+
+font-types.workspace = true
+write-fonts.workspace = true  # for ot_round
+
+ordered-float.workspace = true
+indexmap.workspace = true
+quick-xml.workspace = true
+
+# unique to me!
 norad = "0.10.0"
-kurbo = { version="0.9.3", features=["serde"] }
-serde = {version = "1.0", features = ["derive"] }
-serde_yaml = "0.9.14"
-
-quick-xml = { version = "0.28.0", features = ["serialize"] }
-
-log = "0.4"
-env_logger = "0.10.0"
-
-thiserror = "1.0.37"
-
 plist = { version =  "1.3.1", features = ["serde"] }
 
-font-types = "0.1.4"
-write-fonts = "0.1.11"  # for ot_round
-
-ordered-float = { version = "3.4.0", features = ["serde"] }
-indexmap = "1.9.2"
-
 [dev-dependencies]
-diff = "0.1.12"
-ansi_term = "0.12.1"
-tempfile = "3.3.0"
-pretty_assertions = "1.3.0"
+diff.workspace = true
+ansi_term.workspace = true
+tempfile.workspace = true
+pretty_assertions.workspace = true
