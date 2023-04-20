@@ -23,7 +23,7 @@ pub struct Args {
 
     /// In cases where a source glyph uses a mixture of components and contours, convert
     /// all the components to contours.
-    #[arg(long, default_value = "true")]
+    #[arg(long, default_value = "true", action = ArgAction::Set)]
     pub prefer_simple_glyphs: bool,
 
     /// Eliminate component references to other glyphs using components (that is, nested components),
