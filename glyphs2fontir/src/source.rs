@@ -461,7 +461,7 @@ mod tests {
         },
         error::WorkError,
         ir::{self, GlobalMetricsInstance, NameKey},
-        orchestration::{Context, WorkId},
+        orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Source,
         stateset::StateSet,
@@ -531,10 +531,12 @@ mod tests {
     fn context_for(glyphs_file: PathBuf) -> (impl Source, Context) {
         let mut source = GlyphsIrSource::new(glyphs_file);
         let input = source.inputs().unwrap();
+        let mut flags = Flags::default();
+        flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
         (
             source,
             Context::new_root(
-                Default::default(),
+                flags,
                 Paths::new(Path::new("/nothing/should/write/here")),
                 input,
             ),

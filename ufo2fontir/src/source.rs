@@ -719,7 +719,7 @@ mod tests {
     use fontir::{
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
         ir::NameKey,
-        orchestration::{Context, WorkId},
+        orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::{Input, Source},
     };
@@ -789,8 +789,10 @@ mod tests {
     fn build_static_metadata(name: &str) -> (impl Source, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
         let (source, input) = load_designspace(name);
+        let mut flags = Flags::default();
+        flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
         let context = Context::new_root(
-            Default::default(),
+            flags,
             Paths::new(Path::new("/nothing/should/write/here")),
             input,
         );

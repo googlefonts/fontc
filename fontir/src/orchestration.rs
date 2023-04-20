@@ -74,7 +74,7 @@ macro_rules! context_accessors {
 impl Default for Flags {
     /// Match the way gftools configures fontmake by default
     fn default() -> Self {
-        Flags::PREFER_SIMPLE_GLYPHS | Flags::FLATTEN_COMPONENTS
+        Flags::EMIT_IR | Flags::PREFER_SIMPLE_GLYPHS
     }
 }
 

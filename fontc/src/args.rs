@@ -23,7 +23,7 @@ pub struct Args {
 
     /// In cases where a source glyph uses a mixture of components and contours, convert
     /// all the components to contours.
-    #[arg(long, default_value = "true")]
+    #[arg(long, default_value = "true", action = ArgAction::Set)]
     pub prefer_simple_glyphs: bool,
 
     /// Eliminate component references to other glyphs using components (that is, nested components),
@@ -72,5 +72,21 @@ impl Args {
             prefer_simple_glyphs: Flags::default().contains(Flags::PREFER_SIMPLE_GLYPHS),
             flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+    use fontir::orchestration::Flags;
+
+    use crate::Args;
+
+    // It's awkward to get the Flags::default values into #[arg] so test for consistency
+    #[test]
+    fn arg_default_matches_flags_default() {
+        let arg_default = Args::parse_from(vec!["program", "--source", "dont.care"]).flags();
+        let flags_default = Flags::default();
+        assert_eq!(flags_default.bits(), arg_default.bits());
     }
 }
