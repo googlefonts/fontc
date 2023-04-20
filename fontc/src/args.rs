@@ -26,8 +26,8 @@ pub struct Args {
     #[arg(long, default_value = "true")]
     pub prefer_simple_glyphs: bool,
 
-    /// Eliminate component references to other glyphs using components, emitting only
-    /// component references to simple (contour) glyphs.
+    /// Eliminate component references to other glyphs using components (that is, nested components),
+    /// emitting only component references to simple (contour) glyphs.
     #[arg(long, default_value = "false")]
     pub flatten_components: bool,
 
