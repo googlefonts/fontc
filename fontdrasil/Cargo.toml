@@ -11,11 +11,11 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
-smol_str = { version = "0.1.24", features = ["serde"] }
+smol_str.workspace = true
 
-serde = {version = "1.0", features = ["derive"] }
+serde.workspace = true
 
 [dev-dependencies]
-diff = "0.1.12"
-ansi_term = "0.12.1"
-tempfile = "3.3.0"
+diff.workspace = true
+ansi_term.workspace = true
+tempfile.workspace = true

@@ -13,26 +13,29 @@ categories = ["text-processing", "parsing", "graphics"]
 [dependencies]
 fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 
-bitflags = "2.0"
-serde = {version = "1.0", features = ["derive"] }
-serde_yaml = "0.9.14"
-bincode = "1.3.3"
-filetime = "0.2.18"
-thiserror = "1.0.37"
+bitflags.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+bincode.workspace = true
+filetime.workspace = true
+thiserror.workspace = true
 
-kurbo = { version = "0.9.3", features = ["serde"] }
-ordered-float = { version = "3.4.0", features = ["serde"] }
-indexmap = "1.9.2"
+kurbo.workspace = true
+ordered-float.workspace = true
+indexmap.workspace = true
+
+log.workspace = true
+env_logger.workspace = true
+parking_lot.workspace = true
+
+font-types.workspace = true
+write-fonts.workspace = true  # for pens
+
+# unique to me!
 blake3 = "1.3.3"
-log = "0.4"
-env_logger = "0.10.0"
-parking_lot = "0.12.1"
-
-font-types = "0.1.4"
-write-fonts = "0.1.11"  # for pens
 
 [dev-dependencies]
-diff = "0.1.12"
-ansi_term = "0.12.1"
-tempfile = "3.3.0"
-pretty_assertions = "1.3.0"
+diff.workspace = true
+ansi_term.workspace = true
+tempfile.workspace = true
+pretty_assertions.workspace = true
