@@ -614,18 +614,42 @@ impl<'a> CompilationCtx<'a> {
                 to_return
             } else {
                 let target = input.items().next().unwrap().target();
-                let replacement = rule.replacements().next().unwrap();
-                if let Some((target, replacement)) =
-                    self.validate_single_sub_inputs(&target, Some(&replacement))
-                {
-                    let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-                    Some(
-                        lookup
-                            .as_gsub_contextual()
-                            .add_anon_gsub_type_1(target, replacement),
-                    )
+                let arity = rule.replacements().count();
+                if arity == 1 {
+                    let replacement = rule.replacements().next().unwrap();
+                    if let Some((target, replacement)) =
+                        self.validate_single_sub_inputs(&target, Some(&replacement))
+                    {
+                        let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+                        Some(
+                            lookup
+                                .as_gsub_contextual()
+                                .add_anon_gsub_type_1(target, replacement),
+                        )
+                    } else {
+                        None
+                    }
                 } else {
-                    None
+                    if target.is_class() {
+                        self.error(
+                            target.range(),
+                            "Inline multiple substitution must have a single glyph target",
+                        );
+                    }
+                    let replacements = rule
+                        .replacement_glyphs()
+                        .map(|g| self.resolve_glyph(&g))
+                        .collect();
+                    if let Some(target_id) = self.resolve_glyph_or_class(&target).iter().next() {
+                        let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+                        Some(
+                            lookup
+                                .as_gsub_contextual()
+                                .add_anon_gsub_type_2(target_id, replacements),
+                        )
+                    } else {
+                        None
+                    }
                 }
             }
         });

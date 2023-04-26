@@ -171,6 +171,34 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         self.current_anon_lookup_id()
     }
 
+    pub(crate) fn add_anon_gsub_type_2(
+        &mut self,
+        target: GlyphId,
+        replacements: Vec<GlyphId>,
+    ) -> LookupId {
+        // do we need a new lookup or can we use the existing one?
+        self.add_new_lookup_if_necessary(
+            |existing| match existing {
+                SubstitutionLookup::Multiple(subtables) => subtables
+                    .subtables
+                    .iter()
+                    .any(|subt| subt.contains_target(target)),
+                _ => true,
+            },
+            |flags, mark_set| SubstitutionLookup::Multiple(LookupBuilder::new(flags, mark_set)),
+        );
+
+        let lookup = self.anon_lookups.last_mut().unwrap();
+        let SubstitutionLookup::Multiple(subtables) = lookup else {
+            // we didn't panic here before my refactor but I don't think we
+            // want to fall through. let's find out?
+            panic!("I don't think this should happen?");
+        };
+        let sub = subtables.last_mut().unwrap();
+        sub.insert(target, replacements);
+        self.current_anon_lookup_id()
+    }
+
     pub(crate) fn add_anon_gsub_type_4(
         &mut self,
         target: Vec<GlyphId>,

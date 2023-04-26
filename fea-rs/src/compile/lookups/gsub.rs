@@ -164,6 +164,10 @@ impl MultipleSubBuilder {
     pub fn insert(&mut self, target: GlyphId, replacement: Vec<GlyphId>) {
         self.items.insert(target, replacement);
     }
+
+    pub fn contains_target(&self, target: GlyphId) -> bool {
+        self.items.contains_key(&target)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
