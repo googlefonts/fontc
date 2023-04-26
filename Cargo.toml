@@ -21,7 +21,7 @@ bitflags = "2.0"
 chrono = "0.4.24"
 filetime = "0.2.18"
 indexmap = "1.9.2"
-kurbo = { version = "0.9.3", features = ["serde"] }
+kurbo = { version = "0.9.4", features = ["serde"] }
 ordered-float = { version = "3.4.0", features = ["serde"] }
 smol_str = { version = "0.1.24", features = ["serde"] }
 quick-xml = { version = "0.28.0", features = ["serialize"] }
