@@ -25,7 +25,7 @@ pub fn create_metric_and_limit_work() -> Box<BeWork> {
 #[derive(Debug, Default)]
 struct GlyphLimits {
     min_left_side_bearing: Option<i16>,
-    min_right_side_bearing: Option<u16>,
+    min_right_side_bearing: Option<i16>,
     x_max_extent: Option<i16>,
     advance_width_max: u16,
     max_points: u16,
@@ -44,10 +44,10 @@ impl GlyphLimits {
         let bbox = glyph.bbox();
         let left_side_bearing = bbox.x_min;
         // aw - (lsb + xMax - xMin) ... but if lsb == xMin then just advance - xMax?
-        let right_side_bearing = if bbox.x_max > 0 {
-            advance.saturating_sub(bbox.x_max.try_into().unwrap())
-        } else {
-            0
+        let right_side_bearing: i16 = match advance as i32 - bbox.x_max as i32 {
+            value if value < i16::MIN as i32 => i16::MIN,
+            value if value > i16::MAX as i32 => i16::MAX,
+            value => value as i16,
         };
         self.min_left_side_bearing = self
             .min_left_side_bearing
@@ -139,14 +139,7 @@ impl Work<Context, Error> for MetricAndLimitWork {
             .min_left_side_bearing
             .unwrap_or_default()
             .into();
-        let min_right_side_bearing: i16 = glyph_limits
-            .min_right_side_bearing
-            .unwrap_or_default()
-            .try_into()
-            .map_err(|_| Error::OutOfBounds {
-                what: "min_right_side_bearing".into(),
-                value: format!("{:?}", glyph_limits.min_right_side_bearing),
-            })?;
+        let min_right_side_bearing = glyph_limits.min_right_side_bearing.unwrap_or_default();
         let min_right_side_bearing = min_right_side_bearing.into();
         let x_max_extent = glyph_limits.x_max_extent.unwrap_or_default().into();
         let hhea = Hhea {
@@ -209,6 +202,13 @@ mod tests {
                 )
                 .unwrap(),
             ),
+        );
+        assert_eq!(
+            (Some(-437), Some(334)),
+            (
+                glyph_limits.min_left_side_bearing,
+                glyph_limits.min_right_side_bearing
+            )
         );
     }
 }
