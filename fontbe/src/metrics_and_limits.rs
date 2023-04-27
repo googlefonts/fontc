@@ -44,7 +44,11 @@ impl GlyphLimits {
         let bbox = glyph.bbox();
         let left_side_bearing = bbox.x_min;
         // aw - (lsb + xMax - xMin) ... but if lsb == xMin then just advance - xMax?
-        let right_side_bearing = advance.saturating_sub(bbox.x_max.try_into().unwrap());
+        let right_side_bearing = if bbox.x_max > 0 {
+            advance.saturating_sub(bbox.x_max.try_into().unwrap())
+        } else {
+            0
+        };
         self.min_left_side_bearing = self
             .min_left_side_bearing
             .map(|v| min(v, left_side_bearing))
@@ -182,5 +186,29 @@ impl Work<Context, Error> for MetricAndLimitWork {
         context.set_maxp(maxp);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use kurbo::BezPath;
+    use write_fonts::tables::glyf::SimpleGlyph;
+
+    use super::GlyphLimits;
+
+    // advance 0, bbox (-437,611) => (-334, 715) encountered in NotoSansKayahLi.designspace
+    #[test]
+    fn negative_xmax_does_not_crash() {
+        let mut glyph_limits = GlyphLimits::default();
+        // path crafted to give the desired bbox
+        glyph_limits.update(
+            0,
+            &crate::orchestration::Glyph::Simple(
+                SimpleGlyph::from_kurbo(
+                    &BezPath::from_svg("M-437,611 L-334,715 L-334,611 Z").unwrap(),
+                )
+                .unwrap(),
+            ),
+        );
     }
 }
