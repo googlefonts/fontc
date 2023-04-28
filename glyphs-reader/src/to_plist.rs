@@ -36,11 +36,10 @@ impl ToPlist for f64 {
 
 impl<T: ToPlist> ToPlist for Vec<T> {
     fn to_plist(self) -> Plist {
-        let mut result = Vec::new();
-        for element in self {
-            result.push(ToPlist::to_plist(element));
-        }
-        result.into()
+        self.into_iter()
+            .map(ToPlist::to_plist)
+            .collect::<Vec<_>>()
+            .into()
     }
 }
 
