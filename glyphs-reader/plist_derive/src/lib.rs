@@ -5,6 +5,8 @@ use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields};
 
+mod attrs;
+
 #[proc_macro_derive(FromPlist, attributes(fromplist))]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -53,33 +55,32 @@ fn add_deser(input: &DeriveInput) -> syn::Result<TokenStream> {
     match input.data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {
-                let recurse = fields.named.iter().filter_map(|f| {
-                    if !is_rest(&f.attrs) {
+                let fields = fields.named.iter().map(|f| {
+                    let attrs = attrs::FieldAttrs::from_attrs(&f.attrs)?;
                         let name = &f.ident;
+                    if attrs.rest.is_none() {
                         let name_str = name.as_ref().unwrap().to_string();
                         let snake_name = snake_to_camel_case(&name_str);
-                        Some(quote_spanned! {f.span() =>
-                            #name: crate::from_plist::FromPlistOpt::from_plist(
-                                map.remove(#snake_name)
-                            ),
-                        })
+                        if attrs.default.is_none() {
+                            Ok(quote_spanned! {f.span() =>
+                                #name: crate::from_plist::FromPlistOpt::from_plist(
+                                    map.remove(#snake_name)
+                                ),
+                            })
+                        } else {
+                            Ok(quote_spanned! {f.span() =>
+                                #name: map.remove(#snake_name).map(crate::from_plist::FromPlist::from_plist).unwrap_or_default(),
+                            })
+                        }
                     } else {
-                        None
-                    }
-                });
-                let recurse_rest = fields.named.iter().filter_map(|f| {
-                    if is_rest(&f.attrs) {
-                        let name = &f.ident;
-                        Some(quote_spanned! {f.span() =>
+                        Ok(quote_spanned! {f.span() =>
                             #name: map,
                         })
-                    } else {
-                        None
                     }
-                });
+                }).collect::<Result<Vec<_>, syn::Error>>()?;
+
                 return Ok(quote! {
-                    #( #recurse )*
-                    #( #recurse_rest )*
+                    #( #fields )*
                 });
             }
             _ => (),
@@ -87,7 +88,10 @@ fn add_deser(input: &DeriveInput) -> syn::Result<TokenStream> {
         _ => (),
     };
 
-    Err(syn::Error::new(input.ident.span(), "FromPlist only supports structs with named fields"))
+    Err(syn::Error::new(
+        input.ident.span(),
+        "FromPlist only supports structs with named fields",
+    ))
 }
 
 fn add_ser(data: &Data) -> TokenStream {

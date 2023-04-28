@@ -297,8 +297,10 @@ impl FontMaster {
 #[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
 struct RawFontMaster {
     pub id: String,
-    pub axes_values: Option<Vec<OrderedFloat<f64>>>,
-    pub metric_values: Option<Vec<RawMetricValue>>,
+    #[fromplist(default)]
+    pub axes_values: Vec<OrderedFloat<f64>>,
+    #[fromplist(default)]
+    pub metric_values: Vec<RawMetricValue>,
     #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
@@ -353,7 +355,8 @@ struct RawInstance {
     pub exports: Option<i64>,
     pub active: Option<i64>,
     pub type_: Option<String>,
-    pub axes_values: Option<Vec<OrderedFloat<f64>>>,
+    #[fromplist(default)]
+    pub axes_values: Vec<OrderedFloat<f64>>,
 
     #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
@@ -777,7 +780,7 @@ impl RawFont {
         // v2 stores values for axes in specific fields, find them and put them into place
         // "Axis position related properties (e.g. weightValue, widthValue, customValue) have been replaced by the axesValues list which is indexed in parallel with the toplevel axes list."
         for master in self.font_master.iter_mut() {
-            master.axes_values = Some(v2_to_v3_axis_values(axes, &mut master.other_stuff)?);
+            master.axes_values = v2_to_v3_axis_values(axes, &mut master.other_stuff)?;
         }
 
         if custom_params_mut(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
@@ -856,7 +859,7 @@ impl RawFont {
                 }
             }
 
-            master.metric_values = Some(metric_values);
+            master.metric_values = metric_values;
         }
         Ok(())
     }
@@ -931,10 +934,8 @@ impl RawFont {
 
             // v2 stores values for axes in specific fields, find them and put them into place
             // "Axis position related properties (e.g. weightValue, widthValue, customValue) have been replaced by the axesValues list which is indexed in parallel with the toplevel axes list."
-            instance.axes_values = Some(v2_to_v3_axis_values(
-                self.axes.as_ref().unwrap(),
-                &mut instance.other_stuff,
-            )?);
+            instance.axes_values =
+                v2_to_v3_axis_values(self.axes.as_ref().unwrap(), &mut instance.other_stuff)?;
         }
 
         Ok(())
@@ -1115,11 +1116,8 @@ fn user_to_design_from_axis_location(
             let Some(axis_index) = axis_index(from, |a| &a.name == axis_name) else {
                 panic!("Axis has no index {axis_location:?}");
             };
-            let Some(axis_values) = master.axes_values.as_ref() else {
-                panic!("Master has no axis values {master:?}");
-            };
             let user = user as f32;
-            let design = axis_values[axis_index].into_inner() as f32;
+            let design = master.axes_values[axis_index].into_inner() as f32;
 
             axis_mappings
                 .entry(axis_name.clone())
@@ -1200,7 +1198,7 @@ impl RawUserToDesignMapping {
     fn add_master_mappings_if_new(&mut self, from: &RawFont) {
         for master in from.font_master.iter() {
             let Some(axes) = from.axes.as_ref() else { continue; };
-            for (axis, value) in axes.iter().zip(master.axes_values.as_ref().unwrap()) {
+            for (axis, value) in axes.iter().zip(&master.axes_values) {
                 let value = OrderedFloat(value.0 as f32);
                 self.0
                     .entry(axis.name.clone())
@@ -1384,12 +1382,11 @@ fn add_mapping_if_present(
     axis_mappings: &mut BTreeMap<String, RawAxisUserToDesignMap>,
     axes: &[Axis],
     axis_tag: &str,
-    axes_values: Option<&Vec<OrderedFloat<f64>>>,
+    axes_values: &Vec<OrderedFloat<f64>>,
     value: Option<&Plist>,
 ) {
     let Some(idx) = axes.iter().position(|a| a.tag == axis_tag) else { return; };
     let axis = &axes[idx];
-    let Some(axes_values) = axes_values else { return; };
     let Some(design) = axes_values.get(idx) else { return; };
     let Some(value) = value.and_then(|v| v.as_f64()) else { return; };
     let user = OrderedFloat(value as f32);
@@ -1414,7 +1411,7 @@ impl Instance {
             &mut axis_mappings,
             axes,
             "wght",
-            value.axes_values.as_ref(),
+            &value.axes_values,
             value.other_stuff.get("weightClass"),
         );
         add_mapping_if_present(
@@ -1518,10 +1515,9 @@ impl TryFrom<RawFont> for Font {
             .into_iter()
             .map(|m| FontMaster {
                 id: m.id,
-                axes_values: m.axes_values.unwrap_or_default(),
+                axes_values: m.axes_values,
                 metric_values: m
                     .metric_values
-                    .unwrap_or_default()
                     .into_iter()
                     .enumerate()
                     .filter_map(|(idx, value)| {
