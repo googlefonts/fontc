@@ -1,9 +1,9 @@
 extern crate proc_macro;
 
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields};
+use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
 mod attrs;
 
@@ -34,9 +34,16 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro_derive(ToPlist, attributes(fromplist))]
 pub fn derive_to(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
+    match derive_to_impl(&input) {
+        Ok(thing) => thing,
+        Err(e) => e.into_compile_error().into(),
+    }
+}
 
-    let ser_rest = add_ser_rest(&input.data);
+fn derive_to_impl(input: &DeriveInput) -> syn::Result<proc_macro::TokenStream> {
+    let name = &input.ident;
+
+    let ser_rest = add_ser_rest(&input.data)?;
     let ser = add_ser(&input.data);
 
     let expanded = quote! {
@@ -48,50 +55,45 @@ pub fn derive_to(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             }
         }
     };
-    proc_macro::TokenStream::from(expanded)
+    Ok(proc_macro::TokenStream::from(expanded))
 }
 
 fn add_deser(input: &DeriveInput) -> syn::Result<TokenStream> {
-    match input.data {
-        Data::Struct(ref data) => match data.fields {
-            Fields::Named(ref fields) => {
-                let fields = fields.named.iter().map(|f| {
-                    let attrs = attrs::FieldAttrs::from_attrs(&f.attrs)?;
-                        let name = &f.ident;
-                    if attrs.rest.is_none() {
-                        let name_str = name.as_ref().unwrap().to_string();
-                        let snake_name = snake_to_camel_case(&name_str);
-                        if attrs.default.is_none() {
-                            Ok(quote_spanned! {f.span() =>
-                                #name: crate::from_plist::FromPlistOpt::from_plist(
-                                    map.remove(#snake_name)
-                                ),
-                            })
-                        } else {
-                            Ok(quote_spanned! {f.span() =>
-                                #name: map.remove(#snake_name).map(crate::from_plist::FromPlist::from_plist).unwrap_or_default(),
-                            })
-                        }
-                    } else {
-                        Ok(quote_spanned! {f.span() =>
-                            #name: map,
-                        })
-                    }
-                }).collect::<Result<Vec<_>, syn::Error>>()?;
-
-                return Ok(quote! {
-                    #( #fields )*
-                });
-            }
-            _ => (),
-        },
-        _ => (),
+    let Data::Struct(data) =    &input.data else {
+        return Err(syn::Error::new(input.ident.span(), "FromPlist only supports structs"));
     };
 
-    Err(syn::Error::new(
-        input.ident.span(),
-        "FromPlist only supports structs with named fields",
-    ))
+    let Fields::Named(fields) = &data.fields else {
+                return Err(syn::Error::new(input.ident.span(), "FromPlist only supports named fields"));
+    };
+
+    let fields = fields.named.iter().map(|f| {
+        let attrs = attrs::FieldAttrs::from_attrs(&f.attrs)?;
+        let name = &f.ident;
+        if attrs.rest.is_none() {
+            let name_str = name.as_ref().unwrap().to_string();
+            let snake_name = snake_to_camel_case(&name_str);
+            if attrs.default.is_none() {
+                Ok(quote_spanned! {f.span() =>
+                    #name: crate::from_plist::FromPlistOpt::from_plist(
+                        map.remove(#snake_name)
+                    ),
+                })
+            } else {
+                Ok(quote_spanned! {f.span() =>
+                    #name: map.remove(#snake_name).map(crate::from_plist::FromPlist::from_plist).unwrap_or_default(),
+                })
+            }
+        } else {
+            Ok(quote_spanned! {f.span() =>
+                #name: map,
+            })
+        }
+        }).collect::<Result<Vec<_>, syn::Error>>()?;
+
+    Ok(quote! {
+        #( #fields )*
+    })
 }
 
 fn add_ser(data: &Data) -> TokenStream {
@@ -99,7 +101,9 @@ fn add_ser(data: &Data) -> TokenStream {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {
                 let recurse = fields.named.iter().filter_map(|f| {
-                    if !is_rest(&f.attrs) {
+                    let attrs = attrs::FieldAttrs::from_attrs(&f.attrs)
+                        .expect("already checked in add_der");
+                    if attrs.rest.is_none() {
                         let name = &f.ident;
                         let name_str = name.as_ref().unwrap().to_string();
                         let snake_name = snake_to_camel_case(&name_str);
@@ -122,31 +126,25 @@ fn add_ser(data: &Data) -> TokenStream {
     }
 }
 
-fn add_ser_rest(data: &Data) -> TokenStream {
+fn add_ser_rest(data: &Data) -> syn::Result<TokenStream> {
     match *data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {
                 for f in fields.named.iter() {
-                    if is_rest(&f.attrs) {
+                    let attrs = attrs::FieldAttrs::from_attrs(&f.attrs)?;
+                    if attrs.rest.is_some() {
                         let name = &f.ident;
-                        return quote_spanned! { f.span() =>
+                        return Ok(quote_spanned! { f.span() =>
                             let mut map = self.#name;
-                        };
+                        });
                     }
                 }
-                quote! { let mut map = BTreeMap::new(); }
+                Ok(quote! { let mut map = BTreeMap::new(); })
             }
             _ => unimplemented!(),
         },
         _ => unimplemented!(),
     }
-}
-
-fn is_rest(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        matches!((attr.path.get_ident(), attr.parse_args::<Ident>()), 
-            (Some(ident), Ok(arg)) if ident == "fromplist" && arg == "rest")
-    })
 }
 
 fn snake_to_camel_case(id: &str) -> String {
