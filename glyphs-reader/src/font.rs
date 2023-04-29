@@ -1382,7 +1382,7 @@ fn add_mapping_if_present(
     axis_mappings: &mut BTreeMap<String, RawAxisUserToDesignMap>,
     axes: &[Axis],
     axis_tag: &str,
-    axes_values: &Vec<OrderedFloat<f64>>,
+    axes_values: &[OrderedFloat<f64>],
     value: Option<&Plist>,
 ) {
     let Some(idx) = axes.iter().position(|a| a.tag == axis_tag) else { return; };
