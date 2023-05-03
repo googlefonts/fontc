@@ -744,9 +744,15 @@ impl GlyphPathBuilder {
             // explicitly output the implied closing line
             // equivalent to fontTools' PointToSegmentPen(outputImpliedClosingLine=True)
             match self.path.elements().last() {
+                // The last point of the closed contour is actually of type "line"
+                // Explicitly emit it so it doesn't get lost if we turn back into a pointstream
                 Some(PathEl::LineTo(_)) => {
                     self.path.line_to(last_move);
                 }
+
+                // The source ends in something that isn't a line, and it's closed.
+                // Add an explicit line if it wouldn't be zero-length as this is how
+                // a closed point-stream is interpreted.
                 Some(PathEl::QuadTo(_, last_pt)) | Some(PathEl::CurveTo(_, _, last_pt)) => {
                     if *last_pt != last_move {
                         self.path.line_to(last_move)
