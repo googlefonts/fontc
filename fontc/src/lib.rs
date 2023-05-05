@@ -770,7 +770,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use skrifa::{
-        meta::charmap::Charmap,
+        charmap::Charmap,
+        instance::Size,
         raw::{
             tables::{
                 cmap::{Cmap, CmapSubtable},
@@ -781,7 +782,7 @@ mod tests {
             types::F2Dot14,
             FontData, FontRead, FontReadWithArgs, FontRef, TableProvider,
         },
-        GlyphId, Size, Tag,
+        GlyphId, Tag,
     };
     use tempfile::{tempdir, TempDir};
     use write_fonts::dump_table;
