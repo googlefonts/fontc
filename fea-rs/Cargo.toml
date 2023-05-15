@@ -16,7 +16,7 @@ exclude = ["test-data"]
 ansi_term = "0.12.1"
 smol_str = "0.1.18"
 norad = "0.8" # just for use in sample binaries/debugging, remove eventually
-write-fonts = { version = "0.1.5" }
+write-fonts = { version = "0.2.0" }
 chrono = "0.4.3"
 diff = { version = "0.1.12", optional = true }
 rayon = { version = "1.6", optional = true }
