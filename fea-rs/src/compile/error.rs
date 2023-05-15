@@ -107,3 +107,15 @@ impl From<write_fonts::error::Error> for BinaryCompilationError {
         BinaryCompilationError(src)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Some clients, notably fontmake-rs, expect this.
+    #[test]
+    fn assert_compiler_error_is_send() {
+        fn send_me_baby<T: Send>() {}
+        send_me_baby::<CompilerError>();
+    }
+}
