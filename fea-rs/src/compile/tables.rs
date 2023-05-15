@@ -17,7 +17,6 @@ use write_fonts::{
         layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
     },
     types::{Fixed, LongDateTime, NameId, Tag, Uint24},
-    validate::ValidationReport,
 };
 
 use crate::{
@@ -571,7 +570,7 @@ impl Os2Builder {
 }
 
 impl GdefBuilder {
-    pub fn build(&self) -> Result<Vec<u8>, ValidationReport> {
+    pub fn build(&self) -> Result<Vec<u8>, write_fonts::error::Error> {
         let mut table = tables::gdef::Gdef::new(
             self.build_class_def(),
             self.build_attach_list(),
