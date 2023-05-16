@@ -15,7 +15,9 @@ use read_fonts::{
     types::{F2Dot14, GlyphId},
 };
 use write_fonts::{
-    tables::glyf::{Bbox, Component, ComponentFlags, CompositeGlyph, SimpleGlyph},
+    tables::glyf::{
+        simple_glyphs_from_kurbo, Bbox, Component, ComponentFlags, CompositeGlyph, SimpleGlyph,
+    },
     OtRound,
 };
 
@@ -233,20 +235,22 @@ impl Work<Context, Error> for GlyphWork {
                 (name, point_seqs_for_composite_glyph(ir_glyph))
             }
             CheckedGlyph::Contour { name, paths } => {
-                // Convert paths to SimpleGlyph so we can get consistent point streams
-                let instances = paths
-                    .into_iter()
-                    .map(|(loc, path)| {
-                        match SimpleGlyph::from_kurbo(&path).map_err(|e| Error::KurboError {
-                            glyph_name: self.glyph_name.clone(),
-                            kurbo_problem: e,
-                            context: path.to_svg(),
-                        }) {
-                            Ok(glyph) => Ok((loc, glyph)),
-                            Err(e) => Err(e),
-                        }
-                    })
-                    .collect::<Result<HashMap<_, _>, Error>>()?;
+                // Convert paths to SimpleGlyphs in parallel so we can get consistent point streams
+                let (locations, bezpaths): (Vec<_>, Vec<_>) = paths.into_iter().unzip();
+                let simple_glyphs =
+                    simple_glyphs_from_kurbo(&bezpaths).map_err(|e| Error::KurboError {
+                        glyph_name: self.glyph_name.clone(),
+                        kurbo_problem: e,
+                        context: bezpaths
+                            .into_iter()
+                            .map(|p| p.to_svg())
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                    })?;
+                let mut instances = HashMap::new();
+                for (loc, glyph) in locations.into_iter().zip(simple_glyphs.into_iter()) {
+                    instances.insert(loc, glyph);
+                }
 
                 // Establish the default outline of our simple glyph
                 let Some(base_glyph) = instances.get(default_location) else {
