@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use write_fonts::read::ReadError;
+use write_fonts::{error::Error as WriteError, read::ReadError};
 
 use crate::{
     parse::{SourceList, SourceLoadError},
@@ -70,7 +70,7 @@ pub enum CompilerError {
 /// An error that occured when generating the binary font
 #[derive(Debug, thiserror::Error)]
 #[error("Binary generation failed: '{0}'")]
-pub struct BinaryCompilationError(write_fonts::error::Error);
+pub struct BinaryCompilationError(WriteError);
 
 /// A set of diagnostics with the associated source info
 #[derive(Clone)]
@@ -102,8 +102,8 @@ impl std::fmt::Debug for DiagnosticSet {
     }
 }
 
-impl From<write_fonts::error::Error> for BinaryCompilationError {
-    fn from(src: write_fonts::error::Error) -> BinaryCompilationError {
+impl From<WriteError> for BinaryCompilationError {
+    fn from(src: WriteError) -> BinaryCompilationError {
         BinaryCompilationError(src)
     }
 }
