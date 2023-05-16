@@ -5,10 +5,7 @@ use fontdrasil::types::GlyphName;
 use fontir::variations::DeltaError;
 use read_fonts::ReadError;
 use thiserror::Error;
-use write_fonts::{
-    tables::{glyf::BadKurbo, gvar::GvarInputError},
-    validate::ValidationReport,
-};
+use write_fonts::tables::{glyf::BadKurbo, gvar::GvarInputError};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -37,9 +34,9 @@ pub enum Error {
         glyph: GlyphName,
         errors: Vec<Error>,
     },
-    #[error("Generating bytes for table failed")]
+    #[error("Generating bytes for {context} failed: {e}")]
     DumpTableError {
-        report: ValidationReport,
+        e: write_fonts::error::Error,
         context: String,
     },
     #[error("{what} out of bounds: {value}")]
