@@ -37,8 +37,8 @@ impl Work<Context, Error> for GvarWork {
             .collect();
         let gvar = Gvar::new(variations).map_err(Error::GvarError)?;
 
-        let raw_gvar = Bytes::new(dump_table(&gvar).map_err(|report| Error::DumpTableError {
-            report,
+        let raw_gvar = Bytes::new(dump_table(&gvar).map_err(|e| Error::DumpTableError {
+            e,
             context: "gvar".into(),
         })?);
         context.set_gvar(raw_gvar);

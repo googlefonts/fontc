@@ -161,8 +161,8 @@ impl Work<Context, Error> for MetricAndLimitWork {
 
         // Send hmtx out into the world
         let hmtx = Hmtx::new(long_metrics, lsbs);
-        let raw_hmtx = Bytes::new(dump_table(&hmtx).map_err(|report| Error::DumpTableError {
-            report,
+        let raw_hmtx = Bytes::new(dump_table(&hmtx).map_err(|e| Error::DumpTableError {
+            e,
             context: "hmtx".into(),
         })?);
         context.set_hmtx(raw_hmtx);
