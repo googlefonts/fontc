@@ -281,7 +281,9 @@ impl Workload {
                 job.write_access,
             );
             log::debug!("Exec {:?}", id);
-            job.work.exec(context).unwrap();
+            job.work
+                .exec(context)
+                .unwrap_or_else(|_| panic!("{id:?} should have succeeded"));
             assert!(
                 self.success.insert(id.clone()),
                 "We just did {id:?} a second time?"
