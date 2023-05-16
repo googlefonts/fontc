@@ -35,7 +35,7 @@ use write_fonts::{
         variations::Tuple,
     },
     validate::Validate,
-    FontBuilder, FontWrite,
+    FontBuilder, FontWrite, OtRound,
 };
 use write_fonts::{from_obj::FromTableRef, tables::glyf::CompositeGlyph};
 
@@ -156,11 +156,11 @@ impl Glyph {
 
 /// Unusually we store something other than the binary gvar per glyph.
 ///
-///
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/gvar>
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GvarFragment {
-    pub deltas: Vec<(VariationRegion, Vec<Vec2>)>,
+    /// None entries are safe to omit per IUP
+    pub deltas: Vec<(VariationRegion, Vec<Option<Vec2>>)>,
 }
 
 impl GvarFragment {
@@ -177,10 +177,15 @@ impl GvarFragment {
                     return None;
                 }
 
-                // TODO: nice rounding on deltas
                 let deltas: Vec<_> = deltas
                     .iter()
-                    .map(|v| Some((v.x as i16, v.y as i16)))
+                    .map(|v| {
+                        v.map(|Vec2 { x, y }| {
+                            let x: i16 = x.ot_round();
+                            let y: i16 = y.ot_round();
+                            (x, y)
+                        })
+                    })
                     .collect();
 
                 let tuple_builder: TupleBuilder = region.into();
@@ -599,9 +604,7 @@ impl Context {
 }
 
 fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
-    trace!("  set_cached::begin");
     let mut wl = lock.write();
-    trace!("  set_cached::has write lock");
     *wl = Some(Arc::from(value));
 }
 

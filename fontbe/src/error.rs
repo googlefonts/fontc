@@ -5,7 +5,7 @@ use fontdrasil::types::GlyphName;
 use fontir::variations::DeltaError;
 use read_fonts::ReadError;
 use thiserror::Error;
-use write_fonts::tables::{glyf::BadKurbo, gvar::GvarInputError};
+use write_fonts::tables::{glyf::BadKurbo, gvar::GvarInputError, variations::IupError};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -47,6 +47,8 @@ pub enum Error {
     GvarError(#[from] GvarInputError),
     #[error("Unable to read")]
     ReadFontsReadError(#[from] ReadError),
+    #[error("IUP error for {0}: {1:?}")]
+    IupError(GlyphName, IupError),
 }
 
 #[derive(Debug)]
