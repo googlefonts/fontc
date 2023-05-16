@@ -775,7 +775,7 @@ mod tests {
         raw::{
             tables::{
                 cmap::{Cmap, CmapSubtable},
-                glyf::{self, CompositeGlyph, Glyf, SimpleGlyph},
+                glyf::{self, CompositeGlyph, CurvePoint, Glyf, SimpleGlyph},
                 hmtx::Hmtx,
                 loca::Loca,
             },
@@ -1139,6 +1139,39 @@ mod tests {
                     glyf::Glyph::Composite(glyph) => (0, glyph.number_of_contours()),
                 })
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn compile_variable_simple_glyph_with_implied_oncurves() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(Args::for_test(build_dir, "glyphs3/Oswald-O.glyphs"));
+
+        let glyph_data = result.glyphs();
+        let glyphs = glyph_data.read();
+        // the glyph 'O' contains several quad splines
+        let uppercase_o = &glyphs[result.get_glyph_index("O") as usize];
+        let glyf::Glyph::Simple(glyph) = uppercase_o else {
+            panic!("Expected 'O' to be a simple glyph, got {:?}", uppercase_o);
+        };
+        assert_eq!(2, glyph.number_of_contours());
+        assert_eq!(36, glyph.num_points());
+        assert_eq!(
+            [48, -9, 491, 817],
+            [glyph.x_min(), glyph.y_min(), glyph.x_max(), glyph.y_max()]
+        );
+        // for brevity, we only check the first 5 points to confirm that we now get
+        // multiple off-curve points in a row with impliable on-curve points omitted
+        assert_eq!(
+            vec![
+                CurvePoint::on_curve(270, -9),
+                CurvePoint::off_curve(352, -9),
+                CurvePoint::off_curve(448, 56),
+                CurvePoint::off_curve(491, 174),
+                CurvePoint::on_curve(491, 253),
+            ],
+            glyph.points().take(5).collect::<Vec<_>>()
         );
     }
 
