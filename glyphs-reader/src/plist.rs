@@ -38,7 +38,16 @@ fn is_numeric(b: u8) -> bool {
 }
 
 fn is_alnum(b: u8) -> bool {
-    is_numeric(b) || b.is_ascii_uppercase() || b.is_ascii_lowercase() || b == b'_'
+    // https://github.com/opensource-apple/CF/blob/3cc41a76b1491f50813e28a4ec09954ffa359e6f/CFOldStylePList.c#L79
+    is_numeric(b)
+        || b.is_ascii_uppercase()
+        || b.is_ascii_lowercase()
+        || b == b'_'
+        || b == b'$'
+        || b == b'/'
+        || b == b':'
+        || b == b'.'
+        || b == b'-'
 }
 
 // Used for serialization; make sure UUID's get quoted
@@ -424,5 +433,44 @@ impl From<Vec<Plist>> for Plist {
 impl From<BTreeMap<String, Plist>> for Plist {
     fn from(x: BTreeMap<String, Plist>) -> Plist {
         Plist::Dictionary(x)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::Plist;
+
+    #[test]
+    fn parse_unquoted_strings() {
+        let contents = r#"
+        {
+            name = "UFO Filename";
+            value1 = ../../build/instance_ufos/Testing_Rg.ufo;
+            value2 = _;
+            value3 = $;
+            value4 = /;
+            value5 = :;
+            value6 = .;
+            value7 = -;
+        }
+        "#;
+
+        let plist = Plist::parse(contents).unwrap();
+        let plist_expected = Plist::Dictionary(BTreeMap::from_iter([
+            ("name".into(), Plist::String("UFO Filename".into())),
+            (
+                "value1".into(),
+                Plist::String("../../build/instance_ufos/Testing_Rg.ufo".into()),
+            ),
+            ("value2".into(), Plist::String("_".into())),
+            ("value3".into(), Plist::String("$".into())),
+            ("value4".into(), Plist::String("/".into())),
+            ("value5".into(), Plist::String(":".into())),
+            ("value6".into(), Plist::String(".".into())),
+            ("value7".into(), Plist::String("-".into())),
+        ]));
+        assert_eq!(plist, plist_expected);
     }
 }
