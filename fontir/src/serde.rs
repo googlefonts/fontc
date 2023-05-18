@@ -4,9 +4,8 @@ use std::{
 };
 
 use filetime::FileTime;
-use font_types::NameId;
 use ordered_float::OrderedFloat;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
@@ -16,42 +15,6 @@ use crate::{
     },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
-
-struct NameIdVisitor;
-
-impl<'de> serde::de::Visitor<'de> for NameIdVisitor {
-    type Value = NameId;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("A valid NameId")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        let v = v
-            .parse::<u16>()
-            .map_err(|_| E::invalid_value(serde::de::Unexpected::Str(v), &self))?;
-        Ok(NameId::new(v))
-    }
-}
-
-pub(crate) fn serialize_name_id<S>(name: &NameId, ser: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    ser.serialize_str(&format!("{}", name.to_u16()))
-}
-
-pub(crate) fn deserialize_name_id<'de, D>(de: D) -> Result<NameId, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    // For reasons that are not clear to me trying to treat name id as a u16 results in
-    // invalid type: integer `2`. Just use a damn string.
-    de.deserialize_str(NameIdVisitor)
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CoordConverterSerdeRepr {
