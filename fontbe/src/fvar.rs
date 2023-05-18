@@ -79,9 +79,7 @@ impl Work<Context, Error> for FvarWork {
 
 #[cfg(test)]
 mod tests {
-    use fontir::{
-        ir::{Axis, StaticMetadata},
-    };
+    use fontir::ir::{Axis, StaticMetadata};
 
     use super::generate_fvar;
 

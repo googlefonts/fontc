@@ -173,7 +173,7 @@ impl GvarFragment {
                 }
 
                 // Variation of no point has limited entertainment value
-                if deltas.is_empty() {
+                if deltas.is_empty() || deltas.iter().all(|d| d.is_none()) {
                     return None;
                 }
 
@@ -655,11 +655,15 @@ fn read_entire_file(file: &Path) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use fontir::{
+        coords::NormalizedCoord,
+        variations::{Tent, VariationRegion},
+    };
     use tempfile::tempdir;
 
     use crate::{orchestration::LocaFormat, paths::Paths};
 
-    use super::GlyfLoca;
+    use super::{GlyfLoca, GvarFragment};
 
     #[test]
     fn no_glyphs_is_short() {
@@ -695,5 +699,39 @@ mod tests {
 
         let gl = GlyfLoca::read(LocaFormat::Short, &paths);
         assert_eq!((glyf, loca), (gl.glyf, gl.loca));
+    }
+
+    fn non_default_region() -> VariationRegion {
+        let mut region = VariationRegion::default();
+        region.insert(
+            "Weight".to_string(),
+            Tent::new(
+                NormalizedCoord::new(0.0),
+                NormalizedCoord::new(1.0),
+                NormalizedCoord::new(1.0),
+            ),
+        );
+        region
+    }
+
+    #[test]
+    fn keeps_if_some_deltas() {
+        let deltas = GvarFragment {
+            deltas: vec![(
+                non_default_region(),
+                vec![None, Some((1.0, 0.0).into()), None],
+            )],
+        }
+        .to_deltas();
+        assert!(!deltas.is_empty(), "{deltas:?}");
+    }
+
+    #[test]
+    fn drops_nop_deltas() {
+        let deltas = GvarFragment {
+            deltas: vec![(non_default_region(), vec![None, None, None])],
+        }
+        .to_deltas();
+        assert!(deltas.is_empty(), "{deltas:?}");
     }
 }

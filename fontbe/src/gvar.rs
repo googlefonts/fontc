@@ -5,7 +5,7 @@ use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::ir::StaticMetadata;
 use write_fonts::{
     dump_table,
-    tables::gvar::{GlyphVariations, Gvar, GlyphDeltas},
+    tables::gvar::{GlyphDeltas, GlyphVariations, Gvar},
 };
 
 use crate::{
@@ -19,20 +19,23 @@ pub fn create_gvar_work() -> Box<BeWork> {
     Box::new(GvarWork {})
 }
 
-fn make_variations(static_metadata: &StaticMetadata, get_deltas: impl Fn(&GlyphName) -> Vec<GlyphDeltas>) ->Vec<GlyphVariations> {
+fn make_variations(
+    static_metadata: &StaticMetadata,
+    get_deltas: impl Fn(&GlyphName) -> Vec<GlyphDeltas>,
+) -> Vec<GlyphVariations> {
     static_metadata
-    .glyph_order
-    .iter()
-    .enumerate()
-    .filter_map(|(gid, gn)| {        
-        let deltas = get_deltas(gn);
-        if deltas.is_empty() {
-            return None;
-        }
-        Some((GlyphId::new(gid as u16), deltas))
-    })
-    .map(|(gid, deltas)| GlyphVariations::new(gid, deltas))
-    .collect()
+        .glyph_order
+        .iter()
+        .enumerate()
+        .filter_map(|(gid, gn)| {
+            let deltas = get_deltas(gn);
+            if deltas.is_empty() {
+                return None;
+            }
+            Some((GlyphId::new(gid as u16), deltas))
+        })
+        .map(|(gid, deltas)| GlyphVariations::new(gid, deltas))
+        .collect()
 }
 
 impl Work<Context, Error> for GvarWork {
@@ -41,7 +44,9 @@ impl Work<Context, Error> for GvarWork {
         // We built the gvar fragments alongside glyphs, now we need to glue them together into a gvar table
         let static_metadata = context.ir.get_final_static_metadata();
 
-        let variations: Vec<_> = make_variations(&static_metadata, |gid| context.get_gvar_fragment(gid).to_deltas());        
+        let variations: Vec<_> = make_variations(&static_metadata, |gid| {
+            context.get_gvar_fragment(gid).to_deltas()
+        });
         let gvar = Gvar::new(variations).map_err(Error::GvarError)?;
 
         let raw_gvar = Bytes::new(dump_table(&gvar).map_err(|e| Error::DumpTableError {
@@ -56,20 +61,22 @@ impl Work<Context, Error> for GvarWork {
 
 #[cfg(test)]
 mod tests {
-    use font_types::{F2Dot14};
-    use fontir::{ir::{StaticMetadata}};
+    use font_types::F2Dot14;
+    use fontdrasil::types::GlyphName;
+    use fontir::ir::StaticMetadata;
+    use indexmap::IndexSet;
     use write_fonts::tables::{gvar::GlyphDeltas, variations::Tuple};
 
     use crate::test_util::axis;
 
-    use super::{make_variations};
+    use super::make_variations;
 
     fn create_static_metadata(glyph_order: &[&str]) -> StaticMetadata {
         StaticMetadata::new(
             1000,
             Default::default(),
             [axis(400.0, 400.0, 700.0)].to_vec(),
-            Default::default(),
+            IndexSet::from_iter(glyph_order.iter().map(|n| GlyphName::from(*n))),
             Default::default(),
         )
         .unwrap()
@@ -85,7 +92,11 @@ mod tests {
             match name.as_str() {
                 v if v == glyph_without_var => Vec::new(),
                 // At the maximum extent (normalized pos 1.0) of our axis, add +1, +1
-                v if v == glyph_with_var => vec![GlyphDeltas::new(Tuple::new(vec![F2Dot14::from_f32(1.0)]), vec![Some((1, 1))], None)],
+                v if v == glyph_with_var => vec![GlyphDeltas::new(
+                    Tuple::new(vec![F2Dot14::from_f32(1.0)]),
+                    vec![Some((1, 1))],
+                    None,
+                )],
                 v => panic!("unexpected {v}"),
             }
         });
