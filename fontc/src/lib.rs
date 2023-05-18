@@ -589,18 +589,14 @@ fn add_metric_and_limits_job(
 
     // If no glyph has changed there isn't a lot to do
     if !glyphs_changed.is_empty() {
-        let mut dependencies: HashSet<_> = glyphs_changed
-            .iter()
-            .flat_map(|gn| {
-                [
-                    FeWorkIdentifier::Glyph(gn.clone()).into(),
-                    BeWorkIdentifier::GlyfFragment(gn.clone()).into(),
-                ]
-            })
-            .collect();
+        let mut dependencies = HashSet::new();
         dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
         dependencies.insert(BeWorkIdentifier::Maxp.into());
+
+        // https://github.com/googlefonts/fontmake-rs/issues/285: we need bboxes and those are done for glyf
+        // since we depend on glyf we needn't block on any individual glyphs
+        dependencies.insert(BeWorkIdentifier::Glyf.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Hmtx.into();
         workload.insert(
@@ -697,9 +693,6 @@ fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: Gl
     if !workload.is_dependency(&BeWorkIdentifier::Gvar.into(), &gvar_id) {
         panic!("BE glyph '{glyph_name}' is being built but not participating in gvar",);
     }
-    if !workload.is_dependency(&BeWorkIdentifier::Hmtx.into(), &id) {
-        panic!("BE glyph '{glyph_name}' is being built but not participating in hmtx",);
-    }
 
     let write_access = Access::Set(HashSet::from([id.clone(), gvar_id]));
     workload.insert(
@@ -724,7 +717,7 @@ pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload,
     add_glyph_ir_jobs(change_detector, &mut workload)?;
     add_finalize_static_metadata_ir_job(change_detector, &mut workload)?;
 
-    // BE: f(IR) => binary
+    // BE: f(IR, maybe other BE work) => binary
     add_feature_be_job(change_detector, &mut workload)?;
     add_glyf_loca_be_job(change_detector, &mut workload)?;
     add_avar_be_job(change_detector, &mut workload)?;

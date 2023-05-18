@@ -485,7 +485,7 @@ pub struct Tent {
 }
 
 impl Tent {
-    fn new(mut min: NormalizedCoord, peak: NormalizedCoord, mut max: NormalizedCoord) -> Self {
+    pub fn new(mut min: NormalizedCoord, peak: NormalizedCoord, mut max: NormalizedCoord) -> Self {
         let zero = NormalizedCoord::new(0.0);
         if peak > zero {
             min = zero;
