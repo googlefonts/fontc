@@ -3,10 +3,7 @@
 use crate::{
     coords::{CoordConverter, NormalizedCoord, NormalizedLocation, UserCoord},
     error::{PathConversionError, VariationModelError, WorkError},
-    serde::{
-        deserialize_name_id, deserialize_tag, serialize_name_id, serialize_tag,
-        GlobalMetricsSerdeRepr, GlyphSerdeRepr, StaticMetadataSerdeRepr,
-    },
+    serde::{GlobalMetricsSerdeRepr, GlyphSerdeRepr, StaticMetadataSerdeRepr},
     variations::VariationModel,
 };
 use font_types::NameId;
@@ -402,8 +399,6 @@ fn encoding_for(value: &str) -> u16 {
 /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct NameKey {
-    #[serde(serialize_with = "serialize_name_id")]
-    #[serde(deserialize_with = "deserialize_name_id")]
     pub name_id: NameId,
     pub platform_id: u16,
     pub encoding_id: u16,
@@ -435,8 +430,6 @@ impl NameKey {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Axis {
     pub name: String,
-    #[serde(serialize_with = "serialize_tag")]
-    #[serde(deserialize_with = "deserialize_tag")]
     pub tag: Tag,
     pub min: UserCoord,
     pub default: UserCoord,

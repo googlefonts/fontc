@@ -178,7 +178,10 @@ impl GvarFragment {
                 }
 
                 // TODO: nice rounding on deltas
-                let deltas: Vec<_> = deltas.iter().map(|v| (v.x as i16, v.y as i16)).collect();
+                let deltas: Vec<_> = deltas
+                    .iter()
+                    .map(|v| Some((v.x as i16, v.y as i16)))
+                    .collect();
 
                 let tuple_builder: TupleBuilder = region.into();
                 let (min, peak, max) = tuple_builder.build();
