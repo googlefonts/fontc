@@ -1,3 +1,8 @@
+[patch.crates-io]
+font-types = { git="https://github.com/googlefonts/fontations.git" }
+read-fonts = { git="https://github.com/googlefonts/fontations.git" }
+write-fonts = { git="https://github.com/googlefonts/fontations.git" }
+skrifa = { git="https://github.com/googlefonts/fontations.git" }
 [workspace.dependencies]
 
 bincode = "1.3.3"
@@ -12,7 +17,7 @@ env_logger = "0.10.0"
 parking_lot = "0.12.1"
 
 fea-rs = "= 0.3.3"
-font-types = "0.1.5"
+font-types = { version = "0.1.5", features = ["serde"] }
 read-fonts = "0.2.0"
 write-fonts = "0.3.2"
 skrifa = "0.1.0"
