@@ -85,12 +85,11 @@ impl Workload {
 
                     debug!("Adding dependencies on {glyph_name}");
 
-                    // It would be lovely if our new glyph was in glyf, gvar, and hmtx
-                    // loca hides with glyf
+                    // It would be lovely if our new glyph was in glyf, and gvar
+                    // loca hides with glyf. hmtx blocks on glyf.
                     for (merge_work_id, new_dep) in [
                         (BeWorkIdentifier::Glyf, &glyph_work_id),
                         (BeWorkIdentifier::Gvar, &gvar_work_id),
-                        (BeWorkIdentifier::Hmtx, &glyph_work_id),
                     ] {
                         self.jobs_pending
                             .get_mut(&AnyWorkId::Be(merge_work_id))
