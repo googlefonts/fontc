@@ -141,10 +141,16 @@ def main(argv):
     t1e = {e.tag: e for e in fontc.getroot()}
     t2e = {e.tag: e for e in fontmake.getroot()}
     for tag in sorted(t1 & t2):
-        if etree.tostring(t1e[tag]) == etree.tostring(t2e[tag]):
+        t1s = etree.tostring(t1e[tag])
+        t2s = etree.tostring(t2e[tag])
+        if t1s == t2s:
             print(f"  Identical '{tag}'")
         else:
-            print(f"  DIFF '{tag}'")
+            p1 = build_dir / f"fontc.{tag}.ttx"
+            p1.write_bytes(t1s)
+            p2 = build_dir / f"fontmake.{tag}.ttx"
+            p2.write_bytes(t2s)
+            print(f"  DIFF '{tag}', {p1} {p2}")
 
 
 if __name__ == "__main__":
