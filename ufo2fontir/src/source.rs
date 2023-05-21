@@ -594,13 +594,20 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         let units_per_em = units_per_em(font_infos.values())?;
         let names = names(font_info_at_default);
         let axes = to_ir_axes(&self.designspace.axes)?;
+        let named_instances = Vec::new(); // TODO
         let master_locations = master_locations(&axes, &self.designspace.sources);
         let glyph_locations = master_locations.values().cloned().collect();
         let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;
 
-        let mut static_metadata =
-            StaticMetadata::new(units_per_em, names, axes, glyph_order, glyph_locations)
-                .map_err(WorkError::VariationModelError)?;
+        let mut static_metadata = StaticMetadata::new(
+            units_per_em,
+            names,
+            axes,
+            named_instances,
+            glyph_order,
+            glyph_locations,
+        )
+        .map_err(WorkError::VariationModelError)?;
         if let Some(vendor_id) = &font_info_at_default.open_type_os2_vendor_id {
             static_metadata.vendor_id = Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }

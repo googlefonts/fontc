@@ -107,7 +107,8 @@ struct RawFont {
     pub axes: Option<Vec<Axis>>,
     pub glyphs: Vec<RawGlyph>,
     pub font_master: Vec<RawFontMaster>,
-    pub instances: Option<Vec<RawInstance>>,
+    #[fromplist(default)]
+    pub instances: Vec<RawInstance>,
     pub feature_prefixes: Option<Vec<RawFeature>>,
     pub features: Option<Vec<RawFeature>>,
     pub classes: Option<Vec<RawFeature>>,
@@ -330,6 +331,7 @@ pub struct Instance {
     // So named to let FromPlist populate it from a field called "type"
     pub type_: InstanceType,
     pub axis_mappings: BTreeMap<String, RawAxisUserToDesignMap>,
+    pub axes_values: Vec<OrderedFloat<f64>>,
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L150>
@@ -782,6 +784,10 @@ impl RawFont {
         for master in self.font_master.iter_mut() {
             master.axes_values = v2_to_v3_axis_values(axes, &mut master.other_stuff)?;
         }
+        for instance in self.instances.iter_mut() {
+            instance.axes_values = v2_to_v3_axis_values(axes, &mut instance.other_stuff)?;
+            eprintln!("{} at {:?}", instance.name, instance.axes_values);
+        }
 
         if custom_params_mut(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
             self.other_stuff.remove("customParameters");
@@ -916,9 +922,7 @@ impl RawFont {
     }
 
     fn v2_to_v3_instances(&mut self) -> Result<(), Error> {
-        let Some(instances) = self.instances.as_mut() else { return Ok(()); };
-
-        for instance in instances.iter_mut() {
+        for instance in self.instances.iter_mut() {
             // named clases become #s in v3
             for (tag, name) in &[("wght", "weightClass"), ("wdth", "widthClass")] {
                 let Some(Plist::String(value)) = instance.other_stuff.get(*name) else {
@@ -931,11 +935,6 @@ impl RawFont {
                     .other_stuff
                     .insert(name.to_string(), Plist::Integer(value as i64));
             }
-
-            // v2 stores values for axes in specific fields, find them and put them into place
-            // "Axis position related properties (e.g. weightValue, widthValue, customValue) have been replaced by the axesValues list which is indexed in parallel with the toplevel axes list."
-            instance.axes_values =
-                v2_to_v3_axis_values(self.axes.as_ref().unwrap(), &mut instance.other_stuff)?;
         }
 
         Ok(())
@@ -1431,6 +1430,7 @@ impl Instance {
                 .map(|v| v.as_str().into())
                 .unwrap_or(InstanceType::Single),
             axis_mappings,
+            axes_values: value.axes_values.clone(),
         }
     }
 }
@@ -1451,14 +1451,11 @@ impl TryFrom<RawFont> for Font {
         let glyph_to_codepoints = parse_codepoints(&mut from, radix);
 
         let axes = from.axes.clone().unwrap_or_default();
-        let instances: Vec<_> = if let Some(raw_instances) = &from.instances {
-            raw_instances
-                .iter()
-                .map(|ri| Instance::new(&axes, ri))
-                .collect()
-        } else {
-            Default::default()
-        };
+        let instances: Vec<_> = from
+            .instances
+            .iter()
+            .map(|ri| Instance::new(&axes, ri))
+            .collect();
 
         let default_master_idx = default_master_idx(&from);
         let axis_mappings = RawUserToDesignMapping::new(&from, &instances);

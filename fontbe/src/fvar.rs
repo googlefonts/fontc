@@ -2,11 +2,12 @@
 
 use std::collections::HashMap;
 
+use font_types::Fixed;
 use fontdrasil::orchestration::Work;
 use fontir::ir::StaticMetadata;
 use log::trace;
 use read_fonts::types::MajorMinor;
-use write_fonts::tables::fvar::{AxisInstanceArrays, Fvar, VariationAxisRecord};
+use write_fonts::tables::fvar::{AxisInstanceArrays, Fvar, InstanceRecord, VariationAxisRecord};
 
 use crate::{
     error::Error,
@@ -53,7 +54,28 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
                 var
             })
             .collect(),
-        Vec::new(),
+        static_metadata
+            .named_instances
+            .iter()
+            .map(|ni| InstanceRecord {
+                subfamily_name_id: *reverse_names.get(&ni.name).unwrap(),
+                coordinates: static_metadata
+                    .variable_axes
+                    .iter()
+                    .map(|axis| {
+                        eprintln!("{} lookup in {:?}", axis.name, ni.location);
+                        let loc = ni
+                            .location
+                            .get(&axis.name)
+                            .map(|nc| nc.to_user(&axis.converter))
+                            .unwrap_or(axis.default)
+                            .into_inner();
+                        Fixed::from_f64(loc.into_inner() as f64)
+                    })
+                    .collect(),
+                ..Default::default()
+            })
+            .collect(),
     );
 
     let axis_count = axes_and_instances.axes.len().try_into().unwrap();
@@ -90,6 +112,7 @@ mod tests {
             1000,
             Default::default(),
             axes.to_vec(),
+            Default::default(),
             Default::default(),
             Default::default(),
         )

@@ -1,7 +1,7 @@
 //! Font IR types.
 
 use crate::{
-    coords::{CoordConverter, NormalizedCoord, NormalizedLocation, UserCoord},
+    coords::{CoordConverter, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
     error::{PathConversionError, VariationModelError, WorkError},
     serde::{GlobalMetricsSerdeRepr, GlyphSerdeRepr, StaticMetadataSerdeRepr},
     variations::VariationModel,
@@ -46,6 +46,9 @@ pub struct StaticMetadata {
     /// If empty this is a static font.
     pub variable_axes: Vec<Axis>,
 
+    /// Named locations in variation space
+    pub named_instances: Vec<NamedInstance>,
+
     /// The name of every glyph, in the order it will be emitted
     ///
     /// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
@@ -67,22 +70,27 @@ impl StaticMetadata {
         units_per_em: u16,
         names: HashMap<NameKey, String>,
         axes: Vec<Axis>,
+        named_instances: Vec<NamedInstance>,
         mut glyph_order: IndexSet<GlyphName>,
         glyph_locations: HashSet<NormalizedLocation>,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
         let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
 
-        // Claim names for axes
+        // Claim names for axes and named instances
         let mut name_id_gen = 255;
-        let mut names = names;
-        axes.iter().for_each(|axis| {
-            name_id_gen += 1;
-            names.insert(
-                NameKey::new(name_id_gen.into(), &axis.name),
-                axis.name.clone(),
-            );
-        });
+        let mut key_to_name = names;
+        let mut visited = HashSet::new();
+        axes.iter()
+            .map(|axis| &axis.name)
+            .chain(named_instances.iter().map(|ni| &ni.name))
+            .for_each(|name| {
+                if !visited.insert(name) {
+                    return;
+                }
+                name_id_gen += 1;
+                key_to_name.insert(NameKey::new(name_id_gen.into(), name), name.clone());
+            });
 
         let variation_model = VariationModel::new(glyph_locations, variable_axes.clone())?;
 
@@ -107,9 +115,10 @@ impl StaticMetadata {
         Ok(StaticMetadata {
             units_per_em,
             vendor_id: DEFAULT_VENDOR_ID,
-            names,
+            names: key_to_name,
             axes,
             variable_axes,
+            named_instances,
             glyph_order,
             variation_model,
             axes_default,
@@ -442,6 +451,13 @@ impl Axis {
     pub fn is_point(&self) -> bool {
         self.min == self.default && self.max == self.default
     }
+}
+
+/// IR for a named position in variation space
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct NamedInstance {
+    pub name: String,
+    pub location: NormalizedLocation,
 }
 
 /// Features (Adobe fea).

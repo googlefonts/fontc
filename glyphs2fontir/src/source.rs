@@ -4,12 +4,13 @@ use fontdrasil::types::GlyphName;
 use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
 use fontir::ir::{
-    self, GlobalMetric, GlobalMetrics, GlyphInstance, NameBuilder, NameKey, StaticMetadata,
+    self, GlobalMetric, GlobalMetrics, GlyphInstance, NameBuilder, NameKey, NamedInstance,
+    StaticMetadata,
 };
 use fontir::orchestration::{Context, IrWork};
 use fontir::source::{Input, Source};
 use fontir::stateset::StateSet;
-use glyphs_reader::Font;
+use glyphs_reader::{Font, InstanceType};
 use indexmap::IndexSet;
 use log::{debug, trace, warn};
 use std::collections::HashSet;
@@ -268,7 +269,24 @@ impl Work<Context, WorkError> for StaticMetadataWork {
                 .unwrap_or("<nameless family>")
         );
         let axes = font_info.axes.clone();
-        let glyph_locations = font_info.master_locations.values().cloned().collect();
+        let named_instances = font
+            .instances
+            .iter()
+            .filter_map(|inst| {
+                if inst.type_ != InstanceType::Single || !inst.active {
+                    return None;
+                }
+                Some(NamedInstance {
+                    name: inst.name.clone(),
+                    location: font_info.locations.get(&inst.axes_values).cloned().unwrap(),
+                })
+            })
+            .collect();
+        let glyph_locations = font
+            .masters
+            .iter()
+            .map(|m| font_info.locations.get(&m.axes_values).cloned().unwrap())
+            .collect();
         let glyph_order = font
             .glyph_order
             .iter()
@@ -280,6 +298,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             font.units_per_em,
             names(font),
             axes,
+            named_instances,
             glyph_order,
             glyph_locations,
         )
@@ -287,7 +306,10 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         if let Some(vendor_id) = font.names.get("vendorID") {
             static_metadata.vendor_id = Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
-
+        // for instance in font.instances.iter() {
+        //     eprintln!("{instance:?}");
+        // }
+        // todo!();
         context.set_init_static_metadata(static_metadata);
         Ok(())
     }
@@ -316,7 +338,7 @@ impl Work<Context, WorkError> for GlobalMetricWork {
         );
 
         for master in font.masters.iter() {
-            let pos = font_info.master_locations.get(&master.id).unwrap();
+            let pos = font_info.locations.get(&master.axes_values).unwrap();
             metrics.set_if_some(GlobalMetric::Ascender, pos.clone(), master.ascender());
             metrics.set_if_some(GlobalMetric::Descender, pos.clone(), master.descender());
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), master.cap_height());
@@ -396,7 +418,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
                 });
             };
             let master = &font.masters[*master_idx];
-            let location = &font_info.master_locations[master.id.as_str()];
+            let location = font_info.locations.get(&master.axes_values).unwrap();
 
             for (tag, coord) in location.iter() {
                 axis_positions
