@@ -9,7 +9,9 @@ fontmake should be installed in an active virtual environment.
 Usage:
     # rebuild with fontmake and fontc and compare
     python resources/scripts/ttx_diff.py ../OswaldFont/sources/Oswald.glyphs
+
     # rebuild the fontc copy, reuse the prior fontmake copy (if present), and compare
+    # useful if you are making changes to fontc meant to narrow the diff
     python resources/scripts/ttx_diff.py --rebuild fontc ../OswaldFont/sources/Oswald.glyphs
 """
 
@@ -20,47 +22,75 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from typing import MutableSequence
+
+
+_COMPARE_DEFAULTS = "default"
+_COMPARE_GFTOOLS = "gftools"
 
 
 FLAGS = flags.FLAGS
 
 
-flags.DEFINE_enum('rebuild', 'both', ['both', 'fontc', 'fontmake'], 'Which compilers to rebuild with if the output appears to already exist')
+flags.DEFINE_enum(
+    "compare",
+    "both",
+    ["both", _COMPARE_DEFAULTS, _COMPARE_GFTOOLS],
+    "Compare results with default flags, with the flags gftools uses, or both. Default both. Note that as of 5/21/2023 defaults still sets flags for fontmake to match fontc behavior.",
+)
+flags.DEFINE_enum(
+    "rebuild",
+    "both",
+    ["both", "fontc", "fontmake"],
+    "Which compilers to rebuild with if the output appears to already exist",
+)
 
 
-def run(cmd, **kwargs):
+def run(cmd: MutableSequence, working_dir: Path, log_file: str, **kwargs):
     cmd_string = " ".join(cmd)
-    print(f"Running {cmd_string}")
-    subprocess.run(cmd, text=True, check=True, **kwargs)
+    log_file = working_dir / log_file
+    print(f"  {cmd_string} > {log_file} 2>&1")
+    with open(log_file, "w") as log_file:
+        subprocess.run(
+            cmd,
+            text=True,
+            check=True,
+            cwd=working_dir,
+            stdout=log_file,
+            stderr=log_file,
+            **kwargs,
+        )
 
 
-def ttx(font_file):
+def ttx(font_file: Path):
     ttx_file = font_file.with_suffix(".ttx")
     cmd = [
         "ttx",
         "-o",
-        str(ttx_file),
-        str(font_file),
+        ttx_file.name,
+        font_file.name,
     ]
-    run(cmd)
+    run(cmd, font_file.parent, "ttx.log")
     return ttx_file
 
 
-def build(cmd, build_tool, ttf_find_fn, **kwargs):
+def build(
+    cmd: MutableSequence, build_dir: Path, build_tool: str, ttf_find_fn, **kwargs
+):
     try_skip = FLAGS.rebuild not in [build_tool, "both"]
     ttfs = ttf_find_fn()
     if try_skip and len(ttfs) == 1:
         ttx_file = ttfs[0].with_suffix(".ttx")
         if ttx_file.is_file():
             print(f"skipping {build_tool}")
-            return ttx_file 
-    run(cmd, **kwargs)
+            return ttx_file
+    run(cmd, build_dir, build_tool + ".log", **kwargs)
     ttfs = ttf_find_fn()
     assert len(ttfs) == 1, ttfs
     return ttx(ttfs[0])
 
 
-def build_fontc(source, build_dir):    
+def build_fontc(source: Path, build_dir: Path, compare: str):
     cmd = [
         "cargo",
         "run",
@@ -70,25 +100,37 @@ def build_fontc(source, build_dir):
         "--source",
         str(source),
         "--build-dir",
-        str(build_dir),
+        ".",
     ]
-    return build(cmd, "fontc", lambda: (build_dir / "font.ttf",))
+    if compare == _COMPARE_GFTOOLS:
+        cmd.append("--flatten-components")
+    return build(cmd, build_dir, "fontc", lambda: (build_dir / "font.ttf",))
 
 
-def build_fontmake(source, build_dir):
+def build_fontmake(source: Path, build_dir: Path, compare: str):
     cmd = [
         "fontmake",
         "-o",
         "variable",
+        # TODO we shouldn't need these flags
         "--no-production-names",
         "--keep-direction",
-        "--filter",
-        "FlattenComponentsFilter",
-        "--filter",
-        "DecomposeTransformedComponentsFilter",
-        str(source),
     ]
-    return build(cmd, "fontmake", lambda: tuple((build_dir /"variable_ttf").rglob("*.ttf")), cwd=build_dir)
+    if compare == _COMPARE_GFTOOLS:
+        cmd += [
+            "--filter",
+            "FlattenComponentsFilter",
+            "--filter",
+            "DecomposeTransformedComponentsFilter",
+        ]
+    cmd.append(str(source))
+
+    return build(
+        cmd,
+        build_dir,
+        "fontmake",
+        lambda: tuple((build_dir / "variable_ttf").rglob("*.ttf")),
+    )
 
 
 def copy(old, new):
@@ -108,49 +150,60 @@ def main(argv):
     if root.name != "fontmake-rs":
         sys.exit("Expected to be at the root of fontmake-rs")
 
-    build_dir = (root / "build").relative_to(root)
-    build_dir.mkdir(exist_ok = True)
-
     if shutil.which("fontmake") is None:
         sys.exit("No fontmake")
     if shutil.which("ttx") is None:
         sys.exit("No ttx")
 
-    fontc_ttx = copy(build_fontc(source, build_dir), build_dir / "fontc.ttx")
-    fontmake_ttx = copy(build_fontmake(source.resolve(), build_dir), build_dir / "fontmake.ttx")
+    comparisons = (FLAGS.compare,)
+    if comparisons == ("both",):
+        comparisons = (_COMPARE_DEFAULTS, _COMPARE_GFTOOLS)
 
-    print("TTX FILES")
-    print("  fontc    ", fontc_ttx)
-    print("  fontmake ", fontmake_ttx)
+    for compare in comparisons:
+        build_dir = (root / "build" / compare).relative_to(root)
+        build_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Compare {compare} in {build_dir}")
 
-    fontc = etree.parse(fontc_ttx)
-    fontmake = etree.parse(fontmake_ttx)
+        fontc_ttx = copy(
+            build_fontc(source.resolve(), build_dir, compare), build_dir / "fontc.ttx"
+        )
+        fontmake_ttx = copy(
+            build_fontmake(source.resolve(), build_dir, compare),
+            build_dir / "fontmake.ttx",
+        )
 
-    print("COMPARISON")
-    t1 = {e.tag for e in fontc.getroot()}
-    t2 = {e.tag for e in fontmake.getroot()}
-    if t1 != t2:
-        if t1 -t2:
-            tags = ", ".join(f"'{t}'" for t in sorted(t1 -t2))
-            print(f"  Only fontc produced {tags}")
+        print("TTX FILES")
+        print("  fontc    ", fontc_ttx)
+        print("  fontmake ", fontmake_ttx)
 
-        if t2 -t1:
-            tags = ", ".join(f"'{t}'" for t in sorted(t2 - t1))
-            print(f"  Only fontmake produced {tags}")
+        fontc = etree.parse(fontc_ttx)
+        fontmake = etree.parse(fontmake_ttx)
 
-    t1e = {e.tag: e for e in fontc.getroot()}
-    t2e = {e.tag: e for e in fontmake.getroot()}
-    for tag in sorted(t1 & t2):
-        t1s = etree.tostring(t1e[tag])
-        t2s = etree.tostring(t2e[tag])
-        if t1s == t2s:
-            print(f"  Identical '{tag}'")
-        else:
-            p1 = build_dir / f"fontc.{tag}.ttx"
-            p1.write_bytes(t1s)
-            p2 = build_dir / f"fontmake.{tag}.ttx"
-            p2.write_bytes(t2s)
-            print(f"  DIFF '{tag}', {p1} {p2}")
+        print("COMPARISON")
+        t1 = {e.tag for e in fontc.getroot()}
+        t2 = {e.tag for e in fontmake.getroot()}
+        if t1 != t2:
+            if t1 - t2:
+                tags = ", ".join(f"'{t}'" for t in sorted(t1 - t2))
+                print(f"  Only fontc produced {tags}")
+
+            if t2 - t1:
+                tags = ", ".join(f"'{t}'" for t in sorted(t2 - t1))
+                print(f"  Only fontmake produced {tags}")
+
+        t1e = {e.tag: e for e in fontc.getroot()}
+        t2e = {e.tag: e for e in fontmake.getroot()}
+        for tag in sorted(t1 & t2):
+            t1s = etree.tostring(t1e[tag])
+            t2s = etree.tostring(t2e[tag])
+            if t1s == t2s:
+                print(f"  Identical '{tag}'")
+            else:
+                p1 = build_dir / f"fontc.{tag}.ttx"
+                p1.write_bytes(t1s)
+                p2 = build_dir / f"fontmake.{tag}.ttx"
+                p2.write_bytes(t2s)
+                print(f"  DIFF '{tag}', {p1} {p2}")
 
 
 if __name__ == "__main__":
