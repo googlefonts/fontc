@@ -1274,44 +1274,46 @@ mod tests {
         let font_data = FontData::new(&raw_cmap);
         let cmap = Cmap::read(font_data).unwrap();
 
-        assert_eq!(1, cmap.encoding_records().len());
-        let encoding_record = cmap.encoding_records().first().unwrap();
-        let CmapSubtable::Format4(cmap4) = encoding_record.subtable(font_data).unwrap() else {
-            panic!("Wrong subtable {encoding_record:#?}");
-        };
+        assert!(!cmap.encoding_records().is_empty());
+        for encoding_record in cmap.encoding_records() {
+            let CmapSubtable::Format4(cmap4) = encoding_record.subtable(font_data).unwrap() else {
+                panic!("Wrong subtable {encoding_record:#?}");
+            };
 
-        // Hopefully we find the codepoints in the .glyphs file, with glyph ids based on order in that file
-        let cp_and_gid: Vec<(u16, u16)> = cmap4
-            .start_code()
-            .iter()
-            .zip(cmap4.end_code())
-            .zip(cmap4.id_delta())
-            .filter_map(|((start, end), id_delta)| {
-                let start = start.get();
-                let end = end.get();
-                if (start, end) == (0xFFFF, 0xFFFF) {
-                    return None;
-                }
-                Some((start, end, id_delta.get()))
-            })
-            .flat_map(|(start, end, id_delta)| {
-                (start..=end).map(move |cp| (cp, (cp as i32 + id_delta as i32).try_into().unwrap()))
-            })
-            .collect();
-        assert_eq!(
-            vec![
-                (0x002C, 1),
-                (0x002E, 0),
-                (0x0030, 2),
-                (0x031, 3),
-                (0x032, 4)
-            ],
-            cp_and_gid,
-            "start {:?}\nend {:?}id_delta {:?}",
-            cmap4.start_code(),
-            cmap4.end_code(),
-            cmap4.id_delta()
-        );
+            // Hopefully we find the codepoints in the .glyphs file, with glyph ids based on order in that file
+            let cp_and_gid: Vec<(u16, u16)> = cmap4
+                .start_code()
+                .iter()
+                .zip(cmap4.end_code())
+                .zip(cmap4.id_delta())
+                .filter_map(|((start, end), id_delta)| {
+                    let start = start.get();
+                    let end = end.get();
+                    if (start, end) == (0xFFFF, 0xFFFF) {
+                        return None;
+                    }
+                    Some((start, end, id_delta.get()))
+                })
+                .flat_map(|(start, end, id_delta)| {
+                    (start..=end)
+                        .map(move |cp| (cp, (cp as i32 + id_delta as i32).try_into().unwrap()))
+                })
+                .collect();
+            assert_eq!(
+                vec![
+                    (0x002C, 1),
+                    (0x002E, 0),
+                    (0x0030, 2),
+                    (0x031, 3),
+                    (0x032, 4)
+                ],
+                cp_and_gid,
+                "start {:?}\nend {:?}id_delta {:?}",
+                cmap4.start_code(),
+                cmap4.end_code(),
+                cmap4.id_delta()
+            );
+        }
     }
 
     #[test]
