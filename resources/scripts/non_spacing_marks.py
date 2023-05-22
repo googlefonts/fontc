@@ -14,7 +14,6 @@ from absl import app
 import glyphsLib
 from glyphsLib.glyphdata import GlyphData
 from importlib import resources
-from pathlib import Path
 import sys
 
 
@@ -28,13 +27,6 @@ def glyph_data():
 
 
 def main(_):
-    glyphs_lib = Path("../glyphsLib")
-    if not glyphs_lib.is_dir():
-        sys.exit(f"Missing {glyphs_lib}")
-    glyphdata_file = glyphs_lib / "Lib/glyphsLib/data/GlyphData.xml"
-    if not glyphdata_file.is_file():
-        sys.exit(f"Missing {glyphdata_file}")
-
     non_spacing_marks_by_unicode = set()
     non_spacing_marks_by_name = set()
     for name, attrib in glyph_data().names.items():
