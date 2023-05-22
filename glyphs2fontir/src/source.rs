@@ -17,6 +17,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 
+use crate::glyphdata::is_nonspacing_mark;
 use crate::toir::{to_ir_contours_and_components, to_ir_features, FontInfo};
 
 pub struct GlyphsIrSource {
@@ -386,6 +387,9 @@ impl Work<Context, WorkError> for GlyphIrWork {
             });
         }
 
+        // https://github.com/googlefonts/fontmake-rs/issues/285 glyphs non-spacing marks are 0-width
+        let zero_width = is_nonspacing_mark(&ir_glyph.codepoints, ir_glyph.name.as_str());
+
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<String, HashSet<NormalizedCoord>> = HashMap::new();
         for instance in glyph.layers.iter() {
@@ -409,7 +413,11 @@ impl Work<Context, WorkError> for GlyphIrWork {
             let (contours, components) =
                 to_ir_contours_and_components(self.glyph_name.clone(), &instance.shapes)?;
             let glyph_instance = GlyphInstance {
-                width: instance.width.into_inner(),
+                width: if !zero_width {
+                    instance.width.into_inner()
+                } else {
+                    0.0
+                },
                 height: None,
                 contours,
                 components,
