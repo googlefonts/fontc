@@ -269,6 +269,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
                 .unwrap_or("<nameless family>")
         );
         let axes = font_info.axes.clone();
+        let axis_map = axes.iter().map(|a| (&a.name, a)).collect();
         let named_instances = font
             .instances
             .iter()
@@ -278,7 +279,11 @@ impl Work<Context, WorkError> for StaticMetadataWork {
                 }
                 Some(NamedInstance {
                     name: inst.name.clone(),
-                    location: font_info.locations.get(&inst.axes_values).cloned().unwrap(),
+                    location: font_info
+                        .locations
+                        .get(&inst.axes_values)
+                        .map(|nc| nc.to_user(&axis_map))
+                        .unwrap(),
                 })
             })
             .collect();
@@ -306,10 +311,6 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         if let Some(vendor_id) = font.names.get("vendorID") {
             static_metadata.vendor_id = Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
-        // for instance in font.instances.iter() {
-        //     eprintln!("{instance:?}");
-        // }
-        // todo!();
         context.set_init_static_metadata(static_metadata);
         Ok(())
     }

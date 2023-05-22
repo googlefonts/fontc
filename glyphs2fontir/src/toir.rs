@@ -7,7 +7,7 @@ use fontir::{
     error::{Error, WorkError},
     ir::{self, GlyphPathBuilder},
 };
-use glyphs_reader::{Component, FeatureSnippet, Font, FontMaster, NodeType, Path, Shape};
+use glyphs_reader::{Component, FeatureSnippet, Font, NodeType, Path, Shape};
 use kurbo::BezPath;
 use log::trace;
 use ordered_float::OrderedFloat;

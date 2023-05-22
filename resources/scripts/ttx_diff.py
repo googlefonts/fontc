@@ -146,7 +146,10 @@ def name_id_to_name(ttx, xpath, attr):
     for el in ttx.xpath(xpath):
         if attr not in el.attrib:
             continue
-        print(f"{el.attrib[attr]} => {id_to_name[el.attrib[attr]]}")
+        # names <= 255 have specific assigned slots, names > 255 not
+        name_id = int(el.attrib[attr])
+        if name_id <= 255:
+            continue
         el.attrib[attr] = id_to_name[el.attrib[attr]]
 
 
@@ -217,13 +220,13 @@ def main(argv):
         for tag in sorted(t1 & t2):
             t1s = etree.tostring(t1e[tag])
             t2s = etree.tostring(t2e[tag])
+            p1 = build_dir / f"fontc.{tag}.ttx"
+            p1.write_bytes(t1s)
+            p2 = build_dir / f"fontmake.{tag}.ttx"
+            p2.write_bytes(t2s)
             if t1s == t2s:
                 print(f"  Identical '{tag}'")
             else:
-                p1 = build_dir / f"fontc.{tag}.ttx"
-                p1.write_bytes(t1s)
-                p2 = build_dir / f"fontmake.{tag}.ttx"
-                p2.write_bytes(t2s)
                 print(f"  DIFF '{tag}', {p1} {p2}")
 
 

@@ -457,7 +457,7 @@ impl Axis {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct NamedInstance {
     pub name: String,
-    pub location: NormalizedLocation,
+    pub location: UserLocation,
 }
 
 /// Features (Adobe fea).

@@ -786,7 +786,6 @@ impl RawFont {
         }
         for instance in self.instances.iter_mut() {
             instance.axes_values = v2_to_v3_axis_values(axes, &mut instance.other_stuff)?;
-            eprintln!("{} at {:?}", instance.name, instance.axes_values);
         }
 
         if custom_params_mut(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
@@ -1723,6 +1722,11 @@ mod tests {
         assert_load_v2_matches_load_v3("WghtVar_Avar.glyphs");
     }
 
+    #[test]
+    fn read_wght_var_instances_2_and_3() {
+        assert_load_v2_matches_load_v3("WghtVar_Instances.glyphs");
+    }
+
     fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {
         let glyph = font.glyphs.get(glyph_name).unwrap();
         assert_eq!(1, glyph.layers.len());
@@ -2035,5 +2039,27 @@ mod tests {
     #[test]
     fn favor_regular_as_origin_glyphs3() {
         assert_wghtvar_avar_master_and_axes(&glyphs3_dir().join("WghtVar_Avar.glyphs"));
+    }
+
+    #[test]
+    fn have_all_the_best_instances() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_Instances.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                ("Regular", vec![("Weight", 400.0)]),
+                ("Bold", vec![("Weight", 700.0)])
+            ],
+            font.instances
+                .iter()
+                .map(|inst| (
+                    inst.name.as_str(),
+                    font.axes
+                        .iter()
+                        .zip(&inst.axes_values)
+                        .map(|(a, v)| (a.name.as_str(), v.0 as f32))
+                        .collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>()
+        );
     }
 }

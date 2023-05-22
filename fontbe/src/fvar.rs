@@ -63,11 +63,9 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
                     .variable_axes
                     .iter()
                     .map(|axis| {
-                        eprintln!("{} lookup in {:?}", axis.name, ni.location);
                         let loc = ni
                             .location
                             .get(&axis.name)
-                            .map(|nc| nc.to_user(&axis.converter))
                             .unwrap_or(axis.default)
                             .into_inner();
                         Fixed::from_f64(loc.into_inner() as f64)
