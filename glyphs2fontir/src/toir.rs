@@ -116,7 +116,7 @@ pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features
     Ok(ir::Features::Memory(fea_snippets.join("\n\n")))
 }
 
-fn design_location(axes: &[ir::Axis], axes_values: &Vec<OrderedFloat<f64>>) -> DesignLocation {
+fn design_location(axes: &[ir::Axis], axes_values: &[OrderedFloat<f64>]) -> DesignLocation {
     axes.iter()
         .zip(axes_values.iter())
         .map(|(axis, pos)| (axis.name.clone(), DesignCoord::new(pos.into_inner() as f32)))
