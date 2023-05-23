@@ -11,7 +11,7 @@ use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
     ir::{
         Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, NameKey,
-        StaticMetadata,
+        NamedInstance, StaticMetadata,
     },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
@@ -53,6 +53,7 @@ impl From<CoordConverter> for CoordConverterSerdeRepr {
 pub struct StaticMetadataSerdeRepr {
     pub units_per_em: u16,
     pub axes: Vec<Axis>,
+    pub named_instances: Vec<NamedInstance>,
     pub glyph_locations: Vec<NormalizedLocation>,
     pub names: HashMap<NameKey, String>,
     pub glyph_order: Vec<String>,
@@ -64,6 +65,7 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
             from.units_per_em,
             from.names,
             from.axes,
+            from.named_instances,
             from.glyph_order.into_iter().map(|s| s.into()).collect(),
             from.glyph_locations.into_iter().collect(),
         )
@@ -77,6 +79,7 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
         StaticMetadataSerdeRepr {
             units_per_em: from.units_per_em,
             axes: from.axes,
+            named_instances: from.named_instances,
             glyph_locations,
             names: from.names,
             glyph_order: from

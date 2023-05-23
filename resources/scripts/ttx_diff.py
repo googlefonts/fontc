@@ -41,8 +41,8 @@ flags.DEFINE_enum(
 flags.DEFINE_enum(
     "rebuild",
     "both",
-    ["both", "fontc", "fontmake"],
-    "Which compilers to rebuild with if the output appears to already exist",
+    ["both", "fontc", "fontmake", "none"],
+    "Which compilers to rebuild with if the output appears to already exist. None is handy when playing with ttx_diff.py itself.",
 )
 
 
@@ -138,6 +138,28 @@ def copy(old, new):
     return new
 
 
+def name_id_to_name(ttx, xpath, attr):
+    id_to_name = {
+        el.attrib["nameID"]: el.text.strip()
+        for el in ttx.xpath("//name/namerecord[@platformID='3' and @platEncID='1' and @langID='0x409']")
+    }
+    for el in ttx.xpath(xpath):
+        if attr not in el.attrib:
+            continue
+        # names <= 255 have specific assigned slots, names > 255 not
+        name_id = int(el.attrib[attr])
+        if name_id <= 255:
+            continue
+        el.attrib[attr] = id_to_name[el.attrib[attr]]
+
+
+def reduce_diff_noise(fontc, fontmake):
+    for ttx in (fontc, fontmake):
+        # different name ids with the same value is fine
+        name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
+    
+
+
 def main(argv):
     if len(argv) != 2:
         sys.exit("Only one argument, a source file, is expected")
@@ -179,6 +201,8 @@ def main(argv):
         fontc = etree.parse(fontc_ttx)
         fontmake = etree.parse(fontmake_ttx)
 
+        reduce_diff_noise(fontc, fontmake)
+
         print("COMPARISON")
         t1 = {e.tag for e in fontc.getroot()}
         t2 = {e.tag for e in fontmake.getroot()}
@@ -196,13 +220,13 @@ def main(argv):
         for tag in sorted(t1 & t2):
             t1s = etree.tostring(t1e[tag])
             t2s = etree.tostring(t2e[tag])
+            p1 = build_dir / f"fontc.{tag}.ttx"
+            p1.write_bytes(t1s)
+            p2 = build_dir / f"fontmake.{tag}.ttx"
+            p2.write_bytes(t2s)
             if t1s == t2s:
                 print(f"  Identical '{tag}'")
             else:
-                p1 = build_dir / f"fontc.{tag}.ttx"
-                p1.write_bytes(t1s)
-                p2 = build_dir / f"fontmake.{tag}.ttx"
-                p2.write_bytes(t2s)
                 print(f"  DIFF '{tag}', {p1} {p2}")
 
 

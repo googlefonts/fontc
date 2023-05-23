@@ -7,7 +7,7 @@ use fontir::{
     error::{Error, WorkError},
     ir::{self, GlyphPathBuilder},
 };
-use glyphs_reader::{Component, FeatureSnippet, Font, FontMaster, NodeType, Path, Shape};
+use glyphs_reader::{Component, FeatureSnippet, Font, NodeType, Path, Shape};
 use kurbo::BezPath;
 use log::trace;
 use ordered_float::OrderedFloat;
@@ -116,9 +116,9 @@ pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features
     Ok(ir::Features::Memory(fea_snippets.join("\n\n")))
 }
 
-fn design_location(axes: &[ir::Axis], master: &FontMaster) -> DesignLocation {
+fn design_location(axes: &[ir::Axis], axes_values: &[OrderedFloat<f64>]) -> DesignLocation {
     axes.iter()
-        .zip(master.axes_values.iter())
+        .zip(axes_values.iter())
         .map(|(axis, pos)| (axis.name.clone(), DesignCoord::new(pos.into_inner() as f32)))
         .collect()
 }
@@ -224,8 +224,8 @@ pub struct FontInfo {
     pub font: Font,
     /// Index by master id
     pub master_indices: HashMap<String, usize>,
-    /// Location by master id
-    pub master_locations: HashMap<String, NormalizedLocation>,
+    /// Axes values => location for every instance and master
+    pub locations: HashMap<Vec<OrderedFloat<f64>>, NormalizedLocation>,
     pub axes: Vec<ir::Axis>,
     /// Index by tag
     pub axis_indices: HashMap<Tag, usize>,
@@ -250,21 +250,27 @@ impl TryFrom<Font> for FontInfo {
             .collect();
 
         let axes_by_name = axes.iter().map(|a| (&a.name, a)).collect();
-        let master_locations: HashMap<_, _> = font
+        let locations: HashMap<_, _> = font
             .masters
             .iter()
             .map(|m| {
                 (
-                    m.id.clone(),
-                    design_location(&axes, m).to_normalized(&axes_by_name),
+                    m.axes_values.clone(),
+                    design_location(&axes, &m.axes_values).to_normalized(&axes_by_name),
                 )
             })
+            .chain(font.instances.iter().map(|i| {
+                (
+                    i.axes_values.clone(),
+                    design_location(&axes, &i.axes_values).to_normalized(&axes_by_name),
+                )
+            }))
             .collect();
 
         Ok(FontInfo {
             font,
             master_indices,
-            master_locations,
+            locations,
             axes,
             axis_indices,
         })

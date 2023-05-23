@@ -762,6 +762,7 @@ mod tests {
     use log::info;
     use pretty_assertions::assert_eq;
 
+    use read_fonts::{tables::name::Name, types::NameId};
     use skrifa::{
         charmap::Charmap,
         instance::Size,
@@ -1626,5 +1627,61 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(vec![Path::new("font.ttf")], outputs);
+    }
+
+    fn resolve_name(name: &Name, id: NameId) -> Option<String> {
+        name.name_record().iter().find_map(|nr| {
+            (nr.name_id() == id).then(|| {
+                nr.string(name.string_data())
+                    .unwrap()
+                    .chars()
+                    .collect::<String>()
+            })
+        })
+    }
+
+    #[test]
+    fn compile_named_instances() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(
+            build_dir,
+            "glyphs3/WghtVar_Instances.glyphs",
+        ));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+
+        let name = font.name().unwrap();
+        let fvar = font.fvar().unwrap();
+        let axis_names: Vec<_> = fvar
+            .axes()
+            .unwrap()
+            .iter()
+            .map(|axis| resolve_name(&name, axis.axis_name_id()).unwrap())
+            .collect();
+        let instances = fvar.instances().unwrap();
+
+        assert_eq!(
+            vec![
+                ("Regular".to_string(), vec![("Weight", 400.0)]),
+                ("Bold".to_string(), vec![("Weight", 700.0)])
+            ],
+            instances
+                .iter()
+                .map(|i| i.unwrap())
+                .map(|inst| (
+                    resolve_name(&name, inst.subfamily_name_id)
+                        .unwrap_or_else(|| format!("{:?}", inst.subfamily_name_id)),
+                    inst.coordinates
+                        .iter()
+                        .enumerate()
+                        .map(|(i, coord)| { (axis_names[i].as_str(), coord.get().to_f64() as f32) })
+                        .collect(),
+                ))
+                .collect::<Vec<_>>()
+        );
     }
 }
