@@ -269,6 +269,11 @@ pub struct FontMaster {
     pub id: String,
     pub axes_values: Vec<OrderedFloat<f64>>,
     metric_values: BTreeMap<String, RawMetricValue>,
+    pub typo_ascender: Option<i64>,
+    pub typo_descender: Option<i64>,
+    pub typo_line_gap: Option<i64>,
+    pub win_ascent: Option<i64>,
+    pub win_descent: Option<i64>,
 }
 
 impl FontMaster {
@@ -298,6 +303,13 @@ impl FontMaster {
 #[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
 struct RawFontMaster {
     pub id: String,
+
+    pub typo_ascender: Option<i64>,
+    pub typo_descender: Option<OrderedFloat<f64>>,
+    pub typo_line_gap: Option<OrderedFloat<f64>>,
+    pub win_ascender: Option<OrderedFloat<f64>>,
+    pub win_descender: Option<OrderedFloat<f64>>,
+
     #[fromplist(default)]
     pub axes_values: Vec<OrderedFloat<f64>>,
     #[fromplist(default)]
@@ -668,6 +680,16 @@ fn custom_param<'a>(
         }
     }
     None
+}
+
+fn custom_param_int(other_stuff: &BTreeMap<String, Plist>, key: &str) -> Option<i64> {
+    let Some((_, Plist::Dictionary(dict))) = custom_param(other_stuff, key) else {
+        return None;
+    };
+    let Some(Plist::Integer(value)) = dict.get("value") else {
+        return None;
+    };
+    Some(*value)
 }
 
 fn v2_to_v3_name(properties: &mut Vec<RawName>, v2_prop: &Option<String>, v3_name: &str) {
@@ -1521,6 +1543,11 @@ impl TryFrom<RawFont> for Font {
                     })
                     .filter(|(_, metric)| !metric.is_empty())
                     .collect(),
+                typo_ascender: custom_param_int(&m.other_stuff, "typoAscender"),
+                typo_descender: custom_param_int(&m.other_stuff, "typoDescender"),
+                typo_line_gap: custom_param_int(&m.other_stuff, "typoLineGap"),
+                win_ascent: custom_param_int(&m.other_stuff, "winAscent"),
+                win_descent: custom_param_int(&m.other_stuff, "winDescent"),
             })
             .collect();
 
@@ -1725,6 +1752,11 @@ mod tests {
     #[test]
     fn read_wght_var_instances_2_and_3() {
         assert_load_v2_matches_load_v3("WghtVar_Instances.glyphs");
+    }
+
+    #[test]
+    fn read_wght_var_os2_2_and_3() {
+        assert_load_v2_matches_load_v3("WghtVar_OS2.glyphs");
     }
 
     fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {
@@ -2061,5 +2093,12 @@ mod tests {
                 ))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn read_typo_whatsits() {
+        let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
+        assert_eq!(Some(1193), font.default_master().typo_ascender);
+        assert_eq!(Some(-289), font.default_master().typo_descender);
     }
 }

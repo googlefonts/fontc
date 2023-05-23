@@ -621,14 +621,25 @@ impl Work<Context, WorkError> for GlobalMetricsWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Global metrics for {:#?}", self.designspace_file);
         let static_metadata = context.get_init_static_metadata();
-        let mut metrics = GlobalMetrics::new(
-            static_metadata.default_location().clone(),
-            static_metadata.units_per_em,
-        );
 
         let designspace_dir = self.designspace_file.parent().unwrap();
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
         let master_locations = master_locations(&static_metadata.axes, &self.designspace.sources);
+        let Some((_, default_master)) = default_master(&self.designspace) else {
+            return Err(WorkError::NoDefaultMaster(self.designspace_file.clone()));
+        };
+
+        let mut metrics = GlobalMetrics::new(
+            static_metadata.default_location().clone(),
+            static_metadata.units_per_em,
+            font_infos
+                .get(&default_master.filename)
+                .ok_or_else(|| {
+                    WorkError::FileExpected(designspace_dir.join(&default_master.filename))
+                })?
+                .x_height
+                .map(|v| v as f32),
+        );
         for source in self.designspace.sources.iter() {
             let pos = master_locations.get(&source.name).unwrap();
 

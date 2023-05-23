@@ -1,6 +1,7 @@
 use std::{fmt::Display, io};
 
 use fea_rs::compile::error::{BinaryCompilationError, CompilerError};
+use font_types::Tag;
 use fontdrasil::types::GlyphName;
 use fontir::variations::DeltaError;
 use read_fonts::ReadError;
@@ -49,6 +50,8 @@ pub enum Error {
     ReadFontsReadError(#[from] ReadError),
     #[error("IUP error for {0}: {1:?}")]
     IupError(GlyphName, IupError),
+    #[error("Unable to interpret bytes as {0}")]
+    InvalidTableBytes(Tag),
 }
 
 #[derive(Debug)]

@@ -337,6 +337,7 @@ impl Work<Context, WorkError> for GlobalMetricWork {
         let mut metrics = GlobalMetrics::new(
             static_metadata.default_location().clone(),
             static_metadata.units_per_em,
+            font.default_master().x_height().map(|v| v.0 as f32),
         );
 
         for master in font.masters.iter() {
@@ -345,6 +346,31 @@ impl Work<Context, WorkError> for GlobalMetricWork {
             metrics.set_if_some(GlobalMetric::Descender, pos.clone(), master.descender());
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), master.cap_height());
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), master.x_height());
+            metrics.set_if_some(
+                GlobalMetric::Os2TypoAscender,
+                pos.clone(),
+                master.typo_ascender.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::Os2TypoDescender,
+                pos.clone(),
+                master.typo_descender.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::Os2TypoLineGap,
+                pos.clone(),
+                master.typo_line_gap.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::Os2WinAscent,
+                pos.clone(),
+                master.win_ascent.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::Os2WinDescent,
+                pos.clone(),
+                master.win_descent.map(|v| v as f64),
+            );
         }
 
         context.set_global_metrics(metrics);
@@ -981,6 +1007,20 @@ mod tests {
                 descender: (-42.0).into(),
                 cap_height: 702.0.into(),
                 x_height: 501.0.into(),
+                y_subscript_x_size: 650.0.into(),
+                y_subscript_y_size: 600.0.into(),
+                y_subscript_y_offset: 75.0.into(),
+                y_superscript_x_size: 650.0.into(),
+                y_superscript_y_size: 600.0.into(),
+                y_superscript_y_offset: 350.0.into(),
+                y_strikeout_position: 300.6.into(),
+                y_strikeout_size: 50.0.into(),
+                os2_typo_ascender: 1000.0.into(),
+                os2_typo_descender: (-200.0).into(),
+                os2_typo_line_gap: 200.0.into(),
+                os2_win_ascent: 800.0.into(),
+                os2_win_descent: (-200.0).into(),
+                ..Default::default()
             },
             default_metrics
         );
