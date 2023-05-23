@@ -564,6 +564,8 @@ fn add_os2_be_job(
         let mut dependencies = HashSet::new();
         dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
         dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
+        dependencies.insert(BeWorkIdentifier::Hhea.into());
+        dependencies.insert(BeWorkIdentifier::Hmtx.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Os2.into();
         workload.insert(
