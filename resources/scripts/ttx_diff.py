@@ -48,8 +48,8 @@ flags.DEFINE_enum(
 
 def run(cmd: MutableSequence, working_dir: Path, log_file: str, **kwargs):
     cmd_string = " ".join(cmd)
+    print(f"  (cd {working_dir} && {cmd_string} > {log_file} 2>&1)")
     log_file = working_dir / log_file
-    print(f"  {cmd_string} > {log_file} 2>&1")
     with open(log_file, "w") as log_file:
         subprocess.run(
             cmd,
@@ -112,6 +112,8 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         "fontmake",
         "-o",
         "variable",
+        "--output-dir",
+        str(source.name),
         # TODO we shouldn't need these flags
         "--no-production-names",
         "--keep-direction",
@@ -129,7 +131,7 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         cmd,
         build_dir,
         "fontmake",
-        lambda: tuple((build_dir / "variable_ttf").rglob("*.ttf")),
+        lambda: tuple((build_dir / source.name).rglob("*.ttf")),
     )
 
 
@@ -141,7 +143,9 @@ def copy(old, new):
 def name_id_to_name(ttx, xpath, attr):
     id_to_name = {
         el.attrib["nameID"]: el.text.strip()
-        for el in ttx.xpath("//name/namerecord[@platformID='3' and @platEncID='1' and @langID='0x409']")
+        for el in ttx.xpath(
+            "//name/namerecord[@platformID='3' and @platEncID='1' and @langID='0x409']"
+        )
     }
     for el in ttx.xpath(xpath):
         if attr not in el.attrib:
@@ -157,7 +161,6 @@ def reduce_diff_noise(fontc, fontmake):
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
         name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
-    
 
 
 def main(argv):
