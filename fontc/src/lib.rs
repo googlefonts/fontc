@@ -1642,14 +1642,10 @@ mod tests {
         })
     }
 
-    #[test]
-    fn compile_named_instances() {
+    fn assert_named_instances(source: &str, expected: Vec<(String, Vec<(&str, f32)>)>) {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        compile(Args::for_test(
-            build_dir,
-            "glyphs3/WghtVar_Instances.glyphs",
-        ));
+        compile(Args::for_test(build_dir, source));
 
         let font_file = build_dir.join("font.ttf");
         assert!(font_file.exists());
@@ -1667,10 +1663,7 @@ mod tests {
         let instances = fvar.instances().unwrap();
 
         assert_eq!(
-            vec![
-                ("Regular".to_string(), vec![("Weight", 400.0)]),
-                ("Bold".to_string(), vec![("Weight", 700.0)])
-            ],
+            expected,
             instances
                 .iter()
                 .map(|i| i.unwrap())
@@ -1684,6 +1677,28 @@ mod tests {
                         .collect(),
                 ))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn compile_named_instances_from_glyphs() {
+        assert_named_instances(
+            "glyphs3/WghtVar_Instances.glyphs",
+            vec![
+                ("Regular".to_string(), vec![("Weight", 400.0)]),
+                ("Bold".to_string(), vec![("Weight", 700.0)]),
+            ],
+        );
+    }
+
+    #[test]
+    fn compile_named_instances_from_designspace() {
+        assert_named_instances(
+            "wght_var.designspace",
+            vec![
+                ("Regular".to_string(), vec![("Weight", 400.0)]),
+                ("Bold".to_string(), vec![("Weight", 700.0)]),
+            ],
         );
     }
 }
