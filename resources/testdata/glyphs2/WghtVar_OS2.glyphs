@@ -1,0 +1,228 @@
+{
+.appVersion = "3151";
+DisplayStrings = (
+"-",
+"!"
+);
+copyright = "Copy!";
+customParameters = (
+{
+name = localizedFamilyName;
+value = "Spanish;SpanishWghtVar";
+},
+{
+name = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+name = description;
+value = "The greatest weight var";
+},
+{
+name = versionString;
+value = "New Value";
+},
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WghtVar;
+fontMaster = (
+{
+alignmentZones = (
+"{737, 16}",
+"{0, -16}",
+"{-42, -16}"
+);
+ascender = 737;
+capHeight = 702;
+customParameters = (
+{
+name = typoAscender;
+value = 1193;
+},
+{
+name = typoDescender;
+value = -289;
+},
+{
+name = typoLineGap;
+value = 42;
+},
+{
+name = winAscent;
+value = 1325;
+},
+{
+name = winDescent;
+value = 377;
+}
+);
+descender = -42;
+id = m01;
+weightValue = 400;
+xHeight = 501;
+},
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2022-12-01 04:58:12 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 0020;
+},
+{
+glyphname = exclam;
+lastChange = "2022-12-01 05:10:49 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"354 183 LINE",
+"414 585 LINE",
+"178 585 LINE",
+"238 182 LINE"
+);
+},
+{
+closed = 1;
+nodes = (
+"354 0 LINE",
+"354 107 LINE",
+"238 107 LINE",
+"238 0 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+paths = (
+{
+closed = 1;
+nodes = (
+"364 176 LINE",
+"434 605 LINE",
+"159 605 LINE",
+"228 174 LINE"
+);
+},
+{
+closed = 1;
+nodes = (
+"364 -20 LINE",
+"364 94 LINE",
+"228 94 LINE",
+"228 -20 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0021;
+},
+{
+glyphname = hyphen;
+lastChange = "2022-12-01 04:57:39 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"131 250 LINE",
+"470 250 LINE",
+"470 330 LINE",
+"131 330 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+paths = (
+{
+closed = 1;
+nodes = (
+"92 224 LINE",
+"508 224 LINE",
+"508 356 LINE",
+"92 356 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 002D;
+},
+{
+glyphname = "manual-component";
+lastChange = "2022-12-01 04:57:39 +0000";
+layers = (
+{
+components = (
+{
+name = hyphen;
+transform = "{1, 0, 0, 1, 0, 100}";
+},
+{
+name = hyphen;
+}
+);
+layerId = m01;
+width = 600;
+},
+{
+components = (
+{
+name = hyphen;
+transform = "{1.15, 0, 0, 1.25, 10, 100}";
+},
+{
+name = hyphen;
+}
+);
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 003D;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}

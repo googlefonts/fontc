@@ -65,6 +65,25 @@ fn build_os2(x_avg_char_width: i16, vendor_id: Tag, metrics: &GlobalMetricsInsta
         s_cap_height: Some(metrics.cap_height.ot_round()),
         sx_height: Some(metrics.x_height.ot_round()),
 
+        y_subscript_x_size: metrics.y_subscript_x_size.ot_round(),
+        y_subscript_y_size: metrics.y_subscript_y_size.ot_round(),
+        y_subscript_x_offset: metrics.y_subscript_x_offset.ot_round(),
+        y_subscript_y_offset: metrics.y_subscript_y_offset.ot_round(),
+
+        y_superscript_x_size: metrics.y_superscript_x_size.ot_round(),
+        y_superscript_y_size: metrics.y_superscript_y_size.ot_round(),
+        y_superscript_x_offset: metrics.y_superscript_x_offset.ot_round(),
+        y_superscript_y_offset: metrics.y_superscript_y_offset.ot_round(),
+
+        y_strikeout_size: metrics.y_strikeout_size.ot_round(),
+        y_strikeout_position: metrics.y_strikeout_position.ot_round(),
+
+        s_typo_ascender: metrics.os2_typo_ascender.ot_round(),
+        s_typo_descender: metrics.os2_typo_descender.ot_round(),
+        s_typo_line_gap: metrics.os2_typo_line_gap.ot_round(),
+        us_win_ascent: metrics.os2_win_ascent.ot_round(),
+        us_win_descent: metrics.os2_win_descent.ot_round(),
+
         // Avoid "field must be present for version 2"
         ul_code_page_range_1: Some(0),
         ul_code_page_range_2: Some(0),
@@ -80,6 +99,7 @@ impl Work<Context, Error> for Os2Work {
     /// Generate [OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_final_static_metadata();
+
         let metrics = context
             .ir
             .get_global_metrics()
@@ -107,7 +127,7 @@ mod tests {
     #[test]
     fn build_basic_os2() {
         let default_location = NormalizedLocation::new();
-        let mut global_metrics = GlobalMetrics::new(default_location.clone(), 1000);
+        let mut global_metrics = GlobalMetrics::new(default_location.clone(), 1000, None);
 
         global_metrics.set(GlobalMetric::CapHeight, default_location.clone(), 37.5);
         global_metrics.set(GlobalMetric::XHeight, default_location.clone(), 112.2);

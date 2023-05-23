@@ -155,23 +155,103 @@ pub struct GlobalMetrics(
 pub enum GlobalMetric {
     Ascender,
     Descender,
+    Os2TypoAscender,
+    Os2TypoDescender,
+    Os2TypoLineGap,
+    Os2WinAscent,
+    Os2WinDescent,
     CapHeight,
     XHeight,
+    ItalicAngle,
+    YSubscriptXSize,
+    YSubscriptYSize,
+    YSubscriptXOffset,
+    YSubscriptYOffset,
+    YSuperscriptXSize,
+    YSuperscriptYSize,
+    YSuperscriptXOffset,
+    YSuperscriptYOffset,
+    YStrikeoutSize,
+    YStrikeoutPosition,
+}
+
+/// Adjust Y offset based on italic angle, to get X offset.
+///
+///  <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L571-L573>
+fn adjust_offset(offset: f32, angle: f32) -> f32 {
+    if angle.abs() >= f32::EPSILON {
+        offset * (-angle).to_radians().tan()
+    } else {
+        0.0
+    }
 }
 
 impl GlobalMetrics {
     /// Creates a new [GlobalMetrics] with default values at the default location.
-    pub fn new(default_location: NormalizedLocation, units_per_em: u16) -> GlobalMetrics {
+    pub fn new(
+        default_location: NormalizedLocation,
+        units_per_em: u16,
+        x_height: Option<f32>,
+    ) -> GlobalMetrics {
         let mut metrics = GlobalMetrics(HashMap::new());
         let mut set = |metric, value| metrics.set(metric, default_location.clone(), value);
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
-        set(GlobalMetric::Ascender, 0.8 * units_per_em as f32);
-        set(GlobalMetric::Descender, -0.2 * units_per_em as f32);
+        let ascender = 0.8 * units_per_em as f32;
+        let descender = -0.2 * units_per_em as f32;
+        set(GlobalMetric::Ascender, ascender);
+        set(GlobalMetric::Descender, descender);
+
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L229-L238
+        let typo_line_gap = units_per_em as f32 * 1.2 + descender - ascender;
+        let typo_line_gap = if typo_line_gap > 0.0 {
+            typo_line_gap
+        } else {
+            0.0
+        };
+        set(GlobalMetric::Os2TypoLineGap, typo_line_gap);
+
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L215-L226
+        set(GlobalMetric::Os2TypoAscender, ascender + typo_line_gap);
+        set(GlobalMetric::Os2TypoDescender, descender);
+
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L241-L254
+        set(GlobalMetric::Os2WinAscent, ascender);
+        set(GlobalMetric::Os2WinDescent, descender);
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
         set(GlobalMetric::CapHeight, 0.7 * units_per_em as f32);
-        set(GlobalMetric::XHeight, 0.5 * units_per_em as f32);
+        let x_height = x_height.unwrap_or(0.5 * units_per_em as f32);
+        set(GlobalMetric::XHeight, x_height);
+
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L360
+        let italic_angle = 0.0;
+        set(GlobalMetric::ItalicAngle, italic_angle);
+
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L575-L616
+        let y_subscript_x_size = units_per_em as f32 * 0.65;
+        let y_subscript_y_size = units_per_em as f32 * 0.60;
+        let y_subscript_y_offset = units_per_em as f32 * 0.075;
+        let y_superscript_y_offset = units_per_em as f32 * 0.35;
+        set(GlobalMetric::YSubscriptXSize, y_subscript_x_size);
+        set(GlobalMetric::YSubscriptYSize, y_subscript_y_size);
+        set(
+            GlobalMetric::YSubscriptXOffset,
+            adjust_offset(-y_subscript_y_offset, italic_angle),
+        );
+        set(GlobalMetric::YSubscriptYOffset, y_subscript_y_offset);
+
+        set(GlobalMetric::YSuperscriptXSize, y_subscript_x_size);
+        set(GlobalMetric::YSuperscriptYSize, y_subscript_y_size);
+        set(
+            GlobalMetric::YSuperscriptXOffset,
+            adjust_offset(y_superscript_y_offset, italic_angle),
+        );
+        set(GlobalMetric::YSuperscriptYOffset, y_superscript_y_offset);
+
+        // // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L313-L316
+        set(GlobalMetric::YStrikeoutSize, 0.05 * units_per_em as f32);
+        set(GlobalMetric::YStrikeoutPosition, x_height * 0.6);
 
         metrics
     }
@@ -222,6 +302,22 @@ impl GlobalMetrics {
             descender: self.get(GlobalMetric::Descender, pos),
             cap_height: self.get(GlobalMetric::CapHeight, pos),
             x_height: self.get(GlobalMetric::XHeight, pos),
+            italic_angle: self.get(GlobalMetric::ItalicAngle, pos),
+            y_subscript_x_size: self.get(GlobalMetric::YSubscriptXSize, pos),
+            y_subscript_y_size: self.get(GlobalMetric::YSubscriptYSize, pos),
+            y_subscript_x_offset: self.get(GlobalMetric::YSubscriptXOffset, pos),
+            y_subscript_y_offset: self.get(GlobalMetric::YSubscriptYOffset, pos),
+            y_superscript_x_size: self.get(GlobalMetric::YSuperscriptXSize, pos),
+            y_superscript_y_size: self.get(GlobalMetric::YSuperscriptYSize, pos),
+            y_superscript_x_offset: self.get(GlobalMetric::YSuperscriptXOffset, pos),
+            y_superscript_y_offset: self.get(GlobalMetric::YSuperscriptYOffset, pos),
+            y_strikeout_size: self.get(GlobalMetric::YStrikeoutSize, pos),
+            y_strikeout_position: self.get(GlobalMetric::YStrikeoutPosition, pos),
+            os2_typo_ascender: self.get(GlobalMetric::Os2TypoAscender, pos),
+            os2_typo_descender: self.get(GlobalMetric::Os2TypoDescender, pos),
+            os2_typo_line_gap: self.get(GlobalMetric::Os2TypoLineGap, pos),
+            os2_win_ascent: self.get(GlobalMetric::Os2WinAscent, pos),
+            os2_win_descent: self.get(GlobalMetric::Os2WinDescent, pos),
         }
     }
 
@@ -233,13 +329,29 @@ impl GlobalMetrics {
 }
 
 /// Metrics at a specific [NormalizedLocation]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct GlobalMetricsInstance {
     pub pos: NormalizedLocation,
     pub ascender: OrderedFloat<f32>,
     pub descender: OrderedFloat<f32>,
     pub cap_height: OrderedFloat<f32>,
     pub x_height: OrderedFloat<f32>,
+    pub italic_angle: OrderedFloat<f32>,
+    pub y_subscript_x_size: OrderedFloat<f32>,
+    pub y_subscript_y_size: OrderedFloat<f32>,
+    pub y_subscript_x_offset: OrderedFloat<f32>,
+    pub y_subscript_y_offset: OrderedFloat<f32>,
+    pub y_superscript_x_size: OrderedFloat<f32>,
+    pub y_superscript_y_size: OrderedFloat<f32>,
+    pub y_superscript_x_offset: OrderedFloat<f32>,
+    pub y_superscript_y_offset: OrderedFloat<f32>,
+    pub y_strikeout_size: OrderedFloat<f32>,
+    pub y_strikeout_position: OrderedFloat<f32>,
+    pub os2_typo_ascender: OrderedFloat<f32>,
+    pub os2_typo_descender: OrderedFloat<f32>,
+    pub os2_typo_line_gap: OrderedFloat<f32>,
+    pub os2_win_ascent: OrderedFloat<f32>,
+    pub os2_win_descent: OrderedFloat<f32>,
 }
 
 /// Helps accumulate 'name' values.
