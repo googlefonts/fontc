@@ -10,7 +10,9 @@ use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
-    ir::{Features, GlobalMetric, GlobalMetrics, NameBuilder, NameKey, StaticMetadata},
+    ir::{
+        Features, GlobalMetric, GlobalMetrics, NameBuilder, NameKey, NamedInstance, StaticMetadata,
+    },
     orchestration::{Context, IrWork},
     source::{Input, Source},
     stateset::{StateIdentifier, StateSet},
@@ -517,7 +519,14 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
 
     // Name's that get individual fields
     builder.add_if_present(NameId::COPYRIGHT_NOTICE, &font_info.copyright);
-    builder.add_if_present(NameId::FAMILY_NAME, &font_info.style_map_family_name);
+    builder.add_if_present(
+        NameId::FAMILY_NAME,
+        &font_info
+            .style_map_family_name
+            .as_ref()
+            .or(font_info.family_name.as_ref())
+            .cloned(),
+    );
     builder.add_if_present(
         NameId::SUBFAMILY_NAME,
         &font_info.style_map_style_name.as_ref().map(|s| {
@@ -594,7 +603,25 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         let units_per_em = units_per_em(font_infos.values())?;
         let names = names(font_info_at_default);
         let axes = to_ir_axes(&self.designspace.axes)?;
-        let named_instances = Vec::new(); // TODO
+
+        let axes_by_name = axes.iter().map(|a| (&a.name, a)).collect();
+        let family_prefix = names
+            .get(&NameKey::new_bmp_only(NameId::FAMILY_NAME))
+            .map(|name| name.clone() + " ")
+            .unwrap_or_default();
+        let named_instances = self
+            .designspace
+            .instances
+            .iter()
+            .map(|inst| NamedInstance {
+                name: match inst.name.strip_prefix(family_prefix.as_str()) {
+                    Some(tail) => tail.to_string(),
+                    None => inst.name.clone(),
+                },
+                location: to_design_location(&inst.location).to_user(&axes_by_name),
+            })
+            .collect();
+
         let master_locations = master_locations(&axes, &self.designspace.sources);
         let glyph_locations = master_locations.values().cloned().collect();
         let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;
@@ -660,6 +687,31 @@ impl Work<Context, WorkError> for GlobalMetricsWork {
             metrics.set_if_some(GlobalMetric::Descender, pos.clone(), font_info.descender);
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), font_info.cap_height);
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), font_info.x_height);
+            metrics.set_if_some(
+                GlobalMetric::Os2TypoAscender,
+                pos.clone(),
+                font_info.open_type_os2_typo_ascender.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::Os2TypoDescender,
+                pos.clone(),
+                font_info.open_type_os2_typo_descender.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::Os2TypoLineGap,
+                pos.clone(),
+                font_info.open_type_os2_typo_line_gap.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::Os2WinAscent,
+                pos.clone(),
+                font_info.open_type_os2_win_ascent.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::Os2WinDescent,
+                pos.clone(),
+                font_info.open_type_os2_win_descent.map(|v| v as f64),
+            );
         }
 
         trace!("{:#?}", metrics);
@@ -736,7 +788,7 @@ mod tests {
     use fontdrasil::{orchestration::Access, types::GlyphName};
     use fontir::{
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
-        ir::NameKey,
+        ir::{GlobalMetricsInstance, NameKey},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::{Input, Source},
@@ -1059,6 +1111,39 @@ mod tests {
         assert_eq!(
             Tag::new(b"RODS"),
             context.get_init_static_metadata().vendor_id
+        );
+    }
+
+    #[test]
+    fn captures_global_metrics() {
+        let (_, context) = build_global_metrics("fontinfo.designspace");
+        let static_metadata = &context.get_init_static_metadata();
+        let default_metrics = context
+            .get_global_metrics()
+            .at(static_metadata.default_location());
+        assert_eq!(
+            GlobalMetricsInstance {
+                pos: static_metadata.default_location().clone(),
+                ascender: 737.0.into(),
+                descender: (-42.0).into(),
+                cap_height: 702.0.into(),
+                x_height: 501.0.into(),
+                y_subscript_x_size: 650.0.into(),
+                y_subscript_y_size: 600.0.into(),
+                y_subscript_y_offset: 75.0.into(),
+                y_superscript_x_size: 650.0.into(),
+                y_superscript_y_size: 600.0.into(),
+                y_superscript_y_offset: 350.0.into(),
+                y_strikeout_position: 300.6.into(),
+                y_strikeout_size: 50.0.into(),
+                os2_typo_ascender: 1193.0.into(),
+                os2_typo_descender: (-289.0).into(),
+                os2_typo_line_gap: 42.0.into(),
+                os2_win_ascent: 1325.0.into(),
+                os2_win_descent: 377.0.into(),
+                ..Default::default()
+            },
+            default_metrics
         );
     }
 

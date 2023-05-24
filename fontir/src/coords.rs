@@ -291,6 +291,20 @@ impl DesignLocation {
                 .collect(),
         )
     }
+
+    pub fn to_user(&self, axes: &HashMap<&String, &Axis>) -> UserLocation {
+        Location::<UserCoord>(
+            self.0
+                .iter()
+                .map(|(name, coord)| {
+                    (
+                        name.clone(),
+                        coord.to_user(&axes.get(name).unwrap().converter),
+                    )
+                })
+                .collect(),
+        )
+    }
 }
 
 impl NormalizedLocation {

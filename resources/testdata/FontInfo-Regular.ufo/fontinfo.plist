@@ -10,5 +10,23 @@
     <string>Regular</string>
     <key>openTypeOS2VendorID</key>
     <string>RODS</string>
+    <key>ascender</key>
+    <integer>737</integer>
+    <key>capHeight</key>
+    <integer>702</integer>
+    <key>descender</key>
+    <integer>-42</integer>
+    <key>xHeight</key>
+    <integer>501</integer>
+    <key>openTypeOS2TypoAscender</key>
+    <integer>1193</integer>
+    <key>openTypeOS2TypoDescender</key>
+    <integer>-289</integer>
+    <key>openTypeOS2TypoLineGap</key>
+    <integer>42</integer>
+    <key>openTypeOS2WinAscent</key>
+    <integer>1325</integer>
+    <key>openTypeOS2WinDescent</key>
+    <integer>377</integer>
   </dict>
 </plist>

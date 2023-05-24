@@ -6,5 +6,7 @@
     <integer>1000</integer>
     <key>ascender</key>
     <real>801</real>
+    <key>familyName</key>
+    <string>Wght Var</string>
   </dict>
 </plist>
