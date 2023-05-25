@@ -8,5 +8,7 @@
     <string>plus.glif</string>
     <key>space</key>
     <string>space.glif</string>
+    <key>element_of</key>
+    <string>element_of.glif</string>
   </dict>
 </plist>
