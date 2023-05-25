@@ -41,9 +41,9 @@ familyName = WghtVar;
 fontMaster = (
 {
 alignmentZones = (
-"{737, 16}",
+"{800, 16}",
 "{0, -16}",
-"{-42, -16}"
+"{-200, -16}"
 );
 ascender = 737;
 capHeight = 702;

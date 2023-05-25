@@ -6,6 +6,7 @@ use std::{
 use filetime::FileTime;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
+use write_fonts::tables::os2::SelectionFlags;
 
 use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
@@ -52,6 +53,7 @@ impl From<CoordConverter> for CoordConverterSerdeRepr {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StaticMetadataSerdeRepr {
     pub units_per_em: u16,
+    pub selection_flags: u16,
     pub axes: Vec<Axis>,
     pub named_instances: Vec<NamedInstance>,
     pub glyph_locations: Vec<NormalizedLocation>,
@@ -63,6 +65,7 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
     fn from(from: StaticMetadataSerdeRepr) -> Self {
         StaticMetadata::new(
             from.units_per_em,
+            SelectionFlags::from_bits_truncate(from.selection_flags),
             from.names,
             from.axes,
             from.named_instances,
@@ -78,6 +81,7 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
         let glyph_locations = from.variation_model.locations().cloned().collect();
         StaticMetadataSerdeRepr {
             units_per_em: from.units_per_em,
+            selection_flags: from.selection_flags.bits(),
             axes: from.axes,
             named_instances: from.named_instances,
             glyph_locations,

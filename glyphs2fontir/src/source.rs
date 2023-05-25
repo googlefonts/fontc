@@ -13,6 +13,7 @@ use fontir::stateset::StateSet;
 use glyphs_reader::{Font, InstanceType};
 use indexmap::IndexSet;
 use log::{debug, trace, warn};
+use read_fonts::tables::os2::SelectionFlags;
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -73,6 +74,7 @@ impl GlyphsIrSource {
         // Explicitly field by field so if we add more compiler will force us to update here
         let font = Font {
             units_per_em: font.units_per_em,
+            use_typo_metrics: font.use_typo_metrics,
             axes: font.axes.clone(),
             masters: font.masters.clone(),
             default_master_idx: font.default_master_idx,
@@ -97,6 +99,7 @@ impl GlyphsIrSource {
         // Explicitly field by field so if we add more compiler will force us to update here
         let font = Font {
             units_per_em: font.units_per_em,
+            use_typo_metrics: font.use_typo_metrics,
             axes: font.axes.clone(),
             masters: font.masters.clone(),
             default_master_idx: font.default_master_idx,
@@ -300,8 +303,21 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             .filter(|gn| self.glyph_names.contains(gn))
             .collect();
 
+        let selection_flags = match font.use_typo_metrics.unwrap_or_default() {
+            true => SelectionFlags::USE_TYPO_METRICS,
+            false => SelectionFlags::empty(),
+        } |
+        // https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/names.py#L27
+        match font.default_master().name.to_ascii_lowercase().as_str() {
+            "italic" => SelectionFlags::ITALIC,
+            "bold" => SelectionFlags::BOLD,
+            "bold italic" => SelectionFlags::BOLD | SelectionFlags::ITALIC,
+            _ => SelectionFlags::REGULAR,
+        };
+
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
+            selection_flags,
             names(font),
             axes,
             named_instances,

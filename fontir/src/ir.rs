@@ -19,6 +19,7 @@ use std::{
     fmt::Debug,
     path::{Path, PathBuf},
 };
+use write_fonts::tables::os2::SelectionFlags;
 
 const DEFAULT_VENDOR_ID: Tag = Tag::new(b"NONE");
 
@@ -31,6 +32,9 @@ const DEFAULT_VENDOR_ID: Tag = Tag::new(b"NONE");
 pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/head>.
     pub units_per_em: u16,
+
+    /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#fsselection>
+    pub selection_flags: SelectionFlags,
 
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#achvendid>
     pub vendor_id: Tag,
@@ -68,6 +72,7 @@ pub struct StaticMetadata {
 impl StaticMetadata {
     pub fn new(
         units_per_em: u16,
+        selection_flags: SelectionFlags,
         names: HashMap<NameKey, String>,
         axes: Vec<Axis>,
         named_instances: Vec<NamedInstance>,
@@ -114,6 +119,7 @@ impl StaticMetadata {
 
         Ok(StaticMetadata {
             units_per_em,
+            selection_flags,
             vendor_id: DEFAULT_VENDOR_ID,
             names: key_to_name,
             axes,
