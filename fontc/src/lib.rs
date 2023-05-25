@@ -1722,7 +1722,7 @@ mod tests {
     fn wght_var_fs_selection() {
         assert_fs_selection(
             "glyphs3/WghtVar.glyphs",
-            SelectionFlags::REGULAR | SelectionFlags::USE_TYPO_METRICS,
+            SelectionFlags::REGULAR | SelectionFlags::USE_TYPO_METRICS | SelectionFlags::WWS,
         );
     }
 

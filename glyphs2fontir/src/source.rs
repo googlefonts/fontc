@@ -75,6 +75,7 @@ impl GlyphsIrSource {
         let font = Font {
             units_per_em: font.units_per_em,
             use_typo_metrics: font.use_typo_metrics,
+            has_wws_names: font.has_wws_names,
             axes: font.axes.clone(),
             masters: font.masters.clone(),
             default_master_idx: font.default_master_idx,
@@ -100,6 +101,7 @@ impl GlyphsIrSource {
         let font = Font {
             units_per_em: font.units_per_em,
             use_typo_metrics: font.use_typo_metrics,
+            has_wws_names: None,
             axes: font.axes.clone(),
             masters: font.masters.clone(),
             default_master_idx: font.default_master_idx,
@@ -306,6 +308,9 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         let selection_flags = match font.use_typo_metrics.unwrap_or_default() {
             true => SelectionFlags::USE_TYPO_METRICS,
             false => SelectionFlags::empty(),
+        } | match font.has_wws_names.unwrap_or_default() {
+            true => SelectionFlags::WWS,
+            false => SelectionFlags::empty(),
         } |
         // https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/names.py#L27
         match font.default_master().name.to_ascii_lowercase().as_str() {
@@ -317,7 +322,6 @@ impl Work<Context, WorkError> for StaticMetadataWork {
 
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
-            selection_flags,
             names(font),
             axes,
             named_instances,
@@ -325,8 +329,10 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             glyph_locations,
         )
         .map_err(WorkError::VariationModelError)?;
+        static_metadata.misc.selection_flags = selection_flags;
         if let Some(vendor_id) = font.names.get("vendorID") {
-            static_metadata.vendor_id = Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
+            static_metadata.misc.vendor_id =
+                Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
         context.set_init_static_metadata(static_metadata);
         Ok(())
@@ -1047,7 +1053,7 @@ mod tests {
         let (_, context) = build_static_metadata(glyphs3_dir().join("TheBestNames.glyphs"));
         assert_eq!(
             Tag::new(b"RODS"),
-            context.get_init_static_metadata().vendor_id
+            context.get_init_static_metadata().misc.vendor_id
         );
     }
 }

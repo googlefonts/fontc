@@ -47,6 +47,7 @@ pub struct RawAxisUserToDesignMap(Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>);
 pub struct Font {
     pub units_per_em: u16,
     pub use_typo_metrics: Option<bool>,
+    pub has_wws_names: Option<bool>,
     pub axes: Vec<Axis>,
     pub masters: Vec<FontMaster>,
     pub default_master_idx: usize,
@@ -1475,6 +1476,7 @@ impl TryFrom<RawFont> for Font {
 
         let use_typo_metrics =
             custom_param_int(&from.other_stuff, "Use Typo Metrics").map(|v| v == 1);
+        let has_wws_names = custom_param_int(&from.other_stuff, "Has WWS Names").map(|v| v == 1);
 
         let axes = from.axes.clone().unwrap_or_default();
         let instances: Vec<_> = from
@@ -1560,6 +1562,7 @@ impl TryFrom<RawFont> for Font {
         Ok(Font {
             units_per_em,
             use_typo_metrics,
+            has_wws_names,
             axes,
             masters,
             default_master_idx,
@@ -2107,5 +2110,20 @@ mod tests {
         let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
         assert_eq!(Some(1193), font.default_master().typo_ascender);
         assert_eq!(Some(-289), font.default_master().typo_descender);
+    }
+
+    #[test]
+    fn read_os2_flags_default_set() {
+        let font = Font::load(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
+        assert_eq!(
+            (Some(true), Some(true)),
+            (font.use_typo_metrics, font.has_wws_names)
+        );
+    }
+
+    #[test]
+    fn read_os2_flags_default_unset() {
+        let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
+        assert_eq!((None, None), (font.use_typo_metrics, font.has_wws_names));
     }
 }

@@ -75,7 +75,6 @@ mod tests {
         StaticMetadata::new(
             1000,
             Default::default(),
-            Default::default(),
             [axis(400.0, 400.0, 700.0)].to_vec(),
             Default::default(),
             IndexSet::from_iter(glyph_order.iter().map(|n| GlyphName::from(*n))),

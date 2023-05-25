@@ -4,6 +4,7 @@ use std::{
 };
 
 use filetime::FileTime;
+use font_types::Tag;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use write_fonts::tables::os2::SelectionFlags;
@@ -11,8 +12,8 @@ use write_fonts::tables::os2::SelectionFlags;
 use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
     ir::{
-        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, NameKey,
-        NamedInstance, StaticMetadata,
+        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, MiscMetadata,
+        NameKey, NamedInstance, StaticMetadata,
     },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
@@ -53,11 +54,11 @@ impl From<CoordConverter> for CoordConverterSerdeRepr {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StaticMetadataSerdeRepr {
     pub units_per_em: u16,
-    pub selection_flags: u16,
     pub axes: Vec<Axis>,
     pub named_instances: Vec<NamedInstance>,
     pub glyph_locations: Vec<NormalizedLocation>,
     pub names: HashMap<NameKey, String>,
+    pub platform_metadata: MiscSerdeRepr,
     pub glyph_order: Vec<String>,
 }
 
@@ -65,7 +66,6 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
     fn from(from: StaticMetadataSerdeRepr) -> Self {
         StaticMetadata::new(
             from.units_per_em,
-            SelectionFlags::from_bits_truncate(from.selection_flags),
             from.names,
             from.axes,
             from.named_instances,
@@ -81,16 +81,40 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
         let glyph_locations = from.variation_model.locations().cloned().collect();
         StaticMetadataSerdeRepr {
             units_per_em: from.units_per_em,
-            selection_flags: from.selection_flags.bits(),
             axes: from.axes,
             named_instances: from.named_instances,
             glyph_locations,
             names: from.names,
+            platform_metadata: from.misc.into(),
             glyph_order: from
                 .glyph_order
                 .into_iter()
                 .map(|n| n.as_str().to_string())
                 .collect(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MiscSerdeRepr {
+    pub selection_flags: u16,
+    pub vendor_id: Tag,
+}
+
+impl From<MiscSerdeRepr> for MiscMetadata {
+    fn from(from: MiscSerdeRepr) -> Self {
+        MiscMetadata {
+            selection_flags: SelectionFlags::from_bits_truncate(from.selection_flags),
+            vendor_id: from.vendor_id,
+        }
+    }
+}
+
+impl From<MiscMetadata> for MiscSerdeRepr {
+    fn from(from: MiscMetadata) -> Self {
+        MiscSerdeRepr {
+            selection_flags: from.selection_flags.bits(),
+            vendor_id: from.vendor_id,
         }
     }
 }

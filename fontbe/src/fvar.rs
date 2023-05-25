@@ -109,7 +109,6 @@ mod tests {
         StaticMetadata::new(
             1000,
             Default::default(),
-            Default::default(),
             axes.to_vec(),
             Default::default(),
             Default::default(),

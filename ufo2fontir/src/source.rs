@@ -630,6 +630,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields
+        // Start with the bits from selection flags
         let selection_flags = font_info_at_default
             .open_type_os2_selection
             .as_ref()
@@ -639,20 +640,20 @@ impl Work<Context, WorkError> for StaticMetadataWork {
                 })
             })
             .unwrap_or_default()
-            | font_info_at_default
+            // Also set any bits implied by the style map style name
+            | match font_info_at_default
                 .style_map_style_name
                 .as_ref()
-                .map(|style_map| match style_map {
-                    StyleMapStyle::Regular => SelectionFlags::REGULAR,
-                    StyleMapStyle::Bold => SelectionFlags::BOLD,
-                    StyleMapStyle::Italic => SelectionFlags::ITALIC,
-                    StyleMapStyle::BoldItalic => SelectionFlags::BOLD | SelectionFlags::ITALIC,
-                })
-                .unwrap_or_default();
+                .unwrap_or(&StyleMapStyle::Regular)
+            {
+                StyleMapStyle::Regular => SelectionFlags::REGULAR,
+                StyleMapStyle::Bold => SelectionFlags::BOLD,
+                StyleMapStyle::Italic => SelectionFlags::ITALIC,
+                StyleMapStyle::BoldItalic => SelectionFlags::BOLD | SelectionFlags::ITALIC,
+            };
 
         let mut static_metadata = StaticMetadata::new(
             units_per_em,
-            selection_flags,
             names,
             axes,
             named_instances,
@@ -660,8 +661,10 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             glyph_locations,
         )
         .map_err(WorkError::VariationModelError)?;
+        static_metadata.misc.selection_flags = selection_flags;
         if let Some(vendor_id) = &font_info_at_default.open_type_os2_vendor_id {
-            static_metadata.vendor_id = Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
+            static_metadata.misc.vendor_id =
+                Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
 
         context.set_init_static_metadata(static_metadata);
@@ -1135,7 +1138,7 @@ mod tests {
         let (_, context) = build_static_metadata("fontinfo.designspace");
         assert_eq!(
             Tag::new(b"RODS"),
-            context.get_init_static_metadata().vendor_id
+            context.get_init_static_metadata().misc.vendor_id
         );
     }
 
