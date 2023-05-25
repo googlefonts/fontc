@@ -7,6 +7,10 @@ DisplayStrings = (
 copyright = "Copy!";
 customParameters = (
 {
+name = "Use Typo Metrics";
+value = 1;
+},
+{
 name = localizedFamilyName;
 value = "Spanish;SpanishWghtVar";
 },
@@ -37,9 +41,9 @@ familyName = WghtVar;
 fontMaster = (
 {
 alignmentZones = (
-"{800, 16}",
+"{737, 16}",
 "{0, -16}",
-"{-200, -16}"
+"{-42, -16}"
 );
 ascender = 737;
 capHeight = 702;
