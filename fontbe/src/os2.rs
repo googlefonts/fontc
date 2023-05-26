@@ -283,15 +283,10 @@ fn add_unicode_range_bits(add_to: &mut HashSet<u32>, codepoint: u32) {
 }
 
 /// <https://github.com/fonttools/fonttools/blob/47813b217c1f8bc343c094776020b4f32fc024b0/Lib/fontTools/ttLib/tables/O_S_2f_2.py#L317-L334>
-fn apply_unicode_range(os2: &mut Os2, context: &Context) {
-    let static_metadata = context.ir.get_final_static_metadata();
-
+fn apply_unicode_range(os2: &mut Os2, codepoints: &HashSet<u32>) {
     let mut bits = HashSet::new();
-    for glyph_name in static_metadata.glyph_order.iter() {
-        let codepoints = &context.ir.get_glyph_ir(glyph_name).codepoints;
-        for codepoint in codepoints {
-            add_unicode_range_bits(&mut bits, *codepoint);
-        }
+    for codepoint in codepoints {
+        add_unicode_range_bits(&mut bits, *codepoint);
     }
 
     let mut unicode_range = [0u32; 4];
@@ -307,6 +302,163 @@ fn apply_unicode_range(os2: &mut Os2, context: &Context) {
     os2.ul_unicode_range_4 = unicode_range[3];
 }
 
+/// Given a set of Unicode codepoints (integers), calculate the
+/// corresponding OS/2 CodePage range bits.
+///
+/// This is a direct translation from FontTools
+///   <https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/util.py#L357-L449>
+/// FontTools is in turn a translation of <https://github.com/fontforge/fontforge/blob/7b2c074/fontforge/tottf.c#L3158>
+fn codepage_range_bits(codepoints: &HashSet<u32>) -> HashSet<usize> {
+    let mut bits = HashSet::new();
+
+    let chars = codepoints
+        .iter()
+        .filter_map(|cp| char::from_u32(*cp))
+        .collect::<HashSet<_>>();
+    let has_ascii = (0x20_u32..0x7E).all(|cp| codepoints.contains(&cp));
+    let has_lineart = chars.contains(&'┤');
+
+    for char in chars.iter() {
+        match char {
+            'Þ' if has_ascii => {
+                bits.insert(0);
+            } //Latin 1
+            'Ľ' if has_ascii => {
+                bits.insert(1); //Latin 2: Eastern Europe
+                if has_lineart {
+                    bits.insert(58); //Latin 2
+                }
+            }
+            'Б' => {
+                bits.insert(2); //Cyrillic
+                if chars.contains(&'Ѕ') && has_lineart {
+                    bits.insert(57); //IBM Cyrillic
+                }
+                if chars.contains(&'╜') && has_lineart {
+                    bits.insert(49); //MS-DOS Russian
+                }
+            }
+            'Ά' => {
+                bits.insert(3); //Greek
+                if has_lineart && chars.contains(&'½') {
+                    bits.insert(48); //IBM Greek
+                }
+                if has_lineart && chars.contains(&'√') {
+                    bits.insert(60); //Greek, former 437 G
+                }
+            }
+            'İ' if has_ascii => {
+                bits.insert(4); //Turkish
+                if has_lineart {
+                    bits.insert(56); //IBM turkish
+                }
+            }
+            'א' => {
+                bits.insert(5); //Hebrew
+                if has_lineart && chars.contains(&'√') {
+                    bits.insert(53); //Hebrew
+                }
+            }
+            'ر' => {
+                bits.insert(6); //Arabic
+                if chars.contains(&'√') {
+                    bits.insert(51); //Arabic
+                }
+                if has_lineart {
+                    bits.insert(61); //Arabic; ASMO 708
+                }
+            }
+            'ŗ' if has_ascii => {
+                bits.insert(7); //Windows Baltic
+                if has_lineart {
+                    bits.insert(59); //MS-DOS Baltic
+                }
+            }
+            '₫' if has_ascii => {
+                bits.insert(8); //Vietnamese
+            }
+            'ๅ' => {
+                bits.insert(16); //Thai
+            }
+            'エ' => {
+                bits.insert(17); //JIS/Japan
+            }
+            'ㄅ' => {
+                bits.insert(18); //Chinese: Simplified chars
+            }
+            'ㄱ' => {
+                bits.insert(19); //Korean wansung
+            }
+            '央' => {
+                bits.insert(20); //Chinese: Traditional chars
+            }
+            '곴' => {
+                bits.insert(21); //Korean Johab
+            }
+            '♥' if has_ascii => {
+                bits.insert(30); //OEM Character Set
+            }
+            //    //TODO: Symbol bit has a special meaning (check the spec), we need
+            //    //to confirm if this is wanted by default.
+            //    //elif  chr(0xF000) <= char <= chr(0xF0FF) {
+            //    //   bits.insert(31)         //Symbol Character Set
+            'þ' if has_ascii && has_lineart => {
+                bits.insert(54); //MS-DOS Icelandic
+            }
+            '╚' if has_ascii => {
+                bits.insert(62); //WE/Latin 1
+                bits.insert(63); //US
+            }
+            'Å' if has_ascii && has_lineart && chars.contains(&'√') => {
+                bits.insert(50); //MS-DOS Nordic
+            }
+            'é' if has_ascii && has_lineart && chars.contains(&'√') => {
+                bits.insert(52); //MS-DOS Canadian French
+            }
+            'õ' if has_ascii && has_lineart && chars.contains(&'√') => {
+                bits.insert(55); //MS-DOS Portuguese
+            }
+            _ => (),
+        }
+    }
+
+    if has_ascii && chars.contains(&'‰') && chars.contains(&'∑') {
+        bits.insert(29); // Macintosh Character Set (US Roman)
+    }
+
+    // when no codepage ranges can be enabled, fall back to enabling bit 0
+    // (Latin 1) so that the font works in MS Word:
+    // https://github.com/googlei18n/fontmake/issues/468
+    if bits.is_empty() {
+        bits.insert(0);
+    }
+
+    bits
+}
+
+fn apply_codepage_range(os2: &mut Os2, codepoints: &HashSet<u32>) {
+    let bits = codepage_range_bits(codepoints);
+    let mut codepage_range = [0u32; 2];
+    for bit in bits {
+        let idx = bit / 32;
+        let bit = bit - idx * 32;
+        assert!(bit <= 32, "{bit}");
+        codepage_range[idx] |= 1 << bit;
+    }
+    os2.ul_code_page_range_1 = Some(codepage_range[0]);
+    os2.ul_code_page_range_2 = Some(codepage_range[1]);
+}
+
+fn codepoints(context: &Context) -> HashSet<u32> {
+    let static_metadata = context.ir.get_final_static_metadata();
+
+    let mut codepoints = HashSet::new();
+    for glyph_name in static_metadata.glyph_order.iter() {
+        codepoints.extend(context.ir.get_glyph_ir(glyph_name).codepoints.iter());
+    }
+    codepoints
+}
+
 impl Work<Context, Error> for Os2Work {
     /// Generate [OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2)
     fn exec(&self, context: &Context) -> Result<(), Error> {
@@ -316,6 +468,7 @@ impl Work<Context, Error> for Os2Work {
             .ir
             .get_global_metrics()
             .at(static_metadata.default_location());
+        let codepoints = codepoints(context);
 
         let mut os2 = Os2 {
             ach_vend_id: static_metadata.misc.vendor_id,
@@ -323,8 +476,6 @@ impl Work<Context, Error> for Os2Work {
             x_avg_char_width: x_avg_char_width(context)?,
 
             // Avoid "field must be present for version 2" caused by default to None
-            ul_code_page_range_1: Some(0),
-            ul_code_page_range_2: Some(0),
             us_default_char: Some(0),
             us_break_char: Some(0),
             us_max_context: Some(0),
@@ -332,7 +483,8 @@ impl Work<Context, Error> for Os2Work {
             ..Default::default()
         };
         apply_metrics(&mut os2, &metrics);
-        apply_unicode_range(&mut os2, context);
+        apply_unicode_range(&mut os2, &codepoints);
+        apply_codepage_range(&mut os2, &codepoints);
 
         context.set_os2(os2);
         Ok(())
@@ -349,6 +501,8 @@ mod tests {
     };
     use read_fonts::types::Tag;
     use write_fonts::tables::os2::Os2;
+
+    use crate::os2::codepage_range_bits;
 
     use super::{add_unicode_range_bits, apply_metrics};
 
@@ -392,5 +546,32 @@ mod tests {
     #[test]
     fn unicode_range_bit_lut_mahjong() {
         assert_eq!(HashSet::from([57, 122]), unicode_range_bits(0x1F02F));
+    }
+
+    #[test]
+    fn codepage_range_report_latin_1() {
+        assert_eq!(
+            HashSet::from([0]),
+            codepage_range_bits(&(0x20..=0x7E).collect())
+        );
+    }
+
+    #[test]
+    fn codepage_range_fallback_to_latin_1() {
+        let latin_1_sentinel = 'Þ' as u32;
+        let latin_2_sentinel = 'Ľ' as u32;
+
+        // No latin, but we'd rather report bit 0 than nothing
+        let mut codepoints = (0x20..=0x7E).collect::<HashSet<_>>();
+        codepoints.remove(&latin_1_sentinel);
+        assert_eq!(HashSet::from([0]), codepage_range_bits(&codepoints));
+
+        // No longer empty so we don't fallback to latin
+        codepoints.insert(latin_2_sentinel);
+        assert_eq!(HashSet::from([1]), codepage_range_bits(&codepoints));
+
+        // We can report both, right?
+        codepoints.insert(latin_1_sentinel);
+        assert_eq!(HashSet::from([0, 1]), codepage_range_bits(&codepoints));
     }
 }
