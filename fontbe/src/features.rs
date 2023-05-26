@@ -12,14 +12,15 @@ use fea_rs::{
     Compiler, GlyphMap, GlyphName as FeaRsGlyphName,
 };
 use fontir::{ir::Features, orchestration::Flags};
-use log::{debug, error, trace, warn};
-use write_fonts::FontBuilder;
+use log::{debug, error, warn};
+use read_fonts::{FontRef, TableProvider};
+use write_fonts::{from_obj::ToOwnedTable, FontBuilder};
 
 use fontdrasil::orchestration::Work;
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context},
+    orchestration::{BeWork, Context, WorkId},
 };
 
 pub struct FeatureWork {}
@@ -111,29 +112,42 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
 impl Work<Context, Error> for FeatureWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let features = context.ir.get_features();
-        if let Features::Empty = *features {
-            // set a default in place so subsequent compiles skip this step
-            trace!("No fea file, dull compile");
-            context.set_features(FontBuilder::default());
-            return Ok(());
-        }
-        let glyph_order = &context.ir.get_final_static_metadata().glyph_order;
-        if glyph_order.is_empty() {
-            warn!("Glyph order is empty; feature compile improbable");
-        }
-        let glyph_map = glyph_order
-            .iter()
-            .map(|n| Into::<FeaRsGlyphName>::into(n.as_str()))
-            .collect();
-
-        let result = self.compile(&features, glyph_map);
-        if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
-            if let Features::Memory(fea_content) = &*features {
-                write_debug_fea(context, result.is_err(), "compile failed", fea_content);
+        if !matches!(*features, Features::Empty) {
+            let glyph_order = &context.ir.get_final_static_metadata().glyph_order;
+            if glyph_order.is_empty() {
+                warn!("Glyph order is empty; feature compile improbable");
             }
+            let glyph_map = glyph_order
+                .iter()
+                .map(|n| Into::<FeaRsGlyphName>::into(n.as_str()))
+                .collect();
+
+            let result = self.compile(&features, glyph_map);
+            if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
+                if let Features::Memory(fea_content) = &*features {
+                    write_debug_fea(context, result.is_err(), "compile failed", fea_content);
+                }
+            }
+            let buf = result?.build();
+            let font = FontRef::new(&buf).unwrap();
+            debug!(
+                "Built features, gpos? {} gsub? {}",
+                font.gpos().is_ok(),
+                font.gsub().is_ok()
+            );
+            if let Ok(gpos) = font.gpos() {
+                context.set_gpos(gpos.to_owned_table());
+            }
+            if let Ok(gsub) = font.gsub() {
+                context.set_gsub(gsub.to_owned_table());
+            }
+        } else {
+            debug!("No fea file, dull compile");
         }
-        let font = result?;
-        context.set_features(font);
+        // Enables the assumption that if the file exists features were compiled
+        if context.flags.contains(Flags::EMIT_IR) {
+            fs::write(context.paths.target_file(&WorkId::Features), "1").map_err(Error::IoError)?;
+        }
         Ok(())
     }
 }

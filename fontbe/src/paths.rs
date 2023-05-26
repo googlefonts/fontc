@@ -47,11 +47,13 @@ impl Paths {
 
     pub fn target_file(&self, id: &WorkId) -> PathBuf {
         match id {
-            WorkId::Features => self.build_dir.join("features.ttf"),
+            WorkId::Features => self.build_dir.join("features.marker"),
             WorkId::GlyfFragment(name) => self.glyph_glyf_file(name.as_str()),
             WorkId::GvarFragment(name) => self.glyph_gvar_file(name.as_str()),
             WorkId::Avar => self.build_dir.join("avar.table"),
             WorkId::Glyf => self.build_dir.join("glyf.table"),
+            WorkId::Gsub => self.build_dir.join("gsub.table"),
+            WorkId::Gpos => self.build_dir.join("gpos.table"),
             WorkId::Gvar => self.build_dir.join("gvar.table"),
             WorkId::Loca => self.build_dir.join("loca.table"),
             WorkId::LocaFormat => self.build_dir.join("loca.format"),

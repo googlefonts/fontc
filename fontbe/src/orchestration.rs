@@ -25,6 +25,8 @@ use write_fonts::{
         cmap::Cmap,
         fvar::Fvar,
         glyf::{Bbox, SimpleGlyph},
+        gpos::Gpos,
+        gsub::Gsub,
         gvar::GlyphDeltas,
         head::Head,
         hhea::Hhea,
@@ -35,7 +37,7 @@ use write_fonts::{
         variations::Tuple,
     },
     validate::Validate,
-    FontBuilder, FontWrite, OtRound,
+    FontWrite, OtRound,
 };
 use write_fonts::{from_obj::FromTableRef, tables::glyf::CompositeGlyph};
 
@@ -61,6 +63,8 @@ pub enum WorkId {
     Fvar,
     Glyf,
     GlyfFragment(GlyphName),
+    Gpos,
+    Gsub,
     Gvar,
     GvarFragment(GlyphName),
     Head,
@@ -346,8 +350,6 @@ pub struct Context {
 
     // work results we've completed or restored from disk
     // We create individual caches so we can return typed results from get fns
-    features: Arc<RwLock<Option<Arc<Vec<u8>>>>>,
-
     glyphs: Arc<RwLock<HashMap<GlyphName, Arc<Glyph>>>>,
     gvar_fragments: Arc<RwLock<HashMap<GlyphName, Arc<GvarFragment>>>>,
 
@@ -355,6 +357,8 @@ pub struct Context {
     avar: ContextItem<Avar>,
     cmap: ContextItem<Cmap>,
     fvar: ContextItem<Fvar>,
+    gsub: ContextItem<Gsub>,
+    gpos: ContextItem<Gpos>,
     gvar: ContextItem<Bytes>,
     post: ContextItem<Post>,
     loca_format: ContextItem<LocaFormat>,
@@ -374,13 +378,14 @@ impl Context {
             paths: self.paths.clone(),
             ir: self.ir.clone(),
             acl,
-            features: self.features.clone(),
             glyphs: self.glyphs.clone(),
             gvar_fragments: self.gvar_fragments.clone(),
             glyf_loca: self.glyf_loca.clone(),
             avar: self.avar.clone(),
             cmap: self.cmap.clone(),
             fvar: self.fvar.clone(),
+            gsub: self.gsub.clone(),
+            gpos: self.gpos.clone(),
             gvar: self.gvar.clone(),
             post: self.post.clone(),
             loca_format: self.loca_format.clone(),
@@ -400,13 +405,14 @@ impl Context {
             paths: Arc::from(paths),
             ir: Arc::from(ir.read_only()),
             acl: AccessControlList::read_only(),
-            features: Arc::from(RwLock::new(None)),
             glyphs: Arc::from(RwLock::new(HashMap::new())),
             gvar_fragments: Arc::from(RwLock::new(HashMap::new())),
             glyf_loca: Arc::from(RwLock::new(None)),
             avar: Arc::from(RwLock::new(None)),
             cmap: Arc::from(RwLock::new(None)),
             fvar: Arc::from(RwLock::new(None)),
+            gpos: Arc::from(RwLock::new(None)),
+            gsub: Arc::from(RwLock::new(None)),
             gvar: Arc::from(RwLock::new(None)),
             post: Arc::from(RwLock::new(None)),
             loca_format: Arc::from(RwLock::new(None)),
@@ -437,13 +443,6 @@ impl Context {
         self.paths.debug_dir()
     }
 
-    fn maybe_persist(&self, file: &Path, content: &[u8]) {
-        if !self.flags.contains(Flags::EMIT_IR) {
-            return;
-        }
-        self.persist(file, content);
-    }
-
     // we need a self.persist for macros
     fn persist(&self, file: &Path, content: &[u8]) {
         persist(file, content);
@@ -452,29 +451,6 @@ impl Context {
     pub fn read_raw(&self, id: WorkId) -> Result<Vec<u8>, io::Error> {
         self.acl.assert_read_access(&id.clone().into());
         fs::read(self.paths.target_file(&id))
-    }
-
-    pub fn get_features(&self) -> Arc<Vec<u8>> {
-        let id = WorkId::Features;
-        self.acl.assert_read_access(&id.clone().into());
-        {
-            let rl = self.features.read();
-            if rl.is_some() {
-                return rl.as_ref().unwrap().clone();
-            }
-        }
-        let font = read_entire_file(&self.paths.target_file(&id));
-        set_cached(&self.features, font);
-        let rl = self.features.read();
-        rl.as_ref().expect(MISSING_DATA).clone()
-    }
-
-    pub fn set_features(&self, mut font: FontBuilder) {
-        let id = WorkId::Features;
-        self.acl.assert_write_access(&id.clone().into());
-        let font = font.build();
-        self.maybe_persist(&self.paths.target_file(&id), &font);
-        set_cached(&self.features, font);
     }
 
     fn set_cached_glyph(&self, glyph_name: GlyphName, glyph: Glyph) {
@@ -568,6 +544,23 @@ impl Context {
         rl.as_ref().expect(MISSING_DATA).clone()
     }
 
+    pub fn has_glyf_loca(&self) -> bool {
+        let ids = [
+            WorkId::Glyf.into(),
+            WorkId::Loca.into(),
+            WorkId::LocaFormat.into(),
+        ];
+        self.acl.assert_read_access_to_all(&ids);
+        {
+            let rl = self.glyf_loca.read();
+            if rl.is_some() {
+                return true;
+            }
+        }
+        ids.iter()
+            .all(|id| self.paths.target_file(id.unwrap_be()).is_file())
+    }
+
     pub fn set_glyf_loca(&self, glyf_loca: GlyfLoca) {
         let ids = [
             WorkId::Glyf.into(),
@@ -586,21 +579,23 @@ impl Context {
     }
 
     // Lovely little typed accessors
-    context_accessors! { get_avar, set_avar, avar, Avar, WorkId::Avar, from_file, to_bytes }
-    context_accessors! { get_cmap, set_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
-    context_accessors! { get_fvar, set_fvar, fvar, Fvar, WorkId::Fvar, from_file, to_bytes }
-    context_accessors! { get_loca_format, set_loca_format, loca_format, LocaFormat, WorkId::LocaFormat, loca_format_from_file, loca_format_to_bytes }
-    context_accessors! { get_maxp, set_maxp, maxp, Maxp, WorkId::Maxp, from_file, to_bytes }
-    context_accessors! { get_name, set_name, name, Name, WorkId::Name, from_file, to_bytes }
-    context_accessors! { get_os2, set_os2, os2, Os2, WorkId::Os2, from_file, to_bytes }
-    context_accessors! { get_post, set_post, post, Post, WorkId::Post, from_file, to_bytes }
-    context_accessors! { get_head, set_head, head, Head, WorkId::Head, from_file, to_bytes }
-    context_accessors! { get_hhea, set_hhea, hhea, Hhea, WorkId::Hhea, from_file, to_bytes }
+    context_accessors! { get_avar, set_avar, has_avar, avar, Avar, WorkId::Avar, from_file, to_bytes }
+    context_accessors! { get_cmap, set_cmap, has_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
+    context_accessors! { get_fvar, set_fvar, has_fvar, fvar, Fvar, WorkId::Fvar, from_file, to_bytes }
+    context_accessors! { get_loca_format, set_loca_format, has_loca_format, loca_format, LocaFormat, WorkId::LocaFormat, loca_format_from_file, loca_format_to_bytes }
+    context_accessors! { get_maxp, set_maxp, has_maxp, maxp, Maxp, WorkId::Maxp, from_file, to_bytes }
+    context_accessors! { get_name, set_name, has_name, name, Name, WorkId::Name, from_file, to_bytes }
+    context_accessors! { get_os2, set_os2, has_os2, os2, Os2, WorkId::Os2, from_file, to_bytes }
+    context_accessors! { get_post, set_post, has_post, post, Post, WorkId::Post, from_file, to_bytes }
+    context_accessors! { get_head, set_head, has_head, head, Head, WorkId::Head, from_file, to_bytes }
+    context_accessors! { get_hhea, set_hhea, has_hhea, hhea, Hhea, WorkId::Hhea, from_file, to_bytes }
+    context_accessors! { get_gpos, set_gpos, has_gpos, gpos, Gpos, WorkId::Gpos, from_file, to_bytes }
+    context_accessors! { get_gsub, set_gsub, has_gsub, gsub, Gsub, WorkId::Gsub, from_file, to_bytes }
 
     // Accessors where value is raw bytes
-    context_accessors! { get_gvar, set_gvar, gvar, Bytes, WorkId::Gvar, raw_from_file, raw_to_bytes }
-    context_accessors! { get_hmtx, set_hmtx, hmtx, Bytes, WorkId::Hmtx, raw_from_file, raw_to_bytes }
-    context_accessors! { get_font, set_font, font, Bytes, WorkId::Font, raw_from_file, raw_to_bytes }
+    context_accessors! { get_gvar, set_gvar, has_gvar, gvar, Bytes, WorkId::Gvar, raw_from_file, raw_to_bytes }
+    context_accessors! { get_hmtx, set_hmtx, has_hmtx, hmtx, Bytes, WorkId::Hmtx, raw_from_file, raw_to_bytes }
+    context_accessors! { get_font, set_font, has_font, font, Bytes, WorkId::Font, raw_from_file, raw_to_bytes }
 }
 
 fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {

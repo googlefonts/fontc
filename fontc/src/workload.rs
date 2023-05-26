@@ -102,6 +102,12 @@ impl Workload {
                 }
             }
 
+            // Features handles GSUB/POS
+            AnyWorkId::Be(BeWorkIdentifier::Features) => {
+                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Gpos));
+                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Gsub));
+            }
+
             // GlyfFragment carries GvarFragment along for the ride
             AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name)) => {
                 self.mark_success(AnyWorkId::Be(BeWorkIdentifier::GvarFragment(glyph_name)));
@@ -261,7 +267,16 @@ impl Workload {
                 }
                 log::error!("Unable to proceed with:");
                 for (id, job) in self.jobs_pending.iter() {
-                    log::error!("  {:?}, happens-after {:?}", id, job.dependencies);
+                    let unfulfilled = job
+                        .dependencies
+                        .iter()
+                        .filter(|id| !self.success.contains(id))
+                        .collect::<Vec<_>>();
+                    log::error!(
+                        "  {:?}, happens-after {:?}, unfulfilled {unfulfilled:?}",
+                        id,
+                        job.dependencies
+                    );
                 }
                 assert!(
                     !launchable.is_empty(),

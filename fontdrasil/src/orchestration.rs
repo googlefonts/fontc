@@ -18,7 +18,7 @@ pub enum Access<I> {
     All,
     /// Access to one specific resource is permitted
     One(I),
-    /// Access to two specific resource is permitted
+    /// Access to multiple resources is permitted
     Set(HashSet<I>),
     /// A closure is used to determine access
     Custom(Arc<dyn Fn(&I) -> bool + Send + Sync>),

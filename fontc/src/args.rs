@@ -56,16 +56,22 @@ impl Args {
     /// Manually create args for testing
     #[cfg(test)]
     pub fn for_test(build_dir: &std::path::Path, source: &str) -> Args {
-        fn testdata_dir() -> PathBuf {
-            let path = PathBuf::from("../resources/testdata")
-                .canonicalize()
-                .unwrap();
-            assert!(path.is_dir(), "{path:#?} isn't a dir");
-            path
-        }
+        // cargo test seems to run in the project directory
+        // VSCode test seems to run in the workspace directory
+        // probe for the file we want in hopes of finding it regardless
+        let potential_paths = vec!["./resources/testdata", "../resources/testdata"];
+        let source = potential_paths
+            .iter()
+            .map(PathBuf::from)
+            .find(|pb| pb.exists())
+            .unwrap()
+            .join(source)
+            .canonicalize()
+            .unwrap();
+
         Args {
             glyph_name_filter: None,
-            source: testdata_dir().join(source),
+            source,
             emit_ir: true,
             emit_debug: false,
             build_dir: build_dir.to_path_buf(),
