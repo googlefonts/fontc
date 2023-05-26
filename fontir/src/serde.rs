@@ -58,7 +58,7 @@ pub struct StaticMetadataSerdeRepr {
     pub named_instances: Vec<NamedInstance>,
     pub glyph_locations: Vec<NormalizedLocation>,
     pub names: HashMap<NameKey, String>,
-    pub platform_metadata: MiscSerdeRepr,
+    pub misc: MiscSerdeRepr,
     pub glyph_order: Vec<String>,
 }
 
@@ -85,7 +85,7 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
             named_instances: from.named_instances,
             glyph_locations,
             names: from.names,
-            platform_metadata: from.misc.into(),
+            misc: from.misc.into(),
             glyph_order: from
                 .glyph_order
                 .into_iter()
