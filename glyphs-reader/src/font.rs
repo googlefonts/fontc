@@ -46,6 +46,8 @@ pub struct RawAxisUserToDesignMap(Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>);
 #[derive(Debug, PartialEq, Hash)]
 pub struct Font {
     pub units_per_em: u16,
+    pub use_typo_metrics: Option<bool>,
+    pub has_wws_names: Option<bool>,
     pub axes: Vec<Axis>,
     pub masters: Vec<FontMaster>,
     pub default_master_idx: usize,
@@ -267,6 +269,7 @@ pub struct Anchor {
 #[derive(Clone, Debug, PartialEq, Hash)]
 pub struct FontMaster {
     pub id: String,
+    pub name: String,
     pub axes_values: Vec<OrderedFloat<f64>>,
     metric_values: BTreeMap<String, RawMetricValue>,
     pub typo_ascender: Option<i64>,
@@ -303,6 +306,7 @@ impl FontMaster {
 #[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
 struct RawFontMaster {
     pub id: String,
+    pub name: Option<String>,
 
     pub typo_ascender: Option<i64>,
     pub typo_descender: Option<OrderedFloat<f64>>,
@@ -901,9 +905,7 @@ impl RawFont {
                 Some(Plist::String(name)) => name,
                 _ => String::from("Regular"), // Missing = default = Regular per @anthrotype
             };
-            master
-                .other_stuff
-                .insert("name".into(), Plist::String(name));
+            master.name = Some(name);
         }
         Ok(())
     }
@@ -1044,9 +1046,10 @@ fn default_master_idx(raw_font: &RawFont) -> usize {
         // TODO: implement searching for "a base style shared between all masters" as glyphsLib does
         // Still nothing? - just look for one called Regular
         .or_else(|| {
-            raw_font.font_master.iter().position(
-                |m| matches!(m.other_stuff.get("name"), Some(Plist::String(name)) if name == "Regular"),
-            )
+            raw_font
+                .font_master
+                .iter()
+                .position(|m| matches!(m.name.as_deref(), Some("Regular")))
         })
         .unwrap_or_default()
 }
@@ -1471,6 +1474,10 @@ impl TryFrom<RawFont> for Font {
         let glyph_order = parse_glyph_order(&from);
         let glyph_to_codepoints = parse_codepoints(&mut from, radix);
 
+        let use_typo_metrics =
+            custom_param_int(&from.other_stuff, "Use Typo Metrics").map(|v| v == 1);
+        let has_wws_names = custom_param_int(&from.other_stuff, "Has WWS Names").map(|v| v == 1);
+
         let axes = from.axes.clone().unwrap_or_default();
         let instances: Vec<_> = from
             .instances
@@ -1533,6 +1540,7 @@ impl TryFrom<RawFont> for Font {
             .into_iter()
             .map(|m| FontMaster {
                 id: m.id,
+                name: m.name.unwrap_or_default(),
                 axes_values: m.axes_values,
                 metric_values: m
                     .metric_values
@@ -1553,6 +1561,8 @@ impl TryFrom<RawFont> for Font {
 
         Ok(Font {
             units_per_em,
+            use_typo_metrics,
+            has_wws_names,
             axes,
             masters,
             default_master_idx,
@@ -2100,5 +2110,20 @@ mod tests {
         let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
         assert_eq!(Some(1193), font.default_master().typo_ascender);
         assert_eq!(Some(-289), font.default_master().typo_descender);
+    }
+
+    #[test]
+    fn read_os2_flags_default_set() {
+        let font = Font::load(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
+        assert_eq!(
+            (Some(true), Some(true)),
+            (font.use_typo_metrics, font.has_wws_names)
+        );
+    }
+
+    #[test]
+    fn read_os2_flags_default_unset() {
+        let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
+        assert_eq!((None, None), (font.use_typo_metrics, font.has_wws_names));
     }
 }

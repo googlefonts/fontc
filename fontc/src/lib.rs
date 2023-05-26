@@ -764,7 +764,10 @@ mod tests {
     use log::info;
     use pretty_assertions::assert_eq;
 
-    use read_fonts::{tables::name::Name, types::NameId};
+    use read_fonts::{
+        tables::{name::Name, os2::SelectionFlags},
+        types::NameId,
+    };
     use skrifa::{
         charmap::Charmap,
         instance::Size,
@@ -1699,6 +1702,35 @@ mod tests {
                 ("Regular".to_string(), vec![("Weight", 400.0)]),
                 ("Bold".to_string(), vec![("Weight", 700.0)]),
             ],
+        );
+    }
+
+    fn assert_fs_selection(source: &str, expected: SelectionFlags) {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, source));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let os2 = font.os2().unwrap();
+        assert_eq!(expected, os2.fs_selection());
+    }
+
+    #[test]
+    fn wght_var_fs_selection() {
+        assert_fs_selection(
+            "glyphs3/WghtVar.glyphs",
+            SelectionFlags::REGULAR | SelectionFlags::USE_TYPO_METRICS | SelectionFlags::WWS,
+        );
+    }
+
+    #[test]
+    fn static_bold_italic_fs_selection() {
+        assert_fs_selection(
+            "glyphs3/StaticBoldItalic.glyphs",
+            SelectionFlags::BOLD | SelectionFlags::ITALIC,
         );
     }
 }

@@ -4,14 +4,16 @@ use std::{
 };
 
 use filetime::FileTime;
+use font_types::Tag;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
+use write_fonts::tables::os2::SelectionFlags;
 
 use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
     ir::{
-        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, NameKey,
-        NamedInstance, StaticMetadata,
+        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, MiscMetadata,
+        NameKey, NamedInstance, StaticMetadata,
     },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
@@ -56,6 +58,7 @@ pub struct StaticMetadataSerdeRepr {
     pub named_instances: Vec<NamedInstance>,
     pub glyph_locations: Vec<NormalizedLocation>,
     pub names: HashMap<NameKey, String>,
+    pub misc: MiscSerdeRepr,
     pub glyph_order: Vec<String>,
 }
 
@@ -82,11 +85,36 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
             named_instances: from.named_instances,
             glyph_locations,
             names: from.names,
+            misc: from.misc.into(),
             glyph_order: from
                 .glyph_order
                 .into_iter()
                 .map(|n| n.as_str().to_string())
                 .collect(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MiscSerdeRepr {
+    pub selection_flags: u16,
+    pub vendor_id: Tag,
+}
+
+impl From<MiscSerdeRepr> for MiscMetadata {
+    fn from(from: MiscSerdeRepr) -> Self {
+        MiscMetadata {
+            selection_flags: SelectionFlags::from_bits_truncate(from.selection_flags),
+            vendor_id: from.vendor_id,
+        }
+    }
+}
+
+impl From<MiscMetadata> for MiscSerdeRepr {
+    fn from(from: MiscMetadata) -> Self {
+        MiscSerdeRepr {
+            selection_flags: from.selection_flags.bits(),
+            vendor_id: from.vendor_id,
         }
     }
 }
