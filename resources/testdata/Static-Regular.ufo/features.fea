@@ -4,3 +4,7 @@ languagesystem latn dflt;
 feature kern {
     position bar plus -100;
 } kern;
+
+feature liga {
+    substitute bar bar by plus;
+} liga;

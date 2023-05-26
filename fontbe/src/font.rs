@@ -4,8 +4,9 @@ use fontdrasil::orchestration::Work;
 use log::debug;
 use read_fonts::{
     tables::{
-        avar::Avar, cmap::Cmap, fvar::Fvar, glyf::Glyf, gvar::Gvar, head::Head, hhea::Hhea,
-        hmtx::Hmtx, loca::Loca, maxp::Maxp, name::Name, os2::Os2, post::Post,
+        avar::Avar, cmap::Cmap, fvar::Fvar, glyf::Glyf, gpos::Gpos, gsub::Gsub, gvar::Gvar,
+        head::Head, hhea::Hhea, hmtx::Hmtx, loca::Loca, maxp::Maxp, name::Name, os2::Os2,
+        post::Post,
     },
     types::Tag,
     TopLevelTable,
@@ -36,6 +37,8 @@ const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
     (WorkId::Hhea, Hhea::TAG, TableType::Static),
     (WorkId::Hmtx, Hmtx::TAG, TableType::Static),
     (WorkId::Glyf, Glyf::TAG, TableType::Static),
+    (WorkId::Gpos, Gpos::TAG, TableType::Static),
+    (WorkId::Gsub, Gsub::TAG, TableType::Static),
     (WorkId::Gvar, Gvar::TAG, TableType::Variable),
     (WorkId::Loca, Loca::TAG, TableType::Static),
     (WorkId::Maxp, Maxp::TAG, TableType::Static),
@@ -43,6 +46,27 @@ const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
     (WorkId::Os2, Os2::TAG, TableType::Static),
     (WorkId::Post, Post::TAG, TableType::Static),
 ];
+
+fn has(context: &Context, id: WorkId) -> bool {
+    match id {
+        WorkId::Avar => context.has_avar(),
+        WorkId::Cmap => context.has_cmap(),
+        WorkId::Fvar => context.has_fvar(),
+        WorkId::Head => context.has_head(),
+        WorkId::Hhea => context.has_hhea(),
+        WorkId::Hmtx => context.has_hmtx(),
+        WorkId::Glyf => context.has_glyf_loca(),
+        WorkId::Gpos => context.has_gpos(),
+        WorkId::Gsub => context.has_gsub(),
+        WorkId::Gvar => context.has_gvar(),
+        WorkId::Loca => context.has_glyf_loca(),
+        WorkId::Maxp => context.has_maxp(),
+        WorkId::Name => context.has_name(),
+        WorkId::Os2 => context.has_os2(),
+        WorkId::Post => context.has_post(),
+        _ => false,
+    }
+}
 
 fn bytes_for(context: &Context, id: WorkId) -> Result<Vec<u8>, Error> {
     let bytes = match id {
@@ -53,6 +77,8 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Vec<u8>, Error> {
         WorkId::Hhea => to_bytes(&*context.get_hhea()),
         WorkId::Hmtx => context.get_hmtx().get().to_vec(),
         WorkId::Glyf => context.get_glyf_loca().glyf.clone(),
+        WorkId::Gpos => to_bytes(&*context.get_gpos()),
+        WorkId::Gsub => to_bytes(&*context.get_gsub()),
         WorkId::Gvar => context.get_gvar().get().to_vec(),
         WorkId::Loca => context.get_glyf_loca().raw_loca.clone(),
         WorkId::Maxp => to_bytes(&*context.get_maxp()),
@@ -81,11 +107,16 @@ impl Work<Context, Error> for FontWork {
                 debug!("Skip {tag} because this is a static font");
                 continue;
             }
+            if !has(context, work_id.clone()) {
+                debug!("Skip {tag} because we don't have it");
+                continue;
+            }
             debug!("Grabbing {tag} for final font");
             let bytes = bytes_for(context, work_id.clone())?;
             builder.add_table(*tag, bytes);
         }
 
+        debug!("Building font");
         let font = builder.build();
         debug!("Assembled {} byte font", font.len());
         context.set_font(Bytes::new(font));

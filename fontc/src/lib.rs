@@ -225,7 +225,13 @@ fn add_feature_be_job(
 ) -> Result<(), Error> {
     if change_detector.feature_be_change() && change_detector.glyph_name_filter().is_none() {
         let id: AnyWorkId = BeWorkIdentifier::Features.into();
-        let write_access = Access::one(id.clone());
+
+        // fea-rs compiles, or will compile, several tables
+        // we want to capture them individually
+        let write_access = Access::Set(HashSet::from([
+            BeWorkIdentifier::Gsub.into(),
+            BeWorkIdentifier::Gpos.into(),
+        ]));
         workload.insert(
             id,
             Job {
@@ -244,6 +250,8 @@ fn add_feature_be_job(
             warn!("Not processing BE Features because a glyph name filter is active");
         }
         workload.mark_success(BeWorkIdentifier::Features);
+        workload.mark_success(BeWorkIdentifier::Gpos);
+        workload.mark_success(BeWorkIdentifier::Gsub);
     }
     Ok(())
 }
@@ -562,6 +570,7 @@ fn add_os2_be_job(
 ) -> Result<(), Error> {
     if change_detector.init_static_metadata_ir_change() {
         let mut dependencies = HashSet::new();
+        dependencies.insert(BeWorkIdentifier::Features.into());
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
         dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
         dependencies.insert(BeWorkIdentifier::Hhea.into());
@@ -634,6 +643,7 @@ fn add_metric_and_limits_job(
             },
         );
     } else {
+        workload.mark_success(BeWorkIdentifier::Hhea);
         workload.mark_success(BeWorkIdentifier::Hmtx);
     }
     Ok(())
@@ -654,6 +664,8 @@ fn add_font_be_job(
         dependencies.insert(BeWorkIdentifier::Cmap.into());
         dependencies.insert(BeWorkIdentifier::Fvar.into());
         dependencies.insert(BeWorkIdentifier::Glyf.into());
+        dependencies.insert(BeWorkIdentifier::Gpos.into());
+        dependencies.insert(BeWorkIdentifier::Gsub.into());
         dependencies.insert(BeWorkIdentifier::Gvar.into());
         dependencies.insert(BeWorkIdentifier::Head.into());
         dependencies.insert(BeWorkIdentifier::Hhea.into());
@@ -947,6 +959,8 @@ mod tests {
                 BeWorkIdentifier::Glyf.into(),
                 BeWorkIdentifier::GlyfFragment("bar".into()).into(),
                 BeWorkIdentifier::GlyfFragment("plus".into()).into(),
+                BeWorkIdentifier::Gpos.into(),
+                BeWorkIdentifier::Gsub.into(),
                 BeWorkIdentifier::Gvar.into(),
                 BeWorkIdentifier::GvarFragment("bar".into()).into(),
                 BeWorkIdentifier::GvarFragment("plus".into()).into(),
@@ -1041,18 +1055,15 @@ mod tests {
     fn compile_fea() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, "static.designspace"));
 
-        let result = compile(Args::for_test(build_dir, "static.designspace"));
-        assert!(
-            result
-                .work_completed
-                .contains(&BeWorkIdentifier::Features.into()),
-            "Missing BE feature work in {:?}",
-            result.work_completed
-        );
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
 
-        let feature_ttf = build_dir.join("features.ttf");
-        assert!(feature_ttf.is_file(), "Should have written {feature_ttf:?}");
+        assert!(font.gpos().is_ok());
+        assert!(font.gsub().is_ok());
     }
 
     fn build_contour_and_composite_glyph(

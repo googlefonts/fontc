@@ -44,7 +44,7 @@ pub type ContextItem<T> = Arc<RwLock<Option<Arc<T>>>>;
 /// <https://veykril.github.io/tlborm/decl-macros/minutiae/fragment-specifiers.html>
 #[macro_export]
 macro_rules! context_accessors {
-    ($getter_name:ident, $setter_name:ident, $lock_name:ident, $value_type:ty, $id:expr, $restore_fn:ident, $prepersist_fn:ident) => {
+    ($getter_name:ident, $setter_name:ident, $has_name:ident, $lock_name:ident, $value_type:ty, $id:expr, $restore_fn:ident, $prepersist_fn:ident) => {
         pub fn $getter_name(&self) -> Arc<$value_type> {
             let id = $id;
             self.acl.assert_read_access(&id.clone().into());
@@ -57,6 +57,18 @@ macro_rules! context_accessors {
             set_cached(&self.$lock_name, $restore_fn(&self.paths.target_file(&id)));
             let rl = self.$lock_name.read();
             rl.as_ref().expect(MISSING_DATA).clone()
+        }
+
+        pub fn $has_name(&self) -> bool {
+            let id = $id;
+            self.acl.assert_read_access(&id.clone().into());
+            {
+                let rl = self.$lock_name.read();
+                if rl.is_some() {
+                    return true;
+                }
+            }
+            self.paths.target_file(&id).is_file()
         }
 
         pub fn $setter_name(&self, value: $value_type) {
@@ -218,10 +230,10 @@ impl Context {
         self.set_cached_glyph(ir);
     }
 
-    context_accessors! { get_init_static_metadata, set_init_static_metadata, init_static_metadata, ir::StaticMetadata, WorkId::InitStaticMetadata, restore, nop }
-    context_accessors! { get_final_static_metadata, set_final_static_metadata, final_static_metadata, ir::StaticMetadata, WorkId::FinalizeStaticMetadata, restore, nop }
-    context_accessors! { get_global_metrics, set_global_metrics, global_metrics, ir::GlobalMetrics, WorkId::GlobalMetrics, restore, nop }
-    context_accessors! { get_features, set_features, feature_ir, ir::Features, WorkId::Features, restore, nop }
+    context_accessors! { get_init_static_metadata, set_init_static_metadata, has_init_static_metadata, init_static_metadata, ir::StaticMetadata, WorkId::InitStaticMetadata, restore, nop }
+    context_accessors! { get_final_static_metadata, set_final_static_metadata, has_final_static_metadata, final_static_metadata, ir::StaticMetadata, WorkId::FinalizeStaticMetadata, restore, nop }
+    context_accessors! { get_global_metrics, set_global_metrics, has_global_metrics, global_metrics, ir::GlobalMetrics, WorkId::GlobalMetrics, restore, nop }
+    context_accessors! { get_features, set_features, has_feature_ir, feature_ir, ir::Features, WorkId::Features, restore, nop }
 }
 
 fn nop<T>(v: &T) -> &T {
