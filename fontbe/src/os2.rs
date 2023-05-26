@@ -450,11 +450,11 @@ fn apply_codepage_range(os2: &mut Os2, codepoints: &HashSet<u32>) {
 }
 
 fn apply_min_max_char_index(os2: &mut Os2, codepoints: &HashSet<u32>) {
-    let (min, max) = codepoints.iter().fold((0xFFFF, 0), |(min, max), cp| {
-        (std::cmp::min(min, *cp), std::cmp::max(max, *cp))
-    });
-    os2.us_first_char_index = std::cmp::min(min, 0xFFFF) as u16;
-    os2.us_last_char_index = std::cmp::min(max, 0xFFFF) as u16;
+    let (min, max) = codepoints
+        .iter()
+        .fold((0xFFFF, 0), |(min, max), cp| (*cp.min(&min), *cp.max(&max)));
+    os2.us_first_char_index = min.min(0xFFFF) as u16;
+    os2.us_last_char_index = max.min(0xFFFF) as u16;
 }
 
 fn codepoints(context: &Context) -> HashSet<u32> {
