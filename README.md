@@ -1,4 +1,4 @@
-# fontmake-rs
+# fontc
 Where in we pursue oxidizing (context: https://github.com/googlefonts/oxidize) fontmake.
 
 Converts source to IR, and then IR to font binary. Aims to be safe, incremental, and fast.
