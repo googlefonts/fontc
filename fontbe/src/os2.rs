@@ -449,6 +449,14 @@ fn apply_codepage_range(os2: &mut Os2, codepoints: &HashSet<u32>) {
     os2.ul_code_page_range_2 = Some(codepage_range[1]);
 }
 
+fn apply_min_max_char_index(os2: &mut Os2, codepoints: &HashSet<u32>) {
+    let (min, max) = codepoints.iter().fold((0xFFFF, 0), |(min, max), cp| {
+        (std::cmp::min(min, *cp), std::cmp::max(max, *cp))
+    });
+    os2.us_first_char_index = std::cmp::min(min, 0xFFFF) as u16;
+    os2.us_last_char_index = std::cmp::min(max, 0xFFFF) as u16;
+}
+
 fn codepoints(context: &Context) -> HashSet<u32> {
     let static_metadata = context.ir.get_final_static_metadata();
 
@@ -485,6 +493,7 @@ impl Work<Context, Error> for Os2Work {
         apply_metrics(&mut os2, &metrics);
         apply_unicode_range(&mut os2, &codepoints);
         apply_codepage_range(&mut os2, &codepoints);
+        apply_min_max_char_index(&mut os2, &codepoints);
 
         context.set_os2(os2);
         Ok(())
@@ -504,7 +513,7 @@ mod tests {
 
     use crate::os2::codepage_range_bits;
 
-    use super::{add_unicode_range_bits, apply_metrics};
+    use super::{add_unicode_range_bits, apply_metrics, apply_min_max_char_index};
 
     #[test]
     fn build_basic_os2() {
@@ -573,5 +582,25 @@ mod tests {
         // We can report both, right?
         codepoints.insert(latin_1_sentinel);
         assert_eq!(HashSet::from([0, 1]), codepage_range_bits(&codepoints));
+    }
+
+    #[test]
+    fn min_max_char_index_simple() {
+        let codepoints = HashSet::from([5, 6, 99]);
+        let mut os2 = Os2::default();
+        apply_min_max_char_index(&mut os2, &codepoints);
+        assert_eq!((5, 99), (os2.us_first_char_index, os2.us_last_char_index));
+    }
+
+    #[test]
+    fn min_max_char_index_big_values() {
+        // Mahjong font, notably entirely outside u16
+        let codepoints = (0x1F000..=0x1F02B).collect();
+        let mut os2 = Os2::default();
+        apply_min_max_char_index(&mut os2, &codepoints);
+        assert_eq!(
+            (0xFFFF, 0xFFFF),
+            (os2.us_first_char_index, os2.us_last_char_index)
+        );
     }
 }
