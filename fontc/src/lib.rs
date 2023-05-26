@@ -562,7 +562,7 @@ fn add_os2_be_job(
 ) -> Result<(), Error> {
     if change_detector.init_static_metadata_ir_change() {
         let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
+        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
         dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
         dependencies.insert(BeWorkIdentifier::Hhea.into());
         dependencies.insert(BeWorkIdentifier::Hmtx.into());
@@ -573,7 +573,15 @@ fn add_os2_be_job(
             Job {
                 work: create_os2_work().into(),
                 dependencies,
-                read_access: ReadAccess::Dependencies,
+                // We want to read all the glyphs, which must be done if hmtx is done, for codepoints
+                read_access: ReadAccess::custom(|id| {
+                    matches!(
+                        id,
+                        AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
+                            | AnyWorkId::Be(BeWorkIdentifier::Hhea)
+                            | AnyWorkId::Be(BeWorkIdentifier::Hmtx)
+                    )
+                }),
                 write_access: Access::one(id),
             },
         );
@@ -1127,8 +1135,9 @@ mod tests {
         // space, 0 points, 0 contour
         // bar, 4 points, 1 contour
         // plus, 12 points, 1 contour
+        // element of, 0 points, 0 contours
         assert_eq!(
-            vec![(0, 0), (4, 1), (12, 1)],
+            vec![(0, 0), (4, 1), (12, 1), (0, 0)],
             result
                 .glyphs()
                 .read()
@@ -1731,6 +1740,30 @@ mod tests {
         assert_fs_selection(
             "glyphs3/StaticBoldItalic.glyphs",
             SelectionFlags::BOLD | SelectionFlags::ITALIC,
+        );
+    }
+
+    #[test]
+    fn populates_unicode_range() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, "static.designspace"));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let os2 = font.os2().unwrap();
+
+        assert_eq!(
+            (1, 1 << 6, 0, 0),
+            (
+                os2.ul_unicode_range_1(),
+                os2.ul_unicode_range_2(),
+                os2.ul_unicode_range_3(),
+                os2.ul_unicode_range_4()
+            ),
+            "Should set bit 1, Latin-1 Supplement and bit 38, Math Operators",
         );
     }
 }
