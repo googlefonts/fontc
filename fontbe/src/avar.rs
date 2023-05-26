@@ -7,7 +7,6 @@ use fontir::{
     ir::Axis,
 };
 use log::debug;
-use read_fonts::types::MajorMinor;
 use write_fonts::tables::avar::{Avar, AxisValueMap, SegmentMaps};
 
 use crate::{
@@ -71,7 +70,6 @@ impl Work<Context, Error> for AvarWork {
             return Ok(());
         }
         context.set_avar(Avar::new(
-            MajorMinor::VERSION_1_0,
             static_metadata
                 .variable_axes
                 .iter()
