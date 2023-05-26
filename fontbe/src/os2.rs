@@ -475,9 +475,11 @@ impl Work<Context, Error> for Os2Work {
             fs_selection: static_metadata.misc.selection_flags,
             x_avg_char_width: x_avg_char_width(context)?,
 
+            // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/outlineCompiler.py#L705
+            us_break_char: Some(32),
+
             // Avoid "field must be present for version 2" caused by default to None
             us_default_char: Some(0),
-            us_break_char: Some(0),
             us_max_context: Some(0),
 
             ..Default::default()
