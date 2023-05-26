@@ -14,8 +14,8 @@ exclude = ["test-data"]
 
 [dependencies]
 ansi_term = "0.12.1"
-smol_str = "0.1.18"
-norad = "0.8" # just for use in sample binaries/debugging, remove eventually
+smol_str = "0.2.0"
+norad = "0.10" # Used in the compile binary
 write-fonts = { version = "0.4.0" }
 chrono = "0.4.3"
 diff = { version = "0.1.12", optional = true }
@@ -33,7 +33,7 @@ test = ["diff", "rayon", "serde", "serde_json"]
 [dev-dependencies]
 diff = "0.1.12"
 rayon = "1.5"
-criterion = "0.4"
+criterion = "0.5"
 serde = { version = "1.0.147", features = ["derive"] }
 serde_json = "1.0.87"
 
