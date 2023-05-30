@@ -172,8 +172,8 @@ def main(argv):
         sys.exit(f"No such file: {source}")
 
     root = Path(".").resolve()
-    if root.name != "fontmake-rs":
-        sys.exit("Expected to be at the root of fontmake-rs")
+    if root.name != "fontc":
+        sys.exit("Expected to be at the root of fontc")
 
     if shutil.which("fontmake") is None:
         sys.exit("No fontmake")
