@@ -5,7 +5,7 @@ use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
 use fontir::ir::{
     self, GlobalMetric, GlobalMetrics, GlyphInstance, NameBuilder, NameKey, NamedInstance,
-    StaticMetadata,
+    StaticMetadata, DEFAULT_VENDOR_ID,
 };
 use fontir::orchestration::{Context, IrWork};
 use fontir::source::{Input, Source};
@@ -253,7 +253,11 @@ fn names(font: &Font) -> HashMap<NameKey, String> {
             builder.add(name_id, value.clone());
         }
     }
-    builder.apply_default_fallbacks();
+    let vendor = font
+        .vendor_id()
+        .map(|v| v.as_str())
+        .unwrap_or(DEFAULT_VENDOR_ID);
+    builder.apply_default_fallbacks(vendor);
 
     builder.into_inner()
 }
@@ -330,7 +334,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         )
         .map_err(WorkError::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
-        if let Some(vendor_id) = font.names.get("vendorID") {
+        if let Some(vendor_id) = font.vendor_id() {
             static_metadata.misc.vendor_id =
                 Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
@@ -907,6 +911,7 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
         let mut names: Vec<_> = names(&font).into_iter().collect();
         names.sort_by_key(|(id, v)| (id.name_id, v.clone()));
+        // typographic family name == family name and should NOT be present
         assert_eq!(
             vec![
                 (
@@ -916,6 +921,10 @@ mod tests {
                 (
                     NameKey::new_bmp_only(NameId::FAMILY_NAME),
                     String::from("FamilyName")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
+                    String::from("Regular")
                 ),
                 (
                     NameKey::new_bmp_only(NameId::UNIQUE_ID),
@@ -960,10 +969,6 @@ mod tests {
                 (
                     NameKey::new_bmp_only(NameId::LICENSE_URL),
                     String::from("https://example.com/my/font/license")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
-                    String::from("FamilyName")
                 ),
                 (
                     NameKey::new_bmp_only(NameId::COMPATIBLE_FULL_NAME),

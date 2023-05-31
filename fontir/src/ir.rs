@@ -21,7 +21,8 @@ use std::{
 };
 use write_fonts::tables::os2::SelectionFlags;
 
-const DEFAULT_VENDOR_ID: Tag = Tag::new(b"NONE");
+pub const DEFAULT_VENDOR_ID: &str = "NONE";
+const DEFAULT_VENDOR_ID_TAG: Tag = Tag::new(b"NONE");
 
 /// Global font info that cannot vary across the design space.
 ///
@@ -95,7 +96,8 @@ impl StaticMetadata {
         let mut name_id_gen = 255;
         let mut key_to_name = names;
         let mut visited = HashSet::new();
-        axes.iter()
+        variable_axes
+            .iter()
             .map(|axis| &axis.name)
             .chain(named_instances.iter().map(|ni| &ni.name))
             .for_each(|name| {
@@ -138,7 +140,7 @@ impl StaticMetadata {
             variable_axes_default,
             misc: MiscMetadata {
                 selection_flags: Default::default(),
-                vendor_id: DEFAULT_VENDOR_ID,
+                vendor_id: DEFAULT_VENDOR_ID_TAG,
             },
         })
     }
@@ -374,7 +376,6 @@ pub struct GlobalMetricsInstance {
 /// Helps accumulate 'name' values.
 ///
 /// See <https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/outlineCompiler.py#L367>.
-#[derive(Default)]
 pub struct NameBuilder {
     names: HashMap<NameKey, String>,
     /// Helps lookup entries in name when all we have is a NameId
@@ -383,11 +384,31 @@ pub struct NameBuilder {
     version_minor: u32,
 }
 
+impl Default for NameBuilder {
+    fn default() -> Self {
+        let mut builder = Self {
+            names: Default::default(),
+            name_to_key: Default::default(),
+            version_major: Default::default(),
+            version_minor: Default::default(),
+        };
+        // Based on diffing fontmake Oswald build
+        builder.add(NameId::SUBFAMILY_NAME, "Regular".to_string());
+        builder
+    }
+}
+
 impl NameBuilder {
     pub fn add(&mut self, name_id: NameId, value: String) {
         let key = NameKey::new(name_id, &value);
         self.names.insert(key, value);
         self.name_to_key.insert(name_id, key);
+    }
+
+    pub fn remove(&mut self, name_id: NameId) {
+        if let Some(key) = self.name_to_key.remove(&name_id) {
+            self.names.remove(&key);
+        }
     }
 
     pub fn add_if_present(&mut self, name_id: NameId, value: &Option<String>) {
@@ -426,7 +447,7 @@ impl NameBuilder {
         self.names
     }
 
-    pub fn apply_default_fallbacks(&mut self) {
+    pub fn apply_default_fallbacks(&mut self, vendor_id: &str) {
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L188
         self.apply_fallback(NameId::TYPOGRAPHIC_FAMILY_NAME, &[NameId::FAMILY_NAME]);
 
@@ -463,7 +484,7 @@ impl NameBuilder {
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L178-L185
         if !self.contains_key(NameId::POSTSCRIPT_NAME) {
             let mut value = format!(
-                "{} {}",
+                "{}-{}",
                 self.get(NameId::TYPOGRAPHIC_FAMILY_NAME)
                     .unwrap_or_default(),
                 self.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME)
@@ -480,12 +501,23 @@ impl NameBuilder {
                 .unwrap()
                 .replace("Version ", "");
             // fontmake pulls the openTypeOS2VendorID but we don't have that so just use their default
-            let vendor = "NONE";
             let postscript_name = self.get(NameId::POSTSCRIPT_NAME).unwrap();
             self.add(
                 NameId::UNIQUE_ID,
-                format!("{version};{vendor};{postscript_name}"),
+                format!("{version};{vendor_id};{postscript_name}"),
             );
+        }
+
+        // based on diffing with fontmake
+        if let Some(family) = self.get(NameId::FAMILY_NAME) {
+            if Some(family) == self.get(NameId::TYPOGRAPHIC_FAMILY_NAME) {
+                self.remove(NameId::TYPOGRAPHIC_FAMILY_NAME);
+            }
+        }
+        if let Some(subfamily) = self.get(NameId::SUBFAMILY_NAME) {
+            if Some(subfamily) == self.get(NameId::TYPOGRAPHIC_SUBFAMILY_NAME) {
+                self.remove(NameId::TYPOGRAPHIC_SUBFAMILY_NAME);
+            }
         }
     }
 
