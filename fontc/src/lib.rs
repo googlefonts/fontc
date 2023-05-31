@@ -575,6 +575,8 @@ fn add_os2_be_job(
         dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
         dependencies.insert(BeWorkIdentifier::Hhea.into());
         dependencies.insert(BeWorkIdentifier::Hmtx.into());
+        dependencies.insert(BeWorkIdentifier::Gpos.into());
+        dependencies.insert(BeWorkIdentifier::Gsub.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Os2.into();
         workload.insert(
@@ -589,6 +591,8 @@ fn add_os2_be_job(
                         AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
                             | AnyWorkId::Be(BeWorkIdentifier::Hhea)
                             | AnyWorkId::Be(BeWorkIdentifier::Hmtx)
+                            | AnyWorkId::Be(BeWorkIdentifier::Gpos)
+                            | AnyWorkId::Be(BeWorkIdentifier::Gsub)
                     )
                 }),
                 write_access: Access::one(id),
