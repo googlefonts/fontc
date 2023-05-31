@@ -17,8 +17,7 @@ use write_fonts::{
             ChainedClassSequenceRule, ChainedClassSequenceRuleSet, ChainedSequenceContext,
             ChainedSequenceContextFormat1, ChainedSequenceContextFormat2, ChainedSequenceRule,
             ChainedSequenceRuleSet, ClassSequenceRule, ClassSequenceRuleSet, SequenceContext,
-            SequenceContextFormat1, SequenceContextFormat2, SequenceContextFormat3,
-            SequenceLookupRecord, SequenceRule, SequenceRuleSet,
+            SequenceContextFormat1, SequenceContextFormat2, SequenceRule, SequenceRuleSet,
         },
         os2::Os2,
     },
@@ -642,7 +641,7 @@ impl MaxContext for AlternateSubstFormat1 {
     }
 }
 
-/// <// https://github.com/fonttools/fonttools/blob/bf77873d5a0ea7462664c8335c8cc7ea9e48ca18/Lib/fontTools/otlLib/maxContextCalc.py#L35-L39>
+/// <https://github.com/fonttools/fonttools/blob/bf77873d5a0ea7462664c8335c8cc7ea9e48ca18/Lib/fontTools/otlLib/maxContextCalc.py#L35-L39>
 impl MaxContext for LigatureSubstFormat1 {
     fn max_context(&self) -> u16 {
         self.ligature_sets
