@@ -1608,6 +1608,10 @@ impl Font {
     pub fn default_master(&self) -> &FontMaster {
         &self.masters[self.default_master_idx]
     }
+
+    pub fn vendor_id(&self) -> Option<&String> {
+        self.names.get("vendorID")
+    }
 }
 
 /// Convert [kurbo::Point] to this for eq and hash/

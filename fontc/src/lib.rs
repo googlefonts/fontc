@@ -1781,4 +1781,18 @@ mod tests {
             "Should set bit 1, Latin-1 Supplement and bit 38, Math Operators",
         );
     }
+
+    #[test]
+    fn captures_vendor_id() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, "glyphs3/TheBestNames.glyphs"));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let os2 = font.os2().unwrap();
+        assert_eq!(Tag::new(b"RODS"), os2.ach_vend_id());
+    }
 }

@@ -12,6 +12,7 @@ use fontir::{
     error::{Error, WorkError},
     ir::{
         Features, GlobalMetric, GlobalMetrics, NameBuilder, NameKey, NamedInstance, StaticMetadata,
+        DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork},
     source::{Input, Source},
@@ -578,7 +579,11 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
     );
 
     // After our first pass at getting values, apply fallbacks
-    builder.apply_default_fallbacks();
+    let vendor = font_info
+        .open_type_os2_vendor_id
+        .as_deref()
+        .unwrap_or(DEFAULT_VENDOR_ID);
+    builder.apply_default_fallbacks(vendor);
 
     // Name's that don't get individual fields
     if let Some(name_records) = font_info.open_type_name_records.as_ref() {
@@ -1074,7 +1079,7 @@ mod tests {
                 ),
                 (
                     NameKey::new_bmp_only(NameId::UNIQUE_ID),
-                    String::from("0.000;NONE;NewFontRegular")
+                    String::from("0.000;NONE;NewFont-Regular")
                 ),
                 (
                     NameKey::new_bmp_only(NameId::FULL_NAME),
@@ -1086,15 +1091,7 @@ mod tests {
                 ),
                 (
                     NameKey::new_bmp_only(NameId::POSTSCRIPT_NAME),
-                    String::from("NewFontRegular")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_FAMILY_NAME),
-                    String::from("New Font")
-                ),
-                (
-                    NameKey::new_bmp_only(NameId::TYPOGRAPHIC_SUBFAMILY_NAME),
-                    String::from("Regular")
+                    String::from("NewFont-Regular")
                 ),
             ],
             names

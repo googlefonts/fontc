@@ -157,10 +157,48 @@ def name_id_to_name(ttx, xpath, attr):
         el.attrib[attr] = id_to_name[el.attrib[attr]]
 
 
+def find_table(ttx, tag):
+    el = ttx.xpath(f"/ttFont/{tag}")
+    assert len(el) == 1, f"Wanted 1 name element, got {len(el)}"
+    return el[0]
+
+
+def sort_name(ttx):
+    name = find_table(ttx, "name")
+    records = sorted(
+        list(name),
+        key=lambda el: (
+            int(el.attrib["nameID"]),
+            el.attrib["platformID"],
+            el.attrib["platEncID"],
+            el.attrib["langID"],
+        ),
+    )
+    name.clear()
+    for record in records:
+        name.append(record)
+
+
+def drop_weird_names(ttx):
+    drops = list(
+        ttx.xpath(
+            "//name/namerecord[@platformID='1' and @platEncID='0' and @langID='0x0']"
+        )
+    )
+    for drop in drops:
+        drop.getparent().remove(drop)
+
+
 def reduce_diff_noise(fontc, fontmake):
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
         name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
+
+        # different order of records is fine
+        sort_name(ttx)
+
+        # deal with https://github.com/googlefonts/fontmake/issues/1003
+        drop_weird_names(ttx)
 
 
 def main(argv):
