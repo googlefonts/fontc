@@ -672,6 +672,18 @@ impl Work<Context, WorkError> for StaticMetadataWork {
                 Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
 
+        // <https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L313-L322>
+        static_metadata.misc.underline_thickness = font_info_at_default
+            .postscript_underline_thickness
+            .map(|v| v as f32)
+            .unwrap_or(0.05 * units_per_em as f32)
+            .into();
+        static_metadata.misc.underline_position = font_info_at_default
+            .postscript_underline_position
+            .map(|v| v as f32)
+            .unwrap_or(-0.075 * units_per_em as f32)
+            .into();
+
         context.set_init_static_metadata(static_metadata);
         Ok(())
     }
@@ -1220,6 +1232,20 @@ mod tests {
                 (UserCoord::new(700.0), NormalizedCoord::new(1.0)),
             ],
             metric_locations
+        );
+    }
+
+    #[test]
+    fn default_underline_settings() {
+        let (_, context) = build_static_metadata("wght_var.designspace");
+        let static_metadata = &context.get_init_static_metadata();
+        assert_eq!(
+            (1000, 50.0, -75.0),
+            (
+                static_metadata.units_per_em,
+                static_metadata.misc.underline_thickness.0,
+                static_metadata.misc.underline_position.0
+            )
         );
     }
 }

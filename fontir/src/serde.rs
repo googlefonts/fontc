@@ -99,6 +99,8 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
 pub struct MiscSerdeRepr {
     pub selection_flags: u16,
     pub vendor_id: Tag,
+    pub underline_thickness: f32,
+    pub underline_position: f32,
 }
 
 impl From<MiscSerdeRepr> for MiscMetadata {
@@ -106,6 +108,8 @@ impl From<MiscSerdeRepr> for MiscMetadata {
         MiscMetadata {
             selection_flags: SelectionFlags::from_bits_truncate(from.selection_flags),
             vendor_id: from.vendor_id,
+            underline_thickness: from.underline_thickness.into(),
+            underline_position: from.underline_position.into(),
         }
     }
 }
@@ -115,6 +119,8 @@ impl From<MiscMetadata> for MiscSerdeRepr {
         MiscSerdeRepr {
             selection_flags: from.selection_flags.bits(),
             vendor_id: from.vendor_id,
+            underline_thickness: from.underline_thickness.into(),
+            underline_position: from.underline_position.into(),
         }
     }
 }
