@@ -3,7 +3,7 @@
 //! The main entry point for this crate is the [`Compiler`] struct, which provides
 //! a builder-like interface for compiliing from source.
 
-#![deny(missing_docs)]
+#![deny(missing_docs, rustdoc::broken_intra_doc_links)]
 
 mod common;
 pub mod compile;
