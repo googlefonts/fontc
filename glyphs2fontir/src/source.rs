@@ -1069,7 +1069,7 @@ mod tests {
                 os2_win_descent: (-200.0).into(),
                 hhea_ascender: 1000.0.into(),
                 hhea_descender: (-200.0).into(),
-                hhea_line_gap: 200.0.into(),
+                hhea_line_gap: 0.0.into(),
                 ..Default::default()
             },
             default_metrics

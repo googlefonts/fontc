@@ -243,10 +243,11 @@ impl GlobalMetrics {
         set(GlobalMetric::Os2TypoAscender, ascender + typo_line_gap);
         set(GlobalMetric::Os2TypoDescender, descender);
 
-        // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L126-L130
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L126-L130
         set(GlobalMetric::HheaAscender, ascender + typo_line_gap);
         set(GlobalMetric::HheaDescender, descender);
-        set(GlobalMetric::HheaLineGap, typo_line_gap);
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L366
+        set(GlobalMetric::HheaLineGap, 0.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L241-L254
         set(GlobalMetric::Os2WinAscent, ascender);
@@ -261,7 +262,7 @@ impl GlobalMetrics {
         let italic_angle = 0.0;
         set(GlobalMetric::ItalicAngle, italic_angle);
 
-        // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L133-L150
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L133-L150
         set(GlobalMetric::CaretSlopeRise, 1.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L575-L616
