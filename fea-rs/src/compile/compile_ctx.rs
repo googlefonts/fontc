@@ -10,7 +10,7 @@ use write_fonts::{
         self,
         gdef::CaretValue,
         gpos::{AnchorTable, ValueRecord},
-        layout::LookupFlag,
+        layout::{FeatureParams, LookupFlag, StylisticSetParams},
     },
     types::{NameId, Tag},
 };
@@ -196,13 +196,62 @@ impl<'a> CompilationCtx<'a> {
             return Err(self.errors.clone());
         }
 
+        let mut name_builder = self.tables.name.clone();
+        let stat = self
+            .tables
+            .stat
+            .as_ref()
+            .map(|raw| raw.build(&mut name_builder));
+        let (mut gsub, mut gpos) = self.lookups.build(&self.features, &self.required_features);
+
+        let mut feature_params = HashMap::new();
+        if let Some(size) = self.size.as_ref() {
+            feature_params.insert(
+                (tags::GPOS, tags::SIZE),
+                FeatureParams::Size(size.build(&mut name_builder)),
+            );
+        }
+
+        for (tag, names) in self.tables.stylistic_sets.iter() {
+            let id = name_builder.add_anon_group(names);
+            let params = FeatureParams::StylisticSet(StylisticSetParams::new(id));
+            feature_params.insert((tags::GSUB, *tag), params);
+        }
+
+        for (tag, cv_params) in self.tables.character_variants.iter() {
+            let params = cv_params.build(&mut name_builder);
+            feature_params.insert((tags::GSUB, *tag), FeatureParams::CharacterVariant(params));
+        }
+
+        if !feature_params.is_empty() {
+            if let Some(gsub) = gsub.as_mut() {
+                for record in gsub.feature_list.feature_records.iter_mut() {
+                    if let Some(params) = feature_params.get(&(tags::GSUB, record.feature_tag)) {
+                        record.feature.feature_params = params.clone().into();
+                    }
+                }
+            }
+            if let Some(gpos) = gpos.as_mut() {
+                for record in gpos.feature_list.feature_records.iter_mut() {
+                    if let Some(params) = feature_params.get(&(tags::GPOS, record.feature_tag)) {
+                        record.feature.feature_params = params.clone().into();
+                    }
+                }
+            }
+        }
+
         Ok(Compilation {
             warnings: self.errors.clone(),
-            lookups: self.lookups.clone(),
-            features: self.features.clone(),
-            tables: self.tables.clone(),
-            size: self.size.clone(),
-            required_features: self.required_features.clone(),
+            head: self.tables.head.as_ref().map(|raw| raw.build(None)),
+            hhea: self.tables.hhea.clone(),
+            vhea: self.tables.vhea.clone(),
+            os2: self.tables.os2.as_ref().map(|raw| raw.build()),
+            gdef: self.tables.gdef.as_ref().map(|raw| raw.build()),
+            base: self.tables.base.as_ref().map(|raw| raw.build()),
+            name: name_builder.build(),
+            stat,
+            gsub,
+            gpos,
         })
     }
 

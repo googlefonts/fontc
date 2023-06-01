@@ -126,7 +126,7 @@ impl<'a> Compiler<'a> {
     pub fn compile_binary(self) -> Result<Vec<u8>, CompilerError> {
         let opts = self.opts.clone();
         let glyph_map = self.glyph_map;
-        Ok(self.compile()?.assemble(glyph_map, opts)?.build())
+        Ok(self.compile()?.to_binary(glyph_map, opts)?)
     }
 }
 

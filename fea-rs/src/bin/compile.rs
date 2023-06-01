@@ -31,9 +31,8 @@ fn main() -> Result<(), Error> {
     let path = args.out_path();
     let opts = Opts::new().make_post_table(args.post);
     let raw_font = compiled
-        .assemble(&glyph_names, opts)
-        .expect("ttf compile failed")
-        .build();
+        .to_binary(&glyph_names, opts)
+        .expect("ttf compile failed");
 
     log::info!("writing {} bytes to {}", raw_font.len(), path.display());
     std::fs::write(path, raw_font).map_err(Into::into)

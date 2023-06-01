@@ -5,8 +5,6 @@ use std::{
 
 use smol_str::SmolStr;
 use write_fonts::{
-    dump_table,
-    error::Error as WriteError,
     from_obj::ToOwnedTable,
     read::{tables::name::Encoding, FontRef, TableProvider},
     tables::{
@@ -571,7 +569,7 @@ impl Os2Builder {
 }
 
 impl GdefBuilder {
-    pub fn build(&self) -> Result<Vec<u8>, WriteError> {
+    pub fn build(&self) -> tables::gdef::Gdef {
         let mut table = tables::gdef::Gdef::new(
             self.build_class_def(),
             self.build_attach_list(),
@@ -580,7 +578,7 @@ impl GdefBuilder {
         );
 
         table.mark_glyph_sets_def = self.build_mark_glyph_sets().into();
-        dump_table(&table)
+        table
     }
 
     fn build_class_def(&self) -> Option<ClassDef> {
