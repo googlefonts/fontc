@@ -78,6 +78,9 @@ pub struct MiscMetadata {
 
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#achvendid>
     pub vendor_id: Tag,
+
+    pub underline_thickness: OrderedFloat<f32>,
+    pub underline_position: OrderedFloat<f32>,
 }
 
 impl StaticMetadata {
@@ -141,6 +144,8 @@ impl StaticMetadata {
             misc: MiscMetadata {
                 selection_flags: Default::default(),
                 vendor_id: DEFAULT_VENDOR_ID_TAG,
+                underline_thickness: 0.0.into(),
+                underline_position: 0.0.into(),
             },
         })
     }

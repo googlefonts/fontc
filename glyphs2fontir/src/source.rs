@@ -338,6 +338,10 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             static_metadata.misc.vendor_id =
                 Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
+        // <https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/builder/custom_params.py#L1116-L1125>
+        static_metadata.misc.underline_thickness = 50.0.into();
+        static_metadata.misc.underline_position = (-100.0).into();
+
         context.set_init_static_metadata(static_metadata);
         Ok(())
     }
@@ -1059,6 +1063,20 @@ mod tests {
         assert_eq!(
             Tag::new(b"RODS"),
             context.get_init_static_metadata().misc.vendor_id
+        );
+    }
+
+    #[test]
+    fn default_underline_settings() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("Oswald-O.glyphs"));
+        let static_metadata = context.get_init_static_metadata();
+        assert_eq!(
+            (1000, 50.0, -100.0),
+            (
+                static_metadata.units_per_em,
+                static_metadata.misc.underline_thickness.0,
+                static_metadata.misc.underline_position.0
+            )
         );
     }
 }
