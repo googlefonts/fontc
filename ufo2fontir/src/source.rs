@@ -730,6 +730,11 @@ impl Work<Context, WorkError> for GlobalMetricsWork {
 
             metrics.set_if_some(GlobalMetric::Ascender, pos.clone(), font_info.ascender);
             metrics.set_if_some(GlobalMetric::Descender, pos.clone(), font_info.descender);
+            metrics.set_if_some(
+                GlobalMetric::CaretSlopeRise,
+                pos.clone(),
+                font_info.open_type_hhea_caret_slope_rise.map(|v| v as f64),
+            );
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), font_info.cap_height);
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), font_info.x_height);
             metrics.set_if_some(
@@ -756,6 +761,21 @@ impl Work<Context, WorkError> for GlobalMetricsWork {
                 GlobalMetric::Os2WinDescent,
                 pos.clone(),
                 font_info.open_type_os2_win_descent.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::HheaAscender,
+                pos.clone(),
+                font_info.open_type_hhea_ascender.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::HheaDescender,
+                pos.clone(),
+                font_info.open_type_hhea_descender.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::HheaLineGap,
+                pos.clone(),
+                font_info.open_type_hhea_line_gap.map(|v| v as f64),
             );
         }
 
@@ -1163,6 +1183,7 @@ mod tests {
                 pos: static_metadata.default_location().clone(),
                 ascender: 737.0.into(),
                 descender: (-42.0).into(),
+                caret_slope_rise: 1.0.into(),
                 cap_height: 702.0.into(),
                 x_height: 501.0.into(),
                 y_subscript_x_size: 650.0.into(),
@@ -1178,6 +1199,9 @@ mod tests {
                 os2_typo_line_gap: 42.0.into(),
                 os2_win_ascent: 1325.0.into(),
                 os2_win_descent: 377.0.into(),
+                hhea_ascender: 1194.0.into(),
+                hhea_descender: (-290.0).into(),
+                hhea_line_gap: 43.0.into(),
                 ..Default::default()
             },
             default_metrics

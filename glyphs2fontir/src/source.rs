@@ -401,6 +401,21 @@ impl Work<Context, WorkError> for GlobalMetricWork {
                 pos.clone(),
                 master.win_descent.map(|v| v as f64),
             );
+            metrics.set_if_some(
+                GlobalMetric::HheaAscender,
+                pos.clone(),
+                master.hhea_ascender.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::HheaDescender,
+                pos.clone(),
+                master.hhea_descender.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::HheaLineGap,
+                pos.clone(),
+                master.hhea_line_gap.map(|v| v as f64),
+            );
         }
 
         context.set_global_metrics(metrics);
@@ -1036,6 +1051,7 @@ mod tests {
                 pos: static_metadata.default_location().clone(),
                 ascender: 737.0.into(),
                 descender: (-42.0).into(),
+                caret_slope_rise: 1.0.into(),
                 cap_height: 702.0.into(),
                 x_height: 501.0.into(),
                 y_subscript_x_size: 650.0.into(),
@@ -1051,6 +1067,9 @@ mod tests {
                 os2_typo_line_gap: 200.0.into(),
                 os2_win_ascent: 800.0.into(),
                 os2_win_descent: (-200.0).into(),
+                hhea_ascender: 1000.0.into(),
+                hhea_descender: (-200.0).into(),
+                hhea_line_gap: 200.0.into(),
                 ..Default::default()
             },
             default_metrics

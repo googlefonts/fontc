@@ -277,6 +277,9 @@ pub struct FontMaster {
     pub typo_line_gap: Option<i64>,
     pub win_ascent: Option<i64>,
     pub win_descent: Option<i64>,
+    pub hhea_ascender: Option<i64>,
+    pub hhea_descender: Option<i64>,
+    pub hhea_line_gap: Option<i64>,
 }
 
 impl FontMaster {
@@ -1556,6 +1559,9 @@ impl TryFrom<RawFont> for Font {
                 typo_line_gap: custom_param_int(&m.other_stuff, "typoLineGap"),
                 win_ascent: custom_param_int(&m.other_stuff, "winAscent"),
                 win_descent: custom_param_int(&m.other_stuff, "winDescent"),
+                hhea_ascender: custom_param_int(&m.other_stuff, "hheaAscender"),
+                hhea_descender: custom_param_int(&m.other_stuff, "hheaDescender"),
+                hhea_line_gap: custom_param_int(&m.other_stuff, "hheaLineGap"),
             })
             .collect();
 

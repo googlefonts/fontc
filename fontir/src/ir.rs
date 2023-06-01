@@ -179,12 +179,16 @@ pub struct GlobalMetrics(
 pub enum GlobalMetric {
     Ascender,
     Descender,
+    HheaAscender,
+    HheaDescender,
+    HheaLineGap,
     Os2TypoAscender,
     Os2TypoDescender,
     Os2TypoLineGap,
     Os2WinAscent,
     Os2WinDescent,
     CapHeight,
+    CaretSlopeRise,
     XHeight,
     ItalicAngle,
     YSubscriptXSize,
@@ -239,6 +243,11 @@ impl GlobalMetrics {
         set(GlobalMetric::Os2TypoAscender, ascender + typo_line_gap);
         set(GlobalMetric::Os2TypoDescender, descender);
 
+        // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L126-L130
+        set(GlobalMetric::HheaAscender, ascender + typo_line_gap);
+        set(GlobalMetric::HheaDescender, descender);
+        set(GlobalMetric::HheaLineGap, typo_line_gap);
+
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L241-L254
         set(GlobalMetric::Os2WinAscent, ascender);
         set(GlobalMetric::Os2WinDescent, descender);
@@ -251,6 +260,9 @@ impl GlobalMetrics {
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L360
         let italic_angle = 0.0;
         set(GlobalMetric::ItalicAngle, italic_angle);
+
+        // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L133-L150
+        set(GlobalMetric::CaretSlopeRise, 1.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L575-L616
         let y_subscript_x_size = units_per_em as f32 * 0.65;
@@ -324,6 +336,7 @@ impl GlobalMetrics {
             pos: pos.clone(),
             ascender: self.get(GlobalMetric::Ascender, pos),
             descender: self.get(GlobalMetric::Descender, pos),
+            caret_slope_rise: self.get(GlobalMetric::CaretSlopeRise, pos),
             cap_height: self.get(GlobalMetric::CapHeight, pos),
             x_height: self.get(GlobalMetric::XHeight, pos),
             italic_angle: self.get(GlobalMetric::ItalicAngle, pos),
@@ -342,6 +355,9 @@ impl GlobalMetrics {
             os2_typo_line_gap: self.get(GlobalMetric::Os2TypoLineGap, pos),
             os2_win_ascent: self.get(GlobalMetric::Os2WinAscent, pos),
             os2_win_descent: self.get(GlobalMetric::Os2WinDescent, pos),
+            hhea_ascender: self.get(GlobalMetric::HheaAscender, pos),
+            hhea_descender: self.get(GlobalMetric::HheaDescender, pos),
+            hhea_line_gap: self.get(GlobalMetric::HheaLineGap, pos),
         }
     }
 
@@ -358,6 +374,7 @@ pub struct GlobalMetricsInstance {
     pub pos: NormalizedLocation,
     pub ascender: OrderedFloat<f32>,
     pub descender: OrderedFloat<f32>,
+    pub caret_slope_rise: OrderedFloat<f32>,
     pub cap_height: OrderedFloat<f32>,
     pub x_height: OrderedFloat<f32>,
     pub italic_angle: OrderedFloat<f32>,
@@ -376,6 +393,9 @@ pub struct GlobalMetricsInstance {
     pub os2_typo_line_gap: OrderedFloat<f32>,
     pub os2_win_ascent: OrderedFloat<f32>,
     pub os2_win_descent: OrderedFloat<f32>,
+    pub hhea_ascender: OrderedFloat<f32>,
+    pub hhea_descender: OrderedFloat<f32>,
+    pub hhea_line_gap: OrderedFloat<f32>,
 }
 
 /// Helps accumulate 'name' values.

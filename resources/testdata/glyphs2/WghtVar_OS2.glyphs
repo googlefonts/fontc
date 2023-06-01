@@ -63,6 +63,18 @@ value = 1325;
 {
 name = winDescent;
 value = 377;
+},
+{
+name = hheaAscender;
+value = 1194;
+},
+{
+name = hheaDescender;
+value = -290;
+},
+{
+name = hheaLineGap;
+value = 43;
 }
 );
 descender = -42;

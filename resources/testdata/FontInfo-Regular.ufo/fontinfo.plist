@@ -28,5 +28,11 @@
     <integer>1325</integer>
     <key>openTypeOS2WinDescent</key>
     <integer>377</integer>
+    <key>openTypeHheaAscender</key>
+    <integer>1194</integer>
+    <key>openTypeHheaDescender</key>
+    <integer>-290</integer>
+    <key>openTypeHheaLineGap</key>
+    <integer>43</integer>
   </dict>
 </plist>

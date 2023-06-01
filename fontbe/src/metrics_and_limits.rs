@@ -143,8 +143,10 @@ impl Work<Context, Error> for MetricAndLimitWork {
         let min_right_side_bearing = min_right_side_bearing.into();
         let x_max_extent = glyph_limits.x_max_extent.unwrap_or_default().into();
         let hhea = Hhea {
-            ascender: FWord::new(default_metrics.ascender.into_inner().ot_round()),
-            descender: FWord::new(default_metrics.descender.into_inner().ot_round()),
+            ascender: FWord::new(default_metrics.hhea_ascender.into_inner().ot_round()),
+            descender: FWord::new(default_metrics.hhea_descender.into_inner().ot_round()),
+            line_gap: FWord::new(default_metrics.hhea_line_gap.into_inner().ot_round()),
+            caret_slope_rise: default_metrics.caret_slope_rise.into_inner().ot_round(),
             advance_width_max: glyph_limits.advance_width_max.into(),
             min_left_side_bearing,
             min_right_side_bearing,
