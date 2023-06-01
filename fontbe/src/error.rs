@@ -1,6 +1,6 @@
 use std::{fmt::Display, io};
 
-use fea_rs::compile::error::{BinaryCompilationError, CompilerError};
+use fea_rs::compile::error::CompilerError;
 use font_types::Tag;
 use fontdrasil::types::GlyphName;
 use fontir::variations::DeltaError;
@@ -12,8 +12,6 @@ use write_fonts::tables::{glyf::BadKurbo, gvar::GvarInputError, variations::IupE
 pub enum Error {
     #[error("IO failure")]
     IoError(#[from] io::Error),
-    #[error("Fea binary assembly failure")]
-    FeaAssembleError(#[from] BinaryCompilationError),
     #[error("Fea compilation failure")]
     FeaCompileError(#[from] CompilerError),
     #[error("'{0}' {1}")]
