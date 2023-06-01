@@ -8,13 +8,12 @@ use std::{
 };
 
 use fea_rs::{
+    compile::Compilation,
     parse::{SourceLoadError, SourceResolver},
     Compiler, GlyphMap, GlyphName as FeaRsGlyphName,
 };
 use fontir::{ir::Features, orchestration::Flags};
 use log::{debug, error, warn};
-use read_fonts::{FontRef, TableProvider};
-use write_fonts::{from_obj::ToOwnedTable, FontBuilder};
 
 use fontdrasil::orchestration::Work;
 
@@ -73,7 +72,7 @@ impl FeatureWork {
         Box::new(FeatureWork {})
     }
 
-    fn compile(&self, features: &Features, glyph_order: GlyphMap) -> Result<FontBuilder, Error> {
+    fn compile(&self, features: &Features, glyph_order: GlyphMap) -> Result<Compilation, Error> {
         let root_path = if let Features::File(file) = features {
             OsString::from(file)
         } else {
@@ -87,11 +86,7 @@ impl FeatureWork {
             };
             compiler = compiler.with_resolver(resolver);
         }
-        compiler
-            .compile()
-            .map_err(Error::FeaCompileError)?
-            .assemble(&glyph_order, Default::default())
-            .map_err(Error::FeaAssembleError)
+        compiler.compile().map_err(Error::FeaCompileError)
     }
 }
 
@@ -128,18 +123,18 @@ impl Work<Context, Error> for FeatureWork {
                     write_debug_fea(context, result.is_err(), "compile failed", fea_content);
                 }
             }
-            let buf = result?.build();
-            let font = FontRef::new(&buf).unwrap();
+            let result = result?;
+
             debug!(
                 "Built features, gpos? {} gsub? {}",
-                font.gpos().is_ok(),
-                font.gsub().is_ok()
+                result.gpos.is_some(),
+                result.gsub.is_some()
             );
-            if let Ok(gpos) = font.gpos() {
-                context.set_gpos(gpos.to_owned_table());
+            if let Some(gpos) = result.gpos {
+                context.set_gpos(gpos);
             }
-            if let Ok(gsub) = font.gsub() {
-                context.set_gsub(gsub.to_owned_table());
+            if let Some(gsub) = result.gsub {
+                context.set_gsub(gsub);
             }
         } else {
             debug!("No fea file, dull compile");
