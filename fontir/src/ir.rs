@@ -534,7 +534,8 @@ impl NameBuilder {
             );
         }
 
-        // based on diffing with fontmake
+        // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/outlineCompiler.py#L417-L421
+        // Drop typographic names if they match the legacy ones
         if let Some(family) = self.get(NameId::FAMILY_NAME) {
             if Some(family) == self.get(NameId::TYPOGRAPHIC_FAMILY_NAME) {
                 self.remove(NameId::TYPOGRAPHIC_FAMILY_NAME);
