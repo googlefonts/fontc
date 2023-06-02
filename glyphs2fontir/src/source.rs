@@ -810,7 +810,7 @@ mod tests {
             let mut loc = UserLocation::new();
             loc.set_pos("Optical Size", UserCoord::new(*opsz));
             loc.set_pos("Weight", UserCoord::new(*wght));
-            let loc: _ = loc;
+            let loc = loc;
             expected_locations.insert(loc);
         }
         let actual_locations = context
@@ -842,7 +842,7 @@ mod tests {
             let mut loc = NormalizedLocation::new();
             loc.set_pos("Optical Size", NormalizedCoord::new(*opsz));
             loc.set_pos("Weight", NormalizedCoord::new(*wght));
-            let loc: _ = loc;
+            let loc = loc;
             expected_locations.insert(loc);
         }
         let actual_locations = context

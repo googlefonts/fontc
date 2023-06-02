@@ -405,10 +405,9 @@ mod tests {
     fn file_diff() {
         let temp_dir = tempdir().unwrap();
         let (changed, unchanged, fs) = one_changed_file_one_not(&temp_dir);
-        let fs2 = fs.clone();
 
         // Nothing changed
-        assert_eq!(StateDiff::new(), fs2.diff(&fs).unwrap());
+        assert_eq!(StateDiff::new(), fs.diff(&fs).unwrap());
 
         // Some stuff changed!
         let added = write(&temp_dir, Path::new("new"), "meh");
