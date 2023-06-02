@@ -163,22 +163,6 @@ def find_table(ttx, tag):
     return el[0]
 
 
-def sort_name(ttx):
-    name = find_table(ttx, "name")
-    records = sorted(
-        list(name),
-        key=lambda el: (
-            int(el.attrib["nameID"]),
-            el.attrib["platformID"],
-            el.attrib["platEncID"],
-            el.attrib["langID"],
-        ),
-    )
-    name.clear()
-    for record in records:
-        name.append(record)
-
-
 def drop_weird_names(ttx):
     drops = list(
         ttx.xpath(
@@ -193,9 +177,6 @@ def reduce_diff_noise(fontc, fontmake):
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
         name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
-
-        # different order of records is fine
-        sort_name(ttx)
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
         drop_weird_names(ttx)
