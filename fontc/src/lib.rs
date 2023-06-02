@@ -1810,6 +1810,6 @@ mod tests {
 
     #[test]
     fn maxp_with_deep_components() {
-        assert_maxp_composite("glyphs3/NestedComponent.glyphs", 2, 4, 1);
+        assert_maxp_composite("glyphs3/NestedComponent.glyphs", 3, 12, 3);
     }
 }
