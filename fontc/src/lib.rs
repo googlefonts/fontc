@@ -30,7 +30,6 @@ use fontbe::{
     glyphs::{create_glyf_loca_work, create_glyf_work},
     gvar::create_gvar_work,
     head::create_head_work,
-    maxp::create_maxp_work,
     metrics_and_limits::create_metric_and_limit_work,
     name::create_name_work,
     orchestration::{AnyWorkId, WorkId as BeWorkIdentifier},
@@ -515,31 +514,6 @@ fn add_head_be_job(
     Ok(())
 }
 
-fn add_maxp_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let glyphs_changed = change_detector.glyphs_changed();
-    if !glyphs_changed.is_empty() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-
-        let id: AnyWorkId = BeWorkIdentifier::Maxp.into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: create_maxp_work().into(),
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(BeWorkIdentifier::Maxp);
-    }
-    Ok(())
-}
-
 fn add_name_be_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
@@ -615,7 +589,6 @@ fn add_metric_and_limits_job(
         let mut dependencies = HashSet::new();
         dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-        dependencies.insert(BeWorkIdentifier::Maxp.into());
 
         // https://github.com/googlefonts/fontmake-rs/issues/285: we need bboxes and those are done for glyf
         // since we depend on glyf we needn't block on any individual glyphs
@@ -649,6 +622,7 @@ fn add_metric_and_limits_job(
     } else {
         workload.mark_success(BeWorkIdentifier::Hhea);
         workload.mark_success(BeWorkIdentifier::Hmtx);
+        workload.mark_success(BeWorkIdentifier::Maxp);
     }
     Ok(())
 }
@@ -753,7 +727,6 @@ pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload,
     add_head_be_job(change_detector, &mut workload)?;
     add_metric_and_limits_job(change_detector, &mut workload)?;
     add_name_be_job(change_detector, &mut workload)?;
-    add_maxp_be_job(change_detector, &mut workload)?;
     add_os2_be_job(change_detector, &mut workload)?;
     add_post_be_job(change_detector, &mut workload)?;
 
@@ -908,7 +881,6 @@ mod tests {
         add_gvar_be_job(&mut change_detector, &mut workload).unwrap();
         add_head_be_job(&mut change_detector, &mut workload).unwrap();
         add_metric_and_limits_job(&mut change_detector, &mut workload).unwrap();
-        add_maxp_be_job(&mut change_detector, &mut workload).unwrap();
         add_name_be_job(&mut change_detector, &mut workload).unwrap();
         add_os2_be_job(&mut change_detector, &mut workload).unwrap();
         add_post_be_job(&mut change_detector, &mut workload).unwrap();
@@ -1794,5 +1766,50 @@ mod tests {
         let font = FontRef::new(&buf).unwrap();
         let os2 = font.os2().unwrap();
         assert_eq!(Tag::new(b"RODS"), os2.ach_vend_id());
+    }
+
+    fn assert_maxp_composite(
+        src: &str,
+        max_component_depth: u16,
+        max_composite_points: u16,
+        max_composite_contours: u16,
+    ) {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, src));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let maxp = font.maxp().unwrap();
+
+        assert_eq!(
+            (
+                max_component_depth,
+                max_composite_points,
+                max_composite_contours
+            ),
+            (
+                maxp.max_component_depth().unwrap(),
+                maxp.max_composite_points().unwrap(),
+                maxp.max_composite_contours().unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn maxp_with_no_components() {
+        assert_maxp_composite("glyphs3/StaticBoldItalic.glyphs", 0, 0, 0);
+    }
+
+    #[test]
+    fn maxp_with_shallow_components() {
+        assert_maxp_composite("glyphs2/Component.glyphs", 1, 4, 1);
+    }
+
+    #[test]
+    fn maxp_with_deep_components() {
+        assert_maxp_composite("glyphs3/NestedComponent.glyphs", 2, 4, 1);
     }
 }
