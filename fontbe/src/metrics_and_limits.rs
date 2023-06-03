@@ -27,7 +27,7 @@ pub fn create_metric_and_limit_work() -> Box<BeWork> {
 }
 
 #[derive(Debug, Default)]
-struct GlyphLimits {
+struct Limits {
     min_left_side_bearing: Option<i16>,
     min_right_side_bearing: Option<i16>,
     x_max_extent: Option<i16>,
@@ -35,15 +35,13 @@ struct GlyphLimits {
     max_points: u16,
     max_contours: u16,
     max_component_elements: u16,
-    components: HashMap<GlyphId, HashSet<GlyphId>>,
     glyph_info: HashMap<GlyphId, GlyphInfo>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct GlyphInfo {
-    gid: GlyphId,
-    num_points: u16,
-    num_contours: u16,
+    /// For simple glyphs always present. For composites, set by [`GlyphLimits::update_composite_limits`]
+    limits: Option<GlyphLimits>,
     components: Option<HashSet<GlyphId>>,
 }
 
@@ -53,13 +51,24 @@ impl GlyphInfo {
     }
 }
 
-struct ComponentLimits {
+#[derive(Default, Debug, Copy, Clone)]
+struct GlyphLimits {
     max_points: u16,
     max_contours: u16,
     max_depth: u16,
 }
 
 impl GlyphLimits {
+    fn max(&self, other: GlyphLimits) -> GlyphLimits {
+        GlyphLimits {
+            max_points: self.max_points.max(other.max_points),
+            max_contours: self.max_contours.max(other.max_contours),
+            max_depth: self.max_depth.max(other.max_depth),
+        }
+    }
+}
+
+impl Limits {
     fn update(&mut self, id: GlyphId, advance: u16, glyph: &Glyph) {
         // min side bearings are only for non-empty glyphs
         // we will presume only simple glyphs with no contours are empty
@@ -96,10 +105,12 @@ impl GlyphLimits {
                 self.glyph_info.insert(
                     id,
                     GlyphInfo {
-                        gid: id,
-                        num_points,
-                        num_contours,
-                        ..Default::default()
+                        limits: Some(GlyphLimits {
+                            max_points: num_points,
+                            max_contours: num_contours,
+                            max_depth: 0,
+                        }),
+                        components: None,
                     },
                 )
             }
@@ -110,25 +121,22 @@ impl GlyphLimits {
                 self.glyph_info.insert(
                     id,
                     GlyphInfo {
-                        gid: id,
+                        limits: None,
                         components,
-                        ..Default::default()
                     },
                 )
             }
         };
     }
 
-    fn compute_component_limits(&self) -> ComponentLimits {
-        let mut depths = HashMap::<GlyphId, u16>::new();
+    fn update_composite_limits(&mut self) -> GlyphLimits {
         let mut pending = self
             .glyph_info
             .iter()
             .filter_map(|(gid, gi)| if gi.is_component() { Some(*gid) } else { None })
             .collect::<Vec<_>>();
-        let mut components = Vec::with_capacity(8);
-        let mut max_points = 0;
-        let mut max_contours = 0;
+        let mut overall_max = GlyphLimits::default();
+        let mut components: Vec<Option<GlyphLimits>> = Vec::with_capacity(8);
         while !pending.is_empty() {
             let size_before = pending.len();
             pending.retain(|gid| {
@@ -140,64 +148,34 @@ impl GlyphLimits {
                         .as_ref()
                         .unwrap()
                         .iter()
-                        .map(|gid| self.glyph_info.get(gid).unwrap()),
+                        .map(|gid| self.glyph_info.get(gid).unwrap().limits),
                 );
 
-                // Update max points, contours while we're here
-                (max_points, max_contours) = components
-                    .iter()
-                    .filter_map(|c| {
-                        if !c.is_component() {
-                            Some((c.num_points, c.num_contours))
-                        } else {
-                            None
-                        }
-                    })
-                    .fold(
-                        (max_points, max_contours),
-                        |(max_points, max_contours), (num_points, num_contours)| {
-                            (max_points.max(num_points), max_contours.max(num_contours))
-                        },
-                    );
-
-                // See if we can sort out the depth?
-                if !components
-                    .iter()
-                    .all(|c| !c.is_component() || depths.contains_key(&c.gid))
-                {
-                    // At least one component is a component whose depth is not yet known
+                // If we contain components whose limits are not yet known we can't proceed
+                // Simple glyphs always know, so this only applies to nested composites
+                if !components.iter().all(|limits| limits.is_some()) {
                     return true;
                 }
-                // We know the depth of all child components; anything whose depth is unknown must be simple
-                depths.insert(
-                    *gid,
-                    components
-                        .iter()
-                        .filter_map(|c| {
-                            if c.is_component() {
-                                depths.get(&c.gid).copied()
-                            } else {
-                                None
-                            }
-                        })
-                        .map(|depth| depth + 1)
-                        .max()
-                        .unwrap_or(1),
+                // We know the limits of all child components; a final result is achievable
+                let limit = components.iter().map(|limits| limits.unwrap()).fold(
+                    GlyphLimits::default(),
+                    |acc, e| GlyphLimits {
+                        max_points: acc.max_points + e.max_points,
+                        max_contours: acc.max_contours + e.max_contours,
+                        max_depth: acc.max_depth.max(e.max_depth + 1),
+                    },
                 );
+                self.glyph_info.get_mut(gid).unwrap().limits = Some(limit);
+                overall_max = overall_max.max(limit);
                 false
             });
             assert!(
                 pending.len() < size_before,
-                "Stuck with {size_before} of unknown depth. Started with {}",
-                self.components.len()
+                "Stuck with {size_before} of unknown depth"
             );
         }
 
-        ComponentLimits {
-            max_points,
-            max_contours,
-            max_depth: depths.into_values().max().unwrap_or_default(),
-        }
+        overall_max
     }
 }
 
@@ -214,7 +192,7 @@ impl Work<Context, Error> for MetricAndLimitWork {
             .get_global_metrics()
             .at(static_metadata.default_location());
 
-        let mut glyph_limits = GlyphLimits::default();
+        let mut glyph_limits = Limits::default();
 
         let mut long_metrics: Vec<LongMetric> = static_metadata
             .glyph_order
@@ -297,15 +275,15 @@ impl Work<Context, Error> for MetricAndLimitWork {
         context.set_hmtx(raw_hmtx);
 
         // Might as well do maxp while we're here
-        let component_limits = glyph_limits.compute_component_limits();
+        let composite_limits = glyph_limits.update_composite_limits();
         let maxp = Maxp {
             num_glyphs: static_metadata.glyph_order.len().try_into().unwrap(),
             // maxp computes it's version based on whether fields are set
             // if you fail to set any of them it gets angry with you so set all of them
             max_points: Some(glyph_limits.max_points),
             max_contours: Some(glyph_limits.max_contours),
-            max_composite_points: Some(component_limits.max_points),
-            max_composite_contours: Some(component_limits.max_contours),
+            max_composite_points: Some(composite_limits.max_points),
+            max_composite_contours: Some(composite_limits.max_contours),
             max_zones: Some(1),
             max_twilight_points: Some(0),
             max_storage: Some(0),
@@ -314,7 +292,7 @@ impl Work<Context, Error> for MetricAndLimitWork {
             max_stack_elements: Some(0),
             max_size_of_instructions: Some(0),
             max_component_elements: Some(glyph_limits.max_component_elements),
-            max_component_depth: Some(component_limits.max_depth),
+            max_component_depth: Some(composite_limits.max_depth),
         };
         context.set_maxp(maxp);
 
@@ -328,12 +306,12 @@ mod tests {
     use kurbo::BezPath;
     use write_fonts::tables::glyf::SimpleGlyph;
 
-    use super::GlyphLimits;
+    use super::Limits;
 
     // advance 0, bbox (-437,611) => (-334, 715) encountered in NotoSansKayahLi.designspace
     #[test]
     fn negative_xmax_does_not_crash() {
-        let mut glyph_limits = GlyphLimits::default();
+        let mut glyph_limits = Limits::default();
         // path crafted to give the desired bbox
         glyph_limits.update(
             GlyphId::new(0),
