@@ -3,7 +3,7 @@
 use std::env;
 
 use chrono::{DateTime, TimeZone, Utc};
-use font_types::LongDateTime;
+use font_types::{Fixed, LongDateTime};
 use fontdrasil::orchestration::Work;
 use log::warn;
 use write_fonts::tables::head::Head;
@@ -23,7 +23,7 @@ pub fn create_head_work() -> Box<BeWork> {
 // Equivalent to Utc.with_ymd_and_hms(1904, 1, 1, 0, 0, 0).unwrap().timestamp()
 const MACINTOSH_EPOCH: i64 = -2082844800;
 
-fn timestamp_since_mac_epoch(datetime: DateTime<Utc>) -> i64 {
+fn seconds_since_mac_epoch(datetime: DateTime<Utc>) -> i64 {
     let mac_epoch = Utc.timestamp_opt(MACINTOSH_EPOCH, 0).unwrap();
     datetime.signed_duration_since(mac_epoch).num_seconds()
 }
@@ -45,15 +45,14 @@ fn current_timestamp() -> i64 {
             );
         }
     }
-    timestamp_since_mac_epoch(src_date.unwrap_or_else(Utc::now))
+    seconds_since_mac_epoch(src_date.unwrap_or_else(Utc::now))
 }
 
-fn build_head(units_per_em: u16, loca_format: LocaFormat) -> Head {
-    let now = LongDateTime::new(current_timestamp());
+fn init_head(units_per_em: u16, loca_format: LocaFormat, flags: u16, lowest_rec_ppem: u16) -> Head {
     Head {
         units_per_em,
-        created: now, // TODO: support GSFont.date / UFO.info.openTypeHeadCreated
-        modified: now,
+        lowest_rec_ppem,
+        flags,
         index_to_loc_format: match loca_format {
             LocaFormat::Short => 0,
             LocaFormat::Long => 1,
@@ -62,13 +61,52 @@ fn build_head(units_per_em: u16, loca_format: LocaFormat) -> Head {
     }
 }
 
+/// See:
+/// * <https://www.microsoft.com/typography/otspec/recom.htm>
+/// * <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L313-L326>
+fn apply_font_revision(head: &mut Head, major: i32, minor: u32) {
+    let major = major as f64;
+    let minor = if minor != 0 {
+        // Make minor the decimal part
+        let mut minor = minor as f64;
+        minor /= 10.0_f64.powi(minor.log10().ceil() as i32);
+        // Keep 3 decimal places per OTSpec recommendation
+        minor = (minor * 1000.0).round() / 1000.0;
+        minor
+    } else {
+        0.0
+    };
+
+    head.font_revision = Fixed::from_f64(major + minor);
+}
+
+fn apply_created_modified(head: &mut Head, created: Option<DateTime<Utc>>) {
+    let now = current_timestamp();
+    head.created = LongDateTime::new(created.map(seconds_since_mac_epoch).unwrap_or(now));
+    head.modified = LongDateTime::new(now);
+}
+
 impl Work<Context, Error> for HeadWork {
     /// Generate [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_final_static_metadata();
         let loca_format = context.get_loca_format();
-        let head = build_head(static_metadata.units_per_em, *loca_format);
+        let mut head = init_head(
+            static_metadata.units_per_em,
+            *loca_format,
+            static_metadata.misc.head_flags,
+            static_metadata.misc.lowest_rec_ppm,
+        );
+        apply_font_revision(
+            &mut head,
+            static_metadata.misc.version_major,
+            static_metadata.misc.version_minor,
+        );
+        apply_created_modified(&mut head, static_metadata.misc.created);
         context.set_head(head);
+
+        // Defer x/y Min/Max to metrics and limits job
+
         Ok(())
     }
 }
@@ -79,46 +117,50 @@ mod tests {
     use more_asserts::assert_ge;
     use temp_env;
 
-    use crate::orchestration::LocaFormat;
+    use crate::{head::apply_created_modified, orchestration::LocaFormat};
 
-    use super::{build_head, timestamp_since_mac_epoch};
+    use super::{init_head, seconds_since_mac_epoch};
 
     #[test]
-    fn build_head_simple() {
+    fn init_head_simple() {
         // if SOURCE_DATE_EPOCH is not set, use the current time for created/modified
         temp_env::with_var_unset("SOURCE_DATE_EPOCH", || {
-            let now = timestamp_since_mac_epoch(Utc::now());
-            let head = build_head(1000, LocaFormat::Long);
+            let now = seconds_since_mac_epoch(Utc::now());
+            let mut head = init_head(1000, LocaFormat::Long, 3, 42);
+            apply_created_modified(&mut head, None);
             assert_eq!(head.units_per_em, 1000);
             assert_eq!(head.index_to_loc_format, 1);
             assert_ge!(head.created.as_secs(), now);
             assert_ge!(head.modified.as_secs(), now);
+            assert_eq!(head.lowest_rec_ppem, 42);
         });
     }
 
     #[test]
-    fn build_head_with_valid_source_date_epoch() {
+    fn init_head_with_valid_source_date_epoch() {
         // set SOURCE_DATE_EPOCH to the TrueType epoch, expect 0 for created/modified
         let source_date = Utc
             .with_ymd_and_hms(1904, 1, 1, 0, 0, 0)
             .unwrap()
             .timestamp();
         temp_env::with_var("SOURCE_DATE_EPOCH", Some(source_date.to_string()), || {
-            let head = build_head(1000, LocaFormat::Short);
+            let mut head = init_head(1000, LocaFormat::Short, 3, 42);
+            apply_created_modified(&mut head, None);
             assert_eq!(head.created.as_secs(), 0);
             assert_eq!(head.modified.as_secs(), 0);
         });
     }
 
     #[test]
-    fn build_head_with_invalid_source_date_epoch() {
+    fn init_head_with_invalid_source_date_epoch() {
         // if SOURCE_DATE_EPOCH is invalid, set the current time for created/modified
-        let now = timestamp_since_mac_epoch(Utc::now());
+        let now = seconds_since_mac_epoch(Utc::now());
         temp_env::with_var(
             "SOURCE_DATE_EPOCH",
             Some("I am not a Unix timestamp!"),
             || {
-                let head = build_head(1000, LocaFormat::Short);
+                let mut head = init_head(1000, LocaFormat::Short, 3, 42);
+                apply_created_modified(&mut head, None);
                 assert_ge!(head.created.as_secs(), now);
                 assert_ge!(head.modified.as_secs(), now);
             },

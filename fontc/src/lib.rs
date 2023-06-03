@@ -589,10 +589,11 @@ fn add_metric_and_limits_job(
         let mut dependencies = HashSet::new();
         dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
         dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-
         // https://github.com/googlefonts/fontmake-rs/issues/285: we need bboxes and those are done for glyf
         // since we depend on glyf we needn't block on any individual glyphs
         dependencies.insert(BeWorkIdentifier::Glyf.into());
+        // We want to update head with glyph extents so await the first pass at head
+        dependencies.insert(BeWorkIdentifier::Head.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Hmtx.into();
         workload.insert(
@@ -607,6 +608,7 @@ fn add_metric_and_limits_job(
                         AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
                             | AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..))
                             | AnyWorkId::Be(BeWorkIdentifier::Maxp)
+                            | AnyWorkId::Be(BeWorkIdentifier::Head)
                     )
                 }),
                 write_access: Access::custom(|id| {
@@ -615,6 +617,7 @@ fn add_metric_and_limits_job(
                         AnyWorkId::Be(BeWorkIdentifier::Hmtx)
                             | AnyWorkId::Be(BeWorkIdentifier::Hhea)
                             | AnyWorkId::Be(BeWorkIdentifier::Maxp)
+                            | AnyWorkId::Be(BeWorkIdentifier::Head)
                     )
                 }),
             },
@@ -747,6 +750,7 @@ mod tests {
         str::FromStr,
     };
 
+    use chrono::{Duration, TimeZone, Utc};
     use fontbe::orchestration::{
         loca_format_from_file, AnyWorkId, Context as BeContext, LocaFormat,
         WorkId as BeWorkIdentifier,
@@ -1811,5 +1815,39 @@ mod tests {
     #[test]
     fn maxp_with_deep_components() {
         assert_maxp_composite("glyphs3/NestedComponent.glyphs", 3, 12, 3);
+    }
+
+    fn assert_created_set(source: &str) {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, source));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let head = font.head().unwrap();
+
+        // TIL Mac has an epoch of it's own
+        let mac_epoch = Utc.with_ymd_and_hms(1904, 1, 1, 0, 0, 0).unwrap();
+        let created = mac_epoch
+            .checked_add_signed(Duration::seconds(head.created().as_secs()))
+            .unwrap();
+
+        // We should match 2023-05-05 15:11:55 +0000
+        assert_eq!(
+            Utc.with_ymd_and_hms(2023, 5, 5, 15, 11, 55).unwrap(),
+            created
+        );
+    }
+
+    #[test]
+    fn captures_created_from_glyphs() {
+        assert_created_set("glyphs3/Dated.glyphs");
+    }
+
+    #[test]
+    fn captures_created_from_designspace() {
+        assert_created_set("wght_var.designspace");
     }
 }

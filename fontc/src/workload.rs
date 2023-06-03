@@ -298,7 +298,7 @@ impl Workload {
             log::debug!("Exec {:?}", id);
             job.work
                 .exec(context)
-                .unwrap_or_else(|_| panic!("{id:?} should have succeeded"));
+                .unwrap_or_else(|e| panic!("{id:?} failed: {e:?}"));
             assert!(
                 self.success.insert(id.clone()),
                 "We just did {id:?} a second time?"

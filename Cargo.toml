@@ -14,11 +14,11 @@ parking_lot = "0.12.1"
 fea-rs = "= 0.5.0"
 font-types = { version = "0.1.8", features = ["serde"] }
 read-fonts = "0.3.0"
-write-fonts = "0.5.0"
+write-fonts = "0.5.1"
 skrifa = "0.2.0"
 
 bitflags = "2.0"
-chrono = "0.4.24"
+chrono = { version = "0.4.24", features = ["serde"] }
 filetime = "0.2.18"
 indexmap = "1.9.2"
 kurbo = { version = "0.9.4", features = ["serde"] }

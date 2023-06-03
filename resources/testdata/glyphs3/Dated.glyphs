@@ -1,0 +1,22 @@
+{
+.formatVersion = 3;
+familyName = Dated;
+date = "2023-05-05 15:11:55 +0000";
+fontMaster = (
+{
+id = m01;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+}
+);
+unitsPerEm = 1000;
+}

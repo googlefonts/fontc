@@ -61,6 +61,7 @@ pub struct Font {
     pub instances: Vec<Instance>,
     pub version_major: i32,
     pub version_minor: u32,
+    pub date: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -99,6 +100,7 @@ struct RawFont {
     pub units_per_em: Option<i64>,
     pub metrics: Option<Vec<RawMetric>>,
     pub family_name: String,
+    pub date: Option<String>,
     pub copyright: Option<String>,
     pub designer: Option<String>,
     pub designerURL: Option<String>,
@@ -1581,6 +1583,7 @@ impl TryFrom<RawFont> for Font {
             instances,
             version_major: from.versionMajor.unwrap_or_default() as i32,
             version_minor: from.versionMinor.unwrap_or_default() as u32,
+            date: from.date,
         })
     }
 }

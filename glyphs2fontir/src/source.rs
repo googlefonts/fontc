@@ -1,3 +1,4 @@
+use chrono::{TimeZone, Utc};
 use font_types::{NameId, Tag};
 use fontdrasil::orchestration::Work;
 use fontdrasil::types::GlyphName;
@@ -88,6 +89,7 @@ impl GlyphsIrSource {
             instances: font.instances.clone(),
             version_major: Default::default(),
             version_minor: Default::default(),
+            date: None,
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -114,6 +116,7 @@ impl GlyphsIrSource {
             instances: font.instances.clone(),
             version_major: Default::default(),
             version_minor: Default::default(),
+            date: None,
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -341,6 +344,21 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         // <https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/builder/custom_params.py#L1116-L1125>
         static_metadata.misc.underline_thickness = 50.0.into();
         static_metadata.misc.underline_position = (-100.0).into();
+
+        static_metadata.misc.version_major = font.version_major;
+        static_metadata.misc.version_minor = font.version_minor;
+
+        static_metadata.misc.created = font
+            .date
+            .as_ref()
+            .and_then(|raw_date| {
+                let parsed = Utc.datetime_from_str(raw_date, "%Y-%m-%d %H:%M:%S %Z");
+                if let Err(e) = parsed {
+                    warn!("Invalid creation date: {}: {e:?}", raw_date);
+                }
+                parsed.ok()
+            })
+            .or(static_metadata.misc.created);
 
         context.set_init_static_metadata(static_metadata);
         Ok(())
