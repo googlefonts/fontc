@@ -62,6 +62,9 @@ pub struct Font {
     pub version_major: i32,
     pub version_minor: u32,
     pub date: Option<String>,
+
+    // master id => { (name or class, name or class) => adjustment }
+    pub kerning_ltr: BTreeMap<String, BTreeMap<(String, String), i32>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -968,6 +971,13 @@ impl RawFont {
         Ok(())
     }
 
+    fn v2_to_v3_kerning(&mut self) -> Result<(), Error> {
+        if let Some(kerning) = self.other_stuff.remove("kerning") {
+            self.other_stuff.insert("kerningLTR".to_string(), kerning);
+        };
+        Ok(())
+    }
+
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
     fn v2_to_v3(&mut self) -> Result<(), Error> {
         self.v2_to_v3_weight()?;
@@ -975,6 +985,7 @@ impl RawFont {
         self.v2_to_v3_metrics()?;
         self.v2_to_v3_names()?;
         self.v2_to_v3_instances()?;
+        self.v2_to_v3_kerning()?;
         Ok(())
     }
 }
@@ -1025,6 +1036,31 @@ fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<String, BTre
         };
     }
     name_to_cp
+}
+
+fn parse_kerning(kerning: Option<&Plist>) -> BTreeMap<String, BTreeMap<(String, String), i32>> {
+    let mut result = BTreeMap::new();
+    let Some(Plist::Dictionary(kerning)) = kerning else {
+        return result;
+    };
+    for (master_id, kerning) in kerning {
+        let mut master_kerns = BTreeMap::new();
+        if let Plist::Dictionary(kerning) = kerning {
+            for (kern_from, kern_tos) in kerning {
+                let Plist::Dictionary(kern_tos) = kern_tos else {
+                    continue;
+                };
+                for (kern_to, adjustment) in kern_tos {
+                    let Some(adjustment) = adjustment.as_i64() else {
+                        continue;
+                    };
+                    master_kerns.insert((kern_from.clone(), kern_to.clone()), adjustment as i32);
+                }
+            }
+        }
+        result.insert(master_id.clone(), master_kerns);
+    }
+    result
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L578>
@@ -1584,6 +1620,7 @@ impl TryFrom<RawFont> for Font {
             version_major: from.versionMajor.unwrap_or_default() as i32,
             version_minor: from.versionMinor.unwrap_or_default() as u32,
             date: from.date,
+            kerning_ltr: parse_kerning(from.other_stuff.get("kerningLTR")),
         })
     }
 }
@@ -1662,7 +1699,7 @@ mod tests {
         Font, FromPlist, Node, Plist, Shape,
     };
     use std::{
-        collections::{BTreeMap, BTreeSet},
+        collections::{BTreeMap, BTreeSet, HashSet},
         path::{Path, PathBuf},
     };
 
@@ -1673,7 +1710,11 @@ mod tests {
     use kurbo::Affine;
 
     fn testdata_dir() -> PathBuf {
-        let dir = Path::new("../resources/testdata");
+        // working dir varies CLI vs VSCode
+        let mut dir = Path::new("../resources/testdata");
+        if !dir.is_dir() {
+            dir = Path::new("./resources/testdata");
+        }
         assert!(dir.is_dir());
         dir.to_path_buf()
     }
@@ -2138,5 +2179,34 @@ mod tests {
     fn read_os2_flags_default_unset() {
         let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
         assert_eq!((None, None), (font.use_typo_metrics, font.has_wws_names));
+    }
+
+    #[test]
+    fn read_simple_kerning() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
+        assert_eq!(
+            HashSet::from(["m01", "E09E0C54-128D-4FEA-B209-1B70BEFE300B",]),
+            font.kerning_ltr
+                .keys()
+                .map(|k| k.as_str())
+                .collect::<HashSet<_>>()
+        );
+
+        let actual_kerning = font
+            .kerning_ltr
+            .get("m01")
+            .unwrap()
+            .iter()
+            .map(|((n1, n2), value)| (n1.as_str(), n2.as_str(), *value))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            vec![
+                ("exclam", "exclam", -360),
+                ("exclam", "hyphen", 20),
+                ("hyphen", "hyphen", -150),
+            ],
+            actual_kerning,
+        );
     }
 }
