@@ -11,7 +11,13 @@ use fontdrasil::orchestration::Work;
 use read_fonts::types::FWord;
 use write_fonts::{
     dump_table,
-    tables::{glyf::Contour, hhea::Hhea, hmtx::Hmtx, maxp::Maxp, vmtx::LongMetric},
+    tables::{
+        glyf::{Bbox, Contour},
+        hhea::Hhea,
+        hmtx::Hmtx,
+        maxp::Maxp,
+        vmtx::LongMetric,
+    },
     OtRound,
 };
 
@@ -37,11 +43,12 @@ struct FontLimits {
     max_contours: u16,
     max_component_elements: u16,
     glyph_info: HashMap<GlyphId, GlyphInfo>,
+    bbox: Option<Bbox>,
 }
 
 #[derive(Debug)]
 struct GlyphInfo {
-    /// For simple glyphs always present. For composites, set by [`GlyphLimits::update_composite_limits`]
+    /// For simple glyphs always present. For composites, set by [`FontLimits::update_composite_limits`]
     limits: Option<GlyphLimits>,
     components: Option<HashSet<GlyphId>>,
 }
@@ -97,6 +104,9 @@ impl FontLimits {
                 .or(Some(bbox.x_max));
             self.advance_width_max = max(self.advance_width_max, advance);
         }
+
+        let bbox = glyph.bbox();
+        self.bbox = self.bbox.map(|b| b.union(bbox)).or(Some(bbox));
 
         match glyph {
             Glyph::Simple(simple) => {
@@ -187,6 +197,8 @@ impl Work<Context, Error> for MetricAndLimitWork {
     /// * [hmtx](https://learn.microsoft.com/en-us/typography/opentype/spec/hmtx)
     /// * [hhea](https://learn.microsoft.com/en-us/typography/opentype/spec/hhea)
     /// * [maxp](https://learn.microsoft.com/en-us/typography/opentype/spec/maxp)
+    ///
+    /// Touchup [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_final_static_metadata();
         let default_metrics = context
@@ -297,6 +309,15 @@ impl Work<Context, Error> for MetricAndLimitWork {
             max_component_depth: Some(composite_limits.max_depth),
         };
         context.set_maxp(maxp);
+
+        // Set x/y min/max in head
+        let mut head = (*context.get_head()).clone();
+        let bbox = glyph_limits.bbox.unwrap_or_default();
+        head.x_min = bbox.x_min;
+        head.y_min = bbox.y_min;
+        head.x_max = bbox.x_max;
+        head.y_max = bbox.y_max;
+        context.set_head(head);
 
         Ok(())
     }

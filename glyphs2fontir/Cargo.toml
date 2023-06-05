@@ -28,6 +28,8 @@ quick-xml.workspace = true
 font-types.workspace = true
 read-fonts.workspace = true
 
+chrono.workspace = true
+
 [dev-dependencies]
 diff.workspace = true
 ansi_term.workspace = true

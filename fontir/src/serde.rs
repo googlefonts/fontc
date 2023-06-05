@@ -3,6 +3,7 @@ use std::{
     path::PathBuf,
 };
 
+use chrono::{DateTime, Utc};
 use filetime::FileTime;
 use font_types::Tag;
 use ordered_float::OrderedFloat;
@@ -101,6 +102,11 @@ pub struct MiscSerdeRepr {
     pub vendor_id: Tag,
     pub underline_thickness: f32,
     pub underline_position: f32,
+    pub version_major: i32,
+    pub version_minor: u32,
+    pub head_flags: u16,
+    pub lowest_rec_ppm: u16,
+    pub created: Option<DateTime<Utc>>,
 }
 
 impl From<MiscSerdeRepr> for MiscMetadata {
@@ -110,6 +116,11 @@ impl From<MiscSerdeRepr> for MiscMetadata {
             vendor_id: from.vendor_id,
             underline_thickness: from.underline_thickness.into(),
             underline_position: from.underline_position.into(),
+            version_major: from.version_major,
+            version_minor: from.version_minor,
+            head_flags: from.head_flags,
+            lowest_rec_ppm: from.lowest_rec_ppm,
+            created: from.created,
         }
     }
 }
@@ -121,6 +132,11 @@ impl From<MiscMetadata> for MiscSerdeRepr {
             vendor_id: from.vendor_id,
             underline_thickness: from.underline_thickness.into(),
             underline_position: from.underline_position.into(),
+            version_major: from.version_major,
+            version_minor: from.version_minor,
+            head_flags: from.head_flags,
+            lowest_rec_ppm: from.lowest_rec_ppm,
+            created: from.created,
         }
     }
 }

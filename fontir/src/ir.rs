@@ -6,6 +6,7 @@ use crate::{
     serde::{GlobalMetricsSerdeRepr, GlyphSerdeRepr, MiscSerdeRepr, StaticMetadataSerdeRepr},
     variations::VariationModel,
 };
+use chrono::{DateTime, Utc};
 use font_types::NameId;
 use font_types::Tag;
 use fontdrasil::types::GlyphName;
@@ -81,6 +82,17 @@ pub struct MiscMetadata {
 
     pub underline_thickness: OrderedFloat<f32>,
     pub underline_position: OrderedFloat<f32>,
+
+    /// UFO appears to allow negative major versions.
+    ///
+    /// See <https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#generic-identification-information>
+    pub version_major: i32,
+    pub version_minor: u32,
+
+    pub head_flags: u16,
+    pub lowest_rec_ppm: u16,
+
+    pub created: Option<DateTime<Utc>>,
 }
 
 impl StaticMetadata {
@@ -146,6 +158,14 @@ impl StaticMetadata {
                 vendor_id: DEFAULT_VENDOR_ID_TAG,
                 underline_thickness: 0.0.into(),
                 underline_position: 0.0.into(),
+                // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L353-L354
+                version_major: 0,
+                version_minor: 0,
+                // <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L364>
+                lowest_rec_ppm: 6,
+                // <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L365>
+                head_flags: 3,
+                created: None,
             },
         })
     }

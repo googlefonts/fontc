@@ -157,8 +157,12 @@ def name_id_to_name(ttx, xpath, attr):
         el.attrib[attr] = id_to_name[el.attrib[attr]]
 
 
-def find_table(ttx, tag):
-    el = ttx.xpath(f"/ttFont/{tag}")
+def find_table(ttx, table):
+    return select_one(ttx, f"/ttFont/{tag}")
+
+
+def select_one(ttx, xpath):
+    el = ttx.xpath(xpath)
     assert len(el) == 1, f"Wanted 1 name element, got {len(el)}"
     return el[0]
 
@@ -173,6 +177,11 @@ def drop_weird_names(ttx):
         drop.getparent().remove(drop)
 
 
+def erase_modified(ttx):
+    el = select_one(ttx, "//head/modified")
+    del el.attrib["value"]
+
+
 def reduce_diff_noise(fontc, fontmake):
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
@@ -180,6 +189,9 @@ def reduce_diff_noise(fontc, fontmake):
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
         drop_weird_names(ttx)
+
+        # it's not at all helpful to see modified off by a second or two in a diff
+        erase_modified(ttx)
 
 
 def main(argv):

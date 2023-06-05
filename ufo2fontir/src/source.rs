@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use chrono::{DateTime, TimeZone, Utc};
 use font_types::{NameId, Tag};
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
@@ -596,6 +597,19 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
     builder.into_inner()
 }
 
+/// <https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-head-table-fields>
+fn try_parse_date(raw_date: Option<&String>) -> Option<DateTime<Utc>> {
+    let Some(raw_date) = raw_date else {
+        return None;
+    };
+
+    let parse_result = Utc.datetime_from_str(raw_date, "%Y/%m/%d %H:%M:%S");
+    if let Err(e) = parse_result {
+        warn!("Invalid date string {}: {e}", raw_date);
+    }
+    parse_result.ok()
+}
+
 impl Work<Context, WorkError> for StaticMetadataWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
@@ -683,6 +697,26 @@ impl Work<Context, WorkError> for StaticMetadataWork {
             .map(|v| v as f32)
             .unwrap_or(-0.075 * units_per_em as f32)
             .into();
+
+        static_metadata.misc.version_major = font_info_at_default
+            .version_major
+            .unwrap_or(static_metadata.misc.version_major);
+        static_metadata.misc.version_minor = font_info_at_default
+            .version_minor
+            .unwrap_or(static_metadata.misc.version_minor);
+        static_metadata.misc.lowest_rec_ppm = font_info_at_default
+            .open_type_head_lowest_rec_ppem
+            .map(|v| v as u16)
+            .unwrap_or(static_metadata.misc.lowest_rec_ppm);
+        static_metadata.misc.head_flags = font_info_at_default
+            .open_type_head_flags
+            .as_ref()
+            .map(|bit_indices| bit_indices.iter().map(|i| 1 << i).fold(0, |acc, e| acc | e))
+            .unwrap_or(static_metadata.misc.head_flags);
+
+        static_metadata.misc.created =
+            try_parse_date(font_info_at_default.open_type_head_created.as_ref())
+                .or(static_metadata.misc.created);
 
         context.set_init_static_metadata(static_metadata);
         Ok(())

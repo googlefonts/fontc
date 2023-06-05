@@ -19,5 +19,7 @@ env_logger.workspace = true
 
 regex.workspace = true
 
+chrono.workspace = true
+
 [dev-dependencies]
 pretty_assertions.workspace = true
