@@ -66,6 +66,7 @@ impl Paths {
             WorkId::Name => self.build_dir.join("name.table"),
             WorkId::Os2 => self.build_dir.join("os2.table"),
             WorkId::Post => self.build_dir.join("post.table"),
+            WorkId::Stat => self.build_dir.join("stat.table"),
             WorkId::Font => self.build_dir.join("font.ttf"),
         }
     }

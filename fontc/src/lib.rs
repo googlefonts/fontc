@@ -35,6 +35,7 @@ use fontbe::{
     orchestration::{AnyWorkId, WorkId as BeWorkIdentifier},
     os2::create_os2_work,
     post::create_post_work,
+    stat::create_stat_work,
 };
 
 use fontdrasil::{orchestration::Access, types::GlyphName};
@@ -374,6 +375,30 @@ fn add_avar_be_job(
     Ok(())
 }
 
+fn add_stat_be_job(
+    change_detector: &mut ChangeDetector,
+    workload: &mut Workload,
+) -> Result<(), Error> {
+    if change_detector.stat_be_change() {
+        let mut dependencies = HashSet::new();
+        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
+
+        let id: AnyWorkId = BeWorkIdentifier::Stat.into();
+        workload.insert(
+            id.clone(),
+            Job {
+                work: create_stat_work().into(),
+                dependencies,
+                read_access: ReadAccess::Dependencies,
+                write_access: Access::one(id),
+            },
+        );
+    } else {
+        workload.mark_success(BeWorkIdentifier::Stat);
+    }
+    Ok(())
+}
+
 fn add_fvar_be_job(
     change_detector: &mut ChangeDetector,
     workload: &mut Workload,
@@ -657,6 +682,7 @@ fn add_font_be_job(
         dependencies.insert(BeWorkIdentifier::Name.into());
         dependencies.insert(BeWorkIdentifier::Os2.into());
         dependencies.insert(BeWorkIdentifier::Post.into());
+        dependencies.insert(BeWorkIdentifier::Stat.into());
 
         let id: AnyWorkId = BeWorkIdentifier::Font.into();
         workload.insert(
@@ -724,6 +750,7 @@ pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload,
     add_feature_be_job(change_detector, &mut workload)?;
     add_glyf_loca_be_job(change_detector, &mut workload)?;
     add_avar_be_job(change_detector, &mut workload)?;
+    add_stat_be_job(change_detector, &mut workload)?;
     add_cmap_be_job(change_detector, &mut workload)?;
     add_fvar_be_job(change_detector, &mut workload)?;
     add_gvar_be_job(change_detector, &mut workload)?;
@@ -880,6 +907,7 @@ mod tests {
 
         add_glyf_loca_be_job(&mut change_detector, &mut workload).unwrap();
         add_avar_be_job(&mut change_detector, &mut workload).unwrap();
+        add_stat_be_job(&mut change_detector, &mut workload).unwrap();
         add_cmap_be_job(&mut change_detector, &mut workload).unwrap();
         add_fvar_be_job(&mut change_detector, &mut workload).unwrap();
         add_gvar_be_job(&mut change_detector, &mut workload).unwrap();
@@ -935,6 +963,7 @@ mod tests {
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Avar.into(),
                 BeWorkIdentifier::Cmap.into(),
+                BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Fvar.into(),
                 BeWorkIdentifier::Glyf.into(),
                 BeWorkIdentifier::GlyfFragment("bar".into()).into(),
@@ -953,7 +982,7 @@ mod tests {
                 BeWorkIdentifier::Name.into(),
                 BeWorkIdentifier::Os2.into(),
                 BeWorkIdentifier::Post.into(),
-                BeWorkIdentifier::Font.into(),
+                BeWorkIdentifier::Stat.into(),
             ],
             completed
         );
@@ -995,6 +1024,7 @@ mod tests {
             vec![
                 AnyWorkId::Fe(FeWorkIdentifier::Glyph("bar".into())),
                 BeWorkIdentifier::Cmap.into(),
+                BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Glyf.into(),
                 BeWorkIdentifier::GlyfFragment("bar".into()).into(),
                 BeWorkIdentifier::Gvar.into(),
@@ -1004,7 +1034,6 @@ mod tests {
                 BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::LocaFormat.into(),
                 BeWorkIdentifier::Maxp.into(),
-                BeWorkIdentifier::Font.into(),
             ],
             completed
         );
@@ -1395,6 +1424,7 @@ mod tests {
         assert_eq!(
             vec![
                 Tag::new(b"OS/2"),
+                Tag::new(b"STAT"),
                 Tag::new(b"avar"),
                 Tag::new(b"cmap"),
                 Tag::new(b"fvar"),
@@ -1849,5 +1879,33 @@ mod tests {
     #[test]
     fn captures_created_from_designspace() {
         assert_created_set("wght_var.designspace");
+    }
+
+    #[test]
+    fn generates_stat() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, "wght_var.designspace"));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+
+        let name = font.name().unwrap();
+        let stat = font.stat().unwrap();
+        assert_eq!(
+            ("Regular", vec![Tag::from_str("wght").unwrap(),]),
+            (
+                resolve_name(&name, stat.elided_fallback_name_id().unwrap())
+                    .unwrap()
+                    .as_str(),
+                stat.design_axes()
+                    .unwrap()
+                    .iter()
+                    .map(|ar| ar.axis_tag())
+                    .collect::<Vec<_>>(),
+            )
+        );
     }
 }
