@@ -182,6 +182,11 @@ def erase_modified(ttx):
     del el.attrib["value"]
 
 
+def erase_checksum(ttx):
+    el = select_one(ttx, "//head/checkSumAdjustment")
+    del el.attrib["value"]
+
+
 def reduce_diff_noise(fontc, fontmake):
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
@@ -192,6 +197,9 @@ def reduce_diff_noise(fontc, fontmake):
 
         # it's not at all helpful to see modified off by a second or two in a diff
         erase_modified(ttx)
+
+        # for matching purposes checksum is just noise
+        erase_checksum(ttx)
 
 
 def main(argv):
