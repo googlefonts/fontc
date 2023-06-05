@@ -14,16 +14,17 @@ References
 
 ## Plan
 
-As of 12/6/2022 we intend to:
+As of 6/4/2023 we intend to:
 
-* Broadly, go depth first
-* Push glyphs & related tables through
-* Insert updated glyph building into fontmake (Python)
-* Wire up feature compilation using https://github.com/cmyr/fea-rs
-* Insert into fontmake
-* Then finish fontc and stop using fontmake :)
+* Get to the point where Oswald compilation matches fontmake
+   * https://github.com/googlefonts/fontc/milestone/4
+* Get to the point where ever more of the families for which we have source compile
+  to a form that matches fontmake, or differs only in well understood ways
+* Provide a Glyphs plugin to allow push-button use of the new compiler
+* Once there are no known issues, switch Google Fonts to exclusively use fontc
 
-Fontmake will then have incremental, parallel, recompilation, delivering user benefit at a time when fontc doesn't yet do 100% of the job.
+We are discarding our prior plan to make fontmake (Python) call into Rust as it appears to be
+more complex than initially anticipated and higher risk than migrating on a per-family basis.
 
 For context see https://github.com/googlefonts/oxidize/blob/main/text/2022-07-25-PROPOSAL-build-glyphs-in-rust.md and the discussion on https://github.com/googlefonts/oxidize/pull/33.
 
@@ -34,6 +35,28 @@ Once you have them you could try building them:
 
 ```shell
 cargo run --package fontc -- --source ../google_fonts_sources/sources/ofl/notosanskayahli/sources/NotoSansKayahLi.designspace
+```
+
+## Using a local copy of fontations
+
+It is quite common to find we need changes in https://github.com/googlefonts/fontations to add a feature
+or fix a bug. Prior to a release being available modify the root `Cargo.toml` to point to either a local
+clone or a branch:
+
+```toml
+# Local copy
+[patch.crates-io]
+font-types =  { path = "../fontations/font-types" }
+read-fonts =  { path = "../fontations/read-fonts" }
+write-fonts = { path = "../fontations/write-fonts" }
+skrifa =  { path = "../fontations/skrifa" }
+
+# Branch
+[patch.crates-io]
+font-types = { git="https://github.com/googlefonts/fontations.git", branch="box" }
+read-fonts = { git="https://github.com/googlefonts/fontations.git", branch="box" }
+write-fonts = { git="https://github.com/googlefonts/fontations.git", branch="box" }
+skrifa = { git="https://github.com/googlefonts/fontations.git", branch="box" }
 ```
 
 ## Contributing
