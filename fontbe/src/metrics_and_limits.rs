@@ -26,8 +26,9 @@ pub fn create_metric_and_limit_work() -> Box<BeWork> {
     Box::new(MetricAndLimitWork {})
 }
 
+/// Font-wide, or global, limits
 #[derive(Debug, Default)]
-struct Limits {
+struct FontLimits {
     min_left_side_bearing: Option<i16>,
     min_right_side_bearing: Option<i16>,
     x_max_extent: Option<i16>,
@@ -51,6 +52,7 @@ impl GlyphInfo {
     }
 }
 
+/// Limits of a single glyph
 #[derive(Default, Debug, Copy, Clone)]
 struct GlyphLimits {
     max_points: u16,
@@ -68,7 +70,7 @@ impl GlyphLimits {
     }
 }
 
-impl Limits {
+impl FontLimits {
     fn update(&mut self, id: GlyphId, advance: u16, glyph: &Glyph) {
         // min side bearings are only for non-empty glyphs
         // we will presume only simple glyphs with no contours are empty
@@ -192,7 +194,7 @@ impl Work<Context, Error> for MetricAndLimitWork {
             .get_global_metrics()
             .at(static_metadata.default_location());
 
-        let mut glyph_limits = Limits::default();
+        let mut glyph_limits = FontLimits::default();
 
         let mut long_metrics: Vec<LongMetric> = static_metadata
             .glyph_order
@@ -306,12 +308,12 @@ mod tests {
     use kurbo::BezPath;
     use write_fonts::tables::glyf::SimpleGlyph;
 
-    use super::Limits;
+    use super::FontLimits;
 
     // advance 0, bbox (-437,611) => (-334, 715) encountered in NotoSansKayahLi.designspace
     #[test]
     fn negative_xmax_does_not_crash() {
-        let mut glyph_limits = Limits::default();
+        let mut glyph_limits = FontLimits::default();
         // path crafted to give the desired bbox
         glyph_limits.update(
             GlyphId::new(0),
