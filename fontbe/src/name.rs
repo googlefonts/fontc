@@ -22,7 +22,7 @@ impl Work<Context, Error> for NameWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_init_static_metadata();
 
-        let mut name_records = static_metadata
+        let name_records = static_metadata
             .names
             .iter()
             .map(|(key, value)| NameRecord {
@@ -33,17 +33,6 @@ impl Work<Context, Error> for NameWork {
                 string: OffsetMarker::new(value.clone()),
             })
             .collect::<Vec<_>>();
-
-        // https://learn.microsoft.com/en-us/typography/opentype/spec/name#name-records
-        // first by platform ID, then by platform-specific ID, then by language ID, and then by name ID
-        name_records.sort_by_key(|nr| {
-            (
-                nr.platform_id,
-                nr.encoding_id,
-                nr.language_id,
-                nr.name_id.to_u16(),
-            )
-        });
 
         context.set_name(Name::new(name_records.into_iter().collect()));
         Ok(())
