@@ -2,7 +2,7 @@
 .appVersion = "3151";
 DisplayStrings = (
 "-",
-"!"
+"!!--"
 );
 copyright = "Copy!";
 customParameters = (
@@ -84,7 +84,7 @@ unicode = 0020;
 },
 {
 glyphname = exclam;
-lastChange = "2022-12-01 05:10:49 +0000";
+lastChange = "2023-06-05 23:22:51 +0000";
 layers = (
 {
 layerId = m01;
@@ -139,7 +139,7 @@ unicode = 0021;
 },
 {
 glyphname = hyphen;
-lastChange = "2022-12-01 04:57:39 +0000";
+lastChange = "2023-06-05 23:23:03 +0000";
 layers = (
 {
 layerId = m01;
@@ -208,6 +208,25 @@ width = 600;
 unicode = 003D;
 }
 );
+kerning = {
+m01 = {
+exclam = {
+exclam = -360;
+hyphen = 20;
+};
+hyphen = {
+hyphen = -150;
+};
+};
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
+exclam = {
+exclam = -100;
+};
+hyphen = {
+hyphen = -50;
+};
+};
+};
 unitsPerEm = 1000;
 versionMajor = 42;
 versionMinor = 42;
