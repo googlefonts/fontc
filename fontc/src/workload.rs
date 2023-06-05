@@ -119,9 +119,10 @@ impl Workload {
                 self.mark_success(AnyWorkId::Be(BeWorkIdentifier::LocaFormat));
             }
 
-            // Hmtx carries hhea along for the ride
+            // Hmtx, hhea, and maxp are done together as metrics and limits
             AnyWorkId::Be(BeWorkIdentifier::Hmtx) => {
                 self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Hhea));
+                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Maxp));
             }
             _ => (),
         }
