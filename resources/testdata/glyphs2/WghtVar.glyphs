@@ -1,8 +1,7 @@
 {
 .appVersion = "3151";
 DisplayStrings = (
-"-",
-"!!--"
+"![]!"
 );
 copyright = "Copy!";
 customParameters = (
@@ -84,7 +83,7 @@ unicode = 0020;
 },
 {
 glyphname = exclam;
-lastChange = "2023-06-05 23:22:51 +0000";
+lastChange = "2023-06-07 22:35:08 +0000";
 layers = (
 {
 layerId = m01;
@@ -175,6 +174,100 @@ width = 600;
 unicode = 002D;
 },
 {
+glyphname = bracketleft;
+lastChange = "2023-06-07 22:37:02 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"324 637 LINE",
+"324 51 LINE",
+"454 51 LINE",
+"454 -10 LINE",
+"259 -10 LINE",
+"259 696 LINE",
+"454 696 LINE",
+"454 637 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+paths = (
+{
+closed = 1;
+nodes = (
+"324 629 LINE",
+"324 58 LINE",
+"454 58 LINE",
+"454 -17 LINE",
+"243 -17 LINE",
+"243 704 LINE",
+"454 704 LINE",
+"454 629 LINE"
+);
+}
+);
+width = 600;
+}
+);
+leftKerningGroup = brackets;
+rightKerningGroup = brackets;
+unicode = 005B;
+},
+{
+glyphname = bracketright;
+lastChange = "2023-06-07 22:35:47 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"259 696 LINE",
+"454 696 LINE",
+"454 -10 LINE",
+"259 -10 LINE",
+"259 51 LINE",
+"389 51 LINE",
+"389 637 LINE",
+"259 637 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+paths = (
+{
+closed = 1;
+nodes = (
+"243 704 LINE",
+"454 704 LINE",
+"454 -17 LINE",
+"243 -17 LINE",
+"243 58 LINE",
+"373 58 LINE",
+"373 629 LINE",
+"243 629 LINE"
+);
+}
+);
+width = 600;
+}
+);
+leftKerningGroup = brackets;
+rightKerningGroup = brackets;
+unicode = 005D;
+},
+{
 glyphname = "manual-component";
 lastChange = "2022-12-01 04:57:39 +0000";
 layers = (
@@ -210,15 +303,25 @@ unicode = 003D;
 );
 kerning = {
 m01 = {
+bracketleft = {
+bracketright = -300;
+};
 exclam = {
+"@MMK_R_brackets" = -160;
 exclam = -360;
 hyphen = 20;
 };
 hyphen = {
 hyphen = -150;
 };
+"@MMK_L_brackets" = {
+exclam = -165;
+};
 };
 "E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
+bracketleft = {
+bracketright = -150;
+};
 exclam = {
 exclam = -100;
 };

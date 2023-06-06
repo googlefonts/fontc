@@ -80,6 +80,8 @@ impl FeatureSnippet {
 pub struct Glyph {
     pub glyphname: String,
     pub layers: Vec<Layer>,
+    pub left_kern: Option<String>,
+    pub right_kern: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Hash)]
@@ -166,6 +168,8 @@ pub struct Axis {
 pub struct RawGlyph {
     pub layers: Vec<RawLayer>,
     pub glyphname: String,
+    pub kern_left: Option<String>,
+    pub kern_right: Option<String>,
     #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
@@ -975,6 +979,14 @@ impl RawFont {
         if let Some(kerning) = self.other_stuff.remove("kerning") {
             self.other_stuff.insert("kerningLTR".to_string(), kerning);
         };
+        for glyph in self.glyphs.iter_mut() {
+            if let Some(Plist::String(group)) = glyph.other_stuff.remove("leftKerningGroup") {
+                glyph.kern_left = Some(group.clone());
+            }
+            if let Some(Plist::String(group)) = glyph.other_stuff.remove("rightKerningGroup") {
+                glyph.kern_right = Some(group.clone());
+            }
+        }
         Ok(())
     }
 
@@ -1340,6 +1352,8 @@ impl TryFrom<RawGlyph> for Glyph {
         Ok(Glyph {
             glyphname: from.glyphname,
             layers: instances,
+            left_kern: from.kern_left,
+            right_kern: from.kern_right,
         })
     }
 }
@@ -1953,7 +1967,14 @@ mod tests {
     fn glyph_order_default_is_file_order() {
         let font = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
         assert_eq!(
-            vec!["space", "exclam", "hyphen", "manual-component"],
+            vec![
+                "space",
+                "exclam",
+                "hyphen",
+                "bracketleft",
+                "bracketright",
+                "manual-component"
+            ],
             font.glyph_order
         );
     }
@@ -2192,6 +2213,22 @@ mod tests {
                 .collect::<HashSet<_>>()
         );
 
+        let actual_groups: Vec<_> = font
+            .glyphs
+            .iter()
+            .filter_map(|(name, glyph)| {
+                if glyph.left_kern.is_some() || glyph.right_kern.is_some() {
+                    Some((
+                        name.as_str(),
+                        glyph.left_kern.as_deref(),
+                        glyph.right_kern.as_deref(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         let actual_kerning = font
             .kerning_ltr
             .get("m01")
@@ -2201,12 +2238,21 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(
-            vec![
-                ("exclam", "exclam", -360),
-                ("exclam", "hyphen", 20),
-                ("hyphen", "hyphen", -150),
-            ],
-            actual_kerning,
+            (
+                vec![
+                    ("bracketleft", Some("brackets"), Some("brackets")),
+                    ("bracketright", Some("brackets"), Some("brackets")),
+                ],
+                vec![
+                    ("@MMK_L_brackets", "exclam", -165),
+                    ("bracketleft", "bracketright", -300),
+                    ("exclam", "@MMK_R_brackets", -160),
+                    ("exclam", "exclam", -360),
+                    ("exclam", "hyphen", 20),
+                    ("hyphen", "hyphen", -150),
+                ],
+            ),
+            (actual_groups, actual_kerning),
         );
     }
 }

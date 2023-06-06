@@ -1,0 +1,65 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>ascender</key>
+    <integer>737</integer>
+    <key>capHeight</key>
+    <integer>702</integer>
+    <key>copyright</key>
+    <string>Copy!</string>
+    <key>descender</key>
+    <integer>-42</integer>
+    <key>familyName</key>
+    <string>WghtVar</string>
+    <key>italicAngle</key>
+    <integer>0</integer>
+    <key>openTypeHeadCreated</key>
+    <string>2022/12/01 04:52:20</string>
+    <key>openTypeNameDescription</key>
+    <string>The greatest weight var</string>
+    <key>openTypeNameLicenseURL</key>
+    <string>https://example.com/my/font/license</string>
+    <key>openTypeNameVersion</key>
+    <string>New Value</string>
+    <key>openTypeOS2Selection</key>
+    <array>
+      <integer>7</integer>
+      <integer>8</integer>
+    </array>
+    <key>openTypeOS2Type</key>
+    <array>
+      <integer>3</integer>
+    </array>
+    <key>postscriptBlueValues</key>
+    <array>
+      <integer>-16</integer>
+      <integer>0</integer>
+      <integer>737</integer>
+      <integer>753</integer>
+    </array>
+    <key>postscriptOtherBlues</key>
+    <array>
+      <integer>-58</integer>
+      <integer>-42</integer>
+    </array>
+    <key>postscriptUnderlinePosition</key>
+    <integer>-100</integer>
+    <key>postscriptUnderlineThickness</key>
+    <integer>50</integer>
+    <key>styleMapFamilyName</key>
+    <string>WghtVar</string>
+    <key>styleMapStyleName</key>
+    <string>regular</string>
+    <key>styleName</key>
+    <string>Regular</string>
+    <key>unitsPerEm</key>
+    <integer>1000</integer>
+    <key>versionMajor</key>
+    <integer>42</integer>
+    <key>versionMinor</key>
+    <integer>42</integer>
+    <key>xHeight</key>
+    <integer>501</integer>
+  </dict>
+</plist>

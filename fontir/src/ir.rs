@@ -3,20 +3,23 @@
 use crate::{
     coords::{CoordConverter, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
     error::{PathConversionError, VariationModelError, WorkError},
-    serde::{GlobalMetricsSerdeRepr, GlyphSerdeRepr, MiscSerdeRepr, StaticMetadataSerdeRepr},
+    serde::{
+        GlobalMetricsSerdeRepr, GlyphSerdeRepr, KerningSerdeRepr, MiscSerdeRepr,
+        StaticMetadataSerdeRepr,
+    },
     variations::VariationModel,
 };
 use chrono::{DateTime, Utc};
 use font_types::NameId;
 use font_types::Tag;
-use fontdrasil::types::GlyphName;
+use fontdrasil::types::{GlyphName, GroupName};
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
 use log::{trace, warn};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
     path::{Path, PathBuf},
 };
@@ -93,6 +96,37 @@ pub struct MiscMetadata {
     pub lowest_rec_ppm: u16,
 
     pub created: Option<DateTime<Utc>>,
+}
+
+/// IR representation of kerning.
+///
+/// In UFO terms, roughly [groups.plist](https://unifiedfontobject.org/versions/ufo3/groups.plist/)
+/// and [kerning.plist](https://unifiedfontobject.org/versions/ufo3/kerning.plist/) combined.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(from = "KerningSerdeRepr", into = "KerningSerdeRepr")]
+pub struct Kerning {
+    pub groups: HashMap<GroupName, HashSet<GlyphName>>,
+    /// An adjustment to the space *between* two glyphs in logical order.
+    ///
+    /// Maps (side1, side2) => a mapping location:adjustment.
+    ///
+    /// Used for both LTR and RTL. The BE application differs but the concept
+    /// is the same.
+    pub kerns: HashMap<
+        (KernParticipant, KernParticipant),
+        BTreeMap<NormalizedLocation, OrderedFloat<f32>>,
+    >,
+}
+
+/// A participant in kerning, one of the entries in a kerning pair.
+///
+/// Concretely, a glyph or a group of glyphs.
+///
+/// <https://unifiedfontobject.org/versions/ufo3/kerning.plist/#kerning-pair-types>
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum KernParticipant {
+    Glyph(GlyphName),
+    Group(GroupName),
 }
 
 impl StaticMetadata {
