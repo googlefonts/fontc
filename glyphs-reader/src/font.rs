@@ -2242,13 +2242,17 @@ mod tests {
         assert_eq!(
             (
                 vec![
-                    ("bracketleft", Some("brackets"), Some("brackets")),
-                    ("bracketright", Some("brackets"), Some("brackets")),
+                    ("bracketleft", Some("bracketleft_L"), Some("bracketleft_R")),
+                    (
+                        "bracketright",
+                        Some("bracketright_L"),
+                        Some("bracketright_R")
+                    ),
                 ],
                 vec![
-                    ("@MMK_L_brackets", "exclam", -165),
+                    ("@MMK_L_bracketleft_R", "exclam", -165),
                     ("bracketleft", "bracketright", -300),
-                    ("exclam", "@MMK_R_brackets", -160),
+                    ("exclam", "@MMK_R_bracketright_L", -160),
                     ("exclam", "exclam", -360),
                     ("exclam", "hyphen", 20),
                     ("hyphen", "hyphen", -150),

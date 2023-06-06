@@ -69,6 +69,11 @@ pub trait Source {
     ///
     /// When run work should update [Context] with [crate::ir::Features].
     fn create_feature_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
+
+    /// Create a function that could be called to generate or identify kerning.
+    ///
+    /// When run work should update [Context] with [crate::ir::Kerning].
+    fn create_kerning_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
 }
 
 /// The files (in future non-file sources?) that drive various parts of IR
