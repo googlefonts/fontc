@@ -6,7 +6,7 @@ use read_fonts::{
     tables::{
         avar::Avar, cmap::Cmap, fvar::Fvar, glyf::Glyf, gpos::Gpos, gsub::Gsub, gvar::Gvar,
         head::Head, hhea::Hhea, hmtx::Hmtx, loca::Loca, maxp::Maxp, name::Name, os2::Os2,
-        post::Post,
+        post::Post, stat::Stat,
     },
     types::Tag,
     TopLevelTable,
@@ -45,6 +45,7 @@ const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
     (WorkId::Name, Name::TAG, TableType::Static),
     (WorkId::Os2, Os2::TAG, TableType::Static),
     (WorkId::Post, Post::TAG, TableType::Static),
+    (WorkId::Stat, Stat::TAG, TableType::Variable),
 ];
 
 fn has(context: &Context, id: WorkId) -> bool {
@@ -64,6 +65,7 @@ fn has(context: &Context, id: WorkId) -> bool {
         WorkId::Name => context.has_name(),
         WorkId::Os2 => context.has_os2(),
         WorkId::Post => context.has_post(),
+        WorkId::Stat => context.has_stat(),
         _ => false,
     }
 }
@@ -85,6 +87,7 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Vec<u8>, Error> {
         WorkId::Name => to_bytes(&*context.get_name()),
         WorkId::Os2 => to_bytes(&*context.get_os2()),
         WorkId::Post => to_bytes(&*context.get_post()),
+        WorkId::Stat => to_bytes(&*context.get_stat()),
         _ => panic!("Missing a match for {id:?}"),
     };
     Ok(bytes)

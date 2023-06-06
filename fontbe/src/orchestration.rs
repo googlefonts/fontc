@@ -34,6 +34,7 @@ use write_fonts::{
         name::Name,
         os2::Os2,
         post::Post,
+        stat::Stat,
         variations::Tuple,
     },
     validate::Validate,
@@ -60,6 +61,7 @@ pub enum WorkId {
     Features,
     Avar,
     Cmap,
+    Font,
     Fvar,
     Glyf,
     GlyfFragment(GlyphName),
@@ -76,7 +78,7 @@ pub enum WorkId {
     Name,
     Os2,
     Post,
-    Font,
+    Stat,
 }
 
 // Identifies work of any type, FE, BE, ... future optimization passes, w/e.
@@ -368,6 +370,7 @@ pub struct Context {
     head: ContextItem<Head>,
     hhea: ContextItem<Hhea>,
     hmtx: ContextItem<Bytes>,
+    stat: ContextItem<Stat>,
     font: ContextItem<Bytes>,
 }
 
@@ -395,6 +398,7 @@ impl Context {
             head: self.head.clone(),
             hhea: self.hhea.clone(),
             hmtx: self.hmtx.clone(),
+            stat: self.stat.clone(),
             font: self.font.clone(),
         }
     }
@@ -422,6 +426,7 @@ impl Context {
             head: Arc::from(RwLock::new(None)),
             hhea: Arc::from(RwLock::new(None)),
             hmtx: Arc::from(RwLock::new(None)),
+            stat: Arc::from(RwLock::new(None)),
             font: Arc::from(RwLock::new(None)),
         }
     }
@@ -591,6 +596,7 @@ impl Context {
     context_accessors! { get_hhea, set_hhea, has_hhea, hhea, Hhea, WorkId::Hhea, from_file, to_bytes }
     context_accessors! { get_gpos, set_gpos, has_gpos, gpos, Gpos, WorkId::Gpos, from_file, to_bytes }
     context_accessors! { get_gsub, set_gsub, has_gsub, gsub, Gsub, WorkId::Gsub, from_file, to_bytes }
+    context_accessors! { get_stat, set_stat, has_stat, stat, Stat, WorkId::Stat, from_file, to_bytes }
 
     // Accessors where value is raw bytes
     context_accessors! { get_gvar, set_gvar, has_gvar, gvar, Bytes, WorkId::Gvar, raw_from_file, raw_to_bytes }

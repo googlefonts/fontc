@@ -157,12 +157,12 @@ def name_id_to_name(ttx, xpath, attr):
         el.attrib[attr] = id_to_name[el.attrib[attr]]
 
 
-def find_table(ttx, table):
+def find_table(ttx, tag):
     return select_one(ttx, f"/ttFont/{tag}")
 
 
-def select_one(ttx, xpath):
-    el = ttx.xpath(xpath)
+def select_one(container, xpath):
+    el = container.xpath(xpath)
     assert len(el) == 1, f"Wanted 1 name element, got {len(el)}"
     return el[0]
 
@@ -187,6 +187,23 @@ def erase_checksum(ttx):
     del el.attrib["value"]
 
 
+def stat_like_fontmake(ttx):
+    el = find_table(ttx, "STAT")
+    ver = select_one(el, "Version")
+    if ver.attrib["value"] != "0x00010002":
+        return;  # nop
+
+    # fontc likes to write STAT 1.2, fontmake prefers 1.1
+    # Version 1.2 adds support for the format 4 axis value table
+    # So until such time as we start writing format 4 axis value tables it doesn't matter
+    ver.attrib["value"] = "0x00010001"
+
+    # fontc reporting a blank axis value array isn't a very interesting diff
+    axis_values = select_one(el, "AxisValueArray")
+    if len(axis_values) == 0:
+        axis_values.getparent().remove(axis_values)
+        
+
 def reduce_diff_noise(fontc, fontmake):
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
@@ -200,6 +217,8 @@ def reduce_diff_noise(fontc, fontmake):
 
         # for matching purposes checksum is just noise
         erase_checksum(ttx)
+        
+        stat_like_fontmake(ttx)
 
 
 def main(argv):

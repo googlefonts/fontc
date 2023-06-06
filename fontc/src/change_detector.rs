@@ -134,6 +134,11 @@ impl ChangeDetector {
             || !self.be_paths.target_file(&BeWorkIdentifier::Avar).is_file()
     }
 
+    pub fn stat_be_change(&self) -> bool {
+        self.final_static_metadata_ir_change()
+            || !self.be_paths.target_file(&BeWorkIdentifier::Stat).is_file()
+    }
+
     pub fn fvar_be_change(&self) -> bool {
         self.final_static_metadata_ir_change()
             || !self.be_paths.target_file(&BeWorkIdentifier::Fvar).is_file()
