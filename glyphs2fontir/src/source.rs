@@ -90,6 +90,7 @@ impl GlyphsIrSource {
             version_major: Default::default(),
             version_minor: Default::default(),
             date: None,
+            kerning_ltr: Default::default(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -117,6 +118,7 @@ impl GlyphsIrSource {
             version_major: Default::default(),
             version_minor: Default::default(),
             date: None,
+            kerning_ltr: font.kerning_ltr.clone(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
