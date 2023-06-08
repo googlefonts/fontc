@@ -80,7 +80,9 @@ impl FeatureSnippet {
 pub struct Glyph {
     pub glyphname: String,
     pub layers: Vec<Layer>,
+    /// The left kerning group
     pub left_kern: Option<String>,
+    /// The right kerning group
     pub right_kern: Option<String>,
 }
 
@@ -981,10 +983,10 @@ impl RawFont {
         };
         for glyph in self.glyphs.iter_mut() {
             if let Some(Plist::String(group)) = glyph.other_stuff.remove("leftKerningGroup") {
-                glyph.kern_left = Some(group.clone());
+                glyph.kern_left = Some(group);
             }
             if let Some(Plist::String(group)) = glyph.other_stuff.remove("rightKerningGroup") {
-                glyph.kern_right = Some(group.clone());
+                glyph.kern_right = Some(group);
             }
         }
         Ok(())
