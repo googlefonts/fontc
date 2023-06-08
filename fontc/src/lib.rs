@@ -1592,7 +1592,12 @@ mod tests {
         );
 
         assert_eq!(
-            (0..4).map(GlyphId::new).collect::<Vec<_>>(),
+            vec![
+                GlyphId::new(0),
+                GlyphId::new(1),
+                GlyphId::new(2),
+                GlyphId::new(5),
+            ],
             [0x20, 0x21, 0x2d, 0x3d]
                 .iter()
                 .map(|cp| font.cmap().unwrap().map_codepoint(*cp as u32).unwrap())

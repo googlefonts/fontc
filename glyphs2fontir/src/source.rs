@@ -620,7 +620,14 @@ mod tests {
     #[test]
     fn find_glyphs() {
         assert_eq!(
-            HashSet::from(["space", "hyphen", "exclam", "manual-component"]),
+            HashSet::from([
+                "space",
+                "hyphen",
+                "exclam",
+                "bracketleft",
+                "bracketright",
+                "manual-component"
+            ]),
             glyph_state_for_file(&glyphs3_dir(), "WghtVar.glyphs")
                 .keys()
                 .map(|k| k.as_str())
@@ -685,10 +692,17 @@ mod tests {
                 .map(|a| a.tag)
                 .collect::<Vec<_>>()
         );
-        let expected: IndexSet<GlyphName> = vec!["space", "exclam", "hyphen", "manual-component"]
-            .iter()
-            .map(|s| (*s).into())
-            .collect();
+        let expected: IndexSet<GlyphName> = vec![
+            "space",
+            "exclam",
+            "hyphen",
+            "bracketleft",
+            "bracketright",
+            "manual-component",
+        ]
+        .iter()
+        .map(|s| (*s).into())
+        .collect();
         assert_eq!(expected, context.get_init_static_metadata().glyph_order);
     }
 
