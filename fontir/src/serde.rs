@@ -13,8 +13,8 @@ use write_fonts::tables::os2::SelectionFlags;
 use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
     ir::{
-        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, KernParticipant,
-        Kerning, MiscMetadata, NameKey, NamedInstance, StaticMetadata,
+        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, MiscMetadata,
+        NameKey, NamedInstance, StaticMetadata,
     },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
@@ -91,88 +91,6 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
                 .glyph_order
                 .into_iter()
                 .map(|n| n.as_str().to_string())
-                .collect(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct KerningSerdeRepr {
-    pub groups: Vec<KerningGroupSerdeRepr>,
-    pub kerns: Vec<KernSerdeRepr>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct KerningGroupSerdeRepr {
-    name: String,
-    glyphs: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct KernSerdeRepr {
-    side1: KernParticipant,
-    side2: KernParticipant,
-    values: Vec<(NormalizedLocation, f32)>,
-}
-
-impl From<Kerning> for KerningSerdeRepr {
-    fn from(from: Kerning) -> Self {
-        KerningSerdeRepr {
-            groups: from
-                .groups
-                .into_iter()
-                .map(|(name, glyphs)| {
-                    let name = name.to_string();
-                    let mut glyphs: Vec<_> = glyphs.iter().map(|g| g.to_string()).collect();
-                    glyphs.sort();
-                    KerningGroupSerdeRepr { name, glyphs }
-                })
-                .collect(),
-            kerns: from
-                .kerns
-                .into_iter()
-                .map(|((side1, side2), values)| {
-                    let mut values: Vec<_> = values
-                        .into_iter()
-                        .map(|(pos, adjustment)| (pos, adjustment.0))
-                        .collect();
-                    values.sort_by_key(|(pos, _)| pos.clone());
-                    KernSerdeRepr {
-                        side1,
-                        side2,
-                        values,
-                    }
-                })
-                .collect(),
-        }
-    }
-}
-
-impl From<KerningSerdeRepr> for Kerning {
-    fn from(from: KerningSerdeRepr) -> Self {
-        Kerning {
-            groups: from
-                .groups
-                .into_iter()
-                .map(|g| {
-                    (
-                        g.name.into(),
-                        g.glyphs.into_iter().map(|n| n.into()).collect(),
-                    )
-                })
-                .collect(),
-            kerns: from
-                .kerns
-                .into_iter()
-                .map(|k| {
-                    (
-                        (k.side1, k.side2),
-                        k.values
-                            .into_iter()
-                            .map(|(pos, value)| (pos, value.into()))
-                            .collect(),
-                    )
-                })
                 .collect(),
         }
     }

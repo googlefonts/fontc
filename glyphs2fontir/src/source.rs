@@ -1,12 +1,12 @@
 use chrono::{TimeZone, Utc};
 use font_types::{NameId, Tag};
 use fontdrasil::orchestration::Work;
-use fontdrasil::types::{GlyphName, GroupName};
+use fontdrasil::types::GlyphName;
 use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
 use fontir::ir::{
-    self, GlobalMetric, GlobalMetrics, GlyphInstance, KernParticipant, Kerning, NameBuilder,
-    NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+    self, GlobalMetric, GlobalMetrics, GlyphInstance, NameBuilder, NameKey, NamedInstance,
+    StaticMetadata, DEFAULT_VENDOR_ID,
 };
 use fontir::orchestration::{Context, IrWork};
 use fontir::source::{Input, Source};
@@ -220,16 +220,6 @@ impl Source for GlyphsIrSource {
         let cache = self.cache.as_ref().unwrap();
 
         Ok(Box::new(FeatureWork {
-            font_info: cache.font_info.clone(),
-        }))
-    }
-
-    fn create_kerning_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
-        self.check_static_metadata(&input.static_metadata)?;
-
-        let cache = self.cache.as_ref().unwrap();
-
-        Ok(Box::new(KerningWork {
             font_info: cache.font_info.clone(),
         }))
     }
@@ -464,138 +454,6 @@ impl Work<Context, WorkError> for FeatureWork {
         let font = &font_info.font;
 
         context.set_features(to_ir_features(&font.features)?);
-        Ok(())
-    }
-}
-
-/// What side of the kern is this, in logical order
-enum KernSide {
-    L,
-    R,
-}
-
-impl KernSide {
-    fn class_prefix(&self) -> &'static str {
-        match self {
-            KernSide::L => "@MMK_L_",
-            KernSide::R => "@MMK_R_",
-        }
-    }
-
-    fn group_prefix(&self) -> &'static str {
-        match self {
-            KernSide::L => "public.kern1.",
-            KernSide::R => "public.kern2.",
-        }
-    }
-}
-
-struct KerningWork {
-    font_info: Arc<FontInfo>,
-}
-
-/// See <https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/kerning.py#L53-L72>
-fn kern_participant(
-    glyph_order: &IndexSet<GlyphName>,
-    groups: &HashMap<GlyphName, HashSet<GlyphName>>,
-    side: KernSide,
-    raw_side: &str,
-) -> Option<KernParticipant> {
-    if raw_side.starts_with(side.class_prefix()) {
-        let group_name = format!(
-            "{}{}",
-            side.group_prefix(),
-            raw_side.strip_prefix(side.class_prefix()).unwrap()
-        );
-        let group = GroupName::from(&group_name);
-        if groups.contains_key(&group) {
-            Some(KernParticipant::Group(group))
-        } else {
-            warn!("Invalid kern side: {raw_side}, no group {group_name}");
-            None
-        }
-    } else {
-        let name = GlyphName::from(raw_side);
-        if glyph_order.contains(&name) {
-            Some(KernParticipant::Glyph(name))
-        } else {
-            warn!("Invalid kern side: {raw_side}, no such glyph");
-            None
-        }
-    }
-}
-
-impl Work<Context, WorkError> for KerningWork {
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        trace!("Generate IR for kerning");
-        let static_metadata = context.get_final_static_metadata();
-        let glyph_order = &static_metadata.glyph_order;
-        let font_info = self.font_info.as_ref();
-        let font = &font_info.font;
-
-        let master_positions: HashMap<_, _> = font
-            .masters
-            .iter()
-            .map(|m| (&m.id, font_info.locations.get(&m.axes_values).unwrap()))
-            .collect();
-
-        let mut kerning = Kerning::default();
-
-        // If glyph uses a group for either side it goes in that group
-        font.glyphs
-            .iter()
-            .flat_map(|(glyph_name, glyph)| {
-                glyph
-                    .left_kern
-                    .iter()
-                    .map(|group| (KernSide::L, group))
-                    .chain(glyph.right_kern.iter().map(|group| (KernSide::R, group)))
-                    .map(|(side, group_name)| {
-                        (
-                            GroupName::from(format!("{}{}", side.group_prefix(), group_name)),
-                            GlyphName::from(glyph_name.as_str()),
-                        )
-                    })
-            })
-            .for_each(|(group_name, glyph_name)| {
-                kerning
-                    .groups
-                    .entry(group_name)
-                    .or_default()
-                    .insert(glyph_name);
-            });
-
-        font.kerning_ltr
-            .iter()
-            .filter_map(|(master_id, kerns)| match master_positions.get(master_id) {
-                Some(pos) => Some((pos, kerns)),
-                None => {
-                    warn!("Kerning is present for non-existent master {master_id}");
-                    None
-                }
-            })
-            .flat_map(|(master_pos, kerns)| {
-                kerns.iter().map(|((side1, side2), adjustment)| {
-                    ((side1, side2), ((*master_pos).clone(), *adjustment))
-                })
-            })
-            .filter_map(|((side1, side2), pos_adjust)| {
-                let side1 = kern_participant(glyph_order, &kerning.groups, KernSide::L, side1);
-                let side2 = kern_participant(glyph_order, &kerning.groups, KernSide::R, side2);
-                let (Some(side1), Some(side2)) = (side1, side2) else {
-                    return None
-                };
-                Some(((side1, side2), pos_adjust))
-            })
-            .for_each(|(participants, (pos, value))| {
-                kerning
-                    .kerns
-                    .entry(participants)
-                    .or_default()
-                    .insert(pos, (value as f32).into());
-            });
-
-        context.set_kerning(kerning);
         Ok(())
     }
 }

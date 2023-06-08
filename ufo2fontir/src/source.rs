@@ -7,16 +7,13 @@ use std::{
 
 use chrono::{DateTime, TimeZone, Utc};
 use font_types::{NameId, Tag};
-use fontdrasil::{
-    orchestration::Work,
-    types::{GlyphName, GroupName},
-};
+use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
     ir::{
-        Features, GlobalMetric, GlobalMetrics, KernParticipant, Kerning, NameBuilder, NameKey,
-        NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+        Features, GlobalMetric, GlobalMetrics, NameBuilder, NameKey, NamedInstance, StaticMetadata,
+        DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork},
     source::{Input, Source},
@@ -349,16 +346,6 @@ impl Source for DesignSpaceIrSource {
         }))
     }
 
-    fn create_kerning_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
-        self.check_static_metadata(&input.static_metadata)?;
-        let cache = self.cache.as_ref().unwrap();
-
-        Ok(Box::new(KerningWork {
-            designspace_file: cache.designspace_file.clone(),
-            designspace: cache.designspace.clone(),
-        }))
-    }
-
     fn create_glyph_ir_work(
         &self,
         glyph_names: &IndexSet<GlyphName>,
@@ -393,11 +380,6 @@ struct GlobalMetricsWork {
 struct FeatureWork {
     designspace_file: PathBuf,
     fea_files: Arc<Vec<PathBuf>>,
-}
-
-struct KerningWork {
-    designspace_file: PathBuf,
-    designspace: Arc<DesignSpaceDocument>,
 }
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
@@ -859,79 +841,6 @@ impl Work<Context, WorkError> for FeatureWork {
             context.set_features(Features::empty());
         }
 
-        Ok(())
-    }
-}
-
-impl Work<Context, WorkError> for KerningWork {
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        debug!("Kerning for {:#?}", self.designspace_file);
-
-        let designspace_dir = self.designspace_file.parent().unwrap();
-        let static_metadata = context.get_final_static_metadata();
-        let master_locations = master_locations(&static_metadata.axes, &self.designspace.sources);
-
-        let mut kerning = Kerning::default();
-        for source in self.designspace.sources.iter() {
-            let pos = master_locations.get(&source.name).unwrap();
-            let ufo_dir = designspace_dir.join(&source.filename);
-            let data_request = norad::DataRequest::none().groups(true).kerning(true);
-            let font = norad::Font::load_requested_data(&ufo_dir, data_request)
-                .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?;
-
-            kerning.groups = font
-                .groups
-                .into_iter()
-                .map(|(group_name, entries)| {
-                    (
-                        GroupName::from(group_name.as_str()),
-                        entries
-                            .into_iter()
-                            .filter_map(|glyph_name| {
-                                let glyph_name = GlyphName::from(glyph_name.as_str());
-                                if static_metadata.glyph_order.contains(&glyph_name) {
-                                    Some(glyph_name)
-                                } else {
-                                    warn!("{} kerning group {} references non-existent glyph {}; ignoring", source.filename, group_name, glyph_name);
-                                    None
-                                }
-                            })
-                            .collect(),
-                    )
-                })
-                .collect();
-
-            let resolve_participant = |name: &norad::Name| {
-                let group_name = GroupName::from(name.as_str());
-                if kerning.groups.contains_key(&group_name) {
-                    return Some(KernParticipant::Group(group_name));
-                }
-                let glyph_name = GlyphName::from(name.as_str());
-                if static_metadata.glyph_order.contains(&glyph_name) {
-                    return Some(KernParticipant::Glyph(glyph_name));
-                }
-                None
-            };
-
-            for (side1, side2, adjustment) in font.kerning.into_iter().flat_map(|(side1, kerns)| {
-                kerns
-                    .into_iter()
-                    .map(move |(side2, adjustment)| (side1.clone(), side2, adjustment))
-            }) {
-                let (Some(side1), Some(side2)) = (resolve_participant(&side1), resolve_participant(&side2)) else {
-                    warn!("{} kerning unable to resolve at least one of {}, {}; ignoring", source.name, side1.as_str(), side2.as_str());
-                    continue;
-                };
-
-                kerning
-                    .kerns
-                    .entry((side1, side2))
-                    .or_default()
-                    .insert(pos.clone(), (adjustment as f32).into());
-            }
-        }
-
-        context.set_kerning(kerning);
         Ok(())
     }
 }

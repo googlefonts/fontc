@@ -49,5 +49,3 @@ impl Display for GlyphName {
         f.write_str(self.as_str())
     }
 }
-
-pub type GroupName = GlyphName;
