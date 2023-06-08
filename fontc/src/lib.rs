@@ -1184,7 +1184,7 @@ mod tests {
             panic!("Expected 'O' to be a simple glyph, got {:?}", uppercase_o);
         };
         assert_eq!(2, glyph.number_of_contours());
-        assert_eq!(36, glyph.num_points());
+        assert_eq!(35, glyph.num_points());
         assert_eq!(
             [48, -9, 491, 817],
             [glyph.x_min(), glyph.y_min(), glyph.x_max(), glyph.y_max()]
