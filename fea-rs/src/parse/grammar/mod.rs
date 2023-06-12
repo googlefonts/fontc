@@ -8,6 +8,7 @@ mod gpos;
 mod gsub;
 mod metrics;
 mod table;
+mod variations;
 
 #[cfg(test)]
 // we use this in a test in edit.rs
@@ -47,6 +48,8 @@ fn top_level_element(parser: &mut Parser) {
         anonymous(parser)
     } else if parser.matches(0, Kind::NamedGlyphClass) {
         glyph::named_glyph_class_decl(parser, TokenSet::TOP_LEVEL)
+    } else if parser.matches(0, Kind::ConditionSetKw) {
+        variations::condition_set(parser)
     } else if parser.matches(0, Kind::ValueRecordDefKw) {
         value_record_def(parser, TokenSet::TOP_LEVEL)
     } else {

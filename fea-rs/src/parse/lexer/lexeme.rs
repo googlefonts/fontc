@@ -16,7 +16,7 @@ impl Lexeme {
 
 /// Kinds of tokens assigned during lexing.
 ///
-/// These kinds are assigned by the lexer, and consumed by parser, which
+/// These kinds are assigned by the lexer, and consumed by the parser, which
 /// replaces them with the richer `Kind` enum in the `token_tree` module.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u16)]
@@ -64,6 +64,7 @@ pub enum Kind {
     FeatureKw,
     MarkClassKw,
     AnonKw, // 'anon' and 'anonymous'
+    ConditionSetKw,
 
     // other keywords
     AnchorKw,
@@ -185,6 +186,7 @@ impl Kind {
             b"anchor" => Some(Kind::AnchorKw),
             b"anchorDef" => Some(Kind::AnchorDefKw),
             b"anon" | b"anonymous" => Some(Kind::AnonKw),
+            b"conditionset" => Some(Kind::ConditionSetKw),
             b"by" => Some(Kind::ByKw),
             b"contourpoint" => Some(Kind::ContourpointKw),
             b"cursive" => Some(Kind::CursiveKw),
@@ -314,6 +316,7 @@ impl Kind {
             Self::FeatureKw => AstKind::FeatureKw,
             Self::MarkClassKw => AstKind::MarkClassKw,
             Self::AnonKw => AstKind::AnonKw,
+            Self::ConditionSetKw => AstKind::ConditionSetKw,
             Self::AnchorKw => AstKind::AnchorKw,
             Self::ByKw => AstKind::ByKw,
             Self::ContourpointKw => AstKind::ContourpointKw,
@@ -441,6 +444,7 @@ impl std::fmt::Display for Kind {
             Self::MarkClassKw => write!(f, "MarkClassKw"),
             Self::AnonKw => write!(f, "AnonKw"),
             Self::AnchorKw => write!(f, "AnchorKw"),
+            Self::ConditionSetKw => write!(f, "ConditionSetKw"),
             Self::ByKw => write!(f, "ByKw"),
             Self::ContourpointKw => write!(f, "ContourpointKw"),
             Self::CursiveKw => write!(f, "CursiveKw"),

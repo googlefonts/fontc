@@ -1,4 +1,8 @@
 /// Kinds of tokens assigned during lexing and parsing.
+///
+/// This includes the set of raw tokens that are generated during lexing,
+/// but also includes richer information about the parsed FEA that is used to
+/// assign type information to collections of tokens ('nodes').
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 #[repr(u16)]
@@ -46,6 +50,7 @@ pub enum Kind {
     FeatureKw,
     MarkClassKw,
     AnonKw, // 'anon' and 'anonymous'
+    ConditionSetKw,
 
     // other keywords
     AnchorKw,
@@ -220,6 +225,8 @@ pub enum Kind {
     LanguageNode,
     LookupFlagNode,
     SubtableNode,
+    ConditionSetNode,
+    ConditionNode,
 
     TableNode,
     HeadTableNode,
@@ -337,6 +344,7 @@ impl std::fmt::Display for Kind {
             Self::FeatureKw => write!(f, "FeatureKw"),
             Self::MarkClassKw => write!(f, "MarkClassKw"),
             Self::AnonKw => write!(f, "AnonKw"),
+            Self::ConditionSetKw => write!(f, "ConditionSetKw"),
             Self::AnchorKw => write!(f, "AnchorKw"),
             Self::ByKw => write!(f, "ByKw"),
             Self::ContourpointKw => write!(f, "ContourpointKw"),
@@ -465,6 +473,8 @@ impl std::fmt::Display for Kind {
             Self::MarkClassNode => write!(f, "MarkClassNode"),
             Self::AnchorDefNode => write!(f, "AnchorDefNode"),
             Self::AnchorNode => write!(f, "AnchorNode"),
+            Self::ConditionSetNode => write!(f, "ConditionSetNode"),
+            Self::ConditionNode => write!(f, "ConditionNode"),
             Self::DeviceNode => write!(f, "DeviceNode"),
             Self::AnonBlockNode => write!(f, "AnonBlockNode"),
             Self::GlyphClassDefNode => write!(f, "GlyphClassDefNode"),
