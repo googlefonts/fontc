@@ -72,7 +72,7 @@ pub(crate) fn lookup_block(parser: &mut Parser, recovery: TokenSet) {
 }
 
 /// returns true if we advanced the parser.
-fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
+pub(crate) fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
     let start_pos = parser.nth_range(0).start;
     match parser.nth(0).kind.to_token_kind() {
         Kind::PosKw | Kind::SubKw | Kind::RsubKw | Kind::IgnoreKw | Kind::EnumKw => {

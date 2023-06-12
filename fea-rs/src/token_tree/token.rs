@@ -51,6 +51,7 @@ pub enum Kind {
     MarkClassKw,
     AnonKw, // 'anon' and 'anonymous'
     ConditionSetKw,
+    VariationKw,
 
     // other keywords
     AnchorKw,
@@ -227,6 +228,7 @@ pub enum Kind {
     SubtableNode,
     ConditionSetNode,
     ConditionNode,
+    VariationNode,
 
     TableNode,
     HeadTableNode,
@@ -345,6 +347,7 @@ impl std::fmt::Display for Kind {
             Self::MarkClassKw => write!(f, "MarkClassKw"),
             Self::AnonKw => write!(f, "AnonKw"),
             Self::ConditionSetKw => write!(f, "ConditionSetKw"),
+            Self::VariationKw => write!(f, "VariationKw"),
             Self::AnchorKw => write!(f, "AnchorKw"),
             Self::ByKw => write!(f, "ByKw"),
             Self::ContourpointKw => write!(f, "ContourpointKw"),
@@ -475,6 +478,7 @@ impl std::fmt::Display for Kind {
             Self::AnchorNode => write!(f, "AnchorNode"),
             Self::ConditionSetNode => write!(f, "ConditionSetNode"),
             Self::ConditionNode => write!(f, "ConditionNode"),
+            Self::VariationNode => write!(f, "VariationNode"),
             Self::DeviceNode => write!(f, "DeviceNode"),
             Self::AnonBlockNode => write!(f, "AnonBlockNode"),
             Self::GlyphClassDefNode => write!(f, "GlyphClassDefNode"),

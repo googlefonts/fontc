@@ -50,6 +50,8 @@ fn top_level_element(parser: &mut Parser) {
         glyph::named_glyph_class_decl(parser, TokenSet::TOP_LEVEL)
     } else if parser.matches(0, Kind::ConditionSetKw) {
         variations::condition_set(parser)
+    } else if parser.matches(0, Kind::VariationKw) {
+        variations::variation(parser)
     } else if parser.matches(0, Kind::ValueRecordDefKw) {
         value_record_def(parser, TokenSet::TOP_LEVEL)
     } else {

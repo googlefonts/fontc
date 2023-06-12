@@ -65,6 +65,7 @@ pub enum Kind {
     MarkClassKw,
     AnonKw, // 'anon' and 'anonymous'
     ConditionSetKw,
+    VariationKw,
 
     // other keywords
     AnchorKw,
@@ -187,6 +188,7 @@ impl Kind {
             b"anchorDef" => Some(Kind::AnchorDefKw),
             b"anon" | b"anonymous" => Some(Kind::AnonKw),
             b"conditionset" => Some(Kind::ConditionSetKw),
+            b"variation" => Some(Kind::VariationKw),
             b"by" => Some(Kind::ByKw),
             b"contourpoint" => Some(Kind::ContourpointKw),
             b"cursive" => Some(Kind::CursiveKw),
@@ -317,6 +319,7 @@ impl Kind {
             Self::MarkClassKw => AstKind::MarkClassKw,
             Self::AnonKw => AstKind::AnonKw,
             Self::ConditionSetKw => AstKind::ConditionSetKw,
+            Self::VariationKw => AstKind::VariationKw,
             Self::AnchorKw => AstKind::AnchorKw,
             Self::ByKw => AstKind::ByKw,
             Self::ContourpointKw => AstKind::ContourpointKw,
@@ -445,6 +448,7 @@ impl std::fmt::Display for Kind {
             Self::AnonKw => write!(f, "AnonKw"),
             Self::AnchorKw => write!(f, "AnchorKw"),
             Self::ConditionSetKw => write!(f, "ConditionSetKw"),
+            Self::VariationKw => write!(f, "VariationKw"),
             Self::ByKw => write!(f, "ByKw"),
             Self::ContourpointKw => write!(f, "ContourpointKw"),
             Self::CursiveKw => write!(f, "CursiveKw"),

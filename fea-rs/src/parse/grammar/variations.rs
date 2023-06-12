@@ -60,3 +60,39 @@ pub(crate) fn condition_set(parser: &mut Parser) {
 
     parser.in_node(AstKind::ConditionSetNode, condition_set_body);
 }
+
+pub(crate) fn variation(parser: &mut Parser) {
+    fn variation_body(parser: &mut Parser) {
+        assert!(parser.eat(Kind::VariationKw));
+        let open_tag = parser.expect_tag(TokenSet::TOP_LEVEL.add(Kind::Ident).add(Kind::LBrace));
+        if !parser.eat(Kind::NullKw) {
+            // can be null or an ident
+            parser.expect_remap_recover(
+                TokenSet::IDENT_LIKE,
+                AstKind::Label,
+                TokenSet::TOP_LEVEL.add(Kind::LBrace),
+            );
+        }
+
+        parser.expect(Kind::LBrace);
+
+        while !parser.at_eof() && !parser.matches(0, Kind::RBrace) {
+            if !super::feature::statement(parser, TokenSet::FEATURE_STATEMENT, false) {
+                if let Some(tag) = open_tag.as_ref() {
+                    parser.raw_error(tag.range.clone(), "Variation block is unclosed");
+                }
+                break;
+            }
+        }
+        parser.expect_recover(Kind::RBrace, TokenSet::TOP_SEMI);
+        let close_tag = parser.expect_tag(TokenSet::TOP_LEVEL);
+        if let (Some(open), Some(close)) = (open_tag, close_tag) {
+            if open.tag != close.tag {
+                parser.raw_error(close.range, format!("expected tag '{}'", open.tag));
+            }
+        }
+        parser.expect_semi();
+    }
+
+    parser.in_node(AstKind::VariationNode, variation_body);
+}
