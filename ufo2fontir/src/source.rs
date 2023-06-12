@@ -282,32 +282,6 @@ impl Source for DesignSpaceIrSource {
         }
 
         let ds_dir = self.designspace_file.parent().unwrap();
-
-        // We haven't parsed fea files yet, and we don't want to so make the educated guess that
-        // any feature file in designspace directory is an include instead of only looking at the
-        // ufo dir / features.fea files.
-        let mut features = StateSet::new();
-        let mut paths = vec![ds_dir.to_path_buf()];
-        while let Some(path) = paths.pop() {
-            if path.is_dir() {
-                for entry in path.read_dir().map_err(Error::IoError)? {
-                    let entry = entry.map_err(Error::IoError)?;
-                    paths.push(entry.path());
-                }
-            }
-            if path.is_file()
-                && path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.ends_with(".fea"))
-                    .unwrap_or_default()
-            {
-                trace!("Tracking {path:?} as a feature file");
-                features.track_file(&path)?;
-            }
-        }
-
-        // For compilation purposes we start from ufo dir / features.fea
         let fea_files: Vec<_> = designspace
             .sources
             .iter()
@@ -316,6 +290,10 @@ impl Source for DesignSpaceIrSource {
                 fea_file.is_file().then_some(fea_file)
             })
             .collect();
+        let mut features = StateSet::new();
+        for fea_file in fea_files.iter() {
+            features.track_file(fea_file)?;
+        }
 
         self.cache = Some(Cache::new(
             static_metadata.clone(),
@@ -858,11 +836,7 @@ impl Work<Context, WorkError> for FeatureWork {
         }
 
         if !fea_files.is_empty() {
-            let designspace_dir = self.designspace_file.parent().unwrap();
-            context.set_features(Features::from_file(
-                fea_files[0].clone(),
-                Some(designspace_dir.to_path_buf()),
-            ));
+            context.set_features(Features::from_file(&fea_files[0]));
         } else {
             context.set_features(Features::empty());
         }

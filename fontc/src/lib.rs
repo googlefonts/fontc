@@ -767,22 +767,10 @@ pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload,
 }
 
 #[cfg(test)]
-pub fn testdata_dir() -> PathBuf {
-    // cargo test seems to run in the project directory
-    // VSCode test seems to run in the workspace directory
-    // probe for the file we want in hopes of finding it regardless
-    ["./resources/testdata", "../resources/testdata"]
-        .iter()
-        .map(PathBuf::from)
-        .find(|pb| pb.exists())
-        .unwrap()
-}
-
-#[cfg(test)]
 mod tests {
 
     use std::{
-        collections::{HashSet, VecDeque},
+        collections::HashSet,
         fs::{self, File},
         io::Read,
         path::{Path, PathBuf},
@@ -892,36 +880,6 @@ mod tests {
                 .map(|gid| loca.get_glyf(GlyphId::new(gid as u16), &glyf))
                 .map(|r| r.unwrap().unwrap())
                 .collect()
-        }
-    }
-
-    /// Copy testdata => tempdir so the test can modify it
-    fn copy_testdata(from: impl IntoIterator<Item = impl AsRef<Path>>, to_dir: &Path) {
-        let from_dir = testdata_dir();
-
-        let mut from: VecDeque<PathBuf> = from.into_iter().map(|p| from_dir.join(p)).collect();
-        while let Some(source) = from.pop_back() {
-            let rel_source = source.strip_prefix(&from_dir).unwrap();
-            let dest = to_dir.join(rel_source);
-            assert!(source.exists(), "{source:?}");
-
-            let dest_dir = if source.is_dir() {
-                dest.as_path()
-            } else {
-                dest.parent().unwrap()
-            };
-            if !dest_dir.exists() {
-                fs::create_dir_all(dest_dir).unwrap();
-            }
-
-            if source.is_file() {
-                fs::copy(&source, &dest).unwrap();
-            }
-            if source.is_dir() {
-                for entry in fs::read_dir(source).unwrap() {
-                    from.push_back(entry.unwrap().path());
-                }
-            }
         }
     }
 
@@ -1103,10 +1061,10 @@ mod tests {
     }
 
     #[test]
-    fn compile_fea_with_includes() {
+    fn compile_fea() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "fea_include.designspace"));
+        compile(Args::for_test(build_dir, "static.designspace"));
 
         let font_file = build_dir.join("font.ttf");
         assert!(font_file.exists());
@@ -1115,54 +1073,6 @@ mod tests {
 
         assert!(font.gpos().is_ok());
         assert!(font.gsub().is_ok());
-    }
-
-    #[test]
-    fn compile_fea_again_with_modified_include() {
-        let temp_dir = tempdir().unwrap();
-        let source_dir = temp_dir.path().join("sources");
-        let build_dir = temp_dir.path().join("build");
-        fs::create_dir(&source_dir).unwrap();
-        fs::create_dir(&build_dir).unwrap();
-
-        copy_testdata(
-            [
-                "static.fea",
-                "fea_include.designspace",
-                "FeaInc-Regular.ufo",
-                "FeaInc-Bold.ufo",
-            ],
-            &source_dir,
-        );
-
-        let source = source_dir
-            .join("fea_include.designspace")
-            .canonicalize()
-            .unwrap();
-        compile(Args::for_test(&build_dir, source.to_str().unwrap()));
-
-        let shared_fea = source_dir.join("static.fea");
-        fs::write(
-            &shared_fea,
-            fs::read_to_string(&shared_fea).unwrap() + "\n\nfeature k2 { pos bar bar -100; } k2;",
-        )
-        .unwrap();
-
-        let result = compile(Args::for_test(&build_dir, source.to_str().unwrap()));
-
-        // Features and things downstream of features should rebuild
-        let mut completed = result.work_completed.iter().cloned().collect::<Vec<_>>();
-        completed.sort();
-        assert_eq!(
-            vec![
-                AnyWorkId::Fe(FeWorkIdentifier::Features),
-                BeWorkIdentifier::Features.into(),
-                BeWorkIdentifier::Font.into(),
-                BeWorkIdentifier::Gpos.into(),
-                BeWorkIdentifier::Gsub.into(),
-            ],
-            completed
-        );
     }
 
     fn build_contour_and_composite_glyph(

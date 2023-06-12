@@ -1,8 +1,0 @@
-languagesystem DFLT dflt;
-languagesystem latn dflt;
-
-feature kern {
-    position bar plus -100;
-} kern;
-
-include(static.fea)

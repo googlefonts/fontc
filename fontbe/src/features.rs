@@ -73,26 +73,19 @@ impl FeatureWork {
     }
 
     fn compile(&self, features: &Features, glyph_order: GlyphMap) -> Result<Compilation, Error> {
-        let compiler = match features {
-            Features::File {
-                fea_file,
-                include_dir,
-            } => {
-                let mut compiler = Compiler::new(OsString::from(fea_file), &glyph_order);
-                if let Some(include_dir) = include_dir {
-                    compiler = compiler.with_project_root(include_dir)
-                }
-                compiler
-            }
-            Features::Memory(fea_content) => {
-                let root = OsString::new();
-                Compiler::new(root.clone(), &glyph_order).with_resolver(InMemoryResolver {
-                    content_path: root,
-                    content: Arc::from(fea_content.as_str()),
-                })
-            }
-            Features::Empty => panic!("compile isn't supposed to be called for Empty"),
+        let root_path = if let Features::File(file) = features {
+            OsString::from(file)
+        } else {
+            OsString::new()
         };
+        let mut compiler = Compiler::new(root_path.clone(), &glyph_order);
+        if let Features::Memory(fea_content) = features {
+            let resolver = InMemoryResolver {
+                content_path: root_path,
+                content: Arc::from(fea_content.as_str()),
+            };
+            compiler = compiler.with_resolver(resolver);
+        }
         compiler.compile().map_err(Error::FeaCompileError)
     }
 }
