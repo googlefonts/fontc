@@ -1,4 +1,4 @@
-use std::{fmt::Display, io};
+use std::{fmt::Display, io, path::PathBuf};
 
 use fea_rs::compile::error::CompilerError;
 use font_types::Tag;
@@ -50,6 +50,8 @@ pub enum Error {
     IupError(GlyphName, IupError),
     #[error("Unable to interpret bytes as {0}")]
     InvalidTableBytes(Tag),
+    #[error("Missing directory:{0}")]
+    MissingDirectory(PathBuf),
 }
 
 #[derive(Debug)]
