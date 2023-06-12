@@ -5,4 +5,4 @@ feature kern {
     position bar plus -100;
 } kern;
 
-include(static.fea)
+include(common.fea)
