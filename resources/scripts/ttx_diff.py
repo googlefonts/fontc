@@ -114,6 +114,7 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         "variable",
         "--output-dir",
         str(source.name),
+        "--drop-implied-oncurves",
         # TODO we shouldn't need these flags
         "--no-production-names",
         "--keep-direction",
