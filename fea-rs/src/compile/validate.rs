@@ -89,8 +89,8 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_table(&table);
             } else if let Some(lookup) = typed::LookupBlock::cast(item) {
                 self.validate_lookup_block(&lookup, None);
-            } else if let Some(_value_record_def) = typed::ValueRecordDef::cast(item) {
-                unimplemented!("valueRecordDef")
+            } else if let Some(node) = typed::ValueRecordDef::cast(item) {
+                self.validate_value_record_def(&node);
             } else if item.kind() == Kind::AnonKw {
                 unimplemented!("anon")
             }
@@ -194,6 +194,18 @@ impl<'a> ValidationCtx<'a> {
         self.mark_class_defs
             .insert(node.mark_class_name().text().clone());
         self.validate_anchor(&node.anchor());
+    }
+
+    fn validate_value_record_def(&mut self, node: &typed::ValueRecordDef) {
+        let record = node.value_record();
+        self.validate_value_record(&record);
+        let name = node.name();
+        if let Some(_prev) = self
+            .value_record_defs
+            .insert(name.text.clone(), name.clone())
+        {
+            self.warning(name.range(), "duplicate value record name");
+        }
     }
 
     fn validate_mark_class(&mut self, node: &typed::GlyphClassName) {

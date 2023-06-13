@@ -56,6 +56,7 @@ pub struct CompilationCtx<'a> {
     glyph_class_defs: HashMap<SmolStr, GlyphClass>,
     mark_classes: HashMap<SmolStr, MarkClass>,
     anchor_defs: HashMap<SmolStr, (AnchorTable, usize)>,
+    value_record_defs: HashMap<SmolStr, ValueRecord>,
     mark_attach_class_id: HashMap<GlyphClass, u16>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
     size: Option<SizeFeature>,
@@ -82,6 +83,7 @@ impl<'a> CompilationCtx<'a> {
             features: Default::default(),
             mark_classes: Default::default(),
             anchor_defs: Default::default(),
+            value_record_defs: Default::default(),
             lookup_flags: Default::default(),
             active_feature: None,
             vertical_feature: Default::default(),
@@ -104,6 +106,8 @@ impl<'a> CompilationCtx<'a> {
                 self.define_mark_class(mark_def);
             } else if let Some(anchor_def) = typed::AnchorDef::cast(item) {
                 self.define_named_anchor(anchor_def);
+            } else if let Some(item) = typed::ValueRecordDef::cast(item) {
+                self.define_named_value_record(item);
             } else if let Some(feature) = typed::Feature::cast(item) {
                 self.add_feature(feature);
             } else if let Some(lookup) = typed::LookupBlock::cast(item) {
@@ -1050,6 +1054,14 @@ impl<'a> CompilationCtx<'a> {
             return ValueRecord::default();
         }
 
+        if let Some(name) = record.named() {
+            return self
+                .value_record_defs
+                .get(name.as_str())
+                .cloned()
+                .expect("checked in validation");
+        }
+
         if let Some(adv) = record.advance().map(|x| x.parse_signed()) {
             let (x_advance, y_advance) = if self.vertical_feature.in_eligible_vertical_feature() {
                 (None, Some(adv))
@@ -1079,11 +1091,8 @@ impl<'a> CompilationCtx<'a> {
             }
             return result;
         }
-        if let Some(name) = record.named() {
-            //FIXME:
-            self.warning(name.range(), "named value records not implemented yet");
-        }
 
+        log::warn!("failed to resolve value record. This indicates a bug.");
         ValueRecord::default()
     }
 
@@ -1655,6 +1664,13 @@ impl<'a> CompilationCtx<'a> {
             };
             self.error(span, format!("unhandled statement: '{}'", item.kind()));
         }
+    }
+
+    fn define_named_value_record(&mut self, item: typed::ValueRecordDef) {
+        let name = item.name();
+        let record = item.value_record();
+        let resolved = self.resolve_value_record(&record);
+        self.value_record_defs.insert(name.text.clone(), resolved);
     }
 
     fn define_named_anchor(&mut self, anchor_def: typed::AnchorDef) {

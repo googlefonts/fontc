@@ -48,7 +48,7 @@ fn top_level_element(parser: &mut Parser) {
     } else if parser.matches(0, Kind::NamedGlyphClass) {
         glyph::named_glyph_class_decl(parser, TokenSet::TOP_LEVEL)
     } else if parser.matches(0, Kind::ValueRecordDefKw) {
-        unimplemented!()
+        value_record_def(parser, TokenSet::TOP_LEVEL)
     } else {
         parser.err_and_bump(format!(
             "Unexpected token '{}', expected global keyword.",
@@ -202,6 +202,19 @@ fn anchor_def(parser: &mut Parser) {
     parser.in_node(AstKind::AnchorDefNode, anchor_def_body);
 }
 
+fn value_record_def(parser: &mut Parser, recovery: TokenSet) {
+    fn value_record_def_body(parser: &mut Parser, recovery: TokenSet) {
+        assert!(parser.eat(Kind::ValueRecordDefKw));
+        metrics::expect_value_record(parser, recovery);
+        parser.expect_remap_recover(TokenSet::IDENT_LIKE, AstKind::Ident, recovery);
+        parser.expect_semi();
+    }
+
+    parser.in_node(AstKind::ValueRecordDefNode, |parser| {
+        value_record_def_body(parser, recovery)
+    })
+}
+
 fn anonymous(parser: &mut Parser) {
     fn anon_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::AnonKw));
@@ -304,7 +317,7 @@ fn greedy<F: FnMut(&mut Parser, TokenSet) -> bool>(
 fn debug_parse_output(
     text: &str,
     f: impl FnOnce(&mut Parser),
-) -> (crate::Node, Vec<crate::Diagnostic>, String) {
+) -> (crate::NodeOrToken, Vec<crate::Diagnostic>, String) {
     use super::Source;
 
     let source = Source::new("debug_parse_output", text.into());
@@ -319,17 +332,34 @@ fn debug_parse_output(
         }
         crate::util::highlighting::write_diagnostic(&mut err_str, err, &source, Some(80));
     }
-    (node, errs, err_str)
+    (node.into(), errs, err_str)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::token_tree::typed::{self, AstNode};
+
     #[test]
     fn no_cv_param_in_lookup() {
         let fea = "lookup hi {cvParameters {}; } hi ;";
         let (_out, errors, _errstr) = debug_parse_output(fea, root);
         assert!(!errors.is_empty(), "{}", fea);
         assert!(errors.first().unwrap().text().contains("cvParameters"));
+    }
+
+    #[test]
+    fn simple_value_record_def() {
+        let fea = "valueRecordDef 123 foo;";
+        let (out, errors, _errstr) = debug_parse_output(fea, root);
+        assert!(errors.is_empty());
+
+        let out = typed::Root::cast(&out).unwrap();
+        let value_def = out.iter().find_map(typed::ValueRecordDef::cast).unwrap();
+        assert_eq!(
+            value_def.value_record().advance().map(|x| x.parse_signed()),
+            Some(123)
+        );
+        assert_eq!(value_def.name().as_str(), "foo");
     }
 }

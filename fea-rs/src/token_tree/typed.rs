@@ -203,7 +203,7 @@ ast_node!(GlyphClassDef, Kind::GlyphClassDefNode);
 ast_node!(MarkClassDef, Kind::MarkClassNode);
 ast_node!(Anchor, Kind::AnchorNode);
 ast_node!(AnchorDef, Kind::AnchorDefNode);
-ast_node!(ValueRecordDef, Kind::ValueRecordDefKw);
+ast_node!(ValueRecordDef, Kind::ValueRecordDefNode);
 ast_node!(GlyphClassLiteral, Kind::GlyphClass);
 ast_node!(LanguageSystem, Kind::LanguageSystemNode);
 ast_node!(Include, Kind::IncludeNode);
@@ -520,6 +520,16 @@ impl MarkClassDef {
             .skip_while(|t| t.kind() != Kind::AnchorNode)
             .find_map(GlyphClassName::cast)
             .unwrap()
+    }
+}
+
+impl ValueRecordDef {
+    pub(crate) fn value_record(&self) -> ValueRecord {
+        self.iter().find_map(ValueRecord::cast).unwrap()
+    }
+
+    pub(crate) fn name(&self) -> &Token {
+        self.find_token(Kind::Ident).expect("validated")
     }
 }
 
