@@ -75,6 +75,8 @@ pub enum WorkError {
     NoGlyphIdForName(String),
     #[error("No Glyph for name {0:?}")]
     NoGlyphForName(GlyphName),
+    #[error("Directory expected {0}: {1}")]
+    DirectoryExpected(String, PathBuf),
     #[error("File expected: {0:?}")]
     FileExpected(PathBuf),
     #[error("Expected to match: {0:?}, {1:?}")]

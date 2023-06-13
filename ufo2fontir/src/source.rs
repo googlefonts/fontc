@@ -282,6 +282,32 @@ impl Source for DesignSpaceIrSource {
         }
 
         let ds_dir = self.designspace_file.parent().unwrap();
+
+        // We haven't parsed fea files yet, and we don't want to so make the educated guess that
+        // any feature file in designspace directory is an include instead of only looking at the
+        // ufo dir / features.fea files.
+        let mut features = StateSet::new();
+        let mut paths = vec![ds_dir.to_path_buf()];
+        while let Some(path) = paths.pop() {
+            if path.is_dir() {
+                for entry in path.read_dir().map_err(Error::IoError)? {
+                    let entry = entry.map_err(Error::IoError)?;
+                    paths.push(entry.path());
+                }
+            }
+            if path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.ends_with(".fea"))
+                    .unwrap_or_default()
+            {
+                trace!("Tracking {path:?} as a feature file");
+                features.track_file(&path)?;
+            }
+        }
+
+        // For compilation purposes we start from ufo dir / features.fea
         let fea_files: Vec<_> = designspace
             .sources
             .iter()
@@ -290,10 +316,6 @@ impl Source for DesignSpaceIrSource {
                 fea_file.is_file().then_some(fea_file)
             })
             .collect();
-        let mut features = StateSet::new();
-        for fea_file in fea_files.iter() {
-            features.track_file(fea_file)?;
-        }
 
         self.cache = Some(Cache::new(
             static_metadata.clone(),
@@ -823,7 +845,6 @@ impl Work<Context, WorkError> for FeatureWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Features for {:#?}", self.designspace_file);
 
-        // TODO: support feature files that aren't identical
         let fea_files = self.fea_files.as_ref();
         for fea_file in fea_files.iter().skip(1) {
             if !files_identical(&fea_files[0], fea_file)? {
@@ -836,7 +857,20 @@ impl Work<Context, WorkError> for FeatureWork {
         }
 
         if !fea_files.is_empty() {
-            context.set_features(Features::from_file(&fea_files[0]));
+            // Fea file is required to be ufo_dir/features.fea. Includes resolve as siblings
+            // of ufo_dir.
+            let fea_file = fea_files[0].clone();
+            let include_dir = fea_file
+                .parent()
+                .and_then(|f| f.parent())
+                .map(|v| v.to_path_buf())
+                .ok_or_else(|| {
+                    WorkError::DirectoryExpected(
+                        "Unable to resolve directory of .ufo".to_string(),
+                        fea_file.clone(),
+                    )
+                })?;
+            context.set_features(Features::from_file(fea_file, Some(include_dir)));
         } else {
             context.set_features(Features::empty());
         }

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 use write_fonts::tables::os2::SelectionFlags;
 
@@ -675,7 +675,10 @@ pub struct NamedInstance {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum Features {
     Empty,
-    File(PathBuf),
+    File {
+        fea_file: PathBuf,
+        include_dir: Option<PathBuf>,
+    },
     Memory(String),
 }
 
@@ -683,8 +686,11 @@ impl Features {
     pub fn empty() -> Features {
         Features::Empty
     }
-    pub fn from_file(file: &Path) -> Features {
-        Features::File(file.to_path_buf())
+    pub fn from_file(fea_file: PathBuf, include_dir: Option<PathBuf>) -> Features {
+        Features::File {
+            fea_file,
+            include_dir,
+        }
     }
     pub fn from_string(fea_content: String) -> Features {
         Features::Memory(fea_content)
