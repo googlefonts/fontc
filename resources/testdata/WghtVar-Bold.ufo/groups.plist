@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- deliberately different name than default master. Same glyphs so it should be renamed. -->
+    <key>public.kern1.the_WrOng_name</key>
+    <array>
+      <string>bar</string>
+      <string>plus</string>
+    </array>
+  </dict>
+</plist>

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -900,6 +900,58 @@ impl Work<Context, WorkError> for FeatureWork {
     }
 }
 
+fn kerning_groups_for(
+    designspace_dir: &Path,
+    glyph_order: &IndexSet<GlyphName>,
+    source: &norad::designspace::Source,
+) -> Result<HashMap<GroupName, BTreeSet<GlyphName>>, WorkError> {
+    let ufo_dir = designspace_dir.join(&source.filename);
+    let data_request = norad::DataRequest::none().groups(true);
+    Ok(norad::Font::load_requested_data(&ufo_dir, data_request)
+        .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?
+        .groups
+        .into_iter()
+        .filter(|(group_name, entries)|
+            (group_name.starts_with(UFO_KERN1_PREFIX) || group_name.starts_with(UFO_KERN2_PREFIX))
+            && !entries.is_empty()
+        )
+        .map(|(group_name, entries)| {
+            (
+                GroupName::from(group_name.as_str()),
+                entries
+                    .into_iter()
+                    .filter_map(|glyph_name| {
+                        let glyph_name = GlyphName::from(glyph_name.as_str());
+                        if glyph_order.contains(&glyph_name) {
+                            Some(glyph_name)
+                        } else {
+                            debug!("{} kerning group '{}' references non-existent glyph '{}'; ignoring", source.filename, group_name, glyph_name);
+                            None
+                        }
+                    })
+                    .collect(),
+            )
+        })
+        .collect())
+}
+
+/// What side of the kern is this, in logical order
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum KernSide {
+    Side1,
+    Side2,
+}
+
+impl KernSide {
+    fn of(group: &GroupName) -> Option<KernSide> {
+        match group.as_str() {
+            v if v.starts_with(UFO_KERN1_PREFIX) => Some(KernSide::Side1),
+            v if v.starts_with(UFO_KERN2_PREFIX) => Some(KernSide::Side2),
+            _ => None,
+        }
+    }
+}
+
 impl Work<Context, WorkError> for KerningWork {
     /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
@@ -911,47 +963,63 @@ impl Work<Context, WorkError> for KerningWork {
 
         let mut kerning = Kerning::default();
 
-        // Pass 1: find all the groups used by any source
-        // Woe unto ye who define the same group but inconsistently; we effectively union the members
-        for source in self
+        let Some((default_master_idx, default_master)) = default_master(&self.designspace) else {
+            return Err(WorkError::NoDefaultMaster(self.designspace_file.clone()));
+        };
+
+        // Step 1: find the groups
+
+        // Based on discussion on https://github.com/googlefonts/ufo2ft/pull/635, take the groups of
+        // the default master as the authoritative source on groups
+        kerning.groups = kerning_groups_for(
+            designspace_dir,
+            &static_metadata.glyph_order,
+            default_master,
+        )?;
+
+        // Group names are side-specific (public.kern1/2) but the set of glyph names isn't
+        // so include side in the key to avoid matching the wrong side
+        let reverse_groups: HashMap<_, _> = kerning
+            .groups
+            .iter()
+            .map(|(k, v)| ((KernSide::of(k), v), k))
+            .collect();
+
+        // https://gist.github.com/madig/76567a9650de639bbff51ce010783790#file-align-groups-py-L21
+        // claims some sources use different names for groups of the same glyphs in different masters
+        // so we need to create a renaming map.
+        let mut old_to_new_group_name: HashMap<_, _> = kerning
+            .groups
+            .keys()
+            .map(|name| (name.clone(), name))
+            .collect();
+
+        for (_, source) in self
             .designspace
             .sources
             .iter()
-            .filter(|s| !is_glyph_only(s))
+            .enumerate()
+            .filter(|(idx, source)| !is_glyph_only(source) && *idx != default_master_idx)
         {
-            let ufo_dir = designspace_dir.join(&source.filename);
-            let data_request = norad::DataRequest::none().groups(true);
-            let font = norad::Font::load_requested_data(&ufo_dir, data_request)
-                .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?;
-
-            kerning.groups = font
-                .groups
-                .into_iter()
-                .filter(|(group_name, entries)|
-                    (group_name.starts_with(UFO_KERN1_PREFIX) || group_name.starts_with(UFO_KERN2_PREFIX))
-                    && !entries.is_empty()
-                )
-                .map(|(group_name, entries)| {
-                    (
-                        GroupName::from(group_name.as_str()),
-                        entries
-                            .into_iter()
-                            .filter_map(|glyph_name| {
-                                let glyph_name = GlyphName::from(glyph_name.as_str());
-                                if static_metadata.glyph_order.contains(&glyph_name) {
-                                    Some(glyph_name)
-                                } else {
-                                    debug!("{} kerning group '{}' references non-existent glyph '{}'; ignoring", source.filename, group_name, glyph_name);
-                                    None
-                                }
-                            })
-                            .collect(),
-                    )
-                })
-                .collect();
+            for (name, entries) in
+                kerning_groups_for(designspace_dir, &static_metadata.glyph_order, source)?
+            {
+                let Some(real_name) = reverse_groups.get(&(KernSide::of(&name), &entries)) else {
+                    warn!("{name} exists only in {} and will be ignored", source.name);
+                    continue;
+                };
+                if name == **real_name {
+                    continue;
+                }
+                warn!(
+                    "{name} in {} matches {real_name} in {} and will be renamed",
+                    source.name, default_master.name
+                );
+                old_to_new_group_name.insert(name, *real_name);
+            }
         }
 
-        // Pass 2: now we know all the groups, read all the kerning
+        // Pass 2: now we know all the groups, read all the kerning and update group naming
         for source in self
             .designspace
             .sources
@@ -969,19 +1037,19 @@ impl Work<Context, WorkError> for KerningWork {
                 if name.starts_with(UFO_KERN1_PREFIX) || name.starts_with(UFO_KERN2_PREFIX) {
                     // looks like a group, but is it?
                     if !name.starts_with(group_prefix) {
-                        debug!("'{name}' should have prefix {group_prefix}; ignored");
+                        warn!("'{name}' should have prefix {group_prefix}; ignored");
                         return None;
                     }
                     let group_name = GroupName::from(name);
-                    if !kerning.groups.contains_key(&group_name) {
-                        debug!("'{name}' references non-existent group {group_name}; ignored");
+                    let Some(group_name) = old_to_new_group_name.get(&group_name) else {
+                        warn!("'{name}' is not a valid group name; ignored");
                         return None;
-                    }
-                    Some(KernParticipant::Group(group_name))
+                    };
+                    Some(KernParticipant::Group((**group_name).clone()))
                 } else {
                     let glyph_name = GlyphName::from(name);
                     if !static_metadata.glyph_order.contains(&glyph_name) {
-                        debug!("'{name}' references non-existent glyph {glyph_name}; ignored");
+                        warn!("'{name}' refers to a non-existent glyph; ignored");
                         return None;
                     }
                     Some(KernParticipant::Glyph(glyph_name))
@@ -994,7 +1062,7 @@ impl Work<Context, WorkError> for KerningWork {
                     .map(move |(side2, adjustment)| (side1.clone(), side2, adjustment))
             }) {
                 let (Some(side1), Some(side2)) = (resolve(&side1, UFO_KERN1_PREFIX), resolve(&side2, UFO_KERN2_PREFIX)) else {
-                    debug!("{} kerning unable to resolve at least one of '{}', '{}'; ignoring", source.name, side1.as_str(), side2.as_str());
+                    warn!("{} kerning unable to resolve at least one of '{}', '{}'; ignoring", source.name, side1.as_str(), side2.as_str());
                     continue;
                 };
 
@@ -1149,6 +1217,28 @@ mod tests {
         );
         source
             .create_global_metric_work(&context.input)
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        (source, context)
+    }
+
+    fn build_kerning(name: &str) -> (impl Source, Context) {
+        let (source, context) = build_static_metadata(name);
+
+        context
+            .copy_for_work(
+                Access::one(WorkId::InitStaticMetadata),
+                Access::one(WorkId::FinalizeStaticMetadata),
+            )
+            .set_final_static_metadata((*context.get_init_static_metadata()).clone());
+
+        let task_context = context.copy_for_work(
+            Access::one(WorkId::FinalizeStaticMetadata),
+            Access::one(WorkId::Kerning),
+        );
+        source
+            .create_kerning_ir_work(&context.input)
             .unwrap()
             .exec(&task_context)
             .unwrap();
@@ -1470,6 +1560,28 @@ mod tests {
                 static_metadata.misc.underline_thickness.0,
                 static_metadata.misc.underline_position.0
             )
+        );
+    }
+
+    #[test]
+    fn groups_renamed_to_match_master() {
+        let (_, context) = build_kerning("wght_var.designspace");
+        let kerning = context.get_kerning();
+
+        let mut groups: Vec<_> = kerning
+            .groups
+            .iter()
+            .map(|(name, entries)| {
+                let mut entries: Vec<_> = entries.iter().map(|e| e.as_str()).collect();
+                entries.sort();
+                (name.as_str(), entries)
+            })
+            .collect();
+        groups.sort();
+
+        assert_eq!(
+            groups,
+            vec![("public.kern1.correct_name", vec!["bar", "plus"],),],
         );
     }
 }

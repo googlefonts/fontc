@@ -19,7 +19,7 @@ use log::{trace, warn};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Debug,
     path::PathBuf,
 };
@@ -109,7 +109,7 @@ type KernValues = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(from = "KerningSerdeRepr", into = "KerningSerdeRepr")]
 pub struct Kerning {
-    pub groups: HashMap<GroupName, HashSet<GlyphName>>,
+    pub groups: HashMap<GroupName, BTreeSet<GlyphName>>,
     /// An adjustment to the space *between* two glyphs in logical order.
     ///
     /// Maps (side1, side2) => a mapping location:adjustment.
