@@ -132,6 +132,8 @@ pub enum WorkError {
     AxisMustMapMin(Tag),
     #[error("Axis '{0}' must map max if it maps anything")]
     AxisMustMapMax(Tag),
+    #[error("No kerning group or glyph for name {0:?}")]
+    InvalidKernSide(String),
 }
 
 /// An async work error, hence one that must be Send

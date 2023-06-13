@@ -216,8 +216,8 @@ nodes = (
 width = 600;
 }
 );
-leftKerningGroup = brackets;
-rightKerningGroup = brackets;
+leftKerningGroup = bracketleft_L;
+rightKerningGroup = bracketleft_R;
 unicode = 005B;
 },
 {
@@ -263,8 +263,8 @@ nodes = (
 width = 600;
 }
 );
-leftKerningGroup = brackets;
-rightKerningGroup = brackets;
+leftKerningGroup = bracketright_L;
+rightKerningGroup = bracketright_R;
 unicode = 005D;
 },
 {
@@ -303,19 +303,19 @@ unicode = 003D;
 );
 kerning = {
 m01 = {
+"@MMK_L_bracketleft_R" = {
+exclam = -165;
+};
 bracketleft = {
 bracketright = -300;
 };
 exclam = {
-"@MMK_R_brackets" = -160;
+"@MMK_R_bracketright_L" = -160;
 exclam = -360;
 hyphen = 20;
 };
 hyphen = {
 hyphen = -150;
-};
-"@MMK_L_brackets" = {
-exclam = -165;
 };
 };
 "E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {

@@ -2,14 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
   <dict>
-    <key>public.kern1.brackets</key>
+    <key>public.kern1.bracketleft_R</key>
     <array>
       <string>bracketleft</string>
+    </array>
+    <key>public.kern1.bracketright_R</key>
+    <array>
       <string>bracketright</string>
     </array>
-    <key>public.kern2.brackets</key>
+    <key>public.kern2.bracketleft_L</key>
     <array>
       <string>bracketleft</string>
+    </array>
+    <key>public.kern2.bracketright_L</key>
+    <array>
       <string>bracketright</string>
     </array>
   </dict>

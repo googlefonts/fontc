@@ -7,13 +7,16 @@ use std::{
 
 use chrono::{DateTime, TimeZone, Utc};
 use font_types::{NameId, Tag};
-use fontdrasil::{orchestration::Work, types::GlyphName};
+use fontdrasil::{
+    orchestration::Work,
+    types::{GlyphName, GroupName},
+};
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
     ir::{
-        Features, GlobalMetric, GlobalMetrics, NameBuilder, NameKey, NamedInstance, StaticMetadata,
-        DEFAULT_VENDOR_ID,
+        Features, GlobalMetric, GlobalMetrics, KernParticipant, Kerning, NameBuilder, NameKey,
+        NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork},
     source::{Input, Source},
@@ -28,6 +31,9 @@ use norad::{
 use write_fonts::{tables::os2::SelectionFlags, OtRound};
 
 use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph};
+
+const UFO_KERN1_PREFIX: &str = "public.kern1.";
+const UFO_KERN2_PREFIX: &str = "public.kern2.";
 
 pub struct DesignSpaceIrSource {
     designspace_file: PathBuf,
@@ -368,6 +374,16 @@ impl Source for DesignSpaceIrSource {
         }))
     }
 
+    fn create_kerning_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
+        self.check_static_metadata(&input.static_metadata)?;
+        let cache = self.cache.as_ref().unwrap();
+
+        Ok(Box::new(KerningWork {
+            designspace_file: cache.designspace_file.clone(),
+            designspace: cache.designspace.clone(),
+        }))
+    }
+
     fn create_glyph_ir_work(
         &self,
         glyph_names: &IndexSet<GlyphName>,
@@ -402,6 +418,11 @@ struct GlobalMetricsWork {
 struct FeatureWork {
     designspace_file: PathBuf,
     fea_files: Arc<Vec<PathBuf>>,
+}
+
+struct KerningWork {
+    designspace_file: PathBuf,
+    designspace: Arc<DesignSpaceDocument>,
 }
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
@@ -745,6 +766,11 @@ impl Work<Context, WorkError> for StaticMetadataWork {
     }
 }
 
+fn is_glyph_only(source: &norad::designspace::Source) -> bool {
+    // Sources that use layer= specifically should not contribute metrics, only glyphs
+    source.layer.is_some()
+}
+
 impl Work<Context, WorkError> for GlobalMetricsWork {
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Global metrics for {:#?}", self.designspace_file);
@@ -768,18 +794,13 @@ impl Work<Context, WorkError> for GlobalMetricsWork {
                 .x_height
                 .map(|v| v as f32),
         );
-        for source in self.designspace.sources.iter() {
+        for source in self
+            .designspace
+            .sources
+            .iter()
+            .filter(|s| !is_glyph_only(s))
+        {
             let pos = master_locations.get(&source.name).unwrap();
-
-            // Sources that use layer= specifically should not contribute metrics, only glyphs
-            if source.layer.is_some() {
-                trace!(
-                    "{} {pos:?} is uses layer=, skipping global metrics",
-                    source.filename
-                );
-                continue;
-            }
-
             let font_info = font_infos
                 .get(&source.filename)
                 .ok_or_else(|| WorkError::FileExpected(designspace_dir.join(&source.filename)))?;
@@ -875,6 +896,117 @@ impl Work<Context, WorkError> for FeatureWork {
             context.set_features(Features::empty());
         }
 
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkError> for KerningWork {
+    /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        debug!("Kerning for {:#?}", self.designspace_file);
+
+        let designspace_dir = self.designspace_file.parent().unwrap();
+        let static_metadata = context.get_final_static_metadata();
+        let master_locations = master_locations(&static_metadata.axes, &self.designspace.sources);
+
+        let mut kerning = Kerning::default();
+
+        // Pass 1: find all the groups used by any source
+        // Woe unto ye who define the same group but inconsistently; we effectively union the members
+        for source in self
+            .designspace
+            .sources
+            .iter()
+            .filter(|s| !is_glyph_only(s))
+        {
+            let ufo_dir = designspace_dir.join(&source.filename);
+            let data_request = norad::DataRequest::none().groups(true);
+            let font = norad::Font::load_requested_data(&ufo_dir, data_request)
+                .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?;
+
+            kerning.groups = font
+                .groups
+                .into_iter()
+                .filter(|(group_name, entries)|
+                    (group_name.starts_with(UFO_KERN1_PREFIX) || group_name.starts_with(UFO_KERN2_PREFIX))
+                    && !entries.is_empty()
+                )
+                .map(|(group_name, entries)| {
+                    (
+                        GroupName::from(group_name.as_str()),
+                        entries
+                            .into_iter()
+                            .filter_map(|glyph_name| {
+                                let glyph_name = GlyphName::from(glyph_name.as_str());
+                                if static_metadata.glyph_order.contains(&glyph_name) {
+                                    Some(glyph_name)
+                                } else {
+                                    debug!("{} kerning group '{}' references non-existent glyph '{}'; ignoring", source.filename, group_name, glyph_name);
+                                    None
+                                }
+                            })
+                            .collect(),
+                    )
+                })
+                .collect();
+        }
+
+        // Pass 2: now we know all the groups, read all the kerning
+        for source in self
+            .designspace
+            .sources
+            .iter()
+            .filter(|s| !is_glyph_only(s))
+        {
+            let pos = master_locations.get(&source.name).unwrap();
+            let ufo_dir = designspace_dir.join(&source.filename);
+            let data_request = norad::DataRequest::none().kerning(true);
+            let font = norad::Font::load_requested_data(&ufo_dir, data_request)
+                .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?;
+
+            let resolve = |name: &norad::Name, group_prefix: &str| {
+                let name = name.as_str();
+                if name.starts_with(UFO_KERN1_PREFIX) || name.starts_with(UFO_KERN2_PREFIX) {
+                    // looks like a group, but is it?
+                    if !name.starts_with(group_prefix) {
+                        debug!("'{name}' should have prefix {group_prefix}; ignored");
+                        return None;
+                    }
+                    let group_name = GroupName::from(name);
+                    if !kerning.groups.contains_key(&group_name) {
+                        debug!("'{name}' references non-existent group {group_name}; ignored");
+                        return None;
+                    }
+                    Some(KernParticipant::Group(group_name))
+                } else {
+                    let glyph_name = GlyphName::from(name);
+                    if !static_metadata.glyph_order.contains(&glyph_name) {
+                        debug!("'{name}' references non-existent glyph {glyph_name}; ignored");
+                        return None;
+                    }
+                    Some(KernParticipant::Glyph(glyph_name))
+                }
+            };
+
+            for (side1, side2, adjustment) in font.kerning.into_iter().flat_map(|(side1, kerns)| {
+                kerns
+                    .into_iter()
+                    .map(move |(side2, adjustment)| (side1.clone(), side2, adjustment))
+            }) {
+                let (Some(side1), Some(side2)) = (resolve(&side1, UFO_KERN1_PREFIX), resolve(&side2, UFO_KERN2_PREFIX)) else {
+                    debug!("{} kerning unable to resolve at least one of '{}', '{}'; ignoring", source.name, side1.as_str(), side2.as_str());
+                    continue;
+                };
+
+                kerning
+                    .kerns
+                    .entry((side1, side2))
+                    .or_default()
+                    .insert(pos.clone(), (adjustment as f32).into());
+            }
+        }
+
+        context.set_kerning(kerning);
         Ok(())
     }
 }

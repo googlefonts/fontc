@@ -13,7 +13,7 @@
       <integer>-360</integer>
       <key>hyphen</key>
       <integer>20</integer>
-      <key>public.kern2.brackets</key>
+      <key>public.kern2.bracketright_L</key>
       <integer>-160</integer>
     </dict>
     <key>hyphen</key>
@@ -21,7 +21,7 @@
       <key>hyphen</key>
       <integer>-150</integer>
     </dict>
-    <key>public.kern1.brackets</key>
+    <key>public.kern1.bracketleft_R</key>
     <dict>
       <key>exclam</key>
       <integer>-165</integer>

@@ -129,6 +129,15 @@ impl ChangeDetector {
                 .is_file()
     }
 
+    pub fn kerning_ir_change(&self) -> bool {
+        self.final_static_metadata_ir_change()
+            || self.current_inputs.features != self.prev_inputs.features
+            || !self
+                .ir_paths
+                .target_file(&FeWorkIdentifier::Kerning)
+                .is_file()
+    }
+
     pub fn avar_be_change(&self) -> bool {
         self.final_static_metadata_ir_change()
             || !self.be_paths.target_file(&BeWorkIdentifier::Avar).is_file()

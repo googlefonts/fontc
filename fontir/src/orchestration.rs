@@ -106,6 +106,7 @@ pub enum WorkId {
     /// BE glyphs so the glyph order may change.
     FinalizeStaticMetadata,
     Features,
+    Kerning,
 }
 
 pub type IrWork = dyn Work<Context, WorkError> + Send;
@@ -133,6 +134,7 @@ pub struct Context {
     global_metrics: ContextItem<ir::GlobalMetrics>,
     glyph_ir: Arc<RwLock<HashMap<GlyphName, Arc<ir::Glyph>>>>,
     feature_ir: ContextItem<ir::Features>,
+    kerning: ContextItem<ir::Kerning>,
 }
 
 pub fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
@@ -152,6 +154,7 @@ impl Context {
             global_metrics: self.global_metrics.clone(),
             glyph_ir: self.glyph_ir.clone(),
             feature_ir: self.feature_ir.clone(),
+            kerning: self.kerning.clone(),
         }
     }
 
@@ -166,6 +169,7 @@ impl Context {
             global_metrics: Arc::from(RwLock::new(None)),
             glyph_ir: Arc::from(RwLock::new(HashMap::new())),
             feature_ir: Arc::from(RwLock::new(None)),
+            kerning: Arc::from(RwLock::new(None)),
         }
     }
 
@@ -234,6 +238,7 @@ impl Context {
     context_accessors! { get_final_static_metadata, set_final_static_metadata, has_final_static_metadata, final_static_metadata, ir::StaticMetadata, WorkId::FinalizeStaticMetadata, restore, nop }
     context_accessors! { get_global_metrics, set_global_metrics, has_global_metrics, global_metrics, ir::GlobalMetrics, WorkId::GlobalMetrics, restore, nop }
     context_accessors! { get_features, set_features, has_feature_ir, feature_ir, ir::Features, WorkId::Features, restore, nop }
+    context_accessors! { get_kerning, set_kerning, has_kerning, kerning, ir::Kerning, WorkId::Kerning, restore, nop }
 }
 
 fn nop<T>(v: &T) -> &T {

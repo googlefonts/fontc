@@ -184,8 +184,8 @@ unicode = 45;
 },
 {
 glyphname = bracketleft;
-kernLeft = brackets;
-kernRight = brackets;
+kernLeft = bracketleft_L;
+kernRight = bracketleft_R;
 lastChange = "2023-06-07 22:37:02 +0000";
 layers = (
 {
@@ -231,8 +231,8 @@ unicode = 91;
 },
 {
 glyphname = bracketright;
-kernLeft = brackets;
-kernRight = brackets;
+kernLeft = bracketright_L;
+kernRight = bracketright_R;
 lastChange = "2023-06-07 22:35:47 +0000";
 layers = (
 {
@@ -313,19 +313,19 @@ unicode = 61;
 );
 kerningLTR = {
 m01 = {
+"@MMK_L_bracketleft_R" = {
+exclam = -165;
+};
 bracketleft = {
 bracketright = -300;
 };
 exclam = {
-"@MMK_R_brackets" = -160;
+"@MMK_R_bracketright_L" = -160;
 exclam = -360;
 hyphen = 20;
 };
 hyphen = {
 hyphen = -150;
-};
-"@MMK_L_brackets" = {
-exclam = -165;
 };
 };
 "E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
