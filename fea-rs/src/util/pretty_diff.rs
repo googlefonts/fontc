@@ -60,8 +60,12 @@ impl std::fmt::Display for MyStrs<'_> {
 }
 
 /// Present the diff output for two mutliline strings in a pretty, colorised manner.
-pub fn write_line_diff<TWrite: fmt::Write>(f: &mut TWrite, left: &str, right: &str) -> fmt::Result {
-    let diff = ::diff::lines(left, right);
+pub fn write_line_diff<TWrite: fmt::Write>(
+    f: &mut TWrite,
+    expected: &str,
+    actual: &str,
+) -> fmt::Result {
+    let diff = ::diff::lines(expected, actual);
 
     let mut changes = diff.into_iter().peekable();
     let mut previous_deletion = LatentDeletion::default();

@@ -729,7 +729,7 @@ impl Display for ReasonPrinter<'_> {
             } => {
                 if self.verbose {
                     writeln!(f, "compare failure")?;
-                    super::write_line_diff(f, result, expected)
+                    super::write_line_diff(f, expected, result)
                 } else {
                     write!(
                         f,
