@@ -37,7 +37,7 @@ pub fn create_glyf_work(glyph_name: GlyphName) -> Box<BeWork> {
     Box::new(GlyphWork { glyph_name })
 }
 
-/// Can glyph reuse the metrics of other?
+/// Can glyph instance reuse the metrics of other?
 ///
 /// To be safe the component should have:
 ///
@@ -50,17 +50,14 @@ pub fn create_glyf_work(glyph_name: GlyphName) -> Box<BeWork> {
 /// metrics of the sub-glyph, instead of those from the "hmtx" table.
 ///
 /// See <https://github.com/googlefonts/ufo2ft/blob/0c0a570b84d1351ab704ba1fa5ae03aeef51179f/Lib/ufo2ft/instructionCompiler.py#L151-L173>
-fn can_reuse_metrics(glyph: &ir::Glyph, component_glyph: &ir::Glyph, transform: &Affine) -> bool {
-    for (loc, inst) in glyph.sources().iter() {
-        // We won't stress whether the interpolated values would match just yet
-        let Some(other_inst) = component_glyph.sources().get(loc) else {
-            return false;
-        };
-
-        let width: u16 = inst.width.ot_round();
-        if width != other_inst.width.ot_round() {
-            return false;
-        }
+fn can_reuse_metrics(
+    glyph: &ir::GlyphInstance,
+    component_glyph: &ir::GlyphInstance,
+    transform: &Affine,
+) -> bool {
+    let width: u16 = glyph.width.ot_round();
+    if width != component_glyph.width.ot_round() {
+        return false;
     }
     // transform needs to be identity ignoring dy
     let mut coeffs = transform.as_coeffs();
@@ -114,6 +111,9 @@ fn create_composite(
 ) -> Result<CompositeGlyph, Error> {
     let mut errors = vec![];
     let mut set_use_my_metrics = false;
+    let Some(default_glyph) = glyph.sources().get(default_location) else {
+        return Err(Error::GlyphError(glyph.name.clone(), GlyphProblem::MissingDefault));
+    };
     let components_at_default = components
         .iter()
         .filter_map(|(ref_glyph_name, loc, transform)| {
@@ -135,9 +135,13 @@ fn create_composite(
                 .map(|(mut component, bbox)| {
                     if !set_use_my_metrics {
                         let component_glyph = context.ir.get_glyph_ir(ref_glyph_name);
-                        if can_reuse_metrics(glyph, &component_glyph, transform) {
-                            set_use_my_metrics = true;
-                            component.flags.use_my_metrics = true;
+                        if let Some(default_component) =
+                            component_glyph.sources().get(default_location)
+                        {
+                            if can_reuse_metrics(default_glyph, default_component, transform) {
+                                set_use_my_metrics = true;
+                                component.flags.use_my_metrics = true;
+                            }
                         }
                     }
                     (component, bbox)
@@ -722,64 +726,18 @@ impl Work<Context, Error> for GlyfLocaWork {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use fontir::{
-        coords::{NormalizedCoord, NormalizedLocation},
-        ir,
-    };
+    use fontir::ir;
     use kurbo::Affine;
 
     use crate::glyphs::can_reuse_metrics;
 
-    /// Returns a glyph and a glyph that can be it's component
-    fn create_reusable_component() -> (ir::Glyph, ir::Glyph) {
-        let mut default_location = NormalizedLocation::new();
-        default_location.set_pos("wght", NormalizedCoord::new(0.0));
-        let mut other_location = NormalizedLocation::new();
-        other_location.set_pos("wght", NormalizedCoord::new(1.0));
-        let parent = ir::Glyph::new(
-            "parent".into(),
-            Default::default(),
-            HashMap::from([
-                (
-                    default_location.clone(),
-                    ir::GlyphInstance {
-                        width: 42.5,
-                        ..Default::default()
-                    },
-                ),
-                (
-                    other_location.clone(),
-                    ir::GlyphInstance {
-                        width: 62.5,
-                        ..Default::default()
-                    },
-                ),
-            ]),
-        )
-        .unwrap();
-        let child = ir::Glyph::new(
-            "child".into(),
-            Default::default(),
-            HashMap::from([
-                (
-                    default_location.clone(),
-                    ir::GlyphInstance {
-                        width: 42.5,
-                        ..Default::default()
-                    },
-                ),
-                (
-                    other_location.clone(),
-                    ir::GlyphInstance {
-                        width: 62.5,
-                        ..Default::default()
-                    },
-                ),
-            ]),
-        )
-        .unwrap();
+    /// Returns a glyph instance and another one that can be its component
+    fn create_reusable_component() -> (ir::GlyphInstance, ir::GlyphInstance) {
+        let parent = ir::GlyphInstance {
+            width: 42.5,
+            ..Default::default()
+        };
+        let child = parent.clone();
         (parent, child)
     }
 
@@ -791,10 +749,8 @@ mod tests {
 
     #[test]
     fn cannot_reuse_metrics_if_width_mismatch() {
-        let mut loc = NormalizedLocation::new();
-        loc.set_pos("wght", NormalizedCoord::new(1.0));
         let (glyph, mut component) = create_reusable_component();
-        component.source_mut(&loc).unwrap().width += 1.0;
+        component.width += 1.0;
         assert!(!can_reuse_metrics(&glyph, &component, &Affine::IDENTITY));
     }
 
