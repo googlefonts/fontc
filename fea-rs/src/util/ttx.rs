@@ -98,6 +98,10 @@ pub enum TestResult {
         result: String,
         diff_percent: f64,
     },
+    /// There was a saved "expected diff" for this input, but it did not match
+    /// the actual diff.
+    #[allow(missing_docs)]
+    ExpectedDiffFail { expected: String, result: String },
 }
 
 struct ReasonPrinter<'a> {
@@ -321,8 +325,13 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestResult> {
     if expected_diff_path.exists() {
         let expected_diff = std::fs::read_to_string(&expected_diff_path).unwrap();
         let simple_diff = plain_text_diff(&expected, &result);
-        if expected_diff == simple_diff {
+        if diffs_are_equal_ignoring_comments(&expected_diff, &simple_diff) {
             return Ok(());
+        } else {
+            return Err(TestResult::ExpectedDiffFail {
+                expected: expected_diff,
+                result: simple_diff,
+            });
         }
     }
 
@@ -340,6 +349,21 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestResult> {
     } else {
         Ok(())
     }
+}
+
+// we want to be able to add a comment when we save an 'expected diff', so that
+// a future reader can understand our justification
+fn diffs_are_equal_ignoring_comments(one: &str, two: &str) -> bool {
+    strip_comments(one) == strip_comments(two)
+}
+
+fn strip_comments(s: &str) -> String {
+    s.lines()
+        .skip_while(|line| {
+            let line = line.trim();
+            line.is_empty() || line.starts_with('#')
+        })
+        .collect()
 }
 
 /// take some output and compare it to the expected output (saved on disk)
@@ -540,7 +564,9 @@ impl Report {
                 TestResult::Panic => summary.panic += 1,
                 TestResult::ParseFail(_) => summary.parse += 1,
                 TestResult::CompileFail(_) => summary.compile += 1,
-                TestResult::UnexpectedSuccess | TestResult::TtxFail { .. } => summary.other += 1,
+                TestResult::UnexpectedSuccess
+                | TestResult::TtxFail { .. }
+                | TestResult::ExpectedDiffFail { .. } => summary.other += 1,
                 TestResult::CompareFail { diff_percent, .. } => {
                     summary.compare += 1;
                     summary.sum_compare_perc += diff_percent;
@@ -560,6 +586,7 @@ impl TestResult {
             Self::CompileFail(_) => 4,
             Self::UnexpectedSuccess => 6,
             Self::TtxFail { .. } => 10,
+            Self::ExpectedDiffFail { .. } => 15,
             Self::CompareFail { .. } => 50,
         }
     }
@@ -721,6 +748,14 @@ impl Display for ReasonPrinter<'_> {
             }
             TestResult::TtxFail { code, std_err } => {
                 write!(f, "ttx failure ({:?}) stderr:\n{}", code, std_err)
+            }
+            TestResult::ExpectedDiffFail { expected, result } => {
+                if self.verbose {
+                    writeln!(f, "expected diff fail")?;
+                    super::write_line_diff(f, expected, result)
+                } else {
+                    write!(f, "{}", Color::Yellow.paint("expected diff fail"))
+                }
             }
             TestResult::CompareFail {
                 expected,
