@@ -123,10 +123,9 @@ fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool) -> bool {
         Kind::FeatureNamesKw => feature_names(parser, recovery),
 
         _ => {
-            parser.err(format!(
-                "'{}' Not valid in a feature block",
-                parser.current_token_text()
-            ));
+            let token = parser.current_token_text();
+            let scope = if in_lookup { "lookup" } else { "feature" };
+            parser.err(format!("'{token}' Not valid in a {scope} block"));
             parser.eat_until(TokenSet::TOP_AND_FEATURE.add(LexemeKind::RBrace));
         }
     }
