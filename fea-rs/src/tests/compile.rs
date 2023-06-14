@@ -18,7 +18,6 @@ static IMPORT_RESOLUTION_TEST: &str = "./test-data/include-resolution-tests/dir1
 
 // tests taken directly from fonttools; these require some special handling.
 #[test]
-#[ignore = "disabled so we can use CI"]
 fn fonttools_tests() -> Result<(), Report> {
     test_utils::assert_has_ttx_executable();
     test_utils::run_all_tests(FONTTOOLS_TESTS, None).into_error()
