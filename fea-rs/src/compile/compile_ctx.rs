@@ -1,3 +1,7 @@
+//! The compilation pass
+//!
+//! This is the final stage of the pipeline, which walks the parsed and validated
+//! AST and generates the output.
 use std::{
     collections::{BTreeMap, HashMap},
     convert::TryInto,
@@ -43,16 +47,36 @@ use super::{
     VariationInfo,
 };
 
+/// Context that manages state for a compilation.
+///
+/// This type is where all the actual compilation logic lives.
+///
+/// The basic flow is like this:
+/// - create a new context (CompilationCtx::new), providing a glyph map and
+///   [`SourceMap`] (so that errors can be associated with the source text)
+/// - call `CompilationCtx::compile`, passing in the root AST node. This function
+///   walks through all of the statements in the AST, accumulating state
+///   (and possibly errors) in the context.
+/// - call `CompilationCtx::build`. This checks if any errors were encountered
+///   during compilation, and if not converts the accumulated internal state into
+///   the final output, ready to be written to binary.
 pub struct CompilationCtx<'a> {
     glyph_map: &'a GlyphMap,
     reverse_glyph_map: BTreeMap<GlyphId, GlyphIdent>,
     source_map: &'a SourceMap,
     variation_info: Option<&'a dyn VariationInfo>,
+    /// Any errors or warnings generated during compilation.
     pub errors: Vec<Diagnostic>,
+    /// Stores any [specified table values][tables] in the input FEA.
+    ///
+    /// [tables]: https://github.com/adobe-type-tools/afdko/blob/develop/docs/OpenTypeFeatureFileSpecification.md#9
     tables: Tables,
+    /// Manages buliding up the list of features and adding lookups to them
     features: AllFeatures,
     default_lang_systems: DefaultLanguageSystems,
+    /// Manages adding rules to lookups and assigning `LookupId`s during compilation
     lookups: AllLookups,
+    /// Tracks the lookup flags state
     lookup_flags: LookupFlagInfo,
     active_feature: Option<ActiveFeature>,
     vertical_feature: SpecialVerticalFeatureState,
@@ -101,6 +125,10 @@ impl<'a> CompilationCtx<'a> {
         }
     }
 
+    /// The main entry point for compilation.
+    ///
+    /// Walks the statements in the AST in order, accumulating state and any
+    /// errors encountered.
     pub(crate) fn compile(&mut self, node: &typed::Root) {
         for item in node.statements() {
             if let Some(language_system) = typed::LanguageSystem::cast(item) {
@@ -126,14 +154,7 @@ impl<'a> CompilationCtx<'a> {
             } else if let Some(table) = typed::Table::cast(item) {
                 self.resolve_table(table);
             } else if !item.kind().is_trivia() {
-                let span = match item {
-                    NodeOrToken::Token(t) => t.range(),
-                    NodeOrToken::Node(node) => {
-                        let range = node.range();
-                        let end = range.end.min(range.start + 16);
-                        range.start..end
-                    }
-                };
+                let span = get_reasonable_length_span(item);
                 self.error(span, format!("unhandled top-level item: '{}'", item.kind()));
             }
         }
@@ -1901,6 +1922,22 @@ fn sort_feature_variations(
             Some(condition) => order_fn(condition),
             None => order_fn(&Default::default()),
         })
+}
+
+/// Returns a span suitable for associating an error.
+///
+/// If this is a token, we take the whole token. If it's a node, we take
+/// only some maximum number of characters.
+fn get_reasonable_length_span(node: &NodeOrToken) -> Range<usize> {
+    const MAX_SPAN_LEN_FOR_NODES: usize = 32;
+    match node {
+        NodeOrToken::Token(t) => t.range(),
+        NodeOrToken::Node(node) => {
+            let range = node.range();
+            let end = range.end.min(range.start + MAX_SPAN_LEN_FOR_NODES);
+            range.start..end
+        }
+    }
 }
 
 //FIXME: sometimes a glyph class should be unique/sorted and sometimes order matters
