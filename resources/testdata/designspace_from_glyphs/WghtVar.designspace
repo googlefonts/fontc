@@ -19,16 +19,4 @@
       </location>
     </source>
   </sources>
-  <instances>
-    <instance name="WghtVar Regular" familyname="WghtVar" stylename="Regular" filename="instance_ufos/WghtVar-Regular.ufo" stylemapfamilyname="Wght Var" stylemapstylename="regular">
-      <location>
-        <dimension name="Weight" xvalue="400"/>
-      </location>
-    </instance>
-    <instance name="WghtVar Bold" familyname="WghtVar" stylename="Bold" filename="instance_ufos/WghtVar-Bold.ufo" stylemapfamilyname="Wght Var" stylemapstylename="bold">
-      <location>
-        <dimension name="Weight" xvalue="700"/>
-      </location>      
-    </instance>
-  </instances>
 </designspace>
