@@ -11,11 +11,11 @@ env_logger = "0.10.0"
 
 parking_lot = "0.12.1"
 
-fea-rs = "= 0.6.0"
-font-types = { version = "0.2.0", features = ["serde"] }
-read-fonts = "0.4.0"
-write-fonts = "0.6.2"
-skrifa = "0.3.0"
+fea-rs = "= 0.7.0"
+font-types = { version = "0.3.0", features = ["serde"] }
+read-fonts = "0.5.0"
+write-fonts = "0.7.0"
+skrifa = "0.4.0"
 
 bitflags = "2.0"
 chrono = { version = "0.4.24", features = ["serde"] }
@@ -24,7 +24,7 @@ indexmap = "1.9.2"
 kurbo = { version = "0.9.4", features = ["serde"] }
 ordered-float = { version = "3.4.0", features = ["serde"] }
 smol_str = { version = "0.1.24", features = ["serde"] }
-quick-xml = { version = "0.28.0", features = ["serialize"] }
+quick-xml = { version = "0.29.0", features = ["serialize"] }
 regex = "1.7.1"
 
 # dev dependencies
