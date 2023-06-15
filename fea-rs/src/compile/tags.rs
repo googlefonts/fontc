@@ -46,7 +46,6 @@ mod tests {
         assert!(is_stylistic_set(Tag::new(b"ss19")));
         assert!(!is_stylistic_set(Tag::new(b"ss00")));
         assert!(!is_stylistic_set(Tag::new(b"ss21")));
-        assert!(!is_stylistic_set(Tag::new(b"ss1")));
         assert!(!is_stylistic_set(Tag::new(b"ss1 ")));
         assert!(!is_stylistic_set(Tag::new(b"ss0f")));
     }
@@ -59,7 +58,6 @@ mod tests {
         assert!(is_character_variant(Tag::new(b"cv19")));
         assert!(is_character_variant(Tag::new(b"cv99")));
         assert!(!is_character_variant(Tag::new(b"cv00")));
-        assert!(!is_character_variant(Tag::new(b"cv1")));
         assert!(!is_character_variant(Tag::new(b"cv1 ")));
         assert!(!is_character_variant(Tag::new(b"cv9f")));
     }

@@ -283,10 +283,10 @@ impl SpecialVerticalFeatureState {
 mod tests {
     use super::*;
 
-    const fn langsys(script: &str, lang: &str) -> LanguageSystem {
+    const fn langsys(script: &[u8; 4], lang: &[u8; 4]) -> LanguageSystem {
         LanguageSystem {
-            script: Tag::new(script.as_bytes()),
-            language: Tag::new(lang.as_bytes()),
+            script: Tag::new(script),
+            language: Tag::new(lang),
         }
     }
 
@@ -305,11 +305,11 @@ mod tests {
         out
     }
 
-    const DFLT_DFLT: LanguageSystem = langsys("DFLT", "dflt");
-    const LATN_DFLT: LanguageSystem = langsys("latn", "dflt");
-    const LATN_DEU: LanguageSystem = langsys("latn", "DEU");
-    const LATN_TRK: LanguageSystem = langsys("latn", "TRK");
-    const LATN_POL: LanguageSystem = langsys("latn", "POL");
+    const DFLT_DFLT: LanguageSystem = langsys(b"DFLT", b"dflt");
+    const LATN_DFLT: LanguageSystem = langsys(b"latn", b"dflt");
+    const LATN_DEU: LanguageSystem = langsys(b"latn", b"DEU ");
+    const LATN_TRK: LanguageSystem = langsys(b"latn", b"TRK ");
+    const LATN_POL: LanguageSystem = langsys(b"latn", b"POL ");
     const TAG_TEST: Tag = Tag::new(b"test");
 
     #[test]
@@ -341,11 +341,11 @@ mod tests {
         assert_eq!(built.get(&key), Some(&vec![id_1, id_2]));
     }
 
-    const DFLT_FRE: LanguageSystem = langsys("DFLT", "FRE");
-    const DFLT_ABC: LanguageSystem = langsys("DFLT", "ABC");
-    const LATN_ABC: LanguageSystem = langsys("latn", "ABC");
-    const LATN_FRE: LanguageSystem = langsys("latn", "FRE");
-    const LATN_DEF: LanguageSystem = langsys("latn", "DEF");
+    const DFLT_FRE: LanguageSystem = langsys(b"DFLT", b"FRE ");
+    const DFLT_ABC: LanguageSystem = langsys(b"DFLT", b"ABC ");
+    const LATN_ABC: LanguageSystem = langsys(b"latn", b"ABC ");
+    const LATN_FRE: LanguageSystem = langsys(b"latn", b"FRE ");
+    const LATN_DEF: LanguageSystem = langsys(b"latn", b"DEF ");
 
     // <https://github.com/fonttools/fonttools/pull/1307>
     #[test]
