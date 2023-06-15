@@ -7,7 +7,6 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
-    str::FromStr,
 };
 
 use smol_str::SmolStr;
@@ -316,9 +315,8 @@ impl<'a> ValidationCtx<'a> {
                     }
                 }
                 typed::Os2TableItem::Vendor(item) => {
-                    let val = item.value();
-                    if let Err(e) = Tag::from_str(val.as_str().trim_matches('"')) {
-                        self.error(val.range(), format!("invalid tag: '{}'", e));
+                    if let Err(e) = item.parse_tag() {
+                        self.error(item.value().range(), format!("invalid tag: '{}'", e));
                     }
                 }
             }

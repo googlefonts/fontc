@@ -1198,6 +1198,13 @@ impl VendorRecord {
     pub(crate) fn value(&self) -> &Token {
         self.find_token(Kind::String).unwrap()
     }
+
+    pub(crate) fn parse_tag(
+        &self,
+    ) -> Result<write_fonts::types::Tag, write_fonts::types::InvalidTag> {
+        let raw = self.value();
+        write_fonts::types::Tag::new_checked(raw.text.trim_matches('"').as_bytes())
+    }
 }
 
 impl Os2NumberList {

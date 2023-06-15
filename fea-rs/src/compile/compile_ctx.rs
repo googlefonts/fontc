@@ -1367,9 +1367,7 @@ impl<'a> CompilationCtx<'a> {
                     _ => unreachable!("checked at parse time"),
                 },
                 typed::Os2TableItem::Vendor(item) => {
-                    os2.ach_vend_id =
-                        Tag::new_checked(item.value().text.trim_matches('"').as_bytes())
-                            .expect("validated");
+                    os2.ach_vend_id = item.parse_tag().expect("validated");
                 }
                 typed::Os2TableItem::FamilyClass(item) => {
                     os2.s_family_class = item.value().parse().unwrap() as i16
