@@ -7,6 +7,7 @@
 
 mod lexeme;
 mod token_set;
+
 pub(crate) use lexeme::{Kind, Lexeme};
 pub use token_set::TokenSet;
 
@@ -16,7 +17,35 @@ pub(crate) struct Lexer<'a> {
     input: &'a str,
     pos: usize,
     after_backslash: bool,
-    after_l_paren: bool,
+    in_path: ExpectingPath,
+}
+
+// simple state machine for tracking whether we should be parsing a path.
+//
+// paths are complicated because suddenly we stop tokenizing, and just
+// glom everything together up to the closing parens.
+#[derive(Clone, Copy, Default)]
+enum ExpectingPath {
+    #[default]
+    Ready,
+    // we have seen the 'include' keyword. This means if the next token is a paren,
+    // we enter the 'InPath' state.
+    SawInclude,
+    InPath,
+}
+
+impl ExpectingPath {
+    fn in_path(self) -> bool {
+        matches!(self, ExpectingPath::InPath)
+    }
+
+    fn transition(&mut self, kind: Kind) {
+        *self = match (*self, kind) {
+            (ExpectingPath::Ready, Kind::IncludeKw) => ExpectingPath::SawInclude,
+            (ExpectingPath::SawInclude, Kind::LParen) => ExpectingPath::InPath,
+            _ => ExpectingPath::Ready,
+        }
+    }
 }
 
 impl<'a> Lexer<'a> {
@@ -25,7 +54,7 @@ impl<'a> Lexer<'a> {
             input,
             pos: 0,
             after_backslash: false,
-            after_l_paren: false,
+            in_path: Default::default(),
         }
     }
 
@@ -56,6 +85,7 @@ impl<'a> Lexer<'a> {
             b'0' => self.number(true),
             b'1'..=b'9' => self.number(false),
             b';' => Kind::Semi,
+            b':' => Kind::Colon,
             b',' => Kind::Comma,
             b'@' => self.glyph_class_name(),
             b'\\' => Kind::Backslash,
@@ -70,12 +100,13 @@ impl<'a> Lexer<'a> {
             b'<' => Kind::LAngle,
             b'>' => Kind::RAngle,
             b'\'' => Kind::SingleQuote,
-            _ if self.after_l_paren => self.path(),
+            _ if self.in_path.in_path() => self.path(),
             _ => self.ident(),
         };
+        self.in_path.transition(kind);
 
         self.after_backslash = matches!(kind, Kind::Backslash);
-        self.after_l_paren = matches!(kind, Kind::LParen);
+        //self.after_l_paren = matches!(kind, Kind::LParen);
 
         let len = self.pos - start_pos;
         Lexeme { len, kind }
@@ -214,8 +245,6 @@ impl<'a> Lexer<'a> {
         while !matches!(self.nth(0), EOF | b')') {
             self.bump();
         }
-
-        self.after_l_paren = false;
         Kind::Path
     }
 }

@@ -187,7 +187,7 @@ pub static STYLES: &[SemanticTokenType] = &[
 fn style_for_kind(kind: Kind) -> Option<u32> {
     let raw = match kind {
         Kind::Comment => 2,
-        Kind::Number | Kind::Metric | Kind::Octal | Kind::Hex | Kind::Float => 1,
+        Kind::Number | Kind::Octal | Kind::Hex | Kind::Float => 1,
         Kind::String => 3,
 
         Kind::GlyphName | Kind::Cid => 10,

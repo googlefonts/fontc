@@ -232,12 +232,26 @@ impl<'a> ValidationCtx<'a> {
         //TODO: same number of records as there are number of baseline tags
     }
 
-    fn validate_hhea(&mut self, _node: &typed::HheaTable) {
-        // lgtm
+    fn validate_hhea(&mut self, node: &typed::HheaTable) {
+        self.ensure_metrics_are_non_variable(node.metrics());
     }
 
-    fn validate_vhea(&mut self, _node: &typed::VheaTable) {
-        // lgtm
+    fn validate_vhea(&mut self, node: &typed::VheaTable) {
+        self.ensure_metrics_are_non_variable(node.metrics());
+    }
+
+    fn ensure_metrics_are_non_variable(
+        &mut self,
+        metrics: impl Iterator<Item = typed::MetricRecord>,
+    ) {
+        for record in metrics {
+            if record.metric().parse_simple().is_none() {
+                self.error(
+                    record.metric().range(),
+                    "variable metrics not yet supported",
+                );
+            }
+        }
     }
 
     fn validate_vmtx(&mut self, node: &typed::VmtxTable) {
@@ -303,8 +317,14 @@ impl<'a> ValidationCtx<'a> {
                 typed::Os2TableItem::Metric(i) => {
                     if matches!(i.keyword().kind, Kind::WinAscentKw | Kind::WinDescentKw) {
                         let val = i.metric();
-                        if val.parse().is_negative() {
-                            self.error(val.range(), "expected positive number");
+                        match val.parse_simple() {
+                            None => {
+                                self.error(val.range(), "variable metrics not yet supports in OS/2")
+                            }
+                            Some(x) if x.is_negative() => {
+                                self.error(val.range(), "expected positive number")
+                            }
+                            Some(_) => (),
                         }
                     }
                 }

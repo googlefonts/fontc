@@ -269,11 +269,7 @@ mod hhea {
         if parser.matches(0, HHEA_KEYWORDS) {
             parser.in_node(AstKind::MetricValueNode, |parser| {
                 assert!(parser.eat(HHEA_KEYWORDS));
-                parser.expect_remap_recover(
-                    Kind::Number,
-                    AstKind::Metric,
-                    recovery.union(TokenSet::SEMI_RBRACE),
-                );
+                super::super::metrics::expect_metric(parser, recovery.union(TokenSet::SEMI_RBRACE));
                 parser.expect_recover(Kind::Semi, recovery.add(Kind::RBrace));
             })
         } else {
@@ -340,7 +336,7 @@ mod os2 {
         if parser.matches(0, METRICS) {
             parser.in_node(AstKind::MetricValueNode, |parser| {
                 assert!(parser.eat(METRICS));
-                parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery_semi);
+                super::super::metrics::expect_metric(parser, recovery);
                 parser.expect_semi();
             })
         } else if parser.matches(0, NUM_LISTS) {
@@ -389,7 +385,7 @@ mod vhea {
         if parser.matches(0, VHEA_KEYWORDS) {
             parser.in_node(AstKind::MetricValueNode, |parser| {
                 assert!(parser.eat(VHEA_KEYWORDS));
-                parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery_semi);
+                super::super::metrics::expect_metric(parser, recovery_semi);
                 parser.expect_semi();
             })
         } else {

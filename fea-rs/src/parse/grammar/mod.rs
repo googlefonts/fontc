@@ -194,8 +194,7 @@ fn anchor_def(parser: &mut Parser) {
             let recovery = TokenSet::TOP_LEVEL
                 .union(TokenSet::IDENT_LIKE)
                 .union(TokenSet::new(&[Kind::ContourpointKw, Kind::Semi]));
-            parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery);
-            parser.expect_remap_recover(Kind::Number, AstKind::Metric, recovery);
+            parser.repeat(|parser| metrics::expect_metric(parser, recovery), 2);
             if parser.eat(Kind::ContourpointKw) {
                 parser.expect_recover(Kind::Number, TokenSet::TOP_SEMI);
             }
@@ -362,7 +361,10 @@ mod tests {
         let out = typed::Root::cast(&out).unwrap();
         let value_def = out.iter().find_map(typed::ValueRecordDef::cast).unwrap();
         assert_eq!(
-            value_def.value_record().advance().map(|x| x.parse_signed()),
+            value_def
+                .value_record()
+                .advance()
+                .and_then(|x| x.parse_simple()),
             Some(123)
         );
         assert_eq!(value_def.name().as_str(), "foo");

@@ -195,7 +195,6 @@ ast_token!(Number, Kind::Number);
 ast_token!(Float, Kind::Float);
 ast_token!(Octal, Kind::Octal);
 ast_token!(Hex, Kind::Hex);
-ast_token!(Metric, Kind::Metric);
 ast_token!(Null, Kind::NullKw);
 ast_node!(Root, Kind::SourceFile);
 ast_node!(GlyphRange, Kind::GlyphRange);
@@ -266,6 +265,12 @@ ast_enum!(DecOctHex {
 ast_enum!(FloatLike {
     Float(Float),
     Number(Number),
+});
+
+ast_node!(VariableMetric, Kind::VariableMetricNode);
+ast_enum!(Metric {
+    Scalar(Number),
+    Variable(VariableMetric),
 });
 
 ast_node!(GdefClassDef, Kind::GdefClassDefNode);
@@ -561,7 +566,9 @@ impl Anchor {
     }
 
     pub(crate) fn contourpoint(&self) -> Option<Number> {
-        self.iter().find_map(Number::cast)
+        self.iter()
+            .skip_while(|x| x.kind() != Kind::ContourpointKw)
+            .find_map(Number::cast)
     }
 
     pub(crate) fn devices(&self) -> Option<(Device, Device)> {
@@ -609,12 +616,6 @@ impl FloatLike {
 
     pub(crate) fn parse_fixed(&self) -> Fixed {
         Fixed::from_f64(self.parse() as _)
-    }
-}
-
-impl Metric {
-    pub(crate) fn parse(&self) -> i16 {
-        self.text().parse().expect("already validated")
     }
 }
 
@@ -959,8 +960,8 @@ impl AnchorMark {
 }
 
 impl ValueRecord {
-    pub(crate) fn advance(&self) -> Option<Number> {
-        self.iter().next().and_then(Number::cast)
+    pub(crate) fn advance(&self) -> Option<Metric> {
+        self.iter().next().and_then(Metric::cast)
     }
 
     pub(crate) fn null(&self) -> Option<&Token> {
@@ -974,9 +975,14 @@ impl ValueRecord {
         self.find_token(Kind::Ident)
     }
 
-    pub(crate) fn placement(&self) -> Option<[Number; 4]> {
-        if self.iter().filter(|t| t.kind() == Kind::Number).count() == 4 {
-            let mut iter = self.iter().filter_map(Number::cast);
+    pub(crate) fn placement(&self) -> Option<[Metric; 4]> {
+        if self
+            .iter()
+            .filter(|t| t.kind() == Kind::Number || t.kind() == Kind::VariableMetricNode)
+            .count()
+            == 4
+        {
+            let mut iter = self.iter().filter_map(Metric::cast);
             return Some([
                 iter.next().unwrap(),
                 iter.next().unwrap(),
@@ -1175,6 +1181,16 @@ impl MetricRecord {
 
     pub(crate) fn metric(&self) -> Metric {
         self.iter().find_map(Metric::cast).unwrap()
+    }
+}
+
+impl Metric {
+    /// Returns the value of this metric if it is non-variable
+    pub(crate) fn parse_simple(&self) -> Option<i16> {
+        match self {
+            Metric::Scalar(num) => Some(num.parse_signed()),
+            Metric::Variable(_) => None,
+        }
     }
 }
 

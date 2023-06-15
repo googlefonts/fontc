@@ -1062,7 +1062,11 @@ impl<'a> CompilationCtx<'a> {
                 .expect("checked in validation");
         }
 
-        if let Some(adv) = record.advance().map(|x| x.parse_signed()) {
+        if let Some(adv) = record.advance() {
+            let Some(adv) = adv.parse_simple() else {
+                self.error(adv.range(), "variable metrics not yet supported");
+                return Default::default();
+            };
             let (x_advance, y_advance) = if self.vertical_feature.in_eligible_vertical_feature() {
                 (None, Some(adv))
             } else {
@@ -1076,11 +1080,15 @@ impl<'a> CompilationCtx<'a> {
             };
         }
         if let Some([x_place, y_place, x_adv, y_adv]) = record.placement() {
+            let (Some(x_place), Some(y_place), Some(x_adv), Some(y_adv)) = (x_place.parse_simple(), y_place.parse_simple(), x_adv.parse_simple(), y_adv.parse_simple()) else {
+                self.error(record.range(), "variable metrics not yet supported");
+                return Default::default();
+            };
             let mut result = ValueRecord {
-                x_advance: Some(x_adv.parse_signed()),
-                y_advance: Some(y_adv.parse_signed()),
-                x_placement: Some(x_place.parse_signed()),
-                y_placement: Some(y_place.parse_signed()),
+                x_advance: Some(x_adv),
+                y_advance: Some(y_adv),
+                x_placement: Some(x_place),
+                y_placement: Some(y_place),
                 ..Default::default()
             };
             if let Some([x_place_dev, y_place_dev, x_adv_dev, y_adv_dev]) = record.device() {
@@ -1335,7 +1343,7 @@ impl<'a> CompilationCtx<'a> {
                     }
                 }
                 typed::Os2TableItem::Metric(val) => {
-                    let value = val.metric().parse();
+                    let value = val.metric().parse_simple().expect("checked in validation");
                     match val.keyword().kind {
                         Kind::TypoAscenderKw => os2.s_typo_ascender = value,
                         Kind::TypoDescenderKw => os2.s_typo_descender = value,
@@ -1479,11 +1487,15 @@ impl<'a> CompilationCtx<'a> {
         let mut hhea = tables::hhea::Hhea::default();
         for record in table.metrics() {
             let keyword = record.keyword();
+            let value = record
+                .metric()
+                .parse_simple()
+                .expect("checked during validation");
             match keyword.kind {
-                Kind::CaretOffsetKw => hhea.caret_offset = record.metric().parse(),
-                Kind::AscenderKw => hhea.ascender = record.metric().parse().into(),
-                Kind::DescenderKw => hhea.descender = record.metric().parse().into(),
-                Kind::LineGapKw => hhea.line_gap = record.metric().parse().into(),
+                Kind::CaretOffsetKw => hhea.caret_offset = value,
+                Kind::AscenderKw => hhea.ascender = value.into(),
+                Kind::DescenderKw => hhea.descender = value.into(),
+                Kind::LineGapKw => hhea.line_gap = value.into(),
                 other => panic!("bug in parser, unexpected token '{}'", other),
             }
         }
@@ -1494,10 +1506,15 @@ impl<'a> CompilationCtx<'a> {
         let mut vhea = tables::vhea::Vhea::default();
         for record in table.metrics() {
             let keyword = record.keyword();
+            let value = record
+                .metric()
+                .parse_simple()
+                .expect("checked during validation");
+
             match keyword.kind {
-                Kind::VertTypoAscenderKw => vhea.ascender = record.metric().parse().into(),
-                Kind::VertTypoDescenderKw => vhea.descender = record.metric().parse().into(),
-                Kind::VertTypoLineGapKw => vhea.line_gap = record.metric().parse().into(),
+                Kind::VertTypoAscenderKw => vhea.ascender = value.into(),
+                Kind::VertTypoDescenderKw => vhea.descender = value.into(),
+                Kind::VertTypoLineGapKw => vhea.line_gap = value.into(),
                 other => panic!("bug in parser, unexpected token '{}'", other),
             }
         }
@@ -1695,23 +1712,11 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_anchor(&mut self, item: &typed::Anchor) -> Option<AnchorTable> {
-        if let Some((x, y)) = item.coords().map(|(x, y)| (x.parse(), y.parse())) {
-            if let Some(point) = item.contourpoint() {
-                match point.parse_unsigned() {
-                    Some(point) => return Some(AnchorTable::format_2(x, y, point)),
-                    None => panic!("negative contourpoint, go fix your parser"),
-                }
-            } else if let Some((x_coord, y_coord)) = item.devices() {
-                return Some(AnchorTable::format_3(
-                    x,
-                    y,
-                    x_coord.compile(),
-                    y_coord.compile(),
-                ));
-            } else {
-                return Some(AnchorTable::format_1(x, y));
-            }
-        } else if let Some(name) = item.name() {
+        if item.null().is_some() {
+            return None;
+        }
+
+        if let Some(name) = item.name() {
             match self.anchor_defs.get(&name.text) {
                 Some((anchor, pos)) if *pos < item.range().start => return Some(anchor.clone()),
                 _ => {
@@ -1719,10 +1724,28 @@ impl<'a> CompilationCtx<'a> {
                     return None;
                 }
             }
-        } else if item.null().is_some() {
-            return None;
         }
-        panic!("bad anchor {:?} go check your parser", item);
+
+        let Some((x, y)) = item.coords().and_then(|(x, y)| x.parse_simple().zip(y.parse_simple())) else {
+            self.error(item.range(), "variable anchor compilation not yet implemented");
+            return None;
+        };
+
+        if let Some(point) = item.contourpoint() {
+            match point.parse_unsigned() {
+                Some(point) => Some(AnchorTable::format_2(x, y, point)),
+                None => panic!("negative contourpoint, go fix your parser"),
+            }
+        } else if let Some((x_coord, y_coord)) = item.devices() {
+            Some(AnchorTable::format_3(
+                x,
+                y,
+                x_coord.compile(),
+                y_coord.compile(),
+            ))
+        } else {
+            Some(AnchorTable::format_1(x, y))
+        }
     }
 
     fn resolve_glyph_or_class(&mut self, item: &typed::GlyphOrClass) -> GlyphOrClass {

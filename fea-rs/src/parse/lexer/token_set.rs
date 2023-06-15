@@ -133,7 +133,7 @@ impl TokenSet {
         TokenSet(self.0 | other.0)
     }
 
-    pub(crate) fn add(self, token: Kind) -> TokenSet {
+    pub(crate) const fn add(self, token: Kind) -> TokenSet {
         assert!((token as u16) < 128);
         TokenSet(self.0 | mask(token))
     }

@@ -25,6 +25,7 @@ pub enum Kind {
 
     // special symbols
     Semi,
+    Colon,
     Comma,
     Backslash,
     Hyphen,
@@ -150,7 +151,7 @@ pub enum Kind {
 
     // not lexed
     GlyphRange,
-    Metric,
+    //Metric,
     Label,
     Tag,
     GlyphName,
@@ -229,6 +230,11 @@ pub enum Kind {
     ConditionSetNode,
     ConditionNode,
     VariationNode,
+
+    VariableMetricNode,
+    LocationValueNode,
+    LocationSpecNode,
+    LocationSpecItemNode,
 
     TableNode,
     HeadTableNode,
@@ -313,6 +319,7 @@ impl std::fmt::Display for Kind {
             Self::Float => write!(f, "FLOAT"),
             Self::Whitespace => write!(f, "WS"),
             Self::Semi => write!(f, ";"),
+            Self::Colon => write!(f, ":"),
             Self::Comma => write!(f, ","),
             Self::Backslash => write!(f, "\\"),
             Self::Hyphen => write!(f, "-"), // also minus
@@ -336,7 +343,7 @@ impl std::fmt::Display for Kind {
             Self::GlyphName => write!(f, "GlyphName"),
             Self::GlyphNameOrRange => write!(f, "GlyphNameOrRange"),
             Self::Cid => write!(f, "CID"),
-            Self::Metric => write!(f, "METRIC"),
+            //Self::Metric => write!(f, "METRIC"),
             Self::Label => write!(f, "LABEL"),
 
             Self::TableKw => write!(f, "TableKw"),
@@ -479,6 +486,11 @@ impl std::fmt::Display for Kind {
             Self::ConditionSetNode => write!(f, "ConditionSetNode"),
             Self::ConditionNode => write!(f, "ConditionNode"),
             Self::VariationNode => write!(f, "VariationNode"),
+            Self::VariableMetricNode => write!(f, "VariableMetricNode"),
+            Self::LocationValueNode => write!(f, "LocationValueNode"),
+            Self::LocationSpecNode => write!(f, "LocationSpecNode"),
+            Self::LocationSpecItemNode => write!(f, "LocationSpecItemNode"),
+
             Self::DeviceNode => write!(f, "DeviceNode"),
             Self::AnonBlockNode => write!(f, "AnonBlockNode"),
             Self::GlyphClassDefNode => write!(f, "GlyphClassDefNode"),
@@ -520,9 +532,9 @@ impl std::fmt::Display for Kind {
             Self::NameRecordNode => write!(f, "NameRecordNode"),
             Self::NameSpecNode => write!(f, "NameSpecNode"),
             Self::HeadFontRevisionNode => write!(f, "HeadFontRevisionNode"),
-            Self::MetricValueNode => write!(f, "MetricNode"), // shared between hhea, vhea, and os2
-            Self::NumberValueNode => write!(f, "NumberNode"), // used in os2
-            Self::StringValueNode => write!(f, "StringNode"), // used in os2
+            Self::MetricValueNode => write!(f, "MetricValueNode"), // shared between hhea, vhea, and os2
+            Self::NumberValueNode => write!(f, "NumberNode"),      // used in os2
+            Self::StringValueNode => write!(f, "StringNode"),      // used in os2
             Self::Os2NumberListNode => write!(f, "Os2NumberListNode"),
             Self::Os2FamilyClassNode => write!(f, "Os2FamilyClassNode"),
             Self::CvParamsNameNode => write!(f, "CvParamsNameNode"),

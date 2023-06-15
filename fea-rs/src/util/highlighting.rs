@@ -9,7 +9,7 @@ use ansi_term::{Colour, Style};
 pub fn style_for_kind(kind: Kind) -> Style {
     match kind {
         Kind::Comment => Style::new().fg(Colour::Yellow).dimmed(),
-        Kind::Number | Kind::Metric | Kind::Octal | Kind::Hex | Kind::Float | Kind::String => {
+        Kind::Number | Kind::Octal | Kind::Hex | Kind::Float | Kind::String => {
             Style::new().fg(Colour::Green)
         }
         Kind::Ident | Kind::Tag | Kind::Label => Style::new().fg(Colour::Purple),

@@ -122,6 +122,10 @@ impl<'b, 'a> Parser<'a, 'b> {
         &self.text[self.nth_range(0)]
     }
 
+    fn current_pos(&self) -> usize {
+        self.buf[0].start_pos
+    }
+
     /// advance `N` lexemes, remapping to `Kind`.
     fn do_bump<const N: usize>(&mut self, kind: Kind) {
         let mut len = 0;
@@ -365,6 +369,32 @@ impl<'b, 'a> Parser<'a, 'b> {
 
     pub(crate) fn raw_range(&self, range: Range<usize>) -> &[u8] {
         &self.text.as_bytes()[range]
+    }
+
+    /// Calls the closure with the parser repeatedly, stopping if the parser has not advanced.
+    ///
+    /// The closure is expected to behave like an 'eat' or 'expect' function,
+    /// returning `true` on success (which is different from advancing the cursor!).
+    ///
+    /// We return `true` if all calls returned true.
+    ///
+    /// This is useful for parsing sequences of identical items, where we want
+    /// to avoid generating a new error for each failed item.
+    pub(crate) fn repeat(
+        &mut self,
+        mut f: impl FnMut(&mut Parser) -> bool,
+        repeat_count: usize,
+    ) -> bool {
+        let mut pos = self.current_pos();
+        let mut result = true;
+        for _ in 0..repeat_count {
+            result &= f(self);
+            if self.current_pos() == pos {
+                break;
+            }
+            pos = self.current_pos();
+        }
+        result
     }
 }
 

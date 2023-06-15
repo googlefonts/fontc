@@ -39,6 +39,7 @@ pub enum Kind {
 
     // special symbols
     Semi,
+    Colon,
     Comma,
     Backslash,
     Hyphen,
@@ -294,6 +295,7 @@ impl Kind {
             Self::Float => AstKind::Float,
             Self::Whitespace => AstKind::Whitespace,
             Self::Semi => AstKind::Semi,
+            Self::Colon => AstKind::Colon,
             Self::Comma => AstKind::Comma,
             Self::Backslash => AstKind::Backslash,
             Self::Hyphen => AstKind::Hyphen,
@@ -420,6 +422,7 @@ impl std::fmt::Display for Kind {
             Self::Float => write!(f, "FLOAT"),
             Self::Whitespace => write!(f, "WS"),
             Self::Semi => write!(f, ";"),
+            Self::Colon => write!(f, ":"),
             Self::Comma => write!(f, ","),
             Self::Backslash => write!(f, "\\"),
             Self::Hyphen => write!(f, "-"), // also minus
