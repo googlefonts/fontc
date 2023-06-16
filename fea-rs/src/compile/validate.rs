@@ -39,6 +39,7 @@ pub struct ValidationCtx<'a> {
     mark_class_used: Option<Token>,
     anchor_defs: HashMap<SmolStr, Token>,
     value_record_defs: HashMap<SmolStr, Token>,
+    condition_set_defs: HashMap<SmolStr, Token>,
     aalt_referenced_features: HashMap<Tag, typed::Tag>,
     all_features: HashSet<Tag>,
 }
@@ -57,6 +58,7 @@ impl<'a> ValidationCtx<'a> {
             mark_class_used: None,
             anchor_defs: Default::default(),
             value_record_defs: Default::default(),
+            condition_set_defs: Default::default(),
             aalt_referenced_features: Default::default(),
             all_features: Default::default(),
         }
@@ -90,6 +92,10 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_lookup_block(&lookup, None);
             } else if let Some(node) = typed::ValueRecordDef::cast(item) {
                 self.validate_value_record_def(&node);
+            } else if let Some(node) = typed::ConditionSet::cast(item) {
+                self.validate_condition_set(&node);
+            } else if let Some(node) = typed::FeatureVariation::cast(item) {
+                self.validate_feature_variation(&node);
             } else if item.kind() == Kind::AnonKw {
                 unimplemented!("anon")
             }
@@ -205,6 +211,25 @@ impl<'a> ValidationCtx<'a> {
         {
             self.warning(name.range(), "duplicate value record name");
         }
+    }
+
+    fn validate_condition_set(&mut self, node: &typed::ConditionSet) {
+        let label = node.label().to_owned();
+        if let Some(_prev) = self.condition_set_defs.insert(label.text.clone(), label) {
+            self.warning(node.label().range(), "duplicate condition set definition");
+        }
+    }
+
+    fn validate_feature_variation(&mut self, node: &typed::FeatureVariation) {
+        let feature_tag = node.tag();
+        if let Some(cond_set) = node.condition_set() {
+            if !self.condition_set_defs.contains_key(cond_set.as_str()) {
+                self.error(cond_set.range(), "undefined conditionset");
+            }
+        } else {
+            assert!(node.null().is_some(), "go fix your parser");
+        }
+        self.validate_feature_statements(feature_tag.to_raw(), node.statements());
     }
 
     fn validate_mark_class(&mut self, node: &typed::GlyphClassName) {
@@ -518,8 +543,16 @@ impl<'a> ValidationCtx<'a> {
         if tags::is_character_variant(tag_raw) {
             self.validate_character_variant_items(&mut statement_iter);
         }
+        self.validate_feature_statements(tag_raw, statement_iter);
+    }
 
-        for item in statement_iter {
+    // shared between features and feature variations
+    fn validate_feature_statements<'b>(
+        &mut self,
+        feature_tag: Tag,
+        iter: impl Iterator<Item = &'b NodeOrToken>,
+    ) {
+        for item in iter {
             if item.kind() == Kind::ScriptNode
                 || item.kind() == Kind::LanguageNode
                 || item.kind() == Kind::SubtableNode
@@ -528,7 +561,7 @@ impl<'a> ValidationCtx<'a> {
             } else if let Some(node) = typed::LookupRef::cast(item) {
                 self.validate_lookup_ref(&node);
             } else if let Some(node) = typed::LookupBlock::cast(item) {
-                self.validate_lookup_block(&node, Some(tag_raw));
+                self.validate_lookup_block(&node, Some(feature_tag));
             } else if let Some(node) = typed::LookupFlag::cast(item) {
                 self.validate_lookupflag(&node);
             } else if let Some(node) = typed::GsubStatement::cast(item) {

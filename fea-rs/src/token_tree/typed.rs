@@ -267,6 +267,8 @@ ast_enum!(FloatLike {
     Number(Number),
 });
 
+ast_node!(ConditionSet, Kind::ConditionSetNode);
+ast_node!(FeatureVariation, Kind::VariationNode);
 ast_node!(VariableMetric, Kind::VariableMetricNode);
 ast_enum!(Metric {
     Scalar(Number),
@@ -661,6 +663,35 @@ impl LookupBlock {
 
     pub(crate) fn label(&self) -> &Token {
         self.find_token(Kind::Label).unwrap()
+    }
+
+    pub(crate) fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
+        self.iter()
+            .skip_while(|t| t.kind() != Kind::LBrace)
+            .skip(1)
+            .filter(|t| !t.kind().is_trivia())
+            .take_while(|t| t.kind() != Kind::RBrace)
+    }
+}
+
+impl ConditionSet {
+    pub(crate) fn label(&self) -> &Token {
+        self.find_token(Kind::Label).unwrap()
+    }
+}
+
+impl FeatureVariation {
+    pub(crate) fn tag(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    /// optional; if this is 'none' then 'null' must be present
+    pub(crate) fn condition_set(&self) -> Option<&Token> {
+        self.find_token(Kind::Label)
+    }
+
+    pub(crate) fn null(&self) -> Option<&Token> {
+        self.find_token(Kind::NullKw)
     }
 
     pub(crate) fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {

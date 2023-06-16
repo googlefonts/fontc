@@ -18,9 +18,8 @@ pub(crate) fn condition_set(parser: &mut Parser) {
             return false;
         }
         parser.in_node(AstKind::ConditionNode, |parser| {
-            parser.eat_raw();
-            parser.expect_recover(Kind::Number, TokenSet::TOP_SEMI);
-            parser.expect_recover(Kind::Number, TokenSet::TOP_SEMI);
+            parser.expect_tag(TokenSet::TOP_SEMI.add(Kind::Number));
+            parser.repeat(|p| p.expect_recover(Kind::Number, TokenSet::TOP_SEMI), 2);
             parser.expect_semi();
         });
 
@@ -65,11 +64,9 @@ pub(crate) fn variation(parser: &mut Parser) {
     fn variation_body(parser: &mut Parser) {
         assert!(parser.eat(Kind::VariationKw));
         let open_tag = parser.expect_tag(TokenSet::TOP_LEVEL.add(Kind::Ident).add(Kind::LBrace));
-        if !parser.eat(Kind::NullKw) {
-            // can be null or an ident
-            parser.expect_remap_recover(
-                TokenSet::IDENT_LIKE,
-                AstKind::Label,
+        if !parser.eat(Kind::NullKw) && !parser.eat_remap(TokenSet::IDENT_LIKE, AstKind::Label) {
+            parser.err_recover(
+                "expected label or NULL",
                 TokenSet::TOP_LEVEL.add(Kind::LBrace),
             );
         }
