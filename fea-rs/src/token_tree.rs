@@ -46,7 +46,7 @@ pub struct Node {
     children: Arc<Vec<NodeOrToken>>,
 }
 
-/// A token
+/// A token is a chunk of text, tagged with a `Kind`.
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub struct Token {
     /// The [`Kind`] of this token

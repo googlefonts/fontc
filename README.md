@@ -27,18 +27,37 @@ per line, in utf-8.
 $ cargo run features.fea --glyph-order glyph_order.txt -o my_font.ttf
 ```
 
-## development
+## testing
 
-To run the tests, you will need to ensure that the test-data submodule is up to
-date. After cloning the repo:
+This crate uses a number of testing strategies, although all the tests can be
+run with `cargo test`.
 
-```sh
-$ git submodule init && git submodule update
-```
+In addition to unit tests, we have a custom property-testing system for testing
+parsing and compilation. This involves data that is stored in the `test-data`
+directory. These tests work by taking some input, producing some output, and
+then comparing that output to an expected output that is included in the test
+data. There are three different formats for this:
+
+- *parse tests*: These ensure that we generate the expected AST or errors for
+  various inputs. See [`test-data/parse-tests/README.md`][parse readme] for an
+  overview.
+- *compile tests*: These ensure that we generate the expected [TTX output][ttx]
+  or errors for a various inputs. See [`test-data/compile-tests/README.md`][compile readme] for an overview.
+- *fonttools tests*: Very similar to the compile tests, but instead of being cases
+  that we define ourselves, we reuse the property tests from [fonttools
+  feaLib][feaLib tests]. This ensures that we generate equivalent output to
+  feaLib.
 
 ## architecture sketch
 
-The overall design of this crate is heavily inspired by the design of [rust analyzer].
+The overall design of this crate is heavily inspired by the design of [rust
+analyzer]. At a very high level, given some source, we:
+- *lex* the source file into raw tokens ([src/parse/lexer.rs][lexer-src])
+- *parse* these tokens into an abstract syntax tree ([src/parse/parser.rs][parse-src])
+- *validate* this tree, ensuring that it conforms with the specification
+  ([src/compile/validate.rs][validate-src])
+- *compile* the validated tree into OpenType tables
+  ([src/compile/compile_ctx.rs][compile-src])
 
 ### Parsing
 
@@ -51,7 +70,7 @@ The parser is "error recovering": when parsing fails, the parser skips tokens
 until it finds something that might begin a valid statement in the current
 context, and then tries again. Errors are collected, and reported at the end.
 
-## AST
+### AST
 
 The AST design is adapted from the [AST in rowan][rowan ast], part of rust
 analyzer. The basic idea is that when constructing an AST node, we ensure that
@@ -59,7 +78,7 @@ certain things are true about that node's contents. We can then use the type of
 that node (assigned by us) to cast that node into a concrete type which knows
 how to interpret that node's contents.
 
-## Validation
+### Validation
 
 After building the AST, we perform a validation pass. This checks that
 statements in the tree comply with the spec: for instance, it checks if a
@@ -69,7 +88,7 @@ will continue to check the rest of the tree, and report all errors at the end.
 
 If validation succeeds, then compilation should always succeed.
 
-## Compilation
+### Compilation
 
 After validation, we do a final compilation pass, which walks the tree and
 assembles the various tables and lookups. This uses [fontations][] to generate
@@ -85,3 +104,11 @@ Some general design concepts:
 [rust analyzer]: https://github.com/rust-analyzer/rust-analyzer/
 [rowan ast]: https://github.com/rust-analyzer/rust-analyzer/blob/master/docs/dev/syntax.md#ast
 [fontations]: https://github.com/googlefonts/fontations
+[ttx]: https://fonttools.readthedocs.io/en/latest/ttx.html
+[feaLib tests]: https://github.com/fonttools/fonttools/tree/main/Tests/feaLib/data
+[parse readme]: ./fea-rs/test-data/parse-tests/README.md
+[compile readme]: ./fea-rs/test-data/compile-tests/README.md
+[lexer-src]: ./fea-rs/src/parse/lexer.rs
+[parse-src]: ./fea-rs/src/parse/parser.rs
+[validate-src]: ./fea-rs/src/compile/validate.rs
+[compile-src]: ./fea-rs/src/compile/compile_ctx.rs.rs

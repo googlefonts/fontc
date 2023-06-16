@@ -4,6 +4,10 @@
 //! have no semantic information; for instance we do not try to distinguish a
 //! keyword from a glyph name. Instead we are just describing the most basic
 //! structure of the document.
+//!
+//! The `Lexer` type is driven by a [Parser].
+//!
+//! [Parser]: super::Parser
 
 mod lexeme;
 mod token_set;
