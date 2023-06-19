@@ -14,7 +14,25 @@ use super::{
     tags,
 };
 
-/// Tracking lookups in a feature block
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FeatureLookups {
+    /// the base (not variation specific) lookups
+    pub(crate) base: Vec<LookupId>,
+}
+
+/// A type to store accumulated features during compilation
+///
+/// We update this type as we encounter feature blocks in the source FEA.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct AllFeatures {
+    features: BTreeMap<FeatureKey, FeatureLookups>,
+}
+
+/// Tracking state within a feature block
+///
+/// When we're inside a 'feature' block we need to track the current language
+/// and script, and add any lookups as appropriate; this struct handles that
+/// logic.
 pub(crate) struct ActiveFeature {
     tag: Tag,
     default_systems: DefaultLanguageSystems,
@@ -57,6 +75,51 @@ pub(crate) enum SpecialVerticalFeatureState {
     /// we are inside a lookup in a special vertical feature (and so should not
     /// behave specially)
     InnerLookup,
+}
+
+impl AllFeatures {
+    pub(crate) fn get_or_insert(&mut self, key: FeatureKey) -> &mut FeatureLookups {
+        self.features.entry(key).or_default()
+    }
+
+    pub(crate) fn insert(&mut self, key: FeatureKey, base_lookups: Vec<LookupId>) {
+        self.get_or_insert(key).base = base_lookups;
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&FeatureKey, &FeatureLookups)> {
+        self.features.iter()
+    }
+
+    pub(crate) fn sort_and_dedupe_lookups(&mut self) {
+        // if any duplicate lookups have made their way into our features, remove them;
+        // they will be ignored by the shaper anyway.
+        for lookup in self.features.values_mut() {
+            // note that the order of lookups in a feature doesn't matter, they
+            // are processed in the order that they appear in the lookup list.
+            lookup.base.sort_unstable();
+            lookup.base.dedup();
+        }
+    }
+
+    // when adding the aalt feature we insert a bunch of lookups at the front
+    // of the lookup list, which requires us to adjust any previously-computed
+    // lookup ids
+    pub(crate) fn adjust_gsub_ids(&mut self, delta: usize) {
+        for feat in self.features.values_mut() {
+            feat.adjust_gsub_ids(delta)
+        }
+    }
+
+    #[cfg(test)]
+    fn get_base(&self, key: &FeatureKey) -> Option<&[LookupId]> {
+        self.features.get(key).map(|x| x.base.as_slice())
+    }
+}
+
+impl FeatureLookups {
+    fn adjust_gsub_ids(&mut self, delta: usize) {
+        self.base.iter_mut().for_each(|id| id.adjust_if_gsub(delta));
+    }
 }
 
 impl ActiveFeature {
@@ -144,7 +207,7 @@ impl ActiveFeature {
     }
 
     /// take the lookups for this feature, and add them to the Big List Of Features
-    pub(crate) fn add_to_features(mut self, features: &mut BTreeMap<FeatureKey, Vec<LookupId>>) {
+    pub(crate) fn add_to_features(mut self, features: &mut AllFeatures) {
         // remove the default lookups; we will add them back later if DFLT dflt
         // is registered
         let defaults = self
@@ -182,19 +245,12 @@ impl ActiveFeature {
         // we are always appending, not just setting
         for (system, lookups) in self.lookups {
             let key = system.to_feature_key(self.tag);
-            match features.entry(key) {
-                std::collections::btree_map::Entry::Occupied(slot) => {
-                    slot.into_mut().extend(lookups)
-                }
-                std::collections::btree_map::Entry::Vacant(slot) => {
-                    slot.insert(lookups);
-                }
-            }
+            features.get_or_insert(key).base.extend(lookups);
         }
     }
 
     #[cfg(test)]
-    fn build_features(self) -> BTreeMap<FeatureKey, Vec<LookupId>> {
+    fn build_features(self) -> AllFeatures {
         let mut out = Default::default();
         self.add_to_features(&mut out);
         out
@@ -329,16 +385,16 @@ mod tests {
 
         // should have script default, but not root default (as is not a registered default)
         let key = LATN_TRK.to_feature_key(TAG_TEST);
-        assert_eq!(built.get(&key), Some(&vec![id_2]));
+        assert_eq!(built.get_base(&key), Some([id_2].as_slice()));
 
         // should have root default, but not default (as was not explicitly set
         // as a language)
         let key = LATN_DEU.to_feature_key(TAG_TEST);
-        assert_eq!(built.get(&key), Some(&vec![id_1]));
+        assert_eq!(built.get_base(&key), Some([id_1].as_slice()));
 
         // should have both:
         let key = LATN_POL.to_feature_key(TAG_TEST);
-        assert_eq!(built.get(&key), Some(&vec![id_1, id_2]));
+        assert_eq!(built.get_base(&key), Some([id_1, id_2].as_slice()));
     }
 
     const DFLT_FRE: LanguageSystem = langsys(b"DFLT", b"FRE ");
@@ -373,24 +429,24 @@ mod tests {
         let built = feature.build_features();
         // the root defaults, as well as explicit DFLT script defaults
         let key = DFLT_DFLT.to_feature_key(TAG_TEST);
-        assert_eq!(built.get(&key), Some(&vec![id1, id2, id3]));
+        assert_eq!(built.get_base(&key), Some([id1, id2, id3].as_slice()));
         // only the root defaults, not defaults afer first script statement
         let key = DFLT_ABC.to_feature_key(TAG_TEST);
-        assert_eq!(built.get(&key), Some(&vec![id1]));
+        assert_eq!(built.get_base(&key), Some([id1].as_slice()));
         // DFLT_DFLT + the explicit lookup added for this system
         let key = DFLT_FRE.to_feature_key(TAG_TEST);
-        assert_eq!(built.get(&key), Some(&vec![id1, id2, id3, id4]));
+        assert_eq!(built.get_base(&key), Some([id1, id2, id3, id4].as_slice()));
         // root defaults, plus explicit f/g
         let key = LATN_DFLT.to_feature_key(TAG_TEST);
-        assert_eq!(built.get(&key), Some(&vec![id1, id5, id6]));
+        assert_eq!(built.get_base(&key), Some([id1, id5, id6].as_slice()));
         // LATN_DFLT + explicit h
         let key = LATN_FRE.to_feature_key(TAG_TEST);
-        assert_eq!(built.get(&key), Some(&vec![id1, id5, id6, id7]));
+        assert_eq!(built.get_base(&key), Some([id1, id5, id6, id7].as_slice()));
         // only the root defaults
         let key = LATN_ABC.to_feature_key(TAG_TEST);
-        assert_eq!(built.get(&key), Some(&vec![id1]));
+        assert_eq!(built.get_base(&key), Some([id1].as_slice()));
         // only the explicit 'i' (excludes defaults)
         let key = LATN_DEF.to_feature_key(TAG_TEST);
-        assert_eq!(built.get(&key), Some(&vec![id8]));
+        assert_eq!(built.get_base(&key), Some([id8].as_slice()));
     }
 }

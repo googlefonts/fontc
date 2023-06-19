@@ -27,7 +27,7 @@ use crate::{
 };
 
 use super::{
-    features::{AaltFeature, ActiveFeature, SizeFeature, SpecialVerticalFeatureState},
+    features::{AaltFeature, ActiveFeature, AllFeatures, SizeFeature, SpecialVerticalFeatureState},
     glyph_range,
     language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{
@@ -46,7 +46,7 @@ pub struct CompilationCtx<'a> {
     source_map: &'a SourceMap,
     pub errors: Vec<Diagnostic>,
     tables: Tables,
-    features: BTreeMap<FeatureKey, Vec<LookupId>>,
+    features: AllFeatures,
     default_lang_systems: DefaultLanguageSystems,
     lookups: AllLookups,
     lookup_flags: LookupFlagInfo,
@@ -85,12 +85,12 @@ impl<'a> CompilationCtx<'a> {
             anchor_defs: Default::default(),
             value_record_defs: Default::default(),
             lookup_flags: Default::default(),
-            active_feature: None,
+            active_feature: Default::default(),
             vertical_feature: Default::default(),
-            script: None,
+            script: Default::default(),
             mark_attach_class_id: Default::default(),
             mark_filter_sets: Default::default(),
-            size: None,
+            size: Default::default(),
             required_features: Default::default(),
             aalt: Default::default(),
         }
@@ -131,18 +131,7 @@ impl<'a> CompilationCtx<'a> {
 
         self.finalize_gdef_table();
         self.finalize_aalt();
-        self.sort_and_dedupe_lookups();
-    }
-
-    fn sort_and_dedupe_lookups(&mut self) {
-        // if any duplicate lookups have made their way into our features, remove them;
-        // they will be ignored by the shaper anyway.
-        for lookup in self.features.values_mut() {
-            // note that the order of lookups in a feature doesn't matter, they
-            // are processed in the order that they appear in the lookup list.
-            lookup.sort_unstable();
-            lookup.dedup();
-        }
+        self.features.sort_and_dedupe_lookups();
     }
 
     fn finalize_aalt(&mut self) {
@@ -150,10 +139,11 @@ impl<'a> CompilationCtx<'a> {
         // add all the relevant lookups from the referenced features
         let mut lookups = vec![vec![]; aalt.features().len()];
         // first sort all lookups by the order of the tags in the aalt table:
-        for (key, lookup_ids) in &self.features {
+        for (key, feat_lookups) in self.features.iter() {
             let Some(feat_idx) = aalt.features().iter().position(|tag| *tag == key.feature) else { continue };
             lookups[feat_idx].extend(
-                lookup_ids
+                feat_lookups
+                    .base
                     .iter()
                     .flat_map(|idx| self.lookups.aalt_lookups(*idx)),
             )
@@ -181,11 +171,7 @@ impl<'a> CompilationCtx<'a> {
         // now adjust our previously set lookupids, which are now invalid,
         // since we're going to insert the aalt lookups in front of the lookup
         // list:
-        self.features
-            .values_mut()
-            .flat_map(|x| x.iter_mut())
-            .for_each(|id| id.adjust_if_gsub(aalt_lookup_indices.len()));
-
+        self.features.adjust_gsub_ids(aalt_lookup_indices.len());
         // finally add the aalt feature to all the default language systems
         for sys in self.default_lang_systems.iter() {
             self.features
@@ -1264,7 +1250,7 @@ impl<'a> CompilationCtx<'a> {
         }
         for sys in self.default_lang_systems.iter() {
             let key = sys.to_feature_key(tags::SIZE);
-            self.features.entry(key).or_default();
+            self.features.get_or_insert(key);
         }
         self.size = Some(size);
     }

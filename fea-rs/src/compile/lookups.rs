@@ -30,7 +30,7 @@ use crate::{
     Kind,
 };
 
-use super::{tables::ClassId, tags};
+use super::{features::AllFeatures, tables::ClassId, tags};
 
 use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,
@@ -530,13 +530,13 @@ impl AllLookups {
 
     pub(crate) fn build(
         &self,
-        features: &BTreeMap<FeatureKey, Vec<LookupId>>,
+        features: &AllFeatures,
         required_features: &HashSet<FeatureKey>,
     ) -> (Option<write_gsub::Gsub>, Option<write_gpos::Gpos>) {
         let mut gpos_builder = PosSubBuilder::new(self.gpos.clone());
         let mut gsub_builder = PosSubBuilder::new(self.gsub.clone());
 
-        for (key, feature_indices) in features {
+        for (key, feature_lookups) in features.iter() {
             let required = required_features.contains(key);
 
             if key.feature == tags::SIZE {
@@ -544,7 +544,7 @@ impl AllLookups {
                 continue;
             }
 
-            let (gpos_idxes, gsub_idxes) = split_lookups(feature_indices);
+            let (gpos_idxes, gsub_idxes) = split_lookups(&feature_lookups.base);
             if !gpos_idxes.is_empty() {
                 gpos_builder.add(*key, gpos_idxes, required);
             }
