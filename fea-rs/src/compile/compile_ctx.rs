@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     convert::TryInto,
     ops::Range,
 };
@@ -33,8 +33,7 @@ use super::{
     glyph_range,
     language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{
-        AllLookups, FeatureKey, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass,
-        SomeLookup,
+        AllLookups, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass, SomeLookup,
     },
     output::Compilation,
     tables::{ClassId, ScriptRecord, Tables},
@@ -61,7 +60,6 @@ pub struct CompilationCtx<'a> {
     value_record_defs: HashMap<SmolStr, ValueRecord>,
     mark_attach_class_id: HashMap<GlyphClass, u16>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
-    required_features: HashSet<FeatureKey>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -90,7 +88,6 @@ impl<'a> CompilationCtx<'a> {
             script: Default::default(),
             mark_attach_class_id: Default::default(),
             mark_filter_sets: Default::default(),
-            required_features: Default::default(),
         }
     }
 
@@ -144,7 +141,7 @@ impl<'a> CompilationCtx<'a> {
             .stat
             .as_ref()
             .map(|raw| raw.build(&mut name_builder));
-        let (mut gsub, mut gpos) = self.lookups.build(&self.features, &self.required_features);
+        let (mut gsub, mut gpos) = self.lookups.build(&self.features);
 
         let mut feature_params = HashMap::new();
         if let Some(size) = &self.features.size {
@@ -363,7 +360,7 @@ impl<'a> CompilationCtx<'a> {
             .set_system(system, exclude_dflt);
 
         if required {
-            self.required_features.insert(key);
+            self.features.add_required(key);
         }
     }
 

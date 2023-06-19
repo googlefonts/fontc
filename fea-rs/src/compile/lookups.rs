@@ -6,7 +6,7 @@ mod gsub;
 mod helpers;
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     convert::TryInto,
 };
 
@@ -531,13 +531,12 @@ impl AllLookups {
     pub(crate) fn build(
         &self,
         features: &AllFeatures,
-        required_features: &HashSet<FeatureKey>,
     ) -> (Option<write_gsub::Gsub>, Option<write_gpos::Gpos>) {
         let mut gpos_builder = PosSubBuilder::new(self.gpos.clone());
         let mut gsub_builder = PosSubBuilder::new(self.gsub.clone());
 
         for (key, feature_lookups) in features.iter() {
-            let required = required_features.contains(key);
+            let required = features.is_required(key);
 
             if key.feature == tags::SIZE {
                 gpos_builder.add(*key, Vec::new(), required);

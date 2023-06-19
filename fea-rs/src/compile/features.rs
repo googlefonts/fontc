@@ -26,6 +26,7 @@ pub(crate) struct FeatureLookups {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AllFeatures {
     features: BTreeMap<FeatureKey, FeatureLookups>,
+    required_features: HashSet<FeatureKey>,
     pub(crate) size: Option<SizeFeature>,
     pub(crate) aalt: Option<AaltFeature>,
     pub(crate) stylistic_sets: HashMap<Tag, Vec<NameSpec>>,
@@ -97,6 +98,14 @@ impl AllFeatures {
 
     pub(crate) fn insert(&mut self, key: FeatureKey, base_lookups: Vec<LookupId>) {
         self.get_or_insert(key).base = base_lookups;
+    }
+
+    pub(crate) fn add_required(&mut self, key: FeatureKey) {
+        self.required_features.insert(key);
+    }
+
+    pub(crate) fn is_required(&self, key: &FeatureKey) -> bool {
+        self.required_features.contains(key)
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&FeatureKey, &FeatureLookups)> {
