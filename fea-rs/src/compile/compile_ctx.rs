@@ -27,7 +27,9 @@ use crate::{
 };
 
 use super::{
-    features::{AaltFeature, ActiveFeature, AllFeatures, SizeFeature, SpecialVerticalFeatureState},
+    features::{
+        AaltFeature, ActiveFeature, AllFeatures, CvParams, SizeFeature, SpecialVerticalFeatureState,
+    },
     glyph_range,
     language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{
@@ -35,7 +37,7 @@ use super::{
         SomeLookup,
     },
     output::Compilation,
-    tables::{ClassId, CvParams, ScriptRecord, Tables},
+    tables::{ClassId, ScriptRecord, Tables},
     tags,
     valuerecordext::ValueRecordExt,
 };
@@ -152,13 +154,13 @@ impl<'a> CompilationCtx<'a> {
             );
         }
 
-        for (tag, names) in self.tables.stylistic_sets.iter() {
+        for (tag, names) in self.features.stylistic_sets.iter() {
             let id = name_builder.add_anon_group(names);
             let params = FeatureParams::StylisticSet(StylisticSetParams::new(id));
             feature_params.insert((tags::GSUB, *tag), params);
         }
 
-        for (tag, cv_params) in self.tables.character_variants.iter() {
+        for (tag, cv_params) in self.features.character_variants.iter() {
             let params = cv_params.build(&mut name_builder);
             feature_params.insert((tags::GSUB, *tag), FeatureParams::CharacterVariant(params));
         }
@@ -1112,7 +1114,7 @@ impl<'a> CompilationCtx<'a> {
             }
         }
         if !names.is_empty() {
-            self.tables.stylistic_sets.insert(tag, names);
+            self.features.stylistic_sets.insert(tag, names);
         }
         for item in feature
             .statements()
@@ -1160,7 +1162,7 @@ impl<'a> CompilationCtx<'a> {
                 params.characters.push(c.value().parse_char().unwrap());
             }
 
-            self.tables.character_variants.insert(tag, params);
+            self.features.character_variants.insert(tag, params);
         }
 
         for item in feature

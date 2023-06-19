@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use write_fonts::{
     tables::layout::SizeParams,
-    types::{GlyphId, Tag},
+    types::{GlyphId, Tag, Uint24},
 };
 
 use super::{
@@ -28,6 +28,8 @@ pub(crate) struct AllFeatures {
     features: BTreeMap<FeatureKey, FeatureLookups>,
     pub(crate) size: Option<SizeFeature>,
     pub(crate) aalt: Option<AaltFeature>,
+    pub(crate) stylistic_sets: HashMap<Tag, Vec<NameSpec>>,
+    pub(crate) character_variants: HashMap<Tag, CvParams>,
 }
 
 /// Tracking state within a feature block
@@ -64,6 +66,15 @@ pub(crate) struct SizeFeature {
     pub range_start: u16,
     pub range_end: u16,
     pub names: Vec<NameSpec>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CvParams {
+    pub feat_ui_label_name: Vec<NameSpec>,
+    pub feat_ui_tooltip_text_name: Vec<NameSpec>,
+    pub samle_text_name: Vec<NameSpec>,
+    pub param_ui_label_names: Vec<Vec<NameSpec>>,
+    pub characters: Vec<char>,
 }
 
 /// If we are at the root of one of four magic features, we have special behaviour.
@@ -348,6 +359,39 @@ impl Extend<(GlyphId, GlyphId)> for AaltFeature {
         for (target, alt) in iter.into_iter() {
             self.add(target, alt)
         }
+    }
+}
+
+impl CvParams {
+    pub(crate) fn build(
+        &self,
+        names: &mut NameBuilder,
+    ) -> write_fonts::tables::layout::CharacterVariantParams {
+        let mut out = write_fonts::tables::layout::CharacterVariantParams::default();
+        if !self.feat_ui_label_name.is_empty() {
+            out.feat_ui_label_name_id = names.add_anon_group(&self.feat_ui_label_name);
+        }
+        if !self.feat_ui_tooltip_text_name.is_empty() {
+            out.feat_ui_tooltip_text_name_id =
+                names.add_anon_group(&self.feat_ui_tooltip_text_name);
+        }
+
+        if !self.samle_text_name.is_empty() {
+            out.sample_text_name_id = names.add_anon_group(&self.samle_text_name);
+        }
+
+        if let Some((first, rest)) = self.param_ui_label_names.split_first() {
+            out.first_param_ui_label_name_id = names.add_anon_group(first);
+            for item in rest {
+                names.add_anon_group(item);
+            }
+        }
+        out.num_named_parameters = self.param_ui_label_names.len().try_into().unwrap();
+        for c in &self.characters {
+            out.character.push(Uint24::checked_new(*c as _).unwrap());
+        }
+
+        out
     }
 }
 

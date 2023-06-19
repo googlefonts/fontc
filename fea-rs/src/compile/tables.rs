@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    convert::TryInto,
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use smol_str::SmolStr;
 use write_fonts::{
@@ -15,7 +12,7 @@ use write_fonts::{
         },
         layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
     },
-    types::{Fixed, LongDateTime, NameId, Tag, Uint24},
+    types::{Fixed, LongDateTime, NameId, Tag},
 };
 
 use crate::{
@@ -31,8 +28,6 @@ pub(crate) struct Tables {
     pub vhea: Option<tables::vhea::Vhea>,
     pub vmtx: Option<VmtxBuilder>,
     pub name: NameBuilder,
-    pub stylistic_sets: HashMap<Tag, Vec<NameSpec>>,
-    pub character_variants: HashMap<Tag, CvParams>,
     pub gdef: Option<GdefBuilder>,
     pub base: Option<Base>,
     pub os2: Option<Os2Builder>,
@@ -48,15 +43,6 @@ pub struct HeadBuilder {
 pub struct VmtxBuilder {
     pub origins_y: Vec<(GlyphId, i16)>,
     pub advances_y: Vec<(GlyphId, i16)>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct CvParams {
-    pub feat_ui_label_name: Vec<NameSpec>,
-    pub feat_ui_tooltip_text_name: Vec<NameSpec>,
-    pub samle_text_name: Vec<NameSpec>,
-    pub param_ui_label_names: Vec<Vec<NameSpec>>,
-    pub characters: Vec<char>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -390,39 +376,6 @@ impl NameSpec {
             name_id,
             string.into(),
         )
-    }
-}
-
-impl CvParams {
-    pub(crate) fn build(
-        &self,
-        names: &mut NameBuilder,
-    ) -> write_fonts::tables::layout::CharacterVariantParams {
-        let mut out = write_fonts::tables::layout::CharacterVariantParams::default();
-        if !self.feat_ui_label_name.is_empty() {
-            out.feat_ui_label_name_id = names.add_anon_group(&self.feat_ui_label_name);
-        }
-        if !self.feat_ui_tooltip_text_name.is_empty() {
-            out.feat_ui_tooltip_text_name_id =
-                names.add_anon_group(&self.feat_ui_tooltip_text_name);
-        }
-
-        if !self.samle_text_name.is_empty() {
-            out.sample_text_name_id = names.add_anon_group(&self.samle_text_name);
-        }
-
-        if let Some((first, rest)) = self.param_ui_label_names.split_first() {
-            out.first_param_ui_label_name_id = names.add_anon_group(first);
-            for item in rest {
-                names.add_anon_group(item);
-            }
-        }
-        out.num_named_parameters = self.param_ui_label_names.len().try_into().unwrap();
-        for c in &self.characters {
-            out.character.push(Uint24::checked_new(*c as _).unwrap());
-        }
-
-        out
     }
 }
 
