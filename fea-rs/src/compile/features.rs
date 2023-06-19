@@ -9,7 +9,7 @@ use write_fonts::{
 
 use super::{
     language_system::{DefaultLanguageSystems, LanguageSystem},
-    lookups::{FeatureKey, LookupId},
+    lookups::{AllLookups, FeatureKey, LookupId},
     tables::{NameBuilder, NameSpec},
     tags,
 };
@@ -26,6 +26,8 @@ pub(crate) struct FeatureLookups {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AllFeatures {
     features: BTreeMap<FeatureKey, FeatureLookups>,
+    pub(crate) size: Option<SizeFeature>,
+    pub(crate) aalt: Option<AaltFeature>,
 }
 
 /// Tracking state within a feature block
@@ -88,6 +90,55 @@ impl AllFeatures {
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&FeatureKey, &FeatureLookups)> {
         self.features.iter()
+    }
+
+    pub(crate) fn finalize_aalt(
+        &mut self,
+        all_lookups: &mut AllLookups,
+        default_lang_systems: &DefaultLanguageSystems,
+    ) {
+        let Some(mut aalt) = self.aalt.take() else { return };
+        // add all the relevant lookups from the referenced features
+        let mut relevant_lookups = vec![vec![]; aalt.features().len()];
+        // first sort all lookups by the order of the tags in the aalt table:
+        for (key, feat_lookups) in self.features.iter() {
+            let Some(feat_idx) = aalt.features().iter().position(|tag| *tag == key.feature) else { continue };
+            relevant_lookups[feat_idx].extend(
+                feat_lookups
+                    .base
+                    .iter()
+                    .flat_map(|idx| all_lookups.aalt_lookups(*idx)),
+            )
+        }
+
+        // now go through the lookups, ordered by appearance of feature in aalt
+        for lookup in relevant_lookups.iter().flat_map(|x| x.iter()) {
+            match lookup {
+                super::lookups::SubstitutionLookup::Single(lookup) => {
+                    aalt.extend(lookup.iter_subtables().flat_map(|sub| sub.iter_pairs()))
+                }
+                super::lookups::SubstitutionLookup::Alternate(lookup) => {
+                    aalt.extend(lookup.iter_subtables().flat_map(|sub| sub.iter_pairs()))
+                }
+                _ => (),
+            }
+        }
+
+        // now we have all of our referenced lookups, and so we want to use that
+        // to construct the aalt lookups:
+        let aalt_lookup_indices =
+            all_lookups.insert_aalt_lookups(std::mem::take(&mut aalt.all_alts));
+
+        // now adjust our previously set lookupids, which are now invalid,
+        // since we're going to insert the aalt lookups in front of the lookup
+        // list:
+        self.adjust_gsub_ids(aalt_lookup_indices.len());
+        // finally add the aalt feature to all the default language systems
+        for sys in default_lang_systems.iter() {
+            self.insert(sys.to_feature_key(tags::AALT), aalt_lookup_indices.clone());
+        }
+
+        self.aalt = Some(aalt);
     }
 
     pub(crate) fn sort_and_dedupe_lookups(&mut self) {

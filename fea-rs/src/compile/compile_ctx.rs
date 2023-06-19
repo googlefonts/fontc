@@ -59,8 +59,6 @@ pub struct CompilationCtx<'a> {
     value_record_defs: HashMap<SmolStr, ValueRecord>,
     mark_attach_class_id: HashMap<GlyphClass, u16>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
-    size: Option<SizeFeature>,
-    aalt: Option<AaltFeature>,
     required_features: HashSet<FeatureKey>,
 }
 
@@ -90,9 +88,7 @@ impl<'a> CompilationCtx<'a> {
             script: Default::default(),
             mark_attach_class_id: Default::default(),
             mark_filter_sets: Default::default(),
-            size: Default::default(),
             required_features: Default::default(),
-            aalt: Default::default(),
         }
     }
 
@@ -130,55 +126,9 @@ impl<'a> CompilationCtx<'a> {
         }
 
         self.finalize_gdef_table();
-        self.finalize_aalt();
+        self.features
+            .finalize_aalt(&mut self.lookups, &self.default_lang_systems);
         self.features.sort_and_dedupe_lookups();
-    }
-
-    fn finalize_aalt(&mut self) {
-        let Some(mut aalt) = self.aalt.take() else { return };
-        // add all the relevant lookups from the referenced features
-        let mut lookups = vec![vec![]; aalt.features().len()];
-        // first sort all lookups by the order of the tags in the aalt table:
-        for (key, feat_lookups) in self.features.iter() {
-            let Some(feat_idx) = aalt.features().iter().position(|tag| *tag == key.feature) else { continue };
-            lookups[feat_idx].extend(
-                feat_lookups
-                    .base
-                    .iter()
-                    .flat_map(|idx| self.lookups.aalt_lookups(*idx)),
-            )
-        }
-
-        // now go through the lookups, ordered by appearance of feature in aalt
-        for lookup in lookups.iter().flat_map(|x| x.iter()) {
-            match lookup {
-                super::lookups::SubstitutionLookup::Single(lookup) => {
-                    aalt.extend(lookup.iter_subtables().flat_map(|sub| sub.iter_pairs()))
-                }
-                super::lookups::SubstitutionLookup::Alternate(lookup) => {
-                    aalt.extend(lookup.iter_subtables().flat_map(|sub| sub.iter_pairs()))
-                }
-                _ => (),
-            }
-        }
-
-        // now we have all of our referenced lookups, and so we want to use that
-        // to construct the aalt lookups:
-        let aalt_lookup_indices = self
-            .lookups
-            .insert_aalt_lookups(std::mem::take(&mut aalt.all_alts));
-
-        // now adjust our previously set lookupids, which are now invalid,
-        // since we're going to insert the aalt lookups in front of the lookup
-        // list:
-        self.features.adjust_gsub_ids(aalt_lookup_indices.len());
-        // finally add the aalt feature to all the default language systems
-        for sys in self.default_lang_systems.iter() {
-            self.features
-                .insert(sys.to_feature_key(tags::AALT), aalt_lookup_indices.clone());
-        }
-
-        self.aalt = Some(aalt);
     }
 
     pub(crate) fn build(&mut self) -> Result<Compilation, Vec<Diagnostic>> {
@@ -195,7 +145,7 @@ impl<'a> CompilationCtx<'a> {
         let (mut gsub, mut gpos) = self.lookups.build(&self.features, &self.required_features);
 
         let mut feature_params = HashMap::new();
-        if let Some(size) = self.size.as_ref() {
+        if let Some(size) = &self.features.size {
             feature_params.insert(
                 (tags::GPOS, tags::SIZE),
                 FeatureParams::Size(size.build(&mut name_builder)),
@@ -1150,7 +1100,7 @@ impl<'a> CompilationCtx<'a> {
                 aalt.add_feature_reference(feature.feature().to_raw());
             }
         }
-        self.aalt = Some(aalt);
+        self.features.aalt = Some(aalt);
     }
 
     fn resolve_stylistic_set_feature(&mut self, tag: Tag, feature: &typed::Feature) {
@@ -1252,7 +1202,7 @@ impl<'a> CompilationCtx<'a> {
             let key = sys.to_feature_key(tags::SIZE);
             self.features.get_or_insert(key);
         }
-        self.size = Some(size);
+        self.features.size = Some(size);
     }
 
     fn resolve_table(&mut self, table: typed::Table) {
