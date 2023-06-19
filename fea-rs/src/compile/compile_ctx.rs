@@ -10,7 +10,7 @@ use write_fonts::{
         self,
         gdef::CaretValue,
         gpos::{AnchorTable, ValueRecord},
-        layout::{FeatureParams, LookupFlag, StylisticSetParams},
+        layout::LookupFlag,
     },
     types::{NameId, Tag},
 };
@@ -143,24 +143,7 @@ impl<'a> CompilationCtx<'a> {
             .map(|raw| raw.build(&mut name_builder));
         let (mut gsub, mut gpos) = self.lookups.build(&self.features);
 
-        let mut feature_params = HashMap::new();
-        if let Some(size) = &self.features.size {
-            feature_params.insert(
-                (tags::GPOS, tags::SIZE),
-                FeatureParams::Size(size.build(&mut name_builder)),
-            );
-        }
-
-        for (tag, names) in self.features.stylistic_sets.iter() {
-            let id = name_builder.add_anon_group(names);
-            let params = FeatureParams::StylisticSet(StylisticSetParams::new(id));
-            feature_params.insert((tags::GSUB, *tag), params);
-        }
-
-        for (tag, cv_params) in self.features.character_variants.iter() {
-            let params = cv_params.build(&mut name_builder);
-            feature_params.insert((tags::GSUB, *tag), FeatureParams::CharacterVariant(params));
-        }
+        let feature_params = self.features.build_feature_params(&mut name_builder);
 
         if !feature_params.is_empty() {
             if let Some(gsub) = gsub.as_mut() {
@@ -1137,13 +1120,13 @@ impl<'a> CompilationCtx<'a> {
                     .collect();
             }
             if let Some(node) = cv_params.sample_text_name() {
-                params.samle_text_name = node
+                params.sample_text_name = node
                     .statements()
                     .map(|x| self.resolve_name_spec(&x))
                     .collect();
             }
             if let Some(node) = cv_params.sample_text_name() {
-                params.samle_text_name = node
+                params.sample_text_name = node
                     .statements()
                     .map(|x| self.resolve_name_spec(&x))
                     .collect();

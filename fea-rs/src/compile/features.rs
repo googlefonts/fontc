@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use write_fonts::{
-    tables::layout::SizeParams,
+    tables::layout::{FeatureParams, SizeParams, StylisticSetParams},
     types::{GlyphId, Tag, Uint24},
 };
 
@@ -73,7 +73,7 @@ pub(crate) struct SizeFeature {
 pub(crate) struct CvParams {
     pub feat_ui_label_name: Vec<NameSpec>,
     pub feat_ui_tooltip_text_name: Vec<NameSpec>,
-    pub samle_text_name: Vec<NameSpec>,
+    pub sample_text_name: Vec<NameSpec>,
     pub param_ui_label_names: Vec<Vec<NameSpec>>,
     pub characters: Vec<char>,
 }
@@ -175,10 +175,35 @@ impl AllFeatures {
     // when adding the aalt feature we insert a bunch of lookups at the front
     // of the lookup list, which requires us to adjust any previously-computed
     // lookup ids
-    pub(crate) fn adjust_gsub_ids(&mut self, delta: usize) {
+    fn adjust_gsub_ids(&mut self, delta: usize) {
         for feat in self.features.values_mut() {
             feat.adjust_gsub_ids(delta)
         }
+    }
+
+    pub(crate) fn build_feature_params(
+        &self,
+        name_builder: &mut NameBuilder,
+    ) -> HashMap<(Tag, Tag), FeatureParams> {
+        let mut result = HashMap::new();
+        if let Some(size) = &self.size {
+            result.insert(
+                (tags::GPOS, tags::SIZE),
+                FeatureParams::Size(size.build(name_builder)),
+            );
+        }
+
+        for (tag, names) in self.stylistic_sets.iter() {
+            let id = name_builder.add_anon_group(names);
+            let params = FeatureParams::StylisticSet(StylisticSetParams::new(id));
+            result.insert((tags::GSUB, *tag), params);
+        }
+
+        for (tag, cv_params) in self.character_variants.iter() {
+            let params = cv_params.build(name_builder);
+            result.insert((tags::GSUB, *tag), FeatureParams::CharacterVariant(params));
+        }
+        result
     }
 
     #[cfg(test)]
@@ -385,8 +410,8 @@ impl CvParams {
                 names.add_anon_group(&self.feat_ui_tooltip_text_name);
         }
 
-        if !self.samle_text_name.is_empty() {
-            out.sample_text_name_id = names.add_anon_group(&self.samle_text_name);
+        if !self.sample_text_name.is_empty() {
+            out.sample_text_name_id = names.add_anon_group(&self.sample_text_name);
         }
 
         if let Some((first, rest)) = self.param_ui_label_names.split_first() {
