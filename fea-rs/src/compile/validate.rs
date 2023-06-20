@@ -15,6 +15,7 @@ use write_fonts::{read::tables::name::Encoding, types::Tag};
 use super::{
     glyph_range,
     tags::{self, WIN_PLATFORM_ID},
+    VariationInfo,
 };
 use crate::{
     parse::SourceMap,
@@ -30,6 +31,7 @@ pub struct ValidationCtx<'a> {
     pub errors: Vec<Diagnostic>,
     glyph_map: &'a GlyphMap,
     source_map: &'a SourceMap,
+    variation_info: Option<&'a dyn VariationInfo>,
     default_lang_systems: HashSet<(SmolStr, SmolStr)>,
     seen_non_default_script: bool,
     lookup_defs: HashMap<SmolStr, Token>,
@@ -45,11 +47,16 @@ pub struct ValidationCtx<'a> {
 }
 
 impl<'a> ValidationCtx<'a> {
-    pub(crate) fn new(glyph_map: &'a GlyphMap, source_map: &'a SourceMap) -> Self {
+    pub(crate) fn new(
+        source_map: &'a SourceMap,
+        glyph_map: &'a GlyphMap,
+        variation_info: Option<&'a dyn VariationInfo>,
+    ) -> Self {
         ValidationCtx {
             glyph_map,
             source_map,
             errors: Vec::new(),
+            variation_info,
             default_lang_systems: Default::default(),
             seen_non_default_script: false,
             glyph_class_defs: Default::default(),
@@ -215,8 +222,39 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_condition_set(&mut self, node: &typed::ConditionSet) {
         let label = node.label().to_owned();
+        if self.variation_info.is_none() {
+            self.error(
+                node.keyword().range(),
+                "conditionset only valid when compiling variable font",
+            );
+        }
         if let Some(_prev) = self.condition_set_defs.insert(label.text.clone(), label) {
             self.warning(node.label().range(), "duplicate condition set definition");
+        }
+
+        for condition in node.conditions() {
+            self.validate_condition(&condition);
+        }
+    }
+
+    fn validate_condition(&mut self, condition: &typed::Condition) {
+        // we've already errored if this is missing
+        let Some(fvar) = self.variation_info else { return };
+        let Some(info) = fvar.axis_info(condition.tag().to_raw()) else {
+                self.error(condition.tag().range(), "unknown axis");
+                return
+            };
+        if (condition.min_value().parse_signed() as f64) < info.min_value.to_f64() {
+            self.error(
+                condition.min_value().range(),
+                format!("value is less than axis minimum ({})", info.min_value),
+            );
+        }
+        if (condition.max_value().parse_signed() as f64) > info.max_value.to_f64() {
+            self.error(
+                condition.max_value().range(),
+                format!("value is more than axis maximum ({})", info.max_value),
+            );
         }
     }
 

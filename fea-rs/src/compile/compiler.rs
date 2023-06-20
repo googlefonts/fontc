@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     error::{CompilerError, DiagnosticSet},
-    Compilation, Opts,
+    Compilation, Opts, VariationInfo,
 };
 
 /// A builder-style entry point for the compiler.
@@ -23,15 +23,16 @@ use super::{
 /// # use fea_rs::Compiler;
 /// # fn make_glyph_map() -> fea_rs::GlyphMap { todo!() }
 /// let glyph_map = make_glyph_map();
-/// let my_font_bytes = Compiler::new("path/to/features.fea", &glyph_map)
+/// let my_font_bytes = Compiler::new("path/to/features.fea", &glyph_map, None)
 ///     .verbose(true)
 ///     .compile_binary().unwrap();
 /// ```
-#[derive(Debug)]
 pub struct Compiler<'a> {
     root_path: OsString,
     project_root: Option<PathBuf>,
     glyph_map: &'a GlyphMap,
+    // variable fonts only
+    var_info: Option<&'a dyn VariationInfo>,
     verbose: bool,
     opts: Opts,
     resolver: Option<Box<dyn SourceResolver>>,
@@ -46,10 +47,15 @@ impl<'a> Compiler<'a> {
     /// identifier that your resolver will resolve.
     ///
     /// [`with_resolver`]: Self::with_resolver
-    pub fn new(root_path: impl Into<OsString>, glyph_map: &'a GlyphMap) -> Self {
+    pub fn new(
+        root_path: impl Into<OsString>,
+        glyph_map: &'a GlyphMap,
+        var_info: Option<&'a dyn VariationInfo>,
+    ) -> Self {
         Compiler {
             root_path: root_path.into(),
             glyph_map,
+            var_info,
             opts: Default::default(),
             verbose: false,
             resolver: Default::default(),
@@ -109,7 +115,7 @@ impl<'a> Compiler<'a> {
                 .generate_parse_tree();
         print_warnings_return_errors(diagnostics, &tree, self.verbose)
             .map_err(CompilerError::ParseFail)?;
-        let diagnostics = super::validate(&tree, self.glyph_map);
+        let diagnostics = super::validate(&tree, self.glyph_map, self.var_info);
         print_warnings_return_errors(diagnostics, &tree, self.verbose)
             .map_err(CompilerError::ValidationFail)?;
         let mut ctx = super::CompilationCtx::new(self.glyph_map, tree.source_map());

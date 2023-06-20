@@ -12,6 +12,10 @@ use self::{
 pub use compiler::Compiler;
 pub use opts::Opts;
 pub use output::Compilation;
+pub use variations::{AxisInfo, VariationInfo};
+
+#[cfg(any(test, feature = "test"))]
+pub(crate) use variations::MockVariationInfo;
 
 mod compile_ctx;
 mod compiler;
@@ -26,10 +30,15 @@ mod tables;
 mod tags;
 mod validate;
 mod valuerecordext;
+mod variations;
 
 /// Run the validation pass, returning any diagnostics.
-pub(crate) fn validate(node: &ParseTree, glyph_map: &GlyphMap) -> Vec<Diagnostic> {
-    let mut ctx = validate::ValidationCtx::new(glyph_map, node.source_map());
+pub(crate) fn validate(
+    node: &ParseTree,
+    glyph_map: &GlyphMap,
+    fvar: Option<&dyn VariationInfo>,
+) -> Vec<Diagnostic> {
+    let mut ctx = validate::ValidationCtx::new(node.source_map(), glyph_map, fvar);
     ctx.validate_root(&node.typed_root());
     ctx.errors
 }

@@ -268,6 +268,7 @@ ast_enum!(FloatLike {
 });
 
 ast_node!(ConditionSet, Kind::ConditionSetNode);
+ast_node!(Condition, Kind::ConditionNode);
 ast_node!(FeatureVariation, Kind::VariationNode);
 ast_node!(VariableMetric, Kind::VariableMetricNode);
 ast_enum!(Metric {
@@ -675,8 +676,30 @@ impl LookupBlock {
 }
 
 impl ConditionSet {
+    pub(crate) fn keyword(&self) -> &Token {
+        self.find_token(Kind::ConditionSetKw).unwrap()
+    }
+
     pub(crate) fn label(&self) -> &Token {
         self.find_token(Kind::Label).unwrap()
+    }
+
+    pub(crate) fn conditions(&self) -> impl Iterator<Item = Condition> + '_ {
+        self.iter().filter_map(Condition::cast)
+    }
+}
+
+impl Condition {
+    pub(crate) fn tag(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    pub(crate) fn min_value(&self) -> Number {
+        self.iter().find_map(Number::cast).unwrap()
+    }
+
+    pub(crate) fn max_value(&self) -> Number {
+        self.iter().filter_map(Number::cast).nth(1).unwrap()
     }
 }
 

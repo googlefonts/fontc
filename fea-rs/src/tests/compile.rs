@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    compile::{error::CompilerError, Compiler, Opts},
+    compile::{error::CompilerError, Compiler, MockVariationInfo, Opts},
     util::ttx::{self as test_utils, Report, TestCase, TestResult},
     GlyphMap, GlyphName,
 };
@@ -26,8 +26,12 @@ fn fonttools_tests() -> Result<(), Report> {
 #[test]
 fn should_fail() -> Result<(), Report> {
     let mut results = Vec::new();
-    for (glyph_map, tests) in iter_test_groups(BAD_DIR) {
-        results.extend(tests.into_iter().map(|path| run_bad_test(path, &glyph_map)));
+    for (glyph_map, fvar, tests) in iter_test_groups(BAD_DIR) {
+        results.extend(
+            tests
+                .into_iter()
+                .map(|path| run_bad_test(path, &glyph_map, &fvar)),
+        );
     }
     test_utils::finalize_results(results).into_error()
 }
@@ -36,7 +40,7 @@ fn should_fail() -> Result<(), Report> {
 fn import_resolution() {
     let glyph_map = test_utils::make_glyph_map();
     let path = PathBuf::from(IMPORT_RESOLUTION_TEST);
-    match test_utils::run_test(path, &glyph_map) {
+    match test_utils::run_test(path, &glyph_map, &Default::default()) {
         Ok(_) => (),
         Err(e) => panic!("{:?}", e.reason),
     }
@@ -45,25 +49,29 @@ fn import_resolution() {
 #[test]
 fn should_pass() -> Result<(), Report> {
     let mut results = Vec::new();
-    for (glyph_map, tests) in iter_test_groups(GOOD_DIR) {
+
+    for (glyph_map, fvar, tests) in iter_test_groups(GOOD_DIR) {
         results.extend(
             tests
                 .into_iter()
-                .map(|path| test_utils::run_test(path, &glyph_map)),
+                .map(|path| test_utils::run_test(path, &glyph_map, &fvar)),
         );
     }
     test_utils::finalize_results(results).into_error()
 }
 
-fn iter_test_groups(test_dir: &str) -> impl Iterator<Item = (GlyphMap, Vec<PathBuf>)> + '_ {
+fn iter_test_groups(
+    test_dir: &str,
+) -> impl Iterator<Item = (GlyphMap, MockVariationInfo, Vec<PathBuf>)> + '_ {
     iter_test_group_dirs(ROOT_TEST_DIR).map(move |dir| {
         let glyph_order_path = dir.join(GLYPH_ORDER);
         let glyph_order =
             std::fs::read_to_string(glyph_order_path).expect("failed to read glyph order");
         let glyph_map = glyph_order.lines().map(GlyphName::new).collect();
+        let var_info = test_utils::make_var_info();
         let tests_dir = dir.join(test_dir);
         let tests = test_utils::iter_fea_files(tests_dir).collect::<Vec<_>>();
-        (glyph_map, tests)
+        (glyph_map, var_info, tests)
     })
 }
 
@@ -78,8 +86,12 @@ fn iter_test_group_dirs(root_dir: impl AsRef<Path>) -> impl Iterator<Item = Path
     })
 }
 
-fn run_bad_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, TestCase> {
-    match std::panic::catch_unwind(|| bad_test_body(&path, map)) {
+fn run_bad_test(
+    path: PathBuf,
+    map: &GlyphMap,
+    var_info: &MockVariationInfo,
+) -> Result<PathBuf, TestCase> {
+    match std::panic::catch_unwind(|| bad_test_body(&path, map, var_info)) {
         Err(_) => Err(TestCase {
             path,
             reason: TestResult::Panic,
@@ -89,8 +101,13 @@ fn run_bad_test(path: PathBuf, map: &GlyphMap) -> Result<PathBuf, TestCase> {
     }
 }
 
-fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestResult> {
-    match Compiler::new(path, glyph_map)
+fn bad_test_body(
+    path: &Path,
+    glyph_map: &GlyphMap,
+    var_info: &MockVariationInfo,
+) -> Result<(), TestResult> {
+    let fvar = test_utils::is_variable(&path).then_some(var_info as _);
+    match Compiler::new(path, glyph_map, fvar)
         .verbose(std::env::var(crate::util::VERBOSE).is_ok())
         .with_opts(Opts::new().make_post_table(true))
         .compile_binary()

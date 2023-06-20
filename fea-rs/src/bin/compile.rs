@@ -24,7 +24,8 @@ fn main() -> Result<(), Error> {
     if !fea.exists() {
         return Err(Error::EmptyFeatureFile);
     }
-    let compiled = Compiler::new(fea, &glyph_names)
+    //FIXME: some way to provide variation info from command line?
+    let compiled = Compiler::new(fea, &glyph_names, None)
         .with_opts(Opts::new().make_post_table(args.post))
         .compile()?;
 

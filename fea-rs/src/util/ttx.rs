@@ -13,7 +13,7 @@ use std::{
 use crate::{
     compile::{
         error::{CompilerError, DiagnosticSet},
-        Compiler, Opts,
+        Compiler, MockVariationInfo, Opts,
     },
     Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree,
 };
@@ -154,10 +154,11 @@ impl<'a> Filter<'a> {
 pub fn run_all_tests(fonttools_data_dir: impl AsRef<Path>, filter: Option<&String>) -> Report {
     let glyph_map = make_glyph_map();
     let filter = Filter::new(filter);
+    let var_info = make_var_info();
 
     let result = iter_compile_tests(fonttools_data_dir.as_ref(), filter)
         .par_bridge()
-        .map(|path| run_test(path, &glyph_map))
+        .map(|path| run_test(path, &glyph_map, &var_info))
         .collect::<Vec<_>>();
 
     finalize_results(result)
@@ -237,10 +238,24 @@ pub fn try_parse_file(
     }
 }
 
+/// Returns `true` if the test case requires variation information
+pub(crate) fn is_variable(test_path: &Path) -> bool {
+    let as_str = test_path.to_str().expect("paths are utf8");
+    as_str.contains("variable") || as_str.contains("variation")
+}
+
 /// Run the test case at the provided path.
-pub fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase> {
+///
+/// the provided fvar table will be passed through only if the path contains
+/// the word 'variable'.
+pub(crate) fn run_test(
+    path: PathBuf,
+    glyph_map: &GlyphMap,
+    fvar: &MockVariationInfo,
+) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| {
-        match Compiler::new(&path, glyph_map)
+        let fvar = is_variable(&path).then_some(fvar as _);
+        match Compiler::new(&path, glyph_map, fvar)
             .verbose(std::env::var(super::VERBOSE).is_ok())
             .with_opts(Opts::new().make_post_table(true))
             .compile_binary()
@@ -542,6 +557,11 @@ static TEST_FONT_GLYPHS: &[&str] = &[
         .map(|name| GlyphIdent::Name(GlyphName::new(*name)))
         .chain((800_u16..=1001).map(GlyphIdent::Cid))
         .collect()
+}
+
+/// Generate variation info
+pub(crate) fn make_var_info() -> MockVariationInfo {
+    MockVariationInfo::new(&[("wght", 200, 200, 1000), ("wdth", 100, 100, 200)])
 }
 
 impl Report {
