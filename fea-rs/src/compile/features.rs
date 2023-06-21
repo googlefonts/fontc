@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use write_fonts::{
-    tables::layout::{FeatureParams, SizeParams, StylisticSetParams},
+    tables::layout::{ConditionSet, FeatureParams, SizeParams, StylisticSetParams},
     types::{GlyphId, Tag, Uint24},
 };
 
@@ -18,6 +18,7 @@ use super::{
 pub(crate) struct FeatureLookups {
     /// the base (not variation specific) lookups
     pub(crate) base: Vec<LookupId>,
+    variations: HashMap<ConditionSet, Vec<LookupId>>,
 }
 
 /// A type to store accumulated features during compilation
@@ -40,6 +41,7 @@ pub(crate) struct AllFeatures {
 /// logic.
 pub(crate) struct ActiveFeature {
     tag: Tag,
+    condition_set: Option<ConditionSet>,
     default_systems: DefaultLanguageSystems,
     current_lang_sys: Option<LanguageSystem>,
     lookups: HashMap<LanguageSystem, Vec<LookupId>>,
@@ -214,19 +216,37 @@ impl AllFeatures {
 
 impl FeatureLookups {
     fn adjust_gsub_ids(&mut self, delta: usize) {
-        self.base.iter_mut().for_each(|id| id.adjust_if_gsub(delta));
+        self.base
+            .iter_mut()
+            .chain(self.variations.values_mut().flat_map(|x| x.iter_mut()))
+            .for_each(|id| id.adjust_if_gsub(delta));
     }
 
     // split lookups into gpos/gsub
     pub(crate) fn split_base_lookups(&self) -> (Vec<u16>, Vec<u16>) {
         split_lookups(&self.base)
     }
+
+    pub(crate) fn split_variations(&self) -> Vec<(&ConditionSet, Vec<u16>, Vec<u16>)> {
+        self.variations
+            .iter()
+            .map(|(cond, lookups)| {
+                let (gpos, gsub) = split_lookups(lookups);
+                (cond, gpos, gsub)
+            })
+            .collect()
+    }
 }
 
 impl ActiveFeature {
-    pub(crate) fn new(tag: Tag, default_systems: DefaultLanguageSystems) -> Self {
+    pub(crate) fn new(
+        tag: Tag,
+        default_systems: DefaultLanguageSystems,
+        condition_set: Option<ConditionSet>,
+    ) -> Self {
         ActiveFeature {
             tag,
+            condition_set,
             script_default_lookups: Default::default(),
             lookups: Default::default(),
             current_lang_sys: Default::default(),
@@ -346,7 +366,12 @@ impl ActiveFeature {
         // we are always appending, not just setting
         for (system, lookups) in self.lookups {
             let key = system.to_feature_key(self.tag);
-            features.get_or_insert(key).base.extend(lookups);
+            let feature = features.get_or_insert(key);
+            let to_add = match self.condition_set.clone() {
+                Some(condset) => feature.variations.entry(condset).or_default(),
+                None => &mut feature.base,
+            };
+            to_add.extend(lookups);
         }
     }
 
@@ -526,7 +551,7 @@ mod tests {
         let default_systems = default_systems([DFLT_DFLT, LATN_DEU, LATN_POL]);
         let [id_1, id_2] = make_ids();
 
-        let mut feature = ActiveFeature::new(TAG_TEST, default_systems);
+        let mut feature = ActiveFeature::new(TAG_TEST, default_systems, None);
         feature.add_lookup(id_1); // added to default lookups
         feature.set_system(LATN_DFLT, false);
         feature.add_lookup(id_2); // added to script-default lookups
@@ -562,7 +587,7 @@ mod tests {
         let defaults = default_systems([DFLT_DFLT, DFLT_FRE, DFLT_ABC, LATN_DFLT, LATN_ABC]);
         let [id1, id2, id3, id4, id5, id6, id7, id8] = make_ids();
 
-        let mut feature = ActiveFeature::new(TAG_TEST, defaults);
+        let mut feature = ActiveFeature::new(TAG_TEST, defaults, None);
         feature.add_lookup(id1);
         feature.set_system(DFLT_DFLT, false);
         feature.add_lookup(id2);

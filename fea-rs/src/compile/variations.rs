@@ -1,6 +1,6 @@
 //! compiling variable fonts
 
-use write_fonts::types::{Fixed, Tag};
+use write_fonts::types::{F2Dot14, Fixed, Tag};
 
 /// A trait for providing variable font information to the compiler.
 ///
@@ -12,6 +12,9 @@ use write_fonts::types::{Fixed, Tag};
 pub trait VariationInfo {
     /// If the tag is an axis in this font, return the min/max values from fvar
     fn axis_info(&self, axis_tag: Tag) -> Option<AxisInfo>;
+
+    /// Return the normalized value for a user coordinate for the given axis.
+    fn normalize_coordinate(&self, axis_tag: Tag, value: Fixed) -> F2Dot14;
 }
 
 /// Information about a paritcular axis in a variable font.
@@ -68,5 +71,20 @@ impl VariationInfo for MockVariationInfo {
                 }
             },
         )
+    }
+
+    fn normalize_coordinate(&self, axis_tag: Tag, value: Fixed) -> F2Dot14 {
+        let Some(AxisInfo { min_value, default_value, max_value, .. }) = self.axis_info(axis_tag) else { return F2Dot14::ZERO };
+
+        use core::cmp::Ordering::*;
+        // Make sure max is >= min to avoid potential panic in clamp.
+        let max_value = max_value.max(min_value);
+        let value = value.clamp(min_value, max_value);
+        let value = match value.cmp(&default_value) {
+            Less => -((default_value - value) / (default_value - min_value)),
+            Greater => (value - default_value) / (max_value - default_value),
+            Equal => Fixed::ZERO,
+        };
+        value.clamp(-Fixed::ONE, Fixed::ONE).to_f2dot14()
     }
 }

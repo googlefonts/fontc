@@ -33,7 +33,6 @@ static IGNORED_TESTS: &[&str] = &[
     "GSUB_8.fea",
     // # tests of variable syntax extension #
     "variable_bug2772.fea",
-    "variable_conditionset.fea",
     "variable_scalar_anchor.fea",
     "variable_scalar_valuerecord.fea",
 ];

@@ -26,11 +26,11 @@ fn fonttools_tests() -> Result<(), Report> {
 #[test]
 fn should_fail() -> Result<(), Report> {
     let mut results = Vec::new();
-    for (glyph_map, fvar, tests) in iter_test_groups(BAD_DIR) {
+    for (glyph_map, var_info, tests) in iter_test_groups(BAD_DIR) {
         results.extend(
             tests
                 .into_iter()
-                .map(|path| run_bad_test(path, &glyph_map, &fvar)),
+                .map(|path| run_bad_test(path, &glyph_map, &var_info)),
         );
     }
     test_utils::finalize_results(results).into_error()
@@ -50,11 +50,11 @@ fn import_resolution() {
 fn should_pass() -> Result<(), Report> {
     let mut results = Vec::new();
 
-    for (glyph_map, fvar, tests) in iter_test_groups(GOOD_DIR) {
+    for (glyph_map, var_info, tests) in iter_test_groups(GOOD_DIR) {
         results.extend(
             tests
                 .into_iter()
-                .map(|path| test_utils::run_test(path, &glyph_map, &fvar)),
+                .map(|path| test_utils::run_test(path, &glyph_map, &var_info)),
         );
     }
     test_utils::finalize_results(results).into_error()
@@ -106,8 +106,8 @@ fn bad_test_body(
     glyph_map: &GlyphMap,
     var_info: &MockVariationInfo,
 ) -> Result<(), TestResult> {
-    let fvar = test_utils::is_variable(&path).then_some(var_info as _);
-    match Compiler::new(path, glyph_map, fvar)
+    let var_info = test_utils::is_variable(path).then_some(var_info as _);
+    match Compiler::new(path, glyph_map, var_info)
         .verbose(std::env::var(crate::util::VERBOSE).is_ok())
         .with_opts(Opts::new().make_post_table(true))
         .compile_binary()

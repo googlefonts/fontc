@@ -10,9 +10,9 @@ use write_fonts::{
         self,
         gdef::CaretValue,
         gpos::{AnchorTable, ValueRecord},
-        layout::LookupFlag,
+        layout::{ConditionFormat1, ConditionSet, LookupFlag},
     },
-    types::{NameId, Tag},
+    types::{Fixed, NameId, Tag},
 };
 
 use crate::{
@@ -39,12 +39,14 @@ use super::{
     tables::{ClassId, ScriptRecord, Tables},
     tags,
     valuerecordext::ValueRecordExt,
+    VariationInfo,
 };
 
 pub struct CompilationCtx<'a> {
     glyph_map: &'a GlyphMap,
     reverse_glyph_map: BTreeMap<GlyphId, GlyphIdent>,
     source_map: &'a SourceMap,
+    variation_info: Option<&'a dyn VariationInfo>,
     pub errors: Vec<Diagnostic>,
     tables: Tables,
     features: AllFeatures,
@@ -58,6 +60,9 @@ pub struct CompilationCtx<'a> {
     mark_classes: HashMap<SmolStr, MarkClass>,
     anchor_defs: HashMap<SmolStr, (AnchorTable, usize)>,
     value_record_defs: HashMap<SmolStr, ValueRecord>,
+    // `usize` tracks order in which conditionsets are declared;
+    // used for final sorting
+    conditionset_defs: HashMap<SmolStr, (ConditionSet, usize)>,
     mark_attach_class_id: HashMap<GlyphClass, u16>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
 }
@@ -68,11 +73,16 @@ struct MarkClass {
 }
 
 impl<'a> CompilationCtx<'a> {
-    pub(crate) fn new(glyph_map: &'a GlyphMap, source_map: &'a SourceMap) -> Self {
+    pub(crate) fn new(
+        glyph_map: &'a GlyphMap,
+        source_map: &'a SourceMap,
+        variation_info: Option<&'a dyn VariationInfo>,
+    ) -> Self {
         CompilationCtx {
             glyph_map,
             reverse_glyph_map: glyph_map.reverse_map(),
             source_map,
+            variation_info,
             errors: Vec::new(),
             tables: Tables::default(),
             default_lang_systems: Default::default(),
@@ -82,6 +92,7 @@ impl<'a> CompilationCtx<'a> {
             mark_classes: Default::default(),
             anchor_defs: Default::default(),
             value_record_defs: Default::default(),
+            conditionset_defs: Default::default(),
             lookup_flags: Default::default(),
             active_feature: Default::default(),
             vertical_feature: Default::default(),
@@ -103,8 +114,12 @@ impl<'a> CompilationCtx<'a> {
                 self.define_named_anchor(anchor_def);
             } else if let Some(item) = typed::ValueRecordDef::cast(item) {
                 self.define_named_value_record(item);
+            } else if let Some(node) = typed::ConditionSet::cast(item) {
+                self.define_condition_set(node);
             } else if let Some(feature) = typed::Feature::cast(item) {
                 self.add_feature(feature);
+            } else if let Some(node) = typed::FeatureVariation::cast(item) {
+                self.add_feature_variation(node);
             } else if let Some(lookup) = typed::LookupBlock::cast(item) {
                 self.resolve_lookup_block(lookup);
             } else if item.kind() == Kind::AnonBlockNode {
@@ -245,7 +260,7 @@ impl<'a> CompilationCtx<'a> {
             .insert(LanguageSystem { script, language });
     }
 
-    fn start_feature(&mut self, feature_name: typed::Tag) {
+    fn start_feature(&mut self, feature_name: typed::Tag, conditions: Option<ConditionSet>) {
         assert!(
             !self.lookups.has_current(),
             "no lookup should be active at start of feature"
@@ -254,6 +269,7 @@ impl<'a> CompilationCtx<'a> {
         self.active_feature = Some(ActiveFeature::new(
             raw_tag,
             self.default_lang_systems.clone(),
+            conditions,
         ));
         self.vertical_feature.begin_feature(raw_tag);
         self.lookup_flags.clear();
@@ -269,6 +285,7 @@ impl<'a> CompilationCtx<'a> {
         }
         let active = self.active_feature.take().expect("always present");
         active.add_to_features(&mut self.features);
+
         self.vertical_feature.end_feature();
         self.lookup_flags.clear();
     }
@@ -1051,7 +1068,7 @@ impl<'a> CompilationCtx<'a> {
     fn add_feature(&mut self, feature: typed::Feature) {
         let tag = feature.tag();
         let tag_raw = tag.to_raw();
-        self.start_feature(tag);
+        self.start_feature(tag, None);
         if tag_raw == tags::AALT {
             self.resolve_aalt_feature(&feature);
         } else if tag_raw == tags::SIZE {
@@ -1064,6 +1081,16 @@ impl<'a> CompilationCtx<'a> {
             for item in feature.statements() {
                 self.resolve_statement(item);
             }
+        }
+        self.end_feature();
+    }
+
+    fn add_feature_variation(&mut self, node: typed::FeatureVariation) {
+        let tag = node.tag();
+        let conditions = self.resolve_condition_set(node.condition_set());
+        self.start_feature(tag, Some(conditions));
+        for item in node.statements() {
+            self.resolve_statement(item);
         }
         self.end_feature();
     }
@@ -1558,7 +1585,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_lookup_block(&mut self, lookup: typed::LookupBlock) {
-        self.start_lookup_block(lookup.tag());
+        self.start_lookup_block(lookup.label());
 
         //let use_extension = lookup.use_extension().is_some();
         for item in lookup.statements() {
@@ -1664,6 +1691,43 @@ impl<'a> CompilationCtx<'a> {
         } else {
             Some(AnchorTable::format_1(x, y))
         }
+    }
+
+    fn define_condition_set(&mut self, node: typed::ConditionSet) {
+        let Some(var_info) = self.variation_info else {
+            unreachable!("checked in validation pass");
+        };
+        let label = node.label();
+        let conditions = node
+            .conditions()
+            .map(|cond| {
+                let tag = cond.tag().to_raw();
+                let min = Fixed::from_i32(cond.min_value().parse_signed() as _);
+                let max = Fixed::from_i32(cond.max_value().parse_signed() as _);
+                ConditionFormat1 {
+                    axis_index: var_info.axis_info(cond.tag().to_raw()).unwrap().index,
+                    filter_range_min_value: var_info.normalize_coordinate(tag, min),
+                    filter_range_max_value: var_info.normalize_coordinate(tag, max),
+                }
+            })
+            .collect();
+        let idx = self.conditionset_defs.len();
+        let conditionset = ConditionSet::new(conditions);
+        self.conditionset_defs
+            .insert(label.text.clone(), (conditionset, idx));
+    }
+
+    // if none, then this is a 'null' condition set (e.g. no conditions)
+    fn resolve_condition_set(&self, name: Option<&Token>) -> ConditionSet {
+        name.as_ref()
+            .map(|name| {
+                self.conditionset_defs
+                    .get(name.as_str())
+                    .expect("validated")
+            })
+            .cloned()
+            .unwrap_or_default()
+            .0
     }
 
     fn resolve_glyph_or_class(&mut self, item: &typed::GlyphOrClass) -> GlyphOrClass {

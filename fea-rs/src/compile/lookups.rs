@@ -17,8 +17,10 @@ use write_fonts::{
         gpos::{self as write_gpos, AnchorTable, ValueRecord},
         gsub as write_gsub,
         layout::{
-            Feature, FeatureList, FeatureRecord, LangSys, LangSysRecord, Lookup as RawLookup,
-            LookupFlag, LookupList, Script, ScriptList, ScriptRecord,
+            ConditionSet as RawConditionSet, Feature, FeatureList, FeatureRecord,
+            FeatureTableSubstitution, FeatureTableSubstitutionRecord, FeatureVariationRecord,
+            FeatureVariations, LangSys, LangSysRecord, Lookup as RawLookup, LookupFlag, LookupList,
+            Script, ScriptList, ScriptRecord,
         },
     },
     types::Tag,
@@ -124,11 +126,17 @@ pub(crate) struct FeatureKey {
     pub(crate) script: Tag,
 }
 
+type FeatureIdx = u16;
+type LookupIdx = u16;
+
 /// A helper for building GSUB/GPOS tables
 pub(crate) struct PosSubBuilder<T> {
     lookups: Vec<T>,
     scripts: BTreeMap<Tag, BTreeMap<Tag, LangSys>>,
-    features: BTreeMap<(Tag, Vec<u16>), u16>,
+    // map a feature tag + set of lookups to an index
+    features: BTreeMap<(Tag, Vec<LookupIdx>), FeatureIdx>,
+    // map a conditionset to a map of target features and the lookups to substitute
+    variations: HashMap<RawConditionSet, HashMap<FeatureIdx, Vec<LookupIdx>>>,
 }
 
 impl<T: Default> LookupBuilder<T> {
@@ -544,12 +552,39 @@ impl AllLookups {
             }
 
             let (gpos_idxes, gsub_idxes) = feature_lookups.split_base_lookups();
+            let mut gpos_feat_id = None;
+            let mut gsub_feat_id = None;
             if !gpos_idxes.is_empty() {
-                gpos_builder.add(*key, gpos_idxes, required);
+                gpos_feat_id = Some(gpos_builder.add(*key, gpos_idxes.clone(), required));
             }
 
             if !gsub_idxes.is_empty() {
-                gsub_builder.add(*key, gsub_idxes, required);
+                gsub_feat_id = Some(gsub_builder.add(*key, gsub_idxes.clone(), required));
+            }
+
+            let variations = feature_lookups.split_variations();
+            for (cond, gpos_var_idxes, gsub_var_idxes) in variations {
+                if !gpos_var_idxes.is_empty() {
+                    // add the lookups for the base feature
+                    let mut all_ids = gpos_idxes.clone();
+                    all_ids.extend(gpos_var_idxes);
+
+                    // if this feature only has variations, we insert an empty
+                    // base feature
+                    let feat_id = gpos_feat_id
+                        .get_or_insert_with(|| gpos_builder.add(*key, Vec::new(), false));
+                    gpos_builder.add_variation(*feat_id, cond, all_ids);
+                }
+                if !gsub_var_idxes.is_empty() {
+                    // add the lookups for the base feature
+                    let mut all_ids = gsub_idxes.clone();
+                    all_ids.extend(gsub_var_idxes);
+
+                    let feat_id = gsub_feat_id
+                        .get_or_insert_with(|| gsub_builder.add(*key, Vec::new(), false));
+
+                    gsub_builder.add_variation(*feat_id, cond, all_ids);
+                }
             }
         }
 
@@ -833,10 +868,11 @@ impl<T> PosSubBuilder<T> {
             lookups,
             scripts: Default::default(),
             features: Default::default(),
+            variations: Default::default(),
         }
     }
 
-    fn add(&mut self, key: FeatureKey, lookups: Vec<u16>, required: bool) {
+    fn add(&mut self, key: FeatureKey, lookups: Vec<LookupIdx>, required: bool) -> FeatureIdx {
         let feat_key = (key.feature, lookups);
         let next_feature = self.features.len();
         let idx = *self
@@ -856,6 +892,24 @@ impl<T> PosSubBuilder<T> {
         } else {
             lang_sys.feature_indices.push(idx);
         }
+        idx
+    }
+
+    fn add_variation(
+        &mut self,
+        idx: FeatureIdx,
+        conditions: &RawConditionSet,
+        lookups: Vec<LookupIdx>,
+    ) {
+        // not using entry to avoid cloning conditions all the time?
+        if !self.variations.contains_key(conditions) {
+            self.variations
+                .insert(conditions.clone(), Default::default());
+        }
+        self.variations
+            .get_mut(conditions)
+            .unwrap()
+            .insert(idx, lookups);
     }
 }
 
@@ -864,7 +918,15 @@ where
     T: Builder,
     T::Output: Default,
 {
-    fn build_raw(self) -> Option<(LookupList<T::Output>, ScriptList, FeatureList)> {
+    #[allow(clippy::type_complexity)] // i love my big dumb tuple
+    fn build_raw(
+        self,
+    ) -> Option<(
+        LookupList<T::Output>,
+        ScriptList,
+        FeatureList,
+        Option<FeatureVariations>,
+    )> {
         if self.lookups.is_empty() && self.features.is_empty() {
             return None;
         }
@@ -894,10 +956,40 @@ where
             .collect::<Vec<_>>();
 
         let lookups = self.lookups.into_iter().map(|x| x.build()).collect();
+
+        let variations = if self.variations.is_empty() {
+            None
+        } else {
+            let records = self
+                .variations
+                .into_iter()
+                .map(|(condset, features)| {
+                    // if this is an empty conditionset, leave the offset null
+                    let condset = (!condset.conditions.is_empty()).then_some(condset);
+                    FeatureVariationRecord::new(
+                        condset,
+                        FeatureTableSubstitution::new(
+                            features
+                                .into_iter()
+                                .map(|(feat_id, lookup_ids)| {
+                                    FeatureTableSubstitutionRecord::new(
+                                        feat_id,
+                                        Feature::new(None, lookup_ids),
+                                    )
+                                })
+                                .collect(),
+                        )
+                        .into(),
+                    )
+                })
+                .collect();
+            Some(FeatureVariations::new(records))
+        };
         Some((
             LookupList::new(lookups),
             ScriptList::new(scripts),
             FeatureList::new(features),
+            variations,
         ))
     }
 }
@@ -907,7 +999,11 @@ impl Builder for PosSubBuilder<PositionLookup> {
 
     fn build(self) -> Self::Output {
         self.build_raw()
-            .map(|(lookups, scripts, features)| write_gpos::Gpos::new(scripts, features, lookups))
+            .map(|(lookups, scripts, features, variations)| {
+                let mut gpos = write_gpos::Gpos::new(scripts, features, lookups);
+                gpos.feature_variations = variations.into();
+                gpos
+            })
     }
 }
 
@@ -916,7 +1012,11 @@ impl Builder for PosSubBuilder<SubstitutionLookup> {
 
     fn build(self) -> Self::Output {
         self.build_raw()
-            .map(|(lookups, scripts, features)| write_gsub::Gsub::new(scripts, features, lookups))
+            .map(|(lookups, scripts, features, variations)| {
+                let mut gsub = write_gsub::Gsub::new(scripts, features, lookups);
+                gsub.feature_variations = variations.into();
+                gsub
+            })
     }
 }
 

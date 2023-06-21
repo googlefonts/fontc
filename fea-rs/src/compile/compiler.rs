@@ -118,7 +118,7 @@ impl<'a> Compiler<'a> {
         let diagnostics = super::validate(&tree, self.glyph_map, self.var_info);
         print_warnings_return_errors(diagnostics, &tree, self.verbose)
             .map_err(CompilerError::ValidationFail)?;
-        let mut ctx = super::CompilationCtx::new(self.glyph_map, tree.source_map());
+        let mut ctx = super::CompilationCtx::new(self.glyph_map, tree.source_map(), self.var_info);
         ctx.compile(&tree.typed_root());
 
         // we 'take' the errors here because it's easier for us to handle the

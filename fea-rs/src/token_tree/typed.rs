@@ -645,10 +645,6 @@ impl Feature {
 }
 
 impl LookupBlock {
-    pub(crate) fn tag(&self) -> &Token {
-        self.find_token(Kind::Label).unwrap()
-    }
-
     #[allow(unused)]
     //TODO: do we want to support this syntax?
     pub(crate) fn use_extension(&self) -> Option<&Token> {
