@@ -216,6 +216,11 @@ impl FeatureLookups {
     fn adjust_gsub_ids(&mut self, delta: usize) {
         self.base.iter_mut().for_each(|id| id.adjust_if_gsub(delta));
     }
+
+    // split lookups into gpos/gsub
+    pub(crate) fn split_base_lookups(&self) -> (Vec<u16>, Vec<u16>) {
+        split_lookups(&self.base)
+    }
 }
 
 impl ActiveFeature {
@@ -351,6 +356,25 @@ impl ActiveFeature {
         self.add_to_features(&mut out);
         out
     }
+}
+
+/// Given a slice of lookupids, split them into (GPOS, GSUB)
+///
+/// In general, a feature only has either GSUB or GPOS lookups, but this is not
+/// a requirement, and in the wild we will encounter features that contain mixed
+/// lookups.
+fn split_lookups(lookups: &[LookupId]) -> (Vec<u16>, Vec<u16>) {
+    let mut gpos = Vec::new();
+    let mut gsub = Vec::new();
+    for lookup in lookups {
+        match lookup {
+            LookupId::Gpos(_) => gpos.push(lookup.to_gpos_id_or_die()),
+            LookupId::Gsub(_) => gsub.push(lookup.to_gsub_id_or_die()),
+            LookupId::Empty => (),
+        }
+    }
+
+    (gpos, gsub)
 }
 
 impl SizeFeature {

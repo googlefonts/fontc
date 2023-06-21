@@ -543,7 +543,7 @@ impl AllLookups {
                 continue;
             }
 
-            let (gpos_idxes, gsub_idxes) = split_lookups(&feature_lookups.base);
+            let (gpos_idxes, gsub_idxes) = feature_lookups.split_base_lookups();
             if !gpos_idxes.is_empty() {
                 gpos_builder.add(*key, gpos_idxes, required);
             }
@@ -555,52 +555,6 @@ impl AllLookups {
 
         (gsub_builder.build(), gpos_builder.build())
     }
-}
-
-/// Given a slice of lookupids, split them into (GPOS, GSUB)
-///
-/// In general, a feature only has either GSUB or GPOS lookups, but this is not
-/// a requirement, and in the wild we will encounter features that contain mixed
-/// lookups.
-fn split_lookups(lookups: &[LookupId]) -> (Vec<u16>, Vec<u16>) {
-    if lookups.is_empty() {
-        return (Vec::new(), Vec::new());
-    }
-
-    // in the majority of cases, a given feature only has lookups of one kind,
-    // so that is the fast path.
-    let is_gpos = matches!(lookups.first(), Some(LookupId::Gpos(_)));
-    if lookups
-        .iter()
-        .all(|x| matches!(x, LookupId::Gpos(_)) == is_gpos)
-    {
-        if is_gpos {
-            return (
-                lookups.iter().map(|x| x.to_gpos_id_or_die()).collect(),
-                Vec::new(),
-            );
-        } else {
-            return (
-                Vec::new(),
-                lookups.iter().map(|x| x.to_gsub_id_or_die()).collect(),
-            );
-        }
-    }
-
-    // the uncommon case, where we have mixed lookups;
-    // here we will spit them into two new buffers
-
-    let mut gpos = Vec::new();
-    let mut gsub = Vec::new();
-    for lookup in lookups {
-        match lookup {
-            LookupId::Gpos(_) => gpos.push(lookup.to_gpos_id_or_die()),
-            LookupId::Gsub(_) => gsub.push(lookup.to_gsub_id_or_die()),
-            LookupId::Empty => (),
-        }
-    }
-
-    (gpos, gsub)
 }
 
 impl LookupId {
