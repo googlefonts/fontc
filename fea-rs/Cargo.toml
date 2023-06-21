@@ -1,6 +1,6 @@
 [package]
 name = "fea-rs"
-version = "0.7.0"
+version = "0.8.0"
 license = "MIT/Apache-2.0"
 authors = ["Colin Rofls <colin@cmyr.net>"]
 description = "Tools for working with Adobe OpenType Feature files."
@@ -16,7 +16,7 @@ exclude = ["test-data"]
 ansi_term = "0.12.1"
 smol_str = "0.2.0"
 norad = "0.10" # Used in the compile binary
-write-fonts = { version = "0.7.0" }
+write-fonts = { version = "0.8.0" }
 chrono = "0.4.3"
 diff = { version = "0.1.12", optional = true }
 rayon = { version = "1.6", optional = true }
