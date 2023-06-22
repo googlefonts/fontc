@@ -46,7 +46,7 @@ impl ParseTree {
     ///
     /// This associates the message with the appropriate source location and
     /// syntax highlighting.
-    pub fn format_diagnostic(&self, err: &Diagnostic) -> String {
-        self.sources.format_diagnostic(err)
+    pub fn format_diagnostic(&self, err: &Diagnostic, colorize: bool) -> String {
+        self.sources.format_diagnostic(err, colorize)
     }
 }

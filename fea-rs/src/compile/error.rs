@@ -57,11 +57,11 @@ pub enum CompilerError {
         #[source]
         SourceLoadError,
     ),
-    #[error("Parsing failed with {} errors\n{0}", .0.messages.len())]
+    #[error("Parsing failed with {} errors\n{}", .0.messages.len(), .0.printer())]
     ParseFail(DiagnosticSet),
-    #[error("Validation failed with {} errors\n{0}", .0.messages.len())]
+    #[error("Validation failed with {} errors\n{}", .0.messages.len(), .0.printer())]
     ValidationFail(DiagnosticSet),
-    #[error("Compilation failed with {} errors\n{0}", .0.messages.len())]
+    #[error("Compilation failed with {} errors\n{}", .0.messages.len(), .0.printer())]
     CompilationFail(DiagnosticSet),
     #[error("Binary generation failed: '{0}'")]
     WriteFail(#[from] BinaryCompilationError),
@@ -79,17 +79,41 @@ pub struct DiagnosticSet {
     pub(crate) sources: Arc<SourceList>,
 }
 
-impl std::fmt::Display for DiagnosticSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+// we don't want diagnostic set to impl display itself, because we want to change
+// behaviour based on whether we think we're writing to a terminal, and that is
+// error prone.
+struct DiagnosticDisplayer<'a>(&'a DiagnosticSet);
+
+impl DiagnosticSet {
+    pub(crate) fn write(&self, f: &mut impl std::fmt::Write, colorize: bool) -> std::fmt::Result {
         let mut first = true;
         for err in &self.messages {
             if !first {
                 writeln!(f)?;
             }
-            write!(f, "{}", self.sources.format_diagnostic(err))?;
+            write!(f, "{}", self.sources.format_diagnostic(err, colorize))?;
             first = false;
         }
         Ok(())
+    }
+
+    fn printer(&self) -> DiagnosticDisplayer {
+        DiagnosticDisplayer(self)
+    }
+
+    #[cfg(any(test, feature = "test"))]
+    pub(crate) fn to_string(&self, colorize: bool) -> String {
+        let mut out = String::new();
+        self.write(&mut out, colorize).unwrap();
+        out
+    }
+}
+
+impl std::fmt::Display for DiagnosticDisplayer<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use std::io::IsTerminal;
+        let colorize = std::io::stderr().is_terminal();
+        self.0.write(f, colorize)
     }
 }
 

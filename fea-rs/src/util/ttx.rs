@@ -248,9 +248,9 @@ pub fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase
             // this means we have a test case that doesn't exist or something weird
             Err(CompilerError::SourceLoad(err)) => panic!("{err}"),
             Err(CompilerError::WriteFail(err)) => panic!("{err}"),
-            Err(CompilerError::ParseFail(errs)) => Err(TestResult::ParseFail(errs.to_string())),
+            Err(CompilerError::ParseFail(errs)) => Err(TestResult::ParseFail(errs.to_string(true))),
             Err(CompilerError::ValidationFail(errs) | CompilerError::CompilationFail(errs)) => {
-                Err(TestResult::CompileFail(errs.to_string()))
+                Err(TestResult::CompileFail(errs.to_string(true)))
             }
             Ok(result) => compare_ttx(&result, &path),
         }
@@ -264,11 +264,14 @@ pub fn run_test(path: PathBuf, glyph_map: &GlyphMap) -> Result<PathBuf, TestCase
 
 /// Convert diagnostics to a printable string
 pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> String {
+    let mut out = String::new();
     DiagnosticSet {
         sources: root.sources.clone(),
         messages: diagnostics.to_owned(),
     }
-    .to_string()
+    .write(&mut out, false)
+    .unwrap();
+    out
 }
 
 fn print_diagnostics_if_verbose(root: &ParseTree, diagnostics: &[Diagnostic]) {
@@ -351,20 +354,20 @@ fn compare_ttx(font_data: &[u8], fea_path: &Path) -> Result<(), TestResult> {
         }
     }
 
+    if expected == result {
+        return Ok(());
+    }
+
     if std::env::var(super::WRITE_RESULTS_VAR).is_ok() {
         std::fs::write(&ttx_path, &result).unwrap();
     }
     let diff_percent = compute_diff_percentage(&expected, &result);
 
-    if expected != result {
-        Err(TestResult::CompareFail {
-            expected,
-            result,
-            diff_percent,
-        })
-    } else {
-        Ok(())
-    }
+    Err(TestResult::CompareFail {
+        expected,
+        result,
+        diff_percent,
+    })
 }
 
 // we want to be able to add a comment when we save an 'expected diff', so that
@@ -396,6 +399,7 @@ pub fn compare_to_expected_output(
     };
 
     if expected != output {
+        eprintln!("{expected}\n\n{output}");
         let diff_percent = compute_diff_percentage(&expected, output);
         return Err(TestCase {
             path: src_path.to_owned(),

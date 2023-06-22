@@ -39,14 +39,25 @@ pub fn style_for_kind(kind: Kind) -> Style {
 //FIXME: get from terminal?
 const MAX_PRINT_WIDTH: usize = 100;
 
+macro_rules! style_or_dont {
+    ($tty:expr, $kind:expr) => {
+        if $tty {
+            $kind.into()
+        } else {
+            Style::default()
+        }
+    };
+}
+
 /// Given an error and a line's text, write a fancy error message.
 pub(crate) fn write_diagnostic(
     writer: &mut impl Write,
     err: &Diagnostic,
     source: &Source,
     line_width: Option<usize>,
+    colorized: bool,
 ) {
-    write_header(writer, err, source);
+    write_header(writer, err, source, colorized);
 
     let line_width = line_width.unwrap_or(MAX_PRINT_WIDTH);
     let span = err.message.span.range();
@@ -69,7 +80,7 @@ pub(crate) fn write_diagnostic(
 
     let line_ws = text.bytes().take_while(u8::is_ascii_whitespace).count();
     let n_digits = decimal_digits(line_n);
-    let blue = Colour::Blue;
+    let blue = style_or_dont!(colorized, Colour::Blue);
 
     // one blank line:
     writeln!(
@@ -98,7 +109,7 @@ pub(crate) fn write_diagnostic(
 
     let n_carets = span.end - span.start;
     let n_carets = n_carets.min(CARETS.len());
-    let color = err.level.color();
+    let color = style_or_dont!(colorized, err.level.color());
 
     //let (first, second) = if msg_first {
     //(err.message.text.as_str(), &CARETS[..n_carets])
@@ -126,16 +137,16 @@ pub(crate) fn write_diagnostic(
     .unwrap();
 }
 
-fn write_header(writer: &mut impl Write, err: &Diagnostic, source: &Source) {
-    let color = err.level.color();
+fn write_header(writer: &mut impl Write, err: &Diagnostic, source: &Source, colorized: bool) {
+    let color = style_or_dont!(colorized, err.level.color());
     let text = err.level.label();
 
     write!(writer, "{}{}: {}", color.prefix(), text, color.suffix(),).unwrap();
 
     writeln!(writer, "{}", &err.message.text).unwrap();
     let (line, column) = source.line_col_for_offset(err.message.span.range().start);
-    let pre = Colour::Blue.italic().prefix();
-    let suf = Colour::Blue.italic().suffix();
+    let pre = style_or_dont!(colorized, Colour::Blue.italic()).prefix();
+    let suf = style_or_dont!(colorized, Colour::Blue.italic()).suffix();
     writeln!(
         writer,
         "{pre}in{suf} {} {pre}at{suf} {line}:{column}",
@@ -179,6 +190,6 @@ mod tests {
         let source = Source::new("test", A_BAD_LINE.into());
         let err = Diagnostic::warning(source.id(), 200..220, "bad!");
         let mut write_to = String::new();
-        write_diagnostic(&mut write_to, &err, &source, None);
+        write_diagnostic(&mut write_to, &err, &source, None, true);
     }
 }

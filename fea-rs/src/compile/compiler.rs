@@ -135,6 +135,8 @@ fn print_warnings_return_errors(
     tree: &ParseTree,
     verbose: bool,
 ) -> Result<(), DiagnosticSet> {
+    use std::io::IsTerminal as _;
+    let is_tty = std::io::stderr().is_terminal();
     diagnostics.sort_unstable_by_key(|diag| diag.level);
     let split_at = diagnostics
         .iter()
@@ -143,7 +145,7 @@ fn print_warnings_return_errors(
     let warnings = diagnostics.split_off(split_at);
     if verbose {
         for w in warnings {
-            eprintln!("{}", tree.format_diagnostic(&w));
+            eprintln!("{}", tree.format_diagnostic(&w, is_tty));
         }
     }
     if diagnostics.is_empty() {

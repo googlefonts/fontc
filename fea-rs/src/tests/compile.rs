@@ -99,9 +99,9 @@ fn bad_test_body(path: &Path, glyph_map: &GlyphMap) -> Result<(), TestResult> {
         // this means we have a test case that doesn't exist or something weird
         Err(CompilerError::SourceLoad(err)) => panic!("{err}"),
         Err(CompilerError::WriteFail(err)) => panic!("{err}"),
-        Err(CompilerError::ParseFail(errs)) => Err(TestResult::ParseFail(errs.to_string())),
+        Err(CompilerError::ParseFail(errs)) => Err(TestResult::ParseFail(errs.to_string(true))),
         Err(CompilerError::ValidationFail(errs) | CompilerError::CompilationFail(errs)) => {
-            let msg = errs.to_string();
+            let msg = errs.to_string(false);
             let result = test_utils::compare_to_expected_output(&msg, path, BAD_OUTPUT_EXTENSION);
             if result.is_err() && std::env::var(crate::util::WRITE_RESULTS_VAR).is_ok() {
                 let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);

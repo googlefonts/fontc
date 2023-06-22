@@ -334,7 +334,7 @@ fn debug_parse_output(
         if !err_str.is_empty() {
             err_str.push('\n');
         }
-        crate::util::highlighting::write_diagnostic(&mut err_str, err, &source, Some(80));
+        crate::util::highlighting::write_diagnostic(&mut err_str, err, &source, Some(80), true);
     }
     (node.into(), errs, err_str)
 }

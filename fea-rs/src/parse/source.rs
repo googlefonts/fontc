@@ -346,10 +346,10 @@ impl SourceList {
     ///
     /// This associates the message with the appropriate source location and
     /// syntax highlighting.
-    pub(crate) fn format_diagnostic(&self, err: &Diagnostic) -> String {
+    pub(crate) fn format_diagnostic(&self, err: &Diagnostic, colorize: bool) -> String {
         let mut s = String::new();
         let source = self.get(&err.message.file).unwrap();
-        crate::util::highlighting::write_diagnostic(&mut s, err, source, None);
+        crate::util::highlighting::write_diagnostic(&mut s, err, source, None, colorize);
         s
     }
 }

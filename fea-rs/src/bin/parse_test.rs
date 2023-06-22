@@ -65,7 +65,7 @@ fn single_file_arg(path: &Path, print_tree: bool) {
         println!("{}", tree.root().simple_parse_tree());
     }
     for diagnostic in &errors {
-        eprintln!("{}", tree.format_diagnostic(diagnostic));
+        eprintln!("{}", tree.format_diagnostic(diagnostic, true));
     }
 
     let micros = elapsed.as_micros();
