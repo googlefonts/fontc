@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use smol_str::SmolStr;
 use write_fonts::{
     tables::layout::{ConditionSet, FeatureParams, SizeParams, StylisticSetParams},
     types::{GlyphId, Tag, Uint24},
@@ -91,6 +92,15 @@ pub(crate) enum SpecialVerticalFeatureState {
     /// we are inside a lookup in a special vertical feature (and so should not
     /// behave specially)
     InnerLookup,
+}
+
+/// maps names to conditionsets, also tracking declaration order (which
+/// is maintained in the final output table)
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ConditionSetMap {
+    named_conditionsets: HashMap<SmolStr, ConditionSet>,
+    // used for sorting
+    reference_order: HashMap<ConditionSet, usize>,
 }
 
 impl AllFeatures {
@@ -510,6 +520,30 @@ impl SpecialVerticalFeatureState {
 
     pub(crate) fn in_eligible_vertical_feature(&self) -> bool {
         *self == Self::Root
+    }
+}
+
+impl ConditionSetMap {
+    pub(crate) fn insert(&mut self, label: SmolStr, conditionset: ConditionSet) {
+        self.named_conditionsets.insert(label, conditionset);
+    }
+
+    pub(crate) fn get(&self, label: &SmolStr) -> Option<&ConditionSet> {
+        self.named_conditionsets.get(label)
+    }
+
+    // track the order in which conditionsets are used; this is used for sorting
+    // the output.
+    pub(crate) fn register_use(&mut self, conditionset: &ConditionSet) {
+        if !self.reference_order.contains_key(conditionset) {
+            self.reference_order
+                .insert(conditionset.to_owned(), self.reference_order.len());
+        }
+    }
+
+    pub(crate) fn sort_order(&self, conditionset: &ConditionSet) -> usize {
+        // only used after all conditionsets in the file have been added
+        *self.reference_order.get(conditionset).unwrap()
     }
 }
 

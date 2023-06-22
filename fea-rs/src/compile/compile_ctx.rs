@@ -10,7 +10,7 @@ use write_fonts::{
         self,
         gdef::CaretValue,
         gpos::{AnchorTable, ValueRecord},
-        layout::{ConditionFormat1, ConditionSet, LookupFlag},
+        layout::{ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag},
     },
     types::{Fixed, NameId, Tag},
 };
@@ -28,7 +28,8 @@ use crate::{
 
 use super::{
     features::{
-        AaltFeature, ActiveFeature, AllFeatures, CvParams, SizeFeature, SpecialVerticalFeatureState,
+        AaltFeature, ActiveFeature, AllFeatures, ConditionSetMap, CvParams, SizeFeature,
+        SpecialVerticalFeatureState,
     },
     glyph_range,
     language_system::{DefaultLanguageSystems, LanguageSystem},
@@ -60,9 +61,7 @@ pub struct CompilationCtx<'a> {
     mark_classes: HashMap<SmolStr, MarkClass>,
     anchor_defs: HashMap<SmolStr, (AnchorTable, usize)>,
     value_record_defs: HashMap<SmolStr, ValueRecord>,
-    // `usize` tracks order in which conditionsets are declared;
-    // used for final sorting
-    conditionset_defs: HashMap<SmolStr, (ConditionSet, usize)>,
+    conditionset_defs: ConditionSetMap,
     mark_attach_class_id: HashMap<GlyphClass, u16>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
 }
@@ -160,19 +159,28 @@ impl<'a> CompilationCtx<'a> {
 
         let feature_params = self.features.build_feature_params(&mut name_builder);
 
-        if !feature_params.is_empty() {
-            if let Some(gsub) = gsub.as_mut() {
-                for record in gsub.feature_list.feature_records.iter_mut() {
-                    if let Some(params) = feature_params.get(&(tags::GSUB, record.feature_tag)) {
-                        record.feature.feature_params = params.clone().into();
-                    }
+        if let Some(gsub) = gsub.as_mut() {
+            if let Some(variations) = gsub.feature_variations.as_mut() {
+                sort_feature_variations(variations, |condset| {
+                    self.conditionset_defs.sort_order(condset)
+                });
+            }
+            for record in gsub.feature_list.feature_records.iter_mut() {
+                if let Some(params) = feature_params.get(&(tags::GSUB, record.feature_tag)) {
+                    record.feature.feature_params = params.clone().into();
                 }
             }
-            if let Some(gpos) = gpos.as_mut() {
-                for record in gpos.feature_list.feature_records.iter_mut() {
-                    if let Some(params) = feature_params.get(&(tags::GPOS, record.feature_tag)) {
-                        record.feature.feature_params = params.clone().into();
-                    }
+        }
+        if let Some(gpos) = gpos.as_mut() {
+            if let Some(variations) = gpos.feature_variations.as_mut() {
+                sort_feature_variations(variations, |condset| {
+                    self.conditionset_defs.sort_order(condset)
+                });
+            }
+
+            for record in gpos.feature_list.feature_records.iter_mut() {
+                if let Some(params) = feature_params.get(&(tags::GPOS, record.feature_tag)) {
+                    record.feature.feature_params = params.clone().into();
                 }
             }
         }
@@ -1711,23 +1719,20 @@ impl<'a> CompilationCtx<'a> {
                 }
             })
             .collect();
-        let idx = self.conditionset_defs.len();
         let conditionset = ConditionSet::new(conditions);
         self.conditionset_defs
-            .insert(label.text.clone(), (conditionset, idx));
+            .insert(label.text.clone(), conditionset);
     }
 
     // if none, then this is a 'null' condition set (e.g. no conditions)
-    fn resolve_condition_set(&self, name: Option<&Token>) -> ConditionSet {
-        name.as_ref()
-            .map(|name| {
-                self.conditionset_defs
-                    .get(name.as_str())
-                    .expect("validated")
-            })
+    fn resolve_condition_set(&mut self, name: Option<&Token>) -> ConditionSet {
+        let condset = name
+            .as_ref()
+            .map(|name| self.conditionset_defs.get(&name.text).expect("validated"))
             .cloned()
-            .unwrap_or_default()
-            .0
+            .unwrap_or_default();
+        self.conditionset_defs.register_use(&condset);
+        condset
     }
 
     fn resolve_glyph_or_class(&mut self, item: &typed::GlyphOrClass) -> GlyphOrClass {
@@ -1884,6 +1889,18 @@ fn sequence_enumerator_impl(
             None => acc.push(prefix),
         }
     }
+}
+
+fn sort_feature_variations(
+    variations: &mut FeatureVariations,
+    order_fn: impl Fn(&ConditionSet) -> usize,
+) {
+    variations
+        .feature_variation_records
+        .sort_by_key(|record| match record.condition_set.as_ref() {
+            Some(condition) => order_fn(condition),
+            None => order_fn(&Default::default()),
+        })
 }
 
 //FIXME: sometimes a glyph class should be unique/sorted and sometimes order matters
