@@ -6,7 +6,6 @@ use font_types::Fixed;
 use fontdrasil::orchestration::Work;
 use fontir::ir::StaticMetadata;
 use log::trace;
-use read_fonts::types::MajorMinor;
 use write_fonts::tables::fvar::{AxisInstanceArrays, Fvar, InstanceRecord, VariationAxisRecord};
 
 use crate::{
@@ -79,15 +78,7 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
             .collect(),
     );
 
-    let axis_count = axes_and_instances.axes.len().try_into().unwrap();
-    let instance_count = axes_and_instances.instances.len().try_into().unwrap();
-
-    Some(Fvar::new(
-        MajorMinor::VERSION_1_0,
-        axes_and_instances,
-        axis_count,
-        instance_count,
-    ))
+    Some(Fvar::new(axes_and_instances))
 }
 
 impl Work<Context, Error> for FvarWork {
