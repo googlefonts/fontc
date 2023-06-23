@@ -101,9 +101,9 @@ pub(crate) fn expect_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
 
 /// Eat a metric, which may either be a number or a variable metric.
 ///
-/// A variable metric has the syntax `(<location_spec>:<number> +)`
-/// where a `<location_spec>` is,
-/// `<axis_tag>=<number>,+`
+/// A variable metric has the syntax `(<location_value>+)`
+/// where `<location_value>` is `<location_spec>:<number>`
+/// and a `<location_spec>` is `<axis_tag>=<number>,+`
 fn eat_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
     // a simple numerical metric
     if parser.eat(Kind::Number) {
@@ -115,11 +115,15 @@ fn eat_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
 
     parser.in_node(AstKind::VariableMetricNode, |parser| {
         parser.eat_raw();
-        while !parser.at_eof() && !parser.matches(0, Kind::RParen) {
-            if !parser.in_node(AstKind::LocationValueNode, |parser| {
-                eat_variation_location_and_value(parser, recovery.add(Kind::RParen))
-            }) {
-                break;
+        if parser.in_node(AstKind::LocationValueNode, |parser| {
+            expect_variation_location_and_value(parser, recovery.add(Kind::RParen))
+        }) {
+            while !parser.at_eof() && !parser.matches(0, Kind::RParen) {
+                if !parser.in_node(AstKind::LocationValueNode, |parser| {
+                    eat_variation_location_and_value(parser, recovery.add(Kind::RParen))
+                }) {
+                    break;
+                }
             }
         }
         parser.expect_recover(Kind::RParen, recovery)
@@ -127,11 +131,24 @@ fn eat_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
     true
 }
 
+fn expect_variation_location_and_value(parser: &mut Parser, recovery: TokenSet) -> bool {
+    if !eat_variation_location_and_value(parser, recovery) {
+        parser.err_recover("expected variation location spec", recovery);
+        return false;
+    }
+    true
+}
+
 fn eat_variation_location_and_value(parser: &mut Parser, recovery: TokenSet) -> bool {
-    parser.in_node(AstKind::LocationSpecNode, |parser| {
+    if !parser.matches(0, TokenSet::TAG_LIKE) {
+        return false;
+    }
+
+    let _ = parser.in_node(AstKind::LocationSpecNode, |parser| {
         eat_location_spec(parser, recovery)
     }) && parser.expect_recover(Kind::Colon, recovery)
-        && parser.expect_recover(Kind::Number, recovery)
+        && parser.expect_recover(Kind::Number, recovery);
+    true
 }
 
 fn eat_location_spec(parser: &mut Parser, recovery: TokenSet) -> bool {
@@ -277,5 +294,38 @@ mod tests {
             expect_device(parser, TokenSet::EMPTY);
         });
         assert!(errstr.is_empty(), "{}", errstr);
+    }
+
+    #[test]
+    fn wrong_metric_count_in_value_record() {
+        let fea = "<1 2>";
+        let (_out, _err, errstr) = debug_parse_output(fea, |parser| {
+            expect_value_record(parser, TokenSet::EMPTY);
+        });
+        assert!(errstr.contains("expected metric"));
+
+        let fea = "<1 2 3>";
+        let (_out, _err, errstr) = debug_parse_output(fea, |parser| {
+            expect_value_record(parser, TokenSet::EMPTY);
+        });
+        assert!(errstr.contains("expected metric"));
+    }
+
+    #[test]
+    fn empty_metric() {
+        let empty_metric = "()";
+        let (_out, _err, errstr) = debug_parse_output(empty_metric, |parser| {
+            expect_metric(parser, TokenSet::EMPTY);
+        });
+        assert!(errstr.contains("expected variation location"), "{errstr}");
+    }
+
+    #[test]
+    fn empty_location_spec() {
+        let empty_metric = "(:10)";
+        let (_out, _err, errstr) = debug_parse_output(empty_metric, |parser| {
+            expect_metric(parser, TokenSet::EMPTY);
+        });
+        assert!(errstr.contains("expected variation location"), "{errstr}");
     }
 }
