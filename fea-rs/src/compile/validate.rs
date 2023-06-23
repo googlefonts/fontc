@@ -297,12 +297,19 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_hhea(&mut self, node: &typed::HheaTable) {
         self.ensure_metrics_are_non_variable(node.metrics());
+        for metric in node.metrics() {
+            self.validate_metric(&metric.metric());
+        }
     }
 
     fn validate_vhea(&mut self, node: &typed::VheaTable) {
         self.ensure_metrics_are_non_variable(node.metrics());
+        for metric in node.metrics() {
+            self.validate_metric(&metric.metric());
+        }
     }
 
+    //TODO: remove me when we are compiling this
     fn ensure_metrics_are_non_variable(
         &mut self,
         metrics: impl Iterator<Item = typed::MetricRecord>,
@@ -421,9 +428,9 @@ impl<'a> ValidationCtx<'a> {
                     for item in axis.statements() {
                         if let typed::StatAxisValueItem::Location(loc) = item {
                             let format = match loc.value() {
-                                typed::LocationValue::Value(_) => 'a',
-                                typed::LocationValue::MinMax { .. } => 'b',
-                                typed::LocationValue::Linked { .. } => 'c',
+                                typed::StatLocationValue::Value(_) => 'a',
+                                typed::StatLocationValue::MinMax { .. } => 'b',
+                                typed::StatLocationValue::Linked { .. } => 'c',
                             };
                             let prev_format = seen_location_format.replace(format);
                             match (prev_format, format) {
@@ -1234,12 +1241,52 @@ impl<'a> ValidationCtx<'a> {
                 self.error(name.range(), "undefined value record name");
             }
         }
+
+        for metric in node.all_metrics() {
+            self.validate_metric(&metric);
+        }
     }
 
     fn validate_anchor(&mut self, anchor: &typed::Anchor) {
         if let Some(name) = anchor.name() {
             if !self.anchor_defs.contains_key(&name.text) {
                 self.error(name.range(), "undefined anchor name");
+            }
+        }
+        if let Some((one, two)) = anchor.coords() {
+            self.validate_metric(&one);
+            self.validate_metric(&two);
+        }
+    }
+
+    fn validate_metric(&mut self, metric: &typed::Metric) {
+        let typed::Metric::Variable(metric) = metric else { return};
+        let Some(var_info) = self.variation_info else {
+            self.error(metric.range(), "variable metrics only supported in variable font");
+            return;
+        };
+
+        for location_val in metric.location_values() {
+            for item in location_val.location().items() {
+                let Some(axis_info) = var_info.axis_info(item.axis_tag().to_raw()) else {
+                    self.error(item.axis_tag().range(), "unknown axis");
+                    continue;
+                };
+                let val = item.value().parse_signed() as i32;
+                let min = axis_info.min_value.to_i32();
+                let max = axis_info.max_value.to_i32();
+                if val < min {
+                    self.error(
+                        item.value().range(),
+                        format!("value below minimum allowed for axis ({min})"),
+                    );
+                }
+                if val > max {
+                    self.error(
+                        item.value().range(),
+                        format!("value greater than maximum allowed for axis ({max})"),
+                    );
+                }
             }
         }
     }

@@ -271,6 +271,9 @@ ast_node!(ConditionSet, Kind::ConditionSetNode);
 ast_node!(Condition, Kind::ConditionNode);
 ast_node!(FeatureVariation, Kind::VariationNode);
 ast_node!(VariableMetric, Kind::VariableMetricNode);
+ast_node!(LocationValue, Kind::LocationValueNode);
+ast_node!(LocationSpec, Kind::LocationSpecNode);
+ast_node!(LocationSpecItem, Kind::LocationSpecItemNode);
 ast_enum!(Metric {
     Scalar(Number),
     Variable(VariableMetric),
@@ -1010,6 +1013,7 @@ impl AnchorMark {
 }
 
 impl ValueRecord {
+    /// If this record is a single metric, return it
     pub(crate) fn advance(&self) -> Option<Metric> {
         self.iter().next().and_then(Metric::cast)
     }
@@ -1023,6 +1027,11 @@ impl ValueRecord {
 
     pub(crate) fn named(&self) -> Option<&Token> {
         self.find_token(Kind::Ident)
+    }
+
+    // for validation,
+    pub(crate) fn all_metrics(&self) -> impl Iterator<Item = Metric> + '_ {
+        self.iter().filter_map(Metric::cast)
     }
 
     pub(crate) fn placement(&self) -> Option<[Metric; 4]> {
@@ -1241,6 +1250,34 @@ impl Metric {
             Metric::Scalar(num) => Some(num.parse_signed()),
             Metric::Variable(_) => None,
         }
+    }
+}
+
+impl VariableMetric {
+    pub(crate) fn location_values(&self) -> impl Iterator<Item = LocationValue> + '_ {
+        self.iter().filter_map(LocationValue::cast)
+    }
+}
+
+impl LocationValue {
+    pub(crate) fn location(&self) -> LocationSpec {
+        self.iter().find_map(LocationSpec::cast).unwrap()
+    }
+}
+
+impl LocationSpec {
+    pub(crate) fn items(&self) -> impl Iterator<Item = LocationSpecItem> + '_ {
+        self.iter().filter_map(LocationSpecItem::cast)
+    }
+}
+
+impl LocationSpecItem {
+    pub(crate) fn axis_tag(&self) -> Tag {
+        self.iter().find_map(Tag::cast).unwrap()
+    }
+
+    pub(crate) fn value(&self) -> Number {
+        self.iter().skip(2).find_map(Number::cast).unwrap()
     }
 }
 
@@ -1566,20 +1603,20 @@ impl StatAxisLocation {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
-    pub(crate) fn value(&self) -> LocationValue {
+    pub(crate) fn value(&self) -> StatLocationValue {
         let mut iter = self.iter().filter_map(FloatLike::cast);
         let first = iter.next().unwrap();
         let second = match iter.next() {
             Some(second) => second,
-            None => return LocationValue::Value(first),
+            None => return StatLocationValue::Value(first),
         };
         match iter.next() {
-            Some(third) => LocationValue::MinMax {
+            Some(third) => StatLocationValue::MinMax {
                 nominal: first,
                 min: second,
                 max: third,
             },
-            None => LocationValue::Linked {
+            None => StatLocationValue::Linked {
                 value: first,
                 linked: second,
             },
@@ -1587,7 +1624,7 @@ impl StatAxisLocation {
     }
 }
 
-pub(crate) enum LocationValue {
+pub(crate) enum StatLocationValue {
     Value(FloatLike),
     MinMax {
         nominal: FloatLike,

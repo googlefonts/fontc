@@ -1416,7 +1416,7 @@ impl<'a> CompilationCtx<'a> {
                 typed::StatAxisValueItem::Location(loc) => {
                     let loc_tag = loc.tag().to_raw();
                     match loc.value() {
-                        typed::LocationValue::Value(num) => {
+                        typed::StatLocationValue::Value(num) => {
                             let val = num.parse_fixed();
                             if let Some(AxisLocation::One { tag, value }) = location.as_ref() {
                                 location = Some(AxisLocation::Four(vec![(*tag, *value)]));
@@ -1430,7 +1430,7 @@ impl<'a> CompilationCtx<'a> {
                                 });
                             }
                         }
-                        typed::LocationValue::MinMax { nominal, min, max } => {
+                        typed::StatLocationValue::MinMax { nominal, min, max } => {
                             location = Some(AxisLocation::Two {
                                 tag: loc_tag,
                                 nominal: nominal.parse_fixed(),
@@ -1438,7 +1438,7 @@ impl<'a> CompilationCtx<'a> {
                                 min: min.parse_fixed(),
                             });
                         }
-                        typed::LocationValue::Linked { value, linked } => {
+                        typed::StatLocationValue::Linked { value, linked } => {
                             location = Some(AxisLocation::Three {
                                 tag: loc_tag,
                                 value: value.parse_fixed(),
