@@ -1524,7 +1524,7 @@ mod tests {
                 (UserCoord::new(700.0), NormalizedCoord::new(1.0)),
             ],
             static_metadata
-                .variation_model
+                .glyph_model
                 .locations()
                 .map(|loc| (only_coord(loc).to_user(&wght.converter), only_coord(loc)))
                 .collect::<Vec<_>>()

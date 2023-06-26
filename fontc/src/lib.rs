@@ -239,6 +239,7 @@ fn add_feature_be_job(
                 dependencies: HashSet::from([
                     FeWorkIdentifier::FinalizeStaticMetadata.into(),
                     FeWorkIdentifier::Features.into(),
+                    FeWorkIdentifier::Kerning.into(),
                 ]),
                 read_access: ReadAccess::Dependencies,
                 write_access,

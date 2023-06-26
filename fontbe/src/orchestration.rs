@@ -659,7 +659,7 @@ mod tests {
     use font_types::Tag;
     use fontir::{
         coords::NormalizedCoord,
-        variations::{Tent, VariationRegion},
+        variations::{ModelConstraints, Tent, VariationRegion},
     };
     use tempfile::tempdir;
 
@@ -711,6 +711,7 @@ mod tests {
                 NormalizedCoord::new(0.0),
                 NormalizedCoord::new(1.0),
                 NormalizedCoord::new(1.0),
+                ModelConstraints::ZeroAtDefault,
             ),
         );
         region

@@ -229,7 +229,7 @@ impl Work<Context, Error> for GlyphWork {
         trace!("BE glyph work for '{}'", self.glyph_name);
 
         let static_metadata = context.ir.get_final_static_metadata();
-        let var_model = &static_metadata.variation_model;
+        let var_model = &static_metadata.glyph_model;
         let default_location = static_metadata.default_location();
         let ir_glyph = &*context.ir.get_glyph_ir(&self.glyph_name);
         let glyph: CheckedGlyph = ir_glyph.try_into()?;

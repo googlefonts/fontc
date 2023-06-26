@@ -7,7 +7,7 @@ use crate::{
         GlobalMetricsSerdeRepr, GlyphSerdeRepr, KerningSerdeRepr, MiscSerdeRepr,
         StaticMetadataSerdeRepr,
     },
-    variations::VariationModel,
+    variations::{ModelConstraints, VariationModel},
 };
 use chrono::{DateTime, Utc};
 use font_types::NameId;
@@ -58,8 +58,9 @@ pub struct StaticMetadata {
     ///
     /// This copy includes all locations used in the entire font. That is, every
     /// location any glyph has an instance. Use of a location not in the global model
-    /// is an error.
-    pub variation_model: VariationModel,
+    /// is an error. This model enforces the no delta at the default location constraint
+    /// used in things like gvar.
+    pub glyph_model: VariationModel,
 
     axes_default: NormalizedLocation,
     variable_axes_default: NormalizedLocation,
@@ -119,6 +120,12 @@ pub struct Kerning {
     pub kerns: HashMap<KernPair, KernValues>,
 }
 
+impl Kerning {
+    pub fn is_empty(&self) -> bool {
+        self.kerns.is_empty()
+    }
+}
+
 /// A participant in kerning, one of the entries in a kerning pair.
 ///
 /// Concretely, a glyph or a group of glyphs.
@@ -158,7 +165,11 @@ impl StaticMetadata {
                 key_to_name.insert(NameKey::new(name_id_gen.into(), name), name.clone());
             });
 
-        let variation_model = VariationModel::new(glyph_locations, variable_axes.clone())?;
+        let glyph_model = VariationModel::new(
+            glyph_locations,
+            variable_axes.clone(),
+            ModelConstraints::ZeroAtDefault,
+        )?;
 
         let axes_default = axes
             .iter()
@@ -185,7 +196,7 @@ impl StaticMetadata {
             variable_axes,
             named_instances,
             glyph_order,
-            variation_model,
+            glyph_model,
             axes_default,
             variable_axes_default,
             misc: MiscMetadata {
@@ -707,14 +718,17 @@ pub struct NamedInstance {
 ///
 /// In time will split gpos/gsub, have different features for different
 /// locations, etc.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum Features {
     Empty,
     File {
         fea_file: PathBuf,
         include_dir: Option<PathBuf>,
     },
-    Memory(String),
+    Memory {
+        fea_content: String,
+        include_dir: Option<PathBuf>,
+    },
 }
 
 impl Features {
@@ -728,7 +742,10 @@ impl Features {
         }
     }
     pub fn from_string(fea_content: String) -> Features {
-        Features::Memory(fea_content)
+        Features::Memory {
+            fea_content,
+            include_dir: None,
+        }
     }
 }
 

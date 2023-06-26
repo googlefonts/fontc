@@ -29,7 +29,7 @@ const ONE: OrderedFloat<f32> = OrderedFloat(1.0);
 /// See `class VariationModel` in <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/varLib/models.py>
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct VariationModel {
-    default: NormalizedLocation,
+    pub default: NormalizedLocation,
 
     /// Non-point axes
     axes: Vec<Axis>,
@@ -55,6 +55,7 @@ impl VariationModel {
     pub fn new(
         locations: HashSet<NormalizedLocation>,
         axes: Vec<Axis>,
+        constraints: ModelConstraints,
     ) -> Result<Self, VariationModelError> {
         for axis in axes.iter() {
             if axis.is_point() {
@@ -90,8 +91,8 @@ impl VariationModel {
         let sorting_hat = LocationSortingHat::new(&locations, &axis_order);
         locations.sort_by_cached_key(|loc| sorting_hat.key_for(loc));
 
-        let regions = regions_for(&axis_order, &locations);
-        let influence = master_influence(&axis_order, &regions);
+        let regions = regions_for(&axis_order, &locations, constraints);
+        let influence = master_influence(&axis_order, &regions, constraints);
         let delta_weights = delta_weights(&locations, &influence);
 
         if log::log_enabled!(log::Level::Trace) {
@@ -155,6 +156,10 @@ impl VariationModel {
         P: Copy + Default + Sub<P, Output = V>,
         V: Copy + Mul<f64, Output = V> + Sub<V, Output = V>,
     {
+        if point_seqs.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let point_seqs: HashMap<_, _> = point_seqs
             .iter()
             .map(|(loc, seq)| {
@@ -164,15 +169,15 @@ impl VariationModel {
             })
             .collect();
 
-        let Some(defaults) = point_seqs.get(&self.default) else {
-            return Err(DeltaError::DefaultUndefined);
-        };
         for loc in point_seqs.keys() {
             if !self.locations.contains(loc) {
                 return Err(DeltaError::UnknownLocation(loc.clone()));
             }
         }
-        if point_seqs.values().any(|pts| pts.len() != defaults.len()) {
+
+        // we know point_seqs is non-empty
+        let point_seq_len = point_seqs.values().next().unwrap().len();
+        if point_seqs.values().any(|pts| pts.len() != point_seq_len) {
             return Err(DeltaError::InconsistentNumbersOfPoints);
         }
 
@@ -403,11 +408,9 @@ impl VariationRegion {
 
     /// The scalar multiplier for the provided location for this region
     ///
-    /// Returns None for no influence, Some(non-zero value) for influence.
-    ///
     /// In Python, supportScalar. We only implement the ot=True, extrapolate=False paths.
     /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L123>.
-    fn scalar_at(&self, location: &NormalizedLocation) -> OrderedFloat<f32> {
+    pub fn scalar_at(&self, location: &NormalizedLocation) -> OrderedFloat<f32> {
         let scalar = self.axis_tents.iter().filter(|(_, ar)| ar.validate()).fold(
             ONE,
             |scalar, (tag, tent)| {
@@ -467,26 +470,51 @@ impl VariationRegion {
     }
 }
 
+#[derive(Serialize, Deserialize, Copy, Clone, PartialEq, Eq)]
+pub enum ModelConstraints {
+    None,
+    /// For things like glyf where the influence of variations at
+    ZeroAtDefault,
+}
+
 /// The min/peak/max of a masters influence.
 ///
 /// Visualize as a tent of influence, starting at min, peaking at peak,
 /// and dropping off to zero at max.
-#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Tent {
     pub min: NormalizedCoord,
     pub peak: NormalizedCoord,
     pub max: NormalizedCoord,
+    constraints: ModelConstraints,
 }
 
 impl Tent {
-    pub fn new(mut min: NormalizedCoord, peak: NormalizedCoord, mut max: NormalizedCoord) -> Self {
-        let zero = NormalizedCoord::new(0.0);
-        if peak > zero {
-            min = zero;
-        } else {
-            max = zero;
+    pub fn new(
+        mut min: NormalizedCoord,
+        peak: NormalizedCoord,
+        mut max: NormalizedCoord,
+        constraints: ModelConstraints,
+    ) -> Self {
+        if constraints == ModelConstraints::ZeroAtDefault {
+            let zero = NormalizedCoord::new(0.0);
+            if peak > zero {
+                min = zero;
+            } else {
+                max = zero;
+            }
         }
-        Tent { min, peak, max }
+        Tent {
+            min,
+            peak,
+            max,
+            constraints,
+        }
+    }
+
+    pub fn zeroes(constraints: ModelConstraints) -> Tent {
+        let zero = NormalizedCoord::new(0.0);
+        Tent::new(zero, zero, zero, constraints)
     }
 
     /// OT-specific validation of whether we could have any influence
@@ -502,9 +530,10 @@ impl Tent {
         if min > peak || peak > max {
             return false;
         }
-        // In fonts the influence at zero must be zero so we cannot span zero
-        if min < ZERO && max > ZERO {
-            return false;
+        if self.constraints == ModelConstraints::ZeroAtDefault {
+            if min < ZERO && max > ZERO {
+                return false;
+            }
         }
         true
     }
@@ -535,12 +564,13 @@ impl Display for Tent {
     }
 }
 
-impl From<(f32, f32, f32)> for Tent {
-    fn from(value: (f32, f32, f32)) -> Self {
+impl From<(f32, f32, f32, ModelConstraints)> for Tent {
+    fn from(value: (f32, f32, f32, ModelConstraints)) -> Self {
         Tent::new(
             NormalizedCoord::new(value.0),
             NormalizedCoord::new(value.1),
             NormalizedCoord::new(value.2),
+            value.3,
         )
     }
 }
@@ -549,7 +579,11 @@ impl From<(f32, f32, f32)> for Tent {
 ///
 /// VariationModel::_locationsToRegions in Python.
 /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L416>
-fn regions_for(axis_order: &Vec<Tag>, locations: &[NormalizedLocation]) -> Vec<VariationRegion> {
+fn regions_for(
+    axis_order: &Vec<Tag>,
+    locations: &[NormalizedLocation],
+    constraints: ModelConstraints,
+) -> Vec<VariationRegion> {
     let mut minmax = HashMap::<Tag, (NormalizedCoord, NormalizedCoord)>::new();
     for location in locations.iter() {
         for (tag, value) in location.iter() {
@@ -565,6 +599,8 @@ fn regions_for(axis_order: &Vec<Tag>, locations: &[NormalizedLocation]) -> Vec<V
         }
     }
 
+    eprintln!("regions_for {locations:?}:\nminmax {minmax:?}");
+
     locations
         .iter()
         .map(|location| {
@@ -574,12 +610,18 @@ fn regions_for(axis_order: &Vec<Tag>, locations: &[NormalizedLocation]) -> Vec<V
                 let value = location.get(*tag).unwrap();
 
                 // Python just scrubs 0's out of the location's. We elect to store representative tents.
-                let (min, max) = if value.into_inner() == ZERO {
+                let (min, max) = if value.into_inner() == ZERO
+                    && constraints == ModelConstraints::ZeroAtDefault
+                {
                     (NormalizedCoord::new(ZERO), NormalizedCoord::new(ZERO))
                 } else {
                     *minmax.get(tag).unwrap()
                 };
-                region.insert(*tag, Tent::new(min, value, max));
+                eprintln!(
+                    "  {location:?} += {:?}",
+                    Tent::new(min, value, max, constraints)
+                );
+                region.insert(*tag, Tent::new(min, value, max, constraints));
             }
             region
         })
@@ -593,7 +635,11 @@ fn regions_for(axis_order: &Vec<Tag>, locations: &[NormalizedLocation]) -> Vec<V
 ///
 /// VariationModel::_computeMasterSupports in Python.
 /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L360>
-fn master_influence(axis_order: &Vec<Tag>, regions: &[VariationRegion]) -> Vec<VariationRegion> {
+fn master_influence(
+    axis_order: &Vec<Tag>,
+    regions: &[VariationRegion],
+    constraints: ModelConstraints,
+) -> Vec<VariationRegion> {
     let mut influence = Vec::new();
     for (i, region) in regions.iter().enumerate() {
         let mut region = region.clone();
@@ -645,7 +691,12 @@ fn master_influence(axis_order: &Vec<Tag>, regions: &[VariationRegion]) -> Vec<V
             }
             // Weird things happen when the regions aren't formed in the axis order
             for tag in axis_order {
-                region.insert(*tag, axis_regions.remove(tag).unwrap_or_default());
+                region.insert(
+                    *tag,
+                    axis_regions
+                        .remove(tag)
+                        .unwrap_or_else(|| Tent::zeroes(constraints)),
+                );
             }
         }
         influence.push(region);
@@ -712,10 +763,22 @@ mod tests {
     use crate::{
         coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
         ir::Axis,
-        variations::ONE,
+        variations::{ModelConstraints, ONE},
     };
 
     use super::{Tent, VariationModel, VariationRegion};
+
+    // for testing only, assume 3 floats is meant to be a tent
+    impl From<(f32, f32, f32)> for Tent {
+        fn from(value: (f32, f32, f32)) -> Self {
+            Tent::new(
+                NormalizedCoord::new(value.0),
+                NormalizedCoord::new(value.1),
+                NormalizedCoord::new(value.2),
+                ModelConstraints::ZeroAtDefault,
+            )
+        }
+    }
 
     fn axis(tag: &str) -> Axis {
         let (name, tag, min, default, max) = match tag {
@@ -832,7 +895,7 @@ mod tests {
         let loc = NormalizedLocation::new();
         let locations = HashSet::from([loc]);
         let axes = vec![axis("wght")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         assert_eq!(vec![norm_loc(&[("wght", 0.0)])], model.locations);
         assert_eq!(vec![default_master_weight()], model.delta_weights);
@@ -847,7 +910,7 @@ mod tests {
         let loc = norm_loc(&[("wght", 0.0), ("ital", 0.0), ("wdth", 0.0)]);
         let locations = HashSet::from([loc.clone()]);
         let axes = vec![axis("wdth"), axis("wght"), axis("ital")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         assert_eq!(vec![loc], model.locations);
         assert_eq!(vec![default_master_weight()], model.delta_weights);
@@ -864,7 +927,7 @@ mod tests {
         let weight_1 = norm_loc(&[("wght", 1.0)]);
         let locations = HashSet::from([weight_1.clone(), weight_0.clone()]);
         let axes = vec![axis("wght")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         assert_eq!(vec![weight_0, weight_1], model.locations);
         assert_eq!(
@@ -885,7 +948,7 @@ mod tests {
         let weight_1 = norm_loc(&[("wght", 1.0)]);
         let locations = HashSet::from([weight_1.clone(), weight_0.clone(), weight_minus_1.clone()]);
         let axes = vec![axis("wght")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         assert_eq!(vec![weight_0, weight_minus_1, weight_1], model.locations);
         assert_eq!(
@@ -916,7 +979,7 @@ mod tests {
             wght1_wdth1.clone(),
         ]);
         let axes = vec![axis("wght"), axis("wdth")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         assert_eq!(
             vec![wght0_wdth0, wght1_wdth0, wght0_wdth1, wght1_wdth1],
@@ -962,7 +1025,7 @@ mod tests {
             fixup.clone(),
         ]);
         let axes = vec![axis("wght"), axis("wdth")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         assert_eq!(
             vec![
@@ -1005,7 +1068,7 @@ mod tests {
             norm_loc(&[("wght", 1.0), ("wdth", 0.0)]),
         ]);
         let axes = vec![axis("wght"), axis("wdth")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         assert_eq!(
             vec![
@@ -1069,7 +1132,7 @@ mod tests {
             norm_loc(&[("foo", 1.0), ("bar", 1.0)]),
         ]);
         let axes = vec![axis("bar"), axis("foo")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         assert_eq!(
             vec![
@@ -1119,7 +1182,7 @@ mod tests {
             norm_loc(&[("foo", 0.0), ("bar", 1.0)]),
         ]);
         let axes = vec![axis("bar"), axis("foo")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         assert_eq!(
             vec![
@@ -1162,14 +1225,7 @@ mod tests {
     fn region(spec: &[(&str, f32, f32, f32)]) -> VariationRegion {
         let mut region = VariationRegion::new();
         for (tag, min, peak, max) in spec {
-            region.insert(
-                Tag::from_str(tag).unwrap(),
-                Tent::new(
-                    NormalizedCoord::new(*min),
-                    NormalizedCoord::new(*peak),
-                    NormalizedCoord::new(*max),
-                ),
-            );
+            region.insert(Tag::from_str(tag).unwrap(), (*min, *peak, *max).into());
         }
         region
     }
@@ -1187,7 +1243,7 @@ mod tests {
             max_wght_wdth.clone(),
         ]);
         let axes = vec![axis("wght"), axis("wdth")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         let point_seqs = HashMap::from([
             (origin, vec![Point::new(10.0, 10.0)]),
@@ -1230,7 +1286,7 @@ mod tests {
         let min_wght = norm_loc(&[("wght", -1.0)]);
         let locations = HashSet::from([origin.clone(), max_wght.clone(), min_wght.clone()]);
         let axes = vec![axis("wght")];
-        let model = VariationModel::new(locations, axes).unwrap();
+        let model = VariationModel::new(locations, axes, ModelConstraints::ZeroAtDefault).unwrap();
 
         let point_seqs = HashMap::from([
             (origin, vec![10.0]),
@@ -1246,5 +1302,30 @@ mod tests {
             ],
             model.deltas(&point_seqs).unwrap()
         );
+    }
+
+    #[test]
+    fn model_with_no_default_location() {
+        let max_wght = norm_loc(&[("wght", 1.0)]);
+        let min_wght = norm_loc(&[("wght", -1.0)]);
+        let locations = HashSet::from([max_wght.clone(), min_wght.clone()]);
+        let axes = vec![axis("wght")];
+        let model = VariationModel::new(locations, axes, ModelConstraints::None).unwrap();
+        let point_seqs = HashMap::from([(max_wght, vec![20.0]), (min_wght, vec![10.0])]);
+        let deltas = model.deltas(&point_seqs).unwrap();
+
+        let origin = norm_loc(&[("wght", 0.0)]);
+        let value_at_origin = deltas
+            .iter()
+            .filter_map(|(region, values)| {
+                assert_eq!(1, values.len());
+                let scaler = region.scalar_at(&origin).into_inner();
+                match scaler {
+                    _ if scaler == 0.0 => None,
+                    _ => Some(scaler as f64 * values[0]),
+                }
+            })
+            .sum();
+        assert_eq!(15.0, value_at_origin);
     }
 }

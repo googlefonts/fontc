@@ -545,10 +545,20 @@ impl Work<Context, WorkError> for KerningWork {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
+        let variable_axes: HashSet<_> = static_metadata
+            .variable_axes
+            .iter()
+            .map(|a| a.tag)
+            .collect();
         let master_positions: HashMap<_, _> = font
             .masters
             .iter()
             .map(|m| (&m.id, font_info.locations.get(&m.axes_values).unwrap()))
+            .map(|(id, pos)| {
+                let mut pos = pos.clone();
+                pos.retain(|tag, _| variable_axes.contains(tag));
+                (id, pos)
+            })
             .collect();
 
         let mut kerning = Kerning::default();
@@ -951,6 +961,26 @@ mod tests {
         (source, context)
     }
 
+    fn build_kerning(glyphs_file: PathBuf) -> (impl Source, Context) {
+        let (source, context) = build_static_metadata(glyphs_file);
+        context
+            .copy_for_work(
+                Access::One(WorkId::InitStaticMetadata),
+                Access::One(WorkId::FinalizeStaticMetadata),
+            )
+            .set_final_static_metadata((*context.get_init_static_metadata()).clone());
+        let task_context = context.copy_for_work(
+            Access::one(WorkId::FinalizeStaticMetadata),
+            Access::one(WorkId::Kerning),
+        );
+        source
+            .create_kerning_ir_work(&context.input)
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        (source, context)
+    }
+
     fn build_glyphs(
         source: &impl Source,
         context: &Context,
@@ -1281,5 +1311,22 @@ mod tests {
                 static_metadata.misc.underline_position.0
             )
         );
+    }
+
+    // .glyphs v2 defaults to Weight, Width, Custom if no axes are specified
+    // Avoid ending up with kerning for locations like {XXXX: 0.00, wdth: 0.00, wght: 1.00}
+    // when XXXX and wdth are point axes that won't be in fvar. Oswald was hitting this.
+    #[test]
+    fn kern_positions_on_live_axes() {
+        let (_, context) = build_kerning(glyphs2_dir().join("KernImplicitAxes.glyphs"));
+        let kerning = context.get_kerning();
+        assert!(!kerning.is_empty(), "{kerning:#?}");
+        let bad_kerns: Vec<_> = kerning
+            .kerns
+            .values()
+            .flat_map(|v| v.keys())
+            .filter(|pos| !pos.axis_tags().all(|tag| *tag == Tag::new(b"wght")))
+            .collect();
+        assert!(bad_kerns.is_empty(), "{bad_kerns:#?}");
     }
 }

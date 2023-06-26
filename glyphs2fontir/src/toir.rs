@@ -113,7 +113,10 @@ pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features
     // TODO: token expansion
     // TODO: implement notes and labels
     let fea_snippets: Vec<String> = features.iter().map(|f| f.as_str().to_string()).collect();
-    Ok(ir::Features::Memory(fea_snippets.join("\n\n")))
+    Ok(ir::Features::Memory {
+        fea_content: fea_snippets.join("\n\n"),
+        include_dir: None,
+    })
 }
 
 fn design_location(axes: &[ir::Axis], axes_values: &[OrderedFloat<f64>]) -> DesignLocation {

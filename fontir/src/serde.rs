@@ -79,7 +79,7 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
 
 impl From<StaticMetadata> for StaticMetadataSerdeRepr {
     fn from(from: StaticMetadata) -> Self {
-        let glyph_locations = from.variation_model.locations().cloned().collect();
+        let glyph_locations = from.glyph_model.locations().cloned().collect();
         StaticMetadataSerdeRepr {
             units_per_em: from.units_per_em,
             axes: from.axes,
