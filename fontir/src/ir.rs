@@ -55,7 +55,8 @@ pub struct StaticMetadata {
     ///
     /// This copy includes all locations used in the entire font. That is, every
     /// location any glyph has an instance. Use of a location not in the global model
-    /// is an error.
+    /// is an error. This model enforces the no delta at the default location constraint
+    /// used in things like gvar.
     pub variation_model: VariationModel,
 
     axes_default: NormalizedLocation,
@@ -183,6 +184,12 @@ pub struct Kerning {
     /// Used for both LTR and RTL. The BE application differs but the concept
     /// is the same.
     pub kerns: HashMap<KernPair, KernValues>,
+}
+
+impl Kerning {
+    pub fn is_empty(&self) -> bool {
+        self.kerns.is_empty()
+    }
 }
 
 /// A participant in kerning, one of the entries in a kerning pair.
@@ -765,7 +772,10 @@ pub enum Features {
         fea_file: PathBuf,
         include_dir: Option<PathBuf>,
     },
-    Memory(String),
+    Memory {
+        fea_content: String,
+        include_dir: Option<PathBuf>,
+    },
 }
 
 impl Features {
@@ -779,7 +789,10 @@ impl Features {
         }
     }
     pub fn from_string(fea_content: String) -> Features {
-        Features::Memory(fea_content)
+        Features::Memory {
+            fea_content,
+            include_dir: None,
+        }
     }
 }
 

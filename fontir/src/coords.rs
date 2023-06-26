@@ -277,6 +277,26 @@ impl<T: Copy> Location<T> {
     }
 }
 
+impl UserLocation {
+    pub fn to_normalized(&self, axes: &HashMap<Tag, &Axis>) -> NormalizedLocation {
+        Location::<NormalizedCoord>(
+            self.0
+                .iter()
+                .map(|(tag, dc)| (*tag, dc.to_normalized(&axes.get(tag).unwrap().converter)))
+                .collect(),
+        )
+    }
+
+    pub fn to_design(&self, axes: &HashMap<Tag, &Axis>) -> DesignLocation {
+        Location::<DesignCoord>(
+            self.0
+                .iter()
+                .map(|(tag, coord)| (*tag, coord.to_design(&axes.get(tag).unwrap().converter)))
+                .collect(),
+        )
+    }
+}
+
 impl DesignLocation {
     pub fn to_normalized(&self, axes: &HashMap<Tag, &Axis>) -> NormalizedLocation {
         Location::<NormalizedCoord>(

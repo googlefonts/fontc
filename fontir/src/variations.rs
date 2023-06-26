@@ -29,7 +29,7 @@ const ONE: OrderedFloat<f32> = OrderedFloat(1.0);
 /// See `class VariationModel` in <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/varLib/models.py>
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct VariationModel {
-    default: NormalizedLocation,
+    pub default: NormalizedLocation,
 
     /// Non-point axes
     axes: Vec<Axis>,
@@ -155,6 +155,10 @@ impl VariationModel {
         P: Copy + Default + Sub<P, Output = V>,
         V: Copy + Mul<f64, Output = V> + Sub<V, Output = V>,
     {
+        if point_seqs.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let point_seqs: HashMap<_, _> = point_seqs
             .iter()
             .map(|(loc, seq)| {
@@ -164,15 +168,15 @@ impl VariationModel {
             })
             .collect();
 
-        let Some(defaults) = point_seqs.get(&self.default) else {
-            return Err(DeltaError::DefaultUndefined);
-        };
         for loc in point_seqs.keys() {
             if !self.locations.contains(loc) {
                 return Err(DeltaError::UnknownLocation(loc.clone()));
             }
         }
-        if point_seqs.values().any(|pts| pts.len() != defaults.len()) {
+
+        // we know point_seqs is non-empty
+        let point_seq_len = point_seqs.values().next().unwrap().len();
+        if point_seqs.values().any(|pts| pts.len() != point_seq_len) {
             return Err(DeltaError::InconsistentNumbersOfPoints);
         }
 
@@ -403,11 +407,9 @@ impl VariationRegion {
 
     /// The scalar multiplier for the provided location for this region
     ///
-    /// Returns None for no influence, Some(non-zero value) for influence.
-    ///
     /// In Python, supportScalar. We only implement the ot=True, extrapolate=False paths.
     /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L123>.
-    fn scalar_at(&self, location: &NormalizedLocation) -> OrderedFloat<f32> {
+    pub fn scalar_at(&self, location: &NormalizedLocation) -> OrderedFloat<f32> {
         let scalar = self.axis_tents.iter().filter(|(_, ar)| ar.validate()).fold(
             ONE,
             |scalar, (tag, tent)| {
@@ -475,7 +477,7 @@ impl VariationRegion {
 ///
 /// Visualize as a tent of influence, starting at min, peaking at peak,
 /// and dropping off to zero at max.
-#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Tent {
     pub min: NormalizedCoord,
     pub peak: NormalizedCoord,
@@ -493,6 +495,11 @@ impl Tent {
         Tent { min, peak, max }
     }
 
+    pub fn zeroes() -> Tent {
+        let zero = NormalizedCoord::new(0.0);
+        Tent::new(zero, zero, zero)
+    }
+
     /// OT-specific validation of whether we could have any influence
     ///
     /// (0,0,0) IS valid, meaning apply my deltas at full scale always
@@ -506,7 +513,6 @@ impl Tent {
         if min > peak || peak > max {
             return false;
         }
-        // In fonts the influence at zero must be zero so we cannot span zero
         if min < ZERO && max > ZERO {
             return false;
         }
@@ -647,7 +653,7 @@ fn master_influence(axis_order: &[Tag], regions: &[VariationRegion]) -> Vec<Vari
             }
             // Weird things happen when the regions aren't formed in the axis order
             for tag in axis_order {
-                region.insert(*tag, axis_regions.remove(tag).unwrap_or_default());
+                region.insert(*tag, axis_regions.remove(tag).unwrap_or_else(Tent::zeroes));
             }
         }
         influence.push(region);
@@ -717,7 +723,7 @@ mod tests {
         variations::ONE,
     };
 
-    use super::{Tent, VariationModel, VariationRegion};
+    use super::{VariationModel, VariationRegion};
 
     fn axis(tag: &str) -> Axis {
         let (name, tag, min, default, max) = match tag {
@@ -1164,14 +1170,7 @@ mod tests {
     fn region(spec: &[(&str, f32, f32, f32)]) -> VariationRegion {
         let mut region = VariationRegion::new();
         for (tag, min, peak, max) in spec {
-            region.insert(
-                Tag::from_str(tag).unwrap(),
-                Tent::new(
-                    NormalizedCoord::new(*min),
-                    NormalizedCoord::new(*peak),
-                    NormalizedCoord::new(*max),
-                ),
-            );
+            region.insert(Tag::from_str(tag).unwrap(), (*min, *peak, *max).into());
         }
         region
     }
