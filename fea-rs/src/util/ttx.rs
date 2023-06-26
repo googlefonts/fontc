@@ -253,12 +253,14 @@ pub(crate) fn run_test(
     fvar: &MockVariationInfo,
 ) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| {
-        let fvar = is_variable(&path).then_some(fvar as _);
-        match Compiler::new(&path, glyph_map, fvar)
+        let mut compiler = Compiler::new(&path, glyph_map)
             .verbose(std::env::var(super::VERBOSE).is_ok())
-            .with_opts(Opts::new().make_post_table(true))
-            .compile_binary()
-        {
+            .with_opts(Opts::new().make_post_table(true));
+        if is_variable(&path) {
+            compiler = compiler.with_variable_info(fvar);
+        }
+
+        match compiler.compile_binary() {
             // this means we have a test case that doesn't exist or something weird
             Err(CompilerError::SourceLoad(err)) => panic!("{err}"),
             Err(CompilerError::WriteFail(err)) => panic!("{err}"),

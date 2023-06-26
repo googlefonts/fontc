@@ -47,15 +47,11 @@ impl<'a> Compiler<'a> {
     /// identifier that your resolver will resolve.
     ///
     /// [`with_resolver`]: Self::with_resolver
-    pub fn new(
-        root_path: impl Into<OsString>,
-        glyph_map: &'a GlyphMap,
-        var_info: Option<&'a dyn VariationInfo>,
-    ) -> Self {
+    pub fn new(root_path: impl Into<OsString>, glyph_map: &'a GlyphMap) -> Self {
         Compiler {
             root_path: root_path.into(),
             glyph_map,
-            var_info,
+            var_info: None,
             opts: Default::default(),
             verbose: false,
             resolver: Default::default(),
@@ -66,6 +62,12 @@ impl<'a> Compiler<'a> {
     /// Provide a custom `SourceResolver`, for mapping paths to their contents.
     pub fn with_resolver(mut self, resolver: impl SourceResolver + 'static) -> Self {
         self.resolver = Some(Box::new(resolver));
+        self
+    }
+
+    /// Provide [`VariationInfo`], necessary when compiling features for a variable font.
+    pub fn with_variable_info(mut self, var_info: &'a dyn VariationInfo) -> Self {
+        self.var_info = Some(var_info);
         self
     }
 

@@ -106,12 +106,14 @@ fn bad_test_body(
     glyph_map: &GlyphMap,
     var_info: &MockVariationInfo,
 ) -> Result<(), TestResult> {
-    let var_info = test_utils::is_variable(path).then_some(var_info as _);
-    match Compiler::new(path, glyph_map, var_info)
+    let mut compiler = Compiler::new(path, glyph_map)
         .verbose(std::env::var(crate::util::VERBOSE).is_ok())
-        .with_opts(Opts::new().make_post_table(true))
-        .compile_binary()
-    {
+        .with_opts(Opts::new().make_post_table(true));
+    if test_utils::is_variable(path) {
+        compiler = compiler.with_variable_info(var_info);
+    }
+
+    match compiler.compile_binary() {
         Ok(_) => Err(TestResult::UnexpectedSuccess),
         // this means we have a test case that doesn't exist or something weird
         Err(CompilerError::SourceLoad(err)) => panic!("{err}"),
