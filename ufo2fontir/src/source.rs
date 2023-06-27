@@ -1256,7 +1256,7 @@ mod tests {
         pos: f32,
     ) {
         let mut loc = DesignLocation::new();
-        loc.set_pos(axis, DesignCoord::new(pos));
+        loc.insert(axis, DesignCoord::new(pos));
         add_to
             .entry(testdata_dir().join(glif_file))
             .or_default()
@@ -1330,7 +1330,7 @@ mod tests {
         let (source, _) = load_wght_var();
         let ds = source.load_designspace().unwrap();
         let mut loc = DesignLocation::new();
-        loc.set_pos("Weight", DesignCoord::new(400.0));
+        loc.insert("Weight", DesignCoord::new(400.0));
         assert_eq!(
             loc,
             to_design_location(&default_master(&ds).unwrap().1.location)

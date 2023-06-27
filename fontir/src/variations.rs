@@ -75,8 +75,8 @@ impl VariationModel {
 
             // Fill in missing axis positions with 0
             for axis in axes.iter() {
-                if !location.has(&axis.name) {
-                    location.set_pos(axis.name.clone(), NormalizedCoord::new(0.0));
+                if !location.contains(&axis.name) {
+                    location.insert(axis.name.clone(), NormalizedCoord::new(0.0));
                 }
             }
 
