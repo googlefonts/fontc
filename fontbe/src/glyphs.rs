@@ -5,8 +5,8 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use fontdrasil::{orchestration::Work, types::GlyphName};
-use fontir::{coords::NormalizedLocation, ir};
+use fontdrasil::{coords::NormalizedLocation, orchestration::Work, types::GlyphName};
+use fontir::ir;
 use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect};
 use log::{log_enabled, trace, warn};
 

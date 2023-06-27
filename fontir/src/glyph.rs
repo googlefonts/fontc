@@ -5,7 +5,7 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use fontdrasil::{orchestration::Work, types::GlyphName};
+use fontdrasil::{coords::NormalizedLocation, orchestration::Work, types::GlyphName};
 use indexmap::IndexSet;
 use kurbo::Affine;
 use log::{debug, log_enabled, trace};
@@ -13,7 +13,6 @@ use ordered_float::OrderedFloat;
 use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 
 use crate::{
-    coords::NormalizedLocation,
     error::WorkError,
     ir::{Component, Glyph, GlyphBuilder},
     orchestration::{Context, Flags, IrWork},
@@ -425,13 +424,16 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
 mod tests {
     use std::{collections::HashSet, path::Path};
 
-    use fontdrasil::{orchestration::Access, types::GlyphName};
+    use fontdrasil::{
+        coords::{NormalizedCoord, NormalizedLocation},
+        orchestration::Access,
+        types::GlyphName,
+    };
     use indexmap::IndexSet;
     use kurbo::{Affine, BezPath};
     use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 
     use crate::{
-        coords::{NormalizedCoord, NormalizedLocation},
         glyph::has_consistent_2x2_transforms,
         ir::{Component, Glyph, GlyphBuilder, GlyphInstance},
         orchestration::{Context, Flags},

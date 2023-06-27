@@ -1,8 +1,11 @@
 use chrono::{TimeZone, Utc};
 use font_types::{NameId, Tag};
+use fontdrasil::axis::Axis;
 use fontdrasil::orchestration::Work;
-use fontdrasil::types::{GlyphName, GroupName};
-use fontir::coords::NormalizedCoord;
+use fontdrasil::{
+    coords::NormalizedCoord,
+    types::{GlyphName, GroupName},
+};
 use fontir::error::{Error, WorkError};
 use fontir::ir::{
     self, GlobalMetric, GlobalMetrics, GlyphInstance, KernParticipant, Kerning, NameBuilder,
@@ -620,7 +623,7 @@ struct GlyphIrWork {
 fn check_pos(
     glyph_name: &GlyphName,
     positions: &HashSet<NormalizedCoord>,
-    axis: &ir::Axis,
+    axis: &Axis,
     pos: &NormalizedCoord,
 ) -> Result<(), WorkError> {
     if !positions.contains(pos) {
@@ -729,14 +732,18 @@ mod tests {
 
     use font_types::NameId;
     use font_types::Tag;
-    use fontdrasil::{orchestration::Access, types::GlyphName};
-    use fontir::{
+    use fontdrasil::{
+        axis::Axis,
         coords::{
             CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
             UserLocation,
         },
+        orchestration::Access,
+        types::GlyphName,
+    };
+    use fontir::{
         error::WorkError,
-        ir::{self, GlobalMetricsInstance, NameKey},
+        ir::{GlobalMetricsInstance, NameKey},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Source,
@@ -888,7 +895,7 @@ mod tests {
         // Did you load the mappings? DID YOU?!
         assert_eq!(
             vec![
-                ir::Axis {
+                Axis {
                     name: "Weight".into(),
                     tag: Tag::from_str("wght").unwrap(),
                     min: UserCoord::new(100.0),
@@ -908,7 +915,7 @@ mod tests {
                         4
                     ),
                 },
-                ir::Axis {
+                Axis {
                     name: "Optical Size".into(),
                     tag: Tag::from_str("opsz").unwrap(),
                     min: UserCoord::new(12.0),

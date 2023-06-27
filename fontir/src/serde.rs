@@ -6,51 +6,18 @@ use std::{
 use chrono::{DateTime, Utc};
 use filetime::FileTime;
 use font_types::Tag;
+use fontdrasil::{axis::Axis, coords::NormalizedLocation};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use write_fonts::tables::os2::SelectionFlags;
 
 use crate::{
-    coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
     ir::{
-        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, KernParticipant,
-        Kerning, MiscMetadata, NameKey, NamedInstance, StaticMetadata,
+        GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, KernParticipant, Kerning,
+        MiscMetadata, NameKey, NamedInstance, StaticMetadata,
     },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CoordConverterSerdeRepr {
-    default_idx: usize,
-    user_to_design: Vec<(f32, f32)>,
-}
-
-impl From<CoordConverterSerdeRepr> for CoordConverter {
-    fn from(from: CoordConverterSerdeRepr) -> Self {
-        let examples = from
-            .user_to_design
-            .into_iter()
-            .map(|(u, d)| (UserCoord::new(u), DesignCoord::new(d)))
-            .collect();
-        CoordConverter::new(examples, from.default_idx)
-    }
-}
-
-impl From<CoordConverter> for CoordConverterSerdeRepr {
-    fn from(from: CoordConverter) -> Self {
-        let user_to_design = from
-            .user_to_design
-            .from
-            .iter()
-            .zip(from.user_to_design.to)
-            .map(|(u, d)| (u.into_inner(), d.into_inner()))
-            .collect();
-        CoordConverterSerdeRepr {
-            default_idx: from.default_idx,
-            user_to_design,
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StaticMetadataSerdeRepr {

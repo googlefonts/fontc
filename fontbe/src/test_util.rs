@@ -1,9 +1,9 @@
 //! Only included in test
 
 use font_types::Tag;
-use fontir::{
+use fontdrasil::{
+    axis::Axis,
     coords::{CoordConverter, DesignCoord, UserCoord},
-    ir::Axis,
 };
 use std::cmp;
 

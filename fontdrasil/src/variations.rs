@@ -9,12 +9,11 @@ use std::{
 use log::{log_enabled, trace};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use crate::{
+    axis::Axis,
     coords::{NormalizedCoord, NormalizedLocation},
-    error::VariationModelError,
-    ir::Axis,
+    error::{DeltaError, VariationModelError},
 };
 
 const ZERO: OrderedFloat<f32> = OrderedFloat(0.0);
@@ -224,16 +223,6 @@ impl VariationModel {
 
         Ok(result)
     }
-}
-
-#[derive(Error, Debug)]
-pub enum DeltaError {
-    #[error("The default must have a point sequence")]
-    DefaultUndefined,
-    #[error("Every point sequence must have the same length")]
-    InconsistentNumbersOfPoints,
-    #[error("{0:?} is not present in the variation model")]
-    UnknownLocation(NormalizedLocation),
 }
 
 /// Gryffindor!
@@ -719,8 +708,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use crate::{
+        axis::Axis,
         coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
-        ir::Axis,
         variations::ONE,
     };
 

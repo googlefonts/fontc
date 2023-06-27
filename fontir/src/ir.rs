@@ -1,18 +1,22 @@
 //! Font IR types.
 
 use crate::{
-    coords::{CoordConverter, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
-    error::{PathConversionError, VariationModelError, WorkError},
+    error::{PathConversionError, WorkError},
     serde::{
         GlobalMetricsSerdeRepr, GlyphSerdeRepr, KerningSerdeRepr, MiscSerdeRepr,
         StaticMetadataSerdeRepr,
     },
-    variations::VariationModel,
 };
 use chrono::{DateTime, Utc};
 use font_types::NameId;
 use font_types::Tag;
-use fontdrasil::types::{GlyphName, GroupName};
+use fontdrasil::{
+    axis::Axis,
+    coords::{NormalizedCoord, NormalizedLocation, UserLocation},
+    error::VariationModelError,
+    types::{GlyphName, GroupName},
+    variations::VariationModel,
+};
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
 use log::{trace, warn};
@@ -679,23 +683,6 @@ impl NameKey {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct Axis {
-    pub name: String,
-    pub tag: Tag,
-    pub min: UserCoord,
-    pub default: UserCoord,
-    pub max: UserCoord,
-    pub hidden: bool,
-    pub converter: CoordConverter,
-}
-
-impl Axis {
-    pub fn is_point(&self) -> bool {
-        self.min == self.default && self.max == self.default
-    }
-}
-
 /// IR for a named position in variation space
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct NamedInstance {
@@ -1033,14 +1020,12 @@ mod tests {
 
     use std::str::FromStr;
 
-    use font_types::Tag;
-
-    use crate::{
-        coords::{CoordConverter, UserCoord},
-        ir::Axis,
-    };
-
     use super::GlyphPathBuilder;
+    use font_types::Tag;
+    use fontdrasil::{
+        axis::Axis,
+        coords::{CoordConverter, UserCoord},
+    };
 
     fn test_axis() -> Axis {
         let min = UserCoord::new(100.0);

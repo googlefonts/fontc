@@ -2,8 +2,8 @@ use std::{fmt::Display, io, path::PathBuf};
 
 use fea_rs::compile::error::CompilerError;
 use font_types::Tag;
+use fontdrasil::error::DeltaError;
 use fontdrasil::types::GlyphName;
-use fontir::variations::DeltaError;
 use read_fonts::ReadError;
 use thiserror::Error;
 use write_fonts::tables::{glyf::BadKurbo, gvar::GvarInputError, variations::IupError};

@@ -8,11 +8,11 @@ use std::{
 use chrono::{DateTime, TimeZone, Utc};
 use font_types::{NameId, Tag};
 use fontdrasil::{
+    coords::{DesignLocation, NormalizedLocation, UserCoord},
     orchestration::Work,
     types::{GlyphName, GroupName},
 };
 use fontir::{
-    coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
     ir::{
         Features, GlobalMetric, GlobalMetrics, KernParticipant, Kerning, NameBuilder, NameKey,
@@ -1118,9 +1118,12 @@ mod tests {
     };
 
     use font_types::Tag;
-    use fontdrasil::{orchestration::Access, types::GlyphName};
-    use fontir::{
+    use fontdrasil::{
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
+        orchestration::Access,
+        types::GlyphName,
+    };
+    use fontir::{
         ir::{GlobalMetricsInstance, NameKey},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,

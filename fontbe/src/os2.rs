@@ -818,10 +818,8 @@ impl Work<Context, Error> for Os2Work {
 mod tests {
     use std::collections::HashSet;
 
-    use fontir::{
-        coords::NormalizedLocation,
-        ir::{GlobalMetric, GlobalMetrics},
-    };
+    use fontdrasil::coords::NormalizedLocation;
+    use fontir::ir::{GlobalMetric, GlobalMetrics};
     use read_fonts::types::Tag;
     use write_fonts::tables::os2::Os2;
 

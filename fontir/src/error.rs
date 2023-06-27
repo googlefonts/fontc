@@ -1,11 +1,13 @@
 use std::{error, io, path::PathBuf};
 
 use font_types::{InvalidTag, Tag};
-use fontdrasil::types::GlyphName;
+use fontdrasil::{error::VariationModelError, types::GlyphName};
 use kurbo::Point;
 use thiserror::Error;
 
-use crate::coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation};
+use fontdrasil::coords::{
+    DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation,
+};
 
 // TODO: eliminate dyn Error and collapse Error/WorkError
 
@@ -145,15 +147,4 @@ pub enum PathConversionError {
         num_offcurve: usize,
         points: Vec<Point>,
     },
-}
-
-#[derive(Debug, Error)]
-pub enum VariationModelError {
-    #[error("{axis_names:?} in {location:?} have no assigned order")]
-    AxesWithoutAssignedOrder {
-        axis_names: Vec<String>,
-        location: NormalizedLocation,
-    },
-    #[error("{0} is is an axis of variation defined only at a single point")]
-    PointAxis(String),
 }

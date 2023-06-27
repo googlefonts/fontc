@@ -2,9 +2,12 @@ use std::path::PathBuf;
 use std::{collections::HashMap, str::FromStr};
 
 use font_types::Tag;
-use fontdrasil::types::GlyphName;
-use fontir::{
+use fontdrasil::axis::Axis;
+use fontdrasil::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
+    types::GlyphName,
+};
+use fontir::{
     error::WorkError,
     ir::{self, GlyphPathBuilder},
 };
@@ -80,7 +83,7 @@ fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, WorkE
 
 /// Create a map from source filename (e.g. x.ufo) => normalized location
 pub fn master_locations(
-    axes: &[ir::Axis],
+    axes: &[Axis],
     sources: &[designspace::Source],
 ) -> HashMap<String, NormalizedLocation> {
     let axes = axes.iter().map(|a| (&a.name, a)).collect();
@@ -95,11 +98,11 @@ pub fn master_locations(
         .collect()
 }
 
-pub fn to_ir_axes(axes: &[designspace::Axis]) -> Result<Vec<ir::Axis>, WorkError> {
+pub fn to_ir_axes(axes: &[designspace::Axis]) -> Result<Vec<Axis>, WorkError> {
     axes.iter().map(to_ir_axis).collect()
 }
 
-pub fn to_ir_axis(axis: &designspace::Axis) -> Result<ir::Axis, WorkError> {
+pub fn to_ir_axis(axis: &designspace::Axis) -> Result<Axis, WorkError> {
     let tag = Tag::from_str(&axis.tag).map_err(WorkError::InvalidTag)?;
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element>
@@ -130,7 +133,7 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<ir::Axis, WorkError> {
     } else {
         CoordConverter::unmapped(min, default, max)
     };
-    Ok(ir::Axis {
+    Ok(Axis {
         name: axis.name.clone(),
         tag,
         hidden: axis.hidden,
@@ -169,7 +172,7 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use fontir::coords::{NormalizedCoord, NormalizedLocation};
+    use fontdrasil::coords::{NormalizedCoord, NormalizedLocation};
     use norad::ContourPoint;
 
     use super::{to_ir_contour, to_ir_glyph};

@@ -1,10 +1,10 @@
 //! Generates a [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar) table.
 
 use font_types::F2Dot14;
-use fontdrasil::orchestration::Work;
-use fontir::{
+use fontdrasil::{
+    axis::Axis,
     coords::{CoordConverter, DesignCoord},
-    ir::Axis,
+    orchestration::Work,
 };
 use log::debug;
 use write_fonts::tables::avar::{Avar, AxisValueMap, SegmentMaps};
@@ -83,9 +83,9 @@ impl Work<Context, Error> for AvarWork {
 
 #[cfg(test)]
 mod tests {
-    use fontir::{
+    use fontdrasil::{
+        axis::Axis,
         coords::{CoordConverter, DesignCoord, UserCoord},
-        ir::Axis,
     };
     use read_fonts::types::Tag;
     use std::{cmp, str::FromStr};

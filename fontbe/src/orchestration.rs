@@ -6,11 +6,11 @@ use font_types::F2Dot14;
 use fontdrasil::{
     orchestration::{Access, AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
+    variations::VariationRegion,
 };
 use fontir::{
     context_accessors,
     orchestration::{Context as FeContext, ContextItem, Flags, WorkId as FeWorkIdentifier},
-    variations::VariationRegion,
 };
 use kurbo::Vec2;
 use log::trace;
@@ -656,7 +656,7 @@ fn read_entire_file(file: &Path) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use fontir::{
+    use fontdrasil::{
         coords::NormalizedCoord,
         variations::{Tent, VariationRegion},
     };
