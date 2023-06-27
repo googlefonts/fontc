@@ -247,13 +247,13 @@ impl<T: Copy> Location<T> {
         Location(BTreeMap::new())
     }
 
-    pub fn set_pos(&mut self, axis: impl Into<String>, pos: T) -> &mut Location<T> {
+    /// Insert a new axis + value pair into this location.
+    pub fn insert(&mut self, axis: impl Into<String>, pos: T) {
         self.0.insert(axis.into(), pos);
-        self
     }
 
-    pub fn rm_pos(&mut self, axis: &str) {
-        self.0.remove(axis);
+    pub fn remove(&mut self, axis: &str) -> Option<T> {
+        self.0.remove(axis)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
@@ -264,11 +264,11 @@ impl<T: Copy> Location<T> {
         self.0.keys()
     }
 
-    pub fn has(&self, axis_name: &String) -> bool {
+    pub fn contains(&self, axis_name: &str) -> bool {
         self.0.contains_key(axis_name)
     }
 
-    pub fn get(&self, axis_name: &String) -> Option<T> {
+    pub fn get(&self, axis_name: &str) -> Option<T> {
         self.0.get(axis_name).copied()
     }
 
@@ -322,7 +322,7 @@ impl NormalizedLocation {
         )
     }
 
-    pub fn has_non_zero(&self, axis_name: &String) -> bool {
+    pub fn has_non_zero(&self, axis_name: &str) -> bool {
         self.get(axis_name).unwrap_or_default().into_inner() != OrderedFloat(0.0)
     }
 

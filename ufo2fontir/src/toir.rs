@@ -221,7 +221,7 @@ mod tests {
     #[test]
     pub fn captures_codepoints() {
         let mut norm_loc = NormalizedLocation::new();
-        norm_loc.set_pos("Weight", NormalizedCoord::new(0.0));
+        norm_loc.insert("Weight", NormalizedCoord::new(0.0));
         let glyph = to_ir_glyph(
             "bar".into(),
             &HashMap::from([(

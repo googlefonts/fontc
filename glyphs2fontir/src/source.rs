@@ -996,8 +996,8 @@ mod tests {
             (72.0, 700.0),
         ] {
             let mut loc = UserLocation::new();
-            loc.set_pos("Optical Size", UserCoord::new(*opsz));
-            loc.set_pos("Weight", UserCoord::new(*wght));
+            loc.insert("Optical Size", UserCoord::new(*opsz));
+            loc.insert("Weight", UserCoord::new(*wght));
             let loc = loc;
             expected_locations.insert(loc);
         }
@@ -1028,8 +1028,8 @@ mod tests {
             (1.0, 1.0),
         ] {
             let mut loc = NormalizedLocation::new();
-            loc.set_pos("Optical Size", NormalizedCoord::new(*opsz));
-            loc.set_pos("Weight", NormalizedCoord::new(*wght));
+            loc.insert("Optical Size", NormalizedCoord::new(*opsz));
+            loc.insert("Weight", NormalizedCoord::new(*wght));
             let loc = loc;
             expected_locations.insert(loc);
         }
