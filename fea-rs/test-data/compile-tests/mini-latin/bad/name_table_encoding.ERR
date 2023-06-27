@@ -1,0 +1,11 @@
+error: windows escape sequences must be four hex digits long
+in ./test-data/compile-tests/mini-latin/bad/name_table_encoding.fea at 3:21
+  | 
+3 |     nameid 9 "Joachim\CF"; # windows escapes must be 4 digits
+  |                      ^^^
+
+error: mac escape sequences must be two hex digits long
+in ./test-data/compile-tests/mini-latin/bad/name_table_encoding.fea at 5:23
+  | 
+5 |     nameid 1001 1 "bad \d";      # mac escapes must be 2 digits
+  |                        ^^

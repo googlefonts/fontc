@@ -1,0 +1,5 @@
+error: size feature must include a 'parameters' statement
+in ./test-data/compile-tests/mini-latin/bad/bad_size2.fea at 2:8
+  | 
+2 | feature size {
+  |         ^^^^

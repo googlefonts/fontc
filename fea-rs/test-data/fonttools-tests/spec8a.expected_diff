@@ -1,0 +1,18 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# Note: fonttools currently generates the wrong ordering in aalt.
+# see <https://github.com/fonttools/fonttools/issues/2937>
+L101
+>              <Alternate glyph="A.sc"/>
+L105
+<              <Alternate glyph="A.sc"/>
+L108
+>              <Alternate glyph="B.sc"/>
+L110
+<              <Alternate glyph="B.sc"/>
+L113
+>              <Alternate glyph="C.sc"/>
+L115
+<              <Alternate glyph="C.sc"/>

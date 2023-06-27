@@ -1,0 +1,5 @@
+error: expected label or NULL
+in ./test-data/parse-tests/bad/variation_missing_condset.fea at 1:15
+  | 
+1 | variation oops {
+  |                ^

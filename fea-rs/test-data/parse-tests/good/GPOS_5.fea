@@ -1,0 +1,8 @@
+feature test {
+    position ligature lam_meem_jeem
+    <anchor 625 1800> mark @TOP_MARKS     # mark above lam
+    ligComponent                          # start specifying marks for meem
+    <anchor 376 -368> mark @BOTTOM_MARKS
+    ligComponent
+    <anchor NULL>;
+} test;

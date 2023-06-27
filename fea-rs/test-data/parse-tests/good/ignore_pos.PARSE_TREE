@@ -1,0 +1,54 @@
+FILE@[0; 73)
+    FeatureNode@[0; 72)
+      FeatureKw@0 "feature"
+      WS@7 " "
+      Tag@8 "test"
+      WS@12 " "
+      {@13 "{"
+      WS@14 "\n    "
+        GposIgnore@[19; 41)
+          IgnoreKw@19 "ignore"
+          WS@25 " "
+          PosKw@26 "pos"
+          WS@29 " "
+            IgnoreRuleStatementNode@[30; 40)
+                BacktrackSequence@[30; 37)
+                  GlyphName@30 "f"
+                  WS@31 " "
+                    GlyphClass@[32; 37)
+                      [@32 "["
+                      GlyphName@33 "a"
+                      WS@34 " "
+                      GlyphName@35 "e"
+                      ]@36 "]"
+              WS@37 " "
+                ContextSequence@[38; 40)
+                    ContextGlyphNode@[38; 40)
+                      GlyphName@38 "d"
+                      '@39 "'"
+                LookaheadSequence@[40; 40)
+          ;@40 ";"
+      WS@41 "\n    "
+        GposIgnore@[46; 64)
+          IgnoreKw@46 "ignore"
+          WS@52 " "
+          PosKw@53 "pos"
+          WS@56 " "
+            IgnoreRuleStatementNode@[57; 63)
+                BacktrackSequence@[57; 58)
+                  GlyphName@57 "a"
+              WS@58 " "
+                ContextSequence@[59; 61)
+                    ContextGlyphNode@[59; 61)
+                      GlyphName@59 "d"
+                      '@60 "'"
+              WS@61 " "
+                LookaheadSequence@[62; 63)
+                  GlyphName@62 "d"
+          ;@63 ";"
+      WS@64 "\n"
+      }@65 "}"
+      WS@66 " "
+      Tag@67 "test"
+      ;@71 ";"
+  WS@72 "\n"

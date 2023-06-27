@@ -1,0 +1,5 @@
+error: Referenced feature not found.
+in ./test-data/compile-tests/mini-latin/bad/aalt_reference_missing_feature.fea at 2:12
+  | 
+2 |     feature nope;
+  |             ^^^^

@@ -37,8 +37,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - run: git submodule update --init --recursive
-
       - name: install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -64,8 +62,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - run: git submodule update --init --recursive
-
       - uses: getsentry/action-setup-venv@v1.0.0
         id: venv
         with:

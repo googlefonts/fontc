@@ -1,0 +1,5 @@
+error: if replacing by glyph class, input sequence must be a single glyph class
+in ./test-data/compile-tests/mini-latin/bad/gsub_6_inline_no_class.fea at 3:8
+  | 
+3 |     sub a' d by [z x];
+  |         ^^^

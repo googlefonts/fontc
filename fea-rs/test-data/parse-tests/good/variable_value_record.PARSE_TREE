@@ -1,0 +1,51 @@
+FILE@[0; 81)
+    ValueRecordDefNode@[0; 80)
+      ValueRecordDefKw@0 "valueRecordDef"
+      WS@14 " "
+        ValueRecordNode@[15; 75)
+          <@15 "<"
+          NUM@16 "0"
+          WS@17 " "
+            VariableMetricNode@[18; 70)
+              (@18 "("
+                LocationValueNode@[19; 32)
+                    LocationSpecNode@[19; 27)
+                        LocationSpecItemNode@[19; 27)
+                          Tag@19 "wght"
+                          =@23 "="
+                          NUM@24 "200"
+                  :@27 ":"
+                  NUM@28 "-100"
+              WS@32 " "
+                LocationValueNode@[33; 46)
+                    LocationSpecNode@[33; 41)
+                        LocationSpecItemNode@[33; 41)
+                          Tag@33 "wght"
+                          =@37 "="
+                          NUM@38 "900"
+                  :@41 ":"
+                  NUM@42 "-150"
+              WS@46 " "
+                LocationValueNode@[47; 69)
+                    LocationSpecNode@[47; 64)
+                        LocationSpecItemNode@[47; 55)
+                          Tag@47 "wdth"
+                          =@51 "="
+                          NUM@52 "150"
+                      ,@55 ","
+                        LocationSpecItemNode@[56; 64)
+                          Tag@56 "wght"
+                          =@60 "="
+                          NUM@61 "900"
+                  :@64 ":"
+                  NUM@65 "-120"
+              )@69 ")"
+          WS@70 " "
+          NUM@71 "0"
+          WS@72 " "
+          NUM@73 "0"
+          >@74 ">"
+      WS@75 " "
+      ID@76 "foo"
+      ;@79 ";"
+  WS@80 "\n"

@@ -1,0 +1,3 @@
+feature test {
+    sub @items by [c d];
+} test;

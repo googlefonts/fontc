@@ -1,0 +1,5 @@
+error: size feature can have only one 'parameters' statement
+in ./test-data/compile-tests/mini-latin/bad/bad_size1.fea at 3:4
+  | 
+3 |     parameters 6 6 6 0; # only one param statement allowed
+  |     ^^^^^^^^^^^^^^^^^^^

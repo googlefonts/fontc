@@ -1,0 +1,3 @@
+lookup hi {
+    substitute ampersand from [ampersand.1 ampersand.2 ampersand.3];
+} hi;

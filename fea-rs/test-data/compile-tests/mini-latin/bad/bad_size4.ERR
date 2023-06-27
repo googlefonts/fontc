@@ -1,0 +1,5 @@
+error: if subfamily is omitted, there must be no 'sizemenuname' statements
+in ./test-data/compile-tests/mini-latin/bad/bad_size4.fea at 2:4
+  | 
+2 |     parameters 6 0;
+  |     ^^^^^^^^^^^^^^^

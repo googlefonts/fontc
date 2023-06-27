@@ -1,0 +1,10 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# Note: fonttools orders ligature components by glyph name, but we use glyph id.
+# this should have no practical impact on the user.
+L93
+>              <Ligature components="slash,four" glyph="onequarter"/>
+L95
+<              <Ligature components="slash,four" glyph="onequarter"/>

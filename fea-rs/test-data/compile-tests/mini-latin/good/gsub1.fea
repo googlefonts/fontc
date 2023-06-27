@@ -1,0 +1,22 @@
+@numbers = [one two three four];
+@numbers_old_style = [one.osf two.osf three.osf four.osf];
+
+# glyph -> glyph
+feature onum {
+    sub one by one.osf;
+    sub two by two.osf;
+    sub three by three.osf;
+    sub four by four.osf;
+} onum;
+
+# class -> class
+feature noos {
+    sub @numbers_old_style by @numbers;
+} noos;
+
+# class -> glyph
+feature nono {
+    # technically creates a type-2 lookup: multisub with an empty target sequence
+    sub @numbers by NULL;
+    sub @numbers_old_style by question;
+} nono;

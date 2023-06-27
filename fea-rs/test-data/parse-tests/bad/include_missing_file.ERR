@@ -1,0 +1,5 @@
+error: Failed to load source at 'i_am_quite_unlikely_to_exist.fea': 'No such file or directory (os error 2)'
+in ./test-data/parse-tests/bad/include_missing_file.fea at 7:8
+  | 
+7 | include(i_am_quite_unlikely_to_exist.fea);
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

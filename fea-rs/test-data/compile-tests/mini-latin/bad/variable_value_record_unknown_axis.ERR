@@ -1,0 +1,5 @@
+error: unknown axis
+in ./test-data/compile-tests/mini-latin/bad/variable_value_record_unknown_axis.fea at 1:33
+  | 
+1 | valueRecordDef <0 (wght=200:-100 heft=150,wght=900:-120) 0 0> foo;
+  |                                  ^^^^

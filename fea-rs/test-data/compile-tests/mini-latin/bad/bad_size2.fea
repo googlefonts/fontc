@@ -1,0 +1,4 @@
+# parameters statement is missing
+feature size {
+   sizemenuname 1 0 5 "Mac MinionPro Size Name";
+} size;

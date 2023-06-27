@@ -1,0 +1,7 @@
+# within a named lookup, all rules must have same lookupflag
+lookup foo {
+    lookupflag 1;
+    sub a by b;
+    lookupflag 2;
+    sub x by y;
+} foo;

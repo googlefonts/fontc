@@ -1,0 +1,6 @@
+error: Although explicitly part of the FEA spec, 'by NULL' in rsub rules is meaningless.
+See https://github.com/fonttools/fonttools/issues/2952 for more information
+in ./test-data/parse-tests/bad/rsub_null.fea at 4:19
+  | 
+4 |     rsub a b' c by NULL;
+  |                    ^^^^

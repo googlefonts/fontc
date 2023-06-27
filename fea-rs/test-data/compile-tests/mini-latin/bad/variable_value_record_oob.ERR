@@ -1,0 +1,11 @@
+error: value below minimum allowed for axis (200)
+in ./test-data/compile-tests/mini-latin/bad/variable_value_record_oob.fea at 1:24
+  | 
+1 | valueRecordDef <0 (wght=100:-100 wght=1100:-150) 0 0> foo;
+  |                         ^^^
+
+error: value greater than maximum allowed for axis (1000)
+in ./test-data/compile-tests/mini-latin/bad/variable_value_record_oob.fea at 1:38
+  | 
+1 | valueRecordDef <0 (wght=100:-100 wght=1100:-150) 0 0> foo;
+  |                                       ^^^^
