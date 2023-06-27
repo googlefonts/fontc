@@ -708,7 +708,7 @@ mod tests {
     fn non_default_region() -> VariationRegion {
         let mut region = VariationRegion::default();
         region.insert(
-            Tag::from_str("wght").unwrap(),
+            Tag::new(b"wght"),
             Tent::new(
                 NormalizedCoord::new(0.0),
                 NormalizedCoord::new(1.0),
