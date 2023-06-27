@@ -162,11 +162,11 @@ impl StaticMetadata {
 
         let axes_default = axes
             .iter()
-            .map(|a| (a.name.clone(), NormalizedCoord::new(0.0)))
+            .map(|a| (a.tag, NormalizedCoord::new(0.0)))
             .collect();
         let variable_axes_default = axes
             .iter()
-            .map(|a| (a.name.clone(), NormalizedCoord::new(0.0)))
+            .map(|a| (a.tag, NormalizedCoord::new(0.0)))
             .collect();
 
         // cmap has strong beliefs wrt .notdef coming first

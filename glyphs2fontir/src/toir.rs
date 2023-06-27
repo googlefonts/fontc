@@ -119,7 +119,7 @@ pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features
 fn design_location(axes: &[ir::Axis], axes_values: &[OrderedFloat<f64>]) -> DesignLocation {
     axes.iter()
         .zip(axes_values.iter())
-        .map(|(axis, pos)| (axis.name.clone(), DesignCoord::new(pos.into_inner() as f32)))
+        .map(|(axis, pos)| (axis.tag, DesignCoord::new(pos.into_inner() as f32)))
         .collect()
 }
 
@@ -249,7 +249,7 @@ impl TryFrom<Font> for FontInfo {
             .map(|(idx, a)| (a.tag, idx))
             .collect();
 
-        let axes_by_name = axes.iter().map(|a| (&a.name, a)).collect();
+        let axes_by_name = axes.iter().map(|a| (a.tag, a)).collect();
         let locations: HashMap<_, _> = font
             .masters
             .iter()

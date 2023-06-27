@@ -12,10 +12,18 @@ use kurbo::{Affine, BezPath};
 use log::trace;
 use norad::designspace::{self, Dimension};
 
-pub(crate) fn to_design_location(loc: &[Dimension]) -> DesignLocation {
+pub(crate) fn to_design_location(
+    tags_by_name: &HashMap<&str, Tag>,
+    loc: &[Dimension],
+) -> DesignLocation {
     // TODO: what if Dimension uses uservalue? - new in DS5.0
     loc.iter()
-        .map(|d| (d.name.clone(), DesignCoord::new(d.xvalue.unwrap())))
+        .map(|d| {
+            (
+                *tags_by_name.get(d.name.as_str()).unwrap(),
+                DesignCoord::new(d.xvalue.unwrap()),
+            )
+        })
         .collect()
 }
 
@@ -83,13 +91,14 @@ pub fn master_locations(
     axes: &[ir::Axis],
     sources: &[designspace::Source],
 ) -> HashMap<String, NormalizedLocation> {
-    let axes = axes.iter().map(|a| (&a.name, a)).collect();
+    let tags_by_name: HashMap<_, _> = axes.iter().map(|a| (a.name.as_str(), a.tag)).collect();
+    let axes = axes.iter().map(|a| (a.tag, a)).collect();
     sources
         .iter()
         .map(|s| {
             (
                 s.name.clone(),
-                to_design_location(&s.location).to_normalized(&axes),
+                to_design_location(&tags_by_name, &s.location).to_normalized(&axes),
             )
         })
         .collect()
@@ -169,6 +178,7 @@ mod tests {
         path::{Path, PathBuf},
     };
 
+    use font_types::Tag;
     use fontir::coords::{NormalizedCoord, NormalizedLocation};
     use norad::ContourPoint;
 
@@ -221,7 +231,7 @@ mod tests {
     #[test]
     pub fn captures_codepoints() {
         let mut norm_loc = NormalizedLocation::new();
-        norm_loc.insert("Weight", NormalizedCoord::new(0.0));
+        norm_loc.insert(Tag::new(b"wght"), NormalizedCoord::new(0.0));
         let glyph = to_ir_glyph(
             "bar".into(),
             &HashMap::from([(

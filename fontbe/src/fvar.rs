@@ -67,7 +67,7 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
                     .map(|axis| {
                         let loc = ni
                             .location
-                            .get(&axis.name)
+                            .get(axis.tag)
                             .unwrap_or(axis.default)
                             .into_inner();
                         Fixed::from_f64(loc.into_inner() as f64)

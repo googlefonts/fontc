@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fs, io, path::Path, sync::Arc};
 
-use font_types::F2Dot14;
+use font_types::{F2Dot14, Tag};
 use fontdrasil::{
     orchestration::{Access, AccessControlList, Work, MISSING_DATA},
     types::GlyphName,
@@ -205,7 +205,7 @@ impl GvarFragment {
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview#variation-data>
 #[derive(Debug, Default)]
 struct TupleBuilder {
-    axis_names: Vec<String>,
+    axes: Vec<Tag>,
     min: Vec<F2Dot14>,
     peak: Vec<F2Dot14>,
     max: Vec<F2Dot14>,
@@ -224,8 +224,8 @@ impl TupleBuilder {
 impl From<&VariationRegion> for TupleBuilder {
     fn from(region: &VariationRegion) -> Self {
         let mut builder = TupleBuilder::default();
-        for (axis_name, tent) in region.iter() {
-            builder.axis_names.push(axis_name.clone());
+        for (tag, tent) in region.iter() {
+            builder.axes.push(*tag);
             builder.min.push(F2Dot14::from_f32(tent.min.to_f32()));
             builder.peak.push(F2Dot14::from_f32(tent.peak.to_f32()));
             builder.max.push(F2Dot14::from_f32(tent.max.to_f32()));
@@ -656,6 +656,7 @@ fn read_entire_file(file: &Path) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use font_types::Tag;
     use fontir::{
         coords::NormalizedCoord,
         variations::{Tent, VariationRegion},
@@ -705,7 +706,7 @@ mod tests {
     fn non_default_region() -> VariationRegion {
         let mut region = VariationRegion::default();
         region.insert(
-            "Weight".to_string(),
+            Tag::new(b"wght"),
             Tent::new(
                 NormalizedCoord::new(0.0),
                 NormalizedCoord::new(1.0),
