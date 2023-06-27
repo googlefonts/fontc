@@ -6,7 +6,7 @@ use std::{
 };
 
 use chrono::{DateTime, TimeZone, Utc};
-use font_types::{NameId, Tag};
+use font_types::{InvalidTag, NameId, Tag};
 use fontdrasil::{
     orchestration::Work,
     types::{GlyphName, GroupName},
@@ -255,12 +255,17 @@ impl Source for DesignSpaceIrSource {
                 .map(|(_, s)| s),
         );
 
+        let tags_by_name = designspace
+            .axes
+            .iter()
+            .map(|a| Tag::from_str(&a.tag).map(|tag| (a.name.as_str(), tag)))
+            .collect::<Result<HashMap<&str, Tag>, InvalidTag>>()?;
         for (idx, source) in sources_default_first.iter().enumerate() {
             // Track files within each UFO
             // The UFO dir *must* exist since we were able to find fontinfo in it earlier
             let ufo_dir = self.designspace_dir.join(&source.filename);
 
-            let location = to_design_location(&source.location);
+            let location = to_design_location(&tags_by_name, &source.location);
 
             for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, source)? {
                 if !glif_file.exists() {
@@ -427,24 +432,23 @@ struct KerningWork {
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
     let ds_axes = to_ir_axes(&designspace.axes).ok()?;
-    let axes: HashMap<_, _> = ds_axes.iter().map(|a| (&a.name, a)).collect();
+    let tags_by_name: HashMap<_, _> = ds_axes.iter().map(|a| (a.name.as_str(), a.tag)).collect();
+    let axes: HashMap<_, _> = ds_axes.iter().map(|a| (a.tag, a)).collect();
 
     let default_location = designspace
         .axes
         .iter()
         .map(|a| {
-            let converter = &axes.get(&a.name).unwrap().converter;
-            (
-                a.name.clone(),
-                UserCoord::new(a.default).to_design(converter),
-            )
+            let tag = Tag::from_str(&a.tag).unwrap();
+            let converter = &axes.get(&tag).unwrap().converter;
+            (tag, UserCoord::new(a.default).to_design(converter))
         })
         .collect();
     designspace
         .sources
         .iter()
         .enumerate()
-        .find(|(_, source)| to_design_location(&source.location) == default_location)
+        .find(|(_, source)| to_design_location(&tags_by_name, &source.location) == default_location)
 }
 
 fn load_plist(ufo_dir: &Path, name: &str) -> Result<plist::Dictionary, WorkError> {
@@ -669,7 +673,8 @@ impl Work<Context, WorkError> for StaticMetadataWork {
         let names = names(font_info_at_default);
         let axes = to_ir_axes(&self.designspace.axes)?;
 
-        let axes_by_name = axes.iter().map(|a| (&a.name, a)).collect();
+        let tags_by_name = axes.iter().map(|a| (a.name.as_str(), a.tag)).collect();
+        let axes_by_tag = axes.iter().map(|a| (a.tag, a)).collect();
         let family_prefix = names
             .get(&NameKey::new_bmp_only(NameId::FAMILY_NAME))
             .map(|name| name.clone() + " ")
@@ -683,7 +688,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
                     Some(tail) => tail.to_string(),
                     None => inst.name.clone(),
                 },
-                location: to_design_location(&inst.location).to_user(&axes_by_name),
+                location: to_design_location(&tags_by_name, &inst.location).to_user(&axes_by_tag),
             })
             .collect();
 
@@ -1094,7 +1099,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
         let static_metadata = context.get_init_static_metadata();
 
         // Migrate glif_files into internal coordinates
-        let axes_by_name = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();
+        let axes_by_name = static_metadata.axes.iter().map(|a| (a.tag, a)).collect();
         let mut glif_files = HashMap::new();
         for (path, design_locations) in self.glif_files.iter() {
             let normalized_locations: Vec<NormalizedLocation> = design_locations
@@ -1115,6 +1120,7 @@ mod tests {
     use std::{
         collections::{HashMap, HashSet},
         path::{Path, PathBuf},
+        str::FromStr,
     };
 
     use font_types::Tag;
@@ -1252,11 +1258,12 @@ mod tests {
     fn add_design_location(
         add_to: &mut HashMap<PathBuf, Vec<DesignLocation>>,
         glif_file: &str,
-        axis: &str,
+        tag: &str,
         pos: f32,
     ) {
+        let tag = Tag::from_str(tag).unwrap();
         let mut loc = DesignLocation::new();
-        loc.insert(axis, DesignCoord::new(pos));
+        loc.insert(tag, DesignCoord::new(pos));
         add_to
             .entry(testdata_dir().join(glif_file))
             .or_default()
@@ -1275,19 +1282,19 @@ mod tests {
         add_design_location(
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs/bar.glif",
-            "Weight",
+            "wght",
             400.0,
         );
         add_design_location(
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs.{600}/bar.glif",
-            "Weight",
+            "wght",
             600.0,
         );
         add_design_location(
             &mut expected_glif_files,
             "WghtVar-Bold.ufo/glyphs/bar.glif",
-            "Weight",
+            "wght",
             700.0,
         );
         assert_eq!(expected_glif_files, work.glif_files);
@@ -1306,13 +1313,13 @@ mod tests {
         add_design_location(
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs/plus.glif",
-            "Weight",
+            "wght",
             400.0,
         );
         add_design_location(
             &mut expected_glif_files,
             "WghtVar-Bold.ufo/glyphs/plus.glif",
-            "Weight",
+            "wght",
             700.0,
         );
         assert_eq!(expected_glif_files, work.glif_files);
@@ -1329,11 +1336,13 @@ mod tests {
     pub fn find_default_master() {
         let (source, _) = load_wght_var();
         let ds = source.load_designspace().unwrap();
+        let tag = Tag::from_str("wght").unwrap();
         let mut loc = DesignLocation::new();
-        loc.insert("Weight", DesignCoord::new(400.0));
+        loc.insert(tag, DesignCoord::new(400.0));
+        let tags_by_name = HashMap::from([("Weight", tag)]);
         assert_eq!(
             loc,
-            to_design_location(&default_master(&ds).unwrap().1.location)
+            to_design_location(&tags_by_name, &default_master(&ds).unwrap().1.location)
         );
     }
 
@@ -1499,7 +1508,7 @@ mod tests {
     }
 
     fn only_coord(loc: &NormalizedLocation) -> NormalizedCoord {
-        assert_eq!(1, loc.axis_names().count());
+        assert_eq!(1, loc.axis_tags().count());
         *loc.iter().next().unwrap().1
     }
 

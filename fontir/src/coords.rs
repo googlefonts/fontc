@@ -8,7 +8,7 @@ use std::ops::Sub;
 
 use crate::serde::CoordConverterSerdeRepr;
 use crate::{ir::Axis, piecewise_linear_map::PiecewiseLinearMap};
-use font_types::{F2Dot14, Fixed};
+use font_types::{F2Dot14, Fixed, Tag};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +39,7 @@ pub struct NormalizedCoord(OrderedFloat<f32>);
 /// E.g. a user location is a `Location<UserCoord>`. Hashable so it can do things like be
 /// the key for a map of sources by location.
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Location<T>(BTreeMap<String, T>);
+pub struct Location<T>(BTreeMap<Tag, T>);
 
 pub type DesignLocation = Location<DesignCoord>;
 pub type UserLocation = Location<UserCoord>;
@@ -236,8 +236,8 @@ impl Sub<NormalizedCoord> for NormalizedCoord {
     }
 }
 
-impl<T: Copy> FromIterator<(String, T)> for Location<T> {
-    fn from_iter<I: IntoIterator<Item = (String, T)>>(iter: I) -> Self {
+impl<T: Copy> FromIterator<(Tag, T)> for Location<T> {
+    fn from_iter<I: IntoIterator<Item = (Tag, T)>>(iter: I) -> Self {
         Location(BTreeMap::from_iter(iter))
     }
 }
@@ -247,83 +247,68 @@ impl<T: Copy> Location<T> {
         Location(BTreeMap::new())
     }
 
-    /// Insert a new axis + value pair into this location.
-    pub fn insert(&mut self, axis: impl Into<String>, pos: T) {
-        self.0.insert(axis.into(), pos);
+    pub fn insert(&mut self, tag: Tag, pos: T) -> &mut Location<T> {
+        self.0.insert(tag, pos);
+        self
     }
 
-    pub fn remove(&mut self, axis: &str) -> Option<T> {
-        self.0.remove(axis)
+    pub fn remove(&mut self, tag: Tag) {
+        self.0.remove(&tag);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Tag, &T)> {
         self.0.iter()
     }
 
-    pub fn axis_names(&self) -> impl Iterator<Item = &String> {
+    pub fn axis_tags(&self) -> impl Iterator<Item = &Tag> {
         self.0.keys()
     }
 
-    pub fn contains(&self, axis_name: &str) -> bool {
-        self.0.contains_key(axis_name)
+    pub fn contains(&self, tag: Tag) -> bool {
+        self.0.contains_key(&tag)
     }
 
-    pub fn get(&self, axis_name: &str) -> Option<T> {
-        self.0.get(axis_name).copied()
+    pub fn get(&self, tag: Tag) -> Option<T> {
+        self.0.get(&tag).copied()
     }
 
-    pub fn retain(&mut self, pred: impl Fn(&String, &mut T) -> bool) {
+    pub fn retain(&mut self, pred: impl Fn(&Tag, &mut T) -> bool) {
         self.0.retain(pred);
     }
 }
 
 impl DesignLocation {
-    pub fn to_normalized(&self, axes: &HashMap<&String, &Axis>) -> NormalizedLocation {
+    pub fn to_normalized(&self, axes: &HashMap<Tag, &Axis>) -> NormalizedLocation {
         Location::<NormalizedCoord>(
             self.0
                 .iter()
-                .map(|(name, dc)| {
-                    (
-                        name.clone(),
-                        dc.to_normalized(&axes.get(name).unwrap().converter),
-                    )
-                })
+                .map(|(tag, dc)| (*tag, dc.to_normalized(&axes.get(tag).unwrap().converter)))
                 .collect(),
         )
     }
 
-    pub fn to_user(&self, axes: &HashMap<&String, &Axis>) -> UserLocation {
+    pub fn to_user(&self, axes: &HashMap<Tag, &Axis>) -> UserLocation {
         Location::<UserCoord>(
             self.0
                 .iter()
-                .map(|(name, coord)| {
-                    (
-                        name.clone(),
-                        coord.to_user(&axes.get(name).unwrap().converter),
-                    )
-                })
+                .map(|(tag, coord)| (*tag, coord.to_user(&axes.get(tag).unwrap().converter)))
                 .collect(),
         )
     }
 }
 
 impl NormalizedLocation {
-    pub fn to_user(&self, axes: &HashMap<&String, &Axis>) -> UserLocation {
+    pub fn to_user(&self, axes: &HashMap<Tag, &Axis>) -> UserLocation {
         Location::<UserCoord>(
             self.0
                 .iter()
-                .map(|(name, coord)| {
-                    (
-                        name.clone(),
-                        coord.to_user(&axes.get(name).unwrap().converter),
-                    )
-                })
+                .map(|(tag, coord)| (*tag, coord.to_user(&axes.get(tag).unwrap().converter)))
                 .collect(),
         )
     }
 
-    pub fn has_non_zero(&self, axis_name: &str) -> bool {
-        self.get(axis_name).unwrap_or_default().into_inner() != OrderedFloat(0.0)
+    pub fn has_non_zero(&self, tag: Tag) -> bool {
+        self.get(tag).unwrap_or_default().into_inner() != OrderedFloat(0.0)
     }
 
     pub fn has_any_non_zero(&self) -> bool {
@@ -334,16 +319,15 @@ impl NormalizedLocation {
 fn format_location<'a, 'b>(
     name: &str,
     f: &mut std::fmt::Formatter<'a>,
-    items: impl Iterator<Item = (&'b String, OrderedFloat<f32>)>,
+    items: impl Iterator<Item = (&'b Tag, OrderedFloat<f32>)>,
 ) -> std::fmt::Result {
     f.write_str(name)?;
     f.write_str(" {")?;
-    for (i, (axis_name, value)) in items.enumerate() {
+    for (i, (tag, value)) in items.enumerate() {
         if i > 0 {
             f.write_str(", ")?;
         }
-        f.write_str(axis_name)?;
-        f.write_fmt(format_args!(": {value:.02}"))?;
+        f.write_fmt(format_args!("{tag}: {value:.02}"))?;
     }
     f.write_char('}')
 }

@@ -151,9 +151,9 @@ pub enum PathConversionError {
 pub enum VariationModelError {
     #[error("{axis_names:?} in {location:?} have no assigned order")]
     AxesWithoutAssignedOrder {
-        axis_names: Vec<String>,
+        axis_names: Vec<Tag>,
         location: NormalizedLocation,
     },
     #[error("{0} is is an axis of variation defined only at a single point")]
-    PointAxis(String),
+    PointAxis(Tag),
 }

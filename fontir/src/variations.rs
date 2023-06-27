@@ -6,6 +6,7 @@ use std::{
     ops::{Mul, Sub},
 };
 
+use font_types::Tag;
 use log::{log_enabled, trace};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
@@ -32,7 +33,7 @@ pub struct VariationModel {
 
     /// Non-point axes
     axes: Vec<Axis>,
-    axis_names: HashSet<String>,
+    axis_tags: HashSet<Tag>,
 
     // TODO: why isn't this a Map<Loc, Region>
     // All Vec's have same length and items at the same index refer to the same master
@@ -57,26 +58,26 @@ impl VariationModel {
     ) -> Result<Self, VariationModelError> {
         for axis in axes.iter() {
             if axis.is_point() {
-                return Err(VariationModelError::PointAxis(axis.name.clone()));
+                return Err(VariationModelError::PointAxis(axis.tag));
             }
         }
 
-        let axis_names = axes.iter().map(|a| a.name.clone()).collect::<HashSet<_>>();
+        let axis_tags = axes.iter().map(|a| a.tag).collect::<HashSet<_>>();
 
         let default = axes
             .iter()
-            .map(|axis| (axis.name.to_string(), NormalizedCoord::new(ZERO)))
+            .map(|axis| (axis.tag, NormalizedCoord::new(ZERO)))
             .collect();
 
         let mut expanded_locations = HashSet::new();
         for mut location in locations.into_iter() {
             // Make sure locations are defined on all axes we know of, and only axes we know of
-            location.retain(|axis_name, _| axis_names.contains(axis_name));
+            location.retain(|tag, _| axis_tags.contains(tag));
 
             // Fill in missing axis positions with 0
             for axis in axes.iter() {
-                if !location.contains(&axis.name) {
-                    location.insert(axis.name.clone(), NormalizedCoord::new(0.0));
+                if !location.contains(axis.tag) {
+                    location.insert(axis.tag, NormalizedCoord::new(0.0));
                 }
             }
 
@@ -84,7 +85,7 @@ impl VariationModel {
         }
 
         // sort locations such that [i..N] cannot influence [0..i-1]
-        let axis_order = axes.iter().map(|a| a.name.clone()).collect();
+        let axis_order = axes.iter().map(|a| a.tag).collect();
         let mut locations: Vec<_> = expanded_locations.into_iter().collect();
         let sorting_hat = LocationSortingHat::new(&locations, &axis_order);
         locations.sort_by_cached_key(|loc| sorting_hat.key_for(loc));
@@ -103,7 +104,7 @@ impl VariationModel {
         Ok(VariationModel {
             default,
             axes,
-            axis_names,
+            axis_tags,
             locations,
             influence,
             delta_weights,
@@ -114,7 +115,7 @@ impl VariationModel {
         VariationModel {
             default: NormalizedLocation::new(),
             axes: Vec::new(),
-            axis_names: HashSet::new(),
+            axis_tags: HashSet::new(),
             locations: Vec::new(),
             influence: Vec::new(),
             delta_weights: Vec::new(),
@@ -158,7 +159,7 @@ impl VariationModel {
             .iter()
             .map(|(loc, seq)| {
                 let mut loc = loc.clone();
-                loc.retain(|axis_name, _| self.axis_names.contains(axis_name));
+                loc.retain(|tag, _| self.axis_tags.contains(tag));
                 (loc, seq)
             })
             .collect();
@@ -255,33 +256,27 @@ pub enum DeltaError {
 /// This is a Rust version of FontTools getMasterLocationsSortKeyFunc.
 /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L295>
 struct LocationSortingHat<'a> {
-    axis_order: &'a Vec<String>,
-    on_axis_points: HashMap<String, HashSet<NormalizedCoord>>,
+    axis_order: &'a Vec<Tag>,
+    on_axis_points: HashMap<Tag, HashSet<NormalizedCoord>>,
 }
 
 impl<'a> LocationSortingHat<'a> {
-    fn new(
-        locations: &[NormalizedLocation],
-        axis_order: &'a Vec<String>,
-    ) -> LocationSortingHat<'a> {
+    fn new(locations: &[NormalizedLocation], axis_order: &'a Vec<Tag>) -> LocationSortingHat<'a> {
         // Location is on-axis if it has exactly 1 non-zero coordinate
-        let mut on_axis_points: HashMap<String, HashSet<NormalizedCoord>> = HashMap::new();
+        let mut on_axis_points: HashMap<Tag, HashSet<NormalizedCoord>> = HashMap::new();
         'location: for location in locations {
-            let mut on_axis: Option<(&String, NormalizedCoord)> = None;
-            for (axis_name, pos) in location.iter() {
+            let mut on_axis: Option<(Tag, NormalizedCoord)> = None;
+            for (tag, pos) in location.iter() {
                 if pos.into_inner() == ZERO {
                     continue;
                 }
                 if on_axis.is_some() {
                     continue 'location; // multiple non-zero coords, bail out
                 }
-                on_axis = Some((axis_name, *pos));
+                on_axis = Some((*tag, *pos));
             }
-            if let Some((axis_name, pos)) = on_axis {
-                on_axis_points
-                    .entry(axis_name.clone())
-                    .or_default()
-                    .insert(pos);
+            if let Some((tag, pos)) = on_axis {
+                on_axis_points.entry(tag).or_default().insert(pos);
             }
         }
         LocationSortingHat {
@@ -298,14 +293,14 @@ impl<'a> LocationSortingHat<'a> {
 
         // Score the index of the axis for any axis with non-zero value in the user specified axis order
         let mut known_axes = Vec::new();
-        for (idx, axis_name) in self.axis_order.iter().enumerate() {
-            if location.has_non_zero(axis_name) {
+        for (idx, tag) in self.axis_order.iter().enumerate() {
+            if location.has_non_zero(*tag) {
                 known_axes.push(idx);
-                ordered_axes.push(axis_name.clone());
+                ordered_axes.push(*tag);
             }
         }
 
-        for (axis_name, pos) in location.iter() {
+        for (tag, pos) in location.iter() {
             if pos.into_inner() != ZERO {
                 // Rank is the # of axes with non-zero values
                 rank += 1;
@@ -313,33 +308,32 @@ impl<'a> LocationSortingHat<'a> {
                 // Score more than the max allowable axes for any axis with non-zero value that has no user-specified order
                 // This shouldn't hapen because it's an AxesWithoutAssignedOrder error in ctor, retained
                 // because I want key_for to be infallible.
-                if !self.axis_order.contains(axis_name) {
+                if !self.axis_order.contains(tag) {
                     known_axes.push(0x10000);
                 }
 
-                non_zero_axes.push(axis_name);
+                non_zero_axes.push(*tag);
             }
             // score -1 for every axis position that matches a location that was directly on an axis
             on_axis_points += self
                 .on_axis_points
-                .get(axis_name)
+                .get(tag)
                 .map(|on_axis| on_axis.get(pos).map_or(0, |_| -1))
                 .unwrap_or_default();
         }
 
-        let mut unordered_axes: Vec<String> = non_zero_axes
+        let mut unordered_axes: Vec<Tag> = non_zero_axes
             .into_iter()
-            .filter(|axis_name| !ordered_axes.contains(axis_name))
-            .cloned()
+            .filter(|tag| !ordered_axes.contains(tag))
             .collect();
         unordered_axes.sort();
         ordered_axes.extend(unordered_axes);
 
         let axis_value_signs = ordered_axes
             .iter()
-            .map(|axis_name| {
+            .map(|tag| {
                 location
-                    .get(axis_name)
+                    .get(*tag)
                     .map(|coord| match coord.into_inner().cmp(&ZERO) {
                         Ordering::Greater => 1_i8,
                         Ordering::Less => -1_i8,
@@ -351,9 +345,9 @@ impl<'a> LocationSortingHat<'a> {
 
         let axis_value_abs = ordered_axes
             .iter()
-            .map(|axis_name| {
+            .map(|tag| {
                 location
-                    .get(axis_name)
+                    .get(*tag)
                     .map(|coord| OrderedFloat(coord.into_inner().abs()))
                     .unwrap_or_default()
             })
@@ -388,7 +382,7 @@ struct LocationSortKey {
     // index in user-specified axis order, otherwise score 0x10000 (65536)
     known_axes: Vec<usize>,
     // ordered list of axis in location
-    ordered_axes: Vec<String>,
+    ordered_axes: Vec<Tag>,
     // signs of positions on axes in ordered_axes order
     axis_value_signs: Vec<i8>,
     // abs values of positions on axes in ordered_axes order
@@ -398,8 +392,8 @@ struct LocationSortKey {
 /// A chunk of variation space characterized by a set of per-axis tents.
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct VariationRegion {
-    axis_tents: BTreeMap<String, Tent>,
-    active_axes: HashSet<String>,
+    axis_tents: BTreeMap<Tag, Tent>,
+    active_axes: HashSet<Tag>,
 }
 
 impl VariationRegion {
@@ -416,9 +410,9 @@ impl VariationRegion {
     fn scalar_at(&self, location: &NormalizedLocation) -> OrderedFloat<f32> {
         let scalar = self.axis_tents.iter().filter(|(_, ar)| ar.validate()).fold(
             ONE,
-            |scalar, (axis_name, tent)| {
+            |scalar, (tag, tent)| {
                 let v = location
-                    .get(axis_name)
+                    .get(*tag)
                     .map(|v| v.into_inner())
                     .unwrap_or_default();
                 let min = tent.min.into_inner();
@@ -439,7 +433,7 @@ impl VariationRegion {
                     trace!(
                         "  {:?} => 0 due to {} {:?} at {:?}",
                         self,
-                        axis_name,
+                        tag,
                         tent,
                         location
                     );
@@ -457,14 +451,14 @@ impl VariationRegion {
         scalar
     }
 
-    pub fn insert(&mut self, axis_name: String, tent: Tent) {
+    pub fn insert(&mut self, tag: Tag, tent: Tent) {
         if tent.has_non_zero() {
-            self.active_axes.insert(axis_name.clone());
+            self.active_axes.insert(tag);
         }
-        self.axis_tents.insert(axis_name, tent);
+        self.axis_tents.insert(tag, tent);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &Tent)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Tag, &Tent)> {
         self.axis_tents.iter()
     }
 
@@ -555,12 +549,12 @@ impl From<(f32, f32, f32)> for Tent {
 ///
 /// VariationModel::_locationsToRegions in Python.
 /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L416>
-fn regions_for(axis_order: &Vec<String>, locations: &[NormalizedLocation]) -> Vec<VariationRegion> {
-    let mut minmax = HashMap::<&String, (NormalizedCoord, NormalizedCoord)>::new();
+fn regions_for(axis_order: &Vec<Tag>, locations: &[NormalizedLocation]) -> Vec<VariationRegion> {
+    let mut minmax = HashMap::<Tag, (NormalizedCoord, NormalizedCoord)>::new();
     for location in locations.iter() {
-        for (axis, value) in location.iter() {
+        for (tag, value) in location.iter() {
             let (min, max) = minmax
-                .entry(axis)
+                .entry(*tag)
                 .or_insert_with(|| (NormalizedCoord::new(0.0), NormalizedCoord::new(0.0)));
             if value < min {
                 *min = *value;
@@ -575,17 +569,17 @@ fn regions_for(axis_order: &Vec<String>, locations: &[NormalizedLocation]) -> Ve
         .iter()
         .map(|location| {
             let mut region = VariationRegion::new();
-            for axis_name in axis_order {
+            for tag in axis_order {
                 // We expand locations to cover all axes so this is safe
-                let value = location.get(axis_name).unwrap();
+                let value = location.get(*tag).unwrap();
 
                 // Python just scrubs 0's out of the location's. We elect to store representative tents.
                 let (min, max) = if value.into_inner() == ZERO {
                     (NormalizedCoord::new(ZERO), NormalizedCoord::new(ZERO))
                 } else {
-                    *minmax.get(axis_name).unwrap()
+                    *minmax.get(tag).unwrap()
                 };
-                region.insert(axis_name.clone(), Tent::new(min, value, max));
+                region.insert(*tag, Tent::new(min, value, max));
             }
             region
         })
@@ -599,7 +593,7 @@ fn regions_for(axis_order: &Vec<String>, locations: &[NormalizedLocation]) -> Ve
 ///
 /// VariationModel::_computeMasterSupports in Python.
 /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L360>
-fn master_influence(axis_order: &Vec<String>, regions: &[VariationRegion]) -> Vec<VariationRegion> {
+fn master_influence(axis_order: &Vec<Tag>, regions: &[VariationRegion]) -> Vec<VariationRegion> {
     let mut influence = Vec::new();
     for (i, region) in regions.iter().enumerate() {
         let mut region = region.clone();
@@ -619,14 +613,14 @@ fn master_influence(axis_order: &Vec<String>, regions: &[VariationRegion]) -> Ve
             // As in Python version, split the box for the new master in the direction with the
             // largest range ratio. Cut across multiple axes if they have the largest equal ratio.
             // https://github.com/fonttools/fonttools/commit/7ee81c8821671157968b097f3e55309a1faa511e#commitcomment-31054804
-            let mut axis_regions: HashMap<&String, Tent> = HashMap::new();
+            let mut axis_regions: HashMap<Tag, Tent> = HashMap::new();
             let mut best_ratio = OrderedFloat(-1.0);
-            for axis in axis_order.iter() {
-                if !region.active_axes.contains(axis) {
+            for tag in axis_order.iter() {
+                if !region.active_axes.contains(tag) {
                     continue;
                 }
-                let prev_peak = prev_region.axis_tents[axis].peak;
-                let mut axis_region = region.axis_tents[axis].clone();
+                let prev_peak = prev_region.axis_tents[tag].peak;
+                let mut axis_region = region.axis_tents[tag].clone();
                 let ratio;
                 match prev_peak.cmp(&axis_region.peak) {
                     Ordering::Less => {
@@ -646,15 +640,12 @@ fn master_influence(axis_order: &Vec<String>, regions: &[VariationRegion]) -> Ve
                     best_ratio = ratio;
                 }
                 if ratio == best_ratio {
-                    axis_regions.insert(axis, axis_region);
+                    axis_regions.insert(*tag, axis_region);
                 }
             }
             // Weird things happen when the regions aren't formed in the axis order
-            for axis in axis_order {
-                region.insert(
-                    axis.to_string(),
-                    axis_regions.remove(axis).unwrap_or_default(),
-                );
+            for tag in axis_order {
+                region.insert(*tag, axis_regions.remove(tag).unwrap_or_default());
             }
         }
         influence.push(region);
@@ -726,20 +717,20 @@ mod tests {
 
     use super::{Tent, VariationModel, VariationRegion};
 
-    fn axis(axis_name: &str) -> Axis {
-        let (tag, min, default, max) = match axis_name {
-            "Weight" => ("wght", 300, 400, 700),
-            "Width" => ("wdth", 75, 100, 125),
-            "Italic" => ("ital", 0, 0, 1),
-            "foo" => ("foo ", -1, 0, 1),
-            "bar" => ("bar ", -1, 0, 1),
-            _ => panic!("No definition for {axis_name}, add it?"),
+    fn axis(tag: &str) -> Axis {
+        let (name, tag, min, default, max) = match tag {
+            "wght" => ("Weight", "wght", 300, 400, 700),
+            "wdth" => ("Width", "wdth", 75, 100, 125),
+            "ital" => ("Italic", "ital", 0, 0, 1),
+            "foo" => ("Foo", "foo ", -1, 0, 1),
+            "bar" => ("Bar", "bar ", -1, 0, 1),
+            _ => panic!("No definition for {tag}, add it?"),
         };
         let min = UserCoord::new(min as f32);
         let default = UserCoord::new(default as f32);
         let max = UserCoord::new(max as f32);
         Axis {
-            name: axis_name.to_string(),
+            name: name.to_string(),
             tag: Tag::from_str(tag).unwrap(),
             min,
             default,
@@ -759,7 +750,7 @@ mod tests {
     fn norm_loc(positions: &[(&str, f32)]) -> NormalizedLocation {
         positions
             .iter()
-            .map(|(axis_name, value)| (axis_name.to_string(), NormalizedCoord::new(*value)))
+            .map(|(tag, value)| (Tag::from_str(tag).unwrap(), NormalizedCoord::new(*value)))
             .collect()
     }
 
@@ -782,7 +773,7 @@ mod tests {
     /// 1.0
     #[test]
     fn scalar_at_off_default_for_default() {
-        let loc = norm_loc(&[("Weight", 0.2)]);
+        let loc = norm_loc(&[("wght", 0.2)]);
         assert_eq!(ONE, VariationRegion::new().scalar_at(&loc));
     }
 
@@ -791,9 +782,9 @@ mod tests {
     /// 0.1
     #[test]
     fn scalar_at_off_default_for_simple_weight() {
-        let loc = norm_loc(&[("Weight", 0.2)]);
+        let loc = norm_loc(&[("wght", 0.2)]);
         let mut region = VariationRegion::new();
-        region.insert("Weight".to_string(), (0.0, 2.0, 3.0).into());
+        region.insert(Tag::from_str("wght").unwrap(), (0.0, 2.0, 3.0).into());
         assert_eq!(OrderedFloat(0.1), region.scalar_at(&loc));
     }
 
@@ -802,9 +793,9 @@ mod tests {
     /// 0.75
     #[test]
     fn scalar_at_for_weight() {
-        let loc = norm_loc(&[("Weight", 2.5)]);
+        let loc = norm_loc(&[("wght", 2.5)]);
         let mut region = VariationRegion::new();
-        region.insert("Weight".to_string(), (0.0, 2.0, 4.0).into());
+        region.insert(Tag::from_str("wght").unwrap(), (0.0, 2.0, 4.0).into());
         assert_eq!(OrderedFloat(0.75), region.scalar_at(&loc));
     }
 
@@ -814,10 +805,10 @@ mod tests {
     /// Note that under font rules a peak of 0 means no influence
     #[test]
     fn scalar_at_for_weight_width_fixup() {
-        let loc = norm_loc(&[("Weight", 2.5), ("Width", 0.0)]);
+        let loc = norm_loc(&[("wght", 2.5), ("wdth", 0.0)]);
         let mut region = VariationRegion::new();
-        region.insert("Weight".to_string(), (0.0, 2.0, 4.0).into());
-        region.insert("Width".to_string(), (-1.0, 0.0, 1.0).into());
+        region.insert(Tag::from_str("wght").unwrap(), (0.0, 2.0, 4.0).into());
+        region.insert(Tag::from_str("wdth").unwrap(), (-1.0, 0.0, 1.0).into());
         assert_eq!(OrderedFloat(0.75), region.scalar_at(&loc));
     }
 
@@ -826,9 +817,9 @@ mod tests {
     /// 1.0
     #[test]
     fn scalar_at_for_weight_width_corner() {
-        let loc = norm_loc(&[("Weight", 1.0), ("Width", 1.0)]);
+        let loc = norm_loc(&[("wght", 1.0), ("wdth", 1.0)]);
         let mut region = VariationRegion::new();
-        region.insert("Weight".to_string(), (0.0, 1.0, 1.0).into());
+        region.insert(Tag::from_str("wght").unwrap(), (0.0, 1.0, 1.0).into());
         assert_eq!(OrderedFloat(1.0), region.scalar_at(&loc));
     }
 
@@ -840,10 +831,10 @@ mod tests {
     fn delta_weights_for_static_family_one_axis() {
         let loc = NormalizedLocation::new();
         let locations = HashSet::from([loc]);
-        let axes = vec![axis("Weight")];
+        let axes = vec![axis("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
 
-        assert_eq!(vec![norm_loc(&[("Weight", 0.0)])], model.locations);
+        assert_eq!(vec![norm_loc(&[("wght", 0.0)])], model.locations);
         assert_eq!(vec![default_master_weight()], model.delta_weights);
     }
 
@@ -853,9 +844,9 @@ mod tests {
     /// [{}]
     #[test]
     fn delta_weights_for_static_family_many_axes() {
-        let loc = norm_loc(&[("Weight", 0.0), ("Italic", 0.0), ("Width", 0.0)]);
+        let loc = norm_loc(&[("wght", 0.0), ("ital", 0.0), ("wdth", 0.0)]);
         let locations = HashSet::from([loc.clone()]);
-        let axes = vec![axis("Width"), axis("Weight"), axis("Italic")];
+        let axes = vec![axis("wdth"), axis("wght"), axis("ital")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(vec![loc], model.locations);
@@ -869,10 +860,10 @@ mod tests {
     /// [{}, {0: 1.0}]
     #[test]
     fn delta_weights_for_2_master_weight_variable_family() {
-        let weight_0 = norm_loc(&[("Weight", 0.0)]);
-        let weight_1 = norm_loc(&[("Weight", 1.0)]);
+        let weight_0 = norm_loc(&[("wght", 0.0)]);
+        let weight_1 = norm_loc(&[("wght", 1.0)]);
         let locations = HashSet::from([weight_1.clone(), weight_0.clone()]);
-        let axes = vec![axis("Weight")];
+        let axes = vec![axis("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(vec![weight_0, weight_1], model.locations);
@@ -889,11 +880,11 @@ mod tests {
     /// [{}, {0: 1.0}, {0: 1.0}]    
     #[test]
     fn delta_weights_for_3_master_weight_variable_family() {
-        let weight_minus_1 = norm_loc(&[("Weight", -1.0)]);
-        let weight_0 = norm_loc(&[("Weight", 0.0)]);
-        let weight_1 = norm_loc(&[("Weight", 1.0)]);
+        let weight_minus_1 = norm_loc(&[("wght", -1.0)]);
+        let weight_0 = norm_loc(&[("wght", 0.0)]);
+        let weight_1 = norm_loc(&[("wght", 1.0)]);
         let locations = HashSet::from([weight_1.clone(), weight_0.clone(), weight_minus_1.clone()]);
-        let axes = vec![axis("Weight")];
+        let axes = vec![axis("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(vec![weight_0, weight_minus_1, weight_1], model.locations);
@@ -914,17 +905,17 @@ mod tests {
     /// [{}, {0: 1.0}, {0: 1.0}, {0: 1.0, 1: 1.0, 2: 1.0}]
     #[test]
     fn delta_weights_for_corner_master_weight_width_family() {
-        let wght0_wdth0 = norm_loc(&[("Weight", 0.0), ("Width", 0.0)]);
-        let wght0_wdth1 = norm_loc(&[("Weight", 0.0), ("Width", 1.0)]);
-        let wght1_wdth0 = norm_loc(&[("Weight", 1.0), ("Width", 0.0)]);
-        let wght1_wdth1 = norm_loc(&[("Weight", 1.0), ("Width", 1.0)]);
+        let wght0_wdth0 = norm_loc(&[("wght", 0.0), ("wdth", 0.0)]);
+        let wght0_wdth1 = norm_loc(&[("wght", 0.0), ("wdth", 1.0)]);
+        let wght1_wdth0 = norm_loc(&[("wght", 1.0), ("wdth", 0.0)]);
+        let wght1_wdth1 = norm_loc(&[("wght", 1.0), ("wdth", 1.0)]);
         let locations = HashSet::from([
             wght0_wdth0.clone(),
             wght0_wdth1.clone(),
             wght1_wdth0.clone(),
             wght1_wdth1.clone(),
         ]);
-        let axes = vec![axis("Weight"), axis("Width")];
+        let axes = vec![axis("wght"), axis("wdth")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
@@ -953,12 +944,12 @@ mod tests {
     /// [{}, {0: 1.0}, {0: 1.0}, {0: 1.0}, {0: 1.0}, {0: 1.0}]
     #[test]
     fn delta_weights_for_corner_default_and_fixup_master_weight_width_family() {
-        let default_master = norm_loc(&[("Weight", 0.0), ("Width", 0.0)]);
-        let min_wght_min_wdth = norm_loc(&[("Weight", -1.0), ("Width", -1.0)]);
-        let min_wght_max_wdth = norm_loc(&[("Weight", -1.0), ("Width", 1.0)]);
-        let max_wght_min_wdth = norm_loc(&[("Weight", 1.0), ("Width", -1.0)]);
-        let max_wght_max_wdth = norm_loc(&[("Weight", 1.0), ("Width", 1.0)]);
-        let fixup = norm_loc(&[("Weight", 0.5), ("Width", 0.5)]);
+        let default_master = norm_loc(&[("wght", 0.0), ("wdth", 0.0)]);
+        let min_wght_min_wdth = norm_loc(&[("wght", -1.0), ("wdth", -1.0)]);
+        let min_wght_max_wdth = norm_loc(&[("wght", -1.0), ("wdth", 1.0)]);
+        let max_wght_min_wdth = norm_loc(&[("wght", 1.0), ("wdth", -1.0)]);
+        let max_wght_max_wdth = norm_loc(&[("wght", 1.0), ("wdth", 1.0)]);
+        let fixup = norm_loc(&[("wght", 0.5), ("wdth", 0.5)]);
         let locations = HashSet::from([
             // Default master
             default_master.clone(),
@@ -970,7 +961,7 @@ mod tests {
             // A fixup or knockout
             fixup.clone(),
         ]);
-        let axes = vec![axis("Weight"), axis("Width")];
+        let axes = vec![axis("wght"), axis("wdth")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
@@ -1003,30 +994,30 @@ mod tests {
     #[test]
     fn delta_weights_for_many_master_weight_width_family() {
         let locations = HashSet::from([
-            norm_loc(&[("Weight", 0.55), ("Width", 0.0)]),
-            norm_loc(&[("Weight", -0.55), ("Width", 0.0)]),
-            norm_loc(&[("Weight", -1.0), ("Width", 0.0)]),
-            norm_loc(&[("Weight", 0.0), ("Width", 1.0)]),
-            norm_loc(&[("Weight", 0.66), ("Width", 1.0)]),
-            norm_loc(&[("Weight", 0.66), ("Width", 0.66)]),
-            norm_loc(&[("Weight", 0.0), ("Width", 0.0)]),
-            norm_loc(&[("Weight", 1.0), ("Width", 1.0)]),
-            norm_loc(&[("Weight", 1.0), ("Width", 0.0)]),
+            norm_loc(&[("wght", 0.55), ("wdth", 0.0)]),
+            norm_loc(&[("wght", -0.55), ("wdth", 0.0)]),
+            norm_loc(&[("wght", -1.0), ("wdth", 0.0)]),
+            norm_loc(&[("wght", 0.0), ("wdth", 1.0)]),
+            norm_loc(&[("wght", 0.66), ("wdth", 1.0)]),
+            norm_loc(&[("wght", 0.66), ("wdth", 0.66)]),
+            norm_loc(&[("wght", 0.0), ("wdth", 0.0)]),
+            norm_loc(&[("wght", 1.0), ("wdth", 1.0)]),
+            norm_loc(&[("wght", 1.0), ("wdth", 0.0)]),
         ]);
-        let axes = vec![axis("Weight"), axis("Width")];
+        let axes = vec![axis("wght"), axis("wdth")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
             vec![
-                norm_loc(&[("Weight", 0.0), ("Width", 0.0)]),
-                norm_loc(&[("Weight", -0.55), ("Width", 0.0)]),
-                norm_loc(&[("Weight", -1.0), ("Width", 0.0)]),
-                norm_loc(&[("Weight", 0.55), ("Width", 0.0)]),
-                norm_loc(&[("Weight", 1.0), ("Width", 0.0)]),
-                norm_loc(&[("Weight", 0.0), ("Width", 1.0)]),
-                norm_loc(&[("Weight", 1.0), ("Width", 1.0)]),
-                norm_loc(&[("Weight", 0.66), ("Width", 1.0)]),
-                norm_loc(&[("Weight", 0.66), ("Width", 0.66)]),
+                norm_loc(&[("wght", 0.0), ("wdth", 0.0)]),
+                norm_loc(&[("wght", -0.55), ("wdth", 0.0)]),
+                norm_loc(&[("wght", -1.0), ("wdth", 0.0)]),
+                norm_loc(&[("wght", 0.55), ("wdth", 0.0)]),
+                norm_loc(&[("wght", 1.0), ("wdth", 0.0)]),
+                norm_loc(&[("wght", 0.0), ("wdth", 1.0)]),
+                norm_loc(&[("wght", 1.0), ("wdth", 1.0)]),
+                norm_loc(&[("wght", 0.66), ("wdth", 1.0)]),
+                norm_loc(&[("wght", 0.66), ("wdth", 0.66)]),
             ],
             model.locations
         );
@@ -1170,9 +1161,9 @@ mod tests {
 
     fn region(spec: &[(&str, f32, f32, f32)]) -> VariationRegion {
         let mut region = VariationRegion::new();
-        for (axis_name, min, peak, max) in spec {
+        for (tag, min, peak, max) in spec {
             region.insert(
-                axis_name.to_string(),
+                Tag::from_str(tag).unwrap(),
                 Tent::new(
                     NormalizedCoord::new(*min),
                     NormalizedCoord::new(*peak),
@@ -1185,17 +1176,17 @@ mod tests {
 
     #[test]
     fn compute_simple_delta_corner_masters() {
-        let origin = norm_loc(&[("Weight", 0.0), ("Width", 0.0)]);
-        let max_wght = norm_loc(&[("Weight", 1.0), ("Width", 0.0)]);
-        let max_wdth = norm_loc(&[("Weight", 0.0), ("Width", 1.0)]);
-        let max_wght_wdth = norm_loc(&[("Weight", 1.0), ("Width", 1.0)]);
+        let origin = norm_loc(&[("wght", 0.0), ("wdth", 0.0)]);
+        let max_wght = norm_loc(&[("wght", 1.0), ("wdth", 0.0)]);
+        let max_wdth = norm_loc(&[("wght", 0.0), ("wdth", 1.0)]);
+        let max_wght_wdth = norm_loc(&[("wght", 1.0), ("wdth", 1.0)]);
         let locations = HashSet::from([
             origin.clone(),
             max_wght.clone(),
             max_wdth.clone(),
             max_wght_wdth.clone(),
         ]);
-        let axes = vec![axis("Weight"), axis("Width")];
+        let axes = vec![axis("wght"), axis("wdth")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         let point_seqs = HashMap::from([
@@ -1209,22 +1200,22 @@ mod tests {
             vec![
                 // default
                 (
-                    region(&[("Weight", 0.0, 0.0, 0.0), ("Width", 0.0, 0.0, 0.0)]),
+                    region(&[("wght", 0.0, 0.0, 0.0), ("wdth", 0.0, 0.0, 0.0)]),
                     vec![Vec2::new(10.0, 10.0)]
                 ),
                 // at max weight/width no other master has influence so it's just delta from default
                 (
-                    region(&[("Weight", 0.0, 1.0, 1.0), ("Width", 0.0, 0.0, 0.0)]),
+                    region(&[("wght", 0.0, 1.0, 1.0), ("wdth", 0.0, 0.0, 0.0)]),
                     vec![Vec2::new(2.0, 1.0)]
                 ),
                 (
-                    region(&[("Weight", 0.0, 0.0, 0.0), ("Width", 0.0, 1.0, 1.0)]),
+                    region(&[("wght", 0.0, 0.0, 0.0), ("wdth", 0.0, 1.0, 1.0)]),
                     vec![Vec2::new(1.0, 2.0)]
                 ),
                 // at max wdth and wght the deltas for max_wght and max_wdth are in full effect
                 // so we get (10+2+1, 10+1+2) "for free" and our delta is from there to (14, 11)
                 (
-                    region(&[("Weight", 0.0, 1.0, 1.0), ("Width", 0.0, 1.0, 1.0)]),
+                    region(&[("wght", 0.0, 1.0, 1.0), ("wdth", 0.0, 1.0, 1.0)]),
                     vec![Vec2::new(1.0, -2.0)]
                 ),
             ],
@@ -1234,11 +1225,11 @@ mod tests {
 
     #[test]
     fn compute_1d_deltas() {
-        let origin = norm_loc(&[("Weight", 0.0)]);
-        let max_wght = norm_loc(&[("Weight", 1.0)]);
-        let min_wght = norm_loc(&[("Weight", -1.0)]);
+        let origin = norm_loc(&[("wght", 0.0)]);
+        let max_wght = norm_loc(&[("wght", 1.0)]);
+        let min_wght = norm_loc(&[("wght", -1.0)]);
         let locations = HashSet::from([origin.clone(), max_wght.clone(), min_wght.clone()]);
-        let axes = vec![axis("Weight")];
+        let axes = vec![axis("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         let point_seqs = HashMap::from([
@@ -1249,9 +1240,9 @@ mod tests {
 
         assert_eq!(
             vec![
-                (region(&[("Weight", 0.0, 0.0, 0.0)]), vec![10.0]),
-                (region(&[("Weight", -1.0, -1.0, 0.0)]), vec![-5.0]),
-                (region(&[("Weight", 0.0, 1.0, 1.0)]), vec![2.0]),
+                (region(&[("wght", 0.0, 0.0, 0.0)]), vec![10.0]),
+                (region(&[("wght", -1.0, -1.0, 0.0)]), vec![-5.0]),
+                (region(&[("wght", 0.0, 1.0, 1.0)]), vec![2.0]),
             ],
             model.deltas(&point_seqs).unwrap()
         );

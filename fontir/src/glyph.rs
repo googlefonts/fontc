@@ -423,8 +423,9 @@ impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, path::Path};
+    use std::{collections::HashSet, path::Path, str::FromStr};
 
+    use font_types::Tag;
     use fontdrasil::{orchestration::Access, types::GlyphName};
     use indexmap::IndexSet;
     use kurbo::{Affine, BezPath};
@@ -447,7 +448,7 @@ mod tests {
     fn norm_loc(positions: &[(&str, f32)]) -> NormalizedLocation {
         positions
             .iter()
-            .map(|(axis_name, value)| (axis_name.to_string(), NormalizedCoord::new(*value)))
+            .map(|(tag, value)| (Tag::from_str(tag).unwrap(), NormalizedCoord::new(*value)))
             .collect()
     }
 

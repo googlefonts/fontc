@@ -294,7 +294,7 @@ impl Work<Context, WorkError> for StaticMetadataWork {
                 .unwrap_or("<nameless family>")
         );
         let axes = font_info.axes.clone();
-        let axis_map = axes.iter().map(|a| (&a.name, a)).collect();
+        let axis_map = axes.iter().map(|a| (a.tag, a)).collect();
         let named_instances = font
             .instances
             .iter()
@@ -659,7 +659,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
         let zero_width = is_nonspacing_mark(&ir_glyph.codepoints, ir_glyph.name.as_str());
 
         // Glyphs have layers that match up with masters, and masters have locations
-        let mut axis_positions: HashMap<String, HashSet<NormalizedCoord>> = HashMap::new();
+        let mut axis_positions: HashMap<Tag, HashSet<NormalizedCoord>> = HashMap::new();
         for instance in glyph.layers.iter() {
             let Some(master_idx) = font_info.master_indices.get(instance.layer_id.as_str()) else {
                 return Err(WorkError::NoMasterForGlyph {
@@ -671,10 +671,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
             let location = font_info.locations.get(&master.axes_values).unwrap();
 
             for (tag, coord) in location.iter() {
-                axis_positions
-                    .entry(tag.clone())
-                    .or_default()
-                    .insert(*coord);
+                axis_positions.entry(*tag).or_default().insert(*coord);
             }
 
             // TODO populate width and height properly
@@ -706,7 +703,7 @@ impl Work<Context, WorkError> for GlyphIrWork {
             let min = axis.min.to_normalized(&axis.converter);
             let max = axis.max.to_normalized(&axis.converter);
             let default = axis.max.to_normalized(&axis.converter);
-            let Some(positions) = axis_positions.get(&axis.name) else {
+            let Some(positions) = axis_positions.get(&axis.tag) else {
                 return Err(WorkError::NoAxisPosition(self.glyph_name.clone(), axis.name.clone()));
             };
             check_pos(&self.glyph_name, positions, axis, &min)?;
@@ -984,7 +981,7 @@ mod tests {
         build_glyphs(&source, &context, &[&glyph_name]).unwrap(); // we dont' care about geometry
 
         let static_metadata = context.get_init_static_metadata();
-        let axes = static_metadata.axes.iter().map(|a| (&a.name, a)).collect();
+        let axes = static_metadata.axes.iter().map(|a| (a.tag, a)).collect();
 
         let mut expected_locations = HashSet::new();
         for (opsz, wght) in &[
@@ -996,8 +993,8 @@ mod tests {
             (72.0, 700.0),
         ] {
             let mut loc = UserLocation::new();
-            loc.insert("Optical Size", UserCoord::new(*opsz));
-            loc.insert("Weight", UserCoord::new(*wght));
+            loc.insert(Tag::from_str("opsz").unwrap(), UserCoord::new(*opsz));
+            loc.insert(Tag::from_str("wght").unwrap(), UserCoord::new(*wght));
             let loc = loc;
             expected_locations.insert(loc);
         }
@@ -1028,8 +1025,8 @@ mod tests {
             (1.0, 1.0),
         ] {
             let mut loc = NormalizedLocation::new();
-            loc.insert("Optical Size", NormalizedCoord::new(*opsz));
-            loc.insert("Weight", NormalizedCoord::new(*wght));
+            loc.insert(Tag::from_str("opsz").unwrap(), NormalizedCoord::new(*opsz));
+            loc.insert(Tag::from_str("wght").unwrap(), NormalizedCoord::new(*wght));
             let loc = loc;
             expected_locations.insert(loc);
         }

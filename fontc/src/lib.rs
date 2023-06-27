@@ -2094,7 +2094,7 @@ mod tests {
                     values
                         .iter()
                         .map(|(loc, val)| {
-                            assert_eq!(loc.axis_names().count(), 1, "Should be only weight");
+                            assert_eq!(loc.axis_tags().count(), 1, "Should be only wght");
                             let (axis, pos) = loc.iter().next().unwrap();
                             (format!("{axis} {}", pos.to_f32()), val.0)
                         })
@@ -2118,40 +2118,40 @@ mod tests {
                         &KernParticipant::Glyph("bracketleft".into()),
                         &KernParticipant::Glyph("bracketright".into()),
                         vec![
-                            ("Weight 0".to_string(), -300.0),
-                            ("Weight 1".to_string(), -150.0)
+                            ("wght 0".to_string(), -300.0),
+                            ("wght 1".to_string(), -150.0)
                         ],
                     ),
                     (
                         &KernParticipant::Glyph("exclam".into()),
                         &KernParticipant::Glyph("exclam".into()),
                         vec![
-                            ("Weight 0".to_string(), -360.0),
-                            ("Weight 1".to_string(), -100.0)
+                            ("wght 0".to_string(), -360.0),
+                            ("wght 1".to_string(), -100.0)
                         ],
                     ),
                     (
                         &KernParticipant::Glyph("exclam".into()),
                         &KernParticipant::Glyph("hyphen".into()),
-                        vec![("Weight 0".to_string(), 20.0),],
+                        vec![("wght 0".to_string(), 20.0),],
                     ),
                     (
                         &KernParticipant::Glyph("exclam".into()),
                         &KernParticipant::Group("public.kern2.bracketright_L".into()),
-                        vec![("Weight 0".to_string(), -160.0),],
+                        vec![("wght 0".to_string(), -160.0),],
                     ),
                     (
                         &KernParticipant::Glyph("hyphen".into()),
                         &KernParticipant::Glyph("hyphen".into()),
                         vec![
-                            ("Weight 0".to_string(), -150.0),
-                            ("Weight 1".to_string(), -50.0)
+                            ("wght 0".to_string(), -150.0),
+                            ("wght 1".to_string(), -50.0)
                         ],
                     ),
                     (
                         &KernParticipant::Group("public.kern1.bracketleft_R".into()),
                         &KernParticipant::Glyph("exclam".into()),
-                        vec![("Weight 0".to_string(), -165.0),],
+                        vec![("wght 0".to_string(), -165.0),],
                     ),
                 ],
             ),
