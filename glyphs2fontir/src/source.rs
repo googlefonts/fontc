@@ -721,7 +721,6 @@ mod tests {
     use std::{
         collections::{HashMap, HashSet},
         path::{Path, PathBuf},
-        str::FromStr,
     };
 
     use font_types::NameId;
@@ -835,7 +834,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            vec![Tag::from_str("wght").unwrap()],
+            vec![Tag::new(b"wght")],
             context
                 .get_init_static_metadata()
                 .axes
@@ -887,7 +886,7 @@ mod tests {
             vec![
                 ir::Axis {
                     name: "Weight".into(),
-                    tag: Tag::from_str("wght").unwrap(),
+                    tag: Tag::new(b"wght"),
                     min: UserCoord::new(100.0),
                     default: UserCoord::new(500.0),
                     max: UserCoord::new(700.0),
@@ -907,7 +906,7 @@ mod tests {
                 },
                 ir::Axis {
                     name: "Optical Size".into(),
-                    tag: Tag::from_str("opsz").unwrap(),
+                    tag: Tag::new(b"opsz"),
                     min: UserCoord::new(12.0),
                     default: UserCoord::new(12.0),
                     max: UserCoord::new(72.0),
@@ -993,8 +992,8 @@ mod tests {
             (72.0, 700.0),
         ] {
             let mut loc = UserLocation::new();
-            loc.insert(Tag::from_str("opsz").unwrap(), UserCoord::new(*opsz));
-            loc.insert(Tag::from_str("wght").unwrap(), UserCoord::new(*wght));
+            loc.insert(Tag::new(b"opsz"), UserCoord::new(*opsz));
+            loc.insert(Tag::new(b"wght"), UserCoord::new(*wght));
             let loc = loc;
             expected_locations.insert(loc);
         }
@@ -1025,8 +1024,8 @@ mod tests {
             (1.0, 1.0),
         ] {
             let mut loc = NormalizedLocation::new();
-            loc.insert(Tag::from_str("opsz").unwrap(), NormalizedCoord::new(*opsz));
-            loc.insert(Tag::from_str("wght").unwrap(), NormalizedCoord::new(*wght));
+            loc.insert(Tag::new(b"opsz"), NormalizedCoord::new(*opsz));
+            loc.insert(Tag::new(b"wght"), NormalizedCoord::new(*wght));
             let loc = loc;
             expected_locations.insert(loc);
         }
@@ -1050,7 +1049,7 @@ mod tests {
             panic!("Wrong error");
         };
         assert_eq!("min-undefined", glyph_name.as_str());
-        assert_eq!(Tag::from_str("wght").unwrap(), axis);
+        assert_eq!(Tag::new(b"wght"), axis);
         assert_eq!(NormalizedCoord::new(-1.0), pos);
     }
 

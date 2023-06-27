@@ -176,7 +176,6 @@ mod tests {
     use std::{
         collections::{HashMap, HashSet},
         path::{Path, PathBuf},
-        str::FromStr,
     };
 
     use font_types::Tag;
@@ -232,7 +231,7 @@ mod tests {
     #[test]
     pub fn captures_codepoints() {
         let mut norm_loc = NormalizedLocation::new();
-        norm_loc.insert(Tag::from_str("wght").unwrap(), NormalizedCoord::new(0.0));
+        norm_loc.insert(Tag::new(b"wght"), NormalizedCoord::new(0.0));
         let glyph = to_ir_glyph(
             "bar".into(),
             &HashMap::from([(

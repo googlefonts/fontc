@@ -1120,7 +1120,6 @@ mod tests {
     use std::{
         collections::{HashMap, HashSet},
         path::{Path, PathBuf},
-        str::FromStr,
     };
 
     use font_types::Tag;
@@ -1258,10 +1257,9 @@ mod tests {
     fn add_design_location(
         add_to: &mut HashMap<PathBuf, Vec<DesignLocation>>,
         glif_file: &str,
-        tag: &str,
+        tag: Tag,
         pos: f32,
     ) {
-        let tag = Tag::from_str(tag).unwrap();
         let mut loc = DesignLocation::new();
         loc.insert(tag, DesignCoord::new(pos));
         add_to
@@ -1282,19 +1280,19 @@ mod tests {
         add_design_location(
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs/bar.glif",
-            "wght",
+            Tag::new(b"wght"),
             400.0,
         );
         add_design_location(
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs.{600}/bar.glif",
-            "wght",
+            Tag::new(b"wght"),
             600.0,
         );
         add_design_location(
             &mut expected_glif_files,
             "WghtVar-Bold.ufo/glyphs/bar.glif",
-            "wght",
+            Tag::new(b"wght"),
             700.0,
         );
         assert_eq!(expected_glif_files, work.glif_files);
@@ -1313,13 +1311,13 @@ mod tests {
         add_design_location(
             &mut expected_glif_files,
             "WghtVar-Regular.ufo/glyphs/plus.glif",
-            "wght",
+            Tag::new(b"wght"),
             400.0,
         );
         add_design_location(
             &mut expected_glif_files,
             "WghtVar-Bold.ufo/glyphs/plus.glif",
-            "wght",
+            Tag::new(b"wght"),
             700.0,
         );
         assert_eq!(expected_glif_files, work.glif_files);
@@ -1336,7 +1334,7 @@ mod tests {
     pub fn find_default_master() {
         let (source, _) = load_wght_var();
         let ds = source.load_designspace().unwrap();
-        let tag = Tag::from_str("wght").unwrap();
+        let tag = Tag::new(b"wght");
         let mut loc = DesignLocation::new();
         loc.insert(tag, DesignCoord::new(400.0));
         let tags_by_name = HashMap::from([("Weight", tag)]);

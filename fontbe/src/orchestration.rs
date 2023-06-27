@@ -656,8 +656,6 @@ fn read_entire_file(file: &Path) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use font_types::Tag;
     use fontir::{
         coords::NormalizedCoord,
