@@ -38,7 +38,7 @@ fn should_fail() -> Result<(), Report> {
 
 #[test]
 fn import_resolution() {
-    let glyph_map = test_utils::make_glyph_map();
+    let glyph_map = test_utils::fonttools_test_glyph_order();
     let path = PathBuf::from(IMPORT_RESOLUTION_TEST);
     match test_utils::run_test(path, &glyph_map, &Default::default()) {
         Ok(_) => (),

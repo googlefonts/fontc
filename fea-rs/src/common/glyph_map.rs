@@ -46,6 +46,13 @@ impl GlyphMap {
             .collect()
     }
 
+    /// Iterate the idents in this map, in GID order.
+    ///
+    /// This is really only intended to be used to create new glyphmaps for testing.
+    pub fn iter(&self) -> impl Iterator<Item = GlyphIdent> + '_ {
+        self.reverse_map().into_values()
+    }
+
     /// Return `true` if the map contains the provided `GlyphIdent`.
     pub fn contains<Q: ?Sized + sealed::AsGlyphIdent>(&self, key: &Q) -> bool {
         if let Some(name) = key.named() {

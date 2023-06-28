@@ -8,13 +8,17 @@
 
 use std::{env, path::PathBuf};
 
-use crate::util::ttx::{self as test_utils, Report, TestCase, TestResult};
+use crate::{
+    util::ttx::{self as test_utils, Report, TestCase, TestResult},
+    GlyphIdent, GlyphMap,
+};
 
 static PARSE_GOOD: &str = "./test-data/parse-tests/good";
 static PARSE_BAD: &str = "./test-data/parse-tests/bad";
 static OTHER_TESTS: &[&str] = &["./test-data/include-resolution-tests/dir1/test1.fea"];
 const GOOD_OUTPUT_EXTENSION: &str = "PARSE_TREE";
 const BAD_OUTPUT_EXTENSION: &str = "ERR";
+const GLYPH_ORDER_PATH: &str = "./test-data/simple_glyph_order.txt";
 
 #[test]
 fn parse_good() -> Result<(), Report> {
@@ -24,9 +28,11 @@ fn parse_good() -> Result<(), Report> {
         env::current_dir()
     );
 
+    let glyph_map = parse_test_glyph_order();
+
     let results = test_utils::iter_fea_files(PARSE_GOOD)
         .chain(OTHER_TESTS.iter().map(PathBuf::from))
-        .map(run_good_test)
+        .map(|path| run_good_test(path, &glyph_map))
         .collect::<Vec<_>>();
     test_utils::finalize_results(results).into_error()
 }
@@ -41,9 +47,21 @@ fn parse_bad() -> Result<(), Report> {
     .into_error()
 }
 
-fn run_good_test(path: PathBuf) -> Result<PathBuf, TestCase> {
+fn parse_test_glyph_order() -> GlyphMap {
+    let raw_glyphs = std::fs::read_to_string(GLYPH_ORDER_PATH).unwrap();
+    crate::compile::parse_glyph_order(&raw_glyphs)
+        .unwrap()
+        .iter()
+        // we add one extra glyph, which could be a glyph range.
+        // during parsing, when provided a glyphmap, we can disambiguate this,
+        // but we can't do that otherwise
+        .chain([GlyphIdent::from("two-four")])
+        .collect()
+}
+
+fn run_good_test(path: PathBuf, glyphmap: &GlyphMap) -> Result<PathBuf, TestCase> {
     let verbose = std::env::var(crate::util::VERBOSE).is_ok();
-    match std::panic::catch_unwind(|| match test_utils::try_parse_file(&path, None) {
+    match std::panic::catch_unwind(|| match test_utils::try_parse_file(&path, Some(glyphmap)) {
         Err((node, errs)) => Err(TestCase {
             path: path.clone(),
             reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),

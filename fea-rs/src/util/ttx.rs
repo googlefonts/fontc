@@ -15,7 +15,7 @@ use crate::{
         error::{CompilerError, DiagnosticSet},
         Compiler, MockVariationInfo, Opts,
     },
-    Diagnostic, GlyphIdent, GlyphMap, GlyphName, ParseTree,
+    Diagnostic, GlyphIdent, GlyphMap, ParseTree,
 };
 
 use ansi_term::Color;
@@ -151,7 +151,7 @@ impl<'a> Filter<'a> {
 /// `filter` is an optional comma-separated list of strings. If present, only
 /// tests which contain one of the strings in the list will be run.
 pub fn run_all_tests(fonttools_data_dir: impl AsRef<Path>, filter: Option<&String>) -> Report {
-    let glyph_map = make_glyph_map();
+    let glyph_map = fonttools_test_glyph_order();
     let filter = Filter::new(filter);
     let var_info = make_var_info();
 
@@ -520,42 +520,11 @@ pub fn plain_text_diff(left: &str, right: &str) -> String {
 /// Generate the sample glyph map.
 ///
 /// This is the glyph map used in the feaLib test suite.
-pub fn make_glyph_map() -> GlyphMap {
-    #[rustfmt::skip]
-static TEST_FONT_GLYPHS: &[&str] = &[
-    ".notdef", "space", "slash", "fraction", "semicolon", "period", "comma",
-    "ampersand", "quotedblleft", "quotedblright", "quoteleft", "quoteright",
-    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
-    "nine", "zero.oldstyle", "one.oldstyle", "two.oldstyle",
-    "three.oldstyle", "four.oldstyle", "five.oldstyle", "six.oldstyle",
-    "seven.oldstyle", "eight.oldstyle", "nine.oldstyle", "onequarter",
-    "onehalf", "threequarters", "onesuperior", "twosuperior",
-    "threesuperior", "ordfeminine", "ordmasculine", "A", "B", "C", "D", "E",
-    "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
-    "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g",
-    "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u",
-    "v", "w", "x", "y", "z", "A.sc", "B.sc", "C.sc", "D.sc", "E.sc", "F.sc",
-    "G.sc", "H.sc", "I.sc", "J.sc", "K.sc", "L.sc", "M.sc", "N.sc", "O.sc",
-    "P.sc", "Q.sc", "R.sc", "S.sc", "T.sc", "U.sc", "V.sc", "W.sc", "X.sc",
-    "Y.sc", "Z.sc", "A.alt1", "A.alt2", "A.alt3", "B.alt1", "B.alt2",
-    "B.alt3", "C.alt1", "C.alt2", "C.alt3", "a.alt1", "a.alt2", "a.alt3",
-    "a.end", "b.alt", "c.mid", "d.alt", "d.mid", "e.begin", "e.mid",
-    "e.end", "m.begin", "n.end", "s.end", "z.end", "Eng", "Eng.alt1",
-    "Eng.alt2", "Eng.alt3", "A.swash", "B.swash", "C.swash", "D.swash",
-    "E.swash", "F.swash", "G.swash", "H.swash", "I.swash", "J.swash",
-    "K.swash", "L.swash", "M.swash", "N.swash", "O.swash", "P.swash",
-    "Q.swash", "R.swash", "S.swash", "T.swash", "U.swash", "V.swash",
-    "W.swash", "X.swash", "Y.swash", "Z.swash", "f_l", "c_h", "c_k", "c_s",
-    "c_t", "f_f", "f_f_i", "f_f_l", "f_i", "o_f_f_i", "s_t", "f_i.begin",
-    "a_n_d", "T_h", "T_h.swash", "germandbls", "ydieresis", "yacute",
-    "breve", "grave", "acute", "dieresis", "macron", "circumflex",
-    "cedilla", "umlaut", "ogonek", "caron", "damma", "hamza", "sukun",
-    "kasratan", "lam_meem_jeem", "noon.final", "noon.initial", "by",
-    "feature", "lookup", "sub", "table", "uni0327", "uni0328", "e.fina",
-];
-    TEST_FONT_GLYPHS
+pub fn fonttools_test_glyph_order() -> GlyphMap {
+    let order_str = std::fs::read_to_string("./test-data/simple_glyph_order.txt").unwrap();
+    crate::compile::parse_glyph_order(&order_str)
+        .unwrap()
         .iter()
-        .map(|name| GlyphIdent::Name(GlyphName::new(*name)))
         .chain((800_u16..=1001).map(GlyphIdent::Cid))
         .collect()
 }
