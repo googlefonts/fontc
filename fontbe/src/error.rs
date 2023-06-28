@@ -12,7 +12,7 @@ use write_fonts::tables::{glyf::BadKurbo, gvar::GvarInputError, variations::IupE
 pub enum Error {
     #[error("IO failure")]
     IoError(#[from] io::Error),
-    #[error("Fea compilation failure")]
+    #[error("Fea compilation failure {0}")]
     FeaCompileError(#[from] CompilerError),
     #[error("'{0}' {1}")]
     GlyphError(GlyphName, GlyphProblem),

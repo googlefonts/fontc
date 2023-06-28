@@ -228,7 +228,7 @@ impl Workload {
                     inserted
                 }
                 Err(e) => {
-                    log::error!("{:?} failed {:?}", completed_id, e);
+                    log::error!("{completed_id:?} failed {e}");
                     self.error.push((completed_id.clone(), format!("{e}")));
                     true
                 }
