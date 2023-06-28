@@ -989,6 +989,12 @@ impl Gpos6 {
     }
 }
 
+impl Gpos8 {
+    pub(crate) fn trailing_value_record(&self) -> Option<ValueRecord> {
+        self.iter().skip(4).find_map(ValueRecord::cast)
+    }
+}
+
 impl GposIgnore {
     pub(crate) fn rules(&self) -> impl Iterator<Item = IgnoreRule> + '_ {
         self.iter().filter_map(IgnoreRule::cast)

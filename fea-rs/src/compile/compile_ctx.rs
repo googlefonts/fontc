@@ -950,13 +950,20 @@ impl<'a> CompilationCtx<'a> {
     fn add_contextual_pos_rule(&mut self, node: &typed::Gpos8) {
         let backtrack = self.resolve_backtrack_sequence(node.backtrack().items());
         let lookahead = self.resolve_lookahead_sequence(node.lookahead().items());
+        let trailing_value_record = node.trailing_value_record();
+        if trailing_value_record.is_some() {
+            // sanity check for weird gpos special case
+            debug_assert_eq!(node.input().items().count(), 1,);
+        }
         let context = node
             .input()
             .items()
             .map(|item| {
                 let glyphs = self.resolve_glyph_or_class(&item.target());
                 let mut lookups = Vec::new();
-                if let Some(value) = item.valuerecord() {
+                // if trailing exists then item.valuerecord doesn't, and there is
+                // only one item
+                if let Some(value) = trailing_value_record.clone().or_else(|| item.valuerecord()) {
                     let value = self.resolve_value_record(&value);
                     let anon_id = self
                         .ensure_current_lookup_type(Kind::GposType8)
