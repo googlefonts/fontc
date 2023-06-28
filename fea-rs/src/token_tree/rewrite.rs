@@ -192,20 +192,38 @@ pub(crate) fn reparse_contextual_pos_rule(rewriter: &mut ReparseCtx) -> Kind {
     // the backtrack sequence
     eat_non_marked_seqeunce(rewriter, Kind::BacktrackSequence);
     // the contextual sequence
+
+    // there is one funny special case here,
+    // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#example-3c
+    let mut num_marked_glyphs_and_lookups = 0;
     rewriter.in_node(Kind::ContextSequence, |rewriter| loop {
         if !at_glyph_or_glyph_class(rewriter.nth_kind(0)) || !rewriter.matches(1, Kind::SingleQuote)
         {
             break;
         }
+        num_marked_glyphs_and_lookups += 1;
         rewriter.in_node(Kind::ContextGlyphNode, |rewriter| {
             expect_glyph_or_glyph_class(rewriter);
             rewriter.expect(Kind::SingleQuote);
-            eat_contextual_lookups(rewriter);
-            rewriter.eat(Kind::ValueRecordNode);
+            if eat_contextual_lookups(rewriter) || rewriter.eat(Kind::ValueRecordNode) {
+                num_marked_glyphs_and_lookups += 1;
+            }
         })
     });
+
     // the lookahead sequence
-    eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
+    let had_lookahead = eat_non_marked_seqeunce(rewriter, Kind::LookaheadSequence);
+    if num_marked_glyphs_and_lookups == 1 && had_lookahead {
+        // special case: if only one marked glyph, possible to have value record at end
+        // NOTE: the spec says something different but this is the behaviour of both
+        // afdko and fonttools, see: https://github.com/adobe-type-tools/afdko/issues/1665
+        rewriter.eat(Kind::ValueRecordNode);
+    } else if rewriter.matches(0, Kind::ValueRecordNode) {
+        rewriter.err_and_bump(
+            "trailing value record only valid if there is a single marked glyph, \
+            no inline lookups, and at least one lookahead glyph.",
+        );
+    }
 
     rewriter.expect_semi_and_nothing_else();
     Kind::GposType8
@@ -260,12 +278,15 @@ fn expect_ignore_rule_statement(rewriter: &mut ReparseCtx) {
 }
 
 // impl common to eating backtrack or lookahead
-fn eat_non_marked_seqeunce(rewriter: &mut ReparseCtx, kind: Kind) {
+fn eat_non_marked_seqeunce(rewriter: &mut ReparseCtx, kind: Kind) -> bool {
+    let mut ate_something = false;
     rewriter.in_node(kind, |rewriter| loop {
         if rewriter.matches(1, Kind::SingleQuote) || !eat_glyph_or_glyph_class(rewriter) {
             break;
         }
+        ate_something = true;
     });
+    ate_something
 }
 
 // the two lookups in "sub ka' lookup ONE lookup TWO b'"

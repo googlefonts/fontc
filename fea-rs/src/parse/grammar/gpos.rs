@@ -167,18 +167,23 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     }
 
     while parser.eat(Kind::SingleQuote) {
+        // each marked glyph can be followed by multiple lookup refs
         if !super::greedy(eat_lookup)(parser, recovery) {
+            // or(?) one inline single-pos rule
             metrics::eat_value_record(parser, recovery);
         }
-        // do something else
+        // or nothing, in  which case we eat the next glyph/class & loop
         glyph::eat_glyph_or_glyph_class(parser, recovery.union(RECOVERY));
     }
 
-    // eat any suffix glyphs
+    // eat the lookahead sequence
     super::greedy(glyph::eat_glyph_or_glyph_class)(parser, recovery);
 
-    //TODO: we should be done? but we also don't know how this works? inline rules
-    //are weird for gpos I need to rethink this
+    // special case: for inline pairpos, a value record can come at the very end.
+    // accept this now, and then we will handle it in the rewriter
+    // (http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#example-3c)
+    metrics::eat_value_record(parser, recovery);
+
     if parser.expect_semi() {
         AstKind::GposNodeNeedsRewrite
     } else {
@@ -213,4 +218,19 @@ fn anchor_mark(parser: &mut Parser, recovery: TokenSet) -> bool {
         }
     });
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn whats_up_armenia() {
+        let hmm = "pos @armn_calt_punctuation_centered' @armn_lowercase <0 -16 0 0>;";
+        let (_out, _errors, _errstr) = super::super::debug_parse_output(hmm, |parser| {
+            gpos(parser, TokenSet::FEATURE_STATEMENT)
+        });
+
+        assert!(_errors.is_empty(), "{_errstr}");
+    }
 }
