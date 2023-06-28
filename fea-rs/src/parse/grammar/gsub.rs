@@ -6,7 +6,8 @@ use crate::parse::{
 };
 use crate::token_tree::Kind as AstKind;
 
-pub(crate) fn gsub(parser: &mut Parser, recovery: TokenSet) {
+/// parse a single gsub statement
+pub(crate) fn gsub_rule(parser: &mut Parser, recovery: TokenSet) {
     fn gsub_body(parser: &mut Parser, recovery: TokenSet) -> AstKind {
         const RECOVERY: TokenSet = TokenSet::new(&[
             Kind::ByKw,
@@ -210,7 +211,7 @@ mod tests {
 
         for bad in not_allowed {
             let (_out, errors, _errstr) =
-                debug_parse_output(bad, |parser| gsub(parser, TokenSet::from(Kind::Eof)));
+                debug_parse_output(bad, |parser| gsub_rule(parser, TokenSet::from(Kind::Eof)));
             assert!(!errors.is_empty(), "{}", bad);
         }
     }

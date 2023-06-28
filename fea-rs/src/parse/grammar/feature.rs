@@ -134,18 +134,18 @@ pub(crate) fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool
 
 pub(crate) fn pos_or_sub_rule(parser: &mut Parser, recovery: TokenSet) {
     match parser.nth(0).kind.to_token_kind() {
-        Kind::PosKw => gpos::gpos(parser, recovery),
+        Kind::PosKw => gpos::gpos_rule(parser, recovery),
         Kind::EnumKw if parser.nth(1).kind.to_token_kind() == Kind::PosKw => {
-            gpos::gpos(parser, recovery)
+            gpos::gpos_rule(parser, recovery)
         }
         Kind::EnumKw => parser.err_and_bump("'enum' keyword must be followed by position rule"),
         Kind::IgnoreKw => match parser.nth(1).kind.to_token_kind() {
-            Kind::PosKw => gpos::gpos(parser, recovery),
-            Kind::SubKw => gsub::gsub(parser, recovery),
+            Kind::PosKw => gpos::gpos_rule(parser, recovery),
+            Kind::SubKw => gsub::gsub_rule(parser, recovery),
             _ => parser
                 .err_and_bump("'ignore' keyword must be followed by position or substitution rule"),
         },
-        Kind::SubKw | Kind::RsubKw => gsub::gsub(parser, recovery),
+        Kind::SubKw | Kind::RsubKw => gsub::gsub_rule(parser, recovery),
         other => panic!("'{}' is not a valid gpos or gsub token", other),
     }
 }

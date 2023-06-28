@@ -10,9 +10,9 @@ mod metrics;
 mod table;
 mod variations;
 
-#[cfg(test)]
 // we use this in a test in edit.rs
-pub(crate) use gsub::gsub as parse_gsub;
+#[cfg(test)]
+pub(crate) use gsub::gsub_rule;
 
 /// Entry point for parsing a FEA file.
 pub fn root(parser: &mut Parser) {

@@ -6,6 +6,7 @@ use crate::parse::{
 };
 use crate::token_tree::Kind as AstKind;
 
+/// Parse a single GPOS statement
 // 6.a: pos <glyph|glyphclass> <valuerecord>;
 // 6.b: [enum] pos <glyph|glyphclass> <valuerecord>
 //          <glyph|glyphclass> <valuerecord>;
@@ -19,7 +20,7 @@ use crate::token_tree::Kind as AstKind;
 //      <anchor> mark <named mark class> + ;
 // 6.f: pos mark <glyph|class>
 //      <anchor> mark <named mark class> + ;
-pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
+pub(crate) fn gpos_rule(parser: &mut Parser, recovery: TokenSet) {
     fn gpos_body(parser: &mut Parser, recovery: TokenSet) -> AstKind {
         if parser.matches(0, Kind::IgnoreKw) {
             return parse_ignore(parser, recovery);
@@ -74,6 +75,9 @@ pub(crate) fn gpos(parser: &mut Parser, recovery: TokenSet) {
                 return AstKind::GposType2;
             }
 
+            // if we have made it this far, it looks like this is a chain rule.
+            // in this case, we start needing arbitrary lookahead, so we just
+            // eat everything now and then rewrite these rules later.
             finish_chain_rule(parser, recovery)
         }
     }

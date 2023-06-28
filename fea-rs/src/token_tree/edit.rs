@@ -146,7 +146,7 @@ feature liga {
         let replace_sub = {
             let fea = "sub gg by w_p;";
             make_node(fea, |p| {
-                crate::parse::grammar::parse_gsub(p, TokenSet::FEATURE_STATEMENT)
+                crate::parse::grammar::gsub_rule(p, TokenSet::FEATURE_STATEMENT)
             })
         };
 

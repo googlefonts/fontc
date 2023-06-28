@@ -75,6 +75,7 @@ pub(crate) struct TreeBuilder {
     children: Vec<NodeOrToken>,
 }
 
+/// Consumes tokens during parsing, building up an AST.
 pub(crate) struct AstSink<'a> {
     text: &'a str,
     file_id: FileId,
