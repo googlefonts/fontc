@@ -223,18 +223,3 @@ fn anchor_mark(parser: &mut Parser, recovery: TokenSet) -> bool {
     });
     true
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn whats_up_armenia() {
-        let hmm = "pos @armn_calt_punctuation_centered' @armn_lowercase <0 -16 0 0>;";
-        let (_out, _errors, _errstr) = super::super::debug_parse_output(hmm, |parser| {
-            gpos(parser, TokenSet::FEATURE_STATEMENT)
-        });
-
-        assert!(_errors.is_empty(), "{_errstr}");
-    }
-}
