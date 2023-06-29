@@ -11,7 +11,7 @@ env_logger = "0.10.0"
 
 parking_lot = "0.12.1"
 
-fea-rs = "= 0.8.0"
+fea-rs = "= 0.8.1"
 font-types = { version = "0.3.0", features = ["serde"] }
 read-fonts = "0.6.0"
 write-fonts = "0.8.0"
