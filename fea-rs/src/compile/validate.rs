@@ -751,6 +751,11 @@ impl<'a> ValidationCtx<'a> {
             );
         }
         let mut kind = None;
+
+        // you can set a lookupflag before seeing any rules, after the last rule,
+        // and not anywhere else. Instead of a bool we store the decl range,
+        // for error reporting
+        let mut has_reset_lookup_flag = None;
         if let Some(_prev) = self.lookup_defs.insert(name.text.clone(), name.clone()) {
             //TODO: annotate with previous location
             self.error(
@@ -760,6 +765,12 @@ impl<'a> ValidationCtx<'a> {
         }
         for item in node.statements() {
             if item.kind().is_rule() {
+                if let Some(lookup_flag) = has_reset_lookup_flag.take() {
+                    self.error(
+                        lookup_flag,
+                        "all rules in named lookup must have same lookup flags",
+                    );
+                }
                 match kind {
                     Some(kind) if kind != item.kind() => self.error(
                         item.range(),
@@ -797,10 +808,7 @@ impl<'a> ValidationCtx<'a> {
                 );
             } else if let Some(node) = typed::LookupFlag::cast(item) {
                 if kind.is_some() {
-                    self.error(
-                        node.range(),
-                        "all rules in named lookup must have same lookup flags",
-                    );
+                    has_reset_lookup_flag = Some(node.range());
                 }
                 self.validate_lookupflag(&node);
             } else if let Some(node) = typed::GsubStatement::cast(item) {

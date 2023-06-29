@@ -5,3 +5,10 @@ lookup foo {
     lookupflag 2;
     sub x by y;
 } foo;
+
+# this is fine, since no rules in the lookup use the second lookupflag
+lookup bar {
+    lookupflag 1;
+    sub g by h;
+    lookupflag 0;
+} bar;
