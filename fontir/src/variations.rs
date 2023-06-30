@@ -549,13 +549,11 @@ impl From<(f32, f32, f32)> for Tent {
 ///
 /// VariationModel::_locationsToRegions in Python.
 /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L416>
-fn regions_for(axis_order: &Vec<Tag>, locations: &[NormalizedLocation]) -> Vec<VariationRegion> {
+fn regions_for(axis_order: &[Tag], locations: &[NormalizedLocation]) -> Vec<VariationRegion> {
     let mut minmax = HashMap::<Tag, (NormalizedCoord, NormalizedCoord)>::new();
     for location in locations.iter() {
         for (tag, value) in location.iter() {
-            let (min, max) = minmax
-                .entry(*tag)
-                .or_insert_with(|| (NormalizedCoord::new(0.0), NormalizedCoord::new(0.0)));
+            let (min, max) = minmax.entry(*tag).or_default();
             if value < min {
                 *min = *value;
             }
@@ -593,7 +591,7 @@ fn regions_for(axis_order: &Vec<Tag>, locations: &[NormalizedLocation]) -> Vec<V
 ///
 /// VariationModel::_computeMasterSupports in Python.
 /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L360>
-fn master_influence(axis_order: &Vec<Tag>, regions: &[VariationRegion]) -> Vec<VariationRegion> {
+fn master_influence(axis_order: &[Tag], regions: &[VariationRegion]) -> Vec<VariationRegion> {
     let mut influence = Vec::new();
     for (i, region) in regions.iter().enumerate() {
         let mut region = region.clone();
@@ -826,7 +824,7 @@ mod tests {
     /// >>> models.VariationModel([{'wght':0}]).locations
     /// [{}]
     /// >>> pprint(models.VariationModel([{'wght':0}]).deltaWeights)
-    /// [{}]    
+    /// [{}]
     #[test]
     fn delta_weights_for_static_family_one_axis() {
         let loc = NormalizedLocation::new();
@@ -877,7 +875,7 @@ mod tests {
     /// >>> models.VariationModel([{'wght':-1}, {'wght': 0}, {'wght': 1}]).locations
     /// [{}, {'wght': -1}, {'wght': 1}]
     /// >>> models.VariationModel([{'wght':-1}, {'wght': 0}, {'wght': 1}]).deltaWeights
-    /// [{}, {0: 1.0}, {0: 1.0}]    
+    /// [{}, {0: 1.0}, {0: 1.0}]
     #[test]
     fn delta_weights_for_3_master_weight_variable_family() {
         let weight_minus_1 = norm_loc(&[("wght", -1.0)]);
