@@ -24,7 +24,7 @@ mod os2;
 mod stat;
 
 pub(crate) use base::{BaseBuilder, ScriptRecord};
-pub(crate) use gdef::{ClassId, GdefBuilder};
+pub(crate) use gdef::{ClassId, DeltaKey, GdefBuilder, VariationStoreBuilder};
 pub(crate) use name::{NameBuilder, NameSpec};
 pub(crate) use os2::{CodePageRange, Os2Builder};
 pub(crate) use stat::{AxisLocation, AxisRecord, AxisValue, StatBuilder, StatFallbackName};
@@ -42,6 +42,7 @@ pub(crate) struct Tables {
     pub os2: Option<Os2Builder>,
     pub stat: Option<StatBuilder>,
 }
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HeadBuilder {
     pub font_revision: Fixed,
@@ -51,6 +52,16 @@ pub(crate) struct HeadBuilder {
 pub(crate) struct VmtxBuilder {
     pub origins_y: Vec<(GlyphId, i16)>,
     pub advances_y: Vec<(GlyphId, i16)>,
+}
+
+impl Tables {
+    // convenience method to access the varstore, creating it if it doesn't exist
+    pub(crate) fn var_store(&mut self) -> &mut VariationStoreBuilder {
+        self.gdef
+            .get_or_insert_with(Default::default)
+            .var_store
+            .get_or_insert_with(Default::default)
+    }
 }
 
 // this is the value used in python fonttools when writing this table

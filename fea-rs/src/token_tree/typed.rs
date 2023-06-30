@@ -1269,6 +1269,10 @@ impl LocationValue {
     pub(crate) fn location(&self) -> LocationSpec {
         self.iter().find_map(LocationSpec::cast).unwrap()
     }
+
+    pub(crate) fn value(&self) -> Number {
+        self.iter().find_map(Number::cast).unwrap()
+    }
 }
 
 impl LocationSpec {

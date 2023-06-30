@@ -41,7 +41,7 @@ use super::{
         AllLookups, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass, SomeLookup,
     },
     output::Compilation,
-    tables::{ClassId, ScriptRecord, Tables},
+    tables::{ClassId, DeltaKey, ScriptRecord, Tables},
     tags,
     valuerecordext::ValueRecordExt,
     VariationInfo,
@@ -1061,37 +1061,74 @@ impl<'a> CompilationCtx<'a> {
                 ..Default::default()
             };
         }
-        if let Some([x_place, y_place, x_adv, y_adv]) = record.placement() {
-            let (Some(x_place), Some(y_place), Some(x_adv), Some(y_adv)) = (x_place.parse_simple(), y_place.parse_simple(), x_adv.parse_simple(), y_adv.parse_simple()) else {
-                self.error(record.range(), "variable metrics not yet supported");
-                return Default::default();
-            };
-            let mut result = ValueRecord {
-                x_advance: Some(x_adv),
-                y_advance: Some(y_adv),
-                x_placement: Some(x_place),
-                y_placement: Some(y_place),
-                ..Default::default()
-            };
-            if let Some([x_place_dev, y_place_dev, x_adv_dev, y_adv_dev]) = record.device() {
-                if let Some(x_place_dev) = x_place_dev.compile() {
-                    result.x_placement_device.set(x_place_dev);
-                }
-                if let Some(y_place_dev) = y_place_dev.compile() {
-                    result.y_placement_device.set(y_place_dev);
-                }
-                if let Some(x_adv_dev) = x_adv_dev.compile() {
-                    result.x_advance_device.set(x_adv_dev);
-                }
-                if let Some(y_adv_dev) = y_adv_dev.compile() {
-                    result.y_advance_device.set(y_adv_dev);
-                }
-            }
-            return result;
-        }
 
-        log::warn!("failed to resolve value record. This indicates a bug.");
-        ValueRecord::default()
+        let Some([x_place, y_place, x_adv, y_adv]) = record.placement() else {
+            log::error!("failed to resolve value record. This indicates a bug.");
+                return Default::default();
+        };
+
+        let (x_place, _x_place_dev) = self.resolve_metric(&x_place);
+        let (y_place, _y_place_dev) = self.resolve_metric(&y_place);
+        let (x_adv, _x_adv_dev) = self.resolve_metric(&x_adv);
+        let (y_adv, _y_adv_dev) = self.resolve_metric(&y_adv);
+
+        let mut result = ValueRecord {
+            x_advance: Some(x_adv),
+            y_advance: Some(y_adv),
+            x_placement: Some(x_place),
+            y_placement: Some(y_place),
+            ..Default::default()
+        };
+
+        if let Some([x_place_dev, y_place_dev, x_adv_dev, y_adv_dev]) = record.device() {
+            if let Some(x_place_dev) = x_place_dev.compile() {
+                result.x_placement_device.set(x_place_dev);
+            }
+            if let Some(y_place_dev) = y_place_dev.compile() {
+                result.y_placement_device.set(y_place_dev);
+            }
+            if let Some(x_adv_dev) = x_adv_dev.compile() {
+                result.x_advance_device.set(x_adv_dev);
+            }
+            if let Some(y_adv_dev) = y_adv_dev.compile() {
+                result.y_advance_device.set(y_adv_dev);
+            }
+        }
+        result
+    }
+
+    fn resolve_metric(&mut self, metric: &typed::Metric) -> (i16, DeltaKey) {
+        match metric {
+            typed::Metric::Scalar(value) => (value.parse_signed(), DeltaKey::NO_DELTAS),
+            typed::Metric::Variable(variable) => self.resolve_variable_metric(variable),
+        }
+    }
+
+    fn resolve_variable_metric(&mut self, metric: &typed::VariableMetric) -> (i16, DeltaKey) {
+        let Some(var_info) = self.variation_info else {
+            self.error(metric.range(), "variable metric only valid when compiling variable font");
+            return (0, DeltaKey::NO_DELTAS)
+        };
+
+        let locations = metric
+            .location_values()
+            .map(|loc_value| {
+                let user_loc = loc_value
+                    .location()
+                    .items()
+                    .map(|axis_value| {
+                        (
+                            axis_value.axis_tag().to_raw(),
+                            Fixed::from_i32(axis_value.value().parse_signed() as _),
+                        )
+                    })
+                    .collect();
+                let value = loc_value.value().parse_signed();
+                (user_loc, value)
+            })
+            .collect::<HashMap<_, _>>();
+        let (default, deltas) = var_info.resolve_variable_metric(&locations);
+        (default, self.tables.var_store().add_deltas(deltas))
     }
 
     fn define_glyph_class(&mut self, class_decl: typed::GlyphClassDef) {

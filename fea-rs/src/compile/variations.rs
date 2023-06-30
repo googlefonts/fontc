@@ -1,6 +1,11 @@
 //! compiling variable fonts
 
-use write_fonts::types::{F2Dot14, Fixed, Tag};
+use std::collections::{BTreeMap, HashMap};
+
+use write_fonts::{
+    tables::variations::VariationRegion,
+    types::{F2Dot14, Fixed, Tag},
+};
 
 /// A trait for providing variable font information to the compiler.
 ///
@@ -14,8 +19,19 @@ pub trait VariationInfo {
     fn axis_info(&self, axis_tag: Tag) -> Option<AxisInfo>;
 
     /// Return the normalized value for a user coordinate for the given axis.
+    ///
+    /// NOTE: This is only used for computing the normalized values for ConditionSets.
     fn normalize_coordinate(&self, axis_tag: Tag, value: Fixed) -> F2Dot14;
+
+    /// return the default value, and then the regions and their deltas.
+    fn resolve_variable_metric(
+        &self,
+        locations: &HashMap<UserLocation, i16>,
+    ) -> (i16, Vec<(VariationRegion, i16)>);
 }
+
+// btreemap only because hashmap is not hashable
+type UserLocation = BTreeMap<Tag, Fixed>;
 
 /// Information about a paritcular axis in a variable font.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -86,5 +102,12 @@ impl VariationInfo for MockVariationInfo {
             Equal => Fixed::ZERO,
         };
         value.clamp(-Fixed::ONE, Fixed::ONE).to_f2dot14()
+    }
+
+    fn resolve_variable_metric(
+        &self,
+        _locations: &HashMap<UserLocation, i16>,
+    ) -> (i16, Vec<(VariationRegion, i16)>) {
+        Default::default()
     }
 }

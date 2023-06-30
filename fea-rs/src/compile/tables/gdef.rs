@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use write_fonts::tables::variations::VariationRegion;
 use write_fonts::types::GlyphId;
 
 use write_fonts::tables::{
@@ -21,12 +22,13 @@ use write_fonts::tables::{
 use crate::common::GlyphClass;
 
 #[derive(Clone, Debug, Default)]
-pub struct GdefBuilder {
+pub(crate) struct GdefBuilder {
     pub glyph_classes: HashMap<GlyphId, ClassId>,
     pub attach: BTreeMap<GlyphId, BTreeSet<u16>>,
     pub ligature_pos: BTreeMap<GlyphId, Vec<CaretValue>>,
     pub mark_attach_class: BTreeMap<GlyphId, u16>,
     pub mark_glyph_sets: Vec<GlyphClass>,
+    pub var_store: Option<VariationStoreBuilder>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +38,27 @@ pub enum ClassId {
     Ligature = 2,
     Mark = 3,
     Component = 4,
+}
+
+/// placeholder for type that will build the gdef item variation store if needed?
+///
+/// this probably ends up living in write-fonts
+#[derive(Clone, Debug, Default)]
+pub(crate) struct VariationStoreBuilder {
+    // FIXME write some code?
+}
+
+/// A key that identifies a particular deltaset in an ItemVariationStore.
+///
+/// This corresponds to the outer/inner mapping used to identify deltas.
+/// While constructing a variation store we assign a temporary key to inserted
+/// deltas; these are reordered when the store is built, at which point any
+/// items that reference the store will need to be remapped from their temporary
+/// key to their final one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct DeltaKey {
+    pub outer: u16,
+    pub inner: u16,
 }
 
 impl From<ClassId> for GlyphClassDef {
@@ -135,6 +158,20 @@ impl GdefBuilder {
             && self.ligature_pos.is_empty()
             && self.mark_attach_class.is_empty()
             && self.mark_glyph_sets.is_empty()
+    }
+}
+
+impl DeltaKey {
+    pub const NO_DELTAS: DeltaKey = DeltaKey {
+        outer: 0xFFFF,
+        inner: 0xFFFF,
+    };
+}
+
+impl VariationStoreBuilder {
+    pub(crate) fn add_deltas(&mut self, _deltas: Vec<(VariationRegion, i16)>) -> DeltaKey {
+        //FIXME: write some code
+        DeltaKey { outer: 0, inner: 0 }
     }
 }
 
