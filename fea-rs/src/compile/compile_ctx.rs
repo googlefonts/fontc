@@ -1064,7 +1064,7 @@ impl<'a> CompilationCtx<'a> {
 
         let Some([x_place, y_place, x_adv, y_adv]) = record.placement() else {
             log::error!("failed to resolve value record. This indicates a bug.");
-                return Default::default();
+            return Default::default();
         };
 
         let (x_place, _x_place_dev) = self.resolve_metric(&x_place);
@@ -1127,8 +1127,13 @@ impl<'a> CompilationCtx<'a> {
                 (user_loc, value)
             })
             .collect::<HashMap<_, _>>();
-        let (default, deltas) = var_info.resolve_variable_metric(&locations);
-        (default, self.tables.var_store().add_deltas(deltas))
+        match var_info.resolve_variable_metric(&locations) {
+            Ok((default, deltas)) => (default, self.tables.var_store().add_deltas(deltas)),
+            Err(e) => {
+                self.error(metric.range(), format!("failed to compute deltas: '{e}'"));
+                (0, DeltaKey::NO_DELTAS)
+            }
+        }
     }
 
     fn define_glyph_class(&mut self, class_decl: typed::GlyphClassDef) {

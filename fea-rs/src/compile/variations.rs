@@ -23,12 +23,17 @@ pub trait VariationInfo {
     /// NOTE: This is only used for computing the normalized values for ConditionSets.
     fn normalize_coordinate(&self, axis_tag: Tag, value: Fixed) -> F2Dot14;
 
-    /// return the default value, and then the regions and their deltas.
+    /// Compute default & deltas for a set of locations and values in variation space.
+    ///
+    /// On success, returns the default value for this set of locations, as well
+    /// as a set of deltas suitable for inclusing in an `ItemVariationStore`.
     fn resolve_variable_metric(
         &self,
         locations: &HashMap<UserLocation, i16>,
-    ) -> (i16, Vec<(VariationRegion, i16)>);
+    ) -> Result<(i16, Vec<(VariationRegion, i16)>), AnyError>;
 }
+
+type AnyError = Box<dyn std::error::Error>;
 
 // btreemap only because hashmap is not hashable
 type UserLocation = BTreeMap<Tag, Fixed>;
@@ -107,7 +112,7 @@ impl VariationInfo for MockVariationInfo {
     fn resolve_variable_metric(
         &self,
         _locations: &HashMap<UserLocation, i16>,
-    ) -> (i16, Vec<(VariationRegion, i16)>) {
-        Default::default()
+    ) -> Result<(i16, Vec<(VariationRegion, i16)>), Box<(dyn std::error::Error + 'static)>> {
+        Ok(Default::default())
     }
 }
