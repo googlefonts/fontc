@@ -47,7 +47,9 @@ impl Paths {
             WorkId::FinalizeStaticMetadata => self.build_dir.join("static_metadata.yml"),
             WorkId::GlobalMetrics => self.build_dir.join("global_metrics.yml"),
             WorkId::Glyph(name) => self.glyph_ir_file(name.as_str()),
-            WorkId::GlyphIrDelete => self.build_dir.join("delete.yml"),
+            WorkId::GlyphIrDelete(name) => {
+                self.build_dir.join(format!("delete-{}.yml", name.as_str()))
+            }
             WorkId::Features => self.build_dir.join("features.yml"),
             WorkId::Kerning => self.build_dir.join("kerning.yml"),
         }

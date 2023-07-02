@@ -111,7 +111,11 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
     };
 }
 
-impl Work<Context, Error> for FeatureWork {
+impl Work<Context, WorkId, Error> for FeatureWork {
+    fn id(&self) -> WorkId {
+        WorkId::Features
+    }
+
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let features = context.ir.get_features();
         if !matches!(*features, Features::Empty) {

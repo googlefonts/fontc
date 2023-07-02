@@ -10,7 +10,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Bytes, Context},
+    orchestration::{BeWork, Bytes, Context, WorkId},
 };
 
 struct GvarWork {}
@@ -38,7 +38,11 @@ fn make_variations(
         .collect()
 }
 
-impl Work<Context, Error> for GvarWork {
+impl Work<Context, WorkId, Error> for GvarWork {
+    fn id(&self) -> WorkId {
+        WorkId::Gvar
+    }
+
     /// Generate [gvar](https://learn.microsoft.com/en-us/typography/opentype/spec/gvar)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // We built the gvar fragments alongside glyphs, now we need to glue them together into a gvar table

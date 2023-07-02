@@ -10,7 +10,7 @@ use write_fonts::tables::head::Head;
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context, LocaFormat},
+    orchestration::{BeWork, Context, LocaFormat, WorkId},
 };
 
 struct HeadWork {}
@@ -86,7 +86,11 @@ fn apply_created_modified(head: &mut Head, created: Option<DateTime<Utc>>) {
     head.modified = LongDateTime::new(now);
 }
 
-impl Work<Context, Error> for HeadWork {
+impl Work<Context, WorkId, Error> for HeadWork {
+    fn id(&self) -> WorkId {
+        WorkId::Head
+    }
+
     /// Generate [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_final_static_metadata();

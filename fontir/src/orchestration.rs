@@ -99,7 +99,7 @@ pub enum WorkId {
     /// Build potentially variable font-wide metrics.
     GlobalMetrics,
     Glyph(GlyphName),
-    GlyphIrDelete,
+    GlyphIrDelete(GlyphName),
     /// Update static metadata based on what we learned from IR
     ///
     /// Notably, IR glyphs with both components and paths may split into multiple
@@ -109,7 +109,7 @@ pub enum WorkId {
     Kerning,
 }
 
-pub type IrWork = dyn Work<Context, WorkError> + Send;
+pub type IrWork = dyn Work<Context, WorkId, WorkError> + Send;
 
 /// Read/write access to data for async work.
 ///
@@ -119,7 +119,7 @@ pub type IrWork = dyn Work<Context, WorkError> + Send;
 pub struct Context {
     pub flags: Flags,
 
-    paths: Arc<Paths>,
+    pub(crate) paths: Arc<Paths>,
 
     // The input we're working on. Note that change detection may mean we only process
     // a subset of the full input.

@@ -26,7 +26,7 @@ use write_fonts::{
 
 use crate::{
     error::{Error, GlyphProblem},
-    orchestration::{BeWork, Context, GlyfLoca, Glyph, GvarFragment},
+    orchestration::{BeWork, Context, GlyfLoca, Glyph, GvarFragment, WorkId},
 };
 
 struct GlyphWork {
@@ -224,7 +224,11 @@ fn point_seqs_for_composite_glyph(ir_glyph: &ir::Glyph) -> HashMap<NormalizedLoc
         .collect()
 }
 
-impl Work<Context, Error> for GlyphWork {
+impl Work<Context, WorkId, Error> for GlyphWork {
+    fn id(&self) -> WorkId {
+        WorkId::GlyfFragment(self.glyph_name.clone())
+    }
+
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("BE glyph work for '{}'", self.glyph_name);
 
@@ -691,7 +695,11 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
     Ok(())
 }
 
-impl Work<Context, Error> for GlyfLocaWork {
+impl Work<Context, WorkId, Error> for GlyfLocaWork {
+    fn id(&self) -> WorkId {
+        WorkId::Glyf
+    }
+
     /// Generate [glyf](https://learn.microsoft.com/en-us/typography/opentype/spec/glyf)
     /// and [loca](https://learn.microsoft.com/en-us/typography/opentype/spec/loca).
     ///

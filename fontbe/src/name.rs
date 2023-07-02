@@ -8,7 +8,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context},
+    orchestration::{BeWork, Context, WorkId},
 };
 
 struct NameWork {}
@@ -17,7 +17,11 @@ pub fn create_name_work() -> Box<BeWork> {
     Box::new(NameWork {})
 }
 
-impl Work<Context, Error> for NameWork {
+impl Work<Context, WorkId, Error> for NameWork {
+    fn id(&self) -> WorkId {
+        WorkId::Name
+    }
+
     /// Generate [name](https://learn.microsoft.com/en-us/typography/opentype/spec/name)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_init_static_metadata();

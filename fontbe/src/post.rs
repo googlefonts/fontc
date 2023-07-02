@@ -6,7 +6,7 @@ use write_fonts::tables::post::Post;
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context},
+    orchestration::{BeWork, Context, WorkId},
 };
 
 struct PostWork {}
@@ -15,7 +15,11 @@ pub fn create_post_work() -> Box<BeWork> {
     Box::new(PostWork {})
 }
 
-impl Work<Context, Error> for PostWork {
+impl Work<Context, WorkId, Error> for PostWork {
+    fn id(&self) -> WorkId {
+        WorkId::Post
+    }
+
     /// Generate [post](https://learn.microsoft.com/en-us/typography/opentype/spec/post)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // For now we build a v2 table by default, like fontmake does.

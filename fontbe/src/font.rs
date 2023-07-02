@@ -93,7 +93,11 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Vec<u8>, Error> {
     Ok(bytes)
 }
 
-impl Work<Context, Error> for FontWork {
+impl Work<Context, WorkId, Error> for FontWork {
+    fn id(&self) -> WorkId {
+        WorkId::Font
+    }
+
     /// Glue binary tables into a font
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // Lets go right ahead and believe those bytes are a font
