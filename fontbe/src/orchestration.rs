@@ -1,20 +1,26 @@
 //! Helps coordinate the graph execution for BE
 
-use std::{collections::HashMap, fs, io, path::Path, sync::Arc};
+use std::{
+    fs::File,
+    io::{self, BufReader, BufWriter, Read, Write},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use font_types::{F2Dot14, Tag};
 use fontdrasil::{
-    orchestration::{Access, AccessControlList, Work, MISSING_DATA},
+    orchestration::{Access, AccessControlList, Identifier, Work},
     types::GlyphName,
 };
 use fontir::{
-    context_accessors,
-    orchestration::{Context as FeContext, ContextItem, Flags, WorkId as FeWorkIdentifier},
+    orchestration::{
+        Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
+        PersistentStorage, WorkId as FeWorkIdentifier,
+    },
     variations::VariationRegion,
 };
 use kurbo::Vec2;
 use log::trace;
-use parking_lot::RwLock;
 use read_fonts::{FontData, FontRead};
 use serde::{Deserialize, Serialize};
 
@@ -81,6 +87,8 @@ pub enum WorkId {
     Stat,
 }
 
+impl Identifier for WorkId {}
+
 // Identifies work of any type, FE, BE, ... future optimization passes, w/e.
 // Useful because BE work can very reasonably depend on FE work
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -88,6 +96,8 @@ pub enum AnyWorkId {
     Fe(FeWorkIdentifier),
     Be(WorkId),
 }
+
+impl Identifier for AnyWorkId {}
 
 impl AnyWorkId {
     pub fn unwrap_be(&self) -> &WorkId {
@@ -117,46 +127,123 @@ impl From<WorkId> for AnyWorkId {
     }
 }
 
+impl From<&FeWorkIdentifier> for AnyWorkId {
+    fn from(id: &FeWorkIdentifier) -> Self {
+        AnyWorkId::Fe(id.clone())
+    }
+}
+
+impl From<&WorkId> for AnyWorkId {
+    fn from(id: &WorkId) -> Self {
+        AnyWorkId::Be(id.clone())
+    }
+}
+
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
 #[derive(Debug, Clone)]
 pub enum Glyph {
-    Simple(SimpleGlyph),
-    Composite(CompositeGlyph),
-}
-
-impl From<SimpleGlyph> for Glyph {
-    fn from(value: SimpleGlyph) -> Self {
-        Glyph::Simple(value)
-    }
-}
-
-impl From<CompositeGlyph> for Glyph {
-    fn from(value: CompositeGlyph) -> Self {
-        Glyph::Composite(value)
-    }
+    Simple(GlyphName, SimpleGlyph),
+    Composite(GlyphName, CompositeGlyph),
 }
 
 impl Glyph {
+    pub(crate) fn new_simple(glyph_name: GlyphName, simple: SimpleGlyph) -> Glyph {
+        Glyph::Simple(glyph_name, simple)
+    }
+
+    pub(crate) fn new_composite(glyph_name: GlyphName, composite: CompositeGlyph) -> Glyph {
+        Glyph::Composite(glyph_name, composite)
+    }
+
+    pub(crate) fn glyph_name(&self) -> &GlyphName {
+        match self {
+            Glyph::Simple(name, _) | Glyph::Composite(name, _) => name,
+        }
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
-            Glyph::Simple(table) => dump_table(table),
-            Glyph::Composite(table) => dump_table(table),
+            Glyph::Simple(_, table) => dump_table(table),
+            Glyph::Composite(_, table) => dump_table(table),
         }
         .unwrap()
     }
 
     pub fn bbox(&self) -> Bbox {
         match self {
-            Glyph::Simple(table) => table.bbox,
-            Glyph::Composite(table) => table.bbox,
+            Glyph::Simple(_, table) => table.bbox,
+            Glyph::Composite(_, table) => table.bbox,
         }
     }
 
     pub fn is_empty(&self) -> bool {
         match self {
-            Glyph::Simple(table) => table.contours().is_empty(),
-            Glyph::Composite(table) => table.components().is_empty(),
+            Glyph::Simple(_, table) => table.contours().is_empty(),
+            Glyph::Composite(_, table) => table.components().is_empty(),
         }
+    }
+}
+
+impl IdAware<AnyWorkId> for Glyph {
+    fn id(&self) -> AnyWorkId {
+        AnyWorkId::Be(WorkId::GlyfFragment(self.glyph_name().clone()))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct GlyphPersistable {
+    name: GlyphName,
+    simple: bool,
+    glyph: Vec<u8>,
+}
+
+impl From<&Glyph> for GlyphPersistable {
+    fn from(value: &Glyph) -> Self {
+        match value {
+            Glyph::Simple(name, table) => GlyphPersistable {
+                name: name.clone(),
+                simple: true,
+                glyph: dump_table(table).unwrap(),
+            },
+            Glyph::Composite(name, table) => GlyphPersistable {
+                name: name.clone(),
+                simple: false,
+                glyph: dump_table(table).unwrap(),
+            },
+        }
+    }
+}
+
+impl From<GlyphPersistable> for Glyph {
+    fn from(value: GlyphPersistable) -> Self {
+        match value.simple {
+            true => {
+                let glyph =
+                    read_fonts::tables::glyf::SimpleGlyph::read(FontData::new(&value.glyph))
+                        .unwrap();
+                let glyph = SimpleGlyph::from_table_ref(&glyph);
+                Glyph::Simple(value.name, glyph)
+            }
+            false => {
+                let glyph =
+                    read_fonts::tables::glyf::CompositeGlyph::read(FontData::new(&value.glyph))
+                        .unwrap();
+                let glyph = CompositeGlyph::from_table_ref(&glyph);
+                Glyph::Composite(value.name, glyph)
+            }
+        }
+    }
+}
+
+impl Persistable for Glyph {
+    fn read(from: &mut dyn Read) -> Self {
+        bincode::deserialize_from::<&mut dyn Read, GlyphPersistable>(from)
+            .unwrap()
+            .into()
+    }
+
+    fn write(&self, to: &mut dyn Write) {
+        bincode::serialize_into::<&mut dyn Write, GlyphPersistable>(to, &self.into()).unwrap();
     }
 }
 
@@ -165,6 +252,7 @@ impl Glyph {
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/gvar>
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GvarFragment {
+    pub glyph_name: GlyphName,
     /// None entries are safe to omit per IUP
     pub deltas: Vec<(VariationRegion, Vec<Option<Vec2>>)>,
 }
@@ -199,6 +287,22 @@ impl GvarFragment {
                 Some(GlyphDeltas::new(peak, deltas, Some((min, max))))
             })
             .collect()
+    }
+}
+
+impl IdAware<AnyWorkId> for GvarFragment {
+    fn id(&self) -> AnyWorkId {
+        AnyWorkId::Be(WorkId::GvarFragment(self.glyph_name.clone()))
+    }
+}
+
+impl Persistable for GvarFragment {
+    fn read(from: &mut dyn Read) -> Self {
+        bincode::deserialize_from(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        bincode::serialize_into(to, &self).unwrap();
     }
 }
 
@@ -255,85 +359,88 @@ impl LocaFormat {
     }
 }
 
-// Free function of specific form to fit macro
-pub fn loca_format_from_file(file: &Path) -> LocaFormat {
-    trace!("loca_format_from_file");
-    let bytes = fs::read(file).unwrap();
-    match bytes.first() {
-        Some(0) => LocaFormat::Short,
-        Some(1) => LocaFormat::Long,
-        _ => {
-            panic!("serialized LocaFormat is invalid")
-        }
-    }
-}
-
-// Free function of specific form to fit macro
-fn loca_format_to_bytes(format: &LocaFormat) -> Vec<u8> {
-    vec![*format as u8]
-}
-
-pub type BeWork = dyn Work<Context, WorkId, Error> + Send;
-pub struct GlyfLoca {
-    pub glyf: Vec<u8>,
-    pub raw_loca: Vec<u8>,
-    pub loca: Vec<u32>,
-}
-
-fn raw_loca(loca: &[u32]) -> Vec<u8> {
-    let format = LocaFormat::new(loca);
-    if format == LocaFormat::Short {
-        loca.iter()
-            .flat_map(|offset| ((offset >> 1) as u16).to_be_bytes())
-            .collect()
-    } else {
-        loca.iter()
-            .flat_map(|offset| offset.to_be_bytes())
-            .collect()
-    }
-}
-
-impl GlyfLoca {
-    pub fn new(glyf: Vec<u8>, loca: Vec<u32>) -> Self {
-        Self {
-            glyf,
-            raw_loca: raw_loca(&loca),
-            loca,
+impl Persistable for LocaFormat {
+    fn read(from: &mut dyn Read) -> Self {
+        let mut buf = Vec::new();
+        from.read_to_end(&mut buf).unwrap();
+        match buf.first() {
+            Some(0) => LocaFormat::Short,
+            Some(1) => LocaFormat::Long,
+            _ => {
+                panic!("serialized LocaFormat is invalid")
+            }
         }
     }
 
-    pub fn read(format: LocaFormat, paths: &Paths) -> Self {
-        let glyf = read_entire_file(&paths.target_file(&WorkId::Glyf));
-        let raw_loca = read_entire_file(&paths.target_file(&WorkId::Loca));
-        let loca = if format == LocaFormat::Short {
-            raw_loca
-                .chunks_exact(std::mem::size_of::<u16>())
-                .map(|bytes| u16::from_be_bytes(bytes.try_into().unwrap()) as u32 * 2)
-                .collect()
-        } else {
-            raw_loca
-                .chunks_exact(std::mem::size_of::<u32>())
-                .map(|bytes| u32::from_be_bytes(bytes.try_into().unwrap()))
-                .collect()
-        };
-        Self {
-            glyf,
-            raw_loca,
-            loca,
+    fn write(&self, to: &mut dyn io::Write) {
+        to.write_all(&[*self as u8]).unwrap();
+    }
+}
+
+pub type BeWork = dyn Work<Context, AnyWorkId, Error> + Send;
+
+/// Allows us to implement [Persistable] w/o violating the orphan rules
+///
+/// Other than that just kind of gets in the way
+pub struct BeValue<T>(pub T);
+
+impl<T> Persistable for BeValue<T>
+where
+    for<'a> T: FontRead<'a> + FontWrite + Validate,
+{
+    fn read(from: &mut dyn Read) -> Self {
+        let mut buf = Vec::new();
+        from.read_to_end(&mut buf).unwrap();
+        T::read(FontData::new(&buf)).unwrap().into()
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        let bytes = dump_table(&self.0).unwrap();
+        to.write_all(&bytes).unwrap();
+    }
+}
+
+impl<T> From<T> for BeValue<T>
+where
+    T: FontWrite + Validate,
+{
+    fn from(value: T) -> Self {
+        BeValue(value)
+    }
+}
+
+pub struct BePersistentStorage {
+    active: bool,
+    pub(crate) paths: Paths,
+}
+
+impl PersistentStorage<AnyWorkId> for BePersistentStorage {
+    fn active(&self) -> bool {
+        self.active
+    }
+
+    fn reader(&self, id: &AnyWorkId) -> Option<Box<dyn Read>> {
+        let file = self.paths.target_file(id.unwrap_be());
+        if !file.exists() {
+            return None;
         }
+        let raw_file = File::open(file.clone())
+            .map_err(|e| panic!("Unable to write {file:?} {e}"))
+            .unwrap();
+        Some(Box::from(BufReader::new(raw_file)))
     }
 
-    fn write(&self, paths: &Paths) {
-        persist(&paths.target_file(&WorkId::Glyf), &self.glyf);
-        persist(&paths.target_file(&WorkId::Loca), &self.raw_loca);
+    fn writer(&self, id: &AnyWorkId) -> Box<dyn io::Write> {
+        let file = self.paths.target_file(id.unwrap_be());
+        let raw_file = File::create(file.clone())
+            .map_err(|e| panic!("Unable to write {file:?} {e}"))
+            .unwrap();
+        Box::from(BufWriter::new(raw_file))
     }
 }
 
-fn persist(file: &Path, content: &[u8]) {
-    fs::write(file, content)
-        .map_err(|e| panic!("Unable to write {file:?} {e}"))
-        .unwrap();
-}
+type BeContextItem<T> = ContextItem<AnyWorkId, T, BePersistentStorage>;
+type BeContextMap<T> = ContextMap<AnyWorkId, T, BePersistentStorage>;
 
 /// Read/write access to data for async work.
 ///
@@ -343,91 +450,99 @@ fn persist(file: &Path, content: &[u8]) {
 pub struct Context {
     pub flags: Flags,
 
-    pub paths: Arc<Paths>,
+    pub persistent_storage: Arc<BePersistentStorage>,
 
     // The final, fully populated, read-only FE context
     pub ir: Arc<FeContext>,
 
-    acl: AccessControlList<AnyWorkId>,
-
     // work results we've completed or restored from disk
-    // We create individual caches so we can return typed results from get fns
-    glyphs: Arc<RwLock<HashMap<GlyphName, Arc<Glyph>>>>,
-    gvar_fragments: Arc<RwLock<HashMap<GlyphName, Arc<GvarFragment>>>>,
+    pub gvar_fragments: BeContextMap<GvarFragment>,
+    pub glyphs: BeContextMap<Glyph>,
 
-    glyf_loca: ContextItem<GlyfLoca>,
-    avar: ContextItem<Avar>,
-    cmap: ContextItem<Cmap>,
-    fvar: ContextItem<Fvar>,
-    gsub: ContextItem<Gsub>,
-    gpos: ContextItem<Gpos>,
-    gvar: ContextItem<Bytes>,
-    post: ContextItem<Post>,
-    loca_format: ContextItem<LocaFormat>,
-    maxp: ContextItem<Maxp>,
-    name: ContextItem<Name>,
-    os2: ContextItem<Os2>,
-    head: ContextItem<Head>,
-    hhea: ContextItem<Hhea>,
-    hmtx: ContextItem<Bytes>,
-    stat: ContextItem<Stat>,
-    font: ContextItem<Bytes>,
+    pub avar: BeContextItem<BeValue<Avar>>,
+    pub cmap: BeContextItem<BeValue<Cmap>>,
+    pub fvar: BeContextItem<BeValue<Fvar>>,
+    pub glyf: BeContextItem<Bytes>,
+    pub gsub: BeContextItem<BeValue<Gsub>>,
+    pub gpos: BeContextItem<BeValue<Gpos>>,
+    pub gvar: BeContextItem<Bytes>,
+    pub post: BeContextItem<BeValue<Post>>,
+    pub loca: BeContextItem<Bytes>,
+    pub loca_format: BeContextItem<LocaFormat>,
+    pub maxp: BeContextItem<BeValue<Maxp>>,
+    pub name: BeContextItem<BeValue<Name>>,
+    pub os2: BeContextItem<BeValue<Os2>>,
+    pub head: BeContextItem<BeValue<Head>>,
+    pub hhea: BeContextItem<BeValue<Hhea>>,
+    pub hmtx: BeContextItem<Bytes>,
+    pub stat: BeContextItem<BeValue<Stat>>,
+    pub font: BeContextItem<Bytes>,
 }
 
 impl Context {
     fn copy(&self, acl: AccessControlList<AnyWorkId>) -> Context {
+        let acl = Arc::from(acl);
         Context {
             flags: self.flags,
-            paths: self.paths.clone(),
+            persistent_storage: self.persistent_storage.clone(),
             ir: self.ir.clone(),
-            acl,
-            glyphs: self.glyphs.clone(),
-            gvar_fragments: self.gvar_fragments.clone(),
-            glyf_loca: self.glyf_loca.clone(),
-            avar: self.avar.clone(),
-            cmap: self.cmap.clone(),
-            fvar: self.fvar.clone(),
-            gsub: self.gsub.clone(),
-            gpos: self.gpos.clone(),
-            gvar: self.gvar.clone(),
-            post: self.post.clone(),
-            loca_format: self.loca_format.clone(),
-            maxp: self.maxp.clone(),
-            name: self.name.clone(),
-            os2: self.os2.clone(),
-            head: self.head.clone(),
-            hhea: self.hhea.clone(),
-            hmtx: self.hmtx.clone(),
-            stat: self.stat.clone(),
-            font: self.font.clone(),
+            glyphs: self.glyphs.clone_with_acl(acl.clone()),
+            gvar_fragments: self.gvar_fragments.clone_with_acl(acl.clone()),
+            avar: self.avar.clone_with_acl(acl.clone()),
+            cmap: self.cmap.clone_with_acl(acl.clone()),
+            fvar: self.fvar.clone_with_acl(acl.clone()),
+            glyf: self.glyf.clone_with_acl(acl.clone()),
+            gsub: self.gsub.clone_with_acl(acl.clone()),
+            gpos: self.gpos.clone_with_acl(acl.clone()),
+            gvar: self.gvar.clone_with_acl(acl.clone()),
+            post: self.post.clone_with_acl(acl.clone()),
+            loca: self.loca.clone_with_acl(acl.clone()),
+            loca_format: self.loca_format.clone_with_acl(acl.clone()),
+            maxp: self.maxp.clone_with_acl(acl.clone()),
+            name: self.name.clone_with_acl(acl.clone()),
+            os2: self.os2.clone_with_acl(acl.clone()),
+            head: self.head.clone_with_acl(acl.clone()),
+            hhea: self.hhea.clone_with_acl(acl.clone()),
+            hmtx: self.hmtx.clone_with_acl(acl.clone()),
+            stat: self.stat.clone_with_acl(acl.clone()),
+            font: self.font.clone_with_acl(acl),
         }
     }
 
     pub fn new_root(flags: Flags, paths: Paths, ir: &fontir::orchestration::Context) -> Context {
+        let acl = Arc::from(AccessControlList::read_only());
+        let persistent_storage = Arc::from(BePersistentStorage {
+            active: flags.contains(Flags::EMIT_IR),
+            paths,
+        });
         Context {
             flags,
-            paths: Arc::from(paths),
+            persistent_storage: persistent_storage.clone(),
             ir: Arc::from(ir.read_only()),
-            acl: AccessControlList::read_only(),
-            glyphs: Arc::from(RwLock::new(HashMap::new())),
-            gvar_fragments: Arc::from(RwLock::new(HashMap::new())),
-            glyf_loca: Arc::from(RwLock::new(None)),
-            avar: Arc::from(RwLock::new(None)),
-            cmap: Arc::from(RwLock::new(None)),
-            fvar: Arc::from(RwLock::new(None)),
-            gpos: Arc::from(RwLock::new(None)),
-            gsub: Arc::from(RwLock::new(None)),
-            gvar: Arc::from(RwLock::new(None)),
-            post: Arc::from(RwLock::new(None)),
-            loca_format: Arc::from(RwLock::new(None)),
-            maxp: Arc::from(RwLock::new(None)),
-            name: Arc::from(RwLock::new(None)),
-            os2: Arc::from(RwLock::new(None)),
-            head: Arc::from(RwLock::new(None)),
-            hhea: Arc::from(RwLock::new(None)),
-            hmtx: Arc::from(RwLock::new(None)),
-            stat: Arc::from(RwLock::new(None)),
-            font: Arc::from(RwLock::new(None)),
+            glyphs: ContextMap::new(acl.clone(), persistent_storage.clone()),
+            gvar_fragments: ContextMap::new(acl.clone(), persistent_storage.clone()),
+            avar: ContextItem::new(WorkId::Avar.into(), acl.clone(), persistent_storage.clone()),
+            cmap: ContextItem::new(WorkId::Cmap.into(), acl.clone(), persistent_storage.clone()),
+            fvar: ContextItem::new(WorkId::Fvar.into(), acl.clone(), persistent_storage.clone()),
+            glyf: ContextItem::new(WorkId::Glyf.into(), acl.clone(), persistent_storage.clone()),
+            gpos: ContextItem::new(WorkId::Gpos.into(), acl.clone(), persistent_storage.clone()),
+            gsub: ContextItem::new(WorkId::Gsub.into(), acl.clone(), persistent_storage.clone()),
+            gvar: ContextItem::new(WorkId::Gvar.into(), acl.clone(), persistent_storage.clone()),
+            post: ContextItem::new(WorkId::Post.into(), acl.clone(), persistent_storage.clone()),
+            loca: ContextItem::new(WorkId::Loca.into(), acl.clone(), persistent_storage.clone()),
+            loca_format: ContextItem::new(
+                WorkId::LocaFormat.into(),
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
+            maxp: ContextItem::new(WorkId::Maxp.into(), acl.clone(), persistent_storage.clone()),
+            name: ContextItem::new(WorkId::Name.into(), acl.clone(), persistent_storage.clone()),
+            os2: ContextItem::new(WorkId::Os2.into(), acl.clone(), persistent_storage.clone()),
+            head: ContextItem::new(WorkId::Head.into(), acl.clone(), persistent_storage.clone()),
+            hhea: ContextItem::new(WorkId::Hhea.into(), acl.clone(), persistent_storage.clone()),
+            hmtx: ContextItem::new(WorkId::Hmtx.into(), acl.clone(), persistent_storage.clone()),
+            stat: ContextItem::new(WorkId::Stat.into(), acl.clone(), persistent_storage.clone()),
+            font: ContextItem::new(WorkId::Font.into(), acl, persistent_storage),
         }
     }
 
@@ -445,227 +560,60 @@ impl Context {
 
     /// A reasonable place to write extra files to help someone debugging
     pub fn debug_dir(&self) -> &Path {
-        self.paths.debug_dir()
+        self.persistent_storage.paths.debug_dir()
     }
 
-    // we need a self.persist for macros
-    fn persist(&self, file: &Path, content: &[u8]) {
-        persist(file, content);
+    pub fn font_file(&self) -> PathBuf {
+        self.persistent_storage.paths.target_file(&WorkId::Font)
     }
-
-    pub fn read_raw(&self, id: WorkId) -> Result<Vec<u8>, io::Error> {
-        self.acl.assert_read_access(&id.clone().into());
-        fs::read(self.paths.target_file(&id))
-    }
-
-    fn set_cached_glyph(&self, glyph_name: GlyphName, glyph: Glyph) {
-        let mut wl = self.glyphs.write();
-        wl.insert(glyph_name, Arc::from(glyph));
-    }
-
-    pub fn get_glyph(&self, glyph_name: &GlyphName) -> Arc<Glyph> {
-        let id = WorkId::GlyfFragment(glyph_name.clone());
-        self.acl.assert_read_access(&id.clone().into());
-        {
-            let rl = self.glyphs.read();
-            if let Some(glyph) = rl.get(glyph_name) {
-                return glyph.clone();
-            }
-        }
-
-        // Vec[u8] => read type => write type == all the right type
-        let glyph = read_entire_file(&self.paths.target_file(&id));
-        let glyph = read_fonts::tables::glyf::SimpleGlyph::read(FontData::new(&glyph)).unwrap();
-        let glyph = SimpleGlyph::from_table_ref(&glyph);
-
-        self.set_cached_glyph(glyph_name.clone(), glyph.into());
-        let rl = self.glyphs.read();
-        rl.get(glyph_name).expect(MISSING_DATA).clone()
-    }
-
-    pub fn set_glyph(&self, glyph_name: GlyphName, glyph: Glyph) {
-        let id = WorkId::GlyfFragment(glyph_name.clone());
-        self.acl.assert_write_access(&id.clone().into());
-        if self.flags.contains(Flags::EMIT_IR) {
-            self.persist(&self.paths.target_file(&id), &glyph.to_bytes());
-        }
-        self.set_cached_glyph(glyph_name, glyph);
-    }
-
-    fn set_cached_gvar_fragment(&self, glyph_name: GlyphName, variations: GvarFragment) {
-        let mut wl = self.gvar_fragments.write();
-        wl.insert(glyph_name, Arc::from(variations));
-    }
-
-    pub fn get_gvar_fragment(&self, glyph_name: &GlyphName) -> Arc<GvarFragment> {
-        let id = WorkId::GvarFragment(glyph_name.clone());
-        self.acl.assert_read_access(&id.clone().into());
-        {
-            let rl = self.gvar_fragments.read();
-            if let Some(variations) = rl.get(glyph_name) {
-                return variations.clone();
-            }
-        }
-
-        let gvar_fragment = read_entire_file(&self.paths.target_file(&id));
-        let variations: GvarFragment = bincode::deserialize(&gvar_fragment).unwrap();
-
-        self.set_cached_gvar_fragment(glyph_name.clone(), variations);
-        let rl = self.gvar_fragments.read();
-        rl.get(glyph_name).expect(MISSING_DATA).clone()
-    }
-
-    pub fn set_gvar_fragment(&self, glyph_name: GlyphName, gvar_fragment: GvarFragment) {
-        let id = WorkId::GvarFragment(glyph_name.clone());
-        self.acl.assert_write_access(&id.clone().into());
-
-        if self.flags.contains(Flags::EMIT_IR) {
-            let bytes = bincode::serialize(&gvar_fragment).unwrap();
-            self.persist(&self.paths.target_file(&id), &bytes);
-        }
-        self.set_cached_gvar_fragment(glyph_name, gvar_fragment);
-    }
-
-    pub fn get_glyf_loca(&self) -> Arc<GlyfLoca> {
-        let ids = [
-            WorkId::Glyf.into(),
-            WorkId::Loca.into(),
-            WorkId::LocaFormat.into(),
-        ];
-        self.acl.assert_read_access_to_all(&ids);
-        {
-            let rl = self.glyf_loca.read();
-            if rl.is_some() {
-                return rl.as_ref().unwrap().clone();
-            }
-        }
-
-        let format = self.get_loca_format();
-        set_cached(
-            &self.glyf_loca,
-            GlyfLoca::read(*format, self.paths.as_ref()),
-        );
-        let rl = self.glyf_loca.read();
-        rl.as_ref().expect(MISSING_DATA).clone()
-    }
-
-    pub fn has_glyf_loca(&self) -> bool {
-        let ids = [
-            WorkId::Glyf.into(),
-            WorkId::Loca.into(),
-            WorkId::LocaFormat.into(),
-        ];
-        self.acl.assert_read_access_to_all(&ids);
-        {
-            let rl = self.glyf_loca.read();
-            if rl.is_some() {
-                return true;
-            }
-        }
-        ids.iter()
-            .all(|id| self.paths.target_file(id.unwrap_be()).is_file())
-    }
-
-    pub fn set_glyf_loca(&self, glyf_loca: GlyfLoca) {
-        let ids = [
-            WorkId::Glyf.into(),
-            WorkId::Loca.into(),
-            WorkId::LocaFormat.into(),
-        ];
-        self.acl.assert_write_access_to_all(&ids);
-
-        let loca_format = LocaFormat::new(&glyf_loca.loca);
-        if self.flags.contains(Flags::EMIT_IR) {
-            glyf_loca.write(self.paths.as_ref());
-        }
-
-        self.set_loca_format(loca_format);
-        set_cached(&self.glyf_loca, glyf_loca);
-    }
-
-    // Lovely little typed accessors
-    context_accessors! { get_avar, set_avar, has_avar, avar, Avar, WorkId::Avar, from_file, to_bytes }
-    context_accessors! { get_cmap, set_cmap, has_cmap, cmap, Cmap, WorkId::Cmap, from_file, to_bytes }
-    context_accessors! { get_fvar, set_fvar, has_fvar, fvar, Fvar, WorkId::Fvar, from_file, to_bytes }
-    context_accessors! { get_loca_format, set_loca_format, has_loca_format, loca_format, LocaFormat, WorkId::LocaFormat, loca_format_from_file, loca_format_to_bytes }
-    context_accessors! { get_maxp, set_maxp, has_maxp, maxp, Maxp, WorkId::Maxp, from_file, to_bytes }
-    context_accessors! { get_name, set_name, has_name, name, Name, WorkId::Name, from_file, to_bytes }
-    context_accessors! { get_os2, set_os2, has_os2, os2, Os2, WorkId::Os2, from_file, to_bytes }
-    context_accessors! { get_post, set_post, has_post, post, Post, WorkId::Post, from_file, to_bytes }
-    context_accessors! { get_head, set_head, has_head, head, Head, WorkId::Head, from_file, to_bytes }
-    context_accessors! { get_hhea, set_hhea, has_hhea, hhea, Hhea, WorkId::Hhea, from_file, to_bytes }
-    context_accessors! { get_gpos, set_gpos, has_gpos, gpos, Gpos, WorkId::Gpos, from_file, to_bytes }
-    context_accessors! { get_gsub, set_gsub, has_gsub, gsub, Gsub, WorkId::Gsub, from_file, to_bytes }
-    context_accessors! { get_stat, set_stat, has_stat, stat, Stat, WorkId::Stat, from_file, to_bytes }
-
-    // Accessors where value is raw bytes
-    context_accessors! { get_gvar, set_gvar, has_gvar, gvar, Bytes, WorkId::Gvar, raw_from_file, raw_to_bytes }
-    context_accessors! { get_hmtx, set_hmtx, has_hmtx, hmtx, Bytes, WorkId::Hmtx, raw_from_file, raw_to_bytes }
-    context_accessors! { get_font, set_font, has_font, font, Bytes, WorkId::Font, raw_from_file, raw_to_bytes }
 }
 
-fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
-    let mut wl = lock.write();
-    *wl = Some(Arc::from(value));
-}
-
-fn from_file<T>(file: &Path) -> T
-where
-    for<'a> T: FontRead<'a>,
-{
-    let buf = read_entire_file(file);
-    T::read(FontData::new(&buf)).unwrap()
-}
-
+#[derive(PartialEq)]
 pub struct Bytes {
     buf: Vec<u8>,
 }
 
 impl Bytes {
-    pub(crate) fn new(buf: Vec<u8>) -> Bytes {
-        Bytes { buf }
-    }
-
     pub fn get(&self) -> &[u8] {
         &self.buf
     }
 }
 
-// Free fn because that lets it fit into the context_accessors macro.
-fn raw_from_file(file: &Path) -> Bytes {
-    let buf = read_entire_file(file);
-    Bytes { buf }
+impl From<Vec<u8>> for Bytes {
+    fn from(buf: Vec<u8>) -> Self {
+        Bytes { buf }
+    }
 }
 
-fn raw_to_bytes(table: &Bytes) -> Vec<u8> {
-    table.buf.clone()
+impl Persistable for Bytes {
+    fn read(from: &mut dyn Read) -> Self {
+        let mut buf = Vec::new();
+        from.read_to_end(&mut buf).unwrap();
+        buf.into()
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        to.write_all(&self.buf).unwrap();
+    }
 }
 
-pub(crate) fn to_bytes<T>(table: &T) -> Vec<u8>
+pub(crate) fn to_bytes<T>(table: &BeValue<T>) -> Vec<u8>
 where
     T: FontWrite + Validate,
 {
-    dump_table(table).unwrap()
-}
-
-fn read_entire_file(file: &Path) -> Vec<u8> {
-    fs::read(file)
-        .map_err(|e| panic!("Unable to read {file:?} {e}"))
-        .unwrap()
+    dump_table(&table.0).unwrap()
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::orchestration::LocaFormat;
     use font_types::Tag;
     use fontir::{
         coords::NormalizedCoord,
         variations::{Tent, VariationRegion},
     };
-    use tempfile::tempdir;
 
-    use crate::{orchestration::LocaFormat, paths::Paths};
-
-    use super::{GlyfLoca, GvarFragment};
+    use super::GvarFragment;
 
     #[test]
     fn no_glyphs_is_short() {
@@ -690,19 +638,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn round_trip_glyf_loca() {
-        let glyf = (0..16_u8).collect::<Vec<_>>();
-        let loca = vec![0, 4, 16];
-        let gl = GlyfLoca::new(glyf.clone(), loca.clone());
-        let tmp = tempdir().unwrap();
-        let paths = Paths::new(tmp.path());
-        gl.write(&paths);
-
-        let gl = GlyfLoca::read(LocaFormat::Short, &paths);
-        assert_eq!((glyf, loca), (gl.glyf, gl.loca));
-    }
-
     fn non_default_region() -> VariationRegion {
         let mut region = VariationRegion::default();
         region.insert(
@@ -719,6 +654,7 @@ mod tests {
     #[test]
     fn keeps_if_some_deltas() {
         let deltas = GvarFragment {
+            glyph_name: "blah".into(),
             deltas: vec![(
                 non_default_region(),
                 vec![None, Some((1.0, 0.0).into()), None],
@@ -731,6 +667,7 @@ mod tests {
     #[test]
     fn drops_nop_deltas() {
         let deltas = GvarFragment {
+            glyph_name: "blah".into(),
             deltas: vec![(non_default_region(), vec![None, None, None])],
         }
         .to_deltas();

@@ -1,34 +1,47 @@
 //! Generates a [cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap) table.
 
-use fontdrasil::orchestration::Work;
+use std::sync::Arc;
+
+use fontdrasil::orchestration::{Access, Work};
+use fontir::orchestration::WorkId as FeWorkId;
+
 use read_fonts::types::GlyphId;
 use write_fonts::tables::cmap::Cmap;
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, WorkId},
 };
 
+#[derive(Debug)]
 struct CmapWork {}
 
 pub fn create_cmap_work() -> Box<BeWork> {
     Box::new(CmapWork {})
 }
 
-impl Work<Context, WorkId, Error> for CmapWork {
-    fn id(&self) -> WorkId {
-        WorkId::Cmap
+impl Work<Context, AnyWorkId, Error> for CmapWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Cmap.into()
+    }
+
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::Custom(Arc::new(|id| {
+            matches!(
+                id,
+                AnyWorkId::Fe(FeWorkId::GlyphOrder) | AnyWorkId::Fe(FeWorkId::Glyph(..))
+            )
+        }))
     }
 
     /// Generate [cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // cmap only accomodates single codepoint : glyph mappings; collect all of those
-        let static_metadata = context.ir.get_final_static_metadata();
+        let glyph_order = context.ir.glyph_order.get();
 
-        let mappings = static_metadata
-            .glyph_order
+        let mappings = glyph_order
             .iter()
-            .map(|glyph_name| context.ir.get_glyph_ir(glyph_name))
+            .map(|glyph_name| context.ir.glyphs.get(&FeWorkId::Glyph(glyph_name.clone())))
             .enumerate()
             .flat_map(|(gid, glyph)| {
                 glyph
@@ -44,7 +57,7 @@ impl Work<Context, WorkId, Error> for CmapWork {
             });
 
         let cmap = Cmap::from_mappings(mappings);
-        context.set_cmap(cmap);
+        context.cmap.set_unconditionally(cmap.into());
         Ok(())
     }
 }

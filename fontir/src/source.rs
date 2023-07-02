@@ -15,6 +15,7 @@ use crate::{
 };
 
 /// Destroy a file, such as the IR for a deleted glyph
+#[derive(Debug)]
 pub struct DeleteWork {
     glyph_name: GlyphName,
 }
@@ -31,7 +32,7 @@ impl Work<Context, WorkId, WorkError> for DeleteWork {
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        let path = context.paths.target_file(&self.id());
+        let path = context.persistent_storage.paths.target_file(&self.id());
         debug!("Delete {:#?}", path);
         if path.exists() {
             fs::remove_file(&path).map_err(WorkError::IoError)?

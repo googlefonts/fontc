@@ -12,11 +12,9 @@ pub use change_detector::ChangeDetector;
 pub use config::Config;
 pub use error::Error;
 
-use work::ReadAccess;
-use workload::{Job, Workload};
+use workload::Workload;
 
 use std::{
-    collections::HashSet,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -32,18 +30,13 @@ use fontbe::{
     head::create_head_work,
     metrics_and_limits::create_metric_and_limit_work,
     name::create_name_work,
-    orchestration::{AnyWorkId, WorkId as BeWorkIdentifier},
     os2::create_os2_work,
     post::create_post_work,
     stat::create_stat_work,
 };
 
-use fontdrasil::{orchestration::Access, types::GlyphName};
-use fontir::{
-    glyph::create_finalize_static_metadata_work,
-    orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
-    source::DeleteWork,
-};
+use fontdrasil::types::GlyphName;
+use fontir::{glyph::create_glyph_order_work, source::DeleteWork};
 
 use fontbe::orchestration::Context as BeContext;
 use fontbe::paths::Paths as BePaths;
@@ -82,723 +75,212 @@ pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
 }
 
 pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
-    // if IR is off the font didn't get written yet, otherwise it's done already
-    let font_file = be_context.paths.target_file(&BeWorkIdentifier::Font);
+    // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
+    let font_file = be_context.font_file();
     if !args.emit_ir {
-        fs::write(font_file, be_context.get_font().get()).map_err(Error::IoError)?;
+        fs::write(font_file, be_context.font.get().get()).map_err(Error::IoError)?;
     } else if !font_file.exists() {
         return Err(Error::FileExpected(font_file));
     }
     Ok(())
 }
 
-fn add_init_static_metadata_ir_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = change_detector
+fn add_glyph_order_ir_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_glyph_order_work().into();
+    workload.add(work, workload.change_detector.glyph_order_ir_change());
+
+    Ok(())
+}
+
+fn add_feature_ir_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = workload
+        .change_detector
         .ir_source()
-        .create_static_metadata_work(change_detector.current_inputs())?;
-    if change_detector.init_static_metadata_ir_change() {
-        let id: AnyWorkId = work.id().into();
-        let write_access = Access::one(id.clone());
-        workload.insert(
-            id,
-            Job {
-                work: work.into(),
-                dependencies: HashSet::new(),
-                read_access: ReadAccess::Dependencies,
-                write_access,
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
+        .create_feature_ir_work(workload.change_detector.current_inputs())?
+        .into();
+    workload.add(work, workload.change_detector.feature_ir_change());
     Ok(())
 }
 
-fn add_finalize_static_metadata_ir_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = create_finalize_static_metadata_work();
-    if change_detector.final_static_metadata_ir_change() {
-        let mut dependencies: HashSet<_> = change_detector
-            .glyphs_changed()
-            .iter()
-            .map(|gn| FeWorkIdentifier::Glyph(gn.clone()).into())
-            .collect();
-        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
-
-        // Finalize may create new glyphs so allow read/write to *all* glyphs
-        let read_access = Access::custom(|an_id: &AnyWorkId| {
-            matches!(
-                an_id,
-                AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
-                    | AnyWorkId::Fe(FeWorkIdentifier::InitStaticMetadata)
-            )
-        });
-        let write_access = Access::custom(|an_id: &AnyWorkId| {
-            matches!(
-                an_id,
-                AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
-                    | AnyWorkId::Fe(FeWorkIdentifier::FinalizeStaticMetadata)
-            )
-        });
-
-        workload.insert(
-            work.id().into(),
-            Job {
-                work: work.into(),
-                dependencies,
-                read_access: ReadAccess::Custom(read_access),
-                write_access,
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
-    Ok(())
-}
-
-fn add_global_metric_ir_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = change_detector
-        .ir_source()
-        .create_global_metric_work(change_detector.current_inputs())?;
-    if change_detector.global_metrics_ir_change() {
-        let id: AnyWorkId = work.id().into();
-        let write_access = Access::one(id.clone());
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
-        workload.insert(
-            id,
-            Job {
-                work: work.into(),
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access,
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
-    Ok(())
-}
-
-fn add_feature_ir_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = change_detector
-        .ir_source()
-        .create_feature_ir_work(change_detector.current_inputs())?;
-    if change_detector.feature_ir_change() {
-        let id: AnyWorkId = work.id().into();
-        let write_access = Access::one(id.clone());
-        workload.insert(
-            id,
-            Job {
-                work: work.into(),
-                dependencies: HashSet::new(),
-                read_access: ReadAccess::Dependencies,
-                write_access,
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
-    Ok(())
-}
-
-fn add_feature_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
+fn add_feature_be_job(workload: &mut Workload) -> Result<(), Error> {
     let work = FeatureWork::create();
-    if change_detector.feature_be_change() && change_detector.glyph_name_filter().is_none() {
-        let id: AnyWorkId = work.id().into();
-
-        // fea-rs compiles, or will compile, several tables
-        // we want to capture them individually
-        let write_access = Access::Set(HashSet::from([
-            BeWorkIdentifier::Gsub.into(),
-            BeWorkIdentifier::Gpos.into(),
-        ]));
-        workload.insert(
-            id,
-            Job {
-                work: work.into(),
-                dependencies: HashSet::from([
-                    FeWorkIdentifier::FinalizeStaticMetadata.into(),
-                    FeWorkIdentifier::Features.into(),
-                ]),
-                read_access: ReadAccess::Dependencies,
-                write_access,
-            },
-        );
-    } else {
-        // Features are extremely prone to not making sense when glyphs are filtered
-        if change_detector.glyph_name_filter().is_some() {
-            warn!("Not processing BE Features because a glyph name filter is active");
-        }
-        workload.mark_success(work.id());
-        workload.mark_success(BeWorkIdentifier::Gpos);
-        workload.mark_success(BeWorkIdentifier::Gsub);
+    // Features are extremely prone to not making sense when glyphs are filtered
+    if workload.change_detector.feature_be_change()
+        && workload.change_detector.glyph_name_filter().is_some()
+    {
+        warn!("Not processing BE Features because a glyph name filter is active");
     }
+    workload.add(
+        work.into(),
+        workload.change_detector.feature_be_change()
+            && workload.change_detector.glyph_name_filter().is_none(),
+    );
     Ok(())
 }
 
-fn add_kerning_ir_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = change_detector
+fn add_kerning_ir_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = workload
+        .change_detector
         .ir_source()
-        .create_kerning_ir_work(change_detector.current_inputs())?;
-    if change_detector.kerning_ir_change() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-
-        let id: AnyWorkId = work.id().into();
-        let write_access = Access::one(id.clone());
-        workload.insert(
-            id,
-            Job {
-                work: work.into(),
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access,
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
+        .create_kerning_ir_work(workload.change_detector.current_inputs())?;
+    workload.add(work.into(), workload.change_detector.kerning_ir_change());
     Ok(())
 }
 
-fn add_glyph_ir_jobs(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
+fn add_glyph_ir_jobs(workload: &mut Workload) -> Result<(), Error> {
     // Destroy IR for deleted glyphs. No dependencies.
-    for glyph_name in change_detector.glyphs_deleted().iter() {
+    for glyph_name in workload.change_detector.glyphs_deleted().iter() {
         let work = DeleteWork::create(glyph_name.clone());
-        workload.insert(
-            work.id().into(),
-            Job {
-                work: work.into(),
-                dependencies: HashSet::new(),
-                read_access: ReadAccess::Dependencies,
-                write_access: Access::none(),
-            },
-        );
+        workload.add(work.into(), true);
     }
 
     // Generate IR for changed glyphs
-    let glyphs_changed = change_detector.glyphs_changed();
-    let glyph_work = change_detector
+    let glyphs_changed = workload.change_detector.glyphs_changed();
+    let glyph_work = workload
+        .change_detector
         .ir_source()
-        .create_glyph_ir_work(&glyphs_changed, change_detector.current_inputs())?;
+        .create_glyph_ir_work(&glyphs_changed, workload.change_detector.current_inputs())?;
     for work in glyph_work {
-        let id = work.id();
-        let work = work.into();
-        let dependencies = HashSet::from([FeWorkIdentifier::InitStaticMetadata.into()]);
-
-        let id: AnyWorkId = id.into();
-        let write_access = Access::one(id.clone());
-        workload.insert(
-            id,
-            Job {
-                work,
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access,
-            },
-        );
+        workload.add(work.into(), true);
     }
 
     Ok(())
 }
 
-fn add_glyf_loca_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let glyphs_changed = change_detector.glyphs_changed();
+fn add_glyph_be_jobs(workload: &mut Workload) -> Result<(), Error> {
+    let glyphs_changed = workload.change_detector.glyphs_changed();
+    for glyph_name in glyphs_changed {
+        add_glyph_be_job(workload, glyph_name);
+    }
+    Ok(())
+}
+
+fn add_glyf_loca_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let glyphs_changed = workload.change_detector.glyphs_changed();
 
     // If no glyph has changed there isn't a lot of merging to do
-    let work = create_glyf_loca_work();
-    if !glyphs_changed.is_empty() {
-        let mut dependencies: HashSet<_> = glyphs_changed
-            .iter()
-            .map(|gn| BeWorkIdentifier::GlyfFragment(gn.clone()).into())
-            .collect();
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+    let work = create_glyf_loca_work().into();
+    workload.add(work, !glyphs_changed.is_empty());
 
-        // Write the merged glyphs and write individual glyphs that are updated, such as composites with bboxes
-        let write_access = Access::custom(|id| {
-            matches!(
-                id,
-                AnyWorkId::Be(BeWorkIdentifier::Glyf)
-                    | AnyWorkId::Be(BeWorkIdentifier::Loca)
-                    | AnyWorkId::Be(BeWorkIdentifier::LocaFormat)
-                    | AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..))
-            )
-        });
-
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id,
-            Job {
-                work: work.into(),
-                dependencies,
-                // We need to read all glyphs, even unchanged ones, plus static metadata
-                read_access: ReadAccess::custom(|id| {
-                    matches!(
-                        id,
-                        AnyWorkId::Be(BeWorkIdentifier::Glyf)
-                            | AnyWorkId::Be(BeWorkIdentifier::Loca)
-                            | AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..))
-                    )
-                }),
-                write_access,
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-        workload.mark_success(BeWorkIdentifier::Loca);
-        workload.mark_success(BeWorkIdentifier::LocaFormat);
-    }
     Ok(())
 }
 
-fn add_avar_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = create_avar_work();
-    if change_detector.avar_be_change() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
-
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: work.into(),
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
+fn add_avar_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_avar_work().into();
+    workload.add(work, workload.change_detector.avar_be_change());
     Ok(())
 }
 
-fn add_stat_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = create_stat_work();
-    if change_detector.stat_be_change() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
-
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: work.into(),
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
+fn add_stat_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_stat_work().into();
+    workload.add(work, workload.change_detector.stat_be_change());
     Ok(())
 }
 
-fn add_fvar_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = create_fvar_work();
-    if change_detector.fvar_be_change() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
-
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: work.into(),
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
+fn add_fvar_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_fvar_work().into();
+    workload.add(work, workload.change_detector.fvar_be_change());
     Ok(())
 }
 
-fn add_gvar_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let glyphs_changed = change_detector.glyphs_changed();
+fn add_gvar_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let glyphs_changed = workload.change_detector.glyphs_changed();
 
     // If no glyph has changed there isn't a lot of merging to do
-    let work = create_gvar_work();
-    if !glyphs_changed.is_empty() {
-        let mut dependencies: HashSet<_> = glyphs_changed
-            .iter()
-            .map(|gn| BeWorkIdentifier::GvarFragment(gn.clone()).into())
-            .collect();
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+    let work = create_gvar_work().into();
+    workload.add(work, !glyphs_changed.is_empty());
 
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: work.into(),
-                dependencies,
-                // We need to read all gvar fragments, even unchanged ones, plus static metadata
-                read_access: ReadAccess::custom(|id| {
-                    matches!(id, AnyWorkId::Be(BeWorkIdentifier::GvarFragment(..)))
-                }),
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
     Ok(())
 }
 
-fn add_cmap_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let glyphs_changed = change_detector.glyphs_changed();
+fn add_cmap_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let glyphs_changed = workload.change_detector.glyphs_changed();
 
     // If no glyph has changed there isn't a lot of merging to do
-    let work = create_cmap_work();
-    if !glyphs_changed.is_empty() {
-        let mut dependencies: HashSet<_> = glyphs_changed
-            .iter()
-            .map(|gn| FeWorkIdentifier::Glyph(gn.clone()).into())
-            .collect();
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
+    let work = create_cmap_work().into();
+    workload.add(work, !glyphs_changed.is_empty());
 
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: work.into(),
-                dependencies,
-                // We need to read all glyph IR, even unchanged ones, plus static metadata
-                read_access: ReadAccess::custom(|id| {
-                    matches!(id, AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)))
-                }),
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
     Ok(())
 }
 
-fn add_post_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = create_post_work();
-    if change_detector.post_be_change() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: work.into(),
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
+fn add_post_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_post_work().into();
+    workload.add(work, workload.change_detector.post_be_change());
     Ok(())
 }
 
-fn add_head_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = create_head_work();
-    if change_detector.final_static_metadata_ir_change() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-        dependencies.insert(BeWorkIdentifier::Glyf.into());
-        dependencies.insert(BeWorkIdentifier::LocaFormat.into());
-
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: work.into(),
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
+fn add_head_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_head_work().into();
+    workload.add(work, workload.change_detector.glyph_order_ir_change());
     Ok(())
 }
 
-fn add_name_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = create_name_work();
-    if change_detector.init_static_metadata_ir_change() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::InitStaticMetadata.into());
-
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: work.into(),
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
+fn add_name_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_name_work().into();
+    workload.add(work, workload.change_detector.static_metadata_ir_change());
     Ok(())
 }
 
-fn add_os2_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let work = create_os2_work();
-    if change_detector.init_static_metadata_ir_change() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(BeWorkIdentifier::Features.into());
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-        dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
-        dependencies.insert(BeWorkIdentifier::Hhea.into());
-        dependencies.insert(BeWorkIdentifier::Hmtx.into());
-        dependencies.insert(BeWorkIdentifier::Gpos.into());
-        dependencies.insert(BeWorkIdentifier::Gsub.into());
-
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: work.into(),
-                dependencies,
-                // We want to read all the glyphs, which must be done if hmtx is done, for codepoints
-                read_access: ReadAccess::custom(|id| {
-                    matches!(
-                        id,
-                        AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
-                            | AnyWorkId::Be(BeWorkIdentifier::Hhea)
-                            | AnyWorkId::Be(BeWorkIdentifier::Hmtx)
-                            | AnyWorkId::Be(BeWorkIdentifier::Gpos)
-                            | AnyWorkId::Be(BeWorkIdentifier::Gsub)
-                    )
-                }),
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
+fn add_os2_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_os2_work().into();
+    workload.add(work, workload.change_detector.static_metadata_ir_change());
     Ok(())
 }
 
-fn add_metric_and_limits_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let glyphs_changed = change_detector.glyphs_changed();
+fn add_metric_and_limits_job(workload: &mut Workload) -> Result<(), Error> {
+    let glyphs_changed = workload.change_detector.glyphs_changed();
 
     // If no glyph has changed there isn't a lot to do
-    let work = create_metric_and_limit_work();
-    if !glyphs_changed.is_empty() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::GlobalMetrics.into());
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-        // https://github.com/googlefonts/fontmake-rs/issues/285: we need bboxes and those are done for glyf
-        // since we depend on glyf we needn't block on any individual glyphs
-        dependencies.insert(BeWorkIdentifier::Glyf.into());
-        // We want to update head with glyph extents so await the first pass at head
-        dependencies.insert(BeWorkIdentifier::Head.into());
-
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id,
-            Job {
-                work: work.into(),
-                dependencies,
-                // We need to read all FE and BE glyphs, even unchanged ones, plus static metadata
-                read_access: ReadAccess::custom(|id| {
-                    matches!(
-                        id,
-                        AnyWorkId::Fe(FeWorkIdentifier::Glyph(..))
-                            | AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..))
-                            | AnyWorkId::Be(BeWorkIdentifier::Maxp)
-                            | AnyWorkId::Be(BeWorkIdentifier::Head)
-                    )
-                }),
-                write_access: Access::custom(|id| {
-                    matches!(
-                        id,
-                        AnyWorkId::Be(BeWorkIdentifier::Hmtx)
-                            | AnyWorkId::Be(BeWorkIdentifier::Hhea)
-                            | AnyWorkId::Be(BeWorkIdentifier::Maxp)
-                            | AnyWorkId::Be(BeWorkIdentifier::Head)
-                    )
-                }),
-            },
-        );
-    } else {
-        workload.mark_success(BeWorkIdentifier::Hhea);
-        workload.mark_success(BeWorkIdentifier::Hmtx);
-        workload.mark_success(BeWorkIdentifier::Maxp);
-    }
+    let work = create_metric_and_limit_work().into();
+    workload.add(work, !glyphs_changed.is_empty());
     Ok(())
 }
 
-fn add_font_be_job(
-    change_detector: &mut ChangeDetector,
-    workload: &mut Workload,
-) -> Result<(), Error> {
-    let glyphs_changed = change_detector.glyphs_changed();
+fn add_font_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let glyphs_changed = workload.change_detector.glyphs_changed();
 
     // If glyphs or features changed we better do the thing
     let work = create_font_work();
-    if !glyphs_changed.is_empty() || change_detector.feature_be_change() {
-        let mut dependencies = HashSet::new();
-        dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-        dependencies.insert(BeWorkIdentifier::Features.into());
-        dependencies.insert(BeWorkIdentifier::Avar.into());
-        dependencies.insert(BeWorkIdentifier::Cmap.into());
-        dependencies.insert(BeWorkIdentifier::Fvar.into());
-        dependencies.insert(BeWorkIdentifier::Glyf.into());
-        dependencies.insert(BeWorkIdentifier::Gpos.into());
-        dependencies.insert(BeWorkIdentifier::Gsub.into());
-        dependencies.insert(BeWorkIdentifier::Gvar.into());
-        dependencies.insert(BeWorkIdentifier::Head.into());
-        dependencies.insert(BeWorkIdentifier::Hhea.into());
-        dependencies.insert(BeWorkIdentifier::Hmtx.into());
-        dependencies.insert(BeWorkIdentifier::Loca.into());
-        dependencies.insert(BeWorkIdentifier::LocaFormat.into());
-        dependencies.insert(BeWorkIdentifier::Maxp.into());
-        dependencies.insert(BeWorkIdentifier::Name.into());
-        dependencies.insert(BeWorkIdentifier::Os2.into());
-        dependencies.insert(BeWorkIdentifier::Post.into());
-        dependencies.insert(BeWorkIdentifier::Stat.into());
-
-        let id: AnyWorkId = work.id().into();
-        workload.insert(
-            id.clone(),
-            Job {
-                work: work.into(),
-                dependencies,
-                read_access: ReadAccess::Dependencies,
-                write_access: Access::one(id),
-            },
-        );
-    } else {
-        workload.mark_success(work.id());
-    }
+    workload.add(
+        work.into(),
+        !glyphs_changed.is_empty() || workload.change_detector.feature_be_change(),
+    );
     Ok(())
 }
 
-fn add_glyph_be_job(workload: &mut Workload, fe_root: &FeContext, glyph_name: GlyphName) {
-    let glyph_ir = fe_root.get_glyph_ir(&glyph_name);
-
-    // To build a glyph we need it's components, plus static metadata
-    let mut dependencies: HashSet<_> = glyph_ir
-        .sources()
-        .values()
-        .flat_map(|s| &s.components)
-        .map(|c| AnyWorkId::Fe(FeWorkIdentifier::Glyph(c.base.clone())))
-        .collect();
-    dependencies.insert(FeWorkIdentifier::FinalizeStaticMetadata.into());
-
-    let work = create_glyf_work(glyph_name.clone());
-    let id: AnyWorkId = work.id().into();
-    let gvar_id = AnyWorkId::Be(BeWorkIdentifier::GvarFragment(glyph_name.clone()));
-
-    // this job should already be a dependency of glyf, gvar, and hmtx; if not terrible things will happen
-    if !workload.is_dependency(&BeWorkIdentifier::Glyf.into(), &id) {
-        panic!("BE glyph '{glyph_name}' is being built but not participating in glyf",);
-    }
-    if !workload.is_dependency(&BeWorkIdentifier::Gvar.into(), &gvar_id) {
-        panic!("BE glyph '{glyph_name}' is being built but not participating in gvar",);
-    }
-
-    let write_access = Access::Set(HashSet::from([id.clone(), gvar_id]));
-    workload.insert(
-        id,
-        Job {
-            work: work.into(),
-            dependencies,
-            read_access: ReadAccess::Dependencies,
-            write_access,
-        },
-    );
+fn add_glyph_be_job(workload: &mut Workload, glyph_name: GlyphName) {
+    let work = create_glyf_work(glyph_name).into();
+    let should_run = workload.change_detector.simple_should_run(&work);
+    workload.add(work, should_run);
 }
 
 //FIXME: I should be a method on ChangeDetector
 pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Error> {
-    let mut workload = Workload::new();
+    let mut workload = change_detector.create_workload()?;
 
     // FE: f(source) => IR
-    add_init_static_metadata_ir_job(change_detector, &mut workload)?;
-    add_global_metric_ir_job(change_detector, &mut workload)?;
-    add_feature_ir_job(change_detector, &mut workload)?;
-    add_kerning_ir_job(change_detector, &mut workload)?;
-    add_glyph_ir_jobs(change_detector, &mut workload)?;
-    add_finalize_static_metadata_ir_job(change_detector, &mut workload)?;
+    add_feature_ir_job(&mut workload)?;
+    add_kerning_ir_job(&mut workload)?;
+    add_glyph_ir_jobs(&mut workload)?;
+    add_glyph_order_ir_job(&mut workload)?;
 
     // BE: f(IR, maybe other BE work) => binary
-    add_feature_be_job(change_detector, &mut workload)?;
-    add_glyf_loca_be_job(change_detector, &mut workload)?;
-    add_avar_be_job(change_detector, &mut workload)?;
-    add_stat_be_job(change_detector, &mut workload)?;
-    add_cmap_be_job(change_detector, &mut workload)?;
-    add_fvar_be_job(change_detector, &mut workload)?;
-    add_gvar_be_job(change_detector, &mut workload)?;
-    add_head_be_job(change_detector, &mut workload)?;
-    add_metric_and_limits_job(change_detector, &mut workload)?;
-    add_name_be_job(change_detector, &mut workload)?;
-    add_os2_be_job(change_detector, &mut workload)?;
-    add_post_be_job(change_detector, &mut workload)?;
+    add_feature_be_job(&mut workload)?;
+    add_glyph_be_jobs(&mut workload)?;
+    add_glyf_loca_be_job(&mut workload)?;
+    add_avar_be_job(&mut workload)?;
+    add_stat_be_job(&mut workload)?;
+    add_cmap_be_job(&mut workload)?;
+    add_fvar_be_job(&mut workload)?;
+    add_gvar_be_job(&mut workload)?;
+    add_head_be_job(&mut workload)?;
+    add_metric_and_limits_job(&mut workload)?;
+    add_name_be_job(&mut workload)?;
+    add_os2_be_job(&mut workload)?;
+    add_post_be_job(&mut workload)?;
 
     // Make a damn font
-    add_font_be_job(change_detector, &mut workload)?;
+    add_font_be_job(&mut workload)?;
 
     Ok(workload)
 }
@@ -828,13 +310,12 @@ mod tests {
 
     use chrono::{Duration, TimeZone, Utc};
     use fontbe::orchestration::{
-        loca_format_from_file, AnyWorkId, Context as BeContext, LocaFormat,
-        WorkId as BeWorkIdentifier,
+        AnyWorkId, Context as BeContext, Glyph as BeGlyph, LocaFormat, WorkId as BeWorkIdentifier,
     };
     use fontdrasil::types::GlyphName;
     use fontir::{
         ir::{self, KernParticipant},
-        orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
+        orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
     };
     use indexmap::IndexSet;
     use kurbo::{Point, Rect};
@@ -851,7 +332,7 @@ mod tests {
         raw::{
             tables::{
                 cmap::{Cmap, CmapSubtable},
-                glyf::{self, CompositeGlyph, CurvePoint, Glyf, SimpleGlyph},
+                glyf::{self, CompositeGlyph, CurvePoint, Glyf},
                 hmtx::Hmtx,
                 loca::Loca,
             },
@@ -861,13 +342,13 @@ mod tests {
         GlyphId, Tag,
     };
     use tempfile::{tempdir, TempDir};
-    use write_fonts::dump_table;
+    use write_fonts::{dump_table, tables::glyf::Bbox};
 
     use super::*;
 
     struct TestCompile {
         build_dir: PathBuf,
-        work_completed: HashSet<AnyWorkId>,
+        work_executed: HashSet<AnyWorkId>,
         glyphs_changed: IndexSet<GlyphName>,
         glyphs_deleted: IndexSet<GlyphName>,
         fe_context: FeContext,
@@ -883,7 +364,7 @@ mod tests {
             let build_dir = change_detector.be_paths().build_dir().to_path_buf();
             TestCompile {
                 build_dir,
-                work_completed: HashSet::new(),
+                work_executed: HashSet::new(),
                 glyphs_changed: change_detector.glyphs_changed(),
                 glyphs_deleted: change_detector.glyphs_deleted(),
                 fe_context,
@@ -893,7 +374,8 @@ mod tests {
 
         fn get_glyph_index(&self, name: &str) -> u32 {
             self.fe_context
-                .get_final_static_metadata()
+                .glyph_order
+                .get()
                 .glyph_id(&name.into())
                 .unwrap()
         }
@@ -912,7 +394,9 @@ mod tests {
     impl Glyphs {
         fn new(build_dir: &Path) -> Self {
             Glyphs {
-                loca_format: loca_format_from_file(&build_dir.join("loca.format")),
+                loca_format: LocaFormat::read(
+                    &mut File::open(build_dir.join("loca.format")).unwrap(),
+                ),
                 raw_glyf: read_file(&build_dir.join("glyf.table")),
                 raw_loca: read_file(&build_dir.join("loca.table")),
             }
@@ -978,29 +462,7 @@ mod tests {
         let mut change_detector =
             ChangeDetector::new(config.clone(), ir_paths.clone(), prev_inputs).unwrap();
 
-        let mut workload = Workload::new();
-
-        add_init_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
-        add_global_metric_ir_job(&mut change_detector, &mut workload).unwrap();
-        add_finalize_static_metadata_ir_job(&mut change_detector, &mut workload).unwrap();
-        add_glyph_ir_jobs(&mut change_detector, &mut workload).unwrap();
-        add_feature_ir_job(&mut change_detector, &mut workload).unwrap();
-        add_kerning_ir_job(&mut change_detector, &mut workload).unwrap();
-        add_feature_be_job(&mut change_detector, &mut workload).unwrap();
-
-        add_glyf_loca_be_job(&mut change_detector, &mut workload).unwrap();
-        add_avar_be_job(&mut change_detector, &mut workload).unwrap();
-        add_stat_be_job(&mut change_detector, &mut workload).unwrap();
-        add_cmap_be_job(&mut change_detector, &mut workload).unwrap();
-        add_fvar_be_job(&mut change_detector, &mut workload).unwrap();
-        add_gvar_be_job(&mut change_detector, &mut workload).unwrap();
-        add_head_be_job(&mut change_detector, &mut workload).unwrap();
-        add_metric_and_limits_job(&mut change_detector, &mut workload).unwrap();
-        add_name_be_job(&mut change_detector, &mut workload).unwrap();
-        add_os2_be_job(&mut change_detector, &mut workload).unwrap();
-        add_post_be_job(&mut change_detector, &mut workload).unwrap();
-
-        add_font_be_job(&mut change_detector, &mut workload).unwrap();
+        let mut workload = create_workload(&mut change_detector).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one
@@ -1009,18 +471,18 @@ mod tests {
         let fe_root = FeContext::new_root(
             config.args.flags(),
             ir_paths,
-            change_detector.current_inputs().clone(),
+            workload.change_detector.current_inputs().clone(),
         );
         let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root.read_only());
         let mut result = TestCompile::new(
-            &change_detector,
+            workload.change_detector,
             fe_root.read_only(),
             be_root.copy_read_only(),
         );
         let completed = workload.run_for_test(&fe_root, &be_root);
 
         change_detector.finish_successfully().unwrap();
-        result.work_completed = completed;
+        result.work_executed = completed;
 
         write_font_file(&config.args, &be_root).unwrap();
 
@@ -1033,15 +495,16 @@ mod tests {
         let build_dir = temp_dir.path();
 
         let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
-        let mut completed = result.work_completed.iter().cloned().collect::<Vec<_>>();
+        let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
         completed.sort();
         assert_eq!(
             vec![
-                AnyWorkId::Fe(FeWorkIdentifier::InitStaticMetadata),
+                AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata),
                 FeWorkIdentifier::GlobalMetrics.into(),
                 FeWorkIdentifier::Glyph("bar".into()).into(),
                 FeWorkIdentifier::Glyph("plus".into()).into(),
-                FeWorkIdentifier::FinalizeStaticMetadata.into(),
+                FeWorkIdentifier::PreliminaryGlyphOrder.into(),
+                FeWorkIdentifier::GlyphOrder.into(),
                 FeWorkIdentifier::Features.into(),
                 FeWorkIdentifier::Kerning.into(),
                 BeWorkIdentifier::Features.into(),
@@ -1085,7 +548,7 @@ mod tests {
         assert_eq!(IndexSet::new(), result.glyphs_deleted);
 
         let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
-        assert_eq!(HashSet::new(), result.work_completed);
+        assert_eq!(HashSet::new(), result.work_executed);
         assert_eq!(IndexSet::new(), result.glyphs_changed);
         assert_eq!(IndexSet::new(), result.glyphs_deleted);
     }
@@ -1097,12 +560,14 @@ mod tests {
         let build_dir = temp_dir.path();
 
         let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
-        assert!(result.work_completed.len() > 1);
+        assert!(result.work_executed.len() > 1);
 
-        fs::remove_file(build_dir.join("glyph_ir/bar.yml")).unwrap();
+        let glyph_ir_file = build_dir.join("glyph_ir/bar.yml");
+        fs::remove_file(&glyph_ir_file).unwrap();
 
         let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
-        let mut completed = result.work_completed.iter().cloned().collect::<Vec<_>>();
+        assert!(glyph_ir_file.exists(), "{glyph_ir_file:?}");
+        let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
         completed.sort();
         assert_eq!(
             vec![
@@ -1110,14 +575,39 @@ mod tests {
                 BeWorkIdentifier::Cmap.into(),
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Glyf.into(),
-                BeWorkIdentifier::GlyfFragment("bar".into()).into(),
                 BeWorkIdentifier::Gvar.into(),
-                BeWorkIdentifier::GvarFragment("bar".into()).into(),
                 BeWorkIdentifier::Hhea.into(),
                 BeWorkIdentifier::Hmtx.into(),
                 BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::LocaFormat.into(),
                 BeWorkIdentifier::Maxp.into(),
+            ],
+            completed,
+            "{completed:#?}"
+        );
+    }
+
+    #[test]
+    fn second_compile_only_kerning() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+
+        let result = compile(Args::for_test(build_dir, "glyphs3/WghtVar.glyphs"));
+        assert!(result.work_executed.len() > 1);
+
+        fs::remove_file(build_dir.join("kerning.yml")).unwrap();
+
+        let result = compile(Args::for_test(build_dir, "glyphs3/WghtVar.glyphs"));
+        let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
+        completed.sort();
+        assert_eq!(
+            vec![
+                AnyWorkId::Fe(FeWorkIdentifier::Features),
+                FeWorkIdentifier::Kerning.into(),
+                BeWorkIdentifier::Features.into(),
+                BeWorkIdentifier::Font.into(),
+                BeWorkIdentifier::Gpos.into(),
+                BeWorkIdentifier::Gsub.into(),
             ],
             completed
         );
@@ -1220,7 +710,7 @@ mod tests {
         let result = compile(Args::for_test(&build_dir, source.to_str().unwrap()));
 
         // Features and things downstream of features should rebuild
-        let mut completed = result.work_completed.iter().cloned().collect::<Vec<_>>();
+        let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
         completed.sort();
         assert_eq!(
             vec![
@@ -1247,7 +737,8 @@ mod tests {
 
         let glyph = result
             .fe_context
-            .get_glyph_ir(&"contour_and_component".into());
+            .glyphs
+            .get(&FeWorkIdentifier::Glyph("contour_and_component".into()));
 
         assert_eq!(1, glyph.sources().len());
         (*glyph).clone()
@@ -1260,8 +751,10 @@ mod tests {
         buf
     }
 
-    fn glyph_glyf_bytes(build_dir: &Path, name: &str) -> Vec<u8> {
-        read_file(&build_dir.join(format!("glyphs/{name}.glyf")))
+    fn read_be_glyph(build_dir: &Path, name: &str) -> BeGlyph {
+        let raw_glyph = read_file(&build_dir.join(format!("glyphs/{name}.glyf")));
+        let read: &mut dyn Read = &mut raw_glyph.as_slice();
+        BeGlyph::read(read)
     }
 
     #[test]
@@ -1271,7 +764,10 @@ mod tests {
         assert!(glyph.default_instance().contours.is_empty(), "{glyph:?}");
         assert_eq!(2, glyph.default_instance().components.len(), "{glyph:?}");
 
-        let raw_glyph = glyph_glyf_bytes(temp_dir.path(), glyph.name.as_str());
+        let BeGlyph::Composite(_, glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
+            panic!("Expected a simple glyph");
+        };
+        let raw_glyph = dump_table(&glyph).unwrap();
         let glyph = CompositeGlyph::read(FontData::new(&raw_glyph)).unwrap();
         // -1: composite, per https://learn.microsoft.com/en-us/typography/opentype/spec/glyf
         assert_eq!(-1, glyph.number_of_contours());
@@ -1284,9 +780,10 @@ mod tests {
         assert!(glyph.default_instance().components.is_empty(), "{glyph:?}");
         assert_eq!(2, glyph.default_instance().contours.len(), "{glyph:?}");
 
-        let raw_glyph = glyph_glyf_bytes(temp_dir.path(), glyph.name.as_str());
-        let glyph = SimpleGlyph::read(FontData::new(&raw_glyph)).unwrap();
-        assert_eq!(2, glyph.number_of_contours());
+        let BeGlyph::Simple(_, glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
+            panic!("Expected a simple glyph");
+        };
+        assert_eq!(2, glyph.contours().len());
     }
 
     #[test]
@@ -1295,13 +792,23 @@ mod tests {
         let build_dir = temp_dir.path();
         compile(Args::for_test(build_dir, "static.designspace"));
 
-        let raw_glyph = glyph_glyf_bytes(build_dir, "bar");
-        let glyph = SimpleGlyph::read(FontData::new(&raw_glyph)).unwrap();
-        assert_eq!(1, glyph.number_of_contours());
-        assert_eq!(4, glyph.num_points());
+        let BeGlyph::Simple(_, glyph) = read_be_glyph(build_dir, "bar") else {
+            panic!("Expected a simple glyph");
+        };
+
+        assert_eq!(1, glyph.contours().len());
         assert_eq!(
-            [222, -241, 295, 760],
-            [glyph.x_min(), glyph.y_min(), glyph.x_max(), glyph.y_max()]
+            4_usize,
+            glyph.contours().iter().map(|c| c.iter().count()).sum()
+        );
+        assert_eq!(
+            Bbox {
+                x_min: 222,
+                y_min: -241,
+                x_max: 295,
+                y_max: 760,
+            },
+            glyph.bbox,
         );
     }
 
@@ -1465,7 +972,7 @@ mod tests {
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
 
-        let raw_cmap = dump_table(&*result.be_context.get_cmap()).unwrap();
+        let raw_cmap = dump_table(&result.be_context.cmap.get().0).unwrap();
         let font_data = FontData::new(&raw_cmap);
         let cmap = Cmap::read(font_data).unwrap();
 
@@ -1517,7 +1024,7 @@ mod tests {
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/NotDef.glyphs"));
 
-        let raw_hmtx = result.be_context.get_hmtx();
+        let raw_hmtx = result.be_context.hmtx.get();
         let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &(1, 1)).unwrap();
         assert_eq!(
             vec![(600, 250)],
@@ -1535,19 +1042,21 @@ mod tests {
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/Mono.glyphs"));
 
-        let hhea = result.be_context.get_hhea();
+        let arc_hhea = result.be_context.hhea.get();
+        let hhea = &arc_hhea.0;
         assert_eq!(1, hhea.number_of_long_metrics);
         assert_eq!(175, hhea.min_left_side_bearing.to_i16());
         assert_eq!(50, hhea.min_right_side_bearing.to_i16());
         assert_eq!(375, hhea.x_max_extent.to_i16());
         assert_eq!(425, hhea.advance_width_max.to_u16());
 
-        let maxp = result.be_context.get_maxp();
+        let arc_maxp = result.be_context.maxp.get();
+        let maxp = &arc_maxp.0;
         assert_eq!(3, maxp.num_glyphs);
         assert_eq!(Some(4), maxp.max_points);
         assert_eq!(Some(1), maxp.max_contours);
 
-        let raw_hmtx = result.be_context.get_hmtx();
+        let raw_hmtx = result.be_context.hmtx.get();
         let hmtx = Hmtx::read_with_args(
             FontData::new(raw_hmtx.get()),
             &(hhea.number_of_long_metrics, maxp.num_glyphs),
@@ -2079,7 +1588,7 @@ mod tests {
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, source));
 
-        let kerning = result.fe_context.get_kerning();
+        let kerning = result.fe_context.kerning.get();
 
         let mut groups: Vec<_> = kerning
             .groups

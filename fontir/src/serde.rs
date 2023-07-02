@@ -13,8 +13,8 @@ use write_fonts::tables::os2::SelectionFlags;
 use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
     ir::{
-        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, KernParticipant,
-        Kerning, MiscMetadata, NameKey, NamedInstance, StaticMetadata,
+        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
+        KernParticipant, Kerning, MiscMetadata, NameKey, NamedInstance, StaticMetadata,
     },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
@@ -60,7 +60,6 @@ pub struct StaticMetadataSerdeRepr {
     pub glyph_locations: Vec<NormalizedLocation>,
     pub names: HashMap<NameKey, String>,
     pub misc: MiscSerdeRepr,
-    pub glyph_order: Vec<String>,
 }
 
 impl From<StaticMetadataSerdeRepr> for StaticMetadata {
@@ -70,7 +69,6 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
             from.names,
             from.axes,
             from.named_instances,
-            from.glyph_order.into_iter().map(|s| s.into()).collect(),
             from.glyph_locations.into_iter().collect(),
         )
         .unwrap()
@@ -87,12 +85,22 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
             glyph_locations,
             names: from.names,
             misc: from.misc.into(),
-            glyph_order: from
-                .glyph_order
-                .into_iter()
-                .map(|n| n.as_str().to_string())
-                .collect(),
         }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct GlyphOrderSerdeRepr(Vec<String>);
+
+impl From<GlyphOrderSerdeRepr> for GlyphOrder {
+    fn from(value: GlyphOrderSerdeRepr) -> Self {
+        value.0.into_iter().map(|v| v.into()).collect()
+    }
+}
+
+impl From<GlyphOrder> for GlyphOrderSerdeRepr {
+    fn from(value: GlyphOrder) -> Self {
+        GlyphOrderSerdeRepr(value.into_iter().map(|v| v.to_string()).collect())
     }
 }
 

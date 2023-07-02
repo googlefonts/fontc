@@ -1,10 +1,14 @@
 //! tracking changes during compilation
 
-use std::{ffi::OsStr, fs, path::Path};
+use std::{ffi::OsStr, fmt::Debug, fs, path::Path};
 
-use fontbe::{orchestration::WorkId as BeWorkIdentifier, paths::Paths as BePaths};
+use bitflags::bitflags;
+use fontbe::{
+    orchestration::{AnyWorkId, WorkId as BeWorkIdentifier},
+    paths::Paths as BePaths,
+};
 
-use crate::{Config, Error};
+use crate::{work::AnyWork, workload::Workload, Config, Error};
 use fontdrasil::types::GlyphName;
 use fontir::{
     orchestration::WorkId as FeWorkIdentifier,
@@ -17,8 +21,20 @@ use ufo2fontir::source::DesignSpaceIrSource;
 use indexmap::IndexSet;
 use regex::Regex;
 
-//FIXME: clarify the role of this type.
-/// Tracks changes during incremental compilation and... what, exactly?
+bitflags! {
+    #[derive(Clone, Copy, Debug)]
+    pub struct BuildFlags: u32 {
+        /// We need to generate the direct output artifacts
+        const BUILD_OUTPUTS = 0b0001;
+        /// We need to rebuild anything that depends on us
+        const BUILD_DEPENDENTS = 0b0010;
+        const BUILD_ALL = Self::BUILD_OUTPUTS.bits() | Self::BUILD_DEPENDENTS.bits();
+    }
+}
+
+/// Figures out what changed and helps create work to build updated versions
+///
+/// Uses [Source] to abstract over whether source in .glyphs, .designspace, etc.
 pub struct ChangeDetector {
     glyph_name_filter: Option<Regex>,
     ir_paths: IrPaths,
@@ -29,13 +45,18 @@ pub struct ChangeDetector {
     emit_ir: bool,
 }
 
+impl Debug for ChangeDetector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ChangeDetector")
+    }
+}
+
 impl ChangeDetector {
     pub fn new(
         config: Config,
         ir_paths: IrPaths,
         prev_inputs: Input,
     ) -> Result<ChangeDetector, Error> {
-        // What sources are we dealing with?
         let mut ir_source = ir_source(&config.args.source)?;
         let mut current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
         let be_paths = BePaths::new(ir_paths.build_dir());
@@ -88,19 +109,97 @@ impl ChangeDetector {
         &self.be_paths
     }
 
-    pub fn init_static_metadata_ir_change(&self) -> bool {
+    fn target_exists(&self, work_id: &AnyWorkId) -> bool {
+        match work_id {
+            AnyWorkId::Fe(work_id) => self.ir_paths.target_file(work_id).is_file(),
+            AnyWorkId::Be(work_id) => self.be_paths.target_file(work_id).is_file(),
+        }
+    }
+
+    fn input_changed(&self, work_id: &AnyWorkId) -> bool {
+        match work_id {
+            AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => {
+                self.current_inputs.static_metadata != self.prev_inputs.static_metadata
+            }
+            AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => {
+                self.current_inputs.global_metrics != self.prev_inputs.global_metrics
+            }
+            AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name)) => {
+                self.current_inputs.glyphs.get(glyph_name)
+                    != self.prev_inputs.glyphs.get(glyph_name)
+            }
+            AnyWorkId::Be(BeWorkIdentifier::GvarFragment(glyph_name)) => {
+                self.current_inputs.glyphs.get(glyph_name)
+                    != self.prev_inputs.glyphs.get(glyph_name)
+            }
+            _ => panic!("input_changed does not yet support {work_id:?}"),
+        }
+    }
+
+    fn output_exists(&self, work: &AnyWork) -> bool {
+        self.target_exists(&work.id())
+            && work
+                .also_completes()
+                .iter()
+                .all(|id| self.target_exists(id))
+    }
+
+    /// Not all work ... works ... with this method; notably muts support input_changed.
+    pub(crate) fn simple_should_run(&self, work: &AnyWork) -> bool {
+        let work_id = work.id();
+        !self.output_exists(work) || self.input_changed(&work_id)
+    }
+
+    /// Simple work has simple, static, dependencies. Anything that depends on all-of-type
+    /// (e.g. all glyph ir) is not (yet) amenable to this path.
+    pub fn add_simple_work(&self, workload: &mut Workload, work: AnyWork) {
+        let output_exists = self.output_exists(&work);
+        let input_changed = self.input_changed(&work.id());
+        let run = input_changed || !output_exists;
+        workload.add(work, run);
+    }
+
+    pub fn create_workload(&mut self) -> Result<Workload, Error> {
+        let mut workload = Workload::new(self);
+
+        // Create work roughly in the order it would typically occur
+        // Work is eligible to run as soon as all dependencies are complete
+        // so this is NOT the definitive execution order
+
+        let source = self.ir_source.as_ref();
+
+        // Source => IR
+        self.add_simple_work(
+            &mut workload,
+            source
+                .create_static_metadata_work(&self.current_inputs)?
+                .into(),
+        );
+        self.add_simple_work(
+            &mut workload,
+            source
+                .create_global_metric_work(&self.current_inputs)?
+                .into(),
+        );
+
+        Ok(workload)
+    }
+
+    // TODO: could this be solved based on work id and also completes?
+
+    pub fn static_metadata_ir_change(&self) -> bool {
         self.current_inputs.static_metadata != self.prev_inputs.static_metadata
             || !self
                 .ir_paths
-                .target_file(&FeWorkIdentifier::InitStaticMetadata)
+                .target_file(&FeWorkIdentifier::StaticMetadata)
                 .is_file()
     }
 
-    pub fn final_static_metadata_ir_change(&self) -> bool {
+    pub fn glyph_order_ir_change(&self) -> bool {
         self.current_inputs.static_metadata != self.prev_inputs.static_metadata
             || !self
                 .ir_paths
-                .target_file(&FeWorkIdentifier::FinalizeStaticMetadata)
+                .target_file(&FeWorkIdentifier::GlyphOrder)
                 .is_file()
     }
 
@@ -113,11 +212,15 @@ impl ChangeDetector {
     }
 
     pub fn feature_ir_change(&self) -> bool {
-        self.final_static_metadata_ir_change()
+        self.glyph_order_ir_change()
             || self.current_inputs.features != self.prev_inputs.features
             || !self
                 .ir_paths
                 .target_file(&FeWorkIdentifier::Features)
+                .is_file()
+            || !self
+                .ir_paths
+                .target_file(&FeWorkIdentifier::Kerning)
                 .is_file()
     }
 
@@ -130,7 +233,8 @@ impl ChangeDetector {
     }
 
     pub fn kerning_ir_change(&self) -> bool {
-        self.final_static_metadata_ir_change()
+        self.static_metadata_ir_change()
+            || self.glyph_order_ir_change()
             || self.current_inputs.features != self.prev_inputs.features
             || !self
                 .ir_paths
@@ -139,29 +243,30 @@ impl ChangeDetector {
     }
 
     pub fn avar_be_change(&self) -> bool {
-        self.final_static_metadata_ir_change()
+        self.static_metadata_ir_change()
             || !self.be_paths.target_file(&BeWorkIdentifier::Avar).is_file()
     }
 
     pub fn stat_be_change(&self) -> bool {
-        self.final_static_metadata_ir_change()
+        self.static_metadata_ir_change()
             || !self.be_paths.target_file(&BeWorkIdentifier::Stat).is_file()
     }
 
     pub fn fvar_be_change(&self) -> bool {
-        self.final_static_metadata_ir_change()
+        self.static_metadata_ir_change()
             || !self.be_paths.target_file(&BeWorkIdentifier::Fvar).is_file()
     }
 
     pub fn post_be_change(&self) -> bool {
-        self.final_static_metadata_ir_change()
+        self.static_metadata_ir_change()
+            || self.glyph_order_ir_change()
             || !self.be_paths.target_file(&BeWorkIdentifier::Post).is_file()
     }
 
     pub fn glyphs_changed(&self) -> IndexSet<GlyphName> {
         let glyph_iter = self.current_inputs.glyphs.iter();
 
-        if self.init_static_metadata_ir_change() {
+        if self.static_metadata_ir_change() || self.glyph_order_ir_change() {
             return glyph_iter.map(|(name, _)| name).cloned().collect();
         }
         glyph_iter

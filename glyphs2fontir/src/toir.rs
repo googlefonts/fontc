@@ -220,6 +220,7 @@ fn ir_axes(font: &Font) -> Result<Vec<ir::Axis>, Error> {
 }
 
 /// A [Font] with some prework to convert to IR predone.
+#[derive(Debug)]
 pub struct FontInfo {
     pub font: Font,
     /// Index by master id

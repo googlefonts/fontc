@@ -1,19 +1,21 @@
 //! Generates a [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar) table.
 
 use font_types::F2Dot14;
-use fontdrasil::orchestration::Work;
+use fontdrasil::orchestration::{Access, Work};
 use fontir::{
     coords::{CoordConverter, DesignCoord},
     ir::Axis,
+    orchestration::WorkId as FeWorkId,
 };
 use log::debug;
 use write_fonts::tables::avar::{Avar, AxisValueMap, SegmentMaps};
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, WorkId},
 };
 
+#[derive(Debug)]
 struct AvarWork {}
 
 pub fn create_avar_work() -> Box<BeWork> {
@@ -58,29 +60,36 @@ fn to_segment_map(axis: &Axis) -> SegmentMaps {
     SegmentMaps::new(mappings)
 }
 
-impl Work<Context, WorkId, Error> for AvarWork {
-    fn id(&self) -> WorkId {
-        WorkId::Avar
+impl Work<Context, AnyWorkId, Error> for AvarWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Avar.into()
+    }
+
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::One(FeWorkId::StaticMetadata.into())
     }
 
     /// Generate [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar)
     ///
     /// See also <https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview#CSN>
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let static_metadata = context.ir.get_init_static_metadata();
+        let static_metadata = context.ir.static_metadata.get();
         // Guard clause: don't produce avar for a static font
         if static_metadata.variable_axes.is_empty() {
             debug!("Skip avar; this is not a variable font");
             return Ok(());
         }
-        context.set_avar(Avar::new(
-            static_metadata
-                .variable_axes
-                .iter()
-                .map(to_segment_map)
-                .filter(|sm| !sm.axis_value_maps.is_empty())
-                .collect(),
-        ));
+        context.avar.set_unconditionally(
+            Avar::new(
+                static_metadata
+                    .variable_axes
+                    .iter()
+                    .map(to_segment_map)
+                    .filter(|sm| !sm.axis_value_maps.is_empty())
+                    .collect(),
+            )
+            .into(),
+        );
         Ok(())
     }
 }

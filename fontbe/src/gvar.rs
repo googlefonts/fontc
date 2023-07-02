@@ -1,8 +1,13 @@
 //! Generates a [gvar](https://learn.microsoft.com/en-us/typography/opentype/spec/gvar) table.
 
+use std::sync::Arc;
+
 use font_types::GlyphId;
-use fontdrasil::{orchestration::Work, types::GlyphName};
-use fontir::ir::StaticMetadata;
+use fontdrasil::{
+    orchestration::{Access, Work},
+    types::GlyphName,
+};
+use fontir::{ir::GlyphOrder, orchestration::WorkId as FeWorkId};
 use write_fonts::{
     dump_table,
     tables::gvar::{GlyphDeltas, GlyphVariations, Gvar},
@@ -10,9 +15,10 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Bytes, Context, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, WorkId},
 };
 
+#[derive(Debug)]
 struct GvarWork {}
 
 pub fn create_gvar_work() -> Box<BeWork> {
@@ -20,11 +26,10 @@ pub fn create_gvar_work() -> Box<BeWork> {
 }
 
 fn make_variations(
-    static_metadata: &StaticMetadata,
+    glyph_order: &GlyphOrder,
     get_deltas: impl Fn(&GlyphName) -> Vec<GlyphDeltas>,
 ) -> Vec<GlyphVariations> {
-    static_metadata
-        .glyph_order
+    glyph_order
         .iter()
         .enumerate()
         .filter_map(|(gid, gn)| {
@@ -38,26 +43,40 @@ fn make_variations(
         .collect()
 }
 
-impl Work<Context, WorkId, Error> for GvarWork {
-    fn id(&self) -> WorkId {
-        WorkId::Gvar
+impl Work<Context, AnyWorkId, Error> for GvarWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Gvar.into()
+    }
+
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::Custom(Arc::new(|id| {
+            matches!(
+                id,
+                AnyWorkId::Fe(FeWorkId::GlyphOrder) | AnyWorkId::Be(WorkId::GvarFragment(..))
+            )
+        }))
     }
 
     /// Generate [gvar](https://learn.microsoft.com/en-us/typography/opentype/spec/gvar)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // We built the gvar fragments alongside glyphs, now we need to glue them together into a gvar table
-        let static_metadata = context.ir.get_final_static_metadata();
+        let glyph_order = context.ir.glyph_order.get();
 
-        let variations: Vec<_> = make_variations(&static_metadata, |gid| {
-            context.get_gvar_fragment(gid).to_deltas()
+        let variations: Vec<_> = make_variations(&glyph_order, |glyph_name| {
+            context
+                .gvar_fragments
+                .get(&WorkId::GvarFragment(glyph_name.clone()).into())
+                .to_deltas()
         });
         let gvar = Gvar::new(variations).map_err(Error::GvarError)?;
 
-        let raw_gvar = Bytes::new(dump_table(&gvar).map_err(|e| Error::DumpTableError {
-            e,
-            context: "gvar".into(),
-        })?);
-        context.set_gvar(raw_gvar);
+        let raw_gvar = dump_table(&gvar)
+            .map_err(|e| Error::DumpTableError {
+                e,
+                context: "gvar".into(),
+            })?
+            .into();
+        context.gvar.set_unconditionally(raw_gvar);
 
         Ok(())
     }
@@ -66,34 +85,20 @@ impl Work<Context, WorkId, Error> for GvarWork {
 #[cfg(test)]
 mod tests {
     use font_types::F2Dot14;
-    use fontdrasil::types::GlyphName;
-    use fontir::ir::StaticMetadata;
-    use indexmap::IndexSet;
+    use fontir::ir::GlyphOrder;
     use write_fonts::tables::{gvar::GlyphDeltas, variations::Tuple};
 
-    use crate::test_util::axis;
-
     use super::make_variations;
-
-    fn create_static_metadata(glyph_order: &[&str]) -> StaticMetadata {
-        StaticMetadata::new(
-            1000,
-            Default::default(),
-            [axis(400.0, 400.0, 700.0)].to_vec(),
-            Default::default(),
-            IndexSet::from_iter(glyph_order.iter().map(|n| GlyphName::from(*n))),
-            Default::default(),
-        )
-        .unwrap()
-    }
 
     #[test]
     fn skips_empty_variations() {
         let glyph_with_var = "has_var";
         let glyph_without_var = "no_var";
-        let static_metadata = create_static_metadata(&[glyph_with_var, glyph_without_var]);
+        let mut glyph_order = GlyphOrder::new();
+        glyph_order.insert(glyph_with_var.into());
+        glyph_order.insert(glyph_without_var.into());
 
-        let variations = make_variations(&static_metadata, |name| {
+        let variations = make_variations(&glyph_order, |name| {
             match name.as_str() {
                 v if v == glyph_without_var => Vec::new(),
                 // At the maximum extent (normalized pos 1.0) of our axis, add +1, +1

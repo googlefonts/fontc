@@ -3,9 +3,10 @@
 use crate::{
     coords::{CoordConverter, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
     error::{PathConversionError, VariationModelError, WorkError},
+    orchestration::{IdAware, Persistable, WorkId},
     serde::{
-        GlobalMetricsSerdeRepr, GlyphSerdeRepr, KerningSerdeRepr, MiscSerdeRepr,
-        StaticMetadataSerdeRepr,
+        GlobalMetricsSerdeRepr, GlyphOrderSerdeRepr, GlyphSerdeRepr, KerningSerdeRepr,
+        MiscSerdeRepr, StaticMetadataSerdeRepr,
     },
     variations::VariationModel,
 };
@@ -15,12 +16,13 @@ use font_types::Tag;
 use fontdrasil::types::{GlyphName, GroupName};
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
-use log::{trace, warn};
+use log::warn;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{hash_map::RandomState, BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Debug,
+    io::Read,
     path::PathBuf,
 };
 use write_fonts::tables::os2::SelectionFlags;
@@ -48,11 +50,6 @@ pub struct StaticMetadata {
 
     /// Named locations in variation space
     pub named_instances: Vec<NamedInstance>,
-
-    /// The name of every glyph, in the order it will be emitted
-    ///
-    /// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
-    pub glyph_order: IndexSet<GlyphName>,
 
     /// A model of how variation space is split into regions that have deltas.
     ///
@@ -98,6 +95,75 @@ pub struct MiscMetadata {
     pub created: Option<DateTime<Utc>>,
 }
 
+/// The name of every glyph, in the order it will be emitted
+///
+/// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[serde(from = "GlyphOrderSerdeRepr", into = "GlyphOrderSerdeRepr")]
+pub struct GlyphOrder(IndexSet<GlyphName>);
+
+impl Extend<GlyphName> for GlyphOrder {
+    fn extend<T: IntoIterator<Item = GlyphName>>(&mut self, iter: T) {
+        self.0.extend(iter)
+    }
+}
+
+impl FromIterator<GlyphName> for GlyphOrder {
+    fn from_iter<T: IntoIterator<Item = GlyphName>>(iter: T) -> Self {
+        GlyphOrder(iter.into_iter().collect::<IndexSet<_>>())
+    }
+}
+
+impl GlyphOrder {
+    pub fn new() -> Self {
+        GlyphOrder(IndexSet::new())
+    }
+
+    pub fn glyph_id(&self, name: &GlyphName) -> Option<u32> {
+        self.0.get_index_of(name).map(|i| i as u32)
+    }
+
+    pub fn glyph_name(&self, index: usize) -> Option<&GlyphName> {
+        self.0.get_index(index)
+    }
+
+    pub fn contains(&self, name: &GlyphName) -> bool {
+        self.0.contains(name)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &GlyphName> {
+        self.0.iter()
+    }
+
+    pub fn difference<'a>(
+        &'a self,
+        other: &'a GlyphOrder,
+    ) -> indexmap::set::Difference<'a, GlyphName, RandomState> {
+        self.0.difference(&other.0)
+    }
+
+    pub fn insert(&mut self, name: GlyphName) -> bool {
+        self.0.insert(name)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl IntoIterator for GlyphOrder {
+    type Item = GlyphName;
+    type IntoIter = <IndexSet<GlyphName> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 /// In logical (reading) order
 type KernPair = (KernParticipant, KernParticipant);
 type KernValues = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
@@ -136,7 +202,6 @@ impl StaticMetadata {
         names: HashMap<NameKey, String>,
         axes: Vec<Axis>,
         named_instances: Vec<NamedInstance>,
-        mut glyph_order: IndexSet<GlyphName>,
         glyph_locations: HashSet<NormalizedLocation>,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
@@ -169,22 +234,12 @@ impl StaticMetadata {
             .map(|a| (a.tag, NormalizedCoord::new(0.0)))
             .collect();
 
-        // cmap has strong beliefs wrt .notdef coming first
-        let notdef: GlyphName = ".notdef".into();
-        if let Some(idx) = glyph_order.get_index_of(&notdef) {
-            if idx > 0 {
-                trace!("Migrate .notdef from {idx} to 0");
-                glyph_order.move_index(idx, 0);
-            }
-        }
-
         Ok(StaticMetadata {
             units_per_em,
             names: key_to_name,
             axes,
             variable_axes,
             named_instances,
-            glyph_order,
             variation_model,
             axes_default,
             variable_axes_default,
@@ -203,10 +258,6 @@ impl StaticMetadata {
                 created: None,
             },
         })
-    }
-
-    pub fn glyph_id(&self, name: &GlyphName) -> Option<u32> {
-        self.glyph_order.get_index_of(name).map(|i| i as u32)
     }
 
     /// The default on all known axes.
@@ -707,7 +758,7 @@ pub struct NamedInstance {
 ///
 /// In time will split gpos/gsub, have different features for different
 /// locations, etc.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum Features {
     Empty,
     File {
@@ -796,6 +847,72 @@ impl Glyph {
 
     pub fn source_mut(&mut self, loc: &NormalizedLocation) -> Option<&mut GlyphInstance> {
         self.sources.get_mut(loc)
+    }
+}
+
+impl IdAware<WorkId> for Glyph {
+    fn id(&self) -> WorkId {
+        WorkId::Glyph(self.name.clone())
+    }
+}
+
+impl Persistable for Glyph {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
+impl Persistable for StaticMetadata {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
+impl Persistable for GlyphOrder {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
+impl Persistable for GlobalMetrics {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
+impl Persistable for Features {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
+impl Persistable for Kerning {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
     }
 }
 

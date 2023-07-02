@@ -1,6 +1,7 @@
 //! Feature binary compilation.
 
 use std::{
+    collections::HashSet,
     ffi::{OsStr, OsString},
     fmt::Display,
     fs,
@@ -12,16 +13,20 @@ use fea_rs::{
     parse::{SourceLoadError, SourceResolver},
     Compiler, GlyphMap, GlyphName as FeaRsGlyphName,
 };
-use fontir::{ir::Features, orchestration::Flags};
+use fontir::{
+    ir::Features,
+    orchestration::{Flags, WorkId as FeWorkId},
+};
 use log::{debug, error, warn};
 
-use fontdrasil::orchestration::Work;
+use fontdrasil::orchestration::{Access, Work};
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, WorkId},
 };
 
+#[derive(Debug)]
 pub struct FeatureWork {}
 
 // I did not want to make a struct
@@ -111,19 +116,26 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
     };
 }
 
-impl Work<Context, WorkId, Error> for FeatureWork {
-    fn id(&self) -> WorkId {
-        WorkId::Features
+impl Work<Context, AnyWorkId, Error> for FeatureWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Features.into()
     }
 
-    fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::Gpos, WorkId::Gsub]
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::Set(HashSet::from([
+            FeWorkId::Features.into(),
+            FeWorkId::GlyphOrder.into(),
+        ]))
+    }
+
+    fn also_completes(&self) -> Vec<AnyWorkId> {
+        vec![WorkId::Gpos.into(), WorkId::Gsub.into()]
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let features = context.ir.get_features();
+        let features = context.ir.features.get();
         if !matches!(*features, Features::Empty) {
-            let glyph_order = &context.ir.get_final_static_metadata().glyph_order;
+            let glyph_order = &context.ir.glyph_order.get();
             if glyph_order.is_empty() {
                 warn!("Glyph order is empty; feature compile improbable");
             }
@@ -146,17 +158,24 @@ impl Work<Context, WorkId, Error> for FeatureWork {
                 result.gsub.is_some()
             );
             if let Some(gpos) = result.gpos {
-                context.set_gpos(gpos);
+                context.gpos.set_unconditionally(gpos.into());
             }
             if let Some(gsub) = result.gsub {
-                context.set_gsub(gsub);
+                context.gsub.set_unconditionally(gsub.into());
             }
         } else {
             debug!("No fea file, dull compile");
         }
         // Enables the assumption that if the file exists features were compiled
         if context.flags.contains(Flags::EMIT_IR) {
-            fs::write(context.paths.target_file(&WorkId::Features), "1").map_err(Error::IoError)?;
+            fs::write(
+                context
+                    .persistent_storage
+                    .paths
+                    .target_file(&WorkId::Features),
+                "1",
+            )
+            .map_err(Error::IoError)?;
         }
         Ok(())
     }

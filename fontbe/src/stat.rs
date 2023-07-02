@@ -3,24 +3,30 @@
 use std::collections::HashMap;
 
 use font_types::NameId;
-use fontdrasil::orchestration::Work;
+use fontdrasil::orchestration::{Access, Work};
+use fontir::orchestration::WorkId as FeWorkId;
 use log::trace;
 use write_fonts::tables::stat::{AxisRecord, Stat};
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, WorkId},
 };
 
+#[derive(Debug)]
 struct StatWork {}
 
 pub fn create_stat_work() -> Box<BeWork> {
     Box::new(StatWork {})
 }
 
-impl Work<Context, WorkId, Error> for StatWork {
-    fn id(&self) -> WorkId {
-        WorkId::Stat
+impl Work<Context, AnyWorkId, Error> for StatWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Stat.into()
+    }
+
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::One(FeWorkId::StaticMetadata.into())
     }
 
     /// Generate [stat](https://learn.microsoft.com/en-us/typography/opentype/spec/stat)
@@ -28,7 +34,7 @@ impl Work<Context, WorkId, Error> for StatWork {
     /// See <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/builder.py#L2688-L2810>
     /// Note that we support only a very simple STAT at time of writing.
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let static_metadata = context.ir.get_init_static_metadata();
+        let static_metadata = context.ir.static_metadata.get();
 
         // Guard clause: don't produce fvar for a static font
         if static_metadata.variable_axes.is_empty() {
@@ -45,21 +51,24 @@ impl Work<Context, WorkId, Error> for StatWork {
             .map(|(key, name)| (name, key.name_id))
             .collect();
 
-        context.set_stat(Stat {
-            design_axes: static_metadata
-                .variable_axes
-                .iter()
-                .enumerate()
-                .map(|(idx, a)| AxisRecord {
-                    axis_tag: a.tag,
-                    axis_name_id: *reverse_names.get(&a.name).unwrap(),
-                    axis_ordering: idx as u16,
-                })
-                .collect::<Vec<_>>()
-                .into(),
-            elided_fallback_name_id: Some(NameId::SUBFAMILY_NAME),
-            ..Default::default()
-        });
+        context.stat.set_unconditionally(
+            Stat {
+                design_axes: static_metadata
+                    .variable_axes
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, a)| AxisRecord {
+                        axis_tag: a.tag,
+                        axis_name_id: *reverse_names.get(&a.name).unwrap(),
+                        axis_ordering: idx as u16,
+                    })
+                    .collect::<Vec<_>>()
+                    .into(),
+                elided_fallback_name_id: Some(NameId::SUBFAMILY_NAME),
+                ..Default::default()
+            }
+            .into(),
+        );
 
         Ok(())
     }

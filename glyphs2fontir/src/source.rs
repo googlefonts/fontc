@@ -1,12 +1,12 @@
 use chrono::{TimeZone, Utc};
 use font_types::{NameId, Tag};
-use fontdrasil::orchestration::Work;
+use fontdrasil::orchestration::{Access, Work};
 use fontdrasil::types::{GlyphName, GroupName};
 use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
 use fontir::ir::{
-    self, GlobalMetric, GlobalMetrics, GlyphInstance, KernParticipant, Kerning, NameBuilder,
-    NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+    self, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernParticipant, Kerning,
+    NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
 };
 use fontir::orchestration::{Context, IrWork, WorkId};
 use fontir::source::{Input, Source};
@@ -277,6 +277,7 @@ fn names(font: &Font) -> HashMap<NameKey, String> {
     builder.into_inner()
 }
 
+#[derive(Debug)]
 struct StaticMetadataWork {
     font_info: Arc<FontInfo>,
     glyph_names: Arc<HashSet<GlyphName>>,
@@ -284,7 +285,11 @@ struct StaticMetadataWork {
 
 impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
     fn id(&self) -> WorkId {
-        WorkId::InitStaticMetadata
+        WorkId::StaticMetadata
+    }
+
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::PreliminaryGlyphOrder]
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
@@ -321,12 +326,6 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             .iter()
             .map(|m| font_info.locations.get(&m.axes_values).cloned().unwrap())
             .collect();
-        let glyph_order = font
-            .glyph_order
-            .iter()
-            .map(|s| s.into())
-            .filter(|gn| self.glyph_names.contains(gn))
-            .collect();
 
         let selection_flags = match font.use_typo_metrics.unwrap_or_default() {
             true => SelectionFlags::USE_TYPO_METRICS,
@@ -348,7 +347,6 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             names(font),
             axes,
             named_instances,
-            glyph_order,
             glyph_locations,
         )
         .map_err(WorkError::VariationModelError)?;
@@ -376,11 +374,20 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             })
             .or(static_metadata.misc.created);
 
-        context.set_init_static_metadata(static_metadata);
+        context.static_metadata.set(static_metadata);
+
+        let glyph_order = font
+            .glyph_order
+            .iter()
+            .map(|s| s.into())
+            .filter(|gn| self.glyph_names.contains(gn))
+            .collect();
+        context.preliminary_glyph_order.set(glyph_order);
         Ok(())
     }
 }
 
+#[derive(Debug)]
 struct GlobalMetricWork {
     font_info: Arc<FontInfo>,
 }
@@ -388,6 +395,10 @@ struct GlobalMetricWork {
 impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
     fn id(&self) -> WorkId {
         WorkId::GlobalMetrics
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::One(WorkId::StaticMetadata)
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
@@ -401,7 +412,7 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
                 .unwrap_or("<nameless family>")
         );
 
-        let static_metadata = context.get_init_static_metadata();
+        let static_metadata = context.static_metadata.get();
         let mut metrics = GlobalMetrics::new(
             static_metadata.default_location().clone(),
             static_metadata.units_per_em,
@@ -456,11 +467,12 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
             );
         }
 
-        context.set_global_metrics(metrics);
+        context.global_metrics.set(metrics);
         Ok(())
     }
 }
 
+#[derive(Debug)]
 struct FeatureWork {
     font_info: Arc<FontInfo>,
 }
@@ -475,7 +487,7 @@ impl Work<Context, WorkId, WorkError> for FeatureWork {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
-        context.set_features(to_ir_features(&font.features)?);
+        context.features.set(to_ir_features(&font.features)?);
         Ok(())
     }
 }
@@ -506,13 +518,14 @@ fn is_kerning_class(name: &str) -> bool {
     name.starts_with("@MMK_")
 }
 
+#[derive(Debug)]
 struct KerningWork {
     font_info: Arc<FontInfo>,
 }
 
 /// See <https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/kerning.py#L53-L72>
 fn kern_participant(
-    glyph_order: &IndexSet<GlyphName>,
+    glyph_order: &GlyphOrder,
     groups: &HashMap<GlyphName, BTreeSet<GlyphName>>,
     side: KernSide,
     raw_side: &str,
@@ -554,10 +567,14 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
         WorkId::Kerning
     }
 
+    fn read_access(&self) -> Access<WorkId> {
+        Access::One(WorkId::GlyphOrder)
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!("Generate IR for kerning");
-        let static_metadata = context.get_final_static_metadata();
-        let glyph_order = &static_metadata.glyph_order;
+        let arc_glyph_order = context.glyph_order.get();
+        let glyph_order = arc_glyph_order.as_ref();
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
@@ -623,11 +640,12 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
                     .insert(pos, (value as f32).into());
             });
 
-        context.set_kerning(kerning);
+        context.kerning.set(kerning);
         Ok(())
     }
 }
 
+#[derive(Debug)]
 struct GlyphIrWork {
     glyph_name: GlyphName,
     font_info: Arc<FontInfo>,
@@ -654,12 +672,16 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         WorkId::Glyph(self.glyph_name.clone())
     }
 
+    fn read_access(&self) -> Access<WorkId> {
+        Access::One(WorkId::StaticMetadata)
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!("Generate IR for '{}'", self.glyph_name.as_str());
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
-        let static_metadata = context.get_init_static_metadata();
+        let static_metadata = context.static_metadata.get();
         let axes = &static_metadata.axes;
 
         let glyph = font
@@ -731,7 +753,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             check_pos(&self.glyph_name, positions, axis, &max)?;
         }
 
-        context.set_glyph_ir(ir_glyph.try_into()?);
+        context.glyphs.set(ir_glyph.try_into()?);
         Ok(())
     }
 }
@@ -752,7 +774,7 @@ mod tests {
             UserLocation,
         },
         error::WorkError,
-        ir::{self, GlobalMetricsInstance, NameKey},
+        ir::{self, GlobalMetricsInstance, GlyphOrder, NameKey},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Source,
@@ -845,8 +867,13 @@ mod tests {
     #[test]
     fn static_metadata_ir() {
         let (source, context) = context_for(glyphs3_dir().join("WghtVar.glyphs"));
-        let task_context =
-            context.copy_for_work(Access::none(), Access::one(WorkId::InitStaticMetadata));
+        let task_context = context.copy_for_work(
+            Access::none(),
+            Access::Set(HashSet::from([
+                WorkId::StaticMetadata,
+                WorkId::PreliminaryGlyphOrder,
+            ])),
+        );
         source
             .create_static_metadata_work(&context.input)
             .unwrap()
@@ -856,13 +883,14 @@ mod tests {
         assert_eq!(
             vec![Tag::new(b"wght")],
             context
-                .get_init_static_metadata()
+                .static_metadata
+                .get()
                 .axes
                 .iter()
                 .map(|a| a.tag)
                 .collect::<Vec<_>>()
         );
-        let expected: IndexSet<GlyphName> = vec![
+        let expected: GlyphOrder = vec![
             "space",
             "exclam",
             "hyphen",
@@ -873,15 +901,20 @@ mod tests {
         .iter()
         .map(|s| (*s).into())
         .collect();
-        assert_eq!(expected, context.get_init_static_metadata().glyph_order);
+        assert_eq!(expected, *context.preliminary_glyph_order.get());
     }
 
     #[test]
     fn static_metadata_ir_multi_axis() {
         // Caused index out of bounds due to transposed master and value indices
         let (source, context) = context_for(glyphs2_dir().join("BadIndexing.glyphs"));
-        let task_context =
-            context.copy_for_work(Access::none(), Access::one(WorkId::InitStaticMetadata));
+        let task_context = context.copy_for_work(
+            Access::none(),
+            Access::Set(HashSet::from([
+                WorkId::StaticMetadata,
+                WorkId::PreliminaryGlyphOrder,
+            ])),
+        );
         source
             .create_static_metadata_work(&context.input)
             .unwrap()
@@ -892,14 +925,19 @@ mod tests {
     #[test]
     fn loads_axis_mappings_from_glyphs2() {
         let (source, context) = context_for(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
-        let task_context =
-            context.copy_for_work(Access::none(), Access::one(WorkId::InitStaticMetadata));
+        let task_context = context.copy_for_work(
+            Access::none(),
+            Access::Set(HashSet::from([
+                WorkId::StaticMetadata,
+                WorkId::PreliminaryGlyphOrder,
+            ])),
+        );
         source
             .create_static_metadata_work(&context.input)
             .unwrap()
             .exec(&task_context)
             .unwrap();
-        let static_metadata = context.get_init_static_metadata();
+        let static_metadata = context.static_metadata.get();
 
         // Did you load the mappings? DID YOU?!
         assert_eq!(
@@ -947,8 +985,13 @@ mod tests {
     fn build_static_metadata(glyphs_file: PathBuf) -> (impl Source, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
         let (source, context) = context_for(glyphs_file);
-        let task_context =
-            context.copy_for_work(Access::none(), Access::one(WorkId::InitStaticMetadata));
+        let task_context = context.copy_for_work(
+            Access::none(),
+            Access::Set(HashSet::from([
+                WorkId::StaticMetadata,
+                WorkId::PreliminaryGlyphOrder,
+            ])),
+        );
         source
             .create_static_metadata_work(&context.input)
             .unwrap()
@@ -960,7 +1003,7 @@ mod tests {
     fn build_global_metrics(glyphs_file: PathBuf) -> (impl Source, Context) {
         let (source, context) = build_static_metadata(glyphs_file);
         let task_context = context.copy_for_work(
-            Access::one(WorkId::InitStaticMetadata),
+            Access::one(WorkId::StaticMetadata),
             Access::one(WorkId::GlobalMetrics),
         );
         source
@@ -983,7 +1026,7 @@ mod tests {
                 .unwrap();
             for work in work_items.iter() {
                 let task_context = context.copy_for_work(
-                    Access::one(WorkId::InitStaticMetadata),
+                    Access::one(WorkId::StaticMetadata),
                     Access::one(WorkId::Glyph(glyph_name.clone())),
                 );
                 work.exec(&task_context)?;
@@ -999,7 +1042,7 @@ mod tests {
             build_static_metadata(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
         build_glyphs(&source, &context, &[&glyph_name]).unwrap(); // we dont' care about geometry
 
-        let static_metadata = context.get_init_static_metadata();
+        let static_metadata = context.static_metadata.get();
         let axes = static_metadata.axes.iter().map(|a| (a.tag, a)).collect();
 
         let mut expected_locations = HashSet::new();
@@ -1018,7 +1061,8 @@ mod tests {
             expected_locations.insert(loc);
         }
         let actual_locations = context
-            .get_glyph_ir(&glyph_name)
+            .glyphs
+            .get(&WorkId::Glyph(glyph_name))
             .sources()
             .keys()
             .map(|c| c.to_user(&axes))
@@ -1050,7 +1094,8 @@ mod tests {
             expected_locations.insert(loc);
         }
         let actual_locations = context
-            .get_glyph_ir(&glyph_name)
+            .glyphs
+            .get(&WorkId::Glyph(glyph_name))
             .sources()
             .keys()
             .cloned()
@@ -1076,7 +1121,7 @@ mod tests {
     #[test]
     fn read_axis_location() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar_AxisLocation.glyphs"));
-        let wght = &context.get_init_static_metadata().axes;
+        let wght = &context.static_metadata.get().axes;
         assert_eq!(1, wght.len());
         let wght = &wght[0];
 
@@ -1100,7 +1145,7 @@ mod tests {
     fn captures_single_codepoints() {
         let (source, context) = build_static_metadata(glyphs2_dir().join("WghtVar.glyphs"));
         build_glyphs(&source, &context, &[&"hyphen".into()]).unwrap();
-        let glyph = context.get_glyph_ir(&"hyphen".into());
+        let glyph = context.glyphs.get(&WorkId::Glyph("hyphen".into()));
         assert_eq!(HashSet::from([0x002d]), glyph.codepoints);
     }
 
@@ -1109,7 +1154,7 @@ mod tests {
         let (source, context) =
             build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDec.glyphs"));
         build_glyphs(&source, &context, &[&"name".into()]).unwrap();
-        let glyph = context.get_glyph_ir(&"name".into());
+        let glyph = context.glyphs.get(&WorkId::Glyph("name".into()));
         assert_eq!(HashSet::from([182]), glyph.codepoints);
     }
 
@@ -1118,7 +1163,7 @@ mod tests {
         let (source, context) =
             build_static_metadata(glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs"));
         build_glyphs(&source, &context, &[&"name".into()]).unwrap();
-        let glyph = context.get_glyph_ir(&"name".into());
+        let glyph = context.glyphs.get(&WorkId::Glyph("name".into()));
         assert_eq!(HashSet::from([1619, 1764]), glyph.codepoints);
     }
 
@@ -1126,7 +1171,7 @@ mod tests {
     #[test]
     fn loads_minimal() {
         let (_, context) = build_static_metadata(glyphs2_dir().join("NotDef.glyphs"));
-        assert_eq!(1000, context.get_init_static_metadata().units_per_em);
+        assert_eq!(1000, context.static_metadata.get().units_per_em);
     }
 
     #[test]
@@ -1246,9 +1291,10 @@ mod tests {
     #[test]
     fn captures_global_metrics() {
         let (_, context) = build_global_metrics(glyphs3_dir().join("WghtVar.glyphs"));
-        let static_metadata = &context.get_init_static_metadata();
+        let static_metadata = &context.static_metadata.get();
         let default_metrics = context
-            .get_global_metrics()
+            .global_metrics
+            .get()
             .at(static_metadata.default_location());
         assert_eq!(
             GlobalMetricsInstance {
@@ -1285,14 +1331,14 @@ mod tests {
         let (_, context) = build_static_metadata(glyphs3_dir().join("TheBestNames.glyphs"));
         assert_eq!(
             Tag::new(b"RODS"),
-            context.get_init_static_metadata().misc.vendor_id
+            context.static_metadata.get().misc.vendor_id
         );
     }
 
     #[test]
     fn default_underline_settings() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("Oswald-O.glyphs"));
-        let static_metadata = context.get_init_static_metadata();
+        let static_metadata = context.static_metadata.get();
         assert_eq!(
             (1000, 50.0, -100.0),
             (
