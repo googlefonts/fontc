@@ -229,6 +229,10 @@ impl Work<Context, WorkId, Error> for GlyphWork {
         WorkId::GlyfFragment(self.glyph_name.clone())
     }
 
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::GvarFragment(self.glyph_name.clone())]
+    }
+
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("BE glyph work for '{}'", self.glyph_name);
 
@@ -698,6 +702,10 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
 impl Work<Context, WorkId, Error> for GlyfLocaWork {
     fn id(&self) -> WorkId {
         WorkId::Glyf
+    }
+
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::Loca, WorkId::LocaFormat]
     }
 
     /// Generate [glyf](https://learn.microsoft.com/en-us/typography/opentype/spec/glyf)

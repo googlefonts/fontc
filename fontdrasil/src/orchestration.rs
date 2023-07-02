@@ -35,6 +35,17 @@ pub enum Access<I> {
 pub trait Work<C, I, E> {
     /// The identifier for this work
     fn id(&self) -> I;
+
+    /// The identifier(s) for any work beyond ourself that is completed when this work completes.
+    ///
+    /// By default an empty vector, indicating only our own id completes.
+    ///
+    /// For example, Glyf work might write Loca at the same time and would then
+    /// return the id for Loca here.
+    fn also_completes(&self) -> Vec<I> {
+        Vec::new()
+    }
+
     fn exec(&self, context: &C) -> Result<(), E>;
 }
 

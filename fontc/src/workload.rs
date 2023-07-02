@@ -20,6 +20,9 @@ pub struct Workload {
     job_count: usize,
     success: HashSet<AnyWorkId>,
     error: Vec<(AnyWorkId, String)>,
+
+    // When K completes also mark all entries in V complete
+    also_completes: HashMap<AnyWorkId, Vec<AnyWorkId>>,
     pub(crate) jobs_pending: HashMap<AnyWorkId, Job>,
 }
 
@@ -46,6 +49,10 @@ impl Workload {
     }
 
     pub(crate) fn insert(&mut self, id: AnyWorkId, job: Job) {
+        let also_completes = job.work.also_completes();
+        if !also_completes.is_empty() {
+            self.also_completes.insert(id.clone(), also_completes);
+        }
         self.jobs_pending.insert(id, job);
         self.job_count += 1;
     }
@@ -63,8 +70,20 @@ impl Workload {
         }
     }
 
+    fn mark_also_completed(&mut self, success: &AnyWorkId) {
+        let Some(also_completed) = self.also_completes.get(success) else { return };
+        for id in also_completed {
+            if self.success.insert(id.clone()) {
+                self.pre_success += 1;
+            }
+        }
+    }
+
     fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId) {
         log::debug!("{success:?} successful");
+
+        self.mark_also_completed(&success);
+
         match success {
             // When a glyph finishes IR, register BE work for it
             AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) => {
@@ -102,28 +121,6 @@ impl Workload {
                 }
             }
 
-            // Features handles GSUB/POS
-            AnyWorkId::Be(BeWorkIdentifier::Features) => {
-                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Gpos));
-                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Gsub));
-            }
-
-            // GlyfFragment carries GvarFragment along for the ride
-            AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name)) => {
-                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::GvarFragment(glyph_name)));
-            }
-
-            // Glyf carries Loca along for the ride
-            AnyWorkId::Be(BeWorkIdentifier::Glyf) => {
-                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Loca));
-                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::LocaFormat));
-            }
-
-            // Hmtx, hhea, and maxp are done together as metrics and limits
-            AnyWorkId::Be(BeWorkIdentifier::Hmtx) => {
-                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Hhea));
-                self.mark_success(AnyWorkId::Be(BeWorkIdentifier::Maxp));
-            }
             _ => (),
         }
     }
