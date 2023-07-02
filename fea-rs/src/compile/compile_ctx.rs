@@ -1266,7 +1266,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn resolve_base(&mut self, table: &typed::BaseTable) {
-        let mut base = super::tables::Base::default();
+        let mut base = super::tables::BaseBuilder::default();
         if let Some(list) = table.horiz_base_tag_list() {
             base.horiz_tag_list = list.tags().map(|t| t.to_raw()).collect();
         }
