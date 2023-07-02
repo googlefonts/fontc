@@ -26,7 +26,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context},
+    orchestration::{BeWork, Context, WorkId},
 };
 
 /// Used to build a bitfield.
@@ -777,7 +777,11 @@ fn codepoints(context: &Context) -> HashSet<u32> {
     codepoints
 }
 
-impl Work<Context, Error> for Os2Work {
+impl Work<Context, WorkId, Error> for Os2Work {
+    fn id(&self) -> WorkId {
+        WorkId::Os2
+    }
+
     /// Generate [OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.get_final_static_metadata();

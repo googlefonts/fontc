@@ -6,7 +6,7 @@ use write_fonts::tables::cmap::Cmap;
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context},
+    orchestration::{BeWork, Context, WorkId},
 };
 
 struct CmapWork {}
@@ -15,7 +15,11 @@ pub fn create_cmap_work() -> Box<BeWork> {
     Box::new(CmapWork {})
 }
 
-impl Work<Context, Error> for CmapWork {
+impl Work<Context, WorkId, Error> for CmapWork {
+    fn id(&self) -> WorkId {
+        WorkId::Cmap
+    }
+
     /// Generate [cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // cmap only accomodates single codepoint : glyph mappings; collect all of those

@@ -29,8 +29,12 @@ pub enum Access<I> {
 /// Naively you'd think we'd just return FnOnce + Send but that didn't want to compile
 /// See <https://github.com/rust-lang/rust/issues/29625>.
 ///
-/// Data produced by work is written into a Context (type parameter C).
-pub trait Work<C, E> {
+/// Data produced by work is written into a Context (type parameter C). The identifier
+/// type for work, I, is used to identify the task itself as well as the slots this work
+/// might wish to access in the Context.
+pub trait Work<C, I, E> {
+    /// The identifier for this work
+    fn id(&self) -> I;
     fn exec(&self, context: &C) -> Result<(), E>;
 }
 

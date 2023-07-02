@@ -273,7 +273,7 @@ fn loca_format_to_bytes(format: &LocaFormat) -> Vec<u8> {
     vec![*format as u8]
 }
 
-pub type BeWork = dyn Work<Context, Error> + Send;
+pub type BeWork = dyn Work<Context, WorkId, Error> + Send;
 pub struct GlyfLoca {
     pub glyf: Vec<u8>,
     pub raw_loca: Vec<u8>,

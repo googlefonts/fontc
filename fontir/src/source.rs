@@ -1,6 +1,6 @@
 //! Generic model of font sources.
 
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{collections::HashMap, fs};
 
 use indexmap::IndexSet;
 use log::debug;
@@ -10,26 +10,31 @@ use fontdrasil::{orchestration::Work, types::GlyphName};
 
 use crate::{
     error::{Error, WorkError},
-    orchestration::{Context, IrWork},
+    orchestration::{Context, IrWork, WorkId},
     stateset::StateSet,
 };
 
 /// Destroy a file, such as the IR for a deleted glyph
 pub struct DeleteWork {
-    path: PathBuf,
+    glyph_name: GlyphName,
 }
 
 impl DeleteWork {
-    pub fn create(path: PathBuf) -> Box<IrWork> {
-        Box::new(DeleteWork { path })
+    pub fn create(glyph_name: GlyphName) -> Box<IrWork> {
+        Box::new(DeleteWork { glyph_name })
     }
 }
 
-impl Work<Context, WorkError> for DeleteWork {
-    fn exec(&self, _: &Context) -> Result<(), WorkError> {
-        debug!("Delete {:#?}", self.path);
-        if self.path.exists() {
-            fs::remove_file(&self.path).map_err(WorkError::IoError)?
+impl Work<Context, WorkId, WorkError> for DeleteWork {
+    fn id(&self) -> WorkId {
+        WorkId::GlyphIrDelete(self.glyph_name.clone())
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        let path = context.paths.target_file(&self.id());
+        debug!("Delete {:#?}", path);
+        if path.exists() {
+            fs::remove_file(&path).map_err(WorkError::IoError)?
         }
         Ok(())
     }

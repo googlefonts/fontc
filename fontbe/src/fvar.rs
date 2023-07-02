@@ -10,7 +10,7 @@ use write_fonts::tables::fvar::{AxisInstanceArrays, Fvar, InstanceRecord, Variat
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context},
+    orchestration::{BeWork, Context, WorkId},
 };
 
 const HIDDEN_AXIS: u16 = 0x0001;
@@ -81,7 +81,11 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
     Some(Fvar::new(axes_and_instances))
 }
 
-impl Work<Context, Error> for FvarWork {
+impl Work<Context, WorkId, Error> for FvarWork {
+    fn id(&self) -> WorkId {
+        WorkId::Fvar
+    }
+
     /// Generate [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         if let Some(fvar) = generate_fvar(&context.ir.get_init_static_metadata()) {

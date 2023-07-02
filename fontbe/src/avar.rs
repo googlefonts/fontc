@@ -11,7 +11,7 @@ use write_fonts::tables::avar::{Avar, AxisValueMap, SegmentMaps};
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context},
+    orchestration::{BeWork, Context, WorkId},
 };
 
 struct AvarWork {}
@@ -58,7 +58,11 @@ fn to_segment_map(axis: &Axis) -> SegmentMaps {
     SegmentMaps::new(mappings)
 }
 
-impl Work<Context, Error> for AvarWork {
+impl Work<Context, WorkId, Error> for AvarWork {
+    fn id(&self) -> WorkId {
+        WorkId::Avar
+    }
+
     /// Generate [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar)
     ///
     /// See also <https://learn.microsoft.com/en-us/typography/opentype/spec/otvaroverview#CSN>

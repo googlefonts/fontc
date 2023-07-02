@@ -9,7 +9,7 @@ use write_fonts::tables::stat::{AxisRecord, Stat};
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context},
+    orchestration::{BeWork, Context, WorkId},
 };
 
 struct StatWork {}
@@ -18,7 +18,11 @@ pub fn create_stat_work() -> Box<BeWork> {
     Box::new(StatWork {})
 }
 
-impl Work<Context, Error> for StatWork {
+impl Work<Context, WorkId, Error> for StatWork {
+    fn id(&self) -> WorkId {
+        WorkId::Stat
+    }
+
     /// Generate [stat](https://learn.microsoft.com/en-us/typography/opentype/spec/stat)
     ///
     /// See <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/builder.py#L2688-L2810>

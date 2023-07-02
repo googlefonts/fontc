@@ -23,7 +23,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Bytes, Context, Glyph},
+    orchestration::{BeWork, Bytes, Context, Glyph, WorkId},
 };
 
 struct MetricAndLimitWork {}
@@ -191,7 +191,11 @@ impl FontLimits {
     }
 }
 
-impl Work<Context, Error> for MetricAndLimitWork {
+impl Work<Context, WorkId, Error> for MetricAndLimitWork {
+    fn id(&self) -> WorkId {
+        WorkId::Hmtx
+    }
+
     /// Generate:
     ///
     /// * [hmtx](https://learn.microsoft.com/en-us/typography/opentype/spec/hmtx)

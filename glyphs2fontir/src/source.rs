@@ -8,7 +8,7 @@ use fontir::ir::{
     self, GlobalMetric, GlobalMetrics, GlyphInstance, KernParticipant, Kerning, NameBuilder,
     NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
 };
-use fontir::orchestration::{Context, IrWork};
+use fontir::orchestration::{Context, IrWork, WorkId};
 use fontir::source::{Input, Source};
 use fontir::stateset::StateSet;
 use glyphs_reader::{Font, InstanceType};
@@ -282,7 +282,11 @@ struct StaticMetadataWork {
     glyph_names: Arc<HashSet<GlyphName>>,
 }
 
-impl Work<Context, WorkError> for StaticMetadataWork {
+impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
+    fn id(&self) -> WorkId {
+        WorkId::InitStaticMetadata
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
@@ -381,7 +385,11 @@ struct GlobalMetricWork {
     font_info: Arc<FontInfo>,
 }
 
-impl Work<Context, WorkError> for GlobalMetricWork {
+impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
+    fn id(&self) -> WorkId {
+        WorkId::GlobalMetrics
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
@@ -457,7 +465,11 @@ struct FeatureWork {
     font_info: Arc<FontInfo>,
 }
 
-impl Work<Context, WorkError> for FeatureWork {
+impl Work<Context, WorkId, WorkError> for FeatureWork {
+    fn id(&self) -> WorkId {
+        WorkId::Features
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!("Generate features");
         let font_info = self.font_info.as_ref();
@@ -537,7 +549,11 @@ fn kern_participant(
     }
 }
 
-impl Work<Context, WorkError> for KerningWork {
+impl Work<Context, WorkId, WorkError> for KerningWork {
+    fn id(&self) -> WorkId {
+        WorkId::Kerning
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!("Generate IR for kerning");
         let static_metadata = context.get_final_static_metadata();
@@ -633,7 +649,11 @@ fn check_pos(
     Ok(())
 }
 
-impl Work<Context, WorkError> for GlyphIrWork {
+impl Work<Context, WorkId, WorkError> for GlyphIrWork {
+    fn id(&self) -> WorkId {
+        WorkId::Glyph(self.glyph_name.clone())
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!("Generate IR for '{}'", self.glyph_name.as_str());
         let font_info = self.font_info.as_ref();

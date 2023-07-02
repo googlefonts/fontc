@@ -18,7 +18,7 @@ use fontir::{
         Features, GlobalMetric, GlobalMetrics, KernParticipant, Kerning, NameBuilder, NameKey,
         NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
     },
-    orchestration::{Context, IrWork},
+    orchestration::{Context, IrWork, WorkId},
     source::{Input, Source},
     stateset::{StateIdentifier, StateSet},
 };
@@ -657,7 +657,11 @@ fn try_parse_date(raw_date: Option<&String>) -> Option<DateTime<Utc>> {
     parse_result.ok()
 }
 
-impl Work<Context, WorkError> for StaticMetadataWork {
+impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
+    fn id(&self) -> WorkId {
+        WorkId::InitStaticMetadata
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Static metadata for {:#?}", self.designspace_file);
         let designspace_dir = self.designspace_file.parent().unwrap();
@@ -776,7 +780,11 @@ fn is_glyph_only(source: &norad::designspace::Source) -> bool {
     source.layer.is_some()
 }
 
-impl Work<Context, WorkError> for GlobalMetricsWork {
+impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
+    fn id(&self) -> WorkId {
+        WorkId::GlobalMetrics
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Global metrics for {:#?}", self.designspace_file);
         let static_metadata = context.get_init_static_metadata();
@@ -867,7 +875,11 @@ impl Work<Context, WorkError> for GlobalMetricsWork {
     }
 }
 
-impl Work<Context, WorkError> for FeatureWork {
+impl Work<Context, WorkId, WorkError> for FeatureWork {
+    fn id(&self) -> WorkId {
+        WorkId::Features
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Features for {:#?}", self.designspace_file);
 
@@ -957,7 +969,11 @@ impl KernSide {
     }
 }
 
-impl Work<Context, WorkError> for KerningWork {
+impl Work<Context, WorkId, WorkError> for KerningWork {
+    fn id(&self) -> WorkId {
+        WorkId::Kerning
+    }
+
     /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         debug!("Kerning for {:#?}", self.designspace_file);
@@ -1089,7 +1105,11 @@ struct GlyphIrWork {
     glif_files: HashMap<PathBuf, Vec<DesignLocation>>,
 }
 
-impl Work<Context, WorkError> for GlyphIrWork {
+impl Work<Context, WorkId, WorkError> for GlyphIrWork {
+    fn id(&self) -> WorkId {
+        WorkId::Glyph(self.glyph_name.clone())
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!(
             "Generate glyph IR for {:?} from {:#?}",

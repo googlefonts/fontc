@@ -16,7 +16,7 @@ use crate::{
     coords::NormalizedLocation,
     error::WorkError,
     ir::{Component, Glyph, GlyphBuilder},
-    orchestration::{Context, Flags, IrWork},
+    orchestration::{Context, Flags, IrWork, WorkId},
 };
 
 pub fn create_finalize_static_metadata_work() -> Box<IrWork> {
@@ -355,7 +355,11 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), WorkError> {
     Ok(())
 }
 
-impl Work<Context, WorkError> for FinalizeStaticMetadataWork {
+impl Work<Context, WorkId, WorkError> for FinalizeStaticMetadataWork {
+    fn id(&self) -> WorkId {
+        WorkId::FinalizeStaticMetadata
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         // We should now have access to *all* the glyph IR
         // Some of it may need to be massaged to produce BE glyphs
