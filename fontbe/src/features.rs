@@ -116,6 +116,10 @@ impl Work<Context, WorkId, Error> for FeatureWork {
         WorkId::Features
     }
 
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::Gpos, WorkId::Gsub]
+    }
+
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let features = context.ir.get_features();
         if !matches!(*features, Features::Empty) {

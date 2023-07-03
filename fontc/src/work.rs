@@ -60,6 +60,21 @@ impl From<Box<BeWork>> for AnyWork {
 }
 
 impl AnyWork {
+    pub fn also_completes(&self) -> Vec<AnyWorkId> {
+        match self {
+            AnyWork::Be(work) => work
+                .also_completes()
+                .into_iter()
+                .map(|id| id.into())
+                .collect(),
+            AnyWork::Fe(work) => work
+                .also_completes()
+                .into_iter()
+                .map(|id| id.into())
+                .collect(),
+        }
+    }
+
     pub fn exec(&self, context: AnyContext) -> Result<(), AnyWorkError> {
         match self {
             AnyWork::Be(work) => work.exec(context.unwrap_be()).map_err(|e| e.into()),

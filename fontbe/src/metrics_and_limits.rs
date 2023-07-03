@@ -196,6 +196,10 @@ impl Work<Context, WorkId, Error> for MetricAndLimitWork {
         WorkId::Hmtx
     }
 
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::Hhea, WorkId::Maxp]
+    }
+
     /// Generate:
     ///
     /// * [hmtx](https://learn.microsoft.com/en-us/typography/opentype/spec/hmtx)
