@@ -26,6 +26,7 @@ thiserror = "1.0.37"
 clap = { version = "4.0.32", features = ["derive"] }
 log = "0.4"
 env_logger = "0.10.0"
+indexmap = "2.0"
 
 [features]
 test = ["diff", "rayon", "serde", "serde_json"]

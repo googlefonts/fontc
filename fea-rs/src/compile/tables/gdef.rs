@@ -8,7 +8,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use write_fonts::tables::variations::VariationRegion;
 use write_fonts::types::GlyphId;
 
 use write_fonts::tables::{
@@ -19,6 +18,7 @@ use write_fonts::tables::{
     layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
 };
 
+use super::{VariationIndexRemapping, VariationStoreBuilder};
 use crate::common::GlyphClass;
 
 #[derive(Clone, Debug, Default)]
@@ -40,27 +40,6 @@ pub enum ClassId {
     Component = 4,
 }
 
-/// placeholder for type that will build the gdef item variation store if needed?
-///
-/// this probably ends up living in write-fonts
-#[derive(Clone, Debug, Default)]
-pub(crate) struct VariationStoreBuilder {
-    // FIXME write some code?
-}
-
-/// A key that identifies a particular deltaset in an ItemVariationStore.
-///
-/// This corresponds to the outer/inner mapping used to identify deltas.
-/// While constructing a variation store we assign a temporary key to inserted
-/// deltas; these are reordered when the store is built, at which point any
-/// items that reference the store will need to be remapped from their temporary
-/// key to their final one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct DeltaKey {
-    pub outer: u16,
-    pub inner: u16,
-}
-
 impl From<ClassId> for GlyphClassDef {
     fn from(src: ClassId) -> GlyphClassDef {
         match src {
@@ -73,7 +52,7 @@ impl From<ClassId> for GlyphClassDef {
 }
 
 impl GdefBuilder {
-    pub fn build(&self) -> tables::gdef::Gdef {
+    pub fn build(&self) -> (tables::gdef::Gdef, Option<VariationIndexRemapping>) {
         let mut table = tables::gdef::Gdef::new(
             self.build_class_def(),
             self.build_attach_list(),
@@ -82,7 +61,13 @@ impl GdefBuilder {
         );
 
         table.mark_glyph_sets_def = self.build_mark_glyph_sets().into();
-        table
+        if let Some((var_store, key_map)) = self.var_store.clone().map(VariationStoreBuilder::build)
+        {
+            table.item_var_store.set(var_store);
+            (table, Some(key_map))
+        } else {
+            (table, None)
+        }
     }
 
     fn build_class_def(&self) -> Option<ClassDef> {
@@ -158,21 +143,6 @@ impl GdefBuilder {
             && self.ligature_pos.is_empty()
             && self.mark_attach_class.is_empty()
             && self.mark_glyph_sets.is_empty()
-    }
-}
-
-impl DeltaKey {
-    #[allow(dead_code)]
-    pub const NO_DELTAS: DeltaKey = DeltaKey {
-        outer: 0xFFFF,
-        inner: 0xFFFF,
-    };
-}
-
-impl VariationStoreBuilder {
-    pub(crate) fn add_deltas(&mut self, _deltas: Vec<(VariationRegion, i16)>) -> DeltaKey {
-        //FIXME: write some code
-        DeltaKey { outer: 0, inner: 0 }
     }
 }
 

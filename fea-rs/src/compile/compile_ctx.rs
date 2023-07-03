@@ -176,6 +176,18 @@ impl<'a> CompilationCtx<'a> {
             .stat
             .as_ref()
             .map(|raw| raw.build(&mut name_builder));
+
+        let (gdef, key_map) = match self.tables.gdef.as_ref().map(|raw| raw.build()) {
+            Some((gdef, key_map)) => (Some(gdef), key_map),
+            None => (None, None),
+        };
+        // all VariationIndex tables (in value records and anchors) currently
+        // have temporary indices; now that we've built the ItemVariationStore
+        // we need to go and update them all.
+        if let Some(_key_map) = key_map {
+            log::error!("TODO: go and remap VariationIndex values");
+        }
+
         let (mut gsub, mut gpos) = self.lookups.build(&self.features);
 
         let feature_params = self.features.build_feature_params(&mut name_builder);
@@ -212,7 +224,7 @@ impl<'a> CompilationCtx<'a> {
             hhea: self.tables.hhea.clone(),
             vhea: self.tables.vhea.clone(),
             os2: self.tables.os2.as_ref().map(|raw| raw.build()),
-            gdef: self.tables.gdef.as_ref().map(|raw| raw.build()),
+            gdef,
             base: self.tables.base.as_ref().map(|raw| raw.build()),
             name: name_builder.build(),
             stat,
@@ -1045,14 +1057,15 @@ impl<'a> CompilationCtx<'a> {
         }
 
         if let Some(adv) = record.advance() {
-            let Some(adv) = adv.parse_simple() else {
-                self.error(adv.range(), "variable metrics not yet supported");
-                return Default::default();
-            };
+            let (adv, var_idx) = self.resolve_metric(&adv);
             if self.vertical_feature.in_eligible_vertical_feature() {
-                return ValueRecord::new().with_y_advance(adv);
+                return ValueRecord::new()
+                    .with_y_advance(adv)
+                    .with_device(var_idx, ValueFormat::Y_ADVANCE_DEVICE);
             } else {
-                return ValueRecord::new().with_x_advance(adv);
+                return ValueRecord::new()
+                    .with_x_advance(adv)
+                    .with_device(var_idx, ValueFormat::X_ADVANCE_DEVICE);
             }
         }
 
@@ -1061,18 +1074,32 @@ impl<'a> CompilationCtx<'a> {
             return Default::default();
         };
 
-        let (x_place, _x_place_dev) = self.resolve_metric(&x_place);
-        let (y_place, _y_place_dev) = self.resolve_metric(&y_place);
-        let (x_adv, _x_adv_dev) = self.resolve_metric(&x_adv);
-        let (y_adv, _y_adv_dev) = self.resolve_metric(&y_adv);
+        let (x_place, x_place_var) = self.resolve_metric(&x_place);
+        let (y_place, y_place_var) = self.resolve_metric(&y_place);
+        let (x_adv, x_adv_var) = self.resolve_metric(&x_adv);
+        let (y_adv, y_adv_var) = self.resolve_metric(&y_adv);
 
         let result = ValueRecord::new()
             .with_x_placement(x_place)
             .with_y_placement(y_place)
             .with_x_advance(x_adv)
-            .with_y_advance(y_adv);
+            .with_y_advance(y_adv)
+            .with_device(x_place_var, ValueFormat::X_PLACEMENT_DEVICE)
+            .with_device(y_place_var, ValueFormat::Y_PLACEMENT_DEVICE)
+            .with_device(x_adv_var, ValueFormat::X_ADVANCE_DEVICE)
+            .with_device(y_adv_var, ValueFormat::Y_ADVANCE_DEVICE);
 
         if let Some([x_place_dev, y_place_dev, x_adv_dev, y_adv_dev]) = record.device() {
+            // if we have an explicit device we must not also be variable
+            debug_assert!(
+                !result.format().intersects(
+                    ValueFormat::X_PLACEMENT_DEVICE
+                        | ValueFormat::Y_PLACEMENT_DEVICE
+                        | ValueFormat::X_ADVANCE_DEVICE
+                        | ValueFormat::Y_ADVANCE_DEVICE
+                ),
+                "checked during parsing"
+            );
             return result
                 .with_device(x_place_dev.compile(), ValueFormat::X_PLACEMENT_DEVICE)
                 .with_device(y_place_dev.compile(), ValueFormat::Y_PLACEMENT_DEVICE)

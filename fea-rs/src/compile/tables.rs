@@ -22,12 +22,14 @@ mod gdef;
 mod name;
 mod os2;
 mod stat;
+mod var_store;
 
 pub(crate) use base::{BaseBuilder, ScriptRecord};
-pub(crate) use gdef::{ClassId, GdefBuilder, VariationStoreBuilder};
+pub(crate) use gdef::{ClassId, GdefBuilder};
 pub(crate) use name::{NameBuilder, NameSpec};
 pub(crate) use os2::{CodePageRange, Os2Builder};
 pub(crate) use stat::{AxisLocation, AxisRecord, AxisValue, StatBuilder, StatFallbackName};
+pub(crate) use var_store::{VariationIndexRemapping, VariationStoreBuilder};
 
 /// The explicit tables allowed in a fea file
 #[derive(Clone, Debug, Default)]
