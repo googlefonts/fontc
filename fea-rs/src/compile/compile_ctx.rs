@@ -1063,10 +1063,18 @@ impl<'a> CompilationCtx<'a> {
                 ..Default::default()
             };
             if let Some([x_place_dev, y_place_dev, x_adv_dev, y_adv_dev]) = record.device() {
-                result.x_placement_device.set(x_place_dev.compile());
-                result.y_placement_device.set(y_place_dev.compile());
-                result.x_advance_device.set(x_adv_dev.compile());
-                result.y_advance_device.set(y_adv_dev.compile());
+                if let Some(x_place_dev) = x_place_dev.compile() {
+                    result.x_placement_device.set(x_place_dev);
+                }
+                if let Some(y_place_dev) = y_place_dev.compile() {
+                    result.y_placement_device.set(y_place_dev);
+                }
+                if let Some(x_adv_dev) = x_adv_dev.compile() {
+                    result.x_advance_device.set(x_adv_dev);
+                }
+                if let Some(y_adv_dev) = y_adv_dev.compile() {
+                    result.y_advance_device.set(y_adv_dev);
+                }
             }
             return result;
         }
@@ -1721,8 +1729,8 @@ impl<'a> CompilationCtx<'a> {
             Some(AnchorTable::format_3(
                 x,
                 y,
-                x_coord.compile(),
-                y_coord.compile(),
+                x_coord.compile().map(Into::into),
+                y_coord.compile().map(Into::into),
             ))
         } else {
             Some(AnchorTable::format_1(x, y))
