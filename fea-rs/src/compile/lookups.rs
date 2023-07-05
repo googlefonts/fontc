@@ -351,9 +351,9 @@ impl AllLookups {
         self.current.is_some()
     }
 
-    /// should be called before each new rule.
-    pub(crate) fn needs_new_lookup(&self, kind: Kind) -> bool {
-        self.current.is_none() || self.current.as_ref().map(SomeLookup::kind) != Some(kind)
+    /// Returns `true` if there is an active lookup of this kind
+    pub(crate) fn has_current_kind(&self, kind: Kind) -> bool {
+        self.current.as_ref().map(SomeLookup::kind) == Some(kind)
     }
 
     // `false` if we didn't have an active lookup
@@ -412,6 +412,27 @@ impl AllLookups {
         } else {
             None
         }
+    }
+
+    pub(crate) fn promote_single_sub_to_multi_if_necessary(&mut self) {
+        if !self.has_current_kind(Kind::GsubType1) {
+            return;
+        }
+        let Some(SomeLookup::GsubLookup(SubstitutionLookup::Single(lookup))) = self.current.take() else {
+            unreachable!()
+        };
+        let promoted = LookupBuilder {
+            flags: lookup.flags,
+            mark_set: lookup.mark_set,
+            subtables: lookup
+                .subtables
+                .into_iter()
+                .map(SingleSubBuilder::promote_to_multi_sub)
+                .collect(),
+        };
+        self.current = Some(SomeLookup::GsubLookup(SubstitutionLookup::Multiple(
+            promoted,
+        )));
     }
 
     pub(crate) fn infer_glyph_classes(&self, mut f: impl FnMut(GlyphId, ClassId)) {

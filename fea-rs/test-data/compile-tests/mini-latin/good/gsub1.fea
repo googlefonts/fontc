@@ -18,5 +18,6 @@ feature noos {
 feature nono {
     # technically creates a type-2 lookup: multisub with an empty target sequence
     sub @numbers by NULL;
+    # that means this will also be type-2, since we combine mixed single&multi rules.
     sub @numbers_old_style by question;
 } nono;

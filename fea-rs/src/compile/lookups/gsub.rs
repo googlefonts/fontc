@@ -44,6 +44,16 @@ impl SingleSubBuilder {
     pub(crate) fn iter_pairs(&self) -> impl Iterator<Item = (GlyphId, GlyphId)> + '_ {
         self.items.iter().map(|(target, (alt, _))| (*target, *alt))
     }
+
+    pub(crate) fn promote_to_multi_sub(self) -> MultipleSubBuilder {
+        MultipleSubBuilder {
+            items: self
+                .items
+                .into_iter()
+                .map(|(key, (gid, _))| (key, vec![gid]))
+                .collect(),
+        }
+    }
 }
 
 impl Builder for SingleSubBuilder {

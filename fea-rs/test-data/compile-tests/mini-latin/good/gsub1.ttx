@@ -24,9 +24,8 @@
       <FeatureRecord index="0">
         <FeatureTag value="nono"/>
         <Feature>
-          <!-- LookupCount=2 -->
+          <!-- LookupCount=1 -->
           <LookupListIndex index="0" value="2"/>
-          <LookupListIndex index="1" value="3"/>
         </Feature>
       </FeatureRecord>
       <FeatureRecord index="1">
@@ -45,7 +44,7 @@
       </FeatureRecord>
     </FeatureList>
     <LookupList>
-      <!-- LookupCount=4 -->
+      <!-- LookupCount=3 -->
       <Lookup index="0">
         <LookupType value="1"/>
         <LookupFlag value="0"/>
@@ -74,21 +73,14 @@
         <!-- SubTableCount=1 -->
         <MultipleSubst index="0">
           <Substitution in="four" out=""/>
-          <Substitution in="one" out=""/>
-          <Substitution in="three" out=""/>
-          <Substitution in="two" out=""/>
-        </MultipleSubst>
-      </Lookup>
-      <Lookup index="3">
-        <LookupType value="1"/>
-        <LookupFlag value="0"/>
-        <!-- SubTableCount=1 -->
-        <SingleSubst index="0">
           <Substitution in="four.osf" out="question"/>
+          <Substitution in="one" out=""/>
           <Substitution in="one.osf" out="question"/>
+          <Substitution in="three" out=""/>
           <Substitution in="three.osf" out="question"/>
+          <Substitution in="two" out=""/>
           <Substitution in="two.osf" out="question"/>
-        </SingleSubst>
+        </MultipleSubst>
       </Lookup>
     </LookupList>
   </GSUB>

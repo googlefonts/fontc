@@ -468,7 +468,7 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn ensure_current_lookup_type(&mut self, kind: Kind) -> &mut SomeLookup {
-        if self.lookups.needs_new_lookup(kind) {
+        if !self.lookups.has_current_kind(kind) {
             //FIXME: find another way of ensuring that named lookup blocks don't
             //contain mismatched rules
             //assert!(!self.lookups.is_named(), "ensure rule type in validation");
@@ -514,23 +514,30 @@ impl<'a> CompilationCtx<'a> {
     }
 
     fn add_single_sub(&mut self, node: &typed::Gsub1) {
-        if let Some((target, replacement)) = self.resolve_single_sub_glyphs(node) {
-            if replacement.is_null() {
-                // when the replacement is null, it means we are 'deleting' a glyph
-                // which uses a trick: we represent it as a multiple substitution
-                // rule, with the target sequence being empty.
-                // This is explicitly forbidden in the OpenType spec, and
-                // explicitly encouraged in the FEA spec, and everyone else does it.
-                // see https://github.com/adobe-type-tools/afdko/issues/1438
-                let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
-                for target in target.iter() {
-                    lookup.add_gsub_type_2(target, vec![]);
-                }
-            } else {
-                let lookup = self.ensure_current_lookup_type(Kind::GsubType1);
-                for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
-                    lookup.add_gsub_type_1(target, replacement);
-                }
+        let Some((target, replacement)) = self.resolve_single_sub_glyphs(node) else {
+            return;
+        };
+        if replacement.is_null() {
+            // when the replacement is null, it means we are 'deleting' a glyph
+            // which uses a trick: we represent it as a multiple substitution
+            // rule, with the target sequence being empty.
+            // This is explicitly forbidden in the OpenType spec, and
+            // explicitly encouraged in the FEA spec, and everyone else does it.
+            // see https://github.com/adobe-type-tools/afdko/issues/1438
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
+            for target in target.iter() {
+                lookup.add_gsub_type_2(target, vec![]);
+            }
+        } else if self.lookups.has_current_kind(Kind::GsubType2) {
+            // we combine chains of mixed single & multi-sub rules into multi-sub lookups
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
+            for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
+                lookup.add_gsub_type_2(target, vec![replacement]);
+            }
+        } else {
+            let lookup = self.ensure_current_lookup_type(Kind::GsubType1);
+            for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
+                lookup.add_gsub_type_1(target, replacement);
             }
         }
     }
@@ -580,6 +587,10 @@ impl<'a> CompilationCtx<'a> {
         let target = node.target();
         let target_id = self.resolve_glyph(&target);
         let replacement = node.replacement().map(|g| self.resolve_glyph(&g)).collect();
+        // we combine mixed single/multi-sub rules into a multi-sub lookup.
+        // if this is the first multi-sub rule after a sequence of single-sub rules,
+        // we need to promote the current single-sub lookup before continuing.
+        self.lookups.promote_single_sub_to_multi_if_necessary();
         let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
         lookup.add_gsub_type_2(target_id, replacement);
     }
