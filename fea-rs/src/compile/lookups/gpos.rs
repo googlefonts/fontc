@@ -11,9 +11,9 @@ use write_fonts::{
     types::GlyphId,
 };
 
-use crate::common::GlyphClass;
+use crate::{common::GlyphClass, compile::tables::VariationIndexRemapping};
 
-use super::{Builder, ClassDefBuilder2};
+use super::{Builder, ClassDefBuilder2, VariationIndexContainingLookup};
 
 #[derive(Clone, Debug, Default)]
 pub struct SinglePosBuilder {
@@ -31,6 +31,14 @@ impl SinglePosBuilder {
             .get(&glyph)
             .map(|existing| existing == value)
             .unwrap_or(true)
+    }
+}
+
+impl VariationIndexContainingLookup for SinglePosBuilder {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
+        self.items
+            .values_mut()
+            .for_each(|x| x.remap_variation_indices(key_map))
     }
 }
 
@@ -130,6 +138,23 @@ impl Default for ClassPairPosSubtable {
 
 #[derive(Clone, Debug, Default)]
 struct ClassPairPosBuilder(BTreeMap<(ValueFormat, ValueFormat), Vec<ClassPairPosSubtable>>);
+
+impl VariationIndexContainingLookup for PairPosBuilder {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
+        self.pairs
+            .0
+            .values_mut()
+            .flat_map(|x| x.values_mut())
+            .chain(self.classes.0.values_mut().flat_map(|x| {
+                x.iter_mut()
+                    .flat_map(|x| x.items.values_mut().flat_map(|x| x.values_mut()))
+            }))
+            .for_each(|v| {
+                v.0.remap_variation_indices(key_map);
+                v.1.remap_variation_indices(key_map);
+            });
+    }
+}
 
 impl ClassPairPosBuilder {
     fn insert(
@@ -329,6 +354,21 @@ pub struct CursivePosBuilder {
     items: BTreeMap<GlyphId, write_gpos::EntryExitRecord>,
 }
 
+impl VariationIndexContainingLookup for CursivePosBuilder {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
+        self.items
+            .values_mut()
+            .flat_map(|record| {
+                record
+                    .entry_anchor
+                    .as_mut()
+                    .into_iter()
+                    .chain(record.exit_anchor.as_mut())
+            })
+            .for_each(|anchor| anchor.remap_variation_indices(key_map))
+    }
+}
+
 impl CursivePosBuilder {
     pub fn insert(
         &mut self,
@@ -360,6 +400,14 @@ struct MarkList {
     glyphs: BTreeMap<GlyphId, MarkRecord>,
     // map class names to their idx for this table
     classes: HashMap<SmolStr, u16>,
+}
+
+impl VariationIndexContainingLookup for MarkList {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
+        self.glyphs
+            .values_mut()
+            .for_each(|mark| mark.mark_anchor.remap_variation_indices(key_map))
+    }
 }
 
 impl MarkList {
@@ -419,6 +467,16 @@ impl Builder for MarkList {
 pub struct MarkToBaseBuilder {
     marks: MarkList,
     bases: BTreeMap<GlyphId, Vec<(u16, AnchorTable)>>,
+}
+
+impl VariationIndexContainingLookup for MarkToBaseBuilder {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
+        self.marks.remap_variation_indices(key_map);
+        self.bases
+            .values_mut()
+            .flat_map(|vals| vals.iter_mut().map(|(_, anchor)| anchor))
+            .for_each(|anchor| anchor.remap_variation_indices(key_map))
+    }
 }
 
 /// An error indicating a given glyph is has be
@@ -513,6 +571,16 @@ impl MarkToLigBuilder {
     }
 }
 
+impl VariationIndexContainingLookup for MarkToLigBuilder {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
+        self.marks.remap_variation_indices(key_map);
+        self.ligatures
+            .values_mut()
+            .flat_map(|vals| vals.iter_mut().flat_map(|tree| tree.values_mut()))
+            .for_each(|anchor| anchor.remap_variation_indices(key_map))
+    }
+}
+
 impl Builder for MarkToLigBuilder {
     type Output = Vec<write_gpos::MarkLigPosFormat1>;
 
@@ -580,6 +648,16 @@ impl MarkToMarkBuilder {
 
     pub fn mark2_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.base_marks.keys().copied()
+    }
+}
+
+impl VariationIndexContainingLookup for MarkToMarkBuilder {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
+        self.attaching_marks.remap_variation_indices(key_map);
+        self.base_marks
+            .values_mut()
+            .flat_map(|vals| vals.iter_mut().map(|(_, anchor)| anchor))
+            .for_each(|anchor| anchor.remap_variation_indices(key_map))
     }
 }
 

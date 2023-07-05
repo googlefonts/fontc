@@ -17,10 +17,10 @@ use write_fonts::{
         gpos::{self as write_gpos, AnchorTable, ValueRecord},
         gsub as write_gsub,
         layout::{
-            ConditionSet as RawConditionSet, Feature, FeatureList, FeatureRecord,
-            FeatureTableSubstitution, FeatureTableSubstitutionRecord, FeatureVariationRecord,
-            FeatureVariations, LangSys, LangSysRecord, Lookup as RawLookup, LookupFlag, LookupList,
-            Script, ScriptList, ScriptRecord,
+            ConditionSet as RawConditionSet, DeviceOrVariationIndex, Feature, FeatureList,
+            FeatureRecord, FeatureTableSubstitution, FeatureTableSubstitutionRecord,
+            FeatureVariationRecord, FeatureVariations, LangSys, LangSysRecord, Lookup as RawLookup,
+            LookupFlag, LookupList, Script, ScriptList, ScriptRecord,
         },
     },
     types::Tag,
@@ -32,7 +32,11 @@ use crate::{
     Kind,
 };
 
-use super::{features::AllFeatures, tables::ClassId, tags};
+use super::{
+    features::AllFeatures,
+    tables::{ClassId, VariationIndexRemapping},
+    tags,
+};
 
 use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,
@@ -139,6 +143,14 @@ pub(crate) struct PosSubBuilder<T> {
     variations: HashMap<RawConditionSet, HashMap<FeatureIdx, Vec<LookupIdx>>>,
 }
 
+/// A trait for position lookups which might contain VariationIndex tables
+///
+/// These tables contain indicies that are not known until compilaiton time,
+/// so we need to go and update them all then.
+pub(crate) trait VariationIndexContainingLookup {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping);
+}
+
 impl<T: Default> LookupBuilder<T> {
     fn new(flags: LookupFlag, mark_set: Option<FilterSetId>) -> Self {
         LookupBuilder {
@@ -174,6 +186,14 @@ impl<T: Default> LookupBuilder<T> {
     }
 }
 
+impl<T: VariationIndexContainingLookup> LookupBuilder<T> {
+    fn update_variation_index_tables(&mut self, key_map: &VariationIndexRemapping) {
+        for table in &mut self.subtables {
+            table.remap_variation_indices(key_map);
+        }
+    }
+}
+
 impl<U> LookupBuilder<U> {
     /// A helper method for converting from (say) ContextBuilder to PosContextBuilder
     fn convert<T: From<U>>(self) -> LookupBuilder<T> {
@@ -201,6 +221,18 @@ impl PositionLookup {
             PositionLookup::MarkToMark(lookup) => lookup.force_subtable_break(),
             PositionLookup::Contextual(lookup) => lookup.force_subtable_break(),
             PositionLookup::ChainedContextual(lookup) => lookup.force_subtable_break(),
+        }
+    }
+
+    fn update_variation_index_tables(&mut self, key_map: &VariationIndexRemapping) {
+        match self {
+            PositionLookup::Single(lookup) => lookup.update_variation_index_tables(key_map),
+            PositionLookup::Pair(lookup) => lookup.update_variation_index_tables(key_map),
+            PositionLookup::Cursive(lookup) => lookup.update_variation_index_tables(key_map),
+            PositionLookup::MarkToBase(lookup) => lookup.update_variation_index_tables(key_map),
+            PositionLookup::MarkToLig(lookup) => lookup.update_variation_index_tables(key_map),
+            PositionLookup::MarkToMark(lookup) => lookup.update_variation_index_tables(key_map),
+            PositionLookup::Contextual(_) | PositionLookup::ChainedContextual(_) => (),
         }
     }
 }
@@ -555,6 +587,13 @@ impl AllLookups {
         self.gsub.extend(prev_lookups);
 
         lookup_ids
+    }
+
+    pub(crate) fn update_variation_index_tables(&mut self, key_map: &VariationIndexRemapping) {
+        for lookup in self.gpos.iter_mut() {
+            lookup.update_variation_index_tables(key_map);
+        }
+        //
     }
 
     pub(crate) fn build(
@@ -1038,6 +1077,43 @@ impl Builder for PosSubBuilder<SubstitutionLookup> {
                 gsub.feature_variations = variations.into();
                 gsub
             })
+    }
+}
+
+impl VariationIndexContainingLookup for ValueRecord {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
+        for table in [
+            self.x_placement_device.as_mut(),
+            self.y_placement_device.as_mut(),
+            self.x_advance_device.as_mut(),
+            self.y_advance_device.as_mut(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            table.remap_variation_indices(key_map)
+        }
+    }
+}
+
+impl VariationIndexContainingLookup for DeviceOrVariationIndex {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
+        if let DeviceOrVariationIndex::VariationIndex(table) = self {
+            key_map.remap(table)
+        }
+    }
+}
+
+impl VariationIndexContainingLookup for AnchorTable {
+    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
+        if let AnchorTable::Format3(table) = self {
+            table
+                .x_device
+                .as_mut()
+                .into_iter()
+                .chain(table.y_device.as_mut())
+                .for_each(|x| x.remap_variation_indices(key_map))
+        }
     }
 }
 

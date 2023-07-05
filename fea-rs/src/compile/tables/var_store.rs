@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
-use write_fonts::tables::variations::{
-    ItemVariationData, ItemVariationStore, VariationRegion, VariationRegionList,
+use write_fonts::tables::{
+    layout::VariationIndex,
+    variations::{ItemVariationData, ItemVariationStore, VariationRegion, VariationRegionList},
 };
 
 /// A builder for the [ItemVariationStore].
@@ -208,9 +209,20 @@ impl VariationIndexRemapping {
         self.map.insert(from, to);
     }
 
-    #[cfg(test)]
     fn get(&self, from: DeltaKey) -> Option<DeltaKey> {
         self.map.get(&from).copied()
+    }
+
+    /// remap a variation index table to its final position
+    pub(crate) fn remap(&self, table: &mut VariationIndex) {
+        let key = DeltaKey {
+            outer: table.delta_set_outer_index,
+            inner: table.delta_set_inner_index,
+        };
+
+        let resolved = self.get(key).unwrap();
+        table.delta_set_outer_index = resolved.outer;
+        table.delta_set_inner_index = resolved.inner;
     }
 }
 

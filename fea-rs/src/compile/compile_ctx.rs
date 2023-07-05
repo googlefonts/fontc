@@ -181,11 +181,11 @@ impl<'a> CompilationCtx<'a> {
             Some((gdef, key_map)) => (Some(gdef), key_map),
             None => (None, None),
         };
-        // all VariationIndex tables (in value records and anchors) currently
-        // have temporary indices; now that we've built the ItemVariationStore
-        // we need to go and update them all.
-        if let Some(_key_map) = key_map {
-            log::error!("TODO: go and remap VariationIndex values");
+        // all VariationIndex tables (in value records and anchors) currently have
+        // temporary indices; now that we've built the ItemVariationStore we need
+        // to go and update them all.
+        if let Some(key_map) = key_map {
+            self.lookups.update_variation_index_tables(&key_map);
         }
 
         let (mut gsub, mut gpos) = self.lookups.build(&self.features);
