@@ -24,7 +24,7 @@ mod os2;
 mod stat;
 
 pub(crate) use base::{BaseBuilder, ScriptRecord};
-pub(crate) use gdef::{ClassId, DeltaKey, GdefBuilder, VariationStoreBuilder};
+pub(crate) use gdef::{ClassId, GdefBuilder, VariationStoreBuilder};
 pub(crate) use name::{NameBuilder, NameSpec};
 pub(crate) use os2::{CodePageRange, Os2Builder};
 pub(crate) use stat::{AxisLocation, AxisRecord, AxisValue, StatBuilder, StatFallbackName};

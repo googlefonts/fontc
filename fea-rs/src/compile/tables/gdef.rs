@@ -162,6 +162,7 @@ impl GdefBuilder {
 }
 
 impl DeltaKey {
+    #[allow(dead_code)]
     pub const NO_DELTAS: DeltaKey = DeltaKey {
         outer: 0xFFFF,
         inner: 0xFFFF,

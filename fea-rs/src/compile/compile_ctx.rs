@@ -14,7 +14,7 @@ use write_fonts::{
         self,
         gdef::CaretValue,
         gpos::{AnchorTable, ValueRecord},
-        layout::{ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag},
+        layout::{ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag, VariationIndex},
     },
     types::{Fixed, NameId, Tag},
 };
@@ -41,7 +41,7 @@ use super::{
         AllLookups, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass, SomeLookup,
     },
     output::Compilation,
-    tables::{ClassId, DeltaKey, ScriptRecord, Tables},
+    tables::{ClassId, ScriptRecord, Tables},
     tags,
     valuerecordext::ValueRecordExt,
     VariationInfo,
@@ -1097,17 +1097,20 @@ impl<'a> CompilationCtx<'a> {
         result
     }
 
-    fn resolve_metric(&mut self, metric: &typed::Metric) -> (i16, DeltaKey) {
+    fn resolve_metric(&mut self, metric: &typed::Metric) -> (i16, Option<VariationIndex>) {
         match metric {
-            typed::Metric::Scalar(value) => (value.parse_signed(), DeltaKey::NO_DELTAS),
+            typed::Metric::Scalar(value) => (value.parse_signed(), None),
             typed::Metric::Variable(variable) => self.resolve_variable_metric(variable),
         }
     }
 
-    fn resolve_variable_metric(&mut self, metric: &typed::VariableMetric) -> (i16, DeltaKey) {
+    fn resolve_variable_metric(
+        &mut self,
+        metric: &typed::VariableMetric,
+    ) -> (i16, Option<VariationIndex>) {
         let Some(var_info) = self.variation_info else {
             self.error(metric.range(), "variable metric only valid when compiling variable font");
-            return (0, DeltaKey::NO_DELTAS)
+            return (0, None)
         };
 
         let locations = metric
@@ -1128,10 +1131,14 @@ impl<'a> CompilationCtx<'a> {
             })
             .collect::<HashMap<_, _>>();
         match var_info.resolve_variable_metric(&locations) {
-            Ok((default, deltas)) => (default, self.tables.var_store().add_deltas(deltas)),
+            Ok((default, deltas)) => {
+                let temp_idx = self.tables.var_store().add_deltas(deltas);
+                let var_idx = VariationIndex::new(temp_idx.outer, temp_idx.inner);
+                (default, Some(var_idx))
+            }
             Err(e) => {
                 self.error(metric.range(), format!("failed to compute deltas: '{e}'"));
-                (0, DeltaKey::NO_DELTAS)
+                (0, None)
             }
         }
     }
