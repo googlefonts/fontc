@@ -1775,10 +1775,22 @@ impl<'a> CompilationCtx<'a> {
             }
         }
 
-        let Some((x, y)) = item.coords().and_then(|(x, y)| x.parse_simple().zip(y.parse_simple())) else {
-            self.error(item.range(), "variable anchor compilation not yet implemented");
+        let Some((x, y)) = item.coords() else {
+            self.error(item.range(), "unexpected parse failure, please file a bug");
             return None;
         };
+
+        let (x, x_var) = self.resolve_metric(&x);
+        let (y, y_var) = self.resolve_metric(&y);
+
+        if x_var.is_some() || y_var.is_some() {
+            return Some(AnchorTable::format_3(
+                x,
+                y,
+                x_var.map(Into::into),
+                y_var.map(Into::into),
+            ));
+        }
 
         if let Some(point) = item.contourpoint() {
             match point.parse_unsigned() {
