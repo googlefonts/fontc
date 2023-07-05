@@ -520,8 +520,22 @@ pub fn plain_text_diff(left: &str, right: &str) -> String {
 /// Generate the sample glyph map.
 ///
 /// This is the glyph map used in the feaLib test suite.
-pub fn fonttools_test_glyph_order() -> GlyphMap {
-    let order_str = std::fs::read_to_string("./test-data/simple_glyph_order.txt").unwrap();
+pub(crate) fn fonttools_test_glyph_order() -> GlyphMap {
+    let cwd = std::env::current_dir().expect("could not retrieve current directory");
+    // hack: during testing cwd is the crate root, but when running a binary
+    // it may be the project root
+    let path = if cwd.parent().expect("always present").ends_with("fea-rs") {
+        "./test-data/simple_glyph_order.txt"
+    } else {
+        "./fea-rs/test-data/simple_glyph_order.txt"
+    };
+    if !Path::new(path).exists() {
+        panic!(
+            "could not locate glyph order file (cwd '{}', path '{path}' )",
+            cwd.display()
+        );
+    }
+    let order_str = std::fs::read_to_string(path).unwrap();
     crate::compile::parse_glyph_order(&order_str)
         .unwrap()
         .iter()
