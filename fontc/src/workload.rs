@@ -34,14 +34,17 @@ pub struct Workload<'a> {
 /// Exists to allow us to modify dependencies, such as adding new ones.
 #[derive(Debug)]
 pub(crate) struct Job {
-    // The actual task
-    pub(crate) work: AnyWork,
+    pub(crate) id: AnyWorkId,
+    // The actual task. Exec takes work and sets the running flag.
+    pub(crate) work: Option<AnyWork>,
     // Things our job needs read access to. Job won't run if anything it can read is pending.
     pub(crate) read_access: AnyAccess,
     // Things our job needs write access to
     pub(crate) write_access: AnyAccess,
     // Does this job actually need to execute?
     pub(crate) run: bool,
+    // is this job running right now?
+    pub(crate) running: bool,
 }
 
 enum RecvType {
@@ -63,11 +66,10 @@ impl<'a> Workload<'a> {
 
     /// True if job might read what other produces
     fn might_read(&self, job: &Job, other: &Job) -> bool {
-        let other_id = other.work.id();
-        let result = job.read_access.check(&other_id)
+        let result = job.read_access.check(&other.id)
             || self
                 .also_completes
-                .get(&other_id)
+                .get(&other.id)
                 .map(|also| also.iter().any(|other_id| job.read_access.check(other_id)))
                 .unwrap_or_default();
         result
@@ -83,23 +85,31 @@ impl<'a> Workload<'a> {
         let read_access = work.read_access();
         let write_access = work.write_access();
         self.insert(
-            id,
+            id.clone(),
             Job {
-                work,
+                id,
+                work: Some(work),
                 read_access,
                 write_access,
                 run: should_run,
+                running: false,
             },
         );
     }
 
     pub(crate) fn insert(&mut self, id: AnyWorkId, job: Job) {
-        let also_completes = job.work.also_completes();
+        let also_completes = job
+            .work
+            .as_ref()
+            .expect("{id:?} submitted without work")
+            .also_completes();
+
+        self.job_count += 1 + also_completes.len();
+        self.jobs_pending.insert(id.clone(), job);
+
         if !also_completes.is_empty() {
-            self.also_completes.insert(id.clone(), also_completes);
+            self.also_completes.insert(id, also_completes);
         }
-        self.jobs_pending.insert(id, job);
-        self.job_count += 1;
     }
 
     fn mark_also_completed(&mut self, success: &AnyWorkId) {
@@ -166,7 +176,7 @@ impl<'a> Workload<'a> {
             .jobs_pending
             .iter()
             .filter_map(|(id, job)| {
-                if self.can_run(job) {
+                if !job.running && self.can_run(job) {
                     Some(id.clone())
                 } else {
                     None
@@ -187,18 +197,28 @@ impl<'a> Workload<'a> {
             // TODO timeout and die it if takes too long to make forward progress or we're spinning w/o progress
             while self.success.len() < self.job_count {
                 // Spawn anything that is currently executable (has no unfulfilled dependencies)
-                for id in self.launchable() {
-                    let job = self.jobs_pending.remove(&id).unwrap();
+                let launchable = self.launchable();
+                if launchable.is_empty() && !self.jobs_pending.values().any(|j| j.running) {
+                    return Err(Error::UnableToProceed);
+                }
+
+                // Launch anything that needs launching
+                for id in launchable {
+                    let job = self.jobs_pending.get_mut(&id).unwrap();
                     log::trace!("Start {:?}", id);
                     let send = send.clone();
-                    let work = job.work;
+                    job.running = true;
+                    let work = job
+                        .work
+                        .take()
+                        .expect("{id:?} ready to run but has no work?!");
                     if job.run {
                         let work_context = AnyContext::for_work(
                             fe_root,
                             be_root,
                             &id,
-                            job.read_access,
-                            job.write_access,
+                            job.read_access.clone(),
+                            job.write_access.clone(),
                         );
 
                         scope.spawn(move |_| {
@@ -276,6 +296,9 @@ impl<'a> Workload<'a> {
             } {
                 panic!("Repeat signals for completion of {completed_id:#?}");
             }
+            // When a job marks another as also completed the original may never have been in pending
+            self.jobs_pending.remove(&completed_id);
+
             log::debug!(
                 "{}/{} complete, most recently {:?}",
                 self.error.len() + self.success.len(),
@@ -351,6 +374,7 @@ impl<'a> Workload<'a> {
                     AnyContext::for_work(fe_root, be_root, id, job.read_access, job.write_access);
                 log::debug!("Exec {:?}", id);
                 job.work
+                    .expect("{id:?} should have work!")
                     .exec(context)
                     .unwrap_or_else(|e| panic!("{id:?} failed: {e:?}"));
                 assert!(
