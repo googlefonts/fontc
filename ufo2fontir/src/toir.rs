@@ -30,7 +30,7 @@ pub(crate) fn to_design_location(
 fn to_ir_contour(glyph_name: GlyphName, contour: &norad::Contour) -> Result<BezPath, WorkError> {
     let mut path_builder = GlyphPathBuilder::new(glyph_name.clone());
     if contour.points.is_empty() {
-        return Ok(path_builder.build());
+        return Ok(path_builder.build()?);
     }
 
     // Walk through the remaining points, accumulating off-curve points until we see an on-curve
@@ -44,13 +44,7 @@ fn to_ir_contour(glyph_name: GlyphName, contour: &norad::Contour) -> Result<BezP
         }
     }
 
-    // "A closed contour does not start with a move"
-    // https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
-    if norad::PointType::Move != contour.points[0].typ {
-        path_builder.close_path()?;
-    }
-
-    let path = path_builder.build();
+    let path = path_builder.build()?;
     trace!(
         "Built a {} entry path for {}",
         path.elements().len(),

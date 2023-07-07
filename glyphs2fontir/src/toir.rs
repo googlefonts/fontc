@@ -49,34 +49,27 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkErr
     // See also https://github.com/fonttools/ufoLib2/blob/4d8a9600148b670b0840120658d9aab0b38a9465/src/ufoLib2/pointPens/glyphPointPen.py#L16
     let mut path_builder = GlyphPathBuilder::new(glyph_name.clone());
     if src_path.nodes.is_empty() {
-        return Ok(path_builder.build());
+        return Ok(path_builder.build()?);
     }
 
-    let mut nodes = &src_path.nodes[..];
+    let mut nodes: Vec<_> = src_path.nodes.iter().collect();
 
     // First is a delicate butterfly
-    let first = if !src_path.closed {
-        let (first, elements) = nodes
-            .split_first()
-            .expect("Not empty and no first is a good trick");
-        nodes = elements;
-        first
+    if !src_path.closed {
+        let first = nodes.remove(0);
+        if first.node_type == NodeType::OffCurve {
+            return Err(WorkError::InvalidSourceGlyph {
+                glyph_name,
+                message: String::from("Open path starts with off-curve points"),
+            });
+        }
+        path_builder.move_to((first.pt.x, first.pt.y))?;
     } else {
         // In Glyphs.app, the starting node of a closed contour is always
         // stored at the end of the nodes list.
-        let (last, elements) = nodes
-            .split_last()
-            .expect("Not empty and no last is a good trick");
-        nodes = elements;
-        last
+        // Rotate so that it is at the beginning.
+        nodes.rotate_right(1);
     };
-    if first.node_type == NodeType::OffCurve {
-        return Err(WorkError::InvalidSourceGlyph {
-            glyph_name,
-            message: String::from("Open path starts with off-curve points"),
-        });
-    }
-    path_builder.move_to((first.pt.x, first.pt.y))?;
 
     // Walk through the remaining points, accumulating off-curve points until we see an on-curve
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/pens.py#L92
@@ -95,11 +88,7 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkErr
         }
     }
 
-    if src_path.closed {
-        path_builder.close_path()?;
-    }
-
-    let path = path_builder.build();
+    let path = path_builder.build()?;
     trace!(
         "Built a {} entry path for {}",
         path.elements().len(),
