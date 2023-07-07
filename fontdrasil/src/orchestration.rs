@@ -9,9 +9,14 @@ use std::{
 
 pub const MISSING_DATA: &str = "Missing data, dependency management failed us?";
 
+/// A type that affords identity.
+///
+/// Frequently copied, used in hashmap/sets and printed to logs, hence the trait list.
+pub trait Identifier: Debug + Clone + Eq + Hash {}
+
 /// A rule that represents whether access to something is permitted.
 #[derive(Clone)]
-pub enum Access<I> {
+pub enum Access<I: Identifier> {
     /// No access is permitted
     None,
     /// Any access is permitted
@@ -24,6 +29,18 @@ pub enum Access<I> {
     Custom(Arc<dyn Fn(&I) -> bool + Send + Sync>),
 }
 
+impl<I: Identifier> Debug for Access<I> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "None"),
+            Self::All => write!(f, "All"),
+            Self::One(arg0) => f.debug_tuple("One").field(arg0).finish(),
+            Self::Set(arg0) => f.debug_tuple("Set").field(arg0).finish(),
+            Self::Custom(..) => write!(f, "Custom"),
+        }
+    }
+}
+
 /// A unit of work safe to run in parallel
 ///
 /// Naively you'd think we'd just return FnOnce + Send but that didn't want to compile
@@ -32,7 +49,10 @@ pub enum Access<I> {
 /// Data produced by work is written into a Context (type parameter C). The identifier
 /// type for work, I, is used to identify the task itself as well as the slots this work
 /// might wish to access in the Context.
-pub trait Work<C, I, E> {
+pub trait Work<C, I, E>: Debug
+where
+    I: Identifier,
+{
     /// The identifier for this work
     fn id(&self) -> I;
 
@@ -46,6 +66,28 @@ pub trait Work<C, I, E> {
         Vec::new()
     }
 
+    /// What this work needs to be able to read; our dependencies
+    ///
+    /// Anything we can read should be completed before we execute.
+    /// Where possible avoid [Access::Custom]; it has to be rechecked whenever the task set changes.
+    ///
+    /// The default is no access.
+    fn read_access(&self) -> Access<I> {
+        Access::None
+    }
+
+    /// What this work needs to be able to write.
+    ///
+    /// Defaults to our own id plus anything we also complete.
+    fn write_access(&self) -> Access<I> {
+        let mut also = self.also_completes();
+        if also.is_empty() {
+            return Access::One(self.id());
+        }
+        also.push(self.id());
+        Access::Set(also.into_iter().collect())
+    }
+
     fn exec(&self, context: &C) -> Result<(), E>;
 }
 
@@ -53,7 +95,8 @@ pub trait Work<C, I, E> {
 ///
 /// Not meant to prevent malicious access, merely to detect mistakes
 /// because the result of mistaken concurrent access can be confusing to track down.
-pub struct AccessControlList<I> {
+#[derive(Clone)]
+pub struct AccessControlList<I: Identifier> {
     // Returns true if you can write to the provided id
     write_access: Access<I>,
 
@@ -61,7 +104,16 @@ pub struct AccessControlList<I> {
     read_access: Access<I>,
 }
 
-impl<I: Eq + Hash + Debug + Send + Sync + 'static> AccessControlList<I> {
+impl<I: Identifier> Default for AccessControlList<I> {
+    fn default() -> Self {
+        Self {
+            write_access: Access::None,
+            read_access: Access::None,
+        }
+    }
+}
+
+impl<I: Identifier + Send + Sync + 'static> AccessControlList<I> {
     pub fn read_only() -> AccessControlList<I> {
         AccessControlList {
             write_access: Access::none(),
@@ -77,7 +129,7 @@ impl<I: Eq + Hash + Debug + Send + Sync + 'static> AccessControlList<I> {
     }
 }
 
-impl<I: Eq + Hash> Access<I> {
+impl<I: Identifier> Access<I> {
     /// Create a new access rule with custom logic
     pub fn custom<F: Fn(&I) -> bool + Send + Sync + 'static>(func: F) -> Self {
         Access::Custom(Arc::new(func))
@@ -124,7 +176,7 @@ impl Display for AccessCheck {
     }
 }
 
-fn assert_access_many<I: Eq + Hash + Debug>(
+fn assert_access_many<I: Identifier>(
     demand: AccessCheck,
     access: &Access<I>,
     ids: &[I],
@@ -139,14 +191,14 @@ fn assert_access_many<I: Eq + Hash + Debug>(
     }
 }
 
-fn assert_access_one<I: Eq + Hash + Debug>(access: &Access<I>, id: &I, desc: &str) {
+fn assert_access_one<I: Identifier>(access: &Access<I>, id: &I, desc: &str) {
     let allow = access.check(id);
     if !allow {
         panic!("Illegal {desc} of {id:?}");
     }
 }
 
-impl<I: Eq + Hash + Debug> AccessControlList<I> {
+impl<I: Identifier> AccessControlList<I> {
     pub fn assert_read_access_to_all(&self, ids: &[I]) {
         assert_access_many(AccessCheck::All, &self.read_access, ids, "read");
     }

@@ -1,20 +1,20 @@
 //! Generates a [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar) table.
 
-use std::collections::HashMap;
-
 use font_types::Fixed;
-use fontdrasil::orchestration::Work;
-use fontir::ir::StaticMetadata;
+use fontdrasil::orchestration::{Access, Work};
+use fontir::{ir::StaticMetadata, orchestration::WorkId as FeWorkId};
 use log::trace;
+use std::collections::HashMap;
 use write_fonts::tables::fvar::{AxisInstanceArrays, Fvar, InstanceRecord, VariationAxisRecord};
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, WorkId},
 };
 
 const HIDDEN_AXIS: u16 = 0x0001;
 
+#[derive(Debug)]
 struct FvarWork {}
 
 pub fn create_fvar_work() -> Box<BeWork> {
@@ -81,15 +81,19 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
     Some(Fvar::new(axes_and_instances))
 }
 
-impl Work<Context, WorkId, Error> for FvarWork {
-    fn id(&self) -> WorkId {
-        WorkId::Fvar
+impl Work<Context, AnyWorkId, Error> for FvarWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Fvar.into()
+    }
+
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::One(FeWorkId::StaticMetadata.into())
     }
 
     /// Generate [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar)
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        if let Some(fvar) = generate_fvar(&context.ir.get_init_static_metadata()) {
-            context.set_fvar(fvar);
+        if let Some(fvar) = generate_fvar(&context.ir.static_metadata.get()) {
+            context.fvar.set_unconditionally(fvar.into());
         }
         Ok(())
     }
@@ -108,7 +112,6 @@ mod tests {
             1000,
             Default::default(),
             axes.to_vec(),
-            Default::default(),
             Default::default(),
             Default::default(),
         )

@@ -2,7 +2,7 @@
 //!
 //! Basically enums that can be a FeWhatever or a BeWhatever.
 
-use std::{collections::HashSet, fmt::Display};
+use std::fmt::Display;
 
 use fontbe::{
     error::Error as BeError,
@@ -42,6 +42,7 @@ impl Display for AnyWorkError {
 }
 
 // Work of any type, FE, BE, ... some future pass, w/e
+#[derive(Debug)]
 pub enum AnyWork {
     Fe(Box<IrWork>),
     Be(Box<BeWork>),
@@ -60,13 +61,30 @@ impl From<Box<BeWork>> for AnyWork {
 }
 
 impl AnyWork {
+    pub fn id(&self) -> AnyWorkId {
+        match self {
+            AnyWork::Be(work) => work.id(),
+            AnyWork::Fe(work) => work.id().into(),
+        }
+    }
+
+    pub fn read_access(&self) -> AnyAccess {
+        match self {
+            AnyWork::Be(work) => work.read_access().into(),
+            AnyWork::Fe(work) => work.read_access().into(),
+        }
+    }
+
+    pub fn write_access(&self) -> AnyAccess {
+        match self {
+            AnyWork::Be(work) => work.write_access().into(),
+            AnyWork::Fe(work) => work.write_access().into(),
+        }
+    }
+
     pub fn also_completes(&self) -> Vec<AnyWorkId> {
         match self {
-            AnyWork::Be(work) => work
-                .also_completes()
-                .into_iter()
-                .map(|id| id.into())
-                .collect(),
+            AnyWork::Be(work) => work.also_completes().into_iter().collect(),
             AnyWork::Fe(work) => work
                 .also_completes()
                 .into_iter()
@@ -83,20 +101,55 @@ impl AnyWork {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum AnyAccess {
+    Be(Access<AnyWorkId>),
+    Fe(Access<WorkId>),
+}
+
+impl From<Access<AnyWorkId>> for AnyAccess {
+    fn from(value: Access<AnyWorkId>) -> Self {
+        AnyAccess::Be(value)
+    }
+}
+
+impl From<Access<WorkId>> for AnyAccess {
+    fn from(value: Access<WorkId>) -> Self {
+        AnyAccess::Fe(value)
+    }
+}
+
+impl AnyAccess {
+    pub fn check(&self, id: &AnyWorkId) -> bool {
+        match self {
+            AnyAccess::Be(access) => access.check(id),
+            AnyAccess::Fe(access) => {
+                let AnyWorkId::Fe(id) = id else {
+                    return false;
+                };
+                access.check(id)
+            }
+        }
+    }
+
+    pub fn unwrap_be(&self) -> Access<AnyWorkId> {
+        match self {
+            AnyAccess::Fe(..) => panic!("Not BE access"),
+            AnyAccess::Be(access) => access.clone(),
+        }
+    }
+
+    pub fn unwrap_fe(&self) -> Access<WorkId> {
+        match self {
+            AnyAccess::Fe(access) => access.clone(),
+            AnyAccess::Be(..) => panic!("Not FE access"),
+        }
+    }
+}
+
 pub enum AnyContext {
     Fe(FeContext),
     Be(BeContext),
-}
-
-pub enum ReadAccess {
-    Dependencies,
-    Custom(Access<AnyWorkId>),
-}
-
-impl ReadAccess {
-    pub fn custom(func: impl Fn(&AnyWorkId) -> bool + Send + Sync + 'static) -> Self {
-        Self::Custom(Access::custom(func))
-    }
 }
 
 impl AnyContext {
@@ -104,16 +157,13 @@ impl AnyContext {
         fe_root: &FeContext,
         be_root: &BeContext,
         work_id: &AnyWorkId,
-        dependencies: HashSet<AnyWorkId>,
-        read_access: ReadAccess,
-        write_access: Access<AnyWorkId>,
+        read_access: AnyAccess,
+        write_access: AnyAccess,
     ) -> AnyContext {
-        let read_access = match read_access {
-            ReadAccess::Dependencies => Access::custom(move |id| dependencies.contains(id)),
-            ReadAccess::Custom(access_fn) => access_fn,
-        };
         match work_id {
-            AnyWorkId::Be(..) => AnyContext::Be(be_root.copy_for_work(read_access, write_access)),
+            AnyWorkId::Be(..) => AnyContext::Be(
+                be_root.copy_for_work(read_access.unwrap_be(), write_access.unwrap_be()),
+            ),
             AnyWorkId::Fe(..) => AnyContext::Fe(fe_root.copy_for_work(
                 Access::custom(move |id: &WorkId| read_access.check(&AnyWorkId::Fe(id.clone()))),
                 Access::custom(move |id: &WorkId| write_access.check(&AnyWorkId::Fe(id.clone()))),

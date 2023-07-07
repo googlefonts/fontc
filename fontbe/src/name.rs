@@ -1,6 +1,7 @@
 //! Generates a [name](https://learn.microsoft.com/en-us/typography/opentype/spec/name) table.
 
-use fontdrasil::orchestration::Work;
+use fontdrasil::orchestration::{Access, Work};
+use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
     tables::name::{Name, NameRecord},
     OffsetMarker,
@@ -8,23 +9,28 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, WorkId},
 };
 
+#[derive(Debug)]
 struct NameWork {}
 
 pub fn create_name_work() -> Box<BeWork> {
     Box::new(NameWork {})
 }
 
-impl Work<Context, WorkId, Error> for NameWork {
-    fn id(&self) -> WorkId {
-        WorkId::Name
+impl Work<Context, AnyWorkId, Error> for NameWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Name.into()
+    }
+
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::One(FeWorkId::StaticMetadata.into())
     }
 
     /// Generate [name](https://learn.microsoft.com/en-us/typography/opentype/spec/name)
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let static_metadata = context.ir.get_init_static_metadata();
+        let static_metadata = context.ir.static_metadata.get();
 
         let name_records = static_metadata
             .names
@@ -38,7 +44,9 @@ impl Work<Context, WorkId, Error> for NameWork {
             })
             .collect::<Vec<_>>();
 
-        context.set_name(Name::new(name_records.into_iter().collect()));
+        context
+            .name
+            .set_unconditionally(Name::new(name_records.into_iter().collect()).into());
         Ok(())
     }
 }

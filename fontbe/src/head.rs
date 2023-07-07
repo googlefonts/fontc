@@ -1,18 +1,20 @@
 //! Generates a [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head) table.
 
-use std::env;
+use std::{collections::HashSet, env};
 
 use chrono::{DateTime, TimeZone, Utc};
 use font_types::{Fixed, LongDateTime};
-use fontdrasil::orchestration::Work;
+use fontdrasil::orchestration::{Access, Work};
+use fontir::orchestration::WorkId as FeWorkId;
 use log::warn;
 use write_fonts::tables::head::Head;
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context, LocaFormat, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, LocaFormat, WorkId},
 };
 
+#[derive(Debug)]
 struct HeadWork {}
 
 pub fn create_head_work() -> Box<BeWork> {
@@ -86,15 +88,23 @@ fn apply_created_modified(head: &mut Head, created: Option<DateTime<Utc>>) {
     head.modified = LongDateTime::new(now);
 }
 
-impl Work<Context, WorkId, Error> for HeadWork {
-    fn id(&self) -> WorkId {
-        WorkId::Head
+impl Work<Context, AnyWorkId, Error> for HeadWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Head.into()
+    }
+
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::Set(HashSet::from([
+            FeWorkId::StaticMetadata.into(),
+            WorkId::Glyf.into(),
+            WorkId::LocaFormat.into(),
+        ]))
     }
 
     /// Generate [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head)
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let static_metadata = context.ir.get_final_static_metadata();
-        let loca_format = context.get_loca_format();
+        let static_metadata = context.ir.static_metadata.get();
+        let loca_format = context.loca_format.get();
         let mut head = init_head(
             static_metadata.units_per_em,
             *loca_format,
@@ -107,7 +117,7 @@ impl Work<Context, WorkId, Error> for HeadWork {
             static_metadata.misc.version_minor,
         );
         apply_created_modified(&mut head, static_metadata.misc.created);
-        context.set_head(head);
+        context.head.set_unconditionally(head.into());
 
         // Defer x/y Min/Max to metrics and limits job
 

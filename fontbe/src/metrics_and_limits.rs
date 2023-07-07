@@ -4,10 +4,12 @@
 use std::{
     cmp::{max, min},
     collections::{HashMap, HashSet},
+    sync::Arc,
 };
 
 use font_types::GlyphId;
-use fontdrasil::orchestration::Work;
+use fontdrasil::orchestration::{Access, Work};
+use fontir::orchestration::WorkId as FeWorkId;
 use read_fonts::types::FWord;
 use write_fonts::{
     dump_table,
@@ -23,9 +25,10 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Bytes, Context, Glyph, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, Glyph, WorkId},
 };
 
+#[derive(Debug)]
 struct MetricAndLimitWork {}
 
 pub fn create_metric_and_limit_work() -> Box<BeWork> {
@@ -109,7 +112,7 @@ impl FontLimits {
         self.bbox = self.bbox.map(|b| b.union(bbox)).or(Some(bbox));
 
         match glyph {
-            Glyph::Simple(simple) => {
+            Glyph::Simple(_, simple) => {
                 let num_points = simple.contours().iter().map(Contour::len).sum::<usize>() as u16;
                 let num_contours = simple.contours().len() as u16;
                 self.max_points = max(self.max_points, num_points);
@@ -126,7 +129,7 @@ impl FontLimits {
                     },
                 )
             }
-            Glyph::Composite(composite) => {
+            Glyph::Composite(_, composite) => {
                 let num_components = composite.components().len() as u16;
                 self.max_component_elements = max(self.max_component_elements, num_components);
                 let components = Some(composite.components().iter().map(|c| c.glyph).collect());
@@ -191,13 +194,38 @@ impl FontLimits {
     }
 }
 
-impl Work<Context, WorkId, Error> for MetricAndLimitWork {
-    fn id(&self) -> WorkId {
-        WorkId::Hmtx
+impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Hmtx.into()
     }
 
-    fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::Hhea, WorkId::Maxp]
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::Custom(Arc::new(|id| {
+            matches!(
+                id,
+                AnyWorkId::Fe(FeWorkId::Glyph(..))
+                    | AnyWorkId::Fe(FeWorkId::GlobalMetrics)
+                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
+                    | AnyWorkId::Be(WorkId::GlyfFragment(..))
+                    | AnyWorkId::Be(WorkId::Head)
+            )
+        }))
+    }
+
+    fn write_access(&self) -> Access<AnyWorkId> {
+        Access::Custom(Arc::new(|id| {
+            matches!(
+                id,
+                AnyWorkId::Be(WorkId::Hmtx)
+                    | AnyWorkId::Be(WorkId::Hhea)
+                    | AnyWorkId::Be(WorkId::Maxp)
+                    | AnyWorkId::Be(WorkId::Head)
+            )
+        }))
+    }
+
+    fn also_completes(&self) -> Vec<AnyWorkId> {
+        vec![WorkId::Hhea.into(), WorkId::Maxp.into()]
     }
 
     /// Generate:
@@ -208,27 +236,29 @@ impl Work<Context, WorkId, Error> for MetricAndLimitWork {
     ///
     /// Touchup [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head)
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let static_metadata = context.ir.get_final_static_metadata();
+        let static_metadata = context.ir.static_metadata.get();
+        let glyph_order = context.ir.glyph_order.get();
         let default_metrics = context
             .ir
-            .get_global_metrics()
+            .global_metrics
+            .get()
             .at(static_metadata.default_location());
 
         let mut glyph_limits = FontLimits::default();
 
-        let mut long_metrics: Vec<LongMetric> = static_metadata
-            .glyph_order
+        let mut long_metrics: Vec<LongMetric> = glyph_order
             .iter()
             .enumerate()
             .map(|(gid, gn)| {
                 let gid = GlyphId::new(gid as u16);
                 let advance: u16 = context
                     .ir
-                    .get_glyph_ir(gn)
+                    .glyphs
+                    .get(&FeWorkId::Glyph(gn.clone()))
                     .default_instance()
                     .width
                     .ot_round();
-                let glyph = context.get_glyph(gn);
+                let glyph = context.glyphs.get(&WorkId::GlyfFragment(gn.clone()).into());
                 glyph_limits.update(gid, advance, &glyph);
                 LongMetric {
                     advance,
@@ -286,20 +316,22 @@ impl Work<Context, WorkId, Error> for MetricAndLimitWork {
             })?,
             ..Default::default()
         };
-        context.set_hhea(hhea);
+        context.hhea.set_unconditionally(hhea.into());
 
         // Send hmtx out into the world
         let hmtx = Hmtx::new(long_metrics, lsbs);
-        let raw_hmtx = Bytes::new(dump_table(&hmtx).map_err(|e| Error::DumpTableError {
-            e,
-            context: "hmtx".into(),
-        })?);
-        context.set_hmtx(raw_hmtx);
+        let raw_hmtx = dump_table(&hmtx)
+            .map_err(|e| Error::DumpTableError {
+                e,
+                context: "hmtx".into(),
+            })?
+            .into();
+        context.hmtx.set_unconditionally(raw_hmtx);
 
         // Might as well do maxp while we're here
         let composite_limits = glyph_limits.update_composite_limits();
         let maxp = Maxp {
-            num_glyphs: static_metadata.glyph_order.len().try_into().unwrap(),
+            num_glyphs: glyph_order.len().try_into().unwrap(),
             // maxp computes it's version based on whether fields are set
             // if you fail to set any of them it gets angry with you so set all of them
             max_points: Some(glyph_limits.max_points),
@@ -316,16 +348,16 @@ impl Work<Context, WorkId, Error> for MetricAndLimitWork {
             max_component_elements: Some(glyph_limits.max_component_elements),
             max_component_depth: Some(composite_limits.max_depth),
         };
-        context.set_maxp(maxp);
+        context.maxp.set_unconditionally(maxp.into());
 
         // Set x/y min/max in head
-        let mut head = (*context.get_head()).clone();
+        let mut head = context.head.get().0.clone();
         let bbox = glyph_limits.bbox.unwrap_or_default();
         head.x_min = bbox.x_min;
         head.y_min = bbox.y_min;
         head.x_max = bbox.x_max;
         head.y_max = bbox.y_max;
-        context.set_head(head);
+        context.head.set_unconditionally(head.into());
 
         Ok(())
     }
@@ -348,6 +380,7 @@ mod tests {
             GlyphId::new(0),
             0,
             &crate::orchestration::Glyph::Simple(
+                "don't care".into(),
                 SimpleGlyph::from_kurbo(
                     &BezPath::from_svg("M-437,611 L-334,715 L-334,611 Z").unwrap(),
                 )

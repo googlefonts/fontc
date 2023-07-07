@@ -21,4 +21,6 @@ pub enum Error {
     TasksFailed(Vec<(AnyWorkId, String)>),
     #[error("Invalid regex")]
     BadRegex(#[from] regex::Error),
+    #[error("Unable to proceed")]
+    UnableToProceed,
 }

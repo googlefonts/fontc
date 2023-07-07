@@ -3,10 +3,16 @@
 //! Each glyph is built in isolation and then the fragments are collected
 //! and glued together to form a final table.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    sync::Arc,
+};
 
-use fontdrasil::{orchestration::Work, types::GlyphName};
-use fontir::{coords::NormalizedLocation, ir};
+use fontdrasil::{
+    orchestration::{Access, Work},
+    types::GlyphName,
+};
+use fontir::{coords::NormalizedLocation, ir, orchestration::WorkId as FeWorkId};
 use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect};
 use log::{log_enabled, trace, warn};
 
@@ -26,9 +32,10 @@ use write_fonts::{
 
 use crate::{
     error::{Error, GlyphProblem},
-    orchestration::{BeWork, Context, GlyfLoca, Glyph, GvarFragment, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, Glyph, GvarFragment, LocaFormat, WorkId},
 };
 
+#[derive(Debug)]
 struct GlyphWork {
     glyph_name: GlyphName,
 }
@@ -73,7 +80,8 @@ fn create_component(
     // Obtain glyph id from static metadata
     let gid = context
         .ir
-        .get_final_static_metadata()
+        .glyph_order
+        .get()
         .glyph_id(ref_glyph_name)
         .ok_or(GlyphProblem::NotInGlyphOrder)?;
     let gid = GlyphId::new(gid as u16);
@@ -134,7 +142,10 @@ fn create_composite(
                 })
                 .map(|(mut component, bbox)| {
                     if !set_use_my_metrics {
-                        let component_glyph = context.ir.get_glyph_ir(ref_glyph_name);
+                        let component_glyph = context
+                            .ir
+                            .glyphs
+                            .get(&FeWorkId::Glyph(ref_glyph_name.clone()));
                         if let Some(default_component) =
                             component_glyph.sources().get(default_location)
                         {
@@ -224,22 +235,43 @@ fn point_seqs_for_composite_glyph(ir_glyph: &ir::Glyph) -> HashMap<NormalizedLoc
         .collect()
 }
 
-impl Work<Context, WorkId, Error> for GlyphWork {
-    fn id(&self) -> WorkId {
-        WorkId::GlyfFragment(self.glyph_name.clone())
+impl Work<Context, AnyWorkId, Error> for GlyphWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::GlyfFragment(self.glyph_name.clone()).into()
     }
 
-    fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::GvarFragment(self.glyph_name.clone())]
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::Custom(Arc::new(|id| {
+            matches!(
+                id,
+                AnyWorkId::Fe(FeWorkId::StaticMetadata)
+                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
+                    | AnyWorkId::Fe(FeWorkId::Glyph(..))
+            )
+        }))
+    }
+
+    fn write_access(&self) -> Access<AnyWorkId> {
+        Access::Set(HashSet::from([
+            WorkId::GlyfFragment(self.glyph_name.clone()).into(),
+            WorkId::GvarFragment(self.glyph_name.clone()).into(),
+        ]))
+    }
+
+    fn also_completes(&self) -> Vec<AnyWorkId> {
+        vec![WorkId::GvarFragment(self.glyph_name.clone()).into()]
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("BE glyph work for '{}'", self.glyph_name);
 
-        let static_metadata = context.ir.get_final_static_metadata();
+        let static_metadata = context.ir.static_metadata.get();
         let var_model = &static_metadata.variation_model;
         let default_location = static_metadata.default_location();
-        let ir_glyph = &*context.ir.get_glyph_ir(&self.glyph_name);
+        let ir_glyph = &*context
+            .ir
+            .glyphs
+            .get(&FeWorkId::Glyph(self.glyph_name.clone()));
         let glyph: CheckedGlyph = ir_glyph.try_into()?;
 
         // Hopefully in time https://github.com/harfbuzz/boring-expansion-spec means we can drop this
@@ -249,7 +281,9 @@ impl Work<Context, WorkId, Error> for GlyphWork {
         let (name, point_seqs, contour_ends) = match glyph {
             CheckedGlyph::Composite { name, components } => {
                 let composite = create_composite(context, ir_glyph, default_location, &components)?;
-                context.set_glyph(name.clone(), composite.into());
+                context
+                    .glyphs
+                    .set_unconditionally(Glyph::new_composite(name.clone(), composite));
                 let point_seqs = point_seqs_for_composite_glyph(ir_glyph);
                 (name, point_seqs, Vec::new())
             }
@@ -275,7 +309,9 @@ impl Work<Context, WorkId, Error> for GlyphWork {
                 let Some(base_glyph) = instances.get(default_location) else {
                     return Err(Error::GlyphError(ir_glyph.name.clone(), GlyphProblem::MissingDefault));
                 };
-                context.set_glyph(name.clone(), base_glyph.clone().into());
+                context
+                    .glyphs
+                    .set_unconditionally(Glyph::new_simple(name.clone(), base_glyph.clone()));
 
                 let mut contour_end = 0;
                 let mut contour_ends = Vec::with_capacity(base_glyph.contours().len());
@@ -322,7 +358,10 @@ impl Work<Context, WorkId, Error> for GlyphWork {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| Error::IupError(ir_glyph.name.clone(), e))?;
 
-        context.set_gvar_fragment(name, GvarFragment { deltas });
+        context.gvar_fragments.set_unconditionally(GvarFragment {
+            glyph_name: name,
+            deltas,
+        });
 
         Ok(())
     }
@@ -603,6 +642,7 @@ fn bbox2rect(bbox: Bbox) -> Rect {
     }
 }
 
+#[derive(Debug)]
 struct GlyfLocaWork {}
 
 pub fn create_glyf_loca_work() -> Box<BeWork> {
@@ -610,26 +650,24 @@ pub fn create_glyf_loca_work() -> Box<BeWork> {
 }
 
 fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
-    let static_metadata = context.ir.get_final_static_metadata();
-    let glyph_order = &static_metadata.glyph_order;
+    let glyph_order = context.ir.glyph_order.get();
 
     let glyphs: HashMap<_, _> = glyph_order
         .iter()
-        .map(|gn| (gn, context.get_glyph(gn)))
+        .map(|gn| {
+            (
+                gn,
+                context.glyphs.get(&WorkId::GlyfFragment(gn.clone()).into()),
+            )
+        })
         .collect();
 
     // Simple glyphs have bbox set. Composites don't.
     // Ultimately composites are made up of simple glyphs, lets figure out the boxes
     let mut bbox_acquired: HashMap<GlyphName, Rect> = HashMap::new();
     let mut composites = glyphs
-        .iter()
-        .filter_map(|(name, glyph)| {
-            let glyph = glyph.as_ref();
-            match glyph {
-                Glyph::Composite(composite) => Some(((*name).clone(), composite.clone())),
-                Glyph::Simple(..) => None,
-            }
-        })
+        .values()
+        .filter(|glyph| matches!(glyph.as_ref(), Glyph::Composite(..)))
         .collect::<Vec<_>>();
 
     trace!("Resolve bbox for {} composites", composites.len());
@@ -637,7 +675,10 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
         let pending = composites.len();
 
         // Hopefully we can figure out some of those bboxes!
-        for (glyph_name, composite) in composites.iter() {
+        for composite in composites.iter() {
+            let Glyph::Composite(glyph_name, composite) = composite.as_ref() else {
+                panic!("Only composites should be in our vector of composites!!");
+            };
             let mut missing_boxes = false;
             let boxes: Vec<_> = composite
                 .components()
@@ -646,14 +687,14 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
                     if missing_boxes {
                         return None; // can't succeed
                     }
-                    let ref_glyph_name = glyph_order.get_index(c.glyph.to_u16() as usize).unwrap();
+                    let ref_glyph_name = glyph_order.glyph_name(c.glyph.to_u16() as usize).unwrap();
                     let bbox = bbox_acquired.get(ref_glyph_name).copied().or_else(|| {
                         glyphs
                             .get(ref_glyph_name)
                             .map(|g| g.as_ref().clone())
                             .and_then(|g| match g {
                                 Glyph::Composite(..) => None,
-                                Glyph::Simple(simple_glyph) => Some(bbox2rect(simple_glyph.bbox)),
+                                Glyph::Simple(_, simple_glyph) => Some(bbox2rect(simple_glyph.bbox)),
                             })
                     });
                     if bbox.is_none() {
@@ -680,7 +721,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
         }
 
         // Kerplode if we didn't make any progress this spin
-        composites.retain(|(gn, _)| !bbox_acquired.contains_key(gn));
+        composites.retain(|composite| !bbox_acquired.contains_key(composite.glyph_name()));
         if pending == composites.len() {
             panic!("Unable to make progress on composite bbox, stuck at\n{composites:?}");
         }
@@ -688,24 +729,50 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
 
     // It'd be a shame to just throw away those nice boxes
     for (glyph_name, bbox) in bbox_acquired.into_iter() {
-        let mut glyph = (*context.get_glyph(&glyph_name)).clone();
-        let Glyph::Composite(composite) = &mut glyph else {
+        let mut glyph = (*context
+            .glyphs
+            .get(&WorkId::GlyfFragment(glyph_name.clone()).into()))
+        .clone();
+        let Glyph::Composite(_, composite) = &mut glyph else {
             panic!("{glyph_name} is not a composite; we shouldn't be trying to update it");
         };
         composite.bbox = bbox.into(); // delay conversion to Bbox to avoid accumulating rounding error
-        context.set_glyph(glyph_name, glyph);
+        context.glyphs.set_unconditionally(glyph);
     }
 
     Ok(())
 }
 
-impl Work<Context, WorkId, Error> for GlyfLocaWork {
-    fn id(&self) -> WorkId {
-        WorkId::Glyf
+impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Glyf.into()
     }
 
-    fn also_completes(&self) -> Vec<WorkId> {
-        vec![WorkId::Loca, WorkId::LocaFormat]
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::Custom(Arc::new(|id| {
+            matches!(
+                id,
+                AnyWorkId::Fe(FeWorkId::StaticMetadata)
+                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
+                    | AnyWorkId::Be(WorkId::GlyfFragment(..))
+            )
+        }))
+    }
+
+    fn write_access(&self) -> Access<AnyWorkId> {
+        Access::Custom(Arc::new(|id| {
+            matches!(
+                id,
+                AnyWorkId::Be(WorkId::Glyf)
+                    | AnyWorkId::Be(WorkId::Loca)
+                    | AnyWorkId::Be(WorkId::LocaFormat)
+                    | AnyWorkId::Be(WorkId::GlyfFragment(..))
+            )
+        }))
+    }
+
+    fn also_completes(&self) -> Vec<AnyWorkId> {
+        vec![WorkId::Loca.into(), WorkId::LocaFormat.into()]
     }
 
     /// Generate [glyf](https://learn.microsoft.com/en-us/typography/opentype/spec/glyf)
@@ -715,26 +782,37 @@ impl Work<Context, WorkId, Error> for GlyfLocaWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         compute_composite_bboxes(context)?;
 
-        let static_metadata = context.ir.get_final_static_metadata();
-        let glyph_order = &static_metadata.glyph_order;
+        let glyph_order = context.ir.glyph_order.get();
 
         // Glue together glyf and loca
-        // We generate a long offset loca here, intent is the final merge can make it small
-        // and update the head.indexToLocFormat if it wishes.
+        // Build loca as u32 first, then shrink if it'll fit
         // This isn't overly memory efficient but ... fonts aren't *that* big (yet?)
         let mut loca = vec![0];
         let mut glyf: Vec<u8> = Vec::new();
         glyf.reserve(1024 * 1024); // initial size, will grow as needed
         glyph_order
             .iter()
-            .map(|gn| context.get_glyph(gn))
+            .map(|gn| context.glyphs.get(&WorkId::GlyfFragment(gn.clone()).into()))
             .for_each(|g| {
                 let bytes = g.to_bytes();
                 loca.push(loca.last().unwrap() + bytes.len() as u32);
                 glyf.extend(bytes);
             });
 
-        context.set_glyf_loca(GlyfLoca::new(glyf, loca));
+        let loca_format = LocaFormat::new(&loca);
+        let loca: Vec<u8> = match loca_format {
+            LocaFormat::Short => loca
+                .iter()
+                .flat_map(|offset| ((offset >> 1) as u16).to_be_bytes())
+                .collect(),
+            LocaFormat::Long => loca
+                .iter()
+                .flat_map(|offset| offset.to_be_bytes())
+                .collect(),
+        };
+        context.loca_format.set(loca_format);
+        context.glyf.set(glyf.into());
+        context.loca.set(loca.into());
 
         Ok(())
     }

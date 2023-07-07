@@ -43,8 +43,9 @@ impl Paths {
 
     pub fn target_file(&self, id: &WorkId) -> PathBuf {
         match id {
-            WorkId::InitStaticMetadata => self.build_dir.join("static_metadata.preliminary.yml"),
-            WorkId::FinalizeStaticMetadata => self.build_dir.join("static_metadata.yml"),
+            WorkId::StaticMetadata => self.build_dir.join("static_metadata.yml"),
+            WorkId::PreliminaryGlyphOrder => self.build_dir.join("glyph_order.preliminary.yml"),
+            WorkId::GlyphOrder => self.build_dir.join("glyph_order.yml"),
             WorkId::GlobalMetrics => self.build_dir.join("global_metrics.yml"),
             WorkId::Glyph(name) => self.glyph_ir_file(name.as_str()),
             WorkId::GlyphIrDelete(name) => {

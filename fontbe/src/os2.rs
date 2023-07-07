@@ -1,9 +1,9 @@
 //! Generates a [OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2) table.
 
-use std::{cmp::Ordering, collections::HashSet};
+use std::{cmp::Ordering, collections::HashSet, sync::Arc};
 
-use fontdrasil::orchestration::Work;
-use fontir::ir::GlobalMetricsInstance;
+use fontdrasil::orchestration::{Access, Work};
+use fontir::{ir::GlobalMetricsInstance, orchestration::WorkId as FeWorkId};
 use log::warn;
 use read_fonts::{tables::hmtx::Hmtx, FontData, TopLevelTable};
 use write_fonts::{
@@ -26,7 +26,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{BeWork, Context, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, WorkId},
 };
 
 /// Used to build a bitfield.
@@ -210,6 +210,7 @@ const UNICODE_RANGES: &[(u32, u32, u32)] = &[
     (0x100000, 0x10FFFD, 90), // Private Use (plane 16)
 ];
 
+#[derive(Debug)]
 struct Os2Work {}
 
 pub fn create_os2_work() -> Box<BeWork> {
@@ -218,13 +219,13 @@ pub fn create_os2_work() -> Box<BeWork> {
 
 /// <https://github.com/fonttools/fonttools/blob/115275cbf429d91b75ac5536f5f0b2d6fe9d823a/Lib/fontTools/ttLib/tables/O_S_2f_2.py#L336-L348>
 fn x_avg_char_width(context: &Context) -> Result<i16, Error> {
-    let static_metadata = context.ir.get_final_static_metadata();
-    let hhea = context.get_hhea();
-    let raw_hmtx = context.get_hmtx();
-    let num_glyphs = static_metadata.glyph_order.len() as u64;
+    let glyph_order = context.ir.glyph_order.get();
+    let hhea = context.hhea.get();
+    let raw_hmtx = context.hmtx.get();
+    let num_glyphs = glyph_order.len() as u64;
     let hmtx = Hmtx::read(
         FontData::new(raw_hmtx.get()),
-        hhea.number_of_long_metrics,
+        hhea.0.number_of_long_metrics,
         num_glyphs as u16,
     )
     .map_err(|_| Error::InvalidTableBytes(Hmtx::TAG))?;
@@ -247,7 +248,7 @@ fn x_avg_char_width(context: &Context) -> Result<i16, Error> {
         .map(|m| m.advance() as u64)
         .unwrap_or_default();
     let (count, total) = if last_advance > 0 {
-        let num_short = num_glyphs - hhea.number_of_long_metrics as u64;
+        let num_short = num_glyphs - hhea.0.number_of_long_metrics as u64;
         (count + num_short, total + num_short * last_advance)
     } else {
         (count, total)
@@ -747,17 +748,15 @@ impl MaxContext for &SubstitutionLookup {
 fn apply_max_context(os2: &mut Os2, context: &Context) {
     let mut max_context: u16 = 0;
 
-    if context.has_gsub() {
-        let gsub = context.get_gsub();
-        let lookups = &gsub.lookup_list.lookups;
+    if let Some(gsub) = context.gsub.try_get() {
+        let lookups = &gsub.0.lookup_list.lookups;
         max_context = max_context.max(lookups.iter().fold(0, |max_ctx, lookup| {
             max_ctx.max((lookup as &SubstitutionLookup).max_context())
         }));
     }
 
-    if context.has_gpos() {
-        let gpos = context.get_gpos();
-        let lookups = &gpos.lookup_list.lookups;
+    if let Some(gpos) = context.gpos.try_get() {
+        let lookups = &gpos.0.lookup_list.lookups;
         warn!(
             "max context for gpos not implemented, {} position lookups being ignored",
             lookups.len()
@@ -768,27 +767,51 @@ fn apply_max_context(os2: &mut Os2, context: &Context) {
 }
 
 fn codepoints(context: &Context) -> HashSet<u32> {
-    let static_metadata = context.ir.get_final_static_metadata();
+    let glyph_order = context.ir.glyph_order.get();
 
     let mut codepoints = HashSet::new();
-    for glyph_name in static_metadata.glyph_order.iter() {
-        codepoints.extend(context.ir.get_glyph_ir(glyph_name).codepoints.iter());
+    for glyph_name in glyph_order.iter() {
+        codepoints.extend(
+            context
+                .ir
+                .glyphs
+                .get(&FeWorkId::Glyph(glyph_name.clone()))
+                .codepoints
+                .iter(),
+        );
     }
     codepoints
 }
 
-impl Work<Context, WorkId, Error> for Os2Work {
-    fn id(&self) -> WorkId {
-        WorkId::Os2
+impl Work<Context, AnyWorkId, Error> for Os2Work {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Os2.into()
+    }
+
+    fn read_access(&self) -> Access<AnyWorkId> {
+        Access::Custom(Arc::new(|id| {
+            matches!(
+                id,
+                AnyWorkId::Fe(FeWorkId::Glyph(..))
+                    | AnyWorkId::Fe(FeWorkId::StaticMetadata)
+                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
+                    | AnyWorkId::Fe(FeWorkId::GlobalMetrics)
+                    | AnyWorkId::Be(WorkId::Hhea)
+                    | AnyWorkId::Be(WorkId::Hmtx)
+                    | AnyWorkId::Be(WorkId::Gpos)
+                    | AnyWorkId::Be(WorkId::Gsub)
+            )
+        }))
     }
 
     /// Generate [OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2)
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let static_metadata = context.ir.get_final_static_metadata();
+        let static_metadata = context.ir.static_metadata.get();
 
         let metrics = context
             .ir
-            .get_global_metrics()
+            .global_metrics
+            .get()
             .at(static_metadata.default_location());
         let codepoints = codepoints(context);
 
@@ -813,7 +836,7 @@ impl Work<Context, WorkId, Error> for Os2Work {
 
         apply_max_context(&mut os2, context);
 
-        context.set_os2(os2);
+        context.os2.set_unconditionally(os2.into());
         Ok(())
     }
 }

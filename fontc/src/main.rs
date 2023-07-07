@@ -33,7 +33,7 @@ fn main() -> Result<(), Error> {
     let fe_root = FeContext::new_root(
         config.args.flags(),
         ir_paths,
-        change_detector.current_inputs().clone(),
+        workload.current_inputs().clone(),
     );
     let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root);
     workload.exec(&fe_root, &be_root)?;

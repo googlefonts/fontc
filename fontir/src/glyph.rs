@@ -3,10 +3,15 @@
 //! Notably includes splitting glyphs with contours and components into one new glyph with
 //! the contours and one updated glyph with no contours that references the new gyph as a component.
 
-use std::collections::{HashSet, VecDeque};
+use std::{
+    collections::{HashSet, VecDeque},
+    sync::Arc,
+};
 
-use fontdrasil::{orchestration::Work, types::GlyphName};
-use indexmap::IndexSet;
+use fontdrasil::{
+    orchestration::{Access, Work},
+    types::GlyphName,
+};
 use kurbo::Affine;
 use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
@@ -15,15 +20,16 @@ use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 use crate::{
     coords::NormalizedLocation,
     error::WorkError,
-    ir::{Component, Glyph, GlyphBuilder},
+    ir::{Component, Glyph, GlyphBuilder, GlyphOrder},
     orchestration::{Context, Flags, IrWork, WorkId},
 };
 
-pub fn create_finalize_static_metadata_work() -> Box<IrWork> {
-    Box::new(FinalizeStaticMetadataWork {})
+pub fn create_glyph_order_work() -> Box<IrWork> {
+    Box::new(GlyphOrderWork {})
 }
 
-struct FinalizeStaticMetadataWork {}
+#[derive(Debug)]
+struct GlyphOrderWork {}
 
 /// Glyph should split if it has components *and* contours.
 ///
@@ -64,7 +70,7 @@ fn has_consistent_2x2_transforms(glyph: &Glyph) -> bool {
     component_seqs.len() <= 1
 }
 
-fn name_for_derivative(base_name: &GlyphName, names_in_use: &IndexSet<GlyphName>) -> GlyphName {
+fn name_for_derivative(base_name: &GlyphName, names_in_use: &GlyphOrder) -> GlyphName {
     let mut i = 0;
     let base_name = base_name.as_str();
     loop {
@@ -79,10 +85,7 @@ fn name_for_derivative(base_name: &GlyphName, names_in_use: &IndexSet<GlyphName>
 /// Returns a tuple of (simple glyph, composite glyph).
 ///
 /// The former contains all the contours, the latter contains all the components.
-fn split_glyph(
-    glyph_order: &IndexSet<GlyphName>,
-    original: &Glyph,
-) -> Result<(Glyph, Glyph), WorkError> {
+fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Glyph), WorkError> {
     // Make a simple glyph by erasing the components from it
     let mut simple_glyph: GlyphBuilder = original.into();
     simple_glyph.sources.iter_mut().for_each(|(_, inst)| {
@@ -229,7 +232,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
             continue;
         }
 
-        let referenced_glyph = context.get_glyph_ir(&component.base);
+        let referenced_glyph = context.glyphs.get(&WorkId::Glyph(component.base.clone()));
         frontier.extend(
             components(&referenced_glyph, component.transform)
                 .iter()
@@ -279,13 +282,13 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
         simple.name,
         original.name
     );
-    context.set_glyph_ir(simple);
+    context.glyphs.set(simple);
     Ok(())
 }
 
 fn move_contours_to_new_component(
     context: &Context,
-    new_glyph_order: &mut IndexSet<GlyphName>,
+    new_glyph_order: &mut GlyphOrder,
     glyph: &Glyph,
 ) -> Result<(), WorkError> {
     debug!(
@@ -299,8 +302,8 @@ fn move_contours_to_new_component(
     debug_assert!(simple.name != glyph.name);
 
     new_glyph_order.insert(simple.name.clone());
-    context.set_glyph_ir(simple);
-    context.set_glyph_ir(composite);
+    context.glyphs.set(simple);
+    context.glyphs.set(composite);
     Ok(())
 }
 
@@ -326,7 +329,7 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), WorkError> {
         let mut frontier = VecDeque::new();
         frontier.extend(inst.components.split_off(0));
         while let Some(component) = frontier.pop_front() {
-            let ref_glyph = context.get_glyph_ir(&component.base);
+            let ref_glyph = context.glyphs.get(&WorkId::Glyph(component.base.clone()));
             let ref_inst = ref_glyph.sources().get(loc).ok_or_else(|| {
                 WorkError::GlyphUndefAtNormalizedLocation {
                     glyph_name: ref_glyph.name.clone(),
@@ -351,29 +354,45 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), WorkError> {
         glyph.name,
         glyph.default_instance().components
     );
-    context.set_glyph_ir(glyph);
+    context.glyphs.set(glyph);
     Ok(())
 }
 
-impl Work<Context, WorkId, WorkError> for FinalizeStaticMetadataWork {
+impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
     fn id(&self) -> WorkId {
-        WorkId::FinalizeStaticMetadata
+        WorkId::GlyphOrder
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        Access::Custom(Arc::new(|id| {
+            matches!(
+                id,
+                WorkId::Glyph(..) | WorkId::StaticMetadata | WorkId::PreliminaryGlyphOrder
+            )
+        }))
+    }
+
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Custom(Arc::new(|id| {
+            matches!(id, WorkId::Glyph(..) | WorkId::GlyphOrder)
+        }))
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         // We should now have access to *all* the glyph IR
         // Some of it may need to be massaged to produce BE glyphs
         // In particular, glyphs with both paths and components need to push the path into a component
-        let current_metadata = context.get_init_static_metadata();
-        let mut new_glyph_order = current_metadata.glyph_order.clone();
+        let arc_current = context.preliminary_glyph_order.get();
+        let current_glyph_order = &*arc_current;
+        let mut new_glyph_order = current_glyph_order.clone();
 
         // Glyphs with paths and components, and glyphs whose component 2x2 transforms vary over designspace
         // are not directly supported in fonts. To resolve we must do one of:
         // 1) need to push their paths to a new glyph that is a component
         // 2) collapse such glyphs into a simple (contour-only) glyph
         // fontmake (Python) prefers option 2.
-        for glyph_name in current_metadata.glyph_order.iter() {
-            let glyph = context.get_glyph_ir(glyph_name);
+        for glyph_name in current_glyph_order.iter() {
+            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
             let inconsistent_components = !has_consistent_2x2_transforms(&glyph);
             if inconsistent_components || has_components_and_contours(&glyph) {
                 if inconsistent_components {
@@ -396,31 +415,27 @@ impl Work<Context, WorkId, WorkError> for FinalizeStaticMetadataWork {
 
         if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
             for glyph_name in new_glyph_order.iter() {
-                let glyph = context.get_glyph_ir(glyph_name);
+                let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
                 flatten_glyph(context, &glyph)?;
             }
         }
 
         // We now have the final static metadata
         // If the glyph order changed try not to forget about it
-        if current_metadata.glyph_order != new_glyph_order {
+        if *current_glyph_order != new_glyph_order {
             if log_enabled!(log::Level::Trace) {
-                let mut new_glyphs: Vec<_> = new_glyph_order
-                    .difference(&current_metadata.glyph_order)
-                    .collect();
+                let mut new_glyphs: Vec<_> =
+                    new_glyph_order.difference(current_glyph_order).collect();
                 new_glyphs.sort();
                 trace!(
                     "Added {} additional glyphs: {new_glyphs:?}",
                     new_glyphs.len()
                 )
             }
-            let mut updated_metadata = (*current_metadata).clone();
-            updated_metadata.glyph_order = new_glyph_order;
-            context.set_final_static_metadata(updated_metadata);
         } else {
-            trace!("No new glyphs; final static metadata is unchanged");
-            context.set_final_static_metadata((*current_metadata).clone());
+            trace!("No new glyphs, final glyph order == preliminary glyph order");
         }
+        context.glyph_order.set(new_glyph_order);
         Ok(())
     }
 }
@@ -431,15 +446,14 @@ mod tests {
 
     use font_types::Tag;
     use fontdrasil::{orchestration::Access, types::GlyphName};
-    use indexmap::IndexSet;
     use kurbo::{Affine, BezPath};
     use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 
     use crate::{
         coords::{NormalizedCoord, NormalizedLocation},
         glyph::has_consistent_2x2_transforms,
-        ir::{Component, Glyph, GlyphBuilder, GlyphInstance},
-        orchestration::{Context, Flags},
+        ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
+        orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Input,
     };
@@ -507,9 +521,9 @@ mod tests {
 
     impl DeepComponent {
         fn write_to(&self, context: &Context) {
-            context.set_glyph_ir(self.simple_glyph.clone());
-            context.set_glyph_ir(self.shallow_component.clone());
-            context.set_glyph_ir(self.deep_component.clone());
+            context.glyphs.set(self.simple_glyph.clone());
+            context.glyphs.set(self.shallow_component.clone());
+            context.glyphs.set(self.deep_component.clone());
         }
     }
 
@@ -562,7 +576,7 @@ mod tests {
 
     #[test]
     fn names_for_derivatives() {
-        let mut names = IndexSet::new();
+        let mut names = GlyphOrder::new();
         assert_eq!(
             GlyphName::from("duck.0"),
             name_for_derivative(&"duck".into(), &names)
@@ -628,7 +642,7 @@ mod tests {
     #[test]
     fn split_a_glyph() {
         let split_me = contour_and_component_weight_glyph("glyphname");
-        let (simple, composite) = split_glyph(&IndexSet::new(), &split_me).unwrap();
+        let (simple, composite) = split_glyph(&GlyphOrder::new(), &split_me).unwrap();
 
         let expected_locs = split_me.sources().keys().collect::<HashSet<_>>();
         assert_eq!(
@@ -656,10 +670,10 @@ mod tests {
         let coalesce_me = contour_and_component_weight_glyph("coalesce_me");
 
         let context = test_context();
-        context.set_glyph_ir(contour_glyph("component"));
+        context.glyphs.set(contour_glyph("component"));
 
         convert_components_to_contours(&context, &coalesce_me).unwrap();
-        let simple = context.get_glyph_ir(&coalesce_me.name);
+        let simple = context.glyphs.get(&WorkId::Glyph(coalesce_me.name));
         assert_simple(&simple);
 
         // Our sample is unimaginative; both weights are identical
@@ -709,7 +723,7 @@ mod tests {
         let nested_components = nested_components.try_into().unwrap();
 
         convert_components_to_contours(&context, &nested_components).unwrap();
-        let simple = context.get_glyph_ir(&nested_components.name);
+        let simple = context.glyphs.get(&WorkId::Glyph(nested_components.name));
         assert_simple(&simple);
         assert_eq!(1, simple.sources().len());
         let inst = simple.default_instance();
@@ -757,11 +771,11 @@ mod tests {
             .unwrap();
 
         let context = test_context();
-        context.set_glyph_ir(reuse_me);
+        context.glyphs.set(reuse_me);
 
         let glyph = glyph.try_into().unwrap();
         convert_components_to_contours(&context, &glyph).unwrap();
-        let simple = context.get_glyph_ir(&glyph.name);
+        let simple = context.glyphs.get(&WorkId::Glyph(glyph.name));
         assert_simple(&simple);
         assert_eq!(1, simple.sources().len());
         let inst = simple.sources().values().next().unwrap();
@@ -819,10 +833,10 @@ mod tests {
         });
 
         let context = test_context();
-        context.set_glyph_ir(contour_glyph("component"));
+        context.glyphs.set(contour_glyph("component"));
 
         convert_components_to_contours(&context, &glyph).unwrap();
-        let simple = context.get_glyph_ir(&glyph.name);
+        let simple = context.glyphs.get(&WorkId::Glyph(glyph.name));
         assert_simple(&simple);
     }
 
@@ -832,10 +846,10 @@ mod tests {
         let glyph = adjust_transform_for_each_instance(&glyph, |i| Affine::scale(i as f64));
 
         let context = test_context();
-        context.set_glyph_ir(contour_glyph("component"));
+        context.glyphs.set(contour_glyph("component"));
 
         convert_components_to_contours(&context, &glyph).unwrap();
-        let simple = context.get_glyph_ir(&glyph.name);
+        let simple = context.glyphs.get(&WorkId::Glyph(glyph.name));
         assert_simple(&simple);
     }
 
@@ -848,12 +862,13 @@ mod tests {
     }
 
     fn assert_is_flattened_component(context: &Context, glyph_name: GlyphName) {
-        let glyph = context.get_glyph_ir(&glyph_name);
+        let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name));
         for (loc, inst) in glyph.sources().iter() {
             assert!(!inst.components.is_empty());
             for component in inst.components.iter() {
                 assert!(context
-                    .get_glyph_ir(&component.base)
+                    .glyphs
+                    .get(&WorkId::Glyph(component.base.clone()))
                     .sources()
                     .get(loc)
                     .unwrap()
