@@ -16,9 +16,9 @@ impl FieldAttrs {
         for attr in attrs {
             let args: syn::Path = attr.parse_args()?;
             if args.is_ident(REST) {
-                this.rest = Some(attr.path.clone());
+                this.rest = Some(attr.path().clone());
             } else if args.is_ident(DEFAULT) {
-                this.default = Some(attr.path.clone());
+                this.default = Some(attr.path().clone());
             } else {
                 return Err(syn::Error::new(args.span(), "unsupported attribute"));
             }
