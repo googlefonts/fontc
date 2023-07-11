@@ -1,6 +1,9 @@
 //! Building the ItemVariationStore
 
-use std::collections::{BinaryHeap, HashMap};
+use std::{
+    collections::{BinaryHeap, HashMap},
+    fmt::{Debug, Display},
+};
 
 use indexmap::IndexMap;
 use write_fonts::tables::{
@@ -18,8 +21,9 @@ pub(crate) struct VariationStoreBuilder {
     all_regions: HashMap<VariationRegion, usize>,
     // we use an index map so that we have a deterministic ordering,
     // which lets us write better tests
-    //TODO: we could store IndexMap<RowShape, IndexMap<DeltaSet, DeltaKey>> here,
-    //if desired?
+    //NOTE: we could store IndexMap<RowShape, IndexMap<DeltaSet, DeltaKey>> here,
+    //if desired, but that would require us to know the total number of regions
+    //when we construct the builder.
     delta_sets: IndexMap<DeltaSet, DeltaKey>,
     next_id: DeltaKey,
 }
@@ -56,12 +60,6 @@ pub(crate) struct DeltaKey {
 }
 
 impl DeltaKey {
-    #[allow(dead_code)]
-    pub const NO_DELTAS: DeltaKey = DeltaKey {
-        outer: 0xFFFF,
-        inner: 0xFFFF,
-    };
-
     /// Construct the next identifier.
     ///
     /// Identifiers start (0xfffe, 0xfffe) and decrease (this makes them easier
@@ -95,11 +93,14 @@ impl Default for DeltaKey {
 }
 
 impl VariationStoreBuilder {
-    pub(crate) fn add_deltas(&mut self, deltas: Vec<(VariationRegion, i16)>) -> DeltaKey {
+    pub(crate) fn add_deltas<T: Into<i32>>(
+        &mut self,
+        deltas: Vec<(VariationRegion, T)>,
+    ) -> DeltaKey {
         let mut delta_set = Vec::with_capacity(deltas.len());
         for (region, delta) in deltas {
             let region_idx = self.index_for_region(region) as u16;
-            delta_set.push((region_idx, delta as i32));
+            delta_set.push((region_idx, delta.into()));
         }
         delta_set.sort_unstable();
         *self
@@ -124,95 +125,29 @@ impl VariationStoreBuilder {
         VariationRegionList::new(region_list)
     }
 
+    fn encoder(&self) -> Encoder {
+        Encoder::new(&self.delta_sets, self.all_regions.len() as u16)
+    }
+
     pub(crate) fn build(self) -> (ItemVariationStore, VariationIndexRemapping) {
-        let mut shape = RowShape::default();
-        let mut encodings: IndexMap<_, Vec<_>> = Default::default();
-        let n_regions = self.all_regions.len() as u16;
-
-        for delta in self.delta_sets.keys() {
-            shape.reuse(delta, n_regions);
-            match encodings.get_mut(&shape) {
-                Some(items) => items.push(delta),
-                None => {
-                    encodings.insert(shape.clone(), vec![delta]);
-                }
-            }
-        }
-        let mut to_process = encodings
-            .into_iter()
-            .map(|(shape, deltas)| Some(Encoding { shape, deltas }))
-            .collect::<Vec<_>>();
-
-        // build up a priority list of the space savings from combining each pair
-        // of encodings
-        let mut queue = BinaryHeap::with_capacity(to_process.len());
-
-        for ((i, red), (j, blue)) in to_process
-            .iter()
-            .enumerate()
-            .zip(to_process.iter().enumerate().cycle().skip(1))
-        {
-            let gain = red.as_ref().unwrap().compute_gain(blue.as_ref().unwrap());
-            if gain > 0 {
-                queue.push((gain, i, j));
-            }
-        }
-
-        // iteratively process each item in the queue
-        while let Some((_, i, j)) = queue.pop() {
-            // as items are combined, we leave `None` in the to_process list.
-            // This ensures that indicies are stable.
-            let (Some(mut to_update), Some(to_add)) = (
-                to_process.get_mut(i).and_then(Option::take),
-                to_process.get_mut(j).and_then(Option::take)
-            ) else { continue };
-
-            //NOTE: it is now possible that we have duplicate data. I'm not sure
-            //how likely this is? probably not likely?
-            to_update.merge_with(to_add);
-            let n = to_process.len();
-            let mut maybe_existing_encoding = None;
-            for (ii, opt_encoding) in to_process.iter_mut().enumerate() {
-                // does two things: skips empty indices, and also temporarily
-                // removes the item (we'll put it back unless we merge, below)
-                let Some(encoding) = opt_encoding.take() else { continue };
-
-                if encoding.shape == to_update.shape {
-                    // if an identical encoding exists in the list, we will just
-                    // merge it with the newly created one. We do this after
-                    // calculating the new gains, though, so we aren't changing
-                    // anything mid-stream
-                    maybe_existing_encoding = Some(encoding);
-                    continue;
-                }
-                let gain = to_update.compute_gain(&encoding);
-                if gain > 0 {
-                    queue.push((gain, n, ii));
-                }
-                *opt_encoding = Some(encoding);
-            }
-            if let Some(existing) = maybe_existing_encoding.take() {
-                to_update.deltas.extend(existing.deltas);
-            }
-            to_process.push(Some(to_update));
-        }
-        // we now have a vec of optimized encodings.
-        // we need to turn these into ItemVariationData tables.
-        // (probably one table per encoding, unless the coding contains > u16::max
-        // items, in which case we'll split it)
         let mut key_map = VariationIndexRemapping::default();
-        let subtables: Vec<_> = to_process
-            .into_iter()
-            .flatten()
-            .flat_map(Encoding::iter_split_into_table_size_chunks)
-            .enumerate()
-            .map(|(i, encoding)| encoding.encode(&self.delta_sets, &mut key_map, i as u16))
-            .collect();
+        let mut encoder = self.encoder();
+        encoder.optimize();
+        let subtables = encoder.encode(&mut key_map);
         let region_list = self.make_region_list();
         (ItemVariationStore::new(region_list, subtables), key_map)
     }
 }
 
+/// A context for encoding deltas into the final [`ItemVariationStore`].
+///
+/// This mostly exists so that we can write better tests.
+struct Encoder<'a> {
+    delta_map: &'a IndexMap<DeltaSet, DeltaKey>,
+    encodings: Vec<Encoding<'a>>,
+}
+
+/// A set of deltas that share a shape.
 struct Encoding<'a> {
     shape: RowShape,
     deltas: Vec<&'a DeltaSet>,
@@ -220,6 +155,7 @@ struct Encoding<'a> {
 
 /// A type for remapping delta sets during encoding.
 struct RegionMap {
+    /// a region idx + the bits required to store it.
     map: Vec<(u16, ColumnBits)>,
     n_active_regions: u16,
     n_long_regions: u16,
@@ -229,6 +165,9 @@ struct RegionMap {
 /// Describes the compressability of a row of deltas across all variation regions.
 ///
 /// fonttools calls this the 'characteristic' of a row.
+///
+/// We could get much fancier about how we represent this type, and avoid
+/// allocation in most cases; but this is simple and works, so :shrug:
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 struct RowShape(Vec<ColumnBits>);
 
@@ -246,6 +185,151 @@ enum ColumnBits {
     Two = 2,
     /// an i32
     Four = 4,
+}
+
+impl<'a> Encoder<'a> {
+    fn new(delta_map: &'a IndexMap<DeltaSet, DeltaKey>, total_regions: u16) -> Self {
+        let mut shape = RowShape::default();
+        let mut encodings: IndexMap<_, Vec<_>> = Default::default();
+
+        for delta in delta_map.keys() {
+            shape.reuse(delta, total_regions);
+            match encodings.get_mut(&shape) {
+                Some(items) => items.push(delta),
+                None => {
+                    encodings.insert(shape.clone(), vec![delta]);
+                }
+            }
+        }
+        let encodings = encodings
+            .into_iter()
+            .map(|(shape, deltas)| Encoding { shape, deltas })
+            .collect();
+
+        Encoder {
+            encodings,
+            delta_map,
+        }
+    }
+
+    fn cost(&self) -> usize {
+        self.encodings.iter().map(Encoding::cost).sum()
+    }
+
+    /// Recursively combine encodings where doing so provides space savings.
+    ///
+    /// This is a reimplementation of the [VarStore_optimize][fonttools] function
+    /// in fonttools, although it is not a direct port.
+    ///
+    /// [fonttools]: https://github.com/fonttools/fonttools/blob/fb56e7b7c9715895b81708904c840875008adb9c/Lib/fontTools/varLib/varStore.py#L471
+    fn optimize(&mut self) {
+        let cost = self.cost();
+        log::trace!("optimizing {} encodings, {cost}B", self.encodings.len(),);
+        // a little helper for pretty-printing our todo list
+        struct DebugTodoList<'a>(&'a [Option<Encoding<'a>>]);
+        impl Debug for DebugTodoList<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "Todo({} items", self.0.len())?;
+                for (i, enc) in self.0.iter().enumerate() {
+                    if let Some(enc) = enc {
+                        write!(f, "\n    {i:>4}: {enc:?}")?;
+                    }
+                }
+                writeln!(f, ")")
+            }
+        }
+        // temporarily take ownership of all the encodings
+        let to_process = std::mem::take(&mut self.encodings);
+        // convert to a vec of Option<Encoding>;
+        // we will replace items with None as they are combined
+        let mut to_process = to_process.into_iter().map(Option::Some).collect::<Vec<_>>();
+
+        // build up a priority list of the space savings from combining each pair
+        // of encodings
+        let mut queue = BinaryHeap::with_capacity(to_process.len());
+
+        for (i, red) in to_process.iter().enumerate() {
+            for (j, blue) in to_process.iter().enumerate().skip(i + 1) {
+                let gain = red.as_ref().unwrap().compute_gain(blue.as_ref().unwrap());
+                if gain > 0 {
+                    log::trace!("adding ({i}, {j} ({gain})) to queue");
+                    queue.push((gain, i, j));
+                }
+            }
+        }
+
+        // iteratively process each item in the queue
+        while let Some((_gain, i, j)) = queue.pop() {
+            if to_process[i].is_none() || to_process[j].is_none() {
+                continue;
+            }
+            // as items are combined, we leave `None` in the to_process list.
+            // This ensures that indicies are stable.
+            let (Some(mut to_update), Some(to_add)) = (
+                to_process.get_mut(i).and_then(Option::take),
+                to_process.get_mut(j).and_then(Option::take)
+            ) else { unreachable!("checked above") };
+            log::trace!(
+                "combining {i}+{j} ({}, {} {_gain})",
+                to_update.shape,
+                to_add.shape
+            );
+
+            //NOTE: it is now possible that we have duplicate data. I'm not sure
+            //how likely this is? Not very likely? it would require one deltaset's
+            //regions to be a subset of another, with zeros for the missing axes?
+            to_update.merge_with(to_add);
+            let n = to_process.len(); // index we assign the combined encoding
+            let mut maybe_existing_encoding = None;
+            for (ii, opt_encoding) in to_process.iter_mut().enumerate() {
+                // does two things: skips empty indices, and also temporarily
+                // removes the item (we'll put it back unless we merge, below)
+                let Some(encoding) = opt_encoding.take() else { continue };
+
+                if encoding.shape == to_update.shape {
+                    // if an identical encoding exists in the list, we will just
+                    // merge it with the newly created one. We do this after
+                    // calculating the new gains, though, so we aren't changing
+                    // anything mid-stream
+                    maybe_existing_encoding = Some(encoding);
+                    continue;
+                }
+                let gain = to_update.compute_gain(&encoding);
+                if gain > 0 {
+                    log::trace!("adding ({n}, {ii} ({gain})) to queue");
+                    queue.push((gain, n, ii));
+                }
+                *opt_encoding = Some(encoding);
+            }
+            if let Some(existing) = maybe_existing_encoding.take() {
+                to_update.deltas.extend(existing.deltas);
+            }
+            to_process.push(Some(to_update));
+            log::trace!("{:?}", DebugTodoList(&to_process));
+        }
+        self.encodings = to_process.into_iter().flatten().collect();
+        log::trace!(
+            "optimized {} encodings, {}B, ({}B saved)",
+            self.encodings.len(),
+            self.cost(),
+            cost.saturating_sub(self.cost()),
+        );
+    }
+
+    /// Encode the `Encoding` sets into [`ItemVariationData`] subtables.
+    ///
+    /// In general, each encoding ends up being one subtable, except:
+    /// - if the encoding is empty, we get a `NULL` subtable (aka None)
+    /// - if an encoding contains more than 0xFFFF rows, it is split into
+    ///   multiple subtables.
+    fn encode(self, key_map: &mut VariationIndexRemapping) -> Vec<Option<ItemVariationData>> {
+        self.encodings
+            .into_iter()
+            .flat_map(Encoding::iter_split_into_table_size_chunks)
+            .enumerate()
+            .map(|(i, encoding)| encoding.encode(self.delta_map, key_map, i as u16))
+            .collect()
+    }
 }
 
 impl ColumnBits {
@@ -325,7 +409,7 @@ impl RowShape {
 
     /// we reorder regions so that all the 'word' columns are at the front.
     ///
-    /// The returns a vec where for each region `x`, vec[x] is the final position
+    /// The returns a vec where for each region `x`, `vec[x]` is the final position
     /// of that region.
     fn region_map(&self) -> RegionMap {
         let mut with_idx = self.0.iter().copied().enumerate().collect::<Vec<_>>();
@@ -361,7 +445,7 @@ impl<'a> Encoding<'a> {
         let combined = self.shape.merge(&other.shape);
         let combined_cost =
             combined.overhead() + (combined.row_cost() * (self.deltas.len() + other.deltas.len()));
-        combined_cost as i64 - current_cost as i64
+        current_cost as i64 - combined_cost as i64
     }
 
     fn merge_with(&mut self, other: Encoding<'a>) {
@@ -403,6 +487,11 @@ impl<'a> Encoding<'a> {
         key_map: &mut VariationIndexRemapping,
         subtable_idx: u16,
     ) -> Option<ItemVariationData> {
+        log::trace!(
+            "encoding subtable {subtable_idx} ({} rows, {}B)",
+            self.deltas.len(),
+            self.cost()
+        );
         assert!(self.deltas.len() <= 0xffff, "call split_off_back first");
         let item_count = self.deltas.len() as u16;
         if item_count == 0 {
@@ -410,14 +499,6 @@ impl<'a> Encoding<'a> {
             return None;
         }
 
-        // what is tricky is that the deltasets can have an arbitrary number
-        // of different regionsets, contain a different number of regions, etc.
-        // what would be easiest is to encode to an intermediate representation
-        // (where all items are the same size) so we can index into it, instead
-        // of encoding directly (since we have a variable length encoding, and
-        // so can't use indexes with the final data)
-        //
-        // so... we can actually stay in i32 for this first stage?
         let region_map = self.shape.region_map();
         let n_regions = self.shape.n_non_zero_regions();
         let total_n_delta_values = self.deltas.len() * n_regions;
@@ -440,7 +521,8 @@ impl<'a> Encoding<'a> {
             key_map.set(*raw_key, final_key);
         }
 
-        // then
+        // then we convert the correctly-ordered i32s into the final compressed
+        // representation.
         let delta_sets = region_map.encode_raw_delta_values(raw_deltas);
         let word_delta_count = region_map.word_delta_count();
         let region_indexes = region_map.indices();
@@ -466,23 +548,18 @@ impl RegionMap {
             short: &'a [i32],
             long_words: bool,
         ) -> impl Iterator<Item = u8> + 'a {
-            // dumb trick: the two branches have differnet concrete types,
+            // dumb trick: the two branches have different concrete types,
             // so we need to unify them
-            let mut left = None;
-            let mut right = None;
-            if long_words {
-                left = Some(
-                    long.iter()
-                        .flat_map(|x| x.to_be_bytes().into_iter())
-                        .chain(short.iter().flat_map(|x| (*x as i16).to_be_bytes())),
-                );
-            } else {
-                right = Some(
-                    long.iter()
-                        .flat_map(|x| (*x as i16).to_be_bytes().into_iter())
-                        .chain(short.iter().flat_map(|x| (*x as i8).to_be_bytes())),
-                );
-            }
+            let left = long_words.then(|| {
+                long.iter()
+                    .flat_map(|x| x.to_be_bytes().into_iter())
+                    .chain(short.iter().flat_map(|x| (*x as i16).to_be_bytes()))
+            });
+            let right = (!long_words).then(|| {
+                long.iter()
+                    .flat_map(|x| (*x as i16).to_be_bytes().into_iter())
+                    .chain(short.iter().flat_map(|x| (*x as i8).to_be_bytes()))
+            });
 
             // combine the two branches into a single type
             left.into_iter()
@@ -546,6 +623,40 @@ impl PartialEq<(u16, u16)> for DeltaKey {
     }
 }
 
+impl Display for RowShape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for col in &self.0 {
+            match col {
+                ColumnBits::None => write!(f, "-"),
+                ColumnBits::One => write!(f, "B"),
+                ColumnBits::Two => write!(f, "S"),
+                ColumnBits::Four => write!(f, "L"),
+            }?
+        }
+        Ok(())
+    }
+}
+
+impl Debug for Encoding<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Encoding({}, {} items {} bytes)",
+            self.shape,
+            self.deltas.len(),
+            self.cost()
+        )
+    }
+}
+
+impl Debug for Encoder<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Encoder")
+            .field("encodings", &self.encodings)
+            .finish_non_exhaustive()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use write_fonts::{read::FontRead, tables::variations::RegionAxisCoordinates, types::F2Dot14};
@@ -569,30 +680,15 @@ mod tests {
     }
 
     #[test]
-    fn delta_keys() {
-        impl DeltaKey {
-            fn new(outer: u16, inner: u16) -> Self {
-                Self { outer, inner }
-            }
-        }
-        assert_eq!(
-            DeltaKey::new(0xFFFE, 0xFFFE,).next(),
-            DeltaKey::new(0xFFFE, 0xFFFD,)
-        );
-
-        assert_eq!(
-            DeltaKey::new(0xFFFE, 0).next(),
-            DeltaKey::new(0xFFFD, 0xFFFF)
-        );
-    }
-
-    #[test]
+    #[allow(clippy::redundant_clone)]
     fn smoke_test() {
         let [r1, r2, r3] = test_regions();
 
         let mut builder = VariationStoreBuilder::default();
-        builder.add_deltas(vec![(r1.clone(), 5), (r2, 10), (r3.clone(), 15)]);
-        builder.add_deltas(vec![(r1, -3), (r3, 20)]);
+        builder.add_deltas(vec![(r1.clone(), 512), (r2, 266), (r3.clone(), 1115)]);
+        builder.add_deltas(vec![(r3.clone(), 20)]);
+        builder.add_deltas(vec![(r3.clone(), 21)]);
+        builder.add_deltas(vec![(r3, 22)]);
 
         // we should have three regions, and two subtables
         let (store, _) = builder.build();
@@ -610,7 +706,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .region_indexes,
-            vec![0, 2]
+            vec![2]
         );
     }
 
@@ -619,10 +715,16 @@ mod tests {
         let [r1, r2, r3] = test_regions();
 
         let mut builder = VariationStoreBuilder::default();
-        let k1 = builder.add_deltas(vec![(r1.clone(), 5), (r2, 10), (r3.clone(), 15)]);
+        let k1 = builder.add_deltas(vec![(r1.clone(), 5), (r2, 1000), (r3.clone(), 1500)]);
         let k2 = builder.add_deltas(vec![(r1.clone(), -3), (r3.clone(), 20)]);
-        let k3 = builder.add_deltas(vec![(r1, -12), (r3, 7)]);
+        let k3 = builder.add_deltas(vec![(r1.clone(), -12), (r3.clone(), 7)]);
+        // add enough items so that the optimizer doesn't merge these two encodings
+        let _ = builder.add_deltas(vec![(r1.clone(), -10), (r3.clone(), 7)]);
+        let _ = builder.add_deltas(vec![(r1.clone(), -9), (r3.clone(), 7)]);
+        let _ = builder.add_deltas(vec![(r1, -11), (r3, 7)]);
 
+        let encoder = builder.encoder();
+        eprintln!("{encoder:?}");
         // we should have three regions, and two subtables
         let (_, key_lookup) = builder.build();
 
@@ -632,17 +734,20 @@ mod tests {
         assert_eq!(key_lookup.get(k2).unwrap(), (1, 0),);
         assert_eq!(key_lookup.get(k3).unwrap(), (1, 1),);
 
-        assert_eq!(key_lookup.map.len(), 3);
+        assert_eq!(key_lookup.map.len(), 6);
     }
 
     #[test]
+    #[allow(clippy::redundant_clone)]
     fn to_binary() {
         let [r1, r2, r3] = test_regions();
 
         let mut builder = VariationStoreBuilder::default();
-        builder.add_deltas(vec![(r1.clone(), 5), (r2, 10), (r3.clone(), 15)]);
+        builder.add_deltas(vec![(r1.clone(), 512), (r2, 1000), (r3.clone(), 265)]);
         builder.add_deltas(vec![(r1.clone(), -3), (r3.clone(), 20)]);
-        builder.add_deltas(vec![(r1, -12), (r3, 7)]);
+        builder.add_deltas(vec![(r1.clone(), -12), (r3.clone(), 7)]);
+        builder.add_deltas(vec![(r1.clone(), -11), (r3.clone(), 8)]);
+        builder.add_deltas(vec![(r1.clone(), -10), (r3.clone(), 9)]);
         let (table, _) = builder.build();
         let bytes = write_fonts::dump_table(&table).unwrap();
         let data = write_fonts::read::FontData::new(&bytes);
@@ -656,17 +761,23 @@ mod tests {
         let var_data = var_data_array.get(0).unwrap().unwrap();
         assert_eq!(var_data.region_indexes(), &[0, 1, 2]);
         assert_eq!(var_data.item_count(), 1);
-        assert_eq!(var_data.delta_set(0).collect::<Vec<_>>(), vec![5, 10, 15]);
+        assert_eq!(
+            var_data.delta_set(0).collect::<Vec<_>>(),
+            vec![512, 1000, 265]
+        );
 
         let var_data = var_data_array.get(1).unwrap().unwrap();
         assert_eq!(var_data.region_indexes(), &[0, 2]);
-        assert_eq!(var_data.item_count(), 2);
+        assert_eq!(var_data.item_count(), 4);
         assert_eq!(var_data.delta_set(0).collect::<Vec<_>>(), vec![-3, 20]);
         assert_eq!(var_data.delta_set(1).collect::<Vec<_>>(), vec![-12, 7]);
+        assert_eq!(var_data.delta_set(2).collect::<Vec<_>>(), vec![-11, 8]);
+        assert_eq!(var_data.delta_set(3).collect::<Vec<_>>(), vec![-10, 9]);
     }
 
     #[test]
     fn reuse_identical_variation_data() {
+        let _ = env_logger::builder().is_test(true).try_init();
         let [r1, r2, r3] = test_regions();
 
         let mut builder = VariationStoreBuilder::default();
@@ -681,5 +792,109 @@ mod tests {
         assert_ne!(k1, k2);
         assert_ne!(k1, k4);
         assert_eq!(key_lookup.map.len(), 3);
+    }
+
+    /// if we have a single region set, where some deltas are 32-bit, the
+    /// smaller deltas should get their own subtable IFF we save enough bytes
+    /// to justify this
+    #[test]
+    #[allow(clippy::redundant_clone)]
+    fn long_deltas_split() {
+        let [r1, r2, _] = test_regions();
+        let mut builder = VariationStoreBuilder::default();
+        // short
+        builder.add_deltas(vec![(r1.clone(), 1), (r2.clone(), 2)]);
+        builder.add_deltas(vec![(r1.clone(), 3), (r2.clone(), 4)]);
+        builder.add_deltas(vec![(r1.clone(), 5), (r2.clone(), 6)]);
+        // long
+        builder.add_deltas(vec![(r1.clone(), 0xffff + 1), (r2.clone(), 0xffff + 2)]);
+        let mut encoder = builder.encoder();
+        assert_eq!(encoder.encodings.len(), 2);
+        encoder.optimize();
+        assert_eq!(encoder.encodings.len(), 2);
+    }
+
+    /// combine smaller deltas into larger when there aren't many of them
+    #[test]
+    #[allow(clippy::redundant_clone)]
+    fn long_deltas_combine() {
+        let [r1, r2, _] = test_regions();
+        let mut builder = VariationStoreBuilder::default();
+        // short
+        builder.add_deltas(vec![(r1.clone(), 1), (r2.clone(), 2)]);
+        builder.add_deltas(vec![(r1.clone(), 3), (r2.clone(), 4)]);
+        // long
+        builder.add_deltas(vec![(r1.clone(), 0xffff + 1), (r2.clone(), 0xffff + 2)]);
+
+        let mut encoder = builder.encoder();
+        assert_eq!(encoder.encodings.len(), 2);
+        assert_eq!(encoder.encodings[0].shape.overhead(), 14); // 10 base, 2 * 2 columns
+        assert_eq!(encoder.encodings[0].cost(), 14 + 4); // overhead + 2 * 2 bytes/row
+        assert_eq!(encoder.encodings[1].shape.overhead(), 14);
+        assert_eq!(encoder.encodings[1].cost(), 14 + 8); // overhead + 1 * 8 bytes/rows
+        encoder.optimize();
+        assert_eq!(encoder.encodings.len(), 1);
+    }
+
+    // ensure that we are merging as expected
+    #[test]
+    #[allow(clippy::redundant_clone)]
+    fn combine_many_shapes() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let [r1, r2, r3] = test_regions();
+        let mut builder = VariationStoreBuilder::default();
+        // orchestrate a failure case:
+        // - we want to combine
+        builder.add_deltas(vec![(r1.clone(), 0xffff + 5)]); // (L--)
+        builder.add_deltas(vec![(r1.clone(), 2)]); // (B--)
+        builder.add_deltas(vec![(r1.clone(), 300)]); // (S--)
+        builder.add_deltas(vec![(r2.clone(), 0xffff + 5)]); // (-L-)
+        builder.add_deltas(vec![(r2.clone(), 2)]); // (-B-)
+        builder.add_deltas(vec![(r2.clone(), 300)]); // (-S-)
+        builder.add_deltas(vec![(r3.clone(), 0xffff + 5)]); // (--L)
+        builder.add_deltas(vec![(r3.clone(), 2)]); // (--B)
+        builder.add_deltas(vec![(r3.clone(), 300)]); // (--S)
+        let mut encoder = builder.encoder();
+        encoder.optimize();
+        // we compile down to three subtables, each with one column
+        assert_eq!(encoder.encodings.len(), 3);
+        assert!(encoder.encodings[0]
+            .compute_gain(&encoder.encodings[1])
+            .is_negative());
+    }
+
+    #[test]
+    #[allow(clippy::redundant_clone)]
+    fn combine_two_big_fellas() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let [r1, r2, r3] = test_regions();
+        let mut builder = VariationStoreBuilder::default();
+        // we only combine two of these, since that saves 2 bytes, but adding
+        // the third is too expensive
+        builder.add_deltas(vec![(r1.clone(), 0xffff + 5)]); // (L--)
+        builder.add_deltas(vec![(r2.clone(), 0xffff + 5)]); // (-L-)
+        builder.add_deltas(vec![(r3.clone(), 0xffff + 5)]); // (--L)
+
+        let mut encoder = builder.encoder();
+        assert_eq!(encoder.encodings[0].cost(), 16);
+        let merge_cost = 2 // extra column
+            + 4 // existing encoding gets extra column
+            + 8; // two columns for new row
+        assert_eq!(
+            encoder.encodings[0].compute_gain(&encoder.encodings[1]),
+            16 - merge_cost
+        );
+        encoder.optimize();
+
+        // we didn't merge any further because it's too expensive
+        let next_merge_cost = 2
+            + 2 * 4 // two existing rows get extra column
+            + 12; // three columns for new row
+        assert_eq!(encoder.encodings.len(), 2);
+        assert_eq!(encoder.encodings[0].cost(), 16);
+        assert_eq!(
+            encoder.encodings[0].compute_gain(&encoder.encodings[1]),
+            16 - next_merge_cost
+        );
     }
 }
