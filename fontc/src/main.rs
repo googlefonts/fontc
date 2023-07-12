@@ -12,9 +12,9 @@ fn main() -> Result<(), Error> {
             let ts = buf.timestamp_micros();
             writeln!(
                 buf,
-                "{}: {:?}: {}: {}",
-                ts,
+                "[{ts} {:?} {} {}] {}",
                 std::thread::current().id(),
+                record.target(),
                 buf.default_level_style(record.level())
                     .value(record.level()),
                 record.args()
