@@ -23,4 +23,8 @@ pub enum Error {
     BadRegex(#[from] regex::Error),
     #[error("Unable to proceed")]
     UnableToProceed,
+    // Not sure what the best message is, for this; it probably means that
+    // a thread has panicked?
+    #[error("A task stopped responding unexpectedly")]
+    InternalError,
 }

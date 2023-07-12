@@ -1,8 +1,11 @@
 //! Tracking jobs to run
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
-use crossbeam_channel::{Receiver, TryRecvError};
+use crossbeam_channel::{Receiver, RecvTimeoutError, TryRecvError};
 use fontbe::orchestration::{AnyWorkId, Context as BeContext};
 use fontdrasil::orchestration::Access;
 use fontir::{
@@ -224,15 +227,11 @@ impl<'a> Workload<'a> {
                         scope.spawn(move |_| {
                             let result = work.exec(work_context);
                             if let Err(e) = send.send((id.clone(), result)) {
-                                log::error!(
-                                    "Unable to write {:?} to completion channel: {}",
-                                    id,
-                                    e
-                                );
+                                log::error!("Unable to write {id:?} to completion channel: {e}",);
                             }
                         })
                     } else if let Err(e) = send.send((id.clone(), Ok(()))) {
-                        log::error!("Unable to write nop {:?} to completion channel: {}", id, e);
+                        log::error!("Unable to write nop {id:?} to completion channel: {e}");
                     }
                 }
 
@@ -243,7 +242,7 @@ impl<'a> Workload<'a> {
                     .into_iter()
                     .for_each(|s| self.handle_success(fe_root, s));
             }
-            Ok::<(), Error>(())
+            Ok(())
         })?;
 
         // If ^ exited due to error the scope awaited any live tasks; capture their results
@@ -265,12 +264,31 @@ impl<'a> Workload<'a> {
         recv: &Receiver<(AnyWorkId, Result<(), AnyWorkError>)>,
         initial_read: RecvType,
     ) -> Result<Vec<AnyWorkId>, Error> {
+        // read in a loop, timing out if no progress is made
+        fn spin_read(
+            recv: &Receiver<(AnyWorkId, Result<(), AnyWorkError>)>,
+        ) -> Result<(AnyWorkId, Result<(), AnyWorkError>), Error> {
+            const ONE_SECOND: Duration = Duration::from_secs(1);
+            const N_SPINS_BEFORE_ERROR: usize = 10;
+            let mut spins = 0;
+
+            while spins < N_SPINS_BEFORE_ERROR {
+                match recv.recv_timeout(ONE_SECOND) {
+                    Ok(completed) => return Ok(completed),
+                    Err(RecvTimeoutError::Timeout) => {
+                        spins += 1;
+                        log::info!("read loop spinning ({spins}/{N_SPINS_BEFORE_ERROR})");
+                    }
+                    Err(RecvTimeoutError::Disconnected) => return Err(Error::InternalError),
+                }
+            }
+            log::error!("timed out while waiting for work");
+            Err(Error::InternalError)
+        }
+
         let mut successes = Vec::new();
         let mut opt_complete = match initial_read {
-            RecvType::Blocking => match recv.recv() {
-                Ok(completed) => Some(completed),
-                Err(e) => panic!("Blocking read failed: {e}"),
-            },
+            RecvType::Blocking => Some(spin_read(recv)?),
             RecvType::NonBlocking => match recv.try_recv() {
                 Ok(completed) => Some(completed),
                 Err(TryRecvError::Empty) => None,
