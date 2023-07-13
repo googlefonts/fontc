@@ -212,28 +212,28 @@ impl<'a> Workload<'a> {
                         .work
                         .take()
                         .expect("{id:?} ready to run but has no work?!");
-                    if job.run {
-                        let work_context = AnyContext::for_work(
-                            fe_root,
-                            be_root,
-                            &id,
-                            job.read_access.clone(),
-                            job.write_access.clone(),
-                        );
-
-                        scope.spawn(move |_| {
-                            let result = work.exec(work_context);
-                            if let Err(e) = send.send((id.clone(), result)) {
-                                log::error!(
-                                    "Unable to write {:?} to completion channel: {}",
-                                    id,
-                                    e
-                                );
-                            }
-                        })
-                    } else if let Err(e) = send.send((id.clone(), Ok(()))) {
-                        log::error!("Unable to write nop {:?} to completion channel: {}", id, e);
+                    if !job.run {
+                        if let Err(e) = send.send((id.clone(), Ok(()))) {
+                            log::error!("Unable to write nop {id:?} to completion channel: {e}");
+                            //FIXME: if we can't send messages it means the receiver has dropped,
+                            //which means we should... return? abort?
+                        }
+                        continue;
                     }
+                    let work_context = AnyContext::for_work(
+                        fe_root,
+                        be_root,
+                        &id,
+                        job.read_access.clone(),
+                        job.write_access.clone(),
+                    );
+
+                    scope.spawn(move |_| {
+                        let result = work.exec(work_context);
+                        if let Err(e) = send.send((id.clone(), result)) {
+                            log::error!("Unable to write {id:?} to completion channel: {e}");
+                        }
+                    })
                 }
 
                 // Block for things to phone home to say they are done
