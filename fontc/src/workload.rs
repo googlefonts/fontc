@@ -154,10 +154,10 @@ impl<'a> Workload<'a> {
         match &job.read_access {
             AnyAccess::Fe(access) => match access {
                 Access::None => true,
-                Access::One(id) => !self.jobs_pending.contains_key(&id.into()),
+                Access::One(id) => !self.jobs_pending.contains_key(&id.clone().into()),
                 Access::Set(ids) => !ids
                     .iter()
-                    .any(|id| self.jobs_pending.contains_key(&id.into())),
+                    .any(|id| self.jobs_pending.contains_key(&id.clone().into())),
                 Access::Custom(..) => self.can_run_scan(job),
                 Access::All => self.can_run_scan(job),
             },

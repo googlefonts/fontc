@@ -20,12 +20,6 @@ impl GlyphName {
     }
 }
 
-impl From<&String> for GlyphName {
-    fn from(value: &String) -> Self {
-        GlyphName(value.into())
-    }
-}
-
 impl From<String> for GlyphName {
     fn from(value: String) -> Self {
         GlyphName(value.into())

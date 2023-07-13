@@ -129,7 +129,7 @@ pub(crate) fn layer_dir<'a>(
     let glyph_name = source
         .layer
         .as_ref()
-        .map_or_else(GlyphName::empty, |l| l.into());
+        .map_or_else(GlyphName::empty, |l| l.as_str().into());
     if source.layer.is_none() {
         name_to_path.insert(glyph_name.clone(), PathBuf::from("glyphs"));
     }

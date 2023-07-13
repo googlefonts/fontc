@@ -272,7 +272,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
             .ir
             .glyphs
             .get(&FeWorkId::Glyph(self.glyph_name.clone()));
-        let glyph: CheckedGlyph = ir_glyph.try_into()?;
+        let glyph = CheckedGlyph::new(ir_glyph)?;
 
         // Hopefully in time https://github.com/harfbuzz/boring-expansion-spec means we can drop this
         let glyph = cubics_to_quadratics(glyph);
@@ -497,18 +497,7 @@ enum CheckedGlyph {
 }
 
 impl CheckedGlyph {
-    fn should_iup(&self) -> bool {
-        match self {
-            CheckedGlyph::Composite { .. } => false,
-            CheckedGlyph::Contour { .. } => true,
-        }
-    }
-}
-
-impl TryFrom<&ir::Glyph> for CheckedGlyph {
-    type Error = Error;
-
-    fn try_from(glyph: &ir::Glyph) -> Result<Self, Self::Error> {
+    fn new(glyph: &ir::Glyph) -> Result<Self, Error> {
         // every instance must have consistent component glyphs
         let components: HashSet<BTreeSet<GlyphName>> = glyph
             .sources()
@@ -606,6 +595,13 @@ impl TryFrom<&ir::Glyph> for CheckedGlyph {
                 .collect();
             CheckedGlyph::Composite { name, components }
         })
+    }
+
+    fn should_iup(&self) -> bool {
+        match self {
+            CheckedGlyph::Composite { .. } => false,
+            CheckedGlyph::Contour { .. } => true,
+        }
     }
 }
 
