@@ -12,8 +12,9 @@ fn main() -> Result<(), Error> {
             let ts = buf.timestamp_micros();
             writeln!(
                 buf,
-                "[{ts} {:?} {} {}] {}",
-                std::thread::current().id(),
+                "[{ts} {} {} {}] {}",
+                // we manually assign all threads a name
+                std::thread::current().name().unwrap_or("unknown"),
                 record.target(),
                 buf.default_level_style(record.level())
                     .value(record.level()),
