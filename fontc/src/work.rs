@@ -18,6 +18,7 @@ use fontir::{
 pub enum AnyWorkError {
     Fe(FeError),
     Be(BeError),
+    Panic(String),
 }
 
 impl From<BeError> for AnyWorkError {
@@ -37,6 +38,7 @@ impl Display for AnyWorkError {
         match self {
             AnyWorkError::Be(e) => e.fmt(f),
             AnyWorkError::Fe(e) => e.fmt(f),
+            AnyWorkError::Panic(e) => write!(f, "Job panicked: '{e}'"),
         }
     }
 }
