@@ -49,7 +49,7 @@ fn glyph_states(font: &Font) -> Result<HashMap<GlyphName, StateSet>, Error> {
     for (glyphname, glyph) in font.glyphs.iter() {
         let mut state = StateSet::new();
         state.track_memory(glyph_identifier(glyphname), glyph)?;
-        glyph_states.insert(glyphname.into(), state);
+        glyph_states.insert(glyphname.as_str().into(), state);
     }
 
     Ok(glyph_states)
@@ -379,7 +379,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
         let glyph_order = font
             .glyph_order
             .iter()
-            .map(|s| s.into())
+            .map(|s| s.as_str().into())
             .filter(|gn| self.glyph_names.contains(gn))
             .collect();
         context.preliminary_glyph_order.set(glyph_order);
@@ -537,7 +537,7 @@ fn kern_participant(
                 side.group_prefix(),
                 raw_side.strip_prefix(side.class_prefix()).unwrap()
             );
-            let group = GroupName::from(&group_name);
+            let group = GroupName::from(group_name.as_str());
             if groups.contains_key(&group) {
                 Some(KernParticipant::Group(group))
             } else {

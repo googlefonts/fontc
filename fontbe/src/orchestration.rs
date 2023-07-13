@@ -127,18 +127,6 @@ impl From<WorkId> for AnyWorkId {
     }
 }
 
-impl From<&FeWorkIdentifier> for AnyWorkId {
-    fn from(id: &FeWorkIdentifier) -> Self {
-        AnyWorkId::Fe(id.clone())
-    }
-}
-
-impl From<&WorkId> for AnyWorkId {
-    fn from(id: &WorkId) -> Self {
-        AnyWorkId::Be(id.clone())
-    }
-}
-
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
 #[derive(Debug, Clone)]
 pub enum Glyph {
@@ -197,23 +185,6 @@ struct GlyphPersistable {
     glyph: Vec<u8>,
 }
 
-impl From<&Glyph> for GlyphPersistable {
-    fn from(value: &Glyph) -> Self {
-        match value {
-            Glyph::Simple(name, table) => GlyphPersistable {
-                name: name.clone(),
-                simple: true,
-                glyph: dump_table(table).unwrap(),
-            },
-            Glyph::Composite(name, table) => GlyphPersistable {
-                name: name.clone(),
-                simple: false,
-                glyph: dump_table(table).unwrap(),
-            },
-        }
-    }
-}
-
 impl From<GlyphPersistable> for Glyph {
     fn from(value: GlyphPersistable) -> Self {
         match value.simple {
@@ -243,7 +214,20 @@ impl Persistable for Glyph {
     }
 
     fn write(&self, to: &mut dyn Write) {
-        bincode::serialize_into::<&mut dyn Write, GlyphPersistable>(to, &self.into()).unwrap();
+        let obj = match self {
+            Glyph::Simple(name, table) => GlyphPersistable {
+                name: name.clone(),
+                simple: true,
+                glyph: dump_table(table).unwrap(),
+            },
+            Glyph::Composite(name, table) => GlyphPersistable {
+                name: name.clone(),
+                simple: false,
+                glyph: dump_table(table).unwrap(),
+            },
+        };
+
+        bincode::serialize_into::<&mut dyn Write, GlyphPersistable>(to, &obj).unwrap();
     }
 }
 
@@ -282,7 +266,7 @@ impl GvarFragment {
                     })
                     .collect();
 
-                let tuple_builder: TupleBuilder = region.into();
+                let tuple_builder = TupleBuilder::new(region);
                 let (min, peak, max) = tuple_builder.build();
                 Some(GlyphDeltas::new(peak, deltas, Some((min, max))))
             })
@@ -316,17 +300,7 @@ struct TupleBuilder {
 }
 
 impl TupleBuilder {
-    fn build(self) -> (Tuple, Tuple, Tuple) {
-        (
-            Tuple::new(self.min),
-            Tuple::new(self.peak),
-            Tuple::new(self.max),
-        )
-    }
-}
-
-impl From<&VariationRegion> for TupleBuilder {
-    fn from(region: &VariationRegion) -> Self {
+    fn new(region: &VariationRegion) -> Self {
         let mut builder = TupleBuilder::default();
         for (tag, tent) in region.iter() {
             builder.axes.push(*tag);
@@ -336,6 +310,14 @@ impl From<&VariationRegion> for TupleBuilder {
         }
         trace!("{builder:?}");
         builder
+    }
+
+    fn build(self) -> (Tuple, Tuple, Tuple) {
+        (
+            Tuple::new(self.min),
+            Tuple::new(self.peak),
+            Tuple::new(self.max),
+        )
     }
 }
 

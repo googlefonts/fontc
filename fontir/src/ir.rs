@@ -960,16 +960,6 @@ impl TryInto<Glyph> for GlyphBuilder {
     }
 }
 
-impl From<&Glyph> for GlyphBuilder {
-    fn from(value: &Glyph) -> Self {
-        Self {
-            name: value.name.clone(),
-            codepoints: value.codepoints.clone(),
-            sources: value.sources.clone(),
-        }
-    }
-}
-
 impl From<Glyph> for GlyphBuilder {
     fn from(value: Glyph) -> Self {
         Self {

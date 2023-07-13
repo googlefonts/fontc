@@ -58,7 +58,7 @@ fn has_consistent_2x2_transforms(glyph: &Glyph) -> bool {
         .map(|inst| {
             inst.components
                 .iter()
-                .map(ReusableComponent::from)
+                .map(ReusableComponent::new)
                 .collect::<Vec<_>>()
         })
         .collect();
@@ -87,7 +87,7 @@ fn name_for_derivative(base_name: &GlyphName, names_in_use: &GlyphOrder) -> Glyp
 /// The former contains all the contours, the latter contains all the components.
 fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Glyph), WorkError> {
     // Make a simple glyph by erasing the components from it
-    let mut simple_glyph: GlyphBuilder = original.into();
+    let mut simple_glyph = GlyphBuilder::from(original.clone());
     simple_glyph.sources.iter_mut().for_each(|(_, inst)| {
         inst.components.clear();
     });
@@ -97,7 +97,7 @@ fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Gly
     simple_glyph.name = simple_glyph_name.clone();
 
     // Use the contour glyph as a component in the original glyph and erase it's contours
-    let mut composite_glyph: GlyphBuilder = original.into();
+    let mut composite_glyph = GlyphBuilder::from(original.clone());
     composite_glyph.sources.iter_mut().for_each(|(_, inst)| {
         inst.contours.clear();
         inst.components.push(Component {
@@ -120,16 +120,16 @@ struct ReusableComponent {
     basis_vectors: [OrderedFloat<f64>; 4],
 }
 
-impl From<&Component> for ReusableComponent {
-    fn from(value: &Component) -> Self {
+impl ReusableComponent {
+    fn new(component: &Component) -> Self {
         // by taking the first four coeffs we discard translation
         let mut transform = [OrderedFloat(0.0f64); 4];
         transform
             .iter_mut()
-            .zip(value.transform.as_coeffs())
+            .zip(component.transform.as_coeffs())
             .for_each(|(of, f)| *of = f.into());
         ReusableComponent {
-            base: value.base.clone(),
+            base: component.base.clone(),
             basis_vectors: transform,
         }
     }
@@ -142,16 +142,16 @@ struct HashableComponent {
     transform: [OrderedFloat<f64>; 6],
 }
 
-impl From<&Component> for HashableComponent {
-    fn from(value: &Component) -> Self {
+impl HashableComponent {
+    fn new(component: &Component) -> Self {
         // by taking the first four coeffs we discard translation
         let mut transform = [OrderedFloat(0.0f64); 6];
         transform
             .iter_mut()
-            .zip(value.transform.as_coeffs())
+            .zip(component.transform.as_coeffs())
             .for_each(|(of, f)| *of = f.into());
         HashableComponent {
-            base: value.base.clone(),
+            base: component.base.clone(),
             transform,
         }
     }
@@ -217,7 +217,7 @@ fn components(glyph: &Glyph, transform: Affine) -> VecDeque<(NormalizedLocation,
 ///
 /// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L165>
 fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), WorkError> {
-    let mut simple: GlyphBuilder = original.into();
+    let mut simple = GlyphBuilder::from(original.clone());
     simple
         .sources
         .iter_mut()
@@ -228,7 +228,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
     // Note that here we care about the entire component transform, so we do not use ReusableComponent
     let mut visited: HashSet<(NormalizedLocation, HashableComponent)> = HashSet::new();
     while let Some((loc, component)) = frontier.pop_front() {
-        if !visited.insert((loc.clone(), HashableComponent::from(&component))) {
+        if !visited.insert((loc.clone(), HashableComponent::new(&component))) {
             continue;
         }
 
@@ -807,7 +807,7 @@ mod tests {
             glyph.sources().len() > 1,
             "this operation is meaningless w/o multiple sources"
         );
-        let mut glyph: GlyphBuilder = glyph.into();
+        let mut glyph = GlyphBuilder::from(glyph.clone());
         glyph
             .sources
             .values_mut()
