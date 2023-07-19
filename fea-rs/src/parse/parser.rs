@@ -143,7 +143,7 @@ impl<'b, 'a> Parser<'a, 'b> {
         let new_start = prev_token.start_pos + prev_token.trivia_len + prev_token.token.len;
         self.buf.rotate_left(1);
 
-        let mut pending = &mut self.buf[LOOKAHEAD_MAX];
+        let pending = &mut self.buf[LOOKAHEAD_MAX];
         pending.start_pos = new_start;
         pending.trivia_len = 0;
         pending.token = loop {
