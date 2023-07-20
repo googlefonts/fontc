@@ -13,7 +13,7 @@ use write_fonts::{
     tables::{
         self,
         gdef::CaretValue,
-        gpos::{AnchorTable, ValueRecord},
+        gpos::{AnchorTable, ValueFormat, ValueRecord},
         layout::{ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag, VariationIndex},
     },
     types::{Fixed, NameId, Tag},
@@ -1049,17 +1049,11 @@ impl<'a> CompilationCtx<'a> {
                 self.error(adv.range(), "variable metrics not yet supported");
                 return Default::default();
             };
-            let (x_advance, y_advance) = if self.vertical_feature.in_eligible_vertical_feature() {
-                (None, Some(adv))
+            if self.vertical_feature.in_eligible_vertical_feature() {
+                return ValueRecord::new().with_y_advance(adv);
             } else {
-                (Some(adv), None)
-            };
-
-            return ValueRecord {
-                x_advance,
-                y_advance,
-                ..Default::default()
-            };
+                return ValueRecord::new().with_x_advance(adv);
+            }
         }
 
         let Some([x_place, y_place, x_adv, y_adv]) = record.placement() else {
@@ -1072,27 +1066,18 @@ impl<'a> CompilationCtx<'a> {
         let (x_adv, _x_adv_dev) = self.resolve_metric(&x_adv);
         let (y_adv, _y_adv_dev) = self.resolve_metric(&y_adv);
 
-        let mut result = ValueRecord {
-            x_advance: Some(x_adv),
-            y_advance: Some(y_adv),
-            x_placement: Some(x_place),
-            y_placement: Some(y_place),
-            ..Default::default()
-        };
+        let result = ValueRecord::new()
+            .with_x_placement(x_place)
+            .with_y_placement(y_place)
+            .with_x_advance(x_adv)
+            .with_y_advance(y_adv);
 
         if let Some([x_place_dev, y_place_dev, x_adv_dev, y_adv_dev]) = record.device() {
-            if let Some(x_place_dev) = x_place_dev.compile() {
-                result.x_placement_device.set(x_place_dev);
-            }
-            if let Some(y_place_dev) = y_place_dev.compile() {
-                result.y_placement_device.set(y_place_dev);
-            }
-            if let Some(x_adv_dev) = x_adv_dev.compile() {
-                result.x_advance_device.set(x_adv_dev);
-            }
-            if let Some(y_adv_dev) = y_adv_dev.compile() {
-                result.y_advance_device.set(y_adv_dev);
-            }
+            return result
+                .with_device(x_place_dev.compile(), ValueFormat::X_PLACEMENT_DEVICE)
+                .with_device(y_place_dev.compile(), ValueFormat::Y_PLACEMENT_DEVICE)
+                .with_device(x_adv_dev.compile(), ValueFormat::X_ADVANCE_DEVICE)
+                .with_device(y_adv_dev.compile(), ValueFormat::Y_ADVANCE_DEVICE);
         }
         result
     }

@@ -1,11 +1,20 @@
 //! Extra helper methods on ValueRecord
 
-use write_fonts::tables::gpos::{ValueFormat, ValueRecord};
+use write_fonts::tables::{
+    gpos::{ValueFormat, ValueRecord},
+    layout::DeviceOrVariationIndex,
+};
 
 pub(crate) trait ValueRecordExt {
     fn clear_zeros(self) -> Self;
     fn for_pair_pos(self, in_vert_feature: bool) -> Self;
     fn is_all_zeros(&self) -> bool;
+    /// Set a device for the field indicated by the provided format
+    fn with_device<T: Into<DeviceOrVariationIndex>>(
+        self,
+        val: Option<T>,
+        field: ValueFormat,
+    ) -> Self;
 }
 
 impl ValueRecordExt for ValueRecord {
@@ -65,5 +74,21 @@ impl ValueRecordExt for ValueRecord {
             out.x_advance = Some(0);
         }
         out
+    }
+
+    fn with_device<T: Into<DeviceOrVariationIndex>>(
+        mut self,
+        val: Option<T>,
+        field: ValueFormat,
+    ) -> Self {
+        let val = val.map(Into::into);
+        match field {
+            ValueFormat::X_PLACEMENT_DEVICE => self.x_placement_device = val.into(),
+            ValueFormat::Y_PLACEMENT_DEVICE => self.y_placement_device = val.into(),
+            ValueFormat::X_ADVANCE_DEVICE => self.x_advance_device = val.into(),
+            ValueFormat::Y_ADVANCE_DEVICE => self.y_advance_device = val.into(),
+            other => panic!("how did '{other:?}' get in here?"),
+        };
+        self
     }
 }

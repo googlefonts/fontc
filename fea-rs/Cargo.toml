@@ -16,7 +16,7 @@ exclude = ["test-data"]
 ansi_term = "0.12.1"
 smol_str = "0.2.0"
 norad = "0.10" # Used in the compile binary
-write-fonts = "0.11.0"
+write-fonts = "0.12.0"
 chrono = "0.4.3"
 diff = { version = "0.1.12", optional = true }
 rayon = { version = "1.6", optional = true }
