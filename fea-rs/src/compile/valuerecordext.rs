@@ -19,19 +19,19 @@ pub(crate) trait ValueRecordExt {
 
 impl ValueRecordExt for ValueRecord {
     fn clear_zeros(mut self) -> Self {
-        if self.x_placement == Some(0) {
+        if self.x_placement == Some(0) && self.x_placement_device.is_none() {
             self.x_placement = None;
         }
 
-        if self.y_placement == Some(0) {
+        if self.y_placement == Some(0) && self.y_placement_device.is_none() {
             self.y_placement = None;
         }
 
-        if self.x_advance == Some(0) {
+        if self.x_advance == Some(0) && self.x_advance_device.is_none() {
             self.x_advance = None;
         }
 
-        if self.y_advance == Some(0) {
+        if self.y_advance == Some(0) && self.y_advance_device.is_none() {
             self.y_advance = None;
         }
 
@@ -90,5 +90,23 @@ impl ValueRecordExt for ValueRecord {
             other => panic!("how did '{other:?}' get in here?"),
         };
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use write_fonts::tables::layout::VariationIndex;
+
+    use super::*;
+
+    #[test]
+    fn leave_zero_if_device_exists() {
+        let record = ValueRecord::new().with_x_advance(0).clear_zeros();
+        assert!(record.x_advance.is_none());
+        let record = ValueRecord::new()
+            .with_x_advance(0)
+            .with_x_advance_device(VariationIndex::new(420, 0xbeef))
+            .clear_zeros();
+        assert_eq!(record.x_advance, Some(0));
     }
 }
