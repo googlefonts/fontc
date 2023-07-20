@@ -290,8 +290,8 @@ impl Builder for ClassPairPosSubtable {
             .and_then(|val| val.values().next())
             .map(|(v1, v2)| {
                 write_gpos::Class2Record::new(
-                    empty_record_with_format(v1.format()),
-                    empty_record_with_format(v2.format()),
+                    ValueRecord::new().with_explicit_value_format(v1.format()),
+                    ValueRecord::new().with_explicit_value_format(v2.format()),
                 )
             })
             .unwrap();
@@ -318,35 +318,6 @@ impl Builder for ClassPairPosSubtable {
         }
         write_gpos::PairPos::format_2(coverage, class1def, class2def, out)
     }
-}
-
-fn empty_record_with_format(format: ValueFormat) -> ValueRecord {
-    let mut result = ValueRecord::default();
-    if format.contains(ValueFormat::X_PLACEMENT) {
-        result.x_placement = Some(0);
-    }
-    if format.contains(ValueFormat::Y_PLACEMENT) {
-        result.y_placement = Some(0);
-    }
-    if format.contains(ValueFormat::X_ADVANCE) {
-        result.x_advance = Some(0);
-    }
-    if format.contains(ValueFormat::Y_ADVANCE) {
-        result.y_advance = Some(0);
-    }
-    if format.intersects(
-        ValueFormat::X_PLACEMENT_DEVICE
-            | ValueFormat::Y_PLACEMENT_DEVICE
-            | ValueFormat::X_ADVANCE_DEVICE
-            | ValueFormat::Y_ADVANCE_DEVICE,
-    ) {
-        //FIXME idk here. I think we need to update code in write-fonts so that
-        // we take value format into account when deciding what we write,
-        // instead of just ignoring null values
-        panic!("writing explicit null offsets is currently broken, sorry")
-    }
-
-    result
 }
 
 #[derive(Clone, Debug, Default)]
