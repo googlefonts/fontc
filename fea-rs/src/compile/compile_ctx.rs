@@ -14,7 +14,9 @@ use write_fonts::{
         self,
         gdef::CaretValue,
         gpos::{AnchorTable, ValueFormat, ValueRecord},
-        layout::{ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag, VariationIndex},
+        layout::{
+            ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag, PendingVariationIndex,
+        },
     },
     types::{Fixed, NameId, Tag},
 };
@@ -1109,7 +1111,7 @@ impl<'a> CompilationCtx<'a> {
         result
     }
 
-    fn resolve_metric(&mut self, metric: &typed::Metric) -> (i16, Option<VariationIndex>) {
+    fn resolve_metric(&mut self, metric: &typed::Metric) -> (i16, Option<PendingVariationIndex>) {
         match metric {
             typed::Metric::Scalar(value) => (value.parse_signed(), None),
             typed::Metric::Variable(variable) => self.resolve_variable_metric(variable),
@@ -1119,7 +1121,7 @@ impl<'a> CompilationCtx<'a> {
     fn resolve_variable_metric(
         &mut self,
         metric: &typed::VariableMetric,
-    ) -> (i16, Option<VariationIndex>) {
+    ) -> (i16, Option<PendingVariationIndex>) {
         let Some(var_info) = self.variation_info else {
             self.error(metric.range(), "variable metric only valid when compiling variable font");
             return (0, None)
@@ -1145,7 +1147,7 @@ impl<'a> CompilationCtx<'a> {
         match var_info.resolve_variable_metric(&locations) {
             Ok((default, deltas)) => {
                 let temp_idx = self.tables.var_store().add_deltas(deltas);
-                let var_idx = VariationIndex::new(temp_idx.outer, temp_idx.inner);
+                let var_idx = PendingVariationIndex::new(temp_idx);
                 (default, Some(var_idx))
             }
             Err(e) => {

@@ -1098,8 +1098,8 @@ impl VariationIndexContainingLookup for ValueRecord {
 
 impl VariationIndexContainingLookup for DeviceOrVariationIndex {
     fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        if let DeviceOrVariationIndex::VariationIndex(table) = self {
-            key_map.remap(table)
+        if let DeviceOrVariationIndex::PendingVariationIndex(table) = self {
+            *self = key_map.get(table.delta_set_id).unwrap().into();
         }
     }
 }

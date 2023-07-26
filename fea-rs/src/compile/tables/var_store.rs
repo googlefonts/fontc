@@ -11,6 +11,8 @@ use write_fonts::tables::{
     variations::{ItemVariationData, ItemVariationStore, VariationRegion, VariationRegionList},
 };
 
+type TemporaryDeltaSetId = u32;
+
 /// A builder for the [ItemVariationStore].
 ///
 /// This handles assigning VariationIndex values to unique sets of deltas and
@@ -21,11 +23,11 @@ pub(crate) struct VariationStoreBuilder {
     all_regions: HashMap<VariationRegion, usize>,
     // we use an index map so that we have a deterministic ordering,
     // which lets us write better tests
-    //NOTE: we could store IndexMap<RowShape, IndexMap<DeltaSet, DeltaKey>> here,
+    //NOTE: we could store IndexMap<RowShape, IndexMap<DeltaSet, TemporaryDeltaSetId>> here,
     //if desired, but that would require us to know the total number of regions
     //when we construct the builder.
-    delta_sets: IndexMap<DeltaSet, DeltaKey>,
-    next_id: DeltaKey,
+    delta_sets: IndexMap<DeltaSet, TemporaryDeltaSetId>,
+    next_id: TemporaryDeltaSetId,
 }
 
 /// A map from the temporary delta set identifiers to the final values.
@@ -34,7 +36,7 @@ pub(crate) struct VariationStoreBuilder {
 /// any tables or records that contain VariationIndex tables need to be remapped.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct VariationIndexRemapping {
-    map: HashMap<DeltaKey, DeltaKey>,
+    map: HashMap<TemporaryDeltaSetId, VariationIndex>,
 }
 
 /// Always sorted, so we can ensure equality
@@ -43,60 +45,8 @@ pub(crate) struct VariationIndexRemapping {
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 struct DeltaSet(Vec<(u16, i32)>);
 
-/// A temporary value that uniquely describes a particular delta set.
-///
-/// When adding a delta set to the [VariationStoreBuilder], the final position
-/// of that data is not known until the whole table is compiled. We use these
-/// temporary keys to identify delta sets before the builder is finalized.
-///
-/// After the [ItemVariationStore] is built, we remap keys to the final value.
-///
-/// This is intended to be temporarily stored in a value record or anchor table's
-/// VariationIndex table.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct DeltaKey {
-    pub(crate) outer: u16,
-    pub(crate) inner: u16,
-}
-
-impl DeltaKey {
-    /// Construct the next identifier.
-    ///
-    /// Identifiers start (0xfffe, 0xfffe) and decrease (this makes them easier
-    /// to identify if they show up in a compiled table)
-    const fn next(self) -> Self {
-        let DeltaKey { outer, inner } = self;
-        match inner.checked_sub(1) {
-            Some(inner) => DeltaKey { outer, inner },
-            None => DeltaKey {
-                outer: outer.saturating_sub(1),
-                inner: 0xFFFF,
-            },
-        }
-    }
-
-    /// Return the current key and update self
-    fn bump(&mut self) -> Self {
-        let value = *self;
-        *self = self.next();
-        value
-    }
-}
-
-impl Default for DeltaKey {
-    fn default() -> Self {
-        Self {
-            outer: 0xFFFE,
-            inner: 0xFFFE,
-        }
-    }
-}
-
 impl VariationStoreBuilder {
-    pub(crate) fn add_deltas<T: Into<i32>>(
-        &mut self,
-        deltas: Vec<(VariationRegion, T)>,
-    ) -> DeltaKey {
+    pub(crate) fn add_deltas<T: Into<i32>>(&mut self, deltas: Vec<(VariationRegion, T)>) -> u32 {
         let mut delta_set = Vec::with_capacity(deltas.len());
         for (region, delta) in deltas {
             let region_idx = self.index_for_region(region) as u16;
@@ -106,7 +56,11 @@ impl VariationStoreBuilder {
         *self
             .delta_sets
             .entry(DeltaSet(delta_set))
-            .or_insert_with(|| self.next_id.bump())
+            .or_insert_with(|| {
+                let id = self.next_id;
+                self.next_id += 1;
+                id
+            })
     }
 
     fn index_for_region(&mut self, region: VariationRegion) -> usize {
@@ -143,7 +97,7 @@ impl VariationStoreBuilder {
 ///
 /// This mostly exists so that we can write better tests.
 struct Encoder<'a> {
-    delta_map: &'a IndexMap<DeltaSet, DeltaKey>,
+    delta_map: &'a IndexMap<DeltaSet, TemporaryDeltaSetId>,
     encodings: Vec<Encoding<'a>>,
 }
 
@@ -188,7 +142,7 @@ enum ColumnBits {
 }
 
 impl<'a> Encoder<'a> {
-    fn new(delta_map: &'a IndexMap<DeltaSet, DeltaKey>, total_regions: u16) -> Self {
+    fn new(delta_map: &'a IndexMap<DeltaSet, TemporaryDeltaSetId>, total_regions: u16) -> Self {
         let mut shape = RowShape::default();
         let mut encodings: IndexMap<_, Vec<_>> = Default::default();
 
@@ -483,7 +437,7 @@ impl<'a> Encoding<'a> {
 
     fn encode(
         self,
-        delta_ids: &IndexMap<DeltaSet, DeltaKey>,
+        delta_ids: &IndexMap<DeltaSet, TemporaryDeltaSetId>,
         key_map: &mut VariationIndexRemapping,
         subtable_idx: u16,
     ) -> Option<ItemVariationData> {
@@ -514,10 +468,7 @@ impl<'a> Encoding<'a> {
                 raw_deltas[idx] = *val;
             }
             let raw_key = delta_ids.get(*delta).unwrap();
-            let final_key = DeltaKey {
-                outer: subtable_idx,
-                inner: i as u16,
-            };
+            let final_key = VariationIndex::new(subtable_idx, i as u16);
             key_map.set(*raw_key, final_key);
         }
 
@@ -596,30 +547,20 @@ impl RegionMap {
 }
 
 impl VariationIndexRemapping {
-    fn set(&mut self, from: DeltaKey, to: DeltaKey) {
+    fn set(&mut self, from: TemporaryDeltaSetId, to: VariationIndex) {
         self.map.insert(from, to);
     }
 
-    fn get(&self, from: DeltaKey) -> Option<DeltaKey> {
-        self.map.get(&from).copied()
+    pub(crate) fn get(&self, from: TemporaryDeltaSetId) -> Option<VariationIndex> {
+        self.map.get(&from).cloned()
     }
 
-    /// remap a variation index table to its final position
-    pub(crate) fn remap(&self, table: &mut VariationIndex) {
-        let key = DeltaKey {
-            outer: table.delta_set_outer_index,
-            inner: table.delta_set_inner_index,
-        };
-
-        let resolved = self.get(key).unwrap();
-        table.delta_set_outer_index = resolved.outer;
-        table.delta_set_inner_index = resolved.inner;
-    }
-}
-
-impl PartialEq<(u16, u16)> for DeltaKey {
-    fn eq(&self, other: &(u16, u16)) -> bool {
-        (self.outer, self.inner) == *other
+    /// convert to tuple for easier comparisons in tests
+    #[cfg(test)]
+    fn get_raw(&self, from: TemporaryDeltaSetId) -> Option<(u16, u16)> {
+        self.map
+            .get(&from)
+            .map(|var| (var.delta_set_outer_index, var.delta_set_inner_index))
     }
 }
 
@@ -729,10 +670,10 @@ mod tests {
         let (_, key_lookup) = builder.build();
 
         // first subtable has only one item
-        assert_eq!(key_lookup.get(k1).unwrap(), (0, 0),);
+        assert_eq!(key_lookup.get_raw(k1).unwrap(), (0, 0),);
         // next two items are in the next subtable (different outer index)
-        assert_eq!(key_lookup.get(k2).unwrap(), (1, 0),);
-        assert_eq!(key_lookup.get(k3).unwrap(), (1, 1),);
+        assert_eq!(key_lookup.get_raw(k2).unwrap(), (1, 0),);
+        assert_eq!(key_lookup.get_raw(k3).unwrap(), (1, 1),);
 
         assert_eq!(key_lookup.map.len(), 6);
     }
