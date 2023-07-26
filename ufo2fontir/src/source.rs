@@ -152,8 +152,20 @@ impl DesignSpaceIrSource {
         }
     }
     fn load_designspace(&self) -> Result<DesignSpaceDocument, Error> {
-        DesignSpaceDocument::load(&self.designspace_file)
-            .map_err(|e| Error::UnableToLoadSource(Box::new(e)))
+        let mut doc = DesignSpaceDocument::load(&self.designspace_file)
+            .map_err(|e| Error::UnableToLoadSource(Box::new(e)))?;
+        for (i, source) in doc.sources.iter_mut().enumerate() {
+            if source.name.is_none() {
+                source.name = Some(format!("unnamed_source_{i}"));
+            }
+        }
+
+        for (i, instance) in doc.instances.iter_mut().enumerate() {
+            if instance.name.is_none() {
+                instance.name = Some(format!("unnamed_instance_{i}"))
+            }
+        }
+        Ok(doc)
     }
 
     // When things like upem may have changed forget incremental and rebuild the whole thing
@@ -696,9 +708,14 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             .instances
             .iter()
             .map(|inst| NamedInstance {
-                name: match inst.name.strip_prefix(family_prefix.as_str()) {
+                name: match inst
+                    .name
+                    .as_ref()
+                    .unwrap()
+                    .strip_prefix(family_prefix.as_str())
+                {
                     Some(tail) => tail.to_string(),
-                    None => inst.name.clone(),
+                    None => inst.name.clone().unwrap(),
                 },
                 location: to_design_location(&tags_by_name, &inst.location).to_user(&axes_by_tag),
             })
@@ -820,7 +837,7 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
             .iter()
             .filter(|s| !is_glyph_only(s))
         {
-            let pos = master_locations.get(&source.name).unwrap();
+            let pos = master_locations.get(source.name.as_ref().unwrap()).unwrap();
             let font_info = font_infos
                 .get(&source.filename)
                 .ok_or_else(|| WorkError::FileExpected(designspace_dir.join(&source.filename)))?;
@@ -1034,7 +1051,7 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
         {
             for (name, entries) in kerning_groups_for(designspace_dir, &glyph_order, source)? {
                 let Some(real_name) = reverse_groups.get(&(KernSide::of(&name), &entries)) else {
-                    warn!("{name} exists only in {} and will be ignored", source.name);
+                    warn!("{name} exists only in {} and will be ignored", source.name.as_ref().unwrap());
                     continue;
                 };
                 if name == **real_name {
@@ -1042,7 +1059,8 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
                 }
                 warn!(
                     "{name} in {} matches {real_name} in {} and will be renamed",
-                    source.name, default_master.name
+                    source.name.as_ref().unwrap(),
+                    default_master.name.as_ref().unwrap()
                 );
                 old_to_new_group_name.insert(name, *real_name);
             }
@@ -1055,7 +1073,7 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
             .iter()
             .filter(|s| !is_glyph_only(s))
         {
-            let pos = master_locations.get(&source.name).unwrap();
+            let pos = master_locations.get(source.name.as_ref().unwrap()).unwrap();
             let ufo_dir = designspace_dir.join(&source.filename);
             let data_request = norad::DataRequest::none().kerning(true);
             let font = norad::Font::load_requested_data(&ufo_dir, data_request)
@@ -1091,7 +1109,7 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
                     .map(move |(side2, adjustment)| (side1.clone(), side2, adjustment))
             }) {
                 let (Some(side1), Some(side2)) = (resolve(&side1, UFO_KERN1_PREFIX), resolve(&side2, UFO_KERN2_PREFIX)) else {
-                    warn!("{} kerning unable to resolve at least one of '{}', '{}'; ignoring", source.name, side1.as_str(), side2.as_str());
+                    warn!("{} kerning unable to resolve at least one of '{}', '{}'; ignoring", source.name.as_ref().unwrap(), side1.as_str(), side2.as_str());
                     continue;
                 };
 
