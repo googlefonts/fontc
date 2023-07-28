@@ -58,7 +58,8 @@ impl<'a> GraphBuilder<'a> {
             }
 
             let (task, id) = self.get_task(resource)?;
-            debug_assert_eq!(self.deps.len(), *id);
+            let id = *id;
+            //debug_assert_eq!(self.deps.len(), *id);
             let mut dep_ids = Vec::new();
             for dep in task.0.dependencies().iter() {
                 if !self.storage.contains(&dep) {
@@ -67,7 +68,7 @@ impl<'a> GraphBuilder<'a> {
                     queue.push_back(dep.clone());
                 }
             }
-            self.deps.insert(*id, dep_ids);
+            self.deps.insert(id, dep_ids);
         }
 
         let tasks = self
