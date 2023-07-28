@@ -45,4 +45,5 @@ members = [
     "glyphs2fontir",
     "ufo2fontir",
     "fontc",
+    "fontcolin",
 ]
