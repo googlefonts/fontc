@@ -15,7 +15,7 @@ pub(crate) struct AnyResource {
     inner: Arc<dyn Any>,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceIdentifier {
     /// The type of the generated resource
     type_id: TypeId,
@@ -25,7 +25,7 @@ pub struct ResourceIdentifier {
 }
 
 pub trait ResourceRequest {
-    type Output;
+    type Output: 'static;
     fn identifier(&self) -> ResourceIdentifier;
 }
 

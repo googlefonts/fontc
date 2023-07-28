@@ -1,25 +1,36 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{hash_map::Entry, HashMap, VecDeque};
 
 use crate::{
     resource::{ResourceIdentifier, ResourceStore},
-    AnyTask, ProviderSet,
+    AnyTask, ProviderError, ProviderSet,
 };
 
-type TaskId = u64;
+type TaskId = usize;
 
 #[derive(Default)]
 pub(crate) struct WorkGraph {
-    //tasks: Vec<AnyTask>,
-    // stuff
+    tasks: HashMap<TaskId, AnyTask>,
+    /// a map from each task to all of its parents
+    parents: HashMap<TaskId, Vec<TaskId>>,
+    /// the number of outstanding depedencies for each task
+    outstanding_deps: HashMap<TaskId, usize>,
+}
+
+impl WorkGraph {
+    pub(crate) fn new(
+        root: ResourceIdentifier,
+        storage: &ResourceStore,
+        providers: &ProviderSet,
+    ) -> Result<Self, ProviderError> {
+        GraphBuilder::new(storage, providers).build_for_root(root)
+    }
 }
 
 struct GraphBuilder<'a> {
     storage: &'a ResourceStore,
     providers: &'a ProviderSet,
-    resource_ids: HashMap<ResourceIdentifier, (TaskId)>,
-    deps: Vec<Vec<TaskId>>,
-    //tasks: HashMap<ResourceIdentifier, (AnyTask, Vec<ResourceIdentifier>)>,
-    //deps: HashM
+    tasks: HashMap<ResourceIdentifier, (AnyTask, TaskId)>,
+    deps: HashMap<TaskId, Vec<TaskId>>,
     next_id: TaskId,
 }
 
@@ -28,15 +39,13 @@ impl<'a> GraphBuilder<'a> {
         Self {
             storage,
             providers,
-            //next_id: 0,
-            //tasks: Default::default(),
-            resource_ids: Default::default(),
+            tasks: Default::default(),
             deps: Default::default(),
             next_id: 0,
         }
     }
 
-    fn build_for_root(self, ident: ResourceIdentifier) -> Result<WorkGraph, Error> {
+    fn build_for_root(mut self, ident: ResourceIdentifier) -> Result<WorkGraph, ProviderError> {
         // if the root resource exists, there's nothing to do:
         if self.storage.contains(&ident) {
             return Ok(Default::default());
@@ -47,43 +56,59 @@ impl<'a> GraphBuilder<'a> {
             if self.storage.contains(&resource) {
                 continue;
             }
-            // if this already exists, or if we've already seen it, skip
-            //if self.existing_task_or_resource(&resource) {
-            //continue;
-            //}
 
-            let task = self.providers.find_task(&resource)?;
-            for dep in task.0.dependencies() {}
+            let (task, id) = self.get_task(resource)?;
+            debug_assert_eq!(self.deps.len(), *id);
+            let mut dep_ids = Vec::new();
+            for dep in task.0.dependencies().iter() {
+                if !self.storage.contains(&dep) {
+                    let (_, dep_id) = self.get_task(dep.clone())?;
+                    dep_ids.push(*dep_id);
+                    queue.push_back(dep.clone());
+                }
+            }
+            self.deps.insert(*id, dep_ids);
         }
 
-        //
-    }
+        let tasks = self
+            .tasks
+            .into_values()
+            .map(|(task, id)| (id, task))
+            .collect();
 
-    //pub(crate) fn next_id(&mut self) -> u64 {
-    //let next = self.next_id;
-    //self.next_id += 1;
-    //next
-    //}
-
-    fn existing_task_or_resource(&self, resource: &ResourceIdentifier) -> bool {
-        self.storage.contains(resource) || self.tasks.contains_key(resource)
-    }
-}
-
-pub(crate) struct Node {
-    id: u64,
-    deps: Vec<u64>,
-}
-
-impl Node {
-    pub(crate) fn new(id: u64) -> Self {
-        Self {
-            id,
-            deps: Vec::new(),
+        let mut outstanding_deps = HashMap::new();
+        let mut parents = HashMap::new();
+        for (id, children) in self.deps {
+            outstanding_deps.insert(id, children.len());
+            for child in children {
+                parents.entry(child).or_insert_with(Vec::new).push(id);
+            }
         }
+
+        Ok(WorkGraph {
+            tasks,
+            parents,
+            outstanding_deps,
+        })
     }
 
-    pub(crate) fn add_dep(&mut self, dep_id: u64) {
-        self.deps.push(dep_id)
+    fn next_id(&mut self) -> TaskId {
+        let next = self.next_id;
+        self.next_id += 1;
+        next
+    }
+
+    fn get_task(
+        &mut self,
+        resource: ResourceIdentifier,
+    ) -> Result<&(AnyTask, TaskId), ProviderError> {
+        match self.tasks.entry(resource) {
+            Entry::Occupied(entry) => Ok(entry.get()),
+            Entry::Vacant(entry) => {
+                let task = self.providers.find_task(entry.key())?;
+                let id = self.next_id();
+                Ok(entry.insert((task, id)))
+            }
+        }
     }
 }

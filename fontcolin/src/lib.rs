@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use graph::{Node, WorkGraph};
+use graph::WorkGraph;
 use resource::{AnyResource, ResourceIdentifier, ResourceRequest, ResourceStore};
 
 mod graph;
@@ -8,6 +8,7 @@ mod resource;
 
 struct Fontc {
     resources: ResourceStore,
+    providers: ProviderSet,
 }
 
 /// Identifies a particular task, and describes its dependencies.
@@ -37,56 +38,15 @@ struct ProviderSet {
     providers: Vec<Box<dyn Provider>>,
 }
 
-enum Error {
-    DidMistake,
-    MissingResource(ResourceIdentifier),
-}
-
 impl Fontc {
     fn run<T: ResourceRequest>(&mut self, resource: T) -> Result<&T::Output, Error> {
         let ident = resource.identifier();
         if let Some(existing) = self.resources.get(&ident) {
             return Ok(existing.downcast::<T::Output>().unwrap());
         }
-        let graph = self.build_work_graph(ident);
+        let _graph = WorkGraph::new(ident, &self.resources, &self.providers)?;
         Err(Error::DidMistake)
-        //
     }
-
-    ///// A graph of dependencies required to complete a task
-    //fn build_work_graph(&self, for_resource: ResourceIdentifier) -> Result<WorkGraph, Error> {
-    //let mut graph = WorkGraph::default();
-    //let mut queue = VecDeque::from([(&for_resource, graph.next_id())]);
-    //while let Some((ident, id)) = queue.pop_front() {
-    //let task = self.find_task(ident)?;
-    //let mut node = Node::new(id);
-
-    //for resource in task.0.dependencies().iter() {
-    //// this work has already been done, so we can skip
-    //if self.resources.contains(resource) {
-    //continue;
-    //}
-
-    //let next_id = graph.next_id();
-    ////node.add_dep(next_id);
-    ////queue.push_back((resource));
-    ////next_id += 1;
-    //}
-    ////
-    //}
-    //graph
-    //}
-
-    //fn produce
-}
-
-enum ProviderError {
-    NoProvider(ResourceIdentifier),
-    DuplicateProvider {
-        resource: ResourceIdentifier,
-        first: &'static str,
-        second: &'static str,
-    },
 }
 
 impl ProviderSet {
@@ -102,7 +62,7 @@ impl ProviderSet {
             result = match (result.take(), provider.make_task(for_resource)) {
                 (None, None) => None,
                 (None, Some(task)) => Some((task, provider.type_name())),
-                (Some((prev, first)), Some(task)) => {
+                (Some((_prev, first)), Some(_)) => {
                     return Err(ProviderError::DuplicateProvider {
                         resource: for_resource.to_owned(),
                         first,
@@ -116,4 +76,24 @@ impl ProviderSet {
             .map(|(task, _)| task)
             .ok_or_else(|| ProviderError::NoProvider(for_resource.to_owned()))
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+enum Error {
+    #[error("oh no")]
+    DidMistake,
+    #[error("{0}")]
+    ProviderError(#[from] ProviderError),
+}
+
+#[derive(thiserror::Error, Debug)]
+enum ProviderError {
+    #[error("No provider for resource {0:?}")]
+    NoProvider(ResourceIdentifier),
+    #[error("Multiple providers for resource {resource:?}: '{first}', '{second}'")]
+    DuplicateProvider {
+        resource: ResourceIdentifier,
+        first: &'static str,
+        second: &'static str,
+    },
 }
