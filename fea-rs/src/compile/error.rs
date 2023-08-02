@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use write_fonts::{error::Error as WriteError, read::ReadError};
+use write_fonts::{read::ReadError, BuilderError};
 
 use crate::{
     parse::{SourceList, SourceLoadError},
@@ -63,14 +63,9 @@ pub enum CompilerError {
     ValidationFail(DiagnosticSet),
     #[error("Compilation failed with {} errors\n{}", .0.messages.len(), .0.printer())]
     CompilationFail(DiagnosticSet),
-    #[error("Binary generation failed: '{0}'")]
-    WriteFail(#[from] BinaryCompilationError),
+    #[error("{0}")]
+    WriteFail(#[from] BuilderError),
 }
-
-/// An error that occured when generating the binary font
-#[derive(Debug, thiserror::Error)]
-#[error("Binary generation failed: '{0}'")]
-pub struct BinaryCompilationError(WriteError);
 
 /// A set of diagnostics with the associated source info
 #[derive(Clone)]
@@ -126,17 +121,11 @@ impl std::fmt::Debug for DiagnosticSet {
     }
 }
 
-impl From<WriteError> for BinaryCompilationError {
-    fn from(src: WriteError) -> BinaryCompilationError {
-        BinaryCompilationError(src)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Some clients, notably fontmake-rs, expect this.
+    /// Some clients, notably fontc, expect this.
     #[test]
     fn assert_compiler_error_is_send() {
         fn send_me_baby<T: Send>() {}

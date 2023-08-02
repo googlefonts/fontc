@@ -1,14 +1,11 @@
 //! The result of a compilation
 
 use write_fonts::{
-    dump_table,
-    read::TopLevelTable,
     tables::{self as wtables, maxp::Maxp},
-    validate::Validate,
-    FontBuilder, FontWrite,
+    BuilderError, FontBuilder,
 };
 
-use super::{error::BinaryCompilationError, Opts};
+use super::Opts;
 
 use crate::{Diagnostic, GlyphMap};
 
@@ -55,18 +52,25 @@ impl Compilation {
     /// and manipulate the raw tables directly.
     ///
     /// [`to_binary`]: Compilation::to_binary
-    pub fn to_font_builder(&self) -> Result<FontBuilder, BinaryCompilationError> {
+    pub fn to_font_builder(&self) -> Result<FontBuilder, BuilderError> {
         let mut builder = FontBuilder::default();
-        builder.add(self.head.as_ref())?;
-        builder.add(self.hhea.as_ref())?;
-        builder.add(self.vhea.as_ref())?;
-        builder.add(self.os2.as_ref())?;
-        builder.add(self.gdef.as_ref())?;
-        builder.add(self.base.as_ref())?;
-        builder.add(self.name.as_ref())?;
-        builder.add(self.stat.as_ref())?;
-        builder.add(self.gsub.as_ref())?;
-        builder.add(self.gpos.as_ref())?;
+        macro_rules! add_if_some {
+            ($table:expr) => {
+                if let Some(table) = $table.as_ref() {
+                    builder.add_table(table)?;
+                }
+            };
+        }
+        add_if_some!(self.head);
+        add_if_some!(self.hhea);
+        add_if_some!(self.vhea);
+        add_if_some!(self.os2);
+        add_if_some!(self.gdef);
+        add_if_some!(self.base);
+        add_if_some!(self.name);
+        add_if_some!(self.stat);
+        add_if_some!(self.gsub);
+        add_if_some!(self.gpos);
         Ok(builder)
     }
 
@@ -75,40 +79,17 @@ impl Compilation {
     /// This is a convenience method used for things like testing; if you are
     /// building a font compiler you will probably prefer to manipulate the
     /// generated tables directly.
-    pub fn to_binary(
-        &self,
-        glyph_map: &GlyphMap,
-        opts: Opts,
-    ) -> Result<Vec<u8>, BinaryCompilationError> {
+    pub fn to_binary(&self, glyph_map: &GlyphMap, opts: Opts) -> Result<Vec<u8>, BuilderError> {
         // because we often inspect our output with ttx, and ttx fails if maxp is
         // missing, we create a maxp table.
         let mut builder = self.to_font_builder()?;
         let maxp = Maxp::new(glyph_map.len().try_into().unwrap());
-        builder.add(Some(&maxp))?;
+        builder.add_table(&maxp)?;
         if opts.make_post_table {
             let post = glyph_map.make_post_table();
-            builder.add(Some(&post))?;
+            builder.add_table(&post)?;
         }
 
         Ok(builder.build())
-    }
-}
-
-// a little helper trait for adding raw tables to a FontBuilder
-trait BuilderHelper {
-    fn add<T: FontWrite + Validate + TopLevelTable>(
-        &mut self,
-        table: Option<&T>,
-    ) -> Result<(), BinaryCompilationError>;
-}
-
-impl BuilderHelper for FontBuilder<'_> {
-    fn add<T: FontWrite + Validate + TopLevelTable>(
-        &mut self,
-        table: Option<&T>,
-    ) -> Result<(), BinaryCompilationError> {
-        let Some(table) = table else { return Ok(()) };
-        dump_table(table).map(|bytes| self.add_table(T::TAG, bytes))?;
-        Ok(())
     }
 }
