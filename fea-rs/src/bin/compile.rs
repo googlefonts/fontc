@@ -127,6 +127,7 @@ impl Args {
     }
 }
 
+#[cfg(feature = "norad")]
 impl From<norad::error::FontLoadError> for Error {
     fn from(src: norad::error::FontLoadError) -> Error {
         Error::Ufo(Box::new(src))

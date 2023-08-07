@@ -6,8 +6,11 @@ use crate::{parse::ParseTree, Diagnostic, GlyphMap, GlyphName};
 
 use self::{
     compile_ctx::CompilationCtx,
-    error::{FontGlyphOrderError, GlyphOrderError, UfoGlyphOrderError},
+    error::{FontGlyphOrderError, GlyphOrderError},
 };
+
+#[cfg(feature = "norad")]
+use self::error::UfoGlyphOrderError;
 
 pub use compiler::Compiler;
 pub use opts::Opts;
@@ -43,13 +46,14 @@ pub(crate) fn validate(
     ctx.errors
 }
 
-static GLYPH_ORDER_KEY: &str = "public.glyphOrder";
-
 /// A helper function for extracting the glyph order from a UFO
 ///
 /// If the public.glyphOrder key is missing, or the glyphOrder is malformed,
 /// this will return `None`.
+#[cfg(feature = "norad")]
 pub fn get_ufo_glyph_order(font: &norad::Font) -> Result<GlyphMap, UfoGlyphOrderError> {
+    static GLYPH_ORDER_KEY: &str = "public.glyphOrder";
+
     font.lib
         .get(GLYPH_ORDER_KEY)
         .ok_or(UfoGlyphOrderError::KeyNotSet)?

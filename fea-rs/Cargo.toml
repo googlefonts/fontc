@@ -15,7 +15,7 @@ exclude = ["test-data"]
 [dependencies]
 ansi_term = "0.12.1"
 smol_str = "0.2.0"
-norad = "0.11" # Used in the compile binary
+norad = { version = "0.11", optional = true } # Used in the compile binary
 write-fonts = { version = "0.13.0", features = ["read"] }
 chrono = "0.4.3"
 diff = { version = "0.1.12", optional = true }
@@ -23,13 +23,14 @@ rayon = { version = "1.6", optional = true }
 serde = { version = "1.0.147", features = ["derive"], optional = true }
 serde_json = {version = "1.0.87", optional = true }
 thiserror = "1.0.37"
-clap = { version = "4.0.32", features = ["derive"] }
+clap = { version = "4.0.32", features = ["derive"], optional = true }
 log = "0.4"
 env_logger = "0.10.0"
 indexmap = "2.0"
 
 [features]
-test = ["diff", "rayon", "serde", "serde_json"]
+test = ["diff", "rayon", "serde", "serde_json", "clap"]
+cli = ["norad", "clap"]
 
 [dev-dependencies]
 diff = "0.1.12"
@@ -45,8 +46,8 @@ harness = false
 [[bin]]
 name = "fea-rs"
 path = "src/bin/compile.rs"
+required-features = ["cli"]
 
-# this is an example so it can use dev-dependencies
 [[bin]]
 name = "ttx_test"
 required-features = ["test"]
