@@ -85,6 +85,9 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkErr
             NodeType::OffCurve => path_builder
                 .offcurve((node.pt.x, node.pt.y))
                 .map_err(WorkError::PathConversionError)?,
+            NodeType::QCurve | NodeType::QCurveSmooth => path_builder
+                .qcurve_to((node.pt.x, node.pt.y))
+                .map_err(WorkError::PathConversionError)?,
         }
     }
 

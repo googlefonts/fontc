@@ -1,0 +1,121 @@
+{
+.appVersion = "3208";
+.formatVersion = 3;
+DisplayStrings = (
+"",
+i
+);
+customParameters = (
+{
+name = "Write lastChange";
+value = 0;
+}
+);
+date = "2023-07-20 13:49:39 +0000";
+familyName = "New Font";
+fontMaster = (
+{
+id = m01;
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = i;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(328,584,o),
+(364,620,o),
+(364,645,qs),
+(364,670,o),
+(328,705,o),
+(302,705,qs),
+(276,705,o),
+(239,670,o),
+(239,645,qs),
+(239,620,o),
+(276,584,o),
+(302,584,qs)
+);
+},
+{
+closed = 1;
+nodes = (
+(241,0,l),
+(354,0,l),
+(354,500,l),
+(241,500,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 105;
+},
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+unicode = 32;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+userData = {
+GSDontShowVersionAlert = 1;
+};
+versionMajor = 1;
+versionMinor = 0;
+}
