@@ -6,7 +6,7 @@ use fontdrasil::types::GlyphName;
 use fontir::variations::DeltaError;
 use read_fonts::ReadError;
 use thiserror::Error;
-use write_fonts::tables::{glyf::BadKurbo, gvar::GvarInputError, variations::IupError};
+use write_fonts::tables::{glyf::MalformedPath, gvar::GvarInputError, variations::IupError};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -19,7 +19,7 @@ pub enum Error {
     #[error("'{glyph_name}' {kurbo_problem:?} {context}")]
     KurboError {
         glyph_name: GlyphName,
-        kurbo_problem: BadKurbo,
+        kurbo_problem: MalformedPath,
         context: String,
     },
     #[error("'{glyph}' references {referenced_glyph}, {problem}")]
