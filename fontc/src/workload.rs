@@ -11,8 +11,8 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, TryRecvError};
-use fontbe::orchestration::{AnyWorkId, Context as BeContext};
-use fontdrasil::orchestration::Access;
+use fontbe::orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier};
+use fontdrasil::{orchestration::Access, types::GlyphName};
 use fontir::{
     orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     source::Input,
@@ -129,6 +129,34 @@ impl<'a> Workload<'a> {
         }
     }
 
+    fn update_be_glyph_dependencies(&mut self, fe_root: &FeContext, glyph_name: GlyphName) {
+        let glyph = fe_root
+            .glyphs
+            .get(&FeWorkIdentifier::Glyph(glyph_name.clone()));
+        let be_id = AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name));
+        let be_job = self
+            .jobs_pending
+            .get_mut(&be_id)
+            .expect("{be_id} should exist");
+
+        let mut deps = HashSet::from([
+            AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata),
+            FeWorkIdentifier::GlyphOrder.into(),
+        ]);
+
+        for inst in glyph.sources().values() {
+            for component in inst.components.iter() {
+                deps.insert(FeWorkIdentifier::Glyph(component.base.clone()).into());
+            }
+        }
+
+        trace!(
+            "Updating {be_id:?} deps from {:?} to {deps:?}",
+            be_job.read_access
+        );
+        be_job.read_access = Access::Set(deps).into();
+    }
+
     fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId) {
         log::debug!("{success:?} successful");
 
@@ -144,7 +172,18 @@ impl<'a> Workload<'a> {
             {
                 debug!("Generating a BE job for {glyph_name}");
                 super::add_glyph_be_job(self, glyph_name.clone());
+
+                // Glyph order is done so all IR must be done. Copy dependencies from the IR for the same name.
+                self.update_be_glyph_dependencies(fe_root, glyph_name.clone());
             }
+        }
+
+        // When BE glyph jobs are initially created they don't know enough to set fine grained dependencies
+        // so they depend on *all* IR glyphs. Once IR for a glyph completes we know enough to refine that
+        // to just the glyphs our glyphs uses as components. This allows BE glyph jobs to run concurrently with
+        // unrelated IR jobs.
+        if let AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) = success {
+            self.update_be_glyph_dependencies(fe_root, glyph_name);
         }
     }
 
@@ -162,6 +201,7 @@ impl<'a> Workload<'a> {
         match &job.read_access {
             AnyAccess::Fe(access) => match access {
                 Access::None => true,
+                Access::Unknown => false,
                 Access::One(id) => !self.jobs_pending.contains_key(&id.clone().into()),
                 Access::Set(ids) => !ids
                     .iter()
@@ -171,6 +211,7 @@ impl<'a> Workload<'a> {
             },
             AnyAccess::Be(access) => match access {
                 Access::None => true,
+                Access::Unknown => false,
                 Access::One(id) => !self.jobs_pending.contains_key(id),
                 Access::Set(ids) => !ids.iter().any(|id| self.jobs_pending.contains_key(id)),
                 Access::Custom(..) => self.can_run_scan(job),
