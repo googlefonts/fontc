@@ -7,11 +7,11 @@ use font_types::{Fixed, LongDateTime};
 use fontdrasil::orchestration::{Access, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use log::warn;
-use write_fonts::tables::head::Head;
+use write_fonts::tables::{head::Head, loca::LocaFormat};
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, LocaFormat, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, WorkId},
 };
 
 #[derive(Debug)]
@@ -104,10 +104,10 @@ impl Work<Context, AnyWorkId, Error> for HeadWork {
     /// Generate [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
-        let loca_format = context.loca_format.get();
+        let loca_format = (*context.loca_format.get().as_ref()).into();
         let mut head = init_head(
             static_metadata.units_per_em,
-            *loca_format,
+            loca_format,
             static_metadata.misc.head_flags,
             static_metadata.misc.lowest_rec_ppm,
         );
@@ -130,8 +130,9 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use more_asserts::assert_ge;
     use temp_env;
+    use write_fonts::tables::loca::LocaFormat;
 
-    use crate::{head::apply_created_modified, orchestration::LocaFormat};
+    use crate::head::apply_created_modified;
 
     use super::{init_head, seconds_since_mac_epoch};
 

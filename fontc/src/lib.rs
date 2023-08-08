@@ -310,7 +310,7 @@ mod tests {
 
     use chrono::{Duration, TimeZone, Utc};
     use fontbe::orchestration::{
-        AnyWorkId, Context as BeContext, Glyph, LocaFormat, WorkId as BeWorkIdentifier,
+        AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
     };
     use fontdrasil::types::GlyphName;
     use fontir::{
@@ -344,7 +344,10 @@ mod tests {
     use tempfile::{tempdir, TempDir};
     use write_fonts::{
         dump_table,
-        tables::glyf::{Bbox, Glyph as RawGlyph},
+        tables::{
+            glyf::{Bbox, Glyph as RawGlyph},
+            loca::LocaFormat,
+        },
     };
 
     use super::*;
@@ -397,9 +400,10 @@ mod tests {
     impl Glyphs {
         fn new(build_dir: &Path) -> Self {
             Glyphs {
-                loca_format: LocaFormat::read(
+                loca_format: LocaFormatWrapper::read(
                     &mut File::open(build_dir.join("loca.format")).unwrap(),
-                ),
+                )
+                .into(),
                 raw_glyf: read_file(&build_dir.join("glyf.table")),
                 raw_loca: read_file(&build_dir.join("loca.table")),
             }
