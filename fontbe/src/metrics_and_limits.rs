@@ -14,7 +14,7 @@ use read_fonts::types::FWord;
 use write_fonts::{
     dump_table,
     tables::{
-        glyf::{Bbox, Contour},
+        glyf::{Bbox, Contour, Glyph},
         hhea::Hhea,
         hmtx::Hmtx,
         maxp::Maxp,
@@ -25,7 +25,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, Glyph, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, NamedGlyph, WorkId},
 };
 
 #[derive(Debug)]
@@ -81,11 +81,11 @@ impl GlyphLimits {
 }
 
 impl FontLimits {
-    fn update(&mut self, id: GlyphId, advance: u16, glyph: &Glyph) {
+    fn update(&mut self, id: GlyphId, advance: u16, glyph: &NamedGlyph) {
         // min side bearings are only for non-empty glyphs
         // we will presume only simple glyphs with no contours are empty
-        if !glyph.is_empty() {
-            let bbox = glyph.bbox();
+        if !glyph.glyph.is_empty() {
+            let bbox = glyph.glyph.bbox();
             let left_side_bearing = bbox.x_min;
             // aw - (lsb + xMax - xMin) ... but if lsb == xMin then just advance - xMax?
             let right_side_bearing: i16 = match advance as i32 - bbox.x_max as i32 {
@@ -108,11 +108,11 @@ impl FontLimits {
             self.advance_width_max = max(self.advance_width_max, advance);
         }
 
-        let bbox = glyph.bbox();
+        let bbox = glyph.glyph.bbox();
         self.bbox = self.bbox.map(|b| b.union(bbox)).or(Some(bbox));
 
-        match glyph {
-            Glyph::Simple(_, simple) => {
+        match &glyph.glyph {
+            Glyph::Simple(simple) => {
                 let num_points = simple.contours().iter().map(Contour::len).sum::<usize>() as u16;
                 let num_contours = simple.contours().len() as u16;
                 self.max_points = max(self.max_points, num_points);
@@ -129,7 +129,7 @@ impl FontLimits {
                     },
                 )
             }
-            Glyph::Composite(_, composite) => {
+            Glyph::Composite(composite) => {
                 let num_components = composite.components().len() as u16;
                 self.max_component_elements = max(self.max_component_elements, num_components);
                 let components = Some(composite.components().iter().map(|c| c.glyph).collect());
@@ -262,7 +262,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
                 glyph_limits.update(gid, advance, &glyph);
                 LongMetric {
                     advance,
-                    side_bearing: glyph.bbox().x_min,
+                    side_bearing: glyph.glyph.bbox().x_min,
                 }
             })
             .collect();
@@ -379,7 +379,7 @@ mod tests {
         glyph_limits.update(
             GlyphId::new(0),
             0,
-            &crate::orchestration::Glyph::Simple(
+            &crate::orchestration::NamedGlyph::new(
                 "don't care".into(),
                 SimpleGlyph::from_bezpath(
                     &BezPath::from_svg("M-437,611 L-334,715 L-334,611 Z").unwrap(),

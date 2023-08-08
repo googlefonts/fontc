@@ -310,7 +310,7 @@ mod tests {
 
     use chrono::{Duration, TimeZone, Utc};
     use fontbe::orchestration::{
-        AnyWorkId, Context as BeContext, Glyph as BeGlyph, LocaFormat, WorkId as BeWorkIdentifier,
+        AnyWorkId, Context as BeContext, LocaFormat, NamedGlyph, WorkId as BeWorkIdentifier,
     };
     use fontdrasil::types::GlyphName;
     use fontir::{
@@ -342,7 +342,10 @@ mod tests {
         GlyphId, Tag,
     };
     use tempfile::{tempdir, TempDir};
-    use write_fonts::{dump_table, tables::glyf::Bbox};
+    use write_fonts::{
+        dump_table,
+        tables::glyf::{Bbox, Glyph},
+    };
 
     use super::*;
 
@@ -402,16 +405,16 @@ mod tests {
             }
         }
 
-        fn read(&self) -> Vec<glyf::Glyph> {
+        fn read(&self) -> Vec<Option<glyf::Glyph>> {
             let glyf = Glyf::read(FontData::new(&self.raw_glyf)).unwrap();
-            let loca = Loca::read_with_args(
+            let loca = Loca::read(
                 FontData::new(&self.raw_loca),
-                &(self.loca_format == LocaFormat::Long),
+                self.loca_format == LocaFormat::Long,
             )
             .unwrap();
             (0..loca.len())
                 .map(|gid| loca.get_glyf(GlyphId::new(gid as u16), &glyf))
-                .map(|r| r.unwrap().unwrap())
+                .map(|r| r.unwrap())
                 .collect()
         }
     }
@@ -751,10 +754,10 @@ mod tests {
         buf
     }
 
-    fn read_be_glyph(build_dir: &Path, name: &str) -> BeGlyph {
+    fn read_be_glyph(build_dir: &Path, name: &str) -> Glyph {
         let raw_glyph = read_file(&build_dir.join(format!("glyphs/{name}.glyf")));
         let read: &mut dyn Read = &mut raw_glyph.as_slice();
-        BeGlyph::read(read)
+        NamedGlyph::read(read).glyph
     }
 
     #[test]
@@ -764,7 +767,7 @@ mod tests {
         assert!(glyph.default_instance().contours.is_empty(), "{glyph:?}");
         assert_eq!(2, glyph.default_instance().components.len(), "{glyph:?}");
 
-        let BeGlyph::Composite(_, glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
+        let Glyph::Composite(glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
             panic!("Expected a simple glyph");
         };
         let raw_glyph = dump_table(&glyph).unwrap();
@@ -780,7 +783,7 @@ mod tests {
         assert!(glyph.default_instance().components.is_empty(), "{glyph:?}");
         assert_eq!(2, glyph.default_instance().contours.len(), "{glyph:?}");
 
-        let BeGlyph::Simple(_, glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
+        let Glyph::Simple(glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
             panic!("Expected a simple glyph");
         };
         assert_eq!(2, glyph.contours().len());
@@ -792,7 +795,7 @@ mod tests {
         let build_dir = temp_dir.path();
         compile(Args::for_test(build_dir, "static.designspace"));
 
-        let BeGlyph::Simple(_, glyph) = read_be_glyph(build_dir, "bar") else {
+        let Glyph::Simple( glyph) = read_be_glyph(build_dir, "bar") else {
             panic!("Expected a simple glyph");
         };
 
@@ -830,8 +833,10 @@ mod tests {
                 .read()
                 .iter()
                 .map(|g| match g {
-                    glyf::Glyph::Simple(glyph) => (glyph.num_points(), glyph.number_of_contours()),
-                    glyf::Glyph::Composite(glyph) => (0, glyph.number_of_contours()),
+                    None => (0, 0),
+                    Some(glyf::Glyph::Simple(glyph)) =>
+                        (glyph.num_points(), glyph.number_of_contours()),
+                    Some(glyf::Glyph::Composite(glyph)) => (0, glyph.number_of_contours()),
                 })
                 .collect::<Vec<_>>()
         );
@@ -847,7 +852,7 @@ mod tests {
         let glyphs = glyph_data.read();
         // the glyph 'O' contains several quad splines
         let uppercase_o = &glyphs[result.get_glyph_index("O") as usize];
-        let glyf::Glyph::Simple(glyph) = uppercase_o else {
+        let Some(glyf::Glyph::Simple(glyph)) = uppercase_o else {
             panic!("Expected 'O' to be a simple glyph, got {:?}", uppercase_o);
         };
         assert_eq!(2, glyph.number_of_contours());
@@ -882,16 +887,19 @@ mod tests {
         let glyphs = glyph_data.read();
         assert!(glyphs.len() > 1, "{glyphs:#?}");
         let period_idx = result.get_glyph_index("period");
-        assert!(matches!(glyphs[0], glyf::Glyph::Simple(..)), "{glyphs:#?}");
+        assert!(
+            matches!(glyphs[0], Some(glyf::Glyph::Simple(..))),
+            "{glyphs:#?}"
+        );
         for (idx, glyph) in glyphs.iter().enumerate() {
             if idx == period_idx.try_into().unwrap() {
                 assert!(
-                    matches!(glyphs[idx], glyf::Glyph::Simple(..)),
+                    matches!(glyphs[idx], Some(glyf::Glyph::Simple(..))),
                     "glyphs[{idx}] should be simple\n{glyph:#?}\nAll:\n{glyphs:#?}"
                 );
             } else {
                 assert!(
-                    matches!(glyphs[idx], glyf::Glyph::Composite(..)),
+                    matches!(glyphs[idx], Some(glyf::Glyph::Composite(..))),
                     "glyphs[{idx}] should be composite\n{glyph:#?}\nAll:\n{glyphs:#?}"
                 );
             }
@@ -908,7 +916,7 @@ mod tests {
         let non_uniform_scale_idx = result.get_glyph_index("non_uniform_scale");
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
-        let glyf::Glyph::Composite(glyph) = &glyphs[non_uniform_scale_idx as usize] else {
+        let Some(glyf::Glyph::Composite(glyph)) = &glyphs[non_uniform_scale_idx as usize] else {
             panic!("Expected a composite\n{glyphs:#?}");
         };
         let component = glyph.components().next().unwrap();
@@ -950,7 +958,7 @@ mod tests {
         let gid = result.get_glyph_index("simple_transform_again");
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
-        let glyf::Glyph::Composite(glyph) = &glyphs[gid as usize] else {
+        let Some(glyf::Glyph::Composite(glyph)) = &glyphs[gid as usize] else {
             panic!("Expected a composite\n{glyphs:#?}");
         };
 

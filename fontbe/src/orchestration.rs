@@ -27,26 +27,13 @@ use serde::{Deserialize, Serialize};
 use write_fonts::{
     dump_table,
     tables::{
-        avar::Avar,
-        cmap::Cmap,
-        fvar::Fvar,
-        glyf::{Bbox, SimpleGlyph},
-        gpos::Gpos,
-        gsub::Gsub,
-        gvar::GlyphDeltas,
-        head::Head,
-        hhea::Hhea,
-        maxp::Maxp,
-        name::Name,
-        os2::Os2,
-        post::Post,
-        stat::Stat,
+        avar::Avar, cmap::Cmap, fvar::Fvar, glyf::Glyph, gpos::Gpos, gsub::Gsub, gvar::GlyphDeltas,
+        head::Head, hhea::Hhea, maxp::Maxp, name::Name, os2::Os2, post::Post, stat::Stat,
         variations::Tuple,
     },
     validate::Validate,
     FontWrite, OtRound,
 };
-use write_fonts::{from_obj::FromTableRef, tables::glyf::CompositeGlyph};
 
 use crate::{error::Error, paths::Paths};
 
@@ -127,107 +114,47 @@ impl From<WorkId> for AnyWorkId {
     }
 }
 
-/// <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
+/// A glyph and its associated name
 #[derive(Debug, Clone)]
-pub enum Glyph {
-    Simple(GlyphName, SimpleGlyph),
-    Composite(GlyphName, CompositeGlyph),
+pub struct NamedGlyph {
+    pub name: GlyphName,
+    pub glyph: Glyph,
 }
 
-impl Glyph {
-    pub(crate) fn new_simple(glyph_name: GlyphName, simple: SimpleGlyph) -> Glyph {
-        Glyph::Simple(glyph_name, simple)
-    }
-
-    pub(crate) fn new_composite(glyph_name: GlyphName, composite: CompositeGlyph) -> Glyph {
-        Glyph::Composite(glyph_name, composite)
-    }
-
-    pub(crate) fn glyph_name(&self) -> &GlyphName {
-        match self {
-            Glyph::Simple(name, _) | Glyph::Composite(name, _) => name,
+impl NamedGlyph {
+    pub(crate) fn new(name: GlyphName, glyph: impl Into<Glyph>) -> Self {
+        Self {
+            name,
+            glyph: glyph.into(),
         }
+    }
+
+    pub fn is_simple(&self) -> bool {
+        matches!(&self.glyph, Glyph::Simple(_))
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        match self {
-            Glyph::Simple(_, table) => dump_table(table),
-            Glyph::Composite(_, table) => dump_table(table),
-        }
-        .unwrap()
-    }
-
-    pub fn bbox(&self) -> Bbox {
-        match self {
-            Glyph::Simple(_, table) => table.bbox,
-            Glyph::Composite(_, table) => table.bbox,
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        match self {
-            Glyph::Simple(_, table) => table.contours().is_empty(),
-            Glyph::Composite(_, table) => table.components().is_empty(),
-        }
+        dump_table(&self.glyph).unwrap()
     }
 }
 
-impl IdAware<AnyWorkId> for Glyph {
+impl IdAware<AnyWorkId> for NamedGlyph {
     fn id(&self) -> AnyWorkId {
-        AnyWorkId::Be(WorkId::GlyfFragment(self.glyph_name().clone()))
+        AnyWorkId::Be(WorkId::GlyfFragment(self.name.clone()))
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct GlyphPersistable {
-    name: GlyphName,
-    simple: bool,
-    glyph: Vec<u8>,
-}
-
-impl From<GlyphPersistable> for Glyph {
-    fn from(value: GlyphPersistable) -> Self {
-        match value.simple {
-            true => {
-                let glyph =
-                    read_fonts::tables::glyf::SimpleGlyph::read(FontData::new(&value.glyph))
-                        .unwrap();
-                let glyph = SimpleGlyph::from_table_ref(&glyph);
-                Glyph::Simple(value.name, glyph)
-            }
-            false => {
-                let glyph =
-                    read_fonts::tables::glyf::CompositeGlyph::read(FontData::new(&value.glyph))
-                        .unwrap();
-                let glyph = CompositeGlyph::from_table_ref(&glyph);
-                Glyph::Composite(value.name, glyph)
-            }
-        }
-    }
-}
-
-impl Persistable for Glyph {
+impl Persistable for NamedGlyph {
     fn read(from: &mut dyn Read) -> Self {
-        bincode::deserialize_from::<&mut dyn Read, GlyphPersistable>(from)
-            .unwrap()
-            .into()
+        let (name, bytes): (GlyphName, Vec<u8>) = bincode::deserialize_from(from).unwrap();
+        let glyph = Glyph::read(bytes.as_slice().into()).unwrap();
+        NamedGlyph { name, glyph }
     }
 
     fn write(&self, to: &mut dyn Write) {
-        let obj = match self {
-            Glyph::Simple(name, table) => GlyphPersistable {
-                name: name.clone(),
-                simple: true,
-                glyph: dump_table(table).unwrap(),
-            },
-            Glyph::Composite(name, table) => GlyphPersistable {
-                name: name.clone(),
-                simple: false,
-                glyph: dump_table(table).unwrap(),
-            },
-        };
-
-        bincode::serialize_into::<&mut dyn Write, GlyphPersistable>(to, &obj).unwrap();
+        let glyph_bytes = dump_table(&self.glyph).unwrap();
+        let to_write = (&self.name, glyph_bytes);
+        bincode::serialize_into(to, &to_write).unwrap();
     }
 }
 
@@ -439,7 +366,7 @@ pub struct Context {
 
     // work results we've completed or restored from disk
     pub gvar_fragments: BeContextMap<GvarFragment>,
-    pub glyphs: BeContextMap<Glyph>,
+    pub glyphs: BeContextMap<NamedGlyph>,
 
     pub avar: BeContextItem<BeValue<Avar>>,
     pub cmap: BeContextItem<BeValue<Cmap>>,
