@@ -1070,6 +1070,7 @@ impl GlyphPathBuilder {
     }
 
     /// Lifts the "pen" to Point `p` and marks the beginning of an open contour.
+    ///
     /// A point of this type can only be the first point in a contour.
     /// Cf. "move" in https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
     pub fn move_to(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
@@ -1083,6 +1084,7 @@ impl GlyphPathBuilder {
     }
 
     /// Draws a line from the previous point to Point `p`.
+    ///
     /// The previous point cannot be an off-curve point.
     /// If this is the first point in a contour, the contour is assumed to be closed,
     /// i.e. a cyclic list of points with no predominant start point.
@@ -1097,8 +1099,9 @@ impl GlyphPathBuilder {
         Ok(())
     }
 
-    /// Draws a quadratic curve from the last non-offcufve point to Point `p`, using the
-    /// TrueType "implied on-curve point" principle.
+    /// Draws a quadratic curve/spline from the last non-offcurve point to Point `p`.
+    ///
+    /// This uses the TrueType "implied on-curve point" principle.
     /// The number of preceding off-curve points can be n >= 0. When n=0, a straight line is
     /// implied. If n=1, a single quadratic Bezier curve is drawn. If n>=2, a sequence of
     /// quadratic Bezier curves is drawn, with the implied on-curve points at the midpoints
@@ -1131,6 +1134,7 @@ impl GlyphPathBuilder {
     }
 
     /// Draws a cubic curve from the previous non-offcurve point to Point `p`.
+    ///
     /// Type of curve depends on the number of accumulated off-curves: 0 (straight line),
     /// 1 (quadratic Bezier) or 2 (cubic Bezier).
     /// If this is the first point in a contour, the contour is assumed to be closed.
@@ -1152,9 +1156,11 @@ impl GlyphPathBuilder {
         Ok(())
     }
 
-    /// Append off-curve point `p` to curve segment identified by the following on-curve
-    /// point, which can be either a (cubic) "curve" or (quadratic) "qcurve".
-    /// If this is the first point in a contour, the contour is assumed to be closed.
+    /// Append off-curve point `p` to the following curve segment.
+    ///
+    /// The type of curve is defined by following on-curve point, which can be either a
+    /// (cubic) "curve" or (quadratic) "qcurve".
+    /// If offcurve is the first point in a contour, the contour is assumed to be closed.
     /// Cf. "offcurve" in https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
     pub fn offcurve(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         if self.first_oncurve.is_some() {
@@ -1165,7 +1171,9 @@ impl GlyphPathBuilder {
         Ok(())
     }
 
-    /// Ends the current sub-path. It's called automatically by `build()` thus can be
+    /// Ends the current sub-path.
+    ///
+    /// It's called automatically by `build()` thus can be
     /// omitted when building one BezPath per contour, but can be called manually in
     /// order to build multiple contours into a single BezPath.
     pub fn end_path(&mut self) -> Result<(), PathConversionError> {
