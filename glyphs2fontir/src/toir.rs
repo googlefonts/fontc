@@ -52,7 +52,7 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkErr
         return Ok(path_builder.build()?);
     }
 
-    let mut nodes: Vec<_> = src_path.nodes.iter().collect();
+    let mut nodes: Vec<_> = src_path.nodes.clone();
 
     // First is a delicate butterfly
     if !src_path.closed {
