@@ -144,7 +144,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
             }
             debug!("Grabbing {tag} for final font");
             let bytes = bytes_for(context, work_id.clone())?;
-            builder.add_table(*tag, bytes);
+            builder.add_raw(*tag, bytes);
         }
 
         debug!("Building font");

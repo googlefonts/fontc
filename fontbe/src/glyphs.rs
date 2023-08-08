@@ -22,9 +22,7 @@ use read_fonts::{
 };
 use write_fonts::{
     tables::{
-        glyf::{
-            simple_glyphs_from_kurbo, Bbox, Component, ComponentFlags, CompositeGlyph, SimpleGlyph,
-        },
+        glyf::{Bbox, Component, ComponentFlags, CompositeGlyph, SimpleGlyph},
         variations::iup_delta_optimize,
     },
     OtRound,
@@ -290,8 +288,8 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
             CheckedGlyph::Contour { name, paths } => {
                 // Convert paths to SimpleGlyphs in parallel so we can get consistent point streams
                 let (locations, bezpaths): (Vec<_>, Vec<_>) = paths.into_iter().unzip();
-                let simple_glyphs =
-                    simple_glyphs_from_kurbo(&bezpaths).map_err(|e| Error::KurboError {
+                let simple_glyphs = SimpleGlyph::interpolatable_glyphs_from_bezpaths(&bezpaths)
+                    .map_err(|e| Error::KurboError {
                         glyph_name: self.glyph_name.clone(),
                         kurbo_problem: e,
                         context: bezpaths

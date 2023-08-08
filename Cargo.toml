@@ -11,11 +11,11 @@ env_logger = "0.10.0"
 
 parking_lot = "0.12.1"
 
-fea-rs = "0.10.0"
+fea-rs = "0.12.0"
 font-types = { version = "0.3.3", features = ["serde"] }
-read-fonts = "0.8.0"
-write-fonts = "0.11.0"
-skrifa = "0.7.0"
+read-fonts = "0.10.0"
+write-fonts = "0.13.0"
+skrifa = "0.9.0"
 
 bitflags = "2.0"
 chrono = { version = "0.4.24", features = ["serde"] }
