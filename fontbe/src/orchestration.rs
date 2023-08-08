@@ -28,8 +28,8 @@ use write_fonts::{
     dump_table,
     tables::{
         avar::Avar, cmap::Cmap, fvar::Fvar, glyf::Glyph as RawGlyph, gpos::Gpos, gsub::Gsub,
-        gvar::GlyphDeltas, head::Head, hhea::Hhea, maxp::Maxp, name::Name, os2::Os2, post::Post,
-        stat::Stat, variations::Tuple,
+        gvar::GlyphDeltas, head::Head, hhea::Hhea, loca::LocaFormat, maxp::Maxp, name::Name,
+        os2::Os2, post::Post, stat::Stat, variations::Tuple,
     },
     validate::Validate,
     FontWrite, OtRound,
@@ -251,19 +251,25 @@ impl TupleBuilder {
     }
 }
 
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum LocaFormat {
-    Short = 0,
-    Long = 1,
+// work around orphan rules.
+//
+// FIXME: Clarify if there's a good reason not to treat glyf/loca as a single
+// entity, for the purpose of persistence? like a struct that contains both
+// tables, and from which the format can be retrieved
+//
+// this whole thing needs a rethink, but this gets us working
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct LocaFormatWrapper(u8);
+
+impl From<LocaFormat> for LocaFormatWrapper {
+    fn from(value: LocaFormat) -> Self {
+        LocaFormatWrapper(value as _)
+    }
 }
 
-impl LocaFormat {
-    pub fn new(loca: &[u32]) -> LocaFormat {
-        // https://github.com/fonttools/fonttools/blob/1c283756a5e39d69459eea80ed12792adc4922dd/Lib/fontTools/ttLib/tables/_l_o_c_a.py#L37
-        if loca.last().copied().unwrap_or_default() < 0x20000
-            && loca.iter().all(|offset| offset % 2 == 0)
-        {
+impl From<LocaFormatWrapper> for LocaFormat {
+    fn from(value: LocaFormatWrapper) -> Self {
+        if value.0 == 0 {
             LocaFormat::Short
         } else {
             LocaFormat::Long
@@ -271,21 +277,13 @@ impl LocaFormat {
     }
 }
 
-impl Persistable for LocaFormat {
+impl Persistable for LocaFormatWrapper {
     fn read(from: &mut dyn Read) -> Self {
-        let mut buf = Vec::new();
-        from.read_to_end(&mut buf).unwrap();
-        match buf.first() {
-            Some(0) => LocaFormat::Short,
-            Some(1) => LocaFormat::Long,
-            _ => {
-                panic!("serialized LocaFormat is invalid")
-            }
-        }
+        bincode::deserialize_from(from).unwrap()
     }
 
     fn write(&self, to: &mut dyn io::Write) {
-        to.write_all(&[*self as u8]).unwrap();
+        bincode::serialize_into(to, self).unwrap()
     }
 }
 
@@ -380,7 +378,7 @@ pub struct Context {
     pub gvar: BeContextItem<Bytes>,
     pub post: BeContextItem<BeValue<Post>>,
     pub loca: BeContextItem<Bytes>,
-    pub loca_format: BeContextItem<LocaFormat>,
+    pub loca_format: BeContextItem<LocaFormatWrapper>,
     pub maxp: BeContextItem<BeValue<Maxp>>,
     pub name: BeContextItem<BeValue<Name>>,
     pub os2: BeContextItem<BeValue<Os2>>,
@@ -518,7 +516,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::orchestration::LocaFormat;
     use font_types::Tag;
     use fontir::{
         coords::NormalizedCoord,
@@ -526,29 +523,6 @@ mod tests {
     };
 
     use super::GvarFragment;
-
-    #[test]
-    fn no_glyphs_is_short() {
-        assert_eq!(LocaFormat::Short, LocaFormat::new(&Vec::new()));
-    }
-
-    #[test]
-    fn some_glyphs_is_short() {
-        assert_eq!(LocaFormat::Short, LocaFormat::new(&[24, 48, 112]));
-    }
-
-    #[test]
-    fn unpadded_glyphs_is_long() {
-        assert_eq!(LocaFormat::Long, LocaFormat::new(&[24, 7, 112]));
-    }
-
-    #[test]
-    fn big_glyphs_is_long() {
-        assert_eq!(
-            LocaFormat::Long,
-            LocaFormat::new(&(0..=32).map(|i| i * 0x1000).collect::<Vec<_>>())
-        );
-    }
 
     fn non_default_region() -> VariationRegion {
         let mut region = VariationRegion::default();

@@ -22,7 +22,10 @@ use read_fonts::{
 };
 use write_fonts::{
     tables::{
-        glyf::{Bbox, Component, ComponentFlags, CompositeGlyph, Glyph as RawGlyph, SimpleGlyph},
+        glyf::{
+            Bbox, Component, ComponentFlags, CompositeGlyph, GlyfLocaBuilder, Glyph as RawGlyph,
+            SimpleGlyph,
+        },
         variations::iup_delta_optimize,
     },
     OtRound,
@@ -30,7 +33,7 @@ use write_fonts::{
 
 use crate::{
     error::{Error, GlyphProblem},
-    orchestration::{AnyWorkId, BeWork, Context, Glyph, GvarFragment, LocaFormat, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, Glyph, GvarFragment, WorkId},
 };
 
 #[derive(Debug)]
@@ -778,36 +781,21 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
         compute_composite_bboxes(context)?;
 
         let glyph_order = context.ir.glyph_order.get();
+        let mut builder = GlyfLocaBuilder::new();
 
-        // Glue together glyf and loca
-        // Build loca as u32 first, then shrink if it'll fit
-        // This isn't overly memory efficient but ... fonts aren't *that* big (yet?)
-        let mut loca = vec![0];
-        let mut glyf: Vec<u8> = Vec::new();
-        glyf.reserve(1024 * 1024); // initial size, will grow as needed
-        glyph_order
-            .iter()
-            .map(|gn| context.glyphs.get(&WorkId::GlyfFragment(gn.clone()).into()))
-            .for_each(|g| {
-                let bytes = g.to_bytes();
-                loca.push(loca.last().unwrap() + bytes.len() as u32);
-                glyf.extend(bytes);
-            });
+        for name in glyph_order.iter() {
+            let glyph = context
+                .glyphs
+                .get(&WorkId::GlyfFragment(name.clone()).into());
+            builder.add_glyph(&glyph.data).unwrap();
+        }
 
-        let loca_format = LocaFormat::new(&loca);
-        let loca: Vec<u8> = match loca_format {
-            LocaFormat::Short => loca
-                .iter()
-                .flat_map(|offset| ((offset >> 1) as u16).to_be_bytes())
-                .collect(),
-            LocaFormat::Long => loca
-                .iter()
-                .flat_map(|offset| offset.to_be_bytes())
-                .collect(),
-        };
-        context.loca_format.set(loca_format);
-        context.glyf.set(glyf.into());
-        context.loca.set(loca.into());
+        let (glyf, loca, loca_format) = builder.build();
+        let raw_loca = write_fonts::dump_table(&loca).unwrap();
+        let raw_glyf = write_fonts::dump_table(&glyf).unwrap();
+        context.loca_format.set(loca_format.into());
+        context.glyf.set(raw_glyf.into());
+        context.loca.set(raw_loca.into());
 
         Ok(())
     }
