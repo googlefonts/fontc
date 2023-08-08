@@ -1072,7 +1072,7 @@ impl GlyphPathBuilder {
     /// Lifts the "pen" to Point `p` and marks the beginning of an open contour.
     ///
     /// A point of this type can only be the first point in a contour.
-    /// Cf. "move" in https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
+    /// Cf. "move" in <https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types>
     pub fn move_to(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         if !self.is_empty() {
             return Err(PathConversionError::MoveAfterFirstPoint {
@@ -1088,7 +1088,7 @@ impl GlyphPathBuilder {
     /// The previous point cannot be an off-curve point.
     /// If this is the first point in a contour, the contour is assumed to be closed,
     /// i.e. a cyclic list of points with no predominant start point.
-    /// Cf. "line" in https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
+    /// Cf. "line" in <https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types>
     pub fn line_to(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         self.check_num_offcurve(|v| v == 0)?;
         if self.first_oncurve.is_none() {
@@ -1107,7 +1107,7 @@ impl GlyphPathBuilder {
     /// quadratic Bezier curves is drawn, with the implied on-curve points at the midpoints
     /// between pairs of successive off-curve points.
     /// If this is the first point in a contour, the contour is assumed to be closed.
-    /// Cf. "qcurve" in https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
+    /// Cf. "qcurve" in <https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types>
     pub fn qcurve_to(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         // https://github.com/googlefonts/fontmake-rs/issues/110
         // Guard clauses: degenerate cases
@@ -1161,7 +1161,7 @@ impl GlyphPathBuilder {
     /// The type of curve is defined by following on-curve point, which can be either a
     /// (cubic) "curve" or (quadratic) "qcurve".
     /// If offcurve is the first point in a contour, the contour is assumed to be closed.
-    /// Cf. "offcurve" in https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types
+    /// Cf. "offcurve" in <https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types>
     pub fn offcurve(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         if self.first_oncurve.is_some() {
             self.offcurve.push(p.into());
