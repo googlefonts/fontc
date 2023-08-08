@@ -91,7 +91,7 @@ pub fn master_locations(
         .iter()
         .map(|s| {
             (
-                s.name.clone(),
+                s.name.clone().unwrap(),
                 to_design_location(&tags_by_name, &s.location).to_normalized(&axes),
             )
         })
