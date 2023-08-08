@@ -1021,7 +1021,7 @@ impl OnCurve {
 /// often easier on bezier path, so provide a mechanism to convert.
 /// While kurbo::BezPath can contain multiple subpaths, and this builder could be
 /// used to convert multiple contours (i.e. list of points) into a single BezPath,
-/// our GlyphInstance.contours is defined as a Vec<BezPath>, so frontends should
+/// our GlyphInstance.contours is defined as a `Vec<BezPath>`, so frontends should
 /// convert one contour at a time.
 #[derive(Debug)]
 pub struct GlyphPathBuilder {
