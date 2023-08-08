@@ -28,10 +28,11 @@ pub(crate) fn to_design_location(
 }
 
 fn to_ir_contour(glyph_name: GlyphName, contour: &norad::Contour) -> Result<BezPath, WorkError> {
-    let mut path_builder = GlyphPathBuilder::new(glyph_name.clone());
     if contour.points.is_empty() {
-        return Ok(path_builder.build()?);
+        return Ok(BezPath::new());
     }
+
+    let mut path_builder = GlyphPathBuilder::new(glyph_name.clone(), contour.points.len());
 
     // Walk through the remaining points, accumulating off-curve points until we see an on-curve
     for node in contour.points.iter() {

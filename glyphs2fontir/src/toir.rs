@@ -16,7 +16,8 @@ pub(crate) fn to_ir_contours_and_components(
     glyph_name: GlyphName,
     shapes: &[Shape],
 ) -> Result<(Vec<BezPath>, Vec<ir::Component>), WorkError> {
-    let mut contours = Vec::new();
+    // For most glyphs in most fonts all the shapes are contours so it's a good guess
+    let mut contours = Vec::with_capacity(shapes.len());
     let mut components = Vec::new();
 
     for shape in shapes.iter() {
@@ -44,33 +45,10 @@ fn to_ir_component(glyph_name: GlyphName, component: &Component) -> ir::Componen
     }
 }
 
-fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkError> {
-    // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/paths.py#L20
-    // See also https://github.com/fonttools/ufoLib2/blob/4d8a9600148b670b0840120658d9aab0b38a9465/src/ufoLib2/pointPens/glyphPointPen.py#L16
-    let mut path_builder = GlyphPathBuilder::new(glyph_name.clone());
-    if src_path.nodes.is_empty() {
-        return Ok(path_builder.build()?);
-    }
-
-    let mut nodes: Vec<_> = src_path.nodes.clone();
-
-    // First is a delicate butterfly
-    if !src_path.closed {
-        let first = nodes.remove(0);
-        if first.node_type == NodeType::OffCurve {
-            return Err(WorkError::InvalidSourceGlyph {
-                glyph_name,
-                message: String::from("Open path starts with off-curve points"),
-            });
-        }
-        path_builder.move_to((first.pt.x, first.pt.y))?;
-    } else {
-        // In Glyphs.app, the starting node of a closed contour is always
-        // stored at the end of the nodes list.
-        // Rotate so that it is at the beginning.
-        nodes.rotate_right(1);
-    };
-
+fn add_to_path<'a>(
+    path_builder: &'a mut GlyphPathBuilder,
+    nodes: impl Iterator<Item = &'a glyphs_reader::Node>,
+) -> Result<(), WorkError> {
     // Walk through the remaining points, accumulating off-curve points until we see an on-curve
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/pens.py#L92
     for node in nodes {
@@ -90,6 +68,41 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkErr
                 .map_err(WorkError::PathConversionError)?,
         }
     }
+    Ok(())
+}
+
+fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkError> {
+    // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/paths.py#L20
+    // See also https://github.com/fonttools/ufoLib2/blob/4d8a9600148b670b0840120658d9aab0b38a9465/src/ufoLib2/pointPens/glyphPointPen.py#L16
+    if src_path.nodes.is_empty() {
+        return Ok(BezPath::new());
+    }
+
+    let mut path_builder = GlyphPathBuilder::new(glyph_name.clone(), src_path.nodes.len());
+
+    // First is a delicate butterfly
+    if !src_path.closed {
+        let first = src_path.nodes.first().unwrap();
+        if first.node_type == NodeType::OffCurve {
+            return Err(WorkError::InvalidSourceGlyph {
+                glyph_name,
+                message: String::from("Open path starts with off-curve points"),
+            });
+        }
+        path_builder.move_to((first.pt.x, first.pt.y))?;
+        add_to_path(&mut path_builder, src_path.nodes[1..].iter())?;
+    } else {
+        // In Glyphs.app, the starting node of a closed contour is always
+        // stored at the end of the nodes list.
+        // Rotate right by 1 by way of chaining iterators
+        add_to_path(
+            &mut path_builder,
+            Iterator::chain(
+                src_path.nodes[src_path.nodes.len() - 1..].iter(),
+                src_path.nodes[..src_path.nodes.len() - 1].iter(),
+            ),
+        )?;
+    };
 
     let path = path_builder.build()?;
     trace!(
