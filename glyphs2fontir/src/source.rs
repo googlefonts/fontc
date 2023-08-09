@@ -1348,4 +1348,21 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    fn build_glyph_contour_ir_containing_qcurves() {
+        let glyph_name = "i";
+        let expected = "M302,584 Q328,584 346,602 Q364,620 364,645 Q364,670 346,687.5 Q328,705 302,705 Q276,705 257.5,687.5 Q239,670 239,645 Q239,620 257.5,602 Q276,584 302,584 Z";
+        for test_dir in &[glyphs2_dir(), glyphs3_dir()] {
+            let (source, context) = build_static_metadata(test_dir.join("QCurve.glyphs"));
+            build_glyphs(&source, &context, &[&glyph_name.into()]).unwrap();
+            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.into()));
+            let default_instance = glyph
+                .sources()
+                .get(context.static_metadata.get().default_location())
+                .unwrap();
+            let first_contour = default_instance.contours.first().unwrap();
+            assert_eq!(first_contour.to_svg(), expected);
+        }
+    }
 }

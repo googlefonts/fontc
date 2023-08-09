@@ -1,0 +1,87 @@
+{
+.appVersion = "3208";
+DisplayStrings = (
+"",
+i
+);
+customParameters = (
+{
+name = "Disable Last Change";
+value = 1;
+}
+);
+date = "2023-07-20 13:49:39 +0000";
+familyName = "New Font";
+fontMaster = (
+{
+alignmentZones = (
+"{800, 16}",
+"{700, 16}",
+"{500, 16}",
+"{0, -16}",
+"{-200, -16}"
+);
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = m01;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = i;
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"328 584 OFFCURVE",
+"364 620 OFFCURVE",
+"364 645 QCURVE SMOOTH",
+"364 670 OFFCURVE",
+"328 705 OFFCURVE",
+"302 705 QCURVE SMOOTH",
+"276 705 OFFCURVE",
+"239 670 OFFCURVE",
+"239 645 QCURVE SMOOTH",
+"239 620 OFFCURVE",
+"276 584 OFFCURVE",
+"302 584 QCURVE SMOOTH"
+);
+},
+{
+closed = 1;
+nodes = (
+"241 0 LINE",
+"354 0 LINE",
+"354 500 LINE",
+"241 500 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0069;
+},
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+unicode = 0020;
+}
+);
+unitsPerEm = 1000;
+userData = {
+GSDontShowVersionAlert = 1;
+};
+versionMajor = 1;
+versionMinor = 0;
+}

@@ -269,6 +269,8 @@ pub enum NodeType {
     OffCurve,
     Curve,
     CurveSmooth,
+    QCurve,
+    QCurveSmooth,
 }
 
 #[derive(Clone, Debug, FromPlist, PartialEq)]
@@ -440,12 +442,16 @@ impl std::str::FromStr for NodeType {
             "OFFCURVE" => Ok(NodeType::OffCurve),
             "CURVE" => Ok(NodeType::Curve),
             "CURVE SMOOTH" => Ok(NodeType::CurveSmooth),
+            "QCURVE" => Ok(NodeType::QCurve),
+            "QCURVE SMOOTH" => Ok(NodeType::QCurveSmooth),
             // Glyphs 3 style
             "l" => Ok(NodeType::Line),
             "ls" => Ok(NodeType::LineSmooth),
             "o" => Ok(NodeType::OffCurve),
             "c" => Ok(NodeType::Curve),
             "cs" => Ok(NodeType::CurveSmooth),
+            "q" => Ok(NodeType::QCurve),
+            "qs" => Ok(NodeType::QCurveSmooth),
             _ => Err(format!("unknown node type {s}")),
         }
     }

@@ -145,6 +145,8 @@ pub enum PathConversionError {
         num_offcurve: usize,
         points: Vec<Point>,
     },
+    #[error("{glyph_name} contour contains a 'move' that is not the first point: {point:?}")]
+    MoveAfterFirstPoint { glyph_name: GlyphName, point: Point },
 }
 
 #[derive(Debug, Error)]
