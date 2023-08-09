@@ -381,7 +381,7 @@ mod tests {
             0,
             &crate::orchestration::Glyph::Simple(
                 "don't care".into(),
-                SimpleGlyph::from_kurbo(
+                SimpleGlyph::from_bezpath(
                     &BezPath::from_svg("M-437,611 L-334,715 L-334,611 Z").unwrap(),
                 )
                 .unwrap(),
