@@ -465,6 +465,10 @@ impl VariationRegion {
     pub fn is_default(&self) -> bool {
         self.active_axes.is_empty()
     }
+
+    pub fn get(&self, tag: &Tag) -> Option<&Tent> {
+        self.axis_tents.get(tag)
+    }
 }
 
 /// The min/peak/max of a masters influence.

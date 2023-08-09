@@ -52,7 +52,9 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
         Access::Custom(Arc::new(|id| {
             matches!(
                 id,
-                AnyWorkId::Fe(FeWorkId::GlyphOrder) | AnyWorkId::Be(WorkId::GvarFragment(..))
+                AnyWorkId::Fe(FeWorkId::StaticMetadata)
+                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
+                    | AnyWorkId::Be(WorkId::GvarFragment(..))
             )
         }))
     }
@@ -60,13 +62,19 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
     /// Generate [gvar](https://learn.microsoft.com/en-us/typography/opentype/spec/gvar)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // We built the gvar fragments alongside glyphs, now we need to glue them together into a gvar table
+        let static_metadata = context.ir.static_metadata.get();
+        let axis_order: Vec<_> = static_metadata
+            .variable_axes
+            .iter()
+            .map(|a| a.tag)
+            .collect();
         let glyph_order = context.ir.glyph_order.get();
 
         let variations: Vec<_> = make_variations(&glyph_order, |glyph_name| {
             context
                 .gvar_fragments
                 .get(&WorkId::GvarFragment(glyph_name.clone()).into())
-                .to_deltas()
+                .to_deltas(&axis_order)
         });
         let gvar = Gvar::new(variations).map_err(Error::GvarError)?;
 

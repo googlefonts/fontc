@@ -242,7 +242,7 @@ pub struct GvarFragment {
 }
 
 impl GvarFragment {
-    pub fn to_deltas(&self) -> Vec<GlyphDeltas> {
+    pub fn to_deltas(&self, axis_order: &[Tag]) -> Vec<GlyphDeltas> {
         self.deltas
             .iter()
             .filter_map(|(region, deltas)| {
@@ -266,7 +266,7 @@ impl GvarFragment {
                     })
                     .collect();
 
-                let tuple_builder = TupleBuilder::new(region);
+                let tuple_builder = TupleBuilder::new(region, axis_order);
                 let (min, peak, max) = tuple_builder.build();
                 Some(GlyphDeltas::new(peak, deltas, Some((min, max))))
             })
@@ -300,9 +300,10 @@ struct TupleBuilder {
 }
 
 impl TupleBuilder {
-    fn new(region: &VariationRegion) -> Self {
+    fn new(region: &VariationRegion, axis_order: &[Tag]) -> Self {
         let mut builder = TupleBuilder::default();
-        for (tag, tent) in region.iter() {
+        for tag in axis_order {
+            let tent = region.get(tag).unwrap();
             builder.axes.push(*tag);
             builder.min.push(F2Dot14::from_f32(tent.min.to_f32()));
             builder.peak.push(F2Dot14::from_f32(tent.peak.to_f32()));
@@ -642,7 +643,7 @@ mod tests {
                 vec![None, Some((1.0, 0.0).into()), None],
             )],
         }
-        .to_deltas();
+        .to_deltas(&[Tag::new(b"wght")]);
         assert!(!deltas.is_empty(), "{deltas:?}");
     }
 
@@ -652,7 +653,7 @@ mod tests {
             glyph_name: "blah".into(),
             deltas: vec![(non_default_region(), vec![None, None, None])],
         }
-        .to_deltas();
+        .to_deltas(&[Tag::new(b"wght")]);
         assert!(deltas.is_empty(), "{deltas:?}");
     }
 }
