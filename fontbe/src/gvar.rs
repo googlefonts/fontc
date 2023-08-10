@@ -32,14 +32,7 @@ fn make_variations(
     glyph_order
         .iter()
         .enumerate()
-        .filter_map(|(gid, gn)| {
-            let deltas = get_deltas(gn);
-            if deltas.is_empty() {
-                return None;
-            }
-            Some((GlyphId::new(gid as u16), deltas))
-        })
-        .map(|(gid, deltas)| GlyphVariations::new(gid, deltas))
+        .map(|(gid, gn)| GlyphVariations::new(GlyphId::new(gid as u16), get_deltas(gn)))
         .collect()
 }
 
@@ -99,7 +92,9 @@ mod tests {
     use super::make_variations;
 
     #[test]
-    fn skips_empty_variations() {
+    fn do_not_skip_empty_variations() {
+        // gvar contains a GlyphVariationData for each glyph in the 'glyf' table
+        // whether or not it contains any deltas for that glyph.
         let glyph_with_var = "has_var";
         let glyph_without_var = "no_var";
         let mut glyph_order = GlyphOrder::new();
@@ -119,6 +114,6 @@ mod tests {
             }
         });
 
-        assert_eq!(1, variations.len(), "{variations:?}");
+        assert_eq!(2, variations.len(), "{variations:?}");
     }
 }
