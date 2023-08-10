@@ -238,15 +238,13 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
         WorkId::GlyfFragment(self.glyph_name.clone()).into()
     }
 
+    /// We need to block on all our components, but we don't know them yet.
+    ///
+    /// We could block on ALL IR glyphs, but that triggers inefficient behavior in workload.rs.
+    /// Instead, start in a hard block and update upon success of the corresponding IR job.
+    /// See fontc, workload.rs, handle_success.
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Fe(FeWorkId::Glyph(..))
-            )
-        }))
+        Access::Unknown
     }
 
     fn write_access(&self) -> Access<AnyWorkId> {

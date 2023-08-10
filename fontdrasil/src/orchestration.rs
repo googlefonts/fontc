@@ -17,8 +17,11 @@ pub trait Identifier: Debug + Clone + Eq + Hash {}
 /// A rule that represents whether access to something is permitted.
 #[derive(Clone)]
 pub enum Access<I: Identifier> {
-    /// No access is permitted
+    /// Nothing is accessed
     None,
+    /// Access requirements not yet known. Intended to be used when what access is needed
+    /// isn't initially known. Once known, access will change to some other option.
+    Unknown,
     /// Any access is permitted
     All,
     /// Access to one specific resource is permitted
@@ -33,6 +36,7 @@ impl<I: Identifier> Debug for Access<I> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::None => write!(f, "None"),
+            Self::Unknown => write!(f, "Unknown"),
             Self::All => write!(f, "All"),
             Self::One(arg0) => f.debug_tuple("One").field(arg0).finish(),
             Self::Set(arg0) => f.debug_tuple("Set").field(arg0).finish(),
@@ -154,6 +158,7 @@ impl<I: Identifier> Access<I> {
     pub fn check(&self, id: &I) -> bool {
         match self {
             Access::None => false,
+            Access::Unknown => false,
             Access::All => true,
             Access::One(allow) => id == allow,
             Access::Set(ids) => ids.contains(id),
