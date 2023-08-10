@@ -27,9 +27,9 @@ use serde::{Deserialize, Serialize};
 use write_fonts::{
     dump_table,
     tables::{
-        avar::Avar, cmap::Cmap, fvar::Fvar, glyf::Glyph, gpos::Gpos, gsub::Gsub, gvar::GlyphDeltas,
-        head::Head, hhea::Hhea, maxp::Maxp, name::Name, os2::Os2, post::Post, stat::Stat,
-        variations::Tuple,
+        avar::Avar, cmap::Cmap, fvar::Fvar, glyf::Glyph as RawGlyph, gpos::Gpos, gsub::Gsub,
+        gvar::GlyphDeltas, head::Head, hhea::Hhea, maxp::Maxp, name::Name, os2::Os2, post::Post,
+        stat::Stat, variations::Tuple,
     },
     validate::Validate,
     FontWrite, OtRound,
@@ -115,44 +115,46 @@ impl From<WorkId> for AnyWorkId {
 }
 
 /// A glyph and its associated name
+///
+/// See <https://learn.microsoft.com/en-us/typography/opentype/spec/glyf>
 #[derive(Debug, Clone)]
-pub struct NamedGlyph {
+pub struct Glyph {
     pub name: GlyphName,
-    pub glyph: Glyph,
+    pub data: RawGlyph,
 }
 
-impl NamedGlyph {
-    pub(crate) fn new(name: GlyphName, glyph: impl Into<Glyph>) -> Self {
+impl Glyph {
+    pub(crate) fn new(name: GlyphName, glyph: impl Into<RawGlyph>) -> Self {
         Self {
             name,
-            glyph: glyph.into(),
+            data: glyph.into(),
         }
     }
 
     pub fn is_simple(&self) -> bool {
-        matches!(&self.glyph, Glyph::Simple(_))
+        matches!(&self.data, RawGlyph::Simple(_))
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        dump_table(&self.glyph).unwrap()
+        dump_table(&self.data).unwrap()
     }
 }
 
-impl IdAware<AnyWorkId> for NamedGlyph {
+impl IdAware<AnyWorkId> for Glyph {
     fn id(&self) -> AnyWorkId {
         AnyWorkId::Be(WorkId::GlyfFragment(self.name.clone()))
     }
 }
 
-impl Persistable for NamedGlyph {
+impl Persistable for Glyph {
     fn read(from: &mut dyn Read) -> Self {
         let (name, bytes): (GlyphName, Vec<u8>) = bincode::deserialize_from(from).unwrap();
-        let glyph = Glyph::read(bytes.as_slice().into()).unwrap();
-        NamedGlyph { name, glyph }
+        let glyph = RawGlyph::read(bytes.as_slice().into()).unwrap();
+        Glyph { name, data: glyph }
     }
 
     fn write(&self, to: &mut dyn Write) {
-        let glyph_bytes = dump_table(&self.glyph).unwrap();
+        let glyph_bytes = dump_table(&self.data).unwrap();
         let to_write = (&self.name, glyph_bytes);
         bincode::serialize_into(to, &to_write).unwrap();
     }
@@ -367,7 +369,7 @@ pub struct Context {
 
     // work results we've completed or restored from disk
     pub gvar_fragments: BeContextMap<GvarFragment>,
-    pub glyphs: BeContextMap<NamedGlyph>,
+    pub glyphs: BeContextMap<Glyph>,
 
     pub avar: BeContextItem<BeValue<Avar>>,
     pub cmap: BeContextItem<BeValue<Cmap>>,

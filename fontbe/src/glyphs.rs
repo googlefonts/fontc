@@ -22,7 +22,7 @@ use read_fonts::{
 };
 use write_fonts::{
     tables::{
-        glyf::{Bbox, Component, ComponentFlags, CompositeGlyph, Glyph, SimpleGlyph},
+        glyf::{Bbox, Component, ComponentFlags, CompositeGlyph, Glyph as RawGlyph, SimpleGlyph},
         variations::iup_delta_optimize,
     },
     OtRound,
@@ -30,7 +30,7 @@ use write_fonts::{
 
 use crate::{
     error::{Error, GlyphProblem},
-    orchestration::{AnyWorkId, BeWork, Context, GvarFragment, LocaFormat, NamedGlyph, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, Glyph, GvarFragment, LocaFormat, WorkId},
 };
 
 #[derive(Debug)]
@@ -279,7 +279,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                 let composite = create_composite(context, ir_glyph, default_location, &components)?;
                 context
                     .glyphs
-                    .set_unconditionally(NamedGlyph::new(name.clone(), composite));
+                    .set_unconditionally(Glyph::new(name.clone(), composite));
                 let point_seqs = point_seqs_for_composite_glyph(ir_glyph);
                 (name, point_seqs, Vec::new())
             }
@@ -307,7 +307,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                 };
                 context
                     .glyphs
-                    .set_unconditionally(NamedGlyph::new(name.clone(), base_glyph.clone()));
+                    .set_unconditionally(Glyph::new(name.clone(), base_glyph.clone()));
 
                 let mut num_points = 0;
                 let mut contour_ends = Vec::with_capacity(base_glyph.contours().len());
@@ -670,7 +670,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
         // Hopefully we can figure out some of those bboxes!
         for composite in composites.iter() {
             let glyph_name = &composite.name;
-            let Glyph::Composite(composite) = &composite.glyph else {
+            let RawGlyph::Composite(composite) = &composite.data else {
                 panic!("Only composites should be in our vector of composites!!");
             };
 
@@ -687,9 +687,9 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
                         glyphs
                             .get(ref_glyph_name)
                             .map(|g| g.as_ref().clone())
-                            .and_then(|g| match &g.glyph {
-                                Glyph::Composite(..) => None,
-                                Glyph::Simple(simple_glyph) => Some(bbox2rect(simple_glyph.bbox)),
+                            .and_then(|g| match &g.data {
+                                RawGlyph::Composite(..) => None,
+                                RawGlyph::Simple(simple_glyph) => Some(bbox2rect(simple_glyph.bbox)),
                             })
                     });
                     if bbox.is_none() {
@@ -728,7 +728,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
             .glyphs
             .get(&WorkId::GlyfFragment(glyph_name.clone()).into()))
         .clone();
-        let Glyph::Composite(composite) = &mut glyph.glyph else {
+        let RawGlyph::Composite(composite) = &mut glyph.data else {
             panic!("{glyph_name} is not a composite; we shouldn't be trying to update it");
         };
         composite.bbox = bbox.into(); // delay conversion to Bbox to avoid accumulating rounding error
