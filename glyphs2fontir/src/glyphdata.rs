@@ -698,32 +698,6 @@ pub(crate) fn is_nonspacing_mark_name(name: &str) -> bool {
     if name.len() > 35 || matches!(name.len(), 1 | 2) {
         return false;
     }
-    // fast exit: first char indicates no match
-    let Some(first) = name.chars().next() else {
-        return false;
-    };
-    if matches!(
-        first,
-        'B' | 'C'
-            | 'D'
-            | 'E'
-            | 'H'
-            | 'I'
-            | 'J'
-            | 'K'
-            | 'O'
-            | 'P'
-            | 'Q'
-            | 'S'
-            | 'T'
-            | 'U'
-            | 'W'
-            | 'X'
-            | 'Y'
-            | 'Z'
-    ) {
-        return false;
-    };
     if !might_be_a_nonspacing_mark_name(name) {
         return false;
     }

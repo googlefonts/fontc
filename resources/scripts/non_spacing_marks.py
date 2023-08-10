@@ -7,7 +7,7 @@ can be identified as a non-spacing mark by name. No unicode db will do that for 
 This utility generates a Rust file with key information extracted from GlyphData.xml.
 
 Usage:
-    python resources/scripts/non_spacing_marks.py
+    python resources/scripts/non_spacing_marks.py && cargo fmt
 """
 
 #from absl import app
@@ -108,15 +108,16 @@ def main(_):
         f.write("        return false;\n")
         f.write("    }\n")
 
-        f.write("    // fast exit: first char indicates no match\n")
-        f.write("    let Some(first) = name.chars().next() else {\n")
-        f.write("        return false;\n")
-        f.write("    };\n")
-        f.write("    if matches!(first, ")
-        f.write(" | ".join(sorted(f"'{str(c)}'" for c in unused_first)))
-        f.write(") {\n")
-        f.write("        return false;\n")
-        f.write("    };\n")
+        # flamegraph suggests this doesn't help
+        # f.write("    // fast exit: first char indicates no match\n")
+        # f.write("    let Some(first) = name.chars().next() else {\n")
+        # f.write("        return false;\n")
+        # f.write("    };\n")
+        # f.write("    if matches!(first, ")
+        # f.write(" | ".join(sorted(f"'{str(c)}'" for c in unused_first)))
+        # f.write(") {\n")
+        # f.write("        return false;\n")
+        # f.write("    };\n")
 
         f.write("    if !might_be_a_nonspacing_mark_name(name) {\n")
         f.write("        return false;\n")
