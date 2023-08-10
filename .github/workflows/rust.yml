@@ -57,8 +57,8 @@ jobs:
           command: clippy
           args: --all-targets --no-default-features -- -D warnings
 
-  test-stable:
-    name: cargo test stable
+  test-all-targets:
+    name: cargo test all-targets
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -77,9 +77,35 @@ jobs:
           profile: minimal
           override: true
 
-      - name: cargo test
+      - name: cargo test all-targets
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --all-targets --all-features
+
+
+  test-basic:
+    name: cargo test basic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: getsentry/action-setup-venv@v1.0.0
+        id: venv
+        with:
+          python-version: 3.10.7
+          requirement-files: requirements.txt
+      - run: pip install -r requirements.txt
+        if: steps.venv.outputs.cache-hit != 'true'
+
+      - name: install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: cargo test basic
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
 
