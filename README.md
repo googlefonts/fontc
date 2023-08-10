@@ -59,6 +59,39 @@ write-fonts = { git="https://github.com/googlefonts/fontations.git", branch="box
 skrifa = { git="https://github.com/googlefonts/fontations.git", branch="box" }
 ```
 
+## Running flamegraph
+
+[flamegraphs](https://www.brendangregg.com/flamegraphs.html) of fontc are very handy. They are most
+easily created using `cargo flamegraph`:
+
+```shell
+
+# Minimize the impact of logging
+$ export RUST_LOG=error
+# Symbols are nice, https://github.com/flamegraph-rs/flamegraph#improving-output-when-running-with---release
+$ export CARGO_PROFILE_RELEASE_DEBUG=true
+
+# Build something and capture a flamegraph of it
+$ rm -rf build/ && cargo flamegraph -p fontc --  --source ../OswaldFont/sources/Oswald.glyphs --emit-ir false
+
+# TIPS
+
+# On macOS you might have to pass `--root` to cargo flamegraph, e.g. cargo flamegraph --root ...as above...
+
+# If you are losing samples you might want to dial down the rayon threadcount
+# You'll see a perf error similar to:
+Warning:
+Processed 5114 events and lost 159 chunks!
+
+Check IO/CPU overload!
+
+Warning:
+Processed 5116 samples and lost 35.01%!
+
+# Fix is to lower the threadcount:
+$ export RAYON_NUM_THREADS=16
+```
+
 ## Contributing
 
 We have included a few git hooks that you may choose to use to ensure that
