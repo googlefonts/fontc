@@ -309,11 +309,12 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
                     .glyphs
                     .set_unconditionally(Glyph::new_simple(name.clone(), base_glyph.clone()));
 
-                let mut contour_end = 0;
+                let mut num_points = 0;
                 let mut contour_ends = Vec::with_capacity(base_glyph.contours().len());
                 for contour in base_glyph.contours() {
-                    contour_end += contour.len();
-                    contour_ends.push(contour_end);
+                    assert!(!contour.is_empty());
+                    num_points += contour.len();
+                    contour_ends.push(num_points - 1);
                 }
                 (
                     name,
