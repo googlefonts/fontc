@@ -310,7 +310,7 @@ mod tests {
 
     use chrono::{Duration, TimeZone, Utc};
     use fontbe::orchestration::{
-        AnyWorkId, Context as BeContext, LocaFormat, NamedGlyph, WorkId as BeWorkIdentifier,
+        AnyWorkId, Context as BeContext, Glyph, LocaFormat, WorkId as BeWorkIdentifier,
     };
     use fontdrasil::types::GlyphName;
     use fontir::{
@@ -344,7 +344,7 @@ mod tests {
     use tempfile::{tempdir, TempDir};
     use write_fonts::{
         dump_table,
-        tables::glyf::{Bbox, Glyph},
+        tables::glyf::{Bbox, Glyph as RawGlyph},
     };
 
     use super::*;
@@ -754,10 +754,10 @@ mod tests {
         buf
     }
 
-    fn read_be_glyph(build_dir: &Path, name: &str) -> Glyph {
+    fn read_be_glyph(build_dir: &Path, name: &str) -> RawGlyph {
         let raw_glyph = read_file(&build_dir.join(format!("glyphs/{name}.glyf")));
         let read: &mut dyn Read = &mut raw_glyph.as_slice();
-        NamedGlyph::read(read).glyph
+        Glyph::read(read).data
     }
 
     #[test]
@@ -767,7 +767,7 @@ mod tests {
         assert!(glyph.default_instance().contours.is_empty(), "{glyph:?}");
         assert_eq!(2, glyph.default_instance().components.len(), "{glyph:?}");
 
-        let Glyph::Composite(glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
+        let RawGlyph::Composite(glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
             panic!("Expected a simple glyph");
         };
         let raw_glyph = dump_table(&glyph).unwrap();
@@ -783,7 +783,7 @@ mod tests {
         assert!(glyph.default_instance().components.is_empty(), "{glyph:?}");
         assert_eq!(2, glyph.default_instance().contours.len(), "{glyph:?}");
 
-        let Glyph::Simple(glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
+        let RawGlyph::Simple(glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
             panic!("Expected a simple glyph");
         };
         assert_eq!(2, glyph.contours().len());
@@ -795,7 +795,7 @@ mod tests {
         let build_dir = temp_dir.path();
         compile(Args::for_test(build_dir, "static.designspace"));
 
-        let Glyph::Simple( glyph) = read_be_glyph(build_dir, "bar") else {
+        let RawGlyph::Simple( glyph) = read_be_glyph(build_dir, "bar") else {
             panic!("Expected a simple glyph");
         };
 
