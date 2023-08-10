@@ -1,6 +1,5 @@
 //! Tracking jobs to run
 
-use rayon::ThreadPoolBuilder;
 use std::{
     collections::{HashMap, HashSet},
     panic::AssertUnwindSafe,
@@ -242,13 +241,9 @@ impl<'a> Workload<'a> {
 
         // a flag we set if we panic
         let abort_queued_jobs = Arc::new(AtomicBool::new(false));
-        // build a custom threadpool. we use this to ensure all threads are named
-        let threadpool = ThreadPoolBuilder::new()
-            .thread_name(|n| format!("tp{n}"))
-            .build()
-            .expect("failed to init thread pool");
 
-        threadpool.in_place_scope(|scope| {
+        // Do NOT assign custom thread names because it makes flamegraph root each thread individually
+        rayon::in_place_scope(|scope| {
             // Whenever a task completes see if it was the last incomplete dependency of other task(s)
             // and spawn them if it was
             // TODO timeout and die it if takes too long to make forward progress or we're spinning w/o progress
