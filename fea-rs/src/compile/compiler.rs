@@ -23,7 +23,7 @@ use super::{
 /// # use fea_rs::Compiler;
 /// # fn make_glyph_map() -> fea_rs::GlyphMap { todo!() }
 /// let glyph_map = make_glyph_map();
-/// let my_font_bytes = Compiler::new("path/to/features.fea", &glyph_map, None)
+/// let my_font_bytes = Compiler::new("path/to/features.fea", &glyph_map)
 ///     .verbose(true)
 ///     .compile_binary().unwrap();
 /// ```
