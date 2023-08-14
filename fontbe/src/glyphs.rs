@@ -280,11 +280,12 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
         let (name, point_seqs, contour_ends) = match glyph {
             CheckedGlyph::Composite { name, components } => {
                 let composite = create_composite(context, ir_glyph, default_location, &components)?;
+                let num_components = composite.components().len();
                 context
                     .glyphs
                     .set_unconditionally(Glyph::new(name.clone(), composite));
                 let point_seqs = point_seqs_for_composite_glyph(ir_glyph);
-                (name, point_seqs, Vec::new())
+                (name, point_seqs, (0..num_components).collect::<Vec<_>>())
             }
             CheckedGlyph::Contour { name, paths } => {
                 // Convert paths to SimpleGlyphs in parallel so we can get consistent point streams
@@ -598,8 +599,9 @@ impl CheckedGlyph {
     }
 
     fn should_iup(&self) -> bool {
+        // TODO: add a CLI flag to optionally disable this?
         match self {
-            CheckedGlyph::Composite { .. } => false,
+            CheckedGlyph::Composite { .. } => true,
             CheckedGlyph::Contour { .. } => true,
         }
     }
