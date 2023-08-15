@@ -82,6 +82,7 @@ def main(_):
         print(len(unique_prefix4s), "unique_prefix4s", sorted(unique_prefix4s))
 
         f.write("\n")
+        f.write("    // Do a quick (relative to large match on str) check to see if this might be a mark\n")
         f.write("#[inline(always)]\n")
         f.write(
             "pub(crate) fn might_be_a_nonspacing_mark_name(name: &str) -> bool {\n"
@@ -118,6 +119,7 @@ def main(_):
         # f.write("        return false;\n")
         # f.write("    };\n")
 
+        f.write("    // fast exit: this can't possibly be a nonspacing mark\n")
         f.write("    if !might_be_a_nonspacing_mark_name(name) {\n")
         f.write("        return false;\n")
         f.write("    }\n")

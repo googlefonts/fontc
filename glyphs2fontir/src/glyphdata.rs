@@ -4,6 +4,7 @@
 
 use std::collections::HashSet;
 
+// Do a quick (relative to large match on str) check to see if this might be a mark
 #[inline(always)]
 pub(crate) fn might_be_a_nonspacing_mark_name(name: &str) -> bool {
     // shove the first 4 chars into a u32 and see if they could possibly be a nonspacing mark
@@ -698,6 +699,7 @@ pub(crate) fn is_nonspacing_mark_name(name: &str) -> bool {
     if name.len() > 35 || matches!(name.len(), 1 | 2) {
         return false;
     }
+    // fast exit: this can't possibly be a nonspacing mark
     if !might_be_a_nonspacing_mark_name(name) {
         return false;
     }
