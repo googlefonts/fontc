@@ -143,6 +143,7 @@ impl GdefBuilder {
             && self.ligature_pos.is_empty()
             && self.mark_attach_class.is_empty()
             && self.mark_glyph_sets.is_empty()
+            && self.var_store.is_none()
     }
 }
 
