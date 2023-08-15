@@ -278,6 +278,8 @@ ast_enum!(Metric {
     Scalar(Number),
     Variable(VariableMetric),
 });
+ast_node!(AxisLocation, Kind::AxisLocationNode);
+ast_token!(NumberSuffix, Kind::NumberSuffix);
 
 ast_node!(GdefClassDef, Kind::GdefClassDefNode);
 ast_node!(GdefClassDefEntry, Kind::GdefClassDefEntryNode);
@@ -1286,8 +1288,22 @@ impl LocationSpecItem {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
-    pub(crate) fn value(&self) -> Number {
-        self.iter().skip(2).find_map(Number::cast).unwrap()
+    pub(crate) fn value(&self) -> AxisLocation {
+        self.iter().skip(2).find_map(AxisLocation::cast).unwrap()
+    }
+}
+
+impl AxisLocation {
+    pub(crate) fn value(&self) -> f32 {
+        let raw = self.iter().next().unwrap();
+        Number::cast(&raw)
+            .map(|num| num.parse_signed() as f32)
+            .or_else(|| Float::cast(&raw).map(|num| num.parse()))
+            .unwrap()
+    }
+
+    pub(crate) fn suffix(&self) -> Option<NumberSuffix> {
+        self.iter().find_map(NumberSuffix::cast)
     }
 }
 

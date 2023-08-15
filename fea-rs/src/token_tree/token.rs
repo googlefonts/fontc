@@ -20,6 +20,9 @@ pub enum Kind {
     HexEmpty, // naked 0x
     Float,
 
+    // experimental
+    NumberSuffix, // 'n' 'd' or 'u'
+
     Whitespace,
     Comment,
 
@@ -235,6 +238,7 @@ pub enum Kind {
     LocationValueNode,
     LocationSpecNode,
     LocationSpecItemNode,
+    AxisLocationNode, // a number or float + optional suffix
 
     TableNode,
     HeadTableNode,
@@ -316,6 +320,7 @@ impl std::fmt::Display for Kind {
             Self::Octal => write!(f, "OCT"),
             Self::Hex => write!(f, "HEX"),
             Self::HexEmpty => write!(f, "HEX EMPTY"),
+            Self::NumberSuffix => write!(f, "SUFFIX"),
             Self::Float => write!(f, "FLOAT"),
             Self::Whitespace => write!(f, "WS"),
             Self::Semi => write!(f, ";"),
@@ -490,6 +495,7 @@ impl std::fmt::Display for Kind {
             Self::LocationValueNode => write!(f, "LocationValueNode"),
             Self::LocationSpecNode => write!(f, "LocationSpecNode"),
             Self::LocationSpecItemNode => write!(f, "LocationSpecItemNode"),
+            Self::AxisLocationNode => write!(f, "AxisLocationNode"),
 
             Self::DeviceNode => write!(f, "DeviceNode"),
             Self::AnonBlockNode => write!(f, "AnonBlockNode"),

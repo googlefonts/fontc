@@ -21,6 +21,7 @@ pub(crate) struct Lexer<'a> {
     input: &'a str,
     pos: usize,
     after_backslash: bool,
+    after_number_or_float: bool,
     in_path: ExpectingPath,
 }
 
@@ -58,6 +59,7 @@ impl<'a> Lexer<'a> {
             input,
             pos: 0,
             after_backslash: false,
+            after_number_or_float: false,
             in_path: Default::default(),
         }
     }
@@ -104,13 +106,14 @@ impl<'a> Lexer<'a> {
             b'<' => Kind::LAngle,
             b'>' => Kind::RAngle,
             b'\'' => Kind::SingleQuote,
+            b'n' | b'u' | b'd' if self.after_number_or_float => Kind::NumberSuffix,
             _ if self.in_path.in_path() => self.path(),
             _ => self.ident(),
         };
         self.in_path.transition(kind);
 
         self.after_backslash = matches!(kind, Kind::Backslash);
-        //self.after_l_paren = matches!(kind, Kind::LParen);
+        self.after_number_or_float = matches!(kind, Kind::Number | Kind::Float);
 
         let len = self.pos - start_pos;
         Lexeme { len, kind }
@@ -452,5 +455,20 @@ mod tests {
         assert_eq!(token_strs[7], "WS( )");
         assert_eq!(token_strs[8], "ID(cool)");
         assert_eq!(token_strs[9], ";");
+    }
+
+    #[test]
+    fn suffixes_good() {
+        let fea = "1n -5.3u 31.1d 0n";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "NUM(1)");
+        assert_eq!(token_strs[1], "SUFFIX(n)");
+        assert_eq!(token_strs[3], "FLOAT(-5.3)");
+        assert_eq!(token_strs[4], "SUFFIX(u)");
+        assert_eq!(token_strs[6], "FLOAT(31.1)");
+        assert_eq!(token_strs[7], "SUFFIX(d)");
+        assert_eq!(token_strs[9], "NUM(0)");
+        assert_eq!(token_strs[10], "SUFFIX(n)");
     }
 }

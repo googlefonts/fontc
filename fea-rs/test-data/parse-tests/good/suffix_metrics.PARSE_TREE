@@ -1,0 +1,84 @@
+FILE@[0; 111)
+    FeatureNode@[0; 110)
+      FeatureKw@0 "feature"
+      WS@7 " "
+      Tag@8 "kern"
+      WS@12 " "
+      {@13 "{"
+      WS@14 "\n    "
+        GposType1@[19; 55)
+          PosKw@19 "pos"
+          WS@22 " "
+          GlyphName@23 "p"
+          WS@24 " "
+            ValueRecordNode@[25; 54)
+                VariableMetricNode@[25; 54)
+                  (@25 "("
+                    LocationValueNode@[26; 41)
+                        LocationSpecNode@[26; 36)
+                            LocationSpecItemNode@[26; 36)
+                              Tag@26 "wght"
+                              =@30 "="
+                                AxisLocationNode@[31; 36)
+                                  NUM@31 "1000"
+                                  SUFFIX@35 "u"
+                      :@36 ":"
+                      NUM@37 "-100"
+                  WS@41 " "
+                    LocationValueNode@[42; 53)
+                        LocationSpecNode@[42; 51)
+                            LocationSpecItemNode@[42; 51)
+                              Tag@42 "wght"
+                              =@46 "="
+                                AxisLocationNode@[47; 51)
+                                  NUM@47 "200"
+                                  SUFFIX@50 "d"
+                      :@51 ":"
+                      NUM@52 "0"
+                  )@53 ")"
+          ;@54 ";"
+      WS@55 "\n    "
+        GposType1@[60; 102)
+          PosKw@60 "pos"
+          WS@63 " "
+          GlyphName@64 "d"
+          WS@65 " "
+            ValueRecordNode@[66; 101)
+                VariableMetricNode@[66; 101)
+                  (@66 "("
+                    LocationValueNode@[67; 77)
+                        LocationSpecNode@[67; 75)
+                            LocationSpecItemNode@[67; 75)
+                              Tag@67 "blah"
+                              =@71 "="
+                                AxisLocationNode@[72; 75)
+                                  NUM@72 "-1"
+                                  SUFFIX@74 "n"
+                      :@75 ":"
+                      NUM@76 "5"
+                  WS@77 " "
+                    LocationValueNode@[78; 100)
+                        LocationSpecNode@[78; 96)
+                            LocationSpecItemNode@[78; 86)
+                              Tag@78 "blah"
+                              =@82 "="
+                                AxisLocationNode@[83; 86)
+                                  FLOAT@83 "0.5"
+                          ,@86 ","
+                            LocationSpecItemNode@[87; 96)
+                              Tag@87 "rah"
+                              =@90 "="
+                                AxisLocationNode@[91; 96)
+                                  FLOAT@91 "-0.3"
+                                  SUFFIX@95 "n"
+                      :@96 ":"
+                      WS@97 " "
+                      NUM@98 "-9"
+                  )@100 ")"
+          ;@101 ";"
+      WS@102 "\n"
+      }@103 "}"
+      WS@104 " "
+      Tag@105 "kern"
+      ;@109 ";"
+  WS@110 "\n"

@@ -34,6 +34,10 @@ pub enum Kind {
     HexEmpty, // naked 0x
     Float,
 
+    // Experimental
+    // a number or float + an optional suffix
+    NumberSuffix,
+
     Whitespace,
     Comment,
 
@@ -175,6 +179,7 @@ impl Kind {
                 | Self::Whitespace
                 | Self::NamedGlyphClass
                 | Self::Number
+                | Self::NumberSuffix
                 | Self::Cid
         )
     }
@@ -293,6 +298,7 @@ impl Kind {
             Self::Octal => AstKind::Octal,
             Self::Hex => AstKind::Hex,
             Self::Float => AstKind::Float,
+            Self::NumberSuffix => AstKind::NumberSuffix,
             Self::Whitespace => AstKind::Whitespace,
             Self::Semi => AstKind::Semi,
             Self::Colon => AstKind::Colon,
@@ -420,6 +426,7 @@ impl std::fmt::Display for Kind {
             Self::Hex => write!(f, "HEX"),
             Self::HexEmpty => write!(f, "HEX EMPTY"),
             Self::Float => write!(f, "FLOAT"),
+            Self::NumberSuffix => write!(f, "SUFFIX"),
             Self::Whitespace => write!(f, "WS"),
             Self::Semi => write!(f, ";"),
             Self::Colon => write!(f, ":"),

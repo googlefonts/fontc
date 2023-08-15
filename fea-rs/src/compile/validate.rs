@@ -1283,9 +1283,9 @@ impl<'a> ValidationCtx<'a> {
                     self.error(item.axis_tag().range(), "unknown axis");
                     continue;
                 };
-                let val = item.value().parse_signed() as i32;
-                let min = axis_info.min_value.to_i32();
-                let max = axis_info.max_value.to_i32();
+                let val = item.value().value() as f64;
+                let min = axis_info.min_value.to_f64();
+                let max = axis_info.max_value.to_f64();
                 if val < min {
                     self.error(
                         item.value().range(),

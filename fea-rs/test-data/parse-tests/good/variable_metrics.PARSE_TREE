@@ -21,7 +21,8 @@ FILE@[0; 204)
                             LocationSpecItemNode@[28; 37)
                               Tag@28 "wght"
                               =@32 "="
-                              NUM@33 "1000"
+                                AxisLocationNode@[33; 37)
+                                  NUM@33 "1000"
                       :@37 ":"
                       NUM@38 "-100"
                   WS@42 " "
@@ -30,7 +31,8 @@ FILE@[0; 204)
                             LocationSpecItemNode@[43; 51)
                               Tag@43 "wght"
                               =@47 "="
-                              NUM@48 "200"
+                                AxisLocationNode@[48; 51)
+                                  NUM@48 "200"
                       :@51 ":"
                       NUM@52 "0"
                   )@53 ")"
@@ -51,7 +53,8 @@ FILE@[0; 204)
                             LocationSpecItemNode@[69; 77)
                               Tag@69 "wght"
                               =@73 "="
-                              NUM@74 "200"
+                                AxisLocationNode@[74; 77)
+                                  NUM@74 "200"
                       :@77 ":"
                       NUM@78 "-100"
                   WS@82 " "
@@ -60,7 +63,8 @@ FILE@[0; 204)
                             LocationSpecItemNode@[83; 91)
                               Tag@83 "wght"
                               =@87 "="
-                              NUM@88 "900"
+                                AxisLocationNode@[88; 91)
+                                  NUM@88 "900"
                       :@91 ":"
                       NUM@92 "-150"
                   WS@96 " "
@@ -69,12 +73,14 @@ FILE@[0; 204)
                             LocationSpecItemNode@[97; 105)
                               Tag@97 "wdth"
                               =@101 "="
-                              NUM@102 "150"
+                                AxisLocationNode@[102; 105)
+                                  NUM@102 "150"
                           ,@105 ","
                             LocationSpecItemNode@[106; 114)
                               Tag@106 "wght"
                               =@110 "="
-                              NUM@111 "900"
+                                AxisLocationNode@[111; 114)
+                                  NUM@111 "900"
                       :@114 ":"
                       NUM@115 "-120"
                   )@119 ")"
@@ -102,7 +108,8 @@ FILE@[0; 204)
                         LocationSpecItemNode@[162; 170)
                           Tag@162 "blah"
                           =@166 "="
-                          NUM@167 "100"
+                            AxisLocationNode@[167; 170)
+                              NUM@167 "100"
                   :@170 ":"
                   NUM@171 "5"
               WS@172 " "
@@ -111,12 +118,14 @@ FILE@[0; 204)
                         LocationSpecItemNode@[173; 181)
                           Tag@173 "blah"
                           =@177 "="
-                          NUM@178 "400"
+                            AxisLocationNode@[178; 181)
+                              NUM@178 "400"
                       ,@181 ","
                         LocationSpecItemNode@[182; 189)
                           Tag@182 "rah"
                           =@185 "="
-                          NUM@186 "300"
+                            AxisLocationNode@[186; 189)
+                              NUM@186 "300"
                   :@189 ":"
                   WS@190 " "
                   NUM@191 "-9"

@@ -177,7 +177,30 @@ fn eat_location_item(parser: &mut Parser, recovery: TokenSet) -> bool {
     parser.in_node(AstKind::LocationSpecItemNode, |parser| {
         parser.eat_tag();
         parser.expect_recover(Kind::Eq, recovery.add(Kind::Comma));
-        parser.expect_recover(Kind::Number, recovery.add(Kind::Comma));
+        if !expect_axis_location(parser) {
+            parser.err_recover(
+                "expected axis location (number or float)",
+                recovery.add(Kind::Comma),
+            );
+        }
+    });
+    true
+}
+
+/// A float or integer, optionally followed by one of the suffixes 'u', 'c' or 'n'
+// e.g:
+// -50
+// 10001
+// -5u
+// 1.0n
+// -0.9d
+fn expect_axis_location(parser: &mut Parser) -> bool {
+    if !parser.matches(0, TokenSet::new(&[Kind::Number, Kind::Float])) {
+        return false;
+    }
+    parser.in_node(AstKind::AxisLocationNode, |parser| {
+        assert!(parser.eat(Kind::Number) || parser.eat(Kind::Float));
+        parser.eat(Kind::NumberSuffix);
     });
     true
 }

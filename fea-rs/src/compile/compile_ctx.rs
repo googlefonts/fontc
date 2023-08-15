@@ -1136,7 +1136,7 @@ impl<'a> CompilationCtx<'a> {
                     .map(|axis_value| {
                         (
                             axis_value.axis_tag().to_raw(),
-                            Fixed::from_i32(axis_value.value().parse_signed() as _),
+                            Fixed::from_f64(axis_value.value().value() as _),
                         )
                     })
                     .collect();
