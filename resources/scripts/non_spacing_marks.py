@@ -10,7 +10,6 @@ Usage:
     python resources/scripts/non_spacing_marks.py && cargo fmt
 """
 
-#from absl import app
 import glyphsLib
 from glyphsLib.glyphdata import GlyphData
 from importlib import resources
@@ -88,7 +87,7 @@ def main(_):
             "pub(crate) fn might_be_a_nonspacing_mark_name(name: &str) -> bool {\n"
         )
         f.write("    // shove the first 4 chars into a u32 and see if they could possibly be a nonspacing mark\n")
-        f.write("    let head = name.chars().enumerate().take(4).fold(0u32, |acc, (i, ch)| acc | (ch as u32) << (i * 8));\n")
+        f.write("    let head = name.bytes().enumerate().take(4).fold(0u32, |acc, (i, ch)| acc | (ch as u32) << (i * 8));\n")
         f.write("    matches!(head, ")
         f.write(" | ".join(str(u32) for u32 in sorted(first4_as_u32(p4) for p4 in unique_prefix4s)))        
         f.write(")\n")

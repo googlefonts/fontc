@@ -8,7 +8,7 @@ use std::collections::HashSet;
 pub(crate) fn might_be_a_nonspacing_mark_name(name: &str) -> bool {
     // shove the first 4 chars into a u32 and see if they could possibly be a nonspacing mark
     let head = name
-        .chars()
+        .bytes()
         .enumerate()
         .take(4)
         .fold(0u32, |acc, (i, ch)| acc | (ch as u32) << (i * 8));
