@@ -596,10 +596,16 @@ fn regions_for(axis_order: &[Tag], locations: &[NormalizedLocation]) -> Vec<Vari
 /// VariationModel::_computeMasterSupports in Python.
 /// <https://github.com/fonttools/fonttools/blob/2f1f5e5e7be331d960a0e30d537c2b4c70d89285/Lib/fontTools/varLib/models.py#L360>
 fn master_influence(axis_order: &[Tag], regions: &[VariationRegion]) -> Vec<VariationRegion> {
-    let mut influence = Vec::new();
-    for (i, region) in regions.iter().enumerate() {
+    let mut influence: Vec<VariationRegion> = Vec::new();
+    for region in regions.iter() {
         let mut region = region.clone();
-        for prev_region in regions[..i].iter() {
+        // Walk over the previous masters accummulated so far.
+        // The Python version here iterates over the previous regions[:i], and these might have
+        // been modified in a previous iteration (the latter is important for the algorithm to work);
+        // in Rust, we can't at the same time borrow regions.iter_mut() mutably in the outer loop and
+        // then again borrow regions[..i].iter() immutably in the inner one. Instead, in the inner
+        // loop we iterate over the master influences computed so far, which is a distinct vector.
+        for prev_region in influence.iter() {
             if region.active_axes != prev_region.active_axes {
                 continue;
             }
@@ -645,9 +651,8 @@ fn master_influence(axis_order: &[Tag], regions: &[VariationRegion]) -> Vec<Vari
                     axis_regions.insert(*tag, axis_region);
                 }
             }
-            // Weird things happen when the regions aren't formed in the axis order
-            for tag in axis_order {
-                region.insert(*tag, axis_regions.remove(tag).unwrap_or_default());
+            for (tag, tent) in axis_regions {
+                region.insert(tag, tent);
             }
         }
         influence.push(region);
