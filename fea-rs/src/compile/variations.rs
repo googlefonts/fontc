@@ -21,6 +21,9 @@ pub trait VariationInfo {
     /// Return the normalized value for a user coordinate for the given axis.
     ///
     /// NOTE: This is only used for computing the normalized values for ConditionSets.
+    ///
+    /// NOTE: if unit suffixes become a thing, and ConditionSets remain a thing, then
+    /// this should use the same AxisLocation enum as below.
     fn normalize_coordinate(&self, axis_tag: Tag, value: Fixed) -> F2Dot14;
 
     /// Compute default & deltas for a set of locations and values in variation space.
@@ -29,14 +32,25 @@ pub trait VariationInfo {
     /// as a set of deltas suitable for inclusing in an `ItemVariationStore`.
     fn resolve_variable_metric(
         &self,
-        locations: &HashMap<UserLocation, i16>,
+        locations: &HashMap<Location, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), AnyError>;
 }
 
 type AnyError = Box<dyn std::error::Error>;
 
 // btreemap only because hashmap is not hashable
-type UserLocation = BTreeMap<Tag, Fixed>;
+type Location = BTreeMap<Tag, AxisLocation>;
+
+/// A location on an axis, in one of three coordinate spaces
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AxisLocation {
+    /// A position in the user coordinate space
+    User(Fixed),
+    /// A position in the design coordinate space
+    Design(Fixed),
+    /// A normalized position
+    Normalized(Fixed),
+}
 
 /// Information about a paritcular axis in a variable font.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -111,7 +125,7 @@ impl VariationInfo for MockVariationInfo {
 
     fn resolve_variable_metric(
         &self,
-        _locations: &HashMap<UserLocation, i16>,
+        _locations: &HashMap<Location, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), Box<(dyn std::error::Error + 'static)>> {
         Ok(Default::default())
     }

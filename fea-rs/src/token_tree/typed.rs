@@ -1294,15 +1294,27 @@ impl LocationSpecItem {
 }
 
 impl AxisLocation {
-    pub(crate) fn value(&self) -> f32 {
+    pub(crate) fn parse(&self) -> crate::compile::AxisLocation {
+        let value = self.value();
+        let value = Fixed::from_f64(value as _);
+        match self.suffix() {
+            Some(token) if token.text() == "n" => crate::compile::AxisLocation::Normalized(value),
+            Some(token) if token.text() == "d" => crate::compile::AxisLocation::Design(value),
+            Some(token) if token.text() == "u" => crate::compile::AxisLocation::User(value),
+            None => crate::compile::AxisLocation::User(value),
+            Some(_) => unreachable!("we only parse three suffixes"),
+        }
+    }
+
+    fn value(&self) -> f32 {
         let raw = self.iter().next().unwrap();
-        Number::cast(&raw)
+        Number::cast(raw)
             .map(|num| num.parse_signed() as f32)
-            .or_else(|| Float::cast(&raw).map(|num| num.parse()))
+            .or_else(|| Float::cast(raw).map(|num| num.parse()))
             .unwrap()
     }
 
-    pub(crate) fn suffix(&self) -> Option<NumberSuffix> {
+    fn suffix(&self) -> Option<NumberSuffix> {
         self.iter().find_map(NumberSuffix::cast)
     }
 }

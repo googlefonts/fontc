@@ -1133,12 +1133,7 @@ impl<'a> CompilationCtx<'a> {
                 let user_loc = loc_value
                     .location()
                     .items()
-                    .map(|axis_value| {
-                        (
-                            axis_value.axis_tag().to_raw(),
-                            Fixed::from_f64(axis_value.value().value() as _),
-                        )
-                    })
+                    .map(|axis_value| (axis_value.axis_tag().to_raw(), axis_value.value().parse()))
                     .collect();
                 let value = loc_value.value().parse_signed();
                 (user_loc, value)

@@ -10,7 +10,10 @@ use std::{
 };
 
 use smol_str::SmolStr;
-use write_fonts::{read::tables::name::Encoding, types::Tag};
+use write_fonts::{
+    read::tables::name::Encoding,
+    types::{Fixed, Tag},
+};
 
 use super::{
     glyph_range,
@@ -1283,20 +1286,27 @@ impl<'a> ValidationCtx<'a> {
                     self.error(item.axis_tag().range(), "unknown axis");
                     continue;
                 };
-                let val = item.value().value() as f64;
-                let min = axis_info.min_value.to_f64();
-                let max = axis_info.max_value.to_f64();
-                if val < min {
-                    self.error(
-                        item.value().range(),
-                        format!("value below minimum allowed for axis ({min})"),
-                    );
-                }
-                if val > max {
-                    self.error(
-                        item.value().range(),
-                        format!("value greater than maximum allowed for axis ({max})"),
-                    );
+                let val = item.value().parse();
+                match val {
+                    super::AxisLocation::User(val) => {
+                        let min = axis_info.min_value;
+                        let max = axis_info.max_value;
+                        if val < min || val > max {
+                            self.error(
+                                item.value().range(),
+                                format!("value exceeds expected range ({min}, {max})"),
+                            );
+                        }
+                    }
+                    super::AxisLocation::Design(_) => (), // we don't have info to validate this
+                    super::AxisLocation::Normalized(val) => {
+                        if val < Fixed::from_f64(-1.0) || val > Fixed::ONE {
+                            self.error(
+                                item.value().range(),
+                                "normalized value should be in range (-1.0, 1.0)",
+                            );
+                        }
+                    }
                 }
             }
         }

@@ -187,7 +187,9 @@ fn eat_location_item(parser: &mut Parser, recovery: TokenSet) -> bool {
     true
 }
 
-/// A float or integer, optionally followed by one of the suffixes 'u', 'c' or 'n'
+/// A float or integer, optionally followed by one of the suffixes 'u', 'd' or 'n'
+/// NOTE: this is very experimental syntax, based on the discussion at
+/// <https://github.com/harfbuzz/boring-expansion-spec/issues/94#issuecomment-1608007111>
 // e.g:
 // -50
 // 10001
