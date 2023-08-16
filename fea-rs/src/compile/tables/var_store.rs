@@ -846,4 +846,15 @@ mod tests {
             16 - next_merge_cost
         );
     }
+
+    /// we had a crash here where we were trying to write zeros when they should
+    /// be getting ignored.
+    #[test]
+    fn ensure_zero_deltas_dont_write() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let [r1, r2, _] = test_regions();
+        let mut builder = VariationStoreBuilder::default();
+        builder.add_deltas(vec![(r1.clone(), 0), (r2.clone(), 4)]);
+        let _ = builder.build();
+    }
 }
