@@ -463,7 +463,9 @@ impl<'a> Encoding<'a> {
         for (i, delta) in self.deltas.iter().enumerate() {
             let pos = i * n_regions;
             for (region, val) in &delta.0 {
-                let idx_for_region = region_map.map[*region as usize].0;
+                let Some(idx_for_region) = region_map.index_for_region(*region) else {
+                    continue;
+                };
                 let idx = pos + idx_for_region as usize;
                 raw_deltas[idx] = *val;
             }
@@ -534,6 +536,12 @@ impl RegionMap {
     fn word_delta_count(&self) -> u16 {
         let long_flag = if self.long_words { 0x8000 } else { 0 };
         self.n_long_regions | long_flag
+    }
+
+    /// returns `None` if this column is ignored
+    fn index_for_region(&self, region: u16) -> Option<u16> {
+        let (idx, bits) = self.map[region as usize];
+        (bits != ColumnBits::None).then_some(idx)
     }
 
     /// the indexes into the canonical region list of the active regions
