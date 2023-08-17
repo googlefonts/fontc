@@ -129,7 +129,11 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
     }
 
     fn also_completes(&self) -> Vec<AnyWorkId> {
-        vec![WorkId::Gpos.into(), WorkId::Gsub.into()]
+        vec![
+            WorkId::Gpos.into(),
+            WorkId::Gsub.into(),
+            WorkId::Gdef.into(),
+        ]
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
@@ -153,15 +157,19 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
             let result = result?;
 
             debug!(
-                "Built features, gpos? {} gsub? {}",
+                "Built features, gpos? {} gsub? {} gdef? {}",
                 result.gpos.is_some(),
-                result.gsub.is_some()
+                result.gsub.is_some(),
+                result.gdef.is_some(),
             );
             if let Some(gpos) = result.gpos {
                 context.gpos.set_unconditionally(gpos.into());
             }
             if let Some(gsub) = result.gsub {
                 context.gsub.set_unconditionally(gsub.into());
+            }
+            if let Some(gdef) = result.gdef {
+                context.gdef.set_unconditionally(gdef.into());
             }
         } else {
             debug!("No fea file, dull compile");
