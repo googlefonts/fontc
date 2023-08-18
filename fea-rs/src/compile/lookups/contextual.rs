@@ -31,9 +31,15 @@ pub(crate) struct ContextualLookupBuilder<T> {
     flags: LookupFlag,
     mark_set: Option<FilterSetId>,
     subtables: Vec<ContextBuilder>,
-    anon_lookups: Vec<T>,
+    /// anonymous lookups that are not modifiable
+    ///
+    /// When we have seen an explicit 'subtable' statement we need to ensure that
+    /// any inline rules after that statement do not get added to anonymous
+    /// lookups that were created before it, so we move them here.
+    finished_anon_lookups: Vec<T>,
+    /// anonymous lookups that we are allowed to add rules to
+    current_anon_lookups: Vec<T>,
     pub(super) root_id: LookupId,
-    force_subtable_break: bool,
 }
 
 // while building we use a common representation, but when compiling we will
@@ -43,15 +49,32 @@ pub(crate) enum ChainOrNot {
     Chain(LookupBuilder<ChainContextBuilder>),
 }
 
+// a little helper trait for generating the right kind of LookupId
+trait MakeLookupId {
+    fn make_id(raw: usize) -> LookupId;
+}
+
+impl MakeLookupId for PositionLookup {
+    fn make_id(raw: usize) -> LookupId {
+        LookupId::Gpos(raw)
+    }
+}
+
+impl MakeLookupId for SubstitutionLookup {
+    fn make_id(raw: usize) -> LookupId {
+        LookupId::Gsub(raw)
+    }
+}
+
 impl<T> ContextualLookupBuilder<T> {
     pub(crate) fn new(flags: LookupFlag, mark_set: Option<FilterSetId>) -> Self {
         ContextualLookupBuilder {
             flags,
             mark_set,
-            anon_lookups: Vec::new(),
             subtables: vec![Default::default()],
             root_id: LookupId::Empty,
-            force_subtable_break: false,
+            finished_anon_lookups: Default::default(),
+            current_anon_lookups: Default::default(),
         }
     }
 
@@ -60,9 +83,11 @@ impl<T> ContextualLookupBuilder<T> {
             flags,
             mark_set,
             subtables,
-            anon_lookups,
+            mut finished_anon_lookups,
+            current_anon_lookups,
             ..
         } = self;
+        finished_anon_lookups.extend(current_anon_lookups);
         let lookup = if subtables.iter().any(ContextBuilder::is_chain_rule) {
             ChainOrNot::Chain(LookupBuilder::new_with_lookups(
                 flags,
@@ -72,48 +97,63 @@ impl<T> ContextualLookupBuilder<T> {
         } else {
             ChainOrNot::Context(LookupBuilder::new_with_lookups(flags, mark_set, subtables))
         };
-        (lookup, anon_lookups)
+        (lookup, finished_anon_lookups)
     }
 
-    //TODO: if we keep this, make it unwrap and ensure we always have a subtable
+    /// Returns a mutable reference to the active builder
     pub fn last_mut(&mut self) -> &mut ContextBuilder {
         self.subtables.last_mut().unwrap()
     }
 
+    /// Force a new subtable (caused by the explicit 'subtable' statement)
+    ///
+    /// For contextual lookups, a subtable break does two things: it ensures
+    /// that any subsequent contextual rules go into a new subtable (like with
+    /// other tables) but it also forces any new inline rules to go into new
+    /// lookups (e.g. lookups cannot be shared across a 'subtable break' boundary.)
     pub fn force_subtable_break(&mut self) {
         self.subtables.push(Default::default());
-        self.force_subtable_break = true;
+        self.finished_anon_lookups
+            .append(&mut self.current_anon_lookups);
     }
 
-    fn add_new_lookup_if_necessary(
+    /// returns the index of the appropriate lookup in anon_lookups
+    #[must_use]
+    fn find_or_create_anon_lookup(
         &mut self,
-        check_fn: impl FnOnce(&T) -> bool,
+        check_fn: impl Fn(&T) -> bool,
         new_fn: impl FnOnce(LookupFlag, Option<FilterSetId>) -> T,
-    ) {
-        if self
-            .anon_lookups
-            .last()
-            .map(|lookup| self.force_subtable_break || check_fn(lookup))
-            .unwrap_or(true)
+    ) -> (&mut T, LookupId)
+    where
+        T: MakeLookupId,
+    {
+        // if we don't need an explicit break, and we have a suitable lookup:
+        let idx = match self
+            .current_anon_lookups
+            .iter()
+            .position(|lookup| !check_fn(lookup))
         {
-            self.force_subtable_break = false;
-            let lookup = new_fn(self.flags, self.mark_set);
-            self.anon_lookups.push(lookup);
-        }
+            Some(idx) => idx,
+            None => {
+                // else create a new lookup.
+                let lookup = new_fn(self.flags, self.mark_set);
+                self.current_anon_lookups.push(lookup);
+                self.current_anon_lookups.len() - 1
+            }
+        };
+        let raw_id = self.root_id.to_raw() + self.finished_anon_lookups.len() + idx + 1;
+        let lookup = self.current_anon_lookups.get_mut(idx).unwrap();
+        (lookup, T::make_id(raw_id))
     }
 }
 
 impl ContextualLookupBuilder<PositionLookup> {
-    fn current_anon_lookup_id(&self) -> LookupId {
-        LookupId::Gpos(self.root_id.to_raw() + self.anon_lookups.len())
-    }
-
     pub(crate) fn add_anon_gpos_type_1(
         &mut self,
         glyphs: &GlyphOrClass,
         value: ValueRecord,
     ) -> LookupId {
-        self.add_new_lookup_if_necessary(
+        let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
                 PositionLookup::Single(lookup) => lookup
                     .subtables
@@ -123,7 +163,6 @@ impl ContextualLookupBuilder<PositionLookup> {
             },
             |flags, mark_set| PositionLookup::Single(super::LookupBuilder::new(flags, mark_set)),
         );
-        let lookup = self.anon_lookups.last_mut().unwrap();
         let PositionLookup::Single(lookup) = lookup else {
             panic!("this shouldn't happen");
         };
@@ -132,22 +171,18 @@ impl ContextualLookupBuilder<PositionLookup> {
         for id in glyphs.iter() {
             sub.insert(id, value.clone());
         }
-        self.current_anon_lookup_id()
+        id
     }
 }
 
 impl ContextualLookupBuilder<SubstitutionLookup> {
-    fn current_anon_lookup_id(&self) -> LookupId {
-        LookupId::Gsub(self.root_id.to_raw() + self.anon_lookups.len())
-    }
-
     pub(crate) fn add_anon_gsub_type_1(
         &mut self,
         target: GlyphOrClass,
         replacement: GlyphOrClass,
     ) -> LookupId {
         // do we need a new lookup or can we use the existing one?
-        self.add_new_lookup_if_necessary(
+        let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
                 SubstitutionLookup::Single(subtables) => subtables
                     .subtables
@@ -158,7 +193,6 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
             |flags, mark_set| SubstitutionLookup::Single(LookupBuilder::new(flags, mark_set)),
         );
 
-        let lookup = self.anon_lookups.last_mut().unwrap();
         let SubstitutionLookup::Single(subtables) = lookup else {
             // we didn't panic here before my refactor but I don't think we
             // want to fall through. let's find out?
@@ -168,7 +202,7 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
             sub.insert(target, replacement);
         }
-        self.current_anon_lookup_id()
+        id
     }
 
     pub(crate) fn add_anon_gsub_type_2(
@@ -177,7 +211,7 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         replacements: Vec<GlyphId>,
     ) -> LookupId {
         // do we need a new lookup or can we use the existing one?
-        self.add_new_lookup_if_necessary(
+        let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
                 SubstitutionLookup::Multiple(subtables) => subtables
                     .subtables
@@ -188,7 +222,6 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
             |flags, mark_set| SubstitutionLookup::Multiple(LookupBuilder::new(flags, mark_set)),
         );
 
-        let lookup = self.anon_lookups.last_mut().unwrap();
         let SubstitutionLookup::Multiple(subtables) = lookup else {
             // we didn't panic here before my refactor but I don't think we
             // want to fall through. let's find out?
@@ -196,7 +229,7 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         };
         let sub = subtables.last_mut().unwrap();
         sub.insert(target, replacements);
-        self.current_anon_lookup_id()
+        id
     }
 
     pub(crate) fn add_anon_gsub_type_4(
@@ -205,7 +238,7 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         replacement: GlyphId,
     ) -> LookupId {
         // do we need a new lookup or can we use the existing one?
-        self.add_new_lookup_if_necessary(
+        let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
                 SubstitutionLookup::Ligature(builder) => builder
                     .subtables
@@ -216,14 +249,13 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
             |flags, mark_set| SubstitutionLookup::Ligature(LookupBuilder::new(flags, mark_set)),
         );
 
-        let lookup = self.anon_lookups.last_mut().unwrap();
         let SubstitutionLookup::Ligature(subtables) = lookup else {
             panic!("ahhhhhh");
         };
 
         let sub = subtables.last_mut().unwrap();
         sub.insert(target, replacement);
-        self.current_anon_lookup_id()
+        id
     }
 }
 

@@ -643,8 +643,8 @@ impl<'a> CompilationCtx<'a> {
                     .collect::<Vec<_>>();
                 let replacement = self.resolve_glyph(&rule.replacement_glyphs().next().unwrap());
                 let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
-                //FIXME: we should check that the whole sequence is not present the
-                //lookup before adding..
+                //FIXME: we should check that the whole sequence is not present
+                // in the lookup before adding.. (https://github.com/cmyr/fea-rs/issues/207)
                 let mut to_return = None;
                 for target in sequence_enumerator(&target) {
                     to_return = Some(
