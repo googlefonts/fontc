@@ -17,7 +17,14 @@ use fea_rs::{
 /// usage: FONT_PATH GLYPH_ORDER
 ///
 /// where glyph order is a file listing glyphs, one per line, in glyph id order.
-fn main() -> Result<(), Error> {
+fn main() {
+    if let Err(err) = run() {
+        eprintln!("{err}");
+        std::process::exit(1)
+    }
+}
+
+fn run() -> Result<(), Error> {
     env_logger::init();
     let args = Args::parse();
     let (fea, glyph_names) = args.get_inputs()?;
