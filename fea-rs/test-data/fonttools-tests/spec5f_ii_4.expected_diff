@@ -1,0 +1,25 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# # Note: we generate two different subtables here, which is a more efficient
+# representation than what fonttools does.
+L247
+>          <!-- SubTableCount=1 -->
+L247
+<          <!-- SubTableCount=2 -->
+L250
+<            <Substitution in="T_h" out="T_h.swash"/>
+<            <Substitution in="a" out="a.end"/>
+<            <Substitution in="e" out="e.end"/>
+<            <Substitution in="m" out="m.begin"/>
+<            <Substitution in="z" out="z.end"/>
+<          </SingleSubst>
+<          <SingleSubst index="1">
+L276
+>            <Substitution in="T_h" out="T_h.swash"/>
+L283
+>            <Substitution in="a" out="a.end"/>
+>            <Substitution in="e" out="e.end"/>
+>            <Substitution in="m" out="m.begin"/>
+>            <Substitution in="z" out="z.end"/>
