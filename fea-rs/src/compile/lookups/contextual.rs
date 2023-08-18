@@ -117,26 +117,27 @@ impl<T> ContextualLookupBuilder<T> {
             .append(&mut self.current_anon_lookups);
     }
 
-    /// returns the index of the appropriate lookup in anon_lookups
+    /// Find or create an anonymous lookup that meets a given condition
+    ///
+    /// This is a helper called by various methods that add anonymous lookup
+    /// rules.
+    ///
+    /// The `can_use_lookup` argument is a closure that should return `true` if a
+    /// given lookup can be used by the caller; if no suitable lookup is found,
+    /// then `make_lookup` will be called to create one.
     #[must_use]
     fn find_or_create_anon_lookup(
         &mut self,
-        check_fn: impl Fn(&T) -> bool,
-        new_fn: impl FnOnce(LookupFlag, Option<FilterSetId>) -> T,
+        can_use_lookup: impl Fn(&T) -> bool,
+        make_lookup: impl FnOnce(LookupFlag, Option<FilterSetId>) -> T,
     ) -> (&mut T, LookupId)
     where
         T: MakeLookupId,
     {
-        // if we don't need an explicit break, and we have a suitable lookup:
-        let idx = match self
-            .current_anon_lookups
-            .iter()
-            .position(|lookup| !check_fn(lookup))
-        {
+        let idx = match self.current_anon_lookups.iter().position(can_use_lookup) {
             Some(idx) => idx,
             None => {
-                // else create a new lookup.
-                let lookup = new_fn(self.flags, self.mark_set);
+                let lookup = make_lookup(self.flags, self.mark_set);
                 self.current_anon_lookups.push(lookup);
                 self.current_anon_lookups.len() - 1
             }
@@ -158,8 +159,8 @@ impl ContextualLookupBuilder<PositionLookup> {
                 PositionLookup::Single(lookup) => lookup
                     .subtables
                     .iter()
-                    .any(|subt| glyphs.iter().any(|gid| !subt.can_add_rule(gid, &value))),
-                _ => true,
+                    .all(|subt| glyphs.iter().all(|gid| subt.can_add_rule(gid, &value))),
+                _ => false,
             },
             |flags, mark_set| PositionLookup::Single(super::LookupBuilder::new(flags, mark_set)),
         );
@@ -181,14 +182,13 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         target: GlyphOrClass,
         replacement: GlyphOrClass,
     ) -> LookupId {
-        // do we need a new lookup or can we use the existing one?
         let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
                 SubstitutionLookup::Single(subtables) => subtables
                     .subtables
                     .iter()
-                    .any(|subt| target.iter().any(|t| subt.contains_target(t))),
-                _ => true,
+                    .all(|subt| target.iter().all(|t| !subt.contains_target(t))),
+                _ => false,
             },
             |flags, mark_set| SubstitutionLookup::Single(LookupBuilder::new(flags, mark_set)),
         );
@@ -210,14 +210,13 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         target: GlyphId,
         replacements: Vec<GlyphId>,
     ) -> LookupId {
-        // do we need a new lookup or can we use the existing one?
         let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
                 SubstitutionLookup::Multiple(subtables) => subtables
                     .subtables
                     .iter()
-                    .any(|subt| subt.contains_target(target)),
-                _ => true,
+                    .all(|subt| !subt.contains_target(target)),
+                _ => false,
             },
             |flags, mark_set| SubstitutionLookup::Multiple(LookupBuilder::new(flags, mark_set)),
         );
@@ -237,14 +236,13 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         target: Vec<GlyphId>,
         replacement: GlyphId,
     ) -> LookupId {
-        // do we need a new lookup or can we use the existing one?
         let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
                 SubstitutionLookup::Ligature(builder) => builder
                     .subtables
                     .iter()
-                    .any(|sub| sub.contains_target(target.first().copied().unwrap())),
-                _ => true,
+                    .all(|sub| !sub.contains_target(target.first().copied().unwrap())),
+                _ => false,
             },
             |flags, mark_set| SubstitutionLookup::Ligature(LookupBuilder::new(flags, mark_set)),
         );
