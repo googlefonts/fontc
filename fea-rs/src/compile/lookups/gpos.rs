@@ -6,7 +6,7 @@ use smol_str::SmolStr;
 use write_fonts::{
     tables::{
         gpos::{self as write_gpos, AnchorTable, MarkRecord, ValueFormat, ValueRecord},
-        layout::{CoverageTable, CoverageTableBuilder},
+        layout::CoverageTable,
     },
     types::GlyphId,
 };
@@ -49,14 +49,11 @@ impl Builder for SinglePosBuilder {
         fn build_subtable(items: BTreeMap<GlyphId, &ValueRecord>) -> write_gpos::SinglePos {
             let first = *items.values().next().unwrap();
             let use_format_1 = first.format().is_empty() || items.values().all(|val| val == &first);
-            let coverage: CoverageTableBuilder = items.keys().copied().collect();
+            let coverage: CoverageTable = items.keys().copied().collect();
             if use_format_1 {
-                write_gpos::SinglePos::format_1(coverage.build(), first.clone())
+                write_gpos::SinglePos::format_1(coverage.clone(), first.clone())
             } else {
-                write_gpos::SinglePos::format_2(
-                    coverage.build(),
-                    items.into_values().cloned().collect(),
-                )
+                write_gpos::SinglePos::format_2(coverage, items.into_values().cloned().collect())
             }
         }
         const NEW_SUBTABLE_COST: usize = 10;
@@ -256,9 +253,9 @@ impl Builder for GlyphPairPosBuilder {
         split_by_format
             .into_values()
             .map(|map| {
-                let coverage: CoverageTableBuilder = map.keys().copied().collect();
+                let coverage = map.keys().copied().collect();
                 let pair_sets = map.into_values().map(write_gpos::PairSet::new).collect();
-                write_gpos::PairPos::format_1(coverage.build(), pair_sets)
+                write_gpos::PairPos::format_1(coverage, pair_sets)
             })
             .collect()
     }
@@ -299,12 +296,7 @@ impl Builder for ClassPairPosSubtable {
         let (class1def, class1map) = self.classdef_1.build();
         let (class2def, class2map) = self.classdef_2.build();
 
-        let coverage = self
-            .items
-            .keys()
-            .flat_map(GlyphClass::iter)
-            .collect::<CoverageTableBuilder>()
-            .build();
+        let coverage = self.items.keys().flat_map(GlyphClass::iter).collect();
 
         let mut out = vec![write_gpos::Class1Record::default(); self.items.len()];
         for (cls1, stuff) in self.items {
@@ -356,12 +348,9 @@ impl Builder for CursivePosBuilder {
     type Output = Vec<write_gpos::CursivePosFormat1>;
 
     fn build(self) -> Self::Output {
-        let coverage: CoverageTableBuilder = self.items.keys().copied().collect();
+        let coverage = self.items.keys().copied().collect();
         let records = self.items.into_values().collect();
-        vec![write_gpos::CursivePosFormat1::new(
-            coverage.build(),
-            records,
-        )]
+        vec![write_gpos::CursivePosFormat1::new(coverage, records)]
     }
 }
 
@@ -428,9 +417,9 @@ impl Builder for MarkList {
     type Output = (CoverageTable, write_gpos::MarkArray);
 
     fn build(self) -> Self::Output {
-        let coverage = self.glyphs().collect::<CoverageTableBuilder>();
+        let coverage = self.glyphs().collect();
         let array = write_gpos::MarkArray::new(self.glyphs.into_values().collect());
-        (coverage.build(), array)
+        (coverage, array)
     }
 }
 
@@ -492,7 +481,7 @@ impl Builder for MarkToBaseBuilder {
         let n_classes = marks.classes.len();
 
         let (mark_coverage, mark_array) = marks.build();
-        let base_coverage = bases.keys().copied().collect::<CoverageTableBuilder>();
+        let base_coverage = bases.keys().copied().collect();
         let base_records = bases
             .into_values()
             .map(|anchors| {
@@ -506,7 +495,7 @@ impl Builder for MarkToBaseBuilder {
         let base_array = write_gpos::BaseArray::new(base_records);
         vec![write_gpos::MarkBasePosFormat1::new(
             mark_coverage,
-            base_coverage.build(),
+            base_coverage,
             mark_array,
             base_array,
         )]
@@ -563,7 +552,7 @@ impl Builder for MarkToLigBuilder {
         // - [LigatureAttach] (one per ligature glyph)
         //    - [ComponentRecord] (one per component)
         //    - [Anchor] (one per mark-class)
-        let ligature_coverage = ligatures.keys().copied().collect::<CoverageTableBuilder>();
+        let ligature_coverage = ligatures.keys().copied().collect();
         let ligature_array = ligatures
             .into_values()
             .map(|components| {
@@ -585,7 +574,7 @@ impl Builder for MarkToLigBuilder {
         let (mark_coverage, mark_array) = marks.build();
         vec![write_gpos::MarkLigPosFormat1::new(
             mark_coverage,
-            ligature_coverage.build(),
+            ligature_coverage,
             mark_array,
             ligature_array,
         )]
@@ -643,7 +632,7 @@ impl Builder for MarkToMarkBuilder {
         let n_classes = attaching_marks.classes.len();
 
         let (mark_coverage, mark_array) = attaching_marks.build();
-        let mark2_coverage = base_marks.keys().copied().collect::<CoverageTableBuilder>();
+        let mark2_coverage = base_marks.keys().copied().collect();
         let mark2_records = base_marks
             .into_values()
             .map(|anchors| {
@@ -657,7 +646,7 @@ impl Builder for MarkToMarkBuilder {
         let mark2array = write_gpos::Mark2Array::new(mark2_records);
         vec![write_gpos::MarkMarkPosFormat1::new(
             mark_coverage,
-            mark2_coverage.build(),
+            mark2_coverage,
             mark_array,
             mark2array,
         )]

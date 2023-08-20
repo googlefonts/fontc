@@ -3,7 +3,7 @@
 use std::{collections::BTreeMap, convert::TryFrom};
 
 use write_fonts::{
-    tables::{gsub as write_gsub, layout::CoverageTableBuilder},
+    tables::gsub as write_gsub,
     types::{FixedSize, GlyphId},
 };
 
@@ -61,14 +61,15 @@ impl Builder for SingleSubBuilder {
 
     fn build(self) -> Self::Output {
         const COST_OF_EXTRA_SUB1F1_SUBTABLE: usize = 2 + // extra offset
-2 + 2 + 2 + // format1 table itself
-2 + 2; // extra coverage table
+            2 + 2 + 2 + // format1 table itself
+            2 + 2; // extra coverage table
 
         const N_GLYPHS_TO_JUSTIFY_EXTRA_SUB1F1: usize =
             COST_OF_EXTRA_SUB1F1_SUBTABLE / GlyphId::RAW_BYTE_LEN;
 
         #[derive(Default)]
         struct SubtableMap {
+            // key is the delta between the two gylphs.
             format1: BTreeMap<i16, Vec<(GlyphId, GlyphId)>>,
             format2: Vec<(GlyphId, GlyphId)>,
         }
@@ -114,30 +115,20 @@ impl Builder for SingleSubBuilder {
                 let mut result = Vec::with_capacity(self.len());
                 if !self.format2.is_empty() {
                     self.format2.sort_unstable();
-                    let coverage = self
-                        .format2
-                        .iter()
-                        .copied()
-                        .map(|(g1, _)| g1)
-                        .collect::<CoverageTableBuilder>();
+                    let coverage = self.format2.iter().copied().map(|(g1, _)| g1).collect();
                     let subs = self.format2.into_iter().map(|(_, g2)| g2).collect();
-                    result.push(write_gsub::SingleSubst::format_2(coverage.build(), subs));
+                    result.push(write_gsub::SingleSubst::format_2(coverage, subs));
                 }
 
                 for (delta, pairs) in self.format1 {
-                    let coverage = pairs
-                        .into_iter()
-                        .map(|(g1, _)| g1)
-                        .collect::<CoverageTableBuilder>();
-                    result.push(write_gsub::SingleSubst::format_1(coverage.build(), delta));
+                    let coverage = pairs.into_iter().map(|(g1, _)| g1).collect();
+                    result.push(write_gsub::SingleSubst::format_1(coverage, delta));
                 }
                 result
             }
         }
 
         // optimal subtable generation:
-        // TODO: the runtime efficiency of this implementation could be improved.
-        // steps:
         // - sort all pairs into their 'preferred' subtables (everything that
         // can be in a format 1 table is)
         // - go through the format1 tables and move small ones into the format 2 table
@@ -157,16 +148,13 @@ impl Builder for MultipleSubBuilder {
     type Output = Vec<write_gsub::MultipleSubstFormat1>;
 
     fn build(self) -> Self::Output {
-        let coverage = self.items.keys().copied().collect::<CoverageTableBuilder>();
+        let coverage = self.items.keys().copied().collect();
         let seq_tables = self
             .items
             .into_values()
             .map(write_gsub::Sequence::new)
             .collect();
-        vec![write_gsub::MultipleSubstFormat1::new(
-            coverage.build(),
-            seq_tables,
-        )]
+        vec![write_gsub::MultipleSubstFormat1::new(coverage, seq_tables)]
     }
 }
 
@@ -206,16 +194,13 @@ impl Builder for AlternateSubBuilder {
     type Output = Vec<write_gsub::AlternateSubstFormat1>;
 
     fn build(self) -> Self::Output {
-        let coverage = self.items.keys().copied().collect::<CoverageTableBuilder>();
+        let coverage = self.items.keys().copied().collect();
         let seq_tables = self
             .items
             .into_values()
             .map(write_gsub::AlternateSet::new)
             .collect();
-        vec![write_gsub::AlternateSubstFormat1::new(
-            coverage.build(),
-            seq_tables,
-        )]
+        vec![write_gsub::AlternateSubstFormat1::new(coverage, seq_tables)]
     }
 }
 
@@ -246,7 +231,7 @@ impl Builder for LigatureSubBuilder {
     type Output = Vec<write_gsub::LigatureSubstFormat1>;
 
     fn build(self) -> Self::Output {
-        let coverage = self.items.keys().copied().collect::<CoverageTableBuilder>();
+        let coverage = self.items.keys().copied().collect();
         let lig_sets = self
             .items
             .into_values()
@@ -267,9 +252,6 @@ impl Builder for LigatureSubBuilder {
             })
             .collect();
 
-        vec![write_gsub::LigatureSubstFormat1::new(
-            coverage.build(),
-            lig_sets,
-        )]
+        vec![write_gsub::LigatureSubstFormat1::new(coverage, lig_sets)]
     }
 }
