@@ -203,6 +203,18 @@ pub enum KernParticipant {
     Group(GroupName),
 }
 
+impl KernParticipant {
+    #[inline]
+    pub fn is_glyph(&self) -> bool {
+        matches!(self, KernParticipant::Glyph(_))
+    }
+
+    #[inline]
+    pub fn is_group(&self) -> bool {
+        matches!(self, KernParticipant::Group(_))
+    }
+}
+
 impl StaticMetadata {
     pub fn new(
         units_per_em: u16,

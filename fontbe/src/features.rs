@@ -300,6 +300,15 @@ fn push_identifier(fea: &mut String, identifier: &KernParticipant) {
     }
 }
 
+#[inline]
+fn enumerated(kp1: &KernParticipant, kp2: &KernParticipant) -> bool {
+    // Glyph to class or class to glyph pairs are interpreted as 'class exceptions' to class pairs
+    // and are thus prefixed with 'enum' keyword so they will be enumerated as specific glyph-glyph pairs.
+    // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#6bii-enumerating-pairs
+    // https://github.com/googlefonts/ufo2ft/blob/b3895a9/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L360
+    kp1.is_group() ^ kp2.is_group()
+}
+
 /// Create a single variable fea describing the kerning for the entire variation space.
 ///
 /// No merge baby! - [context](https://github.com/fonttools/fonttools/issues/3168#issuecomment-1608787520)
@@ -362,7 +371,11 @@ fn create_kerning_fea(axes: &HashMap<Tag, &Axis>, kerning: &Kerning) -> Result<S
     let mut pos_strings = HashMap::new();
     fea.push_str("feature kern {\n");
     for ((participant1, participant2), values) in kerning.kerns.iter() {
-        fea.push_str("  pos ");
+        fea.push_str("  ");
+        if enumerated(participant1, participant2) {
+            fea.push_str("enum ");
+        }
+        fea.push_str("pos ");
         push_identifier(&mut fea, participant1);
         fea.push(' ');
         push_identifier(&mut fea, participant2);
