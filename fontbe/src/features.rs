@@ -186,24 +186,28 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
         // Produce the desired delta type
         let deltas = deltas
             .into_iter()
-            .map(|(region, value)| {
-                (
-                    write_fonts::tables::variations::VariationRegion {
-                        region_axes: region
-                            .iter()
-                            .zip(self.static_metadata.axes.iter())
-                            .map(|((tag, tent), expected_axis)| {
-                                assert_eq!(*tag, expected_axis.tag);
-                                RegionAxisCoordinates {
-                                    start_coord: F2Dot14::from_f32(tent.min.to_f32()),
-                                    peak_coord: F2Dot14::from_f32(tent.peak.to_f32()),
-                                    end_coord: F2Dot14::from_f32(tent.max.to_f32()),
-                                }
-                            })
-                            .collect(),
-                    },
-                    value.ot_round(),
-                )
+            .filter_map(|(region, value)| {
+                if region.is_default() {
+                    None
+                } else {
+                    Some((
+                        write_fonts::tables::variations::VariationRegion {
+                            region_axes: region
+                                .iter()
+                                .zip(self.static_metadata.axes.iter())
+                                .map(|((tag, tent), expected_axis)| {
+                                    assert_eq!(*tag, expected_axis.tag);
+                                    RegionAxisCoordinates {
+                                        start_coord: F2Dot14::from_f32(tent.min.to_f32()),
+                                        peak_coord: F2Dot14::from_f32(tent.peak.to_f32()),
+                                        end_coord: F2Dot14::from_f32(tent.max.to_f32()),
+                                    }
+                                })
+                                .collect(),
+                        },
+                        value.ot_round(),
+                    ))
+                }
             })
             .collect();
 
@@ -520,7 +524,6 @@ mod tests {
         coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
         ir::{Axis, StaticMetadata},
     };
-    use write_fonts::tables::variations::RegionAxisCoordinates;
 
     use super::FeaVariationInfo;
 
@@ -564,10 +567,12 @@ mod tests {
         .unwrap()
     }
 
-    fn is_default(region_coords: &RegionAxisCoordinates) -> bool {
-        region_coords.start_coord.to_f32() == 0.0
-            && region_coords.peak_coord.to_f32() == 0.0
-            && region_coords.end_coord.to_f32() == 0.0
+    fn is_default(region: &write_fonts::tables::variations::VariationRegion) -> bool {
+        region.region_axes.iter().all(|axis_coords| {
+            axis_coords.start_coord.to_f32() == 0.0
+                && axis_coords.peak_coord.to_f32() == 0.0
+                && axis_coords.end_coord.to_f32() == 0.0
+        })
     }
 
     #[test]
@@ -585,17 +590,8 @@ mod tests {
                 (BTreeMap::from([(wght, Fixed::from_f64(700.0))]), 20),
             ]))
             .unwrap();
-        let mut region_values: Vec<_> = regions
-            .into_iter()
-            .map(|(r, v)| {
-                if r.region_axes.iter().all(is_default) {
-                    v
-                } else {
-                    v + default
-                }
-            })
-            .collect();
-        region_values.sort();
-        assert_eq!((15, vec![10, 15, 20]), (default, region_values));
+        assert!(!regions.iter().any(|(r, _)| is_default(r)));
+        let region_values: Vec<_> = regions.into_iter().map(|(_, v)| v + default).collect();
+        assert_eq!((15, vec![10, 20]), (default, region_values));
     }
 }
