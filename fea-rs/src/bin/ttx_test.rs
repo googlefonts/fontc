@@ -10,6 +10,7 @@ static TEST_DATA: &str = "./fea-rs/test-data/fonttools-tests";
 static WIP_DIFF_DIR: &str = "./wip";
 
 fn main() {
+    env_logger::init();
     let args = Args::parse();
 
     let results = ttx::run_all_tests(TEST_DATA, args.test_filter.as_ref());

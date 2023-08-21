@@ -427,7 +427,7 @@ impl ContextBuilder {
     fn build(self, in_gpos: bool) -> Vec<write_layout::SequenceContext> {
         assert!(self.rules.iter().all(|rule| !rule.is_chain_rule()));
         let format_1 = self.build_format_1(in_gpos);
-        //TODO: I'm skipping format_2 because it seems consistently larger
+        //NOTE: I'm skipping format_2 because it seems consistently larger
         // than format 3? but I have no verified this.
         let format_3 = self
             .rules
@@ -451,6 +451,22 @@ impl ContextBuilder {
 impl ChainContextBuilder {
     pub(crate) fn iter_lookups(&self) -> impl Iterator<Item = LookupId> + '_ {
         self.0.iter_lookups()
+    }
+
+    fn build(self, in_gpos: bool) -> Vec<write_layout::ChainedSequenceContext> {
+        let maybe_format_1 = self.build_format_1(in_gpos);
+        let maybe_format_2 = self.build_format_2(in_gpos);
+        // format_3 takes ownership, so we build it last (it is always possible)
+        let format_3 = self.build_format_3(in_gpos);
+
+        //gross: we try all types we can, and then pick the best one by
+        //actually checking the compiled size. There may be heuristic approaches
+        //that would approximate this with less work, but they are not obvious.
+        pick_best_format([
+            maybe_format_1.map(|x| vec![x]),
+            maybe_format_2.map(|x| vec![x]),
+            Some(format_3),
+        ])
     }
 
     fn build_format_1(&self, in_gpos: bool) -> Option<write_layout::ChainedSequenceContext> {
@@ -575,6 +591,39 @@ impl ChainContextBuilder {
             rule_sets,
         ))
     }
+
+    /// format 3 is always possible; it also generates a subtable for each rule.
+    fn build_format_3(self, in_gpos: bool) -> Vec<write_layout::ChainedSequenceContext> {
+        self.0
+            .rules
+            .into_iter()
+            .map(|rule| {
+                let backtrack = rule
+                    .backtrack
+                    .iter()
+                    .map(|seq| seq.iter().collect::<CoverageTableBuilder>().build())
+                    .collect();
+                let lookahead = rule
+                    .lookahead
+                    .iter()
+                    .map(|seq| seq.iter().collect::<CoverageTableBuilder>().build())
+                    .collect();
+                let input = rule
+                    .context
+                    .iter()
+                    .map(|(seq, _)| seq.iter().collect::<CoverageTableBuilder>().build())
+                    .collect();
+                let seq_lookups = rule.lookup_records(in_gpos);
+
+                write_layout::ChainedSequenceContext::format_3(
+                    backtrack,
+                    input,
+                    lookahead,
+                    seq_lookups,
+                )
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 impl SubContextBuilder {
@@ -608,76 +657,32 @@ impl Builder for SubChainContextBuilder {
     }
 }
 
-impl ChainContextBuilder {
-    fn build(self, in_gpos: bool) -> Vec<write_layout::ChainedSequenceContext> {
-        // do this first, since we take ownership below
-        let maybe_format_1 = self.build_format_1(in_gpos);
-        let maybe_format_2 = self.build_format_2(in_gpos);
-
-        let format_3 = self
-            .0
-            .rules
-            .into_iter()
-            .map(|rule| {
-                let backtrack = rule
-                    .backtrack
-                    .iter()
-                    .map(|seq| seq.iter().collect::<CoverageTableBuilder>().build())
-                    .collect();
-                let lookahead = rule
-                    .lookahead
-                    .iter()
-                    .map(|seq| seq.iter().collect::<CoverageTableBuilder>().build())
-                    .collect();
-                let input = rule
-                    .context
-                    .iter()
-                    .map(|(seq, _)| seq.iter().collect::<CoverageTableBuilder>().build())
-                    .collect();
-                let seq_lookups = rule.lookup_records(in_gpos);
-
-                write_layout::ChainedSequenceContext::format_3(
-                    backtrack,
-                    input,
-                    lookahead,
-                    seq_lookups,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        //gross: we try all types we can, and then pick the best one by
-        //actually checking the compiled size
-        pick_best_format([
-            maybe_format_1.map(|x| vec![x]),
-            maybe_format_2.map(|x| vec![x]),
-            Some(format_3),
-        ])
-    }
-}
-
 // invariant: at least one item must be Some
 fn pick_best_format<T: FontWrite + Validate>(tables: [Option<T>; 3]) -> T {
+    // first see if there's only one table present, in which case we can exit early:
+    if tables.iter().map(|t| t.is_some() as usize).sum::<usize>() == 1 {
+        return tables.into_iter().find_map(std::convert::identity).unwrap();
+    }
+
     // this is written in a sort of funny style so that it's easy to println
     // the computed sizes for debugging
     tables
         .into_iter()
         .enumerate()
-        .map(|(i, table)| (i, compute_size(table.as_ref()), table))
-        .inspect(|(_i, _size, _table)| {
-            //eprintln!("format {} size {_size:?}", _i + 1);
+        .filter_map(|(i, table)| table.map(|table| (i + 1, compute_size(&table), table)))
+        .inspect(|(i, size, _table)| {
+            log::debug!("format {i} size {size:?}");
         })
-        .min_by_key(|(_, size, _)| size.unwrap_or(usize::MAX))
+        .min_by_key(|(_, size, _)| *size)
         .unwrap()
         .2
-        .unwrap()
 }
 
-fn compute_size<T: FontWrite + Validate>(item: Option<&T>) -> Option<usize> {
-    item.map(write_fonts::dump_table)
-        .transpose()
+fn compute_size<T: FontWrite + Validate>(item: &T) -> usize {
+    write_fonts::dump_table(item)
         .ok()
-        .flatten()
         .map(|x| x.len())
+        .unwrap_or(usize::MAX)
 }
 
 impl ReverseChainBuilder {
