@@ -23,7 +23,7 @@ use fontir::{
 use log::{debug, error, trace, warn};
 
 use fontdrasil::orchestration::{Access, Work};
-use write_fonts::{tables::variations::RegionAxisCoordinates, OtRound};
+use write_fonts::OtRound;
 
 use crate::{
     error::Error,
@@ -76,7 +76,6 @@ impl Display for NotSupportedError {
     }
 }
 
-// TODO: ask Colin if we need to be threadsafe
 struct FeaVariationInfo<'a> {
     fea_rs_axes: HashMap<Tag, (&'a CoordConverter, fea_rs::compile::AxisInfo)>,
     axes: HashMap<Tag, &'a Axis>,
@@ -160,7 +159,6 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
             .collect();
 
         // Only 1 value per region for our input
-        // TODO is that actually guaranteed?
         let deltas: Vec<_> = var_model
             .deltas(&point_seqs)?
             .into_iter()
@@ -197,11 +195,7 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
                                 .zip(self.static_metadata.axes.iter())
                                 .map(|((tag, tent), expected_axis)| {
                                     assert_eq!(*tag, expected_axis.tag);
-                                    RegionAxisCoordinates {
-                                        start_coord: F2Dot14::from_f32(tent.min.to_f32()),
-                                        peak_coord: F2Dot14::from_f32(tent.peak.to_f32()),
-                                        end_coord: F2Dot14::from_f32(tent.max.to_f32()),
-                                    }
+                                    tent.to_region_axis_coords()
                                 })
                                 .collect(),
                         },

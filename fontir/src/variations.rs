@@ -6,11 +6,12 @@ use std::{
     ops::{Mul, Sub},
 };
 
-use font_types::Tag;
+use font_types::{F2Dot14, Tag};
 use log::{log_enabled, trace};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use write_fonts::tables::variations::RegionAxisCoordinates;
 
 use crate::{
     coords::{NormalizedCoord, NormalizedLocation},
@@ -522,6 +523,15 @@ impl Tent {
     pub fn has_non_zero(&self) -> bool {
         let zero = NormalizedCoord::new(0.0);
         (zero, zero, zero) != (self.min, self.peak, self.max)
+    }
+
+    /// Create an equivalent [RegionAxisCoordinates] instance.
+    pub fn to_region_axis_coords(&self) -> RegionAxisCoordinates {
+        RegionAxisCoordinates {
+            start_coord: F2Dot14::from_f32(self.min.to_f32()),
+            peak_coord: F2Dot14::from_f32(self.peak.to_f32()),
+            end_coord: F2Dot14::from_f32(self.max.to_f32()),
+        }
     }
 }
 
