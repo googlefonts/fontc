@@ -10,13 +10,13 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{Compilation, VariationInfo},
+    compile::{AxisLocation, Compilation, VariationInfo},
     parse::{SourceLoadError, SourceResolver},
     Compiler, GlyphMap, GlyphName as FeaRsGlyphName,
 };
-use font_types::{F2Dot14, Fixed, Tag};
+use font_types::{F2Dot14, Tag};
 use fontir::{
-    coords::{CoordConverter, UserCoord, UserLocation},
+    coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
     ir::{Axis, Features, GlyphOrder, KernParticipant, Kerning, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
 };
@@ -112,6 +112,28 @@ impl<'a> FeaVariationInfo<'a> {
             static_metadata,
         }
     }
+
+    fn normalize_location(
+        &self,
+        fears_location: &BTreeMap<Tag, AxisLocation>,
+    ) -> NormalizedLocation {
+        fears_location
+            .iter()
+            .map(|(tag, pos)| {
+                let axis = self.axes.get(tag).unwrap();
+                let pos = match pos {
+                    AxisLocation::User(coord) => {
+                        UserCoord::new(coord.to_f32()).to_normalized(&axis.converter)
+                    }
+                    AxisLocation::Design(coord) => {
+                        DesignCoord::new(coord.to_f32()).to_normalized(&axis.converter)
+                    }
+                    AxisLocation::Normalized(coord) => NormalizedCoord::new(coord.to_f32()),
+                };
+                (*tag, pos)
+            })
+            .collect()
+    }
 }
 
 impl<'a> VariationInfo for FeaVariationInfo<'a> {
@@ -135,7 +157,7 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
 
     fn resolve_variable_metric(
         &self,
-        values: &HashMap<BTreeMap<Tag, Fixed>, i16>,
+        values: &HashMap<BTreeMap<Tag, AxisLocation>, i16>,
     ) -> Result<
         (
             i16,
@@ -150,11 +172,8 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
         let point_seqs: HashMap<_, _> = values
             .iter()
             .map(|(pos, value)| {
-                let user = UserLocation::from_iter(
-                    pos.iter()
-                        .map(|(tag, value)| (*tag, UserCoord::new(value.to_f64() as f32))),
-                );
-                (user.to_normalized(&self.axes), vec![*value as f64])
+                let normalized = self.normalize_location(pos);
+                (normalized, vec![*value as f64])
             })
             .collect();
 
@@ -525,7 +544,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
 mod tests {
     use std::collections::{BTreeMap, HashMap, HashSet};
 
-    use fea_rs::compile::VariationInfo;
+    use fea_rs::compile::{AxisLocation, VariationInfo};
     use font_types::{Fixed, Tag};
     use fontir::{
         coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
@@ -585,6 +604,9 @@ mod tests {
     #[test]
     fn resolve_kern() {
         let _ = env_logger::builder().is_test(true).try_init();
+        fn make_axis_location(user_coord: f64) -> AxisLocation {
+            AxisLocation::User(Fixed::from_f64(user_coord))
+        }
 
         let wght = Tag::new(b"wght");
         let static_metadata = weight_variable_static_metadata(300.0, 400.0, 700.0);
@@ -592,9 +614,9 @@ mod tests {
 
         let (default, regions) = var_info
             .resolve_variable_metric(&HashMap::from([
-                (BTreeMap::from([(wght, Fixed::from_f64(300.0))]), 10),
-                (BTreeMap::from([(wght, Fixed::from_f64(400.0))]), 15),
-                (BTreeMap::from([(wght, Fixed::from_f64(700.0))]), 20),
+                (BTreeMap::from([(wght, make_axis_location(300.0))]), 10),
+                (BTreeMap::from([(wght, make_axis_location(400.0))]), 15),
+                (BTreeMap::from([(wght, make_axis_location(700.0))]), 20),
             ]))
             .unwrap();
         assert!(!regions.iter().any(|(r, _)| is_default(r)));
