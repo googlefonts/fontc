@@ -1,0 +1,79 @@
+{
+familyName = WghtVar;
+fontMaster = (
+{
+alignmentZones = (
+"{737, 16}",
+"{0, -16}",
+"{-42, -16}"
+);
+ascender = 737;
+capHeight = 702;
+descender = -42;
+id = m01;
+weightValue = 400;
+xHeight = 501;
+},
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = hyphen;
+lastChange = "2023-06-05 23:23:03 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"131 250 LINE",
+"470 250 LINE",
+"470 330 LINE",
+"131 330 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+paths = (
+{
+closed = 1;
+nodes = (
+"92 224 LINE",
+"508 224 LINE",
+"508 356 LINE",
+"92 356 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 002D;
+}
+);
+kerning = {
+m01 = {
+hyphen = {
+hyphen = -150;
+};
+};
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
+hyphen = {
+hyphen = -50;
+};
+};
+};
+unitsPerEm = 1000;
+}
