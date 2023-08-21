@@ -37,10 +37,6 @@ static IGNORED_TESTS: &[&str] = &[
     "variable_scalar_valuerecord.fea",
 ];
 
-// these tests are failing and need to be investigated, but I still want to
-// pass CI for the time being.
-static IGNORED_IN_CI_ONLY: &[&str] = &["bug514.fea", "spec5f_ii_3.fea", "spec5f_ii_4.fea"];
-
 /// An environment variable that can be set to specify where to write generated files.
 ///
 /// This can be set during debugging if you want to inspect the generated files.
@@ -197,18 +193,7 @@ fn iter_compile_tests<'a>(
 }
 
 fn should_run_test(path: &str) -> bool {
-    // https://docs.github.com/en/actions/learn-github-actions/variables#default-environment-variables
-    let ci_var = std::env::var_os("CI").unwrap_or_default();
-    let in_ci = ci_var == "true";
-
-    if IGNORED_TESTS.contains(&path) {
-        return false;
-    }
-    if in_ci && IGNORED_IN_CI_ONLY.contains(&path) {
-        return false;
-    }
-
-    true
+    !IGNORED_TESTS.contains(&path)
 }
 
 /// Iterate over all the files in a directory with the 'fea' suffix
