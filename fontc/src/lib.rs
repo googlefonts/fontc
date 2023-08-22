@@ -1707,7 +1707,7 @@ mod tests {
         let build_dir = tmp_dir.path();
         compile(Args::for_test(
             build_dir,
-            "IntermediateLayer/IntermediateLayer.designspace",
+            "designspace_from_glyphs/IntermediateLayer/IntermediateLayer.designspace",
         ));
 
         let font_file = build_dir.join("font.ttf");
