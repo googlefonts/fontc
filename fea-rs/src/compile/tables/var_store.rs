@@ -524,6 +524,10 @@ impl RegionMap {
                 .chain(right.into_iter().flatten())
         }
 
+        if self.n_active_regions == 0 {
+            return Default::default();
+        }
+
         raw_deltas
             .chunks(self.n_active_regions as usize)
             .flat_map(|delta_set| {
@@ -859,6 +863,17 @@ mod tests {
         let [r1, r2, _] = test_regions();
         let mut builder = VariationStoreBuilder::default();
         builder.add_deltas(vec![(r1.clone(), 0), (r2.clone(), 4)]);
+        let _ = builder.build();
+    }
+
+    // we had another crash here where when *all* deltas were zero we would
+    // call 'slice.chunks()' with '0', which is not allowed
+    #[test]
+    fn ensure_all_zeros_dont_write() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let [r1, r2, _] = test_regions();
+        let mut builder = VariationStoreBuilder::default();
+        builder.add_deltas(vec![(r1.clone(), 0), (r2.clone(), 0)]);
         let _ = builder.build();
     }
 }
