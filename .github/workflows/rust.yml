@@ -9,7 +9,7 @@ on:
 
 name: Continuous integration
 
-# The check, clippy-lint, and test-stable jobs should typically be direct copies from
+# The check, clippy-lint, and test-stable-* jobs should typically be direct copies from
 # https://github.com/googlefonts/fontations/blob/main/.github/workflows/rust.yml.
 # other than the list of crates for cargo check no std
 
@@ -49,8 +49,14 @@ jobs:
       - name: cargo clippy --no-default-features
         run: cargo clippy --all-targets --no-default-features -- -D warnings
 
-  test-stable:
-    name: cargo test stable
+# test all packages individually to ensure deterministic resolution
+# of dependencies for each package
+
+# Try to group our tests into sets of crates that take roughly equal time to run
+# so we get concurrent execution on multiple runners
+
+  test-stable-fontbe:
+    name: fontbe tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -58,14 +64,29 @@ jobs:
       - name: install stable toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # test all packages individually to ensure deterministic resolution
-      # of dependencies for each package
-      
       - name: cargo test fontbe
         run: cargo test -p fontbe --all-targets --all-features
 
+  test-stable-fontc:
+    name: fontc tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: cargo test fontc
         run: cargo test -p fontc --all-targets --all-features
+
+  test-stable-misc-quick:
+    name: tests other than fontbe,fontc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - name: cargo test fontdrasil
         run: cargo test -p fontdrasil --all-targets --all-features
