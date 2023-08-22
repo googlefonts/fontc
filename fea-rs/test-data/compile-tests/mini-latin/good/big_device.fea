@@ -1,0 +1,8 @@
+feature test {
+
+pos A <-80 0 -160 0 <device 11 -1, 12 -1, 13 5, 14 2, 19 5>
+              <device NULL>
+              <device NULL>
+              <device NULL>
+      >;
+} test;

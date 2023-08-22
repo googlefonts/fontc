@@ -235,9 +235,6 @@ fn eat_device(parser: &mut Parser, recovery: TokenSet) -> bool {
             parser.repeat(|parser| parser.expect_recover(Kind::Number, recovery), 2);
         }
 
-        // FIXME: this should handle an arbitary number of pairs? but also isn't
-        // supported yet?
-        // I don't know what's going on tbh
         parser.expect(Kind::RAngle);
     }
 
