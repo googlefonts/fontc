@@ -1,5 +1,5 @@
-FILE@[0; 104)
-    FeatureNode@[0; 103)
+FILE@[0; 91)
+    FeatureNode@[0; 90)
       FeatureKw@0 "feature"
       WS@7 " "
       Tag@8 "test"
@@ -32,12 +32,19 @@ FILE@[0; 104)
               >@60 ">"
           ;@61 ";"
       WS@62 "\n    "
-      #@67 "# FIXME"
-      WS@74 "\n    "
-      #@79 "#pos fmt_e <HI>;"
-      WS@95 "\n"
-      }@96 "}"
-      WS@97 " "
-      Tag@98 "test"
-      ;@102 ";"
-  WS@103 "\n"
+        GposType1@[67; 82)
+          PosKw@67 "pos"
+          WS@70 " "
+          GlyphName@71 "fmt_e"
+          WS@76 " "
+            ValueRecordNode@[77; 81)
+              <@77 "<"
+              ID@78 "HI"
+              >@80 ">"
+          ;@81 ";"
+      WS@82 "\n"
+      }@83 "}"
+      WS@84 " "
+      Tag@85 "test"
+      ;@89 ";"
+  WS@90 "\n"
