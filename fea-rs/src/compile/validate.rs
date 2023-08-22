@@ -853,8 +853,9 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_anchor(&rule.entry());
                 self.validate_anchor(&rule.exit());
             }
-            //FIXME: this should be also checking that all mark classes referenced
-            //in this rule are disjoint
+            //NOTE: this should be also checking that all mark classes referenced
+            //in this rule are disjoint, but we don't know the glyph ids in validation
+            //so we validate this in compile_ctx
             typed::GposStatement::Type4(rule) => {
                 self.validate_glyph_or_class(&rule.base());
                 for mark in rule.attachments() {
@@ -1099,8 +1100,6 @@ impl<'a> ValidationCtx<'a> {
                 Kind::IgnoreLigaturesKw if !ignore_lig => ignore_lig = true,
                 Kind::IgnoreMarksKw if !ignore_marks => ignore_marks = true,
 
-                //FIXME: we are not enforcing some requirements here. in particular,
-                // The glyph sets of the referenced classes must not overlap, and the MarkAttachmentType statement can reference at most 15 different classes.
                 Kind::MarkAttachmentTypeKw if !mark_set => {
                     mark_set = true;
                     match iter.next().and_then(typed::GlyphClass::cast) {

@@ -98,24 +98,11 @@ pub(crate) fn write_diagnostic(
     // we don't replace tabs with spaces
     let reuse_ws = n_spaces.min(line_ws);
     let extra_ws = n_spaces - reuse_ws;
-    //FIXME: this stuff was used when we were painting the message inline.
-    // we will want something like this again, when we add help to diagnostics?
-
-    //let (extra_ws, _msg_first) = if extra_ws > (err.message.text.len() + 1) {
-    //(extra_ws - err.message.text.len() - 1, true)
-    //} else {
-    //(extra_ws, false)
-    //};
 
     let n_carets = span.end - span.start;
     let n_carets = n_carets.min(CARETS.len());
     let color = style_or_dont!(colorized, err.level.color());
 
-    //let (first, second) = if msg_first {
-    //(err.message.text.as_str(), &CARETS[..n_carets])
-    //} else {
-    //(&CARETS[..n_carets], err.message.text.as_str())
-    //};
     write!(
         writer,
         "{}{} |{} ",

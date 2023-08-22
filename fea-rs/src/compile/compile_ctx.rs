@@ -427,7 +427,6 @@ impl<'a> CompilationCtx<'a> {
 
                 //FIXME: we are not enforcing some requirements here. in particular,
                 // The glyph sets of the referenced classes must not overlap, and the MarkAttachmentType statement can reference at most 15 different classes.
-                // ALSO: this should accept mark classes.
                 Kind::MarkAttachmentTypeKw => {
                     let node = iter
                         .next()
@@ -1630,6 +1629,9 @@ impl<'a> CompilationCtx<'a> {
                         CaretValue::Format3(table) => table.coordinate as i32,
                     });
                     for glyph in glyphs.iter() {
+                        //NOTE: only one rule allowed per glyph; if a glyph already
+                        //has carets set, we skip it. We could warn here but this is
+                        //a very niche feature, so :shrug:
                         gdef.ligature_pos
                             .entry(glyph)
                             .or_insert_with(|| carets.clone());
