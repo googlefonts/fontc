@@ -333,7 +333,7 @@ fn enumerated(kp1: &KernParticipant, kp2: &KernParticipant) -> bool {
 ///
 /// * See <https://github.com/fonttools/fonttools/issues/3168> wrt sparse kerning.
 /// * See <https://github.com/adobe-type-tools/afdko/pull/1350> wrt variable fea.
-fn create_kerning_fea(axes: &HashMap<Tag, &Axis>, kerning: &Kerning) -> Result<String, Error> {
+fn create_kerning_fea(kerning: &Kerning) -> Result<String, Error> {
     // Every kern must be defined at these locations. For human readability lets order things consistently.
     let kerned_locations: HashSet<_> = kerning.kerns.values().flat_map(|v| v.keys()).collect();
     let mut kerned_locations: Vec<_> = kerned_locations.into_iter().collect();
@@ -404,14 +404,10 @@ fn create_kerning_fea(axes: &HashMap<Tag, &Axis>, kerning: &Kerning) -> Result<S
                 // TODO: kerning lookup
                 .unwrap_or_else(|| 0.0);
 
-            // TODO: use the n suffix as soon as fea-rs supports it
-            let location = location.to_user(axes);
-
-            let pos_str = pos_strings.entry(location.clone()).or_insert_with(|| {
+            let pos_str = pos_strings.entry(*location).or_insert_with(|| {
                 location
                     .iter()
-                    // TODO normalized: .map(|(tag, value)| format!("{tag}={}n", value.into_inner()))
-                    .map(|(tag, value)| format!("{tag}={}", value.into_inner()))
+                    .map(|(tag, value)| format!("{tag}={}n", value.into_inner()))
                     .collect::<Vec<_>>()
                     .join(",")
             });
@@ -483,8 +479,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
         let kerning = context.ir.kerning.get();
 
         let features = if !kerning.is_empty() {
-            let axes = static_metadata.axes.iter().map(|a| (a.tag, a)).collect();
-            let kern_fea = create_kerning_fea(&axes, &kerning)?;
+            let kern_fea = create_kerning_fea(&kerning)?;
             integrate_kerning(&context.ir.features.get(), kern_fea)?
         } else {
             (*context.ir.features.get()).clone()
