@@ -568,20 +568,31 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::One(WorkId::GlyphOrder)
+        Access::Set(HashSet::from([WorkId::GlyphOrder, WorkId::StaticMetadata]))
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!("Generate IR for kerning");
+        let static_metadata = context.static_metadata.get();
         let arc_glyph_order = context.glyph_order.get();
         let glyph_order = arc_glyph_order.as_ref();
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
+        let variable_axes: HashSet<_> = static_metadata
+            .variable_axes
+            .iter()
+            .map(|a| a.tag)
+            .collect();
         let master_positions: HashMap<_, _> = font
             .masters
             .iter()
             .map(|m| (&m.id, font_info.locations.get(&m.axes_values).unwrap()))
+            .map(|(id, pos)| {
+                let mut pos = pos.clone();
+                pos.retain(|tag, _| variable_axes.contains(tag));
+                (id, pos)
+            })
             .collect();
 
         let mut kerning = Kerning::default();
@@ -1014,6 +1025,30 @@ mod tests {
         (source, context)
     }
 
+    fn build_kerning(glyphs_file: PathBuf) -> (impl Source, Context) {
+        let (source, context) = build_static_metadata(glyphs_file);
+
+        // static metadata includes preliminary glyph order; just copy it to be the final one
+        context
+            .copy_for_work(
+                Access::One(WorkId::PreliminaryGlyphOrder),
+                Access::One(WorkId::GlyphOrder),
+            )
+            .glyph_order
+            .set((*context.preliminary_glyph_order.get()).clone());
+
+        let task_context = context.copy_for_work(
+            Access::Set(HashSet::from([WorkId::StaticMetadata, WorkId::GlyphOrder])),
+            Access::one(WorkId::Kerning),
+        );
+        source
+            .create_kerning_ir_work(&context.input)
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+        (source, context)
+    }
+
     fn build_glyphs(
         source: &impl Source,
         context: &Context,
@@ -1364,5 +1399,22 @@ mod tests {
             let first_contour = default_instance.contours.first().unwrap();
             assert_eq!(first_contour.to_svg(), expected);
         }
+    }
+
+    // .glyphs v2 defaults to Weight, Width, Custom if no axes are specified
+    // Avoid ending up with kerning for locations like {XXXX: 0.00, wdth: 0.00, wght: 1.00}
+    // when XXXX and wdth are point axes that won't be in fvar. Oswald was hitting this.
+    #[test]
+    fn kern_positions_on_live_axes() {
+        let (_, context) = build_kerning(glyphs2_dir().join("KernImplicitAxes.glyphs"));
+        let kerning = context.kerning.get();
+        assert!(!kerning.is_empty(), "{kerning:#?}");
+        let bad_kerns: Vec<_> = kerning
+            .kerns
+            .values()
+            .flat_map(|v| v.keys())
+            .filter(|pos| !pos.axis_tags().all(|tag| *tag == Tag::new(b"wght")))
+            .collect();
+        assert!(bad_kerns.is_empty(), "{bad_kerns:#?}");
     }
 }

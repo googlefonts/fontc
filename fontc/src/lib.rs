@@ -524,6 +524,7 @@ mod tests {
                 BeWorkIdentifier::GlyfFragment("plus".into()).into(),
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
+                BeWorkIdentifier::Gdef.into(),
                 BeWorkIdentifier::Gvar.into(),
                 BeWorkIdentifier::GvarFragment("bar".into()).into(),
                 BeWorkIdentifier::GvarFragment("plus".into()).into(),
@@ -615,6 +616,7 @@ mod tests {
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
+                BeWorkIdentifier::Gdef.into(),
             ],
             completed
         );
@@ -727,6 +729,7 @@ mod tests {
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
+                BeWorkIdentifier::Gdef.into(),
             ],
             completed
         );

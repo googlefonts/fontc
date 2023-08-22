@@ -64,7 +64,7 @@ impl Args {
             glyph_name_filter: None,
             source,
             emit_ir: true,
-            emit_debug: false,
+            emit_debug: false, // they get destroyed by test cleanup
             build_dir: build_dir.to_path_buf(),
             prefer_simple_glyphs: Flags::default().contains(Flags::PREFER_SIMPLE_GLYPHS),
             flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
