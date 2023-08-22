@@ -56,7 +56,7 @@ jobs:
 # so we get concurrent execution on multiple runners
 
   test-stable-fontbe:
-    name: cargo test stable
+    name: fontbe tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -68,7 +68,7 @@ jobs:
         run: cargo test -p fontbe --all-targets --all-features
 
   test-stable-fontc:
-    name: cargo test stable
+    name: fontc tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -80,7 +80,7 @@ jobs:
         run: cargo test -p fontc --all-targets --all-features
 
   test-stable-misc-quick:
-    name: cargo test stable
+    name: tests other than fontbe,fontc
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
