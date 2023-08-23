@@ -123,6 +123,11 @@ impl VariationModel {
         }
     }
 
+    pub fn num_locations(&self) -> usize {
+        self.locations.len()
+    }
+
+    /// Unique master locations for model
     pub fn locations(&self) -> impl Iterator<Item = &NormalizedLocation> {
         self.locations.iter()
     }
