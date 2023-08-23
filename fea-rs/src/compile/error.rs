@@ -72,6 +72,7 @@ pub enum CompilerError {
 pub struct DiagnosticSet {
     pub(crate) messages: Vec<Diagnostic>,
     pub(crate) sources: Arc<SourceList>,
+    pub(crate) max_to_print: usize,
 }
 
 // we don't want diagnostic set to impl display itself, because we want to change
@@ -81,16 +82,15 @@ struct DiagnosticDisplayer<'a>(&'a DiagnosticSet);
 
 impl DiagnosticSet {
     pub(crate) fn write(&self, f: &mut impl std::fmt::Write, colorize: bool) -> std::fmt::Result {
-        const MAX_MESSAGES_TO_PRINT: usize = 100;
         let mut first = true;
-        for err in self.messages.iter().take(MAX_MESSAGES_TO_PRINT) {
+        for err in self.messages.iter().take(self.max_to_print) {
             if !first {
                 writeln!(f)?;
             }
             write!(f, "{}", self.sources.format_diagnostic(err, colorize))?;
             first = false;
         }
-        if let Some(overflow) = self.messages.len().checked_sub(MAX_MESSAGES_TO_PRINT) {
+        if let Some(overflow) = self.messages.len().checked_sub(self.max_to_print) {
             writeln!(f, "... and {overflow} more errors")?;
         }
         Ok(())

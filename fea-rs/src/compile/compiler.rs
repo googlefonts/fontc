@@ -15,6 +15,8 @@ use super::{
     Compilation, Opts, VariationInfo,
 };
 
+const DEFAULT_N_MESSAGES_TO_PRINT: usize = 100;
+
 /// A builder-style entry point for the compiler.
 ///
 /// This is intended as the principal public API for this crate.
@@ -33,7 +35,8 @@ pub struct Compiler<'a> {
     glyph_map: &'a GlyphMap,
     // variable fonts only
     var_info: Option<&'a dyn VariationInfo>,
-    verbose: bool,
+    print_warnings: bool,
+    max_n_errors: usize,
     opts: Opts,
     resolver: Option<Box<dyn SourceResolver>>,
 }
@@ -53,9 +56,10 @@ impl<'a> Compiler<'a> {
             glyph_map,
             var_info: None,
             opts: Default::default(),
-            verbose: false,
+            print_warnings: true,
             resolver: Default::default(),
             project_root: Default::default(),
+            max_n_errors: DEFAULT_N_MESSAGES_TO_PRINT,
         }
     }
 
@@ -74,8 +78,24 @@ impl<'a> Compiler<'a> {
     /// Specify verbosity.
     ///
     /// When verbose is true, we will print all warnings.
-    pub fn verbose(mut self, verbose: bool) -> Self {
-        self.verbose = verbose;
+    #[deprecated(since = "0.14.1", note = "use print_warnings method instead")]
+    pub fn verbose(self, verbose: bool) -> Self {
+        self.print_warnings(verbose)
+    }
+
+    /// Indicate whether or not warnings should be printed (default is `true`)
+    pub fn print_warnings(mut self, warnings: bool) -> Self {
+        self.print_warnings = warnings;
+        self
+    }
+
+    /// Specify a maximum number of messages to print when errors occur.
+    ///
+    /// Default is some arbitrary 'reasonable' number (currently 100.) To
+    /// suppress errors, pass `0`. To print all errors, pass a number as large
+    /// as the number of errors you intend to write.
+    pub fn max_error_messages(mut self, max_n_errors: usize) -> Self {
+        self.max_n_errors = max_n_errors;
         self
     }
 
@@ -115,18 +135,23 @@ impl<'a> Compiler<'a> {
         let (tree, diagnostics) =
             crate::parse::ParseContext::parse(self.root_path, Some(self.glyph_map), resolver)?
                 .generate_parse_tree();
-        print_warnings_return_errors(diagnostics, &tree, self.verbose)
+        print_warnings_return_errors(diagnostics, &tree, self.print_warnings, self.max_n_errors)
             .map_err(CompilerError::ParseFail)?;
         let diagnostics = super::validate(&tree, self.glyph_map, self.var_info);
-        print_warnings_return_errors(diagnostics, &tree, self.verbose)
+        print_warnings_return_errors(diagnostics, &tree, self.print_warnings, self.max_n_errors)
             .map_err(CompilerError::ValidationFail)?;
         let mut ctx = super::CompilationCtx::new(self.glyph_map, tree.source_map(), self.var_info);
         ctx.compile(&tree.typed_root());
 
         // we 'take' the errors here because it's easier for us to handle the
         // warnings using our helper method.
-        print_warnings_return_errors(std::mem::take(&mut ctx.errors), &tree, self.verbose)
-            .map_err(CompilerError::CompilationFail)?;
+        print_warnings_return_errors(
+            std::mem::take(&mut ctx.errors),
+            &tree,
+            self.print_warnings,
+            self.max_n_errors,
+        )
+        .map_err(CompilerError::CompilationFail)?;
         Ok(ctx.build().unwrap()) // we've taken the errors, so this can't fail
     }
 
@@ -141,7 +166,8 @@ impl<'a> Compiler<'a> {
 fn print_warnings_return_errors(
     mut diagnostics: Vec<Diagnostic>,
     tree: &ParseTree,
-    verbose: bool,
+    print_warnings: bool,
+    max_to_print: usize,
 ) -> Result<(), DiagnosticSet> {
     use std::io::IsTerminal as _;
     let is_tty = std::io::stderr().is_terminal();
@@ -151,7 +177,7 @@ fn print_warnings_return_errors(
         .position(|x| !x.is_error())
         .unwrap_or(diagnostics.len());
     let warnings = diagnostics.split_off(split_at);
-    if verbose {
+    if print_warnings {
         for w in warnings {
             eprintln!("{}", tree.format_diagnostic(&w, is_tty));
         }
@@ -162,6 +188,7 @@ fn print_warnings_return_errors(
         Err(DiagnosticSet {
             messages: diagnostics,
             sources: tree.sources.clone(),
+            max_to_print,
         })
     }
 }

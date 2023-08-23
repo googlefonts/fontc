@@ -107,7 +107,7 @@ fn bad_test_body(
     var_info: &MockVariationInfo,
 ) -> Result<(), TestResult> {
     let mut compiler = Compiler::new(path, glyph_map)
-        .verbose(std::env::var(crate::util::VERBOSE).is_ok())
+        .print_warnings(std::env::var(crate::util::VERBOSE).is_ok())
         .with_opts(Opts::new().make_post_table(true));
     if test_utils::is_variable(path) {
         compiler = compiler.with_variable_info(var_info);

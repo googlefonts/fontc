@@ -239,7 +239,7 @@ pub(crate) fn run_test(
 ) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| {
         let mut compiler = Compiler::new(&path, glyph_map)
-            .verbose(std::env::var(super::VERBOSE).is_ok())
+            .print_warnings(std::env::var(super::VERBOSE).is_ok())
             .with_opts(Opts::new().make_post_table(true));
         if is_variable(&path) {
             compiler = compiler.with_variable_info(fvar);
@@ -269,6 +269,7 @@ pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> St
     DiagnosticSet {
         sources: root.sources.clone(),
         messages: diagnostics.to_owned(),
+        max_to_print: usize::MAX,
     }
     .write(&mut out, false)
     .unwrap();

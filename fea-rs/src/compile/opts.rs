@@ -1,4 +1,9 @@
 //! Options used during compilation
+//!
+
+// NOTE: This was designed to originate from the command line, but that isn't
+// a very important part of our API, and a more natural place for us to specify
+// options is in the 'Compiler' struct itself.
 
 /// Options for configuring compilation behaviour.
 #[derive(Clone, Debug, Default)]
