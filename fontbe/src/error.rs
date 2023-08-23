@@ -52,6 +52,8 @@ pub enum Error {
     InvalidTableBytes(Tag),
     #[error("Missing directory:{0}")]
     MissingDirectory(PathBuf),
+    #[error("Missing file:{0}")]
+    FileExpected(PathBuf),
 }
 
 #[derive(Debug)]
