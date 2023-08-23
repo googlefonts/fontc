@@ -6,7 +6,16 @@ use fontbe::orchestration::Context as BeContext;
 use fontc::{init_paths, write_font_file, Args, ChangeDetector, Config, Error};
 use fontir::orchestration::Context as FeContext;
 
-fn main() -> Result<(), Error> {
+fn main() {
+    // catch and print errors manually, to avoid just seeing the Debug impls
+    if let Err(e) = run() {
+        // we have a CI check that forbids eprintln, but we're very clever, so
+        let _ = writeln!(std::io::stderr(), "{e}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Error> {
     env_logger::builder()
         .format(|buf, record| {
             let ts = buf.timestamp_micros();
