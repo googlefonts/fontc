@@ -54,6 +54,8 @@ pub enum Error {
     MissingDirectory(PathBuf),
     #[error("Variation model error in '{0}': {1}")]
     VariationModelError(GlyphName, VariationModelError),
+    #[error("Missing file:{0}")]
+    FileExpected(PathBuf),
 }
 
 #[derive(Debug)]

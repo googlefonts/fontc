@@ -6,6 +6,7 @@ use std::{
     ffi::{OsStr, OsString},
     fmt::Display,
     fs,
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -40,38 +41,57 @@ pub struct FeatureWork {}
 struct InMemoryResolver {
     content_path: OsString,
     content: Arc<str>,
+    // Our fea might be generated in memory, such as to inject generated kerning,
+    // while compiling a disk-based source with a well defined include path
+    include_dir: Option<PathBuf>,
 }
 
 impl SourceResolver for InMemoryResolver {
-    fn get_contents(&self, path: &OsStr) -> Result<Arc<str>, SourceLoadError> {
-        if path == &*self.content_path {
+    fn get_contents(&self, rel_path: &OsStr) -> Result<Arc<str>, SourceLoadError> {
+        if rel_path == &*self.content_path {
             return Ok(self.content.clone());
         }
-        Err(SourceLoadError::new(
-            path.to_os_string(),
-            NotSupportedError::new(),
-        ))
+        let Some(include_dir) = &self.include_dir else {
+            return Err(SourceLoadError::new(
+                rel_path.to_os_string(),
+                NoIncludePathError::new(),
+            ));
+        };
+        let path = include_dir
+            .join(rel_path)
+            .canonicalize()
+            .map_err(|e| SourceLoadError::new(rel_path.to_os_string(), e))?;
+        if !path.is_file() {
+            return Err(SourceLoadError::new(
+                rel_path.to_os_string(),
+                Error::FileExpected(path),
+            ));
+        }
+        trace!("Resolved {rel_path:?} to {path:?}");
+        let contents = fs::read_to_string(path)
+            .map_err(|e| SourceLoadError::new(rel_path.to_os_string(), e))?;
+        Ok(Arc::from(contents.as_str()))
     }
 }
 
 #[derive(Debug)]
-struct NotSupportedError {}
+struct NoIncludePathError {}
 
-impl NotSupportedError {
-    fn new() -> NotSupportedError {
-        NotSupportedError {}
+impl NoIncludePathError {
+    fn new() -> NoIncludePathError {
+        NoIncludePathError {}
     }
 }
 
-impl std::error::Error for NotSupportedError {
+impl std::error::Error for NoIncludePathError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
     }
 }
 
-impl Display for NotSupportedError {
+impl Display for NoIncludePathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Not supported")?;
+        f.write_str("No include path available")?;
         Ok(())
     }
 }
@@ -260,6 +280,7 @@ impl FeatureWork {
                     Compiler::new(root.clone(), &glyph_order).with_resolver(InMemoryResolver {
                         content_path: root,
                         content: Arc::from(fea_content.as_str()),
+                        include_dir: include_dir.clone(),
                     });
                 if let Some(include_dir) = include_dir {
                     compiler = compiler.with_project_root(include_dir)
