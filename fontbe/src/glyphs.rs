@@ -12,8 +12,13 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
-use fontir::{coords::NormalizedLocation, ir, orchestration::WorkId as FeWorkId};
-use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect};
+use fontir::{
+    coords::{Location, NormalizedCoord, NormalizedLocation},
+    ir,
+    orchestration::WorkId as FeWorkId,
+    variations::{VariationModel, VariationRegion},
+};
+use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect, Vec2};
 use log::{log_enabled, trace, warn};
 
 use read_fonts::{
@@ -35,6 +40,8 @@ use crate::{
     error::{Error, GlyphProblem},
     orchestration::{AnyWorkId, BeWork, Context, Glyph, GvarFragment, WorkId},
 };
+
+type Deltas = Vec<(VariationRegion, Vec<Option<Vec2>>)>;
 
 #[derive(Debug)]
 struct GlyphWork {
@@ -236,6 +243,42 @@ fn point_seqs_for_composite_glyph(ir_glyph: &ir::Glyph) -> HashMap<NormalizedLoc
         .collect()
 }
 
+fn compute_deltas(
+    glyph_name: &GlyphName,
+    var_model: &VariationModel,
+    should_iup: bool,
+    point_seqs: &HashMap<Location<NormalizedCoord>, Vec<Point>>,
+    coords: &Vec<Point>,
+    contour_ends: &Vec<usize>,
+) -> Result<Deltas, Error> {
+    // FontTools hard-codes 0.5
+    //https://github.com/fonttools/fonttools/blob/65bc6105f7aec3478427525d23ddf2e3c8c4b21e/Lib/fontTools/varLib/__init__.py#L239
+    let tolerance = 0.5;
+
+    // Contour (aka Simple) and Composite both need gvar
+    var_model
+        .deltas(point_seqs)
+        .map_err(|e| Error::GlyphDeltaError(glyph_name.clone(), e))?
+        .into_iter()
+        .map(|(region, deltas)| {
+            // Spec: inferring of deltas for un-referenced points applies only to simple glyphs, not to composite glyphs.
+            if should_iup {
+                // Doing IUP optimization here conveniently means it threads per-glyph
+                if log_enabled!(log::Level::Trace) {
+                    // I like the point string better than the vec2
+                    let deltas = deltas.iter().map(|d| d.to_point()).collect::<Vec<_>>();
+                    trace!("IUP '{}', tolerance {tolerance}\n  {} contour ends {contour_ends:?}\n  {} deltas {deltas:?}\n  {} coords {coords:?}", glyph_name, contour_ends.len(), deltas.len(), coords.len());
+                }
+                iup_delta_optimize(deltas, coords.clone(), tolerance, contour_ends)
+                    .map(|iup_deltas| (region.clone(), iup_deltas))
+            } else {
+                Ok((region, deltas.into_iter().map(Some).collect()))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| Error::IupError(glyph_name.clone(), e))
+}
+
 impl Work<Context, AnyWorkId, Error> for GlyphWork {
     fn id(&self) -> AnyWorkId {
         WorkId::GlyfFragment(self.glyph_name.clone()).into()
@@ -265,7 +308,6 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
         trace!("BE glyph work for '{}'", self.glyph_name);
 
         let static_metadata = context.ir.static_metadata.get();
-        let var_model = &static_metadata.variation_model;
         let default_location = static_metadata.default_location();
         let ir_glyph = &*context
             .ir
@@ -331,32 +373,36 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
             Error::GlyphError(ir_glyph.name.clone(), GlyphProblem::MissingDefault)
         })?;
 
-        // FontTools hard-codes 0.5
-        //https://github.com/fonttools/fonttools/blob/65bc6105f7aec3478427525d23ddf2e3c8c4b21e/Lib/fontTools/varLib/__init__.py#L239
-        let tolerance = 0.5;
-
-        // Contour (aka Simple) and Composite both need gvar
-        let deltas = var_model
-            .deltas(&point_seqs)
-            .map_err(|e| Error::GlyphDeltaError(self.glyph_name.clone(), e))?
-            .into_iter()
-            .map(|(region, deltas)| {
-                // Spec: inferring of deltas for un-referenced points applies only to simple glyphs, not to composite glyphs.
-                if should_iup {
-                    // Doing IUP optimization here conveniently means it threads per-glyph
-                    if log_enabled!(log::Level::Trace) {
-                        // I like the point string better than the vec2
-                        let deltas = deltas.iter().map(|d| d.to_point()).collect::<Vec<_>>();
-                        trace!("IUP '{}', tolerance {tolerance}\n  {} contour ends {contour_ends:?}\n  {} deltas {deltas:?}\n  {} coords {coords:?}", self.glyph_name, contour_ends.len(), deltas.len(), coords.len());
-                    }
-                    iup_delta_optimize(deltas, coords.clone(), tolerance, &contour_ends)
-                        .map(|iup_deltas| (region.clone(), iup_deltas))
-                } else {
-                    Ok((region, deltas.into_iter().map(Some).collect()))
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| Error::IupError(ir_glyph.name.clone(), e))?;
+        // If our glyph is not sparse it will have the same set of locations as the global variation model
+        // and we can use that. If it does not we must build a model specific to this glyph's master locations,
+        // upon which the region of influence and the delta weights associated to each master in turn depend.
+        let global_model = &static_metadata.variation_model;
+        let deltas = if global_model.num_locations() == ir_glyph.sources().len()
+            && global_model
+                .locations()
+                .all(|l| ir_glyph.sources().contains_key(l))
+        {
+            compute_deltas(
+                &self.glyph_name,
+                global_model,
+                should_iup,
+                &point_seqs,
+                coords,
+                &contour_ends,
+            )?
+        } else {
+            let locations: HashSet<_> = ir_glyph.sources().keys().cloned().collect();
+            let sub_model = VariationModel::new(locations, static_metadata.variable_axes.clone())
+                .map_err(|e| Error::VariationModelError(self.glyph_name.clone(), e))?;
+            compute_deltas(
+                &self.glyph_name,
+                &sub_model,
+                should_iup,
+                &point_seqs,
+                coords,
+                &contour_ends,
+            )?
+        };
 
         context.gvar_fragments.set_unconditionally(GvarFragment {
             glyph_name: name,
