@@ -1699,4 +1699,61 @@ mod tests {
     fn kerning_from_ufo() {
         assert_simple_kerning("designspace_from_glyphs/WghtVar.designspace");
     }
+
+    #[test]
+    fn intermediate_layer_in_designspace() {
+        // https://github.com/googlefonts/fontc/issues/400
+        let tmp_dir = tempdir().unwrap();
+        let build_dir = tmp_dir.path();
+        compile(Args::for_test(
+            build_dir,
+            "designspace_from_glyphs/IntermediateLayer/IntermediateLayer.designspace",
+        ));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+
+        assert_eq!(
+            vec!["wght"],
+            font.fvar()
+                .unwrap()
+                .axes()
+                .unwrap()
+                .iter()
+                .map(|a| a.axis_tag().to_string())
+                .collect::<Vec<_>>()
+        );
+
+        // Confirm movement on the wght axis is as expected:
+        // glyph "i" (char 0x69) defines three masters at wght=400, 700 and 900
+        assert_eq!(
+            vec![
+                Rect::new(239.0, 0.0, 364.0, 705.0),
+                Rect::new(213.0, 0.0, 388.0, 737.0),
+                Rect::new(191.0, 0.0, 410.0, 761.0),
+            ],
+            vec![
+                cbox_of_char(0x69, &font, vec![0.0]), // wght=400
+                cbox_of_char(0x69, &font, vec![0.6]), // wght=700
+                cbox_of_char(0x69, &font, vec![1.0]), // wght=900
+            ]
+        );
+
+        // glyph "I" (char 0x49) only defines two masters at wght=400 and wght=900,
+        // so wght=700 should be interpolated between them.
+        assert_eq!(
+            vec![
+                Rect::new(231.0, 0.0, 364.0, 700.0),
+                Rect::new(195.0, 0.0, 400.0, 700.0),
+                Rect::new(171.0, 0.0, 424.0, 700.0),
+            ],
+            vec![
+                cbox_of_char(0x49, &font, vec![0.0]), // wght=400
+                cbox_of_char(0x49, &font, vec![0.6]), // wght=700
+                cbox_of_char(0x49, &font, vec![1.0]), // wght=900
+            ]
+        );
+    }
 }

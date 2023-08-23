@@ -1,0 +1,309 @@
+{
+.appVersion = "3210";
+DisplayStrings = (
+i,
+I,
+"/.notdef"
+);
+customParameters = (
+{
+name = "Disable Last Change";
+value = 1;
+},
+{
+name = glyphOrder;
+value = (
+.notdef,
+space,
+I,
+i
+);
+},
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+date = "2023-07-20 13:49:39 +0000";
+familyName = "Intermediate Layer";
+fontMaster = (
+{
+alignmentZones = (
+"{800, 16}",
+"{700, 16}",
+"{500, 16}",
+"{0, -16}",
+"{-200, -16}"
+);
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+weightValue = 400;
+xHeight = 500;
+},
+{
+alignmentZones = (
+"{800, 16}",
+"{700, 16}",
+"{500, 16}",
+"{0, -16}",
+"{-200, -16}"
+);
+ascender = 800;
+capHeight = 700;
+custom = Black;
+descender = -200;
+id = m01;
+weightValue = 900;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = .notdef;
+layers = (
+{
+layerId = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+paths = (
+{
+closed = 1;
+nodes = (
+"487 0 LINE",
+"487 700 LINE",
+"129 700 LINE",
+"129 0 LINE"
+);
+},
+{
+closed = 1;
+nodes = (
+"158 672 LINE",
+"458 672 LINE",
+"458 29 LINE",
+"158 29 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"487 0 LINE",
+"487 700 LINE",
+"129 700 LINE",
+"129 0 LINE"
+);
+},
+{
+closed = 1;
+nodes = (
+"158 672 LINE",
+"458 672 LINE",
+"458 29 LINE",
+"158 29 LINE"
+);
+}
+);
+width = 600;
+}
+);
+},
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 600;
+},
+{
+layerId = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+width = 600;
+}
+);
+unicode = 0020;
+},
+{
+glyphname = I;
+layers = (
+{
+layerId = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+paths = (
+{
+closed = 1;
+nodes = (
+"231 0 LINE",
+"364 0 LINE",
+"364 700 LINE",
+"231 700 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"171 0 LINE",
+"424 0 LINE",
+"424 700 LINE",
+"171 700 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0049;
+},
+{
+glyphname = i;
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"362 546 OFFCURVE",
+"410 594 OFFCURVE",
+"410 654 CURVE SMOOTH",
+"410 713 OFFCURVE",
+"362 761 OFFCURVE",
+"303 761 CURVE SMOOTH",
+"243 761 OFFCURVE",
+"195 713 OFFCURVE",
+"195 654 CURVE SMOOTH",
+"195 594 OFFCURVE",
+"243 546 OFFCURVE",
+"303 546 CURVE SMOOTH"
+);
+},
+{
+closed = 1;
+nodes = (
+"404 0 LINE",
+"404 500 LINE",
+"191 500 LINE",
+"191 0 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+paths = (
+{
+closed = 1;
+nodes = (
+"336.667 584 OFFCURVE",
+"364 611.667 OFFCURVE",
+"364 645 CURVE SMOOTH",
+"364 678.333 OFFCURVE",
+"336.667 705 OFFCURVE",
+"302 705 CURVE SMOOTH",
+"267.333 705 OFFCURVE",
+"239 678.333 OFFCURVE",
+"239 645 CURVE SMOOTH",
+"239 611.667 OFFCURVE",
+"267.333 584 OFFCURVE",
+"302 584 CURVE SMOOTH"
+);
+},
+{
+closed = 1;
+nodes = (
+"354 0 LINE",
+"354 500 LINE",
+"241 500 LINE",
+"241 0 LINE"
+);
+}
+);
+width = 600;
+},
+{
+associatedMasterId = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+layerId = "5807B081-E05E-4C8E-94C2-CB3F0EF9A1F4";
+name = "{700}";
+paths = (
+{
+closed = 1;
+nodes = (
+"349 556 OFFCURVE",
+"388 597 OFFCURVE",
+"388 647 CURVE SMOOTH",
+"388 696 OFFCURVE",
+"349 737 OFFCURVE",
+"301 737 CURVE SMOOTH",
+"252 737 OFFCURVE",
+"213 696 OFFCURVE",
+"213 647 CURVE SMOOTH",
+"213 597 OFFCURVE",
+"252 556 OFFCURVE",
+"301 556 CURVE SMOOTH"
+);
+},
+{
+closed = 1;
+nodes = (
+"374 0 LINE",
+"296 500 LINE",
+"296 500 LINE",
+"221 0 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0069;
+}
+);
+instances = (
+{
+interpolationWeight = 400;
+instanceInterpolations = {
+"F969B945-4602-464F-B67C-A69BED6E6A4A" = 1;
+};
+name = Regular;
+},
+{
+interpolationWeight = 700;
+instanceInterpolations = {
+"F969B945-4602-464F-B67C-A69BED6E6A4A" = 0.4;
+m01 = 0.6;
+};
+isBold = 1;
+name = Bold;
+weightClass = Bold;
+},
+{
+interpolationWeight = 900;
+instanceInterpolations = {
+m01 = 1;
+};
+name = Black;
+weightClass = Black;
+}
+);
+unitsPerEm = 1000;
+userData = {
+GSDontShowVersionAlert = 1;
+};
+versionMajor = 1;
+versionMinor = 0;
+}

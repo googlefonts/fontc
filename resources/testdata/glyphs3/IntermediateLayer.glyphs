@@ -1,0 +1,372 @@
+{
+.appVersion = "3210";
+.formatVersion = 3;
+DisplayStrings = (
+i,
+I,
+"/.notdef"
+);
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Write lastChange";
+value = 0;
+},
+{
+name = glyphOrder;
+value = (
+.notdef,
+space,
+I,
+i
+);
+}
+);
+date = "2023-07-20 13:49:39 +0000";
+familyName = "Intermediate Layer";
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+900
+);
+id = m01;
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+over = -16;
+}
+);
+name = Black;
+}
+);
+glyphs = (
+{
+glyphname = .notdef;
+layers = (
+{
+layerId = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+shapes = (
+{
+closed = 1;
+nodes = (
+(487,0,l),
+(487,700,l),
+(129,700,l),
+(129,0,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(158,672,l),
+(458,672,l),
+(458,29,l),
+(158,29,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(487,0,l),
+(487,700,l),
+(129,700,l),
+(129,0,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(158,672,l),
+(458,672,l),
+(458,29,l),
+(158,29,l)
+);
+}
+);
+width = 600;
+}
+);
+},
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 600;
+},
+{
+layerId = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+width = 600;
+}
+);
+unicode = 32;
+},
+{
+glyphname = I;
+layers = (
+{
+layerId = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+shapes = (
+{
+closed = 1;
+nodes = (
+(231,0,l),
+(364,0,l),
+(364,700,l),
+(231,700,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(171,0,l),
+(424,0,l),
+(424,700,l),
+(171,700,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 73;
+},
+{
+glyphname = i;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(362,546,o),
+(410,594,o),
+(410,654,cs),
+(410,713,o),
+(362,761,o),
+(303,761,cs),
+(243,761,o),
+(195,713,o),
+(195,654,cs),
+(195,594,o),
+(243,546,o),
+(303,546,cs)
+);
+},
+{
+closed = 1;
+nodes = (
+(404,0,l),
+(404,500,l),
+(191,500,l),
+(191,0,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+shapes = (
+{
+closed = 1;
+nodes = (
+(336.667,584,o),
+(364,611.667,o),
+(364,645,cs),
+(364,678.333,o),
+(336.667,705,o),
+(302,705,cs),
+(267.333,705,o),
+(239,678.333,o),
+(239,645,cs),
+(239,611.667,o),
+(267.333,584,o),
+(302,584,cs)
+);
+},
+{
+closed = 1;
+nodes = (
+(354,0,l),
+(354,500,l),
+(241,500,l),
+(241,0,l)
+);
+}
+);
+width = 600;
+},
+{
+associatedMasterId = "F969B945-4602-464F-B67C-A69BED6E6A4A";
+attr = {
+coordinates = (
+700
+);
+};
+layerId = "5807B081-E05E-4C8E-94C2-CB3F0EF9A1F4";
+name = "17 Aug 23 at 11:51";
+shapes = (
+{
+closed = 1;
+nodes = (
+(349,556,o),
+(388,597,o),
+(388,647,cs),
+(388,696,o),
+(349,737,o),
+(301,737,cs),
+(252,737,o),
+(213,696,o),
+(213,647,cs),
+(213,597,o),
+(252,556,o),
+(301,556,cs)
+);
+},
+{
+closed = 1;
+nodes = (
+(374,0,l),
+(296,500,l),
+(296,500,l),
+(221,0,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 105;
+}
+);
+instances = (
+{
+name = Regular;
+type = variable;
+},
+{
+axesValues = (
+400
+);
+instanceInterpolations = {
+"F969B945-4602-464F-B67C-A69BED6E6A4A" = 1;
+};
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+instanceInterpolations = {
+"F969B945-4602-464F-B67C-A69BED6E6A4A" = 0.4;
+m01 = 0.6;
+};
+isBold = 1;
+name = Bold;
+weightClass = 700;
+},
+{
+axesValues = (
+900
+);
+instanceInterpolations = {
+m01 = 1;
+};
+name = Black;
+weightClass = 900;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+userData = {
+GSDontShowVersionAlert = 1;
+};
+versionMajor = 1;
+versionMinor = 0;
+}
