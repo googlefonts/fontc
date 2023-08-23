@@ -81,13 +81,17 @@ struct DiagnosticDisplayer<'a>(&'a DiagnosticSet);
 
 impl DiagnosticSet {
     pub(crate) fn write(&self, f: &mut impl std::fmt::Write, colorize: bool) -> std::fmt::Result {
+        const MAX_MESSAGES_TO_PRINT: usize = 100;
         let mut first = true;
-        for err in &self.messages {
+        for err in self.messages.iter().take(MAX_MESSAGES_TO_PRINT) {
             if !first {
                 writeln!(f)?;
             }
             write!(f, "{}", self.sources.format_diagnostic(err, colorize))?;
             first = false;
+        }
+        if let Some(overflow) = self.messages.len().checked_sub(MAX_MESSAGES_TO_PRINT) {
+            writeln!(f, "... and {overflow} more errors")?;
         }
         Ok(())
     }
