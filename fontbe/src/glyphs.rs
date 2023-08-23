@@ -12,9 +12,7 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
-use fontir::{
-    coords::NormalizedLocation, ir, orchestration::WorkId as FeWorkId, variations::VariationModel,
-};
+use fontir::{coords::NormalizedLocation, ir, orchestration::WorkId as FeWorkId};
 use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect};
 use log::{log_enabled, trace, warn};
 
@@ -267,6 +265,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
         trace!("BE glyph work for '{}'", self.glyph_name);
 
         let static_metadata = context.ir.static_metadata.get();
+        let var_model = &static_metadata.variation_model;
         let default_location = static_metadata.default_location();
         let ir_glyph = &*context
             .ir
@@ -331,12 +330,6 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
         let coords = point_seqs.get(default_location).ok_or_else(|| {
             Error::GlyphError(ir_glyph.name.clone(), GlyphProblem::MissingDefault)
         })?;
-
-        // build a VariationModel specific to this glyph's master locations, upon which the region
-        // of influence and the delta weights associated to each master in turn depend.
-        let locations: HashSet<_> = ir_glyph.sources().keys().cloned().collect();
-        let var_model = VariationModel::new(locations, static_metadata.variable_axes.clone())
-            .map_err(|e| Error::VariationModelError(self.glyph_name.clone(), e))?;
 
         // FontTools hard-codes 0.5
         //https://github.com/fonttools/fonttools/blob/65bc6105f7aec3478427525d23ddf2e3c8c4b21e/Lib/fontTools/varLib/__init__.py#L239

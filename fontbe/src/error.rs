@@ -3,7 +3,7 @@ use std::{fmt::Display, io, path::PathBuf};
 use fea_rs::compile::error::CompilerError;
 use font_types::Tag;
 use fontdrasil::types::GlyphName;
-use fontir::{error::VariationModelError, variations::DeltaError};
+use fontir::variations::DeltaError;
 use read_fonts::ReadError;
 use thiserror::Error;
 use write_fonts::tables::{glyf::MalformedPath, gvar::GvarInputError, variations::IupError};
@@ -52,8 +52,6 @@ pub enum Error {
     InvalidTableBytes(Tag),
     #[error("Missing directory:{0}")]
     MissingDirectory(PathBuf),
-    #[error("Variation model error in '{0}': {1}")]
-    VariationModelError(GlyphName, VariationModelError),
 }
 
 #[derive(Debug)]
