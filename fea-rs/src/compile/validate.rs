@@ -10,10 +10,7 @@ use std::{
 };
 
 use smol_str::SmolStr;
-use write_fonts::{
-    read::tables::name::Encoding,
-    types::{Fixed, Tag},
-};
+use write_fonts::{read::tables::name::Encoding, types::Tag};
 
 use super::{
     glyph_range,
@@ -1288,9 +1285,9 @@ impl<'a> ValidationCtx<'a> {
                 let val = item.value().parse();
                 match val {
                     super::AxisLocation::User(val) => {
-                        let min = axis_info.min_value;
-                        let max = axis_info.max_value;
-                        if val < min || val > max {
+                        let min = axis_info.min_value.to_f32();
+                        let max = axis_info.max_value.to_f32();
+                        if val.0 < min || val.0 > max {
                             self.error(
                                 item.value().range(),
                                 format!("value exceeds expected range ({min}, {max})"),
@@ -1299,7 +1296,7 @@ impl<'a> ValidationCtx<'a> {
                     }
                     super::AxisLocation::Design(_) => (), // we don't have info to validate this
                     super::AxisLocation::Normalized(val) => {
-                        if val < Fixed::from_f64(-1.0) || val > Fixed::ONE {
+                        if val.0 < -1.0 || val.0 > 1.0 {
                             self.error(
                                 item.value().range(),
                                 "normalized value should be in range (-1.0, 1.0)",

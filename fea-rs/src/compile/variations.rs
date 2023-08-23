@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use ordered_float::OrderedFloat;
 use write_fonts::{
     tables::variations::VariationRegion,
     types::{F2Dot14, Fixed, Tag},
@@ -45,11 +46,11 @@ type Location = BTreeMap<Tag, AxisLocation>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AxisLocation {
     /// A position in the user coordinate space
-    User(Fixed),
+    User(OrderedFloat<f32>),
     /// A position in the design coordinate space
-    Design(Fixed),
+    Design(OrderedFloat<f32>),
     /// A normalized position
-    Normalized(Fixed),
+    Normalized(OrderedFloat<f32>),
 }
 
 /// Information about a paritcular axis in a variable font.

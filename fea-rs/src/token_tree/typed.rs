@@ -1295,13 +1295,13 @@ impl LocationSpecItem {
 
 impl AxisLocation {
     pub(crate) fn parse(&self) -> crate::compile::AxisLocation {
+        use crate::compile::AxisLocation as Output;
         let value = self.value();
-        let value = Fixed::from_f64(value as _);
         match self.suffix() {
-            Some(token) if token.text() == "n" => crate::compile::AxisLocation::Normalized(value),
-            Some(token) if token.text() == "d" => crate::compile::AxisLocation::Design(value),
-            Some(token) if token.text() == "u" => crate::compile::AxisLocation::User(value),
-            None => crate::compile::AxisLocation::User(value),
+            Some(token) if token.text() == "n" => Output::Normalized(value.into()),
+            Some(token) if token.text() == "d" => Output::Design(value.into()),
+            Some(token) if token.text() == "u" => Output::User(value.into()),
+            None => Output::User(value.into()),
             Some(_) => unreachable!("we only parse three suffixes"),
         }
     }
