@@ -221,7 +221,9 @@ impl VariationModel {
                             let Some(result_idx) = model_idx_to_result_idx.get(master_idx) else {
                                 return None;
                             };
-                            let Some((_, master_deltas)): Option<&(VariationRegion, Vec<V>)> = result.get(*result_idx) else {
+                            let Some((_, master_deltas)): Option<&(VariationRegion, Vec<V>)> =
+                                result.get(*result_idx)
+                            else {
                                 return None;
                             };
                             let Some(delta) = master_deltas.get(idx) else {

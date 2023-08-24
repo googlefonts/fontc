@@ -802,7 +802,7 @@ mod tests {
         let build_dir = temp_dir.path();
         compile(Args::for_test(build_dir, "static.designspace"));
 
-        let RawGlyph::Simple( glyph) = read_be_glyph(build_dir, "bar") else {
+        let RawGlyph::Simple(glyph) = read_be_glyph(build_dir, "bar") else {
             panic!("Expected a simple glyph");
         };
 

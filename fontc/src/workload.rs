@@ -120,7 +120,9 @@ impl<'a> Workload<'a> {
     }
 
     fn mark_also_completed(&mut self, success: &AnyWorkId) {
-        let Some(also_completed) = self.also_completes.get(success) else { return };
+        let Some(also_completed) = self.also_completes.get(success) else {
+            return;
+        };
         for id in also_completed {
             if !self.success.insert(id.clone()) {
                 panic!("Multiple completions of {id:?}");

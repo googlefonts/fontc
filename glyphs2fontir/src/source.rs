@@ -639,7 +639,7 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
                 let side1 = kern_participant(glyph_order, &kerning.groups, KernSide::Side1, side1);
                 let side2 = kern_participant(glyph_order, &kerning.groups, KernSide::Side2, side2);
                 let (Some(side1), Some(side2)) = (side1, side2) else {
-                    return None
+                    return None;
                 };
                 Some(((side1, side2), pos_adjust))
             })
@@ -757,7 +757,10 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             let max = axis.max.to_normalized(&axis.converter);
             let default = axis.max.to_normalized(&axis.converter);
             let Some(positions) = axis_positions.get(&axis.tag) else {
-                return Err(WorkError::NoAxisPosition(self.glyph_name.clone(), axis.name.clone()));
+                return Err(WorkError::NoAxisPosition(
+                    self.glyph_name.clone(),
+                    axis.name.clone(),
+                ));
             };
             check_pos(&self.glyph_name, positions, axis, &min)?;
             check_pos(&self.glyph_name, positions, axis, &default)?;
@@ -901,7 +904,7 @@ mod tests {
                 .map(|a| a.tag)
                 .collect::<Vec<_>>()
         );
-        let expected: GlyphOrder = vec![
+        let expected: GlyphOrder = [
             "space",
             "exclam",
             "hyphen",
@@ -1145,7 +1148,12 @@ mod tests {
         let (source, context) = build_static_metadata(glyphs2_dir().join("MinUndef.glyphs"));
         let result = build_glyphs(&source, &context, &[&glyph_name]);
         assert!(result.is_err());
-        let Err(WorkError::GlyphUndefAtNormalizedPosition { glyph_name, axis, pos }) =  result else {
+        let Err(WorkError::GlyphUndefAtNormalizedPosition {
+            glyph_name,
+            axis,
+            pos,
+        }) = result
+        else {
             panic!("Wrong error");
         };
         assert_eq!("min-undefined", glyph_name.as_str());

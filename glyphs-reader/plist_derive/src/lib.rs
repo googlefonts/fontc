@@ -59,12 +59,18 @@ fn derive_to_impl(input: &DeriveInput) -> syn::Result<proc_macro::TokenStream> {
 }
 
 fn add_deser(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let Data::Struct(data) =    &input.data else {
-        return Err(syn::Error::new(input.ident.span(), "FromPlist only supports structs"));
+    let Data::Struct(data) = &input.data else {
+        return Err(syn::Error::new(
+            input.ident.span(),
+            "FromPlist only supports structs",
+        ));
     };
 
     let Fields::Named(fields) = &data.fields else {
-                return Err(syn::Error::new(input.ident.span(), "FromPlist only supports named fields"));
+        return Err(syn::Error::new(
+            input.ident.span(),
+            "FromPlist only supports named fields",
+        ));
     };
 
     let fields = fields.named.iter().map(|f| {
