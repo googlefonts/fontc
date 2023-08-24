@@ -83,11 +83,7 @@ impl NoIncludePathError {
     }
 }
 
-impl std::error::Error for NoIncludePathError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
-    }
-}
+impl std::error::Error for NoIncludePathError {}
 
 impl Display for NoIncludePathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -165,16 +161,11 @@ impl UnsupportedLocationError {
     }
 }
 
-impl std::error::Error for UnsupportedLocationError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
-    }
-}
+impl std::error::Error for UnsupportedLocationError {}
 
 impl Display for UnsupportedLocationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("No variation model for {:?}", self.0))?;
-        Ok(())
+        write!(f, "No variation model for {:?}", self.0)
     }
 }
 
@@ -187,16 +178,11 @@ impl MissingTentError {
     }
 }
 
-impl std::error::Error for MissingTentError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
-    }
-}
+impl std::error::Error for MissingTentError {}
 
 impl Display for MissingTentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("Missing a tent for {}", self.0))?;
-        Ok(())
+        write!(f, "Missing a tent for {}", self.0)
     }
 }
 
