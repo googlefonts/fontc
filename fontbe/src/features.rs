@@ -143,12 +143,12 @@ impl<'a> FeaVariationInfo<'a> {
                 let axis = self.axes.get(tag).unwrap();
                 let pos = match pos {
                     AxisLocation::User(coord) => {
-                        UserCoord::new(coord.to_f32()).to_normalized(&axis.converter)
+                        UserCoord::new(coord.0).to_normalized(&axis.converter)
                     }
                     AxisLocation::Design(coord) => {
-                        DesignCoord::new(coord.to_f32()).to_normalized(&axis.converter)
+                        DesignCoord::new(coord.0).to_normalized(&axis.converter)
                     }
-                    AxisLocation::Normalized(coord) => NormalizedCoord::new(coord.to_f32()),
+                    AxisLocation::Normalized(coord) => NormalizedCoord::new(coord.0),
                 };
                 (*tag, pos)
             })
@@ -561,11 +561,12 @@ mod tests {
     use std::collections::{BTreeMap, HashMap, HashSet};
 
     use fea_rs::compile::{AxisLocation, VariationInfo};
-    use font_types::{Fixed, Tag};
+    use font_types::Tag;
     use fontir::{
         coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
         ir::{Axis, StaticMetadata},
     };
+    use ordered_float::OrderedFloat;
 
     use super::FeaVariationInfo;
 
@@ -621,7 +622,7 @@ mod tests {
     fn resolve_kern() {
         let _ = env_logger::builder().is_test(true).try_init();
         fn make_axis_location(user_coord: f64) -> AxisLocation {
-            AxisLocation::User(Fixed::from_f64(user_coord))
+            AxisLocation::User(OrderedFloat(user_coord as f32))
         }
 
         let wght = Tag::new(b"wght");
