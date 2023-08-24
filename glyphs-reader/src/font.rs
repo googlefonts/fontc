@@ -587,11 +587,17 @@ fn for_raw_glyphs(
         return Ok(());
     }
     let Plist::Array(glyphs) = root_dict.get_mut("glyphs").unwrap() else {
-        return Err(Error::ParseError(glyphs_file.to_path_buf(), "Must have a glyphs array".to_string()));
+        return Err(Error::ParseError(
+            glyphs_file.to_path_buf(),
+            "Must have a glyphs array".to_string(),
+        ));
     };
     for glyph in glyphs.iter_mut() {
         let Plist::Dictionary(glyph) = glyph else {
-            return Err(Error::ParseError(glyphs_file.to_path_buf(), "Glyph must be a dict".to_string()));
+            return Err(Error::ParseError(
+                glyphs_file.to_path_buf(),
+                "Glyph must be a dict".to_string(),
+            ));
         };
         callback(glyph)?;
     }
@@ -780,7 +786,9 @@ impl RawFont {
             if let Plist::Dictionary(dict) = custom_param {
                 let v3_axes = self.axes.as_mut().unwrap();
                 let Some(Plist::Array(v2_axes)) = dict.get_mut("value") else {
-                    return Err(Error::StructuralError("No value for Axes custom parameter".into()));
+                    return Err(Error::StructuralError(
+                        "No value for Axes custom parameter".into(),
+                    ));
                 };
                 for v2_axis in v2_axes {
                     let Plist::Dictionary(v2_axis) = v2_axis else {
@@ -1281,7 +1289,9 @@ impl RawUserToDesignMapping {
 
     fn add_master_mappings_if_new(&mut self, from: &RawFont) {
         for master in from.font_master.iter() {
-            let Some(axes) = from.axes.as_ref() else { continue; };
+            let Some(axes) = from.axes.as_ref() else {
+                continue;
+            };
             for (axis, value) in axes.iter().zip(&master.axes_values) {
                 let value = OrderedFloat(value.0 as f32);
                 self.0
@@ -1471,10 +1481,16 @@ fn add_mapping_if_present(
     axes_values: &[OrderedFloat<f64>],
     value: Option<&Plist>,
 ) {
-    let Some(idx) = axes.iter().position(|a| a.tag == axis_tag) else { return; };
+    let Some(idx) = axes.iter().position(|a| a.tag == axis_tag) else {
+        return;
+    };
     let axis = &axes[idx];
-    let Some(design) = axes_values.get(idx) else { return; };
-    let Some(value) = value.and_then(|v| v.as_f64()) else { return; };
+    let Some(design) = axes_values.get(idx) else {
+        return;
+    };
+    let Some(value) = value.and_then(|v| v.as_f64()) else {
+        return;
+    };
     let user = OrderedFloat(value as f32);
 
     axis_mappings
@@ -1654,10 +1670,9 @@ impl Font {
 
         // Glyphs has a wide variety of unicode definitions, not all of them parser friendly
         // Make unicode always a string, without any wrapping () so we can parse as csv, radix based on format version
-        let re = Regex::new(
-            r#"(?m)^(?P<prefix>\s*unicode\s*=\s*)[(]?(?P<value>[0-9a-zA-Z,]+)[)]?;\s*$"#,
-        )
-        .unwrap();
+        let re =
+            Regex::new(r"(?m)^(?P<prefix>\s*unicode\s*=\s*)[(]?(?P<value>[0-9a-zA-Z,]+)[)]?;\s*$")
+                .unwrap();
         let raw_content = re.replace_all(&raw_content, r#"$prefix"$value";"#);
 
         let mut raw_content = Plist::parse(&raw_content)
@@ -1665,7 +1680,10 @@ impl Font {
 
         // Fix any issues with the raw plist
         let Plist::Dictionary(ref mut root_dict) = raw_content else {
-            return Err(Error::ParseError(glyphs_file.to_path_buf(), "Root must be a dict".to_string()));
+            return Err(Error::ParseError(
+                glyphs_file.to_path_buf(),
+                "Root must be a dict".to_string(),
+            ));
         };
         fix_glyphs_named_infinity(glyphs_file, root_dict)?;
 

@@ -128,7 +128,10 @@ fn create_composite(
     let mut errors = vec![];
     let mut set_use_my_metrics = false;
     let Some(default_glyph) = glyph.sources().get(default_location) else {
-        return Err(Error::GlyphError(glyph.name.clone(), GlyphProblem::MissingDefault));
+        return Err(Error::GlyphError(
+            glyph.name.clone(),
+            GlyphProblem::MissingDefault,
+        ));
     };
     let components_at_default = components
         .iter()
@@ -348,7 +351,10 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
 
                 // Establish the default outline of our simple glyph
                 let Some(base_glyph) = instances.get(default_location) else {
-                    return Err(Error::GlyphError(ir_glyph.name.clone(), GlyphProblem::MissingDefault));
+                    return Err(Error::GlyphError(
+                        ir_glyph.name.clone(),
+                        GlyphProblem::MissingDefault,
+                    ));
                 };
                 context
                     .glyphs
@@ -414,8 +420,12 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
 }
 
 fn cubics_to_quadratics(glyph: CheckedGlyph) -> CheckedGlyph {
-    let CheckedGlyph::Contour { name, paths: contours } = glyph else {
-        return glyph;  // nop for composite
+    let CheckedGlyph::Contour {
+        name,
+        paths: contours,
+    } = glyph
+    else {
+        return glyph; // nop for composite
     };
 
     trace!("Convert '{name}' to quadratic");
@@ -662,7 +672,7 @@ fn path_el_type(el: &PathEl) -> &'static str {
 }
 
 fn affine_for(component: &Component) -> Affine {
-    let glyf::Anchor::Offset { x: dx, y: dy} = component.anchor else {
+    let glyf::Anchor::Offset { x: dx, y: dy } = component.anchor else {
         panic!("Only offset anchor is supported");
     };
     Affine::new([

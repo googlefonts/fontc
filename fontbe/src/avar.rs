@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn up_to_three_points_does_nothing() {
-        let mappings = vec![
+        let mappings = [
             (UserCoord::new(100.0), DesignCoord::new(-10.0)),
             (UserCoord::new(400.0), DesignCoord::new(0.0)),
             (UserCoord::new(700.0), DesignCoord::new(20.0)),

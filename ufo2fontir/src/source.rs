@@ -1051,7 +1051,10 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
         {
             for (name, entries) in kerning_groups_for(designspace_dir, &glyph_order, source)? {
                 let Some(real_name) = reverse_groups.get(&(KernSide::of(&name), &entries)) else {
-                    warn!("{name} exists only in {} and will be ignored", source.name.as_ref().unwrap());
+                    warn!(
+                        "{name} exists only in {} and will be ignored",
+                        source.name.as_ref().unwrap()
+                    );
                     continue;
                 };
                 if name == **real_name {
@@ -1108,8 +1111,16 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
                     .into_iter()
                     .map(move |(side2, adjustment)| (side1.clone(), side2, adjustment))
             }) {
-                let (Some(side1), Some(side2)) = (resolve(&side1, UFO_KERN1_PREFIX), resolve(&side2, UFO_KERN2_PREFIX)) else {
-                    warn!("{} kerning unable to resolve at least one of '{}', '{}'; ignoring", source.name.as_ref().unwrap(), side1.as_str(), side2.as_str());
+                let (Some(side1), Some(side2)) = (
+                    resolve(&side1, UFO_KERN1_PREFIX),
+                    resolve(&side2, UFO_KERN2_PREFIX),
+                ) else {
+                    warn!(
+                        "{} kerning unable to resolve at least one of '{}', '{}'; ignoring",
+                        source.name.as_ref().unwrap(),
+                        side1.as_str(),
+                        side2.as_str()
+                    );
                     continue;
                 };
 
@@ -1417,7 +1428,7 @@ mod tests {
         )
         .unwrap();
         // lib.plist specifies plus, so plus goes first and then the rest in alphabetical order
-        let expected: GlyphOrder = vec!["plus", "an-imaginary-one", "bar"]
+        let expected: GlyphOrder = ["plus", "an-imaginary-one", "bar"]
             .iter()
             .map(|s| (*s).into())
             .collect();

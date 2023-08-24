@@ -576,8 +576,8 @@ impl NameBuilder {
     pub fn apply_fallback(&mut self, name_id: NameId, fallbacks: &[NameId]) {
         if let Some(fallback_id) = fallbacks.iter().find(|n| {
             let Some(key) = self.name_to_key.get(*n) else {
-                    return false;
-                };
+                return false;
+            };
             self.names.contains_key(key)
         }) {
             self.add(name_id, self.names[&self.name_to_key[fallback_id]].clone());
