@@ -132,6 +132,11 @@ impl VariationModel {
         self.locations.iter()
     }
 
+    pub fn supports(&self, location: &NormalizedLocation) -> bool {
+        // current assumption is the #locations is relatively small
+        self.locations.contains(location)
+    }
+
     /// Convert absolute positions at master locations to offsets.
     ///
     /// <ul>
