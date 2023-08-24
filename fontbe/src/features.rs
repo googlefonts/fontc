@@ -83,11 +83,7 @@ impl NoIncludePathError {
     }
 }
 
-impl std::error::Error for NoIncludePathError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
-    }
-}
+impl std::error::Error for NoIncludePathError {}
 
 impl Display for NoIncludePathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -143,16 +139,50 @@ impl<'a> FeaVariationInfo<'a> {
                 let axis = self.axes.get(tag).unwrap();
                 let pos = match pos {
                     AxisLocation::User(coord) => {
-                        UserCoord::new(coord.to_f32()).to_normalized(&axis.converter)
+                        UserCoord::new(coord.0).to_normalized(&axis.converter)
                     }
                     AxisLocation::Design(coord) => {
-                        DesignCoord::new(coord.to_f32()).to_normalized(&axis.converter)
+                        DesignCoord::new(coord.0).to_normalized(&axis.converter)
                     }
-                    AxisLocation::Normalized(coord) => NormalizedCoord::new(coord.to_f32()),
+                    AxisLocation::Normalized(coord) => NormalizedCoord::new(coord.0),
                 };
                 (*tag, pos)
             })
             .collect()
+    }
+}
+
+#[derive(Debug)]
+struct UnsupportedLocationError(NormalizedLocation);
+
+impl UnsupportedLocationError {
+    fn new(loc: NormalizedLocation) -> UnsupportedLocationError {
+        UnsupportedLocationError(loc)
+    }
+}
+
+impl std::error::Error for UnsupportedLocationError {}
+
+impl Display for UnsupportedLocationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "No variation model for {:?}", self.0)
+    }
+}
+
+#[derive(Debug)]
+struct MissingTentError(Tag);
+
+impl MissingTentError {
+    fn new(tag: Tag) -> MissingTentError {
+        MissingTentError(tag)
+    }
+}
+
+impl std::error::Error for MissingTentError {}
+
+impl Display for MissingTentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Missing a tent for {}", self.0)
     }
 }
 
@@ -185,7 +215,6 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
         ),
         Box<(dyn StdError + 'static)>,
     > {
-        // WARNING: this will fail if the fea location isn't also a glyph location. In time we may wish to fix that.
         let var_model = &self.static_metadata.variation_model;
 
         // Compute deltas using f64 as 1d point and delta, then ship them home as i16
@@ -196,6 +225,14 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
                 (normalized, vec![*value as f64])
             })
             .collect();
+
+        // We only support use when the point seq is at a location our variation model supports
+        // TODO: get a model for the location we are asked for so we can support sparseness
+        for loc in point_seqs.keys() {
+            if !var_model.supports(loc) {
+                return Err(Box::new(UnsupportedLocationError::new(loc.clone())));
+            }
+        }
 
         // Only 1 value per region for our input
         let deltas: Vec<_> = var_model
@@ -221,30 +258,24 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
             .ot_round();
 
         // Produce the desired delta type
-        let deltas = deltas
-            .into_iter()
-            .filter_map(|(region, value)| {
-                if region.is_default() {
-                    None
-                } else {
-                    Some((
-                        write_fonts::tables::variations::VariationRegion {
-                            region_axes: region
-                                .iter()
-                                .zip(self.static_metadata.axes.iter())
-                                .map(|((tag, tent), expected_axis)| {
-                                    assert_eq!(*tag, expected_axis.tag);
-                                    tent.to_region_axis_coords()
-                                })
-                                .collect(),
-                        },
-                        value.ot_round(),
-                    ))
-                }
-            })
-            .collect();
+        let mut fears_deltas = Vec::with_capacity(deltas.len());
+        for (region, value) in deltas.iter().filter(|(r, _)| !r.is_default()) {
+            // https://learn.microsoft.com/en-us/typography/opentype/spec/otvarcommonformats#variation-regions
+            // Array of region axis coordinates records, in the order of axes given in the 'fvar' table.
+            let mut region_axes = Vec::with_capacity(self.static_metadata.variable_axes.len());
+            for axis in self.static_metadata.axes.iter() {
+                let Some(tent) = region.get(&axis.tag) else {
+                    return Err(Box::new(MissingTentError::new(axis.tag)));
+                };
+                region_axes.push(tent.to_region_axis_coords());
+            }
+            fears_deltas.push((
+                write_fonts::tables::variations::VariationRegion { region_axes },
+                value.ot_round(),
+            ));
+        }
 
-        Ok((default_value, deltas))
+        Ok((default_value, fears_deltas))
     }
 }
 
@@ -561,11 +592,12 @@ mod tests {
     use std::collections::{BTreeMap, HashMap, HashSet};
 
     use fea_rs::compile::{AxisLocation, VariationInfo};
-    use font_types::{Fixed, Tag};
+    use font_types::Tag;
     use fontir::{
         coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
         ir::{Axis, StaticMetadata},
     };
+    use ordered_float::OrderedFloat;
 
     use super::FeaVariationInfo;
 
@@ -621,7 +653,7 @@ mod tests {
     fn resolve_kern() {
         let _ = env_logger::builder().is_test(true).try_init();
         fn make_axis_location(user_coord: f64) -> AxisLocation {
-            AxisLocation::User(Fixed::from_f64(user_coord))
+            AxisLocation::User(OrderedFloat(user_coord as f32))
         }
 
         let wght = Tag::new(b"wght");
