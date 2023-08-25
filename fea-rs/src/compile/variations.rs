@@ -110,7 +110,15 @@ impl VariationInfo for MockVariationInfo {
     }
 
     fn normalize_coordinate(&self, axis_tag: Tag, value: Fixed) -> F2Dot14 {
-        let Some(AxisInfo { min_value, default_value, max_value, .. }) = self.axis_info(axis_tag) else { return F2Dot14::ZERO };
+        let Some(AxisInfo {
+            min_value,
+            default_value,
+            max_value,
+            ..
+        }) = self.axis_info(axis_tag)
+        else {
+            return F2Dot14::ZERO;
+        };
 
         use core::cmp::Ordering::*;
         // Make sure max is >= min to avoid potential panic in clamp.

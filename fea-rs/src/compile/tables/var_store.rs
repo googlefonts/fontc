@@ -221,8 +221,10 @@ impl<'a> Encoder<'a> {
             // This ensures that indicies are stable.
             let (Some(mut to_update), Some(to_add)) = (
                 to_process.get_mut(i).and_then(Option::take),
-                to_process.get_mut(j).and_then(Option::take)
-            ) else { unreachable!("checked above") };
+                to_process.get_mut(j).and_then(Option::take),
+            ) else {
+                unreachable!("checked above")
+            };
             log::trace!(
                 "combining {i}+{j} ({}, {} {_gain})",
                 to_update.shape,
@@ -238,7 +240,9 @@ impl<'a> Encoder<'a> {
             for (ii, opt_encoding) in to_process.iter_mut().enumerate() {
                 // does two things: skips empty indices, and also temporarily
                 // removes the item (we'll put it back unless we merge, below)
-                let Some(encoding) = opt_encoding.take() else { continue };
+                let Some(encoding) = opt_encoding.take() else {
+                    continue;
+                };
 
                 if encoding.shape == to_update.shape {
                     // if an identical encoding exists in the list, we will just

@@ -126,22 +126,28 @@ impl StatBuilder {
             design_axes.push(record);
         }
 
-        let format4 = sorted_values.remove(&Tag::default()).unwrap_or_default().into_iter().map(|format4| {
-            let flags = write_stat::AxisValueTableFlags::from_bits(format4.flags).unwrap();
-            let name_id = name_builder.add_anon_group(&format4.name);
-            let AxisLocation::Four(values) = &format4.location else { panic!("only format 4 in this group")};
-            let mapping = values
-                .iter()
-                .map(|(tag, value)| {
-                    let axis_index = design_axes
-                        .iter()
-                        .position(|rec| rec.axis_tag == *tag)
-                        .expect("validated");
-                    write_stat::AxisValueRecord::new(axis_index as _, *value)
-                })
-                .collect();
-            write_stat::AxisValue::format_4(flags, name_id, mapping)
-        });
+        let format4 = sorted_values
+            .remove(&Tag::default())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|format4| {
+                let flags = write_stat::AxisValueTableFlags::from_bits(format4.flags).unwrap();
+                let name_id = name_builder.add_anon_group(&format4.name);
+                let AxisLocation::Four(values) = &format4.location else {
+                    panic!("only format 4 in this group")
+                };
+                let mapping = values
+                    .iter()
+                    .map(|(tag, value)| {
+                        let axis_index = design_axes
+                            .iter()
+                            .position(|rec| rec.axis_tag == *tag)
+                            .expect("validated");
+                        write_stat::AxisValueRecord::new(axis_index as _, *value)
+                    })
+                    .collect();
+                write_stat::AxisValue::format_4(flags, name_id, mapping)
+            });
 
         //feaLib puts format4 records first
         let axis_values = format4.chain(axis_values).collect();

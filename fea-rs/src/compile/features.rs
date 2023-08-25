@@ -129,12 +129,16 @@ impl AllFeatures {
         all_lookups: &mut AllLookups,
         default_lang_systems: &DefaultLanguageSystems,
     ) {
-        let Some(mut aalt) = self.aalt.take() else { return };
+        let Some(mut aalt) = self.aalt.take() else {
+            return;
+        };
         // add all the relevant lookups from the referenced features
         let mut relevant_lookups = vec![vec![]; aalt.features().len()];
         // first sort all lookups by the order of the tags in the aalt table:
         for (key, feat_lookups) in self.features.iter() {
-            let Some(feat_idx) = aalt.features().iter().position(|tag| *tag == key.feature) else { continue };
+            let Some(feat_idx) = aalt.features().iter().position(|tag| *tag == key.feature) else {
+                continue;
+            };
             relevant_lookups[feat_idx].extend(
                 feat_lookups
                     .base

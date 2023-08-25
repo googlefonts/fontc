@@ -1122,8 +1122,11 @@ impl<'a> CompilationCtx<'a> {
         metric: &typed::VariableMetric,
     ) -> (i16, Option<PendingVariationIndex>) {
         let Some(var_info) = self.variation_info else {
-            self.error(metric.range(), "variable metric only valid when compiling variable font");
-            return (0, None)
+            self.error(
+                metric.range(),
+                "variable metric only valid when compiling variable font",
+            );
+            return (0, None);
         };
 
         let locations = metric
@@ -1211,7 +1214,9 @@ impl<'a> CompilationCtx<'a> {
         let mut aalt = AaltFeature::default();
         for item in feature.statements() {
             if let Some(node) = typed::Gsub1::cast(item) {
-                let Some((target, replacement)) = self.resolve_single_sub_glyphs(&node) else { continue };
+                let Some((target, replacement)) = self.resolve_single_sub_glyphs(&node) else {
+                    continue;
+                };
                 aalt.extend(target.iter().zip(replacement.into_iter_for_target()))
             } else if let Some(node) = typed::Gsub3::cast(item) {
                 let target = self.resolve_glyph(&node.target());
@@ -1645,7 +1650,9 @@ impl<'a> CompilationCtx<'a> {
                         (rule.mark_glyphs(), ClassId::Mark),
                         (rule.component_glyphs(), ClassId::Component),
                     ] {
-                        let Some(class) = class else { continue; };
+                        let Some(class) = class else {
+                            continue;
+                        };
                         if let Err((bad_glyph, old_class)) =
                             gdef.add_glyph_class(self.resolve_glyph_class(&class), id)
                         {

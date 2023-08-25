@@ -450,7 +450,8 @@ impl AllLookups {
         if !self.has_current_kind(Kind::GsubType1) {
             return;
         }
-        let Some(SomeLookup::GsubLookup(SubstitutionLookup::Single(lookup))) = self.current.take() else {
+        let Some(SomeLookup::GsubLookup(SubstitutionLookup::Single(lookup))) = self.current.take()
+        else {
             unreachable!()
         };
         let promoted = LookupBuilder {
@@ -668,12 +669,16 @@ impl LookupId {
     }
 
     pub(crate) fn to_gpos_id_or_die(self) -> u16 {
-        let LookupId::Gpos(x) = self else { panic!("this *really* shouldn't happen") };
+        let LookupId::Gpos(x) = self else {
+            panic!("this *really* shouldn't happen")
+        };
         x.try_into().unwrap()
     }
 
     pub(crate) fn to_gsub_id_or_die(self) -> u16 {
-        let LookupId::Gsub(x) = self else { panic!("this *really* shouldn't happen") };
+        let LookupId::Gsub(x) = self else {
+            panic!("this *really* shouldn't happen")
+        };
         x.try_into().unwrap()
     }
 }

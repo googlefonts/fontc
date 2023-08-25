@@ -239,11 +239,13 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_condition(&mut self, condition: &typed::Condition) {
         // we've already errored if this is missing
-        let Some(fvar) = self.variation_info else { return };
+        let Some(fvar) = self.variation_info else {
+            return;
+        };
         let Some(info) = fvar.axis_info(condition.tag().to_raw()) else {
-                self.error(condition.tag().range(), "unknown axis");
-                return
-            };
+            self.error(condition.tag().range(), "unknown axis");
+            return;
+        };
         if (condition.min_value().parse_signed() as f64) < info.min_value.to_f64() {
             self.error(
                 condition.min_value().range(),
@@ -1270,9 +1272,14 @@ impl<'a> ValidationCtx<'a> {
     }
 
     fn validate_metric(&mut self, metric: &typed::Metric) {
-        let typed::Metric::Variable(metric) = metric else { return};
+        let typed::Metric::Variable(metric) = metric else {
+            return;
+        };
         let Some(var_info) = self.variation_info else {
-            self.error(metric.range(), "variable metrics only supported in variable font");
+            self.error(
+                metric.range(),
+                "variable metrics only supported in variable font",
+            );
             return;
         };
 
