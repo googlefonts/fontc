@@ -5,9 +5,8 @@ fontMaster = (
         id = m01;
     }
 );
-glyphs = (
-{
-    glyphname = First;
+glyphs = ({
+    glyphname = .notdef;
     layers = (
         {
             layerId = m01;
