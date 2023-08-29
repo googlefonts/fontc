@@ -20,7 +20,7 @@ use crate::{
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CoordConverterSerdeRepr {
+pub(crate) struct CoordConverterSerdeRepr {
     default_idx: usize,
     user_to_design: Vec<(f32, f32)>,
 }
@@ -53,7 +53,7 @@ impl From<CoordConverter> for CoordConverterSerdeRepr {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct StaticMetadataSerdeRepr {
+pub(crate) struct StaticMetadataSerdeRepr {
     pub units_per_em: u16,
     pub axes: Vec<Axis>,
     pub named_instances: Vec<NamedInstance>,
@@ -90,7 +90,7 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GlyphOrderSerdeRepr(Vec<String>);
+pub(crate) struct GlyphOrderSerdeRepr(Vec<String>);
 
 impl From<GlyphOrderSerdeRepr> for GlyphOrder {
     fn from(value: GlyphOrderSerdeRepr) -> Self {
@@ -105,19 +105,19 @@ impl From<GlyphOrder> for GlyphOrderSerdeRepr {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct KerningSerdeRepr {
+pub(crate) struct KerningSerdeRepr {
     pub groups: Vec<KerningGroupSerdeRepr>,
     pub kerns: Vec<KernSerdeRepr>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct KerningGroupSerdeRepr {
+pub(crate) struct KerningGroupSerdeRepr {
     name: String,
     glyphs: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct KernSerdeRepr {
+pub(crate) struct KernSerdeRepr {
     side1: KernParticipant,
     side2: KernParticipant,
     values: Vec<(NormalizedLocation, f32)>,
@@ -187,7 +187,7 @@ impl From<KerningSerdeRepr> for Kerning {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct MiscSerdeRepr {
+pub(crate) struct MiscSerdeRepr {
     pub selection_flags: u16,
     pub vendor_id: Tag,
     pub underline_thickness: f32,
@@ -233,7 +233,9 @@ impl From<MiscMetadata> for MiscSerdeRepr {
 
 // The metric maps of HashMap<NormalizedLocation, OrderedFloat> seems to throw serde for a loop
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GlobalMetricsSerdeRepr(Vec<(GlobalMetric, NormalizedLocation, OrderedFloat<f32>)>);
+pub(crate) struct GlobalMetricsSerdeRepr(
+    Vec<(GlobalMetric, NormalizedLocation, OrderedFloat<f32>)>,
+);
 
 impl From<GlobalMetricsSerdeRepr> for GlobalMetrics {
     fn from(from: GlobalMetricsSerdeRepr) -> Self {
@@ -264,13 +266,13 @@ impl From<GlobalMetrics> for GlobalMetricsSerdeRepr {
 
 // The HashMap<NormalizedLocation, GlyphInstance> seems to throw serde for a loop sometimes
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GlyphInstanceSerdeRepr {
+pub(crate) struct GlyphInstanceSerdeRepr {
     location: NormalizedLocation,
     instance: GlyphInstance,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GlyphSerdeRepr {
+pub(crate) struct GlyphSerdeRepr {
     pub name: String,
     pub codepoints: HashSet<u32>,
     pub instances: Vec<GlyphInstanceSerdeRepr>,
