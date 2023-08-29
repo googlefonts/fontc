@@ -312,7 +312,7 @@ mod tests {
     use fontbe::orchestration::{
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
     };
-    use fontdrasil::types::{GlyphName, NOTDEF};
+    use fontdrasil::types::GlyphName;
     use fontir::{
         ir::{self, KernParticipant},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
@@ -1273,10 +1273,14 @@ mod tests {
             .fe_context
             .preliminary_glyph_order
             .get()
-            .contains(&NOTDEF));
+            .contains(&GlyphName::NOTDEF));
         assert_eq!(
             Some(0),
-            result.fe_context.glyph_order.get().glyph_id(&NOTDEF)
+            result
+                .fe_context
+                .glyph_order
+                .get()
+                .glyph_id(&GlyphName::NOTDEF)
         );
 
         let font_file = build_dir.join("font.ttf");

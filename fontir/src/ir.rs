@@ -13,7 +13,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use font_types::NameId;
 use font_types::Tag;
-use fontdrasil::types::{GlyphName, GroupName, NOTDEF};
+use fontdrasil::types::{GlyphName, GroupName};
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
 use log::warn;
@@ -1027,7 +1027,7 @@ impl GlyphBuilder {
         path.close_path();
 
         Self {
-            name: NOTDEF.clone(),
+            name: GlyphName::NOTDEF.clone(),
             codepoints: HashSet::from([0]),
             sources: HashMap::from([(
                 default_location,

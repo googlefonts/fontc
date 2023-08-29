@@ -10,7 +10,7 @@ use std::{
 
 use fontdrasil::{
     orchestration::{Access, Work},
-    types::{GlyphName, NOTDEF},
+    types::GlyphName,
 };
 use kurbo::Affine;
 use log::{debug, log_enabled, trace};
@@ -363,15 +363,15 @@ fn ensure_notdef_exists_and_is_gid_0(
     glyph_order: &mut GlyphOrder,
 ) -> Result<(), WorkError> {
     // Make sure we have a .notdef and that it's gid 0
-    match glyph_order.glyph_id(&NOTDEF) {
+    match glyph_order.glyph_id(&GlyphName::NOTDEF) {
         Some(0) => (), // .notdef is gid 0; life is good
         Some(..) => {
-            trace!("Move {} to gid 0", NOTDEF);
-            glyph_order.set_glyph_id(&NOTDEF, 0);
+            trace!("Move {} to gid 0", GlyphName::NOTDEF);
+            glyph_order.set_glyph_id(&GlyphName::NOTDEF, 0);
         }
         None => {
-            trace!("Generate {} and make it gid 0", NOTDEF);
-            glyph_order.set_glyph_id(&NOTDEF, 0);
+            trace!("Generate {} and make it gid 0", GlyphName::NOTDEF);
+            glyph_order.set_glyph_id(&GlyphName::NOTDEF, 0);
             let static_metadata = context.static_metadata.get();
             let metrics = context
                 .global_metrics
@@ -471,10 +471,6 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
         } else {
             trace!("No new glyphs, final glyph order == preliminary glyph order");
         }
-
-        let Some(0) = new_glyph_order.glyph_id(&NOTDEF) else {
-            todo!(".notdef must be present and must be gid 0")
-        };
 
         context.glyph_order.set(new_glyph_order);
         Ok(())

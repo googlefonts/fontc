@@ -10,10 +10,10 @@ use smol_str::SmolStr;
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GlyphName(SmolStr);
 
-/// The name of the undefined glyph
-pub static NOTDEF: GlyphName = GlyphName(SmolStr::new_inline(".notdef"));
-
 impl GlyphName {
+    /// The name of the undefined glyph
+    pub const NOTDEF: GlyphName = GlyphName(SmolStr::new_inline(".notdef"));
+
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
