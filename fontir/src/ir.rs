@@ -25,7 +25,7 @@ use std::{
     io::Read,
     path::PathBuf,
 };
-use write_fonts::tables::os2::SelectionFlags;
+use write_fonts::{tables::os2::SelectionFlags, OtRound};
 
 pub const DEFAULT_VENDOR_ID: &str = "NONE";
 const DEFAULT_VENDOR_ID_TAG: Tag = Tag::new(b"NONE");
@@ -153,6 +153,17 @@ impl GlyphOrder {
 
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    pub(crate) fn set_glyph_id(&mut self, name: &GlyphName, new_index: usize) {
+        match self.0.get_index_of(name) {
+            Some(index) if index == new_index => (), // nop
+            Some(index) => self.0.move_index(index, new_index),
+            None => {
+                self.insert(name.clone());
+                self.set_glyph_id(name, new_index)
+            }
+        }
     }
 }
 
@@ -974,6 +985,59 @@ impl GlyphBuilder {
         }
         self.sources.insert(unique_location.clone(), source);
         Ok(())
+    }
+
+    /// * see <https://github.com/googlefonts/ufo2ft/blob/b3895a96ca910c1764df016bfee4719448cfec4a/Lib/ufo2ft/outlineCompiler.py#L1666-L1694>
+    pub fn new_notdef(
+        default_location: NormalizedLocation,
+        upem: u16,
+        ascender: f32,
+        descender: f32,
+    ) -> Self {
+        let upem = upem as f32;
+        let width: u16 = (upem * 0.5).ot_round();
+        let width = width as f64;
+        let stroke: u16 = (upem * 0.05).ot_round();
+        let stroke = stroke as f64;
+
+        let mut path = BezPath::new();
+
+        // outer box
+        let x_min = stroke;
+        let x_max = width - stroke;
+        let y_max = ascender as f64;
+        let y_min = descender as f64;
+        path.move_to((x_min, y_min));
+        path.line_to((x_max, y_min));
+        path.line_to((x_max, y_max));
+        path.line_to((x_min, y_max));
+        path.line_to((x_min, y_min));
+        path.close_path();
+
+        // inner, cut out, box
+        let x_min = x_min + stroke;
+        let x_max = x_max - stroke;
+        let y_max = y_max - stroke;
+        let y_min = y_min + stroke;
+        path.move_to((x_min, y_min));
+        path.line_to((x_min, y_max));
+        path.line_to((x_max, y_max));
+        path.line_to((x_max, y_min));
+        path.line_to((x_min, y_min));
+        path.close_path();
+
+        Self {
+            name: GlyphName::NOTDEF.clone(),
+            codepoints: HashSet::from([0]),
+            sources: HashMap::from([(
+                default_location,
+                GlyphInstance {
+                    width,
+                    contours: vec![path],
+                    ..Default::default()
+                },
+            )]),
+        }
     }
 }
 

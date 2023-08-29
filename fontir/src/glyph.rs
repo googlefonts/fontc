@@ -358,6 +358,37 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), WorkError> {
     Ok(())
 }
 
+fn ensure_notdef_exists_and_is_gid_0(
+    context: &Context,
+    glyph_order: &mut GlyphOrder,
+) -> Result<(), WorkError> {
+    // Make sure we have a .notdef and that it's gid 0
+    match glyph_order.glyph_id(&GlyphName::NOTDEF) {
+        Some(0) => (), // .notdef is gid 0; life is good
+        Some(..) => {
+            trace!("Move {} to gid 0", GlyphName::NOTDEF);
+            glyph_order.set_glyph_id(&GlyphName::NOTDEF, 0);
+        }
+        None => {
+            trace!("Generate {} and make it gid 0", GlyphName::NOTDEF);
+            glyph_order.set_glyph_id(&GlyphName::NOTDEF, 0);
+            let static_metadata = context.static_metadata.get();
+            let metrics = context
+                .global_metrics
+                .get()
+                .at(static_metadata.default_location());
+            let builder = GlyphBuilder::new_notdef(
+                static_metadata.default_location().clone(),
+                static_metadata.units_per_em,
+                metrics.ascender.0,
+                metrics.descender.0,
+            );
+            context.glyphs.set(builder.try_into()?);
+        }
+    }
+    Ok(())
+}
+
 impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
     fn id(&self) -> WorkId {
         WorkId::GlyphOrder
@@ -367,7 +398,10 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
         Access::Custom(Arc::new(|id| {
             matches!(
                 id,
-                WorkId::Glyph(..) | WorkId::StaticMetadata | WorkId::PreliminaryGlyphOrder
+                WorkId::Glyph(..)
+                    | WorkId::StaticMetadata
+                    | WorkId::PreliminaryGlyphOrder
+                    | WorkId::GlobalMetrics
             )
         }))
     }
@@ -420,6 +454,8 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
             }
         }
 
+        ensure_notdef_exists_and_is_gid_0(context, &mut new_glyph_order)?;
+
         // We now have the final static metadata
         // If the glyph order changed try not to forget about it
         if *current_glyph_order != new_glyph_order {
@@ -435,6 +471,7 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
         } else {
             trace!("No new glyphs, final glyph order == preliminary glyph order");
         }
+
         context.glyph_order.set(new_glyph_order);
         Ok(())
     }

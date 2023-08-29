@@ -520,12 +520,14 @@ mod tests {
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Fvar.into(),
                 BeWorkIdentifier::Glyf.into(),
+                BeWorkIdentifier::GlyfFragment(".notdef".into()).into(),
                 BeWorkIdentifier::GlyfFragment("bar".into()).into(),
                 BeWorkIdentifier::GlyfFragment("plus".into()).into(),
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
                 BeWorkIdentifier::Gdef.into(),
                 BeWorkIdentifier::Gvar.into(),
+                BeWorkIdentifier::GvarFragment(".notdef".into()).into(),
                 BeWorkIdentifier::GvarFragment("bar".into()).into(),
                 BeWorkIdentifier::GvarFragment("plus".into()).into(),
                 BeWorkIdentifier::Head.into(),
@@ -829,12 +831,13 @@ mod tests {
         let result = compile(Args::for_test(build_dir, "static.designspace"));
 
         // See resources/testdata/Static-Regular.ufo/glyphs
+        // generated .notdef, 8 points, 2 contours
         // space, 0 points, 0 contour
         // bar, 4 points, 1 contour
         // plus, 12 points, 1 contour
         // element of, 0 points, 0 contours
         assert_eq!(
-            vec![(0, 0), (4, 1), (12, 1), (0, 0)],
+            vec![(8, 2), (0, 0), (4, 1), (12, 1), (0, 0)],
             result
                 .glyphs()
                 .read()
@@ -891,26 +894,26 @@ mod tests {
         // Per source, glyphs should be period, comma, non_uniform_scale
         // Period is simple, the other two use it as a component
         let glyph_data = result.glyphs();
-        let glyphs = glyph_data.read();
-        assert!(glyphs.len() > 1, "{glyphs:#?}");
-        let period_idx = result.get_glyph_index("period");
-        assert!(
-            matches!(glyphs[0], Some(glyf::Glyph::Simple(..))),
-            "{glyphs:#?}"
-        );
-        for (idx, glyph) in glyphs.iter().enumerate() {
-            if idx == period_idx.try_into().unwrap() {
-                assert!(
-                    matches!(glyphs[idx], Some(glyf::Glyph::Simple(..))),
-                    "glyphs[{idx}] should be simple\n{glyph:#?}\nAll:\n{glyphs:#?}"
-                );
-            } else {
-                assert!(
-                    matches!(glyphs[idx], Some(glyf::Glyph::Composite(..))),
-                    "glyphs[{idx}] should be composite\n{glyph:#?}\nAll:\n{glyphs:#?}"
-                );
-            }
-        }
+        let all_glyphs = glyph_data.read();
+
+        assert!(matches!(
+            (
+                all_glyphs[result.get_glyph_index("period") as usize]
+                    .as_ref()
+                    .unwrap(),
+                all_glyphs[result.get_glyph_index("comma") as usize]
+                    .as_ref()
+                    .unwrap(),
+                all_glyphs[result.get_glyph_index("non_uniform_scale") as usize]
+                    .as_ref()
+                    .unwrap(),
+            ),
+            (
+                glyf::Glyph::Simple(..),
+                glyf::Glyph::Composite(..),
+                glyf::Glyph::Composite(..),
+            ),
+        ));
     }
 
     #[test]
@@ -1018,11 +1021,12 @@ mod tests {
                 .collect();
             assert_eq!(
                 vec![
-                    (0x002C, 1),
-                    (0x002E, 0),
-                    (0x0030, 2),
-                    (0x031, 3),
-                    (0x032, 4)
+                    (0x0000, 0),
+                    (0x002C, 2),
+                    (0x002E, 1),
+                    (0x0030, 3),
+                    (0x031, 4),
+                    (0x032, 5)
                 ],
                 cp_and_gid,
                 "start {:?}\nend {:?}id_delta {:?}",
@@ -1260,6 +1264,37 @@ mod tests {
     }
 
     #[test]
+    fn compile_generates_notdef() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(Args::for_test(build_dir, "glyphs2/WghtVar.glyphs"));
+
+        assert!(!result
+            .fe_context
+            .preliminary_glyph_order
+            .get()
+            .contains(&GlyphName::NOTDEF));
+        assert_eq!(
+            Some(0),
+            result
+                .fe_context
+                .glyph_order
+                .get()
+                .glyph_id(&GlyphName::NOTDEF)
+        );
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+
+        assert_eq!(
+            GlyphId::new(0),
+            font.cmap().unwrap().map_codepoint(0u32).unwrap()
+        );
+    }
+
+    #[test]
     fn compile_glyphs_font_with_weight_axis() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
@@ -1280,9 +1315,10 @@ mod tests {
                 GlyphId::new(0),
                 GlyphId::new(1),
                 GlyphId::new(2),
-                GlyphId::new(5),
+                GlyphId::new(3),
+                GlyphId::new(6),
             ],
-            [0x20, 0x21, 0x2d, 0x3d]
+            [0x00, 0x20, 0x21, 0x2d, 0x3d]
                 .iter()
                 .map(|cp| font.cmap().unwrap().map_codepoint(*cp as u32).unwrap())
                 .collect::<Vec<_>>()

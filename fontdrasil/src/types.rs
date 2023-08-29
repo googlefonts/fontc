@@ -11,6 +11,9 @@ use smol_str::SmolStr;
 pub struct GlyphName(SmolStr);
 
 impl GlyphName {
+    /// The name of the undefined glyph
+    pub const NOTDEF: GlyphName = GlyphName(SmolStr::new_inline(".notdef"));
+
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
