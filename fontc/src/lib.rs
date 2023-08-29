@@ -1756,4 +1756,29 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn empty_glyph_is_zero_length() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(Args::for_test(build_dir, "glyphs2/WghtVar.glyphs"));
+
+        let space_idx = result.get_glyph_index("space") as usize;
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let is_long = match font.head().unwrap().index_to_loc_format() {
+            0 => false,
+            1 => true,
+            _ => panic!("Unrecognized loca format"),
+        };
+        let loca = font.loca(is_long).unwrap();
+        assert_eq!(
+            loca.get_raw(space_idx).unwrap(),
+            loca.get_raw(space_idx + 1).unwrap(),
+            "space has no outline and should take 0 bytes of glyf"
+        );
+    }
 }
