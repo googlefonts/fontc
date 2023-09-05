@@ -618,23 +618,35 @@ mod tests {
         StaticMetadata::new(
             1024,
             Default::default(),
-            vec![Axis {
-                name: "Weight".to_string(),
-                tag: Tag::new(b"wght"),
-                min: min_wght_user,
-                default: def_wght_user,
-                max: max_wght_user,
-                hidden: false,
-                converter: CoordConverter::new(
-                    vec![
-                        // the design values don't really matter
-                        (min_wght_user, DesignCoord::new(0.0)),
-                        (def_wght_user, DesignCoord::new(1.0)),
-                        (max_wght_user, DesignCoord::new(2.0)),
-                    ],
-                    1,
-                ),
-            }],
+            vec![
+                Axis {
+                    name: "Weight".to_string(),
+                    tag: Tag::new(b"wght"),
+                    min: min_wght_user,
+                    default: def_wght_user,
+                    max: max_wght_user,
+                    hidden: false,
+                    converter: CoordConverter::new(
+                        vec![
+                            // the design values don't really matter
+                            (min_wght_user, DesignCoord::new(0.0)),
+                            (def_wght_user, DesignCoord::new(1.0)),
+                            (max_wght_user, DesignCoord::new(2.0)),
+                        ],
+                        1,
+                    ),
+                },
+                // no-op 'point' axis, should be ignored
+                Axis {
+                    name: "Width".to_string(),
+                    tag: Tag::new(b"wdth"),
+                    min: UserCoord::new(0.0),
+                    default: UserCoord::new(0.0),
+                    max: UserCoord::new(0.0),
+                    hidden: false,
+                    converter: CoordConverter::new(vec![], 0),
+                },
+            ],
             Default::default(),
             HashSet::from([min_wght, def_wght, max_wght]),
         )
