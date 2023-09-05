@@ -263,7 +263,7 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
             // https://learn.microsoft.com/en-us/typography/opentype/spec/otvarcommonformats#variation-regions
             // Array of region axis coordinates records, in the order of axes given in the 'fvar' table.
             let mut region_axes = Vec::with_capacity(self.static_metadata.variable_axes.len());
-            for axis in self.static_metadata.axes.iter() {
+            for axis in self.static_metadata.variable_axes.iter() {
                 let Some(tent) = region.get(&axis.tag) else {
                     return Err(Box::new(MissingTentError::new(axis.tag)));
                 };
