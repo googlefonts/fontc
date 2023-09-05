@@ -1021,7 +1021,6 @@ mod tests {
                 .collect();
             assert_eq!(
                 vec![
-                    (0x0000, 0),
                     (0x002C, 2),
                     (0x002E, 1),
                     (0x0030, 3),
@@ -1288,10 +1287,12 @@ mod tests {
         let buf = fs::read(font_file).unwrap();
         let font = FontRef::new(&buf).unwrap();
 
-        assert_eq!(
-            GlyphId::new(0),
-            font.cmap().unwrap().map_codepoint(0u32).unwrap()
-        );
+        // Character 0x0000 (NULL) != '.notdef' glyph, and neither are any other
+        // characters actually, because '.notdef' (glyph index 0) means the absence
+        // of a character-to-glyph mapping:
+        // https://github.com/googlefonts/fontc/pull/423/files#r1309257127
+        // https://learn.microsoft.com/en-us/typography/opentype/spec/cmap#overview
+        assert_eq!(None, font.cmap().unwrap().map_codepoint(0u32));
     }
 
     #[test]
@@ -1312,13 +1313,12 @@ mod tests {
 
         assert_eq!(
             vec![
-                GlyphId::new(0),
                 GlyphId::new(1),
                 GlyphId::new(2),
                 GlyphId::new(3),
                 GlyphId::new(6),
             ],
-            [0x00, 0x20, 0x21, 0x2d, 0x3d]
+            [0x20, 0x21, 0x2d, 0x3d]
                 .iter()
                 .map(|cp| font.cmap().unwrap().map_codepoint(*cp as u32).unwrap())
                 .collect::<Vec<_>>()

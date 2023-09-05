@@ -1028,7 +1028,7 @@ impl GlyphBuilder {
 
         Self {
             name: GlyphName::NOTDEF.clone(),
-            codepoints: HashSet::from([0]),
+            codepoints: HashSet::new(),
             sources: HashMap::from([(
                 default_location,
                 GlyphInstance {
