@@ -56,11 +56,7 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         // We built the gvar fragments alongside glyphs, now we need to glue them together into a gvar table
         let static_metadata = context.ir.static_metadata.get();
-        let axis_order: Vec<_> = static_metadata
-            .variable_axes
-            .iter()
-            .map(|a| a.tag)
-            .collect();
+        let axis_order: Vec<_> = static_metadata.axes.iter().map(|a| a.tag).collect();
         let glyph_order = context.ir.glyph_order.get();
 
         let variations: Vec<_> = make_variations(&glyph_order, |glyph_name| {

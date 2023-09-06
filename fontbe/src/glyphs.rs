@@ -398,7 +398,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
             )?
         } else {
             let locations: HashSet<_> = ir_glyph.sources().keys().cloned().collect();
-            let sub_model = VariationModel::new(locations, static_metadata.variable_axes.clone())
+            let sub_model = VariationModel::new(locations, static_metadata.axes.clone())
                 .map_err(|e| Error::VariationModelError(self.glyph_name.clone(), e))?;
             compute_deltas(
                 &self.glyph_name,

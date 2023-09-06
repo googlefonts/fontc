@@ -41,12 +41,14 @@ pub struct StaticMetadata {
     pub units_per_em: u16,
 
     /// Every axis used by the font being compiled, including point axes.
-    pub axes: Vec<Axis>,
+    ///
+    /// This is relatively rarely what you want.
+    pub all_source_axes: Vec<Axis>,
 
     /// Every variable (non-point) axis used by the font being compiled.
     ///
     /// If empty this is a static font.
-    pub variable_axes: Vec<Axis>,
+    pub axes: Vec<Axis>,
 
     /// Named locations in variation space
     pub named_instances: Vec<NamedInstance>,
@@ -267,8 +269,8 @@ impl StaticMetadata {
         Ok(StaticMetadata {
             units_per_em,
             names: key_to_name,
-            axes,
-            variable_axes,
+            all_source_axes: axes,
+            axes: variable_axes,
             named_instances,
             variation_model,
             axes_default,

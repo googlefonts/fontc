@@ -815,7 +815,8 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
 
         let designspace_dir = self.designspace_file.parent().unwrap();
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
-        let master_locations = master_locations(&static_metadata.axes, &self.designspace.sources);
+        let master_locations =
+            master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
         let Some((_, default_master)) = default_master(&self.designspace) else {
             return Err(WorkError::NoDefaultMaster(self.designspace_file.clone()));
         };
@@ -1011,7 +1012,8 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
         let designspace_dir = self.designspace_file.parent().unwrap();
         let glyph_order = context.glyph_order.get();
         let static_metadata = context.static_metadata.get();
-        let master_locations = master_locations(&static_metadata.axes, &self.designspace.sources);
+        let master_locations =
+            master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
 
         let mut kerning = Kerning::default();
 
@@ -1161,7 +1163,11 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         let static_metadata = context.static_metadata.get();
 
         // Migrate glif_files into internal coordinates
-        let axes_by_name = static_metadata.axes.iter().map(|a| (a.tag, a)).collect();
+        let axes_by_name = static_metadata
+            .all_source_axes
+            .iter()
+            .map(|a| (a.tag, a))
+            .collect();
         let mut glif_files = HashMap::new();
         for (path, design_locations) in self.glif_files.iter() {
             let normalized_locations: Vec<NormalizedLocation> = design_locations
@@ -1588,7 +1594,7 @@ mod tests {
     fn glyph_locations() {
         let (_, context) = build_static_metadata("wght_var.designspace");
         let static_metadata = &context.static_metadata.get();
-        let wght = static_metadata.variable_axes.first().unwrap();
+        let wght = static_metadata.axes.first().unwrap();
 
         assert_eq!(
             vec![
@@ -1608,7 +1614,7 @@ mod tests {
     fn no_metrics_for_glyph_only_sources() {
         let (_, context) = build_global_metrics("wght_var.designspace");
         let static_metadata = &context.static_metadata.get();
-        let wght = static_metadata.variable_axes.first().unwrap();
+        let wght = static_metadata.axes.first().unwrap();
         let mut metric_locations = context
             .global_metrics
             .get()
