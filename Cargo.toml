@@ -37,6 +37,8 @@ temp-env = "0.3.3"
 
 [workspace]
 
+resolver = "2"
+
 members = [
     "fontdrasil",
     "fontbe",
