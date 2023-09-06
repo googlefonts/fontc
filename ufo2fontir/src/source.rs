@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use font_types::{InvalidTag, NameId, Tag};
 use fontdrasil::{
     orchestration::{Access, Work},
@@ -666,7 +666,8 @@ fn try_parse_date(raw_date: Option<&String>) -> Option<DateTime<Utc>> {
         return None;
     };
 
-    let parse_result = Utc.datetime_from_str(raw_date, "%Y/%m/%d %H:%M:%S");
+    let parse_result =
+        NaiveDateTime::parse_from_str(raw_date, "%Y/%m/%d %H:%M:%S").map(|nd| nd.and_utc());
     if let Err(e) = parse_result {
         warn!("Invalid date string {}: {e}", raw_date);
     }

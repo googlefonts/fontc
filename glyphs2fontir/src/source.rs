@@ -1,4 +1,4 @@
-use chrono::{TimeZone, Utc};
+use chrono::DateTime;
 use font_types::{NameId, Tag};
 use fontdrasil::orchestration::{Access, Work};
 use fontdrasil::types::{GlyphName, GroupName};
@@ -366,7 +366,8 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             .date
             .as_ref()
             .and_then(|raw_date| {
-                let parsed = Utc.datetime_from_str(raw_date, "%Y-%m-%d %H:%M:%S %Z");
+                let parsed =
+                    DateTime::parse_from_str(raw_date, "%Y-%m-%d %H:%M:%S %z").map(|nd| nd.into());
                 if let Err(e) = parsed {
                     warn!("Invalid creation date: {}: {e:?}", raw_date);
                 }
