@@ -579,11 +579,7 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
-        let variable_axes: HashSet<_> = static_metadata
-            .variable_axes
-            .iter()
-            .map(|a| a.tag)
-            .collect();
+        let variable_axes: HashSet<_> = static_metadata.axes.iter().map(|a| a.tag).collect();
         let master_positions: HashMap<_, _> = font
             .masters
             .iter()
@@ -693,7 +689,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         let font = &font_info.font;
 
         let static_metadata = context.static_metadata.get();
-        let axes = &static_metadata.axes;
+        let axes = &static_metadata.all_source_axes;
 
         let glyph = font
             .glyphs
@@ -899,7 +895,7 @@ mod tests {
             context
                 .static_metadata
                 .get()
-                .axes
+                .all_source_axes
                 .iter()
                 .map(|a| a.tag)
                 .collect::<Vec<_>>()
@@ -992,7 +988,7 @@ mod tests {
                     ),
                 },
             ],
-            static_metadata.axes
+            static_metadata.all_source_axes
         );
     }
 
@@ -1081,7 +1077,11 @@ mod tests {
         build_glyphs(&source, &context, &[&glyph_name]).unwrap(); // we dont' care about geometry
 
         let static_metadata = context.static_metadata.get();
-        let axes = static_metadata.axes.iter().map(|a| (a.tag, a)).collect();
+        let axes = static_metadata
+            .all_source_axes
+            .iter()
+            .map(|a| (a.tag, a))
+            .collect();
 
         let mut expected_locations = HashSet::new();
         for (opsz, wght) in &[
@@ -1164,7 +1164,7 @@ mod tests {
     #[test]
     fn read_axis_location() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVar_AxisLocation.glyphs"));
-        let wght = &context.static_metadata.get().axes;
+        let wght = &context.static_metadata.get().all_source_axes;
         assert_eq!(1, wght.len());
         let wght = &wght[0];
 

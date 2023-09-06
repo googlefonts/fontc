@@ -75,14 +75,14 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         // Guard clause: don't produce avar for a static font
-        if static_metadata.variable_axes.is_empty() {
+        if static_metadata.axes.is_empty() {
             debug!("Skip avar; this is not a variable font");
             return Ok(());
         }
         context.avar.set_unconditionally(
             Avar::new(
                 static_metadata
-                    .variable_axes
+                    .axes
                     .iter()
                     .map(to_segment_map)
                     .filter(|sm| !sm.axis_value_maps.is_empty())

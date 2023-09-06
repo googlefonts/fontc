@@ -37,7 +37,7 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
         let static_metadata = context.ir.static_metadata.get();
 
         // Guard clause: don't produce fvar for a static font
-        if static_metadata.variable_axes.is_empty() {
+        if static_metadata.axes.is_empty() {
             trace!("Skip stat; this is not a variable font");
             return Ok(());
         }
@@ -54,7 +54,7 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
         context.stat.set_unconditionally(
             Stat {
                 design_axes: static_metadata
-                    .variable_axes
+                    .axes
                     .iter()
                     .enumerate()
                     .map(|(idx, a)| AxisRecord {

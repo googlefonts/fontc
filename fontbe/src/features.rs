@@ -102,7 +102,7 @@ impl<'a> FeaVariationInfo<'a> {
     fn new(static_metadata: &'a StaticMetadata) -> FeaVariationInfo<'a> {
         FeaVariationInfo {
             fea_rs_axes: static_metadata
-                .variable_axes
+                .axes
                 .iter()
                 .enumerate()
                 .map(|(i, a)| {
@@ -120,11 +120,7 @@ impl<'a> FeaVariationInfo<'a> {
                     )
                 })
                 .collect(),
-            axes: static_metadata
-                .variable_axes
-                .iter()
-                .map(|a| (a.tag, a))
-                .collect(),
+            axes: static_metadata.axes.iter().map(|a| (a.tag, a)).collect(),
             static_metadata,
         }
     }
@@ -262,8 +258,8 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
         for (region, value) in deltas.iter().filter(|(r, _)| !r.is_default()) {
             // https://learn.microsoft.com/en-us/typography/opentype/spec/otvarcommonformats#variation-regions
             // Array of region axis coordinates records, in the order of axes given in the 'fvar' table.
-            let mut region_axes = Vec::with_capacity(self.static_metadata.variable_axes.len());
-            for axis in self.static_metadata.variable_axes.iter() {
+            let mut region_axes = Vec::with_capacity(self.static_metadata.axes.len());
+            for axis in self.static_metadata.axes.iter() {
                 let Some(tent) = region.get(&axis.tag) else {
                     return Err(Box::new(MissingTentError::new(axis.tag)));
                 };

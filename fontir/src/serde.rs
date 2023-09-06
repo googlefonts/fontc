@@ -80,7 +80,7 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
         let glyph_locations = from.variation_model.locations().cloned().collect();
         StaticMetadataSerdeRepr {
             units_per_em: from.units_per_em,
-            axes: from.axes,
+            axes: from.all_source_axes,
             named_instances: from.named_instances,
             glyph_locations,
             names: from.names,
