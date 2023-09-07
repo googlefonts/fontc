@@ -701,7 +701,7 @@ fn pick_best_format<T: FontWrite + Validate>(tables: [Option<T>; 3]) -> T {
         .enumerate()
         .filter_map(|(i, table)| table.map(|table| (i + 1, compute_size(&table), table)))
         .inspect(|(i, size, _table)| {
-            log::debug!("format {i} size {size:?}");
+            log::trace!("format {i} size {size:?}");
         })
         .min_by_key(|(_, size, _)| *size)
         .unwrap()
