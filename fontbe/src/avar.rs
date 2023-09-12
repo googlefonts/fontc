@@ -1,9 +1,8 @@
 //! Generates a [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar) table.
 
-use font_types::F2Dot14;
 use fontdrasil::orchestration::{Access, Work};
 use fontir::{
-    coords::{CoordConverter, DesignCoord},
+    coords::{CoordConverter, DesignCoord, NormalizedCoord},
     ir::Axis,
     orchestration::WorkId as FeWorkId,
 };
@@ -23,20 +22,6 @@ pub fn create_avar_work() -> Box<BeWork> {
 }
 
 fn to_segment_map(axis: &Axis) -> SegmentMaps {
-    // You need at least four values for an avar to DO anything
-    // because, per spec, "If the segment map for a given axis has any value maps,
-    // then it must include at least three value maps: -1 to -1, 0 to 0, and 1 to 1"
-    // so three value maps *must* produce identity.
-    //
-    // 0 entry avar may confuse some clients so emit a default one
-    if axis.converter.len() < 4 {
-        return SegmentMaps::new(vec![
-            AxisValueMap::new(F2Dot14::from_f32(-1.0), F2Dot14::from_f32(-1.0)),
-            AxisValueMap::new(F2Dot14::from_f32(0.0), F2Dot14::from_f32(0.0)),
-            AxisValueMap::new(F2Dot14::from_f32(1.0), F2Dot14::from_f32(1.0)),
-        ]);
-    }
-
     // default normalization
     let default_converter = CoordConverter::new(
         vec![
@@ -47,13 +32,35 @@ fn to_segment_map(axis: &Axis) -> SegmentMaps {
         1,
     );
 
-    // avar maps from the default normalization to the actual one,
-    // using normalized values on both sides.
-    let mappings = axis
+    // We have to walk twice but we don't expect there to be a lot of values so don't stress
+
+    // (default normalization, actual normalization) tuples
+    let mut mappings: Vec<(NormalizedCoord, NormalizedCoord)> = axis
         .converter
         .iter()
-        .map(|(user, _, norm)| {
-            AxisValueMap::new(user.to_normalized(&default_converter).into(), norm.into())
+        .map(|(user, _, norm)| (user.to_normalized(&default_converter), norm))
+        .collect();
+
+    // Coordinate conversion MUST have a default, but it might only extend in one direction from it
+    // For example, weight 400-700 with default 400 will have no entry for -1 in coordinate conversion
+    let (min, max) = mappings
+        .iter()
+        .map(|(n1, n2)| (*n1.into_inner(), *n2.into_inner()))
+        .reduce(|(min, max), (maybe_min, maybe_max)| (min.min(maybe_min), max.max(maybe_max)))
+        .unwrap();
+    if min != -1.0 {
+        mappings.insert(0, (NormalizedCoord::new(-1.0), NormalizedCoord::new(-1.0)));
+    }
+    if max != 1.0 {
+        mappings.push((NormalizedCoord::new(1.0), NormalizedCoord::new(1.0)));
+    }
+
+    // avar maps from the default normalization to the actual one,
+    // using normalized values on both sides.
+    let mappings = mappings
+        .iter()
+        .map(|(default_norm, actual_norm)| {
+            AxisValueMap::new((*default_norm).into(), (*actual_norm).into())
         })
         .collect();
 
@@ -119,8 +126,8 @@ mod tests {
         }
     }
 
-    fn round2(v: f32) -> f32 {
-        (v * 100.0).round() / 100.0
+    fn round4(v: f32) -> f32 {
+        (v * 10000.0).round() / 10000.0
     }
 
     fn dump(segmap: SegmentMaps) -> Vec<(f32, f32)> {
@@ -128,7 +135,7 @@ mod tests {
             .axis_value_maps
             .iter()
             .map(|av| (av.from_coordinate.to_f32(), av.to_coordinate.to_f32()))
-            .map(|(from, to)| (round2(from), round2(to)))
+            .map(|(from, to)| (round4(from), round4(to)))
             .collect()
     }
 
@@ -157,6 +164,21 @@ mod tests {
         assert_eq!(
             vec![(-1.0, -1.0), (0.0, 0.0), (0.75, 0.95), (1.0, 1.0),],
             dump(to_segment_map(&axis(mappings, 1)))
+        );
+    }
+
+    /// In fonts that have 3+ mappings but all are right or left of default
+    /// we were doing silly things
+    #[test]
+    fn adds_implicit_mappings() {
+        let mappings = vec![
+            (UserCoord::new(400.0), DesignCoord::new(380.0)),
+            (UserCoord::new(500.0), DesignCoord::new(555.0)),
+            (UserCoord::new(700.0), DesignCoord::new(734.0)),
+        ];
+        assert_eq!(
+            vec![(-1.0, -1.0), (0.0, 0.0), (0.3333, 0.4943), (1.0, 1.0),],
+            dump(to_segment_map(&axis(mappings, 0)))
         );
     }
 }
