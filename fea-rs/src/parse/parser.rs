@@ -272,6 +272,12 @@ impl<'b, 'a> Parser<'a, 'b> {
         self.sink.error(err);
     }
 
+    /// write a warning, do not advance
+    pub(crate) fn warn(&mut self, message: impl Into<String>) {
+        let err = Diagnostic::warning(FileId::CURRENT_FILE, self.nth_range(0), message);
+        self.sink.error(err);
+    }
+
     /// Write an error associated *before* the whitespace of the current token.
     ///
     /// In practice this is useful when missing things like semis or braces.

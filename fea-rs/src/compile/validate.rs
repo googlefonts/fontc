@@ -603,6 +603,7 @@ impl<'a> ValidationCtx<'a> {
             if item.kind() == Kind::ScriptNode
                 || item.kind() == Kind::LanguageNode
                 || item.kind() == Kind::SubtableNode
+                || item.kind() == Kind::Semi
             {
                 // lgtm
             } else if let Some(node) = typed::LookupRef::cast(item) {
@@ -824,10 +825,12 @@ impl<'a> ValidationCtx<'a> {
                 self.validate_glyph_class_def(&node);
             } else if let Some(node) = typed::MarkClassDef::cast(item) {
                 self.validate_mark_class_def(&node);
+            } else if item.kind() == Kind::Semi {
+                // continue
             } else {
                 self.error(
                     item.range(),
-                    format!("unhandled item {} in lookup block", item.kind()),
+                    format!("unhandled item '{}' in lookup block", item.kind()),
                 );
             }
         }

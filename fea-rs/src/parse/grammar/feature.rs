@@ -121,6 +121,10 @@ pub(crate) fn statement(parser: &mut Parser, recovery: TokenSet, in_lookup: bool
         }
         Kind::CvParametersKw => cv_parameters(parser, recovery),
         Kind::FeatureNamesKw => feature_names(parser, recovery),
+        Kind::Semi => {
+            parser.warn("';' should only follow a statement");
+            parser.eat_raw();
+        }
 
         _ => {
             let token = parser.current_token_text();

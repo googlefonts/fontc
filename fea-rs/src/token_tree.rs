@@ -5,7 +5,7 @@ use std::{cell::Cell, ops::Range, sync::Arc};
 use smol_str::SmolStr;
 
 use crate::parse::{FileId, IncludeStatement};
-use crate::{diagnostic::Diagnostic, GlyphMap};
+use crate::{diagnostic::Diagnostic, GlyphMap, Level};
 
 use self::cursor::Cursor;
 use typed::AstNode as _;
@@ -141,9 +141,10 @@ impl<'a> AstSink<'a> {
     }
 
     pub(crate) fn error(&mut self, mut error: Diagnostic) {
+        let is_hard_error = error.level == Level::Error;
         error.message.file = self.file_id;
         self.errors.push(error);
-        self.cur_node_contains_error = true;
+        self.cur_node_contains_error = is_hard_error;
     }
 
     pub fn finish(self) -> (Node, Vec<Diagnostic>, Vec<IncludeStatement>) {

@@ -1,0 +1,8 @@
+feature test {
+    lookup foo {
+        lookupflag 3;
+        # we should warn here but otherwise continue
+        ;
+        sub a c' by b;
+    } foo;
+} test;

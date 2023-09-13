@@ -1737,6 +1737,8 @@ impl<'a> CompilationCtx<'a> {
             self.add_gsub_statement(rule);
         } else if let Some(rule) = typed::GposStatement::cast(item) {
             self.add_gpos_statement(rule)
+        } else if item.kind() == Kind::Semi {
+            // continue
         } else {
             let span = match item {
                 NodeOrToken::Token(t) => t.range(),
