@@ -1,0 +1,179 @@
+{
+.appVersion = "3218";
+DisplayStrings = (
+A
+);
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WghtVar;
+fontMaster = (
+{
+alignmentZones = (
+"{800, 16}",
+"{0, -16}",
+"{-200, -16}"
+);
+ascender = 800;
+capHeight = 0;
+descender = -200;
+id = m01;
+weightValue = 400;
+xHeight = 0;
+},
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "l2";
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = A;
+lastChange = "2023-09-14 14:42:56 +0000";
+layers = (
+{
+anchors = (
+{
+name = top;
+position = "{300, 700}";
+}
+);
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"354 183 LINE",
+"414 585 LINE",
+"178 585 LINE",
+"238 182 LINE"
+);
+},
+{
+closed = 1;
+nodes = (
+"354 0 LINE",
+"354 107 LINE",
+"238 107 LINE",
+"238 0 LINE"
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = top;
+position = "{325, 725}";
+}
+);
+layerId = "l2";
+paths = (
+{
+closed = 1;
+nodes = (
+"354 183 LINE",
+"414 585 LINE",
+"178 585 LINE",
+"238 182 LINE"
+);
+},
+{
+closed = 1;
+nodes = (
+"354 0 LINE",
+"354 107 LINE",
+"238 107 LINE",
+"238 0 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0041;
+},
+{
+glyphname = space;
+lastChange = "2022-12-01 04:58:12 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "l2";
+width = 600;
+}
+);
+unicode = 0020;
+},
+{
+glyphname = macroncomb;
+lastChange = "2023-09-14 14:41:26 +0000";
+layers = (
+{
+anchors = (
+{
+name = _top;
+position = "{300, 600}";
+}
+);
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"140 661 LINE",
+"454 661 LINE",
+"454 724 LINE",
+"140 724 LINE"
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = _top;
+position = "{310, 610}";
+}
+);
+layerId = "l2";
+paths = (
+{
+closed = 1;
+nodes = (
+"132 658 LINE",
+"462 658 LINE",
+"462 728 LINE",
+"132 728 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0304;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

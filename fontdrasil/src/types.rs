@@ -48,3 +48,4 @@ impl Display for GlyphName {
 }
 
 pub type GroupName = GlyphName;
+pub type AnchorName = GlyphName;

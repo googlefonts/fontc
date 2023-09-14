@@ -1,0 +1,218 @@
+{
+.appVersion = "3218";
+.formatVersion = 3;
+DisplayStrings = (
+A
+);
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WghtVar;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+},
+{
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+iconName = Bold;
+id = "l2";
+metricValues = (
+{
+pos = 800;
+},
+{
+},
+{
+pos = -200;
+},
+{
+pos = 700;
+},
+{
+pos = 500;
+}
+);
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = A;
+lastChange = "2023-09-14 14:42:56 +0000";
+layers = (
+{
+anchors = (
+{
+name = top;
+pos = (300,700);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(354,183,l),
+(414,585,l),
+(178,585,l),
+(238,182,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(354,0,l),
+(354,107,l),
+(238,107,l),
+(238,0,l)
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = top;
+pos = (325,725);
+}
+);
+layerId = "l2";
+shapes = (
+{
+closed = 1;
+nodes = (
+(354,183,l),
+(414,585,l),
+(178,585,l),
+(238,182,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(354,0,l),
+(354,107,l),
+(238,107,l),
+(238,0,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 65;
+},
+{
+glyphname = space;
+lastChange = "2022-12-01 04:58:12 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "l2";
+width = 600;
+}
+);
+unicode = 32;
+},
+{
+glyphname = macroncomb;
+lastChange = "2023-09-14 14:41:26 +0000";
+layers = (
+{
+anchors = (
+{
+name = _top;
+pos = (300,600);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(140,661,l),
+(454,661,l),
+(454,724,l),
+(140,724,l)
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = _top;
+pos = (310,610);
+}
+);
+layerId = "l2";
+shapes = (
+{
+closed = 1;
+nodes = (
+(132,658,l),
+(462,658,l),
+(462,728,l),
+(132,728,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 772;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

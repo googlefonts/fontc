@@ -43,6 +43,7 @@ impl Paths {
 
     pub fn target_file(&self, id: &WorkId) -> PathBuf {
         match id {
+            WorkId::Anchors => self.build_dir.join("anchors.yml"),
             WorkId::StaticMetadata => self.build_dir.join("static_metadata.yml"),
             WorkId::PreliminaryGlyphOrder => self.build_dir.join("glyph_order.preliminary.yml"),
             WorkId::GlyphOrder => self.build_dir.join("glyph_order.yml"),

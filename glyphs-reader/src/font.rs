@@ -91,6 +91,7 @@ pub struct Layer {
     pub layer_id: String,
     pub width: OrderedFloat<f64>,
     pub shapes: Vec<Shape>,
+    pub anchors: Vec<Anchor>,
 }
 
 #[derive(Debug, PartialEq, Hash)]
@@ -101,7 +102,7 @@ pub enum Shape {
 
 // The font you get directly from a plist, minimally modified
 // Types chosen specifically to accomodate plist translation.
-#[derive(Debug, FromPlist, PartialEq, Eq)]
+#[derive(Debug, FromPlist, PartialEq)]
 #[allow(non_snake_case)]
 struct RawFont {
     pub units_per_em: Option<i64>,
@@ -166,7 +167,7 @@ pub struct Axis {
     pub hidden: Option<bool>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq)]
+#[derive(Clone, Debug, FromPlist, PartialEq)]
 pub struct RawGlyph {
     pub layers: Vec<RawLayer>,
     pub glyphname: String,
@@ -176,7 +177,7 @@ pub struct RawGlyph {
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq)]
+#[derive(Clone, Debug, FromPlist, PartialEq)]
 pub struct RawLayer {
     pub layer_id: String,
     pub associated_master_id: Option<String>,
@@ -184,7 +185,7 @@ pub struct RawLayer {
     shapes: Option<Vec<RawShape>>,
     paths: Option<Vec<Path>>,
     components: Option<Vec<Component>>,
-    //pub anchors: Option<Vec<Anchor>>,
+    pub anchors: Option<Vec<RawAnchor>>,
     #[fromplist(rest)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
@@ -274,9 +275,23 @@ pub enum NodeType {
 }
 
 #[derive(Clone, Debug, FromPlist, PartialEq)]
+pub struct RawAnchor {
+    pub name: String,
+    pub pos: Option<Point>,       // v3
+    pub position: Option<String>, // v2
+}
+
+#[derive(Clone, Debug, FromPlist, PartialEq)]
 pub struct Anchor {
     pub name: String,
-    pub position: Point,
+    pub pos: Point,
+}
+
+impl Hash for Anchor {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        PointForEqAndHash::new(self.pos).hash(state);
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Hash)]
@@ -541,10 +556,17 @@ impl FromPlist for Affine {
 
 impl FromPlist for Point {
     fn from_plist(plist: Plist) -> Self {
-        let raw = plist.as_str().unwrap();
-        let raw = &raw[1..raw.len() - 1];
-        let coords: Vec<f64> = raw.split(", ").map(|c| c.parse().unwrap()).collect();
-        Point::new(coords[0], coords[1])
+        match plist {
+            Plist::Array(values) if values.len() == 2 => {
+                Point::new(values[0].as_f64().unwrap(), values[1].as_f64().unwrap())
+            }
+            Plist::String(value) => {
+                let raw = &value[1..value.len() - 1];
+                let coords: Vec<f64> = raw.split(", ").map(|c| c.parse().unwrap()).collect();
+                Point::new(coords[0], coords[1])
+            }
+            _ => panic!("Cannot parse point from {plist:?}"),
+        }
     }
 }
 
@@ -1346,10 +1368,27 @@ impl TryFrom<RawLayer> for Layer {
             shapes.push(raw_shape.try_into()?);
         }
 
+        let anchors = from
+            .anchors
+            .unwrap_or_default()
+            .into_iter()
+            .map(|ra| {
+                let pos = if let Some(pos) = ra.pos {
+                    pos
+                } else if let Some(pos) = ra.position {
+                    Point::from_plist(Plist::String(pos))
+                } else {
+                    panic!("No position for anchor {ra:?}");
+                };
+                Anchor { name: ra.name, pos }
+            })
+            .collect();
+
         Ok(Layer {
             layer_id: from.layer_id,
             width: from.width,
             shapes,
+            anchors,
         })
     }
 }
@@ -1747,7 +1786,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    use kurbo::Affine;
+    use kurbo::{Affine, Point};
 
     fn testdata_dir() -> PathBuf {
         // working dir varies CLI vs VSCode
@@ -1861,6 +1900,11 @@ mod tests {
     #[test]
     fn read_wght_var_os2_2_and_3() {
         assert_load_v2_matches_load_v3("WghtVar_OS2.glyphs");
+    }
+
+    #[test]
+    fn read_wght_var_anchors_2_and_3() {
+        assert_load_v2_matches_load_v3("WghtVar_Anchors.glyphs");
     }
 
     fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {
@@ -2283,6 +2327,28 @@ mod tests {
                 ],
             ),
             (actual_groups, actual_kerning),
+        );
+    }
+
+    #[test]
+    fn read_simple_anchor() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_Anchors.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                ("m01", "top", Point::new(300.0, 700.0)),
+                ("l2", "top", Point::new(325.0, 725.0))
+            ],
+            font.glyphs
+                .get("A")
+                .unwrap()
+                .layers
+                .iter()
+                .flat_map(|l| l.anchors.iter().map(|a| (
+                    l.layer_id.as_str(),
+                    a.name.as_str(),
+                    a.pos
+                )))
+                .collect::<Vec<_>>()
         );
     }
 }
