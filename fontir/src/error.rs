@@ -1,7 +1,7 @@
 use std::{error, io, path::PathBuf};
 
 use font_types::{InvalidTag, Tag};
-use fontdrasil::types::GlyphName;
+use fontdrasil::types::{AnchorName, GlyphName};
 use kurbo::Point;
 use thiserror::Error;
 
@@ -134,6 +134,17 @@ pub enum WorkError {
     AxisMustMapMax(Tag),
     #[error("No kerning group or glyph for name {0:?}")]
     InvalidKernSide(String),
+    #[error("Multiple definitions for glyph {glyph} anchor {anchor} at {loc:?}")]
+    AmbiguousAnchor {
+        glyph: GlyphName,
+        anchor: AnchorName,
+        loc: NormalizedLocation,
+    },
+    #[error("No value at default for glyph {glyph} anchor {anchor}")]
+    NoDefaultForAnchor {
+        glyph: GlyphName,
+        anchor: AnchorName,
+    },
 }
 
 /// An async work error, hence one that must be Send

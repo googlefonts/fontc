@@ -496,53 +496,91 @@ mod tests {
         result
     }
 
-    #[test]
-    fn compile_work() {
+    fn assert_compile_work(source: &str, glyphs: Vec<&str>) {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
 
-        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
+        let result = compile(Args::for_test(build_dir, source));
         let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
-        completed.sort();
-        assert_eq!(
-            vec![
-                AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata),
-                FeWorkIdentifier::GlobalMetrics.into(),
-                FeWorkIdentifier::Glyph("bar".into()).into(),
-                FeWorkIdentifier::Glyph("plus".into()).into(),
-                FeWorkIdentifier::PreliminaryGlyphOrder.into(),
-                FeWorkIdentifier::GlyphOrder.into(),
-                FeWorkIdentifier::Features.into(),
-                FeWorkIdentifier::Kerning.into(),
-                BeWorkIdentifier::Features.into(),
-                BeWorkIdentifier::Avar.into(),
-                BeWorkIdentifier::Cmap.into(),
-                BeWorkIdentifier::Font.into(),
-                BeWorkIdentifier::Fvar.into(),
-                BeWorkIdentifier::Glyf.into(),
-                BeWorkIdentifier::GlyfFragment(".notdef".into()).into(),
-                BeWorkIdentifier::GlyfFragment("bar".into()).into(),
-                BeWorkIdentifier::GlyfFragment("plus".into()).into(),
-                BeWorkIdentifier::Gpos.into(),
-                BeWorkIdentifier::Gsub.into(),
-                BeWorkIdentifier::Gdef.into(),
-                BeWorkIdentifier::Gvar.into(),
-                BeWorkIdentifier::GvarFragment(".notdef".into()).into(),
-                BeWorkIdentifier::GvarFragment("bar".into()).into(),
-                BeWorkIdentifier::GvarFragment("plus".into()).into(),
-                BeWorkIdentifier::Head.into(),
-                BeWorkIdentifier::Hhea.into(),
-                BeWorkIdentifier::Hmtx.into(),
-                BeWorkIdentifier::Loca.into(),
-                BeWorkIdentifier::LocaFormat.into(),
-                BeWorkIdentifier::Maxp.into(),
-                BeWorkIdentifier::Name.into(),
-                BeWorkIdentifier::Os2.into(),
-                BeWorkIdentifier::Post.into(),
-                BeWorkIdentifier::Stat.into(),
-            ],
-            completed
+
+        let mut expected = vec![
+            AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata),
+            FeWorkIdentifier::GlobalMetrics.into(),
+            FeWorkIdentifier::PreliminaryGlyphOrder.into(),
+            FeWorkIdentifier::GlyphOrder.into(),
+            FeWorkIdentifier::Features.into(),
+            FeWorkIdentifier::Kerning.into(),
+            BeWorkIdentifier::Features.into(),
+            BeWorkIdentifier::Avar.into(),
+            BeWorkIdentifier::Cmap.into(),
+            BeWorkIdentifier::Font.into(),
+            BeWorkIdentifier::Fvar.into(),
+            BeWorkIdentifier::Glyf.into(),
+            BeWorkIdentifier::Gpos.into(),
+            BeWorkIdentifier::Gsub.into(),
+            BeWorkIdentifier::Gdef.into(),
+            BeWorkIdentifier::Gvar.into(),
+            BeWorkIdentifier::Head.into(),
+            BeWorkIdentifier::Hhea.into(),
+            BeWorkIdentifier::Hmtx.into(),
+            BeWorkIdentifier::Loca.into(),
+            BeWorkIdentifier::LocaFormat.into(),
+            BeWorkIdentifier::Maxp.into(),
+            BeWorkIdentifier::Name.into(),
+            BeWorkIdentifier::Os2.into(),
+            BeWorkIdentifier::Post.into(),
+            BeWorkIdentifier::Stat.into(),
+        ];
+
+        expected.extend(
+            glyphs
+                .iter()
+                .map(|n| FeWorkIdentifier::Glyph((*n).into()).into()),
         );
+        expected.extend(
+            glyphs
+                .iter()
+                .map(|n| FeWorkIdentifier::Anchor((*n).into()).into()),
+        );
+        expected.extend(
+            glyphs
+                .iter()
+                .map(|n| BeWorkIdentifier::GlyfFragment((*n).into()).into()),
+        );
+        expected.extend(
+            glyphs
+                .iter()
+                .map(|n| BeWorkIdentifier::GvarFragment((*n).into()).into()),
+        );
+
+        expected.extend(vec![
+            BeWorkIdentifier::GlyfFragment((".notdef").into()).into(),
+            BeWorkIdentifier::GvarFragment((".notdef").into()).into(),
+        ]);
+
+        completed.sort();
+        expected.sort();
+        assert_eq!(expected, completed);
+    }
+
+    #[test]
+    fn compile_work_for_designspace() {
+        assert_compile_work("wght_var.designspace", vec!["bar", "plus"])
+    }
+
+    #[test]
+    fn compile_work_for_glyphs() {
+        assert_compile_work(
+            "glyphs3/WghtVar.glyphs",
+            vec![
+                "bracketleft",
+                "bracketright",
+                "exclam",
+                "hyphen",
+                "manual-component",
+                "space",
+            ],
+        )
     }
 
     #[test]
@@ -582,6 +620,7 @@ mod tests {
         assert_eq!(
             vec![
                 AnyWorkId::Fe(FeWorkIdentifier::Glyph("bar".into())),
+                FeWorkIdentifier::Anchor("bar".into()).into(),
                 BeWorkIdentifier::Cmap.into(),
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Glyf.into(),

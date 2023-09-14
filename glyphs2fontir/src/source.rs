@@ -5,8 +5,8 @@ use fontdrasil::types::{GlyphName, GroupName};
 use fontir::coords::NormalizedCoord;
 use fontir::error::{Error, WorkError};
 use fontir::ir::{
-    self, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernParticipant, Kerning,
-    NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+    self, AnchorBuilder, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernParticipant,
+    Kerning, NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
 };
 use fontir::orchestration::{Context, IrWork, WorkId};
 use fontir::source::{Input, Source};
@@ -524,6 +524,11 @@ struct KerningWork {
     font_info: Arc<FontInfo>,
 }
 
+#[derive(Debug)]
+struct AnchorWork {
+    _font_info: Arc<FontInfo>,
+}
+
 /// See <https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/kerning.py#L53-L72>
 fn kern_participant(
     glyph_order: &GlyphOrder,
@@ -684,6 +689,17 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         Access::One(WorkId::StaticMetadata)
     }
 
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Set(HashSet::from([
+            WorkId::Glyph(self.glyph_name.clone()),
+            WorkId::Anchor(self.glyph_name.clone()),
+        ]))
+    }
+
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::Anchor(self.glyph_name.clone())]
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!("Generate IR for '{}'", self.glyph_name.as_str());
         let font_info = self.font_info.as_ref();
@@ -707,6 +723,8 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
 
         // https://github.com/googlefonts/fontmake-rs/issues/285 glyphs non-spacing marks are 0-width
         let zero_width = is_nonspacing_mark(&ir_glyph.codepoints, ir_glyph.name.as_str());
+
+        let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
 
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<Tag, HashSet<NormalizedCoord>> = HashMap::new();
@@ -746,6 +764,10 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
                         self.glyph_name, location, e
                     ))
                 })?;
+
+            for anchor in instance.anchors.iter() {
+                ir_anchors.add(anchor.name.as_str().into(), location.clone(), anchor.pos)?;
+            }
         }
 
         // It's helpful if glyphs are defined at min, default, and max (some of which may be cooincident)
@@ -764,6 +786,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             check_pos(&self.glyph_name, positions, axis, &max)?;
         }
 
+        context.anchors.set(ir_anchors.try_into()?);
         context.glyphs.set(ir_glyph.try_into()?);
         Ok(())
     }
@@ -778,7 +801,10 @@ mod tests {
 
     use font_types::NameId;
     use font_types::Tag;
-    use fontdrasil::{orchestration::Access, types::GlyphName};
+    use fontdrasil::{
+        orchestration::Access,
+        types::{AnchorName, GlyphName},
+    };
     use fontir::{
         coords::{
             CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
@@ -1062,7 +1088,10 @@ mod tests {
             for work in work_items.iter() {
                 let task_context = context.copy_for_work(
                     Access::one(WorkId::StaticMetadata),
-                    Access::one(WorkId::Glyph(glyph_name.clone())),
+                    Access::Set(HashSet::from([
+                        WorkId::Glyph(glyph_name.clone()),
+                        WorkId::Anchor(glyph_name.clone()),
+                    ])),
                 );
                 work.exec(&task_context)?;
             }
@@ -1425,5 +1454,31 @@ mod tests {
             .filter(|pos| !pos.axis_tags().all(|tag| *tag == Tag::new(b"wght")))
             .collect();
         assert!(bad_kerns.is_empty(), "{bad_kerns:#?}");
+    }
+
+    #[test]
+    fn captures_anchors() {
+        let base_name = "A".into();
+        let mark_name = "macroncomb".into();
+        let (source, context) = build_static_metadata(glyphs3_dir().join("WghtVar_Anchors.glyphs"));
+        build_glyphs(&source, &context, &[&base_name, &mark_name]).unwrap();
+
+        let base = context.anchors.get(&WorkId::Anchor(base_name));
+        let mark = context.anchors.get(&WorkId::Anchor(mark_name));
+
+        assert_eq!(
+            vec![AnchorName::from("top")],
+            base.anchors
+                .iter()
+                .map(|a| a.name.clone())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec![AnchorName::from("_top")],
+            mark.anchors
+                .iter()
+                .map(|a| a.name.clone())
+                .collect::<Vec<_>>()
+        );
     }
 }
