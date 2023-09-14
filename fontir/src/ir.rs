@@ -13,7 +13,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use font_types::NameId;
 use font_types::Tag;
-use fontdrasil::types::{GlyphName, GroupName};
+use fontdrasil::types::{AnchorName, GlyphName, GroupName};
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
 use log::warn;
@@ -821,6 +821,21 @@ impl Features {
     }
 }
 
+/// The complete set of anchor data
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Anchors {
+    pub anchors: HashMap<GlyphName, Vec<Anchor>>,
+}
+
+/// A variable definition of an anchor.
+///
+/// Must have at least one definition, at the default location.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Anchor {
+    pub name: AnchorName,
+    pub positions: HashMap<NormalizedLocation, Point>,
+}
+
 /// A variable definition of a single glyph.
 ///
 /// Guarrantees at least one definition. Currently that must be at
@@ -945,6 +960,16 @@ impl Persistable for Features {
 }
 
 impl Persistable for Kerning {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
+impl Persistable for Anchors {
     fn read(from: &mut dyn Read) -> Self {
         serde_yaml::from_reader(from).unwrap()
     }
