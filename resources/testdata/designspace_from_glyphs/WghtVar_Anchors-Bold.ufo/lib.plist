@@ -47,30 +47,34 @@
     <key>com.schriftgestaltung.customParameter.GSFontMaster.customValue3</key>
     <integer>0</integer>
     <key>com.schriftgestaltung.customParameter.GSFontMaster.iconName</key>
-    <string></string>
+    <string>Bold</string>
     <key>com.schriftgestaltung.customParameter.GSFontMaster.weightValue</key>
-    <integer>400</integer>
+    <integer>700</integer>
     <key>com.schriftgestaltung.customParameter.GSFontMaster.widthValue</key>
     <integer>100</integer>
     <key>com.schriftgestaltung.fontMasterOrder</key>
-    <integer>0</integer>
+    <integer>1</integer>
     <key>com.schriftgestaltung.weightValue</key>
-    <integer>400</integer>
+    <integer>700</integer>
     <key>com.schriftgestaltung.widthValue</key>
     <integer>100</integer>
     <key>public.glyphOrder</key>
     <array>
+      <string>A</string>
       <string>space</string>
-      <string>exclam</string>
-      <string>hyphen</string>
-      <string>bracketleft</string>
-      <string>bracketright</string>
-      <string>manual-component</string>
+      <string>macroncomb</string>
     </array>
+    <key>public.openTypeCategories</key>
+    <dict>
+      <key>A</key>
+      <string>base</string>
+      <key>macroncomb</key>
+      <string>mark</string>
+    </dict>
     <key>public.postscriptNames</key>
     <dict>
-      <key>manual-component</key>
-      <string>manualcomponent</string>
+      <key>macroncomb</key>
+      <string>uni0304</string>
     </dict>
   </dict>
 </plist>
