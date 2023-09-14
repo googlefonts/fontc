@@ -34,6 +34,8 @@
         <true/>
       </dict>
     </array>
+    <key>com.schriftgestaltung.customParameter.GSFont.Write lastChange</key>
+    <integer>0</integer>
     <key>com.schriftgestaltung.customParameter.GSFont.disablesAutomaticAlignment</key>
     <false/>
     <key>com.schriftgestaltung.customParameter.GSFont.useNiceNames</key>
@@ -49,28 +51,21 @@
     <key>com.schriftgestaltung.customParameter.GSFontMaster.iconName</key>
     <string></string>
     <key>com.schriftgestaltung.customParameter.GSFontMaster.weightValue</key>
-    <integer>400</integer>
+    <integer>900</integer>
     <key>com.schriftgestaltung.customParameter.GSFontMaster.widthValue</key>
     <integer>100</integer>
     <key>com.schriftgestaltung.fontMasterOrder</key>
-    <integer>0</integer>
+    <integer>1</integer>
     <key>com.schriftgestaltung.weightValue</key>
-    <integer>400</integer>
+    <integer>900</integer>
     <key>com.schriftgestaltung.widthValue</key>
     <integer>100</integer>
     <key>public.glyphOrder</key>
     <array>
+      <string>.notdef</string>
       <string>space</string>
-      <string>exclam</string>
-      <string>hyphen</string>
-      <string>bracketleft</string>
-      <string>bracketright</string>
-      <string>manual-component</string>
+      <string>I</string>
+      <string>i</string>
     </array>
-    <key>public.postscriptNames</key>
-    <dict>
-      <key>manual-component</key>
-      <string>manualcomponent</string>
-    </dict>
   </dict>
 </plist>

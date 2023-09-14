@@ -60,17 +60,21 @@
     <integer>100</integer>
     <key>public.glyphOrder</key>
     <array>
+      <string>A</string>
       <string>space</string>
-      <string>exclam</string>
-      <string>hyphen</string>
-      <string>bracketleft</string>
-      <string>bracketright</string>
-      <string>manual-component</string>
+      <string>macroncomb</string>
     </array>
+    <key>public.openTypeCategories</key>
+    <dict>
+      <key>A</key>
+      <string>base</string>
+      <key>macroncomb</key>
+      <string>mark</string>
+    </dict>
     <key>public.postscriptNames</key>
     <dict>
-      <key>manual-component</key>
-      <string>manualcomponent</string>
+      <key>macroncomb</key>
+      <string>uni0304</string>
     </dict>
   </dict>
 </plist>
