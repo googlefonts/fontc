@@ -5,7 +5,7 @@ set -o errexit
 set -x
 
 function generate_designspace() {
-    rm -rf variable_ttf/ master_ufo/
+    rm -rf master_ufo/
     fontmake -o=ufo "$1"
     mv master_ufo/* resources/testdata/designspace_from_glyphs/
     rm -rf master_ufo/
