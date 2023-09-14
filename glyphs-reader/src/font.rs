@@ -1028,18 +1028,6 @@ impl RawFont {
         Ok(())
     }
 
-    fn v2_to_v3_anchors(&mut self) -> Result<(), Error> {
-        for glyph in self.glyphs.iter_mut() {
-            if let Some(Plist::String(group)) = glyph.other_stuff.remove("leftKerningGroup") {
-                glyph.kern_left = Some(group);
-            }
-            if let Some(Plist::String(group)) = glyph.other_stuff.remove("rightKerningGroup") {
-                glyph.kern_right = Some(group);
-            }
-        }
-        Ok(())
-    }
-
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
     fn v2_to_v3(&mut self) -> Result<(), Error> {
         self.v2_to_v3_weight()?;
@@ -1048,7 +1036,6 @@ impl RawFont {
         self.v2_to_v3_names()?;
         self.v2_to_v3_instances()?;
         self.v2_to_v3_kerning()?;
-        self.v2_to_v3_anchors()?;
         Ok(())
     }
 }
