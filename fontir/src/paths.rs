@@ -17,7 +17,7 @@ pub struct Paths {
 impl Paths {
     pub fn new(build_dir: &Path) -> Paths {
         let build_dir = build_dir.to_path_buf();
-        let anchor_ir_dir = build_dir.join("glyph_ir");
+        let anchor_ir_dir = build_dir.join("anchor_ir");
         let glyph_ir_dir = build_dir.join("glyph_ir");
         let ir_input_file = build_dir.join("irinput.yml");
         Paths {
@@ -30,6 +30,10 @@ impl Paths {
 
     pub fn build_dir(&self) -> &Path {
         &self.build_dir
+    }
+
+    pub fn anchor_ir_dir(&self) -> &Path {
+        &self.anchor_ir_dir
     }
 
     pub fn glyph_ir_dir(&self) -> &Path {

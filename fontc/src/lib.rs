@@ -61,6 +61,7 @@ pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
 
     require_dir(ir_paths.build_dir())?;
     if args.emit_ir {
+        require_dir(ir_paths.anchor_ir_dir())?;
         require_dir(ir_paths.glyph_ir_dir())?;
         require_dir(be_paths.glyph_dir())?;
     }
