@@ -1378,7 +1378,7 @@ impl TryFrom<RawLayer> for Layer {
                 } else if let Some(pos) = ra.position {
                     Point::from_plist(Plist::String(pos))
                 } else {
-                    panic!("No position for anchor {ra:?}");
+                    Point::ZERO
                 };
                 Anchor { name: ra.name, pos }
             })
