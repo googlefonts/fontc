@@ -821,10 +821,22 @@ impl Features {
     }
 }
 
-/// The complete set of anchor data
+/// The anchors for a [Glyph]
+///
+/// Not having any is fine.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Anchors {
-    pub anchors: HashMap<GlyphName, Vec<Anchor>>,
+pub struct GlyphAnchors {
+    pub glyph_name: GlyphName,
+    pub anchors: Vec<Anchor>,
+}
+
+impl GlyphAnchors {
+    pub fn new(glyph_name: GlyphName, anchors: Vec<Anchor>) -> Result<Self, WorkError> {
+        Ok(GlyphAnchors {
+            glyph_name,
+            anchors,
+        })
+    }
 }
 
 /// A variable definition of an anchor.
@@ -834,6 +846,66 @@ pub struct Anchors {
 pub struct Anchor {
     pub name: AnchorName,
     pub positions: HashMap<NormalizedLocation, Point>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AnchorBuilder {
+    glyph_name: GlyphName,
+    anchors: HashMap<AnchorName, HashMap<NormalizedLocation, Point>>,
+}
+
+impl AnchorBuilder {
+    pub fn new(glyph_name: GlyphName) -> Self {
+        Self {
+            glyph_name,
+            anchors: Default::default(),
+        }
+    }
+
+    pub fn add(
+        &mut self,
+        name: AnchorName,
+        loc: NormalizedLocation,
+        pos: Point,
+    ) -> Result<(), WorkError> {
+        if self
+            .anchors
+            .entry(name.clone())
+            .or_default()
+            .insert(loc.clone(), pos)
+            .is_some()
+        {
+            return Err(WorkError::AmbiguousAnchor {
+                glyph: self.glyph_name.clone(),
+                anchor: name,
+                loc,
+            });
+        }
+        Ok(())
+    }
+}
+
+impl TryInto<GlyphAnchors> for AnchorBuilder {
+    type Error = WorkError;
+
+    fn try_into(self) -> Result<GlyphAnchors, Self::Error> {
+        // It would be nice if everyone was defined at default
+        for (anchor, positions) in self.anchors.iter() {
+            if !positions.keys().any(|loc| !loc.has_any_non_zero()) {
+                return Err(WorkError::NoDefaultForAnchor {
+                    glyph: self.glyph_name.clone(),
+                    anchor: anchor.clone(),
+                });
+            }
+        }
+        GlyphAnchors::new(
+            self.glyph_name,
+            self.anchors
+                .into_iter()
+                .map(|(name, positions)| Anchor { name, positions })
+                .collect(),
+        )
+    }
 }
 
 /// A variable definition of a single glyph.
@@ -969,7 +1041,13 @@ impl Persistable for Kerning {
     }
 }
 
-impl Persistable for Anchors {
+impl IdAware<WorkId> for GlyphAnchors {
+    fn id(&self) -> WorkId {
+        WorkId::Anchor(self.glyph_name.clone())
+    }
+}
+
+impl Persistable for GlyphAnchors {
     fn read(from: &mut dyn Read) -> Self {
         serde_yaml::from_reader(from).unwrap()
     }

@@ -15,8 +15,8 @@ use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
     ir::{
-        Features, GlobalMetric, GlobalMetrics, GlyphOrder, KernParticipant, Kerning, NameBuilder,
-        NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+        AnchorBuilder, Features, GlobalMetric, GlobalMetrics, GlyphOrder, KernParticipant, Kerning,
+        NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork, WorkId},
     source::{Input, Source},
@@ -1155,6 +1155,17 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         Access::One(WorkId::StaticMetadata)
     }
 
+    fn write_access(&self) -> Access<WorkId> {
+        Access::Set(HashSet::from([
+            WorkId::Glyph(self.glyph_name.clone()),
+            WorkId::Anchor(self.glyph_name.clone()),
+        ]))
+    }
+
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::Anchor(self.glyph_name.clone())]
+    }
+
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!(
             "Generate glyph IR for {:?} from {:#?}",
@@ -1178,7 +1189,10 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             glif_files.insert(path, normalized_locations);
         }
 
-        let glyph_ir = to_ir_glyph(self.glyph_name.clone(), &glif_files)?;
+        let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
+        let glyph_ir = to_ir_glyph(self.glyph_name.clone(), &glif_files, &mut ir_anchors)?;
+
+        context.anchors.set(ir_anchors.try_into()?);
         context.glyphs.set(glyph_ir);
         Ok(())
     }
@@ -1192,7 +1206,7 @@ mod tests {
     };
 
     use font_types::Tag;
-    use fontdrasil::orchestration::Access;
+    use fontdrasil::{orchestration::Access, types::AnchorName};
     use fontir::{
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
         ir::{GlobalMetricsInstance, GlyphOrder, NameKey},
@@ -1324,6 +1338,21 @@ mod tests {
             .unwrap()
             .exec(&task_context)
             .unwrap();
+        (source, context)
+    }
+
+    fn build_glyphs(name: &str) -> (impl Source, Context) {
+        let (source, context) = build_static_metadata(name);
+        build_glyph_order(&context);
+
+        let glyph_order = context.glyph_order.get().iter().cloned().collect();
+        let task_context = context.copy_for_work(Access::All, Access::All);
+        source
+            .create_glyph_ir_work(&glyph_order, &context.input)
+            .unwrap()
+            .into_iter()
+            .for_each(|w| w.exec(&task_context).unwrap());
+
         (source, context)
     }
 
@@ -1670,6 +1699,31 @@ mod tests {
         assert_eq!(
             groups,
             vec![("public.kern1.correct_name", vec!["bar", "plus"],),],
+        );
+    }
+
+    #[test]
+    fn captures_anchors() {
+        let base_name = "A".into();
+        let mark_name = "macroncomb".into();
+        let (_, context) = build_glyphs("designspace_from_glyphs/WghtVar_Anchors.designspace");
+
+        let base = context.anchors.get(&WorkId::Anchor(base_name));
+        let mark = context.anchors.get(&WorkId::Anchor(mark_name));
+
+        assert_eq!(
+            vec![AnchorName::from("top")],
+            base.anchors
+                .iter()
+                .map(|a| a.name.clone())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec![AnchorName::from("_top")],
+            mark.anchors
+                .iter()
+                .map(|a| a.name.clone())
+                .collect::<Vec<_>>()
         );
     }
 }

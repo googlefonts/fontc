@@ -64,7 +64,8 @@ pub trait Source {
     /// Expected to return a Vec aligned with the glyph_names input. That is,
     /// result vec nth entry is the work for the nth glyph name.
     ///
-    /// When run work should update [Context] with [crate::ir::Glyph] for the glyph name.
+    /// When run work should update [Context] with [crate::ir::Glyph] and [crate::ir::Anchor]
+    /// for the glyph name.
     fn create_glyph_ir_work(
         &self,
         glyph_names: &IndexSet<GlyphName>,

@@ -308,7 +308,7 @@ pub enum WorkId {
     GlyphOrder,
     Features,
     Kerning,
-    Anchors,
+    Anchor(GlyphName),
 }
 
 impl Identifier for WorkId {}
@@ -371,7 +371,7 @@ pub struct Context {
     pub glyphs: FeContextMap<ir::Glyph>,
     pub features: FeContextItem<ir::Features>,
     pub kerning: FeContextItem<ir::Kerning>,
-    pub anchors: FeContextItem<ir::Anchors>,
+    pub anchors: FeContextMap<ir::GlyphAnchors>,
 }
 
 pub fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
@@ -430,7 +430,7 @@ impl Context {
             glyphs: ContextMap::new(acl.clone(), persistent_storage.clone()),
             features: ContextItem::new(WorkId::Features, acl.clone(), persistent_storage.clone()),
             kerning: ContextItem::new(WorkId::Kerning, acl.clone(), persistent_storage.clone()),
-            anchors: ContextItem::new(WorkId::Anchors, acl, persistent_storage),
+            anchors: ContextMap::new(acl, persistent_storage),
         }
     }
 
