@@ -1393,6 +1393,8 @@ impl TryFrom<RawLayer> for Layer {
     }
 }
 
+// Don't analyze me no more, no more
+
 impl TryFrom<RawGlyph> for Glyph {
     type Error = Error;
 
