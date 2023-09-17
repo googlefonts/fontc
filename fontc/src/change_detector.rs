@@ -1,6 +1,6 @@
 //! tracking changes during compilation
 
-use std::{ffi::OsStr, fmt::Debug, fs, path::Path};
+use std::{ffi::OsStr, fmt::Debug, fs, path::Path, time::Instant};
 
 use bitflags::bitflags;
 use fontbe::{
@@ -165,8 +165,8 @@ impl ChangeDetector {
         workload.add(work, run);
     }
 
-    pub fn create_workload(&mut self) -> Result<Workload, Error> {
-        let mut workload = Workload::new(self);
+    pub fn create_workload(&mut self, t0: Instant) -> Result<Workload, Error> {
+        let mut workload = Workload::new(self, t0);
 
         // Create work roughly in the order it would typically occur
         // Work is eligible to run as soon as all dependencies are complete

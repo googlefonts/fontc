@@ -31,6 +31,12 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub flatten_components: bool,
 
+    /// Whether to write a visualization of threadpool execution of tasks.
+    ///
+    /// See <https://github.com/googlefonts/fontc/pull/443>
+    #[arg(long, default_value = "false")]
+    pub emit_threads: bool,
+
     /// Working directory for the build process. If emit-ir is on, written here.
     #[arg(short, long, default_value = "build")]
     pub build_dir: PathBuf,
@@ -53,6 +59,7 @@ impl Args {
         flags.set(Flags::EMIT_DEBUG, self.emit_debug);
         flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
         flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
+        flags.set(Flags::EMIT_THREADS, self.emit_threads);
 
         flags
     }
@@ -69,6 +76,7 @@ impl Args {
             source,
             emit_ir: true,
             emit_debug: false, // they get destroyed by test cleanup
+            emit_threads: false,
             build_dir: build_dir.to_path_buf(),
             prefer_simple_glyphs: Flags::default().contains(Flags::PREFER_SIMPLE_GLYPHS),
             flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),

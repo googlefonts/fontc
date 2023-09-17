@@ -4,6 +4,7 @@ mod args;
 mod change_detector;
 mod config;
 mod error;
+mod timing;
 pub mod work;
 mod workload;
 
@@ -17,6 +18,7 @@ use workload::Workload;
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use fontbe::{
@@ -260,8 +262,11 @@ fn add_glyph_be_job(workload: &mut Workload, glyph_name: GlyphName) {
 }
 
 //FIXME: I should be a method on ChangeDetector
-pub fn create_workload(change_detector: &mut ChangeDetector) -> Result<Workload, Error> {
-    let mut workload = change_detector.create_workload()?;
+pub fn create_workload(
+    change_detector: &mut ChangeDetector,
+    t0: Instant,
+) -> Result<Workload, Error> {
+    let mut workload = change_detector.create_workload(t0)?;
 
     // FE: f(source) => IR
     add_feature_ir_job(&mut workload)?;
@@ -462,6 +467,7 @@ mod tests {
     }
 
     fn compile(args: Args) -> TestCompile {
+        let t0 = Instant::now();
         let _ = env_logger::builder().is_test(true).try_init();
 
         info!("Compile {args:?}");
@@ -474,7 +480,7 @@ mod tests {
         let mut change_detector =
             ChangeDetector::new(config.clone(), ir_paths.clone(), prev_inputs).unwrap();
 
-        let mut workload = create_workload(&mut change_detector).unwrap();
+        let mut workload = create_workload(&mut change_detector, t0).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one

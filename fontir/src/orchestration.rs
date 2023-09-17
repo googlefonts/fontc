@@ -29,6 +29,8 @@ bitflags! {
         // If set, a composite that references another composite will replace that composite with the
         // glyph(s) it references until only simple (contour) glyphs are referenced
         const FLATTEN_COMPONENTS = 0b00001000;
+        // If set a file visualizing thread activity will be emitted to disk
+        const EMIT_THREADS = 0b00010000;
     }
 }
 
@@ -309,6 +311,8 @@ pub enum WorkId {
     Features,
     Kerning,
     Anchor(GlyphName),
+    /// Bucket to attribute overhead
+    Overhead,
 }
 
 impl Identifier for WorkId {}
