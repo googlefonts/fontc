@@ -1,0 +1,8 @@
+absl-py
+# keep fontmake version pinned to ensure output from ttx_diff.py is stable;
+# the 'repacker' option enables faster GSUB/GPOS serialization via uharfbuzz
+fontmake[repacker]==3.7.1
+# technically fonttools is in turn a dependency of fontmake but a few of
+# our scripts import it directly, so we list it among the top-level requirements.
+fonttools
+lxml
