@@ -106,15 +106,19 @@ fn add_feature_ir_job(workload: &mut Workload) -> Result<(), Error> {
 fn add_feature_be_job(workload: &mut Workload) -> Result<(), Error> {
     let work = FeatureWork::create();
     // Features are extremely prone to not making sense when glyphs are filtered
-    if workload.change_detector.feature_be_change()
-        && workload.change_detector.glyph_name_filter().is_some()
-    {
-        warn!("Not processing BE Features because a glyph name filter is active");
+    if workload.change_detector.feature_be_change() {
+        if workload.change_detector.glyph_name_filter().is_some() {
+            warn!("Not processing BE Features because a glyph name filter is active");
+        }
+        if !workload.change_detector.should_compile_features() {
+            debug!("Not processing BE Features because FEA compilation is disabled");
+        }
     }
     workload.add(
         work.into(),
         workload.change_detector.feature_be_change()
-            && workload.change_detector.glyph_name_filter().is_none(),
+            && workload.change_detector.glyph_name_filter().is_none()
+            && workload.change_detector.should_compile_features(),
     );
     Ok(())
 }
