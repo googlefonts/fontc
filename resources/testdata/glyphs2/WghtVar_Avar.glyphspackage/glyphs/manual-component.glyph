@@ -1,0 +1,45 @@
+{
+glyphname = "manual-component";
+layers = (
+{
+components = (
+{
+name = hyphen;
+transform = "{1, 0, 0, 1, 0, 100}";
+},
+{
+name = hyphen;
+}
+);
+layerId = m01;
+width = 600;
+},
+{
+components = (
+{
+name = hyphen;
+transform = "{1.15, 0, 0, 1.25, 10, 100}";
+},
+{
+name = hyphen;
+}
+);
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+},
+{
+components = (
+{
+name = hyphen;
+transform = "{1.15, 0, 0, 1.25, -10, 100}";
+},
+{
+name = hyphen;
+}
+);
+layerId = "A7771C0D-4005-44AE-9B1F-ED6CCEC719DA";
+width = 600;
+}
+);
+unicode = 003D;
+}

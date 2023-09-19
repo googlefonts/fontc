@@ -1,0 +1,66 @@
+{
+glyphname = A;
+layers = (
+{
+anchors = (
+{
+name = top;
+position = "{300, 700}";
+}
+);
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"354 183 LINE",
+"414 585 LINE",
+"178 585 LINE",
+"238 182 LINE"
+);
+},
+{
+closed = 1;
+nodes = (
+"354 0 LINE",
+"354 107 LINE",
+"238 107 LINE",
+"238 0 LINE"
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = top;
+position = "{325, 725}";
+}
+);
+layerId = l2;
+paths = (
+{
+closed = 1;
+nodes = (
+"354 183 LINE",
+"414 585 LINE",
+"178 585 LINE",
+"238 182 LINE"
+);
+},
+{
+closed = 1;
+nodes = (
+"354 0 LINE",
+"354 107 LINE",
+"238 107 LINE",
+"238 0 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0041;
+}

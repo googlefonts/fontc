@@ -1,0 +1,94 @@
+{
+.appVersion = "3219";
+copyright = "Copy!";
+customParameters = (
+{
+name = localizedFamilyName;
+value = "Spanish;SpanishWghtVar";
+},
+{
+name = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+name = description;
+value = "The greatest weight var";
+},
+{
+name = versionString;
+value = "New Value";
+},
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WghtVar;
+fontMaster = (
+{
+alignmentZones = (
+"{737, 16}",
+"{0, -16}",
+"{-42, -16}"
+);
+ascender = 737;
+capHeight = 702;
+customParameters = (
+{
+name = typoAscender;
+value = 1193;
+},
+{
+name = typoDescender;
+value = -289;
+},
+{
+name = typoLineGap;
+value = 42;
+},
+{
+name = winAscent;
+value = 1325;
+},
+{
+name = winDescent;
+value = 377;
+},
+{
+name = hheaAscender;
+value = 1194;
+},
+{
+name = hheaDescender;
+value = -290;
+},
+{
+name = hheaLineGap;
+value = 43;
+}
+);
+descender = -42;
+id = m01;
+weightValue = 400;
+xHeight = 501;
+},
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}

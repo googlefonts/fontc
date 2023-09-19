@@ -1,0 +1,45 @@
+{
+.appVersion = "3219";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WghtVar_Anchors;
+fontMaster = (
+{
+alignmentZones = (
+"{800, 16}",
+"{0, -16}",
+"{0, -16}",
+"{0, -16}",
+"{-200, -16}"
+);
+ascender = 800;
+capHeight = 0;
+descender = -200;
+id = m01;
+weightValue = 400;
+xHeight = 0;
+},
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = l2;
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
