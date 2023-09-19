@@ -1867,12 +1867,18 @@ mod tests {
 
     fn assert_load_v2_matches_load_v3(name: &str) {
         let _ = env_logger::builder().is_test(true).try_init();
-        let g2 = Font::load(&glyphs2_dir().join(name)).unwrap();
-        let g3 = Font::load(&glyphs3_dir().join(name)).unwrap();
+        let filename = format!("{name}.glyphs");
+        let pkgname = format!("{name}.glyphspackage");
+        let g2 = Font::load(&glyphs2_dir().join(filename.clone())).unwrap();
+        let g2_pkg = Font::load(&glyphs2_dir().join(pkgname.clone())).unwrap();
+        let g3 = Font::load(&glyphs3_dir().join(filename.clone())).unwrap();
+        let g3_pkg = Font::load(&glyphs3_dir().join(pkgname.clone())).unwrap();
 
         // Handy if troubleshooting
-        std::fs::write("/tmp/g2.txt", format!("{g2:#?}")).unwrap();
-        std::fs::write("/tmp/g3.txt", format!("{g3:#?}")).unwrap();
+        std::fs::write("/tmp/g2.glyphs.txt", format!("{g2:#?}")).unwrap();
+        std::fs::write("/tmp/g2.glyphspackage.txt", format!("{g2_pkg:#?}")).unwrap();
+        std::fs::write("/tmp/g3.glyphs.txt", format!("{g3:#?}")).unwrap();
+        std::fs::write("/tmp/g3.glyphspackage.txt", format!("{g3_pkg:#?}")).unwrap();
 
         // Assert fields that often don't match individually before doing the whole struct for nicer diffs
         assert_eq!(g2.axes, g3.axes);
@@ -1880,31 +1886,33 @@ mod tests {
             assert_eq!(g2m, g3m);
         }
         assert_eq!(g2, g3);
+        assert_eq!(g2_pkg, g3_pkg);
+        assert_eq!(g3_pkg, g3);
     }
 
     #[test]
     fn read_wght_var_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar.glyphs");
+        assert_load_v2_matches_load_v3("WghtVar");
     }
 
     #[test]
     fn read_wght_var_avar_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_Avar.glyphs");
+        assert_load_v2_matches_load_v3("WghtVar_Avar");
     }
 
     #[test]
     fn read_wght_var_instances_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_Instances.glyphs");
+        assert_load_v2_matches_load_v3("WghtVar_Instances");
     }
 
     #[test]
     fn read_wght_var_os2_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_OS2.glyphs");
+        assert_load_v2_matches_load_v3("WghtVar_OS2");
     }
 
     #[test]
     fn read_wght_var_anchors_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_Anchors.glyphs");
+        assert_load_v2_matches_load_v3("WghtVar_Anchors");
     }
 
     fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {
