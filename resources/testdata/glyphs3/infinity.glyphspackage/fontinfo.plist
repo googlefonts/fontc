@@ -19,6 +19,4 @@ name = Regular;
 }
 );
 unitsPerEm = 1000;
-versionMajor = 1;
-versionMinor = 0;
 }
