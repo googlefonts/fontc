@@ -9,17 +9,6 @@ id = m01;
 name = Regular;
 }
 );
-glyphs = (
-{
-glyphname = infinity;
-layers = (
-{
-layerId = m01;
-width = 600;
-}
-);
-}
-);
 unitsPerEm = 1000;
 versionMajor = 1;
 versionMinor = 0;
