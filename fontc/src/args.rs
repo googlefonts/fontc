@@ -38,6 +38,10 @@ pub struct Args {
     /// Glyph names must match this regex to be processed
     #[arg(short, long, default_value = None)]
     pub glyph_name_filter: Option<String>,
+
+    /// Set to false to skip compilation of OpenType Layout features
+    #[arg(long, default_value = "true", action = ArgAction::Set)]
+    pub compile_features: bool,
 }
 
 impl Args {
@@ -68,6 +72,7 @@ impl Args {
             build_dir: build_dir.to_path_buf(),
             prefer_simple_glyphs: Flags::default().contains(Flags::PREFER_SIMPLE_GLYPHS),
             flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
+            compile_features: true,
         }
     }
 }

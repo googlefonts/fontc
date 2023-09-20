@@ -106,15 +106,19 @@ fn add_feature_ir_job(workload: &mut Workload) -> Result<(), Error> {
 fn add_feature_be_job(workload: &mut Workload) -> Result<(), Error> {
     let work = FeatureWork::create();
     // Features are extremely prone to not making sense when glyphs are filtered
-    if workload.change_detector.feature_be_change()
-        && workload.change_detector.glyph_name_filter().is_some()
-    {
-        warn!("Not processing BE Features because a glyph name filter is active");
+    if workload.change_detector.feature_be_change() {
+        if workload.change_detector.glyph_name_filter().is_some() {
+            warn!("Not processing BE Features because a glyph name filter is active");
+        }
+        if !workload.change_detector.should_compile_features() {
+            debug!("Not processing BE Features because FEA compilation is disabled");
+        }
     }
     workload.add(
         work.into(),
         workload.change_detector.feature_be_change()
-            && workload.change_detector.glyph_name_filter().is_none(),
+            && workload.change_detector.glyph_name_filter().is_none()
+            && workload.change_detector.should_compile_features(),
     );
     Ok(())
 }
@@ -1856,5 +1860,49 @@ mod tests {
             loca.get_raw(space_idx + 1).unwrap(),
             "space has no outline and should take 0 bytes of glyf"
         );
+    }
+
+    fn assert_no_compile_features(source: &str, table_tags: &[&[u8; 4]]) {
+        let temp_dir = tempdir().unwrap();
+
+        let default_build_dir = temp_dir.path().join("default");
+        // default is to compile_features=true
+        compile(Args::for_test(&default_build_dir, source));
+
+        let nofea_build_dir = temp_dir.path().join("nofea");
+        let mut args = Args::for_test(&nofea_build_dir, source);
+        args.compile_features = false;
+        compile(args);
+
+        let buf1 = fs::read(default_build_dir.join("font.ttf")).unwrap();
+        let font_with_fea = FontRef::new(&buf1).unwrap();
+
+        let buf2 = fs::read(nofea_build_dir.join("font.ttf")).unwrap();
+        let font_without_fea = FontRef::new(&buf2).unwrap();
+
+        for table_tag in table_tags {
+            let tag = Tag::new(table_tag);
+            assert!(font_with_fea.data_for_tag(tag).is_some());
+            assert!(font_without_fea.data_for_tag(tag).is_none());
+        }
+    }
+
+    #[test]
+    fn no_compile_features_from_glyphs_2() {
+        assert_no_compile_features("glyphs2/WghtVar.glyphs", &[b"GDEF", b"GPOS"]);
+    }
+
+    #[test]
+    fn no_compile_features_from_glyphs_3() {
+        assert_no_compile_features("glyphs3/WghtVar.glyphs", &[b"GDEF", b"GPOS"]);
+    }
+
+    #[test]
+    fn no_compile_features_from_ufo() {
+        assert_no_compile_features(
+            "designspace_from_glyphs/WghtVar.designspace",
+            &[b"GDEF", b"GPOS"],
+        );
+        assert_no_compile_features("static.designspace", &[b"GPOS", b"GSUB"]);
     }
 }
