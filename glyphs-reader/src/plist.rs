@@ -3,6 +3,12 @@ use std::collections::BTreeMap;
 
 use ordered_float::OrderedFloat;
 
+/// A plist dictionary
+pub type Dictionary = BTreeMap<String, Plist>;
+
+/// An array of plist values
+pub type Array = Vec<Plist>;
+
 /// An enum representing a property list.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Plist {
@@ -13,15 +19,29 @@ pub enum Plist {
     Float(OrderedFloat<f64>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Unexpected character '{0}'")]
     UnexpectedChar(char),
+    #[error("Unterminated string")]
     UnclosedString,
+    #[error("Unknown escape code")]
     UnknownEscape,
-    NotAString,
+    #[error("Expected string, found '{token_name}")]
+    NotAString { token_name: &'static str },
+    #[error("Missing '='")]
     ExpectedEquals,
+    #[error("Missing ','")]
     ExpectedComma,
+    #[error("Missing ';'")]
     ExpectedSemicolon,
+    #[error("Expected '{expected}', found '{found}'")]
+    UnexpectedDataType {
+        expected: &'static str,
+        found: &'static str,
+    },
+
+    #[error("Oops, this parser is just broken")]
     SomethingWentWrong,
 }
 
@@ -125,15 +145,6 @@ impl Plist {
         }
     }
 
-    #[allow(unused)]
-    pub fn as_dict(&self) -> Option<&BTreeMap<String, Plist>> {
-        match self {
-            Plist::Dictionary(d) => Some(d),
-            _ => None,
-        }
-    }
-
-    #[allow(unused)]
     pub fn get(&self, key: &str) -> Option<&Plist> {
         match self {
             Plist::Dictionary(d) => d.get(key),
@@ -141,7 +152,13 @@ impl Plist {
         }
     }
 
-    #[allow(unused)]
+    pub fn as_dict(&self) -> Option<&BTreeMap<String, Plist>> {
+        match self {
+            Plist::Dictionary(d) => Some(d),
+            _ => None,
+        }
+    }
+
     pub fn as_array(&self) -> Option<&[Plist]> {
         match self {
             Plist::Array(a) => Some(a),
@@ -149,7 +166,6 @@ impl Plist {
         }
     }
 
-    #[allow(unused)]
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Plist::String(s) => Some(s),
@@ -172,24 +188,33 @@ impl Plist {
         }
     }
 
-    pub fn into_string(self) -> String {
+    pub fn expect_dict(self) -> Result<Dictionary, Error> {
         match self {
-            Plist::String(s) => s,
-            _ => panic!("expected string, got {}", self.name()),
+            Plist::Dictionary(dict) => Ok(dict),
+            _other => Err(Error::UnexpectedDataType {
+                expected: "dictionary",
+                found: _other.name(),
+            }),
         }
     }
 
-    pub fn into_vec(self) -> Vec<Plist> {
+    pub fn expect_array(self) -> Result<Array, Error> {
         match self {
-            Plist::Array(a) => a,
-            _ => panic!("expected array, got {}", self.name()),
+            Plist::Array(array) => Ok(array),
+            _other => Err(Error::UnexpectedDataType {
+                expected: "array",
+                found: _other.name(),
+            }),
         }
     }
 
-    pub fn into_btreemap(self) -> BTreeMap<String, Plist> {
+    pub fn expect_string(self) -> Result<String, Error> {
         match self {
-            Plist::Dictionary(d) => d,
-            _ => panic!("expected dictionary, got {}", self.name()),
+            Plist::String(string) => Ok(string),
+            _other => Err(Error::UnexpectedDataType {
+                expected: "string",
+                found: _other.name(),
+            }),
         }
     }
 
@@ -390,7 +415,9 @@ impl<'a> Token<'a> {
         match self {
             Token::Atom(s) => Ok(s.into()),
             Token::String(s) => Ok(s.into()),
-            _ => Err(Error::NotAString),
+            Token::Eof => Err(Error::NotAString { token_name: "eof" }),
+            Token::OpenBrace => Err(Error::NotAString { token_name: "{" }),
+            Token::OpenParen => Err(Error::NotAString { token_name: "(" }),
         }
     }
 
