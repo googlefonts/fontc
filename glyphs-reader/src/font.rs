@@ -1782,6 +1782,7 @@ impl Font {
                 .into_iter()
                 .map(|glyph_name| glyphs.remove(&glyph_name).unwrap()),
         );
+        assert!(glyphs.is_empty());
         root_dict.insert("glyphs".to_string(), Plist::Array(ordered_glyphs));
 
         // ignore UIState.plist which stuff like displayStrings that are not used by us
