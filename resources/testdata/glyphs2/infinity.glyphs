@@ -1,0 +1,28 @@
+{
+.appVersion = "3219";
+date = "2023-09-20 08:55:41 +0000";
+familyName = InfWght;
+fontMaster = (
+{
+ascender = 800;
+capHeight = 0;
+descender = 0;
+id = m01;
+xHeight = 0;
+}
+);
+glyphs = (
+{
+glyphname = infinity;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
