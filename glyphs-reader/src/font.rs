@@ -4,7 +4,7 @@
 //! There are lots of other ways this could go, including something serde-like
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
 use std::{fs, path};
 
@@ -598,50 +598,6 @@ impl Path {
     pub fn reverse(&mut self) {
         self.nodes.reverse();
     }
-}
-
-fn for_raw_glyphs(
-    glyphs_file: &path::Path,
-    root_dict: &mut BTreeMap<String, Plist>,
-    callback: fn(&mut BTreeMap<String, Plist>) -> Result<(), Error>,
-) -> Result<(), Error> {
-    if !root_dict.contains_key("glyphs") {
-        return Ok(());
-    }
-    let Plist::Array(glyphs) = root_dict.get_mut("glyphs").unwrap() else {
-        return Err(Error::ParseError(
-            glyphs_file.to_path_buf(),
-            "Must have a glyphs array".to_string(),
-        ));
-    };
-    for glyph in glyphs.iter_mut() {
-        let Plist::Dictionary(glyph) = glyph else {
-            return Err(Error::ParseError(
-                glyphs_file.to_path_buf(),
-                "Glyph must be a dict".to_string(),
-            ));
-        };
-        callback(glyph)?;
-    }
-    Ok(())
-}
-
-fn fix_glyphs_named_infinity(
-    glyphs_file: &path::Path,
-    root_dict: &mut BTreeMap<String, Plist>,
-) -> Result<(), Error> {
-    for_raw_glyphs(glyphs_file, root_dict, |glyph| {
-        if !glyph.contains_key("glyphname") {
-            return Ok(());
-        }
-        if let Plist::Float(..) = glyph.get("glyphname").unwrap() {
-            glyph.insert(
-                "glyphname".to_string(),
-                Plist::String("infinity".to_string()),
-            );
-        }
-        Ok(())
-    })
 }
 
 fn custom_params_mut(other_stuff: &mut BTreeMap<String, Plist>) -> Option<&mut Vec<Plist>> {
@@ -1702,31 +1658,135 @@ impl TryFrom<RawFont> for Font {
     }
 }
 
+fn preprocess_unparsed_plist(s: String) -> String {
+    // Glyphs has a wide variety of unicode definitions, not all of them parser friendly
+    // Make unicode always a string, without any wrapping () so we can parse as csv, radix based on format version
+    let unicode_re =
+        Regex::new(r"(?m)^(?P<prefix>\s*unicode\s*=\s*)[(]?(?P<value>[0-9a-zA-Z,]+)[)]?;\s*$")
+            .unwrap();
+    // Some special glyph names can be parsed as floats so we enquote them
+    let glyphname_re =
+        Regex::new(r"(?mi)^(?P<prefix>\s*glyphname\s*=\s*)(?P<value>(?:infinity|inf|nan));\s*$")
+            .unwrap();
+    let s = unicode_re.replace_all(&s, r#"$prefix"$value";"#);
+    let s = glyphname_re.replace_all(&s, r#"$prefix"$value";"#);
+    s.into_owned()
+}
+
 impl Font {
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
+        if glyphs_file.is_dir() {
+            return Font::load_package(glyphs_file);
+        }
+
         debug!("Read {glyphs_file:?}");
-        let raw_content = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
+        let raw_content =
+            preprocess_unparsed_plist(fs::read_to_string(glyphs_file).map_err(Error::IoError)?);
 
-        // Glyphs has a wide variety of unicode definitions, not all of them parser friendly
-        // Make unicode always a string, without any wrapping () so we can parse as csv, radix based on format version
-        let re =
-            Regex::new(r"(?m)^(?P<prefix>\s*unicode\s*=\s*)[(]?(?P<value>[0-9a-zA-Z,]+)[)]?;\s*$")
-                .unwrap();
-        let raw_content = re.replace_all(&raw_content, r#"$prefix"$value";"#);
-
-        let mut raw_content = Plist::parse(&raw_content)
+        let raw_content = Plist::parse(&raw_content)
             .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), format!("{e:#?}")))?;
 
-        // Fix any issues with the raw plist
-        let Plist::Dictionary(ref mut root_dict) = raw_content else {
+        let raw_font = RawFont::from_plist(raw_content);
+        raw_font.try_into()
+    }
+
+    pub fn load_package(glyphs_package: &path::Path) -> Result<Font, Error> {
+        if !glyphs_package.is_dir() {
+            return Err(Error::NotAGlyphsPackage(glyphs_package.to_path_buf()));
+        }
+        debug!("Read {glyphs_package:?}");
+
+        let fontinfo_file = glyphs_package.join("fontinfo.plist");
+        let fontinfo_data = fs::read_to_string(&fontinfo_file).map_err(Error::IoError)?;
+        let mut font_plist = Plist::parse(&fontinfo_data)
+            .map_err(|e| Error::ParseError(fontinfo_file.to_path_buf(), format!("{e:#?}")))?;
+
+        let Plist::Dictionary(ref mut root_dict) = font_plist else {
             return Err(Error::ParseError(
-                glyphs_file.to_path_buf(),
+                fontinfo_file.to_path_buf(),
                 "Root must be a dict".to_string(),
             ));
         };
-        fix_glyphs_named_infinity(glyphs_file, root_dict)?;
 
-        let raw_font = RawFont::from_plist(raw_content);
+        let mut glyphs: HashMap<String, Plist> = HashMap::new();
+        let glyphs_dir = glyphs_package.join("glyphs");
+        if glyphs_dir.is_dir() {
+            for entry in fs::read_dir(glyphs_dir).map_err(Error::IoError)? {
+                let entry = entry.map_err(Error::IoError)?;
+                let name = entry.file_name();
+                if name.to_string_lossy().ends_with(".glyph") {
+                    let glyph_data = preprocess_unparsed_plist(
+                        fs::read_to_string(&entry.path()).map_err(Error::IoError)?,
+                    );
+                    let glyph_plist = Plist::parse(&glyph_data)
+                        .map_err(|e| Error::ParseError(entry.path(), format!("{e:#?}")))?;
+                    let Plist::Dictionary(ref glyph_dict) = glyph_plist else {
+                        return Err(Error::ParseError(
+                            entry.path(),
+                            "Glyph must be a dict".to_string(),
+                        ));
+                    };
+                    let glyph_name = glyph_dict
+                        .get("glyphname")
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| {
+                            Error::ParseError(
+                                entry.path(),
+                                "Glyph dict must have a 'glyphname' key".to_string(),
+                            )
+                        })?;
+                    glyphs.insert(glyph_name, glyph_plist);
+                }
+            }
+        }
+
+        // if order.plist file exists, read it and sort glyphs in it accordingly
+        let order_file = glyphs_package.join("order.plist");
+        let mut ordered_glyphs = Vec::new();
+        if order_file.exists() {
+            let order_data = fs::read_to_string(&order_file).map_err(Error::IoError)?;
+            // quote glyphname values that can be mistaken as floats
+            let glyphname_re = Regex::new(
+                r"(?mi)^(?P<prefix>\s*)(?P<value>(?:infinity|inf|nan))(?P<comma>,?)\s*$",
+            )
+            .unwrap();
+            let order_data = glyphname_re.replace_all(&order_data, r#"$prefix"$value"$comma"#);
+            let order_plist = Plist::parse(&order_data)
+                .map_err(|e| Error::ParseError(order_file.to_path_buf(), format!("{e:#?}")))?;
+            let Plist::Array(order) = order_plist else {
+                return Err(Error::ParseError(
+                    order_file.to_path_buf(),
+                    "Root must be an array".to_string(),
+                ));
+            };
+            for glyph_name in order {
+                let glyph_name = match glyph_name {
+                    Plist::String(glyph_name) => glyph_name,
+                    _ => {
+                        return Err(Error::ParseError(
+                            order_file.to_path_buf(),
+                            "Glyph name must be a string".to_string(),
+                        ));
+                    }
+                };
+                if glyphs.contains_key(&glyph_name) {
+                    ordered_glyphs.push(glyphs.remove(&glyph_name).unwrap());
+                }
+            }
+        }
+        // sort the glyphs not in order.plist by their name
+        let mut glyph_names: Vec<String> = glyphs.keys().cloned().collect();
+        glyph_names.sort();
+        ordered_glyphs.extend(
+            glyph_names
+                .into_iter()
+                .map(|glyph_name| glyphs.remove(&glyph_name).unwrap()),
+        );
+        root_dict.insert("glyphs".to_string(), Plist::Array(ordered_glyphs));
+
+        // ignore UIState.plist which stuff like displayStrings that are not used by us
+
+        let raw_font = RawFont::from_plist(font_plist);
         raw_font.try_into()
     }
 
