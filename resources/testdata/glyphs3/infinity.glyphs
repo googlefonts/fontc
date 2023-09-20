@@ -4,9 +4,19 @@ familyName = "InfWght";
 glyphs = (
 	{
 		glyphname = infinity;
-		layers = ();
+		layers = (
+			{
+				layerId = m01;
+				width = 600;
+			}
+		);
 	}
 );
-fontMaster = ();
+fontMaster = (
+	{
+		id = m01;
+		name = Regular;
+	}
+);
 unitsPerEm = 1000;
 }
