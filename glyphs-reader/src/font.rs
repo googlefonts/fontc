@@ -5,6 +5,7 @@
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::ffi::OsStr;
 use std::hash::Hash;
 use std::{fs, path};
 
@@ -1675,7 +1676,7 @@ fn preprocess_unparsed_plist(s: String) -> String {
 
 impl Font {
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
-        if glyphs_file.is_dir() {
+        if glyphs_file.extension() == Some(OsStr::new("glyphspackage")) {
             return Font::load_package(glyphs_file);
         }
 
@@ -1684,13 +1685,13 @@ impl Font {
             preprocess_unparsed_plist(fs::read_to_string(glyphs_file).map_err(Error::IoError)?);
 
         let raw_content = Plist::parse(&raw_content)
-            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), format!("{e:#?}")))?;
+            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), e.to_string()))?;
 
         let raw_font = RawFont::from_plist(raw_content);
         raw_font.try_into()
     }
 
-    pub fn load_package(glyphs_package: &path::Path) -> Result<Font, Error> {
+    fn load_package(glyphs_package: &path::Path) -> Result<Font, Error> {
         if !glyphs_package.is_dir() {
             return Err(Error::NotAGlyphsPackage(glyphs_package.to_path_buf()));
         }
@@ -1699,7 +1700,7 @@ impl Font {
         let fontinfo_file = glyphs_package.join("fontinfo.plist");
         let fontinfo_data = fs::read_to_string(&fontinfo_file).map_err(Error::IoError)?;
         let mut font_plist = Plist::parse(&fontinfo_data)
-            .map_err(|e| Error::ParseError(fontinfo_file.to_path_buf(), format!("{e:#?}")))?;
+            .map_err(|e| Error::ParseError(fontinfo_file.to_path_buf(), e.to_string()))?;
 
         let Plist::Dictionary(ref mut root_dict) = font_plist else {
             return Err(Error::ParseError(
@@ -1713,13 +1714,13 @@ impl Font {
         if glyphs_dir.is_dir() {
             for entry in fs::read_dir(glyphs_dir).map_err(Error::IoError)? {
                 let entry = entry.map_err(Error::IoError)?;
-                let name = entry.file_name();
-                if name.to_string_lossy().ends_with(".glyph") {
+                let path = entry.path();
+                if path.extension() == Some(OsStr::new("glyph")) {
                     let glyph_data = preprocess_unparsed_plist(
-                        fs::read_to_string(&entry.path()).map_err(Error::IoError)?,
+                        fs::read_to_string(&path).map_err(Error::IoError)?,
                     );
                     let glyph_plist = Plist::parse(&glyph_data)
-                        .map_err(|e| Error::ParseError(entry.path(), format!("{e:#?}")))?;
+                        .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
                     let Plist::Dictionary(ref glyph_dict) = glyph_plist else {
                         return Err(Error::ParseError(
                             entry.path(),
@@ -1731,7 +1732,7 @@ impl Font {
                         .map(|s| s.to_string())
                         .ok_or_else(|| {
                             Error::ParseError(
-                                entry.path(),
+                                path.clone(),
                                 "Glyph dict must have a 'glyphname' key".to_string(),
                             )
                         })?;
@@ -1752,7 +1753,7 @@ impl Font {
             .unwrap();
             let order_data = glyphname_re.replace_all(&order_data, r#"$prefix"$value"$comma"#);
             let order_plist = Plist::parse(&order_data)
-                .map_err(|e| Error::ParseError(order_file.to_path_buf(), format!("{e:#?}")))?;
+                .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
             let Plist::Array(order) = order_plist else {
                 return Err(Error::ParseError(
                     order_file.to_path_buf(),
