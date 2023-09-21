@@ -1665,12 +1665,7 @@ fn preprocess_unparsed_plist(s: String) -> String {
     let unicode_re =
         Regex::new(r"(?m)^(?P<prefix>\s*unicode\s*=\s*)[(]?(?P<value>[0-9a-zA-Z,]+)[)]?;\s*$")
             .unwrap();
-    // Some special glyph names can be parsed as floats so we enquote them
-    let glyphname_re =
-        Regex::new(r"(?mi)^(?P<prefix>\s*glyphname\s*=\s*)(?P<value>(?:infinity|inf|nan));\s*$")
-            .unwrap();
     let s = unicode_re.replace_all(&s, r#"$prefix"$value";"#);
-    let s = glyphname_re.replace_all(&s, r#"$prefix"$value";"#);
     s.into_owned()
 }
 
@@ -1743,12 +1738,6 @@ impl Font {
         let mut ordered_glyphs = Array::new();
         if order_file.exists() {
             let order_data = fs::read_to_string(&order_file).map_err(Error::IoError)?;
-            // quote glyphname values that can be mistaken as floats
-            let glyphname_re = Regex::new(
-                r"(?mi)^(?P<prefix>\s*)(?P<value>(?:infinity|inf|nan))(?P<comma>,?)\s*$",
-            )
-            .unwrap();
-            let order_data = glyphname_re.replace_all(&order_data, r#"$prefix"$value"$comma"#);
             let order_plist = Plist::parse(&order_data)
                 .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
             let Plist::Array(order) = order_plist else {
