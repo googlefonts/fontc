@@ -21,7 +21,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let expanded = quote! {
         impl crate::from_plist::FromPlist for #name {
             fn from_plist(plist: crate::plist::Plist) -> Self {
-                let mut map = plist.into_btreemap();
+                let mut map = plist.expect_dict().unwrap();
                 #name {
                     #deser
                 }

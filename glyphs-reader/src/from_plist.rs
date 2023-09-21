@@ -14,7 +14,7 @@ pub trait FromPlistOpt {
 
 impl FromPlist for String {
     fn from_plist(plist: Plist) -> Self {
-        plist.into_string()
+        plist.expect_string().unwrap()
     }
 }
 
@@ -40,7 +40,7 @@ impl FromPlist for f64 {
 impl<T: FromPlist> FromPlist for Vec<T> {
     fn from_plist(plist: Plist) -> Self {
         let mut result = Vec::new();
-        for element in plist.into_vec() {
+        for element in plist.expect_array().unwrap() {
             result.push(FromPlist::from_plist(element));
         }
         result
