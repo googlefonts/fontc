@@ -16,7 +16,7 @@ use regex::Regex;
 
 use crate::error::Error;
 use crate::from_plist::FromPlist;
-use crate::plist::Plist;
+use crate::plist::{Array, Dictionary, Plist};
 
 const V3_METRIC_NAMES: [&str; 6] = [
     "ascender",
@@ -1709,7 +1709,7 @@ impl Font {
             ));
         };
 
-        let mut glyphs: HashMap<String, Plist> = HashMap::new();
+        let mut glyphs: HashMap<String, Dictionary> = HashMap::new();
         let glyphs_dir = glyphs_package.join("glyphs");
         if glyphs_dir.is_dir() {
             for entry in fs::read_dir(glyphs_dir).map_err(Error::IoError)? {
@@ -1719,31 +1719,28 @@ impl Font {
                     let glyph_data = preprocess_unparsed_plist(
                         fs::read_to_string(&path).map_err(Error::IoError)?,
                     );
-                    let glyph_plist = Plist::parse(&glyph_data)
+                    let glyph_dict = Plist::parse(&glyph_data)
+                        .and_then(Plist::expect_dict)
                         .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
-                    let Plist::Dictionary(ref glyph_dict) = glyph_plist else {
-                        return Err(Error::ParseError(
-                            entry.path(),
-                            "Glyph must be a dict".to_string(),
-                        ));
-                    };
                     let glyph_name = glyph_dict
                         .get("glyphname")
-                        .map(|s| s.to_string())
                         .ok_or_else(|| {
                             Error::ParseError(
                                 path.clone(),
                                 "Glyph dict must have a 'glyphname' key".to_string(),
                             )
-                        })?;
-                    glyphs.insert(glyph_name, glyph_plist);
+                        })?
+                        .clone()
+                        .expect_string()
+                        .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
+                    glyphs.insert(glyph_name, glyph_dict);
                 }
             }
         }
 
         // if order.plist file exists, read it and sort glyphs in it accordingly
         let order_file = glyphs_package.join("order.plist");
-        let mut ordered_glyphs = Vec::new();
+        let mut ordered_glyphs = Array::new();
         if order_file.exists() {
             let order_data = fs::read_to_string(&order_file).map_err(Error::IoError)?;
             // quote glyphname values that can be mistaken as floats
@@ -1771,7 +1768,7 @@ impl Font {
                     }
                 };
                 if glyphs.contains_key(&glyph_name) {
-                    ordered_glyphs.push(glyphs.remove(&glyph_name).unwrap());
+                    ordered_glyphs.push(Plist::Dictionary(glyphs.remove(&glyph_name).unwrap()));
                 }
             }
         }
@@ -1781,7 +1778,7 @@ impl Font {
         ordered_glyphs.extend(
             glyph_names
                 .into_iter()
-                .map(|glyph_name| glyphs.remove(&glyph_name).unwrap()),
+                .map(|glyph_name| Plist::Dictionary(glyphs.remove(&glyph_name).unwrap())),
         );
         assert!(glyphs.is_empty());
         root_dict.insert("glyphs".to_string(), Plist::Array(ordered_glyphs));
