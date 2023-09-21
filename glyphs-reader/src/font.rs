@@ -4,6 +4,7 @@
 //! There are lots of other ways this could go, including something serde-like
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::Hash;
@@ -1659,14 +1660,13 @@ impl TryFrom<RawFont> for Font {
     }
 }
 
-fn preprocess_unparsed_plist(s: String) -> String {
+fn preprocess_unparsed_plist(s: &str) -> Cow<str> {
     // Glyphs has a wide variety of unicode definitions, not all of them parser friendly
     // Make unicode always a string, without any wrapping () so we can parse as csv, radix based on format version
     let unicode_re =
         Regex::new(r"(?m)^(?P<prefix>\s*unicode\s*=\s*)[(]?(?P<value>[0-9a-zA-Z,]+)[)]?;\s*$")
             .unwrap();
-    let s = unicode_re.replace_all(&s, r#"$prefix"$value";"#);
-    s.into_owned()
+    unicode_re.replace_all(s, r#"$prefix"$value";"#)
 }
 
 impl Font {
@@ -1676,9 +1676,8 @@ impl Font {
         }
 
         debug!("Read {glyphs_file:?}");
-        let raw_content =
-            preprocess_unparsed_plist(fs::read_to_string(glyphs_file).map_err(Error::IoError)?);
-
+        let raw_content = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
+        let raw_content = preprocess_unparsed_plist(&raw_content);
         let raw_content = Plist::parse(&raw_content)
             .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), e.to_string()))?;
 
@@ -1711,9 +1710,8 @@ impl Font {
                 let entry = entry.map_err(Error::IoError)?;
                 let path = entry.path();
                 if path.extension() == Some(OsStr::new("glyph")) {
-                    let glyph_data = preprocess_unparsed_plist(
-                        fs::read_to_string(&path).map_err(Error::IoError)?,
-                    );
+                    let glyph_data = fs::read_to_string(&path).map_err(Error::IoError)?;
+                    let glyph_data = preprocess_unparsed_plist(&glyph_data);
                     let glyph_dict = Plist::parse(&glyph_data)
                         .and_then(Plist::expect_dict)
                         .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
