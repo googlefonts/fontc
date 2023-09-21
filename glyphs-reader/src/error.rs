@@ -16,4 +16,6 @@ pub enum Error {
     InvalidUpem(#[from] TryFromIntError),
     #[error("Unrecognized name {0}")]
     UnknownValueName(String),
+    #[error("Not a .glyphspackage directory: {0}")]
+    NotAGlyphsPackage(PathBuf),
 }

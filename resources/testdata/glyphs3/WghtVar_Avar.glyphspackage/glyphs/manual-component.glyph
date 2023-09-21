@@ -1,0 +1,47 @@
+{
+glyphname = "manual-component";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+pos = (0,100);
+ref = hyphen;
+},
+{
+ref = hyphen;
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+pos = (10,100);
+ref = hyphen;
+scale = (1.15,1.25);
+},
+{
+ref = hyphen;
+}
+);
+width = 600;
+},
+{
+layerId = "A7771C0D-4005-44AE-9B1F-ED6CCEC719DA";
+shapes = (
+{
+pos = (-10,100);
+ref = hyphen;
+scale = (1.15,1.25);
+},
+{
+ref = hyphen;
+}
+);
+width = 600;
+}
+);
+unicode = 61;
+}

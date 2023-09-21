@@ -1,5 +1,5 @@
 {
-.appVersion = "3218";
+.appVersion = "3219";
 .formatVersion = 3;
 DisplayStrings = (
 A
@@ -42,7 +42,7 @@ axesValues = (
 700
 );
 iconName = Bold;
-id = "l2";
+id = l2;
 metricValues = (
 {
 pos = 800;
@@ -104,7 +104,7 @@ name = top;
 pos = (325,725);
 }
 );
-layerId = "l2";
+layerId = l2;
 shapes = (
 {
 closed = 1;
@@ -139,7 +139,7 @@ layerId = m01;
 width = 200;
 },
 {
-layerId = "l2";
+layerId = l2;
 width = 600;
 }
 );
@@ -177,7 +177,7 @@ name = _top;
 pos = (310,610);
 }
 );
-layerId = "l2";
+layerId = l2;
 shapes = (
 {
 closed = 1;

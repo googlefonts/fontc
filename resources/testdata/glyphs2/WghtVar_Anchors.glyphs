@@ -1,5 +1,5 @@
 {
-.appVersion = "3218";
+.appVersion = "3219";
 DisplayStrings = (
 A
 );
@@ -34,7 +34,7 @@ xHeight = 0;
 ascender = 800;
 capHeight = 700;
 descender = -200;
-id = "l2";
+id = l2;
 weight = Bold;
 weightValue = 700;
 xHeight = 500;
@@ -82,7 +82,7 @@ name = top;
 position = "{325, 725}";
 }
 );
-layerId = "l2";
+layerId = l2;
 paths = (
 {
 closed = 1;
@@ -117,7 +117,7 @@ layerId = m01;
 width = 200;
 },
 {
-layerId = "l2";
+layerId = l2;
 width = 600;
 }
 );
@@ -155,7 +155,7 @@ name = _top;
 position = "{310, 610}";
 }
 );
-layerId = "l2";
+layerId = l2;
 paths = (
 {
 closed = 1;

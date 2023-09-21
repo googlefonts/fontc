@@ -1,0 +1,48 @@
+{
+glyphname = macroncomb;
+layers = (
+{
+anchors = (
+{
+name = _top;
+position = "{300, 600}";
+}
+);
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"140 661 LINE",
+"454 661 LINE",
+"454 724 LINE",
+"140 724 LINE"
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = _top;
+position = "{310, 610}";
+}
+);
+layerId = l2;
+paths = (
+{
+closed = 1;
+nodes = (
+"132 658 LINE",
+"462 658 LINE",
+"462 728 LINE",
+"132 728 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0304;
+}

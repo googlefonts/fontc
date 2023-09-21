@@ -1,0 +1,27 @@
+{
+.appVersion = "3219";
+customParameters = (
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+date = "2023-09-20 08:55:41 +0000";
+familyName = InfWght;
+fontMaster = (
+{
+ascender = 0;
+capHeight = 0;
+descender = 0;
+id = m01;
+weightValue = 400;
+xHeight = 0;
+}
+);
+unitsPerEm = 1000;
+}

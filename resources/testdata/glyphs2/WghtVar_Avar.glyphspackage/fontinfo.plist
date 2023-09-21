@@ -1,0 +1,80 @@
+{
+.appVersion = "3219";
+copyright = "Copy!";
+customParameters = (
+{
+name = localizedFamilyName;
+value = "Spanish;SpanishWghtVar";
+},
+{
+name = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+name = description;
+value = "The greatest weight var";
+},
+{
+name = versionString;
+value = "New Value";
+},
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WghtVar;
+fontMaster = (
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "A7771C0D-4005-44AE-9B1F-ED6CCEC719DA";
+weight = Light;
+weightValue = 300;
+xHeight = 500;
+},
+{
+alignmentZones = (
+"{737, 16}",
+"{0, -16}",
+"{-42, -16}"
+);
+ascender = 737;
+capHeight = 702;
+descender = -42;
+id = m01;
+weightValue = 400;
+xHeight = 501;
+},
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+}
+);
+instances = (
+{
+interpolationWeight = 600;
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 0.66667;
+m01 = 0.33333;
+};
+name = Medium;
+weightClass = Medium;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}

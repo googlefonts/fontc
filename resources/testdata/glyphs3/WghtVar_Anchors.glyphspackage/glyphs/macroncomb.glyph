@@ -1,0 +1,48 @@
+{
+glyphname = macroncomb;
+layers = (
+{
+anchors = (
+{
+name = _top;
+pos = (300,600);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(140,661,l),
+(454,661,l),
+(454,724,l),
+(140,724,l)
+);
+}
+);
+width = 600;
+},
+{
+anchors = (
+{
+name = _top;
+pos = (310,610);
+}
+);
+layerId = l2;
+shapes = (
+{
+closed = 1;
+nodes = (
+(132,658,l),
+(462,658,l),
+(462,728,l),
+(132,728,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 772;
+}

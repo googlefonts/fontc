@@ -1,12 +1,33 @@
 {
+.appVersion = "3219";
 .formatVersion = 3;
-familyName = "InfWght";
-glyphs = (
-	{
-		glyphname = infinity;
-		layers = ();
-	}
+axes = (
+{
+name = Weight;
+tag = wght;
+}
 );
-fontMaster = ();
+date = "2023-09-20 08:55:41 +0000";
+familyName = InfWght;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = infinity;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+}
+);
 unitsPerEm = 1000;
 }

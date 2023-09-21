@@ -1,0 +1,22 @@
+{
+.appVersion = "3219";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+date = "2023-09-20 08:55:41 +0000";
+familyName = InfWght;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+}
+);
+unitsPerEm = 1000;
+}

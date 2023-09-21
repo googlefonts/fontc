@@ -4,7 +4,9 @@
 //! There are lots of other ways this could go, including something serde-like
 //! where it gets serialized to more Rust-native structures, proc macros, etc.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::ffi::OsStr;
 use std::hash::Hash;
 use std::{fs, path};
 
@@ -15,7 +17,7 @@ use regex::Regex;
 
 use crate::error::Error;
 use crate::from_plist::FromPlist;
-use crate::plist::Plist;
+use crate::plist::{Array, Dictionary, Plist};
 
 const V3_METRIC_NAMES: [&str; 6] = [
     "ascender",
@@ -598,50 +600,6 @@ impl Path {
     pub fn reverse(&mut self) {
         self.nodes.reverse();
     }
-}
-
-fn for_raw_glyphs(
-    glyphs_file: &path::Path,
-    root_dict: &mut BTreeMap<String, Plist>,
-    callback: fn(&mut BTreeMap<String, Plist>) -> Result<(), Error>,
-) -> Result<(), Error> {
-    if !root_dict.contains_key("glyphs") {
-        return Ok(());
-    }
-    let Plist::Array(glyphs) = root_dict.get_mut("glyphs").unwrap() else {
-        return Err(Error::ParseError(
-            glyphs_file.to_path_buf(),
-            "Must have a glyphs array".to_string(),
-        ));
-    };
-    for glyph in glyphs.iter_mut() {
-        let Plist::Dictionary(glyph) = glyph else {
-            return Err(Error::ParseError(
-                glyphs_file.to_path_buf(),
-                "Glyph must be a dict".to_string(),
-            ));
-        };
-        callback(glyph)?;
-    }
-    Ok(())
-}
-
-fn fix_glyphs_named_infinity(
-    glyphs_file: &path::Path,
-    root_dict: &mut BTreeMap<String, Plist>,
-) -> Result<(), Error> {
-    for_raw_glyphs(glyphs_file, root_dict, |glyph| {
-        if !glyph.contains_key("glyphname") {
-            return Ok(());
-        }
-        if let Plist::Float(..) = glyph.get("glyphname").unwrap() {
-            glyph.insert(
-                "glyphname".to_string(),
-                Plist::String("infinity".to_string()),
-            );
-        }
-        Ok(())
-    })
 }
 
 fn custom_params_mut(other_stuff: &mut BTreeMap<String, Plist>) -> Option<&mut Vec<Plist>> {
@@ -1702,31 +1660,110 @@ impl TryFrom<RawFont> for Font {
     }
 }
 
+fn preprocess_unparsed_plist(s: &str) -> Cow<str> {
+    // Glyphs has a wide variety of unicode definitions, not all of them parser friendly
+    // Make unicode always a string, without any wrapping () so we can parse as csv, radix based on format version
+    let unicode_re =
+        Regex::new(r"(?m)^(?P<prefix>\s*unicode\s*=\s*)[(]?(?P<value>[0-9a-zA-Z,]+)[)]?;\s*$")
+            .unwrap();
+    unicode_re.replace_all(s, r#"$prefix"$value";"#)
+}
+
 impl Font {
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
+        if glyphs_file.extension() == Some(OsStr::new("glyphspackage")) {
+            return Font::load_package(glyphs_file);
+        }
+
         debug!("Read {glyphs_file:?}");
         let raw_content = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
+        let raw_content = preprocess_unparsed_plist(&raw_content);
+        let raw_content = Plist::parse(&raw_content)
+            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), e.to_string()))?;
 
-        // Glyphs has a wide variety of unicode definitions, not all of them parser friendly
-        // Make unicode always a string, without any wrapping () so we can parse as csv, radix based on format version
-        let re =
-            Regex::new(r"(?m)^(?P<prefix>\s*unicode\s*=\s*)[(]?(?P<value>[0-9a-zA-Z,]+)[)]?;\s*$")
-                .unwrap();
-        let raw_content = re.replace_all(&raw_content, r#"$prefix"$value";"#);
+        let raw_font = RawFont::from_plist(raw_content);
+        raw_font.try_into()
+    }
 
-        let mut raw_content = Plist::parse(&raw_content)
-            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), format!("{e:#?}")))?;
+    fn load_package(glyphs_package: &path::Path) -> Result<Font, Error> {
+        if !glyphs_package.is_dir() {
+            return Err(Error::NotAGlyphsPackage(glyphs_package.to_path_buf()));
+        }
+        debug!("Read {glyphs_package:?}");
 
-        // Fix any issues with the raw plist
-        let Plist::Dictionary(ref mut root_dict) = raw_content else {
+        let fontinfo_file = glyphs_package.join("fontinfo.plist");
+        let fontinfo_data = fs::read_to_string(&fontinfo_file).map_err(Error::IoError)?;
+        let mut font_plist = Plist::parse(&fontinfo_data)
+            .map_err(|e| Error::ParseError(fontinfo_file.to_path_buf(), e.to_string()))?;
+
+        let Plist::Dictionary(ref mut root_dict) = font_plist else {
             return Err(Error::ParseError(
-                glyphs_file.to_path_buf(),
+                fontinfo_file.to_path_buf(),
                 "Root must be a dict".to_string(),
             ));
         };
-        fix_glyphs_named_infinity(glyphs_file, root_dict)?;
 
-        let raw_font = RawFont::from_plist(raw_content);
+        let mut glyphs: HashMap<String, Dictionary> = HashMap::new();
+        let glyphs_dir = glyphs_package.join("glyphs");
+        if glyphs_dir.is_dir() {
+            for entry in fs::read_dir(glyphs_dir).map_err(Error::IoError)? {
+                let entry = entry.map_err(Error::IoError)?;
+                let path = entry.path();
+                if path.extension() == Some(OsStr::new("glyph")) {
+                    let glyph_data = fs::read_to_string(&path).map_err(Error::IoError)?;
+                    let glyph_data = preprocess_unparsed_plist(&glyph_data);
+                    let glyph_dict = Plist::parse(&glyph_data)
+                        .and_then(Plist::expect_dict)
+                        .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
+                    let glyph_name = glyph_dict
+                        .get("glyphname")
+                        .ok_or_else(|| {
+                            Error::ParseError(
+                                path.clone(),
+                                "Glyph dict must have a 'glyphname' key".to_string(),
+                            )
+                        })?
+                        .clone()
+                        .expect_string()
+                        .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
+                    glyphs.insert(glyph_name, glyph_dict);
+                }
+            }
+        }
+
+        // if order.plist file exists, read it and sort glyphs in it accordingly
+        let order_file = glyphs_package.join("order.plist");
+        let mut ordered_glyphs = Array::new();
+        if order_file.exists() {
+            let order_data = fs::read_to_string(&order_file).map_err(Error::IoError)?;
+            let order_plist = Plist::parse(&order_data)
+                .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
+            let order = order_plist
+                .expect_array()
+                .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
+            for glyph_name in order {
+                let glyph_name = glyph_name
+                    .expect_string()
+                    .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
+                if glyphs.contains_key(&glyph_name) {
+                    ordered_glyphs.push(Plist::Dictionary(glyphs.remove(&glyph_name).unwrap()));
+                }
+            }
+        }
+        // sort the glyphs not in order.plist by their name
+        let mut glyph_names: Vec<String> = glyphs.keys().cloned().collect();
+        glyph_names.sort();
+        ordered_glyphs.extend(
+            glyph_names
+                .into_iter()
+                .map(|glyph_name| Plist::Dictionary(glyphs.remove(&glyph_name).unwrap())),
+        );
+        assert!(glyphs.is_empty());
+        root_dict.insert("glyphs".to_string(), Plist::Array(ordered_glyphs));
+
+        // ignore UIState.plist which stuff like displayStrings that are not used by us
+
+        let raw_font = RawFont::from_plist(font_plist);
         raw_font.try_into()
     }
 
@@ -1867,12 +1904,18 @@ mod tests {
 
     fn assert_load_v2_matches_load_v3(name: &str) {
         let _ = env_logger::builder().is_test(true).try_init();
-        let g2 = Font::load(&glyphs2_dir().join(name)).unwrap();
-        let g3 = Font::load(&glyphs3_dir().join(name)).unwrap();
+        let filename = format!("{name}.glyphs");
+        let pkgname = format!("{name}.glyphspackage");
+        let g2 = Font::load(&glyphs2_dir().join(filename.clone())).unwrap();
+        let g2_pkg = Font::load(&glyphs2_dir().join(pkgname.clone())).unwrap();
+        let g3 = Font::load(&glyphs3_dir().join(filename.clone())).unwrap();
+        let g3_pkg = Font::load(&glyphs3_dir().join(pkgname.clone())).unwrap();
 
         // Handy if troubleshooting
-        std::fs::write("/tmp/g2.txt", format!("{g2:#?}")).unwrap();
-        std::fs::write("/tmp/g3.txt", format!("{g3:#?}")).unwrap();
+        std::fs::write("/tmp/g2.glyphs.txt", format!("{g2:#?}")).unwrap();
+        std::fs::write("/tmp/g2.glyphspackage.txt", format!("{g2_pkg:#?}")).unwrap();
+        std::fs::write("/tmp/g3.glyphs.txt", format!("{g3:#?}")).unwrap();
+        std::fs::write("/tmp/g3.glyphspackage.txt", format!("{g3_pkg:#?}")).unwrap();
 
         // Assert fields that often don't match individually before doing the whole struct for nicer diffs
         assert_eq!(g2.axes, g3.axes);
@@ -1880,31 +1923,38 @@ mod tests {
             assert_eq!(g2m, g3m);
         }
         assert_eq!(g2, g3);
+        assert_eq!(g2_pkg, g3_pkg);
+        assert_eq!(g3_pkg, g3);
     }
 
     #[test]
     fn read_wght_var_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar.glyphs");
+        assert_load_v2_matches_load_v3("WghtVar");
     }
 
     #[test]
     fn read_wght_var_avar_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_Avar.glyphs");
+        assert_load_v2_matches_load_v3("WghtVar_Avar");
     }
 
     #[test]
     fn read_wght_var_instances_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_Instances.glyphs");
+        assert_load_v2_matches_load_v3("WghtVar_Instances");
     }
 
     #[test]
     fn read_wght_var_os2_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_OS2.glyphs");
+        assert_load_v2_matches_load_v3("WghtVar_OS2");
     }
 
     #[test]
     fn read_wght_var_anchors_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_Anchors.glyphs");
+        assert_load_v2_matches_load_v3("WghtVar_Anchors");
+    }
+
+    #[test]
+    fn read_infinity_2_and_3() {
+        assert_load_v2_matches_load_v3("infinity");
     }
 
     fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {

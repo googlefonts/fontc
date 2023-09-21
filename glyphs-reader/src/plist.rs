@@ -94,6 +94,15 @@ fn numeric_ok(s: &str) -> bool {
     if s.len() > 1 && s[0] == b'0' {
         return !s.iter().all(|&b| b.is_ascii_digit());
     }
+    // Prevent parsing of "infinity", "inf", "nan" as numbers, we
+    // want to keep them as strings (e.g. glyphname)
+    // https://doc.rust-lang.org/std/primitive.f64.html#grammar
+    if s.eq_ignore_ascii_case(b"infinity")
+        || s.eq_ignore_ascii_case(b"inf")
+        || s.eq_ignore_ascii_case(b"nan")
+    {
+        return false;
+    }
     true
 }
 
