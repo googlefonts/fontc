@@ -1738,22 +1738,13 @@ impl Font {
             let order_data = fs::read_to_string(&order_file).map_err(Error::IoError)?;
             let order_plist = Plist::parse(&order_data)
                 .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
-            let Plist::Array(order) = order_plist else {
-                return Err(Error::ParseError(
-                    order_file.to_path_buf(),
-                    "Root must be an array".to_string(),
-                ));
-            };
+            let order = order_plist
+                .expect_array()
+                .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
             for glyph_name in order {
-                let glyph_name = match glyph_name {
-                    Plist::String(glyph_name) => glyph_name,
-                    _ => {
-                        return Err(Error::ParseError(
-                            order_file.to_path_buf(),
-                            "Glyph name must be a string".to_string(),
-                        ));
-                    }
-                };
+                let glyph_name = glyph_name
+                    .expect_string()
+                    .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
                 if glyphs.contains_key(&glyph_name) {
                     ordered_glyphs.push(Plist::Dictionary(glyphs.remove(&glyph_name).unwrap()));
                 }
