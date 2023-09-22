@@ -429,11 +429,17 @@ impl FromPlist for Node {
                 let x = spl.next().unwrap().parse().unwrap();
                 let y = spl.next().unwrap().parse().unwrap();
                 let pt = Point::new(x, y);
-                let node_type = spl.next().unwrap().parse().unwrap();
+                let mut raw_node_type = spl.next().unwrap();
+                // drop the userData dict, we don't use it for compilation
+                if raw_node_type.contains('{') {
+                    raw_node_type = raw_node_type.split('{').next().unwrap().trim_end();
+                }
+                let node_type = raw_node_type.parse().unwrap();
                 Node { pt, node_type }
             }
             Plist::Array(value) => {
-                if value.len() != 3 {
+                // ignore the fourth element (userData) unused for compilation
+                if value.len() < 3 {
                     panic!("Invalid node content {plist:?}");
                 };
                 let x = value[0].as_f64().unwrap();

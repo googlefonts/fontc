@@ -146,7 +146,7 @@ paths = (
 {
 closed = 1;
 nodes = (
-"131 250 LINE",
+"131 250 LINE {name = hr00;}",
 "470 250 LINE",
 "470 330 LINE",
 "131 330 LINE"
