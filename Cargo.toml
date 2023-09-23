@@ -40,6 +40,7 @@ temp-env = "0.3.3"
 resolver = "2"
 
 members = [
+    "shape-brokkr",
     "fontdrasil",
     "fontbe",
     "fontir",
