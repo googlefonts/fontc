@@ -1,4 +1,8 @@
-use std::{io::{Write, BufWriter}, time::Instant, fs::OpenOptions};
+use std::{
+    fs::OpenOptions,
+    io::{BufWriter, Write},
+    time::Instant,
+};
 
 use clap::Parser;
 
