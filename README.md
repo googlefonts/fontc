@@ -12,6 +12,25 @@ References
    * [Units](resources/text/units.md)
       * Fonts have all the best units; distinguishing between them turns out to matter.
 
+## Getting started
+
+Install the latest version of Rust, https://www.rust-lang.org/tools/install.
+
+### Build a simple test font
+
+```shell
+$ cargo run -p fontc -- --source resources/testdata/wght_var.designspace
+```
+
+### Sources to play with
+
+Google Fonts has lots, you could try https://github.com/rsheeter/google_fonts_sources to get some.
+Once you have them you could try building them:
+
+```shell
+cargo run --package fontc -- --source ../google_fonts_sources/sources/ofl/notosanskayahli/sources/NotoSansKayahLi.designspace
+```
+
 ## Plan
 
 As of 6/4/2023 we intend to:
@@ -28,14 +47,7 @@ more complex than initially anticipated and higher risk than migrating on a per-
 
 For context see https://github.com/googlefonts/oxidize/blob/main/text/2022-07-25-PROPOSAL-build-glyphs-in-rust.md and the discussion on https://github.com/googlefonts/oxidize/pull/33.
 
-## Sources to play with
 
-Google Fonts has lots, you could try https://github.com/rsheeter/google_fonts_sources to get some.
-Once you have them you could try building them:
-
-```shell
-cargo run --package fontc -- --source ../google_fonts_sources/sources/ofl/notosanskayahli/sources/NotoSansKayahLi.designspace
-```
 
 ## Using a local copy of fontations
 
