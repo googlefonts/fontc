@@ -16,7 +16,7 @@ use font_types::Tag;
 use fontdrasil::types::{AnchorName, GlyphName, GroupName};
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
-use log::warn;
+use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -923,6 +923,37 @@ pub struct Glyph {
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     default_location: NormalizedLocation,
     sources: HashMap<NormalizedLocation, GlyphInstance>,
+    has_consistent_2x2_transforms: bool,
+}
+
+/// Compute this during glyph processing and without allocation
+///
+/// See <https://github.com/googlefonts/fontc/issues/458>
+fn has_consistent_2x2_transforms(
+    name: &GlyphName,
+    sources: &HashMap<NormalizedLocation, GlyphInstance>,
+) -> bool {
+    let mut instances = sources.values();
+    let Some(first) = instances.next() else {
+        return true; // all none of us are the same
+    };
+
+    let consistent = instances.all(|inst| {
+        if first.components.len() != inst.components.len() {
+            return false;
+        }
+        first
+            .components
+            .iter()
+            .zip(inst.components.iter())
+            .all(|(c1, c2)| {
+                c1.base == c2.base && c1.transform.as_coeffs()[..4] == c2.transform.as_coeffs()[..4]
+            })
+    });
+    if log_enabled!(log::Level::Trace) && !consistent {
+        trace!("{name} has inconsistent component names or 2x2 transforms");
+    }
+    consistent
 }
 
 impl Glyph {
@@ -948,11 +979,13 @@ impl Glyph {
             });
         }
         let default_location = defaults[0].clone();
+        let has_consistent_2x2_transforms = has_consistent_2x2_transforms(&name, &sources);
         Ok(Glyph {
             name,
             codepoints,
             default_location,
             sources,
+            has_consistent_2x2_transforms,
         })
     }
 
@@ -972,6 +1005,16 @@ impl Glyph {
 
     pub fn source_mut(&mut self, loc: &NormalizedLocation) -> Option<&mut GlyphInstance> {
         self.sources.get_mut(loc)
+    }
+
+    /// Does the Glyph use the same components, (name, 2x2 transform), for all instances?
+    ///
+    /// The (glyphname, 2x2 transform) pair is considered for uniqueness. Note that
+    /// translation IS not considered for uniqueness because components are allowed
+    /// to vary in translation.
+    #[inline]
+    pub(crate) fn has_consistent_components(&self) -> bool {
+        self.has_consistent_2x2_transforms
     }
 }
 

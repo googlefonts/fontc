@@ -44,32 +44,6 @@ fn has_components_and_contours(glyph: &Glyph) -> bool {
         .any(|inst| !inst.components.is_empty() && !inst.contours.is_empty())
 }
 
-/// Does the Glyph use the same set of components, including 2x2 transform, for all instances?
-///
-/// The (glyphname, 2x2 transform) pair is considered for uniqueness. Note that
-/// translation IS not considered for uniqueness because components are allowed
-/// to vary in translation.
-///
-/// Primary use is expected to be checking if there is >1 or not.
-fn has_consistent_2x2_transforms(glyph: &Glyph) -> bool {
-    let component_seqs: HashSet<_> = glyph
-        .sources()
-        .values()
-        .map(|inst| {
-            inst.components
-                .iter()
-                .map(ReusableComponent::new)
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    if log_enabled!(log::Level::Trace) && component_seqs.len() > 1 {
-        for seq in component_seqs.iter() {
-            trace!("{} inconsistent 2x2: {seq:?}", glyph.name);
-        }
-    }
-    component_seqs.len() <= 1
-}
-
 fn name_for_derivative(base_name: &GlyphName, names_in_use: &GlyphOrder) -> GlyphName {
     let mut i = 0;
     let base_name = base_name.as_str();
@@ -107,32 +81,6 @@ fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Gly
     });
 
     Ok((simple_glyph.try_into()?, composite_glyph.try_into()?))
-}
-
-/// The parts of a component that must be reused consistently across designspace.
-///
-/// Note that the transform is 2x2, not 2x3 because translation IS allowed to vary
-/// whereas at time of writing the basis vectors are not.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct ReusableComponent {
-    base: GlyphName,
-    /// A 2x2 transform: just the basis vectors, no translation
-    basis_vectors: [OrderedFloat<f64>; 4],
-}
-
-impl ReusableComponent {
-    fn new(component: &Component) -> Self {
-        // by taking the first four coeffs we discard translation
-        let mut transform = [OrderedFloat(0.0f64); 4];
-        transform
-            .iter_mut()
-            .zip(component.transform.as_coeffs())
-            .for_each(|(of, f)| *of = f.into());
-        ReusableComponent {
-            base: component.base.clone(),
-            basis_vectors: transform,
-        }
-    }
 }
 
 /// Component with full transform.
@@ -225,7 +173,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
 
     // Component until you can't component no more
     let mut frontier: VecDeque<_> = components(original, Affine::IDENTITY);
-    // Note that here we care about the entire component transform, so we do not use ReusableComponent
+    // Note that here we care about the entire component transform
     let mut visited: HashSet<(NormalizedLocation, HashableComponent)> = HashSet::new();
     while let Some((loc, component)) = frontier.pop_front() {
         if !visited.insert((loc.clone(), HashableComponent::new(&component))) {
@@ -427,7 +375,7 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
         // fontmake (Python) prefers option 2.
         for glyph_name in current_glyph_order.iter() {
             let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
-            let inconsistent_components = !has_consistent_2x2_transforms(&glyph);
+            let inconsistent_components = !glyph.has_consistent_components();
             if inconsistent_components || has_components_and_contours(&glyph) {
                 if inconsistent_components {
                     debug!(
@@ -488,7 +436,6 @@ mod tests {
 
     use crate::{
         coords::{NormalizedCoord, NormalizedLocation},
-        glyph::has_consistent_2x2_transforms,
         ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
@@ -895,7 +842,7 @@ mod tests {
         let glyph = contour_and_component_weight_glyph("nameless");
         let glyph =
             adjust_transform_for_each_instance(&glyph, |i| Affine::translate((i as f64, i as f64)));
-        assert!(has_consistent_2x2_transforms(&glyph));
+        assert!(glyph.has_consistent_components());
     }
 
     fn assert_is_flattened_component(context: &Context, glyph_name: GlyphName) {
