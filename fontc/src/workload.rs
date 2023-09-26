@@ -7,6 +7,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::Instant,
 };
 
 use crossbeam_channel::{Receiver, TryRecvError};
@@ -19,6 +20,7 @@ use fontir::{
 use log::{debug, trace};
 
 use crate::{
+    timing::{create_timer, JobTime, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork, AnyWorkError},
     ChangeDetector, Error,
 };
@@ -34,6 +36,8 @@ pub struct Workload<'a> {
     // When K completes also mark all entries in V complete
     also_completes: HashMap<AnyWorkId, Vec<AnyWorkId>>,
     pub(crate) jobs_pending: HashMap<AnyWorkId, Job>,
+
+    timing: JobTimer,
 }
 
 /// A unit of executable work plus the identifiers of work that it depends on
@@ -60,7 +64,7 @@ enum RecvType {
 }
 
 impl<'a> Workload<'a> {
-    pub fn new(change_detector: &'a ChangeDetector) -> Workload {
+    pub fn new(change_detector: &'a ChangeDetector, t0: Instant) -> Workload {
         Workload {
             change_detector,
             job_count: 0,
@@ -68,6 +72,7 @@ impl<'a> Workload<'a> {
             error: Default::default(),
             also_completes: Default::default(),
             jobs_pending: Default::default(),
+            timing: JobTimer::new(t0),
         }
     }
 
@@ -158,8 +163,10 @@ impl<'a> Workload<'a> {
         be_job.read_access = Access::Set(deps).into();
     }
 
-    fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId) {
+    fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId, timing: JobTime) {
         log::debug!("{success:?} successful");
+
+        self.timing.add(timing);
 
         self.mark_also_completed(&success);
 
@@ -221,8 +228,12 @@ impl<'a> Workload<'a> {
         }
     }
 
-    pub fn launchable(&self) -> Vec<AnyWorkId> {
-        let launchable = self
+    pub fn launchable(&mut self) -> Vec<AnyWorkId> {
+        let timing = create_timer(AnyWorkId::Fe(FeWorkIdentifier::Overhead))
+            .queued()
+            .run();
+
+        let launchable: Vec<_> = self
             .jobs_pending
             .iter()
             .filter_map(|(id, job)| {
@@ -234,12 +245,15 @@ impl<'a> Workload<'a> {
             })
             .collect();
         trace!("Launchable: {launchable:?}");
+
+        self.timing.add(timing.complete());
         launchable
     }
 
-    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<(), Error> {
+    pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer, Error> {
         // Async work will send us it's ID on completion
-        let (send, recv) = crossbeam_channel::unbounded::<(AnyWorkId, Result<(), AnyWorkError>)>();
+        let (send, recv) =
+            crossbeam_channel::unbounded::<(AnyWorkId, Result<(), AnyWorkError>, JobTime)>();
 
         // a flag we set if we panic
         let abort_queued_jobs = Arc::new(AtomicBool::new(false));
@@ -258,6 +272,8 @@ impl<'a> Workload<'a> {
 
                 // Launch anything that needs launching
                 for id in launchable {
+                    let timing = create_timer(id.clone());
+
                     let job = self.jobs_pending.get_mut(&id).unwrap();
                     log::trace!("Start {:?}", id);
                     let send = send.clone();
@@ -267,7 +283,7 @@ impl<'a> Workload<'a> {
                         .take()
                         .expect("{id:?} ready to run but has no work?!");
                     if !job.run {
-                        if let Err(e) = send.send((id.clone(), Ok(()))) {
+                        if let Err(e) = send.send((id.clone(), Ok(()), JobTime::nop(id.clone()))) {
                             log::error!("Unable to write nop {id:?} to completion channel: {e}");
                             //FIXME: if we can't send messages it means the receiver has dropped,
                             //which means we should... return? abort?
@@ -284,7 +300,9 @@ impl<'a> Workload<'a> {
 
                     let abort = abort_queued_jobs.clone();
 
+                    let timing = timing.queued();
                     scope.spawn(move |_| {
+                        let timing = timing.run();
                         if abort.load(Ordering::Relaxed) {
                             log::trace!("Aborting {:?}", work.id());
                             return;
@@ -314,7 +332,8 @@ impl<'a> Workload<'a> {
                                 Err(AnyWorkError::Panic(msg))
                             }
                         };
-                        if let Err(e) = send.send((id.clone(), result)) {
+                        let timing = timing.complete();
+                        if let Err(e) = send.send((id.clone(), result, timing)) {
                             log::error!("Unable to write {id:?} to completion channel: {e}");
                         }
                     })
@@ -325,7 +344,7 @@ impl<'a> Workload<'a> {
                 let successes = self.read_completions(&recv, RecvType::Blocking)?;
                 successes
                     .into_iter()
-                    .for_each(|s| self.handle_success(fe_root, s));
+                    .for_each(|(s, t)| self.handle_success(fe_root, s, t));
             }
             Ok::<(), Error>(())
         })?;
@@ -341,14 +360,14 @@ impl<'a> Workload<'a> {
             );
         }
 
-        Ok(())
+        Ok(self.timing)
     }
 
     fn read_completions(
         &mut self,
-        recv: &Receiver<(AnyWorkId, Result<(), AnyWorkError>)>,
+        recv: &Receiver<(AnyWorkId, Result<(), AnyWorkError>, JobTime)>,
         initial_read: RecvType,
-    ) -> Result<Vec<AnyWorkId>, Error> {
+    ) -> Result<Vec<(AnyWorkId, JobTime)>, Error> {
         let mut successes = Vec::new();
         let mut opt_complete = match initial_read {
             RecvType::Blocking => match recv.recv() {
@@ -363,12 +382,12 @@ impl<'a> Workload<'a> {
                 }
             },
         };
-        while let Some((completed_id, result)) = opt_complete.take() {
+        while let Some((completed_id, result, timing)) = opt_complete.take() {
             if !match result {
                 Ok(..) => {
                     let inserted = self.success.insert(completed_id.clone());
                     if inserted {
-                        successes.push(completed_id.clone());
+                        successes.push((completed_id.clone(), timing));
                     }
                     inserted
                 }
@@ -380,6 +399,7 @@ impl<'a> Workload<'a> {
             } {
                 panic!("Repeat signals for completion of {completed_id:#?}");
             }
+
             // When a job marks another as also completed the original may never have been in pending
             self.jobs_pending.remove(&completed_id);
 
@@ -452,20 +472,24 @@ impl<'a> Workload<'a> {
             }
 
             let id = &launchable[0];
+            let timing = create_timer(id.clone());
             let job = self.jobs_pending.remove(id).unwrap();
             if job.run {
+                let timing = timing.queued();
                 let context =
                     AnyContext::for_work(fe_root, be_root, id, job.read_access, job.write_access);
                 log::debug!("Exec {:?}", id);
+                let timing = timing.run();
                 job.work
                     .expect("{id:?} should have work!")
                     .exec(context)
                     .unwrap_or_else(|e| panic!("{id:?} failed: {e:?}"));
+                let timing = timing.complete();
                 assert!(
                     self.success.insert(id.clone()),
                     "We just did {id:?} a second time?"
                 );
-                self.handle_success(fe_root, id.clone());
+                self.handle_success(fe_root, id.clone(), timing);
             }
         }
         self.success.difference(&pre_success).cloned().collect()
