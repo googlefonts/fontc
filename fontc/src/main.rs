@@ -53,7 +53,7 @@ fn run() -> Result<(), Error> {
     let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root);
     let mut timing = workload.exec(&fe_root, &be_root)?;
 
-    if config.args.flags().contains(Flags::EMIT_THREADS) {
+    if config.args.flags().contains(Flags::EMIT_TIMING) {
         let out_file = OpenOptions::new()
             .write(true)
             .create(true)
