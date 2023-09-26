@@ -104,6 +104,21 @@ Processed 5116 samples and lost 35.01%!
 $ export RAYON_NUM_THREADS=16
 ```
 
+### Focused flames
+
+https://blog.anp.lol/rust/2016/07/24/profiling-rust-perf-flamegraph/ offers examples of filtering flamegraphs. This
+is very useful when you want to zoom in on a specific operation. For example, to dig into fea-rs:
+
+```shell
+# Generate a perf.data
+# You can also use perf record but cargo flamegraph seems to have nice capture settings for Rust rigged
+$ rm -rf build/ perf.data && cargo flamegraph -p fontc --  --source ../OswaldFont/sources/Oswald.glyphs --emit-ir false
+
+# ^ produced flamegraph.svg but it's very noisy, lets narrow our focus
+# Example assumes https://github.com/brendangregg/FlameGraph is cloned in a sibling directory to fontc
+$ perf script | ../FlameGraph/stackcollapse-perf.pl | grep fea_rs | ../FlameGraph/flamegraph.pl > fea-flame.svg
+```
+
 ## Contributing
 
 We have included a few git hooks that you may choose to use to ensure that
