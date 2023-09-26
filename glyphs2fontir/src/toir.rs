@@ -117,7 +117,7 @@ pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features
     // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L74
     // TODO: token expansion
     // TODO: implement notes and labels
-    let fea_snippets: Vec<String> = features.iter().map(|f| f.as_str().to_string()).collect();
+    let fea_snippets: Vec<_> = features.iter().filter_map(|f| f.str_if_enabled()).collect();
     Ok(ir::Features::Memory {
         fea_content: fea_snippets.join("\n\n"),
         include_dir: None,
