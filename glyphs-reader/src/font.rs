@@ -81,10 +81,7 @@ impl FeatureSnippet {
     }
 
     pub fn str_if_enabled(&self) -> Option<&str> {
-        match self.disabled {
-            true => None,
-            false => Some(&self.content),
-        }
+        (!self.disabled).then_some(&self.content)
     }
 }
 
@@ -1410,7 +1407,7 @@ impl RawFeature {
     }
 
     fn disabled(&self) -> bool {
-        self.disabled.map(|v| v == 1).unwrap_or_default()
+        self.disabled == Some(1)
     }
 }
 
