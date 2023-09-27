@@ -19,7 +19,6 @@ use fontir::{
     },
     variations::VariationRegion,
 };
-use kurbo::Vec2;
 use log::trace;
 use read_fonts::{FontData, FontRead};
 use serde::{Deserialize, Serialize};
@@ -27,12 +26,26 @@ use serde::{Deserialize, Serialize};
 use write_fonts::{
     dump_table,
     tables::{
-        avar::Avar, cmap::Cmap, fvar::Fvar, gdef::Gdef, glyf::Glyph as RawGlyph, gpos::Gpos,
-        gsub::Gsub, gvar::GlyphDeltas, head::Head, hhea::Hhea, loca::LocaFormat, maxp::Maxp,
-        name::Name, os2::Os2, post::Post, stat::Stat, variations::Tuple,
+        avar::Avar,
+        cmap::Cmap,
+        fvar::Fvar,
+        gdef::Gdef,
+        glyf::Glyph as RawGlyph,
+        gpos::Gpos,
+        gsub::Gsub,
+        gvar::{GlyphDelta, GlyphDeltas},
+        head::Head,
+        hhea::Hhea,
+        loca::LocaFormat,
+        maxp::Maxp,
+        name::Name,
+        os2::Os2,
+        post::Post,
+        stat::Stat,
+        variations::Tuple,
     },
     validate::Validate,
-    FontWrite, OtRound,
+    FontWrite,
 };
 
 use crate::{error::Error, paths::Paths};
@@ -168,7 +181,7 @@ impl Persistable for Glyph {
 pub struct GvarFragment {
     pub glyph_name: GlyphName,
     /// None entries are safe to omit per IUP
-    pub deltas: Vec<(VariationRegion, Vec<Option<Vec2>>)>,
+    pub deltas: Vec<(VariationRegion, Vec<GlyphDelta>)>,
 }
 
 impl GvarFragment {
@@ -181,24 +194,13 @@ impl GvarFragment {
                 }
 
                 // Variation of no point has limited entertainment value
-                if deltas.is_empty() || deltas.iter().all(|d| d.is_none()) {
+                if deltas.is_empty() || deltas.iter().all(|d| !d.required) {
                     return None;
                 }
 
-                let deltas: Vec<_> = deltas
-                    .iter()
-                    .map(|v| {
-                        v.map(|Vec2 { x, y }| {
-                            let x: i16 = x.ot_round();
-                            let y: i16 = y.ot_round();
-                            (x, y)
-                        })
-                    })
-                    .collect();
-
                 let tuple_builder = TupleBuilder::new(region, axis_order);
                 let (min, peak, max) = tuple_builder.build();
-                Some(GlyphDeltas::new(peak, deltas, Some((min, max))))
+                Some(GlyphDeltas::new(peak, deltas.clone(), Some((min, max))))
             })
             .collect()
     }
@@ -526,7 +528,7 @@ mod tests {
         variations::{Tent, VariationRegion},
     };
 
-    use super::GvarFragment;
+    use super::*;
 
     fn non_default_region() -> VariationRegion {
         let mut region = VariationRegion::default();
@@ -547,7 +549,11 @@ mod tests {
             glyph_name: "blah".into(),
             deltas: vec![(
                 non_default_region(),
-                vec![None, Some((1.0, 0.0).into()), None],
+                vec![
+                    GlyphDelta::optional(0, 0),
+                    GlyphDelta::required(1, 0),
+                    GlyphDelta::optional(1, 0),
+                ],
             )],
         }
         .to_deltas(&[Tag::new(b"wght")]);
@@ -556,9 +562,10 @@ mod tests {
 
     #[test]
     fn drops_nop_deltas() {
+        let can_omit = GlyphDelta::optional(0, 0);
         let deltas = GvarFragment {
             glyph_name: "blah".into(),
-            deltas: vec![(non_default_region(), vec![None, None, None])],
+            deltas: vec![(non_default_region(), vec![can_omit; 3])],
         }
         .to_deltas(&[Tag::new(b"wght")]);
         assert!(deltas.is_empty(), "{deltas:?}");
