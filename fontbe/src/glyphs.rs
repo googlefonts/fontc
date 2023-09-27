@@ -277,7 +277,12 @@ fn compute_deltas(
             } else {
                 let deltas = deltas
                     .into_iter()
-                    .map(|delta| GlyphDelta::required(delta.x.ot_round(), delta.y.ot_round()))
+                    .map(|delta| match delta.to_point().ot_round() {
+                        // IUP only applies to simple glyphs; for composites we
+                        // just mark the zero deltas as being interpolatable.
+                        (0, 0) => GlyphDelta::optional(0, 0),
+                        (x, y) => GlyphDelta::required(x, y),
+                    })
                     .collect();
 
                 Ok((region, deltas))
