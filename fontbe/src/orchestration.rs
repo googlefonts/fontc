@@ -1,6 +1,7 @@
 //! Helps coordinate the graph execution for BE
 
 use std::{
+    fmt::Debug,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
@@ -9,7 +10,7 @@ use std::{
 
 use font_types::{F2Dot14, Tag};
 use fontdrasil::{
-    orchestration::{Access, AccessControlList, Identifier, Work},
+    orchestration::{Access, AccessControlList, Identifier, Priority, Work},
     types::GlyphName,
 };
 use fontir::{
@@ -59,7 +60,7 @@ pub enum GlyphMerge {
     Cmap,
 }
 
-/// Unique identifier of work.
+/// Unique identifier of prioritized work.
 ///
 /// If there are no fields work is unique.
 /// Meant to be small and cheap to copy around.
@@ -90,6 +91,16 @@ pub enum WorkId {
     Stat,
 }
 
+impl WorkId {
+    /// See <https://github.com/googlefonts/fontc/issues/456>
+    pub fn priority(&self) -> Priority {
+        match self {
+            Self::Features => Priority::High,
+            _ => Priority::Low,
+        }
+    }
+}
+
 impl Identifier for WorkId {}
 
 // Identifies work of any type, FE, BE, ... future optimization passes, w/e.
@@ -98,6 +109,15 @@ impl Identifier for WorkId {}
 pub enum AnyWorkId {
     Fe(FeWorkIdentifier),
     Be(WorkId),
+}
+
+impl AnyWorkId {
+    pub fn priority(&self) -> Priority {
+        match self {
+            Self::Be(id) => id.priority(),
+            Self::Fe(id) => id.priority(),
+        }
+    }
 }
 
 impl Identifier for AnyWorkId {}
@@ -410,6 +430,14 @@ pub struct Context {
     pub hvar: BeContextItem<BeValue<Hvar>>,
     pub stat: BeContextItem<BeValue<Stat>>,
     pub font: BeContextItem<Bytes>,
+}
+
+impl Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Context")
+            .field("flags", &self.flags)
+            .finish()
+    }
 }
 
 impl Context {

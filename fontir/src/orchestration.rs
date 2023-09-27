@@ -12,7 +12,7 @@ use std::{
 use crate::{error::WorkError, ir, paths::Paths, source::Input};
 use bitflags::bitflags;
 use fontdrasil::{
-    orchestration::{Access, AccessControlList, Identifier, Work},
+    orchestration::{Access, AccessControlList, Identifier, Priority, Work},
     types::GlyphName,
 };
 use parking_lot::RwLock;
@@ -331,6 +331,16 @@ pub enum WorkId {
     Overhead,
 }
 
+impl WorkId {
+    /// See <https://github.com/googlefonts/fontc/issues/456>
+    pub fn priority(&self) -> Priority {
+        match self {
+            Self::GlyphOrder | Self::Kerning | Self::Features => Priority::High,
+            _ => Priority::Low,
+        }
+    }
+}
+
 impl Identifier for WorkId {}
 
 pub type IrWork = dyn Work<Context, WorkId, WorkError> + Send;
@@ -397,6 +407,14 @@ pub struct Context {
 pub fn set_cached<T>(lock: &Arc<RwLock<Option<Arc<T>>>>, value: T) {
     let mut wl = lock.write();
     *wl = Some(Arc::from(value));
+}
+
+impl Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Context")
+            .field("flags", &self.flags)
+            .finish()
+    }
 }
 
 impl Context {

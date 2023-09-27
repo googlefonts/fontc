@@ -149,6 +149,7 @@ impl AnyAccess {
     }
 }
 
+#[derive(Debug)]
 pub enum AnyContext {
     Fe(FeContext),
     Be(BeContext),

@@ -1,29 +1,88 @@
 //! Tracking jobs to run
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     panic::AssertUnwindSafe,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::Instant,
 };
 
-use crossbeam_channel::{Receiver, TryRecvError};
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use fontbe::orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier};
-use fontdrasil::{orchestration::Access, types::GlyphName};
+use fontdrasil::{
+    orchestration::{Access, Priority},
+    types::GlyphName,
+};
 use fontir::{
     orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     source::Input,
 };
 use log::{debug, trace};
+use rayon::Scope;
 
 use crate::{
-    timing::{create_timer, JobTime, JobTimer},
+    timing::{create_timer, JobTime, JobTimeQueued, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork, AnyWorkError},
     ChangeDetector, Error,
 };
+
+/// A piece of work that is ready to execute as soon as a thread becomes available
+#[derive(Debug)]
+pub(crate) struct PendingWork {
+    abort: Arc<AtomicBool>,
+    timing: JobTimeQueued,
+    work: AnyWork,
+    context: AnyContext,
+}
+
+/// Manages work that is ready to execute (has no unfulfilled dependencies).
+///
+/// Keeps the work in prioritized order so a threadpool job can grab the highest priority
+/// work.
+#[derive(Default, Debug, Clone)]
+pub(crate) struct PrioritizedWork(Arc<Mutex<VecDeque<PendingWork>>>);
+
+impl PrioritizedWork {
+    #[inline]
+    fn insert(
+        &mut self,
+        abort: Arc<AtomicBool>,
+        timer: JobTimeQueued,
+        work: AnyWork,
+        context: AnyContext,
+    ) {
+        let id = work.id();
+        let entry = PendingWork {
+            abort,
+            timing: timer,
+            work,
+            context,
+        };
+        {
+            let mut queue = self.0.lock().unwrap();
+            match id.priority() {
+                Priority::High => queue.push_front(entry),
+                Priority::Low => queue.push_back(entry),
+            }
+        }
+    }
+
+    /// Reserve space, such as when you anticipate adding a bunch of items to the queue
+    #[inline]
+    fn reserve(&mut self, additional: usize) {
+        let mut queue = self.0.lock().unwrap();
+        queue.reserve(additional);
+    }
+
+    #[inline]
+    fn pop_front(&self) -> Option<PendingWork> {
+        let mut queue = self.0.lock().unwrap();
+        queue.pop_front()
+    }
+}
 
 /// A set of interdependent jobs to execute.
 #[derive(Debug)]
@@ -38,6 +97,8 @@ pub struct Workload<'a> {
     pub(crate) jobs_pending: HashMap<AnyWorkId, Job>,
 
     timing: JobTimer,
+
+    pub(crate) pending_execution: PrioritizedWork,
 }
 
 /// A unit of executable work plus the identifiers of work that it depends on
@@ -73,6 +134,7 @@ impl<'a> Workload<'a> {
             also_completes: Default::default(),
             jobs_pending: Default::default(),
             timing: JobTimer::new(t0),
+            pending_execution: Default::default(),
         }
     }
 
@@ -233,7 +295,7 @@ impl<'a> Workload<'a> {
             .queued()
             .run();
 
-        let launchable: Vec<_> = self
+        let mut launchable: Vec<_> = self
             .jobs_pending
             .iter()
             .filter_map(|(id, job)| {
@@ -244,10 +306,100 @@ impl<'a> Workload<'a> {
                 }
             })
             .collect();
+        launchable.sort_by_key(|id| id.priority());
         trace!("Launchable: {launchable:?}");
 
         self.timing.add(timing.complete());
         launchable
+    }
+
+    fn launch(
+        &mut self,
+        scope: &Scope,
+        send: &Sender<(AnyWorkId, Result<(), AnyWorkError>, JobTime)>,
+        abort: Arc<AtomicBool>,
+        fe_root: &FeContext,
+        be_root: &BeContext,
+        work_ids: &[AnyWorkId],
+    ) {
+        // Place anything that needs launching on the run queue
+        for id in work_ids.iter() {
+            log::trace!("Start {:?}", id);
+            let timing = create_timer(id.clone());
+            let job = self.jobs_pending.get_mut(id).unwrap();
+            job.running = true;
+            let work = job
+                .work
+                .take()
+                .unwrap_or_else(|| panic!("{id:?} ready to run but has no work?!"));
+            if !job.run {
+                if let Err(e) = send.send((id.clone(), Ok(()), JobTime::nop(id.clone()))) {
+                    log::error!("Unable to write nop {id:?} to completion channel: {e}");
+                    //FIXME: if we can't send messages it means the receiver has dropped,
+                    //which means we should... return? abort?
+                }
+                continue;
+            }
+            let work_context = AnyContext::for_work(
+                fe_root,
+                be_root,
+                id,
+                job.read_access.clone(),
+                job.write_access.clone(),
+            );
+
+            self.pending_execution
+                .insert(abort.clone(), timing.queued(), work, work_context)
+        }
+
+        // Push 1 job onto the threadpool for each thing that became runnable.
+        // Each job picks the highest priority work pending execution to run when it executes.
+        for _ in 0..work_ids.len() {
+            let send = send.clone();
+            let pending_execution = self.pending_execution.clone(); // cheap arc copy
+            scope.spawn(move |_| {
+                let Some(pending) = pending_execution.pop_front() else {
+                    log::error!("Nothing pending?!");
+                    return;
+                };
+                if pending.abort.load(Ordering::Relaxed) {
+                    log::trace!("Aborting {:?}", pending.work.id());
+                    return;
+                }
+                let timing = pending.timing.run();
+                let work = pending.work;
+                let context = pending.context;
+                let id = work.id();
+                // # Unwind Safety
+                //
+                // 'unwind safety' does not impact memory safety, but
+                // it may impact program correctness; the thread may have
+                // left shared memory in an inconsistent state.
+                //
+                // I believe this is not a concern for us, as we cancel any
+                // pending jobs after seeing a panic and jobs that depend
+                // on state produced by the panicking job must be scheduled
+                // after it. Unless we have jobs that are mutating
+                // shared resources then I think this is fine.
+                //
+                // references:
+                // <https://doc.rust-lang.org/nomicon/exception-safety.html#exception-safety>
+                // <https://doc.rust-lang.org/std/panic/trait.UnwindSafe.html>
+                let result = match std::panic::catch_unwind(AssertUnwindSafe(|| work.exec(context)))
+                {
+                    Ok(result) => result,
+                    Err(err) => {
+                        let msg = get_panic_message(err);
+                        pending.abort.store(true, Ordering::Relaxed);
+                        Err(AnyWorkError::Panic(msg))
+                    }
+                };
+                let timing = timing.complete();
+                if let Err(e) = send.send((id.clone(), result, timing)) {
+                    log::error!("Unable to write {id:?} to completion channel: {e}");
+                }
+            })
+        }
     }
 
     pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer, Error> {
@@ -270,74 +422,32 @@ impl<'a> Workload<'a> {
                     return Err(Error::UnableToProceed);
                 }
 
-                // Launch anything that needs launching
-                for id in launchable {
-                    let timing = create_timer(id.clone());
+                self.pending_execution.reserve(launchable.len());
 
-                    let job = self.jobs_pending.get_mut(&id).unwrap();
-                    log::trace!("Start {:?}", id);
-                    let send = send.clone();
-                    job.running = true;
-                    let work = job
-                        .work
-                        .take()
-                        .expect("{id:?} ready to run but has no work?!");
-                    if !job.run {
-                        if let Err(e) = send.send((id.clone(), Ok(()), JobTime::nop(id.clone()))) {
-                            log::error!("Unable to write nop {id:?} to completion channel: {e}");
-                            //FIXME: if we can't send messages it means the receiver has dropped,
-                            //which means we should... return? abort?
-                        }
-                        continue;
-                    }
-                    let work_context = AnyContext::for_work(
-                        fe_root,
-                        be_root,
-                        &id,
-                        job.read_access.clone(),
-                        job.write_access.clone(),
-                    );
+                // Launch by priority.
+                let low_idx = launchable
+                    .iter()
+                    .position(|l| l.priority() == Priority::Low)
+                    .unwrap_or(launchable.len());
 
-                    let abort = abort_queued_jobs.clone();
+                let (high, low) = launchable.split_at(low_idx);
 
-                    let timing = timing.queued();
-                    scope.spawn(move |_| {
-                        let timing = timing.run();
-                        if abort.load(Ordering::Relaxed) {
-                            log::trace!("Aborting {:?}", work.id());
-                            return;
-                        }
-                        // # Unwind Safety
-                        //
-                        // 'unwind safety' does not impact memory safety, but
-                        // it may impact program correctness; the thread may have
-                        // left shared memory in an inconsistent state.
-                        //
-                        // I believe this is not a concern for us, as we cancel any
-                        // pending jobs after seeing a panic and jobs that depend
-                        // on state produced by the panicking job must be scheduled
-                        // after it. Unless we have jobs that are mutating
-                        // shared resources then I think this is fine.
-                        //
-                        // references:
-                        // <https://doc.rust-lang.org/nomicon/exception-safety.html#exception-safety>
-                        // <https://doc.rust-lang.org/std/panic/trait.UnwindSafe.html>
-                        let result = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-                            work.exec(work_context)
-                        })) {
-                            Ok(result) => result,
-                            Err(err) => {
-                                let msg = get_panic_message(err);
-                                abort.store(true, Ordering::Relaxed);
-                                Err(AnyWorkError::Panic(msg))
-                            }
-                        };
-                        let timing = timing.complete();
-                        if let Err(e) = send.send((id.clone(), result, timing)) {
-                            log::error!("Unable to write {id:?} to completion channel: {e}");
-                        }
-                    })
-                }
+                self.launch(
+                    scope,
+                    &send,
+                    abort_queued_jobs.clone(),
+                    fe_root,
+                    be_root,
+                    high,
+                );
+                self.launch(
+                    scope,
+                    &send,
+                    abort_queued_jobs.clone(),
+                    fe_root,
+                    be_root,
+                    low,
+                );
 
                 // Block for things to phone home to say they are done
                 // Then complete everything that has reported since our last check

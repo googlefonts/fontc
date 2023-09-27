@@ -190,6 +190,7 @@ pub(crate) fn create_timer(id: AnyWorkId) -> JobTimeRunnable {
 /// The initial state of a runnable job.
 ///
 /// It may have queued from t0 to launchable but now it's go-time!
+#[derive(Debug)]
 pub(crate) struct JobTimeRunnable {
     id: AnyWorkId,
     runnable: Instant,
@@ -206,6 +207,7 @@ impl JobTimeRunnable {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct JobTimeQueued {
     id: AnyWorkId,
     runnable: Instant,

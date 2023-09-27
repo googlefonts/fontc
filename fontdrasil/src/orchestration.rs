@@ -9,6 +9,14 @@ use std::{
 
 pub const MISSING_DATA: &str = "Missing data, dependency management failed us?";
 
+/// The priority of a given job; higher priority jobs are started first.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum Priority {
+    High = 1,
+    Low = 100,
+}
+
 /// A type that affords identity.
 ///
 /// Frequently copied, used in hashmap/sets and printed to logs, hence the trait list.
