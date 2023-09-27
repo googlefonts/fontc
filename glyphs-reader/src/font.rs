@@ -70,11 +70,18 @@ pub struct Font {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct FeatureSnippet(String);
+pub struct FeatureSnippet {
+    pub content: String,
+    pub disabled: bool,
+}
 
 impl FeatureSnippet {
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
+    pub fn new(content: String, disabled: bool) -> Self {
+        FeatureSnippet { content, disabled }
+    }
+
+    pub fn str_if_enabled(&self) -> Option<&str> {
+        (!self.disabled).then_some(&self.content)
     }
 }
 
@@ -154,6 +161,7 @@ pub struct RawNameValue {
 #[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
 pub struct RawFeature {
     pub automatic: Option<i64>,
+    pub disabled: Option<i64>,
     pub name: Option<String>,
     pub tag: Option<String>,
     pub code: String,
@@ -1397,6 +1405,10 @@ impl RawFeature {
             ))),
         }
     }
+
+    fn disabled(&self) -> bool {
+        self.disabled == Some(1)
+    }
 }
 
 // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L90
@@ -1406,7 +1418,7 @@ fn prefix_to_feature(prefix: RawFeature) -> Result<FeatureSnippet, Error> {
         None => "",
     };
     let code = format!("# Prefix: {}\n{}{}", name, prefix.autostr(), prefix.code);
-    Ok(FeatureSnippet(code))
+    Ok(FeatureSnippet::new(code, prefix.disabled()))
 }
 
 // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L101
@@ -1419,7 +1431,7 @@ fn class_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> {
         name,
         feature.code
     );
-    Ok(FeatureSnippet(code))
+    Ok(FeatureSnippet::new(code, feature.disabled()))
 }
 
 // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L113
@@ -1431,7 +1443,7 @@ fn raw_feature_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> 
         feature.autostr(),
         feature.code
     );
-    Ok(FeatureSnippet(code))
+    Ok(FeatureSnippet::new(code, feature.disabled()))
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L220-L249>
@@ -2168,7 +2180,10 @@ mod tests {
                 concat!("# automatic\n", "@Uppercase = [ A B C\n", "];",),
                 concat!("@Lowercase = [ a b c\n", "];",),
             ],
-            font.features.iter().map(|f| f.as_str()).collect::<Vec<_>>()
+            font.features
+                .iter()
+                .filter_map(|f| f.str_if_enabled())
+                .collect::<Vec<_>>()
         )
     }
 
@@ -2186,7 +2201,10 @@ mod tests {
                 ),
                 concat!("# Prefix: \n# automatic\nthanks for all the fish;",),
             ],
-            font.features.iter().map(|f| f.as_str()).collect::<Vec<_>>()
+            font.features
+                .iter()
+                .filter_map(|f| f.str_if_enabled())
+                .collect::<Vec<_>>()
         )
     }
 
@@ -2212,7 +2230,10 @@ mod tests {
                     "} ccmp;",
                 ),
             ],
-            font.features.iter().map(|f| f.as_str()).collect::<Vec<_>>()
+            font.features
+                .iter()
+                .filter_map(|f| f.str_if_enabled())
+                .collect::<Vec<_>>()
         )
     }
 
@@ -2225,7 +2246,10 @@ mod tests {
                 "# Prefix: second\nmeh",
                 "feature third {\nmeh\n} third;",
             ],
-            font.features.iter().map(|f| f.as_str()).collect::<Vec<_>>()
+            font.features
+                .iter()
+                .filter_map(|f| f.str_if_enabled())
+                .collect::<Vec<_>>()
         )
     }
 
@@ -2235,6 +2259,7 @@ mod tests {
             name: None,
             tag: Some("aalt".to_string()),
             automatic: None,
+            disabled: None,
             code: "blah".to_string(),
             other_stuff: BTreeMap::new(),
         };

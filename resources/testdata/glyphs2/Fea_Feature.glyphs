@@ -30,6 +30,11 @@ code = "lookup ccmp_Other_2 {
 
 etc;";
 name = ccmp;
+},
+{
+disabled = 1;
+code = "IGNORE_ME";
+name = duck;
 }
 );
 familyName = Fea;
