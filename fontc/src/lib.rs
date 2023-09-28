@@ -1162,7 +1162,6 @@ mod tests {
             vec![
                 Tag::new(b"OS/2"),
                 Tag::new(b"STAT"),
-                Tag::new(b"avar"),
                 Tag::new(b"cmap"),
                 Tag::new(b"fvar"),
                 Tag::new(b"glyf"),
