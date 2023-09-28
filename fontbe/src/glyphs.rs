@@ -275,7 +275,7 @@ fn compute_deltas(
                 iup_delta_optimize(deltas, coords.clone(), tolerance, contour_ends)
                     .map(|iup_deltas| (region.clone(), iup_deltas))
             } else {
-                let deltas = deltas
+                let mut deltas = deltas
                     .into_iter()
                     .map(|delta| match delta.to_point().ot_round() {
                         // IUP only applies to simple glyphs; for composites we
@@ -283,7 +283,18 @@ fn compute_deltas(
                         (0, 0) => GlyphDelta::optional(0, 0),
                         (x, y) => GlyphDelta::required(x, y),
                     })
-                    .collect();
+                    .collect::<Vec<_>>();
+
+                // match fonttools behaviour, ensuring there is at least one
+                // delta required, to ensure we write an entry for the glyf.
+                // <https://github.com/fonttools/fonttools/blob/0a3360e52727cdefce2e9b28286b074faf99033c/Lib/fontTools/varLib/__init__.py#L351>
+                // <https://github.com/fonttools/fonttools/issues/1381>
+
+                if deltas.iter().all(|delta| !delta.required) {
+                    if let Some(first) = deltas.first_mut() {
+                        first.required = true;
+                    }
+                }
 
                 Ok((region, deltas))
             }
