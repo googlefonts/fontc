@@ -2,16 +2,16 @@ extern crate proc_macro;
 
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
-use syn::spanned::Spanned;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use std::iter;
+use syn::{parse_macro_input, spanned::Spanned, Data, DeriveInput, Fields};
 
 mod attrs;
 
 #[proc_macro_derive(FromPlist, attributes(fromplist))]
-pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn from_plist(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    let deser = match add_deser(&input) {
+    let field_cases = match add_fieldcases(&input) {
         Ok(thing) => thing,
         Err(e) => return e.into_compile_error().into(),
     };
@@ -19,11 +19,24 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let name = input.ident;
 
     let expanded = quote! {
-        impl crate::from_plist::FromPlist for #name {
-            fn from_plist(plist: crate::plist::Plist) -> Self {
-                let mut map = plist.expect_dict().unwrap();
-                #name {
-                    #deser
+        impl FromPlist for #name {
+            fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
+                use crate::plist::Error;
+
+                tokenizer.eat(b'{')?;
+                let mut rec = #name::default();
+                loop {
+                    if tokenizer.eat(b'}').is_ok() {
+                        return Ok((rec));
+                    }
+                    let key = tokenizer.lex()?;
+                    tokenizer.eat(b'=')?;
+                    match key.as_str() {
+                        #field_cases
+                        Some(unrecognized) => tokenizer.skip_rec()?,
+                        _ => (),
+                    };
+                    tokenizer.eat(b';')?;
                 }
             }
         }
@@ -31,34 +44,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     proc_macro::TokenStream::from(expanded)
 }
 
-#[proc_macro_derive(ToPlist, attributes(fromplist))]
-pub fn derive_to(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    match derive_to_impl(&input) {
-        Ok(thing) => thing,
-        Err(e) => e.into_compile_error().into(),
-    }
-}
-
-fn derive_to_impl(input: &DeriveInput) -> syn::Result<proc_macro::TokenStream> {
-    let name = &input.ident;
-
-    let ser_rest = add_ser_rest(&input.data)?;
-    let ser = add_ser(&input.data);
-
-    let expanded = quote! {
-        impl crate::to_plist::ToPlist for #name {
-            fn to_plist(self) -> crate::plist::Plist {
-                #ser_rest
-                #ser
-                map.into()
-            }
-        }
-    };
-    Ok(proc_macro::TokenStream::from(expanded))
-}
-
-fn add_deser(input: &DeriveInput) -> syn::Result<TokenStream> {
+fn add_fieldcases(input: &DeriveInput) -> syn::Result<TokenStream> {
     let Data::Struct(data) = &input.data else {
         return Err(syn::Error::new(
             input.ident.span(),
@@ -73,84 +59,35 @@ fn add_deser(input: &DeriveInput) -> syn::Result<TokenStream> {
         ));
     };
 
-    let fields = fields.named.iter().map(|f| {
-        let attrs = attrs::FieldAttrs::from_attrs(&f.attrs)?;
-        let name = &f.ident;
-        if attrs.rest.is_none() {
-            let name_str = name.as_ref().unwrap().to_string();
-            let snake_name = snake_to_camel_case(&name_str);
-            if attrs.default.is_none() {
-                Ok(quote_spanned! {f.span() =>
-                    #name: crate::from_plist::FromPlistOpt::from_plist(
-                        map.remove(#snake_name)
-                    ),
-                })
-            } else {
-                Ok(quote_spanned! {f.span() =>
-                    #name: map.remove(#snake_name).map(crate::from_plist::FromPlist::from_plist).unwrap_or_default(),
-                })
-            }
-        } else {
-            Ok(quote_spanned! {f.span() =>
-                #name: map,
+    let fields = fields
+        .named
+        .iter()
+        .filter_map(|f| {
+            attrs::FieldAttrs::from_attrs(&f.attrs)
+                .ok()
+                .filter(|a| !a.ignore)
+                .map(|a| (f, a))
+        })
+        .flat_map(|(f, attrs)| {
+            let name = f.ident.as_ref().unwrap();
+            iter::once(
+                attrs
+                    .plist_field_name
+                    .unwrap_or_else(|| snake_to_camel_case(&name.to_string())),
+            )
+            .chain(attrs.plist_addtl_names)
+            .map(|plist_name| {
+                let name = name.clone();
+                quote_spanned! {
+                    f.span() => Some(#plist_name) => rec.#name = tokenizer.parse()?,
+                }
             })
-        }
-        }).collect::<Result<Vec<_>, syn::Error>>()?;
+        })
+        .collect::<Vec<_>>();
 
     Ok(quote! {
         #( #fields )*
     })
-}
-
-fn add_ser(data: &Data) -> TokenStream {
-    match *data {
-        Data::Struct(ref data) => match data.fields {
-            Fields::Named(ref fields) => {
-                let recurse = fields.named.iter().filter_map(|f| {
-                    let attrs = attrs::FieldAttrs::from_attrs(&f.attrs)
-                        .expect("already checked in add_der");
-                    if attrs.rest.is_none() {
-                        let name = &f.ident;
-                        let name_str = name.as_ref().unwrap().to_string();
-                        let snake_name = snake_to_camel_case(&name_str);
-                        Some(quote_spanned! {f.span() =>
-                            if let Some(plist) = crate::to_plist::ToPlistOpt::to_plist(self.#name) {
-                                map.insert(#snake_name.to_string(), plist);
-                            }
-                        })
-                    } else {
-                        None
-                    }
-                });
-                quote! {
-                    #( #recurse )*
-                }
-            }
-            _ => unimplemented!(),
-        },
-        _ => unimplemented!(),
-    }
-}
-
-fn add_ser_rest(data: &Data) -> syn::Result<TokenStream> {
-    match *data {
-        Data::Struct(ref data) => match data.fields {
-            Fields::Named(ref fields) => {
-                for f in fields.named.iter() {
-                    let attrs = attrs::FieldAttrs::from_attrs(&f.attrs)?;
-                    if attrs.rest.is_some() {
-                        let name = &f.ident;
-                        return Ok(quote_spanned! { f.span() =>
-                            let mut map = self.#name;
-                        });
-                    }
-                }
-                Ok(quote! { let mut map = BTreeMap::new(); })
-            }
-            _ => unimplemented!(),
-        },
-        _ => unimplemented!(),
-    }
 }
 
 fn snake_to_camel_case(id: &str) -> String {
@@ -170,18 +107,3 @@ fn snake_to_camel_case(id: &str) -> String {
     }
     result
 }
-
-/*
-fn to_snake_case(id: &str) -> String {
-    let mut result = String::new();
-    for c in id.chars() {
-        if c.is_ascii_uppercase() {
-            result.push('_');
-            result.push(c.to_ascii_lowercase());
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
-*/
