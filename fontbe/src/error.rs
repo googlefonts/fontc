@@ -6,7 +6,10 @@ use fontdrasil::types::GlyphName;
 use fontir::{error::VariationModelError, variations::DeltaError};
 use read_fonts::ReadError;
 use thiserror::Error;
-use write_fonts::tables::{glyf::MalformedPath, gvar::GvarInputError, variations::IupError};
+use write_fonts::tables::{
+    glyf::MalformedPath,
+    gvar::{iup::IupError, GvarInputError},
+};
 
 #[derive(Debug, Error)]
 pub enum Error {

@@ -83,7 +83,10 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
 mod tests {
     use font_types::F2Dot14;
     use fontir::ir::GlyphOrder;
-    use write_fonts::tables::{gvar::GlyphDeltas, variations::Tuple};
+    use write_fonts::tables::{
+        gvar::{GlyphDelta, GlyphDeltas},
+        variations::Tuple,
+    };
 
     use super::make_variations;
 
@@ -103,7 +106,7 @@ mod tests {
                 // At the maximum extent (normalized pos 1.0) of our axis, add +1, +1
                 v if v == glyph_with_var => vec![GlyphDeltas::new(
                     Tuple::new(vec![F2Dot14::from_f32(1.0)]),
-                    vec![Some((1, 1))],
+                    vec![GlyphDelta::new(1, 1, false)],
                     None,
                 )],
                 v => panic!("unexpected {v}"),

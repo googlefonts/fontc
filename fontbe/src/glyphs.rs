@@ -18,7 +18,7 @@ use fontir::{
     orchestration::WorkId as FeWorkId,
     variations::{VariationModel, VariationRegion},
 };
-use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect, Vec2};
+use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect};
 use log::{log_enabled, trace, warn};
 
 use read_fonts::{
@@ -31,7 +31,7 @@ use write_fonts::{
             Bbox, Component, ComponentFlags, CompositeGlyph, GlyfLocaBuilder, Glyph as RawGlyph,
             SimpleGlyph,
         },
-        variations::iup_delta_optimize,
+        gvar::{iup::iup_delta_optimize, GlyphDelta},
     },
     OtRound,
 };
@@ -41,7 +41,7 @@ use crate::{
     orchestration::{AnyWorkId, BeWork, Context, Glyph, GvarFragment, WorkId},
 };
 
-type Deltas = Vec<(VariationRegion, Vec<Option<Vec2>>)>;
+type Deltas = Vec<(VariationRegion, Vec<GlyphDelta>)>;
 
 #[derive(Debug)]
 struct GlyphWork {
@@ -275,7 +275,13 @@ fn compute_deltas(
                 iup_delta_optimize(deltas, coords.clone(), tolerance, contour_ends)
                     .map(|iup_deltas| (region.clone(), iup_deltas))
             } else {
-                Ok((region, deltas.into_iter().map(Some).collect()))
+                // IUP only applies to simple glyphs; for composite glyphs we
+                // just mark the zero deltas as being interpoatable.
+                Ok((region, deltas.into_iter().map(|delta|
+                    match delta.to_point().ot_round() {
+                        (0, 0) => GlyphDelta::optional(0, 0),
+                        (x, y) => GlyphDelta::required(x, y),
+                }).collect()))
             }
         })
         .collect::<Result<Vec<_>, _>>()
