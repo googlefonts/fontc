@@ -7,11 +7,12 @@ use write_fonts::{
     tables::{
         gpos::{self as write_gpos, AnchorTable, MarkRecord, ValueFormat, ValueRecord},
         layout::CoverageTable,
+        variations::ivs_builder::VariationIndexRemapping,
     },
     types::GlyphId,
 };
 
-use crate::{common::GlyphClass, compile::tables::VariationIndexRemapping};
+use crate::common::GlyphClass;
 
 use super::{Builder, ClassDefBuilder2, VariationIndexContainingLookup};
 

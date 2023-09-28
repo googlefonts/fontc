@@ -22,6 +22,7 @@ use write_fonts::{
             FeatureVariationRecord, FeatureVariations, LangSys, LangSysRecord, Lookup as RawLookup,
             LookupFlag, LookupList, Script, ScriptList, ScriptRecord,
         },
+        variations::ivs_builder::VariationIndexRemapping,
     },
     types::Tag,
 };
@@ -32,11 +33,7 @@ use crate::{
     Kind,
 };
 
-use super::{
-    features::AllFeatures,
-    tables::{ClassId, VariationIndexRemapping},
-    tags,
-};
+use super::{features::AllFeatures, tables::ClassId, tags};
 
 use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,

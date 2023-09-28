@@ -1,6 +1,6 @@
 [package]
 name = "fea-rs"
-version = "0.16.1"
+version = "0.17.0"
 license = "MIT/Apache-2.0"
 authors = ["Colin Rofls <colin@cmyr.net>"]
 description = "Tools for working with Adobe OpenType Feature files."
@@ -15,8 +15,8 @@ exclude = ["test-data"]
 [dependencies]
 ansi_term = "0.12.1"
 smol_str = "0.2.0"
-norad = { version = "0.11", optional = true } # Used in the compile binary
-write-fonts = { version = "0.15.0", features = ["read"] }
+norad = { version = "0.12", optional = true } # Used in the compile binary
+write-fonts = { version = "0.16.0", features = ["read"] }
 chrono = "0.4.3"
 diff = { version = "0.1.12", optional = true }
 rayon = { version = "1.6", optional = true }
@@ -27,7 +27,7 @@ clap = { version = "4.0.32", features = ["derive"], optional = true }
 log = "0.4"
 env_logger = "0.10.0"
 indexmap = "2.0"
-ordered-float = "3.9.1"
+ordered-float = "4.1.0"
 
 [features]
 test = ["diff", "rayon", "serde", "serde_json", "clap"]
