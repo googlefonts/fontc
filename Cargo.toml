@@ -14,7 +14,7 @@ parking_lot = "0.12.1"
 fea-rs = "0.16.1"
 font-types = { version = "0.4.0", features = ["serde"] }
 read-fonts = "0.11.1"
-write-fonts = "0.15"
+write-fonts = { path = "../fontations/write-fonts", features = ["serde"] }
 skrifa = "0.10.0"
 
 bitflags = "2.0"
@@ -48,3 +48,10 @@ members = [
     "ufo2fontir",
     "fontc",
 ]
+
+[patch.crates-io]
+font-types =  { path = "../fontations/font-types" }
+read-fonts =  { path = "../fontations/read-fonts" }
+write-fonts = { path = "../fontations/write-fonts" }
+skrifa =  { path = "../fontations/skrifa" }
+fea-rs = { path = "../fea-rs/fea-rs" }
