@@ -18,7 +18,7 @@ use fontir::{
     orchestration::WorkId as FeWorkId,
     variations::{VariationModel, VariationRegion},
 };
-use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect};
+use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect, Vec2};
 use log::{log_enabled, trace, warn};
 
 use read_fonts::{
@@ -264,9 +264,11 @@ fn compute_deltas(
         .map_err(|e| Error::GlyphDeltaError(glyph_name.clone(), e))?
         .into_iter()
         .map(|(region, deltas)| {
-            // Spec: inferring of deltas for un-referenced points applies only to simple glyphs, not to composite glyphs.
+            // Spec: inferring of deltas for un-referenced points applies only
+            // to simple glyphs, not to composite glyphs.
             if should_iup {
-                // Doing IUP optimization here conveniently means it threads per-glyph
+                // Doing IUP optimization here conveniently means it threads
+                // per-glyph
                 if log_enabled!(log::Level::Trace) {
                     // I like the point string better than the vec2
                     let deltas = deltas.iter().map(|d| d.to_point()).collect::<Vec<_>>();
@@ -275,16 +277,36 @@ fn compute_deltas(
                 iup_delta_optimize(deltas, coords.clone(), tolerance, contour_ends)
                     .map(|iup_deltas| (region.clone(), iup_deltas))
             } else {
-                let deltas = deltas
-                    .into_iter()
-                    .map(|delta| GlyphDelta::required(delta.x.ot_round(), delta.y.ot_round()))
-                    .collect();
-
+                let deltas = process_composite_deltas(deltas);
                 Ok((region, deltas))
             }
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| Error::IupError(glyph_name.clone(), e))
+}
+
+/// convert raw deltas to the write-fonts representation (composite glyphs only)
+fn process_composite_deltas(deltas: Vec<Vec2>) -> Vec<GlyphDelta> {
+    let mut deltas = deltas
+        .into_iter()
+        .map(|delta| match delta.to_point().ot_round() {
+            // IUP only applies to simple glyphs; for composites we
+            // just mark the zero deltas as being interpolatable.
+            (0, 0) => GlyphDelta::optional(0, 0),
+            (x, y) => GlyphDelta::required(x, y),
+        })
+        .collect::<Vec<_>>();
+
+    // match fonttools behaviour, ensuring there is at least one
+    // delta required, to ensure we write an entry for the glyf.
+    // <https://github.com/fonttools/fonttools/blob/0a3360e52727cdefce2e9b28286b074faf99033c/Lib/fontTools/varLib/__init__.py#L351>
+    // <https://github.com/fonttools/fonttools/issues/1381>
+    if deltas.iter().all(|delta| !delta.required) {
+        if let Some(first) = deltas.first_mut() {
+            first.required = true;
+        }
+    }
+    deltas
 }
 
 impl Work<Context, AnyWorkId, Error> for GlyphWork {
@@ -864,10 +886,10 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use fontir::ir;
     use kurbo::Affine;
-
-    use crate::glyphs::can_reuse_metrics;
 
     /// Returns a glyph instance and another one that can be its component
     fn create_reusable_component() -> (ir::GlyphInstance, ir::GlyphInstance) {
@@ -910,6 +932,35 @@ mod tests {
             let mut coeffs = Affine::IDENTITY.as_coeffs();
             coeffs[i] = 2.0;
             assert!(!can_reuse_metrics(&glyph, &component, &Affine::new(coeffs)));
+        }
+    }
+
+    #[test]
+    fn all_zero_composite_deltas() {
+        let zeros = vec![Vec2::ZERO; 6];
+        // if a composite glyph has all zero deltas we want to finish with a single
+        // required zero delta, and skip the rest:
+        let deltas = process_composite_deltas(zeros);
+        assert!(deltas[0].required);
+        assert!(deltas.iter().skip(1).all(|d| !d.required));
+    }
+
+    #[test]
+    fn elide_composite_zero_deltas() {
+        // if a composite glyph has some non-zero deltas than all zero deltas
+        // become optional
+        let deltas = vec![
+            Vec2::ZERO,
+            Vec2::new(1., 0.),
+            Vec2::ZERO,
+            Vec2::ZERO,
+            Vec2::new(0., 5.),
+        ];
+
+        let processed = process_composite_deltas(deltas.clone());
+        for (pre, post) in deltas.iter().zip(processed.iter()) {
+            let should_be_required = *pre != Vec2::ZERO;
+            assert_eq!(should_be_required, post.required)
         }
     }
 }
