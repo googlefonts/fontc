@@ -351,7 +351,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
         context.maxp.set_unconditionally(maxp.into());
 
         // Set x/y min/max in head
-        let mut head = context.head.get().0.clone();
+        let mut head = context.head.get().0.clone().unwrap();
         let bbox = glyph_limits.bbox.unwrap_or_default();
         head.x_min = bbox.x_min;
         head.y_min = bbox.y_min;

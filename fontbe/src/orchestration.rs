@@ -293,7 +293,7 @@ pub type BeWork = dyn Work<Context, AnyWorkId, Error> + Send;
 /// Allows us to implement [Persistable] w/o violating the orphan rules
 ///
 /// Other than that just kind of gets in the way
-pub struct BeValue<T>(pub T);
+pub struct BeValue<T>(pub Option<T>);
 
 impl<T> Persistable for BeValue<T>
 where
@@ -302,11 +302,17 @@ where
     fn read(from: &mut dyn Read) -> Self {
         let mut buf = Vec::new();
         from.read_to_end(&mut buf).unwrap();
-        T::read(FontData::new(&buf)).unwrap().into()
+        (!buf.is_empty())
+            .then(|| T::read(FontData::new(&buf)).unwrap())
+            .into()
     }
 
     fn write(&self, to: &mut dyn io::Write) {
-        let bytes = dump_table(&self.0).unwrap();
+        let bytes = self
+            .0
+            .as_ref()
+            .map(|t| dump_table(t).unwrap())
+            .unwrap_or_default();
         to.write_all(&bytes).unwrap();
     }
 }
@@ -316,6 +322,15 @@ where
     T: FontWrite + Validate,
 {
     fn from(value: T) -> Self {
+        BeValue(Some(value))
+    }
+}
+
+impl<T> From<Option<T>> for BeValue<T>
+where
+    T: FontWrite + Validate,
+{
+    fn from(value: Option<T>) -> Self {
         BeValue(value)
     }
 }
@@ -370,6 +385,7 @@ pub struct Context {
     pub gvar_fragments: BeContextMap<GvarFragment>,
     pub glyphs: BeContextMap<Glyph>,
 
+    // Allow avar to be explicitly None to record a noop avar being generated
     pub avar: BeContextItem<BeValue<Avar>>,
     pub cmap: BeContextItem<BeValue<Cmap>>,
     pub fvar: BeContextItem<BeValue<Fvar>>,
@@ -511,11 +527,11 @@ impl Persistable for Bytes {
     }
 }
 
-pub(crate) fn to_bytes<T>(table: &BeValue<T>) -> Vec<u8>
+pub(crate) fn to_bytes<T>(table: &BeValue<T>) -> Option<Vec<u8>>
 where
     T: FontWrite + Validate,
 {
-    dump_table(&table.0).unwrap()
+    table.0.as_ref().map(|t| dump_table(t).unwrap())
 }
 
 #[cfg(test)]

@@ -56,6 +56,8 @@ pub enum Error {
     VariationModelError(GlyphName, VariationModelError),
     #[error("Missing file:{0}")]
     FileExpected(PathBuf),
+    #[error("Missing {0}")]
+    MissingTable(Tag),
 }
 
 #[derive(Debug)]

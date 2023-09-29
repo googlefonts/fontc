@@ -2,6 +2,7 @@
 
 use std::{cmp::Ordering, collections::HashSet, sync::Arc};
 
+use font_types::Tag;
 use fontdrasil::orchestration::{Access, Work};
 use fontir::{ir::GlobalMetricsInstance, orchestration::WorkId as FeWorkId};
 use log::warn;
@@ -220,12 +221,15 @@ pub fn create_os2_work() -> Box<BeWork> {
 /// <https://github.com/fonttools/fonttools/blob/115275cbf429d91b75ac5536f5f0b2d6fe9d823a/Lib/fontTools/ttLib/tables/O_S_2f_2.py#L336-L348>
 fn x_avg_char_width(context: &Context) -> Result<i16, Error> {
     let glyph_order = context.ir.glyph_order.get();
-    let hhea = context.hhea.get();
+    let arc_hhea = context.hhea.get();
+    let Some(hhea) = &arc_hhea.as_ref().0 else {
+        return Err(Error::MissingTable(Tag::new(b"hhea")));
+    };
     let raw_hmtx = context.hmtx.get();
     let num_glyphs = glyph_order.len() as u64;
     let hmtx = Hmtx::read(
         FontData::new(raw_hmtx.get()),
-        hhea.0.number_of_long_metrics,
+        hhea.number_of_long_metrics,
         num_glyphs as u16,
     )
     .map_err(|_| Error::InvalidTableBytes(Hmtx::TAG))?;
@@ -248,7 +252,7 @@ fn x_avg_char_width(context: &Context) -> Result<i16, Error> {
         .map(|m| m.advance() as u64)
         .unwrap_or_default();
     let (count, total) = if last_advance > 0 {
-        let num_short = num_glyphs - hhea.0.number_of_long_metrics as u64;
+        let num_short = num_glyphs - hhea.number_of_long_metrics as u64;
         (count + num_short, total + num_short * last_advance)
     } else {
         (count, total)
@@ -748,19 +752,23 @@ impl MaxContext for &SubstitutionLookup {
 fn apply_max_context(os2: &mut Os2, context: &Context) {
     let mut max_context: u16 = 0;
 
-    if let Some(gsub) = context.gsub.try_get() {
-        let lookups = &gsub.0.lookup_list.lookups;
-        max_context = max_context.max(lookups.iter().fold(0, |max_ctx, lookup| {
-            max_ctx.max((lookup as &SubstitutionLookup).max_context())
-        }));
+    if let Some(arc_gsub) = context.gsub.try_get() {
+        if let Some(gsub) = &arc_gsub.0 {
+            let lookups = &gsub.lookup_list.lookups;
+            max_context = max_context.max(lookups.iter().fold(0, |max_ctx, lookup| {
+                max_ctx.max((lookup as &SubstitutionLookup).max_context())
+            }));
+        }
     }
 
-    if let Some(gpos) = context.gpos.try_get() {
-        let lookups = &gpos.0.lookup_list.lookups;
-        warn!(
-            "max context for gpos not implemented, {} position lookups being ignored",
-            lookups.len()
-        );
+    if let Some(arc_gpos) = context.gpos.try_get() {
+        if let Some(gpos) = &arc_gpos.0 {
+            let lookups = &gpos.lookup_list.lookups;
+            warn!(
+                "max context for gpos not implemented, {} position lookups being ignored",
+                lookups.len()
+            );
+        }
     }
 
     os2.us_max_context = Some(max_context);

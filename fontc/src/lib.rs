@@ -1111,7 +1111,9 @@ mod tests {
         let result = compile(Args::for_test(build_dir, "glyphs2/Mono.glyphs"));
 
         let arc_hhea = result.be_context.hhea.get();
-        let hhea = &arc_hhea.0;
+        let Some(hhea) = &arc_hhea.0 else {
+            panic!("Missing hhea");
+        };
         assert_eq!(1, hhea.number_of_long_metrics);
         assert_eq!(175, hhea.min_left_side_bearing.to_i16());
         assert_eq!(50, hhea.min_right_side_bearing.to_i16());
@@ -1119,7 +1121,9 @@ mod tests {
         assert_eq!(425, hhea.advance_width_max.to_u16());
 
         let arc_maxp = result.be_context.maxp.get();
-        let maxp = &arc_maxp.0;
+        let Some(maxp) = &arc_maxp.0 else {
+            panic!("Missing maxp");
+        };
         assert_eq!(3, maxp.num_glyphs);
         assert_eq!(Some(4), maxp.max_points);
         assert_eq!(Some(1), maxp.max_contours);

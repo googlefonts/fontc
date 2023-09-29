@@ -97,13 +97,8 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
             .filter_map(to_segment_map)
             .filter(|sm| !sm.axis_value_maps.is_empty())
             .collect();
-        if axis_segment_maps.is_empty() {
-            debug!("Skip avar; no interesting mappings");
-            return Ok(());
-        }
-        context
-            .avar
-            .set_unconditionally(Avar::new(axis_segment_maps).into());
+        let avar = (!axis_segment_maps.is_empty()).then_some(Avar::new(axis_segment_maps));
+        context.avar.set_unconditionally(avar.into());
         Ok(())
     }
 }
