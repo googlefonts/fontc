@@ -101,7 +101,11 @@ fn add_feature_ir_job(workload: &mut Workload) -> Result<(), Error> {
         .ir_source()
         .create_feature_ir_work(workload.change_detector.current_inputs())?
         .into();
-    workload.add(work, workload.change_detector.feature_ir_change());
+    workload.add(
+        work,
+        workload.change_detector.feature_ir_change()
+            && workload.change_detector.should_compile_features(),
+    );
     Ok(())
 }
 
