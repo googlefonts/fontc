@@ -31,6 +31,12 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub flatten_components: bool,
 
+    /// Whether a component is allowed to have a non-identity 2x2 transform.
+    ///
+    /// If not, any source component that does will be flattened
+    #[arg(long, default_value = "true", action = ArgAction::Set)]
+    pub allow_component_transforms: bool,
+
     /// Whether to out timing data, notably a visualization of threadpool execution of tasks.
     ///
     /// See <https://github.com/googlefonts/fontc/pull/443>
@@ -59,6 +65,10 @@ impl Args {
         flags.set(Flags::EMIT_DEBUG, self.emit_debug);
         flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
         flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
+        flags.set(
+            Flags::ALLOW_COMPONENT_TRANSFORM,
+            self.allow_component_transforms,
+        );
         flags.set(Flags::EMIT_TIMING, self.emit_timing);
 
         flags
@@ -80,6 +90,7 @@ impl Args {
             build_dir: build_dir.to_path_buf(),
             prefer_simple_glyphs: Flags::default().contains(Flags::PREFER_SIMPLE_GLYPHS),
             flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
+            allow_component_transforms: Flags::default().contains(Flags::ALLOW_COMPONENT_TRANSFORM),
             compile_features: true,
         }
     }

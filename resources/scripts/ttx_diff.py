@@ -104,6 +104,8 @@ def build_fontc(source: Path, build_dir: Path, compare: str):
     ]
     if compare == _COMPARE_GFTOOLS:
         cmd.append("--flatten-components")
+        cmd.append("--allow-component-transforms")
+        cmd.append("false")
     return build(cmd, build_dir, "fontc", lambda: (build_dir / "font.ttf",))
 
 

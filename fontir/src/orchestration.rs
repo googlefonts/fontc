@@ -29,15 +29,15 @@ bitflags! {
         // If set, a composite that references another composite will replace that composite with the
         // glyph(s) it references until only simple (contour) glyphs are referenced
         const FLATTEN_COMPONENTS = 0b00001000;
+        const ALLOW_COMPONENT_TRANSFORM = 0b00010000;
         // If set a files reporting on timing will be emitted to disk
-        const EMIT_TIMING = 0b00010000;
+        const EMIT_TIMING = 0b00100000;
     }
 }
 
 impl Default for Flags {
-    /// Match the way gftools configures fontmake by default
     fn default() -> Self {
-        Flags::EMIT_IR | Flags::PREFER_SIMPLE_GLYPHS
+        Flags::EMIT_IR | Flags::PREFER_SIMPLE_GLYPHS | Flags::ALLOW_COMPONENT_TRANSFORM
     }
 }
 

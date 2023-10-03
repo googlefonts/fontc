@@ -402,6 +402,15 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
             }
         }
 
+        if !context.flags.contains(Flags::ALLOW_COMPONENT_TRANSFORM) {
+            for glyph_name in new_glyph_order.iter() {
+                let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
+                if glyph.has_nonidentity_2x2() {
+                    convert_components_to_contours(context, &glyph)?;
+                }
+            }
+        }
+
         ensure_notdef_exists_and_is_gid_0(context, &mut new_glyph_order)?;
 
         // We now have the final static metadata
