@@ -117,6 +117,23 @@ width = 600;
 }
 );
 unicode = 0032;
+},
+{
+glyphname = translate_only;
+lastChange = "2023-01-20 20:22:39 +0000";
+layers = (
+{
+components = (
+{
+name = period;
+transform = "{1, 0, 0, 1, 50, 50}";
+}
+);
+layerId = m01;
+width = 600;
+}
+);
+unicode = 0033;
 }
 );
 unitsPerEm = 1000;

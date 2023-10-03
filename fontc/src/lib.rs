@@ -1035,6 +1035,32 @@ mod tests {
     }
 
     #[test]
+    fn eliminate_2x2_transforms() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let mut args = Args::for_test(build_dir, "glyphs2/Component.glyphs");
+        args.decompose_transformed_components = true;
+        let result = compile(args);
+
+        let glyph_data = result.glyphs();
+        let glyphs = glyph_data.read();
+
+        // Not an identity 2x2, should be simplified
+        let Some(glyf::Glyph::Simple(..)) =
+            &glyphs[result.get_glyph_index("simple_transform_again") as usize]
+        else {
+            panic!("Expected a simple glyph\n{glyphs:#?}");
+        };
+
+        // Identity 2x2, should be left as a component
+        let Some(glyf::Glyph::Composite(..)) =
+            &glyphs[result.get_glyph_index("translate_only") as usize]
+        else {
+            panic!("Expected a composite glyph\n{glyphs:#?}");
+        };
+    }
+
+    #[test]
     fn writes_cmap() {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
@@ -1075,7 +1101,8 @@ mod tests {
                     (0x002E, 1),
                     (0x0030, 3),
                     (0x031, 4),
-                    (0x032, 5)
+                    (0x032, 5),
+                    (0x033, 6)
                 ],
                 cp_and_gid,
                 "start {:?}\nend {:?}id_delta {:?}",
