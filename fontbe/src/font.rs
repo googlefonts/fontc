@@ -76,7 +76,7 @@ fn has(context: &Context, id: WorkId) -> bool {
     }
 }
 
-fn bytes_for(context: &Context, id: WorkId) -> Result<Vec<u8>, Error> {
+fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
     // TODO: to_vec copies :(
     let bytes = match id {
         WorkId::Avar => to_bytes(context.avar.get().as_ref()),
@@ -84,13 +84,13 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Vec<u8>, Error> {
         WorkId::Fvar => to_bytes(context.fvar.get().as_ref()),
         WorkId::Head => to_bytes(context.head.get().as_ref()),
         WorkId::Hhea => to_bytes(context.hhea.get().as_ref()),
-        WorkId::Hmtx => context.hmtx.get().as_ref().get().to_vec(),
-        WorkId::Glyf => context.glyf.get().as_ref().get().to_vec(),
+        WorkId::Hmtx => Some(context.hmtx.get().as_ref().get().to_vec()),
+        WorkId::Glyf => Some(context.glyf.get().as_ref().get().to_vec()),
         WorkId::Gpos => to_bytes(context.gpos.get().as_ref()),
         WorkId::Gsub => to_bytes(context.gsub.get().as_ref()),
         WorkId::Gdef => to_bytes(context.gdef.get().as_ref()),
-        WorkId::Gvar => context.gvar.get().as_ref().get().to_vec(),
-        WorkId::Loca => context.loca.get().as_ref().get().to_vec(),
+        WorkId::Gvar => Some(context.gvar.get().as_ref().get().to_vec()),
+        WorkId::Loca => Some(context.loca.get().as_ref().get().to_vec()),
         WorkId::Maxp => to_bytes(context.maxp.get().as_ref()),
         WorkId::Name => to_bytes(context.name.get().as_ref()),
         WorkId::Os2 => to_bytes(context.os2.get().as_ref()),
@@ -147,8 +147,11 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
                 continue;
             }
             debug!("Grabbing {tag} for final font");
-            let bytes = bytes_for(context, work_id.clone())?;
-            builder.add_raw(*tag, bytes);
+            if let Some(bytes) = bytes_for(context, work_id.clone())? {
+                builder.add_raw(*tag, bytes);
+            } else {
+                debug!("No content for {tag}");
+            }
         }
 
         debug!("Building font");

@@ -21,7 +21,7 @@ pub fn create_avar_work() -> Box<BeWork> {
     Box::new(AvarWork {})
 }
 
-fn to_segment_map(axis: &Axis) -> SegmentMaps {
+fn to_segment_map(axis: &Axis) -> Option<SegmentMaps> {
     // default normalization
     let default_converter = CoordConverter::new(
         vec![
@@ -57,6 +57,11 @@ fn to_segment_map(axis: &Axis) -> SegmentMaps {
 
     // avar maps from the default normalization to the actual one,
     // using normalized values on both sides.
+    // All identity mappings are not interesting so we can skip them.
+    if mappings.iter().all(|(k, v)| k == v) {
+        return None;
+    }
+
     let mappings = mappings
         .iter()
         .map(|(default_norm, actual_norm)| {
@@ -64,7 +69,7 @@ fn to_segment_map(axis: &Axis) -> SegmentMaps {
         })
         .collect();
 
-    SegmentMaps::new(mappings)
+    Some(SegmentMaps::new(mappings))
 }
 
 impl Work<Context, AnyWorkId, Error> for AvarWork {
@@ -86,17 +91,14 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
             debug!("Skip avar; this is not a variable font");
             return Ok(());
         }
-        context.avar.set_unconditionally(
-            Avar::new(
-                static_metadata
-                    .axes
-                    .iter()
-                    .map(to_segment_map)
-                    .filter(|sm| !sm.axis_value_maps.is_empty())
-                    .collect(),
-            )
-            .into(),
-        );
+        let axis_segment_maps: Vec<_> = static_metadata
+            .axes
+            .iter()
+            .filter_map(to_segment_map)
+            .filter(|sm| !sm.axis_value_maps.is_empty())
+            .collect();
+        let avar = (!axis_segment_maps.is_empty()).then_some(Avar::new(axis_segment_maps));
+        context.avar.set_unconditionally(avar.into());
         Ok(())
     }
 }
@@ -148,8 +150,7 @@ mod tests {
         ];
         for i in 1..mappings.len() {
             let mappings = mappings[0..i].to_vec();
-            let segmap = to_segment_map(&axis(mappings, 1));
-            assert_eq!(vec![(-1.0, -1.0), (0.0, 0.0), (1.0, 1.0),], dump(segmap));
+            assert!(to_segment_map(&axis(mappings, 1)).is_none());
         }
     }
 
@@ -163,7 +164,7 @@ mod tests {
         ];
         assert_eq!(
             vec![(-1.0, -1.0), (0.0, 0.0), (0.75, 0.95), (1.0, 1.0),],
-            dump(to_segment_map(&axis(mappings, 1)))
+            dump(to_segment_map(&axis(mappings, 1)).unwrap())
         );
     }
 
@@ -178,7 +179,7 @@ mod tests {
         ];
         assert_eq!(
             vec![(-1.0, -1.0), (0.0, 0.0), (0.3333, 0.4943), (1.0, 1.0),],
-            dump(to_segment_map(&axis(mappings, 0)))
+            dump(to_segment_map(&axis(mappings, 0)).unwrap())
         );
     }
 }
