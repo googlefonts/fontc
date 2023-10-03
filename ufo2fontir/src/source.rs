@@ -712,7 +712,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
                 // TODO: Also support localised names, and names inferred from axis labels
                 // (also used to build STAT table)
                 NamedInstance {
-                    name: inst.stylename.clone().unwrap_or(
+                    name: inst.stylename.clone().unwrap_or_else(|| {
                         match inst
                             .name
                             .as_ref()
@@ -721,8 +721,8 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
                         {
                             Some(tail) => tail.to_string(),
                             None => inst.name.clone().unwrap(),
-                        },
-                    ),
+                        }
+                    }),
                     location: to_design_location(&tags_by_name, &inst.location)
                         .to_user(&axes_by_tag),
                 }
