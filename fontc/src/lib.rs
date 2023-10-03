@@ -1540,6 +1540,17 @@ mod tests {
         );
     }
 
+    #[test]
+    fn compile_named_instances_from_designspace_with_stylename_attrs() {
+        assert_named_instances(
+            "wght_var_instance_stylename.designspace",
+            vec![
+                ("Foo".to_string(), vec![("Weight", 400.0)]),
+                ("Bar".to_string(), vec![("Weight", 700.0)]),
+            ],
+        );
+    }
+
     fn assert_fs_selection(source: &str, expected: SelectionFlags) {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
