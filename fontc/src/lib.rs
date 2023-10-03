@@ -1039,7 +1039,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let mut args = Args::for_test(build_dir, "glyphs2/Component.glyphs");
-        args.allow_component_transforms = false;
+        args.decompose_transformed_components = true;
         let result = compile(args);
 
         let glyph_data = result.glyphs();

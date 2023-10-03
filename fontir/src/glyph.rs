@@ -402,7 +402,10 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
             }
         }
 
-        if !context.flags.contains(Flags::ALLOW_COMPONENT_TRANSFORM) {
+        if context
+            .flags
+            .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS)
+        {
             for glyph_name in new_glyph_order.iter() {
                 let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
                 if glyph.has_nonidentity_2x2() {
