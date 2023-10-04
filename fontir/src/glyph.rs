@@ -15,7 +15,6 @@ use fontdrasil::{
 use kurbo::Affine;
 use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
-use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 
 use crate::{
     coords::NormalizedLocation,
@@ -210,13 +209,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
 
             // See https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L205
             if component.transform.determinant() < 0.0 {
-                let mut bez_pen = BezPathPen::new();
-                let mut rev_pen = ReverseContourPen::new(&mut bez_pen);
-                write_to_pen(&contour, &mut rev_pen);
-                rev_pen
-                    .flush()
-                    .map_err(|e| WorkError::ContourReversalError(format!("{e:?}")))?;
-                inst.contours.push(bez_pen.into_inner());
+                inst.contours.push(contour.reverse_subpaths());
             } else {
                 inst.contours.push(contour);
             }
@@ -444,7 +437,6 @@ mod tests {
     use font_types::Tag;
     use fontdrasil::{orchestration::Access, types::GlyphName};
     use kurbo::{Affine, BezPath};
-    use write_fonts::pens::{write_to_pen, BezPathPen, ReverseContourPen};
 
     use crate::{
         coords::{NormalizedCoord, NormalizedLocation},
@@ -778,13 +770,9 @@ mod tests {
 
         // what we should get back is the contour with the_neg applied, reversed because
         // the_neg is notoriously negative in determinant
-        let mut bez_pen = BezPathPen::new();
-        let mut rev_pen = ReverseContourPen::new(&mut bez_pen);
         let mut expected = contour();
         expected.apply_affine(the_neg);
-        write_to_pen(&expected, &mut rev_pen);
-        rev_pen.flush().unwrap();
-        let expected = bez_pen.into_inner().to_svg();
+        let expected = expected.reverse_subpaths().to_svg();
 
         assert_eq!(
             vec![expected],
