@@ -1016,6 +1016,16 @@ impl Glyph {
     pub(crate) fn has_consistent_components(&self) -> bool {
         self.has_consistent_2x2_transforms
     }
+
+    /// Does the glyph have any component with a non-identity 2x2
+    ///
+    /// See <https://github.com/googlefonts/fontc/issues/291#issuecomment-1557358538>
+    pub(crate) fn has_nonidentity_2x2(&self) -> bool {
+        self.sources
+            .values()
+            .flat_map(|inst| inst.components.iter())
+            .any(|c| c.transform.as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0])
+    }
 }
 
 impl IdAware<WorkId> for Glyph {
