@@ -31,10 +31,8 @@ pub struct Args {
     #[arg(long, default_value = "false")]
     pub flatten_components: bool,
 
-    /// Whether a component is allowed to have a non-identity 2x2 transform.
-    ///
-    /// If not, any source component that does will be flattened
-    /// Named to match the ufo2ft flag as suggested in <https://github.com/googlefonts/fontc/pull/480#discussion_r1343801553>
+    /// Whether all components with a non-identity 2x2 transform will be converted to outlines.
+    // Named to match the ufo2ft flag as suggested in <https://github.com/googlefonts/fontc/pull/480#discussion_r1343801553>
     #[arg(long, default_value = "false")]
     pub decompose_transformed_components: bool,
 
