@@ -15,7 +15,7 @@ use fontdrasil::{
 use fontir::{
     coords::{Location, NormalizedCoord, NormalizedLocation},
     ir,
-    orchestration::WorkId as FeWorkId,
+    orchestration::{Flags, WorkId as FeWorkId},
     variations::{VariationModel, VariationRegion},
 };
 use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect, Vec2};
@@ -346,7 +346,12 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
         let glyph = CheckedGlyph::new(ir_glyph)?;
 
         // Hopefully in time https://github.com/harfbuzz/boring-expansion-spec means we can drop this
-        let glyph = cubics_to_quadratics(glyph);
+        let mut glyph = cubics_to_quadratics(glyph);
+
+        if !context.flags.contains(Flags::KEEP_DIRECTION) {
+            glyph.reverse_contour_direction();
+        }
+
         let should_iup = glyph.should_iup(); // we partially borrow it later
 
         let (name, point_seqs, contour_ends) = match glyph {
@@ -684,6 +689,34 @@ impl CheckedGlyph {
         match self {
             CheckedGlyph::Composite { .. } => false,
             CheckedGlyph::Contour { .. } => true,
+        }
+    }
+
+    /// Flip the glyph contours' direction, or do nothing if the glyph is a composite.
+    ///
+    /// The source contours are normally drawn with cubic curves thus are expected to be
+    /// in counter-clockwise winding direction as recommended for PostScript outlines.
+    /// When converting to TrueType quadratic splines, we reverse them so that they
+    /// follow the clockwise direction as recommeded for TrueType outlines.
+    fn reverse_contour_direction(&mut self) {
+        let CheckedGlyph::Contour {
+            name,
+            paths: contours,
+        } = self
+        else {
+            return; // nop for composite
+        };
+
+        trace!("Reverse '{name}' contour direction");
+
+        let reversed = contours
+            .iter()
+            .map(|(loc, contour)| (loc.clone(), contour.reverse_subpaths()))
+            .collect();
+
+        *self = CheckedGlyph::Contour {
+            name: name.clone(),
+            paths: reversed,
         }
     }
 }

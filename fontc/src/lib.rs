@@ -930,10 +930,10 @@ mod tests {
         assert_eq!(
             vec![
                 CurvePoint::on_curve(270, -9),
-                CurvePoint::off_curve(352, -9),
-                CurvePoint::off_curve(448, 56),
-                CurvePoint::off_curve(491, 174),
-                CurvePoint::on_curve(491, 253),
+                CurvePoint::off_curve(188, -9),
+                CurvePoint::off_curve(90, 55),
+                CurvePoint::off_curve(48, 174),
+                CurvePoint::on_curve(48, 254),
             ],
             glyph.points().take(5).collect::<Vec<_>>()
         );
