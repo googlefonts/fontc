@@ -101,7 +101,11 @@ fn add_feature_ir_job(workload: &mut Workload) -> Result<(), Error> {
         .ir_source()
         .create_feature_ir_work(workload.change_detector.current_inputs())?
         .into();
-    workload.add(work, workload.change_detector.feature_ir_change());
+    workload.add(
+        work,
+        workload.change_detector.feature_ir_change()
+            && !workload.change_detector.should_skip_features(),
+    );
     Ok(())
 }
 
@@ -112,7 +116,7 @@ fn add_feature_be_job(workload: &mut Workload) -> Result<(), Error> {
         if workload.change_detector.glyph_name_filter().is_some() {
             warn!("Not processing BE Features because a glyph name filter is active");
         }
-        if !workload.change_detector.should_compile_features() {
+        if workload.change_detector.should_skip_features() {
             debug!("Not processing BE Features because FEA compilation is disabled");
         }
     }
@@ -120,7 +124,7 @@ fn add_feature_be_job(workload: &mut Workload) -> Result<(), Error> {
         work.into(),
         workload.change_detector.feature_be_change()
             && workload.change_detector.glyph_name_filter().is_none()
-            && workload.change_detector.should_compile_features(),
+            && !workload.change_detector.should_skip_features(),
     );
     Ok(())
 }
@@ -1913,12 +1917,12 @@ mod tests {
         let temp_dir = tempdir().unwrap();
 
         let default_build_dir = temp_dir.path().join("default");
-        // default is to compile_features=true
+        // default is to skip_features=false
         compile(Args::for_test(&default_build_dir, source));
 
         let nofea_build_dir = temp_dir.path().join("nofea");
         let mut args = Args::for_test(&nofea_build_dir, source);
-        args.compile_features = false;
+        args.skip_features = true;
         compile(args);
 
         let buf1 = fs::read(default_build_dir.join("font.ttf")).unwrap();

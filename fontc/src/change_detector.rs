@@ -43,7 +43,7 @@ pub struct ChangeDetector {
     current_inputs: Input,
     be_paths: BePaths,
     emit_ir: bool,
-    compile_features: bool,
+    skip_features: bool,
 }
 
 impl Debug for ChangeDetector {
@@ -87,7 +87,7 @@ impl ChangeDetector {
             current_inputs,
             be_paths,
             emit_ir: config.args.emit_ir,
-            compile_features: config.args.compile_features,
+            skip_features: config.args.skip_features,
         })
     }
 
@@ -146,8 +146,8 @@ impl ChangeDetector {
                 .all(|id| self.target_exists(id))
     }
 
-    pub fn should_compile_features(&self) -> bool {
-        self.compile_features
+    pub fn should_skip_features(&self) -> bool {
+        self.skip_features
     }
 
     /// Not all work ... works ... with this method; notably muts support input_changed.

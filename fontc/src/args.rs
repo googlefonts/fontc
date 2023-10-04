@@ -52,9 +52,9 @@ pub struct Args {
     #[arg(short, long, default_value = None)]
     pub glyph_name_filter: Option<String>,
 
-    /// Set to false to skip compilation of OpenType Layout features
-    #[arg(long, default_value = "true", action = ArgAction::Set)]
-    pub compile_features: bool,
+    /// Set to skip compilation of OpenType Layout features
+    #[arg(long, default_value = "false")]
+    pub skip_features: bool,
 }
 
 impl Args {
@@ -93,7 +93,7 @@ impl Args {
             flatten_components: Flags::default().contains(Flags::FLATTEN_COMPONENTS),
             decompose_transformed_components: Flags::default()
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
-            compile_features: true,
+            skip_features: false,
         }
     }
 }
