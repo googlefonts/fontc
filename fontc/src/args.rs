@@ -53,6 +53,16 @@ pub struct Args {
     /// Set to skip compilation of OpenType Layout features
     #[arg(long, default_value = "false")]
     pub skip_features: bool,
+
+    /// Whether to keep the original glyph contour direction (TTF only).
+    ///
+    /// TrueType contours are recommended to follow clockwise orientation;
+    /// By default, we assume the source were drawn in counter-clockwise direction
+    /// as in PostScript outlines, and we flip the direction.
+    // Named to match fontmake's homonymous flag:
+    // https://github.com/googlefonts/fontmake/blob/6a8b2907/Lib/fontmake/__main__.py#L443
+    #[arg(long, default_value = "false")]
+    pub keep_direction: bool,
 }
 
 impl Args {
@@ -69,6 +79,7 @@ impl Args {
             self.decompose_transformed_components,
         );
         flags.set(Flags::EMIT_TIMING, self.emit_timing);
+        flags.set(Flags::KEEP_DIRECTION, self.keep_direction);
 
         flags
     }
@@ -92,6 +103,7 @@ impl Args {
             decompose_transformed_components: Flags::default()
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
             skip_features: false,
+            keep_direction: false,
         }
     }
 }

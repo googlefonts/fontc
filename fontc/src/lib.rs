@@ -817,6 +817,11 @@ mod tests {
         buf
     }
 
+    fn read_ir_glyph(build_dir: &Path, name: &str) -> ir::Glyph {
+        let raw_glyph = read_file(&build_dir.join(format!("glyph_ir/{name}.yml")));
+        ir::Glyph::read(&mut raw_glyph.as_slice())
+    }
+
     fn read_be_glyph(build_dir: &Path, name: &str) -> RawGlyph {
         let raw_glyph = read_file(&build_dir.join(format!("glyphs/{name}.glyf")));
         let read: &mut dyn Read = &mut raw_glyph.as_slice();
@@ -930,10 +935,10 @@ mod tests {
         assert_eq!(
             vec![
                 CurvePoint::on_curve(270, -9),
-                CurvePoint::off_curve(352, -9),
-                CurvePoint::off_curve(448, 56),
-                CurvePoint::off_curve(491, 174),
-                CurvePoint::on_curve(491, 253),
+                CurvePoint::off_curve(188, -9),
+                CurvePoint::off_curve(90, 55),
+                CurvePoint::off_curve(48, 174),
+                CurvePoint::on_curve(48, 254),
             ],
             glyph.points().take(5).collect::<Vec<_>>()
         );
@@ -1955,5 +1960,66 @@ mod tests {
             &[b"GDEF", b"GPOS"],
         );
         assert_no_compile_features("static.designspace", &[b"GPOS", b"GSUB"]);
+    }
+
+    #[test]
+    fn compile_simple_glyph_keep_direction() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let mut args = Args::for_test(build_dir, "glyphs3/WghtVar.glyphs");
+        // first compile with default args (keep_direction=false)
+        compile(args.clone());
+
+        let ir_glyph = read_ir_glyph(build_dir, "hyphen");
+        let ir_default_instance = ir_glyph.default_instance();
+        assert_eq!(
+            &ir_default_instance.contours[0].to_svg(),
+            "M131,330 L131,250 L470,250 L470,330 L131,330 Z"
+        );
+
+        let RawGlyph::Simple(glyph) = read_be_glyph(build_dir, "hyphen") else {
+            panic!("Expected a simple glyph");
+        };
+
+        // point order in the compiled glyph is reversed compared to the IR glyph
+        // while the starting point is the same
+        assert_eq!(
+            vec![
+                CurvePoint::on_curve(131, 330),
+                CurvePoint::on_curve(470, 330),
+                CurvePoint::on_curve(470, 250),
+                CurvePoint::on_curve(131, 250),
+            ],
+            glyph
+                .contours()
+                .iter()
+                .flat_map(|c| c.iter())
+                .copied()
+                .collect::<Vec<_>>()
+        );
+
+        // recompile with --keep-direction
+        args.keep_direction = true;
+        compile(args);
+
+        let RawGlyph::Simple(glyph) = read_be_glyph(build_dir, "hyphen") else {
+            panic!("Expected a simple glyph");
+        };
+
+        // order/starting point in the compiled glyph are the same as in the IR glyph
+        assert_eq!(
+            vec![
+                CurvePoint::on_curve(131, 330),
+                CurvePoint::on_curve(131, 250),
+                CurvePoint::on_curve(470, 250),
+                CurvePoint::on_curve(470, 330),
+            ],
+            glyph
+                .contours()
+                .iter()
+                .flat_map(|c| c.iter())
+                .copied()
+                .collect::<Vec<_>>()
+        );
     }
 }

@@ -32,6 +32,8 @@ bitflags! {
         const DECOMPOSE_TRANSFORMED_COMPONENTS = 0b00010000;
         // If set a files reporting on timing will be emitted to disk
         const EMIT_TIMING = 0b00100000;
+        // If set, the direction of contours will NOT be reversed
+        const KEEP_DIRECTION = 0b01000000;
     }
 }
 

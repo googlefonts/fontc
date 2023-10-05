@@ -97,6 +97,8 @@ def build_fontc(source: Path, build_dir: Path, compare: str):
         "-p",
         "fontc",
         "--",
+        # uncomment this to compare output w/ fontmake --keep-direction
+        # "--keep-direction",
         "--source",
         str(source),
         "--build-dir",
@@ -118,7 +120,7 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         "--drop-implied-oncurves",
         # TODO we shouldn't need these flags
         "--no-production-names",
-        "--keep-direction",
+        # "--keep-direction",
     ]
     if compare == _COMPARE_GFTOOLS:
         cmd += [
