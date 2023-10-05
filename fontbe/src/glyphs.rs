@@ -699,24 +699,11 @@ impl CheckedGlyph {
     /// When converting to TrueType quadratic splines, we reverse them so that they
     /// follow the clockwise direction as recommeded for TrueType outlines.
     fn reverse_contour_direction(&mut self) {
-        let CheckedGlyph::Contour {
-            name,
-            paths: contours,
-        } = self
-        else {
-            return; // nop for composite
-        };
-
-        trace!("Reverse '{name}' contour direction");
-
-        let reversed = contours
-            .iter()
-            .map(|(loc, contour)| (loc.clone(), contour.reverse_subpaths()))
-            .collect();
-
-        *self = CheckedGlyph::Contour {
-            name: name.clone(),
-            paths: reversed,
+        if let CheckedGlyph::Contour { name, paths } = self {
+            trace!("Reverse '{name}' contour direction");
+            for contour in paths.values_mut() {
+                *contour = contour.reverse_subpaths();
+            }
         }
     }
 }
