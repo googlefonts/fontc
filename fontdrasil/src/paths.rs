@@ -3,19 +3,19 @@ fn ok_for_filenames(c: char) -> bool {
     match c as u32 {
         v if v < 32 => false,
         0x7F => false,
-        // >>> for c in "\" * + / : < > ? [ \ ] |".split(" "): print(f"v if v == 0x{ord(c):04x} => false, // {unicodedata.name(c).lower()}")
-        v if v == 0x0022 => false, // quotation mark
-        v if v == 0x002a => false, // asterisk
-        v if v == 0x002b => false, // plus sign
-        v if v == 0x002f => false, // solidus
-        v if v == 0x003a => false, // colon
-        v if v == 0x003c => false, // less-than sign
-        v if v == 0x003e => false, // greater-than sign
-        v if v == 0x003f => false, // question mark
-        v if v == 0x005b => false, // left square bracket
-        v if v == 0x005c => false, // reverse solidus
-        v if v == 0x005d => false, // right square bracket
-        v if v == 0x007c => false, // vertical line
+        // py repl: >>> for c in "\" * + / : < > ? [ \ ] |".split(" "): print(f"0x{ord(c):04x} => false, // {unicodedata.name(c).lower()}")
+        0x0022 => false, // quotation mark
+        0x002a => false, // asterisk
+        0x002b => false, // plus sign
+        0x002f => false, // solidus
+        0x003a => false, // colon
+        0x003c => false, // less-than sign
+        0x003e => false, // greater-than sign
+        0x003f => false, // question mark
+        0x005b => false, // left square bracket
+        0x005c => false, // reverse solidus
+        0x005d => false, // right square bracket
+        0x007c => false, // vertical line
         _ => true,
     }
 }
