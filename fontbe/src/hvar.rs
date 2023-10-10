@@ -9,7 +9,11 @@ use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
     tables::{
         hvar::Hvar,
-        variations::{ivs_builder::DirectVariationStoreBuilder, VariationRegion},
+        layout::VariationIndex,
+        variations::{
+            ivs_builder::{DirectVariationStoreBuilder, VariationStoreBuilder},
+            DeltaSetIndexMap, VariationRegion,
+        },
     },
     OtRound,
 };
@@ -52,7 +56,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         let all_glyph_width_deltas: Vec<Vec<(VariationRegion, i16)>> = glyph_order
             .iter()
             .map(|gn| {
-                let advance_widths: HashMap<_, Vec<f64>> = context
+                let advance_widths: HashMap<_, _> = context
                     .ir
                     .glyphs
                     .get(&FeWorkId::Glyph(gn.clone()))
@@ -84,15 +88,39 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
 
         let mut direct_builder = DirectVariationStoreBuilder::default();
         let mut var_idxes = Vec::new();
-        for deltas in all_glyph_width_deltas {
-            var_idxes.push(direct_builder.add_deltas(deltas));
+        for deltas in &all_glyph_width_deltas {
+            var_idxes.push(direct_builder.add_deltas(deltas.clone()));
         }
         // sanity check
         assert_eq!(var_idxes, (0..glyph_order.len() as u32).collect::<Vec<_>>());
-
         let direct_store = direct_builder.build();
 
-        let hvar = Hvar::new(MajorMinor::VERSION_1_0, direct_store, None, None, None);
+        var_idxes.clear();
+        let mut indirect_builder = VariationStoreBuilder::default();
+        for deltas in all_glyph_width_deltas {
+            var_idxes.push(indirect_builder.add_deltas(deltas));
+        }
+        let (indirect_store, varidx_map) = indirect_builder.build();
+
+        let varidx_map = DeltaSetIndexMap::from_vec(
+            var_idxes
+                .into_iter()
+                .map(|idx| {
+                    varidx_map
+                        .get(idx as u32)
+                        .unwrap_or_else(|| VariationIndex::new(0xFFFF_u16, 0xFFFF_u16))
+                })
+                .collect(),
+        );
+
+        // let hvar = Hvar::new(MajorMinor::VERSION_1_0, direct_store, None, None, None);
+        let hvar = Hvar::new(
+            MajorMinor::VERSION_1_0,
+            indirect_store,
+            Some(varidx_map),
+            None,
+            None,
+        );
 
         context.hvar.set_unconditionally(hvar.into());
 
