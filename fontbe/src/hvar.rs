@@ -3,15 +3,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use font_types::MajorMinor;
 use fontdrasil::orchestration::{Access, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
     tables::{
         hvar::Hvar,
-        variations::{
-            ivs_builder::{DirectVariationStoreBuilder, VariationStoreBuilder},
-            VariationRegion,
-        },
+        variations::{ivs_builder::DirectVariationStoreBuilder, VariationRegion},
     },
     OtRound,
 };
@@ -94,10 +92,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
 
         let direct_store = direct_builder.build();
 
-        let hvar = Hvar {
-            item_variation_store: direct_store.into(),
-            ..Hvar::default()
-        };
+        let hvar = Hvar::new(MajorMinor::VERSION_1_0, direct_store, None, None, None);
 
         context.hvar.set_unconditionally(hvar.into());
 
