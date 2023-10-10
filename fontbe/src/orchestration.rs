@@ -36,6 +36,7 @@ use write_fonts::{
         gvar::{GlyphDelta, GlyphDeltas},
         head::Head,
         hhea::Hhea,
+        hvar::Hvar,
         loca::LocaFormat,
         maxp::Maxp,
         name::Name,
@@ -79,6 +80,7 @@ pub enum WorkId {
     Head,
     Hhea,
     Hmtx,
+    Hvar,
     Loca,
     LocaFormat,
     Maxp,
@@ -405,6 +407,7 @@ pub struct Context {
     pub head: BeContextItem<BeValue<Head>>,
     pub hhea: BeContextItem<BeValue<Hhea>>,
     pub hmtx: BeContextItem<Bytes>,
+    pub hvar: BeContextItem<BeValue<Hvar>>,
     pub stat: BeContextItem<BeValue<Stat>>,
     pub font: BeContextItem<Bytes>,
 }
@@ -435,6 +438,7 @@ impl Context {
             head: self.head.clone_with_acl(acl.clone()),
             hhea: self.hhea.clone_with_acl(acl.clone()),
             hmtx: self.hmtx.clone_with_acl(acl.clone()),
+            hvar: self.hvar.clone_with_acl(acl.clone()),
             stat: self.stat.clone_with_acl(acl.clone()),
             font: self.font.clone_with_acl(acl),
         }
@@ -473,6 +477,7 @@ impl Context {
             head: ContextItem::new(WorkId::Head.into(), acl.clone(), persistent_storage.clone()),
             hhea: ContextItem::new(WorkId::Hhea.into(), acl.clone(), persistent_storage.clone()),
             hmtx: ContextItem::new(WorkId::Hmtx.into(), acl.clone(), persistent_storage.clone()),
+            hvar: ContextItem::new(WorkId::Hvar.into(), acl.clone(), persistent_storage.clone()),
             stat: ContextItem::new(WorkId::Stat.into(), acl.clone(), persistent_storage.clone()),
             font: ContextItem::new(WorkId::Font.into(), acl, persistent_storage),
         }

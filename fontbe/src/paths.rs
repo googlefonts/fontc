@@ -63,6 +63,7 @@ impl Paths {
             WorkId::Head => self.build_dir.join("head.table"),
             WorkId::Hhea => self.build_dir.join("hhea.table"),
             WorkId::Hmtx => self.build_dir.join("hmtx.table"),
+            WorkId::Hvar => self.build_dir.join("hvar.table"),
             WorkId::Maxp => self.build_dir.join("maxp.table"),
             WorkId::Name => self.build_dir.join("name.table"),
             WorkId::Os2 => self.build_dir.join("os2.table"),
