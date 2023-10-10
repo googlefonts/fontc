@@ -560,6 +560,7 @@ mod tests {
             BeWorkIdentifier::Head.into(),
             BeWorkIdentifier::Hhea.into(),
             BeWorkIdentifier::Hmtx.into(),
+            BeWorkIdentifier::Hvar.into(),
             BeWorkIdentifier::Loca.into(),
             BeWorkIdentifier::LocaFormat.into(),
             BeWorkIdentifier::Maxp.into(),
@@ -664,6 +665,7 @@ mod tests {
                 BeWorkIdentifier::Gvar.into(),
                 BeWorkIdentifier::Hhea.into(),
                 BeWorkIdentifier::Hmtx.into(),
+                BeWorkIdentifier::Hvar.into(),
                 BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::LocaFormat.into(),
                 BeWorkIdentifier::Maxp.into(),
@@ -1222,6 +1224,7 @@ mod tests {
 
         assert_eq!(
             vec![
+                Tag::new(b"HVAR"),
                 Tag::new(b"OS/2"),
                 Tag::new(b"STAT"),
                 Tag::new(b"cmap"),
