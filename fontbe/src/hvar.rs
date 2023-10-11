@@ -7,6 +7,7 @@ use font_types::MajorMinor;
 use fontdrasil::orchestration::{Access, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
+    dump_table,
     tables::{
         hvar::Hvar,
         layout::VariationIndex,
@@ -107,20 +108,31 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                 .into_iter()
                 .map(|idx| {
                     varidx_map
-                        .get(idx as u32)
+                        .get(idx)
                         .unwrap_or_else(|| VariationIndex::new(0xFFFF_u16, 0xFFFF_u16))
                 })
                 .collect(),
         );
 
-        // let hvar = Hvar::new(MajorMinor::VERSION_1_0, direct_store, None, None, None);
-        let hvar = Hvar::new(
-            MajorMinor::VERSION_1_0,
-            indirect_store,
-            Some(varidx_map),
-            None,
-            None,
-        );
+        // use the most compact representation
+        let direct_store_bytes = dump_table(&direct_store).unwrap();
+        let direct_store_size = direct_store_bytes.len();
+
+        let indirect_store_bytes = dump_table(&indirect_store).unwrap();
+        let varidx_map_bytes = dump_table(&varidx_map).unwrap();
+        let indirect_store_size = indirect_store_bytes.len() + varidx_map_bytes.len();
+
+        let hvar = if direct_store_size <= indirect_store_size {
+            Hvar::new(MajorMinor::VERSION_1_0, direct_store, None, None, None)
+        } else {
+            Hvar::new(
+                MajorMinor::VERSION_1_0,
+                indirect_store,
+                Some(varidx_map),
+                None,
+                None,
+            )
+        };
 
         context.hvar.set_unconditionally(hvar.into());
 
