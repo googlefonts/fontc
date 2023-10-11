@@ -313,35 +313,6 @@ pub(crate) fn debug_tokens2(tokens: &[Lexeme], src: &str) -> Vec<String> {
     result
 }
 
-// microbenchmarks to do, one day. Who do you think will win??
-
-//fn is_special_match(byte: u8) -> bool {
-//match byte {
-//b';' | b',' | b'@' | b'\\' | b'-' | b'=' | b'{' | b'}' | b'[' | b']' | b'(' | b')'
-//| b'<' | b'>' | b'\'' => true,
-//_ => false,
-//}
-//}
-
-//fn is_special_ranges(byte: u8) -> bool {
-//(39..=45).contains(&byte)
-//|| (59..=64).contains(&byte)
-//|| (91..=93).contains(&byte)
-//|| byte == 123
-//|| byte == 125
-//}
-
-//fn is_special_bsearch(byte: u8) -> bool {
-//[39, 40, 41, 44, 45, 59, 60, 61, 62, 64, 91, 92, 93, 123, 125]
-//.binary_search(&byte)
-//.is_ok()
-//}
-
-//// could improve this by sorting by frequency
-//fn is_special_linear_scan(byte: u8) -> bool {
-//[39, 40, 41, 44, 45, 59, 60, 61, 62, 64, 91, 92, 93, 123, 125].contains(&byte)
-//}
-
 #[cfg(test)]
 mod tests {
     use super::*;

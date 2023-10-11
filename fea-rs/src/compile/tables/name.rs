@@ -57,9 +57,8 @@ impl NameBuilder {
             write_fonts::tables::name::Name::new(
                 self.records
                     .iter()
-                    .filter_map(|(id, spec)| {
-                        spec.is_implemented_in_fontations().then(|| spec.build(*id))
-                    })
+                    .filter(|(_, spec)| spec.is_implemented_in_fontations())
+                    .map(|(id, spec)| spec.build(*id))
                     .collect(),
             )
         })

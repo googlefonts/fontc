@@ -120,9 +120,8 @@ impl<'a> ValidationCtx<'a> {
         let bad = self
             .aalt_referenced_features
             .iter()
-            .filter_map(|(tag, tag_node)| {
-                (!self.all_features.contains(tag)).then(|| tag_node.clone())
-            })
+            .filter(|(tag, _)| !self.all_features.contains(*tag))
+            .map(|(_, node)| node.clone())
             .collect::<Vec<_>>();
         for tag in bad {
             self.error(tag.range(), "Referenced feature not found.");
