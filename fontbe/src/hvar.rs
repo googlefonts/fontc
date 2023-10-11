@@ -1,11 +1,12 @@
 //! Generates an [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR) table.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::mem;
 use std::sync::Arc;
 
 use font_types::MajorMinor;
 use fontdrasil::orchestration::{Access, Work};
-use fontir::orchestration::WorkId as FeWorkId;
+use fontir::{orchestration::WorkId as FeWorkId, variations::VariationModel};
 use write_fonts::{
     dump_table,
     tables::{
@@ -49,10 +50,12 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
     /// Generate [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR)
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
-        // TODO one sparse model per glyph
+        let axes = &static_metadata.axes;
         let var_model = &static_metadata.variation_model;
+        let global_locations = var_model.locations().cloned().collect::<HashSet<_>>();
         let glyph_order = context.ir.glyph_order.get();
 
+        let mut single_model = true;
         let all_glyph_width_deltas: Vec<Vec<(VariationRegion, i16)>> = glyph_order
             .iter()
             .map(|gn| {
@@ -64,7 +67,18 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                     .iter()
                     .map(|(loc, src)| (loc.clone(), vec![src.width]))
                     .collect();
-                var_model
+                if advance_widths.len() == 1 {
+                    assert!(advance_widths.contains_key(&var_model.default));
+                    return Vec::new();
+                }
+                let locations = advance_widths.keys().cloned().collect::<HashSet<_>>();
+                let sub_model = if locations == global_locations {
+                    var_model.clone()
+                } else {
+                    single_model = false;
+                    VariationModel::new(locations, axes.clone()).unwrap()
+                };
+                sub_model
                     .deltas(&advance_widths)
                     .unwrap() // TODO handle error
                     .into_iter()
@@ -86,16 +100,23 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
             })
             .collect();
 
-        let mut direct_builder = DirectVariationStoreBuilder::default();
         let mut var_idxes = Vec::new();
-        for deltas in &all_glyph_width_deltas {
-            var_idxes.push(direct_builder.add_deltas(deltas.clone()));
-        }
-        // sanity check
-        assert_eq!(var_idxes, (0..glyph_order.len() as u32).collect::<Vec<_>>());
-        let direct_store = direct_builder.build();
 
-        var_idxes.clear();
+        let direct_store = if single_model {
+            let mut direct_builder = DirectVariationStoreBuilder::default();
+            for deltas in &all_glyph_width_deltas {
+                var_idxes.push(direct_builder.add_deltas(deltas.clone()));
+            }
+            // sanity check
+            assert_eq!(
+                mem::take(&mut var_idxes),
+                (0..glyph_order.len() as u32).collect::<Vec<_>>()
+            );
+            Some(direct_builder.build())
+        } else {
+            None
+        };
+
         let mut indirect_builder = VariationStoreBuilder::default();
         for deltas in all_glyph_width_deltas {
             var_idxes.push(indirect_builder.add_deltas(deltas));
@@ -113,15 +134,27 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
 
         // use the most compact representation
         // TODO handle errors
-        let direct_store_bytes = dump_table(&direct_store).unwrap();
-        let direct_store_size = direct_store_bytes.len();
+        let use_direct = if direct_store.is_some() {
+            let direct_store_bytes = dump_table(direct_store.as_ref().unwrap()).unwrap();
+            let direct_store_size = direct_store_bytes.len();
 
-        let indirect_store_bytes = dump_table(&indirect_store).unwrap();
-        let varidx_map_bytes = dump_table(&varidx_map).unwrap();
-        let indirect_store_size = indirect_store_bytes.len() + varidx_map_bytes.len();
+            let indirect_store_bytes = dump_table(&indirect_store).unwrap();
+            let varidx_map_bytes = dump_table(&varidx_map).unwrap();
+            let indirect_store_size = indirect_store_bytes.len() + varidx_map_bytes.len();
 
-        let hvar = if direct_store_size <= indirect_store_size {
-            Hvar::new(MajorMinor::VERSION_1_0, direct_store, None, None, None)
+            direct_store_size <= indirect_store_size
+        } else {
+            false
+        };
+
+        let hvar = if use_direct {
+            Hvar::new(
+                MajorMinor::VERSION_1_0,
+                direct_store.unwrap(),
+                None,
+                None,
+                None,
+            )
         } else {
             Hvar::new(
                 MajorMinor::VERSION_1_0,
