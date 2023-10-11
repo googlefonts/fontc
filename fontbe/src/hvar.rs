@@ -67,7 +67,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                     .collect();
                 var_model
                     .deltas(&advance_widths)
-                    .unwrap()
+                    .unwrap() // TODO handle error
                     .into_iter()
                     .filter_map(|(region, values)| {
                         if region.is_default() {
@@ -75,7 +75,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                         }
                         let mut region_axes = Vec::with_capacity(static_metadata.axes.len());
                         for axis in static_metadata.axes.iter() {
-                            let tent = region.get(&axis.tag).unwrap();
+                            let tent = region.get(&axis.tag).unwrap(); // TODO handle error?
                             region_axes.push(tent.to_region_axis_coords());
                         }
                         // Only 1 value per region for our input
@@ -115,6 +115,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         );
 
         // use the most compact representation
+        // TODO handle errors
         let direct_store_bytes = dump_table(&direct_store).unwrap();
         let direct_store_size = direct_store_bytes.len();
 
