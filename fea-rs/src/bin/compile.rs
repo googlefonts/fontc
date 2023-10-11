@@ -7,7 +7,7 @@ use fea_rs::{
     compile::{
         self,
         error::{FontGlyphOrderError, GlyphOrderError, UfoGlyphOrderError},
-        Compiler, Opts,
+        Compiler, MockVariationInfo, Opts,
     },
     GlyphMap,
 };
@@ -31,10 +31,25 @@ fn run() -> Result<(), Error> {
     if !fea.exists() {
         return Err(Error::EmptyFeatureFile);
     }
-    //FIXME: some way to provide variation info from command line?
-    let compiled = Compiler::new(fea, &glyph_names)
-        .with_opts(Opts::new().make_post_table(args.post))
-        .compile()?;
+
+    let var_info = args.get_var_info().transpose()?;
+
+    let mut compiler =
+        Compiler::new(fea, &glyph_names).with_opts(Opts::new().make_post_table(args.post));
+    if let Some(var_info) = var_info.as_ref() {
+        log::info!("compiling with {} mock variation axes", var_info.axes.len());
+        for (tag, info) in &var_info.axes {
+            log::info!(
+                "{tag}: ({}, {}, {})",
+                info.min_value,
+                info.default_value,
+                info.max_value
+            );
+        }
+
+        compiler = compiler.with_variable_info(var_info);
+    }
+    let compiled = compiler.compile()?;
 
     let path = args.out_path();
     let opts = Opts::new().make_post_table(args.post);
@@ -62,6 +77,8 @@ enum Error {
     EmptyFeatureFile,
     #[error("No glyph order provided")]
     MissingGlyphOrder,
+    #[error("Error parsing axis info: L{line}, '{message}'")]
+    BadAxisInfo { line: usize, message: String },
     #[error("{0}")]
     CompileFail(#[from] compile::error::CompilerError),
 }
@@ -92,6 +109,26 @@ struct Args {
     #[arg(short, long, group = "glyph_source")]
     font: Option<PathBuf>,
 
+    /// Variable fonts only: a path to a file containing info on variation axes.
+    ///
+    /// Note that we can not correctly compile variable fonts, because we do not
+    /// have the ability to compile deltas. This functionality is provided for
+    /// debugging.
+    ///
+    /// This should be a utf-8 encoded file containing a list of axes and their
+    /// (min, default, max) values, in user coordinates.
+    ///
+    /// Blank lines and lines beginning with '#' will be skipped.
+    ///
+    /// e.g. it might look like,
+    ///
+    /// ```
+    /// wght 100 400 900
+    /// wdth 50 100 200
+    /// ```
+    #[arg(short, long)]
+    axis_info: Option<PathBuf>,
+
     /// path to write the generated font. Defaults to 'compile-out.ttf'
     #[arg(short, long)]
     out_path: Option<PathBuf>,
@@ -121,6 +158,25 @@ impl Args {
             };
             Ok((self.input.clone(), order))
         }
+    }
+
+    fn get_var_info(&self) -> Option<Result<MockVariationInfo, Error>> {
+        let Some(path) = self.axis_info() else {
+            return None;
+        };
+
+        let contents = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => return Some(Err(e.into())),
+        };
+        Some(
+            MockVariationInfo::from_cli_input(&contents)
+                .map_err(|(line, message)| Error::BadAxisInfo { line, message }),
+        )
+    }
+
+    fn axis_info(&self) -> Option<&Path> {
+        self.axis_info.as_deref()
     }
 
     fn glyph_order(&self) -> Option<&Path> {

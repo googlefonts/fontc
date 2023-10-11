@@ -66,10 +66,12 @@ pub struct AxisInfo {
     pub max_value: Fixed,
 }
 
-// For testing: a simple list of axes
+/// A type that implements [`VariationInfo`], for testing and debugging.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct MockVariationInfo {
-    axes: Vec<(Tag, AxisInfo)>,
+pub struct MockVariationInfo {
+    // Note: This is not considered public API for the purposes of semvar
+    #[doc(hidden)]
+    pub axes: Vec<(Tag, AxisInfo)>,
 }
 
 impl MockVariationInfo {
@@ -93,6 +95,58 @@ impl MockVariationInfo {
                 })
                 .collect(),
         }
+    }
+
+    /// parse the custom text format that we accept on the CLI.
+    ///
+    /// If there's an error, returns the line number and description of the
+    /// problem (this is only used in the compile binary, which defines the)
+    /// actual error type, so we don't have access to that from here)
+    ///
+    /// The input format here is plaintext, where each line contains
+    /// info for one axis, in the format `$TAG $MIN_VALUE $DEFAULT_VALUE $MAX_VALUE`.
+    /// The axes are in order. All values are in user coordinates.
+    #[cfg(any(test, feature = "cli"))]
+    pub fn from_cli_input(input_file: &str) -> Result<Self, (usize, String)> {
+        // parse a number that might be a float or an int
+        fn parse_fixed(s: &str, line: usize) -> Result<Fixed, (usize, String)> {
+            if let Ok(val) = s.parse::<f64>() {
+                return Ok(Fixed::from_f64(val));
+            }
+            s.parse::<i32>()
+                .map(Fixed::from_i32)
+                .map_err(|_| (line, format!("failed to parse number '{s}'")))
+        }
+
+        let mut axes = Vec::new();
+        for (i, line) in input_file.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
+            let mut items = line.split(' ');
+            match (items.next(), items.next(), items.next(), items.next()) {
+                (Some(tag), Some(min), Some(default), Some(max)) => {
+                    let tag = tag
+                        .parse::<Tag>()
+                        .map_err(|e| (i, format!("failed to parse tag: '{e}'")))?;
+                    let axis_info = AxisInfo {
+                        index: axes.len() as u16,
+                        min_value: parse_fixed(min, i)?,
+                        default_value: parse_fixed(default, i)?,
+                        max_value: parse_fixed(max, i)?,
+                    };
+                    axes.push((tag, axis_info))
+                }
+                _ => Err((i, ("expected four space separated words".to_string())))?,
+            };
+            if let Some(huh) = items.next() {
+                return Err((i, format!("unexpected text '{huh}'")));
+            }
+        }
+
+        Ok(MockVariationInfo { axes })
     }
 }
 
@@ -137,5 +191,39 @@ impl VariationInfo for MockVariationInfo {
         _locations: &HashMap<Location, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), Box<(dyn std::error::Error + 'static)>> {
         Ok(Default::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn axis_input_format() {
+        let s = "wght 100 200 400";
+        let parsed = MockVariationInfo::from_cli_input(s).unwrap();
+        assert_eq!(parsed.axes[0].0, Tag::new(b"wght"));
+
+        let twotimes = "wght 100 200 400\nwdth 50 55.5 12111";
+        let parsed = MockVariationInfo::from_cli_input(twotimes).unwrap();
+        assert_eq!(parsed.axes[1].1.max_value.to_i32(), 12111);
+    }
+
+    #[test]
+    fn bad_input() {
+        for (input, err_string_match) in [
+            ("wght 100 200", "expected four space separated words"),
+            ("wght 100 200 huh", "failed to parse number 'huh'"),
+            ("cooltag 100 200 300", "failed to parse tag"),
+            ("wdth 100 200 300 400", "unexpected text '400'"),
+        ] {
+            match MockVariationInfo::from_cli_input(input) {
+                Ok(_) => panic!("unexpectedly parsed {input}"),
+                Err((_, msg)) => assert!(
+                    msg.contains(err_string_match),
+                    "'{msg}' does not contain '{err_string_match}'"
+                ),
+            }
+        }
     }
 }
