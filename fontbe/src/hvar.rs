@@ -10,7 +10,6 @@ use write_fonts::{
     dump_table,
     tables::{
         hvar::Hvar,
-        layout::VariationIndex,
         variations::{
             ivs_builder::{DirectVariationStoreBuilder, VariationStoreBuilder},
             DeltaSetIndexMap, VariationRegion,
@@ -103,16 +102,14 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         }
         let (indirect_store, varidx_map) = indirect_builder.build();
 
-        let varidx_map = DeltaSetIndexMap::from_vec(
-            var_idxes
-                .into_iter()
-                .map(|idx| {
-                    varidx_map
-                        .get(idx)
-                        .unwrap_or_else(|| VariationIndex::new(0xFFFF_u16, 0xFFFF_u16))
-                })
-                .collect(),
-        );
+        let varidx_map: DeltaSetIndexMap = var_idxes
+            .into_iter()
+            .map(|idx| {
+                varidx_map
+                    .get(idx)
+                    .unwrap_or_else(|| panic!("varidx_map missing index {}", idx))
+            })
+            .collect();
 
         // use the most compact representation
         // TODO handle errors
