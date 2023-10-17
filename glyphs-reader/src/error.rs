@@ -18,4 +18,6 @@ pub enum Error {
     UnknownValueName(String),
     #[error("Not a .glyphspackage directory: {0}")]
     NotAGlyphsPackage(PathBuf),
+    #[error("Invalid plist")]
+    WorstPlistEver(#[from] crate::plist::Error),
 }

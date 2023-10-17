@@ -36,11 +36,11 @@ fn to_ir_component(glyph_name: GlyphName, component: &Component) -> ir::Componen
     trace!(
         "{} reuses {} with transform {:?}",
         glyph_name,
-        component.glyph_name,
+        component.name,
         component.transform
     );
     ir::Component {
-        base: component.glyph_name.as_str().into(),
+        base: component.name.as_str().into(),
         transform: component.transform,
     }
 }

@@ -8,16 +8,18 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::Hash;
+use std::str::FromStr;
 use std::{fs, path};
 
+use crate::plist::FromPlist;
 use kurbo::{Affine, Point};
-use log::{debug, log_enabled, trace, warn};
+use log::{debug, warn};
 use ordered_float::OrderedFloat;
+use plist_derive::FromPlist;
 use regex::Regex;
 
 use crate::error::Error;
-use crate::from_plist::FromPlist;
-use crate::plist::{Array, Dictionary, Plist};
+use crate::plist::{Plist, Token, Tokenizer, VecDelimiters};
 
 const V3_METRIC_NAMES: [&str; 6] = [
     "ascender",
@@ -25,14 +27,6 @@ const V3_METRIC_NAMES: [&str; 6] = [
     "descender",
     "cap height",
     "x-height",
-    "italic angle",
-];
-const V2_METRIC_NAMES: [&str; 6] = [
-    "ascender",
-    "baseline",
-    "descender",
-    "capHeight",
-    "xHeight",
     "italic angle",
 ];
 
@@ -66,7 +60,94 @@ pub struct Font {
     pub date: Option<String>,
 
     // master id => { (name or class, name or class) => adjustment }
-    pub kerning_ltr: BTreeMap<String, BTreeMap<(String, String), i32>>,
+    pub kerning_ltr: Kerning,
+}
+
+/// master id => { (name or class, name or class) => adjustment }
+#[derive(Clone, Debug, Default, PartialEq, Hash)]
+pub struct Kerning(BTreeMap<String, BTreeMap<(String, String), i32>>);
+
+impl Kerning {
+    pub fn get(&self, master_id: &str) -> Option<&BTreeMap<(String, String), i32>> {
+        self.0.get(master_id)
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.keys()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &BTreeMap<(String, String), i32>)> {
+        self.0.iter()
+    }
+
+    fn insert(
+        &mut self,
+        master_id: String,
+        lhs_class_or_group: String,
+        rhs_class_or_group: String,
+        kern: i64,
+    ) {
+        *self
+            .0
+            .entry(master_id)
+            .or_default()
+            .entry((lhs_class_or_group, rhs_class_or_group))
+            .or_default() = kern as i32;
+    }
+}
+
+/// Hand-parse because it's a bit weird
+impl FromPlist for Kerning {
+    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
+        let mut kerning = Kerning::default();
+
+        tokenizer.eat(b'{')?;
+
+        loop {
+            if tokenizer.eat(b'}').is_ok() {
+                break;
+            }
+
+            // parse string-that-is-master-id = {
+            let master_id: String = tokenizer.parse()?;
+            tokenizer.eat(b'=')?;
+
+            // The map for the master
+            tokenizer.eat(b'{')?;
+            loop {
+                if tokenizer.eat(b'}').is_ok() {
+                    break;
+                }
+                let lhs_name_or_class: String = tokenizer.parse()?;
+                tokenizer.eat(b'=')?;
+                tokenizer.eat(b'{')?;
+
+                // rhs name = value pairs
+                loop {
+                    if tokenizer.eat(b'}').is_ok() {
+                        break;
+                    }
+
+                    let rhs_name_or_class: String = tokenizer.parse()?;
+                    tokenizer.eat(b'=')?;
+                    let value: i64 = tokenizer.parse()?;
+                    tokenizer.eat(b';')?;
+
+                    kerning.insert(
+                        master_id.clone(),
+                        lhs_name_or_class.clone(),
+                        rhs_name_or_class,
+                        value,
+                    );
+                }
+                tokenizer.eat(b';')?;
+            }
+
+            tokenizer.eat(b';')?;
+        }
+
+        Ok(kerning)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -111,11 +192,15 @@ pub enum Shape {
 
 // The font you get directly from a plist, minimally modified
 // Types chosen specifically to accomodate plist translation.
-#[derive(Debug, FromPlist, PartialEq)]
+#[derive(Default, Debug, PartialEq, FromPlist)]
 #[allow(non_snake_case)]
 struct RawFont {
+    #[fromplist(key = ".appVersion")]
+    pub app_version: i64,
+    #[fromplist(key = ".formatVersion")]
+    pub format_version: i64,
     pub units_per_em: Option<i64>,
-    pub metrics: Option<Vec<RawMetric>>,
+    pub metrics: Vec<RawMetric>,
     pub family_name: String,
     pub date: Option<String>,
     pub copyright: Option<String>,
@@ -125,40 +210,243 @@ struct RawFont {
     pub manufacturerURL: Option<String>,
     pub versionMajor: Option<i64>,
     pub versionMinor: Option<i64>,
-    pub axes: Option<Vec<Axis>>,
+    pub axes: Vec<Axis>,
     pub glyphs: Vec<RawGlyph>,
     pub font_master: Vec<RawFontMaster>,
-    #[fromplist(default)]
     pub instances: Vec<RawInstance>,
-    pub feature_prefixes: Option<Vec<RawFeature>>,
-    pub features: Option<Vec<RawFeature>>,
-    pub classes: Option<Vec<RawFeature>>,
-    pub properties: Option<Vec<RawName>>,
-
-    #[fromplist(rest)]
-    pub other_stuff: BTreeMap<String, Plist>,
+    pub feature_prefixes: Vec<RawFeature>,
+    pub features: Vec<RawFeature>,
+    pub classes: Vec<RawFeature>,
+    pub properties: Vec<RawName>,
+    #[fromplist(alt_name = "kerning")]
+    pub kerning_LTR: Kerning,
+    pub custom_parameters: CustomParameters,
 }
 
-#[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct CustomParameters(BTreeMap<String, CustomParameterValue>);
+
+impl CustomParameters {
+    fn int(&self, name: &str) -> Option<i64> {
+        let Some(CustomParameterValue::Int(i)) = self.0.get(name) else {
+            return None;
+        };
+        Some(*i)
+    }
+
+    fn bool(&self, name: &str) -> Option<bool> {
+        self.int(name).map(|v| v == 1)
+    }
+
+    fn string(&self, name: &str) -> Option<&str> {
+        let Some(CustomParameterValue::String(str)) = self.0.get(name) else {
+            return None;
+        };
+        Some(str)
+    }
+
+    fn axes(&self) -> Option<&Vec<Axis>> {
+        let Some(CustomParameterValue::Axes(axes)) = self.0.get("Axes") else {
+            return None;
+        };
+        Some(axes)
+    }
+
+    fn axis_mappings(&self) -> Option<&Vec<AxisMapping>> {
+        let Some(CustomParameterValue::AxesMappings(mappings)) = self.0.get("Axis Mappings") else {
+            return None;
+        };
+        Some(mappings)
+    }
+
+    fn axis_locations(&self) -> Option<&Vec<AxisLocation>> {
+        let Some(CustomParameterValue::AxisLocations(locations)) = self.0.get("Axis Location")
+        else {
+            return None;
+        };
+        Some(locations)
+    }
+
+    fn glyph_order(&self) -> Option<&Vec<String>> {
+        let Some(CustomParameterValue::GlyphOrder(names)) = self.0.get("glyphOrder") else {
+            return None;
+        };
+        Some(names)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum CustomParameterValue {
+    Int(i64),
+    String(String),
+    Axes(Vec<Axis>),
+    AxesMappings(Vec<AxisMapping>),
+    AxisLocations(Vec<AxisLocation>),
+    GlyphOrder(Vec<String>),
+}
+
+/// Hand-parse these because they take multiple shapes
+impl FromPlist for CustomParameters {
+    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
+        use crate::plist::Error;
+        let mut params = BTreeMap::new();
+
+        tokenizer.eat(b'(')?;
+
+        loop {
+            if tokenizer.eat(b')').is_ok() {
+                break;
+            }
+
+            tokenizer.eat(b'{')?;
+
+            // Can we at least count on always having a name and a value?
+            let mut name = None;
+            let mut value = None;
+            for _ in 0..2 {
+                let key: String = tokenizer.parse()?;
+                tokenizer.eat(b'=')?;
+                match key.as_str() {
+                    "name" => {
+                        let the_name: String = tokenizer.parse()?;
+                        name = Some(the_name);
+                    }
+                    "value" => {
+                        let peek = tokenizer.peek()?;
+                        match peek {
+                            // VendorID is a string but doesn't feel it needs quotes
+                            Token::Atom(..) if name == Some(String::from("vendorID")) => {
+                                let token = tokenizer.lex()?;
+                                let Token::Atom(val) = token else {
+                                    return Err(Error::UnexpectedDataType {
+                                        expected: "Atom",
+                                        found: token.name(),
+                                    });
+                                };
+                                value = Some(CustomParameterValue::String(val.to_string()));
+                            }
+                            Token::Atom(..) => {
+                                let Token::Atom(val) = tokenizer.lex()? else {
+                                    panic!("That shouldn't happen");
+                                };
+                                value = Some(CustomParameterValue::Int(val.parse().unwrap()));
+                            }
+                            Token::OpenBrace if name == Some(String::from("Axis Mappings")) => {
+                                let mappings: Vec<AxisMapping> = tokenizer
+                                    .parse_delimited_vec(VecDelimiters::SEMICOLON_SV_IN_BRACES)?;
+                                value = Some(CustomParameterValue::AxesMappings(mappings));
+                            }
+                            Token::String(..) => {
+                                let token = tokenizer.lex()?;
+                                let Token::String(val) = token else {
+                                    return Err(Error::UnexpectedDataType {
+                                        expected: "String",
+                                        found: token.name(),
+                                    });
+                                };
+                                value = Some(CustomParameterValue::String(val.to_string()));
+                            }
+                            _ if name == Some(String::from("Axes")) => {
+                                let Token::OpenParen = peek else {
+                                    return Err(Error::UnexpectedChar('('));
+                                };
+                                value = Some(CustomParameterValue::Axes(tokenizer.parse()?));
+                            }
+                            _ if name == Some(String::from("glyphOrder")) => {
+                                let Token::OpenParen = peek else {
+                                    return Err(Error::UnexpectedChar('('));
+                                };
+                                value = Some(CustomParameterValue::GlyphOrder(tokenizer.parse()?));
+                            }
+                            _ if name == Some(String::from("Axis Location")) => {
+                                let Token::OpenParen = peek else {
+                                    return Err(Error::UnexpectedChar('('));
+                                };
+                                value =
+                                    Some(CustomParameterValue::AxisLocations(tokenizer.parse()?));
+                            }
+                            _ => tokenizer.skip_rec()?,
+                        }
+                    }
+                    _ => return Err(Error::SomethingWentWrong),
+                }
+                tokenizer.eat(b';')?;
+            }
+
+            if let (Some(name), Some(value)) = (name, value) {
+                params.insert(name, value);
+            }
+
+            tokenizer.eat(b'}')?;
+            // Optional comma
+            let _ = tokenizer.eat(b',');
+        }
+
+        // the close paren broke the loop, don't consume here
+        Ok(CustomParameters(params))
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
+pub struct CustomParam {
+    name: String,
+    value: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
+pub struct AxisLocation {
+    #[fromplist(alt_name = "Axis")]
+    axis_name: String,
+    #[fromplist(alt_name = "Location")]
+    location: OrderedFloat<f64>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AxisMapping {
+    tag: String,
+    user_to_design: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>,
+}
+
+impl FromPlist for AxisMapping {
+    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
+        let tag = tokenizer.parse()?;
+        tokenizer.eat(b'=')?;
+        tokenizer.eat(b'{')?;
+        let mut user_to_design = Vec::new();
+        while tokenizer.eat(b'}').is_err() {
+            let user: OrderedFloat<f64> = tokenizer.parse()?;
+            tokenizer.eat(b'=')?;
+            let design: OrderedFloat<f64> = tokenizer.parse()?;
+            tokenizer.eat(b';')?;
+            user_to_design.push((user, design));
+        }
+        Ok(AxisMapping {
+            tag,
+            user_to_design,
+        })
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
 pub struct RawMetric {
     // So named to let FromPlist populate it from a field called "type"
     type_: Option<String>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
 pub struct RawName {
     pub key: String,
     pub value: Option<String>,
-    pub values: Option<Vec<RawNameValue>>,
+    pub values: Vec<RawNameValue>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
 pub struct RawNameValue {
     pub language: String,
     pub value: String,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
 pub struct RawFeature {
     pub automatic: Option<i64>,
     pub disabled: Option<i64>,
@@ -166,78 +454,86 @@ pub struct RawFeature {
     pub tag: Option<String>,
     pub code: String,
 
-    #[fromplist(rest)]
+    #[fromplist(ignore)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
 pub struct Axis {
+    #[fromplist(alt_name = "Name")]
     pub name: String,
+    #[fromplist(alt_name = "Tag")]
     pub tag: String,
     pub hidden: Option<bool>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq, FromPlist)]
 pub struct RawGlyph {
     pub layers: Vec<RawLayer>,
     pub glyphname: String,
+    #[fromplist(alt_name = "leftKerningGroup")]
     pub kern_left: Option<String>,
+    #[fromplist(alt_name = "rightKerningGroup")]
     pub kern_right: Option<String>,
-    #[fromplist(rest)]
+    pub unicode: Option<String>,
+    #[fromplist(ignore)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq, FromPlist)]
 pub struct RawLayer {
     pub layer_id: String,
     pub associated_master_id: Option<String>,
     pub width: OrderedFloat<f64>,
-    shapes: Option<Vec<RawShape>>,
-    paths: Option<Vec<Path>>,
-    components: Option<Vec<Component>>,
-    pub anchors: Option<Vec<RawAnchor>>,
-    #[fromplist(rest)]
+    shapes: Vec<RawShape>,
+    paths: Vec<Path>,
+    components: Vec<Component>,
+    pub anchors: Vec<RawAnchor>,
+    #[fromplist(ignore)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
 /// Represents a path OR a component
 ///
 /// <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq)]
+#[derive(Default, Clone, Debug, PartialEq, FromPlist)]
 pub struct RawShape {
     // TODO: add numerous unsupported attributes
 
     // When I'm a path
     pub closed: Option<bool>,
-    pub nodes: Option<Vec<Node>>,
+    pub nodes: Vec<Node>,
 
     // When I'm a component I specifically want all my attributes to end up in other_stuff
     // My Component'ness can be detected by presence of a ref (Glyphs3) or name(Glyphs2) attribute
+    // ref is reserved so take advantage of alt names
+    #[fromplist(alt_name = "ref", alt_name = "name")]
+    pub glyph_name: Option<String>,
 
-    // Always
-    #[fromplist(rest)]
-    pub other_stuff: BTreeMap<String, Plist>,
+    pub transform: Option<String>, // v2
+    pub pos: Vec<f64>,             // v3
+    pub angle: Option<f64>,        // v3
+    pub scale: Vec<f64>,           // v3
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
 pub struct Path {
     pub closed: bool,
     pub nodes: Vec<Node>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Default, Clone, Debug, FromPlist)]
 pub struct Component {
     /// The glyph this component references
-    pub glyph_name: String,
+    pub name: String,
+    /// meh
     pub transform: Affine,
-    pub other_stuff: BTreeMap<String, Plist>,
 }
 
 impl PartialEq for Component {
     fn eq(&self, other: &Self) -> bool {
-        self.glyph_name == other.glyph_name
+        self.name == other.name
             && Into::<AffineForEqAndHash>::into(self.transform) == other.transform.into()
-            && self.other_stuff == other.other_stuff
     }
 }
 
@@ -245,9 +541,8 @@ impl Eq for Component {}
 
 impl Hash for Component {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.glyph_name.hash(state);
+        self.name.hash(state);
         Into::<AffineForEqAndHash>::into(self.transform).hash(state);
-        self.other_stuff.hash(state);
     }
 }
 
@@ -284,14 +579,14 @@ pub enum NodeType {
     QCurveSmooth,
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq, FromPlist)]
 pub struct RawAnchor {
     pub name: String,
     pub pos: Option<Point>,       // v3
     pub position: Option<String>, // v2
 }
 
-#[derive(Clone, Debug, FromPlist, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Anchor {
     pub name: String,
     pub pos: Point,
@@ -344,10 +639,20 @@ impl FontMaster {
     }
 }
 
-#[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
-struct RawFontMaster {
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
+pub(crate) struct RawFontMaster {
     pub id: String,
     pub name: Option<String>,
+
+    pub weight: Option<String>,
+
+    pub weight_value: Option<OrderedFloat<f64>>,
+    pub interpolation_weight: Option<OrderedFloat<f64>>,
+
+    pub width_value: Option<OrderedFloat<f64>>,
+    pub interpolation_width: Option<OrderedFloat<f64>>,
+
+    pub custom_value: Option<OrderedFloat<f64>>,
 
     pub typo_ascender: Option<i64>,
     pub typo_descender: Option<OrderedFloat<f64>>,
@@ -355,15 +660,26 @@ struct RawFontMaster {
     pub win_ascender: Option<OrderedFloat<f64>>,
     pub win_descender: Option<OrderedFloat<f64>>,
 
-    #[fromplist(default)]
     pub axes_values: Vec<OrderedFloat<f64>>,
-    #[fromplist(default)]
-    pub metric_values: Vec<RawMetricValue>,
-    #[fromplist(rest)]
+    pub metric_values: Vec<RawMetricValue>, // v3
+
+    pub ascender: Option<OrderedFloat<f64>>,   // v2
+    pub baseline: Option<OrderedFloat<f64>>,   // v2
+    pub descender: Option<OrderedFloat<f64>>,  // v2
+    pub cap_height: Option<OrderedFloat<f64>>, // v2
+    pub x_height: Option<OrderedFloat<f64>>,   // v2
+    #[fromplist(alt_name = "italic angle")]
+    pub italic_angle: Option<OrderedFloat<f64>>, // v2
+
+    pub alignment_zones: Vec<String>, // v2
+
+    pub custom_parameters: CustomParameters,
+
+    #[fromplist(ignore)]
     pub other_stuff: BTreeMap<String, Plist>,
 }
 
-#[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
 pub struct RawMetricValue {
     pos: Option<OrderedFloat<f64>>,
     over: Option<OrderedFloat<f64>>,
@@ -408,17 +724,24 @@ impl From<&str> for InstanceType {
     }
 }
 
-#[derive(Debug, Clone, FromPlist, PartialEq, Eq, Hash)]
-struct RawInstance {
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
+pub(crate) struct RawInstance {
     pub name: String,
     pub exports: Option<i64>,
     pub active: Option<i64>,
     pub type_: Option<String>,
-    #[fromplist(default)]
     pub axes_values: Vec<OrderedFloat<f64>>,
 
-    #[fromplist(rest)]
-    pub other_stuff: BTreeMap<String, Plist>,
+    pub weight_value: Option<OrderedFloat<f64>>,
+    pub interpolation_weight: Option<OrderedFloat<f64>>,
+
+    pub width_value: Option<OrderedFloat<f64>>,
+    pub interpolation_width: Option<OrderedFloat<f64>>,
+
+    pub custom_value: Option<OrderedFloat<f64>>,
+
+    pub weight_class: Option<String>,
+    pub width_class: Option<String>,
 }
 
 impl RawInstance {
@@ -429,38 +752,121 @@ impl RawInstance {
     }
 }
 
-impl FromPlist for Node {
-    fn from_plist(plist: Plist) -> Self {
-        match &plist {
-            Plist::String(value) => {
-                let mut spl = value.splitn(3, ' ');
-                let x = spl.next().unwrap().parse().unwrap();
-                let y = spl.next().unwrap().parse().unwrap();
-                let pt = Point::new(x, y);
-                let mut raw_node_type = spl.next().unwrap();
-                // drop the userData dict, we don't use it for compilation
-                if raw_node_type.contains('{') {
-                    raw_node_type = raw_node_type.split('{').next().unwrap().trim_end();
-                }
-                let node_type = raw_node_type.parse().unwrap();
-                Node { pt, node_type }
-            }
-            Plist::Array(value) => {
-                // ignore the fourth element (userData) unused for compilation
-                if value.len() < 3 {
-                    panic!("Invalid node content {plist:?}");
-                };
-                let x = value[0].as_f64().unwrap();
-                let y = value[1].as_f64().unwrap();
-                let pt = Point::new(x, y);
-                let node_type = value[2].as_str().unwrap().parse().unwrap();
-                Node { pt, node_type }
-            }
+trait GlyphsV2OrderedAxes {
+    fn weight_value(&self) -> Option<OrderedFloat<f64>>;
+    fn interpolation_weight(&self) -> Option<OrderedFloat<f64>>;
+    fn width_value(&self) -> Option<OrderedFloat<f64>>;
+    fn interpolation_width(&self) -> Option<OrderedFloat<f64>>;
+    fn custom_value(&self) -> Option<OrderedFloat<f64>>;
+
+    fn value_for_nth_axis(&self, nth_axis: usize) -> Result<OrderedFloat<f64>, Error> {
+        // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
+        // the field to use is based on the order in axes NOT the tag.
+        // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
+        // Defaults per https://github.com/googlefonts/fontmake-rs/pull/42#discussion_r1044415236.
+        // v2 instances use novel field names so send back several for linear probing.
+        Ok(match nth_axis {
+            0 => self
+                .weight_value()
+                .or(self.interpolation_weight())
+                .unwrap_or(100.0.into()),
+            1 => self
+                .width_value()
+                .or(self.interpolation_width())
+                .unwrap_or(100.0.into()),
+            2 => self.custom_value().unwrap_or(0.0.into()),
             _ => {
-                panic!("Invalid node content {plist:?}");
+                return Err(Error::StructuralError(format!(
+                    "We don't know what field to use for axis {nth_axis}"
+                )))
             }
-        }
+        })
     }
+
+    fn axis_values(&self, axes: &Vec<Axis>) -> Result<Vec<OrderedFloat<f64>>, Error> {
+        (0..axes.len())
+            .map(|nth_axis| self.value_for_nth_axis(nth_axis))
+            .collect::<Result<Vec<OrderedFloat<f64>>, Error>>()
+    }
+}
+
+impl GlyphsV2OrderedAxes for RawFontMaster {
+    fn weight_value(&self) -> Option<OrderedFloat<f64>> {
+        self.weight_value
+    }
+
+    fn interpolation_weight(&self) -> Option<OrderedFloat<f64>> {
+        self.interpolation_weight
+    }
+
+    fn width_value(&self) -> Option<OrderedFloat<f64>> {
+        self.width_value
+    }
+
+    fn interpolation_width(&self) -> Option<OrderedFloat<f64>> {
+        self.interpolation_width
+    }
+
+    fn custom_value(&self) -> Option<OrderedFloat<f64>> {
+        self.custom_value
+    }
+}
+
+impl GlyphsV2OrderedAxes for RawInstance {
+    fn weight_value(&self) -> Option<OrderedFloat<f64>> {
+        self.weight_value
+    }
+
+    fn interpolation_weight(&self) -> Option<OrderedFloat<f64>> {
+        self.interpolation_weight
+    }
+
+    fn width_value(&self) -> Option<OrderedFloat<f64>> {
+        self.width_value
+    }
+
+    fn interpolation_width(&self) -> Option<OrderedFloat<f64>> {
+        self.interpolation_width
+    }
+
+    fn custom_value(&self) -> Option<OrderedFloat<f64>> {
+        self.custom_value
+    }
+}
+
+fn parse_node_from_string(value: &str) -> Node {
+    let mut spl = value.splitn(3, ' ');
+    let x = spl.next().unwrap().parse().unwrap();
+    let y = spl.next().unwrap().parse().unwrap();
+    let pt = Point::new(x, y);
+    let mut raw_node_type = spl.next().unwrap();
+    // drop the userData dict, we don't use it for compilation
+    if raw_node_type.contains('{') {
+        raw_node_type = raw_node_type.split('{').next().unwrap().trim_end();
+    }
+    let node_type = raw_node_type.parse().unwrap();
+    Node { pt, node_type }
+}
+
+fn parse_node_from_tokenizer(tokenizer: &mut Tokenizer<'_>) -> Result<Node, crate::plist::Error> {
+    // (x,y,type)
+    let x: f64 = tokenizer.parse()?;
+    tokenizer.eat(b',')?;
+    let y: f64 = tokenizer.parse()?;
+    tokenizer.eat(b',')?;
+    let node_type: String = tokenizer.parse()?;
+    let node_type =
+        NodeType::from_str(&node_type).map_err(|_| crate::plist::Error::SomethingWentWrong)?;
+
+    // Sometimes there is userData; ignore it
+    if tokenizer.eat(b',').is_ok() {
+        tokenizer.skip_rec()?;
+    }
+
+    Ok(Node {
+        pt: Point { x, y },
+        node_type,
+    })
 }
 
 impl std::str::FromStr for NodeType {
@@ -488,107 +894,22 @@ impl std::str::FromStr for NodeType {
     }
 }
 
-fn try_f64(plist: &Plist) -> Result<f64, Error> {
-    plist
-        .as_f64()
-        .ok_or_else(|| Error::StructuralError(format!("Bad f64:{plist:?}")))
-}
-
-impl TryFrom<BTreeMap<String, Plist>> for Component {
-    type Error = Error;
-
-    fn try_from(mut dict: BTreeMap<String, Plist>) -> Result<Self, Self::Error> {
-        // Glyphs v3 name has been renamed to ref; look for both
-        let glyph_name = if let Some(Plist::String(glyph_name)) = dict.remove("ref") {
-            glyph_name
-        } else if let Some(Plist::String(glyph_name)) = dict.remove("name") {
-            glyph_name
-        } else {
-            return Err(Error::StructuralError(format!(
-                "Neither ref nor name present: {dict:?}"
-            )));
+// Hand-parse Node because it doesn't follow the normal structure
+impl FromPlist for Node {
+    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
+        use crate::plist::Error;
+        let tok = tokenizer.lex()?;
+        let node = match &tok {
+            Token::Atom(value) => parse_node_from_string(value),
+            Token::String(value) => parse_node_from_string(value),
+            Token::OpenParen => {
+                let node = parse_node_from_tokenizer(tokenizer)?;
+                tokenizer.eat(b')')?;
+                node
+            }
+            _ => return Err(Error::ExpectedString),
         };
-
-        // V3 vs v2: The transform entry has been replaced by angle, pos and scale entries.
-        let mut transform = if let Some(plist) = dict.remove("transform") {
-            Affine::from_plist(plist)
-        } else {
-            Affine::IDENTITY
-        };
-
-        // Glyphs 3 gives us {angle, pos, scale}. Glyphs 2 gives us the standard 2x3 matrix.
-        // The matrix is more general and less ambiguous (what order do you apply the angle, pos, scale?)
-        // so convert Glyphs 3 to that. Order based on saving the same transformed comonent as
-        // Glyphs 2 and Glyphs 3 then trying to convert one to the other.
-
-        // Translate
-        if let Some(Plist::Array(pos)) = dict.remove("pos") {
-            if pos.len() != 2 {
-                return Err(Error::StructuralError(format!("Bad pos: {pos:?}")));
-            }
-            transform *= Affine::translate((try_f64(&pos[0])?, try_f64(&pos[1])?));
-        }
-
-        // Rotate
-        if let Some(angle) = dict.remove("angle") {
-            transform *= Affine::rotate(try_f64(&angle)?.to_radians());
-        }
-
-        // Scale
-        if let Some(Plist::Array(scale)) = dict.remove("scale") {
-            if scale.len() != 2 {
-                return Err(Error::StructuralError(format!("Bad scale: {scale:?}")));
-            }
-            transform *= Affine::scale_non_uniform(try_f64(&scale[0])?, try_f64(&scale[1])?);
-        }
-
-        Ok(Component {
-            glyph_name,
-            transform,
-            other_stuff: dict,
-        })
-    }
-}
-
-impl FromPlist for Component {
-    fn from_plist(plist: Plist) -> Self {
-        let Plist::Dictionary(dict) = plist else {
-            panic!("Component must be a dict: {plist:?}");
-        };
-        dict.try_into().expect("Unable to parse Component")
-    }
-}
-
-impl FromPlist for Affine {
-    fn from_plist(plist: Plist) -> Self {
-        let raw = plist.as_str().unwrap();
-        let raw = &raw[1..raw.len() - 1];
-        let coords: Vec<f64> = raw.split(", ").map(|c| c.parse().unwrap()).collect();
-        Affine::new([
-            coords[0], coords[1], coords[2], coords[3], coords[4], coords[5],
-        ])
-    }
-}
-
-impl FromPlist for Point {
-    fn from_plist(plist: Plist) -> Self {
-        match plist {
-            Plist::Array(values) if values.len() == 2 => {
-                Point::new(values[0].as_f64().unwrap(), values[1].as_f64().unwrap())
-            }
-            Plist::String(value) => {
-                let raw = &value[1..value.len() - 1];
-                let coords: Vec<f64> = raw.split(", ").map(|c| c.parse().unwrap()).collect();
-                Point::new(coords[0], coords[1])
-            }
-            _ => panic!("Cannot parse point from {plist:?}"),
-        }
-    }
-}
-
-impl FromPlist for OrderedFloat<f64> {
-    fn from_plist(plist: Plist) -> Self {
-        plist.as_f64().unwrap().into()
+        Ok(node)
     }
 }
 
@@ -616,107 +937,7 @@ impl Path {
     }
 }
 
-fn custom_params_mut(other_stuff: &mut BTreeMap<String, Plist>) -> Option<&mut Vec<Plist>> {
-    let custom_params = other_stuff.get_mut("customParameters");
-    custom_params.as_ref()?;
-    let Some(Plist::Array(custom_params)) = custom_params else {
-        warn!("customParameters isn't an array\n{:#?}", custom_params);
-        return None;
-    };
-    Some(custom_params)
-}
-
-fn custom_param_mut<'a>(
-    other_stuff: &'a mut BTreeMap<String, Plist>,
-    key: &str,
-) -> Option<(usize, &'a mut Plist)> {
-    let Some(custom_params) = custom_params_mut(other_stuff) else {
-        return None;
-    };
-
-    let name_key = "name".to_string();
-    for (idx, custom_param) in custom_params.iter_mut().enumerate() {
-        let Plist::Dictionary(dict) = custom_param else {
-            warn!("custom param isn't a dictionary\n{:#?}", custom_param);
-            continue;
-        };
-        let Some(Plist::String(param_key)) = dict.get(&name_key) else {
-            warn!("custom param has a non-string name\n{:#?}", custom_param);
-            continue;
-        };
-        if key == param_key {
-            return Some((idx, custom_param));
-        }
-    }
-    None
-}
-
-fn glyphs_v2_field_name_and_default(
-    nth_axis: usize,
-) -> Result<(&'static [&'static str], f64), Error> {
-    // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
-    // the field to use is based on the order in axes NOT the tag.
-    // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
-    // Defaults per https://github.com/googlefonts/fontmake-rs/pull/42#discussion_r1044415236.
-    // v2 instances use novel field names so send back several for linear probing.
-    Ok(match nth_axis {
-        0 => (&["weightValue", "interpolationWeight"], 100.0),
-        1 => (&["widthValue", "interpolationWidth"], 100.0),
-        2 => (&["customValue"], 0.0),
-        _ => {
-            return Err(Error::StructuralError(format!(
-                "We don't know what field to use for axis {nth_axis}"
-            )))
-        }
-    })
-}
-
-fn custom_params(other_stuff: &BTreeMap<String, Plist>) -> Option<&Vec<Plist>> {
-    let custom_params = other_stuff.get("customParameters");
-    custom_params.as_ref()?;
-    let Some(Plist::Array(custom_params)) = custom_params else {
-        warn!("customParameters isn't an array\n{:#?}", custom_params);
-        return None;
-    };
-    Some(custom_params)
-}
-
-fn custom_param<'a>(
-    other_stuff: &'a BTreeMap<String, Plist>,
-    key: &str,
-) -> Option<(usize, &'a Plist)> {
-    let Some(custom_params) = custom_params(other_stuff) else {
-        return None;
-    };
-
-    let name_key = "name".to_string();
-    for (idx, custom_param) in custom_params.iter().enumerate() {
-        let Plist::Dictionary(dict) = custom_param else {
-            warn!("custom param isn't a dictionary\n{:#?}", custom_param);
-            continue;
-        };
-        let Some(Plist::String(param_key)) = dict.get(&name_key) else {
-            warn!("custom param has a non-string name\n{:#?}", custom_param);
-            continue;
-        };
-        if key == param_key {
-            return Some((idx, custom_param));
-        }
-    }
-    None
-}
-
-fn custom_param_int(other_stuff: &BTreeMap<String, Plist>, key: &str) -> Option<i64> {
-    let Some((_, Plist::Dictionary(dict))) = custom_param(other_stuff, key) else {
-        return None;
-    };
-    let Some(Plist::Integer(value)) = dict.get("value") else {
-        return None;
-    };
-    Some(*value)
-}
-
-fn v2_to_v3_name(properties: &mut Vec<RawName>, v2_prop: &Option<String>, v3_name: &str) {
+fn v2_to_v3_name(properties: &mut Vec<RawName>, v2_prop: Option<&str>, v3_name: &str) {
     // https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#properties
     // Keys ending with "s" are localizable that means the second key is values
     if let Some(value) = v2_prop {
@@ -724,104 +945,56 @@ fn v2_to_v3_name(properties: &mut Vec<RawName>, v2_prop: &Option<String>, v3_nam
             RawName {
                 key: v3_name.into(),
                 value: None,
-                values: Some(vec![RawNameValue {
+                values: vec![RawNameValue {
                     language: "dflt".into(),
-                    value: value.clone(),
-                }]),
+                    value: value.to_string(),
+                }],
             }
         } else {
             RawName {
                 key: v3_name.into(),
-                value: Some(value.clone()),
-                values: None,
+                value: Some(value.to_string()),
+                values: vec![],
             }
         });
     }
 }
 
-/// Convert to axesValues, handy for a master or instance
-fn v2_to_v3_axis_values(
-    axes: &Vec<Axis>,
-    other_stuff: &mut BTreeMap<String, Plist>,
-) -> Result<Vec<OrderedFloat<f64>>, Error> {
-    let mut axis_values = Vec::new();
-    for idx in 0..axes.len() {
-        // Per https://github.com/googlefonts/fontmake-rs/pull/42#pullrequestreview-1211619812
-        // the field to use is based on the order in axes NOT the tag.
-        // That is, whatever the first axis is, it's value is in the weightValue field. Long sigh.
-        let (field_names, default_value) = glyphs_v2_field_name_and_default(idx)?;
-        let value = field_names
-            .iter()
-            .find_map(|field_name| other_stuff.remove(*field_name).and_then(|v| v.as_f64()))
-            .unwrap_or_else(|| {
-                warn!("Invalid '{:?}' in\n{:#?}", field_names, other_stuff);
-                default_value
-            });
-        axis_values.push(value.into());
-    }
-    Ok(axis_values)
-}
-
 impl RawFont {
     fn is_v2(&self) -> bool {
-        let mut is_v2 = true;
-        if let Some(Plist::Integer(version)) = self.other_stuff.get(".formatVersion") {
-            is_v2 = *version < 3; // .formatVersion is only present for v3+
-        }
-        is_v2
+        self.format_version < 3
     }
 
     fn v2_to_v3_axes(&mut self) -> Result<Vec<String>, Error> {
         let mut tags = Vec::new();
-        if self.axes.is_none() {
-            self.axes = Some(Vec::new());
-        }
-        if let Some((axes_idx, custom_param)) = custom_param_mut(&mut self.other_stuff, "Axes") {
-            if let Plist::Dictionary(dict) = custom_param {
-                let v3_axes = self.axes.as_mut().unwrap();
-                let Some(Plist::Array(v2_axes)) = dict.get_mut("value") else {
-                    return Err(Error::StructuralError(
-                        "No value for Axes custom parameter".into(),
-                    ));
-                };
-                for v2_axis in v2_axes {
-                    let Plist::Dictionary(v2_axis) = v2_axis else {
-                        return Err(Error::StructuralError("Axis value must be a dict".into()));
-                    };
-                    let tag = v2_axis.get("Tag").unwrap().as_str().unwrap();
-                    tags.push(tag.to_string());
-                    v3_axes.push(Axis {
-                        name: v2_axis.get("Name").unwrap().as_str().unwrap().into(),
-                        tag: tag.into(),
-                        hidden: v2_axis.get("hidden").map(|v| v.as_i64() == Some(1)),
-                    });
-                }
+        if let Some(v2_axes) = self.custom_parameters.axes() {
+            for v2_axis in v2_axes {
+                tags.push(v2_axis.tag.clone());
+                self.axes.push(v2_axis.clone());
             }
-            custom_params_mut(&mut self.other_stuff).map(|p| p.remove(axes_idx));
         }
 
         // Match the defaults from https://github.com/googlefonts/glyphsLib/blob/f6e9c4a29ce764d34c309caef5118c48c156be36/Lib/glyphsLib/builder/axes.py#L526
         // if we have nothing
-        let axes = self.axes.as_mut().unwrap();
-        if axes.is_empty() {
-            axes.push(Axis {
+        if self.axes.is_empty() {
+            self.axes.push(Axis {
                 name: "Weight".into(),
                 tag: "wght".into(),
                 hidden: None,
             });
-            axes.push(Axis {
+            self.axes.push(Axis {
                 name: "Width".into(),
                 tag: "wdth".into(),
                 hidden: None,
             });
-            axes.push(Axis {
+            self.axes.push(Axis {
                 name: "Custom".into(),
                 tag: "XXXX".into(),
                 hidden: None,
             });
         }
 
-        if axes.len() > 3 {
+        if self.axes.len() > 3 {
             return Err(Error::StructuralError(
                 "We only understand 0..3 axes for Glyphs v2".into(),
             ));
@@ -830,88 +1003,63 @@ impl RawFont {
         // v2 stores values for axes in specific fields, find them and put them into place
         // "Axis position related properties (e.g. weightValue, widthValue, customValue) have been replaced by the axesValues list which is indexed in parallel with the toplevel axes list."
         for master in self.font_master.iter_mut() {
-            master.axes_values = v2_to_v3_axis_values(axes, &mut master.other_stuff)?;
+            master.axes_values = master.axis_values(&self.axes)?;
         }
         for instance in self.instances.iter_mut() {
-            instance.axes_values = v2_to_v3_axis_values(axes, &mut instance.other_stuff)?;
+            instance.axes_values = instance.axis_values(&self.axes)?;
         }
 
-        if custom_params_mut(&mut self.other_stuff).map_or(false, |d| d.is_empty()) {
-            self.other_stuff.remove("customParameters");
-        }
         Ok(tags)
     }
 
     fn v2_to_v3_metrics(&mut self) -> Result<(), Error> {
-        // metrics are in parallel arrays in v3
-        assert!(V2_METRIC_NAMES.len() == V3_METRIC_NAMES.len());
-
-        // setup root storage for the basic metrics
-        self.metrics = Some(
-            V3_METRIC_NAMES
-                .iter()
-                .map(|n| RawMetric {
-                    type_: Some(n.to_string()),
-                })
-                .collect(),
-        );
+        // setup storage for the basic metrics
+        self.metrics = V3_METRIC_NAMES
+            .iter()
+            .map(|n| RawMetric {
+                type_: Some(n.to_string()),
+            })
+            .collect();
 
         // in each font master setup the parallel array
         for master in self.font_master.iter_mut() {
             // Copy the v2 metrics from actual fields into the parallel array rig
-            let mut metric_values = Vec::new();
-            for v2_name in V2_METRIC_NAMES.iter() {
-                let mut pos = None;
-                match master.other_stuff.remove(&v2_name.to_string()) {
-                    Some(Plist::Integer(value)) if value != 0 => {
-                        pos = Some(OrderedFloat(value as f64))
-                    }
-                    Some(Plist::Float(value)) if value != OrderedFloat(0.0) => pos = Some(value),
-                    _ => (),
-                };
-                metric_values.push(RawMetricValue { pos, over: None });
-            }
+            // the order matters :(
+            let mut metric_values: Vec<_> = [
+                master.ascender,
+                master.baseline,
+                master.descender,
+                master.cap_height,
+                master.x_height,
+                master.italic_angle,
+            ]
+            .into_iter()
+            .map(|pos| pos.and_then(|v| (v != 0.0).then_some(v)))
+            .map(|pos| RawMetricValue { pos, over: None })
+            .collect();
+
             // "alignmentZones is now a set of over (overshoot) properties attached to metrics"
             // TODO: are these actually aligned by index or do you just lookup lhs to get over from rhs
-            if let Some(Plist::Array(zones)) = master.other_stuff.get("alignmentZones") {
-                assert!(
-                    zones.len() <= metric_values.len(),
-                    "{} should be <= {}",
-                    zones.len(),
-                    metric_values.len()
-                );
-                for (idx, zone) in zones.iter().enumerate() {
-                    let Plist::String(zone) = zone else {
-                        warn!("Non-string alignment zone, skipping");
-                        continue;
-                    };
-                    // Alignment zones look like {800, 16}, but (800, 16) would be more useful
-                    let zone = zone.replace('{', "(").replace('}', ")");
-                    let Ok(Plist::Array(values)) = Plist::parse(&zone) else {
-                        warn!("Confusing alignment zone, skipping");
-                        continue;
-                    };
-                    if values.len() != 2 {
-                        warn!("Confusing alignment zone, skipping");
-                        continue;
-                    };
-                    // values are pos, over. pos comes across from metrics so just copy non-zero over's.
-                    let Plist::Integer(over) = values[1] else {
-                        warn!("Confusing alignment zone, skipping");
-                        continue;
-                    };
-                    if over != 0 {
-                        metric_values[idx].over = Some(OrderedFloat(over as f64));
-                    }
+            assert!(
+                master.alignment_zones.len() <= metric_values.len(),
+                "{} should be <= {}",
+                master.alignment_zones.len(),
+                metric_values.len()
+            );
+            for (metric_value, alignment_zone) in
+                metric_values.iter_mut().zip(master.alignment_zones.iter())
+            {
+                // Alignment zones look like {800, 16}, but (800, 16) would be more useful
+                let alignment_zone = alignment_zone.replace('{', "(").replace('}', ")");
+                let values = Vec::<i64>::parse_plist(&alignment_zone)?;
+                if values.len() != 2 {
+                    warn!("Confusing alignment zone {alignment_zone}, skipping");
+                    continue;
+                };
+                if values[1] != 0 {
+                    metric_value.over = Some(OrderedFloat(values[1] as f64));
                 }
             }
-
-            if log_enabled!(log::Level::Trace) {
-                for (n, m) in V2_METRIC_NAMES.iter().zip(metric_values.iter()) {
-                    trace!("{} {n} = {m:?}", master.id);
-                }
-            }
-
             master.metric_values = metric_values;
         }
         Ok(())
@@ -920,14 +1068,16 @@ impl RawFont {
     fn v2_to_v3_weight(&mut self) -> Result<(), Error> {
         for master in self.font_master.iter_mut() {
             // Don't remove weightValue, we need it to understand axes
-            let Some(Plist::Integer(..)) = master.other_stuff.get("weightValue") else {
+            if master.weight_value.is_none() {
                 continue;
-            };
-            let name = match master.other_stuff.remove("weight") {
-                Some(Plist::String(name)) => name,
-                _ => String::from("Regular"), // Missing = default = Regular per @anthrotype
-            };
-            master.name = Some(name);
+            }
+            // Missing = default = Regular per @anthrotype
+            master.name = Some(
+                master
+                    .weight
+                    .take()
+                    .unwrap_or_else(|| String::from("Regular")),
+            );
         }
         Ok(())
     }
@@ -935,19 +1085,26 @@ impl RawFont {
     fn v2_to_v3_names(&mut self) -> Result<(), Error> {
         // The copyright, designer, designerURL, manufacturer, manufacturerURL top-level entries
         // have been moved into new top-level properties dictionary and made localizable.
-        let properties = self.properties.get_or_insert_with(Default::default);
+        // Take properties to avoid incompatible borrowing against self
+        let mut properties = std::mem::take(&mut self.properties);
 
-        v2_to_v3_name(properties, &self.copyright, "copyrights");
-        v2_to_v3_name(properties, &self.designer, "designers");
-        v2_to_v3_name(properties, &self.designerURL, "designerURL");
-        v2_to_v3_name(properties, &self.manufacturer, "manufacturers");
-        v2_to_v3_name(properties, &self.manufacturerURL, "manufacturerURL");
+        v2_to_v3_name(&mut properties, self.copyright.as_deref(), "copyrights");
+        v2_to_v3_name(&mut properties, self.designer.as_deref(), "designers");
+        v2_to_v3_name(&mut properties, self.designerURL.as_deref(), "designerURL");
+        v2_to_v3_name(
+            &mut properties,
+            self.manufacturer.as_deref(),
+            "manufacturers",
+        );
+        v2_to_v3_name(
+            &mut properties,
+            self.manufacturerURL.as_deref(),
+            "manufacturerURL",
+        );
 
         let mut v2_to_v3_param = |v2_name: &str, v3_name: &str| {
-            if let Some((_, Plist::Dictionary(param))) = custom_param(&self.other_stuff, v2_name) {
-                if let Some(Plist::String(value)) = param.get("value") {
-                    v2_to_v3_name(properties, &Some(value.clone()), v3_name);
-                }
+            if let Some(value) = self.custom_parameters.string(v2_name) {
+                v2_to_v3_name(&mut properties, Some(value), v3_name);
             }
         };
         v2_to_v3_param("description", "descriptions");
@@ -963,40 +1120,31 @@ impl RawFont {
         v2_to_v3_param("WWSFamilyName", "WWSFamilyName");
         v2_to_v3_param("vendorID", "vendorID");
 
+        self.properties = properties;
+
         Ok(())
     }
 
     fn v2_to_v3_instances(&mut self) -> Result<(), Error> {
         for instance in self.instances.iter_mut() {
             // named clases become #s in v3
-            for (tag, name) in &[("wght", "weightClass"), ("wdth", "widthClass")] {
-                let Some(Plist::String(value)) = instance.other_stuff.get(*name) else {
+            for (tag, opt) in [
+                ("wght", &mut instance.weight_class),
+                ("wght", &mut instance.width_class),
+            ] {
+                let Some(value) = opt.as_ref() else {
+                    continue;
+                };
+                if f32::from_str(value).is_ok() {
                     continue;
                 };
                 let Some(value) = lookup_class_value(tag, value) else {
                     return Err(Error::UnknownValueName(value.clone()));
                 };
-                instance
-                    .other_stuff
-                    .insert(name.to_string(), Plist::Integer(value as i64));
+                let _ = opt.insert(format!("{}", value as i64));
             }
         }
 
-        Ok(())
-    }
-
-    fn v2_to_v3_kerning(&mut self) -> Result<(), Error> {
-        if let Some(kerning) = self.other_stuff.remove("kerning") {
-            self.other_stuff.insert("kerningLTR".to_string(), kerning);
-        };
-        for glyph in self.glyphs.iter_mut() {
-            if let Some(Plist::String(group)) = glyph.other_stuff.remove("leftKerningGroup") {
-                glyph.kern_left = Some(group);
-            }
-            if let Some(Plist::String(group)) = glyph.other_stuff.remove("rightKerningGroup") {
-                glyph.kern_right = Some(group);
-            }
-        }
         Ok(())
     }
 
@@ -1007,30 +1155,23 @@ impl RawFont {
         self.v2_to_v3_metrics()?;
         self.v2_to_v3_names()?;
         self.v2_to_v3_instances()?;
-        self.v2_to_v3_kerning()?;
         Ok(())
     }
 }
 
 fn parse_glyph_order(raw_font: &RawFont) -> Vec<String> {
     let mut valid_names: HashSet<_> = raw_font.glyphs.iter().map(|g| &g.glyphname).collect();
-    let mut glyph_order = Vec::new();
+    let mut glyph_order: Vec<String> = Vec::new();
 
     // Add all valid glyphOrder entries in order
     // See https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044627972
-    if let Some((_, Plist::Dictionary(dict))) = custom_param(&raw_font.other_stuff, "glyphOrder") {
-        if let Some(Plist::Array(entries)) = dict.get("value") {
-            entries
-                .iter()
-                .filter_map(|e| e.as_str())
-                .map(|s| s.to_string())
-                .for_each(|s| {
-                    if valid_names.remove(&s) {
-                        glyph_order.push(s);
-                    }
-                });
-        };
-    };
+    if let Some(names) = raw_font.custom_parameters.glyph_order() {
+        names.iter().for_each(|name| {
+            if valid_names.remove(name) {
+                glyph_order.push(name.clone());
+            }
+        })
+    }
 
     // Add anything left over in file order
     raw_font
@@ -1045,64 +1186,33 @@ fn parse_glyph_order(raw_font: &RawFont) -> Vec<String> {
 /// Returns a map from glyph name to codepoint(s).
 fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<String, BTreeSet<u32>> {
     let mut name_to_cp: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-    for glyph in raw_font.glyphs.iter_mut() {
-        if let Some(Plist::String(val)) = glyph.other_stuff.remove("unicode") {
-            val.split(',')
-                .map(|v| i64::from_str_radix(v, radix).unwrap() as u32)
-                .for_each(|cp| {
-                    name_to_cp
-                        .entry(glyph.glyphname.clone())
-                        .or_default()
-                        .insert(cp);
-                });
-        };
-    }
+    raw_font
+        .glyphs
+        .iter()
+        .filter_map(|g| g.unicode.as_ref().map(|u| (&g.glyphname, u)))
+        .flat_map(|(g, u)| {
+            u.split(',')
+                .map(|cp| (g.clone(), i64::from_str_radix(cp, radix).unwrap() as u32))
+        })
+        .for_each(|(glyph_name, codepoint)| {
+            name_to_cp.entry(glyph_name).or_default().insert(codepoint);
+        });
     name_to_cp
-}
-
-fn parse_kerning(kerning: Option<&Plist>) -> BTreeMap<String, BTreeMap<(String, String), i32>> {
-    let mut result = BTreeMap::new();
-    let Some(Plist::Dictionary(kerning)) = kerning else {
-        return result;
-    };
-    for (master_id, kerning) in kerning {
-        let mut master_kerns = BTreeMap::new();
-        if let Plist::Dictionary(kerning) = kerning {
-            for (kern_from, kern_tos) in kerning {
-                let Plist::Dictionary(kern_tos) = kern_tos else {
-                    continue;
-                };
-                for (kern_to, adjustment) in kern_tos {
-                    let Some(adjustment) = adjustment.as_i64() else {
-                        continue;
-                    };
-                    master_kerns.insert((kern_from.clone(), kern_to.clone()), adjustment as i32);
-                }
-            }
-        }
-        result.insert(master_id.clone(), master_kerns);
-    }
-    result
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L578>
 fn default_master_idx(raw_font: &RawFont) -> usize {
     // Prefer an explicit origin
     // https://github.com/googlefonts/fontmake-rs/issues/44
-    custom_param(&raw_font.other_stuff, "Variable Font Origin")
-        .map(|(_, param)| {
-            let Plist::Dictionary(dict) = param else {
-                return 0;
-            };
-            let Some(Plist::String(origin)) = dict.get("value") else {
-                warn!("Incomprehensible Variable Font Origin");
-                return 0;
-            };
+    raw_font
+        .custom_parameters
+        .string("Variable Font Origin")
+        .map(|origin| {
             raw_font
                 .font_master
                 .iter()
                 .enumerate()
-                .find(|(_, master)| &master.id == origin)
+                .find(|(_, master)| master.id == origin)
                 .map(|(idx, _)| idx)
                 .unwrap_or(0)
         })
@@ -1119,38 +1229,26 @@ fn default_master_idx(raw_font: &RawFont) -> usize {
 
 fn axis_index(from: &RawFont, pred: impl Fn(&Axis) -> bool) -> Option<usize> {
     from.axes
-        .as_ref()
-        .map(|axes| {
-            axes.iter()
-                .enumerate()
-                .find_map(|(i, a)| if pred(a) { Some(i) } else { None })
-        })
-        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .find_map(|(i, a)| if pred(a) { Some(i) } else { None })
 }
 
 fn user_to_design_from_axis_mapping(
     from: &RawFont,
 ) -> Option<BTreeMap<String, RawAxisUserToDesignMap>> {
-    // Fetch mapping from Axis Mappings, if any
-    let Some((_, axis_map)) = custom_param(&from.other_stuff, "Axis Mappings") else {
+    let Some(mappings) = from.custom_parameters.axis_mappings() else {
         return None;
     };
-    let Plist::Dictionary(axis_map) = axis_map.get("value").unwrap() else {
-        panic!("Incomprehensible axis map {axis_map:?}");
-    };
     let mut axis_mappings: BTreeMap<String, RawAxisUserToDesignMap> = BTreeMap::new();
-    for (axis_tag, mappings) in axis_map.iter() {
-        let Plist::Dictionary(mappings) = mappings else {
-            panic!("Incomprehensible mappings {mappings:?}");
+    for mapping in mappings {
+        let Some(axis_index) = axis_index(from, |a| a.tag == mapping.tag) else {
+            panic!("No such axes: {:?}", mapping.tag);
         };
-        let Some(axis_index) = axis_index(from, |a| &a.tag == axis_tag) else {
-            panic!("No such axes: {axis_tag:?}");
-        };
-        // We could not have found an axis index if there are no axes
-        let axis_name = &from.axes.as_ref().unwrap().get(axis_index).unwrap().name;
-        for (user, design) in mappings.iter() {
-            let user: f32 = user.parse().unwrap();
-            let design = design.as_f64().unwrap() as f32;
+        let axis_name = &from.axes.get(axis_index).unwrap().name;
+        for (user, design) in mapping.user_to_design.iter() {
+            let user: f32 = user.0 as f32;
+            let design = design.0 as f32;
             axis_mappings
                 .entry(axis_name.clone())
                 .or_default()
@@ -1165,10 +1263,10 @@ fn user_to_design_from_axis_location(
 ) -> Option<BTreeMap<String, RawAxisUserToDesignMap>> {
     // glyphsLib only trusts Axis Location when all masters have it, match that
     // https://github.com/googlefonts/fontmake-rs/pull/83#discussion_r1065814670
-    let master_locations: Vec<&Plist> = from
+    let master_locations: Vec<_> = from
         .font_master
         .iter()
-        .filter_map(|m| custom_param(&m.other_stuff, "Axis Location").map(|(_, al)| al))
+        .filter_map(|m| m.custom_parameters.axis_locations())
         .collect();
     if master_locations.len() != from.font_master.len() {
         if !master_locations.is_empty() {
@@ -1182,31 +1280,16 @@ fn user_to_design_from_axis_location(
     }
 
     let mut axis_mappings: BTreeMap<String, RawAxisUserToDesignMap> = BTreeMap::new();
-    for (master, axis_locations) in from.font_master.iter().zip(&master_locations) {
-        let Plist::Dictionary(axis_locations) = axis_locations else {
-            panic!("Axis Location must be a dict {axis_locations:?}");
-        };
-        let Some(Plist::Array(axis_locations)) = axis_locations.get("value") else {
-            panic!("Value must be a dict {axis_locations:?}");
-        };
+    for (master, axis_locations) in from.font_master.iter().zip(master_locations) {
         for axis_location in axis_locations {
-            let Some(Plist::String(axis_name)) = axis_location.get("Axis") else {
-                panic!("Axis name must be a string {axis_location:?}");
-            };
-            let Some(user) = axis_location.get("Location") else {
-                panic!("Incomprehensible axis location {axis_location:?}");
-            };
-            let Some(user) = user.as_f64() else {
-                panic!("Incomprehensible axis location {axis_location:?}");
-            };
-            let Some(axis_index) = axis_index(from, |a| &a.name == axis_name) else {
+            let Some(axis_index) = axis_index(from, |a| a.name == axis_location.axis_name) else {
                 panic!("Axis has no index {axis_location:?}");
             };
-            let user = user as f32;
+            let user = axis_location.location.0 as f32;
             let design = master.axes_values[axis_index].into_inner() as f32;
 
             axis_mappings
-                .entry(axis_name.clone())
+                .entry(axis_location.axis_name.clone())
                 .or_default()
                 .add_if_new(user.into(), design.into());
         }
@@ -1283,10 +1366,7 @@ impl RawUserToDesignMapping {
 
     fn add_master_mappings_if_new(&mut self, from: &RawFont) {
         for master in from.font_master.iter() {
-            let Some(axes) = from.axes.as_ref() else {
-                continue;
-            };
-            for (axis, value) in axes.iter().zip(&master.axes_values) {
+            for (axis, value) in from.axes.iter().zip(&master.axes_values) {
                 let value = OrderedFloat(value.0 as f32);
                 self.0
                     .entry(axis.name.clone())
@@ -1304,24 +1384,55 @@ impl TryFrom<RawShape> for Shape {
         // TODO: handle numerous unsupported attributes
         // See <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
 
-        let shape = if let Some(Plist::String(..)) = from.other_stuff.get("ref") {
-            // only components use ref in Glyphs 3
-            Shape::Component(from.other_stuff.try_into()?)
+        let shape = if let Some(glyph_name) = from.glyph_name {
+            assert!(!glyph_name.is_empty(), "A pointless component");
+
+            // V3 vs v2: The transform entry has been replaced by angle, pos and scale entries.
+            let mut transform = if let Some(transform) = from.transform {
+                Affine::parse_plist(&transform)?
+            } else {
+                Affine::IDENTITY
+            };
+
+            // Glyphs 3 gives us {angle, pos, scale}. Glyphs 2 gives us the standard 2x3 matrix.
+            // The matrix is more general and less ambiguous (what order do you apply the angle, pos, scale?)
+            // so convert Glyphs 3 to that. Order based on saving the same transformed comonent as
+            // Glyphs 2 and Glyphs 3 then trying to convert one to the other.
+            if !from.pos.is_empty() {
+                if from.pos.len() != 2 {
+                    return Err(Error::StructuralError(format!("Bad pos: {:?}", from.pos)));
+                }
+                transform *= Affine::translate((from.pos[0], from.pos[1]));
+            }
+            if let Some(angle) = from.angle {
+                transform *= Affine::rotate(angle.to_radians());
+            }
+            if !from.scale.is_empty() {
+                if from.scale.len() != 2 {
+                    return Err(Error::StructuralError(format!(
+                        "Bad scale: {:?}",
+                        from.scale
+                    )));
+                }
+                transform *= Affine::scale_non_uniform(from.scale[0], from.scale[1]);
+            }
+
+            Shape::Component(Component {
+                name: glyph_name,
+                transform,
+            })
         } else {
             // no ref; presume it's a path
             Shape::Path(Path {
                 closed: from.closed.unwrap_or_default(),
-                nodes: from.nodes.clone().unwrap_or_default(),
+                nodes: from.nodes.clone(),
             })
         };
         Ok(shape)
     }
 }
 
-fn map_and_push_if_present<T, U>(dest: &mut Vec<T>, src: Option<Vec<U>>, map: fn(U) -> T) {
-    let Some(src) = src else {
-        return; // nop
-    };
+fn map_and_push_if_present<T, U>(dest: &mut Vec<T>, src: Vec<U>, map: fn(U) -> T) {
     src.into_iter().map(map).for_each(|v| dest.push(v));
 }
 
@@ -1336,19 +1447,18 @@ impl TryFrom<RawLayer> for Layer {
         map_and_push_if_present(&mut shapes, from.components, Shape::Component);
 
         // Glyphs v3 uses shapes for both
-        for raw_shape in from.shapes.unwrap_or_default() {
+        for raw_shape in from.shapes {
             shapes.push(raw_shape.try_into()?);
         }
 
         let anchors = from
             .anchors
-            .unwrap_or_default()
             .into_iter()
             .map(|ra| {
                 let pos = if let Some(pos) = ra.pos {
                     pos
-                } else if let Some(pos) = ra.position {
-                    Point::from_plist(Plist::String(pos))
+                } else if let Some(raw) = ra.position {
+                    Point::parse_plist(&raw).unwrap()
                 } else {
                     Point::ZERO
                 };
@@ -1494,7 +1604,7 @@ fn add_mapping_if_present(
     axes: &[Axis],
     axis_tag: &str,
     axes_values: &[OrderedFloat<f64>],
-    value: Option<&Plist>,
+    value: Option<f64>,
 ) {
     let Some(idx) = axes.iter().position(|a| a.tag == axis_tag) else {
         return;
@@ -1503,7 +1613,7 @@ fn add_mapping_if_present(
     let Some(design) = axes_values.get(idx) else {
         return;
     };
-    let Some(value) = value.and_then(|v| v.as_f64()) else {
+    let Some(value) = value else {
         return;
     };
     let user = OrderedFloat(value as f32);
@@ -1529,14 +1639,20 @@ impl Instance {
             axes,
             "wght",
             &value.axes_values,
-            value.other_stuff.get("weightClass"),
+            value
+                .weight_class
+                .as_ref()
+                .map(|v| f64::from_str(v).unwrap()),
         );
         add_mapping_if_present(
             &mut axis_mappings,
             axes,
             "wdth",
             value.axes_values.as_ref(),
-            value.other_stuff.get("widthClass"),
+            value
+                .width_class
+                .as_ref()
+                .map(|v| f64::from_str(v).unwrap()),
         );
 
         Instance {
@@ -1562,17 +1678,13 @@ impl TryFrom<RawFont> for Font {
         }
 
         let radix = if from.is_v2() { 16 } else { 10 };
-        from.other_stuff.remove("date"); // exists purely to make diffs fail
-        from.other_stuff.remove(".formatVersion"); // no longer relevent
-
         let glyph_order = parse_glyph_order(&from);
         let glyph_to_codepoints = parse_codepoints(&mut from, radix);
 
-        let use_typo_metrics =
-            custom_param_int(&from.other_stuff, "Use Typo Metrics").map(|v| v == 1);
-        let has_wws_names = custom_param_int(&from.other_stuff, "Has WWS Names").map(|v| v == 1);
+        let use_typo_metrics = from.custom_parameters.bool("Use Typo Metrics");
+        let has_wws_names = from.custom_parameters.bool("Has WWS Names");
 
-        let axes = from.axes.clone().unwrap_or_default();
+        let axes = from.axes.clone();
         let instances: Vec<_> = from
             .instances
             .iter()
@@ -1588,13 +1700,13 @@ impl TryFrom<RawFont> for Font {
         }
 
         let mut features = Vec::new();
-        for class in from.classes.unwrap_or_default().into_iter() {
+        for class in from.classes {
             features.push(class_to_feature(class)?);
         }
-        for prefix in from.feature_prefixes.unwrap_or_default().into_iter() {
+        for prefix in from.feature_prefixes {
             features.push(prefix_to_feature(prefix)?);
         }
-        for feature in from.features.unwrap_or_default().into_iter() {
+        for feature in from.features {
             features.push(raw_feature_to_feature(feature)?);
         }
 
@@ -1604,12 +1716,11 @@ impl TryFrom<RawFont> for Font {
         let units_per_em = units_per_em.try_into().map_err(Error::InvalidUpem)?;
 
         let mut names = BTreeMap::new();
-        for name in from.properties.unwrap_or_default() {
+        for name in from.properties {
             // TODO: we only support dflt, .glyphs l10n names are ignored
             name.value
                 .or_else(|| {
                     name.values
-                        .unwrap_or_default()
                         .iter()
                         .find(|v| v.language == "dflt")
                         .map(|v| v.value.clone())
@@ -1623,7 +1734,6 @@ impl TryFrom<RawFont> for Font {
 
         let metric_names: BTreeMap<usize, String> = from
             .metrics
-            .unwrap_or_default()
             .into_iter()
             .enumerate()
             .filter_map(|(idx, metric)| metric.type_.map(|name| (idx, name)))
@@ -1645,14 +1755,14 @@ impl TryFrom<RawFont> for Font {
                     })
                     .filter(|(_, metric)| !metric.is_empty())
                     .collect(),
-                typo_ascender: custom_param_int(&m.other_stuff, "typoAscender"),
-                typo_descender: custom_param_int(&m.other_stuff, "typoDescender"),
-                typo_line_gap: custom_param_int(&m.other_stuff, "typoLineGap"),
-                win_ascent: custom_param_int(&m.other_stuff, "winAscent"),
-                win_descent: custom_param_int(&m.other_stuff, "winDescent"),
-                hhea_ascender: custom_param_int(&m.other_stuff, "hheaAscender"),
-                hhea_descender: custom_param_int(&m.other_stuff, "hheaDescender"),
-                hhea_line_gap: custom_param_int(&m.other_stuff, "hheaLineGap"),
+                typo_ascender: m.custom_parameters.int("typoAscender"),
+                typo_descender: m.custom_parameters.int("typoDescender"),
+                typo_line_gap: m.custom_parameters.int("typoLineGap"),
+                win_ascent: m.custom_parameters.int("winAscent"),
+                win_descent: m.custom_parameters.int("winDescent"),
+                hhea_ascender: m.custom_parameters.int("hheaAscender"),
+                hhea_descender: m.custom_parameters.int("hheaDescender"),
+                hhea_line_gap: m.custom_parameters.int("hheaLineGap"),
             })
             .collect();
 
@@ -1673,7 +1783,7 @@ impl TryFrom<RawFont> for Font {
             version_major: from.versionMajor.unwrap_or_default() as i32,
             version_minor: from.versionMinor.unwrap_or_default() as u32,
             date: from.date,
-            kerning_ltr: parse_kerning(from.other_stuff.get("kerningLTR")),
+            kerning_ltr: from.kerning_LTR,
         })
     }
 }
@@ -1693,13 +1803,11 @@ impl Font {
             return Font::load_package(glyphs_file);
         }
 
-        debug!("Read {glyphs_file:?}");
+        debug!("Read glyphs {glyphs_file:?}");
         let raw_content = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
         let raw_content = preprocess_unparsed_plist(&raw_content);
-        let raw_content = Plist::parse(&raw_content)
-            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), e.to_string()))?;
-
-        let raw_font = RawFont::from_plist(raw_content);
+        let raw_font = RawFont::parse_plist(&raw_content)
+            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), format!("{e}")))?;
         raw_font.try_into()
     }
 
@@ -1707,21 +1815,14 @@ impl Font {
         if !glyphs_package.is_dir() {
             return Err(Error::NotAGlyphsPackage(glyphs_package.to_path_buf()));
         }
-        debug!("Read {glyphs_package:?}");
+        debug!("Read glyphs package {glyphs_package:?}");
 
         let fontinfo_file = glyphs_package.join("fontinfo.plist");
         let fontinfo_data = fs::read_to_string(&fontinfo_file).map_err(Error::IoError)?;
-        let mut font_plist = Plist::parse(&fontinfo_data)
-            .map_err(|e| Error::ParseError(fontinfo_file.to_path_buf(), e.to_string()))?;
+        let mut raw_font = RawFont::parse_plist(&fontinfo_data)
+            .map_err(|e| Error::ParseError(fontinfo_file.to_path_buf(), format!("{e}")))?;
 
-        let Plist::Dictionary(ref mut root_dict) = font_plist else {
-            return Err(Error::ParseError(
-                fontinfo_file.to_path_buf(),
-                "Root must be a dict".to_string(),
-            ));
-        };
-
-        let mut glyphs: HashMap<String, Dictionary> = HashMap::new();
+        let mut glyphs: HashMap<String, RawGlyph> = HashMap::new();
         let glyphs_dir = glyphs_package.join("glyphs");
         if glyphs_dir.is_dir() {
             for entry in fs::read_dir(glyphs_dir).map_err(Error::IoError)? {
@@ -1730,28 +1831,22 @@ impl Font {
                 if path.extension() == Some(OsStr::new("glyph")) {
                     let glyph_data = fs::read_to_string(&path).map_err(Error::IoError)?;
                     let glyph_data = preprocess_unparsed_plist(&glyph_data);
-                    let glyph_dict = Plist::parse(&glyph_data)
-                        .and_then(Plist::expect_dict)
+                    let glyph = RawGlyph::parse_plist(&glyph_data)
                         .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
-                    let glyph_name = glyph_dict
-                        .get("glyphname")
-                        .ok_or_else(|| {
-                            Error::ParseError(
-                                path.clone(),
-                                "Glyph dict must have a 'glyphname' key".to_string(),
-                            )
-                        })?
-                        .clone()
-                        .expect_string()
-                        .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
-                    glyphs.insert(glyph_name, glyph_dict);
+                    if glyph.glyphname.is_empty() {
+                        return Err(Error::ParseError(
+                            path.clone(),
+                            "Glyph dict must have a 'glyphname' key".to_string(),
+                        ));
+                    }
+                    glyphs.insert(glyph.glyphname.clone(), glyph);
                 }
             }
         }
 
         // if order.plist file exists, read it and sort glyphs in it accordingly
         let order_file = glyphs_package.join("order.plist");
-        let mut ordered_glyphs = Array::new();
+        let mut ordered_glyphs = Vec::new();
         if order_file.exists() {
             let order_data = fs::read_to_string(&order_file).map_err(Error::IoError)?;
             let order_plist = Plist::parse(&order_data)
@@ -1764,7 +1859,7 @@ impl Font {
                     .expect_string()
                     .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
                 if glyphs.contains_key(&glyph_name) {
-                    ordered_glyphs.push(Plist::Dictionary(glyphs.remove(&glyph_name).unwrap()));
+                    ordered_glyphs.push(glyphs.remove(&glyph_name).unwrap());
                 }
             }
         }
@@ -1774,14 +1869,13 @@ impl Font {
         ordered_glyphs.extend(
             glyph_names
                 .into_iter()
-                .map(|glyph_name| Plist::Dictionary(glyphs.remove(&glyph_name).unwrap())),
+                .map(|glyph_name| glyphs.remove(&glyph_name).unwrap()),
         );
         assert!(glyphs.is_empty());
-        root_dict.insert("glyphs".to_string(), Plist::Array(ordered_glyphs));
+        raw_font.glyphs = ordered_glyphs;
 
         // ignore UIState.plist which stuff like displayStrings that are not used by us
 
-        let raw_font = RawFont::from_plist(font_plist);
         raw_font.try_into()
     }
 
@@ -1830,7 +1924,8 @@ impl From<Affine> for AffineForEqAndHash {
 mod tests {
     use crate::{
         font::{RawAxisUserToDesignMap, RawFeature, RawUserToDesignMapping},
-        Font, FromPlist, Node, Plist, Shape,
+        plist::FromPlist,
+        Font, Node, Shape,
     };
     use std::{
         collections::{BTreeMap, BTreeSet, HashSet},
@@ -1872,27 +1967,49 @@ mod tests {
 
     #[test]
     fn test_glyphs3_node() {
+        let node: Node = Node::parse_plist("(354, 183, l)").unwrap();
         assert_eq!(
             Node {
                 node_type: crate::NodeType::Line,
                 pt: super::Point { x: 354.0, y: 183.0 }
             },
-            Node::from_plist(Plist::Array(vec![
-                Plist::Integer(354),
-                Plist::Integer(183),
-                Plist::String("l".into()),
-            ]))
+            node
         );
     }
 
     #[test]
     fn test_glyphs2_node() {
+        let node: Node = Node::parse_plist("\"354 183 LINE\"").unwrap();
         assert_eq!(
             Node {
                 node_type: crate::NodeType::Line,
                 pt: super::Point { x: 354.0, y: 183.0 }
             },
-            Node::from_plist(Plist::String("354 183 LINE".into()))
+            node
+        );
+    }
+
+    #[test]
+    fn test_glyphs3_node_userdata() {
+        let node = Node::parse_plist("(354, 183, l,{name = hr00;})").unwrap();
+        assert_eq!(
+            Node {
+                node_type: crate::NodeType::Line,
+                pt: super::Point { x: 354.0, y: 183.0 }
+            },
+            node
+        );
+    }
+
+    #[test]
+    fn test_glyphs2_node_userdata() {
+        let node = Node::parse_plist("\"354 183 LINE {name=duck}\"").unwrap();
+        assert_eq!(
+            Node {
+                node_type: crate::NodeType::Line,
+                pt: super::Point { x: 354.0, y: 183.0 }
+            },
+            node
         );
     }
 
@@ -1940,9 +2057,9 @@ mod tests {
         for (g2m, g3m) in g2.masters.iter().zip(g3.masters.iter()) {
             assert_eq!(g2m, g3m);
         }
-        assert_eq!(g2, g3);
-        assert_eq!(g2_pkg, g3_pkg);
-        assert_eq!(g3_pkg, g3);
+        assert_eq!(g2, g3, "g2 should match g3");
+        assert_eq!(g2_pkg, g3_pkg, "g2_pkg should match g3_pkg");
+        assert_eq!(g3_pkg, g3, "g3_pkg should match g3");
     }
 
     #[test]
@@ -2408,6 +2525,8 @@ mod tests {
                 ],
             ),
             (actual_groups, actual_kerning),
+            "{:?}",
+            font.kerning_ltr
         );
     }
 
