@@ -28,6 +28,7 @@ use norad::{
     designspace::{self, DesignSpaceDocument},
     fontinfo::StyleMapStyle,
 };
+use plist::Value;
 use write_fonts::{tables::os2::SelectionFlags, OtRound};
 
 use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph};
@@ -519,6 +520,33 @@ fn glyph_order(
     Ok(glyph_order)
 }
 
+fn postscript_names(
+    source: &norad::designspace::Source,
+    designspace_dir: &Path,
+) -> Result<HashMap<GlyphName, String>, WorkError> {
+    let lib_plist = load_plist(&designspace_dir.join(&source.filename), "lib.plist")?;
+    let postscript_names = match lib_plist
+        .get("public.postscriptNames")
+        .map(Value::as_dictionary)
+    {
+        Some(Some(postscript_names)) => postscript_names
+            .iter()
+            .filter_map(|(glyph_name, ps_name)| match ps_name.as_string() {
+                Some(ps_name) => Some((GlyphName::from(glyph_name.as_str()), ps_name.to_owned())),
+                None => {
+                    warn!("public.postscriptNames: \"{glyph_name}\" has a non-string entry");
+                    None
+                }
+            })
+            .collect(),
+        Some(None) => {
+            todo!("public.postscriptNames is present, but not a dictionary");
+        }
+        None => HashMap::new(),
+    };
+    Ok(postscript_names)
+}
+
 fn units_per_em<'a>(
     font_infos: impl Iterator<Item = &'a norad::FontInfo>,
 ) -> Result<u16, WorkError> {
@@ -756,9 +784,17 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
                 StyleMapStyle::BoldItalic => SelectionFlags::BOLD | SelectionFlags::ITALIC,
             };
 
-        let mut static_metadata =
-            StaticMetadata::new(units_per_em, names, axes, named_instances, glyph_locations)
-                .map_err(WorkError::VariationModelError)?;
+        let postscript_names = postscript_names(default_master, designspace_dir)?;
+
+        let mut static_metadata = StaticMetadata::new(
+            units_per_em,
+            names,
+            axes,
+            named_instances,
+            glyph_locations,
+            postscript_names,
+        )
+        .map_err(WorkError::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
         if let Some(vendor_id) = &font_info_at_default.open_type_os2_vendor_id {
             static_metadata.misc.vendor_id =

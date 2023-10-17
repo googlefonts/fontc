@@ -67,6 +67,8 @@ pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>.
     pub names: HashMap<NameKey, String>,
 
+    pub postscript_names: HashMap<GlyphName, String>,
+
     /// Miscellaneous font-wide data that didn't seem worthy of top billing
     pub misc: MiscMetadata,
 }
@@ -235,6 +237,7 @@ impl StaticMetadata {
         axes: Vec<Axis>,
         named_instances: Vec<NamedInstance>,
         glyph_locations: HashSet<NormalizedLocation>,
+        postscript_names: HashMap<GlyphName, String>,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
         let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
@@ -275,6 +278,7 @@ impl StaticMetadata {
             variation_model,
             axes_default,
             variable_axes_default,
+            postscript_names,
             misc: MiscMetadata {
                 selection_flags: Default::default(),
                 vendor_id: DEFAULT_VENDOR_ID_TAG,

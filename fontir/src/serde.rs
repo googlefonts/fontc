@@ -6,6 +6,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use filetime::FileTime;
 use font_types::Tag;
+use fontdrasil::types::GlyphName;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use write_fonts::tables::os2::SelectionFlags;
@@ -59,6 +60,7 @@ pub(crate) struct StaticMetadataSerdeRepr {
     pub named_instances: Vec<NamedInstance>,
     pub glyph_locations: Vec<NormalizedLocation>,
     pub names: HashMap<NameKey, String>,
+    pub postscript_names: HashMap<GlyphName, String>,
     pub misc: MiscSerdeRepr,
 }
 
@@ -70,6 +72,7 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
             from.axes,
             from.named_instances,
             from.glyph_locations.into_iter().collect(),
+            from.postscript_names,
         )
         .unwrap()
     }
@@ -84,6 +87,7 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
             named_instances: from.named_instances,
             glyph_locations,
             names: from.names,
+            postscript_names: from.postscript_names,
             misc: from.misc.into(),
         }
     }
