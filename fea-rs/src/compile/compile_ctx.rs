@@ -23,7 +23,7 @@ use write_fonts::{
 };
 
 use crate::{
-    common::{GlyphClass, GlyphId, GlyphOrClass},
+    common::{GlyphClass, GlyphId, GlyphOrClass, MarkClass},
     parse::SourceMap,
     token_tree::{
         typed::{self, AstNode},
@@ -34,6 +34,7 @@ use crate::{
 };
 
 use super::{
+    feature_writer::{FeatureBuilder, FeatureProvider},
     features::{
         AaltFeature, ActiveFeature, AllFeatures, ConditionSetMap, CvParams, SizeFeature,
         SpecialVerticalFeatureState,
@@ -68,6 +69,7 @@ pub struct CompilationCtx<'a> {
     reverse_glyph_map: BTreeMap<GlyphId, GlyphIdent>,
     source_map: &'a SourceMap,
     variation_info: Option<&'a dyn VariationInfo>,
+    feature_writer: Option<&'a dyn FeatureProvider>,
     /// Any errors or warnings generated during compilation.
     pub errors: Vec<Diagnostic>,
     /// Stores any [specified table values][tables] in the input FEA.
@@ -93,22 +95,19 @@ pub struct CompilationCtx<'a> {
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
 }
 
-#[derive(Clone, Debug, Default)]
-struct MarkClass {
-    members: Vec<(GlyphClass, Option<AnchorTable>)>,
-}
-
 impl<'a> CompilationCtx<'a> {
     pub(crate) fn new(
         glyph_map: &'a GlyphMap,
         source_map: &'a SourceMap,
         variation_info: Option<&'a dyn VariationInfo>,
+        feature_writer: Option<&'a dyn FeatureProvider>,
     ) -> Self {
         CompilationCtx {
             glyph_map,
             reverse_glyph_map: glyph_map.reverse_map(),
             source_map,
             variation_info,
+            feature_writer,
             errors: Vec::new(),
             tables: Tables::default(),
             default_lang_systems: Default::default(),
@@ -161,6 +160,11 @@ impl<'a> CompilationCtx<'a> {
                 self.error(span, format!("unhandled top-level item: '{}'", item.kind()));
             }
         }
+
+        // NOTE: this is the easiest place for us to do this, but we
+        // could potentially be more performant by running this in parallel,
+        // immediately after parsing?
+        self.run_feature_writer_if_present();
 
         self.finalize_gdef_table();
         self.features
@@ -234,6 +238,17 @@ impl<'a> CompilationCtx<'a> {
             gsub,
             gpos,
         })
+    }
+
+    fn run_feature_writer_if_present(&mut self) {
+        let Some(writer) = self.feature_writer else {
+            return;
+        };
+
+        let mut builder =
+            FeatureBuilder::new(&self.default_lang_systems, self.mark_filter_sets.len());
+        writer.add_features(&mut builder);
+        todo!("now actually try to merge in the generated features?");
     }
 
     /// Infer/update GDEF table as required.

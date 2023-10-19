@@ -8,6 +8,7 @@ use super::{lookups::FeatureKey, tags};
 
 /// A script/language pair
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
 pub struct LanguageSystem {
     pub script: Tag,
     pub language: Tag,
@@ -36,13 +37,14 @@ impl DefaultLanguageSystems {
         self.items.contains(key)
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = LanguageSystem> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = LanguageSystem> + '_ {
         self.items.iter().copied()
     }
 }
 
 impl LanguageSystem {
-    pub(crate) fn to_feature_key(self, feature: Tag) -> FeatureKey {
+    /// Generate a `FeatureKey` for this langauge system.
+    pub fn to_feature_key(self, feature: Tag) -> FeatureKey {
         let LanguageSystem { script, language } = self;
         FeatureKey {
             feature,

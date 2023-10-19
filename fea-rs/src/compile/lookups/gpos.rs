@@ -108,6 +108,9 @@ fn cmp_coverage_key(coverage: &CoverageTable) -> impl Ord {
     (std::cmp::Reverse(coverage.len()), coverage.iter().next())
 }
 
+/// A builder for GPOS type 2 (PairPos) subtables
+///
+/// This builder can build both glyph and class-based kerning subtables.
 #[derive(Clone, Debug, Default)]
 pub struct PairPosBuilder {
     pairs: GlyphPairPosBuilder,
@@ -200,7 +203,8 @@ impl ClassPairPosSubtable {
 }
 
 impl PairPosBuilder {
-    pub(crate) fn insert_pair(
+    /// Insert a new kerning pair
+    pub fn insert_pair(
         &mut self,
         glyph1: GlyphId,
         record1: ValueRecord,
@@ -214,7 +218,8 @@ impl PairPosBuilder {
             .insert(glyph2, (record1, record2));
     }
 
-    pub(crate) fn insert_classes(
+    /// Insert a new class-based kerning rule.
+    pub fn insert_classes(
         &mut self,
         class1: GlyphClass,
         record1: ValueRecord,

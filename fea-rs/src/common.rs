@@ -3,6 +3,7 @@
 use std::fmt::{Display, Formatter};
 
 use smol_str::SmolStr;
+use write_fonts::tables::gpos::AnchorTable;
 pub use write_fonts::types::GlyphId;
 
 mod glyph_class;
@@ -34,6 +35,11 @@ pub enum GlyphIdent {
     Name(GlyphName),
     /// a CID
     Cid(u16),
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct MarkClass {
+    pub(crate) members: Vec<(GlyphClass, Option<AnchorTable>)>,
 }
 
 impl<T: Into<GlyphName>> From<T> for GlyphIdent {
