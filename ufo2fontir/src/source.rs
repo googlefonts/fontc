@@ -28,7 +28,6 @@ use norad::{
     designspace::{self, DesignSpaceDocument},
     fontinfo::StyleMapStyle,
 };
-use plist::Value;
 use write_fonts::{tables::os2::SelectionFlags, OtRound};
 
 use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph};
@@ -525,22 +524,28 @@ fn postscript_names(
     designspace_dir: &Path,
 ) -> Result<HashMap<GlyphName, String>, WorkError> {
     let lib_plist = load_plist(&designspace_dir.join(&source.filename), "lib.plist")?;
-    let postscript_names = match lib_plist
-        .get("public.postscriptNames")
-        .map(Value::as_dictionary)
-    {
-        Some(Some(postscript_names)) => postscript_names
-            .iter()
-            .filter_map(|(glyph_name, ps_name)| match ps_name.as_string() {
-                Some(ps_name) => Some((GlyphName::from(glyph_name.as_str()), ps_name.to_owned())),
-                None => {
-                    warn!("public.postscriptNames: \"{glyph_name}\" has a non-string entry");
-                    None
-                }
-            })
-            .collect(),
-        Some(None) => {
-            todo!("public.postscriptNames is present, but not a dictionary");
+    let postscript_names = match lib_plist.get("public.postscriptNames") {
+        Some(value) => {
+            let postscript_names_lib = value.as_dictionary().ok_or_else(|| {
+                let mut plist_path = designspace_dir.join(&source.filename);
+                plist_path.push("lib.plist");
+                WorkError::ParseError(
+                    plist_path,
+                    String::from("public.postscriptNames isn't a dictionary"),
+                )
+            })?;
+            postscript_names_lib
+                .iter()
+                .filter_map(|(glyph_name, ps_name)| match ps_name.as_string() {
+                    Some(ps_name) => {
+                        Some((GlyphName::from(glyph_name.as_str()), ps_name.to_owned()))
+                    }
+                    None => {
+                        warn!("public.postscriptNames: \"{glyph_name}\" has a non-string entry");
+                        None
+                    }
+                })
+                .collect()
         }
         None => HashMap::new(),
     };
