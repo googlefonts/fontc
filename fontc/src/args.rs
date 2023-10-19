@@ -63,6 +63,10 @@ pub struct Args {
     // https://github.com/googlefonts/fontmake/blob/6a8b2907/Lib/fontmake/__main__.py#L443
     #[arg(long, default_value = "false")]
     pub keep_direction: bool,
+
+    /// Don't rename glyphs with production names
+    #[arg(long, default_value = "true")]
+    pub no_production_names: bool,
 }
 
 impl Args {
@@ -80,6 +84,7 @@ impl Args {
         );
         flags.set(Flags::EMIT_TIMING, self.emit_timing);
         flags.set(Flags::KEEP_DIRECTION, self.keep_direction);
+        flags.set(Flags::PRODUCTION_NAMES, !self.no_production_names);
 
         flags
     }

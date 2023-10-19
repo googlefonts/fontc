@@ -12,6 +12,7 @@ use fontdrasil::{
     types::{GlyphName, GroupName},
 };
 use fontir::ir::PostscriptNames;
+use fontir::orchestration::Flags;
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
@@ -804,7 +805,11 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
                 StyleMapStyle::BoldItalic => SelectionFlags::BOLD | SelectionFlags::ITALIC,
             };
 
-        let postscript_names = postscript_names(default_master, designspace_dir)?;
+        let postscript_names = if context.flags.contains(Flags::PRODUCTION_NAMES) {
+            postscript_names(default_master, designspace_dir)?
+        } else {
+            PostscriptNames::default()
+        };
 
         let mut static_metadata = StaticMetadata::new(
             units_per_em,
