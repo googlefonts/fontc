@@ -11,6 +11,7 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::{GlyphName, GroupName},
 };
+use fontir::ir::PostscriptNames;
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
@@ -522,7 +523,7 @@ fn glyph_order(
 fn postscript_names(
     source: &norad::designspace::Source,
     designspace_dir: &Path,
-) -> Result<HashMap<GlyphName, String>, WorkError> {
+) -> Result<PostscriptNames, WorkError> {
     let lib_plist = load_plist(&designspace_dir.join(&source.filename), "lib.plist")?;
     let postscript_names = match lib_plist.get("public.postscriptNames") {
         Some(value) => {
@@ -537,9 +538,10 @@ fn postscript_names(
             postscript_names_lib
                 .iter()
                 .filter_map(|(glyph_name, ps_name)| match ps_name.as_string() {
-                    Some(ps_name) => {
-                        Some((GlyphName::from(glyph_name.as_str()), ps_name.to_owned()))
-                    }
+                    Some(ps_name) => Some((
+                        GlyphName::from(glyph_name.as_str()),
+                        GlyphName::from(ps_name),
+                    )),
                     None => {
                         warn!("public.postscriptNames: \"{glyph_name}\" has a non-string entry");
                         None

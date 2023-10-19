@@ -6,7 +6,6 @@ use std::{
 use chrono::{DateTime, Utc};
 use filetime::FileTime;
 use font_types::Tag;
-use fontdrasil::types::GlyphName;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use write_fonts::tables::os2::SelectionFlags;
@@ -15,7 +14,8 @@ use crate::{
     coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
     ir::{
         Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
-        KernParticipant, Kerning, MiscMetadata, NameKey, NamedInstance, StaticMetadata,
+        KernParticipant, Kerning, MiscMetadata, NameKey, NamedInstance, PostscriptNames,
+        StaticMetadata,
     },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
@@ -60,7 +60,7 @@ pub(crate) struct StaticMetadataSerdeRepr {
     pub named_instances: Vec<NamedInstance>,
     pub glyph_locations: Vec<NormalizedLocation>,
     pub names: HashMap<NameKey, String>,
-    pub postscript_names: HashMap<GlyphName, String>,
+    pub postscript_names: PostscriptNames,
     pub misc: MiscSerdeRepr,
 }
 
