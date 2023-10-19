@@ -203,6 +203,18 @@ where
         self.value.read().get(id).cloned()
     }
 
+    /// A copy of all the entries in the map. Values are arc'd so they are cheap, though not free, copies.
+    pub fn all(&self) -> Vec<(I, Arc<T>)> {
+        self.value
+            .read()
+            .iter()
+            .map(|(id, v)| {
+                self.acl.assert_read_access(id);
+                (id.clone(), v.clone())
+            })
+            .collect()
+    }
+
     /// Read item that you are sure must exist. Panic if not.
     ///
     /// Intended for use in [Work] to access items present in

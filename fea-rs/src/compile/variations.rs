@@ -27,7 +27,7 @@ pub trait VariationInfo {
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), AnyError>;
 }
 
-type AnyError = Box<dyn std::error::Error>;
+pub type AnyError = Box<dyn std::error::Error>;
 
 /// A type that implements [`VariationInfo`], for testing and debugging.
 #[derive(Clone, Debug, Default)]

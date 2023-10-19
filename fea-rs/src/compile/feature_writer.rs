@@ -2,14 +2,14 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use fontdrasil::coords::NormalizedLocation;
 use smol_str::SmolStr;
 use write_fonts::tables::{
-    gpos::AnchorTable,
     layout::{LookupFlag, PendingVariationIndex},
     variations::VariationRegion,
 };
 
-use crate::common::{GlyphClass, MarkClass};
+use crate::common::GlyphClass;
 
 use super::{
     features::FeatureLookups,
@@ -30,7 +30,7 @@ pub struct FeatureBuilder<'a> {
     pub(crate) tables: &'a mut Tables,
     pub(crate) lookups: Vec<(LookupId, PositionLookup)>,
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
-    pub(crate) mark_classes: HashMap<SmolStr, MarkClass>,
+    pub(crate) mark_classes: HashMap<GlyphClass, HashMap<NormalizedLocation, (i16, i16)>>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
     // because there may already be defined filter sets from the root fea
     filter_set_id_start: usize,
@@ -77,7 +77,11 @@ impl<'a> FeatureBuilder<'a> {
         self.tables.gdef.as_ref()
     }
 
-    /// Define a new mark class, for use in mark-base and mark-mark rules.
+    /// Define a mark class with a variable anchor.
+    ///
+    /// Roughly equivalent to `markClass glyph|class <anchor x y> @name{};`
+    /// [markClass](https://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#4.f)
+    /// with a variable anchor record.
     ///
     /// TODO: do we want to ensure there are no redefinitions? do we want
     /// return an error? do we want to uphold any other invariants?
@@ -86,11 +90,40 @@ impl<'a> FeatureBuilder<'a> {
     /// I have no idea how best to approximate that in this API :/
     pub fn define_mark_class(
         &mut self,
-        class_name: impl Into<SmolStr>,
-        members: Vec<(GlyphClass, Option<AnchorTable>)>,
+        members: impl Into<GlyphClass>,
+        anchors: HashMap<NormalizedLocation, (i16, i16)>,
     ) {
-        self.mark_classes
-            .insert(class_name.into(), MarkClass { members });
+        // TODO: an error type
+        let members = members.into();
+        if self.mark_classes.insert(members, anchors).is_some() {
+            panic!("Multiple insertions for the same glyph class")
+        }
+    }
+
+    /// Setup a mark to base the recommended way: in a lookup of it's very own.
+    ///
+    /// Pseudo-fea:
+    ///
+    /// ```text
+    /// lookup name {
+    ///     pos base glyph|glyphclass <anchor x y> @markclass;
+    ///     // plus variations of anchor pos
+    /// }
+    ///
+    /// <https://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#6.d>
+    /// ```
+    pub fn add_mark_base_pos(
+        &mut self,
+        base: impl Into<GlyphClass>,
+        class: impl Into<GlyphClass>,
+        anchors: HashMap<NormalizedLocation, (i16, i16)>,
+    ) {
+        // TODO: an error type
+
+        // TODO populate the lookup
+        let lookup_id = self.add_lookup(LookupFlag::default(), None, Default::default());
+
+        //eprintln!("  lookup {lookup_name} {{\n    pos base {base_name} <anchor {} {}> @{class_name}; # TODO variable anchor;\n  }} {lookup_name};", default_anchor.0, default_anchor.1);
     }
 
     /// Create a new lookup.

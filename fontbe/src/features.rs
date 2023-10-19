@@ -18,14 +18,17 @@ use fea_rs::{
 use font_types::{GlyphId, Tag};
 use fontdrasil::{coords::NormalizedLocation, types::Axis};
 use fontir::{
-    ir::{Features, GlyphOrder, KernParticipant, Kerning, StaticMetadata},
+    ir::{Anchor, Features, GlyphAnchors, GlyphOrder, KernParticipant, Kerning, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
 };
 
 use log::{debug, error, trace, warn};
 use ordered_float::OrderedFloat;
 
-use fontdrasil::orchestration::{Access, Work};
+use fontdrasil::{
+    orchestration::{Access, Work},
+    types::GlyphName,
+};
 use write_fonts::{tables::gpos::ValueRecord, tables::layout::LookupFlag, OtRound};
 
 use crate::{
@@ -113,10 +116,49 @@ impl<'a> FeaVariationInfo<'a> {
     }
 }
 
+/// When generating mark features it's handy to know what is a base and what is a mark
+#[derive(Copy, Clone, Debug, PartialEq)]
+enum AnchorType {
+    Base,
+    Mark,
+}
+
+impl AnchorType {
+    fn group_name(&self, glyph_name: GlyphName) -> GlyphName {
+        match self {
+            AnchorType::Base => glyph_name,
+            AnchorType::Mark => glyph_name.as_str()[1..].into(),
+        }
+    }
+}
+
+trait AnchorInfo {
+    fn anchor_type(&self) -> AnchorType;
+}
+
+impl AnchorInfo for GlyphName {
+    fn anchor_type(&self) -> AnchorType {
+        // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
+        if self.as_str().starts_with('_') {
+            AnchorType::Mark
+        } else {
+            AnchorType::Base
+        }
+    }
+}
+
+#[derive(Default, Debug)]
+struct MarkGroup<'a> {
+    //glyph_name: GlyphName,
+    bases: Vec<(GlyphName, &'a Anchor)>,
+    marks: Vec<(GlyphName, &'a Anchor)>,
+}
+
 struct FeatureWriter<'a> {
     kerning: &'a Kerning,
     glyph_map: &'a GlyphOrder,
     static_metadata: &'a StaticMetadata,
+    raw_anchors: &'a Vec<(FeWorkId, Arc<GlyphAnchors>)>,
 }
 
 impl<'a> FeatureWriter<'a> {
@@ -124,28 +166,32 @@ impl<'a> FeatureWriter<'a> {
         static_metadata: &'a StaticMetadata,
         kerning: &'a Kerning,
         glyph_map: &'a GlyphOrder,
+        raw_anchors: &'a Vec<(FeWorkId, Arc<GlyphAnchors>)>,
     ) -> Self {
         FeatureWriter {
             kerning,
             static_metadata,
             glyph_map,
+            raw_anchors,
         }
     }
 
+    fn glyph_id(&self, glyph_name: &GlyphName) -> Option<GlyphId> {
+        self.glyph_map
+            .glyph_id(glyph_name)
+            .map(|val| Some(GlyphId::new(val as u16)))
+            .unwrap_or_default()
+    }
+
     //TODO: at least for kerning, we should be able to generate the lookups
-    //as a separate worktask, and then just add them at the end.
+    //as a separate worktask, and then just add them here.
     fn add_kerning_features(&self, builder: &mut FeatureBuilder) {
         if self.kerning.is_empty() {
             return;
         }
 
         // a little helper closure used below
-        let name_to_gid = |name| {
-            self.glyph_map
-                .glyph_id(name)
-                .map(|val| GlyphId::new(val as u16))
-                .unwrap_or(GlyphId::NOTDEF)
-        };
+        let name_to_gid = |name| self.glyph_id(name).unwrap_or(GlyphId::NOTDEF);
 
         // convert the groups stored in the Kerning object into the glyph classes
         // expected by fea-rs:
@@ -229,6 +275,187 @@ impl<'a> FeatureWriter<'a> {
         }
     }
 
+    /// Generate mark to base and mark to mark features
+    ///
+    /// Based on notes from f2f at W3C TPAC Spain and inspection of fea written by fontmake.
+    ///
+    /// Emit one lookup per mark class, it's simpler and may be more compact. See discussions in:
+    /// * <https://github.com/googlefonts/ufo2ft/issues/762>
+    /// * <https://github.com/googlefonts/ufo2ft/issues/591>
+    /// * <https://github.com/googlefonts/ufo2ft/issues/563>
+    //TODO: could we generate as a separate task, and then just add here.
+    fn add_marks(&self, builder: &mut FeatureBuilder) -> Result<(), Error> {
+        let mut anchors = HashMap::new();
+        for (work_id, arc_glyph_anchors) in self.raw_anchors {
+            let glyph_anchors: &GlyphAnchors = arc_glyph_anchors;
+            let FeWorkId::Anchor(glyph_name) = work_id else {
+                return Err(Error::ExpectedAnchor(work_id.clone()));
+            };
+            anchors.insert(glyph_name.clone(), glyph_anchors);
+        }
+
+        let mut groups: HashMap<GlyphName, MarkGroup> = Default::default();
+        for (glyph_name, glyph_anchors) in anchors.iter() {
+            // We assume the anchor list to be small
+            // considering only glyphs with anchors,
+            //  - glyphs with *only* base anchors are bases
+            //  - glyphs with *any* mark anchor are marks
+
+            let mut base = true; // TODO: only a base if user rules allow it
+            for anchor in glyph_anchors.anchors.iter() {
+                let anchor_type = anchor.name.anchor_type();
+                if anchor_type == AnchorType::Mark {
+                    base = false;
+
+                    // TODO: only if user rules allow us to be a mark
+                    groups
+                        .entry(anchor_type.group_name(anchor.name.clone()))
+                        .or_default()
+                        .marks
+                        .push(((glyph_name).clone(), anchor));
+                }
+            }
+
+            if base {
+                for anchor in glyph_anchors.anchors.iter() {
+                    let anchor_type = anchor.name.anchor_type();
+                    groups
+                        .entry(anchor_type.group_name(anchor.name.clone()))
+                        .or_default()
+                        .bases
+                        .push(((glyph_name).clone(), anchor));
+                }
+            }
+        }
+
+        // **** TODO: drive builder instead of generating a string ****
+
+        let mut classes = Vec::new();
+        let mut mark_to_bases = Vec::new();
+        let mut mark_to_marks = Vec::new();
+
+        for (group_name, group) in groups.iter() {
+            // write a mark class for every mark
+            for (glyph_name, mark) in group.marks.iter() {
+                let default_pos = mark.default_pos();
+                classes.push(format!(
+                    "markClass {} <anchor {} {}> @MC{}; # TODO variable anchor",
+                    glyph_name, default_pos.x, default_pos.y, mark.name
+                ));
+                // TODO error handling
+                let mark_gid = self.glyph_id(&mark.name).unwrap_or(GlyphId::NOTDEF);
+                let variations = mark
+                    .positions
+                    .iter()
+                    .map(|(loc, pos)| (loc.clone(), (pos.x.ot_round(), pos.y.ot_round())))
+                    .collect();
+                builder.define_mark_class(mark_gid, variations);
+            }
+
+            // if we have bases *and* marks emit mark to base
+            for (base_name, base) in group.bases.iter() {
+                let default_pos = base.default_pos();
+                let mark_name = &base.name;
+                let mark_class = format!("MC_{mark_name}");
+                let lookup_name = format!("mark2base_{base_name}_{group_name}");
+                let variations = base
+                    .positions
+                    .iter()
+                    .filter_map(|(loc, pos)| {
+                        if loc.has_any_non_zero() {
+                            Some((loc.clone(), (pos.x.ot_round(), pos.y.ot_round())))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                // TODO: arithmetic for pos
+                mark_to_bases.push(format!("  lookup {lookup_name} {{\n    pos base {base_name} <anchor {} {}> @MC_{mark_name}; # TODO variable anchor;\n  }} {lookup_name};", default_pos.x, default_pos.y));
+                builder.add_mark_base_pos(
+                    lookup_name,
+                    base_name.as_str(),
+                    mark_class,
+                    (default_pos.x.ot_round(), default_pos.y.ot_round()),
+                    variations,
+                );
+            }
+
+            // If a mark has anchors that are themselves marks what we got here is a mark to mark
+            let mut snippets = Vec::new();
+            let mut mark_names = Vec::new();
+            for (mark_name, mark_anchor) in group.marks.iter() {
+                let Some(glyph_anchors) = anchors.get(mark_name) else {
+                    continue;
+                };
+                let base_name = AnchorType::Mark.group_name(mark_anchor.name.clone()); // TODO Ew
+                let Some(anchor_my_anchor) =
+                    glyph_anchors.anchors.iter().find(|a| a.name == base_name)
+                else {
+                    eprintln!("No anchor_my_anchor for {base_name}");
+                    continue;
+                };
+                let Some((_, default_pos)) = anchor_my_anchor
+                    .positions
+                    .iter()
+                    .find(|(loc, _)| !loc.has_any_non_zero())
+                else {
+                    panic!("TODO return a useful error");
+                };
+                for glyph_anchor in glyph_anchors.anchors.iter() {
+                    if AnchorType::Mark != glyph_anchor.name.anchor_type() {
+                        continue;
+                    }
+                    //let group_name = AnchorType::Mark.group_name(mark_anchor.name.clone());
+                    if snippets.is_empty() {
+                        snippets.push(format!("  lookup mark2mark_{group_name} {{"));
+                        snippets.push("".to_string()); // placeholder for MarkFilteringSet
+                        snippets.push(format!(
+                            "    lookupflag UseMarkFilteringSet @MFS_mark2mark_{group_name};"
+                        ));
+                    }
+                    mark_names.push(mark_name.to_string());
+
+                    // TODO: arithmetic for pos
+                    snippets.push(format!(
+                        "    pos mark {} <anchor {} {}> mark @MC_{group_name};  # TODO variable anchor",
+                        mark_name, default_pos.x, default_pos.y
+                    ));
+                }
+            }
+
+            if !snippets.is_empty() {
+                mark_names.sort();
+                snippets[1] = format!(
+                    "    @MFS_mark2mark_{group_name} = [{}];",
+                    mark_names.join(" ")
+                );
+                snippets.push("  }".to_string());
+                mark_to_marks.push(snippets.join("\n"));
+            }
+        }
+
+        classes.sort();
+        for class in classes {
+            eprintln!("{class}");
+        }
+
+        mark_to_bases.sort();
+        eprintln!("\nfeature mark {{");
+        for mark_to_base in mark_to_bases {
+            eprintln!("{mark_to_base}");
+        }
+        eprintln!("}} mark;");
+
+        mark_to_marks.sort();
+        eprintln!("\nfeature mkmk {{");
+        for mark_to_mark in mark_to_marks {
+            eprintln!("{mark_to_mark}");
+        }
+        eprintln!("}} mkmk;");
+
+        todo!("Add marks")
+    }
+
     //NOTE: this is basically identical to the same method on FeaVariationInfo,
     //except they have slightly different inputs?
     fn resolve_variable_metric(
@@ -293,7 +520,7 @@ impl<'a> FeatureWriter<'a> {
 impl<'a> FeatureProvider for FeatureWriter<'a> {
     fn add_features(&self, builder: &mut FeatureBuilder) {
         self.add_kerning_features(builder);
-        //TODO: add mark features
+        self.add_marks(builder).unwrap(); // TODO where my error handling
     }
 }
 
@@ -418,9 +645,10 @@ impl FeatureWork {
         features: &Features,
         glyph_order: &GlyphOrder,
         kerning: &Kerning,
+        raw_anchors: &Vec<(FeWorkId, Arc<GlyphAnchors>)>,
     ) -> Result<Compilation, Error> {
         let var_info = FeaVariationInfo::new(static_metadata);
-        let feature_writer = FeatureWriter::new(static_metadata, kerning, glyph_order);
+        let feature_writer = FeatureWriter::new(static_metadata, kerning, glyph_order, raw_anchors);
         let fears_glyph_map = create_glyphmap(glyph_order);
         let compiler = match features {
             Features::File {
@@ -521,8 +749,9 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();
         let kerning = context.ir.kerning.get();
+        let anchors = context.ir.anchors.all();
 
-        let features = (*context.ir.features.get()).clone();
+        let features = (*context.ir.features.get()).clone(); // TODO does this need to be cloned?
 
         let result = self.compile(&static_metadata, &features, &glyph_order, &kerning);
         if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
