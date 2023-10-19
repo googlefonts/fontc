@@ -551,6 +551,19 @@ fn postscript_names(
         }
         None => HashMap::new(),
     };
+    // Warn about duplicate public.postscriptNames values
+    // Allocate space ahead of time for speed, and because in the happy path the set length will be
+    // the same as the map len
+    let mut duplicate_values_check = HashSet::with_capacity(postscript_names.len());
+    postscript_names
+        .values()
+        .filter(|ps_name| {
+            let ps_name = (*ps_name).clone();
+            !duplicate_values_check.insert(ps_name)
+        })
+        .for_each(|ps_name| {
+            warn!("public.postscriptNames: multiple glyphs have the postscript name \"{ps_name}\"");
+        });
     Ok(postscript_names)
 }
 
