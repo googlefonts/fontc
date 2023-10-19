@@ -831,6 +831,16 @@ pub struct Anchor {
     pub positions: HashMap<NormalizedLocation, Point>,
 }
 
+impl Anchor {
+    pub fn default_pos(&self) -> Point {
+        self.positions
+            .iter()
+            .find(|(loc, _)| !loc.has_any_non_zero())
+            .map(|(_, p)| *p)
+            .unwrap()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AnchorBuilder {
     glyph_name: GlyphName,

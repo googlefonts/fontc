@@ -11,22 +11,34 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{Compilation, FeatureBuilder, FeatureProvider, PairPosBuilder, VariationInfo},
+    compile::{
+        Compilation, FeatureBuilder, FeatureProvider, MarkToBaseBuilder, MarkToMarkBuilder,
+        PairPosBuilder, VariationInfo,
+    },
     parse::{SourceLoadError, SourceResolver},
     Compiler, GlyphClass, GlyphMap, GlyphName as FeaRsGlyphName,
 };
 use font_types::{GlyphId, Tag};
 use fontdrasil::{coords::NormalizedLocation, types::Axis};
 use fontir::{
-    ir::{Features, GlyphOrder, KernParticipant, Kerning, StaticMetadata},
+    ir::{Anchor, Features, GlyphAnchors, GlyphOrder, KernParticipant, Kerning, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
 };
 
 use log::{debug, error, trace, warn};
 use ordered_float::OrderedFloat;
 
-use fontdrasil::orchestration::{Access, Work};
-use write_fonts::{tables::gpos::ValueRecord, tables::layout::LookupFlag, OtRound};
+use fontdrasil::{
+    orchestration::{Access, Work},
+    types::GlyphName,
+};
+use read_fonts::tables::layout::DeltaFormat;
+use smol_str::SmolStr;
+use write_fonts::{
+    tables::{gpos::{AnchorFormat1, AnchorTable, ValueRecord, AnchorFormat3}, layout::{DeviceOrVariationIndex, Device}},
+    tables::layout::LookupFlag,
+    OtRound,
+};
 
 use crate::{
     error::Error,
@@ -113,10 +125,49 @@ impl<'a> FeaVariationInfo<'a> {
     }
 }
 
+/// When generating mark features it's handy to know what is a base and what is a mark
+#[derive(Copy, Clone, Debug, PartialEq)]
+enum AnchorType {
+    Base,
+    Mark,
+}
+
+impl AnchorType {
+    fn group_name(&self, glyph_name: GlyphName) -> GlyphName {
+        match self {
+            AnchorType::Base => glyph_name,
+            AnchorType::Mark => glyph_name.as_str()[1..].into(),
+        }
+    }
+}
+
+trait AnchorInfo {
+    fn anchor_type(&self) -> AnchorType;
+}
+
+impl AnchorInfo for GlyphName {
+    fn anchor_type(&self) -> AnchorType {
+        // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
+        if self.as_str().starts_with('_') {
+            AnchorType::Mark
+        } else {
+            AnchorType::Base
+        }
+    }
+}
+
+#[derive(Default, Debug)]
+struct MarkGroup<'a> {
+    //glyph_name: GlyphName,
+    bases: Vec<(GlyphName, &'a Anchor)>,
+    marks: Vec<(GlyphName, &'a Anchor)>,
+}
+
 struct FeatureWriter<'a> {
     kerning: &'a Kerning,
     glyph_map: &'a GlyphOrder,
     static_metadata: &'a StaticMetadata,
+    raw_anchors: &'a Vec<(FeWorkId, Arc<GlyphAnchors>)>,
 }
 
 impl<'a> FeatureWriter<'a> {
@@ -124,28 +175,32 @@ impl<'a> FeatureWriter<'a> {
         static_metadata: &'a StaticMetadata,
         kerning: &'a Kerning,
         glyph_map: &'a GlyphOrder,
+        raw_anchors: &'a Vec<(FeWorkId, Arc<GlyphAnchors>)>,
     ) -> Self {
         FeatureWriter {
             kerning,
             static_metadata,
             glyph_map,
+            raw_anchors,
         }
     }
 
+    fn glyph_id(&self, glyph_name: &GlyphName) -> Option<GlyphId> {
+        self.glyph_map
+            .glyph_id(glyph_name)
+            .map(|val| Some(GlyphId::new(val as u16)))
+            .unwrap_or_default()
+    }
+
     //TODO: at least for kerning, we should be able to generate the lookups
-    //as a separate worktask, and then just add them at the end.
+    //as a separate worktask, and then just add them here.
     fn add_kerning_features(&self, builder: &mut FeatureBuilder) {
         if self.kerning.is_empty() {
             return;
         }
 
         // a little helper closure used below
-        let name_to_gid = |name| {
-            self.glyph_map
-                .glyph_id(name)
-                .map(|val| GlyphId::new(val as u16))
-                .unwrap_or(GlyphId::NOTDEF)
-        };
+        let name_to_gid = |name| self.glyph_id(name).unwrap_or(GlyphId::NOTDEF);
 
         // convert the groups stored in the Kerning object into the glyph classes
         // expected by fea-rs:
@@ -219,14 +274,171 @@ impl<'a> FeatureWriter<'a> {
 
         // now we have a builder for the pairpos subtables, so we can make
         // a lookup:
-        let lookup_id = builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables]);
-        let kern = Tag::new(b"kern");
-        let lookups = vec![lookup_id];
-        // now register this feature for each of the default language systems
-        for langsys in builder.language_systems() {
-            let feature_key = langsys.to_feature_key(kern);
-            builder.add_feature(feature_key, lookups.clone());
+        let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables])];
+        builder.add_to_default_language_systems(Tag::new(b"kern"), &lookups)
+    }
+
+    /// Generate mark to base and mark to mark features
+    ///
+    /// Based on notes from f2f at W3C TPAC Spain and inspection of fea written by fontmake.
+    ///
+    /// Emit one lookup per mark class, it's simpler and may be more compact. See discussions in:
+    /// * <https://github.com/googlefonts/ufo2ft/issues/762>
+    /// * <https://github.com/googlefonts/ufo2ft/issues/591>
+    /// * <https://github.com/googlefonts/ufo2ft/issues/563>
+    //TODO: could we generate as a separate task, and then just add here.
+    fn add_marks(&self, builder: &mut FeatureBuilder) -> Result<(), Error> {
+        let mut anchors = HashMap::new();
+        for (work_id, arc_glyph_anchors) in self.raw_anchors {
+            let glyph_anchors: &GlyphAnchors = arc_glyph_anchors;
+            let FeWorkId::Anchor(glyph_name) = work_id else {
+                return Err(Error::ExpectedAnchor(work_id.clone()));
+            };
+            anchors.insert(glyph_name.clone(), glyph_anchors);
         }
+
+        let mut groups: HashMap<GlyphName, MarkGroup> = Default::default();
+        for (glyph_name, glyph_anchors) in anchors.iter() {
+            // We assume the anchor list to be small
+            // considering only glyphs with anchors,
+            //  - glyphs with *only* base anchors are bases
+            //  - glyphs with *any* mark anchor are marks
+
+            let mut base = true; // TODO: only a base if user rules allow it
+            for anchor in glyph_anchors.anchors.iter() {
+                let anchor_type = anchor.name.anchor_type();
+                if anchor_type == AnchorType::Mark {
+                    base = false;
+
+                    // TODO: only if user rules allow us to be a mark
+                    groups
+                        .entry(anchor_type.group_name(anchor.name.clone()))
+                        .or_default()
+                        .marks
+                        .push(((glyph_name).clone(), anchor));
+                }
+            }
+
+            if base {
+                for anchor in glyph_anchors.anchors.iter() {
+                    let anchor_type = anchor.name.anchor_type();
+                    groups
+                        .entry(anchor_type.group_name(anchor.name.clone()))
+                        .or_default()
+                        .bases
+                        .push(((glyph_name).clone(), anchor));
+                }
+            }
+        }
+
+        // Build the actual mark base and mark mark constructs using fea-rs builders
+
+        let mut mark_base_lookups = Vec::new();
+        let mut mark_mark_lookups = Vec::new();
+
+        for (group_name, group) in groups.iter() {
+            let mark_class_name: SmolStr = format!("MC_{group_name}").into();
+            
+            // if we have bases *and* marks produce mark to base            
+            if !group.bases.is_empty() && !group.marks.is_empty() {
+                for (base_name, base) in group.bases.iter() {
+                    let Some(base_gid) = self.glyph_id(base_name) else {
+                        return Err(Error::MissingGlyphId(base_name.clone()));
+                    };
+                    let mark_class: SmolStr = format!("MC_{}", base.name).into();
+                    let default_pos = base.default_pos();
+
+                    // TODO: fontmake seems to use Format3 but it does so in a way that makes
+                    // ttx that I can't seem to get ours to match. Maybe my test file is borked?
+                    let device = Device ::new(0, 0, &[0]);
+                    let anchor = AnchorTable::Format3(AnchorFormat3::new(
+                        default_pos.x.ot_round(),
+                        default_pos.y.ot_round(),
+                        Some(DeviceOrVariationIndex::Device(device.clone())),
+                        Some(DeviceOrVariationIndex::Device(device)),
+                    ));
+
+                    let mut mark_base = MarkToBaseBuilder::default();
+                    for (mark_name, _) in group.marks.iter() {
+                        let Some(mark_gid) = self.glyph_id(mark_name) else {
+                            return Err(Error::MissingGlyphId(mark_name.clone()));
+                        };
+                        mark_base.insert_mark(mark_gid, mark_class.clone(), anchor.clone())
+                            .map_err(Error::PreviouslyAssignedClass)?;
+                    }
+
+                    mark_base.insert_base(base_gid, &mark_class, anchor);
+
+                    // each in it's own lookup, whch differs from fontmake
+                    mark_base_lookups.push(builder.add_lookup(
+                        LookupFlag::default(),
+                        None,
+                        vec![mark_base],
+                    ));
+
+                    // TODO: variations
+                    // TODO how do you use self.resolve_variable_metric(values) on 2d values
+                }
+            }
+
+            // If a mark has anchors that are themselves marks what we got here is a mark to mark
+
+            let mut mark_mark = MarkToMarkBuilder::default();
+            let mut filter_set = Vec::new();
+
+            for (mark_name, mark_anchor) in group.marks.iter() {
+                let Some(glyph_anchors) = anchors.get(mark_name) else {
+                    continue;
+                };
+                if !glyph_anchors
+                    .anchors
+                    .iter()
+                    .any(|a| AnchorType::Mark == a.name.anchor_type())
+                {
+                    continue;
+                }
+                let Some(mark_gid) = self.glyph_id(mark_name) else {
+                    return Err(Error::MissingGlyphId(mark_name.clone()));
+                };
+
+                let base_name = AnchorType::Mark.group_name(mark_anchor.name.clone()); // TODO Ew
+                let Some(anchor_my_anchor) =
+                    glyph_anchors.anchors.iter().find(|a| a.name == base_name)
+                else {
+                    debug!("No anchor_my_anchor for {base_name}");
+                    continue;
+                };
+                let default_pos = anchor_my_anchor.default_pos();
+                let anchor = AnchorTable::Format1(AnchorFormat1::new(
+                    default_pos.x.ot_round(),
+                    default_pos.y.ot_round(),
+                ));
+
+                // TODO: variations
+                // TODO how do you use self.resolve_variable_metric(values) on 2d values
+
+                mark_mark
+                    .insert_mark1(mark_gid, mark_class_name.clone(), anchor)
+                    .map_err(Error::PreviouslyAssignedClass)?;
+                filter_set.push(mark_gid);
+            }
+            if !filter_set.is_empty() {
+                mark_mark_lookups.push(builder.add_lookup(
+                    LookupFlag::default(),
+                    Some(filter_set.into()),
+                    vec![mark_mark],
+                ));
+            }
+        }
+
+        if !mark_base_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_base_lookups);
+        }        
+        if !mark_mark_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
+        }        
+
+        Ok(())
     }
 
     //NOTE: this is basically identical to the same method on FeaVariationInfo,
@@ -293,7 +505,7 @@ impl<'a> FeatureWriter<'a> {
 impl<'a> FeatureProvider for FeatureWriter<'a> {
     fn add_features(&self, builder: &mut FeatureBuilder) {
         self.add_kerning_features(builder);
-        //TODO: add mark features
+        self.add_marks(builder).unwrap(); // TODO where my error handling
     }
 }
 
@@ -392,9 +604,10 @@ impl FeatureWork {
         features: &Features,
         glyph_order: &GlyphOrder,
         kerning: &Kerning,
+        raw_anchors: &Vec<(FeWorkId, Arc<GlyphAnchors>)>,
     ) -> Result<Compilation, Error> {
         let var_info = FeaVariationInfo::new(static_metadata);
-        let feature_writer = FeatureWriter::new(static_metadata, kerning, glyph_order);
+        let feature_writer = FeatureWriter::new(static_metadata, kerning, glyph_order, raw_anchors);
         let fears_glyph_map = create_glyphmap(glyph_order);
         let compiler = match features {
             Features::File {
@@ -494,13 +707,19 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();
+        let features = context.ir.features.get();
         let kerning = context.ir.kerning.get();
+        let anchors = context.ir.anchors.all();
 
-        let features = (*context.ir.features.get()).clone();
-
-        let result = self.compile(&static_metadata, &features, &glyph_order, &kerning);
+        let result = self.compile(
+            &static_metadata,
+            features.as_ref(),
+            glyph_order.as_ref(),
+            kerning.as_ref(),
+            anchors.as_ref(),
+        );
         if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
-            if let Features::Memory { fea_content, .. } = &features {
+            if let Features::Memory { fea_content, .. } = features.as_ref() {
                 write_debug_fea(context, result.is_err(), "compile failed", fea_content);
             }
         }
