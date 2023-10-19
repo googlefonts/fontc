@@ -39,11 +39,11 @@ use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,
     SubChainContextBuilder, SubContextBuilder,
 };
-pub use gpos::PreviouslyAssignedClass;
+
 use gpos::{
-    CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder,
-    SinglePosBuilder,
+    CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, SinglePosBuilder,
 };
+pub use gpos::{PairPosBuilder, PreviouslyAssignedClass};
 use gsub::{AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder};
 pub(crate) use helpers::ClassDefBuilder2;
 
@@ -84,6 +84,25 @@ pub(crate) enum PositionLookup {
     ChainedContextual(LookupBuilder<PosChainContextBuilder>),
 }
 
+// a litle helper to implement this conversion trait.
+//
+// Note: this is only used in the API for adding external features ( aka feature
+// writers) and so we only implement the conversion for the specific lookup types
+// that we want to allow the client to add externally.
+macro_rules! impl_into_pos_lookup {
+    ($builder:ty, $variant:ident) => {
+        impl From<LookupBuilder<$builder>> for PositionLookup {
+            fn from(src: LookupBuilder<$builder>) -> PositionLookup {
+                PositionLookup::$variant(src)
+            }
+        }
+    };
+}
+
+impl_into_pos_lookup!(PairPosBuilder, Pair);
+impl_into_pos_lookup!(MarkToBaseBuilder, MarkToBase);
+impl_into_pos_lookup!(MarkToMarkBuilder, MarkToMark);
+
 #[derive(Clone, Debug)]
 pub(crate) enum SubstitutionLookup {
     Single(LookupBuilder<SingleSubBuilder>),
@@ -103,10 +122,18 @@ pub(crate) enum SomeLookup {
     GsubContextual(ContextualLookupBuilder<SubstitutionLookup>),
 }
 
+/// IDs assigned to lookups during compilation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub(crate) enum LookupId {
+pub enum LookupId {
+    /// An id for a GPOS lookup
     Gpos(usize),
+    /// An id for a GSUB lookup
     Gsub(usize),
+    /// A temporary ID assigned to a lookup constructed by the client.
+    ///
+    /// This id will be remapped when the external features are merged into
+    /// the features generated from the FEA.
+    External(usize),
     /// Used when a named lookup block has no rules.
     ///
     /// We parse this, but then discard it immediately whenever it is referenced.
@@ -120,8 +147,9 @@ pub(crate) struct LookupFlagInfo {
     pub(crate) mark_filter_set: Option<FilterSetId>,
 }
 
+/// A feature associated with a particular script and language.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct FeatureKey {
+pub struct FeatureKey {
     pub(crate) feature: Tag,
     pub(crate) language: Tag,
     pub(crate) script: Tag,
@@ -157,7 +185,7 @@ impl<T: Default> LookupBuilder<T> {
         }
     }
 
-    fn new_with_lookups(
+    pub(crate) fn new_with_lookups(
         flags: LookupFlag,
         mark_set: Option<FilterSetId>,
         subtables: Vec<T>,
@@ -656,6 +684,7 @@ impl LookupId {
             LookupId::Gpos(idx) => idx,
             LookupId::Gsub(idx) => idx,
             LookupId::Empty => usize::MAX,
+            LookupId::External(idx) => idx,
         }
     }
 
@@ -1079,6 +1108,20 @@ impl Builder for PosSubBuilder<SubstitutionLookup> {
                 gsub.feature_variations = variations.into();
                 gsub
             })
+    }
+}
+
+impl FeatureKey {
+    /// Create a new feature key for the provided feature, language, and script.
+    ///
+    /// If you already have a [`LanguageSystem`], you can create a `FeatureKey`
+    /// with the [`LanguageSystem::to_feature_key`] method.
+    pub fn new(feature: Tag, language: Tag, script: Tag) -> Self {
+        FeatureKey {
+            feature,
+            language,
+            script,
+        }
     }
 }
 

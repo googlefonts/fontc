@@ -410,6 +410,7 @@ fn split_lookups(lookups: &[LookupId]) -> (Vec<u16>, Vec<u16>) {
             LookupId::Gpos(_) => gpos.push(lookup.to_gpos_id_or_die()),
             LookupId::Gsub(_) => gsub.push(lookup.to_gsub_id_or_die()),
             LookupId::Empty => (),
+            LookupId::External(_) => panic!("external lookups should not be present at split time"),
         }
     }
 
