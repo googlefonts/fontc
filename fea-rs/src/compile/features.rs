@@ -222,6 +222,19 @@ impl AllFeatures {
         result
     }
 
+    //FIXME: what do we do with conflicts?
+    pub(crate) fn merge_external_features(
+        &mut self,
+        features: BTreeMap<FeatureKey, FeatureLookups>,
+    ) {
+        for (key, lookups) in features {
+            self.get_or_insert(key).base.extend(lookups.base);
+            if !lookups.variations.is_empty() {
+                panic!("specifying feature variations from feature writer is not yet supported");
+            }
+        }
+    }
+
     #[cfg(test)]
     fn get_base(&self, key: &FeatureKey) -> Option<&[LookupId]> {
         self.features.get(key).map(|x| x.base.as_slice())

@@ -3,7 +3,11 @@
 use std::collections::{BTreeMap, HashMap};
 
 use smol_str::SmolStr;
-use write_fonts::tables::{gpos::AnchorTable, layout::LookupFlag};
+use write_fonts::tables::{
+    gpos::AnchorTable,
+    layout::{LookupFlag, PendingVariationIndex},
+    variations::VariationRegion,
+};
 
 use crate::common::{GlyphClass, MarkClass};
 
@@ -11,6 +15,7 @@ use super::{
     features::FeatureLookups,
     language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{FeatureKey, FilterSetId, LookupBuilder, LookupId, PositionLookup},
+    tables::Tables,
 };
 
 /// A trait that can be implemented by the client to do custom feature writing.
@@ -22,7 +27,8 @@ pub trait FeatureProvider {
 /// A structure that allows client code to add additional features to the compilation.
 pub struct FeatureBuilder<'a> {
     pub(crate) language_systems: &'a DefaultLanguageSystems,
-    pub(crate) lookups: Vec<PositionLookup>,
+    pub(crate) tables: &'a mut Tables,
+    pub(crate) lookups: Vec<(LookupId, PositionLookup)>,
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
     pub(crate) mark_classes: HashMap<SmolStr, MarkClass>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
@@ -47,10 +53,12 @@ pub struct ExternalGposLookup(PositionLookup);
 impl<'a> FeatureBuilder<'a> {
     pub(crate) fn new(
         language_systems: &'a DefaultLanguageSystems,
+        tables: &'a mut Tables,
         filter_set_id_start: usize,
     ) -> Self {
         Self {
             language_systems,
+            tables,
             lookups: Default::default(),
             features: Default::default(),
             mark_classes: Default::default(),
@@ -92,9 +100,22 @@ impl<'a> FeatureBuilder<'a> {
     ) -> LookupId {
         let filter_set_id = filter_set.map(|cls| self.get_filter_set_id(cls));
         let lookup = T::to_pos_lookup(flags, filter_set_id, subtables);
-        let next_id = self.lookups.len();
-        self.lookups.push(lookup.0);
-        LookupId::External(next_id)
+        let next_id = LookupId::External(self.lookups.len());
+        self.lookups.push((next_id, lookup.0));
+        next_id
+    }
+
+    /// Add a set of deltas to the `ItemVariationStore`.
+    ///
+    /// Returns a `PendingVariationIndex` which should be stored whereever a
+    /// `VariationIndex` table would be expected (it will be remapped during
+    /// compilation).
+    pub fn add_deltas<T: Into<i32>>(
+        &mut self,
+        deltas: Vec<(VariationRegion, T)>,
+    ) -> PendingVariationIndex {
+        let delta_set_id = self.tables.var_store().add_deltas(deltas);
+        PendingVariationIndex { delta_set_id }
     }
 
     /// Create a new feature, registered for a particular language system.

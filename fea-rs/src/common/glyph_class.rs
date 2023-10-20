@@ -29,15 +29,16 @@ impl<'a> std::iter::IntoIterator for &'a GlyphClass {
 }
 
 impl GlyphClass {
-    pub fn items(&self) -> &[GlyphId] {
+    pub(crate) fn items(&self) -> &[GlyphId] {
         &self.0
     }
 
+    /// Return a new, empty glyph class
     pub fn empty() -> Self {
         Self(Rc::new([]))
     }
 
-    pub fn sort_and_dedupe(&self) -> GlyphClass {
+    pub(crate) fn sort_and_dedupe(&self) -> GlyphClass {
         //idfk I guess this is fine
         let mut vec = self.0.iter().cloned().collect::<Vec<_>>();
         vec.sort_unstable();
@@ -45,11 +46,11 @@ impl GlyphClass {
         GlyphClass(vec.into())
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
         self.items().iter().copied()
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
 }
