@@ -48,3 +48,6 @@ members = [
     "ufo2fontir",
     "fontc",
 ]
+
+[patch.crates-io]
+fea-rs = { git = "https://github.com/cmyr/fea-rs.git", branch = "public-feature-builder-api" }

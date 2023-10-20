@@ -21,6 +21,10 @@ impl GlyphName {
     pub fn empty() -> GlyphName {
         "".into()
     }
+
+    pub fn into_inner(self) -> SmolStr {
+        self.0
+    }
 }
 
 impl From<String> for GlyphName {

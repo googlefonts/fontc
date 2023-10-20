@@ -11,20 +11,24 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{AxisLocation, Compilation, VariationInfo},
+    compile::{
+        AxisLocation, Compilation, FeatureBuilder, FeatureProvider, PairPosBuilder, VariationInfo,
+    },
     parse::{SourceLoadError, SourceResolver},
-    Compiler, GlyphMap, GlyphName as FeaRsGlyphName,
+    Compiler, GlyphClass, GlyphMap, GlyphName as FeaRsGlyphName,
 };
-use font_types::{F2Dot14, Tag};
+use font_types::{F2Dot14, GlyphId, Tag};
 use fontir::{
     coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
     ir::{Axis, Features, GlyphOrder, KernParticipant, Kerning, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
 };
+
 use log::{debug, error, trace, warn};
+use ordered_float::OrderedFloat;
 
 use fontdrasil::orchestration::{Access, Work};
-use write_fonts::OtRound;
+use write_fonts::{tables::gpos::ValueRecord, tables::layout::LookupFlag, OtRound};
 
 use crate::{
     error::Error,
@@ -145,6 +149,190 @@ impl<'a> FeaVariationInfo<'a> {
                 (*tag, pos)
             })
             .collect()
+    }
+}
+
+struct FeatureWriter<'a> {
+    kerning: &'a Kerning,
+    glyph_map: &'a GlyphOrder,
+    static_metadata: &'a StaticMetadata,
+}
+
+impl<'a> FeatureWriter<'a> {
+    fn new(
+        static_metadata: &'a StaticMetadata,
+        kerning: &'a Kerning,
+        glyph_map: &'a GlyphOrder,
+    ) -> Self {
+        FeatureWriter {
+            kerning,
+            static_metadata,
+            glyph_map,
+        }
+    }
+
+    //TODO: at least for kerning, we should be able to generate the lookups
+    //as a separate worktask, and then just add them at the end.
+    fn add_kerning_features(&self, builder: &mut FeatureBuilder) {
+        if self.kerning.is_empty() {
+            return;
+        }
+
+        // a little helper closure used below
+        let name_to_gid = |name| {
+            self.glyph_map
+                .glyph_id(name)
+                .map(|val| GlyphId::new(val as u16))
+                .unwrap_or(GlyphId::NOTDEF)
+        };
+
+        // convert the groups stored in the Kerning object into the glyph classes
+        // expected by fea-rs:
+        let glyph_classes = self
+            .kerning
+            .groups
+            .iter()
+            .map(|(class_name, glyph_set)| {
+                let glyph_class: GlyphClass = glyph_set
+                    .iter()
+                    .map(|name| GlyphId::new(self.glyph_map.glyph_id(name).unwrap_or(0) as u16))
+                    .collect();
+                (class_name, glyph_class)
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut ppos_subtables = PairPosBuilder::default();
+
+        // now for each kerning entry, directly add a rule to the builder:
+        for ((left, right), values) in &self.kerning.kerns {
+            let (default_value, deltas) = self
+                .resolve_variable_metric(values)
+                .expect("FIGURE OUT ERRORS");
+
+            let mut x_adv_record = ValueRecord::new().with_x_advance(default_value);
+            let empty_record = ValueRecord::default();
+
+            if !deltas.is_empty() {
+                let var_idx = builder.add_deltas(deltas);
+                x_adv_record = x_adv_record.with_x_advance_device(var_idx);
+            }
+
+            match (left, right) {
+                (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
+                    let gid0 = name_to_gid(left);
+                    let gid1 = name_to_gid(right);
+                    ppos_subtables.insert_pair(gid0, x_adv_record, gid1, empty_record);
+                }
+                (KernParticipant::Group(left), KernParticipant::Group(right)) => {
+                    let left = glyph_classes.get(left).unwrap().clone();
+                    let right = glyph_classes.get(right).unwrap().clone();
+                    ppos_subtables.insert_classes(left, x_adv_record, right, empty_record);
+                }
+                // if groups are mixed with glyphs then we enumerate the group
+                (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
+                    let gid0 = name_to_gid(left);
+                    let right = glyph_classes.get(right).unwrap();
+                    for gid1 in right {
+                        ppos_subtables.insert_pair(
+                            gid0,
+                            x_adv_record.clone(),
+                            *gid1,
+                            empty_record.clone(),
+                        );
+                    }
+                }
+                (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
+                    let left = glyph_classes.get(left).unwrap();
+                    let gid1 = name_to_gid(right);
+                    for gid0 in left {
+                        ppos_subtables.insert_pair(
+                            *gid0,
+                            x_adv_record.clone(),
+                            gid1,
+                            empty_record.clone(),
+                        );
+                    }
+                }
+            }
+        }
+
+        // now we have a builder for the pairpos subtables, so we can make
+        // a lookup:
+        let lookup_id = builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables]);
+        let kern = Tag::new(b"kern");
+        let lookups = vec![lookup_id];
+        // now register this feature for each of the default language systems
+        for langsys in builder.language_systems() {
+            let feature_key = langsys.to_feature_key(kern);
+            builder.add_feature(feature_key, lookups.clone());
+        }
+    }
+
+    //NOTE: this is basically identical to the same method on FeaVariationInfo,
+    //except they have slightly different inputs?
+    fn resolve_variable_metric(
+        &self,
+        values: &BTreeMap<NormalizedLocation, OrderedFloat<f32>>,
+    ) -> Result<
+        (
+            i16,
+            Vec<(write_fonts::tables::variations::VariationRegion, i16)>,
+        ),
+        Error,
+    > {
+        let var_model = &self.static_metadata.variation_model;
+
+        let point_seqs = values
+            .iter()
+            .map(|(pos, value)| (pos.to_owned(), vec![value.0 as f64]))
+            .collect();
+        let raw_deltas: Vec<_> = var_model
+            .deltas(&point_seqs)
+            .expect("FIXME: MAKE OUR ERROR TYPE SUPPORT ? HERE")
+            .into_iter()
+            .map(|(region, values)| {
+                assert!(values.len() == 1, "{} values?!", values.len());
+                (region, values[0])
+            })
+            .collect();
+
+        let default_value: i16 = raw_deltas
+            .iter()
+            .filter_map(|(region, value)| {
+                let scaler = region.scalar_at(&var_model.default).into_inner();
+                match scaler {
+                    scaler if scaler == 0.0 => None,
+                    scaler => Some(scaler * *value as f32),
+                }
+            })
+            .sum::<f32>()
+            .ot_round();
+
+        let mut deltas = Vec::with_capacity(raw_deltas.len());
+        for (region, value) in raw_deltas.iter().filter(|(r, _)| !r.is_default()) {
+            // https://learn.microsoft.com/en-us/typography/opentype/spec/otvarcommonformats#variation-regions
+            // Array of region axis coordinates records, in the order of axes given in the 'fvar' table.
+            let mut region_axes = Vec::with_capacity(self.static_metadata.axes.len());
+            for axis in self.static_metadata.axes.iter() {
+                let Some(tent) = region.get(&axis.tag) else {
+                    todo!("FIXME: add this error conversion!")
+                };
+                region_axes.push(tent.to_region_axis_coords());
+            }
+            deltas.push((
+                write_fonts::tables::variations::VariationRegion { region_axes },
+                value.ot_round(),
+            ));
+        }
+
+        Ok((default_value, deltas))
+    }
+}
+
+impl<'a> FeatureProvider for FeatureWriter<'a> {
+    fn add_features(&self, builder: &mut FeatureBuilder) {
+        self.add_kerning_features(builder);
+        //TODO: add mark features
     }
 }
 
@@ -284,15 +472,18 @@ impl FeatureWork {
         &self,
         static_metadata: &StaticMetadata,
         features: &Features,
-        glyph_order: GlyphMap,
+        glyph_order: &GlyphOrder,
+        kerning: &Kerning,
     ) -> Result<Compilation, Error> {
         let var_info = FeaVariationInfo::new(static_metadata);
+        let feature_writer = FeatureWriter::new(static_metadata, kerning, &glyph_order);
+        let fears_glyph_map = create_glyphmap(glyph_order);
         let compiler = match features {
             Features::File {
                 fea_file,
                 include_dir,
             } => {
-                let mut compiler = Compiler::new(OsString::from(fea_file), &glyph_order);
+                let mut compiler = Compiler::new(OsString::from(fea_file), &fears_glyph_map);
                 if let Some(include_dir) = include_dir {
                     compiler = compiler.with_project_root(include_dir)
                 }
@@ -304,7 +495,7 @@ impl FeatureWork {
             } => {
                 let root = OsString::new();
                 let mut compiler =
-                    Compiler::new(root.clone(), &glyph_order).with_resolver(InMemoryResolver {
+                    Compiler::new(root.clone(), &fears_glyph_map).with_resolver(InMemoryResolver {
                         content_path: root,
                         content: Arc::from(fea_content.as_str()),
                         include_dir: include_dir.clone(),
@@ -316,7 +507,8 @@ impl FeatureWork {
             }
             Features::Empty => panic!("compile isn't supposed to be called for Empty"),
         }
-        .with_variable_info(&var_info);
+        .with_variable_info(&var_info)
+        .with_feature_writer(&feature_writer);
         compiler.compile().map_err(Error::FeaCompileError)
     }
 }
@@ -351,154 +543,6 @@ fn create_glyphmap(glyph_order: &GlyphOrder) -> GlyphMap {
         .collect()
 }
 
-fn push_identifier(fea: &mut String, identifier: &KernParticipant) {
-    match identifier {
-        KernParticipant::Glyph(name) => fea.push_str(name.as_str()),
-        KernParticipant::Group(name) => {
-            fea.push('@');
-            fea.push_str(name.as_str());
-        }
-    }
-}
-
-#[inline]
-fn enumerated(kp1: &KernParticipant, kp2: &KernParticipant) -> bool {
-    // Glyph to class or class to glyph pairs are interpreted as 'class exceptions' to class pairs
-    // and are thus prefixed with 'enum' keyword so they will be enumerated as specific glyph-glyph pairs.
-    // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#6bii-enumerating-pairs
-    // https://github.com/googlefonts/ufo2ft/blob/b3895a9/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L360
-    kp1.is_group() ^ kp2.is_group()
-}
-
-/// Create a single variable fea describing the kerning for the entire variation space.
-///
-/// No merge baby! - [context](https://github.com/fonttools/fonttools/issues/3168#issuecomment-1608787520)
-///
-/// To match existing behavior, all kerns must have values for all locations for which any kerning is specified.
-/// See <https://github.com/fonttools/fonttools/issues/3168#issuecomment-1603631080> for more.
-/// Missing values are populated using the <https://unifiedfontobject.org/versions/ufo3/kerning.plist/#kerning-value-lookup-algorithm>.
-/// In future it is likely sparse kerning - blanks filled by interpolation - will be permitted.
-///
-/// * See <https://github.com/fonttools/fonttools/issues/3168> wrt sparse kerning.
-/// * See <https://github.com/adobe-type-tools/afdko/pull/1350> wrt variable fea.
-fn create_kerning_fea(kerning: &Kerning) -> Result<String, Error> {
-    // Every kern must be defined at these locations. For human readability lets order things consistently.
-    let kerned_locations: HashSet<_> = kerning.kerns.values().flat_map(|v| v.keys()).collect();
-    let mut kerned_locations: Vec<_> = kerned_locations.into_iter().collect();
-    kerned_locations.sort();
-
-    if log::log_enabled!(log::Level::Trace) {
-        trace!(
-            "The following {} locations have kerning:",
-            kerned_locations.len()
-        );
-        for pos in kerned_locations.iter() {
-            trace!("  {pos:?}");
-        }
-    }
-
-    // For any kern that is incompletely specified fill in the missing values using UFO kerning lookup
-    // Not 100% sure if this is correct for .glyphs but lets start there
-    // Generate variable format kerning per https://github.com/adobe-type-tools/afdko/pull/1350
-    // Use design values per discussion on https://github.com/harfbuzz/boring-expansion-spec/issues/94
-    let mut fea = String::new();
-    fea.reserve(8192); // TODO is this a good value?
-    fea.push_str("\n\n# fontc generated kerning\n\n");
-
-    if kerning.is_empty() {
-        return Ok(fea);
-    }
-
-    // TODO eliminate singleton groups, e.g. @public.kern1.Je-cy = [Je-cy];
-
-    // 1) Generate classes (http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#2.g.ii)
-    // @classname = [glyph1 glyph2 glyph3];
-    for (name, members) in kerning.groups.iter() {
-        fea.push('@');
-        fea.push_str(name.as_str());
-        fea.push_str(" = [");
-        for member in members {
-            fea.push_str(member.as_str());
-            fea.push(' ');
-        }
-        fea.remove(fea.len() - 1);
-        fea.push_str("];\n");
-    }
-    fea.push_str("\n\n");
-
-    // 2) Generate pairpos (http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#6.b)
-    // it's likely that many kerns use the same location string, might as well remember the string edition
-
-    let mut pos_strings = HashMap::new();
-    fea.push_str("feature kern {\n");
-    for ((participant1, participant2), values) in kerning.kerns.iter() {
-        fea.push_str("  ");
-        if enumerated(participant1, participant2) {
-            fea.push_str("enum ");
-        }
-        fea.push_str("pos ");
-        push_identifier(&mut fea, participant1);
-        fea.push(' ');
-        push_identifier(&mut fea, participant2);
-
-        // See https://github.com/adobe-type-tools/afdko/pull/1350#issuecomment-845219109 for syntax
-        // <value>n for normalized, per https://github.com/harfbuzz/boring-expansion-spec/issues/94#issuecomment-1608007111
-        fea.push_str(" (");
-        for location in kerned_locations.iter() {
-            // TODO can we skip some values by dropping where value == interpolated value?
-            let advance_adjustment = values
-                .get(location)
-                .map(|f| f.into_inner())
-                // TODO: kerning lookup
-                .unwrap_or_else(|| 0.0);
-
-            let pos_str = pos_strings.entry(*location).or_insert_with(|| {
-                location
-                    .iter()
-                    .map(|(tag, value)| format!("{tag}={}n", value.into_inner()))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            });
-
-            fea.push_str(pos_str);
-            fea.push(':');
-            fea.push_str(&format!("{} ", advance_adjustment));
-        }
-        fea.remove(fea.len() - 1);
-        fea.push_str(");\n");
-    }
-    fea.push_str("} kern;\n");
-
-    Ok(fea)
-}
-
-fn integrate_kerning(features: &Features, kern_fea: String) -> Result<Features, Error> {
-    // TODO: insert at proper spot, there's a magic marker that might be present
-    match features {
-        Features::Empty => Ok(Features::Memory {
-            fea_content: kern_fea,
-            include_dir: None,
-        }),
-        Features::Memory {
-            fea_content,
-            include_dir,
-        } => Ok(Features::Memory {
-            fea_content: format!("{fea_content}{kern_fea}"),
-            include_dir: include_dir.clone(),
-        }),
-        Features::File {
-            fea_file,
-            include_dir,
-        } => {
-            let fea_content = fs::read_to_string(fea_file).map_err(Error::IoError)?;
-            Ok(Features::Memory {
-                fea_content: format!("{fea_content}{kern_fea}"),
-                include_dir: include_dir.clone(),
-            })
-        }
-    }
-}
-
 impl Work<Context, AnyWorkId, Error> for FeatureWork {
     fn id(&self) -> AnyWorkId {
         WorkId::Features.into()
@@ -526,12 +570,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
         let glyph_order = context.ir.glyph_order.get();
         let kerning = context.ir.kerning.get();
 
-        let features = if !kerning.is_empty() {
-            let kern_fea = create_kerning_fea(&kerning)?;
-            integrate_kerning(&context.ir.features.get(), kern_fea)?
-        } else {
-            (*context.ir.features.get()).clone()
-        };
+        let features = (*context.ir.features.get()).clone();
 
         if !matches!(features, Features::Empty) {
             if log::log_enabled!(log::Level::Trace) {
@@ -540,8 +579,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
                 }
             }
 
-            let glyph_map = create_glyphmap(glyph_order.as_ref());
-            let result = self.compile(&static_metadata, &features, glyph_map);
+            let result = self.compile(&static_metadata, &features, &glyph_order, &kerning);
             if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
                 if let Features::Memory { fea_content, .. } = &features {
                     write_debug_fea(context, result.is_err(), "compile failed", fea_content);
