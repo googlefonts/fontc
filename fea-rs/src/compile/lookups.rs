@@ -140,6 +140,19 @@ pub enum LookupId {
     Empty,
 }
 
+/// A struct that remaps initial lookup ids to their final values.
+///
+/// LookupIds can need adjusting in a number of cases:
+/// - if the 'aalt' feature is present it causes additional lookups to be
+///   inserted at the start of the GSUB lookup list
+/// - FEA code can indicate with inline comments where additional lookups
+///   should be inserted
+#[derive(Clone, Debug, Default)]
+pub(crate) struct LookupIdMap {
+    // we could consider having this store the final values as u16?
+    mapping: HashMap<LookupId, LookupId>,
+}
+
 /// Tracks the current lookupflags state
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct LookupFlagInfo {
@@ -619,7 +632,20 @@ impl AllLookups {
         for lookup in self.gpos.iter_mut() {
             lookup.update_variation_index_tables(key_map);
         }
-        //
+    }
+
+    /// Returns a map that must be used to remap the ids in any features where
+    /// they were used.
+    pub(crate) fn merge_external_lookups(
+        &mut self,
+        lookups: Vec<(LookupId, PositionLookup)>,
+    ) -> LookupIdMap {
+        let mut map = LookupIdMap::default();
+        for (temp_id, lookup) in lookups {
+            let final_id = self.push(SomeLookup::GposLookup(lookup));
+            map.insert(temp_id, final_id);
+        }
+        map
     }
 
     pub(crate) fn build(
@@ -706,6 +732,16 @@ impl LookupId {
             panic!("this *really* shouldn't happen")
         };
         x.try_into().unwrap()
+    }
+}
+
+impl LookupIdMap {
+    fn insert(&mut self, from: LookupId, to: LookupId) {
+        self.mapping.insert(from, to);
+    }
+
+    pub(crate) fn get(&self, id: LookupId) -> LookupId {
+        self.mapping.get(&id).copied().unwrap_or(id)
     }
 }
 

@@ -245,10 +245,20 @@ impl<'a> CompilationCtx<'a> {
             return;
         };
 
-        let mut builder =
-            FeatureBuilder::new(&self.default_lang_systems, self.mark_filter_sets.len());
+        let mut builder = FeatureBuilder::new(
+            &self.default_lang_systems,
+            &mut self.tables,
+            self.mark_filter_sets.len(),
+        );
         writer.add_features(&mut builder);
-        todo!("now actually try to merge in the generated features?");
+
+        // now we need to merge in the newly generated features.
+        let id_map = self.lookups.merge_external_lookups(builder.lookups);
+        builder
+            .features
+            .values_mut()
+            .for_each(|feat| feat.base.iter_mut().for_each(|id| *id = id_map.get(*id)));
+        self.features.merge_external_features(builder.features);
     }
 
     /// Infer/update GDEF table as required.
