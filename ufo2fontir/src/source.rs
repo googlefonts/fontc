@@ -1282,6 +1282,7 @@ mod tests {
     };
     use norad::designspace;
 
+    use fontir::error::WorkError;
     use pretty_assertions::assert_eq;
     use write_fonts::types::NameId;
 
@@ -1826,6 +1827,113 @@ mod tests {
                 (GlyphName::from("foo"), GlyphName::from("bar")),
                 (GlyphName::from("baz"), GlyphName::from("qux")),
                 (GlyphName::from("lorem"), GlyphName::from("ipsum")),
+            ]),
+        );
+    }
+
+    #[test]
+    fn postscript_names_not_dictionary() {
+        // Given
+        let lib_plist = {
+            let mut outer = plist::Dictionary::new();
+            outer.insert(
+                String::from("public.postscriptNames"),
+                plist::Value::Boolean(false),
+            );
+            outer
+        };
+
+        // When
+        let err = postscript_names(&lib_plist).expect_err("postscript names should fail");
+
+        // Then
+        assert!(
+            matches!(err, WorkError::ParseError(_, _)),
+            "incorrect error variant"
+        );
+    }
+
+    #[test]
+    fn postscript_names_drop_duplicates() {
+        // Given
+        let lib_plist = {
+            let mut outer = plist::Dictionary::new();
+            let mut inner = plist::Dictionary::new();
+            inner.extend([
+                (String::from("foo"), String::from("bar").into()),
+                (String::from("foo"), String::from("qux").into()),
+                (String::from("lorem"), String::from("ipsum").into()),
+            ]);
+            outer.insert(String::from("public.postscriptNames"), inner.into());
+            outer
+        };
+
+        // When
+        let postscript_names =
+            postscript_names(&lib_plist).expect("postscript names should be parsed");
+
+        // Then
+        assert_eq!(
+            postscript_names,
+            HashMap::from_iter([
+                (GlyphName::from("foo"), GlyphName::from("qux")),
+                (GlyphName::from("lorem"), GlyphName::from("ipsum")),
+            ]),
+        );
+    }
+
+    #[test]
+    fn postscript_names_drops_non_strings() {
+        // Given
+        let lib_plist = {
+            let mut outer = plist::Dictionary::new();
+            let mut inner = plist::Dictionary::new();
+            inner.extend([
+                (String::from("foo"), String::from("bar").into()),
+                (String::from("baz"), 12f32.into()),
+                (String::from("lorem"), true.into()),
+            ]);
+            outer.insert(String::from("public.postscriptNames"), inner.into());
+            outer
+        };
+
+        // When
+        let postscript_names =
+            postscript_names(&lib_plist).expect("postscript names should be parsed");
+
+        // Then
+        assert_eq!(
+            postscript_names,
+            HashMap::from_iter([(GlyphName::from("foo"), GlyphName::from("bar"))]),
+        );
+    }
+
+    #[test]
+    fn postscript_names_allows_duplicate_values() {
+        // Given
+        let lib_plist = {
+            let mut outer = plist::Dictionary::new();
+            let mut inner = plist::Dictionary::new();
+            inner.extend([
+                (String::from("foo"), String::from("bar").into()),
+                (String::from("baz"), String::from("bar").into()),
+                (String::from("lorem"), String::from("bar").into()),
+            ]);
+            outer.insert(String::from("public.postscriptNames"), inner.into());
+            outer
+        };
+
+        // When
+        let postscript_names =
+            postscript_names(&lib_plist).expect("postscript names should be parsed");
+
+        // Then
+        assert_eq!(
+            postscript_names,
+            HashMap::from_iter([
+                (GlyphName::from("foo"), GlyphName::from("bar")),
+                (GlyphName::from("baz"), GlyphName::from("bar")),
+                (GlyphName::from("lorem"), GlyphName::from("bar")),
             ]),
         );
     }
