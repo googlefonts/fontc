@@ -548,15 +548,16 @@ fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, Wo
     // Allocate space ahead of time for speed, and because in the happy path the set length will be
     // the same as the map len
     let mut duplicate_values_check = HashSet::with_capacity(postscript_names.len());
-    postscript_names
+    let duplicate_values = postscript_names
         .values()
         .filter(|ps_name| {
             let ps_name = (*ps_name).clone();
             !duplicate_values_check.insert(ps_name)
         })
-        .for_each(|ps_name| {
-            warn!("public.postscriptNames: multiple glyphs have the postscript name \"{ps_name}\"");
-        });
+        .collect::<BTreeSet<_>>();
+    if !duplicate_values.is_empty() {
+        warn!("public.postscriptNames: the following production names are used by multiple glyphs: {duplicate_values:?}");
+    }
     Ok(postscript_names)
 }
 
