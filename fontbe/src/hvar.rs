@@ -11,10 +11,7 @@ use write_fonts::{
     dump_table,
     tables::{
         hvar::Hvar,
-        variations::{
-            ivs_builder::{DirectVariationStoreBuilder, VariationStoreBuilder},
-            DeltaSetIndexMap, VariationRegion,
-        },
+        variations::{ivs_builder::VariationStoreBuilder, DeltaSetIndexMap, VariationRegion},
     },
     OtRound,
 };
@@ -103,7 +100,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         let mut var_idxes = Vec::new();
 
         let direct_store = if single_model {
-            let mut direct_builder = DirectVariationStoreBuilder::default();
+            let mut direct_builder = VariationStoreBuilder::new_with_implicit_indices();
             for deltas in &all_glyph_width_deltas {
                 var_idxes.push(direct_builder.add_deltas(deltas.clone()));
             }
@@ -112,12 +109,13 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                 mem::take(&mut var_idxes),
                 (0..glyph_order.len() as u32).collect::<Vec<_>>()
             );
-            Some(direct_builder.build())
+            // we don't use the returned (identity) map in this case
+            Some(direct_builder.build().0)
         } else {
             None
         };
 
-        let mut indirect_builder = VariationStoreBuilder::default();
+        let mut indirect_builder = VariationStoreBuilder::new();
         for deltas in all_glyph_width_deltas {
             var_idxes.push(indirect_builder.add_deltas(deltas));
         }
