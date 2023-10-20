@@ -482,14 +482,12 @@ fn load_plist(ufo_dir: &Path, name: &str) -> Result<plist::Dictionary, WorkError
 
 // Per https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044596662
 fn glyph_order(
-    source: &norad::designspace::Source,
-    designspace_dir: &Path,
+    lib_plist: &plist::Dictionary,
     glyph_names: &HashSet<GlyphName>,
 ) -> Result<GlyphOrder, WorkError> {
     // The UFO at the default master *may* elect to specify a glyph order
     // That glyph order *may* deign to overlap with the actual glyph set
     let mut glyph_order = GlyphOrder::new();
-    let lib_plist = load_plist(&designspace_dir.join(&source.filename), "lib.plist")?;
     if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
         let mut pending_add: HashSet<_> = glyph_names.clone();
         // Add names from ufo glyph order union glyph_names in ufo glyph order
@@ -521,18 +519,12 @@ fn glyph_order(
     Ok(glyph_order)
 }
 
-fn postscript_names(
-    source: &norad::designspace::Source,
-    designspace_dir: &Path,
-) -> Result<PostscriptNames, WorkError> {
-    let lib_plist = load_plist(&designspace_dir.join(&source.filename), "lib.plist")?;
+fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, WorkError> {
     let postscript_names = match lib_plist.get("public.postscriptNames") {
         Some(value) => {
             let postscript_names_lib = value.as_dictionary().ok_or_else(|| {
-                let mut plist_path = designspace_dir.join(&source.filename);
-                plist_path.push("lib.plist");
                 WorkError::ParseError(
-                    plist_path,
+                    PathBuf::from("lib.plist"),
                     String::from("public.postscriptNames isn't a dictionary"),
                 )
             })?;
@@ -780,7 +772,9 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
 
         let master_locations = master_locations(&axes, &self.designspace.sources);
         let glyph_locations = master_locations.values().cloned().collect();
-        let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;
+
+        let lib_plist = load_plist(&designspace_dir.join(&default_master.filename), "lib.plist")?;
+        let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields
         // Start with the bits from selection flags
@@ -806,7 +800,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             };
 
         let postscript_names = if context.flags.contains(Flags::PRODUCTION_NAMES) {
-            postscript_names(default_master, designspace_dir)?
+            postscript_names(&lib_plist)?
         } else {
             PostscriptNames::default()
         };
