@@ -118,19 +118,22 @@ impl Args {
 mod tests {
     use clap::Parser;
     use fontir::orchestration::Flags;
+    use log::{debug, LevelFilter};
 
     use crate::Args;
 
     // It's awkward to get the Flags::default values into #[arg] so test for consistency
     #[test]
     fn arg_default_matches_flags_default() {
+        let _ = env_logger::builder()
+            .is_test(true)
+            .format_timestamp(None)
+            .filter_level(LevelFilter::Debug)
+            .try_init();
         let arg_default = Args::parse_from(vec!["program", "--source", "dont.care"]).flags();
         let flags_default = Flags::default();
-        println!(
-            "flags_default: {:#032b}\nargs_default:  {:#032b}",
-            flags_default.bits(),
-            arg_default.bits()
-        );
+        debug!("flags_default: {:#032b}", flags_default.bits());
+        debug!("args_default:  {:#032b}", arg_default.bits());
         assert_eq!(flags_default.bits(), arg_default.bits());
     }
 }
