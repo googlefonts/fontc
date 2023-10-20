@@ -1269,7 +1269,10 @@ mod tests {
     };
 
     use font_types::Tag;
-    use fontdrasil::{orchestration::Access, types::AnchorName};
+    use fontdrasil::{
+        orchestration::Access,
+        types::{AnchorName, GlyphName},
+    };
     use fontir::{
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
         ir::{GlobalMetricsInstance, GlyphOrder, NameKey},
@@ -1287,7 +1290,10 @@ mod tests {
         toir::to_design_location,
     };
 
-    use super::{default_master, glif_files, glyph_order, units_per_em, DesignSpaceIrSource};
+    use super::{
+        default_master, glif_files, glyph_order, load_plist, postscript_names, units_per_em,
+        DesignSpaceIrSource,
+    };
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -1520,9 +1526,13 @@ mod tests {
         let (source, _) = load_wght_var();
         let ds = source.load_designspace().unwrap();
         let (_, default_master) = default_master(&ds).unwrap();
+        let lib_plist = load_plist(
+            &source.designspace_dir.join(&default_master.filename),
+            "lib.plist",
+        )
+        .unwrap();
         let go = glyph_order(
-            default_master,
-            &source.designspace_dir,
+            &lib_plist,
             &HashSet::from(["bar".into(), "plus".into(), "an-imaginary-one".into()]),
         )
         .unwrap();
@@ -1787,6 +1797,36 @@ mod tests {
                 .iter()
                 .map(|a| a.name.clone())
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn postscript_names_happy_path() {
+        // Given
+        let lib_plist = {
+            let mut outer = plist::Dictionary::new();
+            let mut inner = plist::Dictionary::new();
+            inner.extend([
+                (String::from("foo"), String::from("bar").into()),
+                (String::from("baz"), String::from("qux").into()),
+                (String::from("lorem"), String::from("ipsum").into()),
+            ]);
+            outer.insert(String::from("public.postscriptNames"), inner.into());
+            outer
+        };
+
+        // When
+        let postscript_names =
+            postscript_names(&lib_plist).expect("postscript names should be parsed");
+
+        // Then
+        assert_eq!(
+            postscript_names,
+            HashMap::from_iter([
+                (GlyphName::from("foo"), GlyphName::from("bar")),
+                (GlyphName::from("baz"), GlyphName::from("qux")),
+                (GlyphName::from("lorem"), GlyphName::from("ipsum")),
+            ]),
         );
     }
 }
