@@ -65,7 +65,7 @@ pub struct Args {
     pub keep_direction: bool,
 
     /// Don't rename glyphs with production names
-    #[arg(long, default_value = "true")]
+    #[arg(long, default_value = "false")]
     pub no_production_names: bool,
 }
 
@@ -109,6 +109,7 @@ impl Args {
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
             skip_features: false,
             keep_direction: false,
+            no_production_names: false,
         }
     }
 }
@@ -125,6 +126,11 @@ mod tests {
     fn arg_default_matches_flags_default() {
         let arg_default = Args::parse_from(vec!["program", "--source", "dont.care"]).flags();
         let flags_default = Flags::default();
+        println!(
+            "flags_default: {:#032b}\nargs_default:  {:#032b}",
+            flags_default.bits(),
+            arg_default.bits()
+        );
         assert_eq!(flags_default.bits(), arg_default.bits());
     }
 }
