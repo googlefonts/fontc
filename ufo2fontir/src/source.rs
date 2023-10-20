@@ -1275,7 +1275,7 @@ mod tests {
     };
     use fontir::{
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
-        ir::{GlobalMetricsInstance, GlyphOrder, NameKey},
+        ir::{GlobalMetricsInstance, GlyphOrder, NameKey, PostscriptNames},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::{Input, Source},
@@ -1936,5 +1936,50 @@ mod tests {
                 (GlyphName::from("lorem"), GlyphName::from("bar")),
             ]),
         );
+    }
+
+    #[test]
+    fn static_metadata_loads_postscript_names() {
+        let (_, context) = build_static_metadata("designspace_from_glyphs/WghtVar.designspace");
+        let static_metadata = context.static_metadata.get();
+
+        assert_eq!(
+            static_metadata.postscript_names,
+            PostscriptNames::from_iter([(
+                GlyphName::from("manual-component"),
+                GlyphName::from("manualcomponent")
+            )]),
+        );
+    }
+
+    #[test]
+    fn static_metadata_disable_postscript_names() {
+        // Copied from build_static_metadata
+        let _ = env_logger::builder().is_test(true).try_init();
+        let (source, input) = load_designspace("designspace_from_glyphs/WghtVar.designspace");
+        let mut flags = Flags::default();
+        flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
+                                          // This is the line that's different from build_static_metadata
+        flags.set(Flags::PRODUCTION_NAMES, false);
+        let context = Context::new_root(
+            flags,
+            Paths::new(Path::new("/nothing/should/write/here")),
+            input,
+        );
+        let task_context = context.copy_for_work(
+            Access::none(),
+            Access::Set(HashSet::from([
+                WorkId::StaticMetadata,
+                WorkId::PreliminaryGlyphOrder,
+            ])),
+        );
+        source
+            .create_static_metadata_work(&context.input)
+            .unwrap()
+            .exec(&task_context)
+            .unwrap();
+
+        let static_metadata = context.static_metadata.get();
+        assert!(static_metadata.postscript_names.is_empty());
     }
 }
