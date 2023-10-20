@@ -1,6 +1,6 @@
 //! Generates an [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR) table.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::mem;
 use std::sync::Arc;
 
@@ -49,7 +49,9 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         let static_metadata = context.ir.static_metadata.get();
         let axes = &static_metadata.axes;
         let var_model = &static_metadata.variation_model;
-        let global_locations = var_model.locations().cloned().collect::<HashSet<_>>();
+        let global_locations = var_model.locations().cloned().collect::<BTreeSet<_>>();
+        let mut models = HashMap::new();
+        models.insert(global_locations, var_model.clone());
         let glyph_order = context.ir.glyph_order.get();
 
         let mut single_model = true;
@@ -68,14 +70,13 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                     assert!(advance_widths.contains_key(&var_model.default));
                     return Vec::new();
                 }
-                let locations = advance_widths.keys().cloned().collect::<HashSet<_>>();
-                let sub_model = if locations == global_locations {
-                    var_model.clone()
-                } else {
+                let locations = advance_widths.keys().cloned().collect::<BTreeSet<_>>();
+                let model = models.entry(locations).or_insert_with(|| {
                     single_model = false;
-                    VariationModel::new(locations, axes.clone()).unwrap()
-                };
-                sub_model
+                    VariationModel::new(advance_widths.keys().cloned().collect(), axes.clone())
+                        .unwrap()
+                });
+                model
                     .deltas(&advance_widths)
                     .unwrap() // TODO handle error
                     .into_iter()
