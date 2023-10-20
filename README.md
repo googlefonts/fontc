@@ -72,6 +72,22 @@ write-fonts = { git="https://github.com/googlefonts/fontations.git", branch="box
 skrifa = { git="https://github.com/googlefonts/fontations.git", branch="box" }
 ```
 
+## Comparing branch performance with hyperfine
+
+Only relatively large changes are effectively detected this way:
+
+```shell
+# On each branch, typically main and your branch run hyperfine:
+$ cargo build --release && hyperfine --warmup 3 --runs 250 --prepare 'rm -rf build/' 'target/release/fontc --source ../OswaldFont/sources/Oswald.glyphs --emit-ir false'
+
+# Ideally mean+σ of the improved branch is < mean-σ for main.
+# For example, p2s is probably faster here:
+# main Time (mean ± σ):     154.8 ms ±   8.2 ms
+# p2s Time (mean ± σ):     132.7 ms ±   6.4 ms
+
+# Report similar to ^ if claiming this as proof your branch is a win.
+```
+
 ## Running flamegraph
 
 [flamegraphs](https://www.brendangregg.com/flamegraphs.html) of fontc are very handy. They are most
