@@ -429,6 +429,7 @@ impl Builder for MarkList {
     }
 }
 
+/// A builder for GPOS Lookup Type 4, Mark-to-Base
 #[derive(Clone, Debug, Default)]
 pub struct MarkToBaseBuilder {
     marks: MarkList,
@@ -445,9 +446,11 @@ impl VariationIndexContainingLookup for MarkToBaseBuilder {
     }
 }
 
-/// An error indicating a given glyph is has be
+/// An error indicating a given glyph has been assigned to multiple mark classes
 pub struct PreviouslyAssignedClass {
+    /// The ID of the glyph in conflict
     pub glyph_id: GlyphId,
+    /// The name of the previous class
     pub class: SmolStr,
 }
 
@@ -465,15 +468,18 @@ impl MarkToBaseBuilder {
         self.marks.insert(glyph, class, anchor)
     }
 
+    /// Insert a new base glyph.
     pub fn insert_base(&mut self, glyph: GlyphId, class: &SmolStr, anchor: AnchorTable) {
         let class = self.marks.get_class(class);
         self.bases.entry(glyph).or_default().push((class, anchor))
     }
 
+    /// Returns an iterator over all of the base glyphs
     pub fn base_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.bases.keys().copied()
     }
 
+    /// Returns an iterator over all of the mark glyphs
     pub fn mark_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.marks.glyphs()
     }
@@ -587,6 +593,7 @@ impl Builder for MarkToLigBuilder {
     }
 }
 
+/// A builder for GPOS Type 6 (Mark-to-Mark)
 #[derive(Clone, Debug, Default)]
 pub struct MarkToMarkBuilder {
     attaching_marks: MarkList,
@@ -594,7 +601,11 @@ pub struct MarkToMarkBuilder {
 }
 
 impl MarkToMarkBuilder {
-    pub fn insert_mark(
+    /// Add a new mark1 (combining) glyph.
+    ///
+    /// If this glyph already exists in another mark class, we return the
+    /// previous class; this is likely an error.
+    pub fn insert_mark1(
         &mut self,
         glyph: GlyphId,
         class: SmolStr,
@@ -603,15 +614,18 @@ impl MarkToMarkBuilder {
         self.attaching_marks.insert(glyph, class, anchor)
     }
 
-    pub fn insert_base(&mut self, glyph: GlyphId, class: &SmolStr, anchor: AnchorTable) {
+    /// Insert a new mark2 (base) glyph
+    pub fn insert_mark2(&mut self, glyph: GlyphId, class: &SmolStr, anchor: AnchorTable) {
         let id = self.attaching_marks.get_class(class);
         self.base_marks.entry(glyph).or_default().push((id, anchor))
     }
 
+    /// Returns an iterator over all of the mark1 glyphs
     pub fn mark1_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.attaching_marks.glyphs()
     }
 
+    /// Returns an iterator over all of the mark2 glyphs
     pub fn mark2_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.base_marks.keys().copied()
     }

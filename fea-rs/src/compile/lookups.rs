@@ -40,10 +40,8 @@ use contextual::{
     SubChainContextBuilder, SubContextBuilder,
 };
 
-use gpos::{
-    CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, SinglePosBuilder,
-};
-pub use gpos::{PairPosBuilder, PreviouslyAssignedClass};
+use gpos::{CursivePosBuilder, MarkToLigBuilder, SinglePosBuilder};
+pub use gpos::{MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder, PreviouslyAssignedClass};
 use gsub::{AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder};
 pub(crate) use helpers::ClassDefBuilder2;
 

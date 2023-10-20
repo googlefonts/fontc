@@ -15,7 +15,7 @@ use super::{
     features::FeatureLookups,
     language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{FeatureKey, FilterSetId, LookupBuilder, LookupId, PositionLookup},
-    tables::Tables,
+    tables::{GdefBuilder, Tables},
 };
 
 /// A trait that can be implemented by the client to do custom feature writing.
@@ -70,6 +70,11 @@ impl<'a> FeatureBuilder<'a> {
     /// An iterator over the default language systems registered in the FEA
     pub fn language_systems(&self) -> impl Iterator<Item = LanguageSystem> + 'a {
         self.language_systems.iter()
+    }
+
+    /// If the FEA text contained an explicit GDEF table block, return its contents
+    pub fn gdef(&self) -> Option<&GdefBuilder> {
+        self.tables.gdef.as_ref()
     }
 
     /// Define a new mark class, for use in mark-base and mark-mark rules.
