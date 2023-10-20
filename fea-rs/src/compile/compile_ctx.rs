@@ -966,11 +966,11 @@ impl<'a> CompilationCtx<'a> {
                             .as_ref()
                             .expect("no null anchors in mark-to-mark (check validation)");
                         for glyph in glyphs.iter() {
-                            subtable.insert_mark(glyph, class_name.clone(), anchor.clone())?;
+                            subtable.insert_mark1(glyph, class_name.clone(), anchor.clone())?;
                         }
                     }
                     for base in base_ids.iter() {
-                        subtable.insert_base(
+                        subtable.insert_mark2(
                             base,
                             class_name,
                             base_anchor
