@@ -118,8 +118,6 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         "--output-dir",
         str(source.name),
         "--drop-implied-oncurves",
-        # TODO we shouldn't need these flags
-        "--no-production-names",
         # "--keep-direction",
     ]
     if compare == _COMPARE_GFTOOLS:
