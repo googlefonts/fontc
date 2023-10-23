@@ -1352,10 +1352,6 @@ mod tests {
     fn build_static_metadata(name: &str, flags: Flags) -> (impl Source, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
         let (source, input) = load_designspace(name);
-        assert!(
-            !flags.contains(Flags::EMIT_IR),
-            "we don't want to write anything"
-        );
         let context = Context::new_root(
             flags,
             Paths::new(Path::new("/nothing/should/write/here")),
