@@ -25,7 +25,7 @@ use fontir::{
     stateset::{StateIdentifier, StateSet},
 };
 use indexmap::IndexSet;
-use log::{debug, trace, warn};
+use log::{debug, log_enabled, trace, warn, Level};
 use norad::{
     designspace::{self, DesignSpaceDocument},
     fontinfo::StyleMapStyle,
@@ -547,16 +547,15 @@ fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, Wo
     // Warn about duplicate public.postscriptNames values
     // Allocate space ahead of time for speed, and because in the happy path the set length will be
     // the same as the map len
-    let mut duplicate_values_check = HashSet::with_capacity(postscript_names.len());
-    let duplicate_values = postscript_names
-        .values()
-        .filter(|ps_name| {
-            let ps_name = (*ps_name).clone();
-            !duplicate_values_check.insert(ps_name)
-        })
-        .collect::<BTreeSet<_>>();
-    if !duplicate_values.is_empty() {
-        warn!("public.postscriptNames: the following production names are used by multiple glyphs: {duplicate_values:?}");
+    if log_enabled!(Level::Warn) {
+        let mut seen_values = HashSet::with_capacity(postscript_names.len());
+        let duplicate_values = postscript_names
+            .values()
+            .filter(|ps_name| !seen_values.insert((*ps_name).clone()))
+            .collect::<BTreeSet<_>>();
+        if !duplicate_values.is_empty() {
+            warn!("public.postscriptNames: the following production names are used by multiple glyphs: {duplicate_values:?}");
+        }
     }
     Ok(postscript_names)
 }
@@ -1346,11 +1345,17 @@ mod tests {
         (source, input)
     }
 
-    fn build_static_metadata(name: &str) -> (impl Source, Context) {
+    fn flags_without_emit_ir() -> Flags {
+        Flags::default() - Flags::EMIT_IR
+    }
+
+    fn build_static_metadata(name: &str, flags: Flags) -> (impl Source, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
         let (source, input) = load_designspace(name);
-        let mut flags = Flags::default();
-        flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
+        assert!(
+            !flags.contains(Flags::EMIT_IR),
+            "we don't want to write anything"
+        );
         let context = Context::new_root(
             flags,
             Paths::new(Path::new("/nothing/should/write/here")),
@@ -1382,7 +1387,7 @@ mod tests {
     }
 
     fn build_global_metrics(name: &str) -> (impl Source, Context) {
-        let (source, context) = build_static_metadata(name);
+        let (source, context) = build_static_metadata(name, flags_without_emit_ir());
         let task_context = context.copy_for_work(
             Access::one(WorkId::StaticMetadata),
             Access::one(WorkId::GlobalMetrics),
@@ -1396,7 +1401,7 @@ mod tests {
     }
 
     fn build_kerning(name: &str) -> (impl Source, Context) {
-        let (source, context) = build_static_metadata(name);
+        let (source, context) = build_static_metadata(name, flags_without_emit_ir());
         build_glyph_order(&context);
 
         let task_context = context.copy_for_work(
@@ -1412,7 +1417,7 @@ mod tests {
     }
 
     fn build_glyphs(name: &str) -> (impl Source, Context) {
-        let (source, context) = build_static_metadata(name);
+        let (source, context) = build_static_metadata(name, flags_without_emit_ir());
         build_glyph_order(&context);
 
         let glyph_order = context.glyph_order.get().iter().cloned().collect();
@@ -1643,7 +1648,7 @@ mod tests {
 
     #[test]
     fn captures_os2_properties() {
-        let (_, context) = build_static_metadata("fontinfo.designspace");
+        let (_, context) = build_static_metadata("fontinfo.designspace", flags_without_emit_ir());
         assert_eq!(
             Tag::new(b"RODS"),
             context.static_metadata.get().misc.vendor_id
@@ -1696,7 +1701,7 @@ mod tests {
     // Was tripping up on wght_var having two <source> with the same filename, different name and xvalue
     #[test]
     fn glyph_locations() {
-        let (_, context) = build_static_metadata("wght_var.designspace");
+        let (_, context) = build_static_metadata("wght_var.designspace", flags_without_emit_ir());
         let static_metadata = &context.static_metadata.get();
         let wght = static_metadata.axes.first().unwrap();
 
@@ -1742,7 +1747,7 @@ mod tests {
 
     #[test]
     fn default_underline_settings() {
-        let (_, context) = build_static_metadata("wght_var.designspace");
+        let (_, context) = build_static_metadata("wght_var.designspace", flags_without_emit_ir());
         let static_metadata = &context.static_metadata.get();
         assert_eq!(
             (1000, 50.0, -75.0),
@@ -1940,7 +1945,10 @@ mod tests {
 
     #[test]
     fn static_metadata_loads_postscript_names() {
-        let (_, context) = build_static_metadata("designspace_from_glyphs/WghtVar.designspace");
+        let (_, context) = build_static_metadata(
+            "designspace_from_glyphs/WghtVar.designspace",
+            flags_without_emit_ir(),
+        );
         let static_metadata = context.static_metadata.get();
 
         assert_eq!(
@@ -1954,30 +1962,11 @@ mod tests {
 
     #[test]
     fn static_metadata_disable_postscript_names() {
-        // Copied from build_static_metadata
-        let _ = env_logger::builder().is_test(true).try_init();
-        let (source, input) = load_designspace("designspace_from_glyphs/WghtVar.designspace");
-        let mut flags = Flags::default();
-        flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
-                                          // This is the line that's different from build_static_metadata
-        flags.set(Flags::PRODUCTION_NAMES, false);
-        let context = Context::new_root(
-            flags,
-            Paths::new(Path::new("/nothing/should/write/here")),
-            input,
+        let no_production_names = flags_without_emit_ir() - Flags::PRODUCTION_NAMES;
+        let (_, context) = build_static_metadata(
+            "designspace_from_glyphs/WghtVar.designspace",
+            no_production_names,
         );
-        let task_context = context.copy_for_work(
-            Access::none(),
-            Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
-            ])),
-        );
-        source
-            .create_static_metadata_work(&context.input)
-            .unwrap()
-            .exec(&task_context)
-            .unwrap();
 
         let static_metadata = context.static_metadata.get();
         assert!(static_metadata.postscript_names.is_empty());
