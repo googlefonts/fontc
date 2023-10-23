@@ -66,7 +66,7 @@ pub(crate) struct StaticMetadataSerdeRepr {
 
 impl From<StaticMetadataSerdeRepr> for StaticMetadata {
     fn from(from: StaticMetadataSerdeRepr) -> Self {
-        StaticMetadata::new(
+        let mut static_metadata = StaticMetadata::new(
             from.units_per_em,
             from.names,
             from.axes,
@@ -74,7 +74,9 @@ impl From<StaticMetadataSerdeRepr> for StaticMetadata {
             from.glyph_locations.into_iter().collect(),
             from.postscript_names,
         )
-        .unwrap()
+        .unwrap();
+        static_metadata.misc = from.misc.into();
+        static_metadata
     }
 }
 

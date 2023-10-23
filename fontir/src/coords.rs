@@ -242,6 +242,12 @@ impl<T: Copy> FromIterator<(Tag, T)> for Location<T> {
     }
 }
 
+impl<T: Copy> From<Vec<(Tag, T)>> for Location<T> {
+    fn from(value: Vec<(Tag, T)>) -> Self {
+        Location::<T>::from_iter(value)
+    }
+}
+
 impl<T: Copy> Location<T> {
     pub fn new() -> Location<T> {
         Location(BTreeMap::new())

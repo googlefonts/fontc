@@ -61,8 +61,7 @@ pub struct StaticMetadata {
     /// used in things like gvar.
     pub variation_model: VariationModel,
 
-    axes_default: NormalizedLocation,
-    variable_axes_default: NormalizedLocation,
+    default_location: NormalizedLocation,
 
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>.
     pub names: HashMap<NameKey, String>,
@@ -265,11 +264,7 @@ impl StaticMetadata {
 
         let variation_model = VariationModel::new(glyph_locations, variable_axes.clone())?;
 
-        let axes_default = axes
-            .iter()
-            .map(|a| (a.tag, NormalizedCoord::new(0.0)))
-            .collect();
-        let variable_axes_default = axes
+        let default_location = axes
             .iter()
             .map(|a| (a.tag, NormalizedCoord::new(0.0)))
             .collect();
@@ -281,8 +276,7 @@ impl StaticMetadata {
             axes: variable_axes,
             named_instances,
             variation_model,
-            axes_default,
-            variable_axes_default,
+            default_location,
             postscript_names,
             misc: MiscMetadata {
                 selection_flags: Default::default(),
@@ -301,14 +295,9 @@ impl StaticMetadata {
         })
     }
 
-    /// The default on all known axes.
+    /// The default on all variable axes.
     pub fn default_location(&self) -> &NormalizedLocation {
-        &self.axes_default
-    }
-
-    /// The default on all variable (non-point) axes.
-    pub fn variable_axes_default(&self) -> &NormalizedLocation {
-        &self.variable_axes_default
+        &self.default_location
     }
 }
 
@@ -1490,17 +1479,28 @@ impl GlyphPathBuilder {
 #[cfg(test)]
 mod tests {
 
-    use std::str::FromStr;
-
-    use font_types::Tag;
-
-    use crate::{
-        coords::{CoordConverter, UserCoord},
-        error::PathConversionError,
-        ir::Axis,
+    use std::{
+        collections::{HashMap, HashSet},
+        fmt::Debug,
     };
 
-    use super::GlyphPathBuilder;
+    use serde::{Deserialize, Serialize};
+
+    use font_types::{NameId, Tag};
+    use write_fonts::tables::os2::SelectionFlags;
+
+    use crate::{
+        coords::{CoordConverter, NormalizedCoord, UserCoord},
+        error::PathConversionError,
+        ir::Axis,
+        variations::VariationModel,
+    };
+
+    use pretty_assertions::assert_eq;
+
+    use super::{GlyphPathBuilder, MiscMetadata, NameKey, NamedInstance, StaticMetadata};
+
+    const WGHT: Tag = Tag::from_be_bytes(*b"wght");
 
     fn test_axis() -> Axis {
         let min = UserCoord::new(100.0);
@@ -1509,7 +1509,7 @@ mod tests {
         let converter = CoordConverter::unmapped(min, default, max);
         Axis {
             name: String::from("Weight"),
-            tag: Tag::from_str("wght").unwrap(),
+            tag: WGHT,
             min,
             default,
             max,
@@ -1518,18 +1518,93 @@ mod tests {
         }
     }
 
+    fn test_static_metadata() -> StaticMetadata {
+        let axis = test_axis();
+        let mut point_axis = axis.clone();
+        point_axis.min = point_axis.default;
+        point_axis.max = point_axis.default;
+
+        StaticMetadata {
+            units_per_em: 1000,
+            all_source_axes: vec![axis.clone(), point_axis],
+            axes: vec![axis.clone()],
+            named_instances: vec![NamedInstance {
+                name: "Nobody".to_string(),
+                location: vec![(WGHT, UserCoord::new(100.0))].into(),
+            }],
+            variation_model: VariationModel::new(
+                HashSet::from([
+                    vec![(WGHT, NormalizedCoord::new(-1.0))].into(),
+                    vec![(WGHT, NormalizedCoord::new(0.0))].into(),
+                    vec![(WGHT, NormalizedCoord::new(1.0))].into(),
+                ]),
+                vec![axis.clone()],
+            )
+            .unwrap(),
+            default_location: vec![(WGHT, NormalizedCoord::new(0.0))].into(),
+            names: HashMap::from([
+                (
+                    NameKey::new_bmp_only(NameId::FAMILY_NAME),
+                    "Fam".to_string(),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::new(256)),
+                    "Weight".to_string(),
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::new(257)),
+                    "Nobody".to_string(),
+                ),
+            ]),
+            postscript_names: HashMap::from([("lhs".into(), "rhs".into())]),
+            misc: MiscMetadata {
+                selection_flags: SelectionFlags::default(),
+                vendor_id: Tag::from_be_bytes(*b"DUCK"),
+                underline_thickness: 0.15.into(),
+                underline_position: 16.0.into(),
+                version_major: 42,
+                version_minor: 24,
+                head_flags: 42,
+                lowest_rec_ppm: 42,
+                created: None,
+            },
+        }
+    }
+
+    fn assert_yml_round_trip<T>(thing: T)
+    where
+        for<'a> T: Serialize + Deserialize<'a> + PartialEq + Debug,
+    {
+        let yml = serde_yaml::to_string(&thing).unwrap();
+        assert_eq!(thing, serde_yaml::from_str(&yml).unwrap());
+    }
+
+    fn assert_bincode_round_trip<T>(thing: T)
+    where
+        for<'a> T: Serialize + Deserialize<'a> + PartialEq + Debug,
+    {
+        let bin = bincode::serialize(&thing).unwrap();
+        assert_eq!(thing, bincode::deserialize(&bin).unwrap());
+    }
+
     #[test]
     fn axis_yaml() {
-        let test_axis = test_axis();
-        let yml = serde_yaml::to_string(&test_axis).unwrap();
-        assert_eq!(test_axis, serde_yaml::from_str(&yml).unwrap());
+        assert_yml_round_trip(test_axis());
     }
 
     #[test]
     fn axis_bincode() {
-        let test_axis = test_axis();
-        let bin = bincode::serialize(&test_axis).unwrap();
-        assert_eq!(test_axis, bincode::deserialize(&bin).unwrap());
+        assert_bincode_round_trip(test_axis());
+    }
+
+    #[test]
+    fn static_metadata_yaml() {
+        assert_yml_round_trip(test_static_metadata());
+    }
+
+    #[test]
+    fn static_metadata_bincode() {
+        assert_bincode_round_trip(test_static_metadata());
     }
 
     #[test]
