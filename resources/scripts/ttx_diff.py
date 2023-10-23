@@ -99,7 +99,7 @@ def build_fontc(source: Path, build_dir: Path, compare: str):
         "--",
         # uncomment this to compare output w/ fontmake --keep-direction
         # "--keep-direction",
-        # TODO remove this when googlefonts/fontc#248 is fully implemented
+        # no longer required, still useful to get human-readable glyph names in diff
         "--no-production-names",
         "--source",
         str(source),
@@ -121,7 +121,7 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         str(source.name),
         "--drop-implied-oncurves",
         # "--keep-direction",
-        # TODO remove this when googlefonts/fontc#248 is fully implemented
+        # no longer required, still useful to get human-readable glyph names in diff
         "--no-production-names",
     ]
     if compare == _COMPARE_GFTOOLS:
