@@ -67,6 +67,10 @@ pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>.
     pub names: HashMap<NameKey, String>,
 
+    /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/post> and
+    /// <https://github.com/adobe-type-tools/agl-specification>
+    pub postscript_names: PostscriptNames,
+
     /// Miscellaneous font-wide data that didn't seem worthy of top billing
     pub misc: MiscMetadata,
 }
@@ -178,6 +182,9 @@ impl IntoIterator for GlyphOrder {
     }
 }
 
+/// Glyph names mapped to postscript names
+pub type PostscriptNames = HashMap<GlyphName, GlyphName>;
+
 /// In logical (reading) order
 type KernPair = (KernParticipant, KernParticipant);
 type KernValues = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
@@ -235,6 +242,7 @@ impl StaticMetadata {
         axes: Vec<Axis>,
         named_instances: Vec<NamedInstance>,
         glyph_locations: HashSet<NormalizedLocation>,
+        postscript_names: PostscriptNames,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
         let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
@@ -275,6 +283,7 @@ impl StaticMetadata {
             variation_model,
             axes_default,
             variable_axes_default,
+            postscript_names,
             misc: MiscMetadata {
                 selection_flags: Default::default(),
                 vendor_id: DEFAULT_VENDOR_ID_TAG,

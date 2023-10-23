@@ -114,6 +114,7 @@ mod tests {
             axes.to_vec(),
             Default::default(),
             Default::default(),
+            Default::default(),
         )
         .unwrap()
     }

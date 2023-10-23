@@ -11,6 +11,8 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::{GlyphName, GroupName},
 };
+use fontir::ir::PostscriptNames;
+use fontir::orchestration::Flags;
 use fontir::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     error::{Error, WorkError},
@@ -23,7 +25,7 @@ use fontir::{
     stateset::{StateIdentifier, StateSet},
 };
 use indexmap::IndexSet;
-use log::{debug, trace, warn};
+use log::{debug, log_enabled, trace, warn, Level};
 use norad::{
     designspace::{self, DesignSpaceDocument},
     fontinfo::StyleMapStyle,
@@ -480,14 +482,12 @@ fn load_plist(ufo_dir: &Path, name: &str) -> Result<plist::Dictionary, WorkError
 
 // Per https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044596662
 fn glyph_order(
-    source: &norad::designspace::Source,
-    designspace_dir: &Path,
+    lib_plist: &plist::Dictionary,
     glyph_names: &HashSet<GlyphName>,
 ) -> Result<GlyphOrder, WorkError> {
     // The UFO at the default master *may* elect to specify a glyph order
     // That glyph order *may* deign to overlap with the actual glyph set
     let mut glyph_order = GlyphOrder::new();
-    let lib_plist = load_plist(&designspace_dir.join(&source.filename), "lib.plist")?;
     if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
         let mut pending_add: HashSet<_> = glyph_names.clone();
         // Add names from ufo glyph order union glyph_names in ufo glyph order
@@ -517,6 +517,47 @@ fn glyph_order(
             });
     }
     Ok(glyph_order)
+}
+
+fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, WorkError> {
+    let postscript_names = match lib_plist.get("public.postscriptNames") {
+        Some(value) => {
+            let postscript_names_lib = value.as_dictionary().ok_or_else(|| {
+                WorkError::ParseError(
+                    PathBuf::from("lib.plist"),
+                    String::from("public.postscriptNames isn't a dictionary"),
+                )
+            })?;
+            postscript_names_lib
+                .iter()
+                .filter_map(|(glyph_name, ps_name)| match ps_name.as_string() {
+                    Some(ps_name) => Some((
+                        GlyphName::from(glyph_name.as_str()),
+                        GlyphName::from(ps_name),
+                    )),
+                    None => {
+                        warn!("public.postscriptNames: \"{glyph_name}\" has a non-string entry");
+                        None
+                    }
+                })
+                .collect()
+        }
+        None => HashMap::new(),
+    };
+    // Warn about duplicate public.postscriptNames values
+    // Allocate space ahead of time for speed, and because in the happy path the set length will be
+    // the same as the map len
+    if log_enabled!(Level::Warn) {
+        let mut seen_values = HashSet::with_capacity(postscript_names.len());
+        let duplicate_values = postscript_names
+            .values()
+            .filter(|ps_name| !seen_values.insert((*ps_name).clone()))
+            .collect::<BTreeSet<_>>();
+        if !duplicate_values.is_empty() {
+            warn!("public.postscriptNames: the following production names are used by multiple glyphs: {duplicate_values:?}");
+        }
+    }
+    Ok(postscript_names)
 }
 
 fn units_per_em<'a>(
@@ -731,7 +772,9 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
 
         let master_locations = master_locations(&axes, &self.designspace.sources);
         let glyph_locations = master_locations.values().cloned().collect();
-        let glyph_order = glyph_order(default_master, designspace_dir, &self.glyph_names)?;
+
+        let lib_plist = load_plist(&designspace_dir.join(&default_master.filename), "lib.plist")?;
+        let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields
         // Start with the bits from selection flags
@@ -756,9 +799,21 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
                 StyleMapStyle::BoldItalic => SelectionFlags::BOLD | SelectionFlags::ITALIC,
             };
 
-        let mut static_metadata =
-            StaticMetadata::new(units_per_em, names, axes, named_instances, glyph_locations)
-                .map_err(WorkError::VariationModelError)?;
+        let postscript_names = if context.flags.contains(Flags::PRODUCTION_NAMES) {
+            postscript_names(&lib_plist)?
+        } else {
+            PostscriptNames::default()
+        };
+
+        let mut static_metadata = StaticMetadata::new(
+            units_per_em,
+            names,
+            axes,
+            named_instances,
+            glyph_locations,
+            postscript_names,
+        )
+        .map_err(WorkError::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
         if let Some(vendor_id) = &font_info_at_default.open_type_os2_vendor_id {
             static_metadata.misc.vendor_id =
@@ -1213,16 +1268,20 @@ mod tests {
     };
 
     use font_types::Tag;
-    use fontdrasil::{orchestration::Access, types::AnchorName};
+    use fontdrasil::{
+        orchestration::Access,
+        types::{AnchorName, GlyphName},
+    };
     use fontir::{
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
-        ir::{GlobalMetricsInstance, GlyphOrder, NameKey},
+        ir::{GlobalMetricsInstance, GlyphOrder, NameKey, PostscriptNames},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::{Input, Source},
     };
     use norad::designspace;
 
+    use fontir::error::WorkError;
     use pretty_assertions::assert_eq;
     use write_fonts::types::NameId;
 
@@ -1231,7 +1290,10 @@ mod tests {
         toir::to_design_location,
     };
 
-    use super::{default_master, glif_files, glyph_order, units_per_em, DesignSpaceIrSource};
+    use super::{
+        default_master, glif_files, glyph_order, load_plist, postscript_names, units_per_em,
+        DesignSpaceIrSource,
+    };
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -1283,11 +1345,13 @@ mod tests {
         (source, input)
     }
 
-    fn build_static_metadata(name: &str) -> (impl Source, Context) {
+    fn default_test_flags() -> Flags {
+        Flags::default() - Flags::EMIT_IR
+    }
+
+    fn build_static_metadata(name: &str, flags: Flags) -> (impl Source, Context) {
         let _ = env_logger::builder().is_test(true).try_init();
         let (source, input) = load_designspace(name);
-        let mut flags = Flags::default();
-        flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
         let context = Context::new_root(
             flags,
             Paths::new(Path::new("/nothing/should/write/here")),
@@ -1319,7 +1383,7 @@ mod tests {
     }
 
     fn build_global_metrics(name: &str) -> (impl Source, Context) {
-        let (source, context) = build_static_metadata(name);
+        let (source, context) = build_static_metadata(name, default_test_flags());
         let task_context = context.copy_for_work(
             Access::one(WorkId::StaticMetadata),
             Access::one(WorkId::GlobalMetrics),
@@ -1333,7 +1397,7 @@ mod tests {
     }
 
     fn build_kerning(name: &str) -> (impl Source, Context) {
-        let (source, context) = build_static_metadata(name);
+        let (source, context) = build_static_metadata(name, default_test_flags());
         build_glyph_order(&context);
 
         let task_context = context.copy_for_work(
@@ -1349,7 +1413,7 @@ mod tests {
     }
 
     fn build_glyphs(name: &str) -> (impl Source, Context) {
-        let (source, context) = build_static_metadata(name);
+        let (source, context) = build_static_metadata(name, default_test_flags());
         build_glyph_order(&context);
 
         let glyph_order = context.glyph_order.get().iter().cloned().collect();
@@ -1464,9 +1528,13 @@ mod tests {
         let (source, _) = load_wght_var();
         let ds = source.load_designspace().unwrap();
         let (_, default_master) = default_master(&ds).unwrap();
+        let lib_plist = load_plist(
+            &source.designspace_dir.join(&default_master.filename),
+            "lib.plist",
+        )
+        .unwrap();
         let go = glyph_order(
-            default_master,
-            &source.designspace_dir,
+            &lib_plist,
             &HashSet::from(["bar".into(), "plus".into(), "an-imaginary-one".into()]),
         )
         .unwrap();
@@ -1576,7 +1644,7 @@ mod tests {
 
     #[test]
     fn captures_os2_properties() {
-        let (_, context) = build_static_metadata("fontinfo.designspace");
+        let (_, context) = build_static_metadata("fontinfo.designspace", default_test_flags());
         assert_eq!(
             Tag::new(b"RODS"),
             context.static_metadata.get().misc.vendor_id
@@ -1629,7 +1697,7 @@ mod tests {
     // Was tripping up on wght_var having two <source> with the same filename, different name and xvalue
     #[test]
     fn glyph_locations() {
-        let (_, context) = build_static_metadata("wght_var.designspace");
+        let (_, context) = build_static_metadata("wght_var.designspace", default_test_flags());
         let static_metadata = &context.static_metadata.get();
         let wght = static_metadata.axes.first().unwrap();
 
@@ -1675,7 +1743,7 @@ mod tests {
 
     #[test]
     fn default_underline_settings() {
-        let (_, context) = build_static_metadata("wght_var.designspace");
+        let (_, context) = build_static_metadata("wght_var.designspace", default_test_flags());
         let static_metadata = &context.static_metadata.get();
         assert_eq!(
             (1000, 50.0, -75.0),
@@ -1732,5 +1800,171 @@ mod tests {
                 .map(|a| a.name.clone())
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn postscript_names_happy_path() {
+        // Given
+        let lib_plist = {
+            let mut outer = plist::Dictionary::new();
+            let mut inner = plist::Dictionary::new();
+            inner.extend([
+                (String::from("foo"), String::from("bar").into()),
+                (String::from("baz"), String::from("qux").into()),
+                (String::from("lorem"), String::from("ipsum").into()),
+            ]);
+            outer.insert(String::from("public.postscriptNames"), inner.into());
+            outer
+        };
+
+        // When
+        let postscript_names =
+            postscript_names(&lib_plist).expect("postscript names should be parsed");
+
+        // Then
+        assert_eq!(
+            postscript_names,
+            HashMap::from_iter([
+                (GlyphName::from("foo"), GlyphName::from("bar")),
+                (GlyphName::from("baz"), GlyphName::from("qux")),
+                (GlyphName::from("lorem"), GlyphName::from("ipsum")),
+            ]),
+        );
+    }
+
+    #[test]
+    fn postscript_names_not_dictionary() {
+        // Given
+        let lib_plist = {
+            let mut outer = plist::Dictionary::new();
+            outer.insert(
+                String::from("public.postscriptNames"),
+                plist::Value::Boolean(false),
+            );
+            outer
+        };
+
+        // When
+        let err = postscript_names(&lib_plist).expect_err("postscript names should fail");
+
+        // Then
+        assert!(
+            matches!(err, WorkError::ParseError(_, _)),
+            "incorrect error variant"
+        );
+    }
+
+    #[test]
+    fn postscript_names_drop_duplicates() {
+        // Given
+        let lib_plist = {
+            let mut outer = plist::Dictionary::new();
+            let mut inner = plist::Dictionary::new();
+            inner.extend([
+                (String::from("foo"), String::from("bar").into()),
+                (String::from("foo"), String::from("qux").into()),
+                (String::from("lorem"), String::from("ipsum").into()),
+            ]);
+            outer.insert(String::from("public.postscriptNames"), inner.into());
+            outer
+        };
+
+        // When
+        let postscript_names =
+            postscript_names(&lib_plist).expect("postscript names should be parsed");
+
+        // Then
+        assert_eq!(
+            postscript_names,
+            HashMap::from_iter([
+                (GlyphName::from("foo"), GlyphName::from("qux")),
+                (GlyphName::from("lorem"), GlyphName::from("ipsum")),
+            ]),
+        );
+    }
+
+    #[test]
+    fn postscript_names_drops_non_strings() {
+        // Given
+        let lib_plist = {
+            let mut outer = plist::Dictionary::new();
+            let mut inner = plist::Dictionary::new();
+            inner.extend([
+                (String::from("foo"), String::from("bar").into()),
+                (String::from("baz"), 12f32.into()),
+                (String::from("lorem"), true.into()),
+            ]);
+            outer.insert(String::from("public.postscriptNames"), inner.into());
+            outer
+        };
+
+        // When
+        let postscript_names =
+            postscript_names(&lib_plist).expect("postscript names should be parsed");
+
+        // Then
+        assert_eq!(
+            postscript_names,
+            HashMap::from_iter([(GlyphName::from("foo"), GlyphName::from("bar"))]),
+        );
+    }
+
+    #[test]
+    fn postscript_names_allows_duplicate_values() {
+        // Given
+        let lib_plist = {
+            let mut outer = plist::Dictionary::new();
+            let mut inner = plist::Dictionary::new();
+            inner.extend([
+                (String::from("foo"), String::from("bar").into()),
+                (String::from("baz"), String::from("bar").into()),
+                (String::from("lorem"), String::from("bar").into()),
+            ]);
+            outer.insert(String::from("public.postscriptNames"), inner.into());
+            outer
+        };
+
+        // When
+        let postscript_names =
+            postscript_names(&lib_plist).expect("postscript names should be parsed");
+
+        // Then
+        assert_eq!(
+            postscript_names,
+            HashMap::from_iter([
+                (GlyphName::from("foo"), GlyphName::from("bar")),
+                (GlyphName::from("baz"), GlyphName::from("bar")),
+                (GlyphName::from("lorem"), GlyphName::from("bar")),
+            ]),
+        );
+    }
+
+    #[test]
+    fn static_metadata_loads_postscript_names() {
+        let (_, context) = build_static_metadata(
+            "designspace_from_glyphs/WghtVar.designspace",
+            default_test_flags(),
+        );
+        let static_metadata = context.static_metadata.get();
+
+        assert_eq!(
+            static_metadata.postscript_names,
+            PostscriptNames::from_iter([(
+                GlyphName::from("manual-component"),
+                GlyphName::from("manualcomponent")
+            )]),
+        );
+    }
+
+    #[test]
+    fn static_metadata_disable_postscript_names() {
+        let no_production_names = default_test_flags() - Flags::PRODUCTION_NAMES;
+        let (_, context) = build_static_metadata(
+            "designspace_from_glyphs/WghtVar.designspace",
+            no_production_names,
+        );
+
+        let static_metadata = context.static_metadata.get();
+        assert!(static_metadata.postscript_names.is_empty());
     }
 }

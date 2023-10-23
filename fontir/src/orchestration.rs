@@ -34,12 +34,14 @@ bitflags! {
         const EMIT_TIMING = 0b00100000;
         // If set, the direction of contours will NOT be reversed
         const KEEP_DIRECTION = 0b01000000;
+        // If set, production names are read & used
+        const PRODUCTION_NAMES = 0b10000000;
     }
 }
 
 impl Default for Flags {
     fn default() -> Self {
-        Flags::EMIT_IR | Flags::PREFER_SIMPLE_GLYPHS
+        Flags::EMIT_IR | Flags::PREFER_SIMPLE_GLYPHS | Flags::PRODUCTION_NAMES
     }
 }
 

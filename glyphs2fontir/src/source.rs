@@ -348,6 +348,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             axes,
             named_instances,
             glyph_locations,
+            Default::default(), // TODO: impl reading PS names from Glyphs
         )
         .map_err(WorkError::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
