@@ -1345,7 +1345,7 @@ mod tests {
         (source, input)
     }
 
-    fn flags_without_emit_ir() -> Flags {
+    fn default_test_flags() -> Flags {
         Flags::default() - Flags::EMIT_IR
     }
 
@@ -1387,7 +1387,7 @@ mod tests {
     }
 
     fn build_global_metrics(name: &str) -> (impl Source, Context) {
-        let (source, context) = build_static_metadata(name, flags_without_emit_ir());
+        let (source, context) = build_static_metadata(name, default_test_flags());
         let task_context = context.copy_for_work(
             Access::one(WorkId::StaticMetadata),
             Access::one(WorkId::GlobalMetrics),
@@ -1401,7 +1401,7 @@ mod tests {
     }
 
     fn build_kerning(name: &str) -> (impl Source, Context) {
-        let (source, context) = build_static_metadata(name, flags_without_emit_ir());
+        let (source, context) = build_static_metadata(name, default_test_flags());
         build_glyph_order(&context);
 
         let task_context = context.copy_for_work(
@@ -1417,7 +1417,7 @@ mod tests {
     }
 
     fn build_glyphs(name: &str) -> (impl Source, Context) {
-        let (source, context) = build_static_metadata(name, flags_without_emit_ir());
+        let (source, context) = build_static_metadata(name, default_test_flags());
         build_glyph_order(&context);
 
         let glyph_order = context.glyph_order.get().iter().cloned().collect();
@@ -1648,7 +1648,7 @@ mod tests {
 
     #[test]
     fn captures_os2_properties() {
-        let (_, context) = build_static_metadata("fontinfo.designspace", flags_without_emit_ir());
+        let (_, context) = build_static_metadata("fontinfo.designspace", default_test_flags());
         assert_eq!(
             Tag::new(b"RODS"),
             context.static_metadata.get().misc.vendor_id
@@ -1701,7 +1701,7 @@ mod tests {
     // Was tripping up on wght_var having two <source> with the same filename, different name and xvalue
     #[test]
     fn glyph_locations() {
-        let (_, context) = build_static_metadata("wght_var.designspace", flags_without_emit_ir());
+        let (_, context) = build_static_metadata("wght_var.designspace", default_test_flags());
         let static_metadata = &context.static_metadata.get();
         let wght = static_metadata.axes.first().unwrap();
 
@@ -1747,7 +1747,7 @@ mod tests {
 
     #[test]
     fn default_underline_settings() {
-        let (_, context) = build_static_metadata("wght_var.designspace", flags_without_emit_ir());
+        let (_, context) = build_static_metadata("wght_var.designspace", default_test_flags());
         let static_metadata = &context.static_metadata.get();
         assert_eq!(
             (1000, 50.0, -75.0),
@@ -1947,7 +1947,7 @@ mod tests {
     fn static_metadata_loads_postscript_names() {
         let (_, context) = build_static_metadata(
             "designspace_from_glyphs/WghtVar.designspace",
-            flags_without_emit_ir(),
+            default_test_flags(),
         );
         let static_metadata = context.static_metadata.get();
 
@@ -1962,7 +1962,7 @@ mod tests {
 
     #[test]
     fn static_metadata_disable_postscript_names() {
-        let no_production_names = flags_without_emit_ir() - Flags::PRODUCTION_NAMES;
+        let no_production_names = default_test_flags() - Flags::PRODUCTION_NAMES;
         let (_, context) = build_static_metadata(
             "designspace_from_glyphs/WghtVar.designspace",
             no_production_names,
