@@ -1,11 +1,12 @@
 use std::{error, io, path::PathBuf};
 
 use font_types::{InvalidTag, Tag};
-use fontdrasil::types::{AnchorName, GlyphName};
+use fontdrasil::{
+    coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
+    types::{AnchorName, GlyphName},
+};
 use kurbo::Point;
 use thiserror::Error;
-
-use crate::coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation};
 
 // TODO: eliminate dyn Error and collapse Error/WorkError
 

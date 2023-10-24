@@ -7,17 +7,17 @@ use std::{
 };
 
 use font_types::{F2Dot14, Tag};
+use fontdrasil::{
+    coords::{NormalizedCoord, NormalizedLocation},
+    types::Axis,
+};
 use log::{log_enabled, trace};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use write_fonts::tables::variations::RegionAxisCoordinates;
 
-use crate::{
-    coords::{NormalizedCoord, NormalizedLocation},
-    error::VariationModelError,
-    ir::Axis,
-};
+use crate::error::VariationModelError;
 
 const ZERO: OrderedFloat<f32> = OrderedFloat(0.0);
 const ONE: OrderedFloat<f32> = OrderedFloat(1.0);
@@ -739,16 +739,16 @@ mod tests {
     };
 
     use font_types::Tag;
+    use fontdrasil::{
+        coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
+        types::Axis,
+    };
     use kurbo::{Point, Vec2};
     use ordered_float::OrderedFloat;
 
     use pretty_assertions::assert_eq;
 
-    use crate::{
-        coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
-        ir::Axis,
-        variations::ONE,
-    };
+    use crate::variations::ONE;
 
     use super::{VariationModel, VariationRegion};
 

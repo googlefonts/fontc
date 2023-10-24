@@ -7,7 +7,7 @@ use std::fmt::{Debug, Write};
 use std::ops::Sub;
 
 use crate::serde::CoordConverterSerdeRepr;
-use crate::{ir::Axis, piecewise_linear_map::PiecewiseLinearMap};
+use crate::{piecewise_linear_map::PiecewiseLinearMap, types::Axis};
 use font_types::{F2Dot14, Fixed, Tag};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
