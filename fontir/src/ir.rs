@@ -1,19 +1,11 @@
 //! Font IR types.
-
-use crate::{
-    coords::{CoordConverter, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
-    error::{PathConversionError, VariationModelError, WorkError},
-    orchestration::{IdAware, Persistable, WorkId},
-    serde::{
-        GlobalMetricsSerdeRepr, GlyphOrderSerdeRepr, GlyphSerdeRepr, KerningSerdeRepr,
-        MiscSerdeRepr, StaticMetadataSerdeRepr,
-    },
-    variations::VariationModel,
-};
 use chrono::{DateTime, Utc};
 use font_types::NameId;
 use font_types::Tag;
-use fontdrasil::types::{AnchorName, GlyphName, GroupName};
+use fontdrasil::{
+    coords::{NormalizedCoord, NormalizedLocation, UserLocation},
+    types::{AnchorName, Axis, GlyphName, GroupName},
+};
 use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
 use log::{log_enabled, trace, warn};
@@ -26,6 +18,16 @@ use std::{
     path::PathBuf,
 };
 use write_fonts::{tables::os2::SelectionFlags, OtRound};
+
+use crate::{
+    error::{PathConversionError, VariationModelError, WorkError},
+    orchestration::{IdAware, Persistable, WorkId},
+    serde::{
+        GlobalMetricsSerdeRepr, GlyphOrderSerdeRepr, GlyphSerdeRepr, KerningSerdeRepr,
+        MiscSerdeRepr, StaticMetadataSerdeRepr,
+    },
+    variations::VariationModel,
+};
 
 pub const DEFAULT_VENDOR_ID: &str = "NONE";
 const DEFAULT_VENDOR_ID_TAG: Tag = Tag::new(b"NONE");
@@ -760,23 +762,6 @@ impl NameKey {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct Axis {
-    pub name: String,
-    pub tag: Tag,
-    pub min: UserCoord,
-    pub default: UserCoord,
-    pub max: UserCoord,
-    pub hidden: bool,
-    pub converter: CoordConverter,
-}
-
-impl Axis {
-    pub fn is_point(&self) -> bool {
-        self.min == self.default && self.max == self.default
-    }
-}
-
 /// IR for a named position in variation space
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct NamedInstance {
@@ -1487,14 +1472,10 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use font_types::{NameId, Tag};
+    use fontdrasil::coords::{CoordConverter, NormalizedCoord, UserCoord};
     use write_fonts::tables::os2::SelectionFlags;
 
-    use crate::{
-        coords::{CoordConverter, NormalizedCoord, UserCoord},
-        error::PathConversionError,
-        ir::Axis,
-        variations::VariationModel,
-    };
+    use crate::{error::PathConversionError, ir::Axis, variations::VariationModel};
 
     use pretty_assertions::assert_eq;
 

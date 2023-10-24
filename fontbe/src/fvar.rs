@@ -101,7 +101,8 @@ impl Work<Context, AnyWorkId, Error> for FvarWork {
 
 #[cfg(test)]
 mod tests {
-    use fontir::ir::{Axis, StaticMetadata};
+    use fontdrasil::types::Axis;
+    use fontir::ir::StaticMetadata;
 
     use super::generate_fvar;
 

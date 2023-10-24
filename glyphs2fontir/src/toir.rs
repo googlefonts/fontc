@@ -1,9 +1,11 @@
 use std::{collections::HashMap, str::FromStr};
 
 use font_types::Tag;
-use fontdrasil::types::GlyphName;
-use fontir::{
+use fontdrasil::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
+    types::GlyphName,
+};
+use fontir::{
     error::{Error, WorkError},
     ir::{self, GlyphPathBuilder},
 };
@@ -124,7 +126,10 @@ pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features
     })
 }
 
-fn design_location(axes: &[ir::Axis], axes_values: &[OrderedFloat<f64>]) -> DesignLocation {
+fn design_location(
+    axes: &[fontdrasil::types::Axis],
+    axes_values: &[OrderedFloat<f64>],
+) -> DesignLocation {
     axes.iter()
         .zip(axes_values.iter())
         .map(|(axis, pos)| (axis.tag, DesignCoord::new(pos.into_inner() as f32)))
@@ -156,7 +161,7 @@ fn to_ir_axis(
     axis_values: &[OrderedFloat<f64>],
     default_idx: usize,
     axis: &glyphs_reader::Axis,
-) -> Result<ir::Axis, Error> {
+) -> Result<fontdrasil::types::Axis, Error> {
     let min = axis_values
         .iter()
         .map(|v| OrderedFloat::<f32>(v.into_inner() as f32))
@@ -195,7 +200,7 @@ fn to_ir_axis(
         CoordConverter::unmapped(min, default, max)
     };
 
-    Ok(ir::Axis {
+    Ok(fontdrasil::types::Axis {
         name: axis.name.clone(),
         tag: Tag::from_str(&axis.tag).map_err(Error::InvalidTag)?,
         hidden: axis.hidden.unwrap_or(false),
@@ -206,7 +211,7 @@ fn to_ir_axis(
     })
 }
 
-fn ir_axes(font: &Font) -> Result<Vec<ir::Axis>, Error> {
+fn ir_axes(font: &Font) -> Result<Vec<fontdrasil::types::Axis>, Error> {
     // Every master should have a value for every axis
     for master in font.masters.iter() {
         if font.axes.len() != master.axes_values.len() {
@@ -235,7 +240,7 @@ pub struct FontInfo {
     pub master_indices: HashMap<String, usize>,
     /// Axes values => location for every instance and master
     pub locations: HashMap<Vec<OrderedFloat<f64>>, NormalizedLocation>,
-    pub axes: Vec<ir::Axis>,
+    pub axes: Vec<fontdrasil::types::Axis>,
     /// Index by tag
     pub axis_indices: HashMap<Tag, usize>,
 }

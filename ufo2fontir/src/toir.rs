@@ -2,10 +2,12 @@ use std::path::PathBuf;
 use std::{collections::HashMap, str::FromStr};
 
 use font_types::Tag;
-use fontdrasil::types::GlyphName;
+use fontdrasil::{
+    coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
+    types::GlyphName,
+};
 use fontir::ir::AnchorBuilder;
 use fontir::{
-    coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     error::WorkError,
     ir::{self, GlyphPathBuilder},
 };
@@ -84,7 +86,7 @@ fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, WorkE
 
 /// Create a map from source filename (e.g. x.ufo) => normalized location
 pub fn master_locations(
-    axes: &[ir::Axis],
+    axes: &[fontdrasil::types::Axis],
     sources: &[designspace::Source],
 ) -> HashMap<String, NormalizedLocation> {
     let tags_by_name: HashMap<_, _> = axes.iter().map(|a| (a.name.as_str(), a.tag)).collect();
@@ -100,11 +102,11 @@ pub fn master_locations(
         .collect()
 }
 
-pub fn to_ir_axes(axes: &[designspace::Axis]) -> Result<Vec<ir::Axis>, WorkError> {
+pub fn to_ir_axes(axes: &[designspace::Axis]) -> Result<Vec<fontdrasil::types::Axis>, WorkError> {
     axes.iter().map(to_ir_axis).collect()
 }
 
-pub fn to_ir_axis(axis: &designspace::Axis) -> Result<ir::Axis, WorkError> {
+pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, WorkError> {
     let tag = Tag::from_str(&axis.tag).map_err(WorkError::InvalidTag)?;
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element>
@@ -135,7 +137,7 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<ir::Axis, WorkError> {
     } else {
         CoordConverter::unmapped(min, default, max)
     };
-    Ok(ir::Axis {
+    Ok(fontdrasil::types::Axis {
         name: axis.name.clone(),
         tag,
         hidden: axis.hidden,
@@ -184,10 +186,8 @@ mod tests {
     };
 
     use font_types::Tag;
-    use fontir::{
-        coords::{NormalizedCoord, NormalizedLocation},
-        ir::AnchorBuilder,
-    };
+    use fontdrasil::coords::{NormalizedCoord, NormalizedLocation};
+    use fontir::ir::AnchorBuilder;
     use norad::ContourPoint;
 
     use super::{to_ir_contour, to_ir_glyph};
