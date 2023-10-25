@@ -4,30 +4,31 @@ version = "0.18.0"
 license = "MIT/Apache-2.0"
 authors = ["Colin Rofls <colin@cmyr.net>"]
 description = "Tools for working with Adobe OpenType Feature files."
-repository = "https://github.com/cmyr/fea-rs"
+repository = "https://github.com/googlefonts/fontc"
 categories = ["parsing", "text-processing"]
 keywords = ["fonts", "opentype"]
-readme = "../README.md"
+readme = "./README.md"
 edition = "2021"
 default-run = "fea-rs"
 exclude = ["test-data"]
 
 [dependencies]
 ansi_term = "0.12.1"
-smol_str = "0.2.0"
-norad = { version = "0.12", optional = true } # Used in the compile binary
-write-fonts = { version = "0.17.0", features = ["read"] }
-chrono = "0.4.3"
-diff = { version = "0.1.12", optional = true }
-rayon = { version = "1.6", optional = true }
-serde = { version = "1.0.147", features = ["derive"], optional = true }
 serde_json = {version = "1.0.87", optional = true }
-thiserror = "1.0.37"
-clap = { version = "4.0.32", features = ["derive"], optional = true }
-log = "0.4"
-env_logger = "0.10.0"
-indexmap = "2.0"
-ordered-float = "4.1.0"
+
+diff = { workspace = true, optional = true }
+norad = { workspace = true, optional = true } # Used in the compile binary
+serde = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+write-fonts.workspace = true
+smol_str.workspace = true
+chrono.workspace = true
+indexmap.workspace = true
+thiserror.workspace = true
+ordered-float.workspace = true
+log.workspace = true
+env_logger.workspace = true
 
 [features]
 test = ["diff", "rayon", "serde", "serde_json", "clap"]
