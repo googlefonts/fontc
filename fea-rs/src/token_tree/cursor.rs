@@ -34,6 +34,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// Our current depth in the tree
+    #[allow(dead_code)] // only used when debugging
     pub fn depth(&self) -> usize {
         self.parents.len()
     }

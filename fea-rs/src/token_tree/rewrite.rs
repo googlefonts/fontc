@@ -118,21 +118,21 @@ impl<'a, 'b> ReparseCtx<'a, 'b> {
     }
 
     // for debugging
-    #[allow(dead_code)]
-    fn print_contents(&self, msg: &str) {
-        eprint!("[{}] reparse contents: \"", msg);
-        for item in self.in_buf {
-            match item {
-                NodeOrToken::Token(t) => eprint!("{}", t.text),
-                NodeOrToken::Node(node) => {
-                    for t in node.iter_tokens() {
-                        eprint!("{}", t.text);
-                    }
-                }
-            }
-        }
-        eprintln!("\"");
-    }
+    //#[allow(dead_code)]
+    //fn print_contents(&self, msg: &str) {
+    //eprint!("[{}] reparse contents: \"", msg);
+    //for item in self.in_buf {
+    //match item {
+    //NodeOrToken::Token(t) => eprint!("{}", t.text),
+    //NodeOrToken::Node(node) => {
+    //for t in node.iter_tokens() {
+    //eprint!("{}", t.text);
+    //}
+    //}
+    //}
+    //}
+    //eprintln!("\"");
+    //}
 }
 
 pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
