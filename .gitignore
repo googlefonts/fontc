@@ -5,5 +5,3 @@ Cargo.lock
 
 .DS_Store
 
-# a directory colin uses to stash various wip diffs/test inputs
-_experiments

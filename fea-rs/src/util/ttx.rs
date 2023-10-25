@@ -510,7 +510,8 @@ pub(crate) fn fonttools_test_glyph_order() -> GlyphMap {
     let cwd = std::env::current_dir().expect("could not retrieve current directory");
     // hack: during testing cwd is the crate root, but when running a binary
     // it may be the project root
-    let path = if cwd.parent().expect("always present").ends_with("fea-rs") {
+    let path = if cwd.ends_with("fea-rs") {
+        assert!(!cwd.parent().expect("always presnt").ends_with("fea-rs"));
         "./test-data/simple_glyph_order.txt"
     } else {
         "./fea-rs/test-data/simple_glyph_order.txt"
