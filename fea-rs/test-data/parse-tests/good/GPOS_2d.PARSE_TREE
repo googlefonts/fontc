@@ -1,0 +1,31 @@
+FILE@[0; 48)
+    FeatureNode@[0; 47)
+      FeatureKw@0 "feature"
+      WS@7 " "
+      Tag@8 "test"
+      WS@12 " "
+      {@13 "{"
+      WS@14 "\n    "
+        GposType2@[19; 39)
+          PosKw@19 "pos"
+          WS@22 " "
+          @GlyphClass@23 "@T"
+          WS@25 " "
+            GlyphClass@[26; 33)
+              [@26 "["
+              GlyphName@27 "a"
+              WS@28 " "
+              GlyphName@29 "o"
+              WS@30 " "
+              GlyphName@31 "u"
+              ]@32 "]"
+          WS@33 " "
+            ValueRecordNode@[34; 38)
+              NUM@34 "-100"
+          ;@38 ";"
+      WS@39 "\n"
+      }@40 "}"
+      WS@41 " "
+      Tag@42 "test"
+      ;@46 ";"
+  WS@47 "\n"

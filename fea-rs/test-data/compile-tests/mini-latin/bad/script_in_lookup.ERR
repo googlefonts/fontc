@@ -1,0 +1,11 @@
+error: script and language statements not allowed in standalone lookup blocks
+in ./test-data/compile-tests/mini-latin/bad/script_in_lookup.fea at 3:4
+  | 
+3 |     script latn;
+  |     ^^^^^^^^^^^^
+
+error: script and language statements not allowed in standalone lookup blocks
+in ./test-data/compile-tests/mini-latin/bad/script_in_lookup.fea at 4:4
+  | 
+4 |     language lang;
+  |     ^^^^^^^^^^^^^^

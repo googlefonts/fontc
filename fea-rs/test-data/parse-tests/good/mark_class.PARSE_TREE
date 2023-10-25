@@ -1,0 +1,21 @@
+FILE@[0; 45)
+    MarkClassNode@[0; 44)
+      MarkClassKw@0 "markClass"
+      WS@9 " "
+        GlyphClass@[10; 17)
+          [@10 "["
+          GlyphName@11 "acute"
+          ]@16 "]"
+      WS@17 " "
+        AnchorNode@[18; 32)
+          <@18 "<"
+          AnchorKw@19 "anchor"
+          WS@25 " "
+          NUM@26 "350"
+          WS@29 " "
+          NUM@30 "0"
+          >@31 ">"
+      WS@32 " "
+      @GlyphClass@33 "@TOP_MARKS"
+      ;@43 ";"
+  WS@44 "\n"

@@ -1,0 +1,4 @@
+feature test {
+    ignore pos f [a e] d';
+    ignore pos a d' d;
+} test;

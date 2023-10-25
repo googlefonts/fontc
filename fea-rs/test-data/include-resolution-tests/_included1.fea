@@ -1,0 +1,5 @@
+# this file is included from test1.fea,
+# but this include is relative to *this* file, not the parent.
+include(_included2.fea);
+# but this is relative to the parent
+include(_included3.fea);

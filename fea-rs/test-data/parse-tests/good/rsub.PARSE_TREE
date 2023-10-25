@@ -1,0 +1,36 @@
+FILE@[0; 57)
+    FeatureNode@[0; 56)
+      FeatureKw@0 "feature"
+      WS@7 " "
+      Tag@8 "test"
+      WS@12 " "
+      {@13 "{"
+      WS@14 "\n    "
+        GsubType8@[19; 48)
+          RsubKw@19 "reversesub"
+          WS@29 " "
+            BacktrackSequence@[30; 35)
+                GlyphClass@[30; 35)
+                  [@30 "["
+                  GlyphName@31 "a"
+                  WS@32 " "
+                  GlyphName@33 "e"
+                  ]@34 "]"
+          WS@35 " "
+            ContextSequence@[36; 39)
+                ContextGlyphNode@[36; 39)
+                  GlyphName@36 "d"
+                  '@37 "'"
+                  WS@38 " "
+            LookaheadSequence@[39; 39)
+            InlineSubNode@[39; 47)
+              ByKw@39 "by"
+              WS@41 " "
+              GlyphName@42 "d.alt"
+          ;@47 ";"
+      WS@48 "\n"
+      }@49 "}"
+      WS@50 " "
+      Tag@51 "test"
+      ;@55 ";"
+  WS@56 "\n"

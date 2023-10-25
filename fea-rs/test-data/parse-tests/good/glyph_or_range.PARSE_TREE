@@ -1,0 +1,38 @@
+FILE@[0; 99)
+    FeatureNode@[0; 98)
+      FeatureKw@0 "feature"
+      WS@7 " "
+      Tag@8 "derp"
+      WS@12 " "
+      {@13 "{"
+      WS@14 "\n    "
+        GposType1@[19; 30)
+          PosKw@19 "pos"
+          WS@22 " "
+            GlyphRange@[23; 26)
+              GlyphName@23 "a"
+              -@24 "-"
+              GlyphName@25 "z"
+          WS@26 " "
+            ValueRecordNode@[27; 29)
+              NUM@27 "10"
+          ;@29 ";"
+      WS@30 " "
+      #@31 "# this is range"
+      WS@46 "\n    "
+        GposType1@[51; 67)
+          PosKw@51 "pos"
+          WS@54 " "
+          GlyphName@55 "two-four"
+          WS@63 " "
+            ValueRecordNode@[64; 66)
+              NUM@64 "15"
+          ;@66 ";"
+      WS@67 " "
+      #@68 "# this is a glyph name"
+      WS@90 "\n"
+      }@91 "}"
+      WS@92 " "
+      Tag@93 "derp"
+      ;@97 ";"
+  WS@98 "\n"

@@ -1,0 +1,4 @@
+feature size {
+    parameters 10.0 3 80 139;
+    parameters 6 6 6 0; # only one param statement allowed
+} size;

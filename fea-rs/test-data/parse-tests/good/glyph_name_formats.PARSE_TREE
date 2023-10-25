@@ -1,0 +1,30 @@
+FILE@[0; 31)
+    GlyphClassDefNode@[0; 30)
+      @GlyphClass@0 "@name"
+      WS@5 " "
+      =@6 "="
+      WS@7 " "
+        GlyphClass@[8; 29)
+          [@8 "["
+          GlyphName@9 "a"
+          WS@10 " "
+          GlyphName@11 "b"
+          WS@12 " "
+            GlyphRange@[13; 18)
+              GlyphName@13 "d"
+              WS@14 " "
+              -@15 "-"
+              WS@16 " "
+              GlyphName@17 "z"
+          WS@18 " "
+          \@19 "\\"
+            GlyphRange@[20; 24)
+              CID@20 "1"
+              -@21 "-"
+              \@22 "\\"
+              CID@23 "5"
+          WS@24 " "
+          @GlyphClass@25 "@hi"
+          ]@28 "]"
+      ;@29 ";"
+  WS@30 "\n"

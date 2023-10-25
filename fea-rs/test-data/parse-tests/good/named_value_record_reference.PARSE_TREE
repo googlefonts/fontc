@@ -1,0 +1,96 @@
+FILE@[0; 164)
+    ValueRecordDefNode@[0; 26)
+      ValueRecordDefKw@0 "valueRecordDef"
+      WS@14 " "
+        ValueRecordNode@[15; 17)
+          NUM@15 "42"
+      WS@17 " "
+      ID@18 "FOURTWO"
+      ;@25 ";"
+  WS@26 "\n\n"
+    FeatureNode@[28; 163)
+      FeatureKw@28 "feature"
+      WS@35 " "
+      Tag@36 "test"
+      WS@40 " "
+      {@41 "{"
+      WS@42 "\n    "
+        GposType1@[47; 63)
+          PosKw@47 "pos"
+          WS@50 " "
+          GlyphName@51 "a"
+          WS@52 " "
+            ValueRecordNode@[53; 62)
+              <@53 "<"
+              ID@54 "FOURTWO"
+              >@61 ">"
+          ;@62 ";"
+      WS@63 "\n    "
+        GposType2@[68; 86)
+          PosKw@68 "pos"
+          WS@71 " "
+          GlyphName@72 "b"
+          WS@73 " "
+          GlyphName@74 "c"
+          WS@75 " "
+            ValueRecordNode@[76; 85)
+              <@76 "<"
+              ID@77 "FOURTWO"
+              >@84 ">"
+          ;@85 ";"
+      WS@86 "\n    "
+        GposType2@[91; 123)
+          PosKw@91 "pos"
+          WS@94 " "
+            GlyphClass@[95; 100)
+              [@95 "["
+              GlyphName@96 "d"
+              WS@97 " "
+              GlyphName@98 "e"
+              ]@99 "]"
+          WS@100 " "
+            ValueRecordNode@[101; 110)
+              <@101 "<"
+              ID@102 "FOURTWO"
+              >@109 ">"
+          WS@110 " "
+          GlyphName@111 "f"
+          WS@112 " "
+            ValueRecordNode@[113; 122)
+              <@113 "<"
+              ID@114 "FOURTWO"
+              >@121 ">"
+          ;@122 ";"
+      WS@123 "\n    "
+        GposType8@[128; 155)
+          PosKw@128 "pos"
+          WS@131 " "
+            BacktrackSequence@[132; 135)
+              GlyphName@132 "g"
+              WS@133 " "
+              GlyphName@134 "h"
+          WS@135 " "
+            ContextSequence@[136; 148)
+                ContextGlyphNode@[136; 148)
+                  GlyphName@136 "i"
+                  '@137 "'"
+                  WS@138 " "
+                    ValueRecordNode@[139; 148)
+                      <@139 "<"
+                      ID@140 "FOURTWO"
+                      >@147 ">"
+          WS@148 " "
+            LookaheadSequence@[149; 154)
+                GlyphClass@[149; 154)
+                  [@149 "["
+                  GlyphName@150 "j"
+                  WS@151 " "
+                  GlyphName@152 "k"
+                  ]@153 "]"
+          ;@154 ";"
+      WS@155 "\n"
+      }@156 "}"
+      WS@157 " "
+      Tag@158 "test"
+      ;@162 ";"
+  WS@163 "\n"

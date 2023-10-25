@@ -1,0 +1,7 @@
+lookup dummy {
+    pos a 1;
+} dummy;
+
+feature test {
+    sub a' lookup dummy b;
+} test;

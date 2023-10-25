@@ -1,0 +1,4 @@
+# null conditionset should be null offest in output font
+variation test NULL {
+    pos a b -100;
+} test;

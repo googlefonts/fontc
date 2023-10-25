@@ -1,0 +1,4 @@
+feature test {
+    pos base a <anchor 120 -30> mark @T
+               <anchor 5 -5 contourpoint 14> mark @B;
+} test;

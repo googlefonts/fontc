@@ -1,0 +1,6 @@
+table vmtx {
+    # these are cids
+    VertOriginY \711 864;
+    VertOriginY \712 867;
+    VertOriginY \713 866;
+} vmtx;

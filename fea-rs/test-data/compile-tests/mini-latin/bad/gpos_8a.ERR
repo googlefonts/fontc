@@ -1,0 +1,5 @@
+error: rule cannot have both inline rules and explicit lookups
+in ./test-data/compile-tests/mini-latin/bad/gpos_8a.fea at 6:26
+  | 
+6 |     pos a b' lookup HI c' -20;
+  |                           ^^^

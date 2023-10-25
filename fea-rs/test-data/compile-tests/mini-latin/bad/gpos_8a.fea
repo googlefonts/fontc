@@ -1,0 +1,8 @@
+lookup HI {
+ pos b -30;
+} HI;
+
+feature test {
+    pos a b' lookup HI c' -20;
+
+} test;

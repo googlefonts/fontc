@@ -1,0 +1,5 @@
+feature kern {
+    pos A B 5;
+    pos a f -10;
+    pos b one 15;
+} kern;

@@ -1,0 +1,5 @@
+error: Invalid lookup type: expected GPOS, found GSUB
+in ./test-data/compile-tests/mini-latin/bad/chain_pos_references_gsub_lookup.fea at 6:18
+  | 
+6 |     pos a' lookup dummy b;
+  |                   ^^^^^

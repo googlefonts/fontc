@@ -1,0 +1,6 @@
+# adapted from a test on fonttools
+table GDEF {
+    GlyphClassDef [a b], [X], , ;
+    GlyphClassDef [a b X], , , ;
+} GDEF;
+

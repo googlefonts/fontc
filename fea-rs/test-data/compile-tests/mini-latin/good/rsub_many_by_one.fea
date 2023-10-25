@@ -1,0 +1,5 @@
+# makeotf errors but fonttools replaces everything with the target,
+# which is now normal sub rules work, so that seems sane
+feature test {
+    rsub a [b c]' d by X;
+} test;

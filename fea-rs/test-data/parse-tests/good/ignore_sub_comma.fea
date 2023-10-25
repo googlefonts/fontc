@@ -1,0 +1,4 @@
+# you can have multiple ignore statements separated by commas
+feature test {
+    ignore substitute @LETTER a' n' d', a' n' d' @LETTER;
+} test;

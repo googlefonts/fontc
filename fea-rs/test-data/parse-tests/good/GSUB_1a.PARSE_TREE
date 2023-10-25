@@ -1,0 +1,23 @@
+FILE@[0; 37)
+    LookupBlockNode@[0; 36)
+      LookupKw@0 "lookup"
+      WS@6 " "
+      LABEL@7 "hi"
+      WS@9 " "
+      {@10 "{"
+      WS@11 "\n    "
+        GsubType1@[16; 30)
+          SubKw@16 "sub"
+          WS@19 " "
+          GlyphName@20 "a"
+          WS@21 " "
+          ByKw@22 "by"
+          WS@24 " "
+          GlyphName@25 "A.sc"
+          ;@29 ";"
+      WS@30 "\n"
+      }@31 "}"
+      WS@32 " "
+      LABEL@33 "hi"
+      ;@35 ";"
+  WS@36 "\n"

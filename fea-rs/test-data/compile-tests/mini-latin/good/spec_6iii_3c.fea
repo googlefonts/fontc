@@ -1,0 +1,6 @@
+# http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#example-3c
+# this is a special case, and should produce a pairpos lookup for f -> 10
+feature kern {
+    pos s f' t period 10;
+    pos a b' c 10;
+} kern;

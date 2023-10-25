@@ -1,0 +1,6 @@
+# each of these entries contains an invalid escape sequence
+table name {
+    nameid 9 "Joachim\CF"; # windows escapes must be 4 digits
+    nameid 1001 "Null Mc\0000face"; # which cannot all be zero
+    nameid 1001 1 "bad \d";      # mac escapes must be 2 digits
+} name;
