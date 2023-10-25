@@ -51,14 +51,15 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         let var_model = &static_metadata.variation_model;
         let global_locations = var_model.locations().cloned().collect::<BTreeSet<_>>();
         let mut models = HashMap::new();
-        models.insert(global_locations, var_model.clone());
+        models.insert(global_locations.clone(), var_model.clone());
         let glyph_order = context.ir.glyph_order.get();
 
         let mut single_model = true;
         let all_glyph_width_deltas: Vec<Vec<(VariationRegion, i16)>> = glyph_order
             .iter()
-            .map(|gn| {
-                let advance_widths: HashMap<_, _> = context
+            .enumerate()
+            .map(|(i, gn)| {
+                let mut advance_widths: HashMap<_, _> = context
                     .ir
                     .glyphs
                     .get(&FeWorkId::Glyph(gn.clone()))
@@ -68,7 +69,29 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                     .collect();
                 if advance_widths.len() == 1 {
                     assert!(advance_widths.keys().next().unwrap().is_default());
-                    return Vec::new();
+                    // this glyph has no variations (it's only defined at the default location),
+                    // therefore the deltas returned from VariationModel will be an empty Vec.
+                    // However, when this is the first .notdef glyph we would like to treat it
+                    // specially in order to match the output of fontTools.varLib.
+                    // In fonttools, all master TTFs have a .notdef glyph as their first glyph; in fontc,
+                    // unless the input source defines a .notdef, only a default instance is generated.
+                    // And that's ok for gvar, however for HVAR the order in which regions and associated
+                    // deltas are added to VariationStoreBuilder, one glyph at a time, can produce
+                    // different orderings of the ItemVariationStore.VariationRegionList (newly seen
+                    // regions get appended, and existing regions reused).
+                    // So, to match the VarRegionList produced by fontTools, we need to make the deltaset
+                    // for the first .notdef glyph similarly "dense", by copying its default instance to
+                    // all other glyph locations...
+                    if i == 0 && gn.as_str() == ".notdef" {
+                        let notdef_width = advance_widths.values().next().unwrap()[0];
+                        for loc in global_locations.iter() {
+                            advance_widths
+                                .entry(loc.clone())
+                                .or_insert_with(|| vec![notdef_width]);
+                        }
+                    } else {
+                        return Vec::new();
+                    }
                 }
                 let locations = advance_widths.keys().cloned().collect::<BTreeSet<_>>();
                 let model = models.entry(locations).or_insert_with(|| {
