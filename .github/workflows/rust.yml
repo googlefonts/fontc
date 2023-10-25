@@ -140,3 +140,24 @@ jobs:
 
       - name: Run resources/scripts/ots_test.sh
         run:  resources/scripts/ots_test.sh
+
+  test-fea-rs:
+    name: cargo test fea-rs
+    runs-on: ubuntu-latest
+    steps:
+      - name: install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v3
+      - uses: getsentry/action-setup-venv@v1.0.0
+        id: venv
+        with:
+          python-version: 3.10.7
+          requirement-files: resources/scripts/fea_ci_requirements.txt
+      - run: pip install -r resources/scripts/fea_ci_requirements.txt
+        if: steps.venv.outputs.cache-hit != 'true'
+
+
+      - name: cargo test fea-rs
+        run: cargo test -p fea-rs
+
+
