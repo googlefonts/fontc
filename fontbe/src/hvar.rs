@@ -67,7 +67,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                     .map(|(loc, src)| (loc.clone(), vec![src.width]))
                     .collect();
                 if advance_widths.len() == 1 {
-                    assert!(advance_widths.contains_key(static_metadata.variable_axes_default()));
+                    assert!(advance_widths.keys().next().unwrap().is_default());
                     return Vec::new();
                 }
                 let locations = advance_widths.keys().cloned().collect::<BTreeSet<_>>();
