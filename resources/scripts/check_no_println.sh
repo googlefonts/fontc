@@ -79,6 +79,21 @@ else
     matches=$(diff_rust_lines_with_prints "$from_ref" "$to_ref")
 fi
 
+# https://stackoverflow.com/q/1527049
+function join() {
+    local IFS="$1";
+    shift;
+    echo "$*";
+}
+
+allowlist=()
+allowlist+=("fea-rs/src/bin/")
+allowlist+=("fea-rs/src/util/ttx.rs")
+
+allowlist=$(join "|" "${allowlist[@]}")
+echo grep -v "($allowlist)"
+matches=$(grep -vP "($allowlist)" <<< "$matches")
+
 if [ ! -z "$matches" ]; then
     echo "Error: The following Rust source files contain println! or eprintln! statements:"
     echo "$matches"
