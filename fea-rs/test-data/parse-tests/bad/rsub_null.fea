@@ -1,0 +1,5 @@
+# the spec says this is cool but there's no way to make it work?
+# https://github.com/fonttools/fonttools/issues/2952
+feature test {
+    rsub a b' c by NULL;
+} test;

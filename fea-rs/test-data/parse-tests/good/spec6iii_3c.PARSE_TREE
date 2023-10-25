@@ -1,0 +1,61 @@
+FILE@[0; 162)
+  #@0 "# http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#example-3c"
+  WS@90 "\n"
+    FeatureNode@[91; 161)
+      FeatureKw@91 "feature"
+      WS@98 " "
+      Tag@99 "kern"
+      WS@103 " "
+      {@104 "{"
+      WS@105 "\n    "
+        GposType8@[110; 124)
+          PosKw@110 "pos"
+          WS@113 " "
+            BacktrackSequence@[114; 115)
+              GlyphName@114 "a"
+          WS@115 " "
+            ContextSequence@[116; 119)
+                ContextGlyphNode@[116; 119)
+                  GlyphName@116 "b"
+                  '@117 "'"
+                  WS@118 " "
+            LookaheadSequence@[119; 120)
+              GlyphName@119 "c"
+          WS@120 " "
+            ValueRecordNode@[121; 123)
+              NUM@121 "10"
+          ;@123 ";"
+      WS@124 "\n    "
+        GposType8@[129; 153)
+          PosKw@129 "pos"
+          WS@132 " "
+            BacktrackSequence@[133; 134)
+              GlyphName@133 "e"
+          WS@134 " "
+            ContextSequence@[135; 138)
+                ContextGlyphNode@[135; 138)
+                  GlyphName@135 "f"
+                  '@136 "'"
+                  WS@137 " "
+            LookaheadSequence@[138; 141)
+              GlyphName@138 "g"
+              WS@139 " "
+              GlyphName@140 "h"
+          WS@141 " "
+            ValueRecordNode@[142; 152)
+              <@142 "<"
+              NUM@143 "12"
+              WS@145 " "
+              NUM@146 "0"
+              WS@147 " "
+              NUM@148 "5"
+              WS@149 " "
+              NUM@150 "0"
+              >@151 ">"
+          ;@152 ";"
+      WS@153 "\n"
+      }@154 "}"
+      WS@155 " "
+      Tag@156 "kern"
+      ;@160 ";"
+  WS@161 "\n"

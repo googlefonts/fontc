@@ -1,0 +1,19 @@
+FILE@[0; 93)
+  #@0 "# normal name, an escaped glyph name, and a contextual keyword"
+  WS@62 "\n"
+    GlyphClassDefNode@[63; 92)
+      @GlyphClass@63 "@tricks"
+      WS@70 " "
+      =@71 "="
+      WS@72 " "
+        GlyphClass@[73; 91)
+          [@73 "["
+          GlyphName@74 "A"
+          WS@75 " "
+          \@76 "\\"
+          GlyphName@77 "mark"
+          WS@81 " "
+          GlyphName@82 "Ascender"
+          ]@90 "]"
+      ;@91 ";"
+  WS@92 "\n"

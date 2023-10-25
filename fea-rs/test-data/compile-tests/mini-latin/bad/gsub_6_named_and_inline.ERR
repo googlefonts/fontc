@@ -1,0 +1,5 @@
+error: named lookup not allowed in statement that includes inline rule
+in ./test-data/compile-tests/mini-latin/bad/gsub_6_named_and_inline.fea at 7:11
+  | 
+7 |     sub a' lookup HI b' c by d;
+  |            ^^^^^^^^^

@@ -1,0 +1,7 @@
+valueRecordDef 123 foo;
+
+feature liga {
+    # these should go in the same lookup
+    pos a -20;
+    pos b <foo>;
+} liga;

@@ -1,0 +1,4 @@
+feature size {
+  # we had a parse failure when this was exactly '0.0'
+  parameters 0.0 0 0 0;
+} size;

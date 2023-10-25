@@ -1,0 +1,5 @@
+feature test {
+    pos fmt_a 69;
+    pos fmt_b <-80 0 -160 0>;
+    pos fmt_e <HI>;
+} test;

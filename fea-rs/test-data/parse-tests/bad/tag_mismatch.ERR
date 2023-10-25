@@ -1,0 +1,5 @@
+error: expected tag 'size'
+in ./test-data/parse-tests/bad/tag_mismatch.fea at 3:2
+  | 
+3 | } Size;
+  |   ^^^^

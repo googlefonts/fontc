@@ -1,0 +1,5 @@
+error: mark class includes glyph in class '@TOP_MARKS', already used in lookup.
+in ./test-data/compile-tests/mini-latin/bad/GPOS_4_non_disjoint_mark_class.fea at 10:28
+   | 
+10 |         <anchor 22 -2> mark @CUTE_TOP_MARKS;
+   |                             ^^^^^^^^^^^^^^^

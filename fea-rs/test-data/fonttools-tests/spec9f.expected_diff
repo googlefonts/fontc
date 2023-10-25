@@ -1,0 +1,10 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# Note: write-fonts always prefers format 4, which is identical to 2 but with
+# updated names
+L6
+>      <version value="2"/>
+L6
+<      <version value="4"/>

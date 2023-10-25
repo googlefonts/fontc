@@ -1,0 +1,8 @@
+
+lookup foo {
+    pos a b 3;
+} foo;
+
+lookup foo {
+    sub x by y;
+} foo;

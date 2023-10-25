@@ -1,0 +1,4 @@
+feature test {
+    # only a single item after 'by'
+    rsub a b' by c d;
+} test;

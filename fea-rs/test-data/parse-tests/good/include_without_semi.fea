@@ -1,0 +1,3 @@
+# semis after includes are required in the spec, but not required by all impls.
+# we print a warning here, but accept the syntax.
+include(size_zero.fea)

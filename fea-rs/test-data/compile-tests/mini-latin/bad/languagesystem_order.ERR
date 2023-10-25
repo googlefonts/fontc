@@ -1,0 +1,5 @@
+error: 'DFLT dftl' must be first languagesystem statement
+in ./test-data/compile-tests/mini-latin/bad/languagesystem_order.fea at 2:0
+  | 
+2 | languagesystem DFLT dflt;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^

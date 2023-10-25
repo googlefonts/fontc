@@ -1,0 +1,30 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# Note: fonttools orders ligature components by glyph name, but we use glyph id.
+# this should have no practical impact on the user.
+L45
+>              <Ligature components="fraction,two" glyph="onehalf"/>
+>              <Ligature components="fraction,two.oldstyle" glyph="onehalf"/>
+L49
+>            </LigatureSet>
+>            <LigatureSet glyph="one.oldstyle">
+L53
+<            </LigatureSet>
+<            <LigatureSet glyph="one.oldstyle">
+L57
+<              <Ligature components="fraction,two" glyph="onehalf"/>
+<              <Ligature components="fraction,two.oldstyle" glyph="onehalf"/>
+L68
+>              <Ligature components="fraction,two" glyph="onehalf"/>
+>              <Ligature components="fraction,two.oldstyle" glyph="onehalf"/>
+L72
+>            </LigatureSet>
+>            <LigatureSet glyph="one.oldstyle">
+L76
+<            </LigatureSet>
+<            <LigatureSet glyph="one.oldstyle">
+L80
+<              <Ligature components="fraction,two" glyph="onehalf"/>
+<              <Ligature components="fraction,two.oldstyle" glyph="onehalf"/>

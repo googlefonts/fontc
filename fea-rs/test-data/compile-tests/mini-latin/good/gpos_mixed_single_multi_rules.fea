@@ -1,0 +1,15 @@
+# when a lookup block contains mixed single & multi-sub rules, we combine
+# them into a single multi-sub lookup.
+lookup mixed {
+    # single sub rules:
+    sub [c d] by E;
+    sub b by B;
+    # ligature decomposition/multi sub rules:
+    sub F by f f;
+} mixed;
+
+# we also want to allow single rules to follow multi, and be promoted
+lookup also_mixed {
+    sub F by f f;
+    sub b by B;
+} also_mixed;

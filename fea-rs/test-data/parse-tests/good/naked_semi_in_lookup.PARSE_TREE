@@ -1,0 +1,43 @@
+FILE@[0; 172)
+  #@0 "# some generated sources (glyphs.app?) insert bare semis in places, which we"
+  WS@76 "\n"
+  #@77 "# should warn about but ignore?"
+  WS@108 "\n"
+    LookupBlockNode@[109; 171)
+      LookupKw@109 "lookup"
+      WS@115 " "
+      LABEL@116 "ABC"
+      WS@119 " "
+      {@120 "{"
+      WS@121 "\n    "
+        LookupFlagNode@[126; 139)
+          LookupflagKw@126 "lookupflag"
+          WS@136 " "
+          NUM@137 "0"
+          ;@138 ";"
+      WS@139 "\n    "
+      ;@144 ";"
+      WS@145 "\n    "
+        GsubType6@[150; 164)
+          SubKw@150 "sub"
+          WS@153 " "
+            BacktrackSequence@[154; 155)
+              GlyphName@154 "a"
+          WS@155 " "
+            ContextSequence@[156; 159)
+                ContextGlyphNode@[156; 159)
+                  GlyphName@156 "b"
+                  '@157 "'"
+                  WS@158 " "
+            LookaheadSequence@[159; 159)
+            InlineSubNode@[159; 163)
+              ByKw@159 "by"
+              WS@161 " "
+              GlyphName@162 "c"
+          ;@163 ";"
+      WS@164 "\n"
+      }@165 "}"
+      WS@166 " "
+      LABEL@167 "ABC"
+      ;@170 ";"
+  WS@171 "\n"

@@ -1,0 +1,11 @@
+error: Expected : found ID
+in ./test-data/parse-tests/bad/suffix_metrics.fea at 2:20
+  | 
+2 |     pos p (wght=1000f:-100 wght=200D:0);
+  |                     ^^^^^^
+
+error: Expected : found ID
+in ./test-data/parse-tests/bad/suffix_metrics.fea at 2:35
+  | 
+2 |     pos p (wght=1000f:-100 wght=200D:0);
+  |                                    ^^^

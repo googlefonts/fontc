@@ -1,0 +1,11 @@
+lookup hi {
+    pos b 5;
+} hi;
+
+feature kern {
+    # can't have inline pairpos with other lookup
+    pos a b' lookup hi c 20;
+    # can't have inline pairpos with two marked glyphs
+    pos a b' c' d <10 5 0 0>;
+
+} kern;

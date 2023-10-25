@@ -1,0 +1,5 @@
+error: multiple rule types in lookup block (saw 'GsubType1' after 'GsubType4')
+in ./test-data/compile-tests/mini-latin/bad/lookup_mixed_rules.fea at 4:4
+  | 
+4 |     sub one by one.osf;
+  |     ^^^^^^^^^^^^^^^^^^^

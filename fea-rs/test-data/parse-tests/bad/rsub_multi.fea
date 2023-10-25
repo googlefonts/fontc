@@ -1,0 +1,4 @@
+# rsub rules can only have a single marked glyph
+feature test {
+    rsub a b' d' f by g;
+} test;

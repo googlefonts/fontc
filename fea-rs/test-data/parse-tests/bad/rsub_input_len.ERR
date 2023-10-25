@@ -1,0 +1,11 @@
+error: Expected ';'
+in ./test-data/parse-tests/bad/rsub_input_len.fea at 3:18
+  | 
+3 |     rsub a b' by c d;
+  |                   ^
+
+error: 'd' Not valid in a feature block
+in ./test-data/parse-tests/bad/rsub_input_len.fea at 3:19
+  | 
+3 |     rsub a b' by c d;
+  |                    ^

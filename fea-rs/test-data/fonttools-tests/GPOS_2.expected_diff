@@ -1,0 +1,12 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# Note: the order of lookups within a feature doesn't matter, they are processed
+# in the order they appear in the lookup list
+L26
+>            <LookupListIndex index="0" value="1"/>
+>            <LookupListIndex index="1" value="0"/>
+L26
+<            <LookupListIndex index="0" value="0"/>
+<            <LookupListIndex index="1" value="1"/>

@@ -1,0 +1,5 @@
+error: feature reference only valid in 'aalt' feature
+in ./test-data/compile-tests/mini-latin/bad/feature_ref_outside_aalt.fea at 2:4
+  | 
+2 |     feature none; # this syntax is only allowed in the 'aalt' feature
+  |     ^^^^^^^

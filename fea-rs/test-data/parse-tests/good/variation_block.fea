@@ -1,0 +1,7 @@
+variation test heavy {
+    lookup thing;
+} test;
+
+variation hmm NULL {
+    # accept me please
+} hmm;

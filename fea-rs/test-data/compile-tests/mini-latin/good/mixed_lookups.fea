@@ -1,0 +1,7 @@
+# a feature with both gpos & gsub lookups
+
+feature mixt {
+    sub a by b;
+    pos c d -10;
+} mixt;
+

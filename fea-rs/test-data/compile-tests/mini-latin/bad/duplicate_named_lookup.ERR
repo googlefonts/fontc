@@ -1,0 +1,5 @@
+error: A lookup named 'foo' has already been defined
+in ./test-data/compile-tests/mini-latin/bad/duplicate_named_lookup.fea at 6:7
+  | 
+6 | lookup foo {
+  |        ^^^

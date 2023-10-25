@@ -1,0 +1,11 @@
+languagesystem DFLT dflt;
+
+feature hilo {
+    pos a b 69;
+} hilo;
+
+include(i_am_quite_unlikely_to_exist.fea);
+
+feature tata {
+    pos a b 0;
+} tata;

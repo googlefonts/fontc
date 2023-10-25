@@ -1,0 +1,5 @@
+error: class includes glyph 'X', already in class Ligature
+in ./test-data/compile-tests/mini-latin/bad/GDEF_conflicting_classes.fea at 4:18
+  | 
+4 |     GlyphClassDef [a b X], , , ;
+  |                   ^^^^^^^

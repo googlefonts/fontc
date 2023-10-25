@@ -1,0 +1,35 @@
+error: expected tag, found NUM
+in ./test-data/parse-tests/bad/bad_tag_num.fea at 1:8
+  | 
+1 | feature 1pos {
+  |         ^
+
+error: Expected {, found PosKw
+in ./test-data/parse-tests/bad/bad_tag_num.fea at 1:9
+  | 
+1 | feature 1pos {
+  |          ^^^
+
+error: Expected glyph or glyph class
+in ./test-data/parse-tests/bad/bad_tag_num.fea at 1:13
+  | 
+1 | feature 1pos {
+  |              ^
+
+error: expected tag, found NUM
+in ./test-data/parse-tests/bad/bad_tag_num.fea at 3:2
+  | 
+3 | } 1pos;
+  |   ^
+
+error: Expected ';'
+in ./test-data/parse-tests/bad/bad_tag_num.fea at 3:3
+  | 
+3 | } 1pos;
+  |    ^
+
+error: Unexpected token 'pos', expected global keyword.
+in ./test-data/parse-tests/bad/bad_tag_num.fea at 3:3
+  | 
+3 | } 1pos;
+  |    ^^^

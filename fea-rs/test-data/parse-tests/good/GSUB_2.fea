@@ -1,0 +1,4 @@
+lookup hi {
+    substitute f_f_i by f f i;
+} hi;
+

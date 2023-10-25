@@ -1,0 +1,5 @@
+error: unknown axis
+in ./test-data/compile-tests/mini-latin/bad/variable_unknown_condset_tag.fea at 2:1
+  | 
+2 | 	grvy 101 404;
+  | 	^^^^

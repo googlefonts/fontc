@@ -1,0 +1,5 @@
+error: aalt can only contain feature names and single or alternate sub rules.
+in ./test-data/compile-tests/mini-latin/bad/aalt_script_statement.fea at 3:4
+  | 
+3 |     script latn;
+  |     ^^^^^^^^^^^^
