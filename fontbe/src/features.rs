@@ -1,7 +1,7 @@
 //! Feature binary compilation.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     error::Error as StdError,
     ffi::{OsStr, OsString},
     fmt::Display,
@@ -11,15 +11,12 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{AxisLocation, Compilation, VariationInfo},
+    compile::{Compilation, VariationInfo},
     parse::{SourceLoadError, SourceResolver},
     Compiler, GlyphMap, GlyphName as FeaRsGlyphName,
 };
-use font_types::{F2Dot14, Tag};
-use fontdrasil::{
-    coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
-    types::Axis,
-};
+use font_types::Tag;
+use fontdrasil::{coords::NormalizedLocation, types::Axis};
 use fontir::{
     ir::{Features, GlyphOrder, KernParticipant, Kerning, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
@@ -96,58 +93,21 @@ impl Display for NoIncludePathError {
 }
 
 struct FeaVariationInfo<'a> {
-    fea_rs_axes: HashMap<Tag, (&'a CoordConverter, fea_rs::compile::AxisInfo)>,
-    axes: HashMap<Tag, &'a Axis>,
+    axes: HashMap<Tag, (usize, &'a Axis)>,
     static_metadata: &'a StaticMetadata,
 }
 
 impl<'a> FeaVariationInfo<'a> {
     fn new(static_metadata: &'a StaticMetadata) -> FeaVariationInfo<'a> {
         FeaVariationInfo {
-            fea_rs_axes: static_metadata
+            axes: static_metadata
                 .axes
                 .iter()
                 .enumerate()
-                .map(|(i, a)| {
-                    (
-                        a.tag,
-                        (
-                            &a.converter,
-                            fea_rs::compile::AxisInfo {
-                                index: i as u16,
-                                default_value: a.default.into(),
-                                min_value: a.min.into(),
-                                max_value: a.max.into(),
-                            },
-                        ),
-                    )
-                })
+                .map(|(i, a)| (a.tag, (i, a)))
                 .collect(),
-            axes: static_metadata.axes.iter().map(|a| (a.tag, a)).collect(),
             static_metadata,
         }
-    }
-
-    fn normalize_location(
-        &self,
-        fears_location: &BTreeMap<Tag, AxisLocation>,
-    ) -> NormalizedLocation {
-        fears_location
-            .iter()
-            .map(|(tag, pos)| {
-                let axis = self.axes.get(tag).unwrap();
-                let pos = match pos {
-                    AxisLocation::User(coord) => {
-                        UserCoord::new(coord.0).to_normalized(&axis.converter)
-                    }
-                    AxisLocation::Design(coord) => {
-                        DesignCoord::new(coord.0).to_normalized(&axis.converter)
-                    }
-                    AxisLocation::Normalized(coord) => NormalizedCoord::new(coord.0),
-                };
-                (*tag, pos)
-            })
-            .collect()
     }
 }
 
@@ -186,27 +146,13 @@ impl Display for MissingTentError {
 }
 
 impl<'a> VariationInfo for FeaVariationInfo<'a> {
-    fn axis_info(&self, axis_tag: font_types::Tag) -> Option<fea_rs::compile::AxisInfo> {
-        self.fea_rs_axes.get(&axis_tag).map(|a| a.1)
-    }
-
-    fn normalize_coordinate(
-        &self,
-        axis_tag: font_types::Tag,
-        value: font_types::Fixed,
-    ) -> font_types::F2Dot14 {
-        let converter = &self
-            .axes
-            .get(&axis_tag)
-            .expect("Unsupported axis")
-            .converter;
-        let user_coord = UserCoord::new(value.to_f64() as f32);
-        F2Dot14::from_f32(user_coord.to_normalized(converter).to_f32())
+    fn axis(&self, axis_tag: font_types::Tag) -> Option<(usize, &Axis)> {
+        self.axes.get(&axis_tag).map(|(i, a)| (*i, *a))
     }
 
     fn resolve_variable_metric(
         &self,
-        values: &HashMap<BTreeMap<Tag, AxisLocation>, i16>,
+        values: &HashMap<NormalizedLocation, i16>,
     ) -> Result<
         (
             i16,
@@ -219,10 +165,7 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
         // Compute deltas using f64 as 1d point and delta, then ship them home as i16
         let point_seqs: HashMap<_, _> = values
             .iter()
-            .map(|(pos, value)| {
-                let normalized = self.normalize_location(pos);
-                (normalized, vec![*value as f64])
-            })
+            .map(|(pos, value)| (pos.clone(), vec![*value as f64]))
             .collect();
 
         // We only support use when the point seq is at a location our variation model supports
@@ -588,33 +531,26 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashMap, HashSet};
+    use std::collections::{HashMap, HashSet};
 
-    use fea_rs::compile::{AxisLocation, VariationInfo};
+    use fea_rs::compile::VariationInfo;
     use font_types::Tag;
     use fontdrasil::{
-        coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
+        coords::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord},
         types::Axis,
     };
     use fontir::ir::StaticMetadata;
-    use ordered_float::OrderedFloat;
 
     use super::FeaVariationInfo;
-
-    fn single_axis_norm_loc(tag: Tag, value: f32) -> NormalizedLocation {
-        let mut loc = NormalizedLocation::new();
-        loc.insert(tag, NormalizedCoord::new(value));
-        loc
-    }
 
     fn weight_variable_static_metadata(min: f32, def: f32, max: f32) -> StaticMetadata {
         let min_wght_user = UserCoord::new(min);
         let def_wght_user = UserCoord::new(def);
         let max_wght_user = UserCoord::new(max);
         let wght = Tag::new(b"wght");
-        let min_wght = single_axis_norm_loc(wght, -1.0);
-        let def_wght = single_axis_norm_loc(wght, 0.0);
-        let max_wght = single_axis_norm_loc(wght, 1.0);
+        let min_wght = vec![(wght, NormalizedCoord::new(-1.0))].into();
+        let def_wght = vec![(wght, NormalizedCoord::new(0.0))].into();
+        let max_wght = vec![(wght, NormalizedCoord::new(1.0))].into();
         StaticMetadata::new(
             1024,
             Default::default(),
@@ -665,19 +601,15 @@ mod tests {
     #[test]
     fn resolve_kern() {
         let _ = env_logger::builder().is_test(true).try_init();
-        fn make_axis_location(user_coord: f64) -> AxisLocation {
-            AxisLocation::User(OrderedFloat(user_coord as f32))
-        }
-
         let wght = Tag::new(b"wght");
         let static_metadata = weight_variable_static_metadata(300.0, 400.0, 700.0);
         let var_info = FeaVariationInfo::new(&static_metadata);
 
         let (default, regions) = var_info
             .resolve_variable_metric(&HashMap::from([
-                (BTreeMap::from([(wght, make_axis_location(300.0))]), 10),
-                (BTreeMap::from([(wght, make_axis_location(400.0))]), 15),
-                (BTreeMap::from([(wght, make_axis_location(700.0))]), 20),
+                (vec![(wght, NormalizedCoord::new(-1.0))].into(), 10),
+                (vec![(wght, NormalizedCoord::new(0.0))].into(), 15),
+                (vec![(wght, NormalizedCoord::new(1.0))].into(), 20),
             ]))
             .unwrap();
         assert!(!regions.iter().any(|(r, _)| is_default(r)));
