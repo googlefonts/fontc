@@ -13,7 +13,8 @@ use write_fonts::{
         hvar::Hvar,
         variations::{ivs_builder::VariationStoreBuilder, DeltaSetIndexMap, VariationRegion},
     },
-    OtRound,
+    validate::Validate,
+    FontWrite, OtRound,
 };
 
 use crate::{
@@ -26,6 +27,18 @@ struct HvarWork {}
 
 pub fn create_hvar_work() -> Box<BeWork> {
     Box::new(HvarWork {})
+}
+
+/// Compute the final size of a table, after it has been serialized to bytes
+fn table_size<T>(table: &T, context: &str) -> Result<usize, Error>
+where
+    T: FontWrite + Validate,
+{
+    let data = dump_table(table).map_err(|e| Error::DumpTableError {
+        e,
+        context: context.to_string(),
+    })?;
+    Ok(data.len())
 }
 
 impl Work<Context, AnyWorkId, Error> for HvarWork {
@@ -55,53 +68,52 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         let glyph_order = context.ir.glyph_order.get();
 
         let mut single_model = true;
-        let all_glyph_width_deltas: Vec<Vec<(VariationRegion, i16)>> = glyph_order
-            .iter()
-            .enumerate()
-            .map(|(i, gn)| {
-                let mut advance_widths: HashMap<_, _> = context
-                    .ir
-                    .glyphs
-                    .get(&FeWorkId::Glyph(gn.clone()))
-                    .sources()
-                    .iter()
-                    .map(|(loc, src)| (loc.clone(), vec![src.width]))
-                    .collect();
-                if advance_widths.len() == 1 {
-                    assert!(advance_widths.keys().next().unwrap().is_default());
-                    // this glyph has no variations (it's only defined at the default location),
-                    // therefore the deltas returned from VariationModel will be an empty Vec.
-                    // However, when this is the first .notdef glyph we would like to treat it
-                    // specially in order to match the output of fontTools.varLib.
-                    // In fonttools, all master TTFs have a .notdef glyph as their first glyph; in fontc,
-                    // unless the input source defines a .notdef, only a default instance is generated.
-                    // And that's ok for gvar, however for HVAR the order in which regions and associated
-                    // deltas are added to VariationStoreBuilder, one glyph at a time, can produce
-                    // different orderings of the ItemVariationStore.VariationRegionList (newly seen
-                    // regions get appended, and existing regions reused).
-                    // So, to match the VarRegionList produced by fontTools, we need to make the deltaset
-                    // for the first .notdef glyph similarly "dense", by copying its default instance to
-                    // all other glyph locations...
-                    if i == 0 && gn.as_str() == ".notdef" {
-                        let notdef_width = advance_widths.values().next().unwrap()[0];
-                        for loc in global_locations.iter() {
-                            advance_widths
-                                .entry(loc.clone())
-                                .or_insert_with(|| vec![notdef_width]);
-                        }
-                    } else {
-                        return Vec::new();
+        let mut all_glyph_width_deltas: Vec<Vec<(VariationRegion, i16)>> = Vec::new();
+        for (i, gn) in glyph_order.iter().enumerate() {
+            let mut advance_widths: HashMap<_, _> = context
+                .ir
+                .glyphs
+                .get(&FeWorkId::Glyph(gn.clone()))
+                .sources()
+                .iter()
+                .map(|(loc, src)| (loc.clone(), vec![src.width]))
+                .collect();
+            if advance_widths.len() == 1 {
+                assert!(advance_widths.keys().next().unwrap().is_default());
+                // this glyph has no variations (it's only defined at the default location),
+                // therefore the deltas returned from VariationModel will be an empty Vec.
+                // However, when this is the first .notdef glyph we would like to treat it
+                // specially in order to match the output of fontTools.varLib.
+                // In fonttools, all master TTFs have a .notdef glyph as their first glyph; in fontc,
+                // unless the input source defines a .notdef, only a default instance is generated.
+                // And that's ok for gvar, however for HVAR the order in which regions and associated
+                // deltas are added to VariationStoreBuilder, one glyph at a time, can produce
+                // different orderings of the ItemVariationStore.VariationRegionList (newly seen
+                // regions get appended, and existing regions reused).
+                // So, to match the VarRegionList produced by fontTools, we need to make the deltaset
+                // for the first .notdef glyph similarly "dense", by copying its default instance to
+                // all other glyph locations...
+                if i == 0 && gn.as_str() == ".notdef" {
+                    let notdef_width = advance_widths.values().next().unwrap()[0];
+                    for loc in global_locations.iter() {
+                        advance_widths
+                            .entry(loc.clone())
+                            .or_insert_with(|| vec![notdef_width]);
                     }
+                } else {
+                    all_glyph_width_deltas.push(Vec::new());
+                    continue;
                 }
-                let locations = advance_widths.keys().cloned().collect::<BTreeSet<_>>();
-                let model = models.entry(locations).or_insert_with(|| {
-                    single_model = false;
-                    VariationModel::new(advance_widths.keys().cloned().collect(), axes.clone())
-                        .unwrap()
-                });
+            }
+            let locations = advance_widths.keys().cloned().collect::<BTreeSet<_>>();
+            let model = models.entry(locations).or_insert_with(|| {
+                single_model = false;
+                VariationModel::new(advance_widths.keys().cloned().collect(), axes.clone()).unwrap()
+            });
+            all_glyph_width_deltas.push(
                 model
                     .deltas(&advance_widths)
-                    .unwrap() // TODO handle error
+                    .map_err(|e| Error::GlyphDeltaError(gn.clone(), e))?
                     .into_iter()
                     .filter_map(|(region, values)| {
                         if region.is_default() {
@@ -114,9 +126,9 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                             values[0].ot_round(),
                         ))
                     })
-                    .collect()
-            })
-            .collect();
+                    .collect(),
+            )
+        }
 
         let mut var_idxes = Vec::new();
 
@@ -152,16 +164,13 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
             .collect();
 
         // use the most compact representation
-        // TODO handle errors
         let use_direct = if direct_store.is_some() {
-            let direct_store_bytes = dump_table(direct_store.as_ref().unwrap()).unwrap();
-            let direct_store_size = direct_store_bytes.len();
+            let direct_store_size =
+                table_size(direct_store.as_ref().unwrap(), "ItemVariationStore")?;
+            let indirect_store_size = table_size(&indirect_store, "ItemVariationStore")?;
+            let varidx_map_size = table_size(&varidx_map, "DeltaSetIndexMap")?;
 
-            let indirect_store_bytes = dump_table(&indirect_store).unwrap();
-            let varidx_map_bytes = dump_table(&varidx_map).unwrap();
-            let indirect_store_size = indirect_store_bytes.len() + varidx_map_bytes.len();
-
-            direct_store_size <= indirect_store_size
+            direct_store_size <= indirect_store_size + varidx_map_size
         } else {
             false
         };
