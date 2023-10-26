@@ -89,6 +89,7 @@ function join() {
 allowlist=()
 allowlist+=("fea-rs/src/bin/")
 allowlist+=("fea-rs/src/util/ttx.rs")
+allowlist+=("fea-rs/src/tests/parse.rs")
 
 allowlist=$(join "|" "${allowlist[@]}")
 echo grep -v "($allowlist)"

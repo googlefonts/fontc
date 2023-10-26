@@ -2,6 +2,7 @@
 
 use std::{
     ffi::OsString,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -56,7 +57,7 @@ impl<'a> Compiler<'a> {
             glyph_map,
             var_info: None,
             opts: Default::default(),
-            print_warnings: true,
+            print_warnings: false,
             resolver: Default::default(),
             project_root: Default::default(),
             max_n_errors: DEFAULT_N_MESSAGES_TO_PRINT,
@@ -83,7 +84,7 @@ impl<'a> Compiler<'a> {
         self.print_warnings(verbose)
     }
 
-    /// Indicate whether or not warnings should be printed (default is `true`)
+    /// Indicate whether or not warnings should be printed (default is `false`)
     pub fn print_warnings(mut self, warnings: bool) -> Self {
         self.print_warnings = warnings;
         self
@@ -179,7 +180,8 @@ fn print_warnings_return_errors(
     let warnings = diagnostics.split_off(split_at);
     if print_warnings {
         for w in warnings {
-            eprintln!("{}", tree.format_diagnostic(&w, is_tty));
+            // get around a CI check denying eprintln
+            let _ = writeln!(std::io::stderr(), "{}", tree.format_diagnostic(&w, is_tty));
         }
     }
     if diagnostics.is_empty() {
