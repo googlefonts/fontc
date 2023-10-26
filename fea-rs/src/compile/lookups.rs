@@ -1148,8 +1148,8 @@ impl Builder for PosSubBuilder<SubstitutionLookup> {
 impl FeatureKey {
     /// Create a new feature key for the provided feature, language, and script.
     ///
-    /// If you already have a [`LanguageSystem`], you can create a `FeatureKey`
-    /// with the [`LanguageSystem::to_feature_key`] method.
+    /// If you already have a [`super::LanguageSystem`], you can create a [`FeatureKey`]
+    /// with the [`super::LanguageSystem::to_feature_key`] method.
     pub fn new(feature: Tag, language: Tag, script: Tag) -> Self {
         FeatureKey {
             feature,

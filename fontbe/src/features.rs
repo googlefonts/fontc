@@ -420,7 +420,7 @@ impl FeatureWork {
         kerning: &Kerning,
     ) -> Result<Compilation, Error> {
         let var_info = FeaVariationInfo::new(static_metadata);
-        let feature_writer = FeatureWriter::new(static_metadata, kerning, &glyph_order);
+        let feature_writer = FeatureWriter::new(static_metadata, kerning, glyph_order);
         let fears_glyph_map = create_glyphmap(glyph_order);
         let compiler = match features {
             Features::File {

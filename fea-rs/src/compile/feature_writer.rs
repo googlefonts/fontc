@@ -95,8 +95,7 @@ impl<'a> FeatureBuilder<'a> {
 
     /// Create a new lookup.
     ///
-    /// The `LookupId` that is returned can then be included in features via
-    /// the [`add_feature`] method.
+    /// The `LookupId` that is returned can then be included in features
     pub fn add_lookup<T: GposSubtableBuilder>(
         &mut self,
         flags: LookupFlag,

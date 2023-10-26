@@ -78,7 +78,7 @@ impl<'a> Compiler<'a> {
         self
     }
 
-    /// Provide [`FeatureWriter`] to provide additional features during compilation
+    /// Provide [`FeatureProvider`] to provide additional features during compilation
     pub fn with_feature_writer(mut self, feature_writer: &'a dyn FeatureProvider) -> Self {
         self.feature_writer = Some(feature_writer);
         self
