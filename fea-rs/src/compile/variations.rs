@@ -1,12 +1,10 @@
 //! compiling variable fonts
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
+use fontdrasil::{coords::NormalizedLocation, types::Axis};
 use ordered_float::OrderedFloat;
-use write_fonts::{
-    tables::variations::VariationRegion,
-    types::{F2Dot14, Fixed, Tag},
-};
+use write_fonts::{tables::variations::VariationRegion, types::Tag};
 
 /// A trait for providing variable font information to the compiler.
 ///
@@ -16,16 +14,8 @@ use write_fonts::{
 ///
 /// This trait abstracts over that info.
 pub trait VariationInfo {
-    /// If the tag is an axis in this font, return the min/max values from fvar
-    fn axis_info(&self, axis_tag: Tag) -> Option<AxisInfo>;
-
-    /// Return the normalized value for a user coordinate for the given axis.
-    ///
-    /// NOTE: This is only used for computing the normalized values for ConditionSets.
-    ///
-    /// NOTE: if unit suffixes become a thing, and ConditionSets remain a thing, then
-    /// this should use the same AxisLocation enum as below.
-    fn normalize_coordinate(&self, axis_tag: Tag, value: Fixed) -> F2Dot14;
+    /// If the tag is an axis in this font, it's fvar index and it's [`Axis`] data.
+    fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)>;
 
     /// Compute default & deltas for a set of locations and values in variation space.
     ///
@@ -33,16 +23,21 @@ pub trait VariationInfo {
     /// as a set of deltas suitable for inclusing in an `ItemVariationStore`.
     fn resolve_variable_metric(
         &self,
-        locations: &HashMap<Location, i16>,
+        locations: &HashMap<NormalizedLocation, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), AnyError>;
 }
 
 type AnyError = Box<dyn std::error::Error>;
 
-// btreemap only because hashmap is not hashable
-type Location = BTreeMap<Tag, AxisLocation>;
+/// A type that implements [`VariationInfo`], for testing and debugging.
+#[derive(Clone, Debug, Default)]
+pub struct MockVariationInfo {
+    // Note: This is not considered public API for the purposes of semvar
+    #[doc(hidden)]
+    pub axes: Vec<Axis>,
+}
 
-/// A location on an axis, in one of three coordinate spaces
+/// A location on an axis, in one of three coordinate spaces, as specified in a fea file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AxisLocation {
     /// A position in the user coordinate space
@@ -53,25 +48,30 @@ pub enum AxisLocation {
     Normalized(OrderedFloat<f32>),
 }
 
-/// Information about a paritcular axis in a variable font.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct AxisInfo {
-    /// The index in the fvar table of this axis
-    pub index: u16,
-    /// The minimum value for this axis, in user coordinates
-    pub min_value: Fixed,
-    /// The default value for this axis, in user coordinates
-    pub default_value: Fixed,
-    /// The maximum value for this axis, in user coordinates
-    pub max_value: Fixed,
-}
+/// Create an axis where user coords == design coords
+#[cfg(any(test, feature = "cli"))]
+fn simple_axis(tag: Tag, min: i16, default: i16, max: i16) -> Axis {
+    use fontdrasil::coords::{CoordConverter, DesignCoord, UserCoord};
 
-/// A type that implements [`VariationInfo`], for testing and debugging.
-#[derive(Clone, Debug, Default)]
-pub struct MockVariationInfo {
-    // Note: This is not considered public API for the purposes of semvar
-    #[doc(hidden)]
-    pub axes: Vec<(Tag, AxisInfo)>,
+    let min = UserCoord::new(min);
+    let default = UserCoord::new(default);
+    let max = UserCoord::new(max);
+    Axis {
+        name: tag.to_string(),
+        tag,
+        min,
+        default,
+        max,
+        hidden: false,
+        converter: CoordConverter::new(
+            vec![
+                (min, DesignCoord::new(min.into_inner())),
+                (default, DesignCoord::new(default.into_inner())),
+                (max, DesignCoord::new(max.into_inner())),
+            ],
+            1,
+        ),
+    }
 }
 
 impl MockVariationInfo {
@@ -81,16 +81,12 @@ impl MockVariationInfo {
         Self {
             axes: raw
                 .iter()
-                .enumerate()
-                .map(|(i, (tag, min, default, max))| {
-                    (
+                .map(|(tag, min, default, max)| {
+                    simple_axis(
                         Tag::new_checked(tag.as_bytes()).unwrap(),
-                        AxisInfo {
-                            index: i as u16,
-                            min_value: Fixed::from_i32(*min as _),
-                            default_value: Fixed::from_i32(*default as _),
-                            max_value: Fixed::from_i32(*max as _),
-                        },
+                        *min,
+                        *default,
+                        *max,
                     )
                 })
                 .collect(),
@@ -108,6 +104,8 @@ impl MockVariationInfo {
     /// The axes are in order. All values are in user coordinates.
     #[cfg(any(test, feature = "cli"))]
     pub fn from_cli_input(input_file: &str) -> Result<Self, (usize, String)> {
+        use write_fonts::types::Fixed;
+
         // parse a number that might be a float or an int
         fn parse_fixed(s: &str, line: usize) -> Result<Fixed, (usize, String)> {
             if let Ok(val) = s.parse::<f64>() {
@@ -131,13 +129,12 @@ impl MockVariationInfo {
                     let tag = tag
                         .parse::<Tag>()
                         .map_err(|e| (i, format!("failed to parse tag: '{e}'")))?;
-                    let axis_info = AxisInfo {
-                        index: axes.len() as u16,
-                        min_value: parse_fixed(min, i)?,
-                        default_value: parse_fixed(default, i)?,
-                        max_value: parse_fixed(max, i)?,
-                    };
-                    axes.push((tag, axis_info))
+                    axes.push(simple_axis(
+                        tag,
+                        parse_fixed(min, i)?.to_i32() as i16,
+                        parse_fixed(default, i)?.to_i32() as i16,
+                        parse_fixed(max, i)?.to_i32() as i16,
+                    ));
                 }
                 _ => Err((i, ("expected four space separated words".to_string())))?,
             };
@@ -151,44 +148,19 @@ impl MockVariationInfo {
 }
 
 impl VariationInfo for MockVariationInfo {
-    fn axis_info(&self, axis_tag: Tag) -> Option<AxisInfo> {
-        self.axes.iter().find_map(
-            |(tag, axis)| {
-                if *tag == axis_tag {
-                    Some(*axis)
-                } else {
-                    None
-                }
-            },
-        )
-    }
-
-    fn normalize_coordinate(&self, axis_tag: Tag, value: Fixed) -> F2Dot14 {
-        let Some(AxisInfo {
-            min_value,
-            default_value,
-            max_value,
-            ..
-        }) = self.axis_info(axis_tag)
-        else {
-            return F2Dot14::ZERO;
-        };
-
-        use core::cmp::Ordering::*;
-        // Make sure max is >= min to avoid potential panic in clamp.
-        let max_value = max_value.max(min_value);
-        let value = value.clamp(min_value, max_value);
-        let value = match value.cmp(&default_value) {
-            Less => -((default_value - value) / (default_value - min_value)),
-            Greater => (value - default_value) / (max_value - default_value),
-            Equal => Fixed::ZERO,
-        };
-        value.clamp(-Fixed::ONE, Fixed::ONE).to_f2dot14()
+    fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)> {
+        self.axes.iter().enumerate().find_map(|(i, axis)| {
+            if axis_tag == axis.tag {
+                Some((i, axis))
+            } else {
+                None
+            }
+        })
     }
 
     fn resolve_variable_metric(
         &self,
-        _locations: &HashMap<Location, i16>,
+        _locations: &HashMap<NormalizedLocation, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), Box<(dyn std::error::Error + 'static)>> {
         Ok(Default::default())
     }
@@ -202,11 +174,11 @@ mod tests {
     fn axis_input_format() {
         let s = "wght 100 200 400";
         let parsed = MockVariationInfo::from_cli_input(s).unwrap();
-        assert_eq!(parsed.axes[0].0, Tag::new(b"wght"));
+        assert_eq!(parsed.axes[0].tag, Tag::new(b"wght"));
 
         let twotimes = "wght 100 200 400\nwdth 50 55.5 12111";
         let parsed = MockVariationInfo::from_cli_input(twotimes).unwrap();
-        assert_eq!(parsed.axes[1].1.max_value.to_i32(), 12111);
+        assert_eq!(parsed.axes[1].max.into_inner(), 12111.0);
     }
 
     #[test]

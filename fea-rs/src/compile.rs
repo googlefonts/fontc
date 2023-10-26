@@ -15,7 +15,7 @@ use self::error::UfoGlyphOrderError;
 pub use compiler::Compiler;
 pub use opts::Opts;
 pub use output::Compilation;
-pub use variations::{AxisInfo, AxisLocation, VariationInfo};
+pub use variations::{AxisLocation, VariationInfo};
 
 #[cfg(any(test, feature = "test", feature = "cli"))]
 pub use variations::MockVariationInfo;
