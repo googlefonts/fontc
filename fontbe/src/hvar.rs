@@ -122,7 +122,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                         // Only 1 value per region for our input
                         assert!(values.len() == 1, "{} values?!", values.len());
                         Some((
-                            region.to_write_fonts_variation_region(&static_metadata.axes),
+                            region.to_write_fonts_variation_region(axes),
                             values[0].ot_round(),
                         ))
                     })
