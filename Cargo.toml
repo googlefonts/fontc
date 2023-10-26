@@ -57,4 +57,3 @@ font-types =  { path = "../fontations/font-types" }
 read-fonts =  { path = "../fontations/read-fonts" }
 write-fonts = { path = "../fontations/write-fonts" }
 skrifa =  { path = "../fontations/skrifa" }
-fea-rs = { path = "../fea-rs/fea-rs" }
