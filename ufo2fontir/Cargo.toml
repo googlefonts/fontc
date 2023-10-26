@@ -28,7 +28,6 @@ write-fonts.workspace = true  # for ot_round
 
 ordered-float.workspace = true
 indexmap.workspace = true
-quick-xml.workspace = true
 
 chrono.workspace = true
 norad.workspace = true
