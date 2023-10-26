@@ -484,6 +484,25 @@ impl VariationRegion {
     pub fn get(&self, tag: &Tag) -> Option<&Tent> {
         self.axis_tents.get(tag)
     }
+
+    /// Convert to a write-fonts VariationRegion in the order of the given fvar axes.
+    ///
+    /// If an axis is not present in the region, it will be assumed as not participating
+    /// (peak at 0).
+    pub fn to_write_fonts_variation_region(
+        &self,
+        axes: &[Axis],
+    ) -> write_fonts::tables::variations::VariationRegion {
+        // https://learn.microsoft.com/en-us/typography/opentype/spec/otvarcommonformats#variation-regions
+        // Array of region axis coordinates records, in the order of axes given in the 'fvar' table.
+        let mut region_axes = Vec::with_capacity(axes.len());
+        let zeroes = Tent::zeroes();
+        for axis in axes.iter() {
+            let tent = self.get(&axis.tag).unwrap_or(&zeroes);
+            region_axes.push(tent.to_region_axis_coords());
+        }
+        write_fonts::tables::variations::VariationRegion { region_axes }
+    }
 }
 
 /// The min/peak/max of a masters influence.

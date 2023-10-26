@@ -107,15 +107,12 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                         if region.is_default() {
                             return None;
                         }
-                        let mut region_axes = Vec::with_capacity(static_metadata.axes.len());
-                        for axis in static_metadata.axes.iter() {
-                            let tent = region.get(&axis.tag).unwrap(); // TODO handle error?
-                            region_axes.push(tent.to_region_axis_coords());
-                        }
                         // Only 1 value per region for our input
                         assert!(values.len() == 1, "{} values?!", values.len());
-                        let value = values[0].ot_round();
-                        Some((VariationRegion { region_axes }, value))
+                        Some((
+                            region.to_write_fonts_variation_region(&static_metadata.axes),
+                            values[0].ot_round(),
+                        ))
                     })
                     .collect()
             })

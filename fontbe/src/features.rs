@@ -168,23 +168,6 @@ impl Display for UnsupportedLocationError {
     }
 }
 
-#[derive(Debug)]
-struct MissingTentError(Tag);
-
-impl MissingTentError {
-    fn new(tag: Tag) -> MissingTentError {
-        MissingTentError(tag)
-    }
-}
-
-impl std::error::Error for MissingTentError {}
-
-impl Display for MissingTentError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Missing a tent for {}", self.0)
-    }
-}
-
 impl<'a> VariationInfo for FeaVariationInfo<'a> {
     fn axis_info(&self, axis_tag: font_types::Tag) -> Option<fea_rs::compile::AxisInfo> {
         self.fea_rs_axes.get(&axis_tag).map(|a| a.1)
@@ -259,17 +242,8 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
         // Produce the desired delta type
         let mut fears_deltas = Vec::with_capacity(deltas.len());
         for (region, value) in deltas.iter().filter(|(r, _)| !r.is_default()) {
-            // https://learn.microsoft.com/en-us/typography/opentype/spec/otvarcommonformats#variation-regions
-            // Array of region axis coordinates records, in the order of axes given in the 'fvar' table.
-            let mut region_axes = Vec::with_capacity(self.static_metadata.axes.len());
-            for axis in self.static_metadata.axes.iter() {
-                let Some(tent) = region.get(&axis.tag) else {
-                    return Err(Box::new(MissingTentError::new(axis.tag)));
-                };
-                region_axes.push(tent.to_region_axis_coords());
-            }
             fears_deltas.push((
-                write_fonts::tables::variations::VariationRegion { region_axes },
+                region.to_write_fonts_variation_region(&self.static_metadata.axes),
                 value.ot_round(),
             ));
         }
