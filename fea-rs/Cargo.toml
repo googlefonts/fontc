@@ -9,7 +9,6 @@ categories = ["parsing", "text-processing"]
 keywords = ["fonts", "opentype"]
 readme = "./README.md"
 edition = "2021"
-default-run = "fea-rs"
 exclude = ["test-data"]
 
 [dependencies]
