@@ -1938,8 +1938,14 @@ mod tests {
 
         for table_tag in table_tags {
             let tag = Tag::new(table_tag);
-            assert!(font_with_fea.data_for_tag(tag).is_some(), "Expected font with fea to have {tag}");
-            assert!(font_without_fea.data_for_tag(tag).is_none(), "Expected font without fea to not have {tag}");
+            assert!(
+                font_with_fea.data_for_tag(tag).is_some(),
+                "Expected font built from {source} with fea to have {tag}"
+            );
+            assert!(
+                font_without_fea.data_for_tag(tag).is_none(),
+                "Expected font build from {source} without fea to not have {tag}"
+            );
         }
     }
 

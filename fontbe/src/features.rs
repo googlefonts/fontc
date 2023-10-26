@@ -449,7 +449,15 @@ impl FeatureWork {
                 }
                 compiler
             }
-            Features::Empty => panic!("compile isn't supposed to be called for Empty"),
+            Features::Empty => {
+                // There is no user feature file but we could still generate kerning, marks, etc
+                let root = OsString::new();
+                Compiler::new(root.clone(), &fears_glyph_map).with_resolver(InMemoryResolver {
+                    content_path: root,
+                    content: Arc::from(""),
+                    include_dir: None,
+                })
+            }
         }
         .with_variable_info(&var_info)
         .with_feature_writer(&feature_writer);
@@ -516,38 +524,28 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
 
         let features = (*context.ir.features.get()).clone();
 
-        if !matches!(features, Features::Empty) {
-            if log::log_enabled!(log::Level::Trace) {
-                if let Features::Memory { fea_content, .. } = &features {
-                    trace!("in-memory fea content:\n{fea_content}");
-                }
+        let result = self.compile(&static_metadata, &features, &glyph_order, &kerning);
+        if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
+            if let Features::Memory { fea_content, .. } = &features {
+                write_debug_fea(context, result.is_err(), "compile failed", fea_content);
             }
+        }
+        let result = result?;
 
-            let result = self.compile(&static_metadata, &features, &glyph_order, &kerning);
-            if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
-                if let Features::Memory { fea_content, .. } = &features {
-                    write_debug_fea(context, result.is_err(), "compile failed", fea_content);
-                }
-            }
-            let result = result?;
-
-            debug!(
-                "Built features, gpos? {} gsub? {} gdef? {}",
-                result.gpos.is_some(),
-                result.gsub.is_some(),
-                result.gdef.is_some(),
-            );
-            if let Some(gpos) = result.gpos {
-                context.gpos.set_unconditionally(gpos.into());
-            }
-            if let Some(gsub) = result.gsub {
-                context.gsub.set_unconditionally(gsub.into());
-            }
-            if let Some(gdef) = result.gdef {
-                context.gdef.set_unconditionally(gdef.into());
-            }
-        } else {
-            debug!("No fea file, dull compile");
+        debug!(
+            "Built features, gpos? {} gsub? {} gdef? {}",
+            result.gpos.is_some(),
+            result.gsub.is_some(),
+            result.gdef.is_some(),
+        );
+        if let Some(gpos) = result.gpos {
+            context.gpos.set_unconditionally(gpos.into());
+        }
+        if let Some(gsub) = result.gsub {
+            context.gsub.set_unconditionally(gsub.into());
+        }
+        if let Some(gdef) = result.gdef {
+            context.gdef.set_unconditionally(gdef.into());
         }
 
         // Enables the assumption that if the file exists features were compiled
