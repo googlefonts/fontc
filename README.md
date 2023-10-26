@@ -1,5 +1,6 @@
 # fontc
-Where in we pursue oxidizing (context: https://github.com/googlefonts/oxidize) fontmake.
+Where in we pursue oxidizing (context: https://github.com/googlefonts/oxidize) fontmake. For context
+around where fontmake came from see [Mr B goes to Vartown](https://github.com/googlefonts/oxidize/blob/main/text/2023-10-18-mrb-goes-to-vartown.md).
 
 Converts source to IR, and then IR to font binary. Aims to be safe, incremental, and fast.
 
@@ -69,6 +70,22 @@ font-types = { git="https://github.com/googlefonts/fontations.git", branch="box"
 read-fonts = { git="https://github.com/googlefonts/fontations.git", branch="box" }
 write-fonts = { git="https://github.com/googlefonts/fontations.git", branch="box" }
 skrifa = { git="https://github.com/googlefonts/fontations.git", branch="box" }
+```
+
+## Comparing branch performance with hyperfine
+
+Only relatively large changes are effectively detected this way:
+
+```shell
+# On each branch, typically main and your branch run hyperfine:
+$ cargo build --release && hyperfine --warmup 3 --runs 250 --prepare 'rm -rf build/' 'target/release/fontc --source ../OswaldFont/sources/Oswald.glyphs --emit-ir false'
+
+# Ideally mean+σ of the improved branch is < mean-σ for main.
+# For example, p2s is probably faster here:
+# main Time (mean ± σ):     154.8 ms ±   8.2 ms
+# p2s Time (mean ± σ):     132.7 ms ±   6.4 ms
+
+# Report similar to ^ if claiming this as proof your branch is a win.
 ```
 
 ## Running flamegraph

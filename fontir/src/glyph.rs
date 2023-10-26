@@ -9,6 +9,7 @@ use std::{
 };
 
 use fontdrasil::{
+    coords::NormalizedLocation,
     orchestration::{Access, Work},
     types::GlyphName,
 };
@@ -17,7 +18,6 @@ use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
 
 use crate::{
-    coords::NormalizedLocation,
     error::WorkError,
     ir::{Component, Glyph, GlyphBuilder, GlyphOrder},
     orchestration::{Context, Flags, IrWork, WorkId},
@@ -435,11 +435,14 @@ mod tests {
     use std::{collections::HashSet, path::Path};
 
     use font_types::Tag;
-    use fontdrasil::{orchestration::Access, types::GlyphName};
+    use fontdrasil::{
+        coords::{NormalizedCoord, NormalizedLocation},
+        orchestration::Access,
+        types::GlyphName,
+    };
     use kurbo::{Affine, BezPath};
 
     use crate::{
-        coords::{NormalizedCoord, NormalizedLocation},
         ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,

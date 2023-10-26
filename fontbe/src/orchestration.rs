@@ -544,10 +544,8 @@ where
 #[cfg(test)]
 mod tests {
     use font_types::Tag;
-    use fontir::{
-        coords::NormalizedCoord,
-        variations::{Tent, VariationRegion},
-    };
+    use fontdrasil::coords::NormalizedCoord;
+    use fontir::variations::{Tent, VariationRegion};
 
     use super::*;
 

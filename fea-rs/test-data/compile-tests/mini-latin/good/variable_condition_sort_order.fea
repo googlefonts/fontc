@@ -1,0 +1,38 @@
+# the conditions in the FeatureVariations table should be ordered by
+# when they are used, not declared
+
+# index 0 0.0 - 0.625
+conditionset TWO {
+    wght 200 700;
+} TWO;
+
+# index 1 0.0 - 0.2
+conditionset ZERO {
+   wdth 100 120;
+} ZERO;
+
+# index 0 0.125 - 0.2525
+conditionset ONE {
+    wght 300 402;
+} ONE;
+
+lookup blah {
+    pos a 5;
+} blah;
+
+variation test NULL {
+    lookup blah;
+} test;
+
+variation test ZERO {
+    lookup blah;
+} test;
+
+variation test ONE {
+    lookup blah;
+} test;
+
+variation test TWO {
+    lookup blah;
+} test;
+

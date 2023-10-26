@@ -1,0 +1,17 @@
+languagesystem DFLT dflt;
+
+feature aalt {
+    feature sups;
+    feature frac;
+
+    sub g by g_very_cool;
+    substitute ampersand from [ampersand.1 ampersand.2 ampersand.3];
+} aalt;
+
+feature sups {
+    sub one by onesuperior;
+} sups;
+
+feature frac {
+    sub one slash four by onequarter;
+} frac;

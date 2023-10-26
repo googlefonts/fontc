@@ -1,0 +1,9 @@
+# ensure that we allow a single lookupflag before rules in named lookups
+lookup foo {
+    lookupflag 3;
+    sub a by b;
+} foo;
+
+feature test {
+    lookup foo;
+} test;

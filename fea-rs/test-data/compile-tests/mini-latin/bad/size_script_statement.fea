@@ -1,0 +1,6 @@
+# script & language re not allowed in 'size' feature
+feature size {
+    script latn;
+    language lang;
+    parameters 1 2 3 4;
+} size;

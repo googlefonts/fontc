@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use fontdrasil::paths::glyph_file;
+use fontdrasil::paths::safe_filename;
 
 use crate::orchestration::WorkId;
 
@@ -38,11 +38,11 @@ impl Paths {
     }
 
     fn glyph_glyf_file(&self, name: &str) -> PathBuf {
-        self.glyph_dir.join(glyph_file(name, ".glyf"))
+        self.glyph_dir.join(safe_filename(name, ".glyf"))
     }
 
     fn glyph_gvar_file(&self, name: &str) -> PathBuf {
-        self.glyph_dir.join(glyph_file(name, ".gvar"))
+        self.glyph_dir.join(safe_filename(name, ".gvar"))
     }
 
     pub fn target_file(&self, id: &WorkId) -> PathBuf {

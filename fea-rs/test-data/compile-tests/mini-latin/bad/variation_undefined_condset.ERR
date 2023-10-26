@@ -1,0 +1,5 @@
+error: undefined conditionset
+in ./test-data/compile-tests/mini-latin/bad/variation_undefined_condset.fea at 1:15
+  | 
+1 | variation oops my_conditions {
+  |                ^^^^^^^^^^^^^

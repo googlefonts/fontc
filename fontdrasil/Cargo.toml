@@ -11,9 +11,10 @@ categories = ["text-processing", "parsing", "graphics"]
 [features]
 
 [dependencies]
+ordered-float.workspace = true
 smol_str.workspace = true
-
 serde.workspace = true
+font-types.workspace = true
 
 [dev-dependencies]
 diff.workspace = true

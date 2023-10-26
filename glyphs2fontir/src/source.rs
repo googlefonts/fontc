@@ -1,8 +1,10 @@
 use chrono::DateTime;
 use font_types::{NameId, Tag};
 use fontdrasil::orchestration::{Access, Work};
-use fontdrasil::types::{GlyphName, GroupName};
-use fontir::coords::NormalizedCoord;
+use fontdrasil::{
+    coords::NormalizedCoord,
+    types::{GlyphName, GroupName},
+};
 use fontir::error::{Error, WorkError};
 use fontir::ir::{
     self, AnchorBuilder, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernParticipant,
@@ -348,6 +350,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             axes,
             named_instances,
             glyph_locations,
+            Default::default(), // TODO: impl reading PS names from Glyphs
         )
         .map_err(WorkError::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
@@ -667,7 +670,7 @@ struct GlyphIrWork {
 fn check_pos(
     glyph_name: &GlyphName,
     positions: &HashSet<NormalizedCoord>,
-    axis: &ir::Axis,
+    axis: &fontdrasil::types::Axis,
     pos: &NormalizedCoord,
 ) -> Result<(), WorkError> {
     if !positions.contains(pos) {
@@ -802,16 +805,16 @@ mod tests {
     use font_types::NameId;
     use font_types::Tag;
     use fontdrasil::{
-        orchestration::Access,
-        types::{AnchorName, GlyphName},
-    };
-    use fontir::{
         coords::{
             CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
             UserLocation,
         },
+        orchestration::Access,
+        types::{AnchorName, GlyphName},
+    };
+    use fontir::{
         error::WorkError,
-        ir::{self, GlobalMetricsInstance, GlyphOrder, NameKey},
+        ir::{GlobalMetricsInstance, GlyphOrder, NameKey},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Source,
@@ -979,7 +982,7 @@ mod tests {
         // Did you load the mappings? DID YOU?!
         assert_eq!(
             vec![
-                ir::Axis {
+                fontdrasil::types::Axis {
                     name: "Weight".into(),
                     tag: Tag::new(b"wght"),
                     min: UserCoord::new(100.0),
@@ -999,7 +1002,7 @@ mod tests {
                         4
                     ),
                 },
-                ir::Axis {
+                fontdrasil::types::Axis {
                     name: "Optical Size".into(),
                     tag: Tag::new(b"opsz"),
                     min: UserCoord::new(12.0),

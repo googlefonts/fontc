@@ -1,0 +1,11 @@
+error: value is less than axis minimum (200)
+in ./test-data/compile-tests/mini-latin/bad/variable_condset_oob.fea at 2:6
+  | 
+2 | 	wght -100 4004;
+  | 	     ^^^^
+
+error: value is more than axis maximum (1000)
+in ./test-data/compile-tests/mini-latin/bad/variable_condset_oob.fea at 2:11
+  | 
+2 | 	wght -100 4004;
+  | 	          ^^^^

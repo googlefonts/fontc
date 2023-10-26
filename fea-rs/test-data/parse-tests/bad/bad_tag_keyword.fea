@@ -1,0 +1,4 @@
+feature enum {
+#test-fea2fea: parameters 10.0 0;
+  parameters 10.0 0 0 0;
+} enum;

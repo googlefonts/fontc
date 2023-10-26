@@ -1,0 +1,11 @@
+error: expected tag, found EnumKw
+in ./test-data/parse-tests/bad/bad_tag_keyword.fea at 1:8
+  | 
+1 | feature enum {
+  |         ^^^^
+
+error: expected tag, found EnumKw
+in ./test-data/parse-tests/bad/bad_tag_keyword.fea at 4:2
+  | 
+4 | } enum;
+  |   ^^^^

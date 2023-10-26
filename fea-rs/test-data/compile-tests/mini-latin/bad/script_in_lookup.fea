@@ -1,0 +1,6 @@
+# script/language is not allowed in standalone lookups
+lookup test {
+    script latn;
+    language lang;
+} test;
+

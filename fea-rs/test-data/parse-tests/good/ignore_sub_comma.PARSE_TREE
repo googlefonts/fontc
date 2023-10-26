@@ -1,0 +1,58 @@
+FILE@[0; 143)
+  #@0 "# you can have multiple ignore statements separated by commas"
+  WS@61 "\n"
+    FeatureNode@[62; 142)
+      FeatureKw@62 "feature"
+      WS@69 " "
+      Tag@70 "test"
+      WS@74 " "
+      {@75 "{"
+      WS@76 "\n    "
+        GsubIgnore@[81; 134)
+          IgnoreKw@81 "ignore"
+          WS@87 " "
+          SubKw@88 "substitute"
+          WS@98 " "
+            IgnoreRuleStatementNode@[99; 115)
+                BacktrackSequence@[99; 106)
+                  @GlyphClass@99 "@LETTER"
+              WS@106 " "
+                ContextSequence@[107; 115)
+                    ContextGlyphNode@[107; 109)
+                      GlyphName@107 "a"
+                      '@108 "'"
+                  WS@109 " "
+                    ContextGlyphNode@[110; 112)
+                      GlyphName@110 "n"
+                      '@111 "'"
+                  WS@112 " "
+                    ContextGlyphNode@[113; 115)
+                      GlyphName@113 "d"
+                      '@114 "'"
+                LookaheadSequence@[115; 115)
+          ,@115 ","
+          WS@116 " "
+            IgnoreRuleStatementNode@[117; 133)
+                BacktrackSequence@[117; 117)
+                ContextSequence@[117; 125)
+                    ContextGlyphNode@[117; 119)
+                      GlyphName@117 "a"
+                      '@118 "'"
+                  WS@119 " "
+                    ContextGlyphNode@[120; 122)
+                      GlyphName@120 "n"
+                      '@121 "'"
+                  WS@122 " "
+                    ContextGlyphNode@[123; 125)
+                      GlyphName@123 "d"
+                      '@124 "'"
+              WS@125 " "
+                LookaheadSequence@[126; 133)
+                  @GlyphClass@126 "@LETTER"
+          ;@133 ";"
+      WS@134 "\n"
+      }@135 "}"
+      WS@136 " "
+      Tag@137 "test"
+      ;@141 ";"
+  WS@142 "\n"

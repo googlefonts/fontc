@@ -1,0 +1,8 @@
+valueRecordDef 42 FOURTWO;
+
+feature test {
+    pos a <FOURTWO>;
+    pos b c <FOURTWO>;
+    pos [d e] <FOURTWO> f <FOURTWO>;
+    pos g h i' <FOURTWO> [j k];
+} test;

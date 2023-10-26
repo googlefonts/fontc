@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ttFont>
+
+  <GSUB>
+    <Version value="0x00010000"/>
+    <ScriptList>
+      <!-- ScriptCount=0 -->
+    </ScriptList>
+    <FeatureList>
+      <!-- FeatureCount=0 -->
+    </FeatureList>
+    <LookupList>
+      <!-- LookupCount=2 -->
+      <Lookup index="0">
+        <LookupType value="2"/>
+        <LookupFlag value="0"/>
+        <!-- SubTableCount=1 -->
+        <MultipleSubst index="0">
+          <Substitution in="F" out="f,f"/>
+          <Substitution in="b" out="B"/>
+          <Substitution in="c" out="E"/>
+          <Substitution in="d" out="E"/>
+        </MultipleSubst>
+      </Lookup>
+      <Lookup index="1">
+        <LookupType value="2"/>
+        <LookupFlag value="0"/>
+        <!-- SubTableCount=1 -->
+        <MultipleSubst index="0">
+          <Substitution in="F" out="f,f"/>
+          <Substitution in="b" out="B"/>
+        </MultipleSubst>
+      </Lookup>
+    </LookupList>
+  </GSUB>
+
+</ttFont>

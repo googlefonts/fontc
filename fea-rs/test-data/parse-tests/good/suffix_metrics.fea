@@ -1,0 +1,4 @@
+feature kern {
+    pos p (wght=1000u:-100 wght=200d:0);
+    pos d (blah=-1n:5 blah=0.5,rah=-0.3n: -9);
+} kern;

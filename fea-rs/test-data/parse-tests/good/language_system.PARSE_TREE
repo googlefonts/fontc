@@ -1,0 +1,17 @@
+FILE@[0; 52)
+    LanguageSystemNode@[0; 25)
+      LanguagesystemKw@0 "languagesystem"
+      WS@14 " "
+      Tag@15 "dflt"
+      WS@19 " "
+      Tag@20 "DFLT"
+      ;@24 ";"
+  WS@25 "\n"
+    LanguageSystemNode@[26; 51)
+      LanguagesystemKw@26 "languagesystem"
+      WS@40 " "
+      Tag@41 "okay"
+      WS@45 " "
+      Tag@46 "cool"
+      ;@50 ";"
+  WS@51 "\n"

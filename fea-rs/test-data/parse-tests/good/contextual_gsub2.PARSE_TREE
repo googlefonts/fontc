@@ -1,0 +1,45 @@
+FILE@[0; 59)
+    LookupBlockNode@[0; 58)
+      LookupKw@0 "lookup"
+      WS@6 " "
+      LABEL@7 "hi"
+      WS@9 " "
+      {@10 "{"
+      WS@11 "\n    "
+        GsubType6@[16; 52)
+          SubKw@16 "substitute"
+          WS@26 " "
+            BacktrackSequence@[27; 39)
+                GlyphClass@[27; 39)
+                  [@27 "["
+                  WS@28 " "
+                  GlyphName@29 "a"
+                  WS@30 " "
+                  GlyphName@31 "e"
+                  WS@32 " "
+                  GlyphName@33 "i"
+                  WS@34 " "
+                  GlyphName@35 "o"
+                  WS@36 " "
+                  GlyphName@37 "u"
+                  ]@38 "]"
+          WS@39 " "
+            ContextSequence@[40; 45)
+                ContextGlyphNode@[40; 45)
+                  GlyphName@40 "f_f"
+                  '@43 "'"
+                  WS@44 " "
+            LookaheadSequence@[45; 45)
+            InlineSubNode@[45; 51)
+              ByKw@45 "by"
+              WS@47 " "
+              GlyphName@48 "f"
+              WS@49 " "
+              GlyphName@50 "f"
+          ;@51 ";"
+      WS@52 "\n"
+      }@53 "}"
+      WS@54 " "
+      LABEL@55 "hi"
+      ;@57 ";"
+  WS@58 "\n"

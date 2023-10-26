@@ -1,0 +1,5 @@
+error: alternate substition rules cannot be specified inline
+in ./test-data/parse-tests/bad/contextual_from.fea at 3:15
+  | 
+3 |     sub a b' c from [d e];
+  |                ^^^^

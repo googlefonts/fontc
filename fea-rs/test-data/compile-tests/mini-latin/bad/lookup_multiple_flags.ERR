@@ -1,0 +1,5 @@
+error: all rules in named lookup must have same lookup flags
+in ./test-data/compile-tests/mini-latin/bad/lookup_multiple_flags.fea at 5:4
+  | 
+5 |     lookupflag 2;
+  |     ^^^^^^^^^^^^^

@@ -1,0 +1,39 @@
+FILE@[0; 59)
+    LookupBlockNode@[0; 58)
+      LookupKw@0 "lookup"
+      WS@6 " "
+      LABEL@7 "hi"
+      WS@9 " "
+      {@10 "{"
+      WS@11 "\n    "
+        GsubType1@[16; 52)
+          SubKw@16 "substitute"
+          WS@26 " "
+            GlyphClass@[27; 34)
+              [@27 "["
+                GlyphRange@[28; 33)
+                  GlyphName@28 "a"
+                  WS@29 " "
+                  -@30 "-"
+                  WS@31 " "
+                  GlyphName@32 "z"
+              ]@33 "]"
+          WS@34 " "
+          ByKw@35 "by"
+          WS@37 " "
+            GlyphClass@[38; 51)
+              [@38 "["
+                GlyphRange@[39; 50)
+                  GlyphName@39 "A.sc"
+                  WS@43 " "
+                  -@44 "-"
+                  WS@45 " "
+                  GlyphName@46 "Z.sc"
+              ]@50 "]"
+          ;@51 ";"
+      WS@52 "\n"
+      }@53 "}"
+      WS@54 " "
+      LABEL@55 "hi"
+      ;@57 ";"
+  WS@58 "\n"

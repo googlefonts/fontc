@@ -1,0 +1,6 @@
+# https://github.com/adobe-type-tools/afdko/pull/1350
+conditionset cool {
+	wght 700 900;
+    temp 100 300;
+} cool;
+

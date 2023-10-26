@@ -1,0 +1,5 @@
+error: reversesub rule can have only one marked glyph
+in ./test-data/parse-tests/bad/rsub_multi.fea at 3:15
+  | 
+3 |     rsub a b' d' f by g;
+  |                ^

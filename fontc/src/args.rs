@@ -63,6 +63,12 @@ pub struct Args {
     // https://github.com/googlefonts/fontmake/blob/6a8b2907/Lib/fontmake/__main__.py#L443
     #[arg(long, default_value = "false")]
     pub keep_direction: bool,
+
+    /// Don't rename glyphs with production names
+    // Named to match fontmake's homonymous flag:
+    // https://github.com/googlefonts/fontmake/blob/6a8b2907/Lib/fontmake/__main__.py#L602
+    #[arg(long, default_value = "false")]
+    pub no_production_names: bool,
 }
 
 impl Args {
@@ -80,6 +86,7 @@ impl Args {
         );
         flags.set(Flags::EMIT_TIMING, self.emit_timing);
         flags.set(Flags::KEEP_DIRECTION, self.keep_direction);
+        flags.set(Flags::PRODUCTION_NAMES, !self.no_production_names);
 
         flags
     }
@@ -104,6 +111,7 @@ impl Args {
                 .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS),
             skip_features: false,
             keep_direction: false,
+            no_production_names: false,
         }
     }
 }
@@ -120,6 +128,12 @@ mod tests {
     fn arg_default_matches_flags_default() {
         let arg_default = Args::parse_from(vec!["program", "--source", "dont.care"]).flags();
         let flags_default = Flags::default();
-        assert_eq!(flags_default.bits(), arg_default.bits());
+        assert_eq!(
+            flags_default.bits(),
+            arg_default.bits(),
+            "mismatch in defaults. flags_default: {:#032b}. args_default: {:#032b}",
+            flags_default.bits(),
+            arg_default.bits(),
+        );
     }
 }

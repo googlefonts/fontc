@@ -1,0 +1,9 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# Note: we do not (yet) support this encoding
+L7
+>      <namerecord nameID="256" platformID="1" platEncID="1" langID="0xc" unicode="True">
+>        Feature description for Apple Platform, script Japanese, language Japanese
+>      </namerecord>

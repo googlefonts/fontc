@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ttFont>
+
+  <GPOS>
+    <Version value="0x00010001"/>
+    <ScriptList>
+      <!-- ScriptCount=1 -->
+      <ScriptRecord index="0">
+        <ScriptTag value="DFLT"/>
+        <Script>
+          <DefaultLangSys>
+            <ReqFeatureIndex value="65535"/>
+            <!-- FeatureCount=1 -->
+            <FeatureIndex index="0" value="0"/>
+          </DefaultLangSys>
+          <!-- LangSysCount=0 -->
+        </Script>
+      </ScriptRecord>
+    </ScriptList>
+    <FeatureList>
+      <!-- FeatureCount=1 -->
+      <FeatureRecord index="0">
+        <FeatureTag value="test"/>
+        <Feature>
+          <!-- LookupCount=1 -->
+          <LookupListIndex index="0" value="0"/>
+        </Feature>
+      </FeatureRecord>
+    </FeatureList>
+    <LookupList>
+      <!-- LookupCount=2 -->
+      <Lookup index="0">
+        <LookupType value="2"/>
+        <LookupFlag value="0"/>
+        <!-- SubTableCount=1 -->
+        <PairPos index="0" Format="1">
+          <Coverage>
+            <Glyph value="a"/>
+          </Coverage>
+          <ValueFormat1 value="4"/>
+          <ValueFormat2 value="0"/>
+          <!-- PairSetCount=1 -->
+          <PairSet index="0">
+            <!-- PairValueCount=1 -->
+            <PairValueRecord index="0">
+              <SecondGlyph value="b"/>
+              <Value1 XAdvance="5"/>
+            </PairValueRecord>
+          </PairSet>
+        </PairPos>
+      </Lookup>
+      <Lookup index="1">
+        <LookupType value="2"/>
+        <LookupFlag value="0"/>
+        <!-- SubTableCount=1 -->
+        <PairPos index="0" Format="1">
+          <Coverage>
+            <Glyph value="d"/>
+          </Coverage>
+          <ValueFormat1 value="4"/>
+          <ValueFormat2 value="0"/>
+          <!-- PairSetCount=1 -->
+          <PairSet index="0">
+            <!-- PairValueCount=1 -->
+            <PairValueRecord index="0">
+              <SecondGlyph value="e"/>
+              <Value1 XAdvance="101"/>
+            </PairValueRecord>
+          </PairSet>
+        </PairPos>
+      </Lookup>
+    </LookupList>
+    <FeatureVariations>
+      <Version value="0x00010000"/>
+      <!-- FeatureVariationCount=1 -->
+      <FeatureVariationRecord index="0">
+        <ConditionSet>
+          <!-- ConditionCount=1 -->
+          <ConditionTable index="0" Format="1">
+            <AxisIndex value="0"/>
+            <FilterRangeMinValue value="0.0"/>
+            <FilterRangeMaxValue value="0.0025"/>
+          </ConditionTable>
+        </ConditionSet>
+        <FeatureTableSubstitution>
+          <Version value="0x00010000"/>
+          <!-- SubstitutionCount=1 -->
+          <SubstitutionRecord index="0">
+            <FeatureIndex value="0"/>
+            <Feature>
+              <!-- LookupCount=2 -->
+              <LookupListIndex index="0" value="0"/>
+              <LookupListIndex index="1" value="1"/>
+            </Feature>
+          </SubstitutionRecord>
+        </FeatureTableSubstitution>
+      </FeatureVariationRecord>
+    </FeatureVariations>
+  </GPOS>
+
+</ttFont>

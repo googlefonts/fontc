@@ -1,0 +1,10 @@
+valueRecordDef 123 format_a;
+valueRecordDef <1 2 3 4> format_b;
+valueRecordDef <
+    1 2 3 4
+    <device 8 88>
+    <device 11 111, 12 112>
+    <device NULL>
+    <device 33 -113, 44 -114, 55 115>
+> format_c;
+valueRecordDef <NULL> format_d;

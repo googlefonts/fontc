@@ -6,51 +6,19 @@ use std::{
 use chrono::{DateTime, Utc};
 use filetime::FileTime;
 use font_types::Tag;
+use fontdrasil::{coords::NormalizedLocation, types::Axis};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use write_fonts::tables::os2::SelectionFlags;
 
 use crate::{
-    coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
     ir::{
-        Axis, GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
-        KernParticipant, Kerning, MiscMetadata, NameKey, NamedInstance, StaticMetadata,
+        GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder,
+        KernParticipant, Kerning, MiscMetadata, NameKey, NamedInstance, PostscriptNames,
+        StaticMetadata,
     },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct CoordConverterSerdeRepr {
-    default_idx: usize,
-    user_to_design: Vec<(f32, f32)>,
-}
-
-impl From<CoordConverterSerdeRepr> for CoordConverter {
-    fn from(from: CoordConverterSerdeRepr) -> Self {
-        let examples = from
-            .user_to_design
-            .into_iter()
-            .map(|(u, d)| (UserCoord::new(u), DesignCoord::new(d)))
-            .collect();
-        CoordConverter::new(examples, from.default_idx)
-    }
-}
-
-impl From<CoordConverter> for CoordConverterSerdeRepr {
-    fn from(from: CoordConverter) -> Self {
-        let user_to_design = from
-            .user_to_design
-            .from
-            .iter()
-            .zip(from.user_to_design.to)
-            .map(|(u, d)| (u.into_inner(), d.into_inner()))
-            .collect();
-        CoordConverterSerdeRepr {
-            default_idx: from.default_idx,
-            user_to_design,
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct StaticMetadataSerdeRepr {
@@ -59,19 +27,23 @@ pub(crate) struct StaticMetadataSerdeRepr {
     pub named_instances: Vec<NamedInstance>,
     pub glyph_locations: Vec<NormalizedLocation>,
     pub names: HashMap<NameKey, String>,
+    pub postscript_names: PostscriptNames,
     pub misc: MiscSerdeRepr,
 }
 
 impl From<StaticMetadataSerdeRepr> for StaticMetadata {
     fn from(from: StaticMetadataSerdeRepr) -> Self {
-        StaticMetadata::new(
+        let mut static_metadata = StaticMetadata::new(
             from.units_per_em,
             from.names,
             from.axes,
             from.named_instances,
             from.glyph_locations.into_iter().collect(),
+            from.postscript_names,
         )
-        .unwrap()
+        .unwrap();
+        static_metadata.misc = from.misc.into();
+        static_metadata
     }
 }
 
@@ -84,6 +56,7 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
             named_instances: from.named_instances,
             glyph_locations,
             names: from.names,
+            postscript_names: from.postscript_names,
             misc: from.misc.into(),
         }
     }

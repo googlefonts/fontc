@@ -348,7 +348,7 @@ mod tests {
     use fontbe::orchestration::{
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
     };
-    use fontdrasil::types::GlyphName;
+    use fontdrasil::{paths::safe_filename, types::GlyphName};
     use fontir::{
         ir::{self, KernParticipant},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
@@ -842,12 +842,12 @@ mod tests {
     }
 
     fn read_ir_glyph(build_dir: &Path, name: &str) -> ir::Glyph {
-        let raw_glyph = read_file(&build_dir.join(format!("glyph_ir/{name}.yml")));
+        let raw_glyph = read_file(&build_dir.join("glyph_ir").join(safe_filename(name, ".yml")));
         ir::Glyph::read(&mut raw_glyph.as_slice())
     }
 
     fn read_be_glyph(build_dir: &Path, name: &str) -> RawGlyph {
-        let raw_glyph = read_file(&build_dir.join(format!("glyphs/{name}.glyf")));
+        let raw_glyph = read_file(&build_dir.join("glyphs").join(safe_filename(name, ".glyf")));
         let read: &mut dyn Read = &mut raw_glyph.as_slice();
         Glyph::read(read).data
     }

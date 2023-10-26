@@ -16,9 +16,12 @@ use fea_rs::{
     Compiler, GlyphMap, GlyphName as FeaRsGlyphName,
 };
 use font_types::{F2Dot14, Tag};
-use fontir::{
+use fontdrasil::{
     coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
-    ir::{Axis, Features, GlyphOrder, KernParticipant, Kerning, StaticMetadata},
+    types::Axis,
+};
+use fontir::{
+    ir::{Features, GlyphOrder, KernParticipant, Kerning, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
 };
 use log::{debug, error, trace, warn};
@@ -589,10 +592,11 @@ mod tests {
 
     use fea_rs::compile::{AxisLocation, VariationInfo};
     use font_types::Tag;
-    use fontir::{
+    use fontdrasil::{
         coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
-        ir::{Axis, StaticMetadata},
+        types::Axis,
     };
+    use fontir::ir::StaticMetadata;
     use ordered_float::OrderedFloat;
 
     use super::FeaVariationInfo;
@@ -645,6 +649,7 @@ mod tests {
             ],
             Default::default(),
             HashSet::from([min_wght, def_wght, max_wght]),
+            Default::default(),
         )
         .unwrap()
     }

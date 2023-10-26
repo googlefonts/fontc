@@ -1,0 +1,14 @@
+languagesystem DFLT dflt;
+
+feature test {
+    pos a b 5;
+} test;
+
+conditionset MAYBE {
+    wght 200 202;
+} MAYBE;
+
+# this feature variation should include the lookup declared for the base feature.
+variation test MAYBE {
+    pos d e 101;
+} test;

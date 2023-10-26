@@ -1,0 +1,5 @@
+lookup hkern {
+    @group = [\pos \5];
+    pos \sub \four 1;
+} hkern;
+

@@ -1,0 +1,3 @@
+feature test {
+    reversesub [a e] d' by d.alt;
+} test;

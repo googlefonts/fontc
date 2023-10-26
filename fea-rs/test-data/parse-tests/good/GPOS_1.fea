@@ -1,0 +1,3 @@
+feature test {
+    position one <-80 0 -160 0>;
+} test;

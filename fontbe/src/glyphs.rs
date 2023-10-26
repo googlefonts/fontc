@@ -9,11 +9,11 @@ use std::{
 };
 
 use fontdrasil::{
+    coords::{Location, NormalizedCoord, NormalizedLocation},
     orchestration::{Access, Work},
     types::GlyphName,
 };
 use fontir::{
-    coords::{Location, NormalizedCoord, NormalizedLocation},
     ir,
     orchestration::{Flags, WorkId as FeWorkId},
     variations::{VariationModel, VariationRegion},

@@ -1,0 +1,11 @@
+error: trailing value record only valid if there is a single marked glyph, no inline lookups, and at least one lookahead glyph.
+in ./test-data/parse-tests/bad/contextual_inline_pairpos.fea at 7:25
+  | 
+7 |     pos a b' lookup hi c 20;
+  |                          ^^
+
+error: trailing value record only valid if there is a single marked glyph, no inline lookups, and at least one lookahead glyph.
+in ./test-data/parse-tests/bad/contextual_inline_pairpos.fea at 9:18
+  | 
+9 |     pos a b' c' d <10 5 0 0>;
+  |                   ^^^^^^^^^^

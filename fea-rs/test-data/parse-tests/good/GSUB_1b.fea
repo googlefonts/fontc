@@ -1,0 +1,4 @@
+lookup hi {
+    substitute [one.fitted one.oldstyle one.tab.oldstyle] by one;
+} hi;
+

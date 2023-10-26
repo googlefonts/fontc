@@ -1,0 +1,7 @@
+# some generated sources (glyphs.app?) insert bare semis in places, which we
+# should warn about but ignore?
+lookup ABC {
+    lookupflag 0;
+    ;
+    sub a b' by c;
+} ABC;
