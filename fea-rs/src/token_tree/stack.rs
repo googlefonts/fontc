@@ -24,6 +24,7 @@ impl<T, const N: usize> Stack<T, N> {
     // we need a const for array shorthand to work in the default() fn
     const INIT: MaybeUninit<T> = MaybeUninit::uninit();
 
+    #[allow(dead_code)] // only used when debugging
     pub fn len(&self) -> usize {
         self.len
     }

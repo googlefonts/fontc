@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::{fmt::Write, io::Write as _};
 
 use std::{cell::Cell, ops::Range, sync::Arc};
 
@@ -318,13 +318,15 @@ impl Node {
     }
 
     #[doc(hidden)]
+    // used in some tests for debugging
     pub fn debug_print_structure(&self, include_tokens: bool) {
         let mut cursor = self.cursor();
         while let Some(thing) = cursor.current() {
             match thing {
                 NodeOrToken::Node(node) => {
                     let depth = cursor.depth();
-                    eprintln!(
+                    let _ = writeln!(
+                        std::io::stderr(),
                         "{}{} ({}..{})",
                         &crate::util::SPACES[..depth * 2],
                         node.kind,
