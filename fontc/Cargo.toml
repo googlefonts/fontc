@@ -7,8 +7,8 @@ description = "A compiler for fonts."
 repository = "https://github.com/googlefonts/fontc"
 readme = "README.md"
 categories = ["text-processing", "parsing", "graphics"]
+default-run = "fontc"
 
-[features]
 
 [dependencies]
 fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
