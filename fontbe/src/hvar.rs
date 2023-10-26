@@ -63,10 +63,12 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         let axes = &static_metadata.axes;
         let var_model = &static_metadata.variation_model;
         let global_locations = var_model.locations().cloned().collect::<BTreeSet<_>>();
+        // cache VariationModels for each set of locations
         let mut models = HashMap::new();
         models.insert(global_locations.clone(), var_model.clone());
         let glyph_order = context.ir.glyph_order.get();
 
+        // start by assuming all glyphs define the same locations (aka single model) until proven otherwise
         let mut single_model = true;
         let mut all_glyph_width_deltas: Vec<Vec<(VariationRegion, i16)>> = Vec::new();
         for (i, gn) in glyph_order.iter().enumerate() {
@@ -101,12 +103,14 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
                             .or_insert_with(|| vec![notdef_width]);
                     }
                 } else {
+                    // spare the model the work of computing no-op deltas
                     all_glyph_width_deltas.push(Vec::new());
                     continue;
                 }
             }
             let locations = advance_widths.keys().cloned().collect::<BTreeSet<_>>();
             let model = models.entry(locations).or_insert_with(|| {
+                // this glyph defines its own set of locations, a new sparse model is needed
                 single_model = false;
                 VariationModel::new(advance_widths.keys().cloned().collect(), axes.clone()).unwrap()
             });
@@ -132,6 +136,8 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
 
         let mut var_idxes = Vec::new();
 
+        // if we have a single model, we can try to build a VariationStore with implicit variation
+        // indices (a single ItemVariationData, outer index 0, inner index => gid).
         let direct_store = if single_model {
             let mut direct_builder = VariationStoreBuilder::new_with_implicit_indices();
             for deltas in &all_glyph_width_deltas {
@@ -148,6 +154,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
             None
         };
 
+        // also build an indirect VariationStore with a DeltaSetIndexMap to map gid => varidx
         let mut indirect_builder = VariationStoreBuilder::new();
         for deltas in all_glyph_width_deltas {
             var_idxes.push(indirect_builder.add_deltas(deltas));
@@ -163,7 +170,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
             })
             .collect();
 
-        // use the most compact representation
+        // prefer the most compact representation between the two stores
         let use_direct = if direct_store.is_some() {
             let direct_store_size =
                 table_size(direct_store.as_ref().unwrap(), "ItemVariationStore")?;
