@@ -359,7 +359,11 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use read_fonts::{
-        tables::{name::Name, os2::SelectionFlags, variations::DeltaSetIndexMap},
+        tables::{
+            name::Name,
+            os2::SelectionFlags,
+            variations::{DeltaSetIndexMap, ItemVariationData},
+        },
         types::NameId,
     };
     use skrifa::{
@@ -2054,6 +2058,12 @@ mod tests {
         );
     }
 
+    fn delta_sets(var_data: &ItemVariationData) -> Vec<Vec<i32>> {
+        (0..var_data.item_count())
+            .map(|i| var_data.delta_set(i).collect::<Vec<_>>())
+            .collect()
+    }
+
     #[test]
     fn compile_hvar_single_model_direct_varstore() {
         // All glyphs define the same locations (single model is ok) so a direct
@@ -2096,24 +2106,28 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(region_coords, vec![[0.0, 1.0, 1.0]]);
         // we expect one ItemVariationData and one delta set per glyph
-        assert_eq!(varstore.item_variation_data_count(), 1);
+        assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:?}");
         let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
         assert_eq!(vardata.region_indexes(), &[0]);
-        assert_eq!(vardata.item_count(), num_glyphs);
-        assert_eq!(vardata.delta_set(0).collect::<Vec<_>>(), vec![0]);
-        assert_eq!(vardata.delta_set(1).collect::<Vec<_>>(), vec![100]);
-        assert_eq!(vardata.delta_set(2).collect::<Vec<_>>(), vec![120]);
-        assert_eq!(vardata.delta_set(3).collect::<Vec<_>>(), vec![70]);
-        assert_eq!(vardata.delta_set(4).collect::<Vec<_>>(), vec![100]);
-        assert_eq!(vardata.delta_set(5).collect::<Vec<_>>(), vec![120]);
-        assert_eq!(vardata.delta_set(6).collect::<Vec<_>>(), vec![120]);
-        assert_eq!(vardata.delta_set(7).collect::<Vec<_>>(), vec![70]);
-        assert_eq!(vardata.delta_set(8).collect::<Vec<_>>(), vec![70]);
-        assert_eq!(vardata.delta_set(9).collect::<Vec<_>>(), vec![120]);
-        assert_eq!(vardata.delta_set(10).collect::<Vec<_>>(), vec![70]);
-        assert_eq!(vardata.delta_set(11).collect::<Vec<_>>(), vec![0]);
-        assert_eq!(vardata.delta_set(12).collect::<Vec<_>>(), vec![0]);
-        assert_eq!(vardata.delta_set(13).collect::<Vec<_>>(), vec![0]);
+        assert_eq!(
+            vec![
+                vec![0],
+                vec![100],
+                vec![120],
+                vec![70],
+                vec![100],
+                vec![120],
+                vec![120],
+                vec![70],
+                vec![70],
+                vec![120],
+                vec![70],
+                vec![0],
+                vec![0],
+                vec![0],
+            ],
+            delta_sets(&vardata)
+        );
     }
 
     #[test]
@@ -2146,11 +2160,10 @@ mod tests {
         assert_eq!(varstore.item_variation_data_count(), 1);
         let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
         assert_eq!(vardata.region_indexes(), &[0]);
-        assert_eq!(vardata.item_count(), 4);
-        assert_eq!(vardata.delta_set(0).collect::<Vec<_>>(), vec![0]);
-        assert_eq!(vardata.delta_set(1).collect::<Vec<_>>(), vec![70]);
-        assert_eq!(vardata.delta_set(2).collect::<Vec<_>>(), vec![100]);
-        assert_eq!(vardata.delta_set(3).collect::<Vec<_>>(), vec![120]);
+        assert_eq!(
+            vec![vec![0], vec![70], vec![100], vec![120],],
+            delta_sets(&vardata)
+        );
         let Some(Ok(DeltaSetIndexMap::Format0(varidx_map))) = hvar.advance_width_mapping() else {
             panic!("Expected advance width mapping with DeltaSetIndexMap::Format0");
         };
