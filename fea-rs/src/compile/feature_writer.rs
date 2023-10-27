@@ -2,11 +2,12 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use fontdrasil::coords::NormalizedLocation;
-use smol_str::SmolStr;
-use write_fonts::tables::{
-    layout::{LookupFlag, PendingVariationIndex},
-    variations::VariationRegion,
+use write_fonts::{
+    tables::{
+        layout::{LookupFlag, PendingVariationIndex},
+        variations::VariationRegion,
+    },
+    types::Tag,
 };
 
 use crate::common::GlyphClass;
@@ -30,7 +31,6 @@ pub struct FeatureBuilder<'a> {
     pub(crate) tables: &'a mut Tables,
     pub(crate) lookups: Vec<(LookupId, PositionLookup)>,
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
-    pub(crate) mark_classes: HashMap<GlyphClass, HashMap<NormalizedLocation, (i16, i16)>>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
     // because there may already be defined filter sets from the root fea
     filter_set_id_start: usize,
@@ -61,7 +61,6 @@ impl<'a> FeatureBuilder<'a> {
             tables,
             lookups: Default::default(),
             features: Default::default(),
-            mark_classes: Default::default(),
             mark_filter_sets: Default::default(),
             filter_set_id_start,
         }
@@ -75,55 +74,6 @@ impl<'a> FeatureBuilder<'a> {
     /// If the FEA text contained an explicit GDEF table block, return its contents
     pub fn gdef(&self) -> Option<&GdefBuilder> {
         self.tables.gdef.as_ref()
-    }
-
-    /// Define a mark class with a variable anchor.
-    ///
-    /// Roughly equivalent to `markClass glyph|class <anchor x y> @name{};`
-    /// [markClass](https://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#4.f)
-    /// with a variable anchor record.
-    ///
-    /// TODO: do we want to ensure there are no redefinitions? do we want
-    /// return an error? do we want to uphold any other invariants?
-    ///
-    /// ALSO: mark class IDs depend on definition order in the source.
-    /// I have no idea how best to approximate that in this API :/
-    pub fn define_mark_class(
-        &mut self,
-        members: impl Into<GlyphClass>,
-        anchors: HashMap<NormalizedLocation, (i16, i16)>,
-    ) {
-        // TODO: an error type
-        let members = members.into();
-        if self.mark_classes.insert(members, anchors).is_some() {
-            panic!("Multiple insertions for the same glyph class")
-        }
-    }
-
-    /// Setup a mark to base the recommended way: in a lookup of it's very own.
-    ///
-    /// Pseudo-fea:
-    ///
-    /// ```text
-    /// lookup name {
-    ///     pos base glyph|glyphclass <anchor x y> @markclass;
-    ///     // plus variations of anchor pos
-    /// }
-    ///
-    /// <https://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#6.d>
-    /// ```
-    pub fn add_mark_base_pos(
-        &mut self,
-        base: impl Into<GlyphClass>,
-        class: impl Into<GlyphClass>,
-        anchors: HashMap<NormalizedLocation, (i16, i16)>,
-    ) {
-        // TODO: an error type
-
-        // TODO populate the lookup
-        let lookup_id = self.add_lookup(LookupFlag::default(), None, Default::default());
-
-        //eprintln!("  lookup {lookup_name} {{\n    pos base {base_name} <anchor {} {}> @{class_name}; # TODO variable anchor;\n  }} {lookup_name};", default_anchor.0, default_anchor.1);
     }
 
     /// Create a new lookup.
@@ -153,6 +103,16 @@ impl<'a> FeatureBuilder<'a> {
     ) -> PendingVariationIndex {
         let delta_set_id = self.tables.var_store().add_deltas(deltas);
         PendingVariationIndex { delta_set_id }
+    }
+
+    /// Add lookups to every default language system.
+    ///
+    /// Convenience method for recurring pattern.
+    pub fn add_to_default_language_systems(&mut self, feature_tag: Tag, lookups: &Vec<LookupId>) {
+        for langsys in self.language_systems() {
+            let feature_key = langsys.to_feature_key(feature_tag);
+            self.add_feature(feature_key, lookups.clone());
+        }
     }
 
     /// Create a new feature, registered for a particular language system.

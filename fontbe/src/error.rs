@@ -1,6 +1,6 @@
 use std::{fmt::Display, io, path::PathBuf};
 
-use fea_rs::compile::error::CompilerError;
+use fea_rs::compile::{error::CompilerError, PreviouslyAssignedClass};
 use font_types::Tag;
 use fontdrasil::types::GlyphName;
 use fontir::{
@@ -65,6 +65,10 @@ pub enum Error {
     MissingTable(Tag),
     #[error("Expected an anchor, got {0:?}")]
     ExpectedAnchor(FeWorkId),
+    #[error("No glyph id for '{0}'")]
+    MissingGlyphId(GlyphName),
+    #[error("Multiple assignments for class: {0:?}")]
+    PreviouslyAssignedClass(PreviouslyAssignedClass),
 }
 
 #[derive(Debug)]

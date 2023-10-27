@@ -11,7 +11,10 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{Compilation, FeatureBuilder, FeatureProvider, PairPosBuilder, VariationInfo},
+    compile::{
+        Compilation, FeatureBuilder, FeatureProvider, MarkToBaseBuilder, MarkToMarkBuilder,
+        PairPosBuilder, VariationInfo,
+    },
     parse::{SourceLoadError, SourceResolver},
     Compiler, GlyphClass, GlyphMap, GlyphName as FeaRsGlyphName,
 };
@@ -29,7 +32,12 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
-use write_fonts::{tables::gpos::ValueRecord, tables::layout::LookupFlag, OtRound};
+use smol_str::SmolStr;
+use write_fonts::{
+    tables::gpos::{AnchorFormat1, AnchorTable, ValueRecord},
+    tables::layout::LookupFlag,
+    OtRound,
+};
 
 use crate::{
     error::Error,
@@ -265,14 +273,8 @@ impl<'a> FeatureWriter<'a> {
 
         // now we have a builder for the pairpos subtables, so we can make
         // a lookup:
-        let lookup_id = builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables]);
-        let kern = Tag::new(b"kern");
-        let lookups = vec![lookup_id];
-        // now register this feature for each of the default language systems
-        for langsys in builder.language_systems() {
-            let feature_key = langsys.to_feature_key(kern);
-            builder.add_feature(feature_key, lookups.clone());
-        }
+        let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables])];
+        builder.add_to_default_language_systems(Tag::new(b"kern"), &lookups)
     }
 
     /// Generate mark to base and mark to mark features
@@ -328,132 +330,92 @@ impl<'a> FeatureWriter<'a> {
             }
         }
 
-        // **** TODO: drive builder instead of generating a string ****
+        // Build the actual mark base and mark mark constructs using fea-rs builders
 
-        let mut classes = Vec::new();
-        let mut mark_to_bases = Vec::new();
-        let mut mark_to_marks = Vec::new();
+        let mut mark_base_lookups = Vec::new();
+        let mut mark_mark_lookups = Vec::new();
 
         for (group_name, group) in groups.iter() {
-            // write a mark class for every mark
-            for (glyph_name, mark) in group.marks.iter() {
-                let default_pos = mark.default_pos();
-                classes.push(format!(
-                    "markClass {} <anchor {} {}> @MC{}; # TODO variable anchor",
-                    glyph_name, default_pos.x, default_pos.y, mark.name
-                ));
-                // TODO error handling
-                let mark_gid = self.glyph_id(&mark.name).unwrap_or(GlyphId::NOTDEF);
-                let variations = mark
-                    .positions
-                    .iter()
-                    .map(|(loc, pos)| (loc.clone(), (pos.x.ot_round(), pos.y.ot_round())))
-                    .collect();
-                builder.define_mark_class(mark_gid, variations);
-            }
+            let mark_class_name: SmolStr = format!("MC_{group_name}").into();
 
-            // if we have bases *and* marks emit mark to base
+            // if we have bases *and* marks produce mark to base
             for (base_name, base) in group.bases.iter() {
+                let Some(base_gid) = self.glyph_id(base_name) else {
+                    return Err(Error::MissingGlyphId(base_name.clone()));
+                };
+                let mark_class = format!("MC_{}", base.name).into();
                 let default_pos = base.default_pos();
-                let mark_name = &base.name;
-                let mark_class = format!("MC_{mark_name}");
-                let lookup_name = format!("mark2base_{base_name}_{group_name}");
-                let variations = base
-                    .positions
-                    .iter()
-                    .filter_map(|(loc, pos)| {
-                        if loc.has_any_non_zero() {
-                            Some((loc.clone(), (pos.x.ot_round(), pos.y.ot_round())))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                // TODO: arithmetic for pos
-                mark_to_bases.push(format!("  lookup {lookup_name} {{\n    pos base {base_name} <anchor {} {}> @MC_{mark_name}; # TODO variable anchor;\n  }} {lookup_name};", default_pos.x, default_pos.y));
-                builder.add_mark_base_pos(
-                    lookup_name,
-                    base_name.as_str(),
-                    mark_class,
-                    (default_pos.x.ot_round(), default_pos.y.ot_round()),
-                    variations,
-                );
+                let anchor = AnchorTable::Format1(AnchorFormat1::new(
+                    default_pos.x.ot_round(),
+                    default_pos.y.ot_round(),
+                ));
+
+                let mut mark_base = MarkToBaseBuilder::default();
+                mark_base.insert_base(base_gid, &mark_class, anchor);
+
+                // each in it's own lookup, whch differs from fontmake
+                mark_base_lookups.push(builder.add_lookup(
+                    LookupFlag::default(),
+                    None,
+                    vec![mark_base],
+                ));
+
+                // TODO: variations
+                // TODO how do you use self.resolve_variable_metric(values) on 2d values
             }
 
             // If a mark has anchors that are themselves marks what we got here is a mark to mark
-            let mut snippets = Vec::new();
-            let mut mark_names = Vec::new();
+
+            let mut mark_mark = MarkToMarkBuilder::default();
+            let mut filter_set = Vec::new();
+
             for (mark_name, mark_anchor) in group.marks.iter() {
                 let Some(glyph_anchors) = anchors.get(mark_name) else {
                     continue;
                 };
+                if !glyph_anchors
+                    .anchors
+                    .iter()
+                    .any(|a| AnchorType::Mark == a.name.anchor_type())
+                {
+                    continue;
+                }
+                let Some(mark_gid) = self.glyph_id(mark_name) else {
+                    return Err(Error::MissingGlyphId(mark_name.clone()));
+                };
+
                 let base_name = AnchorType::Mark.group_name(mark_anchor.name.clone()); // TODO Ew
                 let Some(anchor_my_anchor) =
                     glyph_anchors.anchors.iter().find(|a| a.name == base_name)
                 else {
-                    eprintln!("No anchor_my_anchor for {base_name}");
+                    debug!("No anchor_my_anchor for {base_name}");
                     continue;
                 };
-                let Some((_, default_pos)) = anchor_my_anchor
-                    .positions
-                    .iter()
-                    .find(|(loc, _)| !loc.has_any_non_zero())
-                else {
-                    panic!("TODO return a useful error");
-                };
-                for glyph_anchor in glyph_anchors.anchors.iter() {
-                    if AnchorType::Mark != glyph_anchor.name.anchor_type() {
-                        continue;
-                    }
-                    //let group_name = AnchorType::Mark.group_name(mark_anchor.name.clone());
-                    if snippets.is_empty() {
-                        snippets.push(format!("  lookup mark2mark_{group_name} {{"));
-                        snippets.push("".to_string()); // placeholder for MarkFilteringSet
-                        snippets.push(format!(
-                            "    lookupflag UseMarkFilteringSet @MFS_mark2mark_{group_name};"
-                        ));
-                    }
-                    mark_names.push(mark_name.to_string());
+                let default_pos = anchor_my_anchor.default_pos();
+                let anchor = AnchorTable::Format1(AnchorFormat1::new(
+                    default_pos.x.ot_round(),
+                    default_pos.y.ot_round(),
+                ));
 
-                    // TODO: arithmetic for pos
-                    snippets.push(format!(
-                        "    pos mark {} <anchor {} {}> mark @MC_{group_name};  # TODO variable anchor",
-                        mark_name, default_pos.x, default_pos.y
-                    ));
-                }
+                // TODO: variations
+                // TODO how do you use self.resolve_variable_metric(values) on 2d values
+
+                mark_mark
+                    .insert_mark1(mark_gid, mark_class_name.clone(), anchor)
+                    .map_err(Error::PreviouslyAssignedClass)?;
+                filter_set.push(mark_gid);
             }
-
-            if !snippets.is_empty() {
-                mark_names.sort();
-                snippets[1] = format!(
-                    "    @MFS_mark2mark_{group_name} = [{}];",
-                    mark_names.join(" ")
-                );
-                snippets.push("  }".to_string());
-                mark_to_marks.push(snippets.join("\n"));
-            }
+            mark_mark_lookups.push(builder.add_lookup(
+                LookupFlag::default(),
+                Some(filter_set.into()),
+                vec![mark_mark],
+            ));
         }
 
-        classes.sort();
-        for class in classes {
-            eprintln!("{class}");
-        }
+        builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_base_lookups);
+        builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
 
-        mark_to_bases.sort();
-        eprintln!("\nfeature mark {{");
-        for mark_to_base in mark_to_bases {
-            eprintln!("{mark_to_base}");
-        }
-        eprintln!("}} mark;");
-
-        mark_to_marks.sort();
-        eprintln!("\nfeature mkmk {{");
-        for mark_to_mark in mark_to_marks {
-            eprintln!("{mark_to_mark}");
-        }
-        eprintln!("}} mkmk;");
-
-        todo!("Add marks")
+        Ok(())
     }
 
     //NOTE: this is basically identical to the same method on FeaVariationInfo,
@@ -748,14 +710,19 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();
+        let features = context.ir.features.get();
         let kerning = context.ir.kerning.get();
         let anchors = context.ir.anchors.all();
 
-        let features = (*context.ir.features.get()).clone(); // TODO does this need to be cloned?
-
-        let result = self.compile(&static_metadata, &features, &glyph_order, &kerning);
+        let result = self.compile(
+            &static_metadata,
+            features.as_ref(),
+            glyph_order.as_ref(),
+            kerning.as_ref(),
+            anchors.as_ref(),
+        );
         if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
-            if let Features::Memory { fea_content, .. } = &features {
+            if let Features::Memory { fea_content, .. } = features.as_ref() {
                 write_debug_fea(context, result.is_err(), "compile failed", fea_content);
             }
         }
