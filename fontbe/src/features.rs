@@ -32,9 +32,10 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
+use read_fonts::tables::layout::DeltaFormat;
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::gpos::{AnchorFormat1, AnchorTable, ValueRecord},
+    tables::{gpos::{AnchorFormat1, AnchorTable, ValueRecord, AnchorFormat3}, layout::{DeviceOrVariationIndex, Device}},
     tables::layout::LookupFlag,
     OtRound,
 };
@@ -337,31 +338,47 @@ impl<'a> FeatureWriter<'a> {
 
         for (group_name, group) in groups.iter() {
             let mark_class_name: SmolStr = format!("MC_{group_name}").into();
+            
+            // if we have bases *and* marks produce mark to base            
+            if !group.bases.is_empty() && !group.marks.is_empty() {
+                for (base_name, base) in group.bases.iter() {
+                    let Some(base_gid) = self.glyph_id(base_name) else {
+                        return Err(Error::MissingGlyphId(base_name.clone()));
+                    };
+                    let mark_class: SmolStr = format!("MC_{}", base.name).into();
+                    let default_pos = base.default_pos();
 
-            // if we have bases *and* marks produce mark to base
-            for (base_name, base) in group.bases.iter() {
-                let Some(base_gid) = self.glyph_id(base_name) else {
-                    return Err(Error::MissingGlyphId(base_name.clone()));
-                };
-                let mark_class = format!("MC_{}", base.name).into();
-                let default_pos = base.default_pos();
-                let anchor = AnchorTable::Format1(AnchorFormat1::new(
-                    default_pos.x.ot_round(),
-                    default_pos.y.ot_round(),
-                ));
+                    // TODO: fontmake seems to use Format3 but it does so in a way that makes
+                    // ttx that I can't seem to get ours to match. Maybe my test file is borked?
+                    let device = Device ::new(0, 0, &[0]);
+                    let anchor = AnchorTable::Format3(AnchorFormat3::new(
+                        default_pos.x.ot_round(),
+                        default_pos.y.ot_round(),
+                        Some(DeviceOrVariationIndex::Device(device.clone())),
+                        Some(DeviceOrVariationIndex::Device(device)),
+                    ));
 
-                let mut mark_base = MarkToBaseBuilder::default();
-                mark_base.insert_base(base_gid, &mark_class, anchor);
+                    let mut mark_base = MarkToBaseBuilder::default();
+                    for (mark_name, _) in group.marks.iter() {
+                        let Some(mark_gid) = self.glyph_id(mark_name) else {
+                            return Err(Error::MissingGlyphId(mark_name.clone()));
+                        };
+                        mark_base.insert_mark(mark_gid, mark_class.clone(), anchor.clone())
+                            .map_err(Error::PreviouslyAssignedClass)?;
+                    }
 
-                // each in it's own lookup, whch differs from fontmake
-                mark_base_lookups.push(builder.add_lookup(
-                    LookupFlag::default(),
-                    None,
-                    vec![mark_base],
-                ));
+                    mark_base.insert_base(base_gid, &mark_class, anchor);
 
-                // TODO: variations
-                // TODO how do you use self.resolve_variable_metric(values) on 2d values
+                    // each in it's own lookup, whch differs from fontmake
+                    mark_base_lookups.push(builder.add_lookup(
+                        LookupFlag::default(),
+                        None,
+                        vec![mark_base],
+                    ));
+
+                    // TODO: variations
+                    // TODO how do you use self.resolve_variable_metric(values) on 2d values
+                }
             }
 
             // If a mark has anchors that are themselves marks what we got here is a mark to mark
@@ -405,15 +422,21 @@ impl<'a> FeatureWriter<'a> {
                     .map_err(Error::PreviouslyAssignedClass)?;
                 filter_set.push(mark_gid);
             }
-            mark_mark_lookups.push(builder.add_lookup(
-                LookupFlag::default(),
-                Some(filter_set.into()),
-                vec![mark_mark],
-            ));
+            if !filter_set.is_empty() {
+                mark_mark_lookups.push(builder.add_lookup(
+                    LookupFlag::default(),
+                    Some(filter_set.into()),
+                    vec![mark_mark],
+                ));
+            }
         }
 
-        builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_base_lookups);
-        builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
+        if !mark_base_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_base_lookups);
+        }        
+        if !mark_mark_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
+        }        
 
         Ok(())
     }
