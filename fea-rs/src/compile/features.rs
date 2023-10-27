@@ -222,6 +222,19 @@ impl AllFeatures {
         result
     }
 
+    //FIXME: what do we do with conflicts?
+    pub(crate) fn merge_external_features(
+        &mut self,
+        features: BTreeMap<FeatureKey, FeatureLookups>,
+    ) {
+        for (key, lookups) in features {
+            self.get_or_insert(key).base.extend(lookups.base);
+            if !lookups.variations.is_empty() {
+                panic!("specifying feature variations from feature writer is not yet supported");
+            }
+        }
+    }
+
     #[cfg(test)]
     fn get_base(&self, key: &FeatureKey) -> Option<&[LookupId]> {
         self.features.get(key).map(|x| x.base.as_slice())
@@ -410,6 +423,7 @@ fn split_lookups(lookups: &[LookupId]) -> (Vec<u16>, Vec<u16>) {
             LookupId::Gpos(_) => gpos.push(lookup.to_gpos_id_or_die()),
             LookupId::Gsub(_) => gsub.push(lookup.to_gsub_id_or_die()),
             LookupId::Empty => (),
+            LookupId::External(_) => panic!("external lookups should not be present at split time"),
         }
     }
 

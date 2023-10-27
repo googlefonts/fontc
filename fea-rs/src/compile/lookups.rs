@@ -39,11 +39,9 @@ use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,
     SubChainContextBuilder, SubContextBuilder,
 };
-pub use gpos::PreviouslyAssignedClass;
-use gpos::{
-    CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder,
-    SinglePosBuilder,
-};
+
+use gpos::{CursivePosBuilder, MarkToLigBuilder, SinglePosBuilder};
+pub use gpos::{MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder, PreviouslyAssignedClass};
 use gsub::{AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder};
 pub(crate) use helpers::ClassDefBuilder2;
 
@@ -84,6 +82,25 @@ pub(crate) enum PositionLookup {
     ChainedContextual(LookupBuilder<PosChainContextBuilder>),
 }
 
+// a litle helper to implement this conversion trait.
+//
+// Note: this is only used in the API for adding external features ( aka feature
+// writers) and so we only implement the conversion for the specific lookup types
+// that we want to allow the client to add externally.
+macro_rules! impl_into_pos_lookup {
+    ($builder:ty, $variant:ident) => {
+        impl From<LookupBuilder<$builder>> for PositionLookup {
+            fn from(src: LookupBuilder<$builder>) -> PositionLookup {
+                PositionLookup::$variant(src)
+            }
+        }
+    };
+}
+
+impl_into_pos_lookup!(PairPosBuilder, Pair);
+impl_into_pos_lookup!(MarkToBaseBuilder, MarkToBase);
+impl_into_pos_lookup!(MarkToMarkBuilder, MarkToMark);
+
 #[derive(Clone, Debug)]
 pub(crate) enum SubstitutionLookup {
     Single(LookupBuilder<SingleSubBuilder>),
@@ -103,14 +120,35 @@ pub(crate) enum SomeLookup {
     GsubContextual(ContextualLookupBuilder<SubstitutionLookup>),
 }
 
+/// IDs assigned to lookups during compilation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub(crate) enum LookupId {
+pub enum LookupId {
+    /// An id for a GPOS lookup
     Gpos(usize),
+    /// An id for a GSUB lookup
     Gsub(usize),
+    /// A temporary ID assigned to a lookup constructed by the client.
+    ///
+    /// This id will be remapped when the external features are merged into
+    /// the features generated from the FEA.
+    External(usize),
     /// Used when a named lookup block has no rules.
     ///
     /// We parse this, but then discard it immediately whenever it is referenced.
     Empty,
+}
+
+/// A struct that remaps initial lookup ids to their final values.
+///
+/// LookupIds can need adjusting in a number of cases:
+/// - if the 'aalt' feature is present it causes additional lookups to be
+///   inserted at the start of the GSUB lookup list
+/// - FEA code can indicate with inline comments where additional lookups
+///   should be inserted
+#[derive(Clone, Debug, Default)]
+pub(crate) struct LookupIdMap {
+    // we could consider having this store the final values as u16?
+    mapping: HashMap<LookupId, LookupId>,
 }
 
 /// Tracks the current lookupflags state
@@ -120,8 +158,9 @@ pub(crate) struct LookupFlagInfo {
     pub(crate) mark_filter_set: Option<FilterSetId>,
 }
 
+/// A feature associated with a particular script and language.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct FeatureKey {
+pub struct FeatureKey {
     pub(crate) feature: Tag,
     pub(crate) language: Tag,
     pub(crate) script: Tag,
@@ -157,7 +196,7 @@ impl<T: Default> LookupBuilder<T> {
         }
     }
 
-    fn new_with_lookups(
+    pub(crate) fn new_with_lookups(
         flags: LookupFlag,
         mark_set: Option<FilterSetId>,
         subtables: Vec<T>,
@@ -591,7 +630,20 @@ impl AllLookups {
         for lookup in self.gpos.iter_mut() {
             lookup.update_variation_index_tables(key_map);
         }
-        //
+    }
+
+    /// Returns a map that must be used to remap the ids in any features where
+    /// they were used.
+    pub(crate) fn merge_external_lookups(
+        &mut self,
+        lookups: Vec<(LookupId, PositionLookup)>,
+    ) -> LookupIdMap {
+        let mut map = LookupIdMap::default();
+        for (temp_id, lookup) in lookups {
+            let final_id = self.push(SomeLookup::GposLookup(lookup));
+            map.insert(temp_id, final_id);
+        }
+        map
     }
 
     pub(crate) fn build(
@@ -656,6 +708,7 @@ impl LookupId {
             LookupId::Gpos(idx) => idx,
             LookupId::Gsub(idx) => idx,
             LookupId::Empty => usize::MAX,
+            LookupId::External(idx) => idx,
         }
     }
 
@@ -677,6 +730,16 @@ impl LookupId {
             panic!("this *really* shouldn't happen")
         };
         x.try_into().unwrap()
+    }
+}
+
+impl LookupIdMap {
+    fn insert(&mut self, from: LookupId, to: LookupId) {
+        self.mapping.insert(from, to);
+    }
+
+    pub(crate) fn get(&self, id: LookupId) -> LookupId {
+        self.mapping.get(&id).copied().unwrap_or(id)
     }
 }
 
@@ -1079,6 +1142,20 @@ impl Builder for PosSubBuilder<SubstitutionLookup> {
                 gsub.feature_variations = variations.into();
                 gsub
             })
+    }
+}
+
+impl FeatureKey {
+    /// Create a new feature key for the provided feature, language, and script.
+    ///
+    /// If you already have a [`super::LanguageSystem`], you can create a [`FeatureKey`]
+    /// with the [`super::LanguageSystem::to_feature_key`] method.
+    pub fn new(feature: Tag, language: Tag, script: Tag) -> Self {
+        FeatureKey {
+            feature,
+            language,
+            script,
+        }
     }
 }
 

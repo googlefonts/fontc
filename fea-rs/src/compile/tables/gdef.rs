@@ -21,8 +21,9 @@ use write_fonts::tables::{
 use super::{VariationIndexRemapping, VariationStoreBuilder};
 use crate::common::GlyphClass;
 
+/// Data collected from a GDEF block.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct GdefBuilder {
+pub struct GdefBuilder {
     pub glyph_classes: HashMap<GlyphId, ClassId>,
     pub attach: BTreeMap<GlyphId, BTreeSet<u16>>,
     pub ligature_pos: BTreeMap<GlyphId, Vec<CaretValue>>,

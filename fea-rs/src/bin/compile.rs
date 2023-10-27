@@ -38,12 +38,13 @@ fn run() -> Result<(), Error> {
         Compiler::new(fea, &glyph_names).with_opts(Opts::new().make_post_table(args.post));
     if let Some(var_info) = var_info.as_ref() {
         log::info!("compiling with {} mock variation axes", var_info.axes.len());
-        for (tag, info) in &var_info.axes {
+        for axis in &var_info.axes {
             log::info!(
-                "{tag}: ({}, {}, {})",
-                info.min_value,
-                info.default_value,
-                info.max_value
+                "{}: ({}, {}, {})",
+                axis.tag,
+                axis.min.into_inner(),
+                axis.default.into_inner(),
+                axis.max.into_inner()
             );
         }
 

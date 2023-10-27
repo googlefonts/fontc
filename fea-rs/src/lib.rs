@@ -15,7 +15,7 @@ pub mod util;
 #[cfg(test)]
 mod tests;
 
-pub use common::{GlyphIdent, GlyphMap, GlyphName};
+pub use common::{GlyphClass, GlyphIdent, GlyphMap, GlyphName};
 pub use compile::Compiler;
 pub use diagnostic::{Diagnostic, Level};
 pub use parse::{ParseTree, TokenSet};

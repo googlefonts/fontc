@@ -9,10 +9,10 @@ categories = ["parsing", "text-processing"]
 keywords = ["fonts", "opentype"]
 readme = "./README.md"
 edition = "2021"
-default-run = "fea-rs"
 exclude = ["test-data"]
 
 [dependencies]
+fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 ansi_term = "0.12.1"
 serde_json = {version = "1.0.87", optional = true }
 

@@ -8,6 +8,7 @@ use std::{
     ops::Range,
 };
 
+use fontdrasil::coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord};
 use smol_str::SmolStr;
 use write_fonts::{
     tables::{
@@ -18,11 +19,11 @@ use write_fonts::{
             ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag, PendingVariationIndex,
         },
     },
-    types::{Fixed, NameId, Tag},
+    types::{F2Dot14, NameId, Tag},
 };
 
 use crate::{
-    common::{GlyphClass, GlyphId, GlyphOrClass},
+    common::{GlyphClass, GlyphId, GlyphOrClass, MarkClass},
     parse::SourceMap,
     token_tree::{
         typed::{self, AstNode},
@@ -33,6 +34,7 @@ use crate::{
 };
 
 use super::{
+    feature_writer::{FeatureBuilder, FeatureProvider},
     features::{
         AaltFeature, ActiveFeature, AllFeatures, ConditionSetMap, CvParams, SizeFeature,
         SpecialVerticalFeatureState,
@@ -67,6 +69,7 @@ pub struct CompilationCtx<'a> {
     reverse_glyph_map: BTreeMap<GlyphId, GlyphIdent>,
     source_map: &'a SourceMap,
     variation_info: Option<&'a dyn VariationInfo>,
+    feature_writer: Option<&'a dyn FeatureProvider>,
     /// Any errors or warnings generated during compilation.
     pub errors: Vec<Diagnostic>,
     /// Stores any [specified table values][tables] in the input FEA.
@@ -92,22 +95,19 @@ pub struct CompilationCtx<'a> {
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
 }
 
-#[derive(Clone, Debug, Default)]
-struct MarkClass {
-    members: Vec<(GlyphClass, Option<AnchorTable>)>,
-}
-
 impl<'a> CompilationCtx<'a> {
     pub(crate) fn new(
         glyph_map: &'a GlyphMap,
         source_map: &'a SourceMap,
         variation_info: Option<&'a dyn VariationInfo>,
+        feature_writer: Option<&'a dyn FeatureProvider>,
     ) -> Self {
         CompilationCtx {
             glyph_map,
             reverse_glyph_map: glyph_map.reverse_map(),
             source_map,
             variation_info,
+            feature_writer,
             errors: Vec::new(),
             tables: Tables::default(),
             default_lang_systems: Default::default(),
@@ -160,6 +160,11 @@ impl<'a> CompilationCtx<'a> {
                 self.error(span, format!("unhandled top-level item: '{}'", item.kind()));
             }
         }
+
+        // NOTE: this is the easiest place for us to do this, but we
+        // could potentially be more performant by running this in parallel,
+        // immediately after parsing?
+        self.run_feature_writer_if_present();
 
         self.finalize_gdef_table();
         self.features
@@ -233,6 +238,27 @@ impl<'a> CompilationCtx<'a> {
             gsub,
             gpos,
         })
+    }
+
+    fn run_feature_writer_if_present(&mut self) {
+        let Some(writer) = self.feature_writer else {
+            return;
+        };
+
+        let mut builder = FeatureBuilder::new(
+            &self.default_lang_systems,
+            &mut self.tables,
+            self.mark_filter_sets.len(),
+        );
+        writer.add_features(&mut builder);
+
+        // now we need to merge in the newly generated features.
+        let id_map = self.lookups.merge_external_lookups(builder.lookups);
+        builder
+            .features
+            .values_mut()
+            .for_each(|feat| feat.base.iter_mut().for_each(|id| *id = id_map.get(*id)));
+        self.features.merge_external_features(builder.features);
     }
 
     /// Infer/update GDEF table as required.
@@ -940,11 +966,11 @@ impl<'a> CompilationCtx<'a> {
                             .as_ref()
                             .expect("no null anchors in mark-to-mark (check validation)");
                         for glyph in glyphs.iter() {
-                            subtable.insert_mark(glyph, class_name.clone(), anchor.clone())?;
+                            subtable.insert_mark1(glyph, class_name.clone(), anchor.clone())?;
                         }
                     }
                     for base in base_ids.iter() {
-                        subtable.insert_base(
+                        subtable.insert_mark2(
                             base,
                             class_name,
                             base_anchor
@@ -1129,18 +1155,26 @@ impl<'a> CompilationCtx<'a> {
             return (0, None);
         };
 
-        let locations = metric
-            .location_values()
-            .map(|loc_value| {
-                let user_loc = loc_value
-                    .location()
-                    .items()
-                    .map(|axis_value| (axis_value.axis_tag().to_raw(), axis_value.value().parse()))
-                    .collect();
-                let value = loc_value.value().parse_signed();
-                (user_loc, value)
-            })
-            .collect::<HashMap<_, _>>();
+        let mut locations = HashMap::new();
+        for metric_loc in metric.location_values() {
+            let mut pos = NormalizedLocation::new();
+            for axis_value in metric_loc.location().items() {
+                let tag = axis_value.axis_tag().to_raw();
+                // All the tags are valid if we made it here, safe to unwrap
+                let (_, axis) = var_info.axis(tag).unwrap();
+                let coord = match axis_value.value().parse() {
+                    super::AxisLocation::Normalized(value) => NormalizedCoord::new(value),
+                    super::AxisLocation::User(value) => {
+                        UserCoord::new(value).to_normalized(&axis.converter)
+                    }
+                    super::AxisLocation::Design(value) => {
+                        DesignCoord::new(value).to_normalized(&axis.converter)
+                    }
+                };
+                pos.insert(tag, coord);
+            }
+            locations.insert(pos, metric_loc.value().parse_signed());
+        }
         match var_info.resolve_variable_metric(&locations) {
             Ok((default, deltas)) => {
                 let temp_idx = self.tables.var_store().add_deltas(deltas);
@@ -1838,12 +1872,18 @@ impl<'a> CompilationCtx<'a> {
             .conditions()
             .map(|cond| {
                 let tag = cond.tag().to_raw();
-                let min = Fixed::from_i32(cond.min_value().parse_signed() as _);
-                let max = Fixed::from_i32(cond.max_value().parse_signed() as _);
+                let min = UserCoord::new(cond.min_value().parse_signed());
+                let max = UserCoord::new(cond.max_value().parse_signed());
+                let (axis_index, axis) = var_info.axis(tag).unwrap();
+
                 ConditionFormat1 {
-                    axis_index: var_info.axis_info(cond.tag().to_raw()).unwrap().index,
-                    filter_range_min_value: var_info.normalize_coordinate(tag, min),
-                    filter_range_max_value: var_info.normalize_coordinate(tag, max),
+                    axis_index: axis_index as u16,
+                    filter_range_min_value: F2Dot14::from_f32(
+                        min.to_normalized(&axis.converter).to_f32(),
+                    ),
+                    filter_range_max_value: F2Dot14::from_f32(
+                        max.to_normalized(&axis.converter).to_f32(),
+                    ),
                 }
             })
             .collect();

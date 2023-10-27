@@ -13,9 +13,15 @@ use self::{
 use self::error::UfoGlyphOrderError;
 
 pub use compiler::Compiler;
+pub use feature_writer::{FeatureBuilder, FeatureProvider};
+pub use language_system::LanguageSystem;
+pub use lookups::{
+    FeatureKey, LookupId, MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder,
+    PreviouslyAssignedClass,
+};
 pub use opts::Opts;
 pub use output::Compilation;
-pub use variations::{AxisInfo, AxisLocation, VariationInfo};
+pub use variations::{AxisLocation, VariationInfo};
 
 #[cfg(any(test, feature = "test", feature = "cli"))]
 pub use variations::MockVariationInfo;
@@ -23,6 +29,7 @@ pub use variations::MockVariationInfo;
 mod compile_ctx;
 mod compiler;
 pub mod error;
+mod feature_writer;
 mod features;
 mod glyph_range;
 mod language_system;

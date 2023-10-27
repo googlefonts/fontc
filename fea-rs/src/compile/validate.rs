@@ -238,23 +238,29 @@ impl<'a> ValidationCtx<'a> {
 
     fn validate_condition(&mut self, condition: &typed::Condition) {
         // we've already errored if this is missing
-        let Some(fvar) = self.variation_info else {
+        let Some(var_info) = self.variation_info else {
             return;
         };
-        let Some(info) = fvar.axis_info(condition.tag().to_raw()) else {
+        let Some((_, axis)) = var_info.axis(condition.tag().to_raw()) else {
             self.error(condition.tag().range(), "unknown axis");
             return;
         };
-        if (condition.min_value().parse_signed() as f64) < info.min_value.to_f64() {
+        if (condition.min_value().parse_signed() as f64) < axis.min.into_inner().0 as f64 {
             self.error(
                 condition.min_value().range(),
-                format!("value is less than axis minimum ({})", info.min_value),
+                format!(
+                    "value is less than axis minimum ({})",
+                    axis.min.into_inner()
+                ),
             );
         }
-        if (condition.max_value().parse_signed() as f64) > info.max_value.to_f64() {
+        if (condition.max_value().parse_signed() as f64) > axis.max.into_inner().0 as f64 {
             self.error(
                 condition.max_value().range(),
-                format!("value is more than axis maximum ({})", info.max_value),
+                format!(
+                    "value is more than axis maximum ({})",
+                    axis.max.into_inner()
+                ),
             );
         }
     }
@@ -1287,15 +1293,15 @@ impl<'a> ValidationCtx<'a> {
 
         for location_val in metric.location_values() {
             for item in location_val.location().items() {
-                let Some(axis_info) = var_info.axis_info(item.axis_tag().to_raw()) else {
+                let Some((_, axis)) = var_info.axis(item.axis_tag().to_raw()) else {
                     self.error(item.axis_tag().range(), "unknown axis");
                     continue;
                 };
                 let val = item.value().parse();
                 match val {
                     super::AxisLocation::User(val) => {
-                        let min = axis_info.min_value.to_f32();
-                        let max = axis_info.max_value.to_f32();
+                        let min = axis.min.into_inner().0;
+                        let max = axis.max.into_inner().0;
                         if val.0 < min || val.0 > max {
                             self.error(
                                 item.value().range(),
