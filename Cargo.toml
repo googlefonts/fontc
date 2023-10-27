@@ -21,9 +21,9 @@ rayon = "1.6"
 
 # fontations etc
 font-types = { version = "0.4.0", features = ["serde"] }
-read-fonts = "0.12.0"
-write-fonts = { version = "0.17.0", features = ["serde", "read"] }
-skrifa = "0.11.0"
+read-fonts = "0.13.0"
+write-fonts = { version = "0.18.0", features = ["serde", "read"] }
+skrifa = "0.12.0"
 norad = "0.12"
 
 # dev dependencies
@@ -49,10 +49,3 @@ members = [
     "fea-rs",
     "fea-lsp",
 ]
-
-# Local copy
-[patch.crates-io]
-font-types =  { path = "../fontations/font-types" }
-read-fonts =  { path = "../fontations/read-fonts" }
-write-fonts = { path = "../fontations/write-fonts" }
-skrifa =  { path = "../fontations/skrifa" }
