@@ -170,36 +170,20 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
             })
             .collect();
 
-        // prefer the most compact representation between the two stores
-        let use_direct = if direct_store.is_some() {
-            let direct_store_size =
-                table_size(direct_store.as_ref().unwrap(), "ItemVariationStore")?;
-            let indirect_store_size = table_size(&indirect_store, "ItemVariationStore")?;
+        // Default to indirect, switch to direct if it's available and smaller
+        let (mut varidx_map, mut varstore) = (Some(varidx_map), indirect_store);
+        if let Some(direct_store) = direct_store {
+            let direct_store_size = table_size(&direct_store, "ItemVariationStore")?;
+            let indirect_store_size = table_size(&varstore, "ItemVariationStore")?;
             let varidx_map_size = table_size(&varidx_map, "DeltaSetIndexMap")?;
 
-            direct_store_size <= indirect_store_size + varidx_map_size
-        } else {
-            false
-        };
+            if direct_store_size <= indirect_store_size + varidx_map_size {
+                varidx_map = None;
+                varstore = direct_store;
+            }
+        }
 
-        let hvar = if use_direct {
-            Hvar::new(
-                MajorMinor::VERSION_1_0,
-                direct_store.unwrap(),
-                None,
-                None,
-                None,
-            )
-        } else {
-            Hvar::new(
-                MajorMinor::VERSION_1_0,
-                indirect_store,
-                Some(varidx_map),
-                None,
-                None,
-            )
-        };
-
+        let hvar = Hvar::new(MajorMinor::VERSION_1_0, varstore, varidx_map, None, None);
         context.hvar.set_unconditionally(hvar.into());
 
         Ok(())
