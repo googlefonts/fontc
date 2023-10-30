@@ -30,6 +30,7 @@ use fontbe::{
     glyphs::{create_glyf_loca_work, create_glyf_work},
     gvar::create_gvar_work,
     head::create_head_work,
+    hvar::create_hvar_work,
     metrics_and_limits::create_metric_and_limit_work,
     name::create_name_work,
     os2::create_os2_work,
@@ -247,6 +248,27 @@ fn add_metric_and_limits_job(workload: &mut Workload) -> Result<(), Error> {
     Ok(())
 }
 
+fn add_hvar_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let glyphs_changed = workload.change_detector.glyphs_changed();
+
+    let work = create_hvar_work().into();
+    workload.add(
+        work,
+        // Static metadata contains VariationModel, if axes coordinates change
+        // we need to recompute variable tables such as HVAR.
+        // Glyph order matters because HVAR may choose to store variation items
+        // directly mapping to glyph indices. And glyph IR contains advance width
+        // among other things.
+        // TODO: ideally be more granular here e.g. by storing axes and advance widths
+        // in a separate IR file.
+        // https://github.com/googlefonts/fontc/issues/526
+        workload.change_detector.static_metadata_ir_change()
+            || workload.change_detector.glyph_order_ir_change()
+            || !glyphs_changed.is_empty(),
+    );
+    Ok(())
+}
+
 fn add_font_be_job(workload: &mut Workload) -> Result<(), Error> {
     let glyphs_changed = workload.change_detector.glyphs_changed();
 
@@ -289,6 +311,7 @@ pub fn create_workload(
     add_gvar_be_job(&mut workload)?;
     add_head_be_job(&mut workload)?;
     add_metric_and_limits_job(&mut workload)?;
+    add_hvar_be_job(&mut workload)?;
     add_name_be_job(&mut workload)?;
     add_os2_be_job(&mut workload)?;
     add_post_be_job(&mut workload)?;
@@ -320,15 +343,16 @@ mod tests {
         io::Read,
         path::{Path, PathBuf},
         str::FromStr,
+        sync::Arc,
     };
 
     use chrono::{Duration, TimeZone, Utc};
     use fontbe::orchestration::{
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
     };
-    use fontdrasil::{paths::safe_filename, types::GlyphName};
+    use fontdrasil::{coords::NormalizedCoord, paths::safe_filename, types::GlyphName};
     use fontir::{
-        ir::{self, KernParticipant},
+        ir::{self, GlyphOrder, KernParticipant},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
     };
     use indexmap::IndexSet;
@@ -337,7 +361,11 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use read_fonts::{
-        tables::{name::Name, os2::SelectionFlags},
+        tables::{
+            name::Name,
+            os2::SelectionFlags,
+            variations::{DeltaSetIndexMap, ItemVariationData},
+        },
         types::NameId,
     };
     use skrifa::{
@@ -538,6 +566,7 @@ mod tests {
             BeWorkIdentifier::Head.into(),
             BeWorkIdentifier::Hhea.into(),
             BeWorkIdentifier::Hmtx.into(),
+            BeWorkIdentifier::Hvar.into(),
             BeWorkIdentifier::Loca.into(),
             BeWorkIdentifier::LocaFormat.into(),
             BeWorkIdentifier::Maxp.into(),
@@ -642,6 +671,7 @@ mod tests {
                 BeWorkIdentifier::Gvar.into(),
                 BeWorkIdentifier::Hhea.into(),
                 BeWorkIdentifier::Hmtx.into(),
+                BeWorkIdentifier::Hvar.into(),
                 BeWorkIdentifier::Loca.into(),
                 BeWorkIdentifier::LocaFormat.into(),
                 BeWorkIdentifier::Maxp.into(),
@@ -1200,6 +1230,7 @@ mod tests {
 
         assert_eq!(
             vec![
+                Tag::new(b"HVAR"),
                 Tag::new(b"OS/2"),
                 Tag::new(b"STAT"),
                 Tag::new(b"cmap"),
@@ -2027,5 +2058,235 @@ mod tests {
                 .copied()
                 .collect::<Vec<_>>()
         );
+    }
+
+    fn delta_sets(var_data: &ItemVariationData) -> Vec<Vec<i32>> {
+        (0..var_data.item_count())
+            .map(|i| var_data.delta_set(i).collect::<Vec<_>>())
+            .collect()
+    }
+
+    #[test]
+    fn compile_hvar_single_model_direct_varstore() {
+        // All glyphs define the same locations (single model is ok) so a direct
+        // VarStore (without a mapping) can be built. In this particular case, this
+        // turns out to be more compact than the equivalent indirect VarStore
+        // so we check it gets preferred over the latter.
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(
+            build_dir,
+            "HVAR/SingleModel_Direct/HVARSingleModelDirect.designspace",
+        ));
+        let font_file = build_dir.join("font.ttf");
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let num_glyphs = font.maxp().unwrap().num_glyphs();
+        assert_eq!(num_glyphs, 14);
+        let hvar = font.hvar().unwrap();
+        assert!(hvar.advance_width_mapping().is_none());
+        let varstore = hvar.item_variation_store().unwrap();
+        let regions = varstore
+            .variation_region_list()
+            .unwrap()
+            .variation_regions();
+        // this simple test font only has two masters (Regular [default] and Bold)
+        // so we expect a single region with a single wght axis
+        assert_eq!(regions.len(), 1);
+        let region_coords = regions
+            .get(0)
+            .unwrap()
+            .region_axes()
+            .iter()
+            .map(|coords| {
+                [
+                    coords.start_coord().to_f32(),
+                    coords.peak_coord().to_f32(),
+                    coords.end_coord().to_f32(),
+                ]
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(region_coords, vec![[0.0, 1.0, 1.0]]);
+        // we expect one ItemVariationData and one delta set per glyph
+        assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:#?}");
+        let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
+        assert_eq!(vardata.region_indexes(), &[0]);
+        assert_eq!(
+            vec![
+                vec![0],
+                vec![100],
+                vec![120],
+                vec![70],
+                vec![100],
+                vec![120],
+                vec![120],
+                vec![70],
+                vec![70],
+                vec![120],
+                vec![70],
+                vec![0],
+                vec![0],
+                vec![0],
+            ],
+            delta_sets(&vardata)
+        );
+    }
+
+    #[test]
+    fn compile_hvar_single_model_indirect_varstore() {
+        // This is the same as the previous font but with additional 10 glyphs that
+        // share the same deltas (the number was found empirically), enough to tip
+        // the balance and make an indirect store more compact despite the overhead
+        // of the additional DeltaSetIndexMap.
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(
+            build_dir,
+            "HVAR/SingleModel_Indirect/HVARSingleModelIndirect.designspace",
+        ));
+        let font_file = build_dir.join("font.ttf");
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let num_glyphs = font.maxp().unwrap().num_glyphs();
+        assert_eq!(num_glyphs, 24);
+        let hvar = font.hvar().unwrap();
+        let varstore = hvar.item_variation_store().unwrap();
+        assert_eq!(
+            varstore
+                .variation_region_list()
+                .unwrap()
+                .variation_regions()
+                .len(),
+            1
+        );
+        assert_eq!(varstore.item_variation_data_count(), 1);
+        let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
+        assert_eq!(vardata.region_indexes(), &[0]);
+        assert_eq!(
+            vec![vec![0], vec![70], vec![100], vec![120],],
+            delta_sets(&vardata)
+        );
+        let Some(Ok(DeltaSetIndexMap::Format0(varidx_map))) = hvar.advance_width_mapping() else {
+            panic!("Expected advance width mapping with DeltaSetIndexMap::Format0");
+        };
+        // since the last 10 glyphs have the same advance width deltas and share the same varidx,
+        // the mapping omits the trailing duplicate entries
+        assert_eq!(varidx_map.map_count(), num_glyphs - 10 + 1);
+    }
+
+    struct HvarReader<'a> {
+        hvar: read_fonts::tables::hvar::Hvar<'a>,
+        glyph_order: Arc<GlyphOrder>,
+    }
+
+    impl<'a> HvarReader<'a> {
+        fn new(hvar: read_fonts::tables::hvar::Hvar<'a>, glyph_order: Arc<GlyphOrder>) -> Self {
+            Self { hvar, glyph_order }
+        }
+
+        fn width_delta(&self, name: &str, coords: &[NormalizedCoord]) -> f64 {
+            let name = GlyphName::from(name);
+            let gid = GlyphId::new(self.glyph_order.glyph_id(&name).unwrap() as u16);
+            let coords: Vec<F2Dot14> = coords
+                .iter()
+                .map(|coord| F2Dot14::from_f32(coord.into_inner().into()))
+                .collect();
+            self.hvar
+                .advance_width_delta(gid, &coords)
+                .unwrap()
+                .to_f64()
+        }
+    }
+
+    #[test]
+    fn compile_hvar_multi_model_indirect_varstore() {
+        // Some glyphs are 'sparse' and define different sets of locations, so multiple
+        // sub-models are required to compute the advance width deltas.
+        // FontTools always builds an indirect VarStore in this case and we do the same.
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(Args::for_test(
+            build_dir,
+            "HVAR/MultiModel_Indirect/HVARMultiModelIndirect.designspace",
+        ));
+        let font_file = build_dir.join("font.ttf");
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let num_glyphs = font.maxp().unwrap().num_glyphs();
+        assert_eq!(num_glyphs, 5);
+        let hvar = font.hvar().unwrap();
+        let varstore = hvar.item_variation_store().unwrap();
+        let region_coords = varstore
+            .variation_region_list()
+            .unwrap()
+            .variation_regions()
+            .iter()
+            .map(|region| {
+                region
+                    .unwrap()
+                    .region_axes()
+                    .iter()
+                    .map(|coords| {
+                        [
+                            coords.start_coord().to_f32(),
+                            coords.peak_coord().to_f32(),
+                            coords.end_coord().to_f32(),
+                        ]
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        // Glyph "A" defines three masters (Regular, Medium and Bold) so uses two
+        // regions (the first two in the list); the rest of the glyphs only have
+        // two masters so use only one region (the last one).
+        assert_eq!(
+            region_coords,
+            vec![
+                vec![[0.0, 0.333313, 1.0]],
+                vec![[0.333313, 1.0, 1.0]],
+                vec![[0.0, 1.0, 1.0]],
+            ]
+        );
+        // in this particular test font, despite being multi-model, we still end up with
+        // a single VarData subtable, filled with zeros for regions that don't apply
+        assert_eq!(varstore.item_variation_data_count(), 1);
+        let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
+        assert_eq!(vardata.region_indexes(), &[0, 1, 2]);
+        // 4 rows insted of 5 because gid1 and gid4 happen to share the same varidx
+        assert_eq!(vardata.item_count(), 4);
+        let Some(Ok(varidx_map)) = hvar.advance_width_mapping() else {
+            panic!("Expected advance width mapping");
+        };
+        assert_eq!(
+            (0..num_glyphs)
+                .map(|gid| {
+                    let varidx = varidx_map.get(gid as u32).unwrap();
+                    assert_eq!(varidx.outer, 0);
+                    varidx.inner
+                })
+                .collect::<Vec<_>>(),
+            vec![0, 2, 3, 1, 2],
+        );
+        let hvar = HvarReader::new(hvar, result.fe_context.glyph_order.get());
+        // .notdef is not variable
+        assert_eq!(
+            hvar.width_delta(".notdef", &[NormalizedCoord::new(0.0)]),
+            0.0
+        );
+        // 'space' has two masters, with Bold 100 units wider than Regular
+        assert_eq!(
+            hvar.width_delta("space", &[NormalizedCoord::new(1.0)]),
+            100.0
+        );
+        // ... so it will be exactly 50 units wider half-way in between
+        assert_eq!(
+            hvar.width_delta("space", &[NormalizedCoord::new(0.5)]),
+            50.0
+        );
+        // 'A' is 120 units wider than Regular in the Bold master
+        assert_eq!(hvar.width_delta("A", &[NormalizedCoord::new(1.0)]), 120.0);
+        // ... but also has an additional Medium (wght=500, normalized 0.3333) master with
+        // a delta of 70; so at normalized 0.5 (wght=550), its delta will *not* be 60
+        assert_eq!(hvar.width_delta("A", &[NormalizedCoord::new(0.5)]), 83.0);
     }
 }

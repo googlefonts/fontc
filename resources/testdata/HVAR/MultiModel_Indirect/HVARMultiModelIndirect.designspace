@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="400" maximum="700" default="400"/>
+  </axes>
+  <sources>
+    <source filename="HVARMultiModelIndirect-Regular.ufo" name="HVAR MultiModel Indirect Regular">
+      <lib copy="1"/>
+      <groups copy="1"/>
+      <features copy="1"/>
+      <info copy="1"/>
+      <location>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </source>
+    <source filename="HVARMultiModelIndirect-Regular.ufo" name="HVAR MultiModel Indirect Regular {500}" layer="{500}">
+      <location>
+        <dimension name="Weight" xvalue="500"/>
+      </location>
+    </source>
+    <source filename="HVARMultiModelIndirect-Bold.ufo" name="HVAR MultiModel Indirect Bold">
+      <location>
+        <dimension name="Weight" xvalue="700"/>
+      </location>
+    </source>
+  </sources>
+  <instances>
+    <instance name="HVAR MultiModel Indirect Regular" stylename="Regular">
+      <location>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </instance>
+    <instance name="HVAR MultiModel Indirect Medium" stylename="Medium">
+      <location>
+        <dimension name="Weight" xvalue="500"/>
+      </location>
+    </instance>
+    <instance name="HVAR MultiModel Indirect Bold" stylename="Bold">
+      <location>
+        <dimension name="Weight" xvalue="700"/>
+      </location>
+    </instance>
+  </instances>
+</designspace>
