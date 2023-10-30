@@ -32,11 +32,13 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
-use read_fonts::tables::layout::DeltaFormat;
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::{gpos::{AnchorFormat1, AnchorTable, ValueRecord, AnchorFormat3}, layout::{DeviceOrVariationIndex, Device}},
     tables::layout::LookupFlag,
+    tables::{
+        gpos::{AnchorTable, ValueRecord},
+        variations::VariationRegion,
+    },
     OtRound,
 };
 
@@ -338,32 +340,24 @@ impl<'a> FeatureWriter<'a> {
 
         for (group_name, group) in groups.iter() {
             let mark_class_name: SmolStr = format!("MC_{group_name}").into();
-            
-            // if we have bases *and* marks produce mark to base            
+
+            // if we have bases *and* marks produce mark to base
             if !group.bases.is_empty() && !group.marks.is_empty() {
                 for (base_name, base) in group.bases.iter() {
                     let Some(base_gid) = self.glyph_id(base_name) else {
                         return Err(Error::MissingGlyphId(base_name.clone()));
                     };
                     let mark_class: SmolStr = format!("MC_{}", base.name).into();
-                    let default_pos = base.default_pos();
 
-                    // TODO: fontmake seems to use Format3 but it does so in a way that makes
-                    // ttx that I can't seem to get ours to match. Maybe my test file is borked?
-                    let device = Device ::new(0, 0, &[0]);
-                    let anchor = AnchorTable::Format3(AnchorFormat3::new(
-                        default_pos.x.ot_round(),
-                        default_pos.y.ot_round(),
-                        Some(DeviceOrVariationIndex::Device(device.clone())),
-                        Some(DeviceOrVariationIndex::Device(device)),
-                    ));
+                    let anchor = self.resolve_variable_anchor(base, builder)?;
 
                     let mut mark_base = MarkToBaseBuilder::default();
                     for (mark_name, _) in group.marks.iter() {
                         let Some(mark_gid) = self.glyph_id(mark_name) else {
                             return Err(Error::MissingGlyphId(mark_name.clone()));
                         };
-                        mark_base.insert_mark(mark_gid, mark_class.clone(), anchor.clone())
+                        mark_base
+                            .insert_mark(mark_gid, mark_class.clone(), anchor.clone())
                             .map_err(Error::PreviouslyAssignedClass)?;
                     }
 
@@ -375,9 +369,6 @@ impl<'a> FeatureWriter<'a> {
                         None,
                         vec![mark_base],
                     ));
-
-                    // TODO: variations
-                    // TODO how do you use self.resolve_variable_metric(values) on 2d values
                 }
             }
 
@@ -408,14 +399,7 @@ impl<'a> FeatureWriter<'a> {
                     debug!("No anchor_my_anchor for {base_name}");
                     continue;
                 };
-                let default_pos = anchor_my_anchor.default_pos();
-                let anchor = AnchorTable::Format1(AnchorFormat1::new(
-                    default_pos.x.ot_round(),
-                    default_pos.y.ot_round(),
-                ));
-
-                // TODO: variations
-                // TODO how do you use self.resolve_variable_metric(values) on 2d values
+                let anchor = self.resolve_variable_anchor(anchor_my_anchor, builder)?;
 
                 mark_mark
                     .insert_mark1(mark_gid, mark_class_name.clone(), anchor)
@@ -433,12 +417,46 @@ impl<'a> FeatureWriter<'a> {
 
         if !mark_base_lookups.is_empty() {
             builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_base_lookups);
-        }        
+        }
         if !mark_mark_lookups.is_empty() {
             builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
-        }        
+        }
 
         Ok(())
+    }
+
+    // a helper for getting the default & variations for an anchor
+    fn resolve_variable_anchor(
+        &self,
+        anchor: &Anchor,
+        builder: &mut FeatureBuilder,
+    ) -> Result<AnchorTable, Error> {
+        // squish everything into the shape expected by `resolve_variable_metric`
+        let (x_values, y_values) = anchor
+            .positions
+            .iter()
+            .map(|(loc, pt)| {
+                (
+                    (loc.clone(), OrderedFloat::from(pt.x as f32)),
+                    (loc.clone(), OrderedFloat::from(pt.y as f32)),
+                )
+            })
+            .unzip();
+
+        let (x, x_deltas) = self.resolve_variable_metric(&x_values)?;
+        let (y, y_deltas) = self.resolve_variable_metric(&y_values)?;
+        let x_var_idx = (!x_deltas.is_empty()).then(|| builder.add_deltas(x_deltas));
+        let y_var_idx = (!y_deltas.is_empty()).then(|| builder.add_deltas(y_deltas));
+        if x_var_idx.is_some() || y_var_idx.is_some() {
+            Ok(AnchorTable::format_3(
+                x,
+                y,
+                x_var_idx.map(Into::into),
+                y_var_idx.map(Into::into),
+            ))
+        } else {
+            Ok(AnchorTable::format_1(x, y))
+        }
     }
 
     //NOTE: this is basically identical to the same method on FeaVariationInfo,
@@ -446,13 +464,7 @@ impl<'a> FeatureWriter<'a> {
     fn resolve_variable_metric(
         &self,
         values: &BTreeMap<NormalizedLocation, OrderedFloat<f32>>,
-    ) -> Result<
-        (
-            i16,
-            Vec<(write_fonts::tables::variations::VariationRegion, i16)>,
-        ),
-        Error,
-    > {
+    ) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
         let var_model = &self.static_metadata.variation_model;
 
         let point_seqs = values
@@ -534,13 +546,7 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
     fn resolve_variable_metric(
         &self,
         values: &HashMap<NormalizedLocation, i16>,
-    ) -> Result<
-        (
-            i16,
-            Vec<(write_fonts::tables::variations::VariationRegion, i16)>,
-        ),
-        Box<(dyn StdError + 'static)>,
-    > {
+    ) -> Result<(i16, Vec<(VariationRegion, i16)>), Box<(dyn StdError + 'static)>> {
         let var_model = &self.static_metadata.variation_model;
 
         // Compute deltas using f64 as 1d point and delta, then ship them home as i16
