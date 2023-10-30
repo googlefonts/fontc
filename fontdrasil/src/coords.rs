@@ -340,6 +340,11 @@ impl NormalizedLocation {
     pub fn has_any_non_zero(&self) -> bool {
         self.0.values().any(|v| v.into_inner() != OrderedFloat(0.0))
     }
+
+    /// Returns true if all normalized coordinates are zero
+    pub fn is_default(&self) -> bool {
+        !self.has_any_non_zero()
+    }
 }
 
 fn format_location<'a, 'b>(
