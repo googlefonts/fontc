@@ -261,6 +261,7 @@ fn add_hvar_be_job(workload: &mut Workload) -> Result<(), Error> {
         // among other things.
         // TODO: ideally be more granular here e.g. by storing axes and advance widths
         // in a separate IR file.
+        // https://github.com/googlefonts/fontc/issues/526
         workload.change_detector.static_metadata_ir_change()
             || workload.change_detector.glyph_order_ir_change()
             || !glyphs_changed.is_empty(),
@@ -342,15 +343,16 @@ mod tests {
         io::Read,
         path::{Path, PathBuf},
         str::FromStr,
+        sync::Arc,
     };
 
     use chrono::{Duration, TimeZone, Utc};
     use fontbe::orchestration::{
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
     };
-    use fontdrasil::{paths::safe_filename, types::GlyphName};
+    use fontdrasil::{coords::NormalizedCoord, paths::safe_filename, types::GlyphName};
     use fontir::{
-        ir::{self, KernParticipant},
+        ir::{self, GlyphOrder, KernParticipant},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
     };
     use indexmap::IndexSet;
@@ -376,7 +378,7 @@ mod tests {
                 hmtx::Hmtx,
                 loca::Loca,
             },
-            types::{F2Dot14, Fixed},
+            types::F2Dot14,
             FontData, FontRead, FontReadWithArgs, FontRef, TableProvider,
         },
         GlyphId, Tag,
@@ -2106,7 +2108,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(region_coords, vec![[0.0, 1.0, 1.0]]);
         // we expect one ItemVariationData and one delta set per glyph
-        assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:?}");
+        assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:#?}");
         let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
         assert_eq!(vardata.region_indexes(), &[0]);
         assert_eq!(
@@ -2172,6 +2174,30 @@ mod tests {
         assert_eq!(varidx_map.map_count(), num_glyphs - 10 + 1);
     }
 
+    struct HvarReader<'a> {
+        hvar: read_fonts::tables::hvar::Hvar<'a>,
+        glyph_order: Arc<GlyphOrder>,
+    }
+
+    impl<'a> HvarReader<'a> {
+        fn new(hvar: read_fonts::tables::hvar::Hvar<'a>, glyph_order: Arc<GlyphOrder>) -> Self {
+            Self { hvar, glyph_order }
+        }
+
+        fn width_delta(&self, name: &str, coords: &[NormalizedCoord]) -> f64 {
+            let name = GlyphName::from(name);
+            let gid = GlyphId::new(self.glyph_order.glyph_id(&name).unwrap() as u16);
+            let coords: Vec<F2Dot14> = coords
+                .iter()
+                .map(|coord| F2Dot14::from_f32(coord.into_inner().into()))
+                .collect();
+            self.hvar
+                .advance_width_delta(gid, &coords)
+                .unwrap()
+                .to_f64()
+        }
+    }
+
     #[test]
     fn compile_hvar_multi_model_indirect_varstore() {
         // Some glyphs are 'sparse' and define different sets of locations, so multiple
@@ -2179,7 +2205,7 @@ mod tests {
         // FontTools always builds an indirect VarStore in this case and we do the same.
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
-        compile(Args::for_test(
+        let result = compile(Args::for_test(
             build_dir,
             "HVAR/MultiModel_Indirect/HVARMultiModelIndirect.designspace",
         ));
@@ -2241,36 +2267,26 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0, 2, 3, 1, 2],
         );
+        let hvar = HvarReader::new(hvar, result.fe_context.glyph_order.get());
         // .notdef is not variable
         assert_eq!(
-            hvar.advance_width_delta(GlyphId::new(0), &[F2Dot14::from_f32(1.0)])
-                .unwrap(),
-            Fixed::from_f64(0.0)
+            hvar.width_delta(".notdef", &[NormalizedCoord::new(0.0)]),
+            0.0
         );
         // 'space' has two masters, with Bold 100 units wider than Regular
         assert_eq!(
-            hvar.advance_width_delta(GlyphId::new(1), &[F2Dot14::from_f32(1.0)])
-                .unwrap(),
-            Fixed::from_f64(100.0)
+            hvar.width_delta("space", &[NormalizedCoord::new(1.0)]),
+            100.0
         );
         // ... so it will be exactly 50 units wider half-way in between
         assert_eq!(
-            hvar.advance_width_delta(GlyphId::new(1), &[F2Dot14::from_f32(0.5)])
-                .unwrap(),
-            Fixed::from_f64(50.0)
+            hvar.width_delta("space", &[NormalizedCoord::new(0.5)]),
+            50.0
         );
         // 'A' is 120 units wider than Regular in the Bold master
-        assert_eq!(
-            hvar.advance_width_delta(GlyphId::new(2), &[F2Dot14::from_f32(1.0)])
-                .unwrap(),
-            Fixed::from_f64(120.0)
-        );
+        assert_eq!(hvar.width_delta("A", &[NormalizedCoord::new(1.0)]), 120.0);
         // ... but also has an additional Medium (wght=500, normalized 0.3333) master with
         // a delta of 70; so at normalized 0.5 (wght=550), its delta will *not* be 60
-        assert_eq!(
-            hvar.advance_width_delta(GlyphId::new(2), &[F2Dot14::from_f32(0.5)])
-                .unwrap(),
-            Fixed::from_f64(83.0)
-        );
+        assert_eq!(hvar.width_delta("A", &[NormalizedCoord::new(0.5)]), 83.0);
     }
 }
