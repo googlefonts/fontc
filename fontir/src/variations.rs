@@ -132,6 +132,10 @@ impl VariationModel {
         self.locations.iter()
     }
 
+    pub fn axes(&self) -> impl Iterator<Item = &Axis> {
+        self.axes.iter()
+    }
+
     pub fn supports(&self, location: &NormalizedLocation) -> bool {
         // current assumption is the #locations is relatively small
         self.locations.contains(location)
