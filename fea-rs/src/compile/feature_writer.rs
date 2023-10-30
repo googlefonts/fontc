@@ -108,10 +108,10 @@ impl<'a> FeatureBuilder<'a> {
     /// Add lookups to every default language system.
     ///
     /// Convenience method for recurring pattern.
-    pub fn add_to_default_language_systems(&mut self, feature_tag: Tag, lookups: &Vec<LookupId>) {
+    pub fn add_to_default_language_systems(&mut self, feature_tag: Tag, lookups: &[LookupId]) {
         for langsys in self.language_systems() {
             let feature_key = langsys.to_feature_key(feature_tag);
-            self.add_feature(feature_key, lookups.clone());
+            self.add_feature(feature_key, lookups.to_vec());
         }
     }
 

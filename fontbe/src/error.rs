@@ -67,6 +67,8 @@ pub enum Error {
     ExpectedAnchor(FeWorkId),
     #[error("No glyph id for '{0}'")]
     MissingGlyphId(GlyphName),
+    #[error("No glyph class '{0}'")]
+    MissingGlyphClass(GlyphName),
     #[error("Multiple assignments for class: {0:?}")]
     PreviouslyAssignedClass(PreviouslyAssignedClass),
 }

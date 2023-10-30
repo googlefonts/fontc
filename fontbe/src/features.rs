@@ -127,7 +127,7 @@ impl<'a> FeaVariationInfo<'a> {
     }
 }
 
-/// When generating mark features it's handy to know what is a base and what is a mark
+/// The type of an anchor, used when generating mark features
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum AnchorType {
     Base,
@@ -165,6 +165,45 @@ struct MarkGroup<'a> {
     marks: Vec<(GlyphName, &'a Anchor)>,
 }
 
+fn create_mark_groups<'a>(
+    anchors: &HashMap<GlyphName, &'a GlyphAnchors>,
+) -> HashMap<GlyphName, MarkGroup<'a>> {
+    let mut groups: HashMap<GlyphName, MarkGroup> = Default::default();
+    for (glyph_name, glyph_anchors) in anchors.iter() {
+        // We assume the anchor list to be small
+        // considering only glyphs with anchors,
+        //  - glyphs with *only* base anchors are bases
+        //  - glyphs with *any* mark anchor are marks
+
+        let mut base = true; // TODO: only a base if user rules allow it
+        for anchor in glyph_anchors.anchors.iter() {
+            let anchor_type = anchor.name.anchor_type();
+            if anchor_type == AnchorType::Mark {
+                base = false;
+
+                // TODO: only if user rules allow us to be a mark
+                groups
+                    .entry(anchor_type.group_name(anchor.name.clone()))
+                    .or_default()
+                    .marks
+                    .push(((glyph_name).clone(), anchor));
+            }
+        }
+
+        if base {
+            for anchor in glyph_anchors.anchors.iter() {
+                let anchor_type = anchor.name.anchor_type();
+                groups
+                    .entry(anchor_type.group_name(anchor.name.clone()))
+                    .or_default()
+                    .bases
+                    .push(((glyph_name).clone(), anchor));
+            }
+        }
+    }
+    groups
+}
+
 struct FeatureWriter<'a> {
     kerning: &'a Kerning,
     glyph_map: &'a GlyphOrder,
@@ -187,22 +226,19 @@ impl<'a> FeatureWriter<'a> {
         }
     }
 
-    fn glyph_id(&self, glyph_name: &GlyphName) -> Option<GlyphId> {
+    fn glyph_id(&self, glyph_name: &GlyphName) -> Result<GlyphId, Error> {
         self.glyph_map
             .glyph_id(glyph_name)
-            .map(|val| Some(GlyphId::new(val as u16)))
-            .unwrap_or_default()
+            .map(|val| GlyphId::new(val as u16))
+            .ok_or_else(|| Error::MissingGlyphId(glyph_name.clone()))
     }
 
     //TODO: at least for kerning, we should be able to generate the lookups
     //as a separate worktask, and then just add them here.
-    fn add_kerning_features(&self, builder: &mut FeatureBuilder) {
+    fn add_kerning_features(&self, builder: &mut FeatureBuilder) -> Result<(), Error> {
         if self.kerning.is_empty() {
-            return;
+            return Ok(());
         }
-
-        // a little helper closure used below
-        let name_to_gid = |name| self.glyph_id(name).unwrap_or(GlyphId::NOTDEF);
 
         // convert the groups stored in the Kerning object into the glyph classes
         // expected by fea-rs:
@@ -237,19 +273,27 @@ impl<'a> FeatureWriter<'a> {
 
             match (left, right) {
                 (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
-                    let gid0 = name_to_gid(left);
-                    let gid1 = name_to_gid(right);
+                    let gid0 = self.glyph_id(left)?;
+                    let gid1 = self.glyph_id(right)?;
                     ppos_subtables.insert_pair(gid0, x_adv_record, gid1, empty_record);
                 }
                 (KernParticipant::Group(left), KernParticipant::Group(right)) => {
-                    let left = glyph_classes.get(left).unwrap().clone();
-                    let right = glyph_classes.get(right).unwrap().clone();
+                    let left = glyph_classes
+                        .get(left)
+                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?
+                        .clone();
+                    let right = glyph_classes
+                        .get(right)
+                        .ok_or_else(|| Error::MissingGlyphId(right.clone()))?
+                        .clone();
                     ppos_subtables.insert_classes(left, x_adv_record, right, empty_record);
                 }
                 // if groups are mixed with glyphs then we enumerate the group
                 (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
-                    let gid0 = name_to_gid(left);
-                    let right = glyph_classes.get(right).unwrap();
+                    let gid0 = self.glyph_id(left)?;
+                    let right = glyph_classes
+                        .get(right)
+                        .ok_or_else(|| Error::MissingGlyphId(right.clone()))?;
                     for gid1 in right {
                         ppos_subtables.insert_pair(
                             gid0,
@@ -260,8 +304,10 @@ impl<'a> FeatureWriter<'a> {
                     }
                 }
                 (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
-                    let left = glyph_classes.get(left).unwrap();
-                    let gid1 = name_to_gid(right);
+                    let left = glyph_classes
+                        .get(left)
+                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
+                    let gid1 = self.glyph_id(right)?;
                     for gid0 in left {
                         ppos_subtables.insert_pair(
                             *gid0,
@@ -277,14 +323,19 @@ impl<'a> FeatureWriter<'a> {
         // now we have a builder for the pairpos subtables, so we can make
         // a lookup:
         let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables])];
-        builder.add_to_default_language_systems(Tag::new(b"kern"), &lookups)
+        builder.add_to_default_language_systems(Tag::new(b"kern"), &lookups);
+
+        Ok(())
     }
 
     /// Generate mark to base and mark to mark features
     ///
     /// Based on notes from f2f at W3C TPAC Spain and inspection of fea written by fontmake.
     ///
-    /// Emit one lookup per mark class, it's simpler and may be more compact. See discussions in:
+    /// See [markFeatureWriter.py](https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/featureWriters/markFeatureWriter.py)
+    /// for the fontmake implementation.
+    ///
+    /// We emit one lookup per mark class, it's simpler and may be more compact. See discussions in:
     /// * <https://github.com/googlefonts/ufo2ft/issues/762>
     /// * <https://github.com/googlefonts/ufo2ft/issues/591>
     /// * <https://github.com/googlefonts/ufo2ft/issues/563>
@@ -299,69 +350,33 @@ impl<'a> FeatureWriter<'a> {
             anchors.insert(glyph_name.clone(), glyph_anchors);
         }
 
-        let mut groups: HashMap<GlyphName, MarkGroup> = Default::default();
-        for (glyph_name, glyph_anchors) in anchors.iter() {
-            // We assume the anchor list to be small
-            // considering only glyphs with anchors,
-            //  - glyphs with *only* base anchors are bases
-            //  - glyphs with *any* mark anchor are marks
-
-            let mut base = true; // TODO: only a base if user rules allow it
-            for anchor in glyph_anchors.anchors.iter() {
-                let anchor_type = anchor.name.anchor_type();
-                if anchor_type == AnchorType::Mark {
-                    base = false;
-
-                    // TODO: only if user rules allow us to be a mark
-                    groups
-                        .entry(anchor_type.group_name(anchor.name.clone()))
-                        .or_default()
-                        .marks
-                        .push(((glyph_name).clone(), anchor));
-                }
-            }
-
-            if base {
-                for anchor in glyph_anchors.anchors.iter() {
-                    let anchor_type = anchor.name.anchor_type();
-                    groups
-                        .entry(anchor_type.group_name(anchor.name.clone()))
-                        .or_default()
-                        .bases
-                        .push(((glyph_name).clone(), anchor));
-                }
-            }
-        }
+        let mark_groups = create_mark_groups(&anchors);
 
         // Build the actual mark base and mark mark constructs using fea-rs builders
 
         let mut mark_base_lookups = Vec::new();
         let mut mark_mark_lookups = Vec::new();
 
-        for (group_name, group) in groups.iter() {
+        for (group_name, group) in mark_groups.iter() {
             let mark_class_name: SmolStr = format!("MC_{group_name}").into();
 
             // if we have bases *and* marks produce mark to base
             if !group.bases.is_empty() && !group.marks.is_empty() {
-                for (base_name, base) in group.bases.iter() {
-                    let Some(base_gid) = self.glyph_id(base_name) else {
-                        return Err(Error::MissingGlyphId(base_name.clone()));
-                    };
-                    let mark_class: SmolStr = format!("MC_{}", base.name).into();
-
-                    let anchor = self.resolve_variable_anchor(base, builder)?;
+                for (base_name, base_anchor) in group.bases.iter() {
+                    let base_gid = self.glyph_id(base_name)?;
+                    let mark_class: SmolStr = format!("MC_{}", base_anchor.name).into();
 
                     let mut mark_base = MarkToBaseBuilder::default();
-                    for (mark_name, _) in group.marks.iter() {
-                        let Some(mark_gid) = self.glyph_id(mark_name) else {
-                            return Err(Error::MissingGlyphId(mark_name.clone()));
-                        };
+                    for (mark_name, mark_anchor) in group.marks.iter() {
+                        let mark_gid = self.glyph_id(mark_name)?;
+                        let mark_anchor_table = self.create_anchor_table(mark_anchor, builder)?;
                         mark_base
-                            .insert_mark(mark_gid, mark_class.clone(), anchor.clone())
+                            .insert_mark(mark_gid, mark_class.clone(), mark_anchor_table.clone())
                             .map_err(Error::PreviouslyAssignedClass)?;
                     }
 
-                    mark_base.insert_base(base_gid, &mark_class, anchor);
+                    let base_anchor_table = self.create_anchor_table(base_anchor, builder)?;
+                    mark_base.insert_base(base_gid, &mark_class, base_anchor_table);
 
                     // each in it's own lookup, whch differs from fontmake
                     mark_base_lookups.push(builder.add_lookup(
@@ -388,10 +403,7 @@ impl<'a> FeatureWriter<'a> {
                 {
                     continue;
                 }
-                let Some(mark_gid) = self.glyph_id(mark_name) else {
-                    return Err(Error::MissingGlyphId(mark_name.clone()));
-                };
-
+                let mark_gid = self.glyph_id(mark_name)?;
                 let base_name = AnchorType::Mark.group_name(mark_anchor.name.clone()); // TODO Ew
                 let Some(anchor_my_anchor) =
                     glyph_anchors.anchors.iter().find(|a| a.name == base_name)
@@ -399,7 +411,7 @@ impl<'a> FeatureWriter<'a> {
                     debug!("No anchor_my_anchor for {base_name}");
                     continue;
                 };
-                let anchor = self.resolve_variable_anchor(anchor_my_anchor, builder)?;
+                let anchor = self.create_anchor_table(anchor_my_anchor, builder)?;
 
                 mark_mark
                     .insert_mark1(mark_gid, mark_class_name.clone(), anchor)
@@ -426,7 +438,7 @@ impl<'a> FeatureWriter<'a> {
     }
 
     // a helper for getting the default & variations for an anchor
-    fn resolve_variable_anchor(
+    fn create_anchor_table(
         &self,
         anchor: &Anchor,
         builder: &mut FeatureBuilder,
@@ -447,6 +459,7 @@ impl<'a> FeatureWriter<'a> {
         let (y, y_deltas) = self.resolve_variable_metric(&y_values)?;
         let x_var_idx = (!x_deltas.is_empty()).then(|| builder.add_deltas(x_deltas));
         let y_var_idx = (!y_deltas.is_empty()).then(|| builder.add_deltas(y_deltas));
+
         if x_var_idx.is_some() || y_var_idx.is_some() {
             Ok(AnchorTable::format_3(
                 x,
@@ -516,8 +529,9 @@ impl<'a> FeatureWriter<'a> {
 
 impl<'a> FeatureProvider for FeatureWriter<'a> {
     fn add_features(&self, builder: &mut FeatureBuilder) {
-        self.add_kerning_features(builder);
-        self.add_marks(builder).unwrap(); // TODO where my error handling
+        // TODO where my error handling
+        self.add_kerning_features(builder).unwrap();
+        self.add_marks(builder).unwrap();
     }
 }
 
