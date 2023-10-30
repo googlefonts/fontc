@@ -30,6 +30,7 @@ use fontbe::{
     glyphs::{create_glyf_loca_work, create_glyf_work},
     gvar::create_gvar_work,
     head::create_head_work,
+    hvar::create_hvar_work,
     metrics_and_limits::create_metric_and_limit_work,
     name::create_name_work,
     os2::create_os2_work,
@@ -247,6 +248,27 @@ fn add_metric_and_limits_job(workload: &mut Workload) -> Result<(), Error> {
     Ok(())
 }
 
+fn add_hvar_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let glyphs_changed = workload.change_detector.glyphs_changed();
+
+    let work = create_hvar_work().into();
+    workload.add(
+        work,
+        // Static metadata contains VariationModel, if axes coordinates change
+        // we need to recompute variable tables such as HVAR.
+        // Glyph order matters because HVAR may choose to store variation items
+        // directly mapping to glyph indices. And glyph IR contains advance width
+        // among other things.
+        // TODO: ideally be more granular here e.g. by storing axes and advance widths
+        // in a separate IR file.
+        // https://github.com/googlefonts/fontc/issues/526
+        workload.change_detector.static_metadata_ir_change()
+            || workload.change_detector.glyph_order_ir_change()
+            || !glyphs_changed.is_empty(),
+    );
+    Ok(())
+}
+
 fn add_font_be_job(workload: &mut Workload) -> Result<(), Error> {
     let glyphs_changed = workload.change_detector.glyphs_changed();
 
@@ -289,6 +311,7 @@ pub fn create_workload(
     add_gvar_be_job(&mut workload)?;
     add_head_be_job(&mut workload)?;
     add_metric_and_limits_job(&mut workload)?;
+    add_hvar_be_job(&mut workload)?;
     add_name_be_job(&mut workload)?;
     add_os2_be_job(&mut workload)?;
     add_post_be_job(&mut workload)?;
