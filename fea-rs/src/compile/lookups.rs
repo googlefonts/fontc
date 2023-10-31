@@ -1,8 +1,8 @@
 //! gsub/gpos lookup table stuff
 
 mod contextual;
-mod gpos;
-mod gsub;
+mod gpos_builders;
+mod gsub_builders;
 mod helpers;
 
 use std::{
@@ -40,9 +40,13 @@ use contextual::{
     SubChainContextBuilder, SubContextBuilder,
 };
 
-use gpos::{CursivePosBuilder, MarkToLigBuilder, SinglePosBuilder};
-pub use gpos::{MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder, PreviouslyAssignedClass};
-use gsub::{AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder};
+use gpos_builders::{CursivePosBuilder, MarkToLigBuilder, SinglePosBuilder};
+pub use gpos_builders::{
+    MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder, PreviouslyAssignedClass,
+};
+use gsub_builders::{
+    AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder,
+};
 pub(crate) use helpers::ClassDefBuilder2;
 
 pub trait Builder {
