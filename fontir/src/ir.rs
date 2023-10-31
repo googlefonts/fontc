@@ -835,7 +835,7 @@ impl Anchor {
     pub fn default_pos(&self) -> Point {
         self.positions
             .iter()
-            .find(|(loc, _)| !loc.has_any_non_zero())
+            .find(|(loc, _)| loc.is_default())
             .map(|(_, p)| *p)
             .unwrap()
     }
