@@ -32,7 +32,6 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
-use smol_str::SmolStr;
 use write_fonts::{
     tables::layout::LookupFlag,
     tables::{
@@ -357,19 +356,17 @@ impl<'a> FeatureWriter<'a> {
             if !group.bases.is_empty() && !group.marks.is_empty() {
                 for (base_name, base_anchor) in group.bases.iter() {
                     let base_gid = self.glyph_id(base_name)?;
-                    let mark_class: SmolStr = format!("MC_{}", base_anchor.name).into();
-
                     let mut mark_base = MarkToBaseBuilder::default();
                     for (mark_name, mark_anchor) in group.marks.iter() {
                         let mark_gid = self.glyph_id(mark_name)?;
                         let mark_anchor_table = self.create_anchor_table(mark_anchor, builder)?;
                         mark_base
-                            .insert_mark(mark_gid, mark_class.clone(), mark_anchor_table.clone())
+                            .insert_mark(mark_gid, group_name.0.into(), mark_anchor_table.clone())
                             .map_err(Error::PreviouslyAssignedClass)?;
                     }
 
                     let base_anchor_table = self.create_anchor_table(base_anchor, builder)?;
-                    mark_base.insert_base(base_gid, &mark_class, base_anchor_table);
+                    mark_base.insert_base(base_gid, &group_name.0.into(), base_anchor_table);
 
                     // each in it's own lookup, whch differs from fontmake
                     mark_base_lookups.push(builder.add_lookup(
@@ -385,7 +382,7 @@ impl<'a> FeatureWriter<'a> {
             let mut mark_mark = MarkToMarkBuilder::default();
             let mut filter_set = Vec::new();
 
-            for (mark_name, mark_anchor) in group.marks.iter() {
+            for (mark_name, _) in group.marks.iter() {
                 let Some(glyph_anchors) = anchors.get(mark_name) else {
                     continue;
                 };
@@ -397,13 +394,12 @@ impl<'a> FeatureWriter<'a> {
                     continue;
                 }
                 let mark_gid = self.glyph_id(mark_name)?;
-                let base_name = AnchorInfo::new(&mark_anchor.name).group_name();
                 let Some(anchor_my_anchor) = glyph_anchors
                     .anchors
                     .iter()
-                    .find(|a| a.name.as_str() == base_name.0)
+                    .find(|a| a.name.as_str() == group_name.0)
                 else {
-                    debug!("No anchor_my_anchor for {base_name:?}");
+                    debug!("No anchor_my_anchor for {:?}", group_name.0);
                     continue;
                 };
                 let anchor = self.create_anchor_table(anchor_my_anchor, builder)?;

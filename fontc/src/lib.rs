@@ -2362,15 +2362,23 @@ mod tests {
                             .iter()
                             .map(move |mr| (data, mr))
                     })
-                    .map(|(data, mr)| mr.mark_anchor(data).unwrap())
-                    .map(anchor_coords),
+                    .map(|(data, mr)| {
+                        (
+                            mr.mark_class(),
+                            anchor_coords(mr.mark_anchor(data).unwrap()),
+                        )
+                    }),
             )
             .collect::<Vec<_>>();
 
         assert_eq!(
             (
                 vec![(base_gid, (300, 700))],
-                vec![(macroncomb_gid, (300, 600)), (brevecomb_gid, (200, 500))]
+                vec![
+                    // (glyph id, (mark class, (anchor x, anchor y)))
+                    (macroncomb_gid, (0, (300, 600))),
+                    (brevecomb_gid, (0, (200, 500)))
+                ]
             ),
             (bases, marks)
         );
