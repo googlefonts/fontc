@@ -127,48 +127,43 @@ impl<'a> FeaVariationInfo<'a> {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+struct MarkGroupName<'a>(&'a str);
+
 /// The type of an anchor, used when generating mark features
-#[derive(Copy, Clone, Debug, PartialEq)]
-enum AnchorType {
-    Base,
-    Mark,
+#[derive(Clone, Debug, PartialEq)]
+enum AnchorInfo<'a> {
+    Base(MarkGroupName<'a>),
+    Mark(MarkGroupName<'a>),
 }
 
-impl AnchorType {
-    fn group_name(&self, glyph_name: GlyphName) -> GlyphName {
-        match self {
-            AnchorType::Base => glyph_name,
-            AnchorType::Mark => glyph_name.as_str()[1..].into(),
+impl<'a> AnchorInfo<'a> {
+    fn new(name: &'a GlyphName) -> AnchorInfo<'a> {
+        // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
+        if name.as_str().starts_with('_') {
+            AnchorInfo::Mark(MarkGroupName(&name.as_str()[1..]))
+        } else {
+            AnchorInfo::Base(MarkGroupName(name.as_str()))
         }
     }
-}
 
-trait AnchorInfo {
-    fn anchor_type(&self) -> AnchorType;
-}
-
-impl AnchorInfo for GlyphName {
-    fn anchor_type(&self) -> AnchorType {
-        // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
-        if self.as_str().starts_with('_') {
-            AnchorType::Mark
-        } else {
-            AnchorType::Base
+    fn group_name(&self) -> MarkGroupName<'a> {
+        match self {
+            AnchorInfo::Base(group_name) | AnchorInfo::Mark(group_name) => *group_name,
         }
     }
 }
 
 #[derive(Default, Debug)]
 struct MarkGroup<'a> {
-    //glyph_name: GlyphName,
     bases: Vec<(GlyphName, &'a Anchor)>,
     marks: Vec<(GlyphName, &'a Anchor)>,
 }
 
 fn create_mark_groups<'a>(
     anchors: &HashMap<GlyphName, &'a GlyphAnchors>,
-) -> HashMap<GlyphName, MarkGroup<'a>> {
-    let mut groups: HashMap<GlyphName, MarkGroup> = Default::default();
+) -> HashMap<MarkGroupName<'a>, MarkGroup<'a>> {
+    let mut groups: HashMap<MarkGroupName<'a>, MarkGroup> = Default::default();
     for (glyph_name, glyph_anchors) in anchors.iter() {
         // We assume the anchor list to be small
         // considering only glyphs with anchors,
@@ -177,27 +172,27 @@ fn create_mark_groups<'a>(
 
         let mut base = true; // TODO: only a base if user rules allow it
         for anchor in glyph_anchors.anchors.iter() {
-            let anchor_type = anchor.name.anchor_type();
-            if anchor_type == AnchorType::Mark {
+            let anchor_info = AnchorInfo::new(&anchor.name);
+            if matches!(anchor_info, AnchorInfo::Mark(..)) {
                 base = false;
 
                 // TODO: only if user rules allow us to be a mark
                 groups
-                    .entry(anchor_type.group_name(anchor.name.clone()))
+                    .entry(anchor_info.group_name())
                     .or_default()
                     .marks
-                    .push(((glyph_name).clone(), anchor));
+                    .push((glyph_name.clone(), anchor));
             }
         }
 
         if base {
             for anchor in glyph_anchors.anchors.iter() {
-                let anchor_type = anchor.name.anchor_type();
+                let anchor_info = AnchorInfo::new(&anchor.name);
                 groups
-                    .entry(anchor_type.group_name(anchor.name.clone()))
+                    .entry(anchor_info.group_name())
                     .or_default()
                     .bases
-                    .push(((glyph_name).clone(), anchor));
+                    .push((glyph_name.clone(), anchor));
             }
         }
     }
@@ -358,8 +353,6 @@ impl<'a> FeatureWriter<'a> {
         let mut mark_mark_lookups = Vec::new();
 
         for (group_name, group) in mark_groups.iter() {
-            let mark_class_name: SmolStr = format!("MC_{group_name}").into();
-
             // if we have bases *and* marks produce mark to base
             if !group.bases.is_empty() && !group.marks.is_empty() {
                 for (base_name, base_anchor) in group.bases.iter() {
@@ -399,22 +392,24 @@ impl<'a> FeatureWriter<'a> {
                 if !glyph_anchors
                     .anchors
                     .iter()
-                    .any(|a| AnchorType::Mark == a.name.anchor_type())
+                    .any(|a| matches!(AnchorInfo::new(&a.name), AnchorInfo::Mark(..)))
                 {
                     continue;
                 }
                 let mark_gid = self.glyph_id(mark_name)?;
-                let base_name = AnchorType::Mark.group_name(mark_anchor.name.clone()); // TODO Ew
-                let Some(anchor_my_anchor) =
-                    glyph_anchors.anchors.iter().find(|a| a.name == base_name)
+                let base_name = AnchorInfo::new(&mark_anchor.name).group_name();
+                let Some(anchor_my_anchor) = glyph_anchors
+                    .anchors
+                    .iter()
+                    .find(|a| a.name.as_str() == base_name.0)
                 else {
-                    debug!("No anchor_my_anchor for {base_name}");
+                    debug!("No anchor_my_anchor for {base_name:?}");
                     continue;
                 };
                 let anchor = self.create_anchor_table(anchor_my_anchor, builder)?;
 
                 mark_mark
-                    .insert_mark1(mark_gid, mark_class_name.clone(), anchor)
+                    .insert_mark1(mark_gid, group_name.0.into(), anchor)
                     .map_err(Error::PreviouslyAssignedClass)?;
                 filter_set.push(mark_gid);
             }
