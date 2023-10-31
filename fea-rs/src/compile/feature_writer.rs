@@ -2,14 +2,15 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use smol_str::SmolStr;
-use write_fonts::tables::{
-    gpos::AnchorTable,
-    layout::{LookupFlag, PendingVariationIndex},
-    variations::VariationRegion,
+use write_fonts::{
+    tables::{
+        layout::{LookupFlag, PendingVariationIndex},
+        variations::VariationRegion,
+    },
+    types::Tag,
 };
 
-use crate::common::{GlyphClass, MarkClass};
+use crate::common::GlyphClass;
 
 use super::{
     features::FeatureLookups,
@@ -30,7 +31,6 @@ pub struct FeatureBuilder<'a> {
     pub(crate) tables: &'a mut Tables,
     pub(crate) lookups: Vec<(LookupId, PositionLookup)>,
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
-    pub(crate) mark_classes: HashMap<SmolStr, MarkClass>,
     mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
     // because there may already be defined filter sets from the root fea
     filter_set_id_start: usize,
@@ -61,7 +61,6 @@ impl<'a> FeatureBuilder<'a> {
             tables,
             lookups: Default::default(),
             features: Default::default(),
-            mark_classes: Default::default(),
             mark_filter_sets: Default::default(),
             filter_set_id_start,
         }
@@ -75,22 +74,6 @@ impl<'a> FeatureBuilder<'a> {
     /// If the FEA text contained an explicit GDEF table block, return its contents
     pub fn gdef(&self) -> Option<&GdefBuilder> {
         self.tables.gdef.as_ref()
-    }
-
-    /// Define a new mark class, for use in mark-base and mark-mark rules.
-    ///
-    /// TODO: do we want to ensure there are no redefinitions? do we want
-    /// return an error? do we want to uphold any other invariants?
-    ///
-    /// ALSO: mark class IDs depend on definition order in the source.
-    /// I have no idea how best to approximate that in this API :/
-    pub fn define_mark_class(
-        &mut self,
-        class_name: impl Into<SmolStr>,
-        members: Vec<(GlyphClass, Option<AnchorTable>)>,
-    ) {
-        self.mark_classes
-            .insert(class_name.into(), MarkClass { members });
     }
 
     /// Create a new lookup.
@@ -120,6 +103,16 @@ impl<'a> FeatureBuilder<'a> {
     ) -> PendingVariationIndex {
         let delta_set_id = self.tables.var_store().add_deltas(deltas);
         PendingVariationIndex { delta_set_id }
+    }
+
+    /// Add lookups to every default language system.
+    ///
+    /// Convenience method for recurring pattern.
+    pub fn add_to_default_language_systems(&mut self, feature_tag: Tag, lookups: &[LookupId]) {
+        for langsys in self.language_systems() {
+            let feature_key = langsys.to_feature_key(feature_tag);
+            self.add_feature(feature_key, lookups.to_vec());
+        }
     }
 
     /// Create a new feature, registered for a particular language system.

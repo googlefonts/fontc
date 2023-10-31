@@ -362,6 +362,7 @@ mod tests {
 
     use read_fonts::{
         tables::{
+            gpos::{AnchorTable, PositionLookup},
             name::Name,
             os2::SelectionFlags,
             variations::{DeltaSetIndexMap, ItemVariationData},
@@ -2288,5 +2289,98 @@ mod tests {
         // ... but also has an additional Medium (wght=500, normalized 0.3333) master with
         // a delta of 70; so at normalized 0.5 (wght=550), its delta will *not* be 60
         assert_eq!(hvar.width_delta("A", &[NormalizedCoord::new(0.5)]), 83.0);
+    }
+
+    fn anchor_coords(at: AnchorTable) -> (i32, i32) {
+        match at {
+            AnchorTable::Format1(at) => (at.x_coordinate() as i32, at.y_coordinate() as i32),
+            AnchorTable::Format2(at) => (at.x_coordinate() as i32, at.y_coordinate() as i32),
+            AnchorTable::Format3(at) => (at.x_coordinate() as i32, at.y_coordinate() as i32),
+        }
+    }
+
+    #[test]
+    fn compile_basic_gpos_mark_base() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(Args::for_test(build_dir, "glyphs3/WghtVar_Anchors.glyphs"));
+
+        let font_file = build_dir.join("font.ttf");
+        assert!(font_file.exists());
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+
+        let gpos = font.gpos().unwrap();
+
+        let base_gid = GlyphId::new(result.get_glyph_index("A") as u16);
+        let macroncomb_gid = GlyphId::new(result.get_glyph_index("macroncomb") as u16);
+        let brevecomb_gid = GlyphId::new(result.get_glyph_index("brevecomb") as u16);
+
+        // If only we had more indirections
+        let mark_base_lookups: Vec<_> = gpos
+            .lookup_list()
+            .iter()
+            .flat_map(|l| l.lookups().iter().map(|l| l.unwrap()))
+            .filter_map(|l| match l {
+                PositionLookup::MarkToBase(mark_base) => Some(mark_base),
+                _ => None,
+            })
+            .flat_map(|mb| mb.subtables().iter().map(|s| s.unwrap()))
+            .collect();
+
+        let bases = mark_base_lookups
+            .iter()
+            .flat_map(|mb| mb.base_coverage().unwrap().iter().collect::<Vec<_>>())
+            .zip(
+                mark_base_lookups
+                    .iter()
+                    .flat_map(|mb| {
+                        let base_array = mb.base_array().unwrap();
+                        let data = base_array.offset_data();
+                        base_array
+                            .base_records()
+                            .iter()
+                            .map(move |r| (data, r.unwrap()))
+                    })
+                    .flat_map(|(data, b)| b.base_anchors(data).iter().map(|b| b.unwrap().unwrap()))
+                    .map(anchor_coords),
+            )
+            .collect::<Vec<_>>();
+
+        let marks = mark_base_lookups
+            .iter()
+            .flat_map(|mb| mb.mark_coverage().unwrap().iter().collect::<Vec<_>>())
+            .zip(
+                mark_base_lookups
+                    .iter()
+                    .flat_map(|mb| {
+                        let mark_array = mb.mark_array().unwrap();
+                        let data = mark_array.offset_data();
+                        mb.mark_array()
+                            .unwrap()
+                            .mark_records()
+                            .iter()
+                            .map(move |mr| (data, mr))
+                    })
+                    .map(|(data, mr)| {
+                        (
+                            mr.mark_class(),
+                            anchor_coords(mr.mark_anchor(data).unwrap()),
+                        )
+                    }),
+            )
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            (
+                vec![(base_gid, (300, 700))],
+                vec![
+                    // (glyph id, (mark class, (anchor x, anchor y)))
+                    (macroncomb_gid, (0, (300, 600))),
+                    (brevecomb_gid, (0, (200, 500)))
+                ]
+            ),
+            (bases, marks)
+        );
     }
 }

@@ -1,9 +1,11 @@
 use std::{fmt::Display, io, path::PathBuf};
 
-use fea_rs::compile::error::CompilerError;
+use fea_rs::compile::{error::CompilerError, PreviouslyAssignedClass};
 use font_types::Tag;
 use fontdrasil::types::GlyphName;
-use fontir::{error::VariationModelError, variations::DeltaError};
+use fontir::{
+    error::VariationModelError, orchestration::WorkId as FeWorkId, variations::DeltaError,
+};
 use read_fonts::ReadError;
 use thiserror::Error;
 use write_fonts::tables::{
@@ -61,6 +63,14 @@ pub enum Error {
     FileExpected(PathBuf),
     #[error("Missing {0}")]
     MissingTable(Tag),
+    #[error("Expected an anchor, got {0:?}")]
+    ExpectedAnchor(FeWorkId),
+    #[error("No glyph id for '{0}'")]
+    MissingGlyphId(GlyphName),
+    #[error("No glyph class '{0}'")]
+    MissingGlyphClass(GlyphName),
+    #[error("Multiple assignments for class: {0:?}")]
+    PreviouslyAssignedClass(PreviouslyAssignedClass),
 }
 
 #[derive(Debug)]

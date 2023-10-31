@@ -447,6 +447,7 @@ impl VariationIndexContainingLookup for MarkToBaseBuilder {
 }
 
 /// An error indicating a given glyph has been assigned to multiple mark classes
+#[derive(Clone, Debug, Default)]
 pub struct PreviouslyAssignedClass {
     /// The ID of the glyph in conflict
     pub glyph_id: GlyphId,

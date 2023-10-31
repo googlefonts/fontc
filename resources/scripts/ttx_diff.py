@@ -123,6 +123,9 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         # "--keep-direction",
         # no longer required, still useful to get human-readable glyph names in diff
         "--no-production-names",
+        # helpful for troubleshooting
+        "--debug-feature-file",
+        "debug.fea",
     ]
     if compare == _COMPARE_GFTOOLS:
         cmd += [
