@@ -49,7 +49,7 @@ pub enum AxisLocation {
 }
 
 /// Create an axis where user coords == design coords
-#[cfg(any(test, feature = "cli"))]
+#[cfg(any(test, feature = "test", feature = "cli"))]
 fn simple_axis(tag: Tag, min: i16, default: i16, max: i16) -> Axis {
     use fontdrasil::coords::{CoordConverter, DesignCoord, UserCoord};
 

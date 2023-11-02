@@ -1,0 +1,25 @@
+# generated automatically by fea-rs
+# this file represents an acceptable difference between the output of
+# fonttools and the output of fea-rs for a given input.
+#
+# Note: this relates to the change in sort order of classdefs, and will
+# be outdated the next time we update fonttools and these test files.
+# see https://github.com/fonttools/fonttools/issues/3321#issuecomment-1789608511
+L45
+>              <ClassDef glyph="C" class="2"/>
+>              <ClassDef glyph="O" class="2"/>
+>              <ClassDef glyph="V" class="1"/>
+>              <ClassDef glyph="W" class="1"/>
+L45
+<              <ClassDef glyph="C" class="1"/>
+<              <ClassDef glyph="O" class="1"/>
+<              <ClassDef glyph="V" class="2"/>
+<              <ClassDef glyph="W" class="2"/>
+L61
+>                <Value1 XAdvance="0"/>
+L61
+<                <Value1 XAdvance="-20"/>
+L65
+>                <Value1 XAdvance="-20"/>
+L65
+<                <Value1 XAdvance="0"/>
