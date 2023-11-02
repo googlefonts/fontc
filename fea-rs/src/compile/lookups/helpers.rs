@@ -58,11 +58,13 @@ impl ClassDefBuilder2 {
     /// to the final class ids
     pub(crate) fn build(self) -> (ClassDef, HashMap<GlyphClass, u16>) {
         let mut classes = self.classes.into_iter().collect::<Vec<_>>();
+        // we match the sort order used by fonttools, see:
+        // <https://github.com/fonttools/fonttools/blob/9a46f9d3ab01e3/Lib/fontTools/otlLib/builder.py#L2677>
         classes.sort_unstable_by_key(|cls| {
-            (std::cmp::Reverse((
-                cls.len(),
+            (
+                std::cmp::Reverse(cls.len()),
                 cls.iter().next().unwrap_or_default().to_u16(),
-            )),)
+            )
         });
         classes.dedup();
         let add_one = u16::from(!self.use_class_0);
@@ -86,7 +88,7 @@ mod tests {
     use super::*;
 
     fn make_glyph_class<const N: usize>(glyphs: [u16; N]) -> GlyphClass {
-        glyphs.iter().copied().map(GlyphId::new).collect()
+        glyphs.into_iter().map(GlyphId::new).collect()
     }
 
     #[test]
@@ -110,7 +112,7 @@ mod tests {
 
         let mut builder = ClassDefBuilder2::default();
         builder.checked_add(make_glyph_class([7, 8, 9]));
-        builder.checked_add(make_glyph_class([12, 1]));
+        builder.checked_add(make_glyph_class([1, 12]));
         builder.checked_add(make_glyph_class([3, 4]));
         let (cls, _) = builder.build();
         assert_eq!(cls.get(GlyphId::new(9)), 1);
