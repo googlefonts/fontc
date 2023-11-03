@@ -1,0 +1,6 @@
+# single sub format c uses things that look like glyph classes, except that
+# duplicates are allowed, and order matters.
+feature test {
+    # sub a by z, b by z, c by m, d by k.
+    sub [a b c d] by [z z m k];
+} test;
