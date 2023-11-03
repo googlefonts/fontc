@@ -28,7 +28,7 @@ use write_fonts::{
 };
 
 use crate::{
-    common::{GlyphClass, GlyphId, GlyphOrClass},
+    common::{GlyphId, GlyphOrClass, GlyphSet},
     compile::lookups::contextual::ChainOrNot,
     Kind,
 };
@@ -854,8 +854,8 @@ impl SomeLookup {
 
     pub(crate) fn add_gpos_type_2_class(
         &mut self,
-        one: GlyphClass,
-        two: GlyphClass,
+        one: GlyphSet,
+        two: GlyphSet,
         val_one: ValueRecord,
         val_two: ValueRecord,
     ) {

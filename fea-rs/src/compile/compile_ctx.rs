@@ -23,7 +23,7 @@ use write_fonts::{
 };
 
 use crate::{
-    common::{GlyphClass, GlyphId, GlyphOrClass, MarkClass},
+    common::{GlyphClass, GlyphId, GlyphOrClass, GlyphSet, MarkClass},
     parse::SourceMap,
     token_tree::{
         typed::{self, AstNode},
@@ -91,8 +91,8 @@ pub struct CompilationCtx<'a> {
     anchor_defs: HashMap<SmolStr, (AnchorTable, usize)>,
     value_record_defs: HashMap<SmolStr, ValueRecord>,
     conditionset_defs: ConditionSetMap,
-    mark_attach_class_id: HashMap<GlyphClass, u16>,
-    mark_filter_sets: HashMap<GlyphClass, FilterSetId>,
+    mark_attach_class_id: HashMap<GlyphSet, u16>,
+    mark_filter_sets: HashMap<GlyphSet, FilterSetId>,
 }
 
 impl<'a> CompilationCtx<'a> {
@@ -478,7 +478,7 @@ impl<'a> CompilationCtx<'a> {
 
     fn resolve_mark_attach_class(&mut self, glyphs: &typed::GlyphClass) -> u16 {
         let glyphs = self.resolve_glyph_class(glyphs);
-        let mark_set = glyphs.sort_and_dedupe();
+        let mark_set = glyphs.to_glyph_set();
         if let Some(id) = self.mark_attach_class_id.get(&mark_set) {
             return *id;
         }
@@ -492,7 +492,7 @@ impl<'a> CompilationCtx<'a> {
 
     fn resolve_mark_filter_set(&mut self, glyphs: &typed::GlyphClass) -> u16 {
         let glyphs = self.resolve_glyph_class(glyphs);
-        let set = glyphs.sort_and_dedupe();
+        let set = glyphs.to_glyph_set();
         let id = self.mark_filter_sets.len();
         *self
             .mark_filter_sets
@@ -804,8 +804,8 @@ impl<'a> CompilationCtx<'a> {
 
         if (first_ids.is_class() || second_ids.is_class()) && node.enum_().is_none() {
             lookup.add_gpos_type_2_class(
-                first_ids.to_class().unwrap(),
-                second_ids.to_class().unwrap(),
+                first_ids.to_class().unwrap().into(),
+                second_ids.to_class().unwrap().into(),
                 first_value,
                 second_value,
             )
@@ -2086,12 +2086,6 @@ fn get_reasonable_length_span(node: &NodeOrToken) -> Range<usize> {
         }
     }
 }
-
-//FIXME: sometimes a glyph class should be unique/sorted and sometimes order matters
-//and dupes are allowed?
-//fn make_ctx_glyphs(item: &GlyphOrClass) -> BTreeSet<GlyphId> {
-//item.iter().collect()
-//}
 
 #[cfg(test)]
 mod tests {

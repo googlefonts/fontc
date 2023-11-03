@@ -16,7 +16,7 @@ use fea_rs::{
         PairPosBuilder, VariationInfo,
     },
     parse::{SourceLoadError, SourceResolver},
-    Compiler, GlyphClass, GlyphMap, GlyphName as FeaRsGlyphName,
+    Compiler, GlyphMap, GlyphName as FeaRsGlyphName, GlyphSet,
 };
 use font_types::{GlyphId, Tag};
 use fontdrasil::{coords::NormalizedLocation, types::Axis};
@@ -241,7 +241,7 @@ impl<'a> FeatureWriter<'a> {
             .groups
             .iter()
             .map(|(class_name, glyph_set)| {
-                let glyph_class: GlyphClass = glyph_set
+                let glyph_class: GlyphSet = glyph_set
                     .iter()
                     .map(|name| GlyphId::new(self.glyph_map.glyph_id(name).unwrap_or(0) as u16))
                     .collect();
@@ -288,11 +288,11 @@ impl<'a> FeatureWriter<'a> {
                     let right = glyph_classes
                         .get(right)
                         .ok_or_else(|| Error::MissingGlyphId(right.clone()))?;
-                    for gid1 in right {
+                    for gid1 in right.iter() {
                         ppos_subtables.insert_pair(
                             gid0,
                             x_adv_record.clone(),
-                            *gid1,
+                            gid1,
                             empty_record.clone(),
                         );
                     }
@@ -302,9 +302,9 @@ impl<'a> FeatureWriter<'a> {
                         .get(left)
                         .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
                     let gid1 = self.glyph_id(right)?;
-                    for gid0 in left {
+                    for gid0 in left.iter() {
                         ppos_subtables.insert_pair(
-                            *gid0,
+                            gid0,
                             x_adv_record.clone(),
                             gid1,
                             empty_record.clone(),
