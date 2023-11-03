@@ -1868,15 +1868,10 @@ mod tests {
         assert_simple_kerning("designspace_from_glyphs/WghtVar.designspace");
     }
 
-    #[test]
-    fn intermediate_layer_in_designspace() {
-        // https://github.com/googlefonts/fontc/issues/400
+    fn assert_intermediate_layer(src: &str) {
         let tmp_dir = tempdir().unwrap();
         let build_dir = tmp_dir.path();
-        compile(Args::for_test(
-            build_dir,
-            "designspace_from_glyphs/IntermediateLayer/IntermediateLayer.designspace",
-        ));
+        compile(Args::for_test(build_dir, src));
 
         let font_file = build_dir.join("font.ttf");
         assert!(font_file.exists());
@@ -1922,6 +1917,26 @@ mod tests {
                 cbox_of_char(0x49, &font, vec![0.6]), // wght=700
                 cbox_of_char(0x49, &font, vec![1.0]), // wght=900
             ]
+        );
+    }
+
+    #[test]
+    fn intermediate_layer_in_glyphs2() {
+        // https://github.com/googlefonts/fontc/issues/62
+        assert_intermediate_layer("glyphs2/IntermediateLayer.glyphs");
+    }
+
+    #[test]
+    fn intermediate_layer_in_glyphs3() {
+        // https://github.com/googlefonts/fontc/issues/62
+        assert_intermediate_layer("glyphs3/IntermediateLayer.glyphs");
+    }
+
+    #[test]
+    fn intermediate_layer_in_designspace() {
+        // https://github.com/googlefonts/fontc/issues/400
+        assert_intermediate_layer(
+            "designspace_from_glyphs/IntermediateLayer/IntermediateLayer.designspace",
         );
     }
 
