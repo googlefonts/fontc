@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use write_fonts::tables::layout::{ClassDef, ClassDefBuilder};
 
-use crate::common::{GlyphClass, GlyphId};
+use crate::common::{GlyphId, GlyphSet};
 
 // There is a ClassDef builder in write-fonts, but it's a bit anemic.
 //
@@ -17,7 +17,7 @@ use crate::common::{GlyphClass, GlyphId};
 // TODO: use this in other lookups?
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ClassDefBuilder2 {
-    classes: HashSet<GlyphClass>,
+    classes: HashSet<GlyphSet>,
     glyphs: HashSet<GlyphId>,
     use_class_0: bool,
 }
@@ -37,14 +37,14 @@ impl ClassDefBuilder2 {
         }
     }
 
-    pub(crate) fn can_add(&self, cls: &GlyphClass) -> bool {
+    pub(crate) fn can_add(&self, cls: &GlyphSet) -> bool {
         self.classes.contains(cls) || cls.iter().all(|gid| !self.glyphs.contains(&gid))
     }
 
     /// Check that this class can be added to this classdef, and add it if so.
     ///
     /// returns `true` if the class is added, and `false` otherwise.
-    pub(crate) fn checked_add(&mut self, cls: GlyphClass) -> bool {
+    pub(crate) fn checked_add(&mut self, cls: GlyphSet) -> bool {
         if self.can_add(&cls) {
             self.glyphs.extend(cls.iter());
             self.classes.insert(cls);
@@ -56,7 +56,7 @@ impl ClassDefBuilder2 {
 
     /// Returns a compiled glyphclass, as well as a mapping from our class objects
     /// to the final class ids
-    pub(crate) fn build(self) -> (ClassDef, HashMap<GlyphClass, u16>) {
+    pub(crate) fn build(self) -> (ClassDef, HashMap<GlyphSet, u16>) {
         let mut classes = self.classes.into_iter().collect::<Vec<_>>();
         // we match the sort order used by fonttools, see:
         // <https://github.com/fonttools/fonttools/blob/9a46f9d3ab01e3/Lib/fontTools/otlLib/builder.py#L2677>
@@ -87,7 +87,7 @@ impl ClassDefBuilder2 {
 mod tests {
     use super::*;
 
-    fn make_glyph_class<const N: usize>(glyphs: [u16; N]) -> GlyphClass {
+    fn make_glyph_class<const N: usize>(glyphs: [u16; N]) -> GlyphSet {
         glyphs.into_iter().map(GlyphId::new).collect()
     }
 
@@ -120,5 +120,20 @@ mod tests {
         assert_eq!(cls.get(GlyphId::new(4)), 3);
         // notdef
         assert_eq!(cls.get(GlyphId::new(5)), 0);
+    }
+
+    #[test]
+    fn we_handle_dupes() {
+        let mut builder = ClassDefBuilder2::default();
+        let c1 = make_glyph_class([1, 2, 3, 4]);
+        let c2 = make_glyph_class([4, 3, 2, 1, 1]);
+        let c3 = make_glyph_class([1, 5, 6, 7]);
+        assert!(builder.checked_add(c1.clone()));
+        assert!(builder.checked_add(c2.clone()));
+        assert!(!builder.checked_add(c3.clone()));
+
+        let (_, map) = builder.build();
+        assert_eq!(map.get(&c1), map.get(&c2));
+        assert!(map.get(&c3).is_none());
     }
 }

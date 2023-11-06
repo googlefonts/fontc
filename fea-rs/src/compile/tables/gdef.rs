@@ -19,7 +19,7 @@ use write_fonts::tables::{
 };
 
 use super::{VariationIndexRemapping, VariationStoreBuilder};
-use crate::common::GlyphClass;
+use crate::common::{GlyphClass, GlyphSet};
 
 /// Data collected from a GDEF block.
 #[derive(Clone, Debug, Default)]
@@ -28,7 +28,7 @@ pub struct GdefBuilder {
     pub attach: BTreeMap<GlyphId, BTreeSet<u16>>,
     pub ligature_pos: BTreeMap<GlyphId, Vec<CaretValue>>,
     pub mark_attach_class: BTreeMap<GlyphId, u16>,
-    pub mark_glyph_sets: Vec<GlyphClass>,
+    pub mark_glyph_sets: Vec<GlyphSet>,
     pub var_store: Option<VariationStoreBuilder>,
 }
 
@@ -123,8 +123,10 @@ impl GdefBuilder {
     }
 
     /// Errors if the class contains a glyph that is already in an existing class.
-    pub fn add_glyph_class(
+    pub(crate) fn add_glyph_class(
         &mut self,
+        // technically should be a GlyphSet, but we're storing it as individual
+        // glyphs and this is private API, so :shrug:
         glyphs: GlyphClass,
         class: ClassId,
     ) -> Result<(), (GlyphId, ClassId)> {

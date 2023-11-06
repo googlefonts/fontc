@@ -9,7 +9,9 @@ pub use write_fonts::types::GlyphId;
 mod glyph_class;
 mod glyph_map;
 
-pub use glyph_class::GlyphClass;
+pub(crate) use glyph_class::GlyphClass;
+
+pub use glyph_class::GlyphSet;
 pub use glyph_map::GlyphMap;
 
 /// A glyph name
@@ -19,7 +21,7 @@ pub type GlyphName = SmolStr;
 ///
 /// Various places in the FEA spec accept either a single glyph or a glyph class.
 #[derive(Debug, Clone)]
-pub enum GlyphOrClass {
+pub(crate) enum GlyphOrClass {
     /// A resolved GlyphId
     Glyph(GlyphId),
     /// A resolved glyph class

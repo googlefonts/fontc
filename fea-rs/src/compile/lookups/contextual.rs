@@ -342,7 +342,7 @@ impl ContextBuilder {
             .iter()
             .flat_map(|rule| rule.context.iter().map(|x| &x.0))
         {
-            if !builder.checked_add(class.to_class().unwrap()) {
+            if !builder.checked_add(class.to_class().unwrap().into()) {
                 return None;
             }
         }
@@ -542,14 +542,14 @@ impl ChainContextBuilder {
 
         let mut backtrack = ClassDefBuilder2::default();
         for class in self.0.rules.iter().flat_map(|rule| rule.backtrack.iter()) {
-            if !backtrack.checked_add(class.to_class().unwrap()) {
+            if !backtrack.checked_add(class.to_class().unwrap().into()) {
                 return None;
             }
         }
 
         let mut lookahead = ClassDefBuilder2::default();
         for class in self.0.rules.iter().flat_map(|rule| rule.lookahead.iter()) {
-            if !lookahead.checked_add(class.to_class().unwrap()) {
+            if !lookahead.checked_add(class.to_class().unwrap().into()) {
                 return None;
             }
         }
@@ -575,25 +575,25 @@ impl ChainContextBuilder {
 
         for rule in &self.0.rules {
             let cls_idx = *input_map
-                .get(&rule.first_input_sequence_item().to_class().unwrap())
+                .get(&rule.first_input_sequence_item().to_class().unwrap().into())
                 .unwrap();
             let backtrack = rule
                 .backtrack
                 .iter()
-                .map(|cls| backtrack_map.get(&cls.to_class().unwrap()).unwrap())
+                .map(|cls| backtrack_map.get(&cls.to_class().unwrap().into()).unwrap())
                 .copied()
                 .collect();
             let lookahead = rule
                 .lookahead
                 .iter()
-                .map(|cls| lookahead_map.get(&cls.to_class().unwrap()).unwrap())
+                .map(|cls| lookahead_map.get(&cls.to_class().unwrap().into()).unwrap())
                 .copied()
                 .collect();
             let input = rule
                 .context
                 .iter()
                 .skip(1)
-                .map(|(cls, _)| input_map.get(&cls.to_class().unwrap()).unwrap())
+                .map(|(cls, _)| input_map.get(&cls.to_class().unwrap().into()).unwrap())
                 .copied()
                 .collect();
 

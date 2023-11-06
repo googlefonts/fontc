@@ -12,7 +12,7 @@ use write_fonts::{
     types::GlyphId,
 };
 
-use crate::common::GlyphClass;
+use crate::common::GlyphSet;
 
 use super::{Builder, ClassDefBuilder2, VariationIndexContainingLookup};
 
@@ -122,7 +122,7 @@ struct GlyphPairPosBuilder(BTreeMap<GlyphId, BTreeMap<GlyphId, (ValueRecord, Val
 
 #[derive(Clone, Debug)]
 struct ClassPairPosSubtable {
-    items: BTreeMap<GlyphClass, BTreeMap<GlyphClass, (ValueRecord, ValueRecord)>>,
+    items: BTreeMap<GlyphSet, BTreeMap<GlyphSet, (ValueRecord, ValueRecord)>>,
     classdef_1: ClassDefBuilder2,
     classdef_2: ClassDefBuilder2,
 }
@@ -160,9 +160,9 @@ impl VariationIndexContainingLookup for PairPosBuilder {
 impl ClassPairPosBuilder {
     fn insert(
         &mut self,
-        class1: GlyphClass,
+        class1: GlyphSet,
         record1: ValueRecord,
-        class2: GlyphClass,
+        class2: GlyphSet,
         record2: ValueRecord,
     ) {
         let key = (record1.format(), record2.format());
@@ -182,14 +182,14 @@ impl ClassPairPosBuilder {
 }
 
 impl ClassPairPosSubtable {
-    fn can_add(&self, class1: &GlyphClass, class2: &GlyphClass) -> bool {
+    fn can_add(&self, class1: &GlyphSet, class2: &GlyphSet) -> bool {
         self.classdef_1.can_add(class1) && self.classdef_2.can_add(class2)
     }
 
     fn add(
         &mut self,
-        class1: GlyphClass,
-        class2: GlyphClass,
+        class1: GlyphSet,
+        class2: GlyphSet,
         record1: ValueRecord,
         record2: ValueRecord,
     ) {
@@ -221,9 +221,9 @@ impl PairPosBuilder {
     /// Insert a new class-based kerning rule.
     pub fn insert_classes(
         &mut self,
-        class1: GlyphClass,
+        class1: GlyphSet,
         record1: ValueRecord,
-        class2: GlyphClass,
+        class2: GlyphSet,
         record2: ValueRecord,
     ) {
         self.classes.insert(class1, record1, class2, record2)
@@ -302,7 +302,7 @@ impl Builder for ClassPairPosSubtable {
         let (class1def, class1map) = self.classdef_1.build();
         let (class2def, class2map) = self.classdef_2.build();
 
-        let coverage = self.items.keys().flat_map(GlyphClass::iter).collect();
+        let coverage = self.items.keys().flat_map(GlyphSet::iter).collect();
 
         let mut out = vec![write_gpos::Class1Record::default(); self.items.len()];
         for (cls1, stuff) in self.items {
