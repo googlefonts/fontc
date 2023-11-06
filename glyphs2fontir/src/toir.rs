@@ -126,7 +126,7 @@ pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features
     })
 }
 
-fn design_location(
+pub(crate) fn design_location(
     axes: &[fontdrasil::types::Axis],
     axes_values: &[OrderedFloat<f64>],
 ) -> DesignLocation {

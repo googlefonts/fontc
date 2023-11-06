@@ -179,9 +179,58 @@ pub struct Glyph {
 #[derive(Debug, PartialEq, Hash)]
 pub struct Layer {
     pub layer_id: String,
+    pub associated_master_id: Option<String>,
     pub width: OrderedFloat<f64>,
     pub shapes: Vec<Shape>,
     pub anchors: Vec<Anchor>,
+    pub attributes: LayerAttributes,
+}
+
+impl Layer {
+    pub fn is_master(&self) -> bool {
+        self.associated_master_id.is_none()
+    }
+
+    pub fn is_intermediate(&self) -> bool {
+        self.associated_master_id.is_some() && !self.attributes.coordinates.is_empty()
+    }
+
+    // TODO add is_alternate, is_color, etc.
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Hash)]
+pub struct LayerAttributes {
+    pub coordinates: Vec<OrderedFloat<f64>>,
+    // TODO: add axisRules, color, etc.
+}
+
+// hand-parse because they can take multiple shapes
+impl FromPlist for LayerAttributes {
+    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
+        let mut coordinates = Vec::new();
+
+        tokenizer.eat(b'{')?;
+
+        loop {
+            if tokenizer.eat(b'}').is_ok() {
+                break;
+            }
+
+            let key: String = tokenizer.parse()?;
+            tokenizer.eat(b'=')?;
+            match key.as_str() {
+                "coordinates" => {
+                    coordinates = tokenizer.parse()?;
+                }
+                // skip unsupported attributes for now
+                // TODO: match the others
+                _ => tokenizer.skip_rec()?,
+            }
+            tokenizer.eat(b';')?;
+        }
+
+        Ok(LayerAttributes { coordinates })
+    }
 }
 
 #[derive(Debug, PartialEq, Hash)]
@@ -482,6 +531,7 @@ pub struct RawGlyph {
 
 #[derive(Default, Clone, Debug, PartialEq, FromPlist)]
 pub struct RawLayer {
+    pub name: String,
     pub layer_id: String,
     pub associated_master_id: Option<String>,
     pub width: OrderedFloat<f64>,
@@ -489,8 +539,40 @@ pub struct RawLayer {
     paths: Vec<Path>,
     components: Vec<Component>,
     pub anchors: Vec<RawAnchor>,
+    #[fromplist(alt_name = "attr")]
+    pub attributes: LayerAttributes,
     #[fromplist(ignore)]
     pub other_stuff: BTreeMap<String, Plist>,
+}
+
+impl RawLayer {
+    /// Return true if the layer is a draft that is not meant to be compiled.
+    ///
+    /// The presence of an associated master indicates this is not a simple 'master' instance.
+    /// Without 'attributes' that specify whether it's a special intermediate, alternate or
+    /// color layer, we can assume the non-master layer is a draft.
+    fn is_draft(&self) -> bool {
+        self.associated_master_id.is_some() && self.attributes == Default::default()
+    }
+
+    fn v2_to_v3_attributes(&mut self) {
+        // In Glyphs v2, 'brace' or intermediate layer coordinates are stored in the
+        // layer name as comma-separated values inside braces
+        let mut brace_coordinates = Vec::new();
+        if let (Some(start), Some(end)) = (self.name.find('{'), self.name.find('}')) {
+            let mut tokenizer = Tokenizer::new(&self.name[start..=end]);
+            // we don't want this to fail, technically '{foobar}' is valid inside a
+            // layer name which is not meant to specify intermediate coordinates.
+            // Typos are also possible. Perhaps we should warn?
+            brace_coordinates = tokenizer
+                .parse_delimited_vec(VecDelimiters::CSV_IN_BRACES)
+                .unwrap_or_default();
+        }
+        if !brace_coordinates.is_empty() {
+            self.attributes.coordinates = brace_coordinates;
+        }
+        // TODO: handle 'bracket' layers and other attributes
+    }
 }
 
 /// Represents a path OR a component
@@ -1148,6 +1230,14 @@ impl RawFont {
         Ok(())
     }
 
+    fn v2_to_v3_layer_attributes(&mut self) {
+        for raw_glyph in self.glyphs.iter_mut() {
+            for layer in raw_glyph.layers.iter_mut() {
+                layer.v2_to_v3_attributes();
+            }
+        }
+    }
+
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
     fn v2_to_v3(&mut self) -> Result<(), Error> {
         self.v2_to_v3_weight()?;
@@ -1155,6 +1245,7 @@ impl RawFont {
         self.v2_to_v3_metrics()?;
         self.v2_to_v3_names()?;
         self.v2_to_v3_instances()?;
+        self.v2_to_v3_layer_attributes();
         Ok(())
     }
 }
@@ -1468,9 +1559,11 @@ impl TryFrom<RawLayer> for Layer {
 
         Ok(Layer {
             layer_id: from.layer_id,
+            associated_master_id: from.associated_master_id,
             width: from.width,
             shapes,
             anchors,
+            attributes: from.attributes,
         })
     }
 }
@@ -1481,9 +1574,7 @@ impl TryFrom<RawGlyph> for Glyph {
     fn try_from(from: RawGlyph) -> Result<Self, Self::Error> {
         let mut instances = Vec::new();
         for layer in from.layers {
-            // The presence of an associated master indicates this is not a simple instance
-            // It's either a draft or a more complex usage, such as an alternate
-            if layer.associated_master_id.is_some() {
+            if layer.is_draft() {
                 continue;
             }
             instances.push(layer.try_into()?);

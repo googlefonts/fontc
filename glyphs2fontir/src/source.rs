@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::glyphdata::is_nonspacing_mark;
-use crate::toir::{to_ir_contours_and_components, to_ir_features, FontInfo};
+use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features, FontInfo};
 
 pub struct GlyphsIrSource {
     glyphs_file: PathBuf,
@@ -731,15 +731,39 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
 
         // Glyphs have layers that match up with masters, and masters have locations
         let mut axis_positions: HashMap<Tag, HashSet<NormalizedCoord>> = HashMap::new();
+        let axes_by_name = font_info.axes.iter().map(|a| (a.tag, a)).collect();
         for instance in glyph.layers.iter() {
-            let Some(master_idx) = font_info.master_indices.get(instance.layer_id.as_str()) else {
+            // skip not-yet-supported types of layers (e.g. alternate, color, etc.)
+            if !(instance.is_master() || instance.is_intermediate()) {
+                continue;
+            }
+            let master_id = instance
+                .associated_master_id
+                .as_ref()
+                .unwrap_or(&instance.layer_id);
+            let Some(master_idx) = font_info.master_indices.get(master_id) else {
                 return Err(WorkError::NoMasterForGlyph {
-                    master: instance.layer_id.clone(),
+                    master: master_id.clone(),
                     glyph: self.glyph_name.clone(),
                 });
             };
             let master = &font.masters[*master_idx];
-            let location = font_info.locations.get(&master.axes_values).unwrap();
+            let mut location = font_info
+                .locations
+                .get(&master.axes_values)
+                .unwrap()
+                .clone();
+            // intermediate (aka 'brace') layers can override axis values from their
+            // associated master
+            if !instance.attributes.coordinates.is_empty() {
+                for (tag, coord) in
+                    design_location(&font_info.axes, &instance.attributes.coordinates)
+                        .to_normalized(&axes_by_name)
+                        .iter()
+                {
+                    location.insert(*tag, *coord);
+                }
+            }
 
             for (tag, coord) in location.iter() {
                 axis_positions.entry(*tag).or_default().insert(*coord);
@@ -760,7 +784,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             };
 
             ir_glyph
-                .try_add_source(location, glyph_instance)
+                .try_add_source(&location, glyph_instance)
                 .map_err(|e| {
                     WorkError::AddGlyphSource(format!(
                         "Unable to add source to {:?} at {:?}: {}",
