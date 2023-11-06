@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# run this script from the repo root
+# run this script from the test-data root
 # there are currently two files we don't want:
 # - includ0.fea (part of include tests, that we don't run)
 # - STAT_bad.fea (an 'expected failure', which we don't currently handle)
