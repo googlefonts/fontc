@@ -192,7 +192,7 @@ impl Layer {
     }
 
     pub fn is_intermediate(&self) -> bool {
-        self.associated_master_id.is_some() && self.attributes.coordinates.is_some()
+        self.associated_master_id.is_some() && !self.attributes.coordinates.is_empty()
     }
 
     // TODO add is_alternate, is_color, etc.
@@ -200,14 +200,14 @@ impl Layer {
 
 #[derive(Clone, Default, Debug, PartialEq, Hash)]
 pub struct LayerAttributes {
-    pub coordinates: Option<Vec<OrderedFloat<f64>>>,
+    pub coordinates: Vec<OrderedFloat<f64>>,
     // TODO: add axisRules, color, etc.
 }
 
 // hand-parse because they can take multiple shapes
 impl FromPlist for LayerAttributes {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
-        let mut coordinates = None;
+        let mut coordinates = Vec::new();
 
         tokenizer.eat(b'{')?;
 
@@ -220,7 +220,7 @@ impl FromPlist for LayerAttributes {
             tokenizer.eat(b'=')?;
             match key.as_str() {
                 "coordinates" => {
-                    coordinates = Some(tokenizer.parse()?);
+                    coordinates = tokenizer.parse()?;
                 }
                 // skip unsupported attributes for now
                 // TODO: match the others
@@ -569,7 +569,7 @@ impl RawLayer {
                 .unwrap_or_default();
         }
         if !brace_coordinates.is_empty() {
-            self.attributes.coordinates = Some(brace_coordinates);
+            self.attributes.coordinates = brace_coordinates;
         }
         // TODO: handle 'bracket' layers and other attributes
     }

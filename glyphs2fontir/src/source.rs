@@ -755,10 +755,11 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
                 .clone();
             // intermediate (aka 'brace') layers can override axis values from their
             // associated master
-            if let Some(coordinates) = instance.attributes.coordinates.as_ref() {
-                for (tag, coord) in design_location(&font_info.axes, coordinates)
-                    .to_normalized(&axes_by_name)
-                    .iter()
+            if !instance.attributes.coordinates.is_empty() {
+                for (tag, coord) in
+                    design_location(&font_info.axes, &instance.attributes.coordinates)
+                        .to_normalized(&axes_by_name)
+                        .iter()
                 {
                     location.insert(*tag, *coord);
                 }
