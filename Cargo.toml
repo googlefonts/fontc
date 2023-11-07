@@ -48,4 +48,5 @@ members = [
     "fontc",
     "fea-rs",
     "fea-lsp",
+    "layout-repr",
 ]
