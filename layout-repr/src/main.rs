@@ -1,6 +1,7 @@
 //! A binary for generating a normalized text representation for GPOS/GSUB
 
 mod args;
+mod common;
 mod error;
 mod glyph_names;
 mod gpos;
@@ -18,18 +19,14 @@ fn main() -> Result<(), Error> {
     })?;
 
     let font = get_font(&data, args.index)?;
+    let name_map = glyph_names::make_name_map(&font)?;
     let to_print = args.table.unwrap_or_default();
     if matches!(to_print, args::Table::All | args::Table::Gpos) {
-        gpos::print(&font)?;
+        gpos::print(&font, &name_map)?;
     }
 
     if matches!(to_print, args::Table::All | args::Table::Gsub) {
         gsub::print(&font)?;
-    }
-
-    let names = glyph_names::make_name_map(&font)?;
-    for name in names.iter() {
-        println!("{name}");
     }
 
     Ok(())
