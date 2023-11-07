@@ -913,6 +913,8 @@ impl TryInto<GlyphAnchors> for AnchorBuilder {
 #[serde(from = "GlyphSerdeRepr", into = "GlyphSerdeRepr")]
 pub struct Glyph {
     pub name: GlyphName,
+    /// Whether to "export" in source terms
+    pub emit_to_binary: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     default_location: NormalizedLocation,
     sources: HashMap<NormalizedLocation, GlyphInstance>,
@@ -952,6 +954,7 @@ fn has_consistent_2x2_transforms(
 impl Glyph {
     pub fn new(
         name: GlyphName,
+        emit_to_binary: bool,
         codepoints: HashSet<u32>,
         sources: HashMap<NormalizedLocation, GlyphInstance>,
     ) -> Result<Self, WorkError> {
@@ -975,6 +978,7 @@ impl Glyph {
         let has_consistent_2x2_transforms = has_consistent_2x2_transforms(&name, &sources);
         Ok(Glyph {
             name,
+            emit_to_binary,
             codepoints,
             default_location,
             sources,
@@ -1110,6 +1114,7 @@ impl Persistable for GlyphAnchors {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GlyphBuilder {
     pub name: GlyphName,
+    pub emit_to_binary: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     pub sources: HashMap<NormalizedLocation, GlyphInstance>,
 }
@@ -1118,6 +1123,7 @@ impl GlyphBuilder {
     pub fn new(name: GlyphName) -> Self {
         Self {
             name,
+            emit_to_binary: true,
             codepoints: HashSet::new(),
             sources: HashMap::new(),
         }
@@ -1179,6 +1185,7 @@ impl GlyphBuilder {
 
         Self {
             name: GlyphName::NOTDEF.clone(),
+            emit_to_binary: true,
             codepoints: HashSet::new(),
             sources: HashMap::from([(
                 default_location,
@@ -1196,7 +1203,12 @@ impl TryInto<Glyph> for GlyphBuilder {
     type Error = WorkError;
 
     fn try_into(self) -> Result<Glyph, Self::Error> {
-        Glyph::new(self.name, self.codepoints, self.sources)
+        Glyph::new(
+            self.name,
+            self.emit_to_binary,
+            self.codepoints,
+            self.sources,
+        )
     }
 }
 
@@ -1204,6 +1216,7 @@ impl From<Glyph> for GlyphBuilder {
     fn from(value: Glyph) -> Self {
         Self {
             name: value.name,
+            emit_to_binary: value.emit_to_binary,
             codepoints: value.codepoints,
             sources: value.sources,
         }

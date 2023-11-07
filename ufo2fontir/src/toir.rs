@@ -150,10 +150,12 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, W
 
 pub fn to_ir_glyph(
     glyph_name: GlyphName,
+    emit_to_binary: bool,
     glif_files: &HashMap<&PathBuf, Vec<NormalizedLocation>>,
     anchors: &mut AnchorBuilder,
 ) -> Result<ir::Glyph, WorkError> {
     let mut glyph = ir::GlyphBuilder::new(glyph_name.clone());
+    glyph.emit_to_binary = emit_to_binary;
     for (glif_file, locations) in glif_files {
         let norad_glyph =
             norad::Glyph::load(glif_file).map_err(|e| WorkError::InvalidSourceGlyph {
@@ -243,6 +245,7 @@ mod tests {
         let mut anchors = AnchorBuilder::new("bar".into());
         let glyph = to_ir_glyph(
             "bar".into(),
+            true,
             &HashMap::from([(
                 &testdata_dir().join("WghtVar-Regular.ufo/glyphs/bar.glif"),
                 vec![norm_loc],

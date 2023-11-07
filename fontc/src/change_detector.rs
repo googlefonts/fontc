@@ -323,7 +323,7 @@ fn ir_source(source: &Path) -> Result<Box<dyn Source>, Error> {
         .and_then(OsStr::to_str)
         .ok_or_else(|| Error::UnrecognizedSource(source.to_path_buf()))?;
     match ext {
-        "designspace" => Ok(Box::new(DesignSpaceIrSource::new(source.to_path_buf()))),
+        "designspace" => Ok(Box::new(DesignSpaceIrSource::new(source.to_path_buf())?)),
         "glyphs" => Ok(Box::new(GlyphsIrSource::new(source.to_path_buf()))),
         "glyphspackage" => Ok(Box::new(GlyphsIrSource::new(source.to_path_buf()))),
         _ => Err(Error::UnrecognizedSource(source.to_path_buf())),

@@ -169,6 +169,7 @@ impl FeatureSnippet {
 #[derive(Debug, PartialEq, Hash)]
 pub struct Glyph {
     pub glyphname: String,
+    pub export: bool,
     pub layers: Vec<Layer>,
     /// The left kerning group
     pub left_kern: Option<String>,
@@ -520,6 +521,7 @@ pub struct Axis {
 pub struct RawGlyph {
     pub layers: Vec<RawLayer>,
     pub glyphname: String,
+    pub export: Option<bool>,
     #[fromplist(alt_name = "leftKerningGroup")]
     pub kern_left: Option<String>,
     #[fromplist(alt_name = "rightKerningGroup")]
@@ -1581,6 +1583,7 @@ impl TryFrom<RawGlyph> for Glyph {
         }
         Ok(Glyph {
             glyphname: from.glyphname,
+            export: from.export.unwrap_or(true),
             layers: instances,
             left_kern: from.kern_left,
             right_kern: from.kern_right,
@@ -2128,20 +2131,23 @@ mod tests {
         assert_wght_var_metrics(&Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap());
     }
 
-    fn assert_load_v2_matches_load_v3(name: &str) {
+    /// So far we don't have any package-only examples
+    enum LoadCompare {
+        Glyphs,
+        GlyphsAndPackage,
+    }
+
+    fn assert_load_v2_matches_load_v3(name: &str, compare: LoadCompare) {
+        let has_package = matches!(compare, LoadCompare::GlyphsAndPackage);
         let _ = env_logger::builder().is_test(true).try_init();
         let filename = format!("{name}.glyphs");
         let pkgname = format!("{name}.glyphspackage");
         let g2 = Font::load(&glyphs2_dir().join(filename.clone())).unwrap();
-        let g2_pkg = Font::load(&glyphs2_dir().join(pkgname.clone())).unwrap();
         let g3 = Font::load(&glyphs3_dir().join(filename.clone())).unwrap();
-        let g3_pkg = Font::load(&glyphs3_dir().join(pkgname.clone())).unwrap();
 
         // Handy if troubleshooting
         std::fs::write("/tmp/g2.glyphs.txt", format!("{g2:#?}")).unwrap();
-        std::fs::write("/tmp/g2.glyphspackage.txt", format!("{g2_pkg:#?}")).unwrap();
         std::fs::write("/tmp/g3.glyphs.txt", format!("{g3:#?}")).unwrap();
-        std::fs::write("/tmp/g3.glyphspackage.txt", format!("{g3_pkg:#?}")).unwrap();
 
         // Assert fields that often don't match individually before doing the whole struct for nicer diffs
         assert_eq!(g2.axes, g3.axes);
@@ -2149,38 +2155,52 @@ mod tests {
             assert_eq!(g2m, g3m);
         }
         assert_eq!(g2, g3, "g2 should match g3");
-        assert_eq!(g2_pkg, g3_pkg, "g2_pkg should match g3_pkg");
-        assert_eq!(g3_pkg, g3, "g3_pkg should match g3");
+
+        if has_package {
+            let g2_pkg = Font::load(&glyphs2_dir().join(pkgname.clone())).unwrap();
+            let g3_pkg = Font::load(&glyphs3_dir().join(pkgname.clone())).unwrap();
+
+            std::fs::write("/tmp/g2.glyphspackage.txt", format!("{g2_pkg:#?}")).unwrap();
+            std::fs::write("/tmp/g3.glyphspackage.txt", format!("{g3_pkg:#?}")).unwrap();
+
+            assert_eq!(g2_pkg, g3_pkg, "g2_pkg should match g3_pkg");
+            assert_eq!(g3_pkg, g3, "g3_pkg should match g3");
+        }
     }
 
     #[test]
     fn read_wght_var_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar");
+        assert_load_v2_matches_load_v3("WghtVar", LoadCompare::GlyphsAndPackage);
     }
 
     #[test]
     fn read_wght_var_avar_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_Avar");
+        assert_load_v2_matches_load_v3("WghtVar_Avar", LoadCompare::GlyphsAndPackage);
     }
 
     #[test]
     fn read_wght_var_instances_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_Instances");
+        assert_load_v2_matches_load_v3("WghtVar_Instances", LoadCompare::GlyphsAndPackage);
     }
 
     #[test]
     fn read_wght_var_os2_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_OS2");
+        assert_load_v2_matches_load_v3("WghtVar_OS2", LoadCompare::GlyphsAndPackage);
     }
 
     #[test]
     fn read_wght_var_anchors_2_and_3() {
-        assert_load_v2_matches_load_v3("WghtVar_Anchors");
+        assert_load_v2_matches_load_v3("WghtVar_Anchors", LoadCompare::GlyphsAndPackage);
     }
 
     #[test]
     fn read_infinity_2_and_3() {
-        assert_load_v2_matches_load_v3("infinity");
+        assert_load_v2_matches_load_v3("infinity", LoadCompare::GlyphsAndPackage);
+    }
+
+    #[test]
+    fn read_wght_var_noexport_2_and_3() {
+        assert_load_v2_matches_load_v3("WghtVar_NoExport", LoadCompare::Glyphs);
     }
 
     fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {
@@ -2639,6 +2659,25 @@ mod tests {
                     a.name.as_str(),
                     a.pos
                 )))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn read_export_glyph() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_NoExport.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                ("bracketleft", true),
+                ("bracketright", true),
+                ("exclam", true),
+                ("hyphen", false),
+                ("manual-component", true),
+                ("space", true),
+            ],
+            font.glyphs
+                .iter()
+                .map(|(name, glyph)| (name.as_str(), glyph.export))
                 .collect::<Vec<_>>()
         );
     }

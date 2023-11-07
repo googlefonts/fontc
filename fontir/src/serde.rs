@@ -247,6 +247,7 @@ pub(crate) struct GlyphInstanceSerdeRepr {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct GlyphSerdeRepr {
     pub name: String,
+    pub emit_to_binary: bool,
     pub codepoints: HashSet<u32>,
     pub instances: Vec<GlyphInstanceSerdeRepr>,
 }
@@ -255,6 +256,7 @@ impl From<GlyphSerdeRepr> for Glyph {
     fn from(from: GlyphSerdeRepr) -> Self {
         GlyphBuilder {
             name: from.name.into(),
+            emit_to_binary: from.emit_to_binary,
             codepoints: from.codepoints,
             sources: from
                 .instances
@@ -272,6 +274,7 @@ impl From<Glyph> for GlyphSerdeRepr {
         let from: GlyphBuilder = from.into();
         GlyphSerdeRepr {
             name: from.name.as_str().to_string(),
+            emit_to_binary: from.emit_to_binary,
             codepoints: from.codepoints,
             instances: from
                 .sources
