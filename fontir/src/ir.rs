@@ -143,6 +143,10 @@ impl GlyphOrder {
         self.0.iter()
     }
 
+    pub fn remove(&mut self, name: &GlyphName) -> bool {
+        self.0.remove(name)
+    }
+
     pub fn difference<'a>(
         &'a self,
         other: &'a GlyphOrder,

@@ -4,7 +4,7 @@
 //! the contours and one updated glyph with no contours that references the new gyph as a component.
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -359,34 +359,47 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
         // In particular, glyphs with both paths and components need to push the path into a component
         let arc_current = context.preliminary_glyph_order.get();
         let current_glyph_order = &*arc_current;
+        let original_glyphs: HashMap<_, _> = current_glyph_order
+            .iter()
+            .map(|gn| (gn, context.glyphs.get(&WorkId::Glyph(gn.clone()))))
+            .collect();
+
+        // Anything the source specifically said not to retain shouldn't end up in the final font
         let mut new_glyph_order = current_glyph_order.clone();
+        for glyph_name in current_glyph_order.iter() {
+            let glyph = original_glyphs.get(glyph_name).unwrap();
+            if !glyph.emit_to_binary {
+                new_glyph_order.remove(glyph_name);
+            }
+        }
 
         // Glyphs with paths and components, and glyphs whose component 2x2 transforms vary over designspace
         // are not directly supported in fonts. To resolve we must do one of:
         // 1) need to push their paths to a new glyph that is a component
         // 2) collapse such glyphs into a simple (contour-only) glyph
         // fontmake (Python) prefers option 2.
-        for glyph_name in current_glyph_order.iter() {
-            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
+        for glyph_name in new_glyph_order.clone().iter() {
+            let glyph = original_glyphs.get(glyph_name).unwrap();
             let inconsistent_components = !glyph.has_consistent_components();
-            if inconsistent_components || has_components_and_contours(&glyph) {
+            if inconsistent_components || has_components_and_contours(glyph) {
                 if inconsistent_components {
                     debug!(
                         "Coalescing'{0}' into a simple glyph because component 2x2s vary across the designspace",
                         glyph.name
                     );
-                    convert_components_to_contours(context, &glyph)?;
+                    convert_components_to_contours(context, glyph)?;
                 } else if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
                     debug!(
                         "Coalescing '{0}' into a simple glyph because it has contours and components and prefer simple glyphs is set",
                         glyph.name
                     );
-                    convert_components_to_contours(context, &glyph)?;
+                    convert_components_to_contours(context, glyph)?;
                 } else {
-                    move_contours_to_new_component(context, &mut new_glyph_order, &glyph)?;
+                    move_contours_to_new_component(context, &mut new_glyph_order, glyph)?;
                 }
             }
         }
+        drop(original_glyphs); // lets not accidentally use that from here on
 
         if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
             for glyph_name in new_glyph_order.iter() {
@@ -402,6 +415,19 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
             for glyph_name in new_glyph_order.iter() {
                 let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
                 if glyph.has_nonidentity_2x2() {
+                    convert_components_to_contours(context, &glyph)?;
+                }
+            }
+        }
+
+        // Resolve component references to glyphs that are not retained by conversion to contours
+        // Glyphs have to have consistent components at this point so it's safe to just check the default
+        // See https://github.com/googlefonts/fontc/issues/532
+        for glyph_name in new_glyph_order.iter() {
+            // We are only int
+            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
+            for component in glyph.default_instance().components.iter() {
+                if !new_glyph_order.contains(&component.base) {
                     convert_components_to_contours(context, &glyph)?;
                 }
             }

@@ -421,12 +421,8 @@ mod tests {
             }
         }
 
-        fn get_glyph_index(&self, name: &str) -> u32 {
-            self.fe_context
-                .glyph_order
-                .get()
-                .glyph_id(&name.into())
-                .unwrap()
+        fn get_glyph_index(&self, name: &str) -> Option<u32> {
+            self.fe_context.glyph_order.get().glyph_id(&name.into())
         }
 
         fn glyphs(&self) -> Glyphs {
@@ -951,7 +947,7 @@ mod tests {
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
         // the glyph 'O' contains several quad splines
-        let uppercase_o = &glyphs[result.get_glyph_index("O") as usize];
+        let uppercase_o = &glyphs[result.get_glyph_index("O").unwrap() as usize];
         let Some(glyf::Glyph::Simple(glyph)) = uppercase_o else {
             panic!("Expected 'O' to be a simple glyph, got {:?}", uppercase_o);
         };
@@ -988,13 +984,13 @@ mod tests {
 
         assert!(matches!(
             (
-                all_glyphs[result.get_glyph_index("period") as usize]
+                all_glyphs[result.get_glyph_index("period").unwrap() as usize]
                     .as_ref()
                     .unwrap(),
-                all_glyphs[result.get_glyph_index("comma") as usize]
+                all_glyphs[result.get_glyph_index("comma").unwrap() as usize]
                     .as_ref()
                     .unwrap(),
-                all_glyphs[result.get_glyph_index("non_uniform_scale") as usize]
+                all_glyphs[result.get_glyph_index("non_uniform_scale").unwrap() as usize]
                     .as_ref()
                     .unwrap(),
             ),
@@ -1012,8 +1008,8 @@ mod tests {
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
         // non-uniform scaling of period
-        let period_idx = result.get_glyph_index("period");
-        let non_uniform_scale_idx = result.get_glyph_index("non_uniform_scale");
+        let period_idx = result.get_glyph_index("period").unwrap();
+        let non_uniform_scale_idx = result.get_glyph_index("non_uniform_scale").unwrap();
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
         let Some(glyf::Glyph::Composite(glyph)) = &glyphs[non_uniform_scale_idx as usize] else {
@@ -1055,7 +1051,7 @@ mod tests {
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
 
-        let gid = result.get_glyph_index("simple_transform_again");
+        let gid = result.get_glyph_index("simple_transform_again").unwrap();
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
         let Some(glyf::Glyph::Composite(glyph)) = &glyphs[gid as usize] else {
@@ -1087,14 +1083,14 @@ mod tests {
 
         // Not an identity 2x2, should be simplified
         let Some(glyf::Glyph::Simple(..)) =
-            &glyphs[result.get_glyph_index("simple_transform_again") as usize]
+            &glyphs[result.get_glyph_index("simple_transform_again").unwrap() as usize]
         else {
             panic!("Expected a simple glyph\n{glyphs:#?}");
         };
 
         // Identity 2x2, should be left as a component
         let Some(glyf::Glyph::Composite(..)) =
-            &glyphs[result.get_glyph_index("translate_only") as usize]
+            &glyphs[result.get_glyph_index("translate_only").unwrap() as usize]
         else {
             panic!("Expected a composite glyph\n{glyphs:#?}");
         };
@@ -1946,7 +1942,7 @@ mod tests {
         let build_dir = temp_dir.path();
         let result = compile(Args::for_test(build_dir, "glyphs2/WghtVar.glyphs"));
 
-        let space_idx = result.get_glyph_index("space") as usize;
+        let space_idx = result.get_glyph_index("space").unwrap() as usize;
 
         let font_file = build_dir.join("font.ttf");
         assert!(font_file.exists());
@@ -2327,9 +2323,9 @@ mod tests {
 
         let gpos = font.gpos().unwrap();
 
-        let base_gid = GlyphId::new(result.get_glyph_index("A") as u16);
-        let macroncomb_gid = GlyphId::new(result.get_glyph_index("macroncomb") as u16);
-        let brevecomb_gid = GlyphId::new(result.get_glyph_index("brevecomb") as u16);
+        let base_gid = GlyphId::new(result.get_glyph_index("A").unwrap() as u16);
+        let macroncomb_gid = GlyphId::new(result.get_glyph_index("macroncomb").unwrap() as u16);
+        let brevecomb_gid = GlyphId::new(result.get_glyph_index("brevecomb").unwrap() as u16);
 
         // If only we had more indirections
         let mark_base_lookups: Vec<_> = gpos
@@ -2397,5 +2393,43 @@ mod tests {
             ),
             (bases, marks)
         );
+    }
+
+    fn assert_noexport(source: &str) {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let result = compile(Args::for_test(build_dir, source));
+
+        assert!(result.get_glyph_index("hyphen").is_none());
+        let fe_hyphen_consumer = result
+            .fe_context
+            .glyphs
+            .get(&FeWorkIdentifier::Glyph("manual-component".into()));
+        assert!(
+            !fe_hyphen_consumer
+                .default_instance()
+                .components
+                .iter()
+                .any(|c| c.base == "hyphen".into()),
+            "IR glyph should not reference hyphen {fe_hyphen_consumer:?}"
+        );
+        let be_hyphen_consumer = result
+            .be_context
+            .glyphs
+            .get(&BeWorkIdentifier::GlyfFragment("manual-component".into()).into());
+        assert!(
+            be_hyphen_consumer.is_simple(),
+            "{be_hyphen_consumer:?} should be a simple glyph"
+        );
+    }
+
+    #[test]
+    fn compile_obeys_no_export_glyphs() {
+        assert_noexport("glyphs3/WghtVar_NoExport.glyphs");
+    }
+
+    #[test]
+    fn compile_obeys_no_export_designspace() {
+        assert_noexport("designspace_from_glyphs/WghtVar_NoExport.designspace");
     }
 }
