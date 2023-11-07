@@ -4,7 +4,7 @@
     <axis tag="wght" name="Weight" minimum="400" maximum="700" default="400"/>
   </axes>
   <sources>
-    <source filename="WghtVar-Regular.ufo" name="WghtVar Regular" familyname="WghtVar" stylename="Regular">
+    <source filename="WghtVar_NoExport-Regular.ufo" name="WghtVar_NoExport Regular" familyname="WghtVar_NoExport" stylename="Regular">
       <lib copy="1"/>
       <groups copy="1"/>
       <features copy="1"/>
@@ -13,10 +13,18 @@
         <dimension name="Weight" xvalue="400"/>
       </location>
     </source>
-    <source filename="WghtVar-Bold.ufo" name="WghtVar Bold" familyname="WghtVar" stylename="Bold">
+    <source filename="WghtVar_NoExport-Bold.ufo" name="WghtVar_NoExport Bold" familyname="WghtVar_NoExport" stylename="Bold">
       <location>
         <dimension name="Weight" xvalue="700"/>
       </location>
     </source>
   </sources>
+  <lib>
+    <dict>
+      <key>public.skipExportGlyphs</key>
+      <array>
+        <string>hyphen</string>
+      </array>
+    </dict>
+  </lib>
 </designspace>
