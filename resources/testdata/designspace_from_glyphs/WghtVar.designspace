@@ -19,4 +19,12 @@
       </location>
     </source>
   </sources>
+  <lib>
+    <dict>
+      <key>public.skipExportGlyphs</key>
+      <array>
+        <string>hyphen</string>
+      </array>
+    </dict>
+  </lib>
 </designspace>

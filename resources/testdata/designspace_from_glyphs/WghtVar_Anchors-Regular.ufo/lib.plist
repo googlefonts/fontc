@@ -63,16 +63,21 @@
       <string>A</string>
       <string>space</string>
       <string>macroncomb</string>
+      <string>brevecomb</string>
     </array>
     <key>public.openTypeCategories</key>
     <dict>
       <key>A</key>
       <string>base</string>
+      <key>brevecomb</key>
+      <string>mark</string>
       <key>macroncomb</key>
       <string>mark</string>
     </dict>
     <key>public.postscriptNames</key>
     <dict>
+      <key>brevecomb</key>
+      <string>uni0306</string>
       <key>macroncomb</key>
       <string>uni0304</string>
     </dict>

@@ -17,3 +17,4 @@ rm -rf resources/testdata/designspace_from_glyphs/*.ufo
 generate_designspace resources/testdata/glyphs3/IntermediateLayer.glyphs
 generate_designspace resources/testdata/glyphs3/WghtVar.glyphs
 generate_designspace resources/testdata/glyphs3/WghtVar_Anchors.glyphs
+generate_designspace resources/testdata/glyphs3/WghtVar_NoExport.glyphs

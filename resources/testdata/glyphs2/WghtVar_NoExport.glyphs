@@ -1,0 +1,337 @@
+{
+.appVersion = "3226";
+DisplayStrings = (
+"![]!"
+);
+copyright = "Copy!";
+customParameters = (
+{
+name = "Use Typo Metrics";
+value = 1;
+},
+{
+name = "Has WWS Names";
+value = 1;
+},
+{
+name = description;
+value = "The greatest weight var";
+},
+{
+name = localizedFamilyName;
+value = "Spanish;SpanishWghtVar";
+},
+{
+name = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+name = versionString;
+value = "New Value";
+},
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WghtVar;
+fontMaster = (
+{
+alignmentZones = (
+"{737, 16}",
+"{0, -16}",
+"{-42, -16}"
+);
+ascender = 737;
+capHeight = 702;
+descender = -42;
+id = m01;
+weightValue = 400;
+xHeight = 501;
+},
+{
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+weight = Bold;
+weightValue = 700;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2022-12-01 04:58:12 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 0020;
+},
+{
+glyphname = exclam;
+lastChange = "2023-06-07 22:35:08 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"354 183 LINE",
+"414 585 LINE",
+"178 585 LINE",
+"238 182 LINE"
+);
+},
+{
+closed = 1;
+nodes = (
+"354 0 LINE",
+"354 107 LINE",
+"238 107 LINE",
+"238 0 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+paths = (
+{
+closed = 1;
+nodes = (
+"364 176 LINE",
+"434 605 LINE",
+"159 605 LINE",
+"228 174 LINE"
+);
+},
+{
+closed = 1;
+nodes = (
+"364 -20 LINE",
+"364 94 LINE",
+"228 94 LINE",
+"228 -20 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 0021;
+},
+{
+export = 0;
+glyphname = hyphen;
+lastChange = "2023-11-07 18:00:55 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"131 250 LINE {name = hr00;}",
+"470 250 LINE",
+"470 330 LINE",
+"131 330 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+paths = (
+{
+closed = 1;
+nodes = (
+"92 224 LINE",
+"508 224 LINE",
+"508 356 LINE",
+"92 356 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 002D;
+},
+{
+glyphname = bracketleft;
+lastChange = "2023-06-07 22:37:02 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"324 637 LINE",
+"324 51 LINE",
+"454 51 LINE",
+"454 -10 LINE",
+"259 -10 LINE",
+"259 696 LINE",
+"454 696 LINE",
+"454 637 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+paths = (
+{
+closed = 1;
+nodes = (
+"324 629 LINE",
+"324 58 LINE",
+"454 58 LINE",
+"454 -17 LINE",
+"243 -17 LINE",
+"243 704 LINE",
+"454 704 LINE",
+"454 629 LINE"
+);
+}
+);
+width = 600;
+}
+);
+leftKerningGroup = bracketleft_L;
+rightKerningGroup = bracketleft_R;
+unicode = 005B;
+},
+{
+glyphname = bracketright;
+lastChange = "2023-06-07 22:35:47 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"259 696 LINE",
+"454 696 LINE",
+"454 -10 LINE",
+"259 -10 LINE",
+"259 51 LINE",
+"389 51 LINE",
+"389 637 LINE",
+"259 637 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+paths = (
+{
+closed = 1;
+nodes = (
+"243 704 LINE",
+"454 704 LINE",
+"454 -17 LINE",
+"243 -17 LINE",
+"243 58 LINE",
+"373 58 LINE",
+"373 629 LINE",
+"243 629 LINE"
+);
+}
+);
+width = 600;
+}
+);
+leftKerningGroup = bracketright_L;
+rightKerningGroup = bracketright_R;
+unicode = 005D;
+},
+{
+glyphname = "manual-component";
+lastChange = "2023-11-07 18:07:12 +0000";
+layers = (
+{
+components = (
+{
+name = hyphen;
+transform = "{1, 0, 0, 1, 0, 100}";
+},
+{
+name = hyphen;
+}
+);
+layerId = m01;
+width = 600;
+},
+{
+components = (
+{
+name = hyphen;
+transform = "{1.15, 0, 0, 1.25, 10, 100}";
+},
+{
+name = hyphen;
+}
+);
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 003D;
+}
+);
+kerning = {
+m01 = {
+"@MMK_L_bracketleft_R" = {
+exclam = -165;
+};
+bracketleft = {
+bracketright = -300;
+};
+exclam = {
+"@MMK_R_bracketright_L" = -160;
+exclam = -360;
+hyphen = 20;
+};
+hyphen = {
+hyphen = -150;
+};
+};
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
+bracketleft = {
+bracketright = -150;
+};
+exclam = {
+exclam = -100;
+};
+hyphen = {
+hyphen = -50;
+};
+};
+};
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}
