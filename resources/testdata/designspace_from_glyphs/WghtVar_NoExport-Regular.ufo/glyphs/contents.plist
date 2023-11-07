@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>bracketleft</key>
+    <string>bracketleft.glif</string>
+    <key>bracketright</key>
+    <string>bracketright.glif</string>
+    <key>exclam</key>
+    <string>exclam.glif</string>
+    <key>hyphen</key>
+    <string>hyphen.glif</string>
+    <key>manual-component</key>
+    <string>manual-component.glif</string>
+    <key>space</key>
+    <string>space.glif</string>
+  </dict>
+</plist>
