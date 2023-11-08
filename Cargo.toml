@@ -50,3 +50,9 @@ members = [
     "fea-lsp",
     "layout-repr",
 ]
+
+[patch.crates-io]
+read-fonts = { git = "https://github.com/googlefonts/fontations.git", rev = "1d49b0d" }
+write-fonts = { git = "https://github.com/googlefonts/fontations.git", rev = "1d49b0d" }
+font-types = { git = "https://github.com/googlefonts/fontations.git", rev = "1d49b0d" }
+skrifa = { git = "https://github.com/googlefonts/fontations.git", rev = "1d49b0d" }
