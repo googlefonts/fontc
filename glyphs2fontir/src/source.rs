@@ -358,6 +358,10 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             static_metadata.misc.vendor_id =
                 Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
+
+        // <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
+        static_metadata.misc.fs_type = Some(1 << 3);
+
         // <https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/builder/custom_params.py#L1116-L1125>
         static_metadata.misc.underline_thickness = 50.0.into();
         static_metadata.misc.underline_position = (-100.0).into();

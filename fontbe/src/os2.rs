@@ -824,6 +824,7 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
         let codepoints = codepoints(context);
 
         let mut os2 = Os2 {
+            fs_type: static_metadata.misc.fs_type.unwrap_or_default(),
             ach_vend_id: static_metadata.misc.vendor_id,
             fs_selection: static_metadata.misc.selection_flags,
             x_avg_char_width: x_avg_char_width(context)?,
