@@ -839,6 +839,9 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
                 Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
 
+        // <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
+        static_metadata.misc.fs_type = Some(1 << 2);
+
         // <https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L313-L322>
         static_metadata.misc.underline_thickness = font_info_at_default
             .postscript_underline_thickness

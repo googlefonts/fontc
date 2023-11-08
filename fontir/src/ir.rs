@@ -82,6 +82,9 @@ pub struct StaticMetadata {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(from = "MiscSerdeRepr", into = "MiscSerdeRepr")]
 pub struct MiscMetadata {
+    /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#fstype>
+    pub fs_type: Option<u16>,
+
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#fsselection>
     pub selection_flags: SelectionFlags,
 
@@ -285,6 +288,7 @@ impl StaticMetadata {
             default_location,
             postscript_names,
             misc: MiscMetadata {
+                fs_type: None, // default is, sigh, inconsistent across source formats
                 selection_flags: Default::default(),
                 vendor_id: DEFAULT_VENDOR_ID_TAG,
                 underline_thickness: 0.0.into(),
@@ -1566,6 +1570,7 @@ mod tests {
             ]),
             postscript_names: HashMap::from([("lhs".into(), "rhs".into())]),
             misc: MiscMetadata {
+                fs_type: None,
                 selection_flags: SelectionFlags::default(),
                 vendor_id: Tag::from_be_bytes(*b"DUCK"),
                 underline_thickness: 0.15.into(),

@@ -161,6 +161,7 @@ impl From<KerningSerdeRepr> for Kerning {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct MiscSerdeRepr {
+    pub fs_type: Option<u16>,
     pub selection_flags: u16,
     pub vendor_id: Tag,
     pub underline_thickness: f32,
@@ -175,6 +176,7 @@ pub(crate) struct MiscSerdeRepr {
 impl From<MiscSerdeRepr> for MiscMetadata {
     fn from(from: MiscSerdeRepr) -> Self {
         MiscMetadata {
+            fs_type: from.fs_type,
             selection_flags: SelectionFlags::from_bits_truncate(from.selection_flags),
             vendor_id: from.vendor_id,
             underline_thickness: from.underline_thickness.into(),
@@ -191,6 +193,7 @@ impl From<MiscSerdeRepr> for MiscMetadata {
 impl From<MiscMetadata> for MiscSerdeRepr {
     fn from(from: MiscMetadata) -> Self {
         MiscSerdeRepr {
+            fs_type: from.fs_type,
             selection_flags: from.selection_flags.bits(),
             vendor_id: from.vendor_id,
             underline_thickness: from.underline_thickness.into(),

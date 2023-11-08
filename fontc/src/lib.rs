@@ -2432,4 +2432,27 @@ mod tests {
     fn compile_obeys_no_export_designspace() {
         assert_noexport("designspace_from_glyphs/WghtVar_NoExport.designspace");
     }
+
+    fn assert_fs_type(source: &str, expected_fs_type: u16) {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, source));
+
+        let font_file = build_dir.join("font.ttf");
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let os2 = font.os2().unwrap();
+
+        assert_eq!(expected_fs_type, os2.fs_type());
+    }
+
+    #[test]
+    fn default_fs_type_glyphs() {
+        assert_fs_type("glyphs3/WghtVar.glyphs", 1 << 3);
+    }
+
+    #[test]
+    fn default_fs_type_designspace() {
+        assert_fs_type("designspace_from_glyphs/WghtVar.designspace", 1 << 2);
+    }
 }
