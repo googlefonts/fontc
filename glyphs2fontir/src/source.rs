@@ -717,6 +717,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             .ok_or_else(|| WorkError::NoGlyphForName(self.glyph_name.clone()))?;
 
         let mut ir_glyph = ir::GlyphBuilder::new(self.glyph_name.clone());
+        ir_glyph.emit_to_binary = glyph.export;
 
         if let Some(codepoints) = font.glyph_to_codepoints.get(self.glyph_name.as_str()) {
             codepoints.iter().for_each(|cp| {
@@ -1506,6 +1507,36 @@ mod tests {
                 .iter()
                 .map(|a| a.name.clone())
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn reads_skip_export_glyphs() {
+        let (source, context) =
+            build_static_metadata(glyphs3_dir().join("WghtVar_NoExport.glyphs"));
+        build_glyphs(
+            &source,
+            &context,
+            &[
+                &"manual-component".into(),
+                &"hyphen".into(),
+                &"space".into(),
+            ],
+        )
+        .unwrap();
+        let is_export = |name: &str| {
+            context
+                .glyphs
+                .get(&WorkId::Glyph(name.into()))
+                .emit_to_binary
+        };
+        assert_eq!(
+            vec![true, false, true],
+            vec![
+                is_export("manual-component"),
+                is_export("hyphen"),
+                is_export("space"),
+            ]
         );
     }
 }
