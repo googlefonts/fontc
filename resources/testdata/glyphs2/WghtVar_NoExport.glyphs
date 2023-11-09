@@ -40,6 +40,7 @@ Tag = wght;
 }
 );
 date = "2022-12-01 04:52:20 +0000";
+disablesAutomaticAlignment = 1;
 familyName = WghtVar_NoExport;
 fontMaster = (
 {
@@ -139,9 +140,19 @@ unicode = 0021;
 {
 export = 0;
 glyphname = hyphen;
-lastChange = "2023-11-07 18:00:55 +0000";
+lastChange = "2023-11-09 15:45:52 +0000";
 layers = (
 {
+anchors = (
+{
+name = _top;
+position = "{279, 186}";
+},
+{
+name = top;
+position = "{273, 411}";
+}
+);
 layerId = m01;
 paths = (
 {
@@ -157,6 +168,16 @@ nodes = (
 width = 600;
 },
 {
+anchors = (
+{
+name = _top;
+position = "{280, 163}";
+},
+{
+name = top;
+position = "{277, 426}";
+}
+);
 layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
 paths = (
 {
@@ -270,7 +291,7 @@ unicode = 005D;
 },
 {
 glyphname = "manual-component";
-lastChange = "2023-11-07 18:07:12 +0000";
+lastChange = "2023-11-09 15:45:41 +0000";
 layers = (
 {
 components = (

@@ -148,9 +148,19 @@ unicode = 33;
 {
 export = 0;
 glyphname = hyphen;
-lastChange = "2023-11-07 18:00:55 +0000";
+lastChange = "2023-11-09 15:45:52 +0000";
 layers = (
 {
+anchors = (
+{
+name = _top;
+pos = (279,186);
+},
+{
+name = top;
+pos = (273,411);
+}
+);
 layerId = m01;
 shapes = (
 {
@@ -168,6 +178,16 @@ name = hr00;
 width = 600;
 },
 {
+anchors = (
+{
+name = _top;
+pos = (280,163);
+},
+{
+name = top;
+pos = (277,426);
+}
+);
 layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
 shapes = (
 {
@@ -281,7 +301,7 @@ unicode = 93;
 },
 {
 glyphname = "manual-component";
-lastChange = "2023-11-07 18:07:30 +0000";
+lastChange = "2023-11-09 15:45:41 +0000";
 layers = (
 {
 layerId = m01;
@@ -401,6 +421,9 @@ key = versionString;
 value = "New Value";
 }
 );
+settings = {
+disablesAutomaticAlignment = 1;
+};
 unitsPerEm = 1000;
 versionMajor = 42;
 versionMinor = 42;

@@ -161,6 +161,7 @@ struct MarkGroup<'a> {
 
 fn create_mark_groups<'a>(
     anchors: &HashMap<GlyphName, &'a GlyphAnchors>,
+    glyph_order: &GlyphOrder,
 ) -> HashMap<MarkGroupName<'a>, MarkGroup<'a>> {
     let mut groups: HashMap<MarkGroupName<'a>, MarkGroup> = Default::default();
     for (glyph_name, glyph_anchors) in anchors.iter() {
@@ -168,7 +169,10 @@ fn create_mark_groups<'a>(
         // considering only glyphs with anchors,
         //  - glyphs with *only* base anchors are bases
         //  - glyphs with *any* mark anchor are marks
-
+        // We ignore glyphs missing from the glyph order (e.g. no-export glyphs)
+        if !glyph_order.contains(glyph_name) {
+            continue;
+        }
         let mut base = true; // TODO: only a base if user rules allow it
         for anchor in glyph_anchors.anchors.iter() {
             let anchor_info = AnchorInfo::new(&anchor.name);
@@ -344,7 +348,7 @@ impl<'a> FeatureWriter<'a> {
             anchors.insert(glyph_name.clone(), glyph_anchors);
         }
 
-        let mark_groups = create_mark_groups(&anchors);
+        let mark_groups = create_mark_groups(&anchors, self.glyph_map);
 
         // Build the actual mark base and mark mark constructs using fea-rs builders
 
