@@ -161,6 +161,7 @@ struct MarkGroup<'a> {
 
 fn create_mark_groups<'a>(
     anchors: &HashMap<GlyphName, &'a GlyphAnchors>,
+    glyph_order: &GlyphOrder,
 ) -> HashMap<MarkGroupName<'a>, MarkGroup<'a>> {
     let mut groups: HashMap<MarkGroupName<'a>, MarkGroup> = Default::default();
     for (glyph_name, glyph_anchors) in anchors.iter() {
@@ -168,7 +169,10 @@ fn create_mark_groups<'a>(
         // considering only glyphs with anchors,
         //  - glyphs with *only* base anchors are bases
         //  - glyphs with *any* mark anchor are marks
-
+        // We ignore glyphs missing from the glyph order (e.g. no-export glyphs)
+        if !glyph_order.contains(glyph_name) {
+            continue;
+        }
         let mut base = true; // TODO: only a base if user rules allow it
         for anchor in glyph_anchors.anchors.iter() {
             let anchor_info = AnchorInfo::new(&anchor.name);
@@ -240,12 +244,16 @@ impl<'a> FeatureWriter<'a> {
             .kerning
             .groups
             .iter()
-            .map(|(class_name, glyph_set)| {
+            .filter_map(|(class_name, glyph_set)| {
                 let glyph_class: GlyphSet = glyph_set
                     .iter()
-                    .map(|name| GlyphId::new(self.glyph_map.glyph_id(name).unwrap_or(0) as u16))
+                    .filter_map(|name| self.glyph_id(name).ok())
                     .collect();
-                (class_name, glyph_class)
+                if glyph_class.is_empty() {
+                    None
+                } else {
+                    Some((class_name, glyph_class))
+                }
             })
             .collect::<HashMap<_, _>>();
 
@@ -267,57 +275,62 @@ impl<'a> FeatureWriter<'a> {
 
             match (left, right) {
                 (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
-                    let gid0 = self.glyph_id(left)?;
-                    let gid1 = self.glyph_id(right)?;
-                    ppos_subtables.insert_pair(gid0, x_adv_record, gid1, empty_record);
+                    if let (Some(gid0), Some(gid1)) =
+                        (self.glyph_id(left).ok(), self.glyph_id(right).ok())
+                    {
+                        ppos_subtables.insert_pair(gid0, x_adv_record, gid1, empty_record);
+                    }
                 }
                 (KernParticipant::Group(left), KernParticipant::Group(right)) => {
-                    let left = glyph_classes
-                        .get(left)
-                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?
-                        .clone();
-                    let right = glyph_classes
-                        .get(right)
-                        .ok_or_else(|| Error::MissingGlyphId(right.clone()))?
-                        .clone();
-                    ppos_subtables.insert_classes(left, x_adv_record, right, empty_record);
-                }
-                // if groups are mixed with glyphs then we enumerate the group
-                (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
-                    let gid0 = self.glyph_id(left)?;
-                    let right = glyph_classes
-                        .get(right)
-                        .ok_or_else(|| Error::MissingGlyphId(right.clone()))?;
-                    for gid1 in right.iter() {
-                        ppos_subtables.insert_pair(
-                            gid0,
-                            x_adv_record.clone(),
-                            gid1,
-                            empty_record.clone(),
+                    if let (Some(left), Some(right)) =
+                        (glyph_classes.get(left), glyph_classes.get(right))
+                    {
+                        ppos_subtables.insert_classes(
+                            left.clone(),
+                            x_adv_record,
+                            right.clone(),
+                            empty_record,
                         );
                     }
                 }
+                // if groups are mixed with glyphs then we enumerate the group
+                (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
+                    if let (Some(gid0), Some(right)) =
+                        (self.glyph_id(left).ok(), glyph_classes.get(right))
+                    {
+                        for gid1 in right.iter() {
+                            ppos_subtables.insert_pair(
+                                gid0,
+                                x_adv_record.clone(),
+                                gid1,
+                                empty_record.clone(),
+                            );
+                        }
+                    }
+                }
                 (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
-                    let left = glyph_classes
-                        .get(left)
-                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
-                    let gid1 = self.glyph_id(right)?;
-                    for gid0 in left.iter() {
-                        ppos_subtables.insert_pair(
-                            gid0,
-                            x_adv_record.clone(),
-                            gid1,
-                            empty_record.clone(),
-                        );
+                    if let (Some(left), Some(gid1)) =
+                        (glyph_classes.get(left), self.glyph_id(right).ok())
+                    {
+                        for gid0 in left.iter() {
+                            ppos_subtables.insert_pair(
+                                gid0,
+                                x_adv_record.clone(),
+                                gid1,
+                                empty_record.clone(),
+                            );
+                        }
                     }
                 }
             }
         }
 
-        // now we have a builder for the pairpos subtables, so we can make
-        // a lookup:
-        let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables])];
-        builder.add_to_default_language_systems(Tag::new(b"kern"), &lookups);
+        if !ppos_subtables.is_empty() {
+            // now we have a builder for the pairpos subtables, so we can make
+            // a lookup:
+            let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables])];
+            builder.add_to_default_language_systems(Tag::new(b"kern"), &lookups);
+        }
 
         Ok(())
     }
@@ -344,7 +357,7 @@ impl<'a> FeatureWriter<'a> {
             anchors.insert(glyph_name.clone(), glyph_anchors);
         }
 
-        let mark_groups = create_mark_groups(&anchors);
+        let mark_groups = create_mark_groups(&anchors, self.glyph_map);
 
         // Build the actual mark base and mark mark constructs using fea-rs builders
 

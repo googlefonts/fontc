@@ -228,6 +228,11 @@ impl PairPosBuilder {
     ) {
         self.classes.insert(class1, record1, class2, record2)
     }
+
+    /// Returns true if this builder contains neither glyph nor class-based rules.
+    pub fn is_empty(&self) -> bool {
+        self.pairs.0.is_empty() && self.classes.0.is_empty()
+    }
 }
 
 impl Builder for PairPosBuilder {

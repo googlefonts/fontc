@@ -69,6 +69,11 @@ impl GlyphSet {
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
+
+    /// Return true if this glyph set is empty
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl std::iter::FromIterator<GlyphId> for GlyphClass {
