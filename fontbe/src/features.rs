@@ -244,14 +244,12 @@ impl<'a> FeatureWriter<'a> {
             .kerning
             .groups
             .iter()
-            .map(|(class_name, glyph_set)| {
-                let glyph_class: GlyphSet = glyph_set
-                    .iter()
-                    .map(|name| GlyphId::new(self.glyph_map.glyph_id(name).unwrap_or(0) as u16))
-                    .collect();
-                (class_name, glyph_class)
+            .map(|(class_name, members)| {
+                let glyph_class: Result<GlyphSet, Error> =
+                    members.iter().map(|name| self.glyph_id(name)).collect();
+                glyph_class.map(|set| (class_name, set))
             })
-            .collect::<BTreeMap<_, _>>();
+            .collect::<Result<BTreeMap<_, _>, Error>>()?;
 
         let mut ppos_subtables = PairPosBuilder::default();
 
