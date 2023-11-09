@@ -6,6 +6,7 @@ mod error;
 mod glyph_names;
 mod gpos;
 mod gsub;
+mod variations;
 
 use clap::Parser;
 use error::Error;
