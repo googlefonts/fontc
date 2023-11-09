@@ -148,7 +148,9 @@ unicode = 33;
 {
 export = 0;
 glyphname = hyphen;
-lastChange = "2023-11-09 15:45:52 +0000";
+kernLeft = hyphen_L;
+kernRight = hyphen_R;
+lastChange = "2023-11-09 16:34:37 +0000";
 layers = (
 {
 anchors = (
@@ -339,6 +341,9 @@ m01 = {
 "@MMK_L_bracketleft_R" = {
 exclam = -165;
 };
+"@MMK_L_hyphen_R" = {
+"@MMK_R_hyphen_L" = -150;
+};
 bracketleft = {
 bracketright = -300;
 };
@@ -347,19 +352,16 @@ exclam = {
 exclam = -360;
 hyphen = 20;
 };
-hyphen = {
-hyphen = -150;
-};
 };
 "E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
+"@MMK_L_hyphen_R" = {
+"@MMK_R_hyphen_L" = -50;
+};
 bracketleft = {
 bracketright = -150;
 };
 exclam = {
 exclam = -100;
-};
-hyphen = {
-hyphen = -50;
 };
 };
 };

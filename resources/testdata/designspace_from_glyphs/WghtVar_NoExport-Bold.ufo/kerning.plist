@@ -12,9 +12,9 @@
       <key>exclam</key>
       <integer>-100</integer>
     </dict>
-    <key>hyphen</key>
+    <key>public.kern1.hyphen_R</key>
     <dict>
-      <key>hyphen</key>
+      <key>public.kern2.hyphen_L</key>
       <integer>-50</integer>
     </dict>
   </dict>
