@@ -35,7 +35,7 @@
       </dict>
     </array>
     <key>com.schriftgestaltung.customParameter.GSFont.disablesAutomaticAlignment</key>
-    <false/>
+    <true/>
     <key>com.schriftgestaltung.customParameter.GSFont.useNiceNames</key>
     <integer>1</integer>
     <key>com.schriftgestaltung.customParameter.GSFontMaster.customValue</key>
@@ -67,6 +67,11 @@
       <string>bracketright</string>
       <string>manual-component</string>
     </array>
+    <key>public.openTypeCategories</key>
+    <dict>
+      <key>hyphen</key>
+      <string>base</string>
+    </dict>
     <key>public.postscriptNames</key>
     <dict>
       <key>manual-component</key>
