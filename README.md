@@ -13,6 +13,8 @@ References
    * [Units](resources/text/units.md)
       * Fonts have all the best units; distinguishing between them turns out to matter.
 
+![image](https://github.com/googlefonts/fontc/assets/6466432/870be43e-897b-4175-aa5b-6c8ce6e5cb68)
+
 ## Getting started
 
 Install the latest version of Rust, https://www.rust-lang.org/tools/install.
