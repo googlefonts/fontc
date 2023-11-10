@@ -348,16 +348,17 @@ impl<'a> Workload<'a> {
                         // Higher priority sorts last, which means run first due to pop
                         // We basically want things that block the glyph order => kern => fea sequence to go asap
                         match work.id() {
+                            AnyWorkId::Be(BeWorkIdentifier::Features) => 99,
+                            AnyWorkId::Be(BeWorkIdentifier::Kerning) => 99,
+                            AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..)) => 0,
+                            AnyWorkId::Be(BeWorkIdentifier::GvarFragment(..)) => 0,
                             AnyWorkId::Fe(FeWorkIdentifier::Features) => 99,
                             AnyWorkId::Fe(FeWorkIdentifier::Kerning) => 99,
                             AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) => 99,
                             AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => 99,
                             AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => 99,
                             AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => 99,
-                            AnyWorkId::Be(BeWorkIdentifier::Kerning) => 99,
-                            AnyWorkId::Be(BeWorkIdentifier::Features) => 99,
-                            AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..)) => 0,
-                            AnyWorkId::Be(BeWorkIdentifier::GvarFragment(..)) => 0,
+                            AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)) => 1,
                             _ => 32,
                         }
                     });
