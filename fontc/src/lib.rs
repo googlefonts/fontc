@@ -13,12 +13,12 @@ pub use change_detector::ChangeDetector;
 pub use config::Config;
 pub use error::Error;
 
+pub use timing::{create_timer, JobTimer};
 use workload::Workload;
 
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    time::Instant,
 };
 
 use fontbe::{
@@ -33,6 +33,7 @@ use fontbe::{
     hvar::create_hvar_work,
     metrics_and_limits::create_metric_and_limit_work,
     name::create_name_work,
+    orchestration::AnyWorkId,
     os2::create_os2_work,
     post::create_post_work,
     stat::create_stat_work,
@@ -290,9 +291,12 @@ fn add_glyph_be_job(workload: &mut Workload, glyph_name: GlyphName) {
 //FIXME: I should be a method on ChangeDetector
 pub fn create_workload(
     change_detector: &mut ChangeDetector,
-    t0: Instant,
+    timer: JobTimer,
 ) -> Result<Workload, Error> {
-    let mut workload = change_detector.create_workload(t0)?;
+    let time = create_timer(AnyWorkId::InternalTiming("Create workload"))
+        .queued()
+        .run();
+    let mut workload = change_detector.create_workload(timer)?;
 
     // FE: f(source) => IR
     add_feature_ir_job(&mut workload)?;
@@ -319,6 +323,8 @@ pub fn create_workload(
     // Make a damn font
     add_font_be_job(&mut workload)?;
 
+    workload.timer.add(time.complete());
+
     Ok(workload)
 }
 
@@ -344,6 +350,7 @@ mod tests {
         path::{Path, PathBuf},
         str::FromStr,
         sync::Arc,
+        time::Instant,
     };
 
     use chrono::{Duration, TimeZone, Utc};
@@ -497,7 +504,7 @@ mod tests {
     }
 
     fn compile(args: Args) -> TestCompile {
-        let t0 = Instant::now();
+        let mut timer = JobTimer::new(Instant::now());
         let _ = env_logger::builder().is_test(true).try_init();
 
         info!("Compile {args:?}");
@@ -508,9 +515,9 @@ mod tests {
         let prev_inputs = config.init().unwrap();
 
         let mut change_detector =
-            ChangeDetector::new(config.clone(), ir_paths.clone(), prev_inputs).unwrap();
+            ChangeDetector::new(config.clone(), ir_paths.clone(), prev_inputs, &mut timer).unwrap();
 
-        let mut workload = create_workload(&mut change_detector, t0).unwrap();
+        let mut workload = create_workload(&mut change_detector, timer).unwrap();
 
         // Try to do the work
         // As we currently don't stress dependencies just run one by one

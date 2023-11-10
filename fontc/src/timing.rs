@@ -29,7 +29,7 @@ impl JobTimer {
         }
     }
 
-    pub(crate) fn add(&mut self, timing: JobTime) {
+    pub fn add(&mut self, timing: JobTime) {
         self.job_times
             .entry(timing.thread_id)
             .or_default()
@@ -134,7 +134,7 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::Os2) => "OS/2",
         AnyWorkId::Be(BeWorkIdentifier::Post) => "post",
         AnyWorkId::Be(BeWorkIdentifier::Stat) => "STAT",
-        AnyWorkId::Fe(FeWorkIdentifier::Overhead) => ".",
+        AnyWorkId::InternalTiming(name) => name,
     }
 }
 
@@ -172,7 +172,7 @@ fn color(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::Os2) => "gray",
         AnyWorkId::Be(BeWorkIdentifier::Post) => "gray",
         AnyWorkId::Be(BeWorkIdentifier::Stat) => "gray",
-        AnyWorkId::Fe(FeWorkIdentifier::Overhead) => "#009a00",
+        AnyWorkId::InternalTiming(..) => "#009a00",
     }
 }
 
@@ -180,7 +180,7 @@ fn color(id: &AnyWorkId) -> &'static str {
 ///
 /// Meant to be called when a job is runnable, that is it's ready to be
 /// submitted to an execution system such as a threadpool.
-pub(crate) fn create_timer(id: AnyWorkId) -> JobTimeRunnable {
+pub fn create_timer(id: AnyWorkId) -> JobTimeRunnable {
     JobTimeRunnable {
         id,
         runnable: Instant::now(),
@@ -190,7 +190,7 @@ pub(crate) fn create_timer(id: AnyWorkId) -> JobTimeRunnable {
 /// The initial state of a runnable job.
 ///
 /// It may have queued from t0 to launchable but now it's go-time!
-pub(crate) struct JobTimeRunnable {
+pub struct JobTimeRunnable {
     id: AnyWorkId,
     runnable: Instant,
 }
@@ -206,7 +206,7 @@ impl JobTimeRunnable {
     }
 }
 
-pub(crate) struct JobTimeQueued {
+pub struct JobTimeQueued {
     id: AnyWorkId,
     runnable: Instant,
     queued: Instant,
@@ -228,7 +228,7 @@ impl JobTimeQueued {
     }
 }
 
-pub(crate) struct JobTimeRunning {
+pub struct JobTimeRunning {
     id: AnyWorkId,
     thread: ThreadId,
     runnable: Instant,
@@ -254,7 +254,7 @@ impl JobTimeRunning {
 
 /// Times are relative to t0 in a [JobTimer]
 #[derive(Debug)]
-pub(crate) struct JobTime {
+pub struct JobTime {
     id: AnyWorkId,
     thread_id: ThreadId,
     _runnable: Instant,
