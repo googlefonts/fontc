@@ -17,7 +17,7 @@ use glyphs_reader::{Font, InstanceType};
 use indexmap::IndexSet;
 use log::{debug, trace, warn};
 use read_fonts::tables::os2::SelectionFlags;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
@@ -539,7 +539,7 @@ struct AnchorWork {
 /// See <https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/kerning.py#L53-L72>
 fn kern_participant(
     glyph_order: &GlyphOrder,
-    groups: &HashMap<GlyphName, BTreeSet<GlyphName>>,
+    groups: &BTreeMap<GlyphName, BTreeSet<GlyphName>>,
     side: KernSide,
     raw_side: &str,
 ) -> Option<KernParticipant> {

@@ -126,7 +126,7 @@ impl<'a> FeaVariationInfo<'a> {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct MarkGroupName<'a>(&'a str);
 
 /// The type of an anchor, used when generating mark features
@@ -160,10 +160,10 @@ struct MarkGroup<'a> {
 }
 
 fn create_mark_groups<'a>(
-    anchors: &HashMap<GlyphName, &'a GlyphAnchors>,
+    anchors: &BTreeMap<GlyphName, &'a GlyphAnchors>,
     glyph_order: &GlyphOrder,
-) -> HashMap<MarkGroupName<'a>, MarkGroup<'a>> {
-    let mut groups: HashMap<MarkGroupName<'a>, MarkGroup> = Default::default();
+) -> BTreeMap<MarkGroupName<'a>, MarkGroup<'a>> {
+    let mut groups: BTreeMap<MarkGroupName<'a>, MarkGroup> = Default::default();
     for (glyph_name, glyph_anchors) in anchors.iter() {
         // We assume the anchor list to be small
         // considering only glyphs with anchors,
@@ -251,7 +251,7 @@ impl<'a> FeatureWriter<'a> {
                     .collect();
                 (class_name, glyph_class)
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
 
         let mut ppos_subtables = PairPosBuilder::default();
 
@@ -339,7 +339,7 @@ impl<'a> FeatureWriter<'a> {
     /// * <https://github.com/googlefonts/ufo2ft/issues/563>
     //TODO: could we generate as a separate task, and then just add here.
     fn add_marks(&self, builder: &mut FeatureBuilder) -> Result<(), Error> {
-        let mut anchors = HashMap::new();
+        let mut anchors = BTreeMap::new();
         for (work_id, arc_glyph_anchors) in self.raw_anchors {
             let glyph_anchors: &GlyphAnchors = arc_glyph_anchors;
             let FeWorkId::Anchor(glyph_name) = work_id else {
