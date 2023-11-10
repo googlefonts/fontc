@@ -362,12 +362,13 @@ mod tests {
 
     use read_fonts::{
         tables::{
-            gpos::{AnchorTable, PositionLookup},
+            gpos::{AnchorTable, Gpos, MarkBasePosFormat1Marker, PositionLookup},
             name::Name,
             os2::SelectionFlags,
             variations::{DeltaSetIndexMap, ItemVariationData},
         },
         types::NameId,
+        TableRef,
     };
     use skrifa::{
         charmap::Charmap,
@@ -2310,6 +2311,19 @@ mod tests {
         }
     }
 
+    fn mark_base_lookups<'a>(gpos: &'a Gpos) -> Vec<TableRef<'a, MarkBasePosFormat1Marker>> {
+        // If only we had more indirections
+        gpos.lookup_list()
+            .iter()
+            .flat_map(|l| l.lookups().iter().map(|l| l.unwrap()))
+            .filter_map(|l| match l {
+                PositionLookup::MarkToBase(mark_base) => Some(mark_base),
+                _ => None,
+            })
+            .flat_map(|mb| mb.subtables().iter().map(|s| s.unwrap()))
+            .collect()
+    }
+
     #[test]
     fn compile_basic_gpos_mark_base() {
         let temp_dir = tempdir().unwrap();
@@ -2328,16 +2342,7 @@ mod tests {
         let brevecomb_gid = GlyphId::new(result.get_glyph_index("brevecomb").unwrap() as u16);
 
         // If only we had more indirections
-        let mark_base_lookups: Vec<_> = gpos
-            .lookup_list()
-            .iter()
-            .flat_map(|l| l.lookups().iter().map(|l| l.unwrap()))
-            .filter_map(|l| match l {
-                PositionLookup::MarkToBase(mark_base) => Some(mark_base),
-                _ => None,
-            })
-            .flat_map(|mb| mb.subtables().iter().map(|s| s.unwrap()))
-            .collect();
+        let mark_base_lookups = mark_base_lookups(&gpos);
 
         let bases = mark_base_lookups
             .iter()
@@ -2454,5 +2459,20 @@ mod tests {
     #[test]
     fn default_fs_type_designspace() {
         assert_fs_type("designspace_from_glyphs/WghtVar.designspace", 1 << 2);
+    }
+
+    #[test]
+    fn one_lookup_per_group() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        compile(Args::for_test(build_dir, "glyphs3/Oswald-AE-comb.glyphs"));
+
+        let font_file = build_dir.join("font.ttf");
+        let buf = fs::read(font_file).unwrap();
+        let font = FontRef::new(&buf).unwrap();
+        let gpos = font.gpos().unwrap();
+
+        // We had a bug where it was 2
+        assert_eq!(1, mark_base_lookups(&gpos).len());
     }
 }
