@@ -98,6 +98,8 @@ impl Identifier for WorkId {}
 pub enum AnyWorkId {
     Fe(FeWorkIdentifier),
     Be(WorkId),
+    /// Used to capture timing not associated with work
+    InternalTiming(&'static str),
 }
 
 impl Identifier for AnyWorkId {}
@@ -105,15 +107,15 @@ impl Identifier for AnyWorkId {}
 impl AnyWorkId {
     pub fn unwrap_be(&self) -> &WorkId {
         match self {
-            AnyWorkId::Fe(..) => panic!("Not a BE identifier"),
             AnyWorkId::Be(id) => id,
+            _ => panic!("Not a BE identifier"),
         }
     }
 
     pub fn unwrap_fe(&self) -> &FeWorkIdentifier {
         match self {
             AnyWorkId::Fe(id) => id,
-            AnyWorkId::Be(..) => panic!("Not a FE identifier"),
+            _ => panic!("Not a FE identifier"),
         }
     }
 }

@@ -7,7 +7,6 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Instant,
 };
 
 use crossbeam_channel::{Receiver, TryRecvError};
@@ -37,7 +36,7 @@ pub struct Workload<'a> {
     also_completes: HashMap<AnyWorkId, Vec<AnyWorkId>>,
     pub(crate) jobs_pending: HashMap<AnyWorkId, Job>,
 
-    timing: JobTimer,
+    pub(crate) timer: JobTimer,
 }
 
 /// A unit of executable work plus the identifiers of work that it depends on
@@ -64,7 +63,7 @@ enum RecvType {
 }
 
 impl<'a> Workload<'a> {
-    pub fn new(change_detector: &'a ChangeDetector, t0: Instant) -> Workload {
+    pub fn new(change_detector: &'a ChangeDetector, timer: JobTimer) -> Workload {
         Workload {
             change_detector,
             job_count: 0,
@@ -72,7 +71,7 @@ impl<'a> Workload<'a> {
             error: Default::default(),
             also_completes: Default::default(),
             jobs_pending: Default::default(),
-            timing: JobTimer::new(t0),
+            timer,
         }
     }
 
@@ -166,7 +165,7 @@ impl<'a> Workload<'a> {
     fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId, timing: JobTime) {
         log::debug!("{success:?} successful");
 
-        self.timing.add(timing);
+        self.timer.add(timing);
 
         self.mark_also_completed(&success);
 
@@ -229,7 +228,7 @@ impl<'a> Workload<'a> {
     }
 
     pub fn launchable(&mut self) -> Vec<AnyWorkId> {
-        let timing = create_timer(AnyWorkId::Fe(FeWorkIdentifier::Overhead))
+        let timing = create_timer(AnyWorkId::InternalTiming("Launchable"))
             .queued()
             .run();
 
@@ -246,7 +245,7 @@ impl<'a> Workload<'a> {
             .collect();
         trace!("Launchable: {launchable:?}");
 
-        self.timing.add(timing.complete());
+        self.timer.add(timing.complete());
         launchable
     }
 
@@ -360,7 +359,7 @@ impl<'a> Workload<'a> {
             );
         }
 
-        Ok(self.timing)
+        Ok(self.timer)
     }
 
     fn read_completions(

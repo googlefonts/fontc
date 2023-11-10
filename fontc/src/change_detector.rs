@@ -1,6 +1,6 @@
 //! tracking changes during compilation
 
-use std::{ffi::OsStr, fmt::Debug, fs, path::Path, time::Instant};
+use std::{ffi::OsStr, fmt::Debug, fs, path::Path};
 
 use bitflags::bitflags;
 use fontbe::{
@@ -8,7 +8,7 @@ use fontbe::{
     paths::Paths as BePaths,
 };
 
-use crate::{work::AnyWork, workload::Workload, Config, Error};
+use crate::{create_timer, timing::JobTimer, work::AnyWork, workload::Workload, Config, Error};
 use fontdrasil::types::GlyphName;
 use fontir::{
     orchestration::WorkId as FeWorkIdentifier,
@@ -57,7 +57,12 @@ impl ChangeDetector {
         config: Config,
         ir_paths: IrPaths,
         prev_inputs: Input,
+        timer: &mut JobTimer,
     ) -> Result<ChangeDetector, Error> {
+        let time = create_timer(AnyWorkId::InternalTiming("new change detector"))
+            .queued()
+            .run();
+
         let mut ir_source = ir_source(&config.args.source)?;
         let mut current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
         let be_paths = BePaths::new(ir_paths.build_dir());
@@ -78,6 +83,8 @@ impl ChangeDetector {
                 result
             });
         }
+
+        timer.add(time.complete());
 
         Ok(ChangeDetector {
             glyph_name_filter,
@@ -115,6 +122,7 @@ impl ChangeDetector {
         match work_id {
             AnyWorkId::Fe(work_id) => self.ir_paths.target_file(work_id).is_file(),
             AnyWorkId::Be(work_id) => self.be_paths.target_file(work_id).is_file(),
+            AnyWorkId::InternalTiming(..) => false,
         }
     }
 
@@ -165,8 +173,8 @@ impl ChangeDetector {
         workload.add(work, run);
     }
 
-    pub fn create_workload(&mut self, t0: Instant) -> Result<Workload, Error> {
-        let mut workload = Workload::new(self, t0);
+    pub fn create_workload(&mut self, timer: JobTimer) -> Result<Workload, Error> {
+        let mut workload = Workload::new(self, timer);
 
         // Create work roughly in the order it would typically occur
         // Work is eligible to run as soon as all dependencies are complete

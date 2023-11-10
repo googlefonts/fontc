@@ -327,8 +327,6 @@ pub enum WorkId {
     Features,
     Kerning,
     Anchor(GlyphName),
-    /// Bucket to attribute overhead
-    Overhead,
 }
 
 impl Identifier for WorkId {}

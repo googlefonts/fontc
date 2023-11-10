@@ -65,7 +65,6 @@ impl Paths {
             }
             WorkId::Features => self.build_dir.join("features.yml"),
             WorkId::Kerning => self.build_dir.join("kerning.yml"),
-            WorkId::Overhead => panic!("Should never write the overhead file"),
         }
     }
 }

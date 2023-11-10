@@ -170,6 +170,9 @@ impl AnyContext {
                 Access::custom(move |id: &WorkId| read_access.check(&AnyWorkId::Fe(id.clone()))),
                 Access::custom(move |id: &WorkId| write_access.check(&AnyWorkId::Fe(id.clone()))),
             )),
+            AnyWorkId::InternalTiming(..) => {
+                panic!("Should never create a context for internal timing")
+            }
         }
     }
 
