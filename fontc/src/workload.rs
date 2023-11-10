@@ -232,11 +232,15 @@ impl<'a> Workload<'a> {
             .queued()
             .run();
 
-        let launchable: Vec<_> = self
+        let mut has_kern = false;
+        let mut launchable: Vec<_> = self
             .jobs_pending
             .iter()
             .filter_map(|(id, job)| {
                 if !job.running && self.can_run(job) {
+                    if matches!(id, AnyWorkId::Fe(FeWorkIdentifier::Kerning)) {
+                        has_kern = true;
+                    }
                     Some(id.clone())
                 } else {
                     None
@@ -244,6 +248,15 @@ impl<'a> Workload<'a> {
             })
             .collect();
         trace!("Launchable: {launchable:?}");
+
+        // https://github.com/googlefonts/fontc/issues/456: try to avoid kern as long pole
+        if has_kern {
+            let kern_idx = launchable
+                .iter()
+                .position(|id| matches!(id, AnyWorkId::Fe(FeWorkIdentifier::Kerning)))
+                .unwrap();
+            launchable.swap(0, kern_idx);
+        }
 
         self.timer.add(timing.complete());
         launchable
