@@ -797,19 +797,22 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::Glyph(..))
-                    | AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Fe(FeWorkId::GlobalMetrics)
-                    | AnyWorkId::Be(WorkId::Hhea)
-                    | AnyWorkId::Be(WorkId::Hmtx)
-                    | AnyWorkId::Be(WorkId::Gpos)
-                    | AnyWorkId::Be(WorkId::Gsub)
-            )
-        }))
+        Access::Custom(
+            "Os2::Read",
+            Arc::new(|id| {
+                matches!(
+                    id,
+                    AnyWorkId::Fe(FeWorkId::Glyph(..))
+                        | AnyWorkId::Fe(FeWorkId::StaticMetadata)
+                        | AnyWorkId::Fe(FeWorkId::GlyphOrder)
+                        | AnyWorkId::Fe(FeWorkId::GlobalMetrics)
+                        | AnyWorkId::Be(WorkId::Hhea)
+                        | AnyWorkId::Be(WorkId::Hmtx)
+                        | AnyWorkId::Be(WorkId::Gpos)
+                        | AnyWorkId::Be(WorkId::Gsub)
+                )
+            }),
+        )
     }
 
     /// Generate [OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2)

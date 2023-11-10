@@ -314,6 +314,7 @@ pub enum WorkId {
     /// Build potentially variable font-wide metrics.
     GlobalMetrics,
     Glyph(GlyphName),
+    GlyphTouchup(GlyphName),
     GlyphIrDelete(GlyphName),
     /// Glyph order from source, prior to adjustment
     ///

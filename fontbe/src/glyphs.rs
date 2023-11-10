@@ -853,26 +853,32 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Be(WorkId::GlyfFragment(..))
-            )
-        }))
+        Access::Custom(
+            "GlyfLoca::Read",
+            Arc::new(|id| {
+                matches!(
+                    id,
+                    AnyWorkId::Fe(FeWorkId::StaticMetadata)
+                        | AnyWorkId::Fe(FeWorkId::GlyphOrder)
+                        | AnyWorkId::Be(WorkId::GlyfFragment(..))
+                )
+            }),
+        )
     }
 
     fn write_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Be(WorkId::Glyf)
-                    | AnyWorkId::Be(WorkId::Loca)
-                    | AnyWorkId::Be(WorkId::LocaFormat)
-                    | AnyWorkId::Be(WorkId::GlyfFragment(..))
-            )
-        }))
+        Access::Custom(
+            "GlyfLoca::Write",
+            Arc::new(|id| {
+                matches!(
+                    id,
+                    AnyWorkId::Be(WorkId::Glyf)
+                        | AnyWorkId::Be(WorkId::Loca)
+                        | AnyWorkId::Be(WorkId::LocaFormat)
+                        | AnyWorkId::Be(WorkId::GlyfFragment(..))
+                )
+            }),
+        )
     }
 
     fn also_completes(&self) -> Vec<AnyWorkId> {

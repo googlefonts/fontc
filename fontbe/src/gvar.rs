@@ -42,14 +42,17 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Be(WorkId::GvarFragment(..))
-            )
-        }))
+        Access::Custom(
+            "Gvar::Read",
+            Arc::new(|id| {
+                matches!(
+                    id,
+                    AnyWorkId::Fe(FeWorkId::StaticMetadata)
+                        | AnyWorkId::Fe(FeWorkId::GlyphOrder)
+                        | AnyWorkId::Be(WorkId::GvarFragment(..))
+                )
+            }),
+        )
     }
 
     /// Generate [gvar](https://learn.microsoft.com/en-us/typography/opentype/spec/gvar)

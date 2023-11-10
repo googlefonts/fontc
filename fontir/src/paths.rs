@@ -11,6 +11,7 @@ pub struct Paths {
     build_dir: PathBuf,
     anchor_ir_dir: PathBuf,
     glyph_ir_dir: PathBuf,
+    glyph_ir_touchup_dir: PathBuf,
     ir_input_file: PathBuf,
 }
 
@@ -19,11 +20,13 @@ impl Paths {
         let build_dir = build_dir.to_path_buf();
         let anchor_ir_dir = build_dir.join("anchor_ir");
         let glyph_ir_dir = build_dir.join("glyph_ir");
+        let glyph_ir_touchup_dir = build_dir.join("glyph_ir_touchup");
         let ir_input_file = build_dir.join("irinput.yml");
         Paths {
             build_dir,
             anchor_ir_dir,
             glyph_ir_dir,
+            glyph_ir_touchup_dir,
             ir_input_file,
         }
     }
@@ -52,6 +55,10 @@ impl Paths {
         self.glyph_ir_dir.join(safe_filename(name, ".yml"))
     }
 
+    fn glyph_ir_touchup_file(&self, name: &str) -> PathBuf {
+        self.glyph_ir_touchup_dir.join(safe_filename(name, ".yml"))
+    }
+
     pub fn target_file(&self, id: &WorkId) -> PathBuf {
         match id {
             WorkId::Anchor(name) => self.anchor_ir_file(name.as_str()),
@@ -60,6 +67,7 @@ impl Paths {
             WorkId::GlyphOrder => self.build_dir.join("glyph_order.yml"),
             WorkId::GlobalMetrics => self.build_dir.join("global_metrics.yml"),
             WorkId::Glyph(name) => self.glyph_ir_file(name.as_str()),
+            WorkId::GlyphTouchup(name) => self.glyph_ir_touchup_file(name.as_str()),
             WorkId::GlyphIrDelete(name) => {
                 self.build_dir.join(format!("delete-{}.yml", name.as_str()))
             }

@@ -45,16 +45,35 @@ pub struct Workload<'a> {
 #[derive(Debug)]
 pub(crate) struct Job {
     pub(crate) id: AnyWorkId,
-    // The actual task. Exec takes work and sets the running flag.
+    /// The actual task. Exec takes work and sets the running flag.
     pub(crate) work: Option<AnyWork>,
-    // Things our job needs read access to. Job won't run if anything it can read is pending.
-    pub(crate) read_access: AnyAccess,
-    // Things our job needs write access to
+    /// Things that must complete before this job can run
+    pub(crate) dependencies: AnyAccess,
+    /// Things our job needs read access to.
+    ///
+    /// If None, use dependencies as read access.
+    pub(crate) read_access: Option<AnyAccess>,
+    /// Things our job needs write access to
     pub(crate) write_access: AnyAccess,
-    // Does this job actually need to execute?
+    /// Does this job actually need to execute?
     pub(crate) run: bool,
-    // is this job running right now?
+    /// is this job running right now?
     pub(crate) running: bool,
+}
+
+impl Job {
+    fn create_context(&self, fe_root: &FeContext, be_root: &BeContext) -> AnyContext {
+        AnyContext::for_work(
+            fe_root,
+            be_root,
+            &self.id,
+            self.read_access
+                .as_ref()
+                .unwrap_or(&self.dependencies)
+                .clone(),
+            self.write_access.clone(),
+        )
+    }
 }
 
 enum RecvType {
@@ -77,11 +96,11 @@ impl<'a> Workload<'a> {
 
     /// True if job might read what other produces
     fn might_read(&self, job: &Job, other: &Job) -> bool {
-        let result = job.read_access.check(&other.id)
+        let result = job.dependencies.check(&other.id)
             || self
                 .also_completes
                 .get(&other.id)
-                .map(|also| also.iter().any(|other_id| job.read_access.check(other_id)))
+                .map(|also| also.iter().any(|other_id| job.dependencies.check(other_id)))
                 .unwrap_or_default();
         result
     }
@@ -100,7 +119,8 @@ impl<'a> Workload<'a> {
             Job {
                 id,
                 work: Some(work),
-                read_access,
+                dependencies: read_access,
+                read_access: None,
                 write_access,
                 run: should_run,
                 running: false,
@@ -134,8 +154,26 @@ impl<'a> Workload<'a> {
         }
     }
 
-    /// When BE glyph jobs are initially created they don't know enough to set fine grained dependencies
-    /// so they depend on *all* IR glyphs. Once IR for a glyph completes we can refine that:
+    fn update_dependencies(
+        &mut self,
+        job_id: &AnyWorkId,
+        dependencies: AnyAccess,
+        read_access: Option<AnyAccess>,
+    ) {
+        let job = self
+            .jobs_pending
+            .get_mut(job_id)
+            .unwrap_or_else(|| panic!("{job_id:?} should exist"));
+        trace!(
+            "Updating {job_id:?} deps from {:?} to {dependencies:?}, read {read_access:?} (None means the same as deps)",
+            job.dependencies
+        );
+        job.dependencies = dependencies;
+        job.read_access = read_access;
+    }
+
+    /// When Glyph Touchup and BE glyph jobs are initially created they don't know enough to
+    /// set fine grained dependencies. Once IR for a glyph completes we can set them:
     ///
     /// * If the glyph doesn't emit to binary we don't need to do the BE work at all
     /// * If the glyph has no components the BE for it doesn't use glyph order and needn't block on it
@@ -143,44 +181,66 @@ impl<'a> Workload<'a> {
     ///    * For example, flatten
     ///
     /// By minimizing dependencies we allow jobs to start earlier and execute with greater concurrency.
-    fn update_be_glyph_work(&mut self, fe_root: &FeContext, glyph_name: GlyphName) {
-        let glyph = fe_root
-            .glyphs
-            .get(&FeWorkIdentifier::Glyph(glyph_name.clone()));
-        let be_id = AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name));
-        let be_job = self
-            .jobs_pending
-            .get_mut(&be_id)
-            .expect("{be_id} should exist");
+    fn update_glyph_work(
+        &mut self,
+        fe_root: &FeContext,
+        glyph_name: GlyphName,
+        generated_glyph: bool,
+    ) {
+        let glyph_ir_id = FeWorkIdentifier::Glyph(glyph_name.clone());
+        let glyph = fe_root.glyphs.get(&glyph_ir_id);
+        let touchup_id = AnyWorkId::Fe(FeWorkIdentifier::GlyphTouchup(glyph_name.clone()));
+        let be_id = AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name.clone()));
 
         if !glyph.emit_to_binary {
-            trace!("Skipping execution of {be_id:?}; it does not emit to binary");
-            self.jobs_pending.remove(&be_id);
-            self.mark_also_completed(&be_id);
-            self.success.insert(be_id);
+            for id in [touchup_id, be_id] {
+                trace!("Skipping execution of {id:?}; it does not emit to binary");
+                self.jobs_pending.remove(&id);
+                self.mark_also_completed(&id);
+                self.success.insert(id);
+            }
             return;
         }
 
-        let mut deps = HashSet::from([AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata)]);
+        let mut touchup_deps: HashSet<FeWorkIdentifier> = HashSet::from([glyph_ir_id.clone()]);
 
-        let mut has_components = false;
+        let mut be_deps = HashSet::from([
+            AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata),
+            AnyWorkId::Fe(FeWorkIdentifier::GlyphTouchup(glyph_name.clone())),
+        ]);
+
+        let mut components_visited = HashSet::new();
         for inst in glyph.sources().values() {
             for component in inst.components.iter() {
-                has_components = true;
-                deps.insert(FeWorkIdentifier::Glyph(component.base.clone()).into());
+                if components_visited.insert(component.base.clone()) {
+                    let work_id = FeWorkIdentifier::Glyph(component.base.clone());
+                    be_deps.insert(work_id.clone().into());
+                    touchup_deps.insert(work_id.clone());
+                }
             }
         }
 
-        // We don't *have* to wait on glyph order, but if we don't it delays the critical path
-        if has_components {
-            deps.insert(FeWorkIdentifier::GlyphOrder.into());
+        if !components_visited.is_empty() {
+            be_deps.insert(FeWorkIdentifier::GlyphOrder.into());
         }
 
-        trace!(
-            "Updating {be_id:?} deps from {:?} to {deps:?}",
-            be_job.read_access
-        );
-        be_job.read_access = Access::Set(deps).into();
+        // We don't touchup generated glyphs
+        if !generated_glyph {
+            let read_access = AnyAccess::Fe(Access::Custom(
+                "touchup",
+                Arc::new(|id| {
+                    matches!(
+                        id,
+                        // Touchup needs to see the transitive dependencies of the glyph
+                        // We don't know what those are so just allow access to any glyph
+                        FeWorkIdentifier::Glyph(..)
+                    )
+                }),
+            ));
+            let touchup_deps = AnyAccess::Fe(Access::set(touchup_deps));
+            self.update_dependencies(&touchup_id, touchup_deps, Some(read_access));
+        }
+        self.update_dependencies(&be_id, Access::Set(be_deps).into(), None);
     }
 
     fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId, timing: JobTime) {
@@ -202,12 +262,12 @@ impl<'a> Workload<'a> {
                 super::add_glyph_be_job(self, glyph_name.clone());
 
                 // Glyph order is done so all IR must be done. Copy dependencies from the IR for the same name.
-                self.update_be_glyph_work(fe_root, glyph_name.clone());
+                self.update_glyph_work(fe_root, glyph_name.clone(), true);
             }
         }
 
         if let AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) = success {
-            self.update_be_glyph_work(fe_root, glyph_name);
+            self.update_glyph_work(fe_root, glyph_name, false);
         }
     }
 
@@ -222,7 +282,7 @@ impl<'a> Workload<'a> {
 
     fn can_run(&self, job: &Job) -> bool {
         // Custom access requires a scan across pending jobs, hence avoidance is nice
-        match &job.read_access {
+        match &job.dependencies {
             AnyAccess::Fe(access) => match access {
                 Access::None => true,
                 Access::Unknown => false,
@@ -288,24 +348,21 @@ impl<'a> Workload<'a> {
             while self.success.len() < self.job_count {
                 // Spawn anything that is currently executable (has no unfulfilled dependencies)
                 self.update_launchable(&mut launchable);
-                if launchable.is_empty() && !self.jobs_pending.values().any(|j| j.running) {
-                    if log::log_enabled!(log::Level::Warn) {
-                        warn!("{}/{} jobs have succeeded, nothing is running, and nothing is launchable", self.success.len(), self.job_count);
-                        for pending in self.jobs_pending.keys() {
-                            warn!("  blocked: {pending:?}");
+                if launchable.is_empty() {
+                    if !self.jobs_pending.values().any(|j| j.running) {
+                        if log::log_enabled!(log::Level::Warn) {
+                            warn!("{}/{} jobs have succeeded, nothing is running, and nothing is launchable", self.success.len(), self.job_count);
+                            for pending in self.jobs_pending.keys() {
+                                warn!("  blocked: {pending:?}");
+                            }
                         }
+                        return Err(Error::UnableToProceed(self.jobs_pending.len()));
                     }
-                    return Err(Error::UnableToProceed(self.jobs_pending.len()));
                 }
 
                 // Get launchables ready to run
                 if !launchable.is_empty() {
                     nth_wave += 1;
-                }
-
-                // count of launchable jobs that are runnable, i.e. excluding !run jobs
-                let mut runnable_count = launchable.len();
-                {
                     let mut run_queue = run_queue.lock().unwrap();
                     for id in launchable.iter() {
                         let timing = create_timer(id.clone(), nth_wave);
@@ -330,13 +387,7 @@ impl<'a> Workload<'a> {
                             runnable_count -= 1;
                             continue;
                         }
-                        let work_context = AnyContext::for_work(
-                            fe_root,
-                            be_root,
-                            id,
-                            job.read_access.clone(),
-                            job.write_access.clone(),
-                        );
+                        let work_context = job.create_context(fe_root, be_root);
 
                         let timing = timing.queued();
                         run_queue.push((work, timing, work_context));
@@ -359,7 +410,8 @@ impl<'a> Workload<'a> {
                             AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => 99,
                             AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => 99,
                             AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)) => 1,
-                            _ => 32,
+                            AnyWorkId::Fe(FeWorkIdentifier::GlyphTouchup(..)) => 1,
+                            _ => 0,
                         }
                     });
                 }
@@ -551,8 +603,7 @@ impl<'a> Workload<'a> {
             let job = self.jobs_pending.remove(id).unwrap();
             if job.run {
                 let timing = timing.queued();
-                let context =
-                    AnyContext::for_work(fe_root, be_root, id, job.read_access, job.write_access);
+                let context = job.create_context(fe_root, be_root);
                 log::debug!("Exec {:?}", id);
                 let timing = timing.run();
                 job.work

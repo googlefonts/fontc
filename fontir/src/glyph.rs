@@ -27,6 +27,19 @@ pub fn create_glyph_order_work() -> Box<IrWork> {
     Box::new(GlyphOrderWork {})
 }
 
+/// Apply common adjustments to the glyph created by [`crate::source::Source`].
+///
+/// Used primarily to move work from occurring serially in glyph order to occurring
+/// on per-glyph threads.
+pub fn create_glyph_touchup_work(glyph_name: GlyphName) -> Box<IrWork> {
+    Box::new(GlyphTouchupIrWork { glyph_name })
+}
+
+#[derive(Debug)]
+struct GlyphTouchupIrWork {
+    glyph_name: GlyphName,
+}
+
 #[derive(Debug)]
 struct GlyphOrderWork {}
 
@@ -336,21 +349,26 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                WorkId::Glyph(..)
-                    | WorkId::StaticMetadata
-                    | WorkId::PreliminaryGlyphOrder
-                    | WorkId::GlobalMetrics
-            )
-        }))
+        Access::Custom(
+            "GlyphOrder::Read",
+            Arc::new(|id| {
+                matches!(
+                    id,
+                    WorkId::Glyph(..)
+                        | WorkId::GlyphTouchup(..)
+                        | WorkId::StaticMetadata
+                        | WorkId::PreliminaryGlyphOrder
+                        | WorkId::GlobalMetrics
+                )
+            }),
+        )
     }
 
     fn write_access(&self) -> Access<WorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(id, WorkId::Glyph(..) | WorkId::GlyphOrder)
-        }))
+        Access::Custom(
+            "GlyphOrder::Write",
+            Arc::new(|id| matches!(id, WorkId::Glyph(..) | WorkId::GlyphOrder)),
+        )
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
@@ -373,30 +391,18 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
             }
         }
 
-        // Glyphs with paths and components, and glyphs whose component 2x2 transforms vary over designspace
-        // are not directly supported in fonts. To resolve we must do one of:
-        // 1) need to push their paths to a new glyph that is a component
-        // 2) collapse such glyphs into a simple (contour-only) glyph
-        // fontmake (Python) prefers option 2.
+        // Glyph touchup already converted components to contours where necessary so here we need only
+        // extract contours to new components where appropriate.
         for glyph_name in new_glyph_order.clone().iter() {
             let glyph = original_glyphs.get(glyph_name).unwrap();
-            let inconsistent_components = !glyph.has_consistent_components();
-            if inconsistent_components || has_components_and_contours(glyph) {
-                if inconsistent_components {
-                    debug!(
-                        "Coalescing'{0}' into a simple glyph because component 2x2s vary across the designspace",
-                        glyph.name
-                    );
-                    convert_components_to_contours(context, glyph)?;
-                } else if context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS) {
-                    debug!(
-                        "Coalescing '{0}' into a simple glyph because it has contours and components and prefer simple glyphs is set",
-                        glyph.name
-                    );
-                    convert_components_to_contours(context, glyph)?;
-                } else {
-                    move_contours_to_new_component(context, &mut new_glyph_order, glyph)?;
-                }
+            assert!(
+                glyph.has_consistent_components(),
+                "{glyph_name} component consistency wasn't fixed by touchup"
+            );
+            if has_components_and_contours(glyph)
+                && !context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS)
+            {
+                move_contours_to_new_component(context, &mut new_glyph_order, glyph)?;
             }
         }
         drop(original_glyphs); // lets not accidentally use that from here on
@@ -452,6 +458,51 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
         }
 
         context.glyph_order.set(new_glyph_order);
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, WorkError> for GlyphTouchupIrWork {
+    fn id(&self) -> WorkId {
+        WorkId::GlyphTouchup(self.glyph_name.clone())
+    }
+
+    /// We need access to the glyph IR plus it's components IR but we don't yet know what those are yet
+    fn read_access(&self) -> Access<WorkId> {
+        Access::Unknown
+    }
+
+    /// We write to glyph ir not the touchup bucket
+    fn write_access(&self) -> Access<WorkId> {
+        Access::one(WorkId::Glyph(self.glyph_name.clone()))
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        let glyph = context.glyphs.get(&WorkId::Glyph(self.glyph_name.clone()));
+
+        // Glyphs with paths and components, and glyphs whose component 2x2 transforms vary over designspace
+        // are not directly supported in fonts. To resolve we must do one of:
+        // 1) need to push their paths to a new glyph that is a component
+        // 2) collapse such glyphs into a simple (contour-only) glyph
+        // We handle case 2 here. Case 1 is done by the glyph order job.
+        // fontmake (Python) prefers option 2.
+        if !glyph.has_consistent_components() {
+            debug!(
+                "Coalescing'{0}' into a simple glyph because component 2x2s vary across the designspace",
+                glyph.name
+            );
+            convert_components_to_contours(context, &glyph)?;
+        } else if has_components_and_contours(&glyph)
+            && context.flags.contains(Flags::PREFER_SIMPLE_GLYPHS)
+        {
+            debug!(
+                "Coalescing '{0}' into a simple glyph because it has contours and components and prefer simple glyphs is set",
+                glyph.name
+            );
+            convert_components_to_contours(context, &glyph)?;
+        }
+        // If we have components and contours and do *not* prefer simple then we need to generate a new component
+        // That is handled by the glyph order job
         Ok(())
     }
 }
