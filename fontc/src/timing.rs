@@ -8,7 +8,7 @@ use std::{collections::HashMap, io, thread::ThreadId, time::Instant};
 
 /// Tracks time for jobs that run on many threads.
 ///
-/// Meant for use with a threadpool. For example, build up [JobTime] for each
+/// Meant for use with a threadpool. For example, build timing for each
 /// unit of work submitted to something like rayon and accumulate them here.
 ///
 /// Currently not threadsafe, meant to be used by a central orchestrator because
@@ -76,6 +76,7 @@ impl JobTimer {
             for timing in timings {
                 let job_start = (timing.run - self.t0).as_secs_f64();
                 let job_end = (timing.complete - self.t0).as_secs_f64();
+                let job_queued = (timing.queued - self.t0).as_secs_f64();
                 let begin_pct = 100.0 * job_start / end_time.as_secs_f64();
                 let exec_pct =
                     100.0 * (timing.complete - timing.run).as_secs_f64() / end_time.as_secs_f64();
@@ -96,10 +97,13 @@ impl JobTimer {
                 }
                 writeln!(
                     out,
-                    "<title>{:.2}s ({:.2}%) {:?}</title>",
-                    job_end - job_start,
+                    "<title>{:.0}ms ({:.2}%) {:?}\nqueued at {:.0}ms\nrun at {:.0}ms\nWave {}</title>",
+                    1000.0 * (job_end - job_start),
                     exec_pct,
-                    timing.id
+                    timing.id,
+                    1000.0 * job_queued,
+                    1000.0 * job_start,
+                    timing.nth_wave,
                 )
                 .unwrap();
                 writeln!(out, "  </g>").unwrap();
@@ -189,9 +193,14 @@ fn color(id: &AnyWorkId) -> &'static str {
 ///
 /// Meant to be called when a job is runnable, that is it's ready to be
 /// submitted to an execution system such as a threadpool.
-pub fn create_timer(id: AnyWorkId) -> JobTimeRunnable {
+///
+/// nth_wave shows on mouseover in the final output. Each time we release
+/// a group of jobs - because their dependencies are complate - we increment
+/// it so one can see the graph progression in the timing svg output.
+pub fn create_timer(id: AnyWorkId, nth_wave: usize) -> JobTimeRunnable {
     JobTimeRunnable {
         id,
+        nth_wave,
         runnable: Instant::now(),
     }
 }
@@ -201,6 +210,7 @@ pub fn create_timer(id: AnyWorkId) -> JobTimeRunnable {
 /// It may have queued from t0 to launchable but now it's go-time!
 pub struct JobTimeRunnable {
     id: AnyWorkId,
+    nth_wave: usize,
     runnable: Instant,
 }
 
@@ -209,6 +219,7 @@ impl JobTimeRunnable {
     pub fn queued(self) -> JobTimeQueued {
         JobTimeQueued {
             id: self.id,
+            nth_wave: self.nth_wave,
             runnable: self.runnable,
             queued: Instant::now(),
         }
@@ -217,6 +228,7 @@ impl JobTimeRunnable {
 
 pub struct JobTimeQueued {
     id: AnyWorkId,
+    nth_wave: usize,
     runnable: Instant,
     queued: Instant,
 }
@@ -229,6 +241,7 @@ impl JobTimeQueued {
     pub fn run(self) -> JobTimeRunning {
         JobTimeRunning {
             id: self.id,
+            nth_wave: self.nth_wave,
             thread: std::thread::current().id(),
             runnable: self.runnable,
             queued: self.queued,
@@ -239,6 +252,7 @@ impl JobTimeQueued {
 
 pub struct JobTimeRunning {
     id: AnyWorkId,
+    nth_wave: usize,
     thread: ThreadId,
     runnable: Instant,
     queued: Instant,
@@ -252,9 +266,10 @@ impl JobTimeRunning {
     pub fn complete(self) -> JobTime {
         JobTime {
             id: self.id,
+            nth_wave: self.nth_wave,
             thread_id: self.thread,
             _runnable: self.runnable,
-            _queued: self.queued,
+            queued: self.queued,
             run: self.run,
             complete: Instant::now(),
         }
@@ -265,9 +280,10 @@ impl JobTimeRunning {
 #[derive(Debug)]
 pub struct JobTime {
     id: AnyWorkId,
+    nth_wave: usize,
     thread_id: ThreadId,
     _runnable: Instant,
-    _queued: Instant,
+    queued: Instant,
     run: Instant,
     complete: Instant,
 }
@@ -278,9 +294,10 @@ impl JobTime {
         let now = Instant::now();
         JobTime {
             id,
+            nth_wave: 0,
             thread_id: std::thread::current().id(),
             _runnable: now,
-            _queued: now,
+            queued: now,
             run: now,
             complete: now,
         }

@@ -293,7 +293,7 @@ pub fn create_workload(
     change_detector: &mut ChangeDetector,
     timer: JobTimer,
 ) -> Result<Workload, Error> {
-    let time = create_timer(AnyWorkId::InternalTiming("Create workload"))
+    let time = create_timer(AnyWorkId::InternalTiming("Create workload"), 0)
         .queued()
         .run();
     let mut workload = change_detector.create_workload(timer)?;
