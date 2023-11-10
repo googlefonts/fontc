@@ -358,27 +358,28 @@ impl<'a> FeatureWriter<'a> {
         for (group_name, group) in mark_groups.iter() {
             // if we have bases *and* marks produce mark to base
             if !group.bases.is_empty() && !group.marks.is_empty() {
+                let mut mark_base = MarkToBaseBuilder::default();
+
+                for (mark_name, mark_anchor) in group.marks.iter() {
+                    let mark_gid = self.glyph_id(mark_name)?;
+                    let mark_anchor_table = self.create_anchor_table(mark_anchor, builder)?;
+                    mark_base
+                        .insert_mark(mark_gid, group_name.0.into(), mark_anchor_table.clone())
+                        .map_err(Error::PreviouslyAssignedClass)?;
+                }
+
                 for (base_name, base_anchor) in group.bases.iter() {
                     let base_gid = self.glyph_id(base_name)?;
-                    let mut mark_base = MarkToBaseBuilder::default();
-                    for (mark_name, mark_anchor) in group.marks.iter() {
-                        let mark_gid = self.glyph_id(mark_name)?;
-                        let mark_anchor_table = self.create_anchor_table(mark_anchor, builder)?;
-                        mark_base
-                            .insert_mark(mark_gid, group_name.0.into(), mark_anchor_table.clone())
-                            .map_err(Error::PreviouslyAssignedClass)?;
-                    }
-
                     let base_anchor_table = self.create_anchor_table(base_anchor, builder)?;
                     mark_base.insert_base(base_gid, &group_name.0.into(), base_anchor_table);
-
-                    // each in it's own lookup, whch differs from fontmake
-                    mark_base_lookups.push(builder.add_lookup(
-                        LookupFlag::default(),
-                        None,
-                        vec![mark_base],
-                    ));
                 }
+
+                // each mark to base it's own lookup, whch differs from fontmake
+                mark_base_lookups.push(builder.add_lookup(
+                    LookupFlag::default(),
+                    None,
+                    vec![mark_base],
+                ));
             }
 
             // If a mark has anchors that are themselves marks what we got here is a mark to mark
