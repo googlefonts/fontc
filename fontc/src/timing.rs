@@ -74,8 +74,9 @@ impl JobTimer {
             let box_top = line_height * i;
             let text_y = box_top + text_height;
             for timing in timings {
-                let begin_pct =
-                    100.0 * (timing.run - self.t0).as_secs_f64() / end_time.as_secs_f64();
+                let job_start = (timing.run - self.t0).as_secs_f64();
+                let job_end = (timing.complete - self.t0).as_secs_f64();
+                let begin_pct = 100.0 * job_start / end_time.as_secs_f64();
                 let exec_pct =
                     100.0 * (timing.complete - timing.run).as_secs_f64() / end_time.as_secs_f64();
                 let fill = color(&timing.id);
@@ -93,6 +94,14 @@ impl JobTimer {
                     )
                     .unwrap();
                 }
+                writeln!(
+                    out,
+                    "<title>{:.2}s ({:.2}%) {:?}</title>",
+                    job_end - job_start,
+                    exec_pct,
+                    timing.id
+                )
+                .unwrap();
                 writeln!(out, "  </g>").unwrap();
             }
         }
