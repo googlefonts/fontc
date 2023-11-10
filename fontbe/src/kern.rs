@@ -1,12 +1,12 @@
 //! Generates a [Kerning] datastructure to be fed to fea-rs
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use fea_rs::{
     compile::{PairPosBuilder, ValueRecord as ValueRecordBuilder},
     GlyphSet,
 };
-use fontdrasil::orchestration::{Access, Work};
+use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::{ir::KernParticipant, orchestration::WorkId as FeWorkId};
 use write_fonts::types::GlyphId;
 
@@ -29,11 +29,11 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Set(HashSet::from([
-            FeWorkId::StaticMetadata.into(),
-            FeWorkId::Kerning.into(),
-            FeWorkId::GlyphOrder.into(),
-        ]))
+        AccessBuilder::new()
+            .variant(FeWorkId::StaticMetadata)
+            .variant(FeWorkId::Kerning)
+            .variant(FeWorkId::GlyphOrder)
+            .build()
     }
 
     /// Generate kerning data structures.

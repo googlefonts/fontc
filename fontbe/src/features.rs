@@ -2,7 +2,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     error::Error as StdError,
     ffi::{OsStr, OsString},
     fmt::Display,
@@ -28,7 +28,7 @@ use fontir::{
 
 use fontdrasil::{
     coords::NormalizedLocation,
-    orchestration::{Access, Work},
+    orchestration::{Access, AccessBuilder, Work},
     types::Axis,
 };
 use write_fonts::{
@@ -438,13 +438,13 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Set(HashSet::from([
-            AnyWorkId::Fe(FeWorkId::GlyphOrder),
-            AnyWorkId::Fe(FeWorkId::StaticMetadata),
-            AnyWorkId::Fe(FeWorkId::Features),
-            AnyWorkId::Be(WorkId::Kerning),
-            AnyWorkId::Be(WorkId::Marks),
-        ]))
+        AccessBuilder::new()
+            .variant(FeWorkId::GlyphOrder)
+            .variant(FeWorkId::StaticMetadata)
+            .variant(FeWorkId::Features)
+            .variant(WorkId::Kerning)
+            .variant(WorkId::Marks)
+            .build()
     }
 
     fn also_completes(&self) -> Vec<AnyWorkId> {

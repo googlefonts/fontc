@@ -1,8 +1,11 @@
 //! Generates a [OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2) table.
 
-use std::{cmp::Ordering, collections::HashSet, sync::Arc};
+use std::{cmp::Ordering, collections::HashSet};
 
-use fontdrasil::orchestration::{Access, Work};
+use fontdrasil::{
+    orchestration::{Access, AccessBuilder, Work},
+    types::GlyphName,
+};
 use fontir::{ir::GlobalMetricsInstance, orchestration::WorkId as FeWorkId};
 use log::warn;
 use write_fonts::{
@@ -797,19 +800,16 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::Glyph(..))
-                    | AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Fe(FeWorkId::GlobalMetrics)
-                    | AnyWorkId::Be(WorkId::Hhea)
-                    | AnyWorkId::Be(WorkId::Hmtx)
-                    | AnyWorkId::Be(WorkId::Gpos)
-                    | AnyWorkId::Be(WorkId::Gsub)
-            )
-        }))
+        AccessBuilder::new()
+            .variant(FeWorkId::StaticMetadata)
+            .variant(FeWorkId::GlyphOrder)
+            .variant(FeWorkId::GlobalMetrics)
+            .variant(WorkId::Hhea)
+            .variant(WorkId::Hmtx)
+            .variant(WorkId::Gpos)
+            .variant(WorkId::Gsub)
+            .variant(FeWorkId::Glyph(GlyphName::NOTDEF))
+            .build()
     }
 
     /// Generate [OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2)

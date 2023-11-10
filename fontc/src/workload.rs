@@ -4,14 +4,17 @@ use std::{
     collections::{HashMap, HashSet},
     panic::AssertUnwindSafe,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
     },
 };
 
 use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier};
-use fontdrasil::{orchestration::Access, types::GlyphName};
+use fontdrasil::{
+    orchestration::{Access, AccessBuilder, AccessType, Identifier, IdentifierDiscriminant},
+    types::GlyphName,
+};
 use fontir::{
     orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     source::Input,
@@ -35,6 +38,7 @@ pub struct Workload<'a> {
     // When K completes also mark all entries in V complete
     also_completes: HashMap<AnyWorkId, Vec<AnyWorkId>>,
     pub(crate) jobs_pending: HashMap<AnyWorkId, Job>,
+    pub(crate) count_pending: HashMap<IdentifierDiscriminant, Arc<AtomicUsize>>,
 
     pub(crate) timer: JobTimer,
 }
@@ -62,6 +66,26 @@ enum RecvType {
     NonBlocking,
 }
 
+/// Higher is better
+///
+/// We basically want things that block the glyph order => kern => fea sequence to go asap
+fn priority(id: &AnyWorkId) -> u32 {
+    match id {
+        AnyWorkId::Fe(FeWorkIdentifier::Features) => 99,
+        AnyWorkId::Fe(FeWorkIdentifier::Kerning) => 99,
+        AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) => 99,
+        AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => 99,
+        AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => 99,
+        AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => 99,
+        AnyWorkId::Be(BeWorkIdentifier::Kerning) => 99,
+        AnyWorkId::Be(BeWorkIdentifier::Features) => 99,
+        AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..)) => 0,
+        AnyWorkId::Be(BeWorkIdentifier::GvarFragment(..)) => 0,
+        AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)) => 1,
+        _ => 32,
+    }
+}
+
 impl<'a> Workload<'a> {
     pub fn new(change_detector: &'a ChangeDetector, timer: JobTimer) -> Workload {
         Workload {
@@ -71,11 +95,13 @@ impl<'a> Workload<'a> {
             error: Default::default(),
             also_completes: Default::default(),
             jobs_pending: Default::default(),
+            count_pending: Default::default(),
             timer,
         }
     }
 
     /// True if job might read what other produces
+    #[cfg(test)]
     fn might_read(&self, job: &Job, other: &Job) -> bool {
         let result = job.read_access.check(&other.id)
             || self
@@ -109,28 +135,68 @@ impl<'a> Workload<'a> {
     }
 
     pub(crate) fn insert(&mut self, id: AnyWorkId, job: Job) {
+        let run = job.run;
         let also_completes = job
             .work
             .as_ref()
-            .expect("{id:?} submitted without work")
+            .unwrap_or_else(|| panic!("{id:?} submitted without work"))
             .also_completes();
+
+        // We need pending entries for also-completes items so dependencies on them work
+        for id in also_completes.iter() {
+            self.jobs_pending.insert(
+                id.clone(),
+                Job {
+                    id: id.clone(),
+                    work: None, // we exist solely to be marked complete by also_complete
+                    read_access: job.read_access.clone(), // We don't want to be deemed runnable prematurely
+                    write_access: AnyAccess::Be(Access::None),
+                    run: true,
+                    running: false,
+                },
+            );
+            self.count_pending
+                .entry(id.discriminant())
+                .or_default()
+                .fetch_add(1, Ordering::AcqRel);
+        }
 
         self.job_count += 1 + also_completes.len();
         self.jobs_pending.insert(id.clone(), job);
+        self.count_pending
+            .entry(id.discriminant())
+            .or_default()
+            .fetch_add(1, Ordering::AcqRel);
 
         if !also_completes.is_empty() {
-            self.also_completes.insert(id, also_completes);
+            self.also_completes.insert(id.clone(), also_completes);
+        }
+
+        if !run {
+            for counter in self.counters(&id) {
+                counter.fetch_sub(1, Ordering::AcqRel);
+            }
+            self.mark_also_completed(&id);
+            self.complete_one(id, true);
+        }
+    }
+
+    fn complete_one(&mut self, id: AnyWorkId, expected_pending: bool) {
+        let was_pending = self.jobs_pending.remove(&id).is_some();
+        if expected_pending && !was_pending {
+            panic!("Unable to complete {id:?}");
+        }
+        if expected_pending && !self.success.insert(id.clone()) {
+            panic!("Multiple completions of {id:?}");
         }
     }
 
     fn mark_also_completed(&mut self, success: &AnyWorkId) {
-        let Some(also_completed) = self.also_completes.get(success) else {
+        let Some(also_completed) = self.also_completes.get(success).cloned() else {
             return;
         };
         for id in also_completed {
-            if !self.success.insert(id.clone()) {
-                panic!("Multiple completions of {id:?}");
-            }
+            self.complete_one(id, true);
         }
     }
 
@@ -148,39 +214,43 @@ impl<'a> Workload<'a> {
             .glyphs
             .get(&FeWorkIdentifier::Glyph(glyph_name.clone()));
         let be_id = AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(glyph_name));
-        let be_job = self
-            .jobs_pending
-            .get_mut(&be_id)
-            .expect("{be_id} should exist");
+
+        // If the inputs to the BE glyph didn't change it won't be pending
+        let Some(be_job) = self.jobs_pending.get_mut(&be_id) else {
+            return;
+        };
 
         if !glyph.emit_to_binary {
             trace!("Skipping execution of {be_id:?}; it does not emit to binary");
-            self.jobs_pending.remove(&be_id);
+            for counter in self.counters(&be_id) {
+                counter.fetch_sub(1, Ordering::AcqRel);
+            }
+            self.complete_one(be_id.clone(), true);
             self.mark_also_completed(&be_id);
-            self.success.insert(be_id);
             return;
         }
 
-        let mut deps = HashSet::from([AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata)]);
+        let mut deps = AccessBuilder::<AnyWorkId>::new().variant(FeWorkIdentifier::StaticMetadata);
 
         let mut has_components = false;
         for inst in glyph.sources().values() {
             for component in inst.components.iter() {
                 has_components = true;
-                deps.insert(FeWorkIdentifier::Glyph(component.base.clone()).into());
+                deps = deps.specific_instance(FeWorkIdentifier::Glyph(component.base.clone()));
             }
         }
 
         // We don't *have* to wait on glyph order, but if we don't it delays the critical path
         if has_components {
-            deps.insert(FeWorkIdentifier::GlyphOrder.into());
+            deps = deps.variant(FeWorkIdentifier::GlyphOrder);
         }
 
+        let deps = deps.build().into();
         trace!(
             "Updating {be_id:?} deps from {:?} to {deps:?}",
             be_job.read_access
         );
-        be_job.read_access = Access::Set(deps).into();
+        be_job.read_access = deps
     }
 
     fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId, timing: JobTime) {
@@ -188,6 +258,7 @@ impl<'a> Workload<'a> {
 
         self.timer.add(timing);
 
+        self.complete_one(success.clone(), false);
         self.mark_also_completed(&success);
 
         // When glyph order finalizes, add BE work for any new glyphs
@@ -211,35 +282,60 @@ impl<'a> Workload<'a> {
         }
     }
 
-    fn can_run_scan(&self, job: &Job) -> bool {
-        // Job can only run if *no* incomplete jobs exist whose output it could read
-        !self
-            .jobs_pending
-            .iter()
-            .filter(|(other_id, _)| !self.success.contains(other_id))
-            .any(|(_, other_job)| self.might_read(job, other_job))
+    fn can_run_all_or_one(&self, all_or_one: &AccessType<AnyWorkId>) -> bool {
+        match all_or_one {
+            AccessType::SpecificInstanceOfVariant(id) => {
+                !self.jobs_pending.contains_key(&id.clone())
+            }
+            AccessType::Variant(exemplar) => {
+                self.count_pending
+                    .get(&exemplar.discriminant())
+                    .map(|a| a.load(Ordering::Acquire))
+                    .unwrap_or_default()
+                    == 0
+            }
+        }
+    }
+
+    fn anything_else_pending(&self, id: &AnyWorkId) -> bool {
+        if self.jobs_pending.len() > 1 {
+            return true;
+        }
+        let Some(the_pending_job) = self.jobs_pending.keys().next() else {
+            return false;
+        };
+        id != the_pending_job
     }
 
     fn can_run(&self, job: &Job) -> bool {
-        // Custom access requires a scan across pending jobs, hence avoidance is nice
         match &job.read_access {
             AnyAccess::Fe(access) => match access {
                 Access::None => true,
                 Access::Unknown => false,
-                Access::One(id) => !self.jobs_pending.contains_key(&id.clone().into()),
-                Access::Set(ids) => !ids
-                    .iter()
-                    .any(|id| self.jobs_pending.contains_key(&id.clone().into())),
-                Access::Custom(..) => self.can_run_scan(job),
-                Access::All => self.can_run_scan(job),
+                Access::SpecificInstanceOfVariant(id) => self
+                    .can_run_all_or_one(&AccessType::SpecificInstanceOfVariant(id.clone().into())),
+                Access::Variant(id) => {
+                    self.can_run_all_or_one(&AccessType::Variant(id.clone().into()))
+                }
+                Access::Set(ids) => ids.iter().all(|id| match id {
+                    AccessType::SpecificInstanceOfVariant(id) => self.can_run_all_or_one(
+                        &AccessType::SpecificInstanceOfVariant(id.clone().into()),
+                    ),
+                    AccessType::Variant(exemplar) => {
+                        self.can_run_all_or_one(&AccessType::Variant(exemplar.clone().into()))
+                    }
+                }),
+                Access::All => !self.anything_else_pending(&job.id),
             },
             AnyAccess::Be(access) => match access {
                 Access::None => true,
                 Access::Unknown => false,
-                Access::One(id) => !self.jobs_pending.contains_key(id),
-                Access::Set(ids) => !ids.iter().any(|id| self.jobs_pending.contains_key(id)),
-                Access::Custom(..) => self.can_run_scan(job),
-                Access::All => self.can_run_scan(job),
+                Access::SpecificInstanceOfVariant(id) => {
+                    self.can_run_all_or_one(&AccessType::SpecificInstanceOfVariant(id.clone()))
+                }
+                Access::Variant(id) => self.can_run_all_or_one(&AccessType::Variant(id.clone())),
+                Access::Set(ids) => ids.iter().all(|id| self.can_run_all_or_one(id)),
+                Access::All => !self.anything_else_pending(&job.id),
             },
         }
     }
@@ -251,16 +347,36 @@ impl<'a> Workload<'a> {
             .run();
 
         launchable.clear();
-        for id in self
-            .jobs_pending
-            .iter()
-            .filter_map(|(id, job)| (!job.running && self.can_run(job)).then_some(id))
-        {
+        for id in self.jobs_pending.iter().filter_map(|(id, job)| {
+            (job.work.is_some() && !job.running && self.can_run(job)).then_some(id)
+        }) {
             launchable.push(id.clone());
         }
 
-        trace!("Launchable: {:?}", launchable);
         self.timer.add(timing.complete());
+    }
+
+    fn counters(&self, id: &AnyWorkId) -> Vec<Arc<AtomicUsize>> {
+        let also_completes = self.also_completes.get(id);
+        let mut counters =
+            Vec::with_capacity(1 + also_completes.map(|v| v.len()).unwrap_or_default());
+        counters.push(
+            self.count_pending
+                .get(id.discriminant())
+                .unwrap_or_else(|| panic!("No count of type for runnable {id:?}"))
+                .clone(),
+        );
+        if let Some(also_completes) = also_completes {
+            for id in also_completes {
+                counters.push(
+                    self.count_pending
+                        .get(id.discriminant())
+                        .unwrap_or_else(|| panic!("No count of type for runnable {id:?}"))
+                        .clone(),
+                );
+            }
+        }
+        counters
     }
 
     pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer, Error> {
@@ -271,9 +387,12 @@ impl<'a> Workload<'a> {
         // a flag we set if we panic
         let abort_queued_jobs = Arc::new(AtomicBool::new(false));
 
-        let run_queue = Arc::new(Mutex::new(
-            Vec::<(AnyWork, JobTimeQueued, AnyContext)>::with_capacity(512),
-        ));
+        let run_queue = Arc::new(Mutex::new(Vec::<(
+            AnyWork,
+            JobTimeQueued,
+            AnyContext,
+            Vec<Arc<AtomicUsize>>,
+        )>::with_capacity(512)));
 
         // Do NOT assign custom thread names because it makes flamegraph root each thread individually
         rayon::in_place_scope(|scope| {
@@ -283,6 +402,7 @@ impl<'a> Workload<'a> {
 
             // To avoid allocation every poll for work
             let mut launchable = Vec::with_capacity(512.min(self.job_count));
+            let mut successes = Vec::with_capacity(64);
             let mut nth_wave = 0;
 
             while self.success.len() < self.job_count {
@@ -297,140 +417,155 @@ impl<'a> Workload<'a> {
                     }
                     return Err(Error::UnableToProceed(self.jobs_pending.len()));
                 }
+                successes.clear();
 
                 // Get launchables ready to run
                 if !launchable.is_empty() {
                     nth_wave += 1;
-                }
+                    let timing = create_timer(AnyWorkId::InternalTiming("run_q"), nth_wave)
+                        .queued()
+                        .run();
 
-                // count of launchable jobs that are runnable, i.e. excluding !run jobs
-                let mut runnable_count = launchable.len();
-                {
-                    let mut run_queue = run_queue.lock().unwrap();
-                    for id in launchable.iter() {
-                        let timing = create_timer(id.clone(), nth_wave);
+                    // count of launchable jobs that are runnable, i.e. excluding !run jobs
+                    let mut runnable_count = launchable.len();
+                    {
+                        let mut run_queue = run_queue.lock().unwrap();
 
-                        let job = self.jobs_pending.get_mut(id).unwrap();
-                        log::trace!("Start {:?}", id);
-                        job.running = true;
-                        let work = job
-                            .work
-                            .take()
-                            .expect("{id:?} ready to run but has no work?!");
-                        if !job.run {
-                            if let Err(e) =
-                                send.send((id.clone(), Ok(()), JobTime::nop(id.clone())))
-                            {
-                                log::error!(
-                                    "Unable to write nop {id:?} to completion channel: {e}"
-                                );
-                                //FIXME: if we can't send messages it means the receiver has dropped,
-                                //which means we should... return? abort?
+                        for id in launchable.iter() {
+                            let timing = create_timer(id.clone(), nth_wave);
+
+                            let job = self.jobs_pending.get_mut(id).unwrap();
+                            log::trace!("Start {:?}", id);
+                            job.running = true;
+                            if !job.run {
+                                if let Err(e) =
+                                    send.send((id.clone(), Ok(()), JobTime::nop(id.clone())))
+                                {
+                                    log::error!(
+                                        "Unable to write nop {id:?} to completion channel: {e}"
+                                    );
+                                    //FIXME: if we can't send messages it means the receiver has dropped,
+                                    //which means we should... return? abort?
+                                }
+                                runnable_count -= 1;
+                                continue;
                             }
-                            runnable_count -= 1;
-                            continue;
-                        }
-                        let work_context = AnyContext::for_work(
-                            fe_root,
-                            be_root,
-                            id,
-                            job.read_access.clone(),
-                            job.write_access.clone(),
-                        );
+                            let work = job
+                                .work
+                                .take()
+                                .expect("{id:?} ready to run but has no work?!");
+                            let work_context = AnyContext::for_work(
+                                fe_root,
+                                be_root,
+                                id,
+                                job.read_access.clone(),
+                                job.write_access.clone(),
+                            );
 
-                        let timing = timing.queued();
-                        run_queue.push((work, timing, work_context));
+                            let counters = self.counters(id);
+                            let timing = timing.queued();
+                            run_queue.push((work, timing, work_context, counters));
+                        }
+
+                        // Try to prioritize the critical path based on --emit-timing observation
+                        // <https://github.com/googlefonts/fontc/issues/456>, <https://github.com/googlefonts/fontc/pull/565>
+                        run_queue.sort_by_cached_key(|(work, ..)| priority(&work.id()));
+
+                        self.timer.add(timing.complete());
                     }
 
-                    // Try to prioritize the critical path based on --emit-timing observation
-                    // <https://github.com/googlefonts/fontc/issues/456>, <https://github.com/googlefonts/fontc/pull/565>
-                    run_queue.sort_by_cached_key(|(work, ..)| {
-                        // Higher priority sorts last, which means run first due to pop
-                        // We basically want things that block the glyph order => kern => fea sequence to go asap
-                        match work.id() {
-                            AnyWorkId::Fe(FeWorkIdentifier::Features) => 99,
-                            AnyWorkId::Fe(FeWorkIdentifier::Kerning) => 99,
-                            AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) => 99,
-                            AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => 99,
-                            AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => 99,
-                            AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => 99,
-                            AnyWorkId::Be(BeWorkIdentifier::Kerning) => 99,
-                            AnyWorkId::Be(BeWorkIdentifier::Features) => 99,
-                            AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..)) => 0,
-                            AnyWorkId::Be(BeWorkIdentifier::GvarFragment(..)) => 0,
-                            _ => 32,
-                        }
-                    });
-                }
+                    // Spawn for every job that's executable. Each spawn will pull one item from the run queue.
+                    for _ in 0..runnable_count {
+                        let send = send.clone();
+                        let run_queue = run_queue.clone();
+                        let abort = abort_queued_jobs.clone();
 
-                // Spawn for every job that's executable. Each spawn will pull one item from the run queue.
-                for _ in 0..runnable_count {
-                    let send = send.clone();
-                    let run_queue = run_queue.clone();
-                    let abort = abort_queued_jobs.clone();
-
-                    scope.spawn(move |_| {
-                        let runnable = { run_queue.lock().unwrap().pop() };
-                        let Some((work, timing, work_context)) = runnable else {
-                            panic!("Spawned more jobs than items available to run");
-                        };
-                        let id = work.id();
-                        let timing = timing.run();
-                        if abort.load(Ordering::Relaxed) {
-                            log::trace!("Aborting {:?}", id);
-                            return;
-                        }
-                        // # Unwind Safety
-                        //
-                        // 'unwind safety' does not impact memory safety, but
-                        // it may impact program correctness; the thread may have
-                        // left shared memory in an inconsistent state.
-                        //
-                        // I believe this is not a concern for us, as we cancel any
-                        // pending jobs after seeing a panic and jobs that depend
-                        // on state produced by the panicking job must be scheduled
-                        // after it. Unless we have jobs that are mutating
-                        // shared resources then I think this is fine.
-                        //
-                        // references:
-                        // <https://doc.rust-lang.org/nomicon/exception-safety.html#exception-safety>
-                        // <https://doc.rust-lang.org/std/panic/trait.UnwindSafe.html>
-                        let result = match std::panic::catch_unwind(AssertUnwindSafe(|| {
-                            work.exec(work_context)
-                        })) {
-                            Ok(result) => result,
-                            Err(err) => {
-                                let msg = get_panic_message(err);
-                                abort.store(true, Ordering::Relaxed);
-                                Err(AnyWorkError::Panic(msg))
+                        scope.spawn(move |_| {
+                            let runnable = { run_queue.lock().unwrap().pop() };
+                            let Some((work, timing, work_context, counters)) = runnable else {
+                                panic!("Spawned more jobs than items available to run");
+                            };
+                            let id = work.id();
+                            let timing = timing.run();
+                            if abort.load(Ordering::Relaxed) {
+                                log::trace!("Aborting {:?}", id);
+                                return;
                             }
-                        };
-                        let timing = timing.complete();
-                        if let Err(e) = send.send((id.clone(), result, timing)) {
-                            log::error!("Unable to write {id:?} to completion channel: {e}");
-                        }
-                    })
+                            // # Unwind Safety
+                            //
+                            // 'unwind safety' does not impact memory safety, but
+                            // it may impact program correctness; the thread may have
+                            // left shared memory in an inconsistent state.
+                            //
+                            // I believe this is not a concern for us, as we cancel any
+                            // pending jobs after seeing a panic and jobs that depend
+                            // on state produced by the panicking job must be scheduled
+                            // after it. Unless we have jobs that are mutating
+                            // shared resources then I think this is fine.
+                            //
+                            // references:
+                            // <https://doc.rust-lang.org/nomicon/exception-safety.html#exception-safety>
+                            // <https://doc.rust-lang.org/std/panic/trait.UnwindSafe.html>
+                            let result = match std::panic::catch_unwind(AssertUnwindSafe(|| {
+                                work.exec(work_context)
+                            })) {
+                                Ok(result) => result,
+                                Err(err) => {
+                                    let msg = get_panic_message(err);
+                                    abort.store(true, Ordering::Relaxed);
+                                    Err(AnyWorkError::Panic(msg))
+                                }
+                            };
+                            // Decrement counters immediately so all-of detection checks true
+                            // before our success result has passed through the channel
+                            // At peak times, such as completion of tons of glyphs, the channel seems
+                            // to have tens of ms of delay.
+                            if result.is_ok() {
+                                for counter in counters {
+                                    counter.fetch_sub(1, Ordering::AcqRel);
+                                }
+                            }
+                            let timing = timing.complete();
+                            if let Err(e) = send.send((id.clone(), result, timing)) {
+                                log::error!("Unable to write {id:?} to completion channel: {e}");
+                            }
+                        })
+                    }
                 }
 
                 // Block for things to phone home to say they are done
                 // Then complete everything that has reported since our last check
-                let successes = self.read_completions(&recv, RecvType::Blocking)?;
-                successes
-                    .into_iter()
-                    .for_each(|(s, t)| self.handle_success(fe_root, s, t));
+                if successes.is_empty() {
+                    self.read_completions(&mut successes, &recv, RecvType::Blocking)?;
+                    successes
+                        .iter()
+                        .for_each(|(s, t)| self.handle_success(fe_root, s.clone(), t.clone()));
+                }
             }
             Ok::<(), Error>(())
         })?;
 
         // If ^ exited due to error the scope awaited any live tasks; capture their results
-        self.read_completions(&recv, RecvType::NonBlocking)?;
+        self.read_completions(&mut Vec::new(), &recv, RecvType::NonBlocking)?;
 
-        if self.error.is_empty() && self.success.len() != self.job_count {
-            panic!(
-                "No errors but only {}/{} succeeded?!",
-                self.success.len(),
-                self.job_count
-            );
+        if self.error.is_empty() {
+            if self.success.len() != self.job_count {
+                panic!(
+                    "No errors but only {}/{} succeeded?!",
+                    self.success.len(),
+                    self.job_count
+                );
+            }
+            if self
+                .count_pending
+                .iter()
+                .any(|(_, c)| c.load(Ordering::Acquire) != 0)
+            {
+                panic!(
+                    "Not all counts by discriminant are 0\n{:#?}",
+                    self.count_pending
+                );
+            }
         }
 
         Ok(self.timer)
@@ -438,10 +573,11 @@ impl<'a> Workload<'a> {
 
     fn read_completions(
         &mut self,
+        successes: &mut Vec<(AnyWorkId, JobTime)>,
         recv: &Receiver<(AnyWorkId, Result<(), AnyWorkError>, JobTime)>,
         initial_read: RecvType,
-    ) -> Result<Vec<(AnyWorkId, JobTime)>, Error> {
-        let mut successes = Vec::new();
+    ) -> Result<(), Error> {
+        successes.clear();
         let mut opt_complete = match initial_read {
             RecvType::Blocking => match recv.recv() {
                 Ok(completed) => Some(completed),
@@ -491,7 +627,7 @@ impl<'a> Workload<'a> {
         if !self.error.is_empty() {
             return Err(Error::TasksFailed(self.error.clone()));
         }
-        Ok(successes)
+        Ok(())
     }
 
     #[cfg(test)]
@@ -518,6 +654,10 @@ impl<'a> Workload<'a> {
     #[cfg(test)]
     pub fn run_for_test(&mut self, fe_root: &FeContext, be_root: &BeContext) -> HashSet<AnyWorkId> {
         let pre_success = self.success.clone();
+        let mut sorted_pre_success = pre_success.iter().collect::<Vec<_>>();
+        sorted_pre_success.sort();
+        debug!("pre-success {sorted_pre_success:?}");
+
         let mut launchable = Vec::new();
         while !self.jobs_pending.is_empty() {
             self.update_launchable(&mut launchable);
@@ -532,13 +672,21 @@ impl<'a> Workload<'a> {
                 for (id, job) in self.jobs_pending.iter() {
                     let unfulfilled = self.unfulfilled_deps(job);
                     log::error!("  {id:?}, has unfulfilled dependencies: {unfulfilled:?}");
-                    for id in unfulfilled.iter() {
-                        log::error!(
-                            "    {id:?}, has unfulfilled dependencies: {:?}",
-                            self.unfulfilled_deps(self.jobs_pending.get(id).unwrap())
-                        );
-                    }
                 }
+                log::error!("Count by discriminant:");
+                let mut counts = self
+                    .count_pending
+                    .iter()
+                    .filter_map(|(k, c)| {
+                        let value = c.load(Ordering::Acquire);
+                        (value > 0).then_some((k, value))
+                    })
+                    .collect::<Vec<_>>();
+                counts.sort();
+                for (key, count) in counts {
+                    log::error!("  {key} {count}");
+                }
+
                 assert!(
                     !launchable.is_empty(),
                     "Unable to make forward progress, bad graph?"
@@ -555,15 +703,30 @@ impl<'a> Workload<'a> {
                 log::debug!("Exec {:?}", id);
                 let timing = timing.run();
                 job.work
-                    .expect("{id:?} should have work!")
+                    .unwrap_or_else(|| panic!("{id:?} should have work!"))
                     .exec(context)
                     .unwrap_or_else(|e| panic!("{id:?} failed: {e:?}"));
+
+                for counter in self.counters(id) {
+                    counter.fetch_sub(1, Ordering::AcqRel);
+                }
+
                 let timing = timing.complete();
                 assert!(
                     self.success.insert(id.clone()),
                     "We just did {id:?} a second time?"
                 );
                 self.handle_success(fe_root, id.clone(), timing);
+            } else {
+                for counter in self.counters(id) {
+                    counter.fetch_sub(1, Ordering::AcqRel);
+                }
+                if let Some(also_completes) = self.also_completes.get(id).cloned() {
+                    self.complete_one(id.clone(), false);
+                    for also in also_completes {
+                        self.complete_one(also, true);
+                    }
+                }
             }
         }
         self.success.difference(&pre_success).cloned().collect()

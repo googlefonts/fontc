@@ -4,15 +4,85 @@ use std::{
     collections::HashSet,
     fmt::{Debug, Display},
     hash::Hash,
-    sync::Arc,
 };
 
 pub const MISSING_DATA: &str = "Missing data, dependency management failed us?";
 
+/// Identifies all items of the same group, typically enum variant, of an identifer
+///
+/// String because it's enormously easier to understand debug output that way
+pub type IdentifierDiscriminant = &'static str;
+
 /// A type that affords identity.
 ///
 /// Frequently copied, used in hashmap/sets and printed to logs, hence the trait list.
-pub trait Identifier: Debug + Clone + Eq + Hash {}
+pub trait Identifier: Debug + Clone + Eq + Hash {
+    /// Return a value that is consistent across all instances in the same group, e.g. enum variant.
+    fn discriminant(&self) -> IdentifierDiscriminant;
+}
+
+pub struct AccessBuilder<I: Identifier> {
+    access: Access<I>,
+}
+
+impl<I: Identifier> Default for AccessBuilder<I> {
+    fn default() -> Self {
+        Self {
+            access: Access::None,
+        }
+    }
+}
+
+impl<I: Identifier> AccessBuilder<I> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn add_access(mut self, id: AccessType<I>) -> Self {
+        self.access = match self.access {
+            Access::All => self.access,
+            Access::None => match id {
+                AccessType::SpecificInstanceOfVariant(id) => Access::SpecificInstanceOfVariant(id),
+                AccessType::Variant(id) => Access::Variant(id),
+            },
+            Access::SpecificInstanceOfVariant(prior_id) => Access::Set(HashSet::from([
+                AccessType::SpecificInstanceOfVariant(prior_id),
+                id,
+            ])),
+            Access::Variant(prior_id) => {
+                Access::Set(HashSet::from([AccessType::Variant(prior_id), id]))
+            }
+            Access::Set(mut ids) => {
+                ids.insert(id);
+                Access::Set(ids)
+            }
+            Access::Unknown => panic!("Cannot combine {:?} and {id:?}", self.access),
+        };
+        self
+    }
+
+    /// Access to all examples of an identifier is required.
+    ///
+    /// For example, an identifier where there can only be a single example
+    /// such as for a unit-variant of an enum or where access to all examples
+    /// is required, such as access to IR for any glyph.
+    pub fn variant(self, id: impl Into<I>) -> Self {
+        self.add_access(AccessType::Variant(id.into()))
+    }
+
+    /// Access to a specific example of a general class is required.
+    ///
+    /// For example, the glyph variations of a specific glyph. If there can only
+    /// be one instance of the class, such as a unit-variant of an enum, using
+    /// this method results in less efficient processing than
+    pub fn specific_instance(self, id: impl Into<I>) -> Self {
+        self.add_access(AccessType::SpecificInstanceOfVariant(id.into()))
+    }
+
+    pub fn build(self) -> Access<I> {
+        self.access
+    }
+}
 
 /// A rule that represents whether access to something is permitted.
 #[derive(Clone)]
@@ -24,12 +94,20 @@ pub enum Access<I: Identifier> {
     Unknown,
     /// Any access is permitted
     All,
-    /// Access to one specific resource is permitted
-    One(I),
-    /// Access to multiple resources is permitted
-    Set(HashSet<I>),
-    /// A closure is used to determine access
-    Custom(Arc<dyn Fn(&I) -> bool + Send + Sync>),
+    /// Access to a specific example of a general class is required.
+    ///
+    /// For example, the glyph variations of a specific glyph. If there can only
+    /// be one instance of the class, such as a unit-variant of an enum, using
+    /// this method results in less efficient processing than [`Access::Variant`]
+    SpecificInstanceOfVariant(I),
+    /// Access to all examples of an identifier is required.
+    ///
+    /// For example, an identifier where there can only be a single example
+    /// such as for a unit-variant of an enum or where access to all examples
+    /// is required, such as access to IR for any glyph.
+    Variant(I),
+    /// Access to multiple resources or classes of resource is permitted
+    Set(HashSet<AccessType<I>>),
 }
 
 impl<I: Identifier> Debug for Access<I> {
@@ -38,9 +116,9 @@ impl<I: Identifier> Debug for Access<I> {
             Self::None => write!(f, "None"),
             Self::Unknown => write!(f, "Unknown"),
             Self::All => write!(f, "All"),
-            Self::One(arg0) => f.debug_tuple("One").field(arg0).finish(),
-            Self::Set(arg0) => f.debug_tuple("Set").field(arg0).finish(),
-            Self::Custom(..) => write!(f, "Custom"),
+            Self::SpecificInstanceOfVariant(id) => f.debug_tuple("Specific").field(id).finish(),
+            Self::Variant(id) => f.debug_tuple("Any").field(id).finish(),
+            Self::Set(ids) => f.debug_tuple("Set").field(ids).finish(),
         }
     }
 }
@@ -73,7 +151,6 @@ where
     /// What this work needs to be able to read; our dependencies
     ///
     /// Anything we can read should be completed before we execute.
-    /// Where possible avoid [Access::Custom]; it has to be rechecked whenever the task set changes.
     ///
     /// The default is no access.
     fn read_access(&self) -> Access<I> {
@@ -86,10 +163,14 @@ where
     fn write_access(&self) -> Access<I> {
         let mut also = self.also_completes();
         if also.is_empty() {
-            return Access::One(self.id());
+            return Access::SpecificInstanceOfVariant(self.id());
         }
         also.push(self.id());
-        Access::Set(also.into_iter().collect())
+        Access::Set(
+            also.into_iter()
+                .map(|id| AccessType::SpecificInstanceOfVariant(id))
+                .collect(),
+        )
     }
 
     fn exec(&self, context: &C) -> Result<(), E>;
@@ -120,8 +201,8 @@ impl<I: Identifier> Default for AccessControlList<I> {
 impl<I: Identifier + Send + Sync + 'static> AccessControlList<I> {
     pub fn read_only() -> AccessControlList<I> {
         AccessControlList {
-            write_access: Access::none(),
-            read_access: Access::all(),
+            write_access: Access::None,
+            read_access: Access::All,
         }
     }
 
@@ -134,35 +215,30 @@ impl<I: Identifier + Send + Sync + 'static> AccessControlList<I> {
 }
 
 impl<I: Identifier> Access<I> {
-    /// Create a new access rule with custom logic
-    pub fn custom<F: Fn(&I) -> bool + Send + Sync + 'static>(func: F) -> Self {
-        Access::Custom(Arc::new(func))
-    }
-
-    pub fn all() -> Self {
-        Self::All
-    }
-
-    pub fn none() -> Self {
-        Self::None
-    }
-
-    pub fn one(allow_id: I) -> Self
-    where
-        I: Eq + Send + Sync + 'static,
-    {
-        Self::One(allow_id)
-    }
-
     /// Check whether a given id is allowed per this rule.
     pub fn check(&self, id: &I) -> bool {
         match self {
             Access::None => false,
             Access::Unknown => false,
             Access::All => true,
-            Access::One(allow) => id == allow,
-            Access::Set(ids) => ids.contains(id),
-            Access::Custom(f) => f(id),
+            Access::SpecificInstanceOfVariant(all) => all == id,
+            Access::Variant(all) => all.discriminant() == id.discriminant(),
+            Access::Set(ids) => ids.iter().any(|allow| allow.check(id)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AccessType<I: Identifier> {
+    Variant(I),
+    SpecificInstanceOfVariant(I),
+}
+
+impl<I: Identifier> AccessType<I> {
+    fn check(&self, id: &I) -> bool {
+        match self {
+            AccessType::Variant(d) => d.discriminant() == id.discriminant(),
+            AccessType::SpecificInstanceOfVariant(one) => one == id,
         }
     }
 }
@@ -199,7 +275,7 @@ fn assert_access_many<I: Identifier>(
 fn assert_access_one<I: Identifier>(access: &Access<I>, id: &I, desc: &str) {
     let allow = access.check(id);
     if !allow {
-        panic!("Illegal {desc} of {id:?}");
+        panic!("Illegal {desc} of {id:?} per {access:?}");
     }
 }
 

@@ -1,8 +1,6 @@
 //! Generates a [post](https://learn.microsoft.com/en-us/typography/opentype/spec/post) table.
 
-use std::collections::HashSet;
-
-use fontdrasil::orchestration::{Access, Work};
+use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
     tables::post::Post,
@@ -28,11 +26,11 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Set(HashSet::from([
-            FeWorkId::StaticMetadata.into(),
-            FeWorkId::GlobalMetrics.into(),
-            FeWorkId::GlyphOrder.into(),
-        ]))
+        AccessBuilder::new()
+            .variant(FeWorkId::StaticMetadata)
+            .variant(FeWorkId::GlyphOrder)
+            .variant(FeWorkId::GlobalMetrics)
+            .build()
     }
 
     /// Generate [post](https://learn.microsoft.com/en-us/typography/opentype/spec/post)

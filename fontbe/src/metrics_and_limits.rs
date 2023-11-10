@@ -4,10 +4,12 @@
 use std::{
     cmp::{max, min},
     collections::{HashMap, HashSet},
-    sync::Arc,
 };
 
-use fontdrasil::orchestration::{Access, Work};
+use fontdrasil::{
+    orchestration::{Access, AccessBuilder, Work},
+    types::GlyphName,
+};
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
     dump_table,
@@ -199,28 +201,22 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::Glyph(..))
-                    | AnyWorkId::Fe(FeWorkId::GlobalMetrics)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Be(WorkId::GlyfFragment(..))
-                    | AnyWorkId::Be(WorkId::Head)
-            )
-        }))
+        AccessBuilder::new()
+            .variant(FeWorkId::GlobalMetrics)
+            .variant(FeWorkId::GlyphOrder)
+            .variant(WorkId::Head)
+            .variant(FeWorkId::Glyph(GlyphName::NOTDEF))
+            .variant(WorkId::GlyfFragment(GlyphName::NOTDEF))
+            .build()
     }
 
     fn write_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Be(WorkId::Hmtx)
-                    | AnyWorkId::Be(WorkId::Hhea)
-                    | AnyWorkId::Be(WorkId::Maxp)
-                    | AnyWorkId::Be(WorkId::Head)
-            )
-        }))
+        AccessBuilder::new()
+            .variant(WorkId::Hmtx)
+            .variant(WorkId::Hhea)
+            .variant(WorkId::Maxp)
+            .variant(WorkId::Head)
+            .build()
     }
 
     fn also_completes(&self) -> Vec<AnyWorkId> {

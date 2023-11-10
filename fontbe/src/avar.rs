@@ -96,7 +96,7 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::One(FeWorkId::StaticMetadata.into())
+        Access::Variant(AnyWorkId::Fe(FeWorkId::StaticMetadata))
     }
 
     /// Generate [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar)

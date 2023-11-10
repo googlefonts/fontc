@@ -732,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn second_compile_only_glyph() {
+    fn second_compile_only_glyph_ir() {
         // glyph depends on static metadata, which isn't going to run
         let result = TestCompile::compile_source("wght_var.designspace");
         assert!(result.work_executed.len() > 1);

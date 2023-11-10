@@ -1,8 +1,6 @@
 //! Merge tables into a font
 
-use std::collections::HashSet;
-
-use fontdrasil::orchestration::{Access, Work};
+use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use log::debug;
 use write_fonts::{
@@ -110,28 +108,28 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Set(HashSet::from([
-            WorkId::Avar.into(),
-            WorkId::Cmap.into(),
-            WorkId::Fvar.into(),
-            WorkId::Head.into(),
-            WorkId::Hhea.into(),
-            WorkId::Hmtx.into(),
-            WorkId::Glyf.into(),
-            WorkId::Gpos.into(),
-            WorkId::Gsub.into(),
-            WorkId::Gdef.into(),
-            WorkId::Gvar.into(),
-            WorkId::Loca.into(),
-            WorkId::Maxp.into(),
-            WorkId::Name.into(),
-            WorkId::Os2.into(),
-            WorkId::Post.into(),
-            WorkId::Stat.into(),
-            WorkId::Hvar.into(),
-            FeWorkId::StaticMetadata.into(),
-            WorkId::LocaFormat.into(),
-        ]))
+        AccessBuilder::new()
+            .variant(WorkId::Avar)
+            .variant(WorkId::Cmap)
+            .variant(WorkId::Fvar)
+            .variant(WorkId::Head)
+            .variant(WorkId::Hhea)
+            .variant(WorkId::Hmtx)
+            .variant(WorkId::Glyf)
+            .variant(WorkId::Gpos)
+            .variant(WorkId::Gsub)
+            .variant(WorkId::Gdef)
+            .variant(WorkId::Gvar)
+            .variant(WorkId::Loca)
+            .variant(WorkId::Maxp)
+            .variant(WorkId::Name)
+            .variant(WorkId::Os2)
+            .variant(WorkId::Post)
+            .variant(WorkId::Stat)
+            .variant(WorkId::Hvar)
+            .variant(WorkId::LocaFormat)
+            .variant(FeWorkId::StaticMetadata)
+            .build()
     }
 
     /// Glue binary tables into a font

@@ -8,7 +8,7 @@ use fontbe::{
     error::Error as BeError,
     orchestration::{AnyWorkId, BeWork, Context as BeContext},
 };
-use fontdrasil::orchestration::Access;
+use fontdrasil::orchestration::{Access, AccessType};
 use fontir::{
     error::WorkError as FeError,
     orchestration::{Context as FeContext, IrWork, WorkId},
@@ -134,17 +134,65 @@ impl AnyAccess {
         }
     }
 
-    pub fn unwrap_be(&self) -> Access<AnyWorkId> {
+    pub fn to_be(&self) -> Access<AnyWorkId> {
         match self {
-            AnyAccess::Fe(..) => panic!("Not BE access"),
+            AnyAccess::Fe(access) => match access {
+                Access::All => Access::All,
+                Access::None => Access::None,
+                Access::Unknown => Access::Unknown,
+                Access::Variant(id) => Access::Variant(id.clone().into()),
+                Access::SpecificInstanceOfVariant(id) => {
+                    Access::SpecificInstanceOfVariant(id.clone().into())
+                }
+                Access::Set(ids) => Access::Set(
+                    ids.iter()
+                        .map(|id| match id {
+                            AccessType::SpecificInstanceOfVariant(id) => {
+                                AccessType::SpecificInstanceOfVariant(id.clone().into())
+                            }
+                            AccessType::Variant(exemplar) => {
+                                AccessType::Variant(exemplar.clone().into())
+                            }
+                        })
+                        .collect(),
+                ),
+            },
             AnyAccess::Be(access) => access.clone(),
         }
     }
 
-    pub fn unwrap_fe(&self) -> Access<WorkId> {
+    pub fn to_fe(&self) -> Access<WorkId> {
         match self {
             AnyAccess::Fe(access) => access.clone(),
-            AnyAccess::Be(..) => panic!("Not FE access"),
+            AnyAccess::Be(access) => match access {
+                Access::All => Access::All,
+                Access::None => Access::None,
+                Access::Unknown => Access::Unknown,
+                Access::Variant(id) => match id {
+                    AnyWorkId::Fe(id) => Access::Variant(id.clone()),
+                    AnyWorkId::Be(..) | AnyWorkId::InternalTiming(..) => Access::None,
+                },
+                Access::SpecificInstanceOfVariant(id) => match id {
+                    AnyWorkId::Fe(id) => Access::SpecificInstanceOfVariant(id.clone()),
+                    AnyWorkId::Be(..) | AnyWorkId::InternalTiming(..) => Access::None,
+                },
+                Access::Set(ids) => Access::Set(
+                    ids.iter()
+                        .filter_map(|id| match id {
+                            AccessType::SpecificInstanceOfVariant(id) => match id {
+                                AnyWorkId::Fe(id) => {
+                                    Some(AccessType::SpecificInstanceOfVariant(id.clone()))
+                                }
+                                AnyWorkId::Be(..) | AnyWorkId::InternalTiming(..) => None,
+                            },
+                            AccessType::Variant(exemplar) => match exemplar {
+                                AnyWorkId::Fe(id) => Some(AccessType::Variant(id.clone())),
+                                AnyWorkId::Be(..) | AnyWorkId::InternalTiming(..) => None,
+                            },
+                        })
+                        .collect(),
+                ),
+            },
         }
     }
 }
@@ -163,13 +211,12 @@ impl AnyContext {
         write_access: AnyAccess,
     ) -> AnyContext {
         match work_id {
-            AnyWorkId::Be(..) => AnyContext::Be(
-                be_root.copy_for_work(read_access.unwrap_be(), write_access.unwrap_be()),
-            ),
-            AnyWorkId::Fe(..) => AnyContext::Fe(fe_root.copy_for_work(
-                Access::custom(move |id: &WorkId| read_access.check(&AnyWorkId::Fe(id.clone()))),
-                Access::custom(move |id: &WorkId| write_access.check(&AnyWorkId::Fe(id.clone()))),
-            )),
+            AnyWorkId::Be(..) => {
+                AnyContext::Be(be_root.copy_for_work(read_access.to_be(), write_access.to_be()))
+            }
+            AnyWorkId::Fe(..) => {
+                AnyContext::Fe(fe_root.copy_for_work(read_access.to_fe(), write_access.to_fe()))
+            }
             AnyWorkId::InternalTiming(..) => {
                 panic!("Should never create a context for internal timing")
             }

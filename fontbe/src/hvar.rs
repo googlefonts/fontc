@@ -2,8 +2,8 @@
 
 use std::any::type_name;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
 
+use fontdrasil::orchestration::AccessBuilder;
 use indexmap::IndexMap;
 
 use fontdrasil::{
@@ -154,14 +154,11 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::Glyph(..))
-                    | AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-            )
-        }))
+        AccessBuilder::new()
+            .variant(FeWorkId::StaticMetadata)
+            .variant(FeWorkId::GlyphOrder)
+            .variant(FeWorkId::Glyph(GlyphName::NOTDEF))
+            .build()
     }
 
     /// Generate [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR)
