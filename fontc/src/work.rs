@@ -2,13 +2,13 @@
 //!
 //! Basically enums that can be a FeWhatever or a BeWhatever.
 
-use std::fmt::Display;
+use std::{collections::HashSet, fmt::Display};
 
 use fontbe::{
     error::Error as BeError,
     orchestration::{AnyWorkId, BeWork, Context as BeContext},
 };
-use fontdrasil::orchestration::Access;
+use fontdrasil::orchestration::{Access, AllOrOne};
 use fontir::{
     error::WorkError as FeError,
     orchestration::{Context as FeContext, IrWork, WorkId},
@@ -121,6 +121,14 @@ impl From<Access<WorkId>> for AnyAccess {
     }
 }
 
+fn access_one_to_access_fe(id: &AnyWorkId) -> Access<WorkId> {
+    match id {
+        AnyWorkId::Fe(id) => Access::One(id.clone()),
+        AnyWorkId::AllOfFe(id) => Access::Set(HashSet::from([AllOrOne::All(id.clone())])),
+        AnyWorkId::Be(..) | AnyWorkId::AllOfBe(..) | AnyWorkId::InternalTiming(..) => Access::None,
+    }
+}
+
 impl AnyAccess {
     pub fn check(&self, id: &AnyWorkId) -> bool {
         match self {
@@ -134,17 +142,51 @@ impl AnyAccess {
         }
     }
 
-    pub fn unwrap_be(&self) -> Access<AnyWorkId> {
+    pub fn to_be(&self) -> Access<AnyWorkId> {
         match self {
-            AnyAccess::Fe(..) => panic!("Not BE access"),
+            AnyAccess::Fe(access) => match access {
+                Access::All => Access::All,
+                Access::None => Access::None,
+                Access::Unknown => Access::Unknown,
+                Access::One(id) => Access::One(id.clone().into()),
+                Access::Set(ids) => Access::Set(
+                    ids.iter()
+                        .map(|id| match id {
+                            AllOrOne::One(id) => AllOrOne::One(id.clone().into()),
+                            AllOrOne::All(exemplar) => AllOrOne::One(exemplar.clone().into()),
+                        })
+                        .collect(),
+                ),
+            },
             AnyAccess::Be(access) => access.clone(),
         }
     }
 
-    pub fn unwrap_fe(&self) -> Access<WorkId> {
+    pub fn to_fe(&self) -> Access<WorkId> {
         match self {
             AnyAccess::Fe(access) => access.clone(),
-            AnyAccess::Be(..) => panic!("Not FE access"),
+            AnyAccess::Be(access) => match access {
+                Access::All => Access::All,
+                Access::None => Access::None,
+                Access::Unknown => Access::Unknown,
+                Access::One(id) => access_one_to_access_fe(id),
+                Access::Set(ids) => Access::Set(
+                    ids.iter()
+                        .filter_map(|id| match id {
+                            AllOrOne::One(id) => match id {
+                                AnyWorkId::Fe(id) => Some(AllOrOne::One(id.clone())),
+                                AnyWorkId::AllOfFe(exemplar) => {
+                                    Some(AllOrOne::All(exemplar.clone()))
+                                }
+                                AnyWorkId::Be(..)
+                                | AnyWorkId::AllOfBe(..)
+                                | AnyWorkId::InternalTiming(..) => None,
+                            },
+                            AllOrOne::All(exemplar) => panic!("Unsupported for now: {exemplar:?}"),
+                        })
+                        .collect(),
+                ),
+            },
         }
     }
 }
@@ -163,15 +205,17 @@ impl AnyContext {
         write_access: AnyAccess,
     ) -> AnyContext {
         match work_id {
-            AnyWorkId::Be(..) => AnyContext::Be(
-                be_root.copy_for_work(read_access.unwrap_be(), write_access.unwrap_be()),
-            ),
-            AnyWorkId::Fe(..) => AnyContext::Fe(fe_root.copy_for_work(
-                Access::custom(move |id: &WorkId| read_access.check(&AnyWorkId::Fe(id.clone()))),
-                Access::custom(move |id: &WorkId| write_access.check(&AnyWorkId::Fe(id.clone()))),
-            )),
+            AnyWorkId::Be(..) => {
+                AnyContext::Be(be_root.copy_for_work(read_access.to_be(), write_access.to_be()))
+            }
+            AnyWorkId::Fe(..) => {
+                AnyContext::Fe(fe_root.copy_for_work(read_access.to_fe(), write_access.to_fe()))
+            }
             AnyWorkId::InternalTiming(..) => {
                 panic!("Should never create a context for internal timing")
+            }
+            AnyWorkId::AllOfFe(..) | AnyWorkId::AllOfBe(..) => {
+                panic!("Should never create a context for AllOf")
             }
         }
     }

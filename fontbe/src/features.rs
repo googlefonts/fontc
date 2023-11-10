@@ -484,11 +484,11 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
 
     fn read_access(&self) -> Access<AnyWorkId> {
         Access::Set(HashSet::from([
-            AnyWorkId::Fe(FeWorkId::GlyphOrder),
-            AnyWorkId::Fe(FeWorkId::StaticMetadata),
-            AnyWorkId::Fe(FeWorkId::Features),
-            AnyWorkId::Be(WorkId::Kerning),
-            AnyWorkId::Be(WorkId::Marks),
+            AnyWorkId::Fe(FeWorkId::GlyphOrder).into(),
+            AnyWorkId::Fe(FeWorkId::StaticMetadata).into(),
+            AnyWorkId::Fe(FeWorkId::Features).into(),
+            AnyWorkId::Be(WorkId::Kerning).into(),
+            AnyWorkId::Be(WorkId::Marks).into(),
         ]))
     }
 

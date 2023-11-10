@@ -12,7 +12,7 @@ use std::{
 use crate::{error::WorkError, ir, paths::Paths, source::Input};
 use bitflags::bitflags;
 use fontdrasil::{
-    orchestration::{Access, AccessControlList, Identifier, Work},
+    orchestration::{Access, AccessControlList, Identifier, IdentifierDiscriminant, Work},
     types::GlyphName,
 };
 use parking_lot::RwLock;
@@ -329,7 +329,21 @@ pub enum WorkId {
     Anchor(GlyphName),
 }
 
-impl Identifier for WorkId {}
+impl Identifier for WorkId {
+    fn discriminant(&self) -> IdentifierDiscriminant {
+        match self {
+            WorkId::StaticMetadata => "IrStaticMetadata",
+            WorkId::GlobalMetrics => "IrGlobalMetrics",
+            WorkId::Glyph(..) => "IrGlyph",
+            WorkId::GlyphIrDelete(..) => "IrGlyphDelete",
+            WorkId::PreliminaryGlyphOrder => "IrPreliminaryGlyphOrder",
+            WorkId::GlyphOrder => "IrGlyphOrder",
+            WorkId::Features => "Features",
+            WorkId::Kerning => "Kerning",
+            WorkId::Anchor(..) => "IrAnchor",
+        }
+    }
+}
 
 pub type IrWork = dyn Work<Context, WorkId, WorkError> + Send;
 

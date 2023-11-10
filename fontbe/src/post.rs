@@ -25,8 +25,8 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
 
     fn read_access(&self) -> Access<AnyWorkId> {
         Access::Set(HashSet::from([
-            FeWorkId::StaticMetadata.into(),
-            FeWorkId::GlyphOrder.into(),
+            AnyWorkId::Fe(FeWorkId::StaticMetadata).into(),
+            AnyWorkId::Fe(FeWorkId::GlyphOrder).into(),
         ]))
     }
 

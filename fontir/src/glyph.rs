@@ -3,14 +3,11 @@
 //! Notably includes splitting glyphs with contours and components into one new glyph with
 //! the contours and one updated glyph with no contours that references the new gyph as a component.
 
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use fontdrasil::{
     coords::NormalizedLocation,
-    orchestration::{Access, Work},
+    orchestration::{Access, AllOrOne, Work},
     types::GlyphName,
 };
 use kurbo::Affine;
@@ -336,21 +333,19 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                WorkId::Glyph(..)
-                    | WorkId::StaticMetadata
-                    | WorkId::PreliminaryGlyphOrder
-                    | WorkId::GlobalMetrics
-            )
-        }))
+        Access::Set(HashSet::from([
+            AllOrOne::All(WorkId::StaticMetadata),
+            AllOrOne::All(WorkId::PreliminaryGlyphOrder),
+            AllOrOne::All(WorkId::GlobalMetrics),
+            AllOrOne::All(WorkId::Glyph(GlyphName::NOTDEF)), // specific name doesn't matter
+        ]))
     }
 
     fn write_access(&self) -> Access<WorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(id, WorkId::Glyph(..) | WorkId::GlyphOrder)
-        }))
+        Access::Set(HashSet::from([
+            WorkId::GlyphOrder.into(),
+            AllOrOne::All(WorkId::Glyph(GlyphName::NOTDEF)), // specific name doesn't matter
+        ]))
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {

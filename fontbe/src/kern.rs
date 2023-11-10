@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use fea_rs::{compile::ValueRecord as ValueRecordBuilder, GlyphSet};
-use fontdrasil::orchestration::{Access, Work};
+use fontdrasil::orchestration::{Access, AllOrOne, Work};
 use fontir::{ir::KernParticipant, orchestration::WorkId as FeWorkId};
 use write_fonts::types::GlyphId;
 
@@ -27,9 +27,9 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
 
     fn read_access(&self) -> Access<AnyWorkId> {
         Access::Set(HashSet::from([
-            FeWorkId::StaticMetadata.into(),
-            FeWorkId::Kerning.into(),
-            FeWorkId::GlyphOrder.into(),
+            AllOrOne::All(AnyWorkId::Fe(FeWorkId::StaticMetadata)),
+            AllOrOne::All(AnyWorkId::Fe(FeWorkId::Kerning)),
+            AllOrOne::All(AnyWorkId::Fe(FeWorkId::GlyphOrder)),
         ]))
     }
 

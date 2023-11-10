@@ -1,9 +1,9 @@
 //! Generates a [gvar](https://learn.microsoft.com/en-us/typography/opentype/spec/gvar) table.
 
-use std::sync::Arc;
+use std::collections::HashSet;
 
 use fontdrasil::{
-    orchestration::{Access, Work},
+    orchestration::{Access, AllOrOne, Work},
     types::GlyphName,
 };
 use fontir::{ir::GlyphOrder, orchestration::WorkId as FeWorkId};
@@ -42,14 +42,11 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Be(WorkId::GvarFragment(..))
-            )
-        }))
+        Access::Set(HashSet::from([
+            AnyWorkId::Fe(FeWorkId::StaticMetadata).into(),
+            AnyWorkId::Fe(FeWorkId::GlyphOrder).into(),
+            AllOrOne::All(AnyWorkId::AllOfBe(WorkId::GvarFragment(GlyphName::NOTDEF))), // specific name doesn't matter
+        ]))
     }
 
     /// Generate [gvar](https://learn.microsoft.com/en-us/typography/opentype/spec/gvar)

@@ -97,9 +97,9 @@ impl Work<Context, AnyWorkId, Error> for HeadWork {
 
     fn read_access(&self) -> Access<AnyWorkId> {
         Access::Set(HashSet::from([
-            FeWorkId::StaticMetadata.into(),
-            WorkId::Glyf.into(),
-            WorkId::LocaFormat.into(),
+            AnyWorkId::Fe(FeWorkId::StaticMetadata).into(),
+            AnyWorkId::Be(WorkId::Glyf).into(),
+            AnyWorkId::Be(WorkId::LocaFormat).into(),
         ]))
     }
 

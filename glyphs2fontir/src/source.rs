@@ -417,7 +417,7 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::One(WorkId::StaticMetadata)
+        Access::one(WorkId::StaticMetadata)
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
@@ -592,7 +592,10 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::Set(HashSet::from([WorkId::GlyphOrder, WorkId::StaticMetadata]))
+        Access::Set(HashSet::from([
+            WorkId::GlyphOrder.into(),
+            WorkId::StaticMetadata.into(),
+        ]))
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
@@ -711,8 +714,8 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
 
     fn write_access(&self) -> Access<WorkId> {
         Access::Set(HashSet::from([
-            WorkId::Glyph(self.glyph_name.clone()),
-            WorkId::Anchor(self.glyph_name.clone()),
+            WorkId::Glyph(self.glyph_name.clone()).into(),
+            WorkId::Anchor(self.glyph_name.clone()).into(),
         ]))
     }
 
@@ -947,8 +950,8 @@ mod tests {
         let task_context = context.copy_for_work(
             Access::none(),
             Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
+                WorkId::StaticMetadata.into(),
+                WorkId::PreliminaryGlyphOrder.into(),
             ])),
         );
         source
@@ -988,8 +991,8 @@ mod tests {
         let task_context = context.copy_for_work(
             Access::none(),
             Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
+                WorkId::StaticMetadata.into(),
+                WorkId::PreliminaryGlyphOrder.into(),
             ])),
         );
         source
@@ -1005,8 +1008,8 @@ mod tests {
         let task_context = context.copy_for_work(
             Access::none(),
             Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
+                WorkId::StaticMetadata.into(),
+                WorkId::PreliminaryGlyphOrder.into(),
             ])),
         );
         source
@@ -1065,8 +1068,8 @@ mod tests {
         let task_context = context.copy_for_work(
             Access::none(),
             Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
+                WorkId::StaticMetadata.into(),
+                WorkId::PreliminaryGlyphOrder.into(),
             ])),
         );
         source
@@ -1104,7 +1107,10 @@ mod tests {
             .set((*context.preliminary_glyph_order.get()).clone());
 
         let task_context = context.copy_for_work(
-            Access::Set(HashSet::from([WorkId::StaticMetadata, WorkId::GlyphOrder])),
+            Access::Set(HashSet::from([
+                WorkId::StaticMetadata.into(),
+                WorkId::GlyphOrder.into(),
+            ])),
             Access::one(WorkId::Kerning),
         );
         source
@@ -1129,8 +1135,8 @@ mod tests {
                 let task_context = context.copy_for_work(
                     Access::one(WorkId::StaticMetadata),
                     Access::Set(HashSet::from([
-                        WorkId::Glyph(glyph_name.clone()),
-                        WorkId::Anchor(glyph_name.clone()),
+                        WorkId::Glyph(glyph_name.clone()).into(),
+                        WorkId::Anchor(glyph_name.clone()).into(),
                     ])),
                 );
                 work.exec(&task_context)?;

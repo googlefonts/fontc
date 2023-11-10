@@ -4,15 +4,22 @@ use std::{
     collections::HashSet,
     fmt::{Debug, Display},
     hash::Hash,
-    sync::Arc,
 };
 
 pub const MISSING_DATA: &str = "Missing data, dependency management failed us?";
 
+/// Identifies all items of the same group, typically enum variant, of an identifer
+///
+/// String because it's enormously easier to understand debug output that way
+pub type IdentifierDiscriminant = &'static str;
+
 /// A type that affords identity.
 ///
 /// Frequently copied, used in hashmap/sets and printed to logs, hence the trait list.
-pub trait Identifier: Debug + Clone + Eq + Hash {}
+pub trait Identifier: Debug + Clone + Eq + Hash {
+    /// Return a value that is consistent across all instances in the same group, e.g. enum variant.
+    fn discriminant(&self) -> IdentifierDiscriminant;
+}
 
 /// A rule that represents whether access to something is permitted.
 #[derive(Clone)]
@@ -26,10 +33,8 @@ pub enum Access<I: Identifier> {
     All,
     /// Access to one specific resource is permitted
     One(I),
-    /// Access to multiple resources is permitted
-    Set(HashSet<I>),
-    /// A closure is used to determine access
-    Custom(Arc<dyn Fn(&I) -> bool + Send + Sync>),
+    /// Access to multiple resources or classes of resource is permitted
+    Set(HashSet<AllOrOne<I>>),
 }
 
 impl<I: Identifier> Debug for Access<I> {
@@ -38,9 +43,8 @@ impl<I: Identifier> Debug for Access<I> {
             Self::None => write!(f, "None"),
             Self::Unknown => write!(f, "Unknown"),
             Self::All => write!(f, "All"),
-            Self::One(arg0) => f.debug_tuple("One").field(arg0).finish(),
-            Self::Set(arg0) => f.debug_tuple("Set").field(arg0).finish(),
-            Self::Custom(..) => write!(f, "Custom"),
+            Self::One(id) => f.debug_tuple("One").field(id).finish(),
+            Self::Set(ids) => f.debug_tuple("Set").field(ids).finish(),
         }
     }
 }
@@ -73,7 +77,6 @@ where
     /// What this work needs to be able to read; our dependencies
     ///
     /// Anything we can read should be completed before we execute.
-    /// Where possible avoid [Access::Custom]; it has to be rechecked whenever the task set changes.
     ///
     /// The default is no access.
     fn read_access(&self) -> Access<I> {
@@ -89,7 +92,7 @@ where
             return Access::One(self.id());
         }
         also.push(self.id());
-        Access::Set(also.into_iter().collect())
+        Access::Set(also.into_iter().map(|id| id.into()).collect())
     }
 
     fn exec(&self, context: &C) -> Result<(), E>;
@@ -134,11 +137,6 @@ impl<I: Identifier + Send + Sync + 'static> AccessControlList<I> {
 }
 
 impl<I: Identifier> Access<I> {
-    /// Create a new access rule with custom logic
-    pub fn custom<F: Fn(&I) -> bool + Send + Sync + 'static>(func: F) -> Self {
-        Access::Custom(Arc::new(func))
-    }
-
     pub fn all() -> Self {
         Self::All
     }
@@ -160,9 +158,29 @@ impl<I: Identifier> Access<I> {
             Access::None => false,
             Access::Unknown => false,
             Access::All => true,
-            Access::One(allow) => id == allow,
-            Access::Set(ids) => ids.contains(id),
-            Access::Custom(f) => f(id),
+            Access::One(all) => all == id,
+            Access::Set(ids) => ids.iter().any(|allow| allow.check(id)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AllOrOne<I: Identifier> {
+    All(I),
+    One(I),
+}
+
+impl<I: Identifier> From<I> for AllOrOne<I> {
+    fn from(value: I) -> Self {
+        AllOrOne::One(value)
+    }
+}
+
+impl<I: Identifier> AllOrOne<I> {
+    fn check(&self, id: &I) -> bool {
+        match self {
+            AllOrOne::All(d) => d.discriminant() == id.discriminant(),
+            AllOrOne::One(one) => one == id,
         }
     }
 }
@@ -199,7 +217,7 @@ fn assert_access_many<I: Identifier>(
 fn assert_access_one<I: Identifier>(access: &Access<I>, id: &I, desc: &str) {
     let allow = access.check(id);
     if !allow {
-        panic!("Illegal {desc} of {id:?}");
+        panic!("Illegal {desc} of {id:?} per {access:?}");
     }
 }
 

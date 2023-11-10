@@ -122,6 +122,7 @@ impl ChangeDetector {
         match work_id {
             AnyWorkId::Fe(work_id) => self.ir_paths.target_file(work_id).is_file(),
             AnyWorkId::Be(work_id) => self.be_paths.target_file(work_id).is_file(),
+            AnyWorkId::AllOfFe(..) | AnyWorkId::AllOfBe(..) => false,
             AnyWorkId::InternalTiming(..) => false,
         }
     }

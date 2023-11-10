@@ -97,12 +97,13 @@ impl JobTimer {
                 }
                 writeln!(
                     out,
-                    "<title>{:.0}ms ({:.2}%) {:?}\nqueued at {:.0}ms\nrun at {:.0}ms\nWave {}</title>",
+                    "<title>{:.0}ms ({:.2}%) {:?}\nqueued at {:.0}ms\nrun at {:.0}ms\ndone at {:.0}ms\nWave {}</title>",
                     1000.0 * (job_end - job_start),
                     exec_pct,
                     timing.id,
                     1000.0 * job_queued,
                     1000.0 * job_start,
+                    1000.0 * job_end,
                     timing.nth_wave,
                 )
                 .unwrap();
@@ -150,6 +151,7 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::Post) => "post",
         AnyWorkId::Be(BeWorkIdentifier::Stat) => "STAT",
         AnyWorkId::InternalTiming(name) => name,
+        AnyWorkId::AllOfFe(..) | AnyWorkId::AllOfBe(..) => panic!("Should never name AllOf"),
     }
 }
 
@@ -190,6 +192,7 @@ fn color(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::Post) => "gray",
         AnyWorkId::Be(BeWorkIdentifier::Stat) => "gray",
         AnyWorkId::InternalTiming(..) => "#009a00",
+        AnyWorkId::AllOfFe(..) | AnyWorkId::AllOfBe(..) => panic!("Should never color AllOf"),
     }
 }
 
@@ -281,7 +284,7 @@ impl JobTimeRunning {
 }
 
 /// Times are relative to t0 in a [JobTimer]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct JobTime {
     id: AnyWorkId,
     nth_wave: usize,
@@ -289,7 +292,7 @@ pub struct JobTime {
     _runnable: Instant,
     queued: Instant,
     run: Instant,
-    complete: Instant,
+    pub(crate) complete: Instant,
 }
 
 impl JobTime {

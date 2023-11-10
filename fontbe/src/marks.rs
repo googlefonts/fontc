@@ -1,12 +1,12 @@
 //! Generates a [Marks] datastructure to be fed to fea-rs
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     sync::Arc,
 };
 
 use fontdrasil::{
-    orchestration::{Access, Work},
+    orchestration::{Access, AllOrOne, Work},
     types::GlyphName,
 };
 
@@ -169,14 +169,11 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Fe(FeWorkId::Anchor(..))
-            )
-        }))
+        Access::Set(HashSet::from([
+            AllOrOne::All(AnyWorkId::Fe(FeWorkId::StaticMetadata)),
+            AllOrOne::All(AnyWorkId::Fe(FeWorkId::GlyphOrder)),
+            AllOrOne::All(AnyWorkId::Fe(FeWorkId::Anchor(GlyphName::NOTDEF))), // specific glyphname doesn't matter
+        ]))
     }
 
     /// Generate mark data structures.

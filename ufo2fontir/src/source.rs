@@ -1093,7 +1093,10 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::Set(HashSet::from([WorkId::StaticMetadata, WorkId::GlyphOrder]))
+        Access::Set(HashSet::from([
+            WorkId::StaticMetadata.into(),
+            WorkId::GlyphOrder.into(),
+        ]))
     }
 
     /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
@@ -1248,8 +1251,8 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
 
     fn write_access(&self) -> Access<WorkId> {
         Access::Set(HashSet::from([
-            WorkId::Glyph(self.glyph_name.clone()),
-            WorkId::Anchor(self.glyph_name.clone()),
+            WorkId::Glyph(self.glyph_name.clone()).into(),
+            WorkId::Anchor(self.glyph_name.clone()).into(),
         ]))
     }
 
@@ -1390,8 +1393,8 @@ mod tests {
         let task_context = context.copy_for_work(
             Access::none(),
             Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
+                WorkId::StaticMetadata.into(),
+                WorkId::PreliminaryGlyphOrder.into(),
             ])),
         );
         source
@@ -1431,7 +1434,10 @@ mod tests {
         build_glyph_order(&context);
 
         let task_context = context.copy_for_work(
-            Access::Set(HashSet::from([WorkId::StaticMetadata, WorkId::GlyphOrder])),
+            Access::Set(HashSet::from([
+                WorkId::StaticMetadata.into(),
+                WorkId::GlyphOrder.into(),
+            ])),
             Access::one(WorkId::Kerning),
         );
         source

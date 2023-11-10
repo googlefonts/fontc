@@ -1,8 +1,11 @@
 //! Generates a [cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap) table.
 
-use std::sync::Arc;
+use std::collections::HashSet;
 
-use fontdrasil::orchestration::{Access, Work};
+use fontdrasil::{
+    orchestration::{Access, AllOrOne, Work},
+    types::GlyphName,
+};
 use fontir::orchestration::WorkId as FeWorkId;
 
 use write_fonts::{tables::cmap::Cmap, types::GlyphId};
@@ -25,12 +28,10 @@ impl Work<Context, AnyWorkId, Error> for CmapWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::GlyphOrder) | AnyWorkId::Fe(FeWorkId::Glyph(..))
-            )
-        }))
+        Access::Set(HashSet::from([
+            AllOrOne::All(AnyWorkId::Fe(FeWorkId::GlyphOrder)),
+            AllOrOne::All(AnyWorkId::AllOfFe(FeWorkId::Glyph(GlyphName::NOTDEF))), // specific name doesn't matter
+        ]))
     }
 
     /// Generate [cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap)

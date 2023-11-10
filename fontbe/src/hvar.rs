@@ -1,9 +1,9 @@
 //! Generates an [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR) table.
 
 use std::any::type_name;
-use std::collections::{BTreeSet, HashMap};
-use std::sync::Arc;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
+use fontdrasil::orchestration::AllOrOne;
 use indexmap::IndexMap;
 
 use fontdrasil::{
@@ -154,14 +154,11 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::Glyph(..))
-                    | AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-            )
-        }))
+        Access::Set(HashSet::from([
+            AnyWorkId::Fe(FeWorkId::StaticMetadata).into(),
+            AnyWorkId::Fe(FeWorkId::GlyphOrder).into(),
+            AllOrOne::All(AnyWorkId::AllOfFe(FeWorkId::Glyph(GlyphName::NOTDEF))), // specific name doesn't matter
+        ]))
     }
 
     /// Generate [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR)
