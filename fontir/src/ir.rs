@@ -204,14 +204,14 @@ type KernValues = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(from = "KerningSerdeRepr", into = "KerningSerdeRepr")]
 pub struct Kerning {
-    pub groups: HashMap<GroupName, BTreeSet<GlyphName>>,
+    pub groups: BTreeMap<GroupName, BTreeSet<GlyphName>>,
     /// An adjustment to the space *between* two glyphs in logical order.
     ///
     /// Maps (side1, side2) => a mapping location:adjustment.
     ///
     /// Used for both LTR and RTL. The BE application differs but the concept
     /// is the same.
-    pub kerns: HashMap<KernPair, KernValues>,
+    pub kerns: BTreeMap<KernPair, KernValues>,
 }
 
 impl Kerning {

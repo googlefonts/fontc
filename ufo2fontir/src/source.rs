@@ -1033,7 +1033,7 @@ fn kerning_groups_for(
     designspace_dir: &Path,
     glyph_order: &GlyphOrder,
     source: &norad::designspace::Source,
-) -> Result<HashMap<GroupName, BTreeSet<GlyphName>>, WorkError> {
+) -> Result<BTreeMap<GroupName, BTreeSet<GlyphName>>, WorkError> {
     let ufo_dir = designspace_dir.join(&source.filename);
     let data_request = norad::DataRequest::none().groups(true);
     Ok(norad::Font::load_requested_data(&ufo_dir, data_request)
