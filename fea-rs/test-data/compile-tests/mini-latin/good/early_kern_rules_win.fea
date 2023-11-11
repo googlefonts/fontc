@@ -1,0 +1,5 @@
+# https://github.com/googlefonts/fontc/issues/550
+feature kern {
+    pos A B 100;
+    enum pos A B -50;
+} kern;

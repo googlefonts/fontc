@@ -211,11 +211,23 @@ impl PairPosBuilder {
         glyph2: GlyphId,
         record2: ValueRecord,
     ) {
+        // "When specific kern pair rules conflict, the first rule specified is used,
+        // and later conflicting rule are skipped"
+        // https://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#6bii-enumerating-pairs
+        // E.g.:
+        //   @A = [A Aacute Agrave]
+        //   feature kern {
+        //     pos A B 100;
+        //     enum pos @A B -50;
+        //   } kern;
+        // should result in a A B kerning value of 100, not -50.
+        // https://github.com/googlefonts/fontc/issues/550
         self.pairs
             .0
             .entry(glyph1)
             .or_default()
-            .insert(glyph2, (record1, record2));
+            .entry(glyph2)
+            .or_insert((record1, record2));
     }
 
     /// Insert a new class-based kerning rule.
