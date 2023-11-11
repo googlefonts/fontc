@@ -1040,26 +1040,31 @@ fn kerning_groups_for(
         .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?
         .groups
         .into_iter()
-        .filter(|(group_name, entries)|
+        .filter(|(group_name, entries)| {
             (group_name.starts_with(UFO_KERN1_PREFIX) || group_name.starts_with(UFO_KERN2_PREFIX))
-            && !entries.is_empty()
-        )
-        .map(|(group_name, entries)| {
-            (
-                GroupName::from(group_name.as_str()),
-                entries
-                    .into_iter()
-                    .filter_map(|glyph_name| {
-                        let glyph_name = GlyphName::from(glyph_name.as_str());
-                        if glyph_order.contains(&glyph_name) {
-                            Some(glyph_name)
-                        } else {
-                            debug!("{} kerning group '{}' references non-existent glyph '{}'; ignoring", source.filename, group_name, glyph_name);
-                            None
-                        }
-                    })
-                    .collect(),
-            )
+                && !entries.is_empty()
+        })
+        .filter_map(|(group_name, entries)| {
+            let members: BTreeSet<_> = entries
+                .into_iter()
+                .filter_map(|glyph_name| {
+                    let glyph_name = GlyphName::from(glyph_name.as_str());
+                    if glyph_order.contains(&glyph_name) {
+                        Some(glyph_name)
+                    } else {
+                        debug!(
+                            "{} kerning group '{}' references non-existent glyph '{}'; ignoring",
+                            source.filename, group_name, glyph_name
+                        );
+                        None
+                    }
+                })
+                .collect();
+            if !members.is_empty() {
+                Some((GroupName::from(group_name.as_str()), members))
+            } else {
+                None
+            }
         })
         .collect())
 }

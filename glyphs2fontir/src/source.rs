@@ -609,6 +609,8 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
         // If glyph uses a group for either side it goes in that group
         font.glyphs
             .iter()
+            // ignore non-export glyphs
+            .filter(|(_, glyph)| glyph.export)
             .flat_map(|(glyph_name, glyph)| {
                 glyph
                     .right_kern

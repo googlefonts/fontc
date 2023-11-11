@@ -10,6 +10,10 @@
     <array>
       <string>bracketright</string>
     </array>
+    <key>public.kern1.hyphen_R</key>
+    <array>
+      <string>hyphen</string>
+    </array>
     <key>public.kern2.bracketleft_L</key>
     <array>
       <string>bracketleft</string>
@@ -17,6 +21,10 @@
     <key>public.kern2.bracketright_L</key>
     <array>
       <string>bracketright</string>
+    </array>
+    <key>public.kern2.hyphen_L</key>
+    <array>
+      <string>hyphen</string>
     </array>
   </dict>
 </plist>
