@@ -31,6 +31,8 @@ use fontbe::{
     gvar::create_gvar_work,
     head::create_head_work,
     hvar::create_hvar_work,
+    kern::create_kerning_work,
+    marks::create_mark_work,
     metrics_and_limits::create_metric_and_limit_work,
     name::create_name_work,
     orchestration::AnyWorkId,
@@ -125,6 +127,46 @@ fn add_feature_be_job(workload: &mut Workload) -> Result<(), Error> {
     workload.add(
         work.into(),
         workload.change_detector.feature_be_change()
+            && workload.change_detector.glyph_name_filter().is_none()
+            && !workload.change_detector.should_skip_features(),
+    );
+    Ok(())
+}
+
+fn add_marks_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_mark_work();
+    // Features are extremely prone to not making sense when glyphs are filtered
+    if workload.change_detector.mark_be_change() {
+        if workload.change_detector.glyph_name_filter().is_some() {
+            warn!("Not processing BE marks because a glyph name filter is active");
+        }
+        if workload.change_detector.should_skip_features() {
+            debug!("Not processing BE marks because FEA compilation is disabled");
+        }
+    }
+    workload.add(
+        work.into(),
+        workload.change_detector.mark_be_change()
+            && workload.change_detector.glyph_name_filter().is_none()
+            && !workload.change_detector.should_skip_features(),
+    );
+    Ok(())
+}
+
+fn add_kerning_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_kerning_work();
+    // Features are extremely prone to not making sense when glyphs are filtered
+    if workload.change_detector.kerning_be_change() {
+        if workload.change_detector.glyph_name_filter().is_some() {
+            warn!("Not processing BE kerning because a glyph name filter is active");
+        }
+        if workload.change_detector.should_skip_features() {
+            debug!("Not processing BE kerning because FEA compilation is disabled");
+        }
+    }
+    workload.add(
+        work.into(),
+        workload.change_detector.kerning_be_change()
             && workload.change_detector.glyph_name_filter().is_none()
             && !workload.change_detector.should_skip_features(),
     );
@@ -314,6 +356,8 @@ pub fn create_workload(
     add_fvar_be_job(&mut workload)?;
     add_gvar_be_job(&mut workload)?;
     add_head_be_job(&mut workload)?;
+    add_kerning_be_job(&mut workload)?;
+    add_marks_be_job(&mut workload)?;
     add_metric_and_limits_job(&mut workload)?;
     add_hvar_be_job(&mut workload)?;
     add_name_be_job(&mut workload)?;
@@ -572,8 +616,10 @@ mod tests {
             BeWorkIdentifier::Hhea.into(),
             BeWorkIdentifier::Hmtx.into(),
             BeWorkIdentifier::Hvar.into(),
+            BeWorkIdentifier::Kerning.into(),
             BeWorkIdentifier::Loca.into(),
             BeWorkIdentifier::LocaFormat.into(),
+            BeWorkIdentifier::Marks.into(),
             BeWorkIdentifier::Maxp.into(),
             BeWorkIdentifier::Name.into(),
             BeWorkIdentifier::Os2.into(),
@@ -708,6 +754,7 @@ mod tests {
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
                 BeWorkIdentifier::Gdef.into(),
+                BeWorkIdentifier::Kerning.into(),
             ],
             completed
         );
@@ -821,6 +868,7 @@ mod tests {
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
                 BeWorkIdentifier::Gdef.into(),
+                BeWorkIdentifier::Kerning.into(),
             ],
             completed
         );

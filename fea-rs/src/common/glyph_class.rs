@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use write_fonts::types::GlyphId;
 
 use super::GlyphOrClass;
@@ -24,7 +22,7 @@ use super::GlyphOrClass;
 ///
 /// [spec docs]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#2g-glyph-classes
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct GlyphClass(Rc<[GlyphId]>);
+pub(crate) struct GlyphClass(Vec<GlyphId>);
 
 /// A sorted set of unique glyph ids.
 ///
@@ -34,7 +32,8 @@ pub(crate) struct GlyphClass(Rc<[GlyphId]>);
 /// In the former case, we want to be able to do things like compare for equality
 /// and stabily sort, so we ensure that these classes are sorted and deduped.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GlyphSet(Rc<[GlyphId]>);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GlyphSet(Vec<GlyphId>);
 
 impl GlyphClass {
     pub(crate) fn items(&self) -> &[GlyphId] {
@@ -43,7 +42,7 @@ impl GlyphClass {
 
     /// Return a new, empty glyph class
     pub fn empty() -> Self {
-        Self(Rc::new([]))
+        Self(Default::default())
     }
 
     /// Return a `GlyphSet` containing the unique glyphs in this class.
@@ -89,7 +88,7 @@ impl<'a> std::iter::IntoIterator for &'a GlyphClass {
 
 impl From<Vec<GlyphId>> for GlyphClass {
     fn from(src: Vec<GlyphId>) -> GlyphClass {
-        GlyphClass(src.into())
+        GlyphClass(src)
     }
 }
 
@@ -104,7 +103,7 @@ impl From<Vec<GlyphId>> for GlyphSet {
     fn from(mut value: Vec<GlyphId>) -> Self {
         value.sort_unstable();
         value.dedup();
-        Self(value.into())
+        Self(value)
     }
 }
 

@@ -246,6 +246,22 @@ impl ChangeDetector {
                 .is_file()
     }
 
+    pub fn mark_be_change(&self) -> bool {
+        self.glyph_order_ir_change()
+            || !self
+                .be_paths
+                .target_file(&BeWorkIdentifier::Marks)
+                .is_file()
+    }
+
+    pub fn kerning_be_change(&self) -> bool {
+        self.kerning_ir_change()
+            || !self
+                .be_paths
+                .target_file(&BeWorkIdentifier::Kerning)
+                .is_file()
+    }
+
     pub fn kerning_ir_change(&self) -> bool {
         self.static_metadata_ir_change()
             || self.glyph_order_ir_change()
