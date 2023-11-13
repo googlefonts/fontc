@@ -101,14 +101,14 @@ impl CoordConverter {
 
     /// Initialize a converter from just min/default/max user coords, e.g. a source with no mapping
     pub fn unmapped(min: UserCoord, default: UserCoord, max: UserCoord) -> CoordConverter {
-        CoordConverter::new(
-            vec![
-                (min, DesignCoord::new(min.into_inner())),
-                (default, DesignCoord::new(default.into_inner())),
-                (max, DesignCoord::new(max.into_inner())),
-            ],
-            1,
-        )
+        let mut mappings = vec![
+            (min, DesignCoord::new(min.into_inner())),
+            (default, DesignCoord::new(default.into_inner())),
+            (max, DesignCoord::new(max.into_inner())),
+        ];
+        mappings.dedup();
+        let default_idx = mappings.iter().position(|(u, _)| *u == default).unwrap();
+        CoordConverter::new(mappings, default_idx)
     }
 
     /// Walk the vertices of the mappings, viewing the user/design/normalized value at each stop.
@@ -548,6 +548,50 @@ mod tests {
             UserCoord(400.0.into())
                 .to_normalized(&converter)
                 .into_inner()
+        );
+    }
+
+    #[test]
+    fn unmapped_coords_get_deduped() {
+        // min==default==max
+        assert_eq!(
+            CoordConverter::unmapped(
+                UserCoord(100.0.into()),
+                UserCoord(100.0.into()),
+                UserCoord(100.0.into()),
+            )
+            .default_idx,
+            0
+        );
+        // min==default<max
+        assert_eq!(
+            CoordConverter::unmapped(
+                UserCoord(0.0.into()),
+                UserCoord(0.0.into()),
+                UserCoord(100.0.into()),
+            )
+            .default_idx,
+            0
+        );
+        // min<default==max
+        assert_eq!(
+            CoordConverter::unmapped(
+                UserCoord(0.0.into()),
+                UserCoord(100.0.into()),
+                UserCoord(100.0.into()),
+            )
+            .default_idx,
+            1
+        );
+        // min<default<max
+        assert_eq!(
+            CoordConverter::unmapped(
+                UserCoord(0.0.into()),
+                UserCoord(50.0.into()),
+                UserCoord(100.0.into()),
+            )
+            .default_idx,
+            1
         );
     }
 }
