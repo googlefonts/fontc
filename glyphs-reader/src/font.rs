@@ -52,6 +52,7 @@ pub struct Font {
     pub glyph_to_codepoints: BTreeMap<String, BTreeSet<u32>>,
     // tag => (user:design) tuples
     pub axis_mappings: RawUserToDesignMapping,
+    pub virtual_masters: Vec<BTreeMap<String, OrderedFloat<f64>>>,
     pub features: Vec<FeatureSnippet>,
     pub names: BTreeMap<String, String>,
     pub instances: Vec<Instance>,
@@ -273,12 +274,19 @@ struct RawFont {
     pub custom_parameters: CustomParameters,
 }
 
+// we use a vec of tuples instead of a map because there can be multiple
+// values for the same name (e.g. 'Virtual Master')
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct CustomParameters(BTreeMap<String, CustomParameterValue>);
+pub(crate) struct CustomParameters(Vec<(String, CustomParameterValue)>);
 
 impl CustomParameters {
+    /// Get the first parameter with the given name, or `None` if not found.
+    fn get(&self, name: &str) -> Option<&CustomParameterValue> {
+        self.0.iter().find_map(|(n, v)| (n == name).then_some(v))
+    }
+
     fn int(&self, name: &str) -> Option<i64> {
-        let Some(CustomParameterValue::Int(i)) = self.0.get(name) else {
+        let Some(CustomParameterValue::Int(i)) = self.get(name) else {
             return None;
         };
         Some(*i)
@@ -289,39 +297,50 @@ impl CustomParameters {
     }
 
     fn string(&self, name: &str) -> Option<&str> {
-        let Some(CustomParameterValue::String(str)) = self.0.get(name) else {
+        let Some(CustomParameterValue::String(str)) = self.get(name) else {
             return None;
         };
         Some(str)
     }
 
     fn axes(&self) -> Option<&Vec<Axis>> {
-        let Some(CustomParameterValue::Axes(axes)) = self.0.get("Axes") else {
+        let Some(CustomParameterValue::Axes(axes)) = self.get("Axes") else {
             return None;
         };
         Some(axes)
     }
 
     fn axis_mappings(&self) -> Option<&Vec<AxisMapping>> {
-        let Some(CustomParameterValue::AxesMappings(mappings)) = self.0.get("Axis Mappings") else {
+        let Some(CustomParameterValue::AxesMappings(mappings)) = self.get("Axis Mappings") else {
             return None;
         };
         Some(mappings)
     }
 
     fn axis_locations(&self) -> Option<&Vec<AxisLocation>> {
-        let Some(CustomParameterValue::AxisLocations(locations)) = self.0.get("Axis Location")
-        else {
+        let Some(CustomParameterValue::AxisLocations(locations)) = self.get("Axis Location") else {
             return None;
         };
         Some(locations)
     }
 
     fn glyph_order(&self) -> Option<&Vec<String>> {
-        let Some(CustomParameterValue::GlyphOrder(names)) = self.0.get("glyphOrder") else {
+        let Some(CustomParameterValue::GlyphOrder(names)) = self.get("glyphOrder") else {
             return None;
         };
         Some(names)
+    }
+
+    fn virtual_masters(&self) -> impl Iterator<Item = &Vec<AxisLocation>> {
+        self.0.iter().filter_map(|(name, value)| {
+            if name == "Virtual Master" {
+                let CustomParameterValue::VirtualMaster(locations) = value else {
+                    panic!("Virtual Master parameter has wrong type!");
+                };
+                return Some(locations);
+            }
+            None
+        })
     }
 }
 
@@ -333,13 +352,14 @@ enum CustomParameterValue {
     AxesMappings(Vec<AxisMapping>),
     AxisLocations(Vec<AxisLocation>),
     GlyphOrder(Vec<String>),
+    VirtualMaster(Vec<AxisLocation>),
 }
 
 /// Hand-parse these because they take multiple shapes
 impl FromPlist for CustomParameters {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
         use crate::plist::Error;
-        let mut params = BTreeMap::new();
+        let mut params = Vec::new();
 
         tokenizer.eat(b'(')?;
 
@@ -415,6 +435,13 @@ impl FromPlist for CustomParameters {
                                 value =
                                     Some(CustomParameterValue::AxisLocations(tokenizer.parse()?));
                             }
+                            _ if name == Some(String::from("Virtual Master")) => {
+                                let Token::OpenParen = peek else {
+                                    return Err(Error::UnexpectedChar('('));
+                                };
+                                value =
+                                    Some(CustomParameterValue::VirtualMaster(tokenizer.parse()?));
+                            }
                             _ => tokenizer.skip_rec()?,
                         }
                     }
@@ -424,7 +451,7 @@ impl FromPlist for CustomParameters {
             }
 
             if let (Some(name), Some(value)) = (name, value) {
-                params.insert(name, value);
+                params.push((name, value));
             }
 
             tokenizer.eat(b'}')?;
@@ -1860,6 +1887,21 @@ impl TryFrom<RawFont> for Font {
             })
             .collect();
 
+        let virtual_masters = from
+            .custom_parameters
+            .virtual_masters()
+            .map(|vm| {
+                vm.iter()
+                    .map(
+                        |AxisLocation {
+                             axis_name,
+                             location,
+                         }| (axis_name.clone(), *location),
+                    )
+                    .collect()
+            })
+            .collect();
+
         Ok(Font {
             units_per_em,
             use_typo_metrics,
@@ -1871,6 +1913,7 @@ impl TryFrom<RawFont> for Font {
             glyph_order,
             glyph_to_codepoints,
             axis_mappings,
+            virtual_masters,
             features,
             names,
             instances,
