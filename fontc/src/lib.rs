@@ -1883,7 +1883,7 @@ mod tests {
         let font = FontRef::new(&buf).unwrap();
 
         assert_eq!(
-            vec!["wght"],
+            vec!["CPHT", "wght"],
             font.fvar()
                 .unwrap()
                 .axes()
@@ -1902,14 +1902,14 @@ mod tests {
                 Rect::new(191.0, 0.0, 410.0, 761.0),
             ],
             vec![
-                cbox_of_char(0x69, &font, vec![0.0]), // wght=400
-                cbox_of_char(0x69, &font, vec![0.6]), // wght=700
-                cbox_of_char(0x69, &font, vec![1.0]), // wght=900
+                cbox_of_char(0x69, &font, vec![0.0, 0.0]), // CPHT=700, wght=400
+                cbox_of_char(0x69, &font, vec![0.0, 0.6]), // CPHT=700, wght=700
+                cbox_of_char(0x69, &font, vec![0.0, 1.0]), // CPHT=700, wght=900
             ]
         );
 
-        // glyph "I" (char 0x49) only defines two masters at wght=400 and wght=900,
-        // so wght=700 should be interpolated between them.
+        // glyph "I" (char 0x49) only defines two masters along wght at 400 and 900
+        // (and default CPHT=700) so wght=700 should be interpolated between them.
         assert_eq!(
             vec![
                 Rect::new(231.0, 0.0, 364.0, 700.0),
@@ -1917,11 +1917,29 @@ mod tests {
                 Rect::new(171.0, 0.0, 424.0, 700.0),
             ],
             vec![
-                cbox_of_char(0x49, &font, vec![0.0]), // wght=400
-                cbox_of_char(0x49, &font, vec![0.6]), // wght=700
-                cbox_of_char(0x49, &font, vec![1.0]), // wght=900
+                cbox_of_char(0x49, &font, vec![0.0, 0.0]), // CPHT=700, wght=400
+                cbox_of_char(0x49, &font, vec![0.0, 0.6]), // CPHT=700, wght=700
+                cbox_of_char(0x49, &font, vec![0.0, 1.0]), // CPHT=700, wght=900
             ]
         );
+
+        // glyph "I" also defines two additional ('virtual') masters along CPHT at 600 and 800
+        // (and default wght=400), check that the cap-height (bbox.yMax) matches that throughout
+        // the wght axis.
+        assert_eq!(
+            vec![
+                Rect::new(231.0, 0.0, 364.0, 600.0),
+                Rect::new(171.0, 0.0, 424.0, 600.0),
+                Rect::new(231.0, 0.0, 364.0, 800.0),
+                Rect::new(171.0, 0.0, 424.0, 800.0),
+            ],
+            vec![
+                cbox_of_char(0x49, &font, vec![-1.0, 0.0]), // CPHT=600, wght=400
+                cbox_of_char(0x49, &font, vec![-1.0, 1.0]), // CPHT=600, wght=900
+                cbox_of_char(0x49, &font, vec![1.0, 0.0]),  // CPHT=800, wght=400
+                cbox_of_char(0x49, &font, vec![1.0, 1.0]),  // CPHT=800, wght=900
+            ]
+        )
     }
 
     #[test]
