@@ -1434,6 +1434,10 @@ impl RawAxisUserToDesignMap {
     pub fn iter(&self) -> impl Iterator<Item = &(OrderedFloat<f32>, OrderedFloat<f32>)> {
         self.0.iter()
     }
+
+    pub fn is_identity(&self) -> bool {
+        self.0.iter().all(|(u, d)| u == d)
+    }
 }
 
 impl RawUserToDesignMapping {
