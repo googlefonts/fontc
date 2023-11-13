@@ -17,11 +17,12 @@
       <point x="239" y="611.667"/>
       <point x="267.333" y="584"/>
     </contour>
-    <contour>
-      <point x="241" y="0" type="line"/>
-      <point x="354" y="0" type="line"/>
-      <point x="354" y="500" type="line"/>
-      <point x="241" y="500" type="line"/>
-    </contour>
+    <component base="idotless"/>
   </outline>
+  <lib>
+    <dict>
+      <key>com.schriftgestaltung.Glyphs.shapeOrder</key>
+      <string>PC</string>
+    </dict>
+  </lib>
 </glyph>

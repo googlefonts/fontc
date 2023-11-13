@@ -2,13 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
   <dict>
-    <key>.notdef</key>
-    <string>_notdef.glif</string>
+    <key>H</key>
+    <string>H_.glif</string>
     <key>I</key>
     <string>I_.glif</string>
-    <key>i</key>
-    <string>i.glif</string>
-    <key>space</key>
-    <string>space.glif</string>
   </dict>
 </plist>

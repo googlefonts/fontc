@@ -1939,9 +1939,7 @@ mod tests {
     #[test]
     fn intermediate_layer_in_designspace() {
         // https://github.com/googlefonts/fontc/issues/400
-        assert_intermediate_layer(
-            "designspace_from_glyphs/IntermediateLayer/IntermediateLayer.designspace",
-        );
+        assert_intermediate_layer("designspace_from_glyphs/IntermediateLayer.designspace");
     }
 
     #[test]

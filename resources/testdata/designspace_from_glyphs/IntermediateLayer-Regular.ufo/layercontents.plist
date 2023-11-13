@@ -7,8 +7,16 @@
       <string>glyphs</string>
     </array>
     <array>
-      <string>{700}</string>
-      <string>glyphs.{700}</string>
+      <string>{600, 400}</string>
+      <string>glyphs.{600, 400}</string>
+    </array>
+    <array>
+      <string>{800, 400}</string>
+      <string>glyphs.{800, 400}</string>
+    </array>
+    <array>
+      <string>{700, 700}</string>
+      <string>glyphs.{700, 700}</string>
     </array>
   </array>
 </plist>
