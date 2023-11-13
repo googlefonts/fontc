@@ -1214,7 +1214,7 @@ impl RawFont {
             // named clases become #s in v3
             for (tag, opt) in [
                 ("wght", &mut instance.weight_class),
-                ("wght", &mut instance.width_class),
+                ("wdth", &mut instance.width_class),
             ] {
                 let Some(value) = opt.as_ref() else {
                     continue;
