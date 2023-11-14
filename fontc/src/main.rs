@@ -23,7 +23,7 @@ fn main() {
 
 fn run() -> Result<(), Error> {
     let mut timer = JobTimer::new(Instant::now());
-    let time = create_timer(AnyWorkId::InternalTiming("Init logger"))
+    let time = create_timer(AnyWorkId::InternalTiming("Init logger"), 0)
         .queued()
         .run();
     env_logger::builder()
@@ -43,7 +43,7 @@ fn run() -> Result<(), Error> {
         .init();
     timer.add(time.complete());
 
-    let time = create_timer(AnyWorkId::InternalTiming("Init config"))
+    let time = create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .queued()
         .run();
     let args = Args::parse();

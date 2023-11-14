@@ -59,7 +59,7 @@ impl ChangeDetector {
         prev_inputs: Input,
         timer: &mut JobTimer,
     ) -> Result<ChangeDetector, Error> {
-        let time = create_timer(AnyWorkId::InternalTiming("new change detector"))
+        let time = create_timer(AnyWorkId::InternalTiming("new change detector"), 0)
             .queued()
             .run();
 

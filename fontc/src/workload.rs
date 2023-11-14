@@ -5,7 +5,7 @@ use std::{
     panic::AssertUnwindSafe,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
 };
 
@@ -16,10 +16,10 @@ use fontir::{
     orchestration::{Context as FeContext, WorkId as FeWorkIdentifier},
     source::Input,
 };
-use log::{debug, trace};
+use log::{debug, trace, warn};
 
 use crate::{
-    timing::{create_timer, JobTime, JobTimer},
+    timing::{create_timer, JobTime, JobTimeQueued, JobTimer},
     work::{AnyAccess, AnyContext, AnyWork, AnyWorkError},
     ChangeDetector, Error,
 };
@@ -134,7 +134,16 @@ impl<'a> Workload<'a> {
         }
     }
 
-    fn update_be_glyph_dependencies(&mut self, fe_root: &FeContext, glyph_name: GlyphName) {
+    /// When BE glyph jobs are initially created they don't know enough to set fine grained dependencies
+    /// so they depend on *all* IR glyphs. Once IR for a glyph completes we can refine that:
+    ///
+    /// * If the glyph doesn't emit to binary we don't need to do the BE work at all
+    /// * If the glyph has no components the BE for it doesn't use glyph order and needn't block on it
+    /// * If the glyph does have components we need to block on glyph order because that might alter them
+    ///    * For example, flatten
+    ///
+    /// By minimizing dependencies we allow jobs to start earlier and execute with greater concurrency.
+    fn update_be_glyph_work(&mut self, fe_root: &FeContext, glyph_name: GlyphName) {
         let glyph = fe_root
             .glyphs
             .get(&FeWorkIdentifier::Glyph(glyph_name.clone()));
@@ -144,15 +153,27 @@ impl<'a> Workload<'a> {
             .get_mut(&be_id)
             .expect("{be_id} should exist");
 
-        let mut deps = HashSet::from([
-            AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata),
-            FeWorkIdentifier::GlyphOrder.into(),
-        ]);
+        if !glyph.emit_to_binary {
+            trace!("Skipping execution of {be_id:?}; it does not emit to binary");
+            self.jobs_pending.remove(&be_id);
+            self.mark_also_completed(&be_id);
+            self.success.insert(be_id);
+            return;
+        }
 
+        let mut deps = HashSet::from([AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata)]);
+
+        let mut has_components = false;
         for inst in glyph.sources().values() {
             for component in inst.components.iter() {
+                has_components = true;
                 deps.insert(FeWorkIdentifier::Glyph(component.base.clone()).into());
             }
+        }
+
+        // We don't *have* to wait on glyph order, but if we don't it delays the critical path
+        if has_components {
+            deps.insert(FeWorkIdentifier::GlyphOrder.into());
         }
 
         trace!(
@@ -181,16 +202,12 @@ impl<'a> Workload<'a> {
                 super::add_glyph_be_job(self, glyph_name.clone());
 
                 // Glyph order is done so all IR must be done. Copy dependencies from the IR for the same name.
-                self.update_be_glyph_dependencies(fe_root, glyph_name.clone());
+                self.update_be_glyph_work(fe_root, glyph_name.clone());
             }
         }
 
-        // When BE glyph jobs are initially created they don't know enough to set fine grained dependencies
-        // so they depend on *all* IR glyphs. Once IR for a glyph completes we know enough to refine that
-        // to just the glyphs our glyphs uses as components. This allows BE glyph jobs to run concurrently with
-        // unrelated IR jobs.
         if let AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) = success {
-            self.update_be_glyph_dependencies(fe_root, glyph_name);
+            self.update_be_glyph_work(fe_root, glyph_name);
         }
     }
 
@@ -227,39 +244,23 @@ impl<'a> Workload<'a> {
         }
     }
 
-    pub fn launchable(&mut self) -> Vec<AnyWorkId> {
-        let timing = create_timer(AnyWorkId::InternalTiming("Launchable"))
+    /// Populate launchable with jobs ready to run from highest to lowest priority
+    pub fn update_launchable(&mut self, launchable: &mut Vec<AnyWorkId>) {
+        let timing = create_timer(AnyWorkId::InternalTiming("Launchable"), 0)
             .queued()
             .run();
 
-        let mut has_kern = false;
-        let mut launchable: Vec<_> = self
+        launchable.clear();
+        for id in self
             .jobs_pending
             .iter()
-            .filter_map(|(id, job)| {
-                if !job.running && self.can_run(job) {
-                    if matches!(id, AnyWorkId::Fe(FeWorkIdentifier::Kerning)) {
-                        has_kern = true;
-                    }
-                    Some(id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        trace!("Launchable: {launchable:?}");
-
-        // https://github.com/googlefonts/fontc/issues/456: try to avoid kern as long pole
-        if has_kern {
-            let kern_idx = launchable
-                .iter()
-                .position(|id| matches!(id, AnyWorkId::Fe(FeWorkIdentifier::Kerning)))
-                .unwrap();
-            launchable.swap(0, kern_idx);
+            .filter_map(|(id, job)| (!job.running && self.can_run(job)).then_some(id))
+        {
+            launchable.push(id.clone());
         }
 
+        trace!("Launchable: {:?}", launchable);
         self.timer.add(timing.complete());
-        launchable
     }
 
     pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer, Error> {
@@ -270,53 +271,108 @@ impl<'a> Workload<'a> {
         // a flag we set if we panic
         let abort_queued_jobs = Arc::new(AtomicBool::new(false));
 
+        let run_queue = Arc::new(Mutex::new(
+            Vec::<(AnyWork, JobTimeQueued, AnyContext)>::with_capacity(512),
+        ));
+
         // Do NOT assign custom thread names because it makes flamegraph root each thread individually
         rayon::in_place_scope(|scope| {
             // Whenever a task completes see if it was the last incomplete dependency of other task(s)
             // and spawn them if it was
             // TODO timeout and die it if takes too long to make forward progress or we're spinning w/o progress
+
+            // To avoid allocation every poll for work
+            let mut launchable = Vec::with_capacity(512.min(self.job_count));
+            let mut nth_wave = 0;
+
             while self.success.len() < self.job_count {
                 // Spawn anything that is currently executable (has no unfulfilled dependencies)
-                let launchable = self.launchable();
+                self.update_launchable(&mut launchable);
                 if launchable.is_empty() && !self.jobs_pending.values().any(|j| j.running) {
-                    return Err(Error::UnableToProceed);
+                    if log::log_enabled!(log::Level::Warn) {
+                        warn!("{}/{} jobs have succeeded, nothing is running, and nothing is launchable", self.success.len(), self.job_count);
+                        for pending in self.jobs_pending.keys() {
+                            warn!("  blocked: {pending:?}");
+                        }
+                    }
+                    return Err(Error::UnableToProceed(self.jobs_pending.len()));
                 }
 
-                // Launch anything that needs launching
-                for id in launchable {
-                    let timing = create_timer(id.clone());
+                // Get launchables ready to run
+                if !launchable.is_empty() {
+                    nth_wave += 1;
+                }
 
-                    let job = self.jobs_pending.get_mut(&id).unwrap();
-                    log::trace!("Start {:?}", id);
-                    let send = send.clone();
-                    job.running = true;
-                    let work = job
-                        .work
-                        .take()
-                        .expect("{id:?} ready to run but has no work?!");
-                    if !job.run {
-                        if let Err(e) = send.send((id.clone(), Ok(()), JobTime::nop(id.clone()))) {
-                            log::error!("Unable to write nop {id:?} to completion channel: {e}");
-                            //FIXME: if we can't send messages it means the receiver has dropped,
-                            //which means we should... return? abort?
+                {
+                    let mut run_queue = run_queue.lock().unwrap();
+                    for id in launchable.iter() {
+                        let timing = create_timer(id.clone(), nth_wave);
+
+                        let job = self.jobs_pending.get_mut(id).unwrap();
+                        log::trace!("Start {:?}", id);
+                        job.running = true;
+                        let work = job
+                            .work
+                            .take()
+                            .expect("{id:?} ready to run but has no work?!");
+                        if !job.run {
+                            if let Err(e) =
+                                send.send((id.clone(), Ok(()), JobTime::nop(id.clone())))
+                            {
+                                log::error!(
+                                    "Unable to write nop {id:?} to completion channel: {e}"
+                                );
+                                //FIXME: if we can't send messages it means the receiver has dropped,
+                                //which means we should... return? abort?
+                            }
+                            continue;
                         }
-                        continue;
-                    }
-                    let work_context = AnyContext::for_work(
-                        fe_root,
-                        be_root,
-                        &id,
-                        job.read_access.clone(),
-                        job.write_access.clone(),
-                    );
+                        let work_context = AnyContext::for_work(
+                            fe_root,
+                            be_root,
+                            id,
+                            job.read_access.clone(),
+                            job.write_access.clone(),
+                        );
 
+                        let timing = timing.queued();
+                        run_queue.push((work, timing, work_context));
+                    }
+
+                    // Try to prioritize the critical path based on --emit-timing observation
+                    // <https://github.com/googlefonts/fontc/issues/456>, <https://github.com/googlefonts/fontc/pull/565>
+                    run_queue.sort_by_cached_key(|(work, ..)| {
+                        // Higher priority sorts last, which means run first due to pop
+                        // We basically want things that block the glyph order => kern => fea sequence to go asap
+                        match work.id() {
+                            AnyWorkId::Be(BeWorkIdentifier::Features) => 99,
+                            AnyWorkId::Fe(FeWorkIdentifier::Features) => 99,
+                            AnyWorkId::Fe(FeWorkIdentifier::Kerning) => 99,
+                            AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) => 99,
+                            AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => 99,
+                            AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => 99,
+                            AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => 99,
+                            AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)) => 1,
+                            _ => 0,
+                        }
+                    });
+                }
+
+                // Spawn for every job that's executable. Each spawn will pull one item from the run queue.
+                for _ in 0..launchable.len() {
+                    let send = send.clone();
+                    let run_queue = run_queue.clone();
                     let abort = abort_queued_jobs.clone();
 
-                    let timing = timing.queued();
                     scope.spawn(move |_| {
+                        let runnable = { run_queue.lock().unwrap().pop() };
+                        let Some((work, timing, work_context)) = runnable else {
+                            panic!("Spawned more jobs than items available to run");
+                        };
+                        let id = work.id();
                         let timing = timing.run();
                         if abort.load(Ordering::Relaxed) {
-                            log::trace!("Aborting {:?}", work.id());
+                            log::trace!("Aborting {:?}", id);
                             return;
                         }
                         // # Unwind Safety
@@ -457,8 +513,9 @@ impl<'a> Workload<'a> {
     #[cfg(test)]
     pub fn run_for_test(&mut self, fe_root: &FeContext, be_root: &BeContext) -> HashSet<AnyWorkId> {
         let pre_success = self.success.clone();
+        let mut launchable = Vec::new();
         while !self.jobs_pending.is_empty() {
-            let launchable = self.launchable();
+            self.update_launchable(&mut launchable);
             if launchable.is_empty() {
                 log::error!("Completed:");
                 let mut success: Vec<_> = self.success.iter().collect();
@@ -484,7 +541,7 @@ impl<'a> Workload<'a> {
             }
 
             let id = &launchable[0];
-            let timing = create_timer(id.clone());
+            let timing = create_timer(id.clone(), 0);
             let job = self.jobs_pending.remove(id).unwrap();
             if job.run {
                 let timing = timing.queued();
