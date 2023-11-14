@@ -1,5 +1,9 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+};
 
+use indexmap::IndexMap;
 use read_fonts::{
     tables::{
         gpos::{
@@ -56,8 +60,11 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
                 println!("# lookupflag {:?}", rule.flags);
                 last_flag = Some(rule.flags);
             }
-            let g1 = names.get(rule.gid1);
-            let g2 = names.get(rule.gid2);
+            let g1 = names.get(rule.first);
+            let g2 = GlyphPrinter {
+                glyphs: &rule.second,
+                names,
+            };
             let v1 = rule.record1_printer(var_store.as_ref());
             let v2 = rule.record2_printer(var_store.as_ref());
             print!("{g1} {v1} {g2}");
@@ -87,6 +94,11 @@ struct ValueRecordPrinter<'a, 'b: 'a> {
     record: &'b ValueRecord,
     ivs: Option<&'b DeltaComputer<'a>>,
     data: FontData<'a>,
+}
+
+struct GlyphPrinter<'a> {
+    glyphs: &'a GlyphSet,
+    names: &'a NameMap,
 }
 
 impl ValueRecordPrinter<'_, '_> {
@@ -155,6 +167,30 @@ impl Display for ValueRecordPrinter<'_, '_> {
     }
 }
 
+impl Display for GlyphPrinter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.glyphs {
+            GlyphSet::Single(single) => {
+                let name = self.names.get(*single);
+                f.write_str(&name)
+            }
+            GlyphSet::Multiple(glyphs) => {
+                f.write_str("[")?;
+                let mut first = true;
+                for gid in glyphs {
+                    let name = self.names.get(*gid);
+                    if !first {
+                        f.write_str(",")?;
+                    }
+                    f.write_str(&name)?;
+                    first = false;
+                }
+                f.write_str("]")
+            }
+        }
+    }
+}
+
 impl<'a> LookupRules<'a> {
     fn hmm_temp_fn_to_get_just_pairpos<'b: 'a>(
         &'b self,
@@ -173,14 +209,20 @@ impl<'a> LookupRules<'a> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct PairPosRule<'a> {
-    gid1: GlyphId,
-    gid2: GlyphId,
+    first: GlyphId,
+    second: GlyphSet,
     data: FontData<'a>,
     record1: ValueRecord,
     record2: ValueRecord,
     flags: LookupFlag,
+}
+
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+enum GlyphSet {
+    Single(GlyphId),
+    Multiple(Vec<GlyphId>),
 }
 
 impl<'a> PairPosRule<'a> {
@@ -209,8 +251,8 @@ impl<'a> PairPosRule<'a> {
 
 impl PartialEq for PairPosRule<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.gid1 == other.gid1
-            && self.gid2 == other.gid2
+        self.first == other.first
+            && self.second == other.second
             && self.record1 == other.record1
             && self.record2 == other.record2
     }
@@ -220,7 +262,7 @@ impl Eq for PairPosRule<'_> {}
 
 impl Ord for PairPosRule<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.gid1, self.gid2).cmp(&(other.gid1, other.gid2))
+        (self.first, &self.second).cmp(&(other.first, &other.second))
     }
 }
 
@@ -230,6 +272,16 @@ impl PartialOrd for PairPosRule<'_> {
     }
 }
 
+impl Debug for PairPosRule<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PairPosRule")
+            .field("first", &self.first)
+            .field("second", &self.second)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Debug)]
 enum LookupRule<'a> {
     PairPos(PairPosRule<'a>),
     SomethingElse,
@@ -246,22 +298,63 @@ fn get_lookup_rules<'a>(lookups: &PositionLookupList<'a>) -> LookupRules<'a> {
                 for subt in lookup.subtables().iter() {
                     let subt = subt.unwrap();
                     match subt {
-                        PairPos::Format1(subt) => get_pairpos_f1_rules(&subt, &mut rules, flag),
-                        PairPos::Format2(subt) => get_pairpos_f2_rules(&subt, &mut rules, flag),
+                        PairPos::Format1(subt) => {
+                            get_pairpos_f1_rules(&subt, |rule| rules.push(rule), flag)
+                        }
+                        PairPos::Format2(subt) => {
+                            get_pairpos_f2_rules(&subt, |rule| rules.push(rule), flag)
+                        }
                     }
                 }
             }
             _ => (),
         }
-        result.push(rules);
+        result.push(combine_rules(rules));
     }
     LookupRules { rules: result }
+}
+
+// combine any rules where the first glyph and the value records are identical.
+fn combine_rules(rules: Vec<PairPosRule>) -> Vec<LookupRule> {
+    let mut seen = IndexMap::<_, PairPosRule>::new();
+    for rule in rules {
+        match seen.entry((
+            rule.first,
+            make_hashable_thing(&rule.record1),
+            make_hashable_thing(&rule.record2),
+        )) {
+            indexmap::map::Entry::Occupied(mut entry) => {
+                entry.get_mut().second.combine(rule.second)
+            }
+            indexmap::map::Entry::Vacant(entry) => {
+                entry.insert(rule);
+            }
+        }
+    }
+    seen.into_values().map(LookupRule::PairPos).collect()
+}
+
+fn make_hashable_thing(value_record: &ValueRecord) -> ([i16; 4], [u32; 4]) {
+    (
+        [
+            value_record.x_placement().unwrap_or_default(),
+            value_record.y_placement().unwrap_or_default(),
+            value_record.x_advance().unwrap_or_default(),
+            value_record.y_advance().unwrap_or_default(),
+        ],
+        [
+            value_record.x_placement_device.get().offset().to_u32(),
+            value_record.y_placement_device.get().offset().to_u32(),
+            value_record.x_advance_device.get().offset().to_u32(),
+            value_record.y_advance_device.get().offset().to_u32(),
+        ],
+    )
 }
 
 // okay so we want to return some heterogeneous type here hmhm
 fn get_pairpos_f1_rules<'a>(
     subtable: &PairPosFormat1<'a>,
-    rules: &mut Vec<LookupRule<'a>>,
+    mut add_fn: impl FnMut(PairPosRule<'a>),
     flags: LookupFlag,
 ) -> () {
     let coverage = subtable.coverage().unwrap();
@@ -272,14 +365,14 @@ fn get_pairpos_f1_rules<'a>(
             let pairrec = pairrec.unwrap();
             let gid2 = pairrec.second_glyph();
             let data = pairset.offset_data();
-            rules.push(LookupRule::PairPos(PairPosRule {
-                gid1,
-                gid2,
+            add_fn(PairPosRule {
+                first: gid1,
+                second: gid2.into(),
                 data,
                 record1: pairrec.value_record1,
                 record2: pairrec.value_record2,
                 flags,
-            }))
+            })
         }
     }
 }
@@ -293,7 +386,7 @@ fn is_noop(value_record: &ValueRecord) -> bool {
 
 fn get_pairpos_f2_rules<'a>(
     subtable: &PairPosFormat2<'a>,
-    rules: &mut Vec<LookupRule<'a>>,
+    mut add_fn: impl FnMut(PairPosRule<'a>),
     flags: LookupFlag,
 ) -> () {
     let coverage = subtable.coverage().unwrap();
@@ -322,15 +415,46 @@ fn get_pairpos_f2_rules<'a>(
                 .flat_map(|c2glyphs| c2glyphs.iter())
                 .copied()
             {
-                rules.push(LookupRule::PairPos(PairPosRule {
-                    gid1,
-                    gid2,
+                add_fn(PairPosRule {
+                    first: gid1,
+                    second: gid2.into(),
                     data,
                     record1: record1.clone(),
                     record2: record2.clone(),
                     flags,
-                }))
+                })
             }
         }
+    }
+}
+
+impl GlyphSet {
+    fn make_set(&mut self) {
+        if let GlyphSet::Single(gid) = self {
+            *self = GlyphSet::Multiple(vec![*gid])
+        }
+    }
+
+    fn combine(&mut self, other: GlyphSet) {
+        self.make_set();
+        let GlyphSet::Multiple(gids) = self else {
+            unreachable!()
+        };
+        match other {
+            GlyphSet::Single(gid) => gids.push(gid),
+            GlyphSet::Multiple(multi) => gids.extend(multi),
+        }
+    }
+}
+
+impl From<GlyphId> for GlyphSet {
+    fn from(src: GlyphId) -> GlyphSet {
+        GlyphSet::Single(src)
+    }
+}
+
+impl FromIterator<GlyphId> for GlyphSet {
+    fn from_iter<T: IntoIterator<Item = GlyphId>>(iter: T) -> Self {
+        GlyphSet::Multiple(iter.into_iter().collect())
     }
 }

@@ -13,6 +13,7 @@ clap.workspace = true
 thiserror.workspace = true
 smol_str.workspace = true
 read-fonts.workspace = true
+indexmap.workspace = true
 
 # cargo-release settings
 [package.metadata.release]
