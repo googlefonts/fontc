@@ -16,12 +16,7 @@ use read_fonts::{
     FontData, FontRef, ReadError, TableProvider,
 };
 
-use crate::{
-    common,
-    error::Error,
-    glyph_names::NameMap,
-    variations::{DeltaComputer, Value},
-};
+use crate::{common, error::Error, glyph_names::NameMap, variations::DeltaComputer};
 
 pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
     println!("# GPOS #");
@@ -39,7 +34,7 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
     let script_list = table.script_list().unwrap();
     let feature_list = table.feature_list().unwrap();
     let lang_systems = common::get_lang_systems(&script_list, &feature_list);
-    let lookup_rules = get_lookup_rules(&table.lookup_list().unwrap());
+    let lookup_rules = get_lookup_rules(&table.lookup_list().unwrap(), var_store.as_ref());
 
     // so we want to iterate the rules sorted by:
     // - rule type
@@ -65,10 +60,10 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
                 glyphs: &rule.second,
                 names,
             };
-            let v1 = rule.record1_printer(var_store.as_ref());
-            let v2 = rule.record2_printer(var_store.as_ref());
+            let v1 = &rule.record1;
+            let v2 = &rule.record2;
             print!("{g1} {v1} {g2}");
-            if !is_noop(&rule.record2) {
+            if !rule.record2.is_zero() {
                 println!(" {v2}");
             } else {
                 println!();
@@ -79,21 +74,116 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum DeviceOrDeltas {
+    Device {
+        start: u16,
+        end: u16,
+        values: Vec<i8>,
+    },
+    Deltas(Vec<i32>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct ResolvedValue {
+    default: i16,
+    device_or_deltas: Option<DeviceOrDeltas>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct ResolvedValueRecord {
+    x_advance: ResolvedValue,
+    y_advance: ResolvedValue,
+    x_placement: ResolvedValue,
+    y_placement: ResolvedValue,
+}
+
+impl ResolvedValueRecord {
+    fn new(
+        record: ValueRecord,
+        data: FontData,
+        computer: Option<&DeltaComputer>,
+    ) -> Result<Self, ReadError> {
+        let x_advance =
+            ResolvedValue::new(record.x_advance(), record.x_advance_device(data), computer)?;
+        let y_advance =
+            ResolvedValue::new(record.y_advance(), record.y_advance_device(data), computer)?;
+
+        let x_placement = ResolvedValue::new(
+            record.x_placement(),
+            record.x_placement_device(data),
+            computer,
+        )?;
+        let y_placement = ResolvedValue::new(
+            record.y_placement(),
+            record.y_placement_device(data),
+            computer,
+        )?;
+        Ok(ResolvedValueRecord {
+            x_advance,
+            y_advance,
+            x_placement,
+            y_placement,
+        })
+    }
+
+    /// If y_adv, y_pos and x_pos are all zero, return x_adv
+    fn maybe_just_adv(&self) -> Option<&ResolvedValue> {
+        if self.y_advance.is_zero() && self.y_placement.is_zero() && self.x_placement.is_zero() {
+            Some(&self.x_advance)
+        } else {
+            None
+        }
+    }
+
+    fn is_zero(&self) -> bool {
+        self.y_advance.is_zero()
+            && self.x_advance.is_zero()
+            && self.y_placement.is_zero()
+            && self.x_placement.is_zero()
+    }
+}
+
+impl ResolvedValue {
+    fn new(
+        default: Option<i16>,
+        device: Option<Result<DeviceOrVariationIndex, ReadError>>,
+        ivs: Option<&DeltaComputer>,
+    ) -> Result<Self, ReadError> {
+        let default = default.unwrap_or_default();
+        let device_or_deltas = device.transpose()?.map(|device| match device {
+            DeviceOrVariationIndex::Device(device) => Ok(DeviceOrDeltas::Device {
+                start: device.start_size(),
+                end: device.end_size(),
+                values: device.iter().collect(),
+            }),
+            DeviceOrVariationIndex::VariationIndex(idx) => ivs
+                .unwrap()
+                .master_values(default as _, idx)
+                .map(DeviceOrDeltas::Deltas),
+        });
+        device_or_deltas
+            .transpose()
+            .map(|device_or_deltas| ResolvedValue {
+                default,
+                device_or_deltas,
+            })
+    }
+
+    fn is_zero(&self) -> bool {
+        self.default == 0 && self.device_or_deltas.is_none()
+    }
+}
+
 // only kerning, for now?
 // needs to store:
 // - the lookup id, so we can find a thing
 // - the lookup flag, so we can show it
 // - all the rules for each lookup, in some format
 //
-struct LookupRules<'a> {
+struct LookupRules {
     // decomposed rules for each lookup, in lookup order
-    rules: Vec<Vec<LookupRule<'a>>>,
-}
-
-struct ValueRecordPrinter<'a, 'b: 'a> {
-    record: &'b ValueRecord,
-    ivs: Option<&'b DeltaComputer<'a>>,
-    data: FontData<'a>,
+    rules: Vec<Vec<LookupRule>>,
 }
 
 struct GlyphPrinter<'a> {
@@ -101,69 +191,51 @@ struct GlyphPrinter<'a> {
     names: &'a NameMap,
 }
 
-impl ValueRecordPrinter<'_, '_> {
-    fn make_value(
-        &self,
-        default: Option<i16>,
-        device: Option<Result<DeviceOrVariationIndex, ReadError>>,
-    ) -> Option<Value> {
-        let default = default?;
-        let variations = match device {
-            Some(Ok(DeviceOrVariationIndex::VariationIndex(vi))) => self
-                .ivs
-                .map(|ivs| ivs.master_values(default as _, vi).unwrap()),
-            _ => None,
-        };
-
-        Some(Value {
-            default,
-            variations,
-        })
-    }
-
-    fn x_placement(&self) -> Option<Value> {
-        let default = self.record.x_placement();
-        let device = self.record.x_placement_device(self.data);
-        self.make_value(default, device)
-    }
-
-    fn y_placement(&self) -> Option<Value> {
-        let default = self.record.y_placement();
-        let device = self.record.y_placement_device(self.data);
-        self.make_value(default, device)
-    }
-
-    fn x_advance(&self) -> Option<Value> {
-        let default = self.record.x_advance();
-        let device = self.record.x_advance_device(self.data);
-        self.make_value(default, device)
-    }
-
-    fn y_advance(&self) -> Option<Value> {
-        let default = self.record.y_advance();
-        let device = self.record.y_advance_device(self.data);
-        self.make_value(default, device)
-    }
-}
-
-impl Display for ValueRecordPrinter<'_, '_> {
+impl Display for ResolvedValueRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let maybe_just_adv = self.record.x_placement.is_none()
-            && self.record.y_placement.is_none()
-            && self.record.y_advance.is_none();
-        if maybe_just_adv {
-            if let Some(xadv) = self.x_advance() {
+        if let Some(xadv) = self.maybe_just_adv() {
+            if !xadv.is_zero() {
                 write!(f, "{}", xadv)
             } else {
                 Ok(())
             }
         } else {
-            let x_place = self.x_placement().unwrap_or_default();
-            let y_place = self.y_placement().unwrap_or_default();
-            let x_adv = self.x_advance().unwrap_or_default();
-            let y_adv = self.y_advance().unwrap_or_default();
-            write!(f, "<{x_place} {y_place} {x_adv} {y_adv}>")
+            write!(
+                f,
+                "<{} {} {} {}>",
+                &self.x_placement, &self.y_placement, &self.x_advance, &self.y_advance
+            )
         }
+    }
+}
+
+impl Display for ResolvedValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.default)?;
+        match &self.device_or_deltas {
+            Some(DeviceOrDeltas::Device { start, end, values }) => {
+                write!(f, " [({start})")?;
+                for (i, adj) in values.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{adj}")?;
+                }
+                write!(f, "({end})]")?;
+            }
+            Some(DeviceOrDeltas::Deltas(deltas)) => {
+                write!(f, " {{")?;
+                for (i, var) in deltas.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{var}")?;
+                }
+                write!(f, "}}")?;
+            }
+            None => (),
+        }
+        Ok(())
     }
 }
 
@@ -191,11 +263,8 @@ impl Display for GlyphPrinter<'_> {
     }
 }
 
-impl<'a> LookupRules<'a> {
-    fn hmm_temp_fn_to_get_just_pairpos<'b: 'a>(
-        &'b self,
-        lookups: &[u16],
-    ) -> Vec<&'b PairPosRule<'a>> {
+impl LookupRules {
+    fn hmm_temp_fn_to_get_just_pairpos<'a>(&'a self, lookups: &[u16]) -> Vec<&'a PairPosRule> {
         let mut result = Vec::new();
         for lookup in lookups {
             for rule in &self.rules[*lookup as usize] {
@@ -210,12 +279,11 @@ impl<'a> LookupRules<'a> {
 }
 
 #[derive(Clone)]
-struct PairPosRule<'a> {
+struct PairPosRule {
     first: GlyphId,
     second: GlyphSet,
-    data: FontData<'a>,
-    record1: ValueRecord,
-    record2: ValueRecord,
+    record1: ResolvedValueRecord,
+    record2: ResolvedValueRecord,
     flags: LookupFlag,
 }
 
@@ -225,31 +293,7 @@ enum GlyphSet {
     Multiple(Vec<GlyphId>),
 }
 
-impl<'a> PairPosRule<'a> {
-    fn record1_printer<'b: 'a>(
-        &'b self,
-        ivs: Option<&'b DeltaComputer<'a>>,
-    ) -> ValueRecordPrinter<'a, 'b> {
-        ValueRecordPrinter {
-            record: &self.record1,
-            ivs,
-            data: self.data,
-        }
-    }
-
-    fn record2_printer<'b: 'a>(
-        &'b self,
-        ivs: Option<&'b DeltaComputer<'a>>,
-    ) -> ValueRecordPrinter<'a, 'b> {
-        ValueRecordPrinter {
-            record: &self.record2,
-            ivs,
-            data: self.data,
-        }
-    }
-}
-
-impl PartialEq for PairPosRule<'_> {
+impl PartialEq for PairPosRule {
     fn eq(&self, other: &Self) -> bool {
         self.first == other.first
             && self.second == other.second
@@ -258,21 +302,21 @@ impl PartialEq for PairPosRule<'_> {
     }
 }
 
-impl Eq for PairPosRule<'_> {}
+impl Eq for PairPosRule {}
 
-impl Ord for PairPosRule<'_> {
+impl Ord for PairPosRule {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (self.first, &self.second).cmp(&(other.first, &other.second))
     }
 }
 
-impl PartialOrd for PairPosRule<'_> {
+impl PartialOrd for PairPosRule {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Debug for PairPosRule<'_> {
+impl Debug for PairPosRule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PairPosRule")
             .field("first", &self.first)
@@ -282,12 +326,15 @@ impl Debug for PairPosRule<'_> {
 }
 
 #[derive(Clone, Debug)]
-enum LookupRule<'a> {
-    PairPos(PairPosRule<'a>),
+enum LookupRule {
+    PairPos(PairPosRule),
     SomethingElse,
 }
 
-fn get_lookup_rules<'a>(lookups: &PositionLookupList<'a>) -> LookupRules<'a> {
+fn get_lookup_rules<'a>(
+    lookups: &PositionLookupList<'a>,
+    delta_computer: Option<&DeltaComputer>,
+) -> LookupRules {
     let mut result = Vec::new();
     for (_i, lookup) in lookups.lookups().iter().enumerate() {
         let mut rules = Vec::new();
@@ -298,12 +345,18 @@ fn get_lookup_rules<'a>(lookups: &PositionLookupList<'a>) -> LookupRules<'a> {
                 for subt in lookup.subtables().iter() {
                     let subt = subt.unwrap();
                     match subt {
-                        PairPos::Format1(subt) => {
-                            get_pairpos_f1_rules(&subt, |rule| rules.push(rule), flag)
-                        }
-                        PairPos::Format2(subt) => {
-                            get_pairpos_f2_rules(&subt, |rule| rules.push(rule), flag)
-                        }
+                        PairPos::Format1(subt) => get_pairpos_f1_rules(
+                            &subt,
+                            |rule| rules.push(rule),
+                            flag,
+                            delta_computer,
+                        ),
+                        PairPos::Format2(subt) => get_pairpos_f2_rules(
+                            &subt,
+                            |rule| rules.push(rule),
+                            flag,
+                            delta_computer,
+                        ),
                     }
                 }
             }
@@ -318,11 +371,7 @@ fn get_lookup_rules<'a>(lookups: &PositionLookupList<'a>) -> LookupRules<'a> {
 fn combine_rules(rules: Vec<PairPosRule>) -> Vec<LookupRule> {
     let mut seen = IndexMap::<_, PairPosRule>::new();
     for rule in rules {
-        match seen.entry((
-            rule.first,
-            make_hashable_thing(&rule.record1),
-            make_hashable_thing(&rule.record2),
-        )) {
+        match seen.entry((rule.first, rule.record1.clone(), rule.record2.clone())) {
             indexmap::map::Entry::Occupied(mut entry) => {
                 entry.get_mut().second.combine(rule.second)
             }
@@ -334,28 +383,12 @@ fn combine_rules(rules: Vec<PairPosRule>) -> Vec<LookupRule> {
     seen.into_values().map(LookupRule::PairPos).collect()
 }
 
-fn make_hashable_thing(value_record: &ValueRecord) -> ([i16; 4], [u32; 4]) {
-    (
-        [
-            value_record.x_placement().unwrap_or_default(),
-            value_record.y_placement().unwrap_or_default(),
-            value_record.x_advance().unwrap_or_default(),
-            value_record.y_advance().unwrap_or_default(),
-        ],
-        [
-            value_record.x_placement_device.get().offset().to_u32(),
-            value_record.y_placement_device.get().offset().to_u32(),
-            value_record.x_advance_device.get().offset().to_u32(),
-            value_record.y_advance_device.get().offset().to_u32(),
-        ],
-    )
-}
-
 // okay so we want to return some heterogeneous type here hmhm
 fn get_pairpos_f1_rules<'a>(
     subtable: &PairPosFormat1<'a>,
-    mut add_fn: impl FnMut(PairPosRule<'a>),
+    mut add_fn: impl FnMut(PairPosRule),
     flags: LookupFlag,
+    delta_computer: Option<&DeltaComputer>,
 ) -> () {
     let coverage = subtable.coverage().unwrap();
     let pairsets = subtable.pair_sets();
@@ -365,12 +398,15 @@ fn get_pairpos_f1_rules<'a>(
             let pairrec = pairrec.unwrap();
             let gid2 = pairrec.second_glyph();
             let data = pairset.offset_data();
+            let record1 =
+                ResolvedValueRecord::new(pairrec.value_record1, data, delta_computer).unwrap();
+            let record2 =
+                ResolvedValueRecord::new(pairrec.value_record2, data, delta_computer).unwrap();
             add_fn(PairPosRule {
                 first: gid1,
                 second: gid2.into(),
-                data,
-                record1: pairrec.value_record1,
-                record2: pairrec.value_record2,
+                record1,
+                record2,
                 flags,
             })
         }
@@ -386,8 +422,9 @@ fn is_noop(value_record: &ValueRecord) -> bool {
 
 fn get_pairpos_f2_rules<'a>(
     subtable: &PairPosFormat2<'a>,
-    mut add_fn: impl FnMut(PairPosRule<'a>),
+    mut add_fn: impl FnMut(PairPosRule),
     flags: LookupFlag,
+    delta_computer: Option<&DeltaComputer>,
 ) -> () {
     let coverage = subtable.coverage().unwrap();
     let class1 = subtable.class_def1().unwrap();
@@ -415,10 +452,14 @@ fn get_pairpos_f2_rules<'a>(
                 .flat_map(|c2glyphs| c2glyphs.iter())
                 .copied()
             {
+                let record1 =
+                    ResolvedValueRecord::new(record1.clone(), data, delta_computer).unwrap();
+                let record2 =
+                    ResolvedValueRecord::new(record2.clone(), data, delta_computer).unwrap();
+
                 add_fn(PairPosRule {
                     first: gid1,
                     second: gid2.into(),
-                    data,
                     record1: record1.clone(),
                     record2: record2.clone(),
                     flags,
