@@ -86,6 +86,7 @@ impl GlyphsIrSource {
             glyph_order: Default::default(),
             glyph_to_codepoints: Default::default(),
             axis_mappings: font.axis_mappings.clone(),
+            virtual_masters: Default::default(),
             features: Default::default(),
             names: Default::default(),
             instances: font.instances.clone(),
@@ -114,6 +115,7 @@ impl GlyphsIrSource {
             glyph_order: Default::default(),
             glyph_to_codepoints: Default::default(),
             axis_mappings: Default::default(),
+            virtual_masters: Default::default(),
             features: Default::default(),
             names: Default::default(),
             instances: font.instances.clone(),
@@ -804,20 +806,16 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             }
         }
 
-        // It's helpful if glyphs are defined at min, default, and max (some of which may be cooincident)
+        // It's helpful if glyphs are defined at default
         for axis in axes.iter() {
-            let min = axis.min.to_normalized(&axis.converter);
-            let max = axis.max.to_normalized(&axis.converter);
-            let default = axis.max.to_normalized(&axis.converter);
+            let default = axis.default.to_normalized(&axis.converter);
             let Some(positions) = axis_positions.get(&axis.tag) else {
                 return Err(WorkError::NoAxisPosition(
                     self.glyph_name.clone(),
                     axis.name.clone(),
                 ));
             };
-            check_pos(&self.glyph_name, positions, axis, &min)?;
             check_pos(&self.glyph_name, positions, axis, &default)?;
-            check_pos(&self.glyph_name, positions, axis, &max)?;
         }
 
         context.anchors.set(ir_anchors.try_into()?);
@@ -1204,25 +1202,6 @@ mod tests {
             .collect::<HashSet<_>>();
 
         assert_eq!(expected_locations, actual_locations);
-    }
-
-    #[test]
-    fn glyph_must_define_min() {
-        let glyph_name = GlyphName::from("min-undefined");
-        let (source, context) = build_static_metadata(glyphs2_dir().join("MinUndef.glyphs"));
-        let result = build_glyphs(&source, &context, &[&glyph_name]);
-        assert!(result.is_err());
-        let Err(WorkError::GlyphUndefAtNormalizedPosition {
-            glyph_name,
-            axis,
-            pos,
-        }) = result
-        else {
-            panic!("Wrong error");
-        };
-        assert_eq!("min-undefined", glyph_name.as_str());
-        assert_eq!(Tag::new(b"wght"), axis);
-        assert_eq!(NormalizedCoord::new(-1.0), pos);
     }
 
     #[test]

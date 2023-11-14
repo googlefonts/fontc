@@ -179,7 +179,9 @@ fn to_ir_axis(
     let min = DesignCoord::new(min);
     let max = DesignCoord::new(max);
 
-    let converter = if font.axis_mappings.contains(&axis.name) {
+    let converter = if font.axis_mappings.contains(&axis.name)
+        && !font.axis_mappings.get(&axis.name).unwrap().is_identity()
+    {
         let mappings: Vec<_> = font
             .axis_mappings
             .get(&axis.name)
@@ -193,7 +195,7 @@ fn to_ir_axis(
         find_by_design_coord(&mappings, max, axis.name.as_str(), "max")?;
         CoordConverter::new(mappings, default_idx)
     } else {
-        // There is no mapping; design == user
+        // There is no meaningful mapping; design == user
         let min = UserCoord::new(min.into_inner());
         let max = UserCoord::new(max.into_inner());
         let default = UserCoord::new(default.into_inner());
@@ -226,7 +228,22 @@ fn ir_axes(font: &Font) -> Result<Vec<fontdrasil::types::Axis>, Error> {
         .iter()
         .enumerate()
         .map(|(idx, glyphs_axis)| {
-            let axis_values: Vec<_> = font.masters.iter().map(|m| m.axes_values[idx]).collect();
+            let axis_values: Vec<_> = font
+                .masters
+                .iter()
+                .map(|m| m.axes_values[idx])
+                // extend the masters' axis values with the virtual masters' if any;
+                // they will be used to compute the axis min/max values
+                .chain(font.virtual_masters.iter().flat_map(|vm| {
+                    vm.iter().filter_map(|(axis_name, location)| {
+                        if axis_name == &glyphs_axis.name {
+                            Some(*location)
+                        } else {
+                            None
+                        }
+                    })
+                }))
+                .collect();
             to_ir_axis(font, &axis_values, font.default_master_idx, glyphs_axis)
         })
         .collect()

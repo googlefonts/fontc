@@ -4,10 +4,18 @@
   <dict>
     <key>.notdef</key>
     <string>_notdef.glif</string>
+    <key>H</key>
+    <string>H_.glif</string>
     <key>I</key>
     <string>I_.glif</string>
+    <key>acutecomb</key>
+    <string>acutecomb.glif</string>
     <key>i</key>
     <string>i.glif</string>
+    <key>iacute</key>
+    <string>iacute.glif</string>
+    <key>idotless</key>
+    <string>idotless.glif</string>
     <key>space</key>
     <string>space.glif</string>
   </dict>

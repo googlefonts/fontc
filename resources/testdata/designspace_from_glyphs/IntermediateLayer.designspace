@@ -1,6 +1,7 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <designspace format="5.0">
   <axes>
+    <axis tag="CPHT" name="Cap Height" minimum="600" maximum="800" default="700"/>
     <axis tag="wght" name="Weight" minimum="400" maximum="900" default="400"/>
   </axes>
   <sources>
@@ -10,16 +11,31 @@
       <features copy="1"/>
       <info copy="1"/>
       <location>
+        <dimension name="Cap Height" xvalue="700"/>
         <dimension name="Weight" xvalue="400"/>
       </location>
     </source>
-    <source filename="IntermediateLayer-Regular.ufo" name="Intermediate Layer Regular {700}" layer="{700}">
+    <source filename="IntermediateLayer-Regular.ufo" name="Intermediate Layer Regular {600, 400}" layer="{600, 400}">
       <location>
+        <dimension name="Cap Height" xvalue="600"/>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </source>
+    <source filename="IntermediateLayer-Regular.ufo" name="Intermediate Layer Regular {700, 700}" layer="{700, 700}">
+      <location>
+        <dimension name="Cap Height" xvalue="700"/>
         <dimension name="Weight" xvalue="700"/>
+      </location>
+    </source>
+    <source filename="IntermediateLayer-Regular.ufo" name="Intermediate Layer Regular {800, 400}" layer="{800, 400}">
+      <location>
+        <dimension name="Cap Height" xvalue="800"/>
+        <dimension name="Weight" xvalue="400"/>
       </location>
     </source>
     <source filename="IntermediateLayer-Black.ufo" name="Intermediate Layer Black" familyname="Intermediate Layer" stylename="Black">
       <location>
+        <dimension name="Cap Height" xvalue="700"/>
         <dimension name="Weight" xvalue="900"/>
       </location>
     </source>
@@ -27,16 +43,55 @@
   <instances>
     <instance name="Intermediate Layer Regular" familyname="Intermediate Layer" stylename="Regular" filename="../instance_ufo/IntermediateLayer-Regular.ufo" stylemapfamilyname="Intermediate Layer" stylemapstylename="regular">
       <location>
+        <dimension name="Cap Height" xvalue="700"/>
         <dimension name="Weight" xvalue="400"/>
       </location>
     </instance>
     <instance name="Intermediate Layer Bold" familyname="Intermediate Layer" stylename="Bold" filename="../instance_ufo/IntermediateLayer-Bold.ufo" stylemapfamilyname="Intermediate Layer" stylemapstylename="bold">
       <location>
+        <dimension name="Cap Height" xvalue="700"/>
         <dimension name="Weight" xvalue="700"/>
       </location>
     </instance>
     <instance name="Intermediate Layer Black" familyname="Intermediate Layer" stylename="Black" filename="../instance_ufo/IntermediateLayer-Black.ufo" stylemapfamilyname="Intermediate Layer Black" stylemapstylename="regular">
       <location>
+        <dimension name="Cap Height" xvalue="700"/>
+        <dimension name="Weight" xvalue="900"/>
+      </location>
+    </instance>
+    <instance name="Intermediate Layer Short Caps" familyname="Intermediate Layer" stylename="Short Caps" filename="../instance_ufo/IntermediateLayer-ShortCaps.ufo" stylemapfamilyname="Intermediate Layer Short Caps" stylemapstylename="regular">
+      <location>
+        <dimension name="Cap Height" xvalue="600"/>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </instance>
+    <instance name="Intermediate Layer Short Caps Bold" familyname="Intermediate Layer" stylename="Short Caps Bold" filename="../instance_ufo/IntermediateLayer-ShortCapsBold.ufo" stylemapfamilyname="Intermediate Layer Short Caps Bold" stylemapstylename="regular">
+      <location>
+        <dimension name="Cap Height" xvalue="600"/>
+        <dimension name="Weight" xvalue="700"/>
+      </location>
+    </instance>
+    <instance name="Intermediate Layer Short Caps Black" familyname="Intermediate Layer" stylename="Short Caps Black" filename="../instance_ufo/IntermediateLayer-ShortCapsBlack.ufo" stylemapfamilyname="Intermediate Layer Short Caps Black" stylemapstylename="regular">
+      <location>
+        <dimension name="Cap Height" xvalue="600"/>
+        <dimension name="Weight" xvalue="900"/>
+      </location>
+    </instance>
+    <instance name="Intermediate Layer Tall Caps" familyname="Intermediate Layer" stylename="Tall Caps" filename="../instance_ufo/IntermediateLayer-TallCaps.ufo" stylemapfamilyname="Intermediate Layer Tall Caps" stylemapstylename="regular">
+      <location>
+        <dimension name="Cap Height" xvalue="800"/>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </instance>
+    <instance name="Intermediate Layer Tall Caps Bold" familyname="Intermediate Layer" stylename="Tall Caps Bold" filename="../instance_ufo/IntermediateLayer-TallCapsBold.ufo" stylemapfamilyname="Intermediate Layer Tall Caps Bold" stylemapstylename="regular">
+      <location>
+        <dimension name="Cap Height" xvalue="800"/>
+        <dimension name="Weight" xvalue="700"/>
+      </location>
+    </instance>
+    <instance name="Intermediate Layer Tall Caps Black" familyname="Intermediate Layer" stylename="Tall Caps Black" filename="../instance_ufo/IntermediateLayer-TallCapsBlack.ufo" stylemapfamilyname="Intermediate Layer Tall Caps Black" stylemapstylename="regular">
+      <location>
+        <dimension name="Cap Height" xvalue="800"/>
         <dimension name="Weight" xvalue="900"/>
       </location>
     </instance>
