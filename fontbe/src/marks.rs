@@ -111,7 +111,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         }))
     }
 
-    /// Generate kerning data structures.
+    /// Generate mark data structures.
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();
