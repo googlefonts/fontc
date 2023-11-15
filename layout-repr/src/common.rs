@@ -1,7 +1,11 @@
+use std::fmt::Display;
+
 use read_fonts::{
     tables::layout::{FeatureList, ScriptList},
-    types::Tag,
+    types::{GlyphId, Tag},
 };
+
+use crate::glyph_names::NameMap;
 
 /// A set of lookups for a specific feature and language system
 pub(crate) struct Feature {
@@ -9,6 +13,12 @@ pub(crate) struct Feature {
     pub(crate) script: Tag,
     pub(crate) lang: Tag,
     pub(crate) lookups: Vec<u16>,
+}
+
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+pub(crate) enum GlyphSet {
+    Single(GlyphId),
+    Multiple(Vec<GlyphId>),
 }
 
 impl Feature {
@@ -81,4 +91,72 @@ pub(crate) fn get_lang_systems(
     result.sort_unstable_by_key(|sys| sys.sort_key());
 
     result
+}
+
+impl GlyphSet {
+    pub(crate) fn make_set(&mut self) {
+        if let GlyphSet::Single(gid) = self {
+            *self = GlyphSet::Multiple(vec![*gid])
+        }
+    }
+
+    pub(crate) fn combine(&mut self, other: GlyphSet) {
+        self.make_set();
+        let GlyphSet::Multiple(gids) = self else {
+            unreachable!()
+        };
+        match other {
+            GlyphSet::Single(gid) => gids.push(gid),
+            GlyphSet::Multiple(multi) => gids.extend(multi),
+        }
+    }
+
+    pub(crate) fn printer<'a>(&'a self, names: &'a NameMap) -> impl Display + 'a {
+        // A helper for printing one or more glyphs
+        struct GlyphPrinter<'a> {
+            glyphs: &'a GlyphSet,
+            names: &'a NameMap,
+        }
+
+        impl Display for GlyphPrinter<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self.glyphs {
+                    GlyphSet::Single(single) => {
+                        let name = self.names.get(*single);
+                        f.write_str(&name)
+                    }
+                    GlyphSet::Multiple(glyphs) => {
+                        f.write_str("[")?;
+                        let mut first = true;
+                        for gid in glyphs {
+                            let name = self.names.get(*gid);
+                            if !first {
+                                f.write_str(",")?;
+                            }
+                            f.write_str(&name)?;
+                            first = false;
+                        }
+                        f.write_str("]")
+                    }
+                }
+            }
+        }
+
+        GlyphPrinter {
+            glyphs: self,
+            names,
+        }
+    }
+}
+
+impl From<GlyphId> for GlyphSet {
+    fn from(src: GlyphId) -> GlyphSet {
+        GlyphSet::Single(src)
+    }
+}
+
+impl FromIterator<GlyphId> for GlyphSet {
+    fn from_iter<T: IntoIterator<Item = GlyphId>>(iter: T) -> Self {
+        GlyphSet::Multiple(iter.into_iter().collect())
+    }
 }

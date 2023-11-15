@@ -16,7 +16,12 @@ use read_fonts::{
     FontData, FontRef, ReadError, TableProvider,
 };
 
-use crate::{common, error::Error, glyph_names::NameMap, variations::DeltaComputer};
+use crate::{
+    common::{self, GlyphSet},
+    error::Error,
+    glyph_names::NameMap,
+    variations::DeltaComputer,
+};
 
 pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
     println!("# GPOS #");
@@ -56,10 +61,7 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
                 last_flag = Some(rule.flags);
             }
             let g1 = names.get(rule.first);
-            let g2 = GlyphPrinter {
-                glyphs: &rule.second,
-                names,
-            };
+            let g2 = rule.second.printer(names);
             let v1 = &rule.record1;
             let v2 = &rule.record2;
             print!("{g1} {v1} {g2}");
@@ -84,12 +86,14 @@ enum DeviceOrDeltas {
     Deltas(Vec<i32>),
 }
 
+/// A value plus an optional device table or set of deltas
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ResolvedValue {
     default: i16,
     device_or_deltas: Option<DeviceOrDeltas>,
 }
 
+/// A value record where any contained tables have been resolved
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ResolvedValueRecord {
     x_advance: ResolvedValue,
@@ -186,81 +190,10 @@ struct LookupRules {
     rules: Vec<Vec<LookupRule>>,
 }
 
-struct GlyphPrinter<'a> {
-    glyphs: &'a GlyphSet,
-    names: &'a NameMap,
-}
-
-impl Display for ResolvedValueRecord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(xadv) = self.maybe_just_adv() {
-            if !xadv.is_zero() {
-                write!(f, "{}", xadv)
-            } else {
-                Ok(())
-            }
-        } else {
-            write!(
-                f,
-                "<{} {} {} {}>",
-                &self.x_placement, &self.y_placement, &self.x_advance, &self.y_advance
-            )
-        }
-    }
-}
-
-impl Display for ResolvedValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.default)?;
-        match &self.device_or_deltas {
-            Some(DeviceOrDeltas::Device { start, end, values }) => {
-                write!(f, " [({start})")?;
-                for (i, adj) in values.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{adj}")?;
-                }
-                write!(f, "({end})]")?;
-            }
-            Some(DeviceOrDeltas::Deltas(deltas)) => {
-                write!(f, " {{")?;
-                for (i, var) in deltas.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{var}")?;
-                }
-                write!(f, "}}")?;
-            }
-            None => (),
-        }
-        Ok(())
-    }
-}
-
-impl Display for GlyphPrinter<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.glyphs {
-            GlyphSet::Single(single) => {
-                let name = self.names.get(*single);
-                f.write_str(&name)
-            }
-            GlyphSet::Multiple(glyphs) => {
-                f.write_str("[")?;
-                let mut first = true;
-                for gid in glyphs {
-                    let name = self.names.get(*gid);
-                    if !first {
-                        f.write_str(",")?;
-                    }
-                    f.write_str(&name)?;
-                    first = false;
-                }
-                f.write_str("]")
-            }
-        }
-    }
+#[derive(Clone, Debug)]
+enum LookupRule {
+    PairPos(PairPosRule),
+    SomethingElse,
 }
 
 impl LookupRules {
@@ -285,12 +218,6 @@ struct PairPosRule {
     record1: ResolvedValueRecord,
     record2: ResolvedValueRecord,
     flags: LookupFlag,
-}
-
-#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
-enum GlyphSet {
-    Single(GlyphId),
-    Multiple(Vec<GlyphId>),
 }
 
 impl PartialEq for PairPosRule {
@@ -323,12 +250,6 @@ impl Debug for PairPosRule {
             .field("second", &self.second)
             .finish_non_exhaustive()
     }
-}
-
-#[derive(Clone, Debug)]
-enum LookupRule {
-    PairPos(PairPosRule),
-    SomethingElse,
 }
 
 fn get_lookup_rules<'a>(
@@ -469,33 +390,50 @@ fn get_pairpos_f2_rules<'a>(
     }
 }
 
-impl GlyphSet {
-    fn make_set(&mut self) {
-        if let GlyphSet::Single(gid) = self {
-            *self = GlyphSet::Multiple(vec![*gid])
-        }
-    }
-
-    fn combine(&mut self, other: GlyphSet) {
-        self.make_set();
-        let GlyphSet::Multiple(gids) = self else {
-            unreachable!()
-        };
-        match other {
-            GlyphSet::Single(gid) => gids.push(gid),
-            GlyphSet::Multiple(multi) => gids.extend(multi),
+impl Display for ResolvedValueRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(xadv) = self.maybe_just_adv() {
+            if !xadv.is_zero() {
+                write!(f, "{}", xadv)
+            } else {
+                Ok(())
+            }
+        } else {
+            write!(
+                f,
+                "<{} {} {} {}>",
+                &self.x_placement, &self.y_placement, &self.x_advance, &self.y_advance
+            )
         }
     }
 }
 
-impl From<GlyphId> for GlyphSet {
-    fn from(src: GlyphId) -> GlyphSet {
-        GlyphSet::Single(src)
-    }
-}
-
-impl FromIterator<GlyphId> for GlyphSet {
-    fn from_iter<T: IntoIterator<Item = GlyphId>>(iter: T) -> Self {
-        GlyphSet::Multiple(iter.into_iter().collect())
+impl Display for ResolvedValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.default)?;
+        match &self.device_or_deltas {
+            Some(DeviceOrDeltas::Device { start, end, values }) => {
+                write!(f, " [({start})")?;
+                for (i, adj) in values.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{adj}")?;
+                }
+                write!(f, "({end})]")?;
+            }
+            Some(DeviceOrDeltas::Deltas(deltas)) => {
+                write!(f, " {{")?;
+                for (i, var) in deltas.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{var}")?;
+                }
+                write!(f, "}}")?;
+            }
+            None => (),
+        }
+        Ok(())
     }
 }
