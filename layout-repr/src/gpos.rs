@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Debug, Display},
 };
@@ -45,30 +46,19 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
     // - rule type
     // - then just... the ordering used by that rule?
     for sys in &lang_systems {
-        let gpos_rules = lookup_rules.hmm_temp_fn_to_get_just_pairpos(&sys.lookups);
-        if gpos_rules.is_empty() {
-            continue;
-        }
         println!();
         println!("# {}: {}/{} #", sys.feature, sys.script, sys.lang);
-        println!("# {} pair positioning rules", gpos_rules.len());
-        let mut last_flag = None;
 
-        // later on we will figure out a better way to do this
-        for rule in &gpos_rules {
-            if last_flag != Some(rule.flags) {
-                println!("# lookupflag {:?}", rule.flags);
-                last_flag = Some(rule.flags);
-            }
-            let g1 = names.get(rule.first);
-            let g2 = rule.second.printer(names);
-            let v1 = &rule.record1;
-            let v2 = &rule.record2;
-            print!("{g1} {v1} {g2}");
-            if !rule.record2.is_zero() {
-                println!(" {v2}");
-            } else {
-                println!();
+        for rule_set in lookup_rules.iter_rule_sets(&sys.lookups) {
+            println!("# {} {} rules", rule_set.rules.len(), rule_set.lookup_type);
+            let mut last_flag = None;
+            for rule in rule_set.rules {
+                let flags = rule.lookup_flags();
+                if last_flag != Some(flags) {
+                    println!("# lookupflag {flags:?}");
+                    last_flag = Some(flags);
+                }
+                println!("{}", rule_printer(rule, names));
             }
         }
     }
@@ -161,8 +151,8 @@ impl ResolvedAnchor {
                 (anchor.x_coordinate().into(), anchor.y_coordinate().into())
             }
             AnchorTable::Format3(table) => (
-                ResolvedValue::new(anchor.x_coordinate().into(), anchor.x_device(), computer)?,
-                ResolvedValue::new(anchor.y_coordinate().into(), anchor.y_device(), computer)?,
+                ResolvedValue::new(table.x_coordinate().into(), table.x_device(), computer)?,
+                ResolvedValue::new(table.y_coordinate().into(), table.y_device(), computer)?,
             ),
         };
         Ok(ResolvedAnchor { x, y })
@@ -200,12 +190,6 @@ impl ResolvedValue {
     }
 }
 
-// only kerning, for now?
-// needs to store:
-// - the lookup id, so we can find a thing
-// - the lookup flag, so we can show it
-// - all the rules for each lookup, in some format
-//
 struct LookupRules {
     // decomposed rules for each lookup, in lookup order
     rules: Vec<Vec<LookupRule>>,
@@ -214,25 +198,129 @@ struct LookupRules {
 #[derive(Clone, Debug)]
 enum LookupRule {
     PairPos(PairPosRule),
-    SomethingElse,
+    MarkBase(MarkAttachmentRule),
 }
 
-impl LookupRules {
-    fn hmm_temp_fn_to_get_just_pairpos<'a>(&'a self, lookups: &[u16]) -> Vec<&'a PairPosRule> {
-        let mut result = Vec::new();
-        for lookup in lookups {
-            for rule in &self.rules[*lookup as usize] {
-                if let LookupRule::PairPos(rule) = rule {
-                    result.push(rule);
-                }
-            }
+// a collection of rules of a single type
+struct RuleSet<'a> {
+    lookup_type: LookupType,
+    rules: Vec<&'a dyn AnyRule>,
+}
+
+// a trait we use to type-erase our specific rules while printing
+trait AnyRule {
+    fn lookup_flags(&self) -> LookupFlag;
+    fn lookup_type(&self) -> LookupType;
+    // write this rule into the provided stream
+    //
+    // this is passed in a map of gids to names, which are needed for printing
+    fn fmt_impl(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result;
+
+    fn as_any(&self) -> &dyn Any;
+}
+
+fn rule_printer<'a>(rule: &'a dyn AnyRule, names: &'a NameMap) -> Printer<'a> {
+    Printer { rule, names }
+}
+
+impl<'a> Ord for &'a dyn AnyRule {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self.lookup_type(), other.lookup_type()) {
+            (LookupType::PairPos, LookupType::PairPos) => self
+                .as_any()
+                .downcast_ref::<PairPosRule>()
+                .unwrap()
+                .cmp(other.as_any().downcast_ref::<PairPosRule>().unwrap()),
+            (LookupType::MarkToBase, LookupType::MarkToBase) => self
+                .as_any()
+                .downcast_ref::<MarkAttachmentRule>()
+                .unwrap()
+                .cmp(other.as_any().downcast_ref::<MarkAttachmentRule>().unwrap()),
+            (self_type, other_type) => self_type.cmp(&other_type),
         }
-        result.sort_unstable();
-        result
     }
 }
 
-#[derive(Clone)]
+impl<'a> PartialOrd for &'a dyn AnyRule {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> PartialEq for &'a dyn AnyRule {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.lookup_type(), other.lookup_type()) {
+            (LookupType::PairPos, LookupType::PairPos) => self
+                .as_any()
+                .downcast_ref::<PairPosRule>()
+                .unwrap()
+                .eq(other.as_any().downcast_ref::<PairPosRule>().unwrap()),
+            (LookupType::MarkToBase, LookupType::MarkToBase) => self
+                .as_any()
+                .downcast_ref::<MarkAttachmentRule>()
+                .unwrap()
+                .eq(other.as_any().downcast_ref::<MarkAttachmentRule>().unwrap()),
+            _ => false,
+        }
+    }
+}
+
+impl<'a> Eq for &'a dyn AnyRule {}
+
+struct Printer<'a> {
+    rule: &'a dyn AnyRule,
+    names: &'a NameMap,
+}
+
+impl Display for Printer<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.rule.fmt_impl(f, self.names)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum LookupType {
+    //SinglePos = 1,
+    PairPos = 2,
+    MarkToBase,
+    //MarkToMark,
+    //MarkToLig,
+}
+
+impl LookupRule {
+    fn dyn_inner(&self) -> &dyn AnyRule {
+        match self {
+            LookupRule::PairPos(inner) => inner,
+            LookupRule::MarkBase(inner) => inner,
+        }
+    }
+}
+
+impl LookupRules {
+    fn iter_rule_sets<'a>(&'a self, lookups: &[u16]) -> impl Iterator<Item = RuleSet<'a>> {
+        let mut by_type = BTreeMap::new();
+        for lookup in lookups {
+            for rule in &self.rules[*lookup as usize] {
+                let as_dyn = rule.dyn_inner();
+                let lookup_type = as_dyn.lookup_type();
+                by_type
+                    .entry(lookup_type)
+                    .or_insert_with(|| RuleSet {
+                        lookup_type,
+                        rules: Vec::new(),
+                    })
+                    .rules
+                    .push(as_dyn);
+            }
+        }
+        by_type.into_values().map(|mut rules| {
+            rules.rules.sort_unstable();
+            rules
+        })
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct PairPosRule {
     first: GlyphId,
     second: GlyphSet,
@@ -241,26 +329,30 @@ struct PairPosRule {
     flags: LookupFlag,
 }
 
-impl PartialEq for PairPosRule {
-    fn eq(&self, other: &Self) -> bool {
-        self.first == other.first
-            && self.second == other.second
-            && self.record1 == other.record1
-            && self.record2 == other.record2
+impl AnyRule for PairPosRule {
+    fn lookup_flags(&self) -> LookupFlag {
+        self.flags
     }
-}
 
-impl Eq for PairPosRule {}
-
-impl Ord for PairPosRule {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.first, &self.second).cmp(&(other.first, &other.second))
+    fn fmt_impl(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
+        let g1 = names.get(self.first);
+        let g2 = self.second.printer(names);
+        let v1 = &self.record1;
+        let v2 = &self.record2;
+        write!(f, "{g1} {v1} {g2}")?;
+        if !self.record2.is_zero() {
+            write!(f, " {v2}")
+        } else {
+            Ok(())
+        }
     }
-}
 
-impl PartialOrd for PairPosRule {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+    fn lookup_type(&self) -> LookupType {
+        LookupType::PairPos
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -278,8 +370,9 @@ fn get_lookup_rules<'a>(
     delta_computer: Option<&DeltaComputer>,
 ) -> LookupRules {
     let mut result = Vec::new();
+    //let mut pairpos = Vec::new();
     for (_i, lookup) in lookups.lookups().iter().enumerate() {
-        let mut rules = Vec::new();
+        let mut pairpos = Vec::new();
         let lookup = lookup.unwrap();
         match lookup {
             PositionLookup::Pair(lookup) => {
@@ -289,28 +382,32 @@ fn get_lookup_rules<'a>(
                     match subt {
                         PairPos::Format1(subt) => get_pairpos_f1_rules(
                             &subt,
-                            |rule| rules.push(rule),
+                            |rule| pairpos.push(rule),
                             flag,
                             delta_computer,
                         ),
                         PairPos::Format2(subt) => get_pairpos_f2_rules(
                             &subt,
-                            |rule| rules.push(rule),
+                            |rule| pairpos.push(rule),
                             flag,
                             delta_computer,
                         ),
                     }
                 }
+                result.push(combine_rules(pairpos));
             }
             PositionLookup::MarkToBase(lookup) => {
                 let flag = lookup.lookup_flag();
                 for subt in lookup.subtables().iter().flat_map(|subt| subt.ok()) {
-                    get_mark_base_rules(&subt, flag, delta_computer);
+                    let rules = get_mark_base_rules(&subt, flag, delta_computer).unwrap();
+                    result.push(rules);
                 }
             }
-            _ => (),
+            _other => {
+                // we always want to have as many sets as we have lookups
+                result.push(Vec::new());
+            }
         }
-        result.push(combine_rules(rules));
     }
     LookupRules { rules: result }
 }
@@ -417,7 +514,7 @@ fn get_pairpos_f2_rules<'a>(
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct MarkAttachmentRule {
     flags: LookupFlag,
     base: GlyphId,
@@ -425,11 +522,38 @@ struct MarkAttachmentRule {
     marks: BTreeMap<ResolvedAnchor, GlyphSet>,
 }
 
+impl AnyRule for MarkAttachmentRule {
+    fn lookup_flags(&self) -> LookupFlag {
+        self.flags
+    }
+
+    fn fmt_impl(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
+        let base_name = names.get(self.base);
+        writeln!(f, "{base_name} {}", self.base_anchor)?;
+        for (i, (anchor, glyphs)) in self.marks.iter().enumerate() {
+            if i != 0 {
+                writeln!(f)?;
+            }
+
+            write!(f, "  {anchor} {}", glyphs.printer(names))?;
+        }
+        Ok(())
+    }
+
+    fn lookup_type(&self) -> LookupType {
+        LookupType::MarkToBase
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 fn get_mark_base_rules(
     subtable: &MarkBasePosFormat1,
     flags: LookupFlag,
     delta_computer: Option<&DeltaComputer>,
-) -> Result<Vec<MarkAttachmentRule>, ReadError> {
+) -> Result<Vec<LookupRule>, ReadError> {
     let base_array = subtable.base_array()?;
     let base_records = base_array.base_records();
     let mark_array = subtable.mark_array()?;
@@ -475,7 +599,7 @@ fn get_mark_base_rules(
                     .map(|(anchor, glyphs)| (anchor, glyphs.into()))
                     .collect(),
             };
-            result.push(group);
+            result.push(LookupRule::MarkBase(group));
         }
     }
     Ok(result)
@@ -487,6 +611,19 @@ impl From<i16> for ResolvedValue {
             default: src,
             device_or_deltas: None,
         }
+    }
+}
+
+impl Display for LookupType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            //LookupType::SinglePos => "SinglePos",
+            LookupType::PairPos => "PairPos",
+            LookupType::MarkToBase => "MarkToBase",
+            //LookupType::MarkToMark => "MarkToMark",
+            //LookupType::MarkToLig => "MarkToLig",
+        };
+        f.write_str(name)
     }
 }
 
@@ -535,5 +672,11 @@ impl Display for ResolvedValue {
             None => (),
         }
         Ok(())
+    }
+}
+
+impl Display for ResolvedAnchor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "@({},{})", self.x, self.y)
     }
 }
