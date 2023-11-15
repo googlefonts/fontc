@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Debug, Display},
 };
 
@@ -7,8 +7,8 @@ use indexmap::IndexMap;
 use read_fonts::{
     tables::{
         gpos::{
-            PairPos, PairPosFormat1, PairPosFormat2, PositionLookup, PositionLookupList,
-            ValueRecord,
+            AnchorTable, MarkBasePosFormat1, PairPos, PairPosFormat1, PairPosFormat2,
+            PositionLookup, PositionLookupList, ValueRecord,
         },
         layout::{DeviceOrVariationIndex, LookupFlag},
     },
@@ -102,6 +102,12 @@ struct ResolvedValueRecord {
     y_placement: ResolvedValue,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct ResolvedAnchor {
+    x: ResolvedValue,
+    y: ResolvedValue,
+}
+
 impl ResolvedValueRecord {
     fn new(
         record: ValueRecord,
@@ -145,6 +151,21 @@ impl ResolvedValueRecord {
             && self.x_advance.is_zero()
             && self.y_placement.is_zero()
             && self.x_placement.is_zero()
+    }
+}
+
+impl ResolvedAnchor {
+    fn new(anchor: &AnchorTable, computer: Option<&DeltaComputer>) -> Result<Self, ReadError> {
+        let (x, y) = match anchor {
+            AnchorTable::Format1(_) | AnchorTable::Format2(_) => {
+                (anchor.x_coordinate().into(), anchor.y_coordinate().into())
+            }
+            AnchorTable::Format3(table) => (
+                ResolvedValue::new(anchor.x_coordinate().into(), anchor.x_device(), computer)?,
+                ResolvedValue::new(anchor.y_coordinate().into(), anchor.y_device(), computer)?,
+            ),
+        };
+        Ok(ResolvedAnchor { x, y })
     }
 }
 
@@ -281,6 +302,12 @@ fn get_lookup_rules<'a>(
                     }
                 }
             }
+            PositionLookup::MarkToBase(lookup) => {
+                let flag = lookup.lookup_flag();
+                for subt in lookup.subtables().iter().flat_map(|subt| subt.ok()) {
+                    get_mark_base_rules(&subt, flag, delta_computer);
+                }
+            }
             _ => (),
         }
         result.push(combine_rules(rules));
@@ -386,6 +413,79 @@ fn get_pairpos_f2_rules<'a>(
                     flags,
                 })
             }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct MarkAttachmentRule {
+    flags: LookupFlag,
+    base: GlyphId,
+    base_anchor: ResolvedAnchor,
+    marks: BTreeMap<ResolvedAnchor, GlyphSet>,
+}
+
+fn get_mark_base_rules(
+    subtable: &MarkBasePosFormat1,
+    flags: LookupFlag,
+    delta_computer: Option<&DeltaComputer>,
+) -> Result<Vec<MarkAttachmentRule>, ReadError> {
+    let base_array = subtable.base_array()?;
+    let base_records = base_array.base_records();
+    let mark_array = subtable.mark_array()?;
+    let mark_records = mark_array.mark_records();
+
+    let cov_ix_to_mark_gid: HashMap<_, _> = subtable.mark_coverage()?.iter().enumerate().collect();
+    let mut result = Vec::new();
+
+    for (base_ix, base_glyph) in subtable.base_coverage()?.iter().enumerate() {
+        let base_record = base_records.get(base_ix)?;
+        for (base_anchor_ix, base_anchor) in base_record
+            .base_anchors(base_array.offset_data())
+            .iter()
+            .enumerate()
+        {
+            let Some(base_anchor) = base_anchor else {
+                continue;
+            };
+            let base_anchor = base_anchor?;
+            let base_anchor = ResolvedAnchor::new(&base_anchor, delta_computer)?;
+            let mut marks = BTreeMap::default();
+            for (mark_ix, mark_record) in mark_records.iter().enumerate() {
+                let mark_class = mark_record.mark_class() as usize;
+                if mark_class != base_anchor_ix {
+                    continue;
+                }
+                let Some(mark_glyph) = cov_ix_to_mark_gid.get(&mark_ix) else {
+                    continue;
+                };
+                let mark_anchor = mark_record.mark_anchor(mark_array.offset_data())?;
+                let mark_anchor = ResolvedAnchor::new(&mark_anchor, delta_computer)?;
+                marks
+                    .entry(mark_anchor)
+                    .or_insert(BTreeSet::new())
+                    .insert(*mark_glyph);
+            }
+            let group = MarkAttachmentRule {
+                flags,
+                base: base_glyph,
+                base_anchor,
+                marks: marks
+                    .into_iter()
+                    .map(|(anchor, glyphs)| (anchor, glyphs.into()))
+                    .collect(),
+            };
+            result.push(group);
+        }
+    }
+    Ok(result)
+}
+
+impl From<i16> for ResolvedValue {
+    fn from(src: i16) -> ResolvedValue {
+        ResolvedValue {
+            default: src,
+            device_or_deltas: None,
         }
     }
 }

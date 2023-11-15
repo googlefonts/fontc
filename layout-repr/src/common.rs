@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::BTreeSet, fmt::Display};
 
 use read_fonts::{
     tables::layout::{FeatureList, ScriptList},
@@ -158,5 +158,15 @@ impl From<GlyphId> for GlyphSet {
 impl FromIterator<GlyphId> for GlyphSet {
     fn from_iter<T: IntoIterator<Item = GlyphId>>(iter: T) -> Self {
         GlyphSet::Multiple(iter.into_iter().collect())
+    }
+}
+
+impl From<BTreeSet<GlyphId>> for GlyphSet {
+    fn from(src: BTreeSet<GlyphId>) -> GlyphSet {
+        if src.len() == 1 {
+            GlyphSet::Single(src.first().copied().unwrap())
+        } else {
+            src.into_iter().collect()
+        }
     }
 }
