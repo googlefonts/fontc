@@ -11,6 +11,7 @@ pub struct Paths {
     build_dir: PathBuf,
     glyph_dir: PathBuf,
     debug_dir: PathBuf,
+    output_file: Option<PathBuf>,
 }
 
 impl Paths {
@@ -22,7 +23,14 @@ impl Paths {
             build_dir,
             glyph_dir,
             debug_dir,
+            output_file: None,
         }
+    }
+
+    pub fn with_output_file(build_dir: &Path, output_file: &Path) -> Paths {
+        let mut paths = Paths::new(build_dir);
+        paths.output_file = Some(output_file.to_path_buf());
+        paths
     }
 
     pub fn build_dir(&self) -> &Path {
@@ -35,6 +43,10 @@ impl Paths {
 
     pub fn glyph_dir(&self) -> &Path {
         &self.glyph_dir
+    }
+
+    pub fn output_file(&self) -> Option<&Path> {
+        self.output_file.as_deref()
     }
 
     fn glyph_glyf_file(&self, name: &str) -> PathBuf {
@@ -71,7 +83,11 @@ impl Paths {
             WorkId::Os2 => self.build_dir.join("os2.table"),
             WorkId::Post => self.build_dir.join("post.table"),
             WorkId::Stat => self.build_dir.join("stat.table"),
-            WorkId::Font => self.build_dir.join("font.ttf"),
+            WorkId::Font => self
+                .output_file
+                .as_ref()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| self.build_dir.join("font.ttf")),
         }
     }
 }

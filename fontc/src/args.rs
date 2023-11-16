@@ -1,6 +1,6 @@
 //! Command line arguments
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{ArgAction, Parser};
 use fontir::orchestration::Flags;
@@ -10,8 +10,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Parser, Debug, Clone, PartialEq)]
 pub struct Args {
     /// A designspace, ufo, or glyphs file
+    #[arg(conflicts_with = "source", required_unless_present("source"))]
+    input_source: Option<PathBuf>,
+
+    /// DEPRECATED: old name for positional input file
     #[arg(short, long)]
-    pub source: PathBuf,
+    source: Option<PathBuf>,
 
     /// Whether to write IR to disk. Must be true if you want incremental compilation.
     #[arg(
@@ -25,6 +29,10 @@ pub struct Args {
         action = ArgAction::Set,
     )]
     pub incremental: bool,
+
+    /// Output file name (default: build/font.ttf)
+    #[arg(short, long)]
+    pub output_file: Option<PathBuf>,
 
     /// Whether to write additional debug files to disk.
     #[arg(long, default_value = "false")]
@@ -105,12 +113,14 @@ impl Args {
     pub fn for_test(build_dir: &std::path::Path, source: &str) -> Args {
         use crate::testdata_dir;
 
-        let source = testdata_dir().join(source).canonicalize().unwrap();
+        let input_source = testdata_dir().join(source).canonicalize().unwrap();
 
         Args {
             glyph_name_filter: None,
-            source,
+            input_source: Some(input_source),
+            source: None,
             incremental: true,
+            output_file: None,
             emit_debug: false, // they get destroyed by test cleanup
             emit_timing: false,
             build_dir: build_dir.to_path_buf(),
@@ -122,6 +132,15 @@ impl Args {
             keep_direction: false,
             no_production_names: false,
         }
+    }
+
+    /// The input source to compile.
+    pub fn source(&self) -> &Path {
+        // safe to unwrap because clap ensures that the input_source is
+        // required_unless_present("source")
+        self.source
+            .as_ref()
+            .unwrap_or_else(|| self.input_source.as_ref().unwrap())
     }
 }
 

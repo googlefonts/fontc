@@ -101,10 +101,9 @@ def build_fontc(source: Path, build_dir: Path, compare: str):
         # "--keep-direction",
         # no longer required, still useful to get human-readable glyph names in diff
         "--no-production-names",
-        "--source",
-        str(source),
         "--build-dir",
         ".",
+        str(source),
     ]
     if compare == _COMPARE_GFTOOLS:
         cmd.append("--flatten-components")

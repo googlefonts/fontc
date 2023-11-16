@@ -52,8 +52,13 @@ fn run() -> Result<(), Error> {
     let prev_inputs = config.init()?;
     timer.add(time.complete());
 
-    let mut change_detector =
-        ChangeDetector::new(config.clone(), ir_paths.clone(), prev_inputs, &mut timer)?;
+    let mut change_detector = ChangeDetector::new(
+        config.clone(),
+        ir_paths.clone(),
+        be_paths.clone(),
+        prev_inputs,
+        &mut timer,
+    )?;
 
     let workload = fontc::create_workload(&mut change_detector, timer)?;
 
