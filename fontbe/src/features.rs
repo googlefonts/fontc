@@ -1,6 +1,7 @@
 //! Feature binary compilation.
 
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, HashMap, HashSet},
     error::Error as StdError,
     ffi::{OsStr, OsString},
@@ -8,6 +9,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::Arc,
+    time::Instant,
 };
 
 use fea_rs::{
@@ -16,34 +18,24 @@ use fea_rs::{
         PairPosBuilder, VariationInfo,
     },
     parse::{SourceLoadError, SourceResolver},
-    Compiler, GlyphMap, GlyphName as FeaRsGlyphName, GlyphSet,
+    Compiler,
 };
-use font_types::{GlyphId, Tag};
+use font_types::Tag;
 use fontdrasil::{coords::NormalizedLocation, types::Axis};
 use fontir::{
-    ir::{Anchor, Features, GlyphAnchors, GlyphOrder, KernParticipant, Kerning, StaticMetadata},
+    ir::{Features, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
 };
 
 use log::{debug, error, trace, warn};
 use ordered_float::OrderedFloat;
 
-use fontdrasil::{
-    orchestration::{Access, Work},
-    types::GlyphName,
-};
-use write_fonts::{
-    tables::layout::LookupFlag,
-    tables::{
-        gpos::{AnchorTable, ValueRecord},
-        variations::VariationRegion,
-    },
-    OtRound,
-};
+use fontdrasil::orchestration::{Access, Work};
+use write_fonts::{tables::layout::LookupFlag, tables::variations::VariationRegion, OtRound};
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, Kerning, Marks, WorkId},
 };
 
 #[derive(Debug)]
@@ -126,194 +118,88 @@ impl<'a> FeaVariationInfo<'a> {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct MarkGroupName<'a>(&'a str);
+//NOTE: this is basically identical to the same method on FeaVariationInfo,
+//except they have slightly different inputs?
+pub(crate) fn resolve_variable_metric(
+    static_metadata: &StaticMetadata,
+    values: &BTreeMap<NormalizedLocation, OrderedFloat<f32>>,
+) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
+    let var_model = &static_metadata.variation_model;
 
-/// The type of an anchor, used when generating mark features
-#[derive(Clone, Debug, PartialEq)]
-enum AnchorInfo<'a> {
-    Base(MarkGroupName<'a>),
-    Mark(MarkGroupName<'a>),
-}
+    let point_seqs = values
+        .iter()
+        .map(|(pos, value)| (pos.to_owned(), vec![value.0 as f64]))
+        .collect();
+    let raw_deltas: Vec<_> = var_model
+        .deltas(&point_seqs)
+        .expect("FIXME: MAKE OUR ERROR TYPE SUPPORT ? HERE")
+        .into_iter()
+        .map(|(region, values)| {
+            assert!(values.len() == 1, "{} values?!", values.len());
+            (region, values[0])
+        })
+        .collect();
 
-impl<'a> AnchorInfo<'a> {
-    fn new(name: &'a GlyphName) -> AnchorInfo<'a> {
-        // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
-        if name.as_str().starts_with('_') {
-            AnchorInfo::Mark(MarkGroupName(&name.as_str()[1..]))
-        } else {
-            AnchorInfo::Base(MarkGroupName(name.as_str()))
-        }
-    }
-
-    fn group_name(&self) -> MarkGroupName<'a> {
-        match self {
-            AnchorInfo::Base(group_name) | AnchorInfo::Mark(group_name) => *group_name,
-        }
-    }
-}
-
-#[derive(Default, Debug)]
-struct MarkGroup<'a> {
-    bases: Vec<(GlyphName, &'a Anchor)>,
-    marks: Vec<(GlyphName, &'a Anchor)>,
-}
-
-fn create_mark_groups<'a>(
-    anchors: &BTreeMap<GlyphName, &'a GlyphAnchors>,
-    glyph_order: &GlyphOrder,
-) -> BTreeMap<MarkGroupName<'a>, MarkGroup<'a>> {
-    let mut groups: BTreeMap<MarkGroupName<'a>, MarkGroup> = Default::default();
-    for (glyph_name, glyph_anchors) in anchors.iter() {
-        // We assume the anchor list to be small
-        // considering only glyphs with anchors,
-        //  - glyphs with *only* base anchors are bases
-        //  - glyphs with *any* mark anchor are marks
-        // We ignore glyphs missing from the glyph order (e.g. no-export glyphs)
-        if !glyph_order.contains(glyph_name) {
-            continue;
-        }
-        let mut base = true; // TODO: only a base if user rules allow it
-        for anchor in glyph_anchors.anchors.iter() {
-            let anchor_info = AnchorInfo::new(&anchor.name);
-            if matches!(anchor_info, AnchorInfo::Mark(..)) {
-                base = false;
-
-                // TODO: only if user rules allow us to be a mark
-                groups
-                    .entry(anchor_info.group_name())
-                    .or_default()
-                    .marks
-                    .push((glyph_name.clone(), anchor));
+    let default_value: i16 = raw_deltas
+        .iter()
+        .filter_map(|(region, value)| {
+            let scaler = region.scalar_at(&var_model.default).into_inner();
+            match scaler {
+                scaler if scaler == 0.0 => None,
+                scaler => Some(scaler * *value as f32),
             }
-        }
+        })
+        .sum::<f32>()
+        .ot_round();
 
-        if base {
-            for anchor in glyph_anchors.anchors.iter() {
-                let anchor_info = AnchorInfo::new(&anchor.name);
-                groups
-                    .entry(anchor_info.group_name())
-                    .or_default()
-                    .bases
-                    .push((glyph_name.clone(), anchor));
-            }
+    let mut deltas = Vec::with_capacity(raw_deltas.len());
+    for (region, value) in raw_deltas.iter().filter(|(r, _)| !r.is_default()) {
+        // https://learn.microsoft.com/en-us/typography/opentype/spec/otvarcommonformats#variation-regions
+        // Array of region axis coordinates records, in the order of axes given in the 'fvar' table.
+        let mut region_axes = Vec::with_capacity(static_metadata.axes.len());
+        for axis in static_metadata.axes.iter() {
+            let Some(tent) = region.get(&axis.tag) else {
+                todo!("FIXME: add this error conversion!")
+            };
+            region_axes.push(tent.to_region_axis_coords());
         }
+        deltas.push((
+            write_fonts::tables::variations::VariationRegion { region_axes },
+            value.ot_round(),
+        ));
     }
-    groups
+
+    Ok((default_value, deltas))
 }
 
 struct FeatureWriter<'a> {
     kerning: &'a Kerning,
-    glyph_map: &'a GlyphOrder,
-    static_metadata: &'a StaticMetadata,
-    raw_anchors: &'a Vec<(FeWorkId, Arc<GlyphAnchors>)>,
+    marks: &'a Marks,
+    timing: RefCell<Vec<(&'static str, Instant)>>,
 }
 
 impl<'a> FeatureWriter<'a> {
-    fn new(
-        static_metadata: &'a StaticMetadata,
-        kerning: &'a Kerning,
-        glyph_map: &'a GlyphOrder,
-        raw_anchors: &'a Vec<(FeWorkId, Arc<GlyphAnchors>)>,
-    ) -> Self {
+    fn new(kerning: &'a Kerning, marks: &'a Marks) -> Self {
         FeatureWriter {
+            marks,
             kerning,
-            static_metadata,
-            glyph_map,
-            raw_anchors,
+            timing: Default::default(),
         }
     }
 
-    fn glyph_id(&self, glyph_name: &GlyphName) -> Result<GlyphId, Error> {
-        self.glyph_map
-            .glyph_id(glyph_name)
-            .map(|val| GlyphId::new(val as u16))
-            .ok_or_else(|| Error::MissingGlyphId(glyph_name.clone()))
-    }
-
-    //TODO: at least for kerning, we should be able to generate the lookups
-    //as a separate worktask, and then just add them here.
+    /// We did most of the work in the kerning job, take the data and populate a builder
     fn add_kerning_features(&self, builder: &mut FeatureBuilder) -> Result<(), Error> {
         if self.kerning.is_empty() {
             return Ok(());
         }
-
-        // convert the groups stored in the Kerning object into the glyph classes
-        // expected by fea-rs:
-        let glyph_classes = self
-            .kerning
-            .groups
-            .iter()
-            .map(|(class_name, members)| {
-                let glyph_class: Result<GlyphSet, Error> =
-                    members.iter().map(|name| self.glyph_id(name)).collect();
-                glyph_class.map(|set| (class_name, set))
-            })
-            .collect::<Result<BTreeMap<_, _>, Error>>()?;
-
         let mut ppos_subtables = PairPosBuilder::default();
 
-        // now for each kerning entry, directly add a rule to the builder:
-        for ((left, right), values) in &self.kerning.kerns {
-            let (default_value, deltas) = self
-                .resolve_variable_metric(values)
-                .expect("FIGURE OUT ERRORS");
-
-            let mut x_adv_record = ValueRecord::new().with_x_advance(default_value);
-            let empty_record = ValueRecord::default();
-
-            if !deltas.is_empty() {
-                let var_idx = builder.add_deltas(deltas);
-                x_adv_record = x_adv_record.with_x_advance_device(var_idx);
-            }
-
-            match (left, right) {
-                (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
-                    let gid0 = self.glyph_id(left)?;
-                    let gid1 = self.glyph_id(right)?;
-                    ppos_subtables.insert_pair(gid0, x_adv_record, gid1, empty_record);
-                }
-                (KernParticipant::Group(left), KernParticipant::Group(right)) => {
-                    let left = glyph_classes
-                        .get(left)
-                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?
-                        .clone();
-                    let right = glyph_classes
-                        .get(right)
-                        .ok_or_else(|| Error::MissingGlyphId(right.clone()))?
-                        .clone();
-                    ppos_subtables.insert_classes(left, x_adv_record, right, empty_record);
-                }
-                // if groups are mixed with glyphs then we enumerate the group
-                (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
-                    let gid0 = self.glyph_id(left)?;
-                    let right = glyph_classes
-                        .get(right)
-                        .ok_or_else(|| Error::MissingGlyphId(right.clone()))?;
-                    for gid1 in right.iter() {
-                        ppos_subtables.insert_pair(
-                            gid0,
-                            x_adv_record.clone(),
-                            gid1,
-                            empty_record.clone(),
-                        );
-                    }
-                }
-                (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
-                    let left = glyph_classes
-                        .get(left)
-                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
-                    let gid1 = self.glyph_id(right)?;
-                    for gid0 in left.iter() {
-                        ppos_subtables.insert_pair(
-                            gid0,
-                            x_adv_record.clone(),
-                            gid1,
-                            empty_record.clone(),
-                        );
-                    }
-                }
-            }
+        let mut var_indices = HashMap::new();
+        for (idx, deltas) in self.kerning.deltas().enumerate() {
+            var_indices.insert(idx, builder.add_deltas(deltas.clone()));
+        }
+        for kern in self.kerning.kerns() {
+            kern.insert_into(&var_indices, &mut ppos_subtables);
         }
 
         // now we have a builder for the pairpos subtables, so we can make
@@ -321,6 +207,11 @@ impl<'a> FeatureWriter<'a> {
         let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables])];
         builder.add_to_default_language_systems(Tag::new(b"kern"), &lookups);
 
+        {
+            self.timing
+                .borrow_mut()
+                .push(("End add kerning", Instant::now()));
+        }
         Ok(())
     }
 
@@ -337,88 +228,64 @@ impl<'a> FeatureWriter<'a> {
     /// * <https://github.com/googlefonts/ufo2ft/issues/563>
     //TODO: could we generate as a separate task, and then just add here.
     fn add_marks(&self, builder: &mut FeatureBuilder) -> Result<(), Error> {
-        let mut anchors = BTreeMap::new();
-        for (work_id, arc_glyph_anchors) in self.raw_anchors {
-            let glyph_anchors: &GlyphAnchors = arc_glyph_anchors;
-            let FeWorkId::Anchor(glyph_name) = work_id else {
-                return Err(Error::ExpectedAnchor(work_id.clone()));
-            };
-            anchors.insert(glyph_name.clone(), glyph_anchors);
+        {
+            self.timing
+                .borrow_mut()
+                .push(("Start add marks", Instant::now()));
         }
-
-        let mark_groups = create_mark_groups(&anchors, self.glyph_map);
+        let marks = self.marks;
 
         // Build the actual mark base and mark mark constructs using fea-rs builders
 
         let mut mark_base_lookups = Vec::new();
         let mut mark_mark_lookups = Vec::new();
 
-        for (group_name, group) in mark_groups.iter() {
-            // if we have bases *and* marks produce mark to base
-            if !group.bases.is_empty() && !group.marks.is_empty() {
-                let mut mark_base = MarkToBaseBuilder::default();
-
-                for (mark_name, mark_anchor) in group.marks.iter() {
-                    let mark_gid = self.glyph_id(mark_name)?;
-                    let mark_anchor_table = self.create_anchor_table(mark_anchor, builder)?;
-                    mark_base
-                        .insert_mark(mark_gid, group_name.0.into(), mark_anchor_table.clone())
-                        .map_err(Error::PreviouslyAssignedClass)?;
-                }
-
-                for (base_name, base_anchor) in group.bases.iter() {
-                    let base_gid = self.glyph_id(base_name)?;
-                    let base_anchor_table = self.create_anchor_table(base_anchor, builder)?;
-                    mark_base.insert_base(base_gid, &group_name.0.into(), base_anchor_table);
-                }
-
-                // each mark to base it's own lookup, whch differs from fontmake
-                mark_base_lookups.push(builder.add_lookup(
-                    LookupFlag::default(),
-                    None,
-                    vec![mark_base],
-                ));
-            }
-
-            // If a mark has anchors that are themselves marks what we got here is a mark to mark
-
-            let mut mark_mark = MarkToMarkBuilder::default();
-            let mut filter_set = Vec::new();
-
-            for (mark_name, _) in group.marks.iter() {
-                let Some(glyph_anchors) = anchors.get(mark_name) else {
-                    continue;
-                };
-                if !glyph_anchors
-                    .anchors
-                    .iter()
-                    .any(|a| matches!(AnchorInfo::new(&a.name), AnchorInfo::Mark(..)))
-                {
-                    continue;
-                }
-                let mark_gid = self.glyph_id(mark_name)?;
-                let Some(anchor_my_anchor) = glyph_anchors
-                    .anchors
-                    .iter()
-                    .find(|a| a.name.as_str() == group_name.0)
-                else {
-                    debug!("No anchor_my_anchor for {:?}", group_name.0);
-                    continue;
-                };
-                let anchor = self.create_anchor_table(anchor_my_anchor, builder)?;
-
-                mark_mark
-                    .insert_mark1(mark_gid, group_name.0.into(), anchor)
+        for mark_base in marks.mark_base.iter() {
+            let mut mark_base_builder = MarkToBaseBuilder::default();
+            for mark in mark_base.marks.iter() {
+                mark_base_builder
+                    .insert_mark(
+                        mark.gid,
+                        mark_base.class.clone(),
+                        mark.create_anchor_table(builder)?,
+                    )
                     .map_err(Error::PreviouslyAssignedClass)?;
-                filter_set.push(mark_gid);
             }
-            if !filter_set.is_empty() {
-                mark_mark_lookups.push(builder.add_lookup(
-                    LookupFlag::default(),
-                    Some(filter_set.into()),
-                    vec![mark_mark],
-                ));
+
+            for base in mark_base.bases.iter() {
+                mark_base_builder.insert_base(
+                    base.gid,
+                    &mark_base.class,
+                    base.create_anchor_table(builder)?,
+                )
             }
+
+            // each mark to base it's own lookup, whch differs from fontmake
+            mark_base_lookups.push(builder.add_lookup(
+                LookupFlag::default(),
+                None,
+                vec![mark_base_builder],
+            ));
+        }
+
+        // If a mark has anchors that are themselves marks what we got here is a mark to mark
+        for mark_mark in marks.mark_mark.iter() {
+            let mut mark_mark_builder = MarkToMarkBuilder::default();
+
+            for mark in mark_mark.marks.iter() {
+                mark_mark_builder
+                    .insert_mark1(
+                        mark.gid,
+                        mark_mark.class.clone(),
+                        mark.create_anchor_table(builder)?,
+                    )
+                    .map_err(Error::PreviouslyAssignedClass)?;
+            }
+            mark_mark_lookups.push(builder.add_lookup(
+                LookupFlag::default(),
+                Some(mark_mark.filter_set.clone().into()),
+                vec![mark_mark_builder],
+            ));
         }
 
         if !mark_base_lookups.is_empty() {
@@ -428,96 +295,12 @@ impl<'a> FeatureWriter<'a> {
             builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
         }
 
+        {
+            self.timing
+                .borrow_mut()
+                .push(("End add marks", Instant::now()));
+        }
         Ok(())
-    }
-
-    // a helper for getting the default & variations for an anchor
-    fn create_anchor_table(
-        &self,
-        anchor: &Anchor,
-        builder: &mut FeatureBuilder,
-    ) -> Result<AnchorTable, Error> {
-        // squish everything into the shape expected by `resolve_variable_metric`
-        let (x_values, y_values) = anchor
-            .positions
-            .iter()
-            .map(|(loc, pt)| {
-                (
-                    (loc.clone(), OrderedFloat::from(pt.x as f32)),
-                    (loc.clone(), OrderedFloat::from(pt.y as f32)),
-                )
-            })
-            .unzip();
-
-        let (x, x_deltas) = self.resolve_variable_metric(&x_values)?;
-        let (y, y_deltas) = self.resolve_variable_metric(&y_values)?;
-        let x_var_idx = (!x_deltas.is_empty()).then(|| builder.add_deltas(x_deltas));
-        let y_var_idx = (!y_deltas.is_empty()).then(|| builder.add_deltas(y_deltas));
-
-        if x_var_idx.is_some() || y_var_idx.is_some() {
-            Ok(AnchorTable::format_3(
-                x,
-                y,
-                x_var_idx.map(Into::into),
-                y_var_idx.map(Into::into),
-            ))
-        } else {
-            Ok(AnchorTable::format_1(x, y))
-        }
-    }
-
-    //NOTE: this is basically identical to the same method on FeaVariationInfo,
-    //except they have slightly different inputs?
-    fn resolve_variable_metric(
-        &self,
-        values: &BTreeMap<NormalizedLocation, OrderedFloat<f32>>,
-    ) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
-        let var_model = &self.static_metadata.variation_model;
-
-        let point_seqs = values
-            .iter()
-            .map(|(pos, value)| (pos.to_owned(), vec![value.0 as f64]))
-            .collect();
-        let raw_deltas: Vec<_> = var_model
-            .deltas(&point_seqs)
-            .expect("FIXME: MAKE OUR ERROR TYPE SUPPORT ? HERE")
-            .into_iter()
-            .map(|(region, values)| {
-                assert!(values.len() == 1, "{} values?!", values.len());
-                (region, values[0])
-            })
-            .collect();
-
-        let default_value: i16 = raw_deltas
-            .iter()
-            .filter_map(|(region, value)| {
-                let scaler = region.scalar_at(&var_model.default).into_inner();
-                match scaler {
-                    scaler if scaler == 0.0 => None,
-                    scaler => Some(scaler * *value as f32),
-                }
-            })
-            .sum::<f32>()
-            .ot_round();
-
-        let mut deltas = Vec::with_capacity(raw_deltas.len());
-        for (region, value) in raw_deltas.iter().filter(|(r, _)| !r.is_default()) {
-            // https://learn.microsoft.com/en-us/typography/opentype/spec/otvarcommonformats#variation-regions
-            // Array of region axis coordinates records, in the order of axes given in the 'fvar' table.
-            let mut region_axes = Vec::with_capacity(self.static_metadata.axes.len());
-            for axis in self.static_metadata.axes.iter() {
-                let Some(tent) = region.get(&axis.tag) else {
-                    todo!("FIXME: add this error conversion!")
-                };
-                region_axes.push(tent.to_region_axis_coords());
-            }
-            deltas.push((
-                write_fonts::tables::variations::VariationRegion { region_axes },
-                value.ot_round(),
-            ));
-        }
-
-        Ok((default_value, deltas))
     }
 }
 
@@ -616,19 +399,17 @@ impl FeatureWork {
         &self,
         static_metadata: &StaticMetadata,
         features: &Features,
-        glyph_order: &GlyphOrder,
         kerning: &Kerning,
-        raw_anchors: &Vec<(FeWorkId, Arc<GlyphAnchors>)>,
+        marks: &Marks,
     ) -> Result<Compilation, Error> {
         let var_info = FeaVariationInfo::new(static_metadata);
-        let feature_writer = FeatureWriter::new(static_metadata, kerning, glyph_order, raw_anchors);
-        let fears_glyph_map = create_glyphmap(glyph_order);
-        let compiler = match features {
+        let feature_writer = FeatureWriter::new(kerning, marks);
+        match features {
             Features::File {
                 fea_file,
                 include_dir,
             } => {
-                let mut compiler = Compiler::new(OsString::from(fea_file), &fears_glyph_map);
+                let mut compiler = Compiler::new(OsString::from(fea_file), &marks.glyphmap);
                 if let Some(include_dir) = include_dir {
                     compiler = compiler.with_project_root(include_dir)
                 }
@@ -640,7 +421,7 @@ impl FeatureWork {
             } => {
                 let root = OsString::new();
                 let mut compiler =
-                    Compiler::new(root.clone(), &fears_glyph_map).with_resolver(InMemoryResolver {
+                    Compiler::new(root.clone(), &marks.glyphmap).with_resolver(InMemoryResolver {
                         content_path: root,
                         content: Arc::from(fea_content.as_str()),
                         include_dir: include_dir.clone(),
@@ -653,7 +434,7 @@ impl FeatureWork {
             Features::Empty => {
                 // There is no user feature file but we could still generate kerning, marks, etc
                 let root = OsString::new();
-                Compiler::new(root.clone(), &fears_glyph_map).with_resolver(InMemoryResolver {
+                Compiler::new(root.clone(), &marks.glyphmap).with_resolver(InMemoryResolver {
                     content_path: root,
                     content: Arc::from(""),
                     include_dir: None,
@@ -661,8 +442,9 @@ impl FeatureWork {
             }
         }
         .with_variable_info(&var_info)
-        .with_feature_writer(&feature_writer);
-        compiler.compile().map_err(Error::FeaCompileError)
+        .with_feature_writer(&feature_writer)
+        .compile()
+        .map_err(Error::FeaCompileError)
     }
 }
 
@@ -686,16 +468,6 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
     };
 }
 
-fn create_glyphmap(glyph_order: &GlyphOrder) -> GlyphMap {
-    if glyph_order.is_empty() {
-        warn!("Glyph order is empty; feature compile improbable");
-    }
-    glyph_order
-        .iter()
-        .map(|n| Into::<FeaRsGlyphName>::into(n.as_str()))
-        .collect()
-}
-
 impl Work<Context, AnyWorkId, Error> for FeatureWork {
     fn id(&self) -> AnyWorkId {
         WorkId::Features.into()
@@ -705,8 +477,9 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
         Access::Set(HashSet::from([
             AnyWorkId::Fe(FeWorkId::GlyphOrder),
             AnyWorkId::Fe(FeWorkId::StaticMetadata),
-            AnyWorkId::Fe(FeWorkId::Kerning),
             AnyWorkId::Fe(FeWorkId::Features),
+            AnyWorkId::Be(WorkId::Kerning),
+            AnyWorkId::Be(WorkId::Marks),
         ]))
     }
 
@@ -720,17 +493,15 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
-        let glyph_order = context.ir.glyph_order.get();
         let features = context.ir.features.get();
-        let kerning = context.ir.kerning.get();
-        let anchors = context.ir.anchors.all();
+        let kerning = context.kerning.get();
+        let marks = context.marks.get();
 
         let result = self.compile(
             &static_metadata,
             features.as_ref(),
-            glyph_order.as_ref(),
             kerning.as_ref(),
-            anchors.as_ref(),
+            marks.as_ref(),
         );
         if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
             if let Features::Memory { fea_content, .. } = features.as_ref() {

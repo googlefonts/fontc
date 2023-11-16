@@ -240,9 +240,28 @@ impl ChangeDetector {
 
     pub fn feature_be_change(&self) -> bool {
         self.feature_ir_change()
+            || self.kerning_be_change()
+            || self.mark_be_change()
             || !self
                 .be_paths
                 .target_file(&BeWorkIdentifier::Features)
+                .is_file()
+    }
+
+    pub fn mark_be_change(&self) -> bool {
+        // Glyphs produce anchors and we need anchors
+        !self.glyphs_changed().is_empty()
+            || !self
+                .be_paths
+                .target_file(&BeWorkIdentifier::Marks)
+                .is_file()
+    }
+
+    pub fn kerning_be_change(&self) -> bool {
+        self.kerning_ir_change()
+            || !self
+                .be_paths
+                .target_file(&BeWorkIdentifier::Kerning)
                 .is_file()
     }
 

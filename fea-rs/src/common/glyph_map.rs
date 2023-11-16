@@ -15,7 +15,8 @@ use std::{
 ///
 /// Currently, the only way to construct this type is by calling `collect()`
 /// on an iterator of cids or names.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GlyphMap {
     names: HashMap<GlyphName, GlyphId>,
     cids: HashMap<u16, GlyphId>,

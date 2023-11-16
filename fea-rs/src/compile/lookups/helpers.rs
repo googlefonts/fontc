@@ -15,7 +15,8 @@ use crate::common::{GlyphId, GlyphSet};
 // - to handle optionally assigning class 0 or not
 //
 // TODO: use this in other lookups?
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct ClassDefBuilder2 {
     classes: HashSet<GlyphSet>,
     glyphs: HashSet<GlyphId>,

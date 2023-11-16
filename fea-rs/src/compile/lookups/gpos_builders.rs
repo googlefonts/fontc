@@ -111,16 +111,19 @@ fn cmp_coverage_key(coverage: &CoverageTable) -> impl Ord {
 /// A builder for GPOS type 2 (PairPos) subtables
 ///
 /// This builder can build both glyph and class-based kerning subtables.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PairPosBuilder {
     pairs: GlyphPairPosBuilder,
     classes: ClassPairPosBuilder,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct GlyphPairPosBuilder(BTreeMap<GlyphId, BTreeMap<GlyphId, (ValueRecord, ValueRecord)>>);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct ClassPairPosSubtable {
     items: BTreeMap<GlyphSet, BTreeMap<GlyphSet, (ValueRecord, ValueRecord)>>,
     classdef_1: ClassDefBuilder2,
@@ -137,7 +140,8 @@ impl Default for ClassPairPosSubtable {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct ClassPairPosBuilder(BTreeMap<(ValueFormat, ValueFormat), Vec<ClassPairPosSubtable>>);
 
 impl VariationIndexContainingLookup for PairPosBuilder {

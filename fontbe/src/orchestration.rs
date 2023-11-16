@@ -1,18 +1,24 @@
 //! Helps coordinate the graph execution for BE
 
 use std::{
+    collections::HashMap,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use font_types::{F2Dot14, Tag};
+use fea_rs::{
+    compile::{FeatureBuilder, PairPosBuilder},
+    GlyphMap, GlyphSet,
+};
+use font_types::{F2Dot14, GlyphId, Tag};
 use fontdrasil::{
     orchestration::{Access, AccessControlList, Identifier, Work},
     types::GlyphName,
 };
 use fontir::{
+    ir::{Anchor, StaticMetadata},
     orchestration::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
         PersistentStorage, WorkId as FeWorkIdentifier,
@@ -20,9 +26,11 @@ use fontir::{
     variations::VariationRegion,
 };
 use log::trace;
+use ordered_float::OrderedFloat;
 use read_fonts::{FontData, FontRead};
 use serde::{Deserialize, Serialize};
 
+use smol_str::SmolStr;
 use write_fonts::{
     dump_table,
     tables::{
@@ -31,25 +39,26 @@ use write_fonts::{
         fvar::Fvar,
         gdef::Gdef,
         glyf::Glyph as RawGlyph,
-        gpos::Gpos,
+        gpos::{AnchorTable, Gpos, ValueRecord},
         gsub::Gsub,
         gvar::{GlyphDelta, GlyphDeltas},
         head::Head,
         hhea::Hhea,
         hvar::Hvar,
+        layout::PendingVariationIndex,
         loca::LocaFormat,
         maxp::Maxp,
         name::Name,
         os2::Os2,
         post::Post,
         stat::Stat,
-        variations::Tuple,
+        variations::{Tuple, VariationRegion as BeVariationRegion},
     },
     validate::Validate,
     FontWrite,
 };
 
-use crate::{error::Error, paths::Paths};
+use crate::{error::Error, features::resolve_variable_metric, paths::Paths};
 
 /// What exactly is being assembled from glyphs?
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -81,8 +90,10 @@ pub enum WorkId {
     Hhea,
     Hmtx,
     Hvar,
+    Kerning,
     Loca,
     LocaFormat,
+    Marks,
     Maxp,
     Name,
     Os2,
@@ -258,6 +269,273 @@ impl TupleBuilder {
     }
 }
 
+/// Prebuilt kern to the extent we can without being able to assign deltas to a value record.
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+pub enum Kern {
+    Pair {
+        glyph0: GlyphId,
+        glyph1: GlyphId,
+        x_advance: ValueRecord,
+        delta_idx: Option<usize>,
+    },
+    Class {
+        glyphs0: GlyphSet,
+        glyphs1: GlyphSet,
+        x_advance: ValueRecord,
+        delta_idx: Option<usize>,
+    },
+}
+
+impl Kern {
+    pub fn insert_into(
+        &self,
+        var_indices: &HashMap<usize, PendingVariationIndex>,
+        ppos_subtables: &mut PairPosBuilder,
+    ) {
+        let with_deltas = |x_advance: &ValueRecord, delta_idx: Option<usize>| {
+            if let Some(delta_idx) = delta_idx {
+                x_advance.clone().with_x_advance_device(
+                    var_indices
+                        .get(&delta_idx)
+                        .unwrap_or_else(|| panic!("No entry for {delta_idx} in {var_indices:?}"))
+                        .clone(),
+                )
+            } else {
+                x_advance.clone()
+            }
+        };
+
+        match self {
+            Kern::Pair {
+                glyph0,
+                glyph1,
+                x_advance,
+                delta_idx,
+            } => ppos_subtables.insert_pair(
+                *glyph0,
+                with_deltas(x_advance, *delta_idx),
+                *glyph1,
+                Default::default(),
+            ),
+            Kern::Class {
+                glyphs0,
+                glyphs1,
+                x_advance,
+                delta_idx,
+            } => ppos_subtables.insert_classes(
+                glyphs0.clone(),
+                with_deltas(x_advance, *delta_idx),
+                glyphs1.clone(),
+                Default::default(),
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct MarkGroupName(pub(crate) SmolStr);
+
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct MarkGroup {
+    pub(crate) bases: Vec<(GlyphName, Anchor)>,
+    pub(crate) marks: Vec<(GlyphName, Anchor)>,
+}
+
+/// A mark or base entry, prepped for submission to the fea-rs builder
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct MarkEntry {
+    pub(crate) gid: GlyphId,
+    x_default: i16,
+    x_deltas: Vec<(BeVariationRegion, i16)>,
+    y_default: i16,
+    y_deltas: Vec<(BeVariationRegion, i16)>,
+}
+
+impl MarkEntry {
+    pub(crate) fn new(
+        static_metadata: &StaticMetadata,
+        gid: GlyphId,
+        anchor: &Anchor,
+    ) -> Result<Self, Error> {
+        // squish everything into the shape expected by `resolve_variable_metric`
+        let (x_values, y_values) = anchor
+            .positions
+            .iter()
+            .map(|(loc, pt)| {
+                (
+                    (loc.clone(), OrderedFloat::from(pt.x as f32)),
+                    (loc.clone(), OrderedFloat::from(pt.y as f32)),
+                )
+            })
+            .unzip();
+
+        let (x_default, x_deltas) = resolve_variable_metric(static_metadata, &x_values)?;
+        let (y_default, y_deltas) = resolve_variable_metric(static_metadata, &y_values)?;
+
+        Ok(Self {
+            gid,
+            x_default,
+            x_deltas,
+            y_default,
+            y_deltas,
+        })
+    }
+
+    pub(crate) fn create_anchor_table(
+        &self,
+        builder: &mut FeatureBuilder,
+    ) -> Result<AnchorTable, Error> {
+        let x_var_idx =
+            (!self.x_deltas.is_empty()).then(|| builder.add_deltas(self.x_deltas.clone()));
+        let y_var_idx =
+            (!self.y_deltas.is_empty()).then(|| builder.add_deltas(self.y_deltas.clone()));
+        if x_var_idx.is_some() || y_var_idx.is_some() {
+            Ok(AnchorTable::format_3(
+                self.x_default,
+                self.y_default,
+                x_var_idx.map(Into::into),
+                y_var_idx.map(Into::into),
+            ))
+        } else {
+            Ok(AnchorTable::format_1(self.x_default, self.y_default))
+        }
+    }
+}
+
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct MarkBase {
+    pub(crate) class: SmolStr,
+    pub(crate) marks: Vec<MarkEntry>,
+    pub(crate) bases: Vec<MarkEntry>,
+}
+
+impl MarkBase {
+    pub(crate) fn new(class: SmolStr) -> Self {
+        MarkBase {
+            class,
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn insert_mark(&mut self, entry: MarkEntry) {
+        self.marks.push(entry);
+    }
+
+    pub(crate) fn insert_base(&mut self, entry: MarkEntry) {
+        self.bases.push(entry);
+    }
+}
+
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct MarkMark {
+    pub(crate) class: SmolStr,
+    pub(crate) filter_set: Vec<GlyphId>,
+    pub(crate) marks: Vec<MarkEntry>,
+}
+
+impl MarkMark {
+    pub(crate) fn new(class: SmolStr) -> Self {
+        MarkMark {
+            class,
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn insert_mark(&mut self, entry: MarkEntry) {
+        self.marks.push(entry);
+    }
+}
+
+/// Precomputed marks, to the extent possible given that we cannot create temporary var indices in advance.
+///
+/// TODO: update once <https://github.com/googlefonts/fontc/issues/571> is fixed. Then we can build a
+/// actual fea-rs structs in advance.
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Marks {
+    pub(crate) glyphmap: GlyphMap,
+    pub(crate) mark_base: Vec<MarkBase>,
+    pub(crate) mark_mark: Vec<MarkMark>,
+}
+
+impl Persistable for Marks {
+    fn read(from: &mut dyn Read) -> Self {
+        bincode::deserialize_from(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        bincode::serialize_into(to, self).unwrap()
+    }
+}
+
+/// Precomputed kerning, to the extent possible given that we cannot create temporary var indices in advance.
+///
+/// TODO: update once <https://github.com/googlefonts/fontc/issues/571> is fixed. Then we can build a
+/// [`fea_rs::compile::PairPosBuilder`] in advance.
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Kerning {
+    deltas: Vec<Vec<(BeVariationRegion, i16)>>,
+    kerns: Vec<Kern>,
+}
+
+impl Kerning {
+    pub fn is_empty(&self) -> bool {
+        self.kerns.is_empty()
+    }
+
+    pub fn deltas(&self) -> impl Iterator<Item = &Vec<(BeVariationRegion, i16)>> {
+        self.deltas.iter()
+    }
+
+    pub fn kerns(&self) -> impl Iterator<Item = &Kern> {
+        self.kerns.iter()
+    }
+
+    pub fn add_deltas(&mut self, deltas: Vec<(BeVariationRegion, i16)>) -> usize {
+        self.deltas.push(deltas);
+        self.deltas.len() - 1
+    }
+
+    pub fn add_pair(
+        &mut self,
+        glyph0: GlyphId,
+        x_advance: ValueRecord,
+        glyph1: GlyphId,
+        delta_idx: Option<usize>,
+    ) {
+        self.kerns.push(Kern::Pair {
+            glyph0,
+            glyph1,
+            x_advance,
+            delta_idx,
+        })
+    }
+
+    pub fn add_class(
+        &mut self,
+        glyphs0: GlyphSet,
+        x_advance: ValueRecord,
+        glyphs1: GlyphSet,
+        delta_idx: Option<usize>,
+    ) {
+        self.kerns.push(Kern::Class {
+            glyphs0,
+            glyphs1,
+            x_advance,
+            delta_idx,
+        })
+    }
+}
+
+impl Persistable for Kerning {
+    fn read(from: &mut dyn Read) -> Self {
+        bincode::deserialize_from(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        bincode::serialize_into(to, self).unwrap()
+    }
+}
+
 // work around orphan rules.
 //
 // FIXME: Clarify if there's a good reason not to treat glyf/loca as a single
@@ -410,6 +688,8 @@ pub struct Context {
     pub hhea: BeContextItem<BeValue<Hhea>>,
     pub hmtx: BeContextItem<Bytes>,
     pub hvar: BeContextItem<BeValue<Hvar>>,
+    pub kerning: BeContextItem<Kerning>,
+    pub marks: BeContextItem<Marks>,
     pub stat: BeContextItem<BeValue<Stat>>,
     pub font: BeContextItem<Bytes>,
 }
@@ -441,6 +721,8 @@ impl Context {
             hhea: self.hhea.clone_with_acl(acl.clone()),
             hmtx: self.hmtx.clone_with_acl(acl.clone()),
             hvar: self.hvar.clone_with_acl(acl.clone()),
+            kerning: self.kerning.clone_with_acl(acl.clone()),
+            marks: self.marks.clone_with_acl(acl.clone()),
             stat: self.stat.clone_with_acl(acl.clone()),
             font: self.font.clone_with_acl(acl),
         }
@@ -480,6 +762,16 @@ impl Context {
             hhea: ContextItem::new(WorkId::Hhea.into(), acl.clone(), persistent_storage.clone()),
             hmtx: ContextItem::new(WorkId::Hmtx.into(), acl.clone(), persistent_storage.clone()),
             hvar: ContextItem::new(WorkId::Hvar.into(), acl.clone(), persistent_storage.clone()),
+            kerning: ContextItem::new(
+                WorkId::Kerning.into(),
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
+            marks: ContextItem::new(
+                WorkId::Marks.into(),
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
             stat: ContextItem::new(WorkId::Stat.into(), acl.clone(), persistent_storage.clone()),
             font: ContextItem::new(WorkId::Font.into(), acl, persistent_storage),
         }
