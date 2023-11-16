@@ -3,7 +3,7 @@
 set -o nounset
 set -o errexit
 
-cargo run -p fontc -- --source resources/testdata/static.designspace
+cargo run -p fontc -- resources/testdata/static.designspace
 
 cd build
 

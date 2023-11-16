@@ -61,7 +61,7 @@ def current_branch() -> str:
 def compile_time(source):
     # crude but we're looking for large deltas here
     start = time.perf_counter()
-    run(("target/release/fontc", "--source", source))
+    run(("target/release/fontc", source))
     end = time.perf_counter()
     return end - start
 

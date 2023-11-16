@@ -30,7 +30,6 @@ def fontc_command(source) -> Tuple[str, ...]:
         "--package",
         "fontc",
         "--",
-        "--source",
         str(source)
     )
 
