@@ -29,11 +29,15 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
     let table = font
         .gpos()
         .map_err(|_| Error::MissingTable(Tag::new(b"GPOS")))?;
-    let var_store = font
-        .gdef()
-        .ok()
+    let gdef = font.gdef().ok();
+    let var_store = gdef
+        .as_ref()
         .and_then(|gdef| gdef.item_var_store())
         .map(|ivs| ivs.and_then(DeltaComputer::new))
+        .transpose()
+        .unwrap();
+    let mark_glyph_sets = gdef
+        .and_then(|gdef| gdef.mark_glyph_sets_def())
         .transpose()
         .unwrap();
 
@@ -52,12 +56,28 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
         for rule_set in lookup_rules.iter_rule_sets(&sys.lookups) {
             println!("# {} {} rules", rule_set.rules.len(), rule_set.lookup_type);
             let mut last_flag = None;
+            let mut last_filter_set = None;
             for rule in rule_set.rules {
-                let flags = rule.lookup_flags();
+                let (flags, filter_set_id) = rule.lookup_flags();
                 if last_flag != Some(flags) {
                     println!("# lookupflag {flags:?}");
                     last_flag = Some(flags);
                 }
+
+                if filter_set_id != last_filter_set && filter_set_id.is_some() {
+                    // writing it this way (not 'if let') to avoid more nesting
+                    let filter_id = filter_set_id.unwrap();
+                    let filter_set = mark_glyph_sets
+                        .as_ref()
+                        .map(|gsets| gsets.coverages().get(filter_id as usize))
+                        .transpose()
+                        .unwrap();
+                    let glyphs = filter_set.map(|cov| cov.iter().collect::<GlyphSet>());
+                    if let Some(glyphs) = glyphs {
+                        println!("# filter glyphs: {}", glyphs.printer(names))
+                    }
+                }
+                last_filter_set = filter_set_id;
                 println!("{}", rule_printer(rule, names));
             }
         }
@@ -210,7 +230,8 @@ struct RuleSet<'a> {
 
 // a trait we use to type-erase our specific rules while printing
 trait AnyRule {
-    fn lookup_flags(&self) -> LookupFlag;
+    // The lookup flags plus the mark filter set id
+    fn lookup_flags(&self) -> (LookupFlag, Option<u16>);
     fn lookup_type(&self) -> LookupType;
     // write this rule into the provided stream
     //
@@ -332,8 +353,8 @@ struct PairPosRule {
 }
 
 impl AnyRule for PairPosRule {
-    fn lookup_flags(&self) -> LookupFlag {
-        self.flags
+    fn lookup_flags(&self) -> (LookupFlag, Option<u16>) {
+        (self.flags, None)
     }
 
     fn fmt_impl(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
@@ -399,15 +420,23 @@ fn get_lookup_rules<'a>(
             }
             PositionLookup::MarkToBase(lookup) => {
                 let flag = lookup.lookup_flag();
+                let mark_filter_id = flag
+                    .use_mark_filtering_set()
+                    .then(|| lookup.mark_filtering_set());
                 for subt in lookup.subtables().iter().flat_map(|subt| subt.ok()) {
-                    let rules = get_mark_base_rules(&subt, flag, delta_computer).unwrap();
+                    let rules =
+                        get_mark_base_rules(&subt, flag, mark_filter_id, delta_computer).unwrap();
                     result.push(rules);
                 }
             }
             PositionLookup::MarkToMark(lookup) => {
                 let flag = lookup.lookup_flag();
+                let mark_filter_id = flag
+                    .use_mark_filtering_set()
+                    .then(|| lookup.mark_filtering_set());
                 for subt in lookup.subtables().iter().flat_map(|subt| subt.ok()) {
-                    let rules = get_mark_mark_rules(&subt, flag, delta_computer).unwrap();
+                    let rules =
+                        get_mark_mark_rules(&subt, flag, mark_filter_id, delta_computer).unwrap();
                     result.push(rules);
                 }
             }
@@ -529,11 +558,12 @@ struct MarkAttachmentRule {
     base: GlyphId,
     base_anchor: ResolvedAnchor,
     marks: BTreeMap<ResolvedAnchor, GlyphSet>,
+    filter_set: Option<u16>,
 }
 
 impl AnyRule for MarkAttachmentRule {
-    fn lookup_flags(&self) -> LookupFlag {
-        self.flags
+    fn lookup_flags(&self) -> (LookupFlag, Option<u16>) {
+        (self.flags, self.filter_set)
     }
 
     fn fmt_impl(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
@@ -561,6 +591,7 @@ impl AnyRule for MarkAttachmentRule {
 fn get_mark_base_rules(
     subtable: &MarkBasePosFormat1,
     flags: LookupFlag,
+    filter_set: Option<u16>,
     delta_computer: Option<&DeltaComputer>,
 ) -> Result<Vec<LookupRule>, ReadError> {
     let base_array = subtable.base_array()?;
@@ -608,6 +639,7 @@ fn get_mark_base_rules(
                     .map(|(anchor, glyphs)| (anchor, glyphs.into()))
                     .collect(),
                 kind: LookupType::MarkToBase,
+                filter_set,
             };
             result.push(LookupRule::MarkBase(group));
         }
@@ -618,6 +650,7 @@ fn get_mark_base_rules(
 fn get_mark_mark_rules(
     subtable: &MarkMarkPosFormat1,
     flags: LookupFlag,
+    filter_set: Option<u16>,
     delta_computer: Option<&DeltaComputer>,
 ) -> Result<Vec<LookupRule>, ReadError> {
     let base_array = subtable.mark2_array()?;
@@ -665,6 +698,7 @@ fn get_mark_mark_rules(
                     .map(|(anchor, glyphs)| (anchor, glyphs.into()))
                     .collect(),
                 kind: LookupType::MarkToMark,
+                filter_set,
             };
             result.push(LookupRule::MarkMark(group));
         }
