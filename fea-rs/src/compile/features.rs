@@ -507,7 +507,7 @@ impl CvParams {
 }
 
 impl SpecialVerticalFeatureState {
-    const VERTICAL_FEATURES: &[Tag] = &[
+    const VERTICAL_FEATURES: &'static [Tag] = &[
         Tag::new(b"valt"),
         Tag::new(b"vhal"),
         Tag::new(b"vkrn"),
