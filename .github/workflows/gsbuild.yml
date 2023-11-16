@@ -1,0 +1,27 @@
+name: GS Test Build
+
+on:
+  pull_request:
+
+jobs:
+  build-gs:
+    runs-on: ubuntu-latest
+    name: Build GS variable fonts
+    steps:
+      - name: Check out fontc source repository
+        uses: actions/checkout@v4
+      - name: Install the latest stable Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build and install fontc
+        run: cd fontc && cargo install --path . --debug
+      - name: Check out font project source repository
+        uses: actions/checkout@v4
+        with:
+          repository: googlefonts/googlesans
+          token: ${{ secrets.GS_READ_FONTC }}
+      - name: Compile Roman variable font
+        run: fontc --source source/GoogleSans/GoogleSans.designspace
+      - name: Compile Italic variable font
+        run: fontc --source source/GoogleSans/GoogleSans-Italic.designspace
