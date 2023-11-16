@@ -29,6 +29,17 @@ Install the latest version of Rust, https://www.rust-lang.org/tools/install.
 $ cargo run -p fontc -- --source resources/testdata/wght_var.designspace
 ```
 
+### Emit IR to enable incremental builds
+
+If you pass the `--incremental` (or `-i`) option, the IR will be written to disk inside
+the build working directory, so that the next time you run fontc with the same source file
+only what changed will be rebuilt.
+
+```shell
+$ cargo run -p fontc -- --incremental --source resources/testdata/wght_var.designspace
+$ ls build/
+```
+
 ### Sources to play with
 
 Google Fonts has lots, you could try https://github.com/rsheeter/google_fonts_sources to get some.
@@ -84,7 +95,7 @@ Only relatively large changes are effectively detected this way:
 
 ```shell
 # On each branch, typically main and your branch run hyperfine:
-$ cargo build --release && hyperfine --warmup 3 --runs 250 --prepare 'rm -rf build/' 'target/release/fontc --source ../OswaldFont/sources/Oswald.glyphs --emit-ir false'
+$ cargo build --release && hyperfine --warmup 3 --runs 250 --prepare 'rm -rf build/' 'target/release/fontc --source ../OswaldFont/sources/Oswald.glyphs'
 
 # Ideally mean+σ of the improved branch is < mean-σ for main.
 # For example, p2s is probably faster here:
@@ -107,7 +118,7 @@ $ export RUST_LOG=error
 $ export CARGO_PROFILE_RELEASE_DEBUG=true
 
 # Build something and capture a flamegraph of it
-$ rm -rf build/ && cargo flamegraph -p fontc --  --source ../OswaldFont/sources/Oswald.glyphs --emit-ir false
+$ rm -rf build/ && cargo flamegraph -p fontc --  --source ../OswaldFont/sources/Oswald.glyphs
 
 # TIPS
 
@@ -135,7 +146,7 @@ is very useful when you want to zoom in on a specific operation. For example, to
 ```shell
 # Generate a perf.data
 # You can also use perf record but cargo flamegraph seems to have nice capture settings for Rust rigged
-$ rm -rf build/ perf.data && cargo flamegraph -p fontc --  --source ../OswaldFont/sources/Oswald.glyphs --emit-ir false
+$ rm -rf build/ perf.data && cargo flamegraph -p fontc --  --source ../OswaldFont/sources/Oswald.glyphs
 
 # ^ produced flamegraph.svg but it's very noisy, lets narrow our focus
 # Example assumes https://github.com/brendangregg/FlameGraph is cloned in a sibling directory to fontc

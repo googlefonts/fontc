@@ -64,7 +64,7 @@ pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
     let be_paths = BePaths::new(&args.build_dir);
 
     require_dir(ir_paths.build_dir())?;
-    if args.emit_ir {
+    if args.incremental {
         require_dir(ir_paths.anchor_ir_dir())?;
         require_dir(ir_paths.glyph_ir_dir())?;
         require_dir(be_paths.glyph_dir())?;
@@ -82,7 +82,7 @@ pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
 pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error> {
     // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
     let font_file = be_context.font_file();
-    if !args.emit_ir {
+    if !args.incremental {
         fs::write(font_file, be_context.font.get().get()).map_err(Error::IoError)?;
     } else if !font_file.exists() {
         return Err(Error::FileExpected(font_file));
@@ -772,7 +772,7 @@ mod tests {
     fn compile_fea_with_includes_no_ir() {
         assert_compiles_with_gpos_and_gsub("fea_include.designspace", |args| {
             args.emit_debug = false;
-            args.emit_ir = false;
+            args.incremental = false;
         });
     }
 
@@ -1498,7 +1498,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let build_dir = temp_dir.path();
         let mut args = Args::for_test(build_dir, "glyphs2/WghtVar.glyphs");
-        args.emit_ir = false;
+        args.incremental = false;
         compile(args);
 
         let outputs = fs::read_dir(build_dir)

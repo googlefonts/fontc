@@ -41,7 +41,7 @@ bitflags! {
 
 impl Default for Flags {
     fn default() -> Self {
-        Flags::EMIT_IR | Flags::PREFER_SIMPLE_GLYPHS | Flags::PRODUCTION_NAMES
+        Flags::PREFER_SIMPLE_GLYPHS | Flags::PRODUCTION_NAMES
     }
 }
 
