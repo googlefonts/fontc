@@ -8,8 +8,8 @@ use indexmap::IndexMap;
 use read_fonts::{
     tables::{
         gpos::{
-            AnchorTable, MarkBasePosFormat1, PairPos, PairPosFormat1, PairPosFormat2,
-            PositionLookup, PositionLookupList, ValueRecord,
+            AnchorTable, MarkBasePosFormat1, MarkMarkPosFormat1, PairPos, PairPosFormat1,
+            PairPosFormat2, PositionLookup, PositionLookupList, ValueRecord,
         },
         layout::{DeviceOrVariationIndex, LookupFlag},
     },
@@ -199,6 +199,7 @@ struct LookupRules {
 enum LookupRule {
     PairPos(PairPosRule),
     MarkBase(MarkAttachmentRule),
+    MarkMark(MarkAttachmentRule),
 }
 
 // a collection of rules of a single type
@@ -283,7 +284,7 @@ enum LookupType {
     //SinglePos = 1,
     PairPos = 2,
     MarkToBase,
-    //MarkToMark,
+    MarkToMark,
     //MarkToLig,
 }
 
@@ -292,6 +293,7 @@ impl LookupRule {
         match self {
             LookupRule::PairPos(inner) => inner,
             LookupRule::MarkBase(inner) => inner,
+            LookupRule::MarkMark(inner) => inner,
         }
     }
 }
@@ -370,7 +372,6 @@ fn get_lookup_rules<'a>(
     delta_computer: Option<&DeltaComputer>,
 ) -> LookupRules {
     let mut result = Vec::new();
-    //let mut pairpos = Vec::new();
     for (_i, lookup) in lookups.lookups().iter().enumerate() {
         let mut pairpos = Vec::new();
         let lookup = lookup.unwrap();
@@ -400,6 +401,13 @@ fn get_lookup_rules<'a>(
                 let flag = lookup.lookup_flag();
                 for subt in lookup.subtables().iter().flat_map(|subt| subt.ok()) {
                     let rules = get_mark_base_rules(&subt, flag, delta_computer).unwrap();
+                    result.push(rules);
+                }
+            }
+            PositionLookup::MarkToMark(lookup) => {
+                let flag = lookup.lookup_flag();
+                for subt in lookup.subtables().iter().flat_map(|subt| subt.ok()) {
+                    let rules = get_mark_mark_rules(&subt, flag, delta_computer).unwrap();
                     result.push(rules);
                 }
             }
@@ -516,6 +524,7 @@ fn get_pairpos_f2_rules<'a>(
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct MarkAttachmentRule {
+    kind: LookupType,
     flags: LookupFlag,
     base: GlyphId,
     base_anchor: ResolvedAnchor,
@@ -541,7 +550,7 @@ impl AnyRule for MarkAttachmentRule {
     }
 
     fn lookup_type(&self) -> LookupType {
-        LookupType::MarkToBase
+        self.kind
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -598,8 +607,66 @@ fn get_mark_base_rules(
                     .into_iter()
                     .map(|(anchor, glyphs)| (anchor, glyphs.into()))
                     .collect(),
+                kind: LookupType::MarkToBase,
             };
             result.push(LookupRule::MarkBase(group));
+        }
+    }
+    Ok(result)
+}
+
+fn get_mark_mark_rules(
+    subtable: &MarkMarkPosFormat1,
+    flags: LookupFlag,
+    delta_computer: Option<&DeltaComputer>,
+) -> Result<Vec<LookupRule>, ReadError> {
+    let base_array = subtable.mark2_array()?;
+    let base_records = base_array.mark2_records();
+    let mark_array = subtable.mark1_array()?;
+    let mark_records = mark_array.mark_records();
+
+    let cov_ix_to_mark_gid: HashMap<_, _> = subtable.mark1_coverage()?.iter().enumerate().collect();
+    let mut result = Vec::new();
+
+    for (base_ix, base_glyph) in subtable.mark2_coverage()?.iter().enumerate() {
+        let base_record = base_records.get(base_ix).unwrap();
+        for (base_anchor_ix, base_anchor) in base_record
+            .mark2_anchors(base_array.offset_data())
+            .iter()
+            .enumerate()
+        {
+            let Some(base_anchor) = base_anchor else {
+                continue;
+            };
+            let base_anchor = base_anchor?;
+            let base_anchor = ResolvedAnchor::new(&base_anchor, delta_computer)?;
+            let mut marks = BTreeMap::default();
+            for (mark_ix, mark_record) in mark_records.iter().enumerate() {
+                let mark_class = mark_record.mark_class() as usize;
+                if mark_class != base_anchor_ix {
+                    continue;
+                }
+                let Some(mark_glyph) = cov_ix_to_mark_gid.get(&mark_ix) else {
+                    continue;
+                };
+                let mark_anchor = mark_record.mark_anchor(mark_array.offset_data())?;
+                let mark_anchor = ResolvedAnchor::new(&mark_anchor, delta_computer)?;
+                marks
+                    .entry(mark_anchor)
+                    .or_insert(BTreeSet::new())
+                    .insert(*mark_glyph);
+            }
+            let group = MarkAttachmentRule {
+                flags,
+                base: base_glyph,
+                base_anchor,
+                marks: marks
+                    .into_iter()
+                    .map(|(anchor, glyphs)| (anchor, glyphs.into()))
+                    .collect(),
+                kind: LookupType::MarkToMark,
+            };
+            result.push(LookupRule::MarkMark(group));
         }
     }
     Ok(result)
@@ -620,7 +687,7 @@ impl Display for LookupType {
             //LookupType::SinglePos => "SinglePos",
             LookupType::PairPos => "PairPos",
             LookupType::MarkToBase => "MarkToBase",
-            //LookupType::MarkToMark => "MarkToMark",
+            LookupType::MarkToMark => "MarkToMark",
             //LookupType::MarkToLig => "MarkToLig",
         };
         f.write_str(name)
