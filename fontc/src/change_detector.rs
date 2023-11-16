@@ -56,6 +56,7 @@ impl ChangeDetector {
     pub fn new(
         config: Config,
         ir_paths: IrPaths,
+        be_paths: BePaths,
         prev_inputs: Input,
         timer: &mut JobTimer,
     ) -> Result<ChangeDetector, Error> {
@@ -63,9 +64,8 @@ impl ChangeDetector {
             .queued()
             .run();
 
-        let mut ir_source = ir_source(&config.args.source)?;
+        let mut ir_source = ir_source(config.args.source())?;
         let mut current_inputs = ir_source.inputs().map_err(Error::FontIrError)?;
-        let be_paths = BePaths::new(ir_paths.build_dir());
 
         let glyph_name_filter = config
             .args

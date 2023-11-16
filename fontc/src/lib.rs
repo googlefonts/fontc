@@ -63,9 +63,16 @@ pub fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
 
 pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
     let ir_paths = IrPaths::new(&args.build_dir);
-    let be_paths = BePaths::new(&args.build_dir);
-
-    require_dir(ir_paths.build_dir())?;
+    let be_paths = if let Some(output_file) = &args.output_file {
+        BePaths::with_output_file(&args.build_dir, output_file)
+    } else {
+        BePaths::new(&args.build_dir)
+    };
+    // the build dir stores the IR (for incremental builds) and the default output
+    // file ('font.ttf') so we don't need to create one unless we're writing to it
+    if args.output_file.is_none() || args.incremental {
+        require_dir(&args.build_dir)?;
+    }
     if args.incremental {
         require_dir(ir_paths.anchor_ir_dir())?;
         require_dir(ir_paths.glyph_ir_dir())?;
@@ -558,8 +565,14 @@ mod tests {
 
         let prev_inputs = config.init().unwrap();
 
-        let mut change_detector =
-            ChangeDetector::new(config.clone(), ir_paths.clone(), prev_inputs, &mut timer).unwrap();
+        let mut change_detector = ChangeDetector::new(
+            config.clone(),
+            ir_paths.clone(),
+            be_paths.clone(),
+            prev_inputs,
+            &mut timer,
+        )
+        .unwrap();
 
         let mut workload = create_workload(&mut change_detector, timer).unwrap();
 
