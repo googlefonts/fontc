@@ -21,7 +21,7 @@ rayon = "1.6"
 
 # fontations etc
 font-types = { version = "0.4.0", features = ["serde"] }
-read-fonts = "0.13.0"
+read-fonts = "0.13.1"
 write-fonts = { version = "0.18.0", features = ["serde", "read"] }
 skrifa = "0.12.0"
 norad = "0.12"
@@ -51,8 +51,3 @@ members = [
     "layout-repr",
 ]
 
-[patch.crates-io]
-read-fonts = { git = "https://github.com/googlefonts/fontations.git", rev = "1d49b0d" }
-write-fonts = { git = "https://github.com/googlefonts/fontations.git", rev = "1d49b0d" }
-font-types = { git = "https://github.com/googlefonts/fontations.git", rev = "1d49b0d" }
-skrifa = { git = "https://github.com/googlefonts/fontations.git", rev = "1d49b0d" }

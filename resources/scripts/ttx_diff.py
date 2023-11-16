@@ -22,7 +22,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import MutableSequence
+from typing import MutableSequence, Optional
 
 
 _COMPARE_DEFAULTS = "default"
@@ -46,17 +46,27 @@ flags.DEFINE_enum(
 )
 
 
-def run(cmd: MutableSequence, working_dir: Path, log_file: str, **kwargs):
+def run(
+    cmd: MutableSequence,
+    working_dir: Path,
+    log_file: str,
+    redirect_stdout: Optional[str] = None,
+    **kwargs,
+):
     cmd_string = " ".join(cmd)
     print(f"  (cd {working_dir} && {cmd_string} > {log_file} 2>&1)")
     log_file = working_dir / log_file
     with open(log_file, "w") as log_file:
+        if redirect_stdout is not None:
+            stdout = open(working_dir / redirect_stdout, "w")
+        else:
+            stdout = log_file
         subprocess.run(
             cmd,
             text=True,
             check=True,
             cwd=working_dir,
-            stdout=log_file,
+            stdout=stdout,
             stderr=log_file,
             **kwargs,
         )
@@ -70,10 +80,26 @@ def ttx(font_file: Path):
         ttx_file.name,
         font_file.name,
     ]
-    run(cmd, font_file.parent, "ttx.log")
+    run(cmd, font_file.parent, "ttx.log", None)
     return ttx_file
 
 
+# generate a simple text repr for gpos for this font
+def simple_gpos_output(font_file: Path, out_path: Path):
+    temppath = font_file.parent / "gpos.txt"
+    cmd = ["cargo", "run", "-p", "layout-repr", "--", font_file.name, "--table", "gpos"]
+    run(
+        cmd,
+        font_file.parent,
+        "gpos.log",
+        temppath.name,
+    )
+    copy(temppath, out_path)
+    with open(out_path) as f:
+        return f.read()
+
+
+# run a font compiler, returning the path of the generated font
 def build(
     cmd: MutableSequence, build_dir: Path, build_tool: str, ttf_find_fn, **kwargs
 ):
@@ -84,10 +110,10 @@ def build(
         if ttx_file.is_file():
             print(f"skipping {build_tool}")
             return ttx_file
-    run(cmd, build_dir, build_tool + ".log", **kwargs)
+    run(cmd, build_dir, build_tool + ".log", None, **kwargs)
     ttfs = ttf_find_fn()
     assert len(ttfs) == 1, ttfs
-    return ttx(ttfs[0])
+    return ttfs[0]
 
 
 def build_fontc(source: Path, build_dir: Path, compare: str):
@@ -256,12 +282,13 @@ def main(argv):
         build_dir.mkdir(parents=True, exist_ok=True)
         print(f"Compare {compare} in {build_dir}")
 
-        fontc_ttx = copy(
-            build_fontc(source.resolve(), build_dir, compare), build_dir / "fontc.ttx"
-        )
-        fontmake_ttx = copy(
-            build_fontmake(source.resolve(), build_dir, compare),
-            build_dir / "fontmake.ttx",
+        fontc_ttf = build_fontc(source.resolve(), build_dir, compare)
+        fontc_ttx = copy(ttx(fontc_ttf), build_dir / "fontc.ttx")
+        fontmake_ttf = build_fontmake(source.resolve(), build_dir, compare)
+        fontmake_ttx = copy(ttx(fontmake_ttf), build_dir / "fontmake.ttx")
+        fontc_gpos = simple_gpos_output(fontc_ttf, build_dir / "fontc.markkern.txt")
+        fontmake_gpos = simple_gpos_output(
+            fontmake_ttf, build_dir / "fontmake.markkern.txt"
         )
 
         print("TTX FILES")
@@ -298,6 +325,10 @@ def main(argv):
                 print(f"  Identical '{tag}'")
             else:
                 print(f"  DIFF '{tag}', {p1} {p2}")
+                if tag == "GPOS":
+                    p1 = build_dir / "fontc.markkern.txt"
+                    p2 = build_dir / "fontools.markkern.txt"
+                    print(f"  (mark/kern)  {p1} {p2}")
 
 
 if __name__ == "__main__":
