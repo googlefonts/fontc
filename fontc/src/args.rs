@@ -14,8 +14,17 @@ pub struct Args {
     pub source: PathBuf,
 
     /// Whether to write IR to disk. Must be true if you want incremental compilation.
-    #[arg(short, long, default_value = "true", action = ArgAction::Set)]
-    pub emit_ir: bool,
+    #[arg(
+        short,
+        long,
+        num_args = 0..=1,
+        default_value = "false",
+        default_missing_value = "true",
+        // pre-existing long name kept as alias for backwards compatibility
+        alias = "emit-ir",
+        action = ArgAction::Set,
+    )]
+    pub incremental: bool,
 
     /// Whether to write additional debug files to disk.
     #[arg(long, default_value = "false")]
@@ -76,7 +85,7 @@ impl Args {
     pub fn flags(&self) -> Flags {
         let mut flags = Flags::default();
 
-        flags.set(Flags::EMIT_IR, self.emit_ir);
+        flags.set(Flags::EMIT_IR, self.incremental);
         flags.set(Flags::EMIT_DEBUG, self.emit_debug);
         flags.set(Flags::PREFER_SIMPLE_GLYPHS, self.prefer_simple_glyphs);
         flags.set(Flags::FLATTEN_COMPONENTS, self.flatten_components);
@@ -101,7 +110,7 @@ impl Args {
         Args {
             glyph_name_filter: None,
             source,
-            emit_ir: true,
+            incremental: true,
             emit_debug: false, // they get destroyed by test cleanup
             emit_timing: false,
             build_dir: build_dir.to_path_buf(),

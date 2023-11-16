@@ -93,7 +93,7 @@ impl ChangeDetector {
             prev_inputs,
             current_inputs,
             be_paths,
-            emit_ir: config.args.emit_ir,
+            emit_ir: config.args.incremental,
             skip_features: config.args.skip_features,
         })
     }
