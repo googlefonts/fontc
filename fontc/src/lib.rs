@@ -68,6 +68,13 @@ pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
     } else {
         BePaths::new(&args.build_dir)
     };
+    // create the output file's parent directory if it doesn't exist
+    if let Some(output_file) = &args.output_file {
+        if let Some(parent) = output_file.parent() {
+            require_dir(parent)?;
+        }
+    }
+
     // the build dir stores the IR (for incremental builds) and the default output
     // file ('font.ttf') so we don't need to create one unless we're writing to it
     if args.output_file.is_none() || args.incremental {
