@@ -30,6 +30,7 @@ impl NameMap {
         self.0.get(&gid).unwrap()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn iter(&self) -> impl Iterator<Item = &SmolStr> + '_ {
         self.0.values()
     }
@@ -136,7 +137,5 @@ mod tests {
         assert_eq!(glyph_name_for_char('<').unwrap(), "less");
         assert!(glyph_name_for_char('ء').is_none());
         assert_eq!(glyph_name_for_char('!').unwrap(), "exclam");
-
-        let max_len = GLYPH_NAMES.iter().map(|(_, name)| name.len()).max();
     }
 }

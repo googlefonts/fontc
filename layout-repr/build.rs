@@ -18,7 +18,7 @@ fn main() {
 
 fn generate_glyph_names() {
     let path = Path::new(&env::var("OUT_DIR").unwrap()).join(GLYPH_NAMES_FILE);
-    let mut file = BufWriter::new(File::create(&path).unwrap());
+    let mut file = BufWriter::new(File::create(path).unwrap());
 
     let mut entries = AGLFN
         .lines()

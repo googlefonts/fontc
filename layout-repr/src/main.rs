@@ -14,7 +14,7 @@ use read_fonts::{FileRef, FontRef, ReadError};
 
 fn main() -> Result<(), Error> {
     let args = args::Args::parse();
-    let data = std::fs::read(&args.font_path).map_err(|inner| Error::LoadError {
+    let data = std::fs::read(&args.font_path).map_err(|inner| Error::Load {
         path: args.font_path.clone(),
         inner,
     })?;
@@ -33,13 +33,11 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn get_font<'a>(bytes: &'a [u8], idx: Option<u32>) -> Result<FontRef<'a>, Error> {
-    let font = FileRef::new(bytes).map_err(Error::ReadError)?;
+fn get_font(bytes: &[u8], idx: Option<u32>) -> Result<FontRef, Error> {
+    let font = FileRef::new(bytes).map_err(Error::FontRead)?;
     match (font, idx.unwrap_or(0)) {
         (FileRef::Font(font), 0) => Ok(font),
-        (FileRef::Font(_), other) => {
-            Err(Error::ReadError(ReadError::InvalidCollectionIndex(other)))
-        }
-        (FileRef::Collection(collection), idx) => collection.get(idx).map_err(Error::ReadError),
+        (FileRef::Font(_), other) => Err(Error::FontRead(ReadError::InvalidCollectionIndex(other))),
+        (FileRef::Collection(collection), idx) => collection.get(idx).map_err(Error::FontRead),
     }
 }

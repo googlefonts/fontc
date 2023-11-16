@@ -1,3 +1,5 @@
+//! general common utilities and types
+
 use std::{collections::BTreeSet, fmt::Display};
 
 use read_fonts::{
@@ -15,6 +17,7 @@ pub(crate) struct Feature {
     pub(crate) lookups: Vec<u16>,
 }
 
+/// A type to represent either one or multiple glyphs
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub(crate) enum GlyphSet {
     Single(GlyphId),
@@ -123,7 +126,7 @@ impl GlyphSet {
                 match self.glyphs {
                     GlyphSet::Single(single) => {
                         let name = self.names.get(*single);
-                        f.write_str(&name)
+                        f.write_str(name)
                     }
                     GlyphSet::Multiple(glyphs) => {
                         f.write_str("[")?;
@@ -133,7 +136,7 @@ impl GlyphSet {
                             if !first {
                                 f.write_str(",")?;
                             }
-                            f.write_str(&name)?;
+                            f.write_str(name)?;
                             first = false;
                         }
                         f.write_str("]")

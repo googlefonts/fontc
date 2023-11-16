@@ -59,7 +59,7 @@ impl<'a> DeltaComputer<'a> {
         };
         self.locations
             .iter()
-            .map(|loc| self.ivs.compute_delta(delta_ix, &loc).map(|d| d + coord))
+            .map(|loc| self.ivs.compute_delta(delta_ix, loc).map(|d| d + coord))
             .collect()
     }
 }
@@ -80,20 +80,3 @@ impl std::fmt::Display for Value {
         Ok(())
     }
 }
-
-// thanks chad: https://gist.github.com/dfrg/d6909795e5c33e9c9918e44eb69163a1
-//pub(crate) fn master_locations(ivs: &ItemVariationStore) -> Result<MasterLocations, ReadError> {
-//let mut locations = vec![];
-//let region_list = ivs.variation_region_list()?;
-//for region in region_list.variation_regions().iter() {
-//let region = region?;
-//locations.push(
-//region
-//.region_axes()
-//.iter()
-//.map(|axis| axis.peak_coord())
-//.collect(),
-//);
-//}
-//Ok(locations)
-//}

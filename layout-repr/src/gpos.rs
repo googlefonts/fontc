@@ -46,13 +46,13 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
     let lang_systems = common::get_lang_systems(&script_list, &feature_list);
     let lookup_rules = get_lookup_rules(&table.lookup_list().unwrap(), var_store.as_ref());
 
-    // so we want to iterate the rules sorted by:
-    // - rule type
-    // - then just... the ordering used by that rule?
+    // so first we iterate through each feature/language/script set
     for sys in &lang_systems {
         println!();
         println!("# {}: {}/{} #", sys.feature, sys.script, sys.lang);
 
+        // then for each feature/language/script we iterate through
+        // all rules, split by the rule (lookup) type
         for rule_set in lookup_rules.iter_rule_sets(&sys.lookups) {
             println!("# {} {} rules", rule_set.rules.len(), rule_set.lookup_type);
             let mut last_flag = None;
@@ -216,6 +216,7 @@ struct LookupRules {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum LookupRule {
     PairPos(PairPosRule),
     MarkBase(MarkAttachmentRule),
@@ -245,6 +246,13 @@ fn rule_printer<'a>(rule: &'a dyn AnyRule, names: &'a NameMap) -> Printer<'a> {
     Printer { rule, names }
 }
 
+// this code is annoying.
+//
+// basically: we have a bunch of different lookups, of different types. But when
+// we print the rules, we want to take a bunch of rules from different lookups
+// and print them in some canonical way. This means we need to be able to sort
+// them after we've collected them, at which point we don't know their actual
+// types anymore, so we do this dance. I'm sorry.
 impl<'a> Ord for &'a dyn AnyRule {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self.lookup_type(), other.lookup_type()) {
@@ -253,12 +261,19 @@ impl<'a> Ord for &'a dyn AnyRule {
                 .downcast_ref::<PairPosRule>()
                 .unwrap()
                 .cmp(other.as_any().downcast_ref::<PairPosRule>().unwrap()),
-            (LookupType::MarkToBase, LookupType::MarkToBase) => self
+            (LookupType::MarkToBase, LookupType::MarkToBase)
+            | (LookupType::MarkToMark, LookupType::MarkToMark) => self
                 .as_any()
                 .downcast_ref::<MarkAttachmentRule>()
                 .unwrap()
                 .cmp(other.as_any().downcast_ref::<MarkAttachmentRule>().unwrap()),
-            (self_type, other_type) => self_type.cmp(&other_type),
+            (self_type, other_type) => {
+                assert!(
+                    self_type != other_type,
+                    "you need to add a new branch in the Ord impl"
+                );
+                self_type.cmp(&other_type)
+            }
         }
     }
 }
@@ -277,12 +292,19 @@ impl<'a> PartialEq for &'a dyn AnyRule {
                 .downcast_ref::<PairPosRule>()
                 .unwrap()
                 .eq(other.as_any().downcast_ref::<PairPosRule>().unwrap()),
-            (LookupType::MarkToBase, LookupType::MarkToBase) => self
+            (LookupType::MarkToBase, LookupType::MarkToBase)
+            | (LookupType::MarkToMark, LookupType::MarkToMark) => self
                 .as_any()
                 .downcast_ref::<MarkAttachmentRule>()
                 .unwrap()
                 .eq(other.as_any().downcast_ref::<MarkAttachmentRule>().unwrap()),
-            _ => false,
+            (self_type, other_type) => {
+                assert!(
+                    self_type != other_type,
+                    "you need to add a new branch in the PartialEq impl"
+                );
+                false
+            }
         }
     }
 }
@@ -306,7 +328,6 @@ enum LookupType {
     PairPos = 2,
     MarkToBase,
     MarkToMark,
-    //MarkToLig,
 }
 
 impl LookupRule {
@@ -320,6 +341,7 @@ impl LookupRule {
 }
 
 impl LookupRules {
+    /// returns all the rules in all the referenced lookups
     fn iter_rule_sets<'a>(&'a self, lookups: &[u16]) -> impl Iterator<Item = RuleSet<'a>> {
         let mut by_type = BTreeMap::new();
         for lookup in lookups {
@@ -388,8 +410,8 @@ impl Debug for PairPosRule {
     }
 }
 
-fn get_lookup_rules<'a>(
-    lookups: &PositionLookupList<'a>,
+fn get_lookup_rules(
+    lookups: &PositionLookupList,
     delta_computer: Option<&DeltaComputer>,
 ) -> LookupRules {
     let mut result = Vec::new();
@@ -466,12 +488,12 @@ fn combine_rules(rules: Vec<PairPosRule>) -> Vec<LookupRule> {
 }
 
 // okay so we want to return some heterogeneous type here hmhm
-fn get_pairpos_f1_rules<'a>(
-    subtable: &PairPosFormat1<'a>,
+fn get_pairpos_f1_rules(
+    subtable: &PairPosFormat1,
     mut add_fn: impl FnMut(PairPosRule),
     flags: LookupFlag,
     delta_computer: Option<&DeltaComputer>,
-) -> () {
+) {
     let coverage = subtable.coverage().unwrap();
     let pairsets = subtable.pair_sets();
     for (gid1, pairset) in coverage.iter().zip(pairsets.iter()) {
@@ -502,12 +524,12 @@ fn is_noop(value_record: &ValueRecord) -> bool {
         && value_record.y_advance().unwrap_or(0) == 0
 }
 
-fn get_pairpos_f2_rules<'a>(
-    subtable: &PairPosFormat2<'a>,
+fn get_pairpos_f2_rules(
+    subtable: &PairPosFormat2,
     mut add_fn: impl FnMut(PairPosRule),
     flags: LookupFlag,
     delta_computer: Option<&DeltaComputer>,
-) -> () {
+) {
     let coverage = subtable.coverage().unwrap();
     let class1 = subtable.class_def1().unwrap();
     let class2 = subtable.class_def2().unwrap();
@@ -525,7 +547,7 @@ fn get_pairpos_f2_rules<'a>(
             let class2rec = class2rec.unwrap();
             let record1 = class2rec.value_record1();
             let record2 = class2rec.value_record2();
-            if is_noop(&record1) && is_noop(&record2) {
+            if is_noop(record1) && is_noop(record2) {
                 continue;
             }
             for gid2 in reverse_class2
@@ -718,11 +740,9 @@ impl From<i16> for ResolvedValue {
 impl Display for LookupType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
-            //LookupType::SinglePos => "SinglePos",
             LookupType::PairPos => "PairPos",
             LookupType::MarkToBase => "MarkToBase",
             LookupType::MarkToMark => "MarkToMark",
-            //LookupType::MarkToLig => "MarkToLig",
         };
         f.write_str(name)
     }
