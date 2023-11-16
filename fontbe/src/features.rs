@@ -272,7 +272,7 @@ impl<'a> FeatureWriter<'a> {
         for mark_mark in marks.mark_mark.iter() {
             let mut mark_mark_builder = MarkToMarkBuilder::default();
 
-            for mark in mark_mark.marks.iter() {
+            for mark in mark_mark.attaching_marks.iter() {
                 mark_mark_builder
                     .insert_mark1(
                         mark.gid,
@@ -280,6 +280,14 @@ impl<'a> FeatureWriter<'a> {
                         mark.create_anchor_table(builder)?,
                     )
                     .map_err(Error::PreviouslyAssignedClass)?;
+            }
+
+            for base in mark_mark.base_marks.iter() {
+                mark_mark_builder.insert_mark2(
+                    base.gid,
+                    &mark_mark.class,
+                    base.create_anchor_table(builder)?,
+                );
             }
             mark_mark_lookups.push(builder.add_lookup(
                 LookupFlag::default(),

@@ -430,7 +430,8 @@ impl MarkBase {
 pub(crate) struct MarkMark {
     pub(crate) class: SmolStr,
     pub(crate) filter_set: Vec<GlyphId>,
-    pub(crate) marks: Vec<MarkEntry>,
+    pub(crate) attaching_marks: Vec<MarkEntry>,
+    pub(crate) base_marks: Vec<MarkEntry>,
 }
 
 impl MarkMark {
@@ -441,8 +442,12 @@ impl MarkMark {
         }
     }
 
-    pub(crate) fn insert_mark(&mut self, entry: MarkEntry) {
-        self.marks.push(entry);
+    pub(crate) fn insert_attaching_mark(&mut self, entry: MarkEntry) {
+        self.attaching_marks.push(entry);
+    }
+
+    pub(crate) fn insert_base_mark(&mut self, entry: MarkEntry) {
+        self.base_marks.push(entry)
     }
 }
 

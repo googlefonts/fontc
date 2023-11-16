@@ -2423,7 +2423,7 @@ mod tests {
 
     #[test]
     fn compile_mark_mark() {
-        let result = SimpleCompile::new("glyphs3/Oswald-AE-comb.glyphs").unwrap();
+        let result = SimpleCompile::compile("glyphs3/Oswald-AE-comb.glyphs").unwrap();
         let font = result.font().unwrap();
         let gpos = font.gpos().unwrap();
         let acutecomb = result.get_gid("acutecomb");
