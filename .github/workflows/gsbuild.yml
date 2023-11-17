@@ -20,6 +20,6 @@ jobs:
           repository: googlefonts/googlesans
           token: ${{ secrets.GS_READ_FONTC }}
       - name: Compile Roman variable font
-        run: fontc --source source/GoogleSans/GoogleSans.designspace
+        run: fontc source/GoogleSans/GoogleSans.designspace
       - name: Compile Italic variable font
-        run: fontc --source source/GoogleSans/GoogleSans-Italic.designspace
+        run: fontc source/GoogleSans/GoogleSans-Italic.designspace
