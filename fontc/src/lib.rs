@@ -433,7 +433,7 @@ mod tests {
             variations::{DeltaSetIndexMap, ItemVariationData},
         },
         types::NameId,
-        TableRef,
+        ReadError, TableRef,
     };
     use skrifa::{
         charmap::Charmap,
@@ -678,6 +678,47 @@ mod tests {
         assert_eq!(expected, completed);
     }
 
+    /// A convenience type for the common case of "just compile this source with
+    /// default arguments".
+    ///
+    /// When you need more control, just the `compile` fn/`TestCompile` type
+    /// directly
+    struct SimpleCompile {
+        /// we need to hold onto this because when it goes out of scope,
+        /// the directory is deleted.
+        _temp_dir: TempDir,
+        /// the font bytes
+        buf: Vec<u8>,
+        result: TestCompile,
+    }
+
+    impl SimpleCompile {
+        fn compile(source: &str) -> std::io::Result<Self> {
+            let temp_dir = tempdir()?;
+            let build_dir = temp_dir.path();
+            let result = compile(Args::for_test(build_dir, source));
+            let font_file = build_dir.join("font.ttf");
+            let buf = fs::read(font_file)?;
+            Ok(Self {
+                _temp_dir: temp_dir,
+                buf,
+                result,
+            })
+        }
+
+        fn font(&self) -> Result<FontRef, ReadError> {
+            FontRef::new(&self.buf)
+        }
+    }
+
+    // deref to the inner TestCompile obj so existing tests are unchanged
+    impl std::ops::Deref for SimpleCompile {
+        type Target = TestCompile;
+        fn deref(&self) -> &Self::Target {
+            &self.result
+        }
+    }
+
     #[test]
     fn compile_work_for_designspace() {
         assert_compile_work("wght_var.designspace", vec!["bar", "plus"])
@@ -708,12 +749,12 @@ mod tests {
             IndexSet::from(["bar".into(), "plus".into()]),
             result.glyphs_changed
         );
-        assert_eq!(IndexSet::new(), result.glyphs_deleted);
+        assert!(result.glyphs_deleted.is_empty());
 
         let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
-        assert_eq!(HashSet::new(), result.work_executed);
-        assert_eq!(IndexSet::new(), result.glyphs_changed);
-        assert_eq!(IndexSet::new(), result.glyphs_deleted);
+        assert!(result.work_executed.is_empty());
+        assert!(result.glyphs_changed.is_empty());
+        assert!(result.glyphs_deleted.is_empty());
     }
 
     #[test]
@@ -795,7 +836,7 @@ mod tests {
             IndexSet::from(["bar".into(), "plus".into()]),
             result.glyphs_changed
         );
-        assert_eq!(IndexSet::new(), result.glyphs_deleted);
+        assert!(result.glyphs_deleted.is_empty());
 
         let bar_ir = build_dir.join("glyph_ir/bar.yml");
         assert!(bar_ir.is_file(), "no file {bar_ir:#?}");
@@ -803,7 +844,7 @@ mod tests {
 
         let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
         assert_eq!(IndexSet::from(["bar".into()]), result.glyphs_changed);
-        assert_eq!(IndexSet::new(), result.glyphs_deleted);
+        assert!(result.glyphs_deleted.is_empty());
     }
 
     fn assert_compiles_with_gpos_and_gsub(
@@ -993,9 +1034,7 @@ mod tests {
 
     #[test]
     fn compile_simple_glyphs_to_glyf_loca() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "static.designspace"));
+        let result = SimpleCompile::compile("static.designspace").unwrap();
 
         // See resources/testdata/Static-Regular.ufo/glyphs
         // generated .notdef, 8 points, 2 contours
@@ -1021,9 +1060,7 @@ mod tests {
 
     #[test]
     fn compile_variable_simple_glyph_with_implied_oncurves() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "glyphs3/Oswald-O.glyphs"));
+        let result = SimpleCompile::compile("glyphs3/Oswald-O.glyphs").unwrap();
 
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
@@ -1054,10 +1091,7 @@ mod tests {
 
     #[test]
     fn compile_composite_glyphs_has_expected_glyph_types() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
-
+        let result = SimpleCompile::compile("glyphs2/Component.glyphs").unwrap();
         // Per source, glyphs should be period, comma, non_uniform_scale
         // Period is simple, the other two use it as a component
         let glyph_data = result.glyphs();
@@ -1179,9 +1213,7 @@ mod tests {
 
     #[test]
     fn writes_cmap() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
+        let result = SimpleCompile::compile("glyphs2/Component.glyphs").unwrap();
 
         let raw_cmap = dump_table(&result.be_context.cmap.get().0).unwrap();
         let font_data = FontData::new(&raw_cmap);
@@ -1232,9 +1264,7 @@ mod tests {
 
     #[test]
     fn hmtx_of_one() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "glyphs2/NotDef.glyphs"));
+        let result = SimpleCompile::compile("glyphs2/NotDef.glyphs").unwrap();
 
         let raw_hmtx = result.be_context.hmtx.get();
         let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &(1, 1)).unwrap();
@@ -1250,9 +1280,7 @@ mod tests {
 
     #[test]
     fn metrics_and_limits_of_mono() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "glyphs2/Mono.glyphs"));
+        let result = SimpleCompile::compile("glyphs2/Mono.glyphs").unwrap();
 
         let arc_hhea = result.be_context.hhea.get();
         let Some(hhea) = &arc_hhea.0 else {
@@ -1296,15 +1324,8 @@ mod tests {
 
     #[test]
     fn wght_var_has_expected_tables() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "wght_var.designspace"));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result = SimpleCompile::compile("wght_var.designspace").unwrap();
+        let font = result.font().unwrap();
 
         assert_eq!(
             vec![
@@ -1333,15 +1354,8 @@ mod tests {
 
     #[test]
     fn compile_mov_xy_and_move_around() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "mov_xy.designspace"));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
-
+        let result = SimpleCompile::compile("mov_xy.designspace").unwrap();
+        let font = result.font().unwrap();
         // Confirm movx then movy
         assert_eq!(
             vec!["movx", "movy"],
@@ -1462,9 +1476,7 @@ mod tests {
 
     #[test]
     fn compile_generates_notdef() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "glyphs2/WghtVar.glyphs"));
+        let result = SimpleCompile::compile("glyphs2/WghtVar.glyphs").unwrap();
 
         assert!(!result
             .fe_context
@@ -1480,10 +1492,7 @@ mod tests {
                 .glyph_id(&GlyphName::NOTDEF)
         );
 
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let font = result.font().unwrap();
 
         // Character 0x0000 (NULL) != '.notdef' glyph, and neither are any other
         // characters actually, because '.notdef' (glyph index 0) means the absence
@@ -1495,14 +1504,8 @@ mod tests {
 
     #[test]
     fn compile_glyphs_font_with_weight_axis() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "glyphs2/WghtVar.glyphs"));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result = SimpleCompile::compile("glyphs2/WghtVar.glyphs").unwrap();
+        let font = result.font().unwrap();
 
         assert_eq!(
             vec![(Tag::from_str("wght").unwrap(), 400.0, 400.0, 700.0)],
@@ -1525,15 +1528,8 @@ mod tests {
 
     #[test]
     fn compile_glyphs_font_with_avar() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "glyphs2/WghtVar_Avar.glyphs"));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
-
+        let result = SimpleCompile::compile("glyphs2/WghtVar_Avar.glyphs").unwrap();
+        let font = result.font().unwrap();
         // Default 400 is important, it means we found the index of Regular
         assert_eq!(
             vec![(Tag::from_str("wght").unwrap(), 300.0, 400.0, 700.0)],
@@ -1599,14 +1595,8 @@ mod tests {
     }
 
     fn assert_named_instances(source: &str, expected: Vec<(String, Vec<(&str, f32)>)>) {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, source));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result = SimpleCompile::compile(source).unwrap();
+        let font = result.font().unwrap();
 
         let name = font.name().unwrap();
         let fvar = font.fvar().unwrap();
@@ -1670,14 +1660,8 @@ mod tests {
     }
 
     fn assert_fs_selection(source: &str, expected: SelectionFlags) {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, source));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result = SimpleCompile::compile(source).unwrap();
+        let font = result.font().unwrap();
         let os2 = font.os2().unwrap();
         assert_eq!(expected, os2.fs_selection());
     }
@@ -1700,14 +1684,8 @@ mod tests {
 
     #[test]
     fn populates_unicode_range() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "static.designspace"));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result = SimpleCompile::compile("static.designspace").unwrap();
+        let font = result.font().unwrap();
         let os2 = font.os2().unwrap();
 
         assert_eq!(
@@ -1724,14 +1702,9 @@ mod tests {
 
     #[test]
     fn captures_vendor_id() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "glyphs3/TheBestNames.glyphs"));
+        let result = SimpleCompile::compile("glyphs3/TheBestNames.glyphs").unwrap();
+        let font = result.font().unwrap();
 
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
         let os2 = font.os2().unwrap();
         assert_eq!(Tag::new(b"RODS"), os2.ach_vend_id());
     }
@@ -1742,14 +1715,8 @@ mod tests {
         max_composite_points: u16,
         max_composite_contours: u16,
     ) {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, src));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result = SimpleCompile::compile(src).unwrap();
+        let font = result.font().unwrap();
         let maxp = font.maxp().unwrap();
 
         assert_eq!(
@@ -1782,14 +1749,8 @@ mod tests {
     }
 
     fn assert_created_set(source: &str) {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, source));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result = SimpleCompile::compile(source).unwrap();
+        let font = result.font().unwrap();
         let head = font.head().unwrap();
 
         // TIL Mac has an epoch of it's own
@@ -1817,14 +1778,8 @@ mod tests {
 
     #[test]
     fn generates_stat() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "wght_var.designspace"));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result = SimpleCompile::compile("wght_var.designspace").unwrap();
+        let font = result.font().unwrap();
 
         let name = font.name().unwrap();
         let stat = font.stat().unwrap();
@@ -1844,9 +1799,7 @@ mod tests {
     }
 
     fn assert_simple_kerning(source: &str) {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, source));
+        let result = SimpleCompile::compile(source).unwrap();
 
         let kerning = result.fe_context.kerning.get();
 
@@ -1946,14 +1899,8 @@ mod tests {
     }
 
     fn assert_intermediate_layer(src: &str) {
-        let tmp_dir = tempdir().unwrap();
-        let build_dir = tmp_dir.path();
-        compile(Args::for_test(build_dir, src));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result = SimpleCompile::compile(src).unwrap();
+        let font = result.font().unwrap();
 
         assert_eq!(
             vec!["CPHT", "wght"],
@@ -2035,16 +1982,10 @@ mod tests {
 
     #[test]
     fn empty_glyph_is_zero_length() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "glyphs2/WghtVar.glyphs"));
-
+        let result = SimpleCompile::compile("glyphs2/WghtVar.glyphs").unwrap();
         let space_idx = result.get_glyph_index("space").unwrap() as usize;
+        let font = result.font().unwrap();
 
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
         let is_long = match font.head().unwrap().index_to_loc_format() {
             0 => false,
             1 => true,
@@ -2181,15 +2122,10 @@ mod tests {
         // VarStore (without a mapping) can be built. In this particular case, this
         // turns out to be more compact than the equivalent indirect VarStore
         // so we check it gets preferred over the latter.
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(
-            build_dir,
-            "HVAR/SingleModel_Direct/HVARSingleModelDirect.designspace",
-        ));
-        let font_file = build_dir.join("font.ttf");
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result =
+            SimpleCompile::compile("HVAR/SingleModel_Direct/HVARSingleModelDirect.designspace")
+                .unwrap();
+        let font = result.font().unwrap();
         let num_glyphs = font.maxp().unwrap().num_glyphs();
         assert_eq!(num_glyphs, 14);
         let hvar = font.hvar().unwrap();
@@ -2247,15 +2183,10 @@ mod tests {
         // share the same deltas (the number was found empirically), enough to tip
         // the balance and make an indirect store more compact despite the overhead
         // of the additional DeltaSetIndexMap.
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(
-            build_dir,
-            "HVAR/SingleModel_Indirect/HVARSingleModelIndirect.designspace",
-        ));
-        let font_file = build_dir.join("font.ttf");
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result =
+            SimpleCompile::compile("HVAR/SingleModel_Indirect/HVARSingleModelIndirect.designspace")
+                .unwrap();
+        let font = result.font().unwrap();
         let num_glyphs = font.maxp().unwrap().num_glyphs();
         assert_eq!(num_glyphs, 24);
         let hvar = font.hvar().unwrap();
@@ -2312,15 +2243,10 @@ mod tests {
         // Some glyphs are 'sparse' and define different sets of locations, so multiple
         // sub-models are required to compute the advance width deltas.
         // FontTools always builds an indirect VarStore in this case and we do the same.
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(
-            build_dir,
-            "HVAR/MultiModel_Indirect/HVARMultiModelIndirect.designspace",
-        ));
-        let font_file = build_dir.join("font.ttf");
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let result =
+            SimpleCompile::compile("HVAR/MultiModel_Indirect/HVARMultiModelIndirect.designspace")
+                .unwrap();
+        let font = result.font().unwrap();
         let num_glyphs = font.maxp().unwrap().num_glyphs();
         assert_eq!(num_glyphs, 5);
         let hvar = font.hvar().unwrap();
@@ -2422,15 +2348,8 @@ mod tests {
 
     #[test]
     fn compile_basic_gpos_mark_base() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "glyphs3/WghtVar_Anchors.glyphs"));
-
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
-
+        let result = SimpleCompile::compile("glyphs3/WghtVar_Anchors.glyphs").unwrap();
+        let font = result.font().unwrap();
         let gpos = font.gpos().unwrap();
 
         let base_gid = GlyphId::new(result.get_glyph_index("A").unwrap() as u16);
@@ -2497,9 +2416,8 @@ mod tests {
     }
 
     fn assert_noexport(source: &str) {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, source));
+        let compile = SimpleCompile::compile(source).unwrap();
+        let result = compile.result;
 
         assert!(result.get_glyph_index("hyphen").is_none());
         let fe_hyphen_consumer = result
@@ -2535,14 +2453,8 @@ mod tests {
     }
 
     fn assert_fs_type(source: &str, expected_fs_type: u16) {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, source));
-
-        let font_file = build_dir.join("font.ttf");
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
-        let os2 = font.os2().unwrap();
+        let compile = SimpleCompile::compile(source).unwrap();
+        let os2 = compile.font().unwrap().os2().unwrap();
 
         assert_eq!(expected_fs_type, os2.fs_type());
     }
@@ -2559,14 +2471,8 @@ mod tests {
 
     #[test]
     fn one_lookup_per_group() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "glyphs3/Oswald-AE-comb.glyphs"));
-
-        let font_file = build_dir.join("font.ttf");
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
-        let gpos = font.gpos().unwrap();
+        let compile = SimpleCompile::compile("glyphs3/Oswald-AE-comb.glyphs").unwrap();
+        let gpos = compile.font().unwrap().gpos().unwrap();
 
         // We had a bug where it was 2
         assert_eq!(1, mark_base_lookups(&gpos).len());
