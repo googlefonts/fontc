@@ -21,7 +21,7 @@ pub(crate) struct Feature {
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub(crate) enum GlyphSet {
     Single(GlyphId),
-    Multiple(Vec<GlyphId>),
+    Multiple(BTreeSet<GlyphId>),
 }
 
 impl Feature {
@@ -51,45 +51,47 @@ pub(crate) fn get_lang_systems(
 ) -> Vec<Feature> {
     let data = script_list.offset_data();
 
-    let lang_sys_iter = script_list.script_records().iter().flat_map(|script| {
-        let script_tag = script.script_tag();
-        let script = script.script(data).unwrap();
-        let maybe_default = script
-            .default_lang_sys()
-            .transpose()
-            .unwrap()
-            .map(|dflt| (script_tag, Tag::new(b"dflt"), dflt.feature_indices()));
-        let lang_sys_iter = script.lang_sys_records().iter().map(move |lang_sys| {
-            let lang_tag = lang_sys.lang_sys_tag();
-            let lang = lang_sys.lang_sys(script.offset_data()).unwrap();
-            (script_tag, lang_tag, lang.feature_indices())
-        });
-        maybe_default.into_iter().chain(lang_sys_iter)
-    });
-
-    let mut result = Vec::new();
-    for (script, lang, feature_indices) in lang_sys_iter {
-        let data = feature_list.offset_data();
-
-        for idx in feature_indices {
-            let rec = feature_list
-                .feature_records()
-                .get(idx.get() as usize)
-                .unwrap();
-            let feature = rec.feature(data).unwrap();
-            let lookups = feature
-                .lookup_list_indices()
-                .iter()
-                .map(|x| x.get())
-                .collect();
-            result.push(Feature {
-                feature: rec.feature_tag(),
-                script,
-                lang,
-                lookups,
+    let mut result = script_list
+        .script_records()
+        .iter()
+        // first iterate all (script, lang, feature indices)
+        .flat_map(|script| {
+            let script_tag = script.script_tag();
+            let script = script.script(data).unwrap();
+            let maybe_default = script
+                .default_lang_sys()
+                .transpose()
+                .unwrap()
+                .map(|dflt| (script_tag, Tag::new(b"dflt"), dflt.feature_indices()));
+            let lang_sys_iter = script.lang_sys_records().iter().map(move |lang_sys| {
+                let lang_tag = lang_sys.lang_sys_tag();
+                let lang = lang_sys.lang_sys(script.offset_data()).unwrap();
+                (script_tag, lang_tag, lang.feature_indices())
+            });
+            maybe_default.into_iter().chain(lang_sys_iter)
+        })
+        // then convert these into script/lang/feature/lookup indices
+        .flat_map(|(script, lang, indices)| {
+            indices.iter().map(move |idx| {
+                let rec = feature_list
+                    .feature_records()
+                    .get(idx.get() as usize)
+                    .unwrap();
+                let feature = rec.feature(feature_list.offset_data()).unwrap();
+                let lookups = feature
+                    .lookup_list_indices()
+                    .iter()
+                    .map(|x| x.get())
+                    .collect();
+                Feature {
+                    feature: rec.feature_tag(),
+                    script,
+                    lang,
+                    lookups,
+                }
             })
-        }
-    }
+        })
+        .collect::<Vec<_>>();
 
     result.sort_unstable_by_key(|sys| sys.sort_key());
 
@@ -99,7 +101,7 @@ pub(crate) fn get_lang_systems(
 impl GlyphSet {
     pub(crate) fn make_set(&mut self) {
         if let GlyphSet::Single(gid) = self {
-            *self = GlyphSet::Multiple(vec![*gid])
+            *self = GlyphSet::Multiple(BTreeSet::from([*gid]))
         }
     }
 
@@ -109,8 +111,21 @@ impl GlyphSet {
             unreachable!()
         };
         match other {
-            GlyphSet::Single(gid) => gids.push(gid),
-            GlyphSet::Multiple(multi) => gids.extend(multi),
+            GlyphSet::Single(gid) => {
+                gids.insert(gid);
+            }
+            GlyphSet::Multiple(mut multi) => gids.append(&mut multi),
+        }
+    }
+
+    pub(crate) fn add(&mut self, gid: GlyphId) {
+        // if we're a single glyph, don't turn into a set if we're adding ourselves
+        if matches!(self, GlyphSet::Single(x) if *x == gid) {
+            return;
+        }
+        self.make_set();
+        if let GlyphSet::Multiple(set) = self {
+            set.insert(gid);
         }
     }
 
@@ -161,15 +176,5 @@ impl From<GlyphId> for GlyphSet {
 impl FromIterator<GlyphId> for GlyphSet {
     fn from_iter<T: IntoIterator<Item = GlyphId>>(iter: T) -> Self {
         GlyphSet::Multiple(iter.into_iter().collect())
-    }
-}
-
-impl From<BTreeSet<GlyphId>> for GlyphSet {
-    fn from(src: BTreeSet<GlyphId>) -> GlyphSet {
-        if src.len() == 1 {
-            GlyphSet::Single(src.first().copied().unwrap())
-        } else {
-            src.into_iter().collect()
-        }
     }
 }

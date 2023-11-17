@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, HashMap},
     fmt::{Debug, Display},
     io,
 };
@@ -655,8 +655,8 @@ fn get_mark_base_rules(
                 let mark_anchor = ResolvedAnchor::new(&mark_anchor, delta_computer)?;
                 marks
                     .entry(mark_anchor)
-                    .or_insert(BTreeSet::new())
-                    .insert(*mark_glyph);
+                    .or_insert_with(|| GlyphSet::from(*mark_glyph))
+                    .add(*mark_glyph);
             }
             let group = MarkAttachmentRule {
                 flags,
@@ -664,7 +664,7 @@ fn get_mark_base_rules(
                 base_anchor,
                 marks: marks
                     .into_iter()
-                    .map(|(anchor, glyphs)| (anchor, glyphs.into()))
+                    .map(|(anchor, glyphs)| (anchor, glyphs))
                     .collect(),
                 kind: LookupType::MarkToBase,
                 filter_set,
@@ -714,8 +714,8 @@ fn get_mark_mark_rules(
                 let mark_anchor = ResolvedAnchor::new(&mark_anchor, delta_computer)?;
                 marks
                     .entry(mark_anchor)
-                    .or_insert(BTreeSet::new())
-                    .insert(*mark_glyph);
+                    .or_insert_with(|| GlyphSet::from(*mark_glyph))
+                    .add(*mark_glyph);
             }
             let group = MarkAttachmentRule {
                 flags,
@@ -723,7 +723,7 @@ fn get_mark_mark_rules(
                 base_anchor,
                 marks: marks
                     .into_iter()
-                    .map(|(anchor, glyphs)| (anchor, glyphs.into()))
+                    .map(|(anchor, glyphs)| (anchor, glyphs))
                     .collect(),
                 kind: LookupType::MarkToMark,
                 filter_set,
@@ -780,7 +780,7 @@ impl Display for ResolvedValue {
                 write!(f, " [({start})")?;
                 for (i, adj) in values.iter().enumerate() {
                     if i > 0 {
-                        write!(f, ", ")?;
+                        write!(f, ",")?;
                     }
                     write!(f, "{adj}")?;
                 }
@@ -790,7 +790,7 @@ impl Display for ResolvedValue {
                 write!(f, " {{")?;
                 for (i, var) in deltas.iter().enumerate() {
                     if i > 0 {
-                        write!(f, ", ")?;
+                        write!(f, ",")?;
                     }
                     write!(f, "{var}")?;
                 }
@@ -804,6 +804,6 @@ impl Display for ResolvedValue {
 
 impl Display for ResolvedAnchor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "@({},{})", self.x, self.y)
+        write!(f, "@(x: {}, y: {})", self.x, self.y)
     }
 }

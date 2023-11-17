@@ -22,7 +22,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import MutableSequence, Optional
+from typing import MutableSequence
 
 
 _COMPARE_DEFAULTS = "default"
@@ -46,27 +46,17 @@ flags.DEFINE_enum(
 )
 
 
-def run(
-    cmd: MutableSequence,
-    working_dir: Path,
-    log_file: str,
-    redirect_stdout: Optional[str] = None,
-    **kwargs,
-):
+def run(cmd: MutableSequence, working_dir: Path, log_file: str, **kwargs):
     cmd_string = " ".join(cmd)
     print(f"  (cd {working_dir} && {cmd_string} > {log_file} 2>&1)")
     log_file = working_dir / log_file
     with open(log_file, "w") as log_file:
-        if redirect_stdout is not None:
-            stdout = open(working_dir / redirect_stdout, "w")
-        else:
-            stdout = log_file
         subprocess.run(
             cmd,
             text=True,
             check=True,
             cwd=working_dir,
-            stdout=stdout,
+            stdout=log_file,
             stderr=log_file,
             **kwargs,
         )
@@ -80,19 +70,29 @@ def ttx(font_file: Path):
         ttx_file.name,
         font_file.name,
     ]
-    run(cmd, font_file.parent, "ttx.log", None)
+    run(cmd, font_file.parent, "ttx.log")
     return ttx_file
 
 
 # generate a simple text repr for gpos for this font
 def simple_gpos_output(font_file: Path, out_path: Path):
-    temppath = font_file.parent / "gpos.txt"
-    cmd = ["cargo", "run", "-p", "layout-normalizer", "--", font_file.name, "--table", "gpos"]
+    temppath = font_file.parent / "markkern.txt"
+    cmd = [
+        "cargo",
+        "run",
+        "-p",
+        "layout-normalizer",
+        "--",
+        font_file.name,
+        "-o",
+        temppath.name,
+        "--table",
+        "gpos",
+    ]
     run(
         cmd,
         font_file.parent,
-        "gpos.log",
-        temppath.name,
+        "kernmark.log",
     )
     copy(temppath, out_path)
     with open(out_path) as f:
@@ -110,7 +110,7 @@ def build(
         if ttx_file.is_file():
             print(f"skipping {build_tool}")
             return ttx_file
-    run(cmd, build_dir, build_tool + ".log", None, **kwargs)
+    run(cmd, build_dir, build_tool + ".log", **kwargs)
     ttfs = ttf_find_fn()
     assert len(ttfs) == 1, ttfs
     return ttfs[0]
