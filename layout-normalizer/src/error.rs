@@ -9,6 +9,13 @@ pub(crate) enum Error {
         path: PathBuf,
         inner: std::io::Error,
     },
+    #[error("could not create file '{path}': '{inner}'")]
+    FileWrite {
+        path: PathBuf,
+        inner: std::io::Error,
+    },
+    #[error("write error: '{0}'")]
+    Write(#[from] std::io::Error),
     #[error("could not read font data: '{0}")]
     FontRead(ReadError),
     #[error("missing table '{0}'")]

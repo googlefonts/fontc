@@ -10,6 +10,8 @@ mod gpos;
 mod gsub;
 mod variations;
 
+use std::{fs::File, io::Write};
+
 use clap::Parser;
 use error::Error;
 use read_fonts::{FileRef, FontRef, ReadError};
@@ -21,15 +23,25 @@ fn main() -> Result<(), Error> {
         inner,
     })?;
 
+    let mut write_target: Box<dyn Write> = match args.out.as_ref() {
+        Some(path) => File::create(path)
+            .map_err(|inner| Error::FileWrite {
+                path: path.to_owned(),
+                inner,
+            })
+            .map(Box::new)?,
+        None => Box::new(std::io::stdout()),
+    };
+
     let font = get_font(&data, args.index)?;
     let name_map = glyph_names::make_name_map(&font)?;
     let to_print = args.table.unwrap_or_default();
     if matches!(to_print, args::Table::All | args::Table::Gpos) {
-        gpos::print(&font, &name_map)?;
+        gpos::print(&mut write_target, &font, &name_map)?;
     }
 
     if matches!(to_print, args::Table::All | args::Table::Gsub) {
-        gsub::print(&font)?;
+        gsub::print(&mut write_target, &font, &name_map)?;
     }
 
     Ok(())

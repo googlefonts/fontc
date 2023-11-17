@@ -2,6 +2,7 @@ use std::{
     any::Any,
     collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Debug, Display},
+    io,
 };
 
 use indexmap::IndexMap;
@@ -24,8 +25,8 @@ use crate::{
     variations::DeltaComputer,
 };
 
-pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
-    println!("# GPOS #");
+pub(crate) fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> Result<(), Error> {
+    writeln!(f, "# GPOS #")?;
     let table = font
         .gpos()
         .map_err(|_| Error::MissingTable(Tag::new(b"GPOS")))?;
@@ -48,19 +49,24 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
 
     // so first we iterate through each feature/language/script set
     for sys in &lang_systems {
-        println!();
-        println!("# {}: {}/{} #", sys.feature, sys.script, sys.lang);
+        writeln!(f,)?;
+        writeln!(f, "# {}: {}/{} #", sys.feature, sys.script, sys.lang)?;
 
         // then for each feature/language/script we iterate through
         // all rules, split by the rule (lookup) type
         for rule_set in lookup_rules.iter_rule_sets(&sys.lookups) {
-            println!("# {} {} rules", rule_set.rules.len(), rule_set.lookup_type);
+            writeln!(
+                f,
+                "# {} {} rules",
+                rule_set.rules.len(),
+                rule_set.lookup_type
+            )?;
             let mut last_flag = None;
             let mut last_filter_set = None;
             for rule in rule_set.rules {
                 let (flags, filter_set_id) = rule.lookup_flags();
                 if last_flag != Some(flags) {
-                    println!("# lookupflag {flags:?}");
+                    writeln!(f, "# lookupflag {flags:?}")?;
                     last_flag = Some(flags);
                 }
 
@@ -74,11 +80,11 @@ pub(crate) fn print(font: &FontRef, names: &NameMap) -> Result<(), Error> {
                         .unwrap();
                     let glyphs = filter_set.map(|cov| cov.iter().collect::<GlyphSet>());
                     if let Some(glyphs) = glyphs {
-                        println!("# filter glyphs: {}", glyphs.printer(names))
+                        writeln!(f, "# filter glyphs: {}", glyphs.printer(names))?;
                     }
                 }
                 last_filter_set = filter_set_id;
-                println!("{}", rule_printer(rule, names));
+                writeln!(f, "{}", rule_printer(rule, names))?;
             }
         }
     }

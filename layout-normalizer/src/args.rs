@@ -4,7 +4,12 @@ use std::{path::PathBuf, str::FromStr};
 pub(crate) struct Args {
     pub font_path: PathBuf,
     #[arg(short, long)]
+    /// Optional destination path for writing output. Default is stdout.
+    pub out: Option<PathBuf>,
+    /// Target table to print, one of gpos/gsub/all (case insensitive)
+    #[arg(short, long)]
     pub table: Option<Table>,
+    /// Index of font to examine, if target is a font collection
     #[arg(short, long)]
     pub index: Option<u32>,
 }
