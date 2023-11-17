@@ -199,7 +199,8 @@ def stat_like_fontmake(ttx):
     el = find_table(ttx, "STAT")
     ver = select_one(el, "Version")
     if ver.attrib["value"] != "0x00010002":
-        return;  # nop
+        # nop
+        return
 
     # fontc likes to write STAT 1.2, fontmake prefers 1.1
     # Version 1.2 adds support for the format 4 axis value table
@@ -210,7 +211,7 @@ def stat_like_fontmake(ttx):
     axis_values = select_one(el, "AxisValueArray")
     if len(axis_values) == 0:
         axis_values.getparent().remove(axis_values)
-        
+
 
 def reduce_diff_noise(fontc, fontmake):
     for ttx in (fontc, fontmake):
@@ -225,7 +226,7 @@ def reduce_diff_noise(fontc, fontmake):
 
         # for matching purposes checksum is just noise
         erase_checksum(ttx)
-        
+
         stat_like_fontmake(ttx)
 
 
