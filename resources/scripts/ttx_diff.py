@@ -87,7 +87,7 @@ def ttx(font_file: Path):
 # generate a simple text repr for gpos for this font
 def simple_gpos_output(font_file: Path, out_path: Path):
     temppath = font_file.parent / "gpos.txt"
-    cmd = ["cargo", "run", "-p", "layout-repr", "--", font_file.name, "--table", "gpos"]
+    cmd = ["cargo", "run", "-p", "layout-normalizer", "--", font_file.name, "--table", "gpos"]
     run(
         cmd,
         font_file.parent,

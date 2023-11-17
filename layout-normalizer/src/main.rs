@@ -1,4 +1,6 @@
-//! A binary for generating a normalized text representation for GPOS/GSUB
+//! Generating a normalized text representation for layout tables
+//!
+//! This currently supports a subset of GPOS (kerning and marks)
 
 mod args;
 mod common;
