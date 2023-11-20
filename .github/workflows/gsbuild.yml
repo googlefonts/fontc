@@ -19,7 +19,15 @@ jobs:
         with:
           repository: googlefonts/googlesans
           token: ${{ secrets.GS_READ_FONTC }}
+      - name: Download and unzip OTS v9.1.0
+        run: |
+            curl -OL "https://github.com/khaledhosny/ots/releases/download/v9.1.0/ots-9.1.0-Linux.zip"
+            unzip "ots-9.1.0-Linux.zip" "ots-9.1.0-Linux/ots-sanitize"
       - name: Compile Roman variable font
         run: fontc source/GoogleSans/GoogleSans.designspace
+      - name: OTS tests, Roman
+        run: ots-9.1.0-Linux/ots-sanitize build/font.ttf
       - name: Compile Italic variable font
         run: fontc source/GoogleSans/GoogleSans-Italic.designspace
+      - name: OTS tests, Italic
+        run: ots-9.1.0-Linux/ots-sanitize build/font.ttf
