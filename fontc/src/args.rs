@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// What font can we build for you today?
 #[derive(Serialize, Deserialize, Parser, Debug, Clone, PartialEq)]
+#[command(version)]
 pub struct Args {
     /// A designspace, ufo, or glyphs file
     #[arg(conflicts_with = "source", required_unless_present("source"))]
