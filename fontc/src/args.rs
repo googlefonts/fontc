@@ -18,16 +18,7 @@ pub struct Args {
     source: Option<PathBuf>,
 
     /// Whether to write IR to disk. Must be true if you want incremental compilation.
-    #[arg(
-        short,
-        long,
-        num_args = 0..=1,
-        default_value = "false",
-        default_missing_value = "true",
-        // pre-existing long name kept as alias for backwards compatibility
-        alias = "emit-ir",
-        action = ArgAction::Set,
-    )]
+    #[arg(short, long, default_value = "false")]
     pub incremental: bool,
 
     /// Output file name (default: build/font.ttf)
