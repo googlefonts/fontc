@@ -74,6 +74,32 @@ def ttx(font_file: Path):
     return ttx_file
 
 
+# generate a simple text repr for gpos for this font
+def simple_gpos_output(font_file: Path, out_path: Path):
+    temppath = font_file.parent / "markkern.txt"
+    cmd = [
+        "cargo",
+        "run",
+        "-p",
+        "layout-normalizer",
+        "--",
+        font_file.name,
+        "-o",
+        temppath.name,
+        "--table",
+        "gpos",
+    ]
+    run(
+        cmd,
+        font_file.parent,
+        "kernmark.log",
+    )
+    copy(temppath, out_path)
+    with open(out_path) as f:
+        return f.read()
+
+
+# run a font compiler, returning the path of the generated font
 def build(
     cmd: MutableSequence, build_dir: Path, build_tool: str, ttf_find_fn, **kwargs
 ):
@@ -87,7 +113,7 @@ def build(
     run(cmd, build_dir, build_tool + ".log", **kwargs)
     ttfs = ttf_find_fn()
     assert len(ttfs) == 1, ttfs
-    return ttx(ttfs[0])
+    return ttfs[0]
 
 
 def build_fontc(source: Path, build_dir: Path, compare: str):
@@ -256,12 +282,13 @@ def main(argv):
         build_dir.mkdir(parents=True, exist_ok=True)
         print(f"Compare {compare} in {build_dir}")
 
-        fontc_ttx = copy(
-            build_fontc(source.resolve(), build_dir, compare), build_dir / "fontc.ttx"
-        )
-        fontmake_ttx = copy(
-            build_fontmake(source.resolve(), build_dir, compare),
-            build_dir / "fontmake.ttx",
+        fontc_ttf = build_fontc(source.resolve(), build_dir, compare)
+        fontc_ttx = copy(ttx(fontc_ttf), build_dir / "fontc.ttx")
+        fontmake_ttf = build_fontmake(source.resolve(), build_dir, compare)
+        fontmake_ttx = copy(ttx(fontmake_ttf), build_dir / "fontmake.ttx")
+        fontc_gpos = simple_gpos_output(fontc_ttf, build_dir / "fontc.markkern.txt")
+        fontmake_gpos = simple_gpos_output(
+            fontmake_ttf, build_dir / "fontmake.markkern.txt"
         )
 
         print("TTX FILES")
@@ -298,6 +325,10 @@ def main(argv):
                 print(f"  Identical '{tag}'")
             else:
                 print(f"  DIFF '{tag}', {p1} {p2}")
+                if tag == "GPOS":
+                    p1 = build_dir / "fontc.markkern.txt"
+                    p2 = build_dir / "fontools.markkern.txt"
+                    print(f"  (mark/kern)  {p1} {p2}")
 
 
 if __name__ == "__main__":
