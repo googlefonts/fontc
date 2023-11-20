@@ -1,5 +1,6 @@
 //! Generates a [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar) table.
 
+use font_types::F2Dot14;
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, NormalizedCoord},
     orchestration::{Access, Work},
@@ -21,7 +22,30 @@ pub fn create_avar_work() -> Box<BeWork> {
     Box::new(AvarWork {})
 }
 
-fn to_segment_map(axis: &Axis) -> Option<SegmentMaps> {
+/// Return true if the SegmentMaps is not a boring identity map
+fn is_interesting(segment_map: &SegmentMaps) -> bool {
+    segment_map
+        .axis_value_maps
+        .iter()
+        .any(|av| av.from_coordinate != av.to_coordinate)
+}
+
+/// Return a default avar SegmentMaps containing the required {-1:-1, 0:0, 1:1} maps
+fn default_segment_map() -> SegmentMaps {
+    // The OT avar spec would allow us to leave the axis value maps empty, however some
+    // implementations want the 3 required maps to always be present even when the default
+    // normalization for an axis was not modified.
+    // We are matching fontTools.varLib here:
+    // https://github.com/fonttools/fonttools/blob/51e70f9/Lib/fontTools/varLib/__init__.py#L151-L157
+    // https://learn.microsoft.com/en-us/typography/opentype/spec/avar#table-formats
+    SegmentMaps::new(vec![
+        AxisValueMap::new(F2Dot14::from_f32(-1.0), F2Dot14::from_f32(-1.0)),
+        AxisValueMap::new(F2Dot14::from_f32(0.0), F2Dot14::from_f32(0.0)),
+        AxisValueMap::new(F2Dot14::from_f32(1.0), F2Dot14::from_f32(1.0)),
+    ])
+}
+
+fn to_segment_map(axis: &Axis) -> SegmentMaps {
     // default normalization
     let default_converter = CoordConverter::new(
         vec![
@@ -57,9 +81,9 @@ fn to_segment_map(axis: &Axis) -> Option<SegmentMaps> {
 
     // avar maps from the default normalization to the actual one,
     // using normalized values on both sides.
-    // All identity mappings are not interesting so we can skip them.
+    // All identity mappings are not interesting so we return the default mapping.
     if mappings.iter().all(|(k, v)| k == v) {
-        return None;
+        return default_segment_map();
     }
 
     let mappings = mappings
@@ -69,7 +93,7 @@ fn to_segment_map(axis: &Axis) -> Option<SegmentMaps> {
         })
         .collect();
 
-    Some(SegmentMaps::new(mappings))
+    SegmentMaps::new(mappings)
 }
 
 impl Work<Context, AnyWorkId, Error> for AvarWork {
@@ -91,13 +115,12 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
             debug!("Skip avar; this is not a variable font");
             return Ok(());
         }
-        let axis_segment_maps: Vec<_> = static_metadata
-            .axes
+        let axis_segment_maps: Vec<_> = static_metadata.axes.iter().map(to_segment_map).collect();
+        // only when all the segment maps are uninteresting, we can omit avar
+        let avar = axis_segment_maps
             .iter()
-            .filter_map(to_segment_map)
-            .filter(|sm| !sm.axis_value_maps.is_empty())
-            .collect();
-        let avar = (!axis_segment_maps.is_empty()).then_some(Avar::new(axis_segment_maps));
+            .any(is_interesting)
+            .then_some(Avar::new(axis_segment_maps));
         context.avar.set_unconditionally(avar.into());
         Ok(())
     }
@@ -113,7 +136,7 @@ mod tests {
     use std::{cmp, str::FromStr};
     use write_fonts::tables::avar::SegmentMaps;
 
-    use super::to_segment_map;
+    use super::{default_segment_map, to_segment_map};
 
     fn axis(mappings: Vec<(UserCoord, DesignCoord)>, default_idx: usize) -> Axis {
         let default_idx = cmp::min(mappings.len() - 1, default_idx);
@@ -150,7 +173,7 @@ mod tests {
         ];
         for i in 1..mappings.len() {
             let mappings = mappings[0..i].to_vec();
-            assert!(to_segment_map(&axis(mappings, 1)).is_none());
+            assert_eq!(to_segment_map(&axis(mappings, 1)), default_segment_map());
         }
     }
 
@@ -164,7 +187,7 @@ mod tests {
         ];
         assert_eq!(
             vec![(-1.0, -1.0), (0.0, 0.0), (0.75, 0.95), (1.0, 1.0),],
-            dump(to_segment_map(&axis(mappings, 1)).unwrap())
+            dump(to_segment_map(&axis(mappings, 1)))
         );
     }
 
@@ -179,7 +202,7 @@ mod tests {
         ];
         assert_eq!(
             vec![(-1.0, -1.0), (0.0, 0.0), (0.3333, 0.4943), (1.0, 1.0),],
-            dump(to_segment_map(&axis(mappings, 0)).unwrap())
+            dump(to_segment_map(&axis(mappings, 0)))
         );
     }
 }
