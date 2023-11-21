@@ -51,4 +51,4 @@ kurbo.workspace = true
 chrono.workspace = true
 
 [build-dependencies]
-vergen = { version = "8.0.0", features = ["build", "cargo", "git", "gitcl", "rustc"] }
+vergen = { version = "8.2.6", features = ["build", "cargo", "git", "gitcl", "rustc"] }
