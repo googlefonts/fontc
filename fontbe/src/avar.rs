@@ -22,12 +22,13 @@ pub fn create_avar_work() -> Box<BeWork> {
     Box::new(AvarWork {})
 }
 
-/// Return true if the SegmentMaps is not a boring identity map
-fn is_interesting(segment_map: &SegmentMaps) -> bool {
+/// Return true if the SegmentMaps is an identity map
+// TODO: make this a method of SegmentMaps in write-fonts
+fn is_identity(segment_map: &SegmentMaps) -> bool {
     segment_map
         .axis_value_maps
         .iter()
-        .any(|av| av.from_coordinate != av.to_coordinate)
+        .all(|av| av.from_coordinate == av.to_coordinate)
 }
 
 /// Return a default avar SegmentMaps containing the required {-1:-1, 0:0, 1:1} maps
@@ -119,8 +120,8 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
         // only when all the segment maps are uninteresting, we can omit avar
         let avar = axis_segment_maps
             .iter()
-            .any(is_interesting)
-            .then_some(Avar::new(axis_segment_maps));
+            .any(|sm| !is_identity(sm))
+            .then(|| Avar::new(axis_segment_maps));
         context.avar.set_unconditionally(avar.into());
         Ok(())
     }
