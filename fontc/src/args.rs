@@ -11,7 +11,11 @@ use serde::{Deserialize, Serialize};
 #[command(version)]
 pub struct Args {
     /// A designspace, ufo, or glyphs file
-    #[arg(conflicts_with = "source", required_unless_present("source"))]
+    #[arg(
+        conflicts_with = "source",
+        required_unless_present("source"),
+        required_unless_present("verbose_version")
+    )]
     input_source: Option<PathBuf>,
 
     /// DEPRECATED: old name for positional input file
@@ -78,6 +82,12 @@ pub struct Args {
     // https://github.com/googlefonts/fontmake/blob/6a8b2907/Lib/fontmake/__main__.py#L602
     #[arg(long, default_value = "false")]
     pub no_production_names: bool,
+
+    /// Print verbose version information for debugging
+    // Includes fontc git commit, rustc host triple, rustc version and channel, llvm version,
+    // cargo profile, and cargo optimization level.
+    #[arg(long = "vv", default_value = "false")]
+    pub verbose_version: bool,
 }
 
 impl Args {
@@ -123,6 +133,7 @@ impl Args {
             skip_features: false,
             keep_direction: false,
             no_production_names: false,
+            verbose_version: false,
         }
     }
 
