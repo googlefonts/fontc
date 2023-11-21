@@ -25,7 +25,7 @@ fn run() -> Result<(), Error> {
     let args = Args::parse();
     // handle `--vv` verbose version argument request
     if args.verbose_version {
-        print_verbose_version();
+        print_verbose_version()?;
         std::process::exit(0);
     }
     let mut timer = JobTimer::new(Instant::now());
@@ -91,27 +91,35 @@ fn run() -> Result<(), Error> {
     write_font_file(&config.args, &be_root)
 }
 
-fn print_verbose_version() {
-    println!(
+fn print_verbose_version() -> Result<(), std::io::Error> {
+    writeln!(
+        std::io::stdout(),
         "{} {} @ {}\n",
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
         env!("VERGEN_GIT_SHA")
-    );
-    println!("{}", env!("VERGEN_RUSTC_HOST_TRIPLE"));
-    println!(
+    )?;
+    writeln!(std::io::stdout(), "{}", env!("VERGEN_RUSTC_HOST_TRIPLE"))?;
+    writeln!(
+        std::io::stdout(),
         "rustc {} (channel: {})",
         env!("VERGEN_RUSTC_SEMVER"),
         env!("VERGEN_RUSTC_CHANNEL")
-    );
-    println!("llvm {}", env!("VERGEN_RUSTC_LLVM_VERSION"));
+    )?;
+    writeln!(
+        std::io::stdout(),
+        "llvm {}",
+        env!("VERGEN_RUSTC_LLVM_VERSION")
+    )?;
     match env!("VERGEN_CARGO_DEBUG") {
-        "true" => println!("cargo profile: debug"),
-        "false" => println!("cargo profile: release"),
+        "true" => writeln!(std::io::stdout(), "cargo profile: debug")?,
+        "false" => writeln!(std::io::stdout(), "cargo profile: release")?,
         _ => (),
     };
-    println!(
+    writeln!(
+        std::io::stdout(),
         "cargo optimization level: {}",
         env!("VERGEN_CARGO_OPT_LEVEL")
-    );
+    )?;
+    Ok(())
 }
