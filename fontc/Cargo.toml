@@ -1,6 +1,7 @@
 [package]
 name = "fontc"
 version = "0.0.1"
+build = "build.rs"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "A compiler for fonts."
@@ -48,3 +49,6 @@ pretty_assertions.workspace = true
 skrifa.workspace = true
 kurbo.workspace = true
 chrono.workspace = true
+
+[build-dependencies]
+vergen = { version = "8.0.0", features = ["build", "cargo", "git", "gitcl", "rustc"] }
