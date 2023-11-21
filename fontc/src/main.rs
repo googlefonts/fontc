@@ -102,9 +102,11 @@ fn print_verbose_version() -> Result<(), std::io::Error> {
     writeln!(std::io::stdout(), "{}", env!("VERGEN_RUSTC_HOST_TRIPLE"))?;
     writeln!(
         std::io::stdout(),
-        "rustc {} (channel: {})",
+        "rustc {} (channel: {}, {} {})",
         env!("VERGEN_RUSTC_SEMVER"),
-        env!("VERGEN_RUSTC_CHANNEL")
+        env!("VERGEN_RUSTC_CHANNEL"),
+        env!("VERGEN_RUSTC_COMMIT_HASH").get(..9).unwrap_or(""),
+        env!("VERGEN_RUSTC_COMMIT_DATE")
     )?;
     writeln!(
         std::io::stdout(),
