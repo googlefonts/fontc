@@ -22,6 +22,12 @@ fn main() {
 }
 
 fn run() -> Result<(), Error> {
+    let args = Args::parse();
+    // handle `--vv` verbose version argument request
+    if args.verbose_version {
+        print_verbose_version();
+        std::process::exit(0);
+    }
     let mut timer = JobTimer::new(Instant::now());
     let time = create_timer(AnyWorkId::InternalTiming("Init logger"), 0)
         .queued()
@@ -46,7 +52,6 @@ fn run() -> Result<(), Error> {
     let time = create_timer(AnyWorkId::InternalTiming("Init config"), 0)
         .queued()
         .run();
-    let args = Args::parse();
     let (ir_paths, be_paths) = init_paths(&args)?;
     let config = Config::new(args)?;
     let prev_inputs = config.init()?;
@@ -84,4 +89,29 @@ fn run() -> Result<(), Error> {
     change_detector.finish_successfully()?;
 
     write_font_file(&config.args, &be_root)
+}
+
+fn print_verbose_version() {
+    println!(
+        "{} {} @ {}\n",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        env!("VERGEN_GIT_SHA")
+    );
+    println!("{}", env!("VERGEN_RUSTC_HOST_TRIPLE"));
+    println!(
+        "rustc {} (channel: {})",
+        env!("VERGEN_RUSTC_SEMVER"),
+        env!("VERGEN_RUSTC_CHANNEL")
+    );
+    println!("llvm {}", env!("VERGEN_RUSTC_LLVM_VERSION"));
+    match env!("VERGEN_CARGO_DEBUG") {
+        "true" => println!("cargo profile: debug"),
+        "false" => println!("cargo profile: release"),
+        _ => (),
+    };
+    println!(
+        "cargo optimization level: {}",
+        env!("VERGEN_CARGO_OPT_LEVEL")
+    );
 }
