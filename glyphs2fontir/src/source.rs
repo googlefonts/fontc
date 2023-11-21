@@ -818,8 +818,8 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             check_pos(&self.glyph_name, positions, axis, &default)?;
         }
 
-        context.anchors.set(ir_anchors.try_into()?);
-        context.glyphs.set(ir_glyph.try_into()?);
+        context.anchors.set(ir_anchors.build()?);
+        context.glyphs.set(ir_glyph.build()?);
         Ok(())
     }
 }

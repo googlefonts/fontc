@@ -79,7 +79,7 @@ fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Gly
         });
     });
 
-    Ok((simple_glyph.try_into()?, composite_glyph.try_into()?))
+    Ok((simple_glyph.build()?, composite_glyph.build()?))
 }
 
 /// Component with full transform.
@@ -216,7 +216,7 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
         }
     }
 
-    let simple: Glyph = simple.try_into()?;
+    let simple: Glyph = simple.build()?;
     debug_assert!(
         simple.name == original.name,
         "{} != {}",
@@ -324,7 +324,7 @@ fn ensure_notdef_exists_and_is_gid_0(
                 metrics.ascender.0,
                 metrics.descender.0,
             );
-            context.glyphs.set(builder.try_into()?);
+            context.glyphs.set(builder.build()?);
         }
     }
     Ok(())
@@ -574,7 +574,7 @@ mod tests {
         glyph
             .try_add_source(&norm_loc(&[(Tag::new(b"wght"), 1.0)]), contour_instance())
             .unwrap();
-        let glyph = glyph.try_into().unwrap();
+        let glyph = glyph.build().unwrap();
         assert!(!has_components_and_contours(&glyph));
     }
 
@@ -587,7 +587,7 @@ mod tests {
                 contour_and_component_instance(),
             )
             .unwrap();
-        let glyph = glyph.try_into().unwrap();
+        let glyph = glyph.build().unwrap();
         assert!(has_components_and_contours(&glyph));
     }
 
@@ -616,7 +616,7 @@ mod tests {
         glyph
             .try_add_source(&norm_loc(&[(Tag::new(b"wght"), 1.0)]), contour_instance())
             .unwrap();
-        glyph.try_into().unwrap()
+        glyph.build().unwrap()
     }
 
     fn component_glyph(name: &str, base: GlyphName, transform: Affine) -> Glyph {
@@ -631,7 +631,7 @@ mod tests {
         glyph
             .try_add_source(&norm_loc(&[(Tag::new(b"wght"), 1.0)]), component)
             .unwrap();
-        glyph.try_into().unwrap()
+        glyph.build().unwrap()
     }
 
     fn contour_and_component_weight_glyph(name: &str) -> Glyph {
@@ -648,7 +648,7 @@ mod tests {
                 contour_and_component_instance(),
             )
             .unwrap();
-        glyph.try_into().unwrap()
+        glyph.build().unwrap()
     }
 
     fn assert_simple(glyph: &Glyph) {
@@ -737,7 +737,7 @@ mod tests {
                 },
             )
             .unwrap();
-        let nested_components = nested_components.try_into().unwrap();
+        let nested_components = nested_components.build().unwrap();
 
         convert_components_to_contours(&context, &nested_components).unwrap();
         let simple = context.glyphs.get(&WorkId::Glyph(nested_components.name));
@@ -790,7 +790,7 @@ mod tests {
         let context = test_context();
         context.glyphs.set(reuse_me);
 
-        let glyph = glyph.try_into().unwrap();
+        let glyph = glyph.build().unwrap();
         convert_components_to_contours(&context, &glyph).unwrap();
         let simple = context.glyphs.get(&WorkId::Glyph(glyph.name));
         assert_simple(&simple);
@@ -830,7 +830,7 @@ mod tests {
                     .iter_mut()
                     .for_each(|c| c.transform *= adjust_nth(i));
             });
-        glyph.try_into().unwrap()
+        glyph.build().unwrap()
     }
 
     #[test]
@@ -841,7 +841,7 @@ mod tests {
             .sources
             .values_mut()
             .for_each(|inst| inst.contours.clear());
-        let glyph = adjust_transform_for_each_instance(&glyph.try_into().unwrap(), |i| {
+        let glyph = adjust_transform_for_each_instance(&glyph.build().unwrap(), |i| {
             Affine::scale(i as f64)
         });
 
