@@ -439,7 +439,7 @@ mod tests {
         );
         assert_eq!(top_level_nodes[1].kind(), Kind::FeatureNode);
 
-        resolved.root.debug_print_structure(true);
+        //resolved.root.debug_print_structure(true);
         assert_eq!(resolved.map.resolve_range(10..15), (b_id, 10..15));
         assert_eq!(resolved.map.resolve_range(29..33), (a_id, 14..18));
         assert_eq!(resolved.map.resolve_range(49..52), (c_id, 16..19));
