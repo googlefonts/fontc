@@ -177,7 +177,7 @@ pub fn to_ir_glyph(
             }
         }
     }
-    glyph.try_into()
+    glyph.build()
 }
 
 #[cfg(test)]

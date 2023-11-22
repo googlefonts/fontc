@@ -267,7 +267,7 @@ impl From<GlyphSerdeRepr> for Glyph {
                 .map(|g| (g.location, g.instance))
                 .collect(),
         }
-        .try_into()
+        .build()
         .unwrap()
     }
 }

@@ -884,12 +884,8 @@ impl AnchorBuilder {
         }
         Ok(())
     }
-}
 
-impl TryInto<GlyphAnchors> for AnchorBuilder {
-    type Error = WorkError;
-
-    fn try_into(self) -> Result<GlyphAnchors, Self::Error> {
+    pub fn build(self) -> Result<GlyphAnchors, WorkError> {
         // It would be nice if everyone was defined at default
         for (anchor, positions) in self.anchors.iter() {
             if !positions.keys().any(|loc| !loc.has_any_non_zero()) {
@@ -1205,12 +1201,8 @@ impl GlyphBuilder {
             )]),
         }
     }
-}
 
-impl TryInto<Glyph> for GlyphBuilder {
-    type Error = WorkError;
-
-    fn try_into(self) -> Result<Glyph, Self::Error> {
+    pub fn build(self) -> Result<Glyph, WorkError> {
         Glyph::new(
             self.name,
             self.emit_to_binary,

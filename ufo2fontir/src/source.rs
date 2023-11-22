@@ -1287,7 +1287,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             &mut ir_anchors,
         )?;
 
-        context.anchors.set(ir_anchors.try_into()?);
+        context.anchors.set(ir_anchors.build()?);
         context.glyphs.set(glyph_ir);
         Ok(())
     }
