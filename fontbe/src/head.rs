@@ -3,11 +3,13 @@
 use std::{collections::HashSet, env};
 
 use chrono::{DateTime, TimeZone, Utc};
-use font_types::{Fixed, LongDateTime};
 use fontdrasil::orchestration::{Access, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use log::warn;
-use write_fonts::tables::{head::Head, loca::LocaFormat};
+use write_fonts::{
+    tables::{head::Head, loca::LocaFormat},
+    types::{Fixed, LongDateTime},
+};
 
 use crate::{
     error::Error,

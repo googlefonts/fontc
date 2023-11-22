@@ -5,8 +5,7 @@ use std::sync::Arc;
 use fontdrasil::orchestration::{Access, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 
-use read_fonts::types::GlyphId;
-use write_fonts::tables::cmap::Cmap;
+use write_fonts::{tables::cmap::Cmap, types::GlyphId};
 
 use crate::{
     error::Error,

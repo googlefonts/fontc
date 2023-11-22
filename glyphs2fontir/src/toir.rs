@@ -1,6 +1,11 @@
 use std::{collections::HashMap, str::FromStr};
 
-use font_types::Tag;
+use kurbo::BezPath;
+use log::trace;
+use ordered_float::OrderedFloat;
+
+use read_fonts::types::Tag;
+
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     types::GlyphName,
@@ -10,9 +15,6 @@ use fontir::{
     ir::{self, GlyphPathBuilder},
 };
 use glyphs_reader::{Component, FeatureSnippet, Font, NodeType, Path, Shape};
-use kurbo::BezPath;
-use log::trace;
-use ordered_float::OrderedFloat;
 
 pub(crate) fn to_ir_contours_and_components(
     glyph_name: GlyphName,

@@ -3,9 +3,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use fea_rs::GlyphSet;
-use font_types::GlyphId;
 use fontdrasil::orchestration::{Access, Work};
-use write_fonts::tables::gpos::ValueRecord;
+use write_fonts::{tables::gpos::ValueRecord, types::GlyphId};
 
 use crate::{
     error::Error,

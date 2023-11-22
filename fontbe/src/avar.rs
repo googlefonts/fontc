@@ -1,6 +1,5 @@
 //! Generates a [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar) table.
 
-use font_types::F2Dot14;
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, NormalizedCoord},
     orchestration::{Access, Work},
@@ -8,7 +7,10 @@ use fontdrasil::{
 };
 use fontir::orchestration::WorkId as FeWorkId;
 use log::debug;
-use write_fonts::tables::avar::{Avar, AxisValueMap, SegmentMaps};
+use write_fonts::{
+    tables::avar::{Avar, AxisValueMap, SegmentMaps},
+    types::F2Dot14,
+};
 
 use crate::{
     error::Error,
@@ -133,9 +135,9 @@ mod tests {
         coords::{CoordConverter, DesignCoord, UserCoord},
         types::Axis,
     };
-    use read_fonts::types::Tag;
     use std::{cmp, str::FromStr};
     use write_fonts::tables::avar::SegmentMaps;
+    use write_fonts::types::Tag;
 
     use super::{default_segment_map, to_segment_map};
 

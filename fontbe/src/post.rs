@@ -2,10 +2,9 @@
 
 use std::collections::HashSet;
 
-use font_types::FWord;
 use fontdrasil::orchestration::{Access, Work};
 use fontir::orchestration::WorkId as FeWorkId;
-use write_fonts::tables::post::Post;
+use write_fonts::{tables::post::Post, types::FWord};
 
 use crate::{
     error::Error,

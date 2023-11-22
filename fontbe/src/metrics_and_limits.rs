@@ -7,10 +7,8 @@ use std::{
     sync::Arc,
 };
 
-use font_types::GlyphId;
 use fontdrasil::orchestration::{Access, Work};
 use fontir::orchestration::WorkId as FeWorkId;
-use read_fonts::types::FWord;
 use write_fonts::{
     dump_table,
     tables::{
@@ -20,6 +18,7 @@ use write_fonts::{
         maxp::Maxp,
         vmtx::LongMetric,
     },
+    types::{FWord, GlyphId},
     OtRound,
 };
 
@@ -365,11 +364,10 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
 
 #[cfg(test)]
 mod tests {
-    use font_types::GlyphId;
     use kurbo::BezPath;
     use write_fonts::tables::glyf::SimpleGlyph;
 
-    use super::FontLimits;
+    use super::*;
 
     // advance 0, bbox (-437,611) => (-334, 715) encountered in NotoSansKayahLi.designspace
     #[test]

@@ -12,6 +12,9 @@ use std::{
     time::Instant,
 };
 
+use log::{debug, error, trace, warn};
+use ordered_float::OrderedFloat;
+
 use fea_rs::{
     compile::{
         Compilation, FeatureBuilder, FeatureProvider, MarkToBaseBuilder, MarkToMarkBuilder,
@@ -20,18 +23,20 @@ use fea_rs::{
     parse::{SourceLoadError, SourceResolver},
     Compiler,
 };
-use font_types::Tag;
-use fontdrasil::{coords::NormalizedLocation, types::Axis};
+
 use fontir::{
     ir::{Features, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
 };
 
-use log::{debug, error, trace, warn};
-use ordered_float::OrderedFloat;
-
-use fontdrasil::orchestration::{Access, Work};
-use write_fonts::{tables::layout::LookupFlag, tables::variations::VariationRegion, OtRound};
+use fontdrasil::{
+    coords::NormalizedLocation,
+    orchestration::{Access, Work},
+    types::Axis,
+};
+use write_fonts::{
+    tables::layout::LookupFlag, tables::variations::VariationRegion, types::Tag, OtRound,
+};
 
 use crate::{
     error::Error,
@@ -338,7 +343,7 @@ impl Display for UnsupportedLocationError {
 }
 
 impl<'a> VariationInfo for FeaVariationInfo<'a> {
-    fn axis(&self, axis_tag: font_types::Tag) -> Option<(usize, &Axis)> {
+    fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)> {
         self.axes.get(&axis_tag).map(|(i, a)| (*i, *a))
     }
 
@@ -554,14 +559,13 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use fea_rs::compile::VariationInfo;
-    use font_types::Tag;
     use fontdrasil::{
         coords::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord},
         types::Axis,
     };
     use fontir::ir::StaticMetadata;
 
-    use super::FeaVariationInfo;
+    use super::*;
 
     fn weight_variable_static_metadata(min: f32, def: f32, max: f32) -> StaticMetadata {
         let min_wght_user = UserCoord::new(min);

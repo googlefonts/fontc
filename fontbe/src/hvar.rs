@@ -6,13 +6,13 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 
-use font_types::MajorMinor;
 use fontdrasil::{
     coords::NormalizedLocation,
     orchestration::{Access, Work},
     types::{Axis, GlyphName},
 };
 use fontir::{ir::Glyph, orchestration::WorkId as FeWorkId, variations::VariationModel};
+use write_fonts::types::MajorMinor;
 use write_fonts::{
     dump_table,
     tables::{

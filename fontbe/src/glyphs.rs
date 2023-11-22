@@ -21,11 +21,11 @@ use fontir::{
 use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect, Vec2};
 use log::{log_enabled, trace, warn};
 
-use read_fonts::{
-    tables::glyf::{self, Anchor, Transform},
-    types::{F2Dot14, GlyphId},
-};
 use write_fonts::{
+    read::{
+        tables::glyf::{self, Anchor, Transform},
+        types::{F2Dot14, GlyphId},
+    },
     tables::{
         glyf::{
             Bbox, Component, ComponentFlags, CompositeGlyph, GlyfLocaBuilder, Glyph as RawGlyph,

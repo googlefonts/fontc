@@ -12,7 +12,6 @@ use fea_rs::{
     compile::{FeatureBuilder, PairPosBuilder},
     GlyphMap, GlyphSet,
 };
-use font_types::{F2Dot14, GlyphId, Tag};
 use fontdrasil::{
     orchestration::{Access, AccessControlList, Identifier, Work},
     types::GlyphName,
@@ -27,12 +26,12 @@ use fontir::{
 };
 use log::trace;
 use ordered_float::OrderedFloat;
-use read_fonts::{FontData, FontRead};
 use serde::{Deserialize, Serialize};
 
 use smol_str::SmolStr;
 use write_fonts::{
     dump_table,
+    read::{FontData, FontRead},
     tables::{
         avar::Avar,
         cmap::Cmap,
@@ -54,6 +53,7 @@ use write_fonts::{
         stat::Stat,
         variations::{Tuple, VariationRegion as BeVariationRegion},
     },
+    types::{F2Dot14, GlyphId, Tag},
     validate::Validate,
     FontWrite,
 };
@@ -842,7 +842,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use font_types::Tag;
     use fontdrasil::coords::NormalizedCoord;
     use fontir::variations::{Tent, VariationRegion};
 

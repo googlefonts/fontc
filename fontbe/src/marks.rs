@@ -5,11 +5,12 @@ use std::{
     sync::Arc,
 };
 
-use font_types::GlyphId;
 use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
+
+use write_fonts::types::GlyphId;
 
 use crate::{
     error::Error,
