@@ -327,7 +327,7 @@ def main(argv):
                 print(f"  DIFF '{tag}', {p1} {p2}")
                 if tag == "GPOS":
                     p1 = build_dir / "fontc.markkern.txt"
-                    p2 = build_dir / "fontools.markkern.txt"
+                    p2 = build_dir / "fontmake.markkern.txt"
                     print(f"  (mark/kern)  {p1} {p2}")
 
 
