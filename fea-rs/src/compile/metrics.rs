@@ -11,13 +11,13 @@ use write_fonts::tables::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ValueRecord {
     /// The x advance, plus a possible device table or set of deltas
-    pub x_advance: Option<Metric>,
+    pub(crate) x_advance: Option<Metric>,
     /// The y advance, plus a possible device table or set of deltas
-    pub y_advance: Option<Metric>,
+    pub(crate) y_advance: Option<Metric>,
     /// The x placement, plus a possible device table or set of deltas
-    pub x_placement: Option<Metric>,
+    pub(crate) x_placement: Option<Metric>,
     /// The y placement, plus a possible device table or set of deltas
-    pub y_placement: Option<Metric>,
+    pub(crate) y_placement: Option<Metric>,
 }
 
 /// An Anchor table, possibly containing deltas or a devices
@@ -25,18 +25,19 @@ pub struct ValueRecord {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Anchor {
     /// The x coordinate, plus a possible device table or set of deltas
-    pub x: Metric,
+    pub(crate) x: Metric,
     /// The y coordinate, plus a possible device table or set of deltas
-    pub y: Metric,
+    pub(crate) y: Metric,
     /// The countourpoint, in a format 2 anchor.
     ///
     /// This is a rarely used format.
-    pub contourpoint: Option<u16>,
+    pub(crate) contourpoint: Option<u16>,
 }
 
 /// Either a `Device` table or a set of deltas
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[allow(missing_docs)]
 pub enum DeviceOrDeltas {
     Device(Device),
     Deltas(Vec<(VariationRegion, i16)>),
@@ -47,12 +48,88 @@ pub enum DeviceOrDeltas {
 /// A metric with optional device or variation information
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Metric {
+pub(crate) struct Metric {
+    /// The value at the default location
     pub default: i16,
+    /// An optional device table or delta set
     pub device_or_deltas: DeviceOrDeltas,
 }
 
 impl ValueRecord {
+    /// Create a new all-zeros ValueRecord
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    // these methods just match the existing builder methods on `ValueRecord`
+    /// Builder style method to set the default x_placement value
+    pub fn with_x_placement(mut self, val: i16) -> Self {
+        self.x_placement
+            .get_or_insert_with(Default::default)
+            .default = val;
+        self
+    }
+
+    /// Builder style method to set the default y_placement value
+    pub fn with_y_placement(mut self, val: i16) -> Self {
+        self.y_placement
+            .get_or_insert_with(Default::default)
+            .default = val;
+        self
+    }
+
+    /// Builder style method to set the default x_placement value
+    pub fn with_x_advance(mut self, val: i16) -> Self {
+        self.x_advance.get_or_insert_with(Default::default).default = val;
+        self
+    }
+
+    /// Builder style method to set the default y_placement value
+    pub fn with_y_advance(mut self, val: i16) -> Self {
+        self.y_advance.get_or_insert_with(Default::default).default = val;
+        self
+    }
+
+    /// Builder style method to set the device or deltas for x_placement
+    ///
+    /// The argument can be a `Device` table or a `Vec<(VariationRegion, i16)>`
+    pub fn with_x_placement_device(mut self, val: impl Into<DeviceOrDeltas>) -> Self {
+        self.x_placement
+            .get_or_insert_with(Default::default)
+            .device_or_deltas = val.into();
+        self
+    }
+
+    /// Builder style method to set the device or deltas for y_placement
+    ///
+    /// The argument can be a `Device` table or a `Vec<(VariationRegion, i16)>`
+    pub fn with_y_placement_device(mut self, val: impl Into<DeviceOrDeltas>) -> Self {
+        self.y_placement
+            .get_or_insert_with(Default::default)
+            .device_or_deltas = val.into();
+        self
+    }
+
+    /// Builder style method to set the device or deltas for x_advance
+    ///
+    /// The argument can be a `Device` table or a `Vec<(VariationRegion, i16)>`
+    pub fn with_x_advance_device(mut self, val: impl Into<DeviceOrDeltas>) -> Self {
+        self.x_advance
+            .get_or_insert_with(Default::default)
+            .device_or_deltas = val.into();
+        self
+    }
+
+    /// Builder style method to set the device or deltas for y_advance
+    ///
+    /// The argument can be a `Device` table or a `Vec<(VariationRegion, i16)>`
+    pub fn with_y_advance_device(mut self, val: impl Into<DeviceOrDeltas>) -> Self {
+        self.y_advance
+            .get_or_insert_with(Default::default)
+            .device_or_deltas = val.into();
+        self
+    }
+
     pub(crate) fn clear_zeros(mut self) -> Self {
         self.x_advance = self.x_advance.filter(|m| !m.is_zero());
         self.y_advance = self.y_advance.filter(|m| !m.is_zero());
@@ -154,6 +231,40 @@ impl ValueRecord {
 }
 
 impl Anchor {
+    /// Create a new anchor.
+    pub fn new(x: i16, y: i16) -> Self {
+        Anchor {
+            x: x.into(),
+            y: y.into(),
+            contourpoint: None,
+        }
+    }
+
+    /// Builder style method to set the device or deltas for the x value
+    ///
+    /// The argument can be a `Device` table or a `Vec<(VariationRegion, i16)>`
+    pub fn with_x_device(mut self, val: impl Into<DeviceOrDeltas>) -> Self {
+        self.x.device_or_deltas = val.into();
+        self
+    }
+
+    /// Builder style method to set the device or deltas for the y value
+    ///
+    /// The argument can be a `Device` table or a `Vec<(VariationRegion, i16)>`
+    pub fn with_y_device(mut self, val: impl Into<DeviceOrDeltas>) -> Self {
+        self.y.device_or_deltas = val.into();
+        self
+    }
+
+    /// Builder-style method to set the contourpoint.
+    ///
+    /// This is for the little-used format2 AnchorTable; it will be ignored
+    /// if any device or deltas have been set.
+    pub fn with_contourpoint(mut self, idx: u16) -> Self {
+        self.contourpoint = Some(idx);
+        self
+    }
+
     pub(crate) fn build(self, var_store: &mut VariationStoreBuilder) -> AnchorTable {
         let x = self.x.default;
         let y = self.y.default;
@@ -174,6 +285,7 @@ impl Metric {
         self.default == 0 && !self.has_device_or_deltas()
     }
 
+    /// `true` if this metric has either a device table or deltas
     pub fn has_device_or_deltas(&self) -> bool {
         !self.device_or_deltas.is_none()
     }
@@ -210,5 +322,21 @@ impl From<i16> for Metric {
 impl From<Option<Device>> for DeviceOrDeltas {
     fn from(src: Option<Device>) -> DeviceOrDeltas {
         src.map(DeviceOrDeltas::Device).unwrap_or_default()
+    }
+}
+
+impl From<Device> for DeviceOrDeltas {
+    fn from(value: Device) -> Self {
+        DeviceOrDeltas::Device(value)
+    }
+}
+
+impl From<Vec<(VariationRegion, i16)>> for DeviceOrDeltas {
+    fn from(src: Vec<(VariationRegion, i16)>) -> DeviceOrDeltas {
+        if src.is_empty() {
+            DeviceOrDeltas::None
+        } else {
+            DeviceOrDeltas::Deltas(src)
+        }
     }
 }
