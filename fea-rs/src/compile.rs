@@ -21,6 +21,7 @@ pub use lookups::{
 };
 pub use opts::Opts;
 pub use output::Compilation;
+pub use valuerecordext::{Anchor, ValueRecord};
 pub use variations::{AxisLocation, VariationInfo};
 
 #[cfg(any(test, feature = "test", feature = "cli"))]

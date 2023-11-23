@@ -57,16 +57,6 @@ pub(crate) struct VmtxBuilder {
     pub advances_y: Vec<(GlyphId, i16)>,
 }
 
-impl Tables {
-    // convenience method to access the varstore, creating it if it doesn't exist
-    pub(crate) fn var_store(&mut self) -> &mut VariationStoreBuilder {
-        self.gdef
-            .get_or_insert_with(Default::default)
-            .var_store
-            .get_or_insert_with(Default::default)
-    }
-}
-
 // this is the value used in python fonttools when writing this table
 const DATE_2011_12_13_H11_M22_S33: LongDateTime = LongDateTime::new(1323780153);
 

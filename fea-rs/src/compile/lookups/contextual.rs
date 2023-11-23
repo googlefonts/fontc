@@ -7,17 +7,17 @@ use std::{
 
 use write_fonts::{
     tables::{
-        gpos::ValueRecord,
         gsub as write_gsub,
         gsub::ReverseChainSingleSubstFormat1,
         layout::{self as write_layout, CoverageTableBuilder, LookupFlag},
+        variations::ivs_builder::VariationStoreBuilder,
     },
     types::GlyphId,
     validate::Validate,
     FontWrite,
 };
 
-use crate::common::GlyphOrClass;
+use crate::{common::GlyphOrClass, compile::valuerecordext::ValueRecord};
 
 use super::{
     Builder, ClassDefBuilder2, FilterSetId, LookupBuilder, LookupId, PositionLookup,
@@ -440,21 +440,25 @@ impl ContextRule {
 impl Builder for PosContextBuilder {
     type Output = Vec<write_layout::SequenceContext>;
 
-    fn build(self) -> Self::Output {
-        self.0.build(true)
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
+        self.0.build(Some(var_store))
     }
 }
 
 impl Builder for SubContextBuilder {
     type Output = Vec<write_layout::SequenceContext>;
 
-    fn build(self) -> Self::Output {
-        self.0.build(false)
+    fn build(self, _var_store: &mut VariationStoreBuilder) -> Self::Output {
+        self.0.build(None)
     }
 }
 
 impl ContextBuilder {
-    fn build(self, in_gpos: bool) -> Vec<write_layout::SequenceContext> {
+    fn build(
+        self,
+        var_store: Option<&mut VariationStoreBuilder>,
+    ) -> Vec<write_layout::SequenceContext> {
+        let in_gpos = var_store.is_some();
         assert!(self.rules.iter().all(|rule| !rule.is_chain_rule()));
         let format_1 = self.build_format_1(in_gpos);
         //NOTE: I'm skipping format_2 because it seems consistently larger
@@ -674,7 +678,7 @@ impl SubChainContextBuilder {
 impl Builder for PosChainContextBuilder {
     type Output = Vec<write_layout::ChainedSequenceContext>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, _: &mut VariationStoreBuilder) -> Self::Output {
         self.0.build(true)
     }
 }
@@ -682,7 +686,7 @@ impl Builder for PosChainContextBuilder {
 impl Builder for SubChainContextBuilder {
     type Output = Vec<write_layout::ChainedSequenceContext>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, _: &mut VariationStoreBuilder) -> Self::Output {
         self.0.build(false)
     }
 }
@@ -733,7 +737,7 @@ impl ReverseChainBuilder {
 impl Builder for ReverseChainBuilder {
     type Output = Vec<ReverseChainSingleSubstFormat1>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, _: &mut VariationStoreBuilder) -> Self::Output {
         self.rules
             .into_iter()
             .map(|rule| {

@@ -1,41 +1,85 @@
 //! Extra helper methods on ValueRecord
 
 use write_fonts::tables::{
-    gpos::{ValueFormat, ValueRecord},
-    layout::DeviceOrVariationIndex,
+    gpos::{AnchorTable, ValueFormat},
+    layout::{Device, DeviceOrVariationIndex, PendingVariationIndex},
+    variations::{ivs_builder::VariationStoreBuilder, VariationRegion},
 };
 
-pub(crate) trait ValueRecordExt {
-    fn clear_zeros(self) -> Self;
-    fn for_pair_pos(self, in_vert_feature: bool) -> Self;
-    fn is_all_zeros(&self) -> bool;
-    /// Set a device for the field indicated by the provided format
-    fn with_device<T: Into<DeviceOrVariationIndex>>(
-        self,
-        val: Option<T>,
-        field: ValueFormat,
-    ) -> Self;
+/// A value record, possibly containing raw deltas or device tables
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ValueRecord {
+    /// The x advance, plus a possible device table or set of deltas
+    pub x_advance: Option<Metric>,
+    /// The y advance, plus a possible device table or set of deltas
+    pub y_advance: Option<Metric>,
+    /// The x placement, plus a possible device table or set of deltas
+    pub x_placement: Option<Metric>,
+    /// The y placement, plus a possible device table or set of deltas
+    pub y_placement: Option<Metric>,
 }
 
-impl ValueRecordExt for ValueRecord {
-    fn clear_zeros(mut self) -> Self {
-        if self.x_placement == Some(0) && self.x_placement_device.is_none() {
-            self.x_placement = None;
-        }
+/// An Anchor table, possibly containing deltas or a devices
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Anchor {
+    /// The x coordinate, plus a possible device table or set of deltas
+    pub x: Metric,
+    /// The y coordinate, plus a possible device table or set of deltas
+    pub y: Metric,
+    /// The countourpoint, in a format 2 anchor.
+    ///
+    /// This is a rarely used format.
+    pub contourpoint: Option<u16>,
+}
 
-        if self.y_placement == Some(0) && self.y_placement_device.is_none() {
-            self.y_placement = None;
-        }
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum DeviceOrDeltas {
+    Device(Device),
+    Deltas(Vec<(VariationRegion, i16)>),
+    #[default]
+    None,
+}
 
-        if self.x_advance == Some(0) && self.x_advance_device.is_none() {
-            self.x_advance = None;
-        }
+/// A metric with optional device or variation information
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Metric {
+    pub default: i16,
+    pub device_or_deltas: DeviceOrDeltas,
+}
 
-        if self.y_advance == Some(0) && self.y_advance_device.is_none() {
-            self.y_advance = None;
-        }
-
+impl ValueRecord {
+    pub(crate) fn clear_zeros(mut self) -> Self {
+        self.x_advance = self.x_advance.filter(|m| !m.is_zero());
+        self.y_advance = self.y_advance.filter(|m| !m.is_zero());
+        self.x_placement = self.x_placement.filter(|m| !m.is_zero());
+        self.y_placement = self.y_placement.filter(|m| !m.is_zero());
         self
+    }
+
+    pub(crate) fn format(&self) -> ValueFormat {
+        const EMPTY: ValueFormat = ValueFormat::empty();
+        use ValueFormat as VF;
+
+        let get_flags = |field: &Option<Metric>, def_flag, dev_flag| {
+            let field = field.as_ref();
+            let def_flag = if field.is_some() { def_flag } else { EMPTY };
+            let dev_flag = field
+                .and_then(|fld| (!fld.device_or_deltas.is_none()).then_some(dev_flag))
+                .unwrap_or(EMPTY);
+            (def_flag, dev_flag)
+        };
+
+        let (x_adv, x_adv_dev) = get_flags(&self.x_advance, VF::X_ADVANCE, VF::X_ADVANCE_DEVICE);
+        let (y_adv, y_adv_dev) = get_flags(&self.y_advance, VF::Y_ADVANCE, VF::Y_ADVANCE_DEVICE);
+        let (x_place, x_place_dev) =
+            get_flags(&self.x_placement, VF::X_PLACEMENT, VF::X_PLACEMENT_DEVICE);
+        let (y_place, y_place_dev) =
+            get_flags(&self.y_placement, VF::Y_PLACEMENT, VF::Y_PLACEMENT_DEVICE);
+        x_adv | y_adv | x_place | y_place | x_adv_dev | y_adv_dev | x_place_dev | y_place_dev
     }
 
     /// `true` if we are not null, but our set values are all 0
@@ -50,12 +94,14 @@ impl ValueRecordExt for ValueRecord {
             return false;
         }
         let all_values = [
-            self.x_placement,
-            self.y_placement,
-            self.x_advance,
-            self.y_advance,
+            &self.x_placement,
+            &self.y_placement,
+            &self.x_advance,
+            &self.y_advance,
         ];
-        all_values.iter().all(|v| v.unwrap_or_default() == 0)
+        all_values
+            .iter()
+            .all(|v| v.as_ref().map(|v| v.is_zero()).unwrap_or(true))
     }
 
     // Modify this value record for the special requirements of pairpos lookups
@@ -63,50 +109,105 @@ impl ValueRecordExt for ValueRecord {
     // In pair pos tables, if a value record is all zeros (but not null) then
     // we interpret it as a having a single zero advance in the x/y direction,
     // depending on context.
-    fn for_pair_pos(self, in_vert_feature: bool) -> Self {
+    pub(crate) fn for_pair_pos(self, in_vert_feature: bool) -> Self {
         if !self.is_all_zeros() {
             return self.clear_zeros();
         }
         let mut out = self.clear_zeros();
         if in_vert_feature {
-            out.y_advance = Some(0);
+            out.y_advance = Some(0.into());
         } else {
-            out.x_advance = Some(0);
+            out.x_advance = Some(0.into());
         }
         out
     }
 
-    fn with_device<T: Into<DeviceOrVariationIndex>>(
-        mut self,
-        val: Option<T>,
-        field: ValueFormat,
-    ) -> Self {
-        let val = val.map(Into::into);
-        match field {
-            ValueFormat::X_PLACEMENT_DEVICE => self.x_placement_device = val.into(),
-            ValueFormat::Y_PLACEMENT_DEVICE => self.y_placement_device = val.into(),
-            ValueFormat::X_ADVANCE_DEVICE => self.x_advance_device = val.into(),
-            ValueFormat::Y_ADVANCE_DEVICE => self.y_advance_device = val.into(),
-            other => panic!("how did '{other:?}' get in here?"),
-        };
-        self
+    pub(crate) fn build(
+        self,
+        var_store: &mut VariationStoreBuilder,
+    ) -> write_fonts::tables::gpos::ValueRecord {
+        let mut result = write_fonts::tables::gpos::ValueRecord::new();
+        result.x_advance = self.x_advance.as_ref().map(|val| val.default);
+        result.y_advance = self.y_advance.as_ref().map(|val| val.default);
+        result.x_placement = self.x_placement.as_ref().map(|val| val.default);
+        result.y_placement = self.y_placement.as_ref().map(|val| val.default);
+        result.x_advance_device = self
+            .x_advance
+            .and_then(|val| val.device_or_deltas.build(var_store))
+            .into();
+        result.y_advance_device = self
+            .y_advance
+            .and_then(|val| val.device_or_deltas.build(var_store))
+            .into();
+        result.x_placement_device = self
+            .x_placement
+            .and_then(|val| val.device_or_deltas.build(var_store))
+            .into();
+        result.y_placement_device = self
+            .y_placement
+            .and_then(|val| val.device_or_deltas.build(var_store))
+            .into();
+
+        result
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use write_fonts::tables::layout::VariationIndex;
+impl Anchor {
+    pub(crate) fn build(self, var_store: &mut VariationStoreBuilder) -> AnchorTable {
+        let x = self.x.default;
+        let y = self.y.default;
+        let x_dev = self.x.device_or_deltas.build(var_store);
+        let y_dev = self.y.device_or_deltas.build(var_store);
+        if x_dev.is_some() || y_dev.is_some() {
+            AnchorTable::format_3(x, y, x_dev, y_dev)
+        } else if let Some(point) = self.contourpoint {
+            AnchorTable::format_2(x, y, point)
+        } else {
+            AnchorTable::format_1(x, y)
+        }
+    }
+}
 
-    use super::*;
+impl Metric {
+    fn is_zero(&self) -> bool {
+        self.default == 0 && !self.has_device_or_deltas()
+    }
 
-    #[test]
-    fn leave_zero_if_device_exists() {
-        let record = ValueRecord::new().with_x_advance(0).clear_zeros();
-        assert!(record.x_advance.is_none());
-        let record = ValueRecord::new()
-            .with_x_advance(0)
-            .with_x_advance_device(VariationIndex::new(420, 0xbeef))
-            .clear_zeros();
-        assert_eq!(record.x_advance, Some(0));
+    pub fn has_device_or_deltas(&self) -> bool {
+        !self.device_or_deltas.is_none()
+    }
+}
+
+impl DeviceOrDeltas {
+    fn is_none(&self) -> bool {
+        *self == DeviceOrDeltas::None
+    }
+
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Option<DeviceOrVariationIndex> {
+        match self {
+            DeviceOrDeltas::Device(dev) => Some(DeviceOrVariationIndex::Device(dev)),
+            DeviceOrDeltas::Deltas(deltas) => {
+                let temp_id = var_store.add_deltas(deltas);
+                Some(DeviceOrVariationIndex::PendingVariationIndex(
+                    PendingVariationIndex::new(temp_id),
+                ))
+            }
+            DeviceOrDeltas::None => None,
+        }
+    }
+}
+
+impl From<i16> for Metric {
+    fn from(src: i16) -> Metric {
+        Metric {
+            default: src,
+            device_or_deltas: DeviceOrDeltas::None,
+        }
+    }
+}
+
+impl From<Option<Device>> for DeviceOrDeltas {
+    fn from(src: Option<Device>) -> DeviceOrDeltas {
+        src.map(DeviceOrDeltas::Device).unwrap_or_default()
     }
 }

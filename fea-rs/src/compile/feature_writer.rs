@@ -101,8 +101,7 @@ impl<'a> FeatureBuilder<'a> {
         &mut self,
         deltas: Vec<(VariationRegion, T)>,
     ) -> PendingVariationIndex {
-        let delta_set_id = self.tables.var_store().add_deltas(deltas);
-        PendingVariationIndex { delta_set_id }
+        todo!("remove me!")
     }
 
     /// Add lookups to every default language system.

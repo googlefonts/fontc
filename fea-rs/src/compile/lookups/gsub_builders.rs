@@ -3,7 +3,7 @@
 use std::{collections::BTreeMap, convert::TryFrom};
 
 use write_fonts::{
-    tables::gsub as write_gsub,
+    tables::{gsub as write_gsub, variations::ivs_builder::VariationStoreBuilder},
     types::{FixedSize, GlyphId},
 };
 
@@ -59,7 +59,7 @@ impl SingleSubBuilder {
 impl Builder for SingleSubBuilder {
     type Output = Vec<write_gsub::SingleSubst>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, _: &mut VariationStoreBuilder) -> Self::Output {
         const COST_OF_EXTRA_SUB1F1_SUBTABLE: usize = 2 + // extra offset
             2 + 2 + 2 + // format1 table itself
             2 + 2; // extra coverage table
@@ -147,7 +147,7 @@ pub struct MultipleSubBuilder {
 impl Builder for MultipleSubBuilder {
     type Output = Vec<write_gsub::MultipleSubstFormat1>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, _: &mut VariationStoreBuilder) -> Self::Output {
         let coverage = self.items.keys().copied().collect();
         let seq_tables = self
             .items
@@ -193,7 +193,7 @@ impl AlternateSubBuilder {
 impl Builder for AlternateSubBuilder {
     type Output = Vec<write_gsub::AlternateSubstFormat1>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, _: &mut VariationStoreBuilder) -> Self::Output {
         let coverage = self.items.keys().copied().collect();
         let seq_tables = self
             .items
@@ -230,7 +230,7 @@ impl LigatureSubBuilder {
 impl Builder for LigatureSubBuilder {
     type Output = Vec<write_gsub::LigatureSubstFormat1>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, _: &mut VariationStoreBuilder) -> Self::Output {
         let coverage = self.items.keys().copied().collect();
         let lig_sets = self
             .items

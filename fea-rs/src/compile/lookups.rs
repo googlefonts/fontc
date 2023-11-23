@@ -14,26 +14,26 @@ use smol_str::SmolStr;
 
 use write_fonts::{
     tables::{
-        gpos::{self as write_gpos, AnchorTable, ValueRecord},
+        gpos::{self as write_gpos},
         gsub as write_gsub,
         layout::{
-            ConditionSet as RawConditionSet, DeviceOrVariationIndex, Feature, FeatureList,
-            FeatureRecord, FeatureTableSubstitution, FeatureTableSubstitutionRecord,
-            FeatureVariationRecord, FeatureVariations, LangSys, LangSysRecord, Lookup as RawLookup,
-            LookupFlag, LookupList, Script, ScriptList, ScriptRecord,
+            ConditionSet as RawConditionSet, Feature, FeatureList, FeatureRecord,
+            FeatureTableSubstitution, FeatureTableSubstitutionRecord, FeatureVariationRecord,
+            FeatureVariations, LangSys, LangSysRecord, Lookup as RawLookup, LookupFlag, LookupList,
+            Script, ScriptList, ScriptRecord,
         },
-        variations::ivs_builder::VariationIndexRemapping,
+        variations::ivs_builder::VariationStoreBuilder,
     },
     types::Tag,
 };
 
 use crate::{
     common::{GlyphId, GlyphOrClass, GlyphSet},
-    compile::lookups::contextual::ChainOrNot,
+    compile::{lookups::contextual::ChainOrNot, valuerecordext::ValueRecord},
     Kind,
 };
 
-use super::{features::AllFeatures, tables::ClassId, tags};
+use super::{features::AllFeatures, tables::ClassId, tags, valuerecordext::Anchor};
 
 use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,
@@ -49,9 +49,12 @@ use gsub_builders::{
 };
 pub(crate) use helpers::ClassDefBuilder2;
 
-pub trait Builder {
+// A simple trait for building lookups
+// This exists because we use it to implement `LookupBuilder<T>`
+pub(crate) trait Builder {
     type Output;
-    fn build(self) -> Self::Output;
+    // the var_store is only used in GPOS, but we pass it everywhere
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output;
 }
 
 pub(crate) type FilterSetId = u16;
@@ -183,14 +186,6 @@ pub(crate) struct PosSubBuilder<T> {
     variations: HashMap<RawConditionSet, HashMap<FeatureIdx, Vec<LookupIdx>>>,
 }
 
-/// A trait for position lookups which might contain VariationIndex tables
-///
-/// These tables contain indicies that are not known until compilaiton time,
-/// so we need to go and update them all then.
-pub(crate) trait VariationIndexContainingLookup {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping);
-}
-
 impl<T: Default> LookupBuilder<T> {
     fn new(flags: LookupFlag, mark_set: Option<FilterSetId>) -> Self {
         LookupBuilder {
@@ -226,14 +221,6 @@ impl<T: Default> LookupBuilder<T> {
     }
 }
 
-impl<T: VariationIndexContainingLookup> LookupBuilder<T> {
-    fn update_variation_index_tables(&mut self, key_map: &VariationIndexRemapping) {
-        for table in &mut self.subtables {
-            table.remap_variation_indices(key_map);
-        }
-    }
-}
-
 impl<U> LookupBuilder<U> {
     /// A helper method for converting from (say) ContextBuilder to PosContextBuilder
     fn convert<T: From<U>>(self) -> LookupBuilder<T> {
@@ -263,18 +250,6 @@ impl PositionLookup {
             PositionLookup::ChainedContextual(lookup) => lookup.force_subtable_break(),
         }
     }
-
-    fn update_variation_index_tables(&mut self, key_map: &VariationIndexRemapping) {
-        match self {
-            PositionLookup::Single(lookup) => lookup.update_variation_index_tables(key_map),
-            PositionLookup::Pair(lookup) => lookup.update_variation_index_tables(key_map),
-            PositionLookup::Cursive(lookup) => lookup.update_variation_index_tables(key_map),
-            PositionLookup::MarkToBase(lookup) => lookup.update_variation_index_tables(key_map),
-            PositionLookup::MarkToLig(lookup) => lookup.update_variation_index_tables(key_map),
-            PositionLookup::MarkToMark(lookup) => lookup.update_variation_index_tables(key_map),
-            PositionLookup::Contextual(_) | PositionLookup::ChainedContextual(_) => (),
-        }
-    }
 }
 
 impl SubstitutionLookup {
@@ -298,11 +273,11 @@ where
 {
     type Output = RawLookup<U>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         let subtables = self
             .subtables
             .into_iter()
-            .flat_map(|b| b.build().into_iter())
+            .flat_map(|b| b.build(var_store).into_iter())
             .collect();
         RawLookup::new(self.flags, subtables, self.mark_set.unwrap_or_default())
     }
@@ -311,25 +286,31 @@ where
 impl Builder for PositionLookup {
     type Output = write_gpos::PositionLookup;
 
-    fn build(self) -> Self::Output {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         match self {
-            PositionLookup::Single(lookup) => write_gpos::PositionLookup::Single(lookup.build()),
-            PositionLookup::Pair(lookup) => write_gpos::PositionLookup::Pair(lookup.build()),
-            PositionLookup::Cursive(lookup) => write_gpos::PositionLookup::Cursive(lookup.build()),
+            PositionLookup::Single(lookup) => {
+                write_gpos::PositionLookup::Single(lookup.build(var_store))
+            }
+            PositionLookup::Pair(lookup) => {
+                write_gpos::PositionLookup::Pair(lookup.build(var_store))
+            }
+            PositionLookup::Cursive(lookup) => {
+                write_gpos::PositionLookup::Cursive(lookup.build(var_store))
+            }
             PositionLookup::MarkToBase(lookup) => {
-                write_gpos::PositionLookup::MarkToBase(lookup.build())
+                write_gpos::PositionLookup::MarkToBase(lookup.build(var_store))
             }
             PositionLookup::MarkToLig(lookup) => {
-                write_gpos::PositionLookup::MarkToLig(lookup.build())
+                write_gpos::PositionLookup::MarkToLig(lookup.build(var_store))
             }
             PositionLookup::MarkToMark(lookup) => {
-                write_gpos::PositionLookup::MarkToMark(lookup.build())
+                write_gpos::PositionLookup::MarkToMark(lookup.build(var_store))
             }
             PositionLookup::Contextual(lookup) => {
-                write_gpos::PositionLookup::Contextual(lookup.build().into_concrete())
+                write_gpos::PositionLookup::Contextual(lookup.build(var_store).into_concrete())
             }
             PositionLookup::ChainedContextual(lookup) => {
-                write_gpos::PositionLookup::ChainContextual(lookup.build().into_concrete())
+                write_gpos::PositionLookup::ChainContextual(lookup.build(var_store).into_concrete())
             }
         }
     }
@@ -338,28 +319,30 @@ impl Builder for PositionLookup {
 impl Builder for SubstitutionLookup {
     type Output = write_gsub::SubstitutionLookup;
 
-    fn build(self) -> Self::Output {
+    fn build(self, _var_store: &mut VariationStoreBuilder) -> Self::Output {
         match self {
             SubstitutionLookup::Single(lookup) => {
-                write_gsub::SubstitutionLookup::Single(lookup.build())
+                write_gsub::SubstitutionLookup::Single(lookup.build(_var_store))
             }
             SubstitutionLookup::Multiple(lookup) => {
-                write_gsub::SubstitutionLookup::Multiple(lookup.build())
+                write_gsub::SubstitutionLookup::Multiple(lookup.build(_var_store))
             }
             SubstitutionLookup::Alternate(lookup) => {
-                write_gsub::SubstitutionLookup::Alternate(lookup.build())
+                write_gsub::SubstitutionLookup::Alternate(lookup.build(_var_store))
             }
             SubstitutionLookup::Ligature(lookup) => {
-                write_gsub::SubstitutionLookup::Ligature(lookup.build())
+                write_gsub::SubstitutionLookup::Ligature(lookup.build(_var_store))
             }
             SubstitutionLookup::Contextual(lookup) => {
-                write_gsub::SubstitutionLookup::Contextual(lookup.build().into_concrete())
+                write_gsub::SubstitutionLookup::Contextual(lookup.build(_var_store).into_concrete())
             }
             SubstitutionLookup::ChainedContextual(lookup) => {
-                write_gsub::SubstitutionLookup::ChainContextual(lookup.build().into_concrete())
+                write_gsub::SubstitutionLookup::ChainContextual(
+                    lookup.build(_var_store).into_concrete(),
+                )
             }
             SubstitutionLookup::Reverse(lookup) => {
-                write_gsub::SubstitutionLookup::Reverse(lookup.build())
+                write_gsub::SubstitutionLookup::Reverse(lookup.build(_var_store))
             }
         }
     }
@@ -630,12 +613,6 @@ impl AllLookups {
         lookup_ids
     }
 
-    pub(crate) fn update_variation_index_tables(&mut self, key_map: &VariationIndexRemapping) {
-        for lookup in self.gpos.iter_mut() {
-            lookup.update_variation_index_tables(key_map);
-        }
-    }
-
     /// Returns a map that must be used to remap the ids in any features where
     /// they were used.
     pub(crate) fn merge_external_lookups(
@@ -653,6 +630,7 @@ impl AllLookups {
     pub(crate) fn build(
         &self,
         features: &AllFeatures,
+        var_store: &mut VariationStoreBuilder,
     ) -> (Option<write_gsub::Gsub>, Option<write_gpos::Gpos>) {
         let mut gpos_builder = PosSubBuilder::new(self.gpos.clone());
         let mut gsub_builder = PosSubBuilder::new(self.gsub.clone());
@@ -702,7 +680,7 @@ impl AllLookups {
             }
         }
 
-        (gsub_builder.build(), gpos_builder.build())
+        (gsub_builder.build(var_store), gpos_builder.build(var_store))
     }
 }
 
@@ -869,8 +847,8 @@ impl SomeLookup {
     pub(crate) fn add_gpos_type_3(
         &mut self,
         id: GlyphId,
-        entry: Option<AnchorTable>,
-        exit: Option<AnchorTable>,
+        entry: Option<Anchor>,
+        exit: Option<Anchor>,
     ) {
         if let SomeLookup::GposLookup(PositionLookup::Cursive(table)) = self {
             let subtable = table.last_mut().unwrap();
@@ -1050,6 +1028,7 @@ where
     #[allow(clippy::type_complexity)] // i love my big dumb tuple
     fn build_raw(
         self,
+        var_store: &mut VariationStoreBuilder,
     ) -> Option<(
         LookupList<T::Output>,
         ScriptList,
@@ -1084,7 +1063,11 @@ where
             })
             .collect::<Vec<_>>();
 
-        let lookups = self.lookups.into_iter().map(|x| x.build()).collect();
+        let lookups = self
+            .lookups
+            .into_iter()
+            .map(|x| x.build(var_store))
+            .collect();
 
         let variations = if self.variations.is_empty() {
             None
@@ -1126,8 +1109,8 @@ where
 impl Builder for PosSubBuilder<PositionLookup> {
     type Output = Option<write_gpos::Gpos>;
 
-    fn build(self) -> Self::Output {
-        self.build_raw()
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
+        self.build_raw(var_store)
             .map(|(lookups, scripts, features, variations)| {
                 let mut gpos = write_gpos::Gpos::new(scripts, features, lookups);
                 gpos.feature_variations = variations.into();
@@ -1139,8 +1122,8 @@ impl Builder for PosSubBuilder<PositionLookup> {
 impl Builder for PosSubBuilder<SubstitutionLookup> {
     type Output = Option<write_gsub::Gsub>;
 
-    fn build(self) -> Self::Output {
-        self.build_raw()
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
+        self.build_raw(var_store)
             .map(|(lookups, scripts, features, variations)| {
                 let mut gsub = write_gsub::Gsub::new(scripts, features, lookups);
                 gsub.feature_variations = variations.into();
@@ -1159,43 +1142,6 @@ impl FeatureKey {
             feature,
             language,
             script,
-        }
-    }
-}
-
-impl VariationIndexContainingLookup for ValueRecord {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        for table in [
-            self.x_placement_device.as_mut(),
-            self.y_placement_device.as_mut(),
-            self.x_advance_device.as_mut(),
-            self.y_advance_device.as_mut(),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            table.remap_variation_indices(key_map)
-        }
-    }
-}
-
-impl VariationIndexContainingLookup for DeviceOrVariationIndex {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        if let DeviceOrVariationIndex::PendingVariationIndex(table) = self {
-            *self = key_map.get(table.delta_set_id).unwrap().into();
-        }
-    }
-}
-
-impl VariationIndexContainingLookup for AnchorTable {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        if let AnchorTable::Format3(table) = self {
-            table
-                .x_device
-                .as_mut()
-                .into_iter()
-                .chain(table.y_device.as_mut())
-                .for_each(|x| x.remap_variation_indices(key_map))
         }
     }
 }
