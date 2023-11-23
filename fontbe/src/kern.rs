@@ -1,17 +1,17 @@
 //! Generates a [Kerning] datastructure to be fed to fea-rs
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
-use fea_rs::GlyphSet;
+use fea_rs::{compile::ValueRecord as ValueRecordBuilder, GlyphSet};
 use fontdrasil::orchestration::{Access, Work};
-use write_fonts::{tables::gpos::ValueRecord, types::GlyphId};
+use fontir::{ir::KernParticipant, orchestration::WorkId as FeWorkId};
+use write_fonts::types::GlyphId;
 
 use crate::{
     error::Error,
     features::resolve_variable_metric,
     orchestration::{AnyWorkId, BeWork, Context, Kerning, WorkId},
 };
-use fontir::{ir::KernParticipant, orchestration::WorkId as FeWorkId};
 
 #[derive(Debug)]
 struct KerningWork {}
@@ -62,25 +62,15 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
         let mut kerning = Kerning::default();
 
         // now for each kerning entry, directly add a rule to the builder:
-        let mut delta_indices = HashMap::new();
         for ((left, right), values) in &ir_kerning.kerns {
             let (default_value, deltas) = resolve_variable_metric(&static_metadata, values)?;
-            let delta_idx = if !deltas.is_empty() {
-                let mut current = delta_indices.get(&deltas).cloned();
-                if current.is_none() {
-                    let idx = kerning.add_deltas(deltas.clone());
-                    delta_indices.insert(deltas, idx);
-                    current = Some(idx);
-                }
-                current
-            } else {
-                None
-            };
-            let x_adv_record = ValueRecord::new().with_x_advance(default_value);
+            let x_adv_record = ValueRecordBuilder::new()
+                .with_x_advance(default_value)
+                .with_x_advance_device(deltas);
 
             match (left, right) {
                 (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
-                    kerning.add_pair(gid(left)?, x_adv_record.clone(), gid(right)?, delta_idx);
+                    kerning.add_pair(gid(left)?, x_adv_record.clone(), gid(right)?);
                 }
                 (KernParticipant::Group(left), KernParticipant::Group(right)) => {
                     let left = glyph_classes
@@ -91,7 +81,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
                         .get(right)
                         .ok_or_else(|| Error::MissingGlyphId(right.clone()))?
                         .clone();
-                    kerning.add_class(left, x_adv_record.clone(), right, delta_idx);
+                    kerning.add_class(left, x_adv_record.clone(), right);
                 }
                 // if groups are mixed with glyphs then we enumerate the group
                 (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
@@ -105,7 +95,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
                         .get(&right)
                         .ok_or_else(|| Error::MissingGlyphId(right.clone()))?;
                     for gid1 in right.iter() {
-                        kerning.add_pair(gid0, x_adv_record.clone(), gid1, delta_idx);
+                        kerning.add_pair(gid0, x_adv_record.clone(), gid1);
                     }
                 }
                 (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
@@ -114,7 +104,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
                         .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
                     let gid1 = gid(right)?;
                     for gid0 in left.iter() {
-                        kerning.add_pair(gid0, x_adv_record.clone(), gid1, delta_idx);
+                        kerning.add_pair(gid0, x_adv_record.clone(), gid1);
                     }
                 }
             }

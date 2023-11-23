@@ -1,7 +1,6 @@
 //! Helps coordinate the graph execution for BE
 
 use std::{
-    collections::HashMap,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
@@ -9,7 +8,7 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{FeatureBuilder, PairPosBuilder},
+    compile::{PairPosBuilder, ValueRecord as ValueRecordBuilder},
     GlyphMap, GlyphSet,
 };
 use fontdrasil::{
@@ -38,13 +37,12 @@ use write_fonts::{
         fvar::Fvar,
         gdef::Gdef,
         glyf::Glyph as RawGlyph,
-        gpos::{AnchorTable, Gpos, ValueRecord},
+        gpos::Gpos,
         gsub::Gsub,
         gvar::{GlyphDelta, GlyphDeltas},
         head::Head,
         hhea::Hhea,
         hvar::Hvar,
-        layout::PendingVariationIndex,
         loca::LocaFormat,
         maxp::Maxp,
         name::Name,
@@ -275,56 +273,32 @@ pub enum Kern {
     Pair {
         glyph0: GlyphId,
         glyph1: GlyphId,
-        x_advance: ValueRecord,
-        delta_idx: Option<usize>,
+        x_advance: ValueRecordBuilder,
     },
     Class {
         glyphs0: GlyphSet,
         glyphs1: GlyphSet,
-        x_advance: ValueRecord,
-        delta_idx: Option<usize>,
+        x_advance: ValueRecordBuilder,
     },
 }
 
 impl Kern {
-    pub fn insert_into(
-        &self,
-        var_indices: &HashMap<usize, PendingVariationIndex>,
-        ppos_subtables: &mut PairPosBuilder,
-    ) {
-        let with_deltas = |x_advance: &ValueRecord, delta_idx: Option<usize>| {
-            if let Some(delta_idx) = delta_idx {
-                x_advance.clone().with_x_advance_device(
-                    var_indices
-                        .get(&delta_idx)
-                        .unwrap_or_else(|| panic!("No entry for {delta_idx} in {var_indices:?}"))
-                        .clone(),
-                )
-            } else {
-                x_advance.clone()
-            }
-        };
-
+    pub fn insert_into(&self, ppos_subtables: &mut PairPosBuilder) {
         match self {
             Kern::Pair {
                 glyph0,
                 glyph1,
                 x_advance,
-                delta_idx,
-            } => ppos_subtables.insert_pair(
-                *glyph0,
-                with_deltas(x_advance, *delta_idx),
-                *glyph1,
-                Default::default(),
-            ),
+            } => {
+                ppos_subtables.insert_pair(*glyph0, x_advance.clone(), *glyph1, Default::default())
+            }
             Kern::Class {
                 glyphs0,
                 glyphs1,
                 x_advance,
-                delta_idx,
             } => ppos_subtables.insert_classes(
                 glyphs0.clone(),
-                with_deltas(x_advance, *delta_idx),
+                x_advance.clone(),
                 glyphs1.clone(),
                 Default::default(),
             ),
@@ -381,24 +355,10 @@ impl MarkEntry {
         })
     }
 
-    pub(crate) fn create_anchor_table(
-        &self,
-        builder: &mut FeatureBuilder,
-    ) -> Result<AnchorTable, Error> {
-        let x_var_idx =
-            (!self.x_deltas.is_empty()).then(|| builder.add_deltas(self.x_deltas.clone()));
-        let y_var_idx =
-            (!self.y_deltas.is_empty()).then(|| builder.add_deltas(self.y_deltas.clone()));
-        if x_var_idx.is_some() || y_var_idx.is_some() {
-            Ok(AnchorTable::format_3(
-                self.x_default,
-                self.y_default,
-                x_var_idx.map(Into::into),
-                y_var_idx.map(Into::into),
-            ))
-        } else {
-            Ok(AnchorTable::format_1(self.x_default, self.y_default))
-        }
+    pub(crate) fn create_anchor_table(&self) -> fea_rs::compile::Anchor {
+        fea_rs::compile::Anchor::new(self.x_default, self.y_default)
+            .with_x_device(self.x_deltas.clone())
+            .with_y_device(self.y_deltas.clone())
     }
 }
 
@@ -500,33 +460,24 @@ impl Kerning {
         self.deltas.len() - 1
     }
 
-    pub fn add_pair(
-        &mut self,
-        glyph0: GlyphId,
-        x_advance: ValueRecord,
-        glyph1: GlyphId,
-        delta_idx: Option<usize>,
-    ) {
+    pub fn add_pair(&mut self, glyph0: GlyphId, x_advance: ValueRecordBuilder, glyph1: GlyphId) {
         self.kerns.push(Kern::Pair {
             glyph0,
             glyph1,
             x_advance,
-            delta_idx,
         })
     }
 
     pub fn add_class(
         &mut self,
         glyphs0: GlyphSet,
-        x_advance: ValueRecord,
+        x_advance: ValueRecordBuilder,
         glyphs1: GlyphSet,
-        delta_idx: Option<usize>,
     ) {
         self.kerns.push(Kern::Class {
             glyphs0,
             glyphs1,
             x_advance,
-            delta_idx,
         })
     }
 }

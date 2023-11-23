@@ -199,12 +199,8 @@ impl<'a> FeatureWriter<'a> {
         }
         let mut ppos_subtables = PairPosBuilder::default();
 
-        let mut var_indices = HashMap::new();
-        for (idx, deltas) in self.kerning.deltas().enumerate() {
-            var_indices.insert(idx, builder.add_deltas(deltas.clone()));
-        }
         for kern in self.kerning.kerns() {
-            kern.insert_into(&var_indices, &mut ppos_subtables);
+            kern.insert_into(&mut ppos_subtables);
         }
 
         // now we have a builder for the pairpos subtables, so we can make
@@ -252,7 +248,7 @@ impl<'a> FeatureWriter<'a> {
                     .insert_mark(
                         mark.gid,
                         mark_base.class.clone(),
-                        mark.create_anchor_table(builder)?,
+                        mark.create_anchor_table(),
                     )
                     .map_err(Error::PreviouslyAssignedClass)?;
             }
@@ -261,7 +257,7 @@ impl<'a> FeatureWriter<'a> {
                 mark_base_builder.insert_base(
                     base.gid,
                     &mark_base.class,
-                    base.create_anchor_table(builder)?,
+                    base.create_anchor_table(),
                 )
             }
 
@@ -282,7 +278,7 @@ impl<'a> FeatureWriter<'a> {
                     .insert_mark1(
                         mark.gid,
                         mark_mark.class.clone(),
-                        mark.create_anchor_table(builder)?,
+                        mark.create_anchor_table(),
                     )
                     .map_err(Error::PreviouslyAssignedClass)?;
             }
@@ -291,7 +287,7 @@ impl<'a> FeatureWriter<'a> {
                 mark_mark_builder.insert_mark2(
                     base.gid,
                     &mark_mark.class,
-                    base.create_anchor_table(builder)?,
+                    base.create_anchor_table(),
                 );
             }
             mark_mark_lookups.push(builder.add_lookup(
