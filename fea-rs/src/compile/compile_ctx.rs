@@ -43,11 +43,10 @@ use super::{
     lookups::{
         AllLookups, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass, SomeLookup,
     },
+    metrics::{Anchor, DeviceOrDeltas, Metric, ValueRecord},
     output::Compilation,
     tables::{ClassId, ScriptRecord, Tables},
-    tags,
-    valuerecordext::{Anchor, DeviceOrDeltas, Metric, ValueRecord},
-    VariationInfo,
+    tags, VariationInfo,
 };
 
 /// Context that manages state for a compilation.

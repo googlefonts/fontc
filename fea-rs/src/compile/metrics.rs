@@ -1,4 +1,4 @@
-//! Extra helper methods on ValueRecord
+//! Variable-first metrics, ValueRecords & Anchors
 
 use write_fonts::tables::{
     gpos::{AnchorTable, ValueFormat},
@@ -34,6 +34,7 @@ pub struct Anchor {
     pub contourpoint: Option<u16>,
 }
 
+/// Either a `Device` table or a set of deltas
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DeviceOrDeltas {

@@ -17,7 +17,7 @@ use write_fonts::{
     FontWrite,
 };
 
-use crate::{common::GlyphOrClass, compile::valuerecordext::ValueRecord};
+use crate::{common::GlyphOrClass, compile::metrics::ValueRecord};
 
 use super::{
     Builder, ClassDefBuilder2, FilterSetId, LookupBuilder, LookupId, PositionLookup,

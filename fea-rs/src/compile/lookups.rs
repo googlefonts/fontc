@@ -29,11 +29,11 @@ use write_fonts::{
 
 use crate::{
     common::{GlyphId, GlyphOrClass, GlyphSet},
-    compile::{lookups::contextual::ChainOrNot, valuerecordext::ValueRecord},
+    compile::{lookups::contextual::ChainOrNot, metrics::ValueRecord},
     Kind,
 };
 
-use super::{features::AllFeatures, tables::ClassId, tags, valuerecordext::Anchor};
+use super::{features::AllFeatures, metrics::Anchor, tables::ClassId, tags};
 
 use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,

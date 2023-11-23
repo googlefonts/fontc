@@ -14,7 +14,7 @@ use write_fonts::{
 
 use crate::{
     common::GlyphSet,
-    compile::valuerecordext::{Anchor, ValueRecord},
+    compile::metrics::{Anchor, ValueRecord},
 };
 
 use super::{Builder, ClassDefBuilder2};
@@ -351,7 +351,6 @@ impl Builder for CursivePosBuilder {
                 )
             })
             .collect();
-        //let record = write_gpos::EntryExitRecord::new(entry, exit);
         vec![write_gpos::CursivePosFormat1::new(coverage, records)]
     }
 }

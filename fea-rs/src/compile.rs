@@ -19,9 +19,9 @@ pub use lookups::{
     FeatureKey, LookupId, MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder,
     PreviouslyAssignedClass,
 };
+pub use metrics::{Anchor, ValueRecord};
 pub use opts::Opts;
 pub use output::Compilation;
-pub use valuerecordext::{Anchor, ValueRecord};
 pub use variations::{AxisLocation, VariationInfo};
 
 #[cfg(any(test, feature = "test", feature = "cli"))]
@@ -35,12 +35,12 @@ mod features;
 mod glyph_range;
 mod language_system;
 mod lookups;
+mod metrics;
 mod opts;
 mod output;
 mod tables;
 mod tags;
 mod validate;
-mod valuerecordext;
 mod variations;
 
 /// Run the validation pass, returning any diagnostics.
