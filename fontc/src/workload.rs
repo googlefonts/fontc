@@ -303,6 +303,8 @@ impl<'a> Workload<'a> {
                     nth_wave += 1;
                 }
 
+                // count of launchable jobs that are runnable, i.e. excluding !run jobs
+                let mut runnable_count = launchable.len();
                 {
                     let mut run_queue = run_queue.lock().unwrap();
                     for id in launchable.iter() {
@@ -325,6 +327,7 @@ impl<'a> Workload<'a> {
                                 //FIXME: if we can't send messages it means the receiver has dropped,
                                 //which means we should... return? abort?
                             }
+                            runnable_count -= 1;
                             continue;
                         }
                         let work_context = AnyContext::for_work(
@@ -361,7 +364,7 @@ impl<'a> Workload<'a> {
                 }
 
                 // Spawn for every job that's executable. Each spawn will pull one item from the run queue.
-                for _ in 0..launchable.len() {
+                for _ in 0..runnable_count {
                     let send = send.clone();
                     let run_queue = run_queue.clone();
                     let abort = abort_queued_jobs.clone();
