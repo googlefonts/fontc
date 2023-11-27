@@ -491,6 +491,12 @@ mod tests {
             self.fe_context.glyph_order.get().glyph_id(&name.into())
         }
 
+        /// Returns the GlyphId (or NOTDEF, if not present)
+        fn get_gid(&self, name: &str) -> GlyphId {
+            let raw = self.get_glyph_index(name).unwrap_or_default();
+            GlyphId::new(raw as u16)
+        }
+
         fn glyphs(&self) -> Glyphs {
             Glyphs::new(&self.build_dir)
         }
@@ -2352,9 +2358,9 @@ mod tests {
         let font = result.font().unwrap();
         let gpos = font.gpos().unwrap();
 
-        let base_gid = GlyphId::new(result.get_glyph_index("A").unwrap() as u16);
-        let macroncomb_gid = GlyphId::new(result.get_glyph_index("macroncomb").unwrap() as u16);
-        let brevecomb_gid = GlyphId::new(result.get_glyph_index("brevecomb").unwrap() as u16);
+        let base_gid = result.get_gid("A");
+        let macroncomb_gid = result.get_gid("macroncomb");
+        let brevecomb_gid = result.get_gid("brevecomb");
 
         // If only we had more indirections
         let mark_base_lookups = mark_base_lookups(&gpos);
@@ -2412,6 +2418,87 @@ mod tests {
                 ]
             ),
             (bases, marks)
+        );
+    }
+
+    #[test]
+    fn compile_mark_mark() {
+        let result = SimpleCompile::compile("glyphs3/Oswald-AE-comb.glyphs").unwrap();
+        let font = result.font().unwrap();
+        let gpos = font.gpos().unwrap();
+        let acutecomb = result.get_gid("acutecomb");
+        let brevecomb = result.get_gid("brevecomb");
+        let tildecomb = result.get_gid("tildecomb");
+        let macroncomb = result.get_gid("macroncomb");
+
+        let mark_mark_lookups = gpos
+            .lookup_list()
+            .unwrap()
+            .lookups()
+            .iter()
+            .filter_map(|lookup| match lookup {
+                Ok(PositionLookup::MarkToMark(lookup)) => Some(lookup),
+                _ => None,
+            })
+            .flat_map(|lookup| lookup.subtables().iter())
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(mark_mark_lookups.len(), 1);
+
+        let mut bases = Vec::new();
+        let mut marks = Vec::new();
+        for sub in &mark_mark_lookups {
+            let mark_cov = sub.mark1_coverage().unwrap();
+            let base_cov = sub.mark2_coverage().unwrap();
+            let mark1array = sub.mark1_array().unwrap();
+            let mark2array = sub.mark2_array().unwrap();
+
+            assert_eq!(mark_cov.iter().count(), mark1array.mark_count() as usize);
+            assert_eq!(base_cov.iter().count(), mark2array.mark2_count() as usize);
+
+            for (gid, rec) in mark_cov.iter().zip(mark1array.mark_records().iter()) {
+                let mark_class = rec.mark_class();
+                let anchor = rec.mark_anchor(mark1array.offset_data()).unwrap();
+                let x = anchor.x_coordinate();
+                let y = anchor.y_coordinate();
+                marks.push((gid, mark_class, (x, y)));
+            }
+
+            for (i, gid) in base_cov.iter().enumerate() {
+                let rec = mark2array.mark2_records().get(i).unwrap();
+                let anchors = rec
+                    .mark2_anchors(mark2array.offset_data())
+                    .iter()
+                    .map(|anchor| {
+                        anchor
+                            .transpose()
+                            .unwrap()
+                            .map(|anchor| (anchor.x_coordinate(), anchor.y_coordinate()))
+                            .unwrap_or_default()
+                    })
+                    .collect::<Vec<_>>();
+                bases.push((gid, anchors));
+            }
+        }
+
+        assert_eq!(
+            marks,
+            vec![
+                (acutecomb, 0, (0, 578)),
+                (brevecomb, 0, (-1, 578)),
+                (tildecomb, 0, (0, 578)),
+                (macroncomb, 0, (0, 578)),
+            ]
+        );
+
+        assert_eq!(
+            bases,
+            [
+                (acutecomb, vec![(0, 810)]),
+                (brevecomb, vec![(-1, 776)]),
+                (tildecomb, vec![(0, 776)]),
+                (macroncomb, vec![(0, 810)])
+            ]
         );
     }
 

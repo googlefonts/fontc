@@ -1,13 +1,15 @@
 //! Generates a [Marks] datastructure to be fed to fea-rs
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use font_types::GlyphId;
 use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
-use log::debug;
 
 use crate::{
     error::Error,
@@ -29,7 +31,7 @@ pub fn create_mark_work() -> Box<BeWork> {
 }
 
 /// The type of an anchor, used when generating mark features
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub(crate) enum AnchorInfo {
     Base(MarkGroupName),
     Mark(MarkGroupName),
@@ -50,9 +52,13 @@ impl AnchorInfo {
             AnchorInfo::Base(group_name) | AnchorInfo::Mark(group_name) => group_name.clone(),
         }
     }
+
+    pub(crate) fn is_mark(&self) -> bool {
+        matches!(self, AnchorInfo::Mark(_))
+    }
 }
 
-fn create_mark_groups(
+fn create_mark_to_base_groups(
     anchors: &BTreeMap<GlyphName, Arc<GlyphAnchors>>,
     glyph_order: &GlyphOrder,
 ) -> BTreeMap<MarkGroupName, MarkGroup> {
@@ -69,7 +75,7 @@ fn create_mark_groups(
         let mut base = true; // TODO: only a base if user rules allow it
         for anchor in glyph_anchors.anchors.iter() {
             let anchor_info = AnchorInfo::new(&anchor.name);
-            if matches!(anchor_info, AnchorInfo::Mark(..)) {
+            if anchor_info.is_mark() {
                 base = false;
 
                 // TODO: only if user rules allow us to be a mark
@@ -93,6 +99,67 @@ fn create_mark_groups(
         }
     }
     groups
+}
+
+fn create_mark_to_mark_groups(
+    anchors: &BTreeMap<GlyphName, Arc<GlyphAnchors>>,
+    glyph_order: &GlyphOrder,
+) -> BTreeMap<MarkGroupName, MarkGroup> {
+    // first find the set of glyphs that are marks, i.e. have any mark attachment point.
+    let (mark_glyphs, mark_anchors): (BTreeSet<_>, BTreeSet<_>) = anchors
+        .iter()
+        .filter(|(name, anchors)| glyph_order.contains(name) && contains_marks(anchors))
+        .flat_map(|(name, anchors)| {
+            anchors
+                .anchors
+                .iter()
+                .map(|a| AnchorInfo::new(&a.name))
+                .filter_map(|info| info.is_mark().then(|| (name.clone(), info.group_name())))
+        })
+        .unzip();
+
+    // then iterate again, looking for glyphs that we have identified as marks,
+    // but which also have participating base anchors
+    let mut result = BTreeMap::<MarkGroupName, MarkGroup>::new();
+    for (glyph, glyph_anchors) in anchors {
+        if !mark_glyphs.contains(glyph) {
+            continue;
+        }
+
+        for anchor in &glyph_anchors.anchors {
+            let info = AnchorInfo::new(&anchor.name);
+            // only if this anchor is a base, AND we have a mark in the same group
+            if !info.is_mark() && mark_anchors.contains(&info.group_name()) {
+                result
+                    .entry(info.group_name())
+                    .or_default()
+                    .bases
+                    .push((glyph_anchors.glyph_name.clone(), anchor.clone()));
+            }
+        }
+    }
+
+    for mark in mark_glyphs {
+        let anchors = anchors.get(&mark).unwrap();
+        for anchor in &anchors.anchors {
+            let info = AnchorInfo::new(&anchor.name);
+            let group = info.group_name();
+            if !info.is_mark() {
+                continue;
+            }
+            if let Some(group) = result.get_mut(&group) {
+                group.marks.push((mark.clone(), anchor.clone()));
+            }
+        }
+    }
+    result
+}
+
+fn contains_marks(anchors: &GlyphAnchors) -> bool {
+    anchors
+        .anchors
+        .iter()
+        .any(|a| a.name.as_str().starts_with('_'))
 }
 
 impl Work<Context, AnyWorkId, Error> for MarkWork {
@@ -131,12 +198,13 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
             anchors.insert(glyph_name.clone(), arc_glyph_anchors.clone());
         }
 
-        let groups = create_mark_groups(&anchors, &glyph_order);
+        let groups = create_mark_to_base_groups(&anchors, &glyph_order);
 
-        let mut marks = Marks {
+        let mut all_marks = Marks {
             glyphmap: glyph_order
                 .iter()
-                .map(|n| Into::<fea_rs::GlyphName>::into(n.as_str()))
+                .cloned()
+                .map(GlyphName::into_inner)
                 .collect(),
             ..Default::default()
         };
@@ -162,46 +230,36 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
                     )?);
                 }
 
-                marks.mark_base.push(mark_base);
-            }
-
-            // If a mark has anchors that are themselves marks what we got here is a mark to mark
-
-            let mut mark_mark = MarkMark::new(group_name.0.clone());
-            for (mark_name, _) in group.marks.iter() {
-                let Some(glyph_anchors) = anchors.get(mark_name) else {
-                    continue;
-                };
-                if !glyph_anchors
-                    .anchors
-                    .iter()
-                    .any(|a| matches!(AnchorInfo::new(&a.name), AnchorInfo::Mark(..)))
-                {
-                    continue;
-                }
-                let Some(anchor_my_anchor) = glyph_anchors
-                    .anchors
-                    .iter()
-                    .find(|a| a.name.as_str() == group_name.0)
-                else {
-                    debug!("No anchor_my_anchor for {:?}", group_name.0);
-                    continue;
-                };
-
-                let mark_gid = gid(mark_name)?;
-                mark_mark.insert_mark(MarkEntry::new(
-                    &static_metadata,
-                    mark_gid,
-                    anchor_my_anchor,
-                )?);
-                mark_mark.filter_set.push(mark_gid);
-            }
-            if !mark_mark.filter_set.is_empty() {
-                marks.mark_mark.push(mark_mark);
+                all_marks.mark_base.push(mark_base);
             }
         }
 
-        context.marks.set(marks);
+        let mkmk_groups = create_mark_to_mark_groups(&anchors, &glyph_order);
+        for (group_name, MarkGroup { bases, marks }) in &mkmk_groups {
+            if bases.is_empty() || marks.is_empty() {
+                continue;
+            }
+
+            let mut mark_mark = MarkMark::new(group_name.0.clone());
+            for (mark_name, mark_anchor) in marks {
+                mark_mark.insert_attaching_mark(MarkEntry::new(
+                    &static_metadata,
+                    gid(mark_name)?,
+                    mark_anchor,
+                )?);
+            }
+
+            for (base_name, base_anchor) in bases {
+                mark_mark.insert_base_mark(MarkEntry::new(
+                    &static_metadata,
+                    gid(base_name)?,
+                    base_anchor,
+                )?);
+            }
+            all_marks.mark_mark.push(mark_mark);
+        }
+
+        context.marks.set(all_marks);
 
         Ok(())
     }
