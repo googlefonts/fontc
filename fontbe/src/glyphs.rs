@@ -346,7 +346,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
         let glyph = CheckedGlyph::new(ir_glyph)?;
 
         // Hopefully in time https://github.com/harfbuzz/boring-expansion-spec means we can drop this
-        let mut glyph = cubics_to_quadratics(glyph);
+        let mut glyph = cubics_to_quadratics(glyph, static_metadata.units_per_em);
 
         if !context.flags.contains(Flags::KEEP_DIRECTION) {
             glyph.reverse_contour_direction();
@@ -451,7 +451,7 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
     }
 }
 
-fn cubics_to_quadratics(glyph: CheckedGlyph) -> CheckedGlyph {
+fn cubics_to_quadratics(glyph: CheckedGlyph, units_per_em: u16) -> CheckedGlyph {
     let CheckedGlyph::Contour {
         name,
         paths: contours,
@@ -461,6 +461,10 @@ fn cubics_to_quadratics(glyph: CheckedGlyph) -> CheckedGlyph {
     };
 
     trace!("Convert '{name}' to quadratic");
+
+    // match fontTools.cu2qu default tolerance (i.e 1/1000th of UPEM):
+    // https://github.com/fonttools/fonttools/blob/f99774a/Lib/fontTools/cu2qu/ufo.py#L43-L46
+    let tolerance = units_per_em as f64 / 1000.0;
 
     // put all the loc + path iters into a vec
     let mut loc_iters: Vec<_> = contours
@@ -514,8 +518,7 @@ fn cubics_to_quadratics(glyph: CheckedGlyph) -> CheckedGlyph {
                 .collect();
 
             // At long last, actually convert something to quadratic
-            // TODO what should we pass for accuracy
-            let Some(quad_splines) = cubics_to_quadratic_splines(&cubics, 1.0) else {
+            let Some(quad_splines) = cubics_to_quadratic_splines(&cubics, tolerance) else {
                 panic!("'{name}': unable to convert to quadratic {cubics:?}");
             };
             if quad_splines.len() != loc_iters.len() {
@@ -908,8 +911,14 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
 mod tests {
     use super::*;
 
+    use font_types::Tag;
+    use fontdrasil::{
+        coords::{NormalizedCoord, NormalizedLocation},
+        types::GlyphName,
+    };
     use fontir::ir;
-    use kurbo::Affine;
+    use kurbo::{Affine, BezPath, PathEl};
+    use rstest::rstest;
 
     /// Returns a glyph instance and another one that can be its component
     fn create_reusable_component() -> (ir::GlyphInstance, ir::GlyphInstance) {
@@ -982,5 +991,47 @@ mod tests {
             let should_be_required = *pre != Vec2::ZERO;
             assert_eq!(should_be_required, post.required)
         }
+    }
+
+    fn simple_static_contour_glyph() -> CheckedGlyph {
+        // Contains one default instance with one contour comprising two segments, i.e.
+        // a cubic curve and a closing line
+        let mut paths = HashMap::new();
+        paths.insert(
+            NormalizedLocation::from(vec![(Tag::new(b"wght"), NormalizedCoord::new(0.0))]),
+            BezPath::from_vec(vec![
+                PathEl::MoveTo((0.0, 500.0).into()),
+                PathEl::CurveTo(
+                    (200.0, 500.0).into(),
+                    (500.0, 200.0).into(),
+                    (500.0, 0.0).into(),
+                ),
+                PathEl::ClosePath,
+            ]),
+        );
+        CheckedGlyph::Contour {
+            name: GlyphName::from("test"),
+            paths,
+        }
+    }
+
+    #[rstest]
+    #[case::small_upem(500, 8)]
+    #[case::default_upem(1000, 7)]
+    #[case::large_upem(2000, 6)]
+    fn cubics_to_quadratics_at_various_upems(#[case] upem: u16, #[case] expected_segments: usize) {
+        // The default conversion accuracy/tolerance is set to 1/1000th of the UPEM.
+        // Therefore, the number of converted quadratic segments increases as the UPEM
+        // decreases, or decreases as the UPEM increases.
+        let CheckedGlyph::Contour { paths, .. } =
+            cubics_to_quadratics(simple_static_contour_glyph(), upem)
+        else {
+            panic!("Expected a contour glyph");
+        };
+
+        assert_eq!(
+            paths.values().next().unwrap().segments().count(),
+            expected_segments
+        );
     }
 }
