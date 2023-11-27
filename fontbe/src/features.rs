@@ -18,7 +18,7 @@ use ordered_float::OrderedFloat;
 use fea_rs::{
     compile::{
         Compilation, FeatureBuilder, FeatureProvider, MarkToBaseBuilder, MarkToMarkBuilder,
-        PairPosBuilder, VariationInfo,
+        VariationInfo,
     },
     parse::{SourceLoadError, SourceResolver},
     Compiler,
@@ -197,15 +197,11 @@ impl<'a> FeatureWriter<'a> {
         if self.kerning.is_empty() {
             return Ok(());
         }
-        let mut ppos_subtables = PairPosBuilder::default();
-
-        for kern in self.kerning.kerns() {
-            kern.insert_into(&mut ppos_subtables);
-        }
+        let pairpos_subtables = self.kerning.lookups.clone();
 
         // now we have a builder for the pairpos subtables, so we can make
         // a lookup:
-        let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables])];
+        let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, pairpos_subtables)];
         builder.add_to_default_language_systems(Tag::new(b"kern"), &lookups);
 
         {

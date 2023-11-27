@@ -282,30 +282,6 @@ pub enum Kern {
     },
 }
 
-impl Kern {
-    pub fn insert_into(&self, ppos_subtables: &mut PairPosBuilder) {
-        match self {
-            Kern::Pair {
-                glyph0,
-                glyph1,
-                x_advance,
-            } => {
-                ppos_subtables.insert_pair(*glyph0, x_advance.clone(), *glyph1, Default::default())
-            }
-            Kern::Class {
-                glyphs0,
-                glyphs1,
-                x_advance,
-            } => ppos_subtables.insert_classes(
-                glyphs0.clone(),
-                x_advance.clone(),
-                glyphs1.clone(),
-                Default::default(),
-            ),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct MarkGroupName(pub(crate) SmolStr);
 
@@ -438,47 +414,12 @@ impl Persistable for Marks {
 /// [`fea_rs::compile::PairPosBuilder`] in advance.
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Kerning {
-    deltas: Vec<Vec<(BeVariationRegion, i16)>>,
-    kerns: Vec<Kern>,
+    pub lookups: Vec<PairPosBuilder>,
 }
 
 impl Kerning {
     pub fn is_empty(&self) -> bool {
-        self.kerns.is_empty()
-    }
-
-    pub fn deltas(&self) -> impl Iterator<Item = &Vec<(BeVariationRegion, i16)>> {
-        self.deltas.iter()
-    }
-
-    pub fn kerns(&self) -> impl Iterator<Item = &Kern> {
-        self.kerns.iter()
-    }
-
-    pub fn add_deltas(&mut self, deltas: Vec<(BeVariationRegion, i16)>) -> usize {
-        self.deltas.push(deltas);
-        self.deltas.len() - 1
-    }
-
-    pub fn add_pair(&mut self, glyph0: GlyphId, x_advance: ValueRecordBuilder, glyph1: GlyphId) {
-        self.kerns.push(Kern::Pair {
-            glyph0,
-            glyph1,
-            x_advance,
-        })
-    }
-
-    pub fn add_class(
-        &mut self,
-        glyphs0: GlyphSet,
-        x_advance: ValueRecordBuilder,
-        glyphs1: GlyphSet,
-    ) {
-        self.kerns.push(Kern::Class {
-            glyphs0,
-            glyphs1,
-            x_advance,
-        })
+        self.lookups.is_empty()
     }
 }
 

@@ -191,6 +191,11 @@ impl ClassPairPosSubtable {
 }
 
 impl PairPosBuilder {
+    /// Returns `true` if no rules have been added to this builder
+    pub fn is_empty(&self) -> bool {
+        self.pairs.0.is_empty() && self.classes.0.is_empty()
+    }
+
     /// Insert a new kerning pair
     pub fn insert_pair(
         &mut self,

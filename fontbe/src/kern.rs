@@ -2,7 +2,10 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use fea_rs::{compile::ValueRecord as ValueRecordBuilder, GlyphSet};
+use fea_rs::{
+    compile::{PairPosBuilder, ValueRecord as ValueRecordBuilder},
+    GlyphSet,
+};
 use fontdrasil::orchestration::{Access, Work};
 use fontir::{ir::KernParticipant, orchestration::WorkId as FeWorkId};
 use write_fonts::types::GlyphId;
@@ -59,7 +62,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
             })
             .collect::<BTreeMap<_, _>>();
 
-        let mut kerning = Kerning::default();
+        let mut builder = PairPosBuilder::default();
 
         // now for each kerning entry, directly add a rule to the builder:
         for ((left, right), values) in &ir_kerning.kerns {
@@ -67,10 +70,12 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
             let x_adv_record = ValueRecordBuilder::new()
                 .with_x_advance(default_value)
                 .with_x_advance_device(deltas);
+            let empty = ValueRecordBuilder::new();
 
             match (left, right) {
                 (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
-                    kerning.add_pair(gid(left)?, x_adv_record.clone(), gid(right)?);
+                    let (left, right) = (gid(left)?, gid(right)?);
+                    builder.insert_pair(left, x_adv_record.clone(), right, empty.clone());
                 }
                 (KernParticipant::Group(left), KernParticipant::Group(right)) => {
                     let left = glyph_classes
@@ -81,7 +86,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
                         .get(right)
                         .ok_or_else(|| Error::MissingGlyphId(right.clone()))?
                         .clone();
-                    kerning.add_class(left, x_adv_record.clone(), right);
+                    builder.insert_classes(left, x_adv_record.clone(), right, empty.clone());
                 }
                 // if groups are mixed with glyphs then we enumerate the group
                 (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
@@ -95,7 +100,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
                         .get(&right)
                         .ok_or_else(|| Error::MissingGlyphId(right.clone()))?;
                     for gid1 in right.iter() {
-                        kerning.add_pair(gid0, x_adv_record.clone(), gid1);
+                        builder.insert_pair(gid0, x_adv_record.clone(), gid1, empty.clone());
                     }
                 }
                 (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
@@ -104,12 +109,16 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
                         .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
                     let gid1 = gid(right)?;
                     for gid0 in left.iter() {
-                        kerning.add_pair(gid0, x_adv_record.clone(), gid1);
+                        builder.insert_pair(gid0, x_adv_record.clone(), gid1, empty.clone());
                     }
                 }
             }
         }
 
+        let mut kerning = Kerning::default();
+        if !builder.is_empty() {
+            kerning.lookups = vec![builder];
+        }
         context.kerning.set(kerning);
 
         Ok(())
