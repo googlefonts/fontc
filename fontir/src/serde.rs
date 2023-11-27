@@ -5,11 +5,10 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use filetime::FileTime;
-use font_types::Tag;
 use fontdrasil::{coords::NormalizedLocation, types::Axis};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
-use write_fonts::tables::os2::SelectionFlags;
+use write_fonts::{tables::os2::SelectionFlags, types::Tag};
 
 use crate::{
     ir::{

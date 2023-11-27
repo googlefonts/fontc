@@ -460,13 +460,13 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
 mod tests {
     use std::{collections::HashSet, path::Path};
 
-    use font_types::Tag;
     use fontdrasil::{
         coords::{NormalizedCoord, NormalizedLocation},
         orchestration::Access,
         types::GlyphName,
     };
     use kurbo::{Affine, BezPath};
+    use write_fonts::types::Tag;
 
     use crate::{
         ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
@@ -475,10 +475,7 @@ mod tests {
         source::Input,
     };
 
-    use super::{
-        convert_components_to_contours, flatten_glyph, has_components_and_contours,
-        name_for_derivative, split_glyph,
-    };
+    use super::*;
 
     fn norm_loc(positions: &[(Tag, f32)]) -> NormalizedLocation {
         positions

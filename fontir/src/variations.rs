@@ -6,7 +6,6 @@ use std::{
     ops::{Mul, Sub},
 };
 
-use font_types::{F2Dot14, Tag};
 use fontdrasil::{
     coords::{NormalizedCoord, NormalizedLocation},
     types::Axis,
@@ -15,7 +14,10 @@ use log::{log_enabled, trace};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use write_fonts::tables::variations::RegionAxisCoordinates;
+use write_fonts::{
+    tables::variations::RegionAxisCoordinates,
+    types::{F2Dot14, Tag},
+};
 
 use crate::error::VariationModelError;
 
@@ -762,7 +764,6 @@ mod tests {
         str::FromStr,
     };
 
-    use font_types::Tag;
     use fontdrasil::{
         coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
         types::Axis,
@@ -774,7 +775,7 @@ mod tests {
 
     use crate::variations::ONE;
 
-    use super::{VariationModel, VariationRegion};
+    use super::*;
 
     fn axis(tag: &str) -> Axis {
         let (name, tag, min, default, max) = match tag {

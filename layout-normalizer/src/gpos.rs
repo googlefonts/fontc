@@ -6,7 +6,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use read_fonts::{
+use write_fonts::read::{
     tables::{
         gpos::{
             AnchorTable, MarkBasePosFormat1, MarkMarkPosFormat1, PairPos, PairPosFormat1,

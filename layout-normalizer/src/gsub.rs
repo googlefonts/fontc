@@ -1,6 +1,6 @@
 use std::io;
 
-use read_fonts::FontRef;
+use write_fonts::read::FontRef;
 
 use crate::{error::Error, glyph_names::NameMap};
 

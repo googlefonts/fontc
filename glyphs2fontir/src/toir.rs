@@ -4,7 +4,7 @@ use kurbo::BezPath;
 use log::trace;
 use ordered_float::OrderedFloat;
 
-use read_fonts::types::Tag;
+use write_fonts::types::Tag;
 
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},

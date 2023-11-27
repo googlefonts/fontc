@@ -26,7 +26,7 @@ use fontir::{
     stateset::StateSet,
 };
 use glyphs_reader::{Font, InstanceType};
-use read_fonts::{
+use write_fonts::{
     tables::os2::SelectionFlags,
     types::{NameId, Tag},
 };
@@ -858,7 +858,7 @@ mod tests {
     };
     use glyphs_reader::Font;
     use indexmap::IndexSet;
-    use read_fonts::types::{NameId, Tag};
+    use write_fonts::types::{NameId, Tag};
 
     use crate::source::names;
 

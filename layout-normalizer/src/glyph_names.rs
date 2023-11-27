@@ -4,13 +4,12 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use read_fonts::{
+use smol_str::SmolStr;
+use write_fonts::read::{
     tables::cmap::{CmapSubtable, EncodingRecord, PlatformId},
-    types::GlyphId,
-    types::Tag,
+    types::{GlyphId, Tag},
     FontRef, TableProvider,
 };
-use smol_str::SmolStr;
 
 use crate::error::Error;
 

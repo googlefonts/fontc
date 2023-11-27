@@ -1,19 +1,17 @@
-use std::path::PathBuf;
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
-use font_types::Tag;
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     types::GlyphName,
 };
-use fontir::ir::AnchorBuilder;
 use fontir::{
     error::WorkError,
-    ir::{self, GlyphPathBuilder},
+    ir::{self, AnchorBuilder, GlyphPathBuilder},
 };
 use kurbo::{Affine, BezPath};
 use log::trace;
 use norad::designspace::{self, Dimension};
+use write_fonts::types::Tag;
 
 pub(crate) fn to_design_location(
     tags_by_name: &HashMap<&str, Tag>,
@@ -187,12 +185,11 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use font_types::Tag;
     use fontdrasil::coords::{NormalizedCoord, NormalizedLocation};
     use fontir::ir::AnchorBuilder;
     use norad::ContourPoint;
 
-    use super::{to_ir_contour, to_ir_glyph};
+    use super::*;
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");

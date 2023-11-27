@@ -7,7 +7,7 @@ use std::fmt::{Debug, Display};
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
-use font_types::Tag;
+use write_fonts::types::Tag;
 
 use crate::coords::{CoordConverter, UserCoord};
 

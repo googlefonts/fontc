@@ -23,7 +23,6 @@ env_logger.workspace = true
 
 thiserror.workspace = true
 
-font-types.workspace = true
 write-fonts.workspace = true  # for ot_round
 
 ordered-float.workspace = true

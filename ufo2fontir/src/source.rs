@@ -6,21 +6,18 @@ use std::{
 };
 
 use chrono::{DateTime, NaiveDateTime, Utc};
-use font_types::{InvalidTag, NameId, Tag};
 use fontdrasil::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     orchestration::{Access, Work},
     types::{GlyphName, GroupName},
 };
-use fontir::ir::PostscriptNames;
-use fontir::orchestration::Flags;
 use fontir::{
     error::{Error, WorkError},
     ir::{
         AnchorBuilder, Features, GlobalMetric, GlobalMetrics, GlyphOrder, KernParticipant, Kerning,
-        NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+        NameBuilder, NameKey, NamedInstance, PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
     },
-    orchestration::{Context, IrWork, WorkId},
+    orchestration::{Context, Flags, IrWork, WorkId},
     source::{Input, Source},
     stateset::{StateIdentifier, StateSet},
 };
@@ -30,7 +27,11 @@ use norad::{
     designspace::{self, DesignSpaceDocument},
     fontinfo::StyleMapStyle,
 };
-use write_fonts::{tables::os2::SelectionFlags, OtRound};
+use write_fonts::{
+    tables::os2::SelectionFlags,
+    types::{InvalidTag, NameId, Tag},
+    OtRound,
+};
 
 use crate::toir::{master_locations, to_design_location, to_ir_axes, to_ir_glyph};
 
@@ -1300,7 +1301,6 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use font_types::Tag;
     use fontdrasil::{
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
         orchestration::Access,
@@ -1323,10 +1323,7 @@ mod tests {
         toir::to_design_location,
     };
 
-    use super::{
-        default_master, glif_files, glyph_order, load_plist, postscript_names, units_per_em,
-        DesignSpaceIrSource,
-    };
+    use super::*;
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");

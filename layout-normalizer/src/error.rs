@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use read_fonts::{types::Tag, ReadError};
+use write_fonts::{read::ReadError, types::Tag};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {

@@ -14,7 +14,7 @@ use std::{fs::File, io::Write};
 
 use clap::Parser;
 use error::Error;
-use read_fonts::{FileRef, FontRef, ReadError};
+use write_fonts::read::{FileRef, FontRef, ReadError};
 
 fn main() -> Result<(), Error> {
     let args = args::Args::parse();

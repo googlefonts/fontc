@@ -911,7 +911,6 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
 mod tests {
     use super::*;
 
-    use font_types::Tag;
     use fontdrasil::{
         coords::{NormalizedCoord, NormalizedLocation},
         types::GlyphName,
@@ -919,6 +918,7 @@ mod tests {
     use fontir::ir;
     use kurbo::{Affine, BezPath, PathEl};
     use rstest::rstest;
+    use write_fonts::types::Tag;
 
     /// Returns a glyph instance and another one that can be its component
     fn create_reusable_component() -> (ir::GlyphInstance, ir::GlyphInstance) {
