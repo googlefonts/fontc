@@ -1,26 +1,35 @@
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    path::PathBuf,
+    str::FromStr,
+    sync::Arc,
+};
+
 use chrono::DateTime;
-use font_types::{NameId, Tag};
-use fontdrasil::orchestration::{Access, Work};
-use fontdrasil::{
-    coords::NormalizedCoord,
-    types::{GlyphName, GroupName},
-};
-use fontir::error::{Error, WorkError};
-use fontir::ir::{
-    self, AnchorBuilder, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernParticipant,
-    Kerning, NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
-};
-use fontir::orchestration::{Context, IrWork, WorkId};
-use fontir::source::{Input, Source};
-use fontir::stateset::StateSet;
-use glyphs_reader::{Font, InstanceType};
 use indexmap::IndexSet;
 use log::{debug, trace, warn};
-use read_fonts::tables::os2::SelectionFlags;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::str::FromStr;
-use std::sync::Arc;
-use std::{collections::HashMap, path::PathBuf};
+
+use fontdrasil::{
+    coords::NormalizedCoord,
+    orchestration::{Access, Work},
+    types::{GlyphName, GroupName},
+};
+use fontir::{
+    error::{Error, WorkError},
+    ir::{
+        self, AnchorBuilder, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder,
+        KernParticipant, Kerning, NameBuilder, NameKey, NamedInstance, StaticMetadata,
+        DEFAULT_VENDOR_ID,
+    },
+    orchestration::{Context, IrWork, WorkId},
+    source::{Input, Source},
+    stateset::StateSet,
+};
+use glyphs_reader::{Font, InstanceType};
+use write_fonts::{
+    tables::os2::SelectionFlags,
+    types::{NameId, Tag},
+};
 
 use crate::glyphdata::is_nonspacing_mark;
 use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features, FontInfo};
@@ -831,8 +840,6 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use font_types::NameId;
-    use font_types::Tag;
     use fontdrasil::{
         coords::{
             CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
@@ -851,6 +858,7 @@ mod tests {
     };
     use glyphs_reader::Font;
     use indexmap::IndexSet;
+    use write_fonts::types::{NameId, Tag};
 
     use crate::source::names;
 

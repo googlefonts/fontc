@@ -1,16 +1,15 @@
 //! Only included in test
 
-use font_types::Tag;
+use std::{cmp, str::FromStr};
+
 use fontdrasil::{
     coords::{CoordConverter, DesignCoord, UserCoord},
     types::Axis,
 };
-use std::cmp;
+use write_fonts::types::Tag;
 
 #[cfg(test)]
 pub(crate) fn axis(min: f32, default: f32, max: f32) -> Axis {
-    use std::str::FromStr;
-
     let mut mappings = Vec::new();
     if min < default {
         mappings.push((UserCoord::new(min), DesignCoord::new(min / 10.0)));

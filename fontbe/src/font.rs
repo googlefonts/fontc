@@ -5,16 +5,16 @@ use std::collections::HashSet;
 use fontdrasil::orchestration::{Access, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use log::debug;
-use read_fonts::{
+use write_fonts::{
+    read::TopLevelTable,
     tables::{
         avar::Avar, cmap::Cmap, fvar::Fvar, gdef::Gdef, glyf::Glyf, gpos::Gpos, gsub::Gsub,
         gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx, hvar::Hvar, loca::Loca, maxp::Maxp,
         name::Name, os2::Os2, post::Post, stat::Stat,
     },
     types::Tag,
-    TopLevelTable,
+    FontBuilder,
 };
-use write_fonts::FontBuilder;
 
 use crate::{
     error::Error,

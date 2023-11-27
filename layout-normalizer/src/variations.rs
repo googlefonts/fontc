@@ -1,4 +1,4 @@
-use read_fonts::{
+use write_fonts::read::{
     tables::{
         layout::VariationIndex,
         variations::{DeltaSetIndex, ItemVariationStore},

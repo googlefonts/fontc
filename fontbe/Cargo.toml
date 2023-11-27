@@ -27,8 +27,6 @@ env_logger.workspace = true
 
 parking_lot.workspace = true
 
-font-types.workspace = true
-read-fonts.workspace = true
 write-fonts.workspace = true
 
 kurbo.workspace = true

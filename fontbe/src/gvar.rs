@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use font_types::GlyphId;
 use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
@@ -11,6 +10,7 @@ use fontir::{ir::GlyphOrder, orchestration::WorkId as FeWorkId};
 use write_fonts::{
     dump_table,
     tables::gvar::{GlyphDeltas, GlyphVariations, Gvar},
+    types::GlyphId,
 };
 
 use crate::{
@@ -81,11 +81,13 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
 
 #[cfg(test)]
 mod tests {
-    use font_types::F2Dot14;
     use fontir::ir::GlyphOrder;
-    use write_fonts::tables::{
-        gvar::{GlyphDelta, GlyphDeltas},
-        variations::Tuple,
+    use write_fonts::{
+        tables::{
+            gvar::{GlyphDelta, GlyphDeltas},
+            variations::Tuple,
+        },
+        types::F2Dot14,
     };
 
     use super::make_variations;

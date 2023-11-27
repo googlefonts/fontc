@@ -2,15 +2,19 @@
 //!
 //! See <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
 
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::{Debug, Write};
-use std::ops::Sub;
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::{Debug, Write},
+    ops::Sub,
+};
 
-use crate::serde::CoordConverterSerdeRepr;
-use crate::{piecewise_linear_map::PiecewiseLinearMap, types::Axis};
-use font_types::{F2Dot14, Fixed, Tag};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
+use write_fonts::types::{F2Dot14, Fixed, Tag};
+
+use crate::{
+    piecewise_linear_map::PiecewiseLinearMap, serde::CoordConverterSerdeRepr, types::Axis,
+};
 
 /// A coordinate in some arbitrary space the designer dreamed up.
 ///

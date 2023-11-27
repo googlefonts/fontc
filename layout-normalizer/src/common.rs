@@ -2,8 +2,8 @@
 
 use std::{collections::BTreeSet, fmt::Display};
 
-use read_fonts::{
-    tables::layout::{FeatureList, ScriptList},
+use write_fonts::{
+    read::tables::layout::{FeatureList, ScriptList},
     types::{GlyphId, Tag},
 };
 

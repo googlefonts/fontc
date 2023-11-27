@@ -1,23 +1,27 @@
 //! Font IR types.
-use chrono::{DateTime, Utc};
-use font_types::NameId;
-use font_types::Tag;
-use fontdrasil::{
-    coords::{NormalizedCoord, NormalizedLocation, UserLocation},
-    types::{AnchorName, Axis, GlyphName, GroupName},
-};
-use indexmap::IndexSet;
-use kurbo::{Affine, BezPath, PathEl, Point};
-use log::{log_enabled, trace, warn};
-use ordered_float::OrderedFloat;
-use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map::RandomState, BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Debug,
     io::Read,
     path::PathBuf,
 };
-use write_fonts::{tables::os2::SelectionFlags, OtRound};
+
+use chrono::{DateTime, Utc};
+use indexmap::IndexSet;
+use kurbo::{Affine, BezPath, PathEl, Point};
+use log::{log_enabled, trace, warn};
+use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
+use write_fonts::{
+    tables::os2::SelectionFlags,
+    types::{NameId, Tag},
+    OtRound,
+};
+
+use fontdrasil::{
+    coords::{NormalizedCoord, NormalizedLocation, UserLocation},
+    types::{AnchorName, Axis, GlyphName, GroupName},
+};
 
 use crate::{
     error::{PathConversionError, VariationModelError, WorkError},
@@ -1494,7 +1498,6 @@ mod tests {
 
     use serde::{Deserialize, Serialize};
 
-    use font_types::{NameId, Tag};
     use fontdrasil::coords::{CoordConverter, NormalizedCoord, UserCoord};
     use write_fonts::tables::os2::SelectionFlags;
 
@@ -1502,7 +1505,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    use super::{GlyphPathBuilder, MiscMetadata, NameKey, NamedInstance, StaticMetadata};
+    use super::*;
 
     const WGHT: Tag = Tag::from_be_bytes(*b"wght");
 

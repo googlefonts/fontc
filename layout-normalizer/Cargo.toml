@@ -9,7 +9,7 @@ publish = false
 clap.workspace = true
 thiserror.workspace = true
 smol_str.workspace = true
-read-fonts.workspace = true
+write-fonts.workspace = true
 indexmap.workspace = true
 
 # cargo-release settings

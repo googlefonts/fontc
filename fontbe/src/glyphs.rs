@@ -21,11 +21,11 @@ use fontir::{
 use kurbo::{cubics_to_quadratic_splines, Affine, BezPath, CubicBez, PathEl, Point, Rect, Vec2};
 use log::{log_enabled, trace, warn};
 
-use read_fonts::{
-    tables::glyf::{self, Anchor, Transform},
-    types::{F2Dot14, GlyphId},
-};
 use write_fonts::{
+    read::{
+        tables::glyf::{self, Anchor, Transform},
+        types::{F2Dot14, GlyphId},
+    },
     tables::{
         glyf::{
             Bbox, Component, ComponentFlags, CompositeGlyph, GlyfLocaBuilder, Glyph as RawGlyph,
@@ -911,7 +911,6 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
 mod tests {
     use super::*;
 
-    use font_types::Tag;
     use fontdrasil::{
         coords::{NormalizedCoord, NormalizedLocation},
         types::GlyphName,
@@ -919,6 +918,7 @@ mod tests {
     use fontir::ir;
     use kurbo::{Affine, BezPath, PathEl};
     use rstest::rstest;
+    use write_fonts::types::Tag;
 
     /// Returns a glyph instance and another one that can be its component
     fn create_reusable_component() -> (ir::GlyphInstance, ir::GlyphInstance) {

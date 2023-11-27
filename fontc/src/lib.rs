@@ -425,16 +425,6 @@ mod tests {
     use log::info;
     use pretty_assertions::assert_eq;
 
-    use read_fonts::{
-        tables::{
-            gpos::{AnchorTable, Gpos, MarkBasePosFormat1Marker, PositionLookup},
-            name::Name,
-            os2::SelectionFlags,
-            variations::{DeltaSetIndexMap, ItemVariationData},
-        },
-        types::NameId,
-        ReadError, TableRef,
-    };
     use skrifa::{
         charmap::Charmap,
         instance::Size,
@@ -457,6 +447,18 @@ mod tests {
             glyf::{Bbox, Glyph as RawGlyph},
             loca::LocaFormat,
         },
+    };
+    use write_fonts::{
+        read::{
+            tables::{
+                gpos::{AnchorTable, Gpos, MarkBasePosFormat1Marker, PositionLookup},
+                name::Name,
+                os2::SelectionFlags,
+                variations::{DeltaSetIndexMap, ItemVariationData},
+            },
+            ReadError, TableRef,
+        },
+        types::NameId,
     };
 
     use super::*;
@@ -2221,12 +2223,15 @@ mod tests {
     }
 
     struct HvarReader<'a> {
-        hvar: read_fonts::tables::hvar::Hvar<'a>,
+        hvar: write_fonts::read::tables::hvar::Hvar<'a>,
         glyph_order: Arc<GlyphOrder>,
     }
 
     impl<'a> HvarReader<'a> {
-        fn new(hvar: read_fonts::tables::hvar::Hvar<'a>, glyph_order: Arc<GlyphOrder>) -> Self {
+        fn new(
+            hvar: write_fonts::read::tables::hvar::Hvar<'a>,
+            glyph_order: Arc<GlyphOrder>,
+        ) -> Self {
             Self { hvar, glyph_order }
         }
 

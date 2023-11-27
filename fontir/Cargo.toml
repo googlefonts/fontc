@@ -28,7 +28,6 @@ log.workspace = true
 env_logger.workspace = true
 parking_lot.workspace = true
 
-font-types.workspace = true
 write-fonts.workspace = true  # for pens
 
 chrono.workspace = true

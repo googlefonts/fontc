@@ -2,12 +2,11 @@
 
 use std::{cmp::Ordering, collections::HashSet, sync::Arc};
 
-use font_types::Tag;
 use fontdrasil::orchestration::{Access, Work};
 use fontir::{ir::GlobalMetricsInstance, orchestration::WorkId as FeWorkId};
 use log::warn;
-use read_fonts::{tables::hmtx::Hmtx, FontData, TopLevelTable};
 use write_fonts::{
+    read::{tables::hmtx::Hmtx, FontData, TopLevelTable},
     tables::{
         gsub::{
             AlternateSubstFormat1, ExtensionSubtable, LigatureSubstFormat1, MultipleSubstFormat1,
@@ -22,6 +21,7 @@ use write_fonts::{
         },
         os2::Os2,
     },
+    types::Tag,
     NullableOffsetMarker, OffsetMarker, OtRound,
 };
 
@@ -854,13 +854,12 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
 mod tests {
     use fontdrasil::coords::NormalizedLocation;
     use fontir::ir::{GlobalMetric, GlobalMetrics};
-    use read_fonts::types::Tag;
     use std::collections::HashSet;
     use write_fonts::tables::os2::Os2;
 
     use crate::os2::codepage_range_bits;
 
-    use super::{add_unicode_range_bits, apply_metrics, apply_min_max_char_index};
+    use super::*;
 
     #[test]
     fn build_basic_os2() {

@@ -1,16 +1,18 @@
 use std::{fmt::Display, io, path::PathBuf};
 
 use fea_rs::compile::{error::CompilerError, PreviouslyAssignedClass};
-use font_types::Tag;
 use fontdrasil::types::GlyphName;
 use fontir::{
     error::VariationModelError, orchestration::WorkId as FeWorkId, variations::DeltaError,
 };
-use read_fonts::ReadError;
 use thiserror::Error;
-use write_fonts::tables::{
-    glyf::MalformedPath,
-    gvar::{iup::IupError, GvarInputError},
+use write_fonts::{
+    read::ReadError,
+    tables::{
+        glyf::MalformedPath,
+        gvar::{iup::IupError, GvarInputError},
+    },
+    types::Tag,
 };
 
 #[derive(Debug, Error)]

@@ -1,11 +1,14 @@
 //! Generates a [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar) table.
 
-use font_types::Fixed;
-use fontdrasil::orchestration::{Access, Work};
-use fontir::{ir::StaticMetadata, orchestration::WorkId as FeWorkId};
 use log::trace;
 use std::collections::HashMap;
-use write_fonts::tables::fvar::{AxisInstanceArrays, Fvar, InstanceRecord, VariationAxisRecord};
+
+use fontdrasil::orchestration::{Access, Work};
+use fontir::{ir::StaticMetadata, orchestration::WorkId as FeWorkId};
+use write_fonts::{
+    tables::fvar::{AxisInstanceArrays, Fvar, InstanceRecord, VariationAxisRecord},
+    types::Fixed,
+};
 
 use crate::{
     error::Error,

@@ -24,8 +24,7 @@ kurbo.workspace = true
 ordered-float.workspace = true
 indexmap.workspace = true
 
-font-types.workspace = true
-read-fonts.workspace = true
+write-fonts.workspace = true
 
 chrono.workspace = true
 

@@ -2,11 +2,14 @@
 
 use std::collections::HashMap;
 
-use font_types::NameId;
+use log::trace;
+
 use fontdrasil::orchestration::{Access, Work};
 use fontir::orchestration::WorkId as FeWorkId;
-use log::trace;
-use write_fonts::tables::stat::{AxisRecord, Stat};
+use write_fonts::{
+    tables::stat::{AxisRecord, Stat},
+    types::NameId,
+};
 
 use crate::{
     error::Error,
