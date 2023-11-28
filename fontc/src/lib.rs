@@ -814,12 +814,9 @@ mod tests {
 
     fn assert_compiles_with_gpos_and_gsub(
         source: &str,
-        adjust_args: impl Fn(&mut Args),
+        adjust_args: impl Fn(Args) -> Args,
     ) -> TestCompile {
-        let result = TestCompile::compile(source, |mut args| {
-            adjust_args(&mut args);
-            args
-        });
+        let result = TestCompile::compile(source, adjust_args);
 
         let font = result.font();
 
@@ -834,19 +831,20 @@ mod tests {
     }
     #[test]
     fn compile_fea() {
-        assert_compiles_with_gpos_and_gsub("static.designspace", |_| ());
+        assert_compiles_with_gpos_and_gsub("static.designspace", |a| a);
     }
 
     #[test]
     fn compile_fea_with_includes() {
-        assert_compiles_with_gpos_and_gsub("fea_include.designspace", |_| ());
+        assert_compiles_with_gpos_and_gsub("fea_include.designspace", |a| a);
     }
 
     #[test]
     fn compile_fea_with_includes_no_ir() {
-        assert_compiles_with_gpos_and_gsub("fea_include.designspace", |args| {
+        assert_compiles_with_gpos_and_gsub("fea_include.designspace", |mut args| {
             args.emit_debug = false;
             args.incremental = false;
+            args
         });
     }
 
