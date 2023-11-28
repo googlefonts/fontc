@@ -456,7 +456,7 @@ mod tests {
                 os2::SelectionFlags,
                 variations::{DeltaSetIndexMap, ItemVariationData},
             },
-            ReadError, TableRef,
+            TableRef,
         },
         types::NameId,
     };
@@ -464,29 +464,85 @@ mod tests {
     use super::*;
 
     struct TestCompile {
+        /// we need to hold onto this because when it goes out of scope,
+        /// the directory is deleted.
+        _temp_dir: TempDir,
         build_dir: PathBuf,
+        args: Args,
         work_executed: HashSet<AnyWorkId>,
         glyphs_changed: IndexSet<GlyphName>,
         glyphs_deleted: IndexSet<GlyphName>,
         fe_context: FeContext,
         be_context: BeContext,
+        raw_font: Vec<u8>,
     }
 
     impl TestCompile {
-        fn new(
-            change_detector: &ChangeDetector,
-            fe_context: FeContext,
-            be_context: BeContext,
-        ) -> TestCompile {
+        fn compile_source(source: &str) -> TestCompile {
+            TestCompile::compile(source, |args| args)
+        }
+
+        fn compile_again(prior_compile: &TestCompile) -> TestCompile {
+            TestCompile::compile(prior_compile.args.source().to_str().unwrap(), |_| {
+                prior_compile.args.clone()
+            })
+        }
+
+        fn compile(source: &str, adjust_args: impl Fn(Args) -> Args) -> TestCompile {
+            let mut timer = JobTimer::new(Instant::now());
+            let _ = env_logger::builder().is_test(true).try_init();
+
+            let temp_dir = tempdir().unwrap();
+            let build_dir = temp_dir.path();
+            let args = adjust_args(Args::for_test(build_dir, source));
+
+            info!("Compile {args:?}");
+
+            let (ir_paths, be_paths) = init_paths(&args).unwrap();
+            let config = Config::new(args).unwrap();
+
+            let prev_inputs = config.init().unwrap();
+
+            let mut change_detector = ChangeDetector::new(
+                config.clone(),
+                ir_paths.clone(),
+                be_paths.clone(),
+                prev_inputs,
+                &mut timer,
+            )
+            .unwrap();
             let build_dir = change_detector.be_paths().build_dir().to_path_buf();
-            TestCompile {
+
+            let fe_context = FeContext::new_root(
+                config.args.flags(),
+                ir_paths,
+                change_detector.current_inputs().clone(),
+            );
+            let be_context =
+                BeContext::new_root(config.args.flags(), be_paths, &fe_context.read_only());
+            let mut result = TestCompile {
+                _temp_dir: temp_dir,
                 build_dir,
+                args: config.args.clone(),
                 work_executed: HashSet::new(),
                 glyphs_changed: change_detector.glyphs_changed(),
                 glyphs_deleted: change_detector.glyphs_deleted(),
                 fe_context,
                 be_context,
-            }
+                raw_font: Vec::new(),
+            };
+
+            let mut workload = create_workload(&mut change_detector, timer).unwrap();
+            let completed = workload.run_for_test(&result.fe_context, &result.be_context);
+
+            change_detector.finish_successfully().unwrap();
+            result.work_executed = completed;
+
+            write_font_file(&config.args, &result.be_context).unwrap();
+
+            result.raw_font = fs::read(result.build_dir.join("font.ttf")).unwrap();
+
+            result
         }
 
         fn get_glyph_index(&self, name: &str) -> Option<u32> {
@@ -501,6 +557,10 @@ mod tests {
 
         fn glyphs(&self) -> Glyphs {
             Glyphs::new(&self.build_dir)
+        }
+
+        fn font(&self) -> FontRef {
+            FontRef::new(&self.raw_font).unwrap()
         }
     }
 
@@ -569,58 +629,8 @@ mod tests {
         }
     }
 
-    fn compile(args: Args) -> TestCompile {
-        let mut timer = JobTimer::new(Instant::now());
-        let _ = env_logger::builder().is_test(true).try_init();
-
-        info!("Compile {args:?}");
-
-        let (ir_paths, be_paths) = init_paths(&args).unwrap();
-        let config = Config::new(args).unwrap();
-
-        let prev_inputs = config.init().unwrap();
-
-        let mut change_detector = ChangeDetector::new(
-            config.clone(),
-            ir_paths.clone(),
-            be_paths.clone(),
-            prev_inputs,
-            &mut timer,
-        )
-        .unwrap();
-
-        let mut workload = create_workload(&mut change_detector, timer).unwrap();
-
-        // Try to do the work
-        // As we currently don't stress dependencies just run one by one
-        // This will likely need to change when we start doing things like glyphs with components
-
-        let fe_root = FeContext::new_root(
-            config.args.flags(),
-            ir_paths,
-            workload.change_detector.current_inputs().clone(),
-        );
-        let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root.read_only());
-        let mut result = TestCompile::new(
-            workload.change_detector,
-            fe_root.read_only(),
-            be_root.copy_read_only(),
-        );
-        let completed = workload.run_for_test(&fe_root, &be_root);
-
-        change_detector.finish_successfully().unwrap();
-        result.work_executed = completed;
-
-        write_font_file(&config.args, &be_root).unwrap();
-
-        result
-    }
-
     fn assert_compile_work(source: &str, glyphs: Vec<&str>) {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-
-        let result = compile(Args::for_test(build_dir, source));
+        let result = TestCompile::compile_source(source);
         let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
 
         let mut expected = vec![
@@ -686,47 +696,6 @@ mod tests {
         assert_eq!(expected, completed);
     }
 
-    /// A convenience type for the common case of "just compile this source with
-    /// default arguments".
-    ///
-    /// When you need more control, just the `compile` fn/`TestCompile` type
-    /// directly
-    struct SimpleCompile {
-        /// we need to hold onto this because when it goes out of scope,
-        /// the directory is deleted.
-        _temp_dir: TempDir,
-        /// the font bytes
-        buf: Vec<u8>,
-        result: TestCompile,
-    }
-
-    impl SimpleCompile {
-        fn compile(source: &str) -> std::io::Result<Self> {
-            let temp_dir = tempdir()?;
-            let build_dir = temp_dir.path();
-            let result = compile(Args::for_test(build_dir, source));
-            let font_file = build_dir.join("font.ttf");
-            let buf = fs::read(font_file)?;
-            Ok(Self {
-                _temp_dir: temp_dir,
-                buf,
-                result,
-            })
-        }
-
-        fn font(&self) -> Result<FontRef, ReadError> {
-            FontRef::new(&self.buf)
-        }
-    }
-
-    // deref to the inner TestCompile obj so existing tests are unchanged
-    impl std::ops::Deref for SimpleCompile {
-        type Target = TestCompile;
-        fn deref(&self) -> &Self::Target {
-            &self.result
-        }
-    }
-
     #[test]
     fn compile_work_for_designspace() {
         assert_compile_work("wght_var.designspace", vec!["bar", "plus"])
@@ -749,17 +718,14 @@ mod tests {
 
     #[test]
     fn second_compile_is_nop() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-
-        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
+        let result = TestCompile::compile_source("wght_var.designspace");
         assert_eq!(
             IndexSet::from(["bar".into(), "plus".into()]),
             result.glyphs_changed
         );
         assert!(result.glyphs_deleted.is_empty());
 
-        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
+        let result = TestCompile::compile_again(&result);
         assert!(result.work_executed.is_empty());
         assert!(result.glyphs_changed.is_empty());
         assert!(result.glyphs_deleted.is_empty());
@@ -768,16 +734,13 @@ mod tests {
     #[test]
     fn second_compile_only_glyph() {
         // glyph depends on static metadata, which isn't going to run
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-
-        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
+        let result = TestCompile::compile_source("wght_var.designspace");
         assert!(result.work_executed.len() > 1);
 
-        let glyph_ir_file = build_dir.join("glyph_ir/bar.yml");
+        let glyph_ir_file = result.build_dir.join("glyph_ir/bar.yml");
         fs::remove_file(&glyph_ir_file).unwrap();
 
-        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
+        let result = TestCompile::compile_again(&result);
         assert!(glyph_ir_file.exists(), "{glyph_ir_file:?}");
         let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
         completed.sort();
@@ -808,15 +771,12 @@ mod tests {
 
     #[test]
     fn second_compile_only_kerning() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-
-        let result = compile(Args::for_test(build_dir, "glyphs3/WghtVar.glyphs"));
+        let result = TestCompile::compile_source("glyphs3/WghtVar.glyphs");
         assert!(result.work_executed.len() > 1);
 
-        fs::remove_file(build_dir.join("kerning.yml")).unwrap();
+        fs::remove_file(result.build_dir.join("kerning.yml")).unwrap();
 
-        let result = compile(Args::for_test(build_dir, "glyphs3/WghtVar.glyphs"));
+        let result = TestCompile::compile_again(&result);
         let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
         completed.sort();
         assert_eq!(
@@ -836,21 +796,18 @@ mod tests {
 
     #[test]
     fn deleted_ir_recreated() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-
-        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
+        let result = TestCompile::compile_source("wght_var.designspace");
         assert_eq!(
             IndexSet::from(["bar".into(), "plus".into()]),
             result.glyphs_changed
         );
         assert!(result.glyphs_deleted.is_empty());
 
-        let bar_ir = build_dir.join("glyph_ir/bar.yml");
+        let bar_ir = result.build_dir.join("glyph_ir/bar.yml");
         assert!(bar_ir.is_file(), "no file {bar_ir:#?}");
         fs::remove_file(bar_ir).unwrap();
 
-        let result = compile(Args::for_test(build_dir, "wght_var.designspace"));
+        let result = TestCompile::compile_again(&result);
         assert_eq!(IndexSet::from(["bar".into()]), result.glyphs_changed);
         assert!(result.glyphs_deleted.is_empty());
     }
@@ -859,16 +816,12 @@ mod tests {
         source: &str,
         adjust_args: impl Fn(&mut Args),
     ) -> TestCompile {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let mut args = Args::for_test(build_dir, source);
-        adjust_args(&mut args);
-        let result = compile(args);
+        let result = TestCompile::compile(source, |mut args| {
+            adjust_args(&mut args);
+            args
+        });
 
-        let font_file = build_dir.join("font.ttf");
-        assert!(font_file.exists());
-        let buf = fs::read(font_file).unwrap();
-        let font = FontRef::new(&buf).unwrap();
+        let font = result.font();
 
         let gpos = font.gpos();
         let gsub = font.gsub();
@@ -903,7 +856,7 @@ mod tests {
         let source_dir = temp_dir.path().join("sources");
         let build_dir = temp_dir.path().join("build");
         fs::create_dir(&source_dir).unwrap();
-        fs::create_dir(&build_dir).unwrap();
+        fs::create_dir(build_dir).unwrap();
 
         copy_testdata(
             [
@@ -919,7 +872,7 @@ mod tests {
             .join("fea_include.designspace")
             .canonicalize()
             .unwrap();
-        compile(Args::for_test(&build_dir, source.to_str().unwrap()));
+        let result = TestCompile::compile_source(source.to_str().unwrap());
 
         let shared_fea = source_dir.join("fea_include_ufo/common.fea");
         fs::write(
@@ -928,7 +881,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = compile(Args::for_test(&build_dir, source.to_str().unwrap()));
+        let result = TestCompile::compile_again(&result);
 
         // Features and things downstream of features should rebuild
         let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
@@ -948,15 +901,11 @@ mod tests {
         );
     }
 
-    fn build_contour_and_composite_glyph(
-        temp_dir: &TempDir,
-        prefer_simple_glyphs: bool,
-    ) -> ir::Glyph {
-        let build_dir = temp_dir.path();
-
-        let mut args = Args::for_test(build_dir, "glyphs2/MixedContourComponent.glyphs");
-        args.prefer_simple_glyphs = prefer_simple_glyphs; // <-- important :)
-        let result = compile(args);
+    fn build_contour_and_composite_glyph(prefer_simple_glyphs: bool) -> (TestCompile, ir::Glyph) {
+        let result = TestCompile::compile("glyphs2/MixedContourComponent.glyphs", |mut args| {
+            args.prefer_simple_glyphs = prefer_simple_glyphs; // <-- important :)
+            args
+        });
 
         let glyph = result
             .fe_context
@@ -964,7 +913,7 @@ mod tests {
             .get(&FeWorkIdentifier::Glyph("contour_and_component".into()));
 
         assert_eq!(1, glyph.sources().len());
-        (*glyph).clone()
+        (result, (*glyph).clone())
     }
 
     fn read_file(path: &Path) -> Vec<u8> {
@@ -987,12 +936,12 @@ mod tests {
 
     #[test]
     fn resolve_contour_and_composite_glyph_in_non_legacy_mode() {
-        let temp_dir = tempdir().unwrap();
-        let glyph = build_contour_and_composite_glyph(&temp_dir, false);
+        let (result, glyph) = build_contour_and_composite_glyph(false);
         assert!(glyph.default_instance().contours.is_empty(), "{glyph:?}");
         assert_eq!(2, glyph.default_instance().components.len(), "{glyph:?}");
 
-        let RawGlyph::Composite(glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
+        let RawGlyph::Composite(glyph) = read_be_glyph(&result.build_dir, glyph.name.as_str())
+        else {
             panic!("Expected a simple glyph");
         };
         let raw_glyph = dump_table(&glyph).unwrap();
@@ -1003,12 +952,11 @@ mod tests {
 
     #[test]
     fn resolve_contour_and_composite_glyph_in_legacy_mode() {
-        let temp_dir = tempdir().unwrap();
-        let glyph = build_contour_and_composite_glyph(&temp_dir, true);
+        let (result, glyph) = build_contour_and_composite_glyph(true);
         assert!(glyph.default_instance().components.is_empty(), "{glyph:?}");
         assert_eq!(2, glyph.default_instance().contours.len(), "{glyph:?}");
 
-        let RawGlyph::Simple(glyph) = read_be_glyph(temp_dir.path(), glyph.name.as_str()) else {
+        let RawGlyph::Simple(glyph) = read_be_glyph(&result.build_dir, glyph.name.as_str()) else {
             panic!("Expected a simple glyph");
         };
         assert_eq!(2, glyph.contours().len());
@@ -1016,11 +964,9 @@ mod tests {
 
     #[test]
     fn compile_simple_binary_glyph() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        compile(Args::for_test(build_dir, "static.designspace"));
+        let result = TestCompile::compile_source("static.designspace");
 
-        let RawGlyph::Simple(glyph) = read_be_glyph(build_dir, "bar") else {
+        let RawGlyph::Simple(glyph) = read_be_glyph(&result.build_dir, "bar") else {
             panic!("Expected a simple glyph");
         };
 
@@ -1042,7 +988,7 @@ mod tests {
 
     #[test]
     fn compile_simple_glyphs_to_glyf_loca() {
-        let result = SimpleCompile::compile("static.designspace").unwrap();
+        let result = TestCompile::compile_source("static.designspace");
 
         // See resources/testdata/Static-Regular.ufo/glyphs
         // generated .notdef, 8 points, 2 contours
@@ -1068,7 +1014,7 @@ mod tests {
 
     #[test]
     fn compile_variable_simple_glyph_with_implied_oncurves() {
-        let result = SimpleCompile::compile("glyphs3/Oswald-O.glyphs").unwrap();
+        let result = TestCompile::compile_source("glyphs3/Oswald-O.glyphs");
 
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
@@ -1099,7 +1045,7 @@ mod tests {
 
     #[test]
     fn compile_composite_glyphs_has_expected_glyph_types() {
-        let result = SimpleCompile::compile("glyphs2/Component.glyphs").unwrap();
+        let result = TestCompile::compile_source("glyphs2/Component.glyphs");
         // Per source, glyphs should be period, comma, non_uniform_scale
         // Period is simple, the other two use it as a component
         let glyph_data = result.glyphs();
@@ -1127,9 +1073,7 @@ mod tests {
 
     #[test]
     fn compile_composite_glyphs_to_glyf_loca() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
+        let result = TestCompile::compile_source("glyphs2/Component.glyphs");
         // non-uniform scaling of period
         let period_idx = result.get_glyph_index("period").unwrap();
         let non_uniform_scale_idx = result.get_glyph_index("non_uniform_scale").unwrap();
@@ -1170,9 +1114,7 @@ mod tests {
 
     #[test]
     fn compile_composite_glyphs_to_glyf_loca_applies_transforms() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let result = compile(Args::for_test(build_dir, "glyphs2/Component.glyphs"));
+        let result = TestCompile::compile_source("glyphs2/Component.glyphs");
 
         let gid = result.get_glyph_index("simple_transform_again").unwrap();
         let glyph_data = result.glyphs();
@@ -1195,11 +1137,10 @@ mod tests {
 
     #[test]
     fn eliminate_2x2_transforms() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let mut args = Args::for_test(build_dir, "glyphs2/Component.glyphs");
-        args.decompose_transformed_components = true;
-        let result = compile(args);
+        let result = TestCompile::compile("glyphs2/Component.glyphs", |mut args| {
+            args.decompose_transformed_components = true;
+            args
+        });
 
         let glyph_data = result.glyphs();
         let glyphs = glyph_data.read();
@@ -1221,7 +1162,7 @@ mod tests {
 
     #[test]
     fn writes_cmap() {
-        let result = SimpleCompile::compile("glyphs2/Component.glyphs").unwrap();
+        let result = TestCompile::compile_source("glyphs2/Component.glyphs");
 
         let raw_cmap = dump_table(&result.be_context.cmap.get().0).unwrap();
         let font_data = FontData::new(&raw_cmap);
@@ -1272,7 +1213,7 @@ mod tests {
 
     #[test]
     fn hmtx_of_one() {
-        let result = SimpleCompile::compile("glyphs2/NotDef.glyphs").unwrap();
+        let result = TestCompile::compile_source("glyphs2/NotDef.glyphs");
 
         let raw_hmtx = result.be_context.hmtx.get();
         let hmtx = Hmtx::read_with_args(FontData::new(raw_hmtx.get()), &(1, 1)).unwrap();
@@ -1288,7 +1229,7 @@ mod tests {
 
     #[test]
     fn metrics_and_limits_of_mono() {
-        let result = SimpleCompile::compile("glyphs2/Mono.glyphs").unwrap();
+        let result = TestCompile::compile_source("glyphs2/Mono.glyphs");
 
         let arc_hhea = result.be_context.hhea.get();
         let Some(hhea) = &arc_hhea.0 else {
@@ -1332,8 +1273,8 @@ mod tests {
 
     #[test]
     fn wght_var_has_expected_tables() {
-        let result = SimpleCompile::compile("wght_var.designspace").unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source("wght_var.designspace");
+        let font = result.font();
 
         assert_eq!(
             vec![
@@ -1362,8 +1303,8 @@ mod tests {
 
     #[test]
     fn compile_mov_xy_and_move_around() {
-        let result = SimpleCompile::compile("mov_xy.designspace").unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source("mov_xy.designspace");
+        let font = result.font();
         // Confirm movx then movy
         assert_eq!(
             vec!["movx", "movy"],
@@ -1484,7 +1425,7 @@ mod tests {
 
     #[test]
     fn compile_generates_notdef() {
-        let result = SimpleCompile::compile("glyphs2/WghtVar.glyphs").unwrap();
+        let result = TestCompile::compile_source("glyphs2/WghtVar.glyphs");
 
         assert!(!result
             .fe_context
@@ -1500,7 +1441,7 @@ mod tests {
                 .glyph_id(&GlyphName::NOTDEF)
         );
 
-        let font = result.font().unwrap();
+        let font = result.font();
 
         // Character 0x0000 (NULL) != '.notdef' glyph, and neither are any other
         // characters actually, because '.notdef' (glyph index 0) means the absence
@@ -1512,8 +1453,8 @@ mod tests {
 
     #[test]
     fn compile_glyphs_font_with_weight_axis() {
-        let result = SimpleCompile::compile("glyphs2/WghtVar.glyphs").unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source("glyphs2/WghtVar.glyphs");
+        let font = result.font();
 
         assert_eq!(
             vec![(Tag::from_str("wght").unwrap(), 400.0, 400.0, 700.0)],
@@ -1536,8 +1477,8 @@ mod tests {
 
     #[test]
     fn compile_glyphs_font_with_avar() {
-        let result = SimpleCompile::compile("glyphs2/WghtVar_Avar.glyphs").unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source("glyphs2/WghtVar_Avar.glyphs");
+        let font = result.font();
         // Default 400 is important, it means we found the index of Regular
         assert_eq!(
             vec![(Tag::from_str("wght").unwrap(), 300.0, 400.0, 700.0)],
@@ -1572,18 +1513,17 @@ mod tests {
 
     #[test]
     fn compile_without_ir() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let mut args = Args::for_test(build_dir, "glyphs2/WghtVar.glyphs");
-        args.incremental = false;
-        compile(args);
+        let result = TestCompile::compile("glyphs2/WghtVar.glyphs", |mut args| {
+            args.incremental = false;
+            args
+        });
 
-        let outputs = fs::read_dir(build_dir)
+        let outputs = fs::read_dir(&result.build_dir)
             .unwrap()
             .map(|e| {
                 e.unwrap()
                     .path()
-                    .strip_prefix(build_dir)
+                    .strip_prefix(&result.build_dir)
                     .unwrap()
                     .to_owned()
             })
@@ -1603,8 +1543,8 @@ mod tests {
     }
 
     fn assert_named_instances(source: &str, expected: Vec<(String, Vec<(&str, f32)>)>) {
-        let result = SimpleCompile::compile(source).unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source(source);
+        let font = result.font();
 
         let name = font.name().unwrap();
         let fvar = font.fvar().unwrap();
@@ -1668,8 +1608,8 @@ mod tests {
     }
 
     fn assert_fs_selection(source: &str, expected: SelectionFlags) {
-        let result = SimpleCompile::compile(source).unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source(source);
+        let font = result.font();
         let os2 = font.os2().unwrap();
         assert_eq!(expected, os2.fs_selection());
     }
@@ -1692,8 +1632,8 @@ mod tests {
 
     #[test]
     fn populates_unicode_range() {
-        let result = SimpleCompile::compile("static.designspace").unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source("static.designspace");
+        let font = result.font();
         let os2 = font.os2().unwrap();
 
         assert_eq!(
@@ -1710,8 +1650,8 @@ mod tests {
 
     #[test]
     fn captures_vendor_id() {
-        let result = SimpleCompile::compile("glyphs3/TheBestNames.glyphs").unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source("glyphs3/TheBestNames.glyphs");
+        let font = result.font();
 
         let os2 = font.os2().unwrap();
         assert_eq!(Tag::new(b"RODS"), os2.ach_vend_id());
@@ -1723,8 +1663,8 @@ mod tests {
         max_composite_points: u16,
         max_composite_contours: u16,
     ) {
-        let result = SimpleCompile::compile(src).unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source(src);
+        let font = result.font();
         let maxp = font.maxp().unwrap();
 
         assert_eq!(
@@ -1757,8 +1697,8 @@ mod tests {
     }
 
     fn assert_created_set(source: &str) {
-        let result = SimpleCompile::compile(source).unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source(source);
+        let font = result.font();
         let head = font.head().unwrap();
 
         // TIL Mac has an epoch of it's own
@@ -1786,8 +1726,8 @@ mod tests {
 
     #[test]
     fn generates_stat() {
-        let result = SimpleCompile::compile("wght_var.designspace").unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source("wght_var.designspace");
+        let font = result.font();
 
         let name = font.name().unwrap();
         let stat = font.stat().unwrap();
@@ -1807,7 +1747,7 @@ mod tests {
     }
 
     fn assert_simple_kerning(source: &str) {
-        let result = SimpleCompile::compile(source).unwrap();
+        let result = TestCompile::compile_source(source);
 
         let kerning = result.fe_context.kerning.get();
 
@@ -1907,8 +1847,8 @@ mod tests {
     }
 
     fn assert_intermediate_layer(src: &str) {
-        let result = SimpleCompile::compile(src).unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source(src);
+        let font = result.font();
 
         assert_eq!(
             vec!["CPHT", "wght"],
@@ -1990,9 +1930,9 @@ mod tests {
 
     #[test]
     fn empty_glyph_is_zero_length() {
-        let result = SimpleCompile::compile("glyphs2/WghtVar.glyphs").unwrap();
+        let result = TestCompile::compile_source("glyphs2/WghtVar.glyphs");
         let space_idx = result.get_glyph_index("space").unwrap() as usize;
-        let font = result.font().unwrap();
+        let font = result.font();
 
         let is_long = match font.head().unwrap().index_to_loc_format() {
             0 => false,
@@ -2008,22 +1948,16 @@ mod tests {
     }
 
     fn assert_no_compile_features(source: &str, table_tags: &[&[u8; 4]]) {
-        let temp_dir = tempdir().unwrap();
-
-        let default_build_dir = temp_dir.path().join("default");
         // default is to skip_features=false
-        compile(Args::for_test(&default_build_dir, source));
+        let default_result = TestCompile::compile_source(source);
 
-        let nofea_build_dir = temp_dir.path().join("nofea");
-        let mut args = Args::for_test(&nofea_build_dir, source);
-        args.skip_features = true;
-        compile(args);
+        let nofea_result = TestCompile::compile(source, |mut args| {
+            args.skip_features = true;
+            args
+        });
 
-        let buf1 = fs::read(default_build_dir.join("font.ttf")).unwrap();
-        let font_with_fea = FontRef::new(&buf1).unwrap();
-
-        let buf2 = fs::read(nofea_build_dir.join("font.ttf")).unwrap();
-        let font_without_fea = FontRef::new(&buf2).unwrap();
+        let font_with_fea = default_result.font();
+        let font_without_fea = nofea_result.font();
 
         for table_tag in table_tags {
             let tag = Tag::new(table_tag);
@@ -2059,20 +1993,19 @@ mod tests {
 
     #[test]
     fn compile_simple_glyph_keep_direction() {
-        let temp_dir = tempdir().unwrap();
-        let build_dir = temp_dir.path();
-        let mut args = Args::for_test(build_dir, "glyphs3/WghtVar.glyphs");
-        // first compile with default args (keep_direction=false)
-        compile(args.clone());
+        let source = "glyphs3/WghtVar.glyphs";
 
-        let ir_glyph = read_ir_glyph(build_dir, "hyphen");
+        // first compile with default args (keep_direction=false)
+        let default_result = TestCompile::compile_source(source);
+
+        let ir_glyph = read_ir_glyph(&default_result.build_dir, "hyphen");
         let ir_default_instance = ir_glyph.default_instance();
         assert_eq!(
             &ir_default_instance.contours[0].to_svg(),
             "M131,330 L131,250 L470,250 L470,330 L131,330 Z"
         );
 
-        let RawGlyph::Simple(glyph) = read_be_glyph(build_dir, "hyphen") else {
+        let RawGlyph::Simple(glyph) = read_be_glyph(&default_result.build_dir, "hyphen") else {
             panic!("Expected a simple glyph");
         };
 
@@ -2092,12 +2025,16 @@ mod tests {
                 .copied()
                 .collect::<Vec<_>>()
         );
+        drop(default_result); // let's not use that by mistake
 
         // recompile with --keep-direction
-        args.keep_direction = true;
-        compile(args);
+        let keep_direction_result = TestCompile::compile(source, |mut args| {
+            args.keep_direction = true;
+            args
+        });
 
-        let RawGlyph::Simple(glyph) = read_be_glyph(build_dir, "hyphen") else {
+        let RawGlyph::Simple(glyph) = read_be_glyph(&keep_direction_result.build_dir, "hyphen")
+        else {
             panic!("Expected a simple glyph");
         };
 
@@ -2130,10 +2067,10 @@ mod tests {
         // VarStore (without a mapping) can be built. In this particular case, this
         // turns out to be more compact than the equivalent indirect VarStore
         // so we check it gets preferred over the latter.
-        let result =
-            SimpleCompile::compile("HVAR/SingleModel_Direct/HVARSingleModelDirect.designspace")
-                .unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source(
+            "HVAR/SingleModel_Direct/HVARSingleModelDirect.designspace",
+        );
+        let font = result.font();
         let num_glyphs = font.maxp().unwrap().num_glyphs();
         assert_eq!(num_glyphs, 14);
         let hvar = font.hvar().unwrap();
@@ -2191,10 +2128,10 @@ mod tests {
         // share the same deltas (the number was found empirically), enough to tip
         // the balance and make an indirect store more compact despite the overhead
         // of the additional DeltaSetIndexMap.
-        let result =
-            SimpleCompile::compile("HVAR/SingleModel_Indirect/HVARSingleModelIndirect.designspace")
-                .unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source(
+            "HVAR/SingleModel_Indirect/HVARSingleModelIndirect.designspace",
+        );
+        let font = result.font();
         let num_glyphs = font.maxp().unwrap().num_glyphs();
         assert_eq!(num_glyphs, 24);
         let hvar = font.hvar().unwrap();
@@ -2254,10 +2191,10 @@ mod tests {
         // Some glyphs are 'sparse' and define different sets of locations, so multiple
         // sub-models are required to compute the advance width deltas.
         // FontTools always builds an indirect VarStore in this case and we do the same.
-        let result =
-            SimpleCompile::compile("HVAR/MultiModel_Indirect/HVARMultiModelIndirect.designspace")
-                .unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source(
+            "HVAR/MultiModel_Indirect/HVARMultiModelIndirect.designspace",
+        );
+        let font = result.font();
         let num_glyphs = font.maxp().unwrap().num_glyphs();
         assert_eq!(num_glyphs, 5);
         let hvar = font.hvar().unwrap();
@@ -2359,8 +2296,8 @@ mod tests {
 
     #[test]
     fn compile_basic_gpos_mark_base() {
-        let result = SimpleCompile::compile("glyphs3/WghtVar_Anchors.glyphs").unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source("glyphs3/WghtVar_Anchors.glyphs");
+        let font = result.font();
         let gpos = font.gpos().unwrap();
 
         let base_gid = result.get_gid("A");
@@ -2428,8 +2365,8 @@ mod tests {
 
     #[test]
     fn compile_mark_mark() {
-        let result = SimpleCompile::compile("glyphs3/Oswald-AE-comb.glyphs").unwrap();
-        let font = result.font().unwrap();
+        let result = TestCompile::compile_source("glyphs3/Oswald-AE-comb.glyphs");
+        let font = result.font();
         let gpos = font.gpos().unwrap();
         let acutecomb = result.get_gid("acutecomb");
         let brevecomb = result.get_gid("brevecomb");
@@ -2508,8 +2445,7 @@ mod tests {
     }
 
     fn assert_noexport(source: &str) {
-        let compile = SimpleCompile::compile(source).unwrap();
-        let result = compile.result;
+        let result = TestCompile::compile_source(source);
 
         assert!(result.get_glyph_index("hyphen").is_none());
         let fe_hyphen_consumer = result
@@ -2545,8 +2481,8 @@ mod tests {
     }
 
     fn assert_fs_type(source: &str, expected_fs_type: u16) {
-        let compile = SimpleCompile::compile(source).unwrap();
-        let os2 = compile.font().unwrap().os2().unwrap();
+        let compile = TestCompile::compile_source(source);
+        let os2 = compile.font().os2().unwrap();
 
         assert_eq!(expected_fs_type, os2.fs_type());
     }
@@ -2563,8 +2499,8 @@ mod tests {
 
     #[test]
     fn one_lookup_per_group() {
-        let compile = SimpleCompile::compile("glyphs3/Oswald-AE-comb.glyphs").unwrap();
-        let gpos = compile.font().unwrap().gpos().unwrap();
+        let compile = TestCompile::compile_source("glyphs3/Oswald-AE-comb.glyphs");
+        let gpos = compile.font().gpos().unwrap();
 
         // We had a bug where it was 2
         assert_eq!(1, mark_base_lookups(&gpos).len());
