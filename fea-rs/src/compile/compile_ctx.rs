@@ -1094,15 +1094,13 @@ impl<'a> CompilationCtx<'a> {
         if let Some(adv) = record.advance() {
             let adv = self.resolve_metric(&adv);
             if self.vertical_feature.in_eligible_vertical_feature() {
-                return ValueRecord {
-                    y_advance: Some(adv),
-                    ..Default::default()
-                };
+                return ValueRecord::new()
+                    .with_y_advance(adv.default)
+                    .with_y_advance_device(adv.device_or_deltas);
             } else {
-                return ValueRecord {
-                    x_advance: Some(adv),
-                    ..Default::default()
-                };
+                return ValueRecord::new()
+                    .with_x_advance(adv.default)
+                    .with_x_advance_device(adv.device_or_deltas);
             }
         }
 
@@ -1141,7 +1139,6 @@ impl<'a> CompilationCtx<'a> {
         result
     }
 
-    //fn resolve_metric(&mut self, metric: &typed::Metric) -> (i16, Option<PendingVariationIndex>) {
     fn resolve_metric(&mut self, metric: &typed::Metric) -> Metric {
         match metric {
             typed::Metric::Scalar(value) => value.parse_signed().into(),

@@ -53,7 +53,14 @@ pub(crate) use helpers::ClassDefBuilder2;
 // This exists because we use it to implement `LookupBuilder<T>`
 pub(crate) trait Builder {
     type Output;
-    // the var_store is only used in GPOS, but we pass it everywhere
+    // the var_store is only used in GPOS, but we pass it everywhere.
+    // This is annoying but feels like the lesser of two evils. It's easy to
+    // ignore this argument where it isn't used, and this makes the logic
+    // in LookupBuilder simpler, since it is identical for GPOS/GSUB.
+    //
+    // It would be nice if this could then be Option<&mut T>, but that type is
+    // annoying to work with, as Option<&mut _> doesn't impl Copy, so you need
+    // to do a dance anytime you use it.
     fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output;
 }
 
