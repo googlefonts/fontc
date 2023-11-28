@@ -24,15 +24,6 @@ pub fn create_avar_work() -> Box<BeWork> {
     Box::new(AvarWork {})
 }
 
-/// Return true if the SegmentMaps is an identity map
-// TODO: make this a method of SegmentMaps in write-fonts
-fn is_identity(segment_map: &SegmentMaps) -> bool {
-    segment_map
-        .axis_value_maps
-        .iter()
-        .all(|av| av.from_coordinate == av.to_coordinate)
-}
-
 /// Return a default avar SegmentMaps containing the required {-1:-1, 0:0, 1:1} maps
 fn default_segment_map() -> SegmentMaps {
     // The OT avar spec would allow us to leave the axis value maps empty, however some
@@ -122,7 +113,7 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
         // only when all the segment maps are uninteresting, we can omit avar
         let avar = axis_segment_maps
             .iter()
-            .any(|sm| !is_identity(sm))
+            .any(|segmap| !segmap.is_identity())
             .then(|| Avar::new(axis_segment_maps));
         context.avar.set_unconditionally(avar.into());
         Ok(())
