@@ -70,17 +70,17 @@ pub(crate) fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> R
                     last_flag = Some(flags);
                 }
 
-                if filter_set_id != last_filter_set && filter_set_id.is_some() {
-                    // writing it this way (not 'if let') to avoid more nesting
-                    let filter_id = filter_set_id.unwrap();
-                    let filter_set = mark_glyph_sets
-                        .as_ref()
-                        .map(|gsets| gsets.coverages().get(filter_id as usize))
-                        .transpose()
-                        .unwrap();
-                    let glyphs = filter_set.map(|cov| cov.iter().collect::<GlyphSet>());
-                    if let Some(glyphs) = glyphs {
-                        writeln!(f, "# filter glyphs: {}", glyphs.printer(names))?;
+                if filter_set_id != last_filter_set {
+                    if let Some(filter_id) = filter_set_id {
+                        let filter_set = mark_glyph_sets
+                            .as_ref()
+                            .map(|gsets| gsets.coverages().get(filter_id as usize))
+                            .transpose()
+                            .unwrap();
+                        let glyphs = filter_set.map(|cov| cov.iter().collect::<GlyphSet>());
+                        if let Some(glyphs) = glyphs {
+                            writeln!(f, "# filter glyphs: {}", glyphs.printer(names))?;
+                        }
                     }
                 }
                 last_filter_set = filter_set_id;
