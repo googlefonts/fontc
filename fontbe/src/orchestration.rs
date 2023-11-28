@@ -8,7 +8,9 @@ use std::{
 };
 
 use fea_rs::{
-    compile::{PairPosBuilder, ValueRecord as ValueRecordBuilder},
+    compile::{
+        MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder, ValueRecord as ValueRecordBuilder,
+    },
     GlyphMap, GlyphSet,
 };
 use fontdrasil::{
@@ -16,7 +18,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{Anchor, StaticMetadata},
+    ir::Anchor,
     orchestration::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
         PersistentStorage, WorkId as FeWorkIdentifier,
@@ -24,7 +26,7 @@ use fontir::{
     variations::VariationRegion,
 };
 use log::trace;
-use ordered_float::OrderedFloat;
+
 use serde::{Deserialize, Serialize};
 
 use smol_str::SmolStr;
@@ -49,14 +51,14 @@ use write_fonts::{
         os2::Os2,
         post::Post,
         stat::Stat,
-        variations::{Tuple, VariationRegion as BeVariationRegion},
+        variations::Tuple,
     },
     types::{F2Dot14, GlyphId, Tag},
     validate::Validate,
     FontWrite,
 };
 
-use crate::{error::Error, features::resolve_variable_metric, paths::Paths};
+use crate::{error::Error, paths::Paths};
 
 /// What exactly is being assembled from glyphs?
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -291,102 +293,6 @@ pub(crate) struct MarkGroup {
     pub(crate) marks: Vec<(GlyphName, Anchor)>,
 }
 
-/// A mark or base entry, prepped for submission to the fea-rs builder
-#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct MarkEntry {
-    pub(crate) gid: GlyphId,
-    x_default: i16,
-    x_deltas: Vec<(BeVariationRegion, i16)>,
-    y_default: i16,
-    y_deltas: Vec<(BeVariationRegion, i16)>,
-}
-
-impl MarkEntry {
-    pub(crate) fn new(
-        static_metadata: &StaticMetadata,
-        gid: GlyphId,
-        anchor: &Anchor,
-    ) -> Result<Self, Error> {
-        // squish everything into the shape expected by `resolve_variable_metric`
-        let (x_values, y_values) = anchor
-            .positions
-            .iter()
-            .map(|(loc, pt)| {
-                (
-                    (loc.clone(), OrderedFloat::from(pt.x as f32)),
-                    (loc.clone(), OrderedFloat::from(pt.y as f32)),
-                )
-            })
-            .unzip();
-
-        let (x_default, x_deltas) = resolve_variable_metric(static_metadata, &x_values)?;
-        let (y_default, y_deltas) = resolve_variable_metric(static_metadata, &y_values)?;
-
-        Ok(Self {
-            gid,
-            x_default,
-            x_deltas,
-            y_default,
-            y_deltas,
-        })
-    }
-
-    pub(crate) fn create_anchor_table(&self) -> fea_rs::compile::Anchor {
-        fea_rs::compile::Anchor::new(self.x_default, self.y_default)
-            .with_x_device(self.x_deltas.clone())
-            .with_y_device(self.y_deltas.clone())
-    }
-}
-
-#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct MarkBase {
-    pub(crate) class: SmolStr,
-    pub(crate) marks: Vec<MarkEntry>,
-    pub(crate) bases: Vec<MarkEntry>,
-}
-
-impl MarkBase {
-    pub(crate) fn new(class: SmolStr) -> Self {
-        MarkBase {
-            class,
-            ..Default::default()
-        }
-    }
-
-    pub(crate) fn insert_mark(&mut self, entry: MarkEntry) {
-        self.marks.push(entry);
-    }
-
-    pub(crate) fn insert_base(&mut self, entry: MarkEntry) {
-        self.bases.push(entry);
-    }
-}
-
-#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct MarkMark {
-    pub(crate) class: SmolStr,
-    pub(crate) filter_set: Vec<GlyphId>,
-    pub(crate) attaching_marks: Vec<MarkEntry>,
-    pub(crate) base_marks: Vec<MarkEntry>,
-}
-
-impl MarkMark {
-    pub(crate) fn new(class: SmolStr) -> Self {
-        MarkMark {
-            class,
-            ..Default::default()
-        }
-    }
-
-    pub(crate) fn insert_attaching_mark(&mut self, entry: MarkEntry) {
-        self.attaching_marks.push(entry);
-    }
-
-    pub(crate) fn insert_base_mark(&mut self, entry: MarkEntry) {
-        self.base_marks.push(entry)
-    }
-}
-
 /// Precomputed marks, to the extent possible given that we cannot create temporary var indices in advance.
 ///
 /// TODO: update once <https://github.com/googlefonts/fontc/issues/571> is fixed. Then we can build a
@@ -394,8 +300,8 @@ impl MarkMark {
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Marks {
     pub(crate) glyphmap: GlyphMap,
-    pub(crate) mark_base: Vec<MarkBase>,
-    pub(crate) mark_mark: Vec<MarkMark>,
+    pub(crate) mark_base: Vec<MarkToBaseBuilder>,
+    pub(crate) mark_mark: Vec<MarkToMarkBuilder>,
 }
 
 impl Persistable for Marks {

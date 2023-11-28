@@ -5,22 +5,21 @@ use std::{
     sync::Arc,
 };
 
+use fea_rs::compile::{MarkToBaseBuilder, MarkToMarkBuilder};
 use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
 
+use ordered_float::OrderedFloat;
 use write_fonts::types::GlyphId;
 
 use crate::{
     error::Error,
-    orchestration::{
-        AnyWorkId, BeWork, Context, MarkBase, MarkEntry, MarkGroup, MarkGroupName, MarkMark, Marks,
-        WorkId,
-    },
+    orchestration::{AnyWorkId, BeWork, Context, MarkGroup, MarkGroupName, Marks, WorkId},
 };
 use fontir::{
-    ir::{GlyphAnchors, GlyphOrder},
+    ir::{GlyphAnchors, GlyphOrder, StaticMetadata},
     orchestration::WorkId as FeWorkId,
 };
 
@@ -213,22 +212,18 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         for (group_name, group) in groups.iter() {
             // if we have bases *and* marks produce mark to base
             if !group.bases.is_empty() && !group.marks.is_empty() {
-                let mut mark_base = MarkBase::new(group_name.0.clone());
+                let mut mark_base = MarkToBaseBuilder::default();
 
                 for (mark_name, mark_anchor) in group.marks.iter() {
-                    mark_base.insert_mark(MarkEntry::new(
-                        &static_metadata,
-                        gid(mark_name)?,
-                        mark_anchor,
-                    )?);
+                    let gid = gid(mark_name)?;
+                    let anchor = resolve_anchor(mark_anchor, &static_metadata)?;
+                    mark_base.insert_mark(gid, group_name.0.clone(), anchor)?;
                 }
 
                 for (base_name, base_anchor) in group.bases.iter() {
-                    mark_base.insert_base(MarkEntry::new(
-                        &static_metadata,
-                        gid(base_name)?,
-                        base_anchor,
-                    )?);
+                    let gid = gid(base_name)?;
+                    let anchor = resolve_anchor(base_anchor, &static_metadata)?;
+                    mark_base.insert_base(gid, &group_name.0, anchor);
                 }
 
                 all_marks.mark_base.push(mark_base);
@@ -241,21 +236,15 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
                 continue;
             }
 
-            let mut mark_mark = MarkMark::new(group_name.0.clone());
+            let mut mark_mark = MarkToMarkBuilder::default();
             for (mark_name, mark_anchor) in marks {
-                mark_mark.insert_attaching_mark(MarkEntry::new(
-                    &static_metadata,
-                    gid(mark_name)?,
-                    mark_anchor,
-                )?);
+                let anchor = resolve_anchor(mark_anchor, &static_metadata)?;
+                mark_mark.insert_mark1(gid(mark_name)?, group_name.0.clone(), anchor)?;
             }
 
             for (base_name, base_anchor) in bases {
-                mark_mark.insert_base_mark(MarkEntry::new(
-                    &static_metadata,
-                    gid(base_name)?,
-                    base_anchor,
-                )?);
+                let anchor = resolve_anchor(base_anchor, &static_metadata)?;
+                mark_mark.insert_mark2(gid(base_name)?, &group_name.0, anchor);
             }
             all_marks.mark_mark.push(mark_mark);
         }
@@ -264,4 +253,28 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
 
         Ok(())
     }
+}
+
+fn resolve_anchor(
+    anchor: &fontir::ir::Anchor,
+    static_metadata: &StaticMetadata,
+) -> Result<fea_rs::compile::Anchor, Error> {
+    let (x_values, y_values) = anchor
+        .positions
+        .iter()
+        .map(|(loc, pt)| {
+            (
+                (loc.clone(), OrderedFloat::from(pt.x as f32)),
+                (loc.clone(), OrderedFloat::from(pt.y as f32)),
+            )
+        })
+        .unzip();
+
+    let (x_default, x_deltas) =
+        crate::features::resolve_variable_metric(static_metadata, &x_values)?;
+    let (y_default, y_deltas) =
+        crate::features::resolve_variable_metric(static_metadata, &y_values)?;
+    Ok(fea_rs::compile::Anchor::new(x_default, y_default)
+        .with_x_device(x_deltas)
+        .with_y_device(y_deltas))
 }
