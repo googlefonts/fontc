@@ -2,13 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use write_fonts::{
-    tables::{
-        layout::{LookupFlag, PendingVariationIndex},
-        variations::VariationRegion,
-    },
-    types::Tag,
-};
+use write_fonts::{tables::layout::LookupFlag, types::Tag};
 
 use crate::GlyphSet;
 
@@ -90,19 +84,6 @@ impl<'a> FeatureBuilder<'a> {
         let next_id = LookupId::External(self.lookups.len());
         self.lookups.push((next_id, lookup.0));
         next_id
-    }
-
-    /// Add a set of deltas to the `ItemVariationStore`.
-    ///
-    /// Returns a `PendingVariationIndex` which should be stored whereever a
-    /// `VariationIndex` table would be expected (it will be remapped during
-    /// compilation).
-    pub fn add_deltas<T: Into<i32>>(
-        &mut self,
-        deltas: Vec<(VariationRegion, T)>,
-    ) -> PendingVariationIndex {
-        let delta_set_id = self.tables.var_store().add_deltas(deltas);
-        PendingVariationIndex { delta_set_id }
     }
 
     /// Add lookups to every default language system.

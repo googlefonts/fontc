@@ -14,10 +14,9 @@ use write_fonts::{
     tables::{
         self,
         gdef::CaretValue,
-        gpos::{AnchorTable, ValueFormat, ValueRecord},
-        layout::{
-            ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag, PendingVariationIndex,
-        },
+        gpos::ValueFormat,
+        layout::{ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag},
+        variations::ivs_builder::{RemapVariationIndices, VariationStoreBuilder},
     },
     types::{F2Dot14, NameId, Tag},
 };
@@ -44,11 +43,10 @@ use super::{
     lookups::{
         AllLookups, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass, SomeLookup,
     },
+    metrics::{Anchor, DeviceOrDeltas, Metric, ValueRecord},
     output::Compilation,
     tables::{ClassId, ScriptRecord, Tables},
-    tags,
-    valuerecordext::ValueRecordExt,
-    VariationInfo,
+    tags, VariationInfo,
 };
 
 /// Context that manages state for a compilation.
@@ -88,7 +86,7 @@ pub struct CompilationCtx<'a> {
     script: Option<Tag>,
     glyph_class_defs: HashMap<SmolStr, GlyphClass>,
     mark_classes: HashMap<SmolStr, MarkClass>,
-    anchor_defs: HashMap<SmolStr, (AnchorTable, usize)>,
+    anchor_defs: HashMap<SmolStr, (Anchor, usize)>,
     value_record_defs: HashMap<SmolStr, ValueRecord>,
     conditionset_defs: ConditionSetMap,
     mark_attach_class_id: HashMap<GlyphSet, u16>,
@@ -184,18 +182,22 @@ impl<'a> CompilationCtx<'a> {
             .as_ref()
             .map(|raw| raw.build(&mut name_builder));
 
+        // the var store builder is required so that variable metrics/anchors
+        // in the GPOS table can be collected into an ItemVariationStore
+        let mut ivs = VariationStoreBuilder::new();
+
+        let (mut gsub, mut gpos) = self.lookups.build(&self.features, &mut ivs);
+        if !ivs.is_empty() {
+            self.tables
+                .gdef
+                .get_or_insert_with(Default::default)
+                .var_store = Some(ivs);
+        }
+
         let (gdef, key_map) = match self.tables.gdef.as_ref().map(|raw| raw.build()) {
             Some((gdef, key_map)) => (Some(gdef), key_map),
             None => (None, None),
         };
-        // all VariationIndex tables (in value records and anchors) currently have
-        // temporary indices; now that we've built the ItemVariationStore we need
-        // to go and update them all.
-        if let Some(key_map) = key_map {
-            self.lookups.update_variation_index_tables(&key_map);
-        }
-
-        let (mut gsub, mut gpos) = self.lookups.build(&self.features);
 
         let feature_params = self.features.build_feature_params(&mut name_builder);
 
@@ -212,6 +214,12 @@ impl<'a> CompilationCtx<'a> {
             }
         }
         if let Some(gpos) = gpos.as_mut() {
+            if let Some(key_map) = key_map {
+                // all VariationIndex tables (in value records and anchors)
+                // currently have temporary indices; now that we've built the
+                // ItemVariationStore we need to go and update them all.
+                gpos.remap_variation_indices(&key_map);
+            }
             if let Some(variations) = gpos.feature_variations.as_mut() {
                 sort_feature_variations(variations, |condset| {
                     self.conditionset_defs.sort_order(condset)
@@ -1084,15 +1092,15 @@ impl<'a> CompilationCtx<'a> {
         }
 
         if let Some(adv) = record.advance() {
-            let (adv, var_idx) = self.resolve_metric(&adv);
+            let adv = self.resolve_metric(&adv);
             if self.vertical_feature.in_eligible_vertical_feature() {
                 return ValueRecord::new()
-                    .with_y_advance(adv)
-                    .with_device(var_idx, ValueFormat::Y_ADVANCE_DEVICE);
+                    .with_y_advance(adv.default)
+                    .with_y_advance_device(adv.device_or_deltas);
             } else {
                 return ValueRecord::new()
-                    .with_x_advance(adv)
-                    .with_device(var_idx, ValueFormat::X_ADVANCE_DEVICE);
+                    .with_x_advance(adv.default)
+                    .with_x_advance_device(adv.device_or_deltas);
             }
         }
 
@@ -1101,20 +1109,16 @@ impl<'a> CompilationCtx<'a> {
             return Default::default();
         };
 
-        let (x_place, x_place_var) = self.resolve_metric(&x_place);
-        let (y_place, y_place_var) = self.resolve_metric(&y_place);
-        let (x_adv, x_adv_var) = self.resolve_metric(&x_adv);
-        let (y_adv, y_adv_var) = self.resolve_metric(&y_adv);
-
-        let result = ValueRecord::new()
-            .with_x_placement(x_place)
-            .with_y_placement(y_place)
-            .with_x_advance(x_adv)
-            .with_y_advance(y_adv)
-            .with_device(x_place_var, ValueFormat::X_PLACEMENT_DEVICE)
-            .with_device(y_place_var, ValueFormat::Y_PLACEMENT_DEVICE)
-            .with_device(x_adv_var, ValueFormat::X_ADVANCE_DEVICE)
-            .with_device(y_adv_var, ValueFormat::Y_ADVANCE_DEVICE);
+        let x_placement = self.resolve_metric(&x_place);
+        let y_placement = self.resolve_metric(&y_place);
+        let x_advance = self.resolve_metric(&x_adv);
+        let y_advance = self.resolve_metric(&y_adv);
+        let mut result = ValueRecord {
+            x_placement: Some(x_placement),
+            y_placement: Some(y_placement),
+            x_advance: Some(x_advance),
+            y_advance: Some(y_advance),
+        };
 
         if let Some([x_place_dev, y_place_dev, x_adv_dev, y_adv_dev]) = record.device() {
             // if we have an explicit device we must not also be variable
@@ -1127,32 +1131,28 @@ impl<'a> CompilationCtx<'a> {
                 ),
                 "checked during parsing"
             );
-            return result
-                .with_device(x_place_dev.compile(), ValueFormat::X_PLACEMENT_DEVICE)
-                .with_device(y_place_dev.compile(), ValueFormat::Y_PLACEMENT_DEVICE)
-                .with_device(x_adv_dev.compile(), ValueFormat::X_ADVANCE_DEVICE)
-                .with_device(y_adv_dev.compile(), ValueFormat::Y_ADVANCE_DEVICE);
+            result.x_advance.as_mut().unwrap().device_or_deltas = x_adv_dev.compile().into();
+            result.y_advance.as_mut().unwrap().device_or_deltas = y_adv_dev.compile().into();
+            result.x_placement.as_mut().unwrap().device_or_deltas = x_place_dev.compile().into();
+            result.y_placement.as_mut().unwrap().device_or_deltas = y_place_dev.compile().into();
         }
         result
     }
 
-    fn resolve_metric(&mut self, metric: &typed::Metric) -> (i16, Option<PendingVariationIndex>) {
+    fn resolve_metric(&mut self, metric: &typed::Metric) -> Metric {
         match metric {
-            typed::Metric::Scalar(value) => (value.parse_signed(), None),
+            typed::Metric::Scalar(value) => value.parse_signed().into(),
             typed::Metric::Variable(variable) => self.resolve_variable_metric(variable),
         }
     }
 
-    fn resolve_variable_metric(
-        &mut self,
-        metric: &typed::VariableMetric,
-    ) -> (i16, Option<PendingVariationIndex>) {
+    fn resolve_variable_metric(&mut self, metric: &typed::VariableMetric) -> Metric {
         let Some(var_info) = self.variation_info else {
             self.error(
                 metric.range(),
                 "variable metric only valid when compiling variable font",
             );
-            return (0, None);
+            return Default::default();
         };
 
         let mut locations = HashMap::new();
@@ -1176,14 +1176,13 @@ impl<'a> CompilationCtx<'a> {
             locations.insert(pos, metric_loc.value().parse_signed());
         }
         match var_info.resolve_variable_metric(&locations) {
-            Ok((default, deltas)) => {
-                let temp_idx = self.tables.var_store().add_deltas(deltas);
-                let var_idx = PendingVariationIndex::new(temp_idx);
-                (default, Some(var_idx))
-            }
+            Ok((default, deltas)) => Metric {
+                default,
+                device_or_deltas: DeviceOrDeltas::Deltas(deltas),
+            },
             Err(e) => {
                 self.error(metric.range(), format!("failed to compute deltas: '{e}'"));
-                (0, None)
+                Default::default()
             }
         }
     }
@@ -1797,15 +1796,15 @@ impl<'a> CompilationCtx<'a> {
         let anchor_block = anchor_def.anchor();
         let name = anchor_def.name();
         let anchor = match self.resolve_anchor(&anchor_block) {
-            Some(a @ AnchorTable::Format1(_) | a @ AnchorTable::Format2(_)) => a,
-            Some(_) => {
+            Some(a) if !a.x.has_device_or_deltas() && !a.y.has_device_or_deltas() => a,
+            _ => {
                 return self.error(
                     anchor_block.range(),
                     "named anchor definition can only be in format A or B",
                 )
             }
-            None => return,
         };
+
         if let Some(_prev) = self
             .anchor_defs
             .insert(name.text.clone(), (anchor, anchor_def.range().start))
@@ -1814,7 +1813,7 @@ impl<'a> CompilationCtx<'a> {
         }
     }
 
-    fn resolve_anchor(&mut self, item: &typed::Anchor) -> Option<AnchorTable> {
+    fn resolve_anchor(&mut self, item: &typed::Anchor) -> Option<Anchor> {
         if item.null().is_some() {
             return None;
         }
@@ -1834,33 +1833,24 @@ impl<'a> CompilationCtx<'a> {
             return None;
         };
 
-        let (x, x_var) = self.resolve_metric(&x);
-        let (y, y_var) = self.resolve_metric(&y);
-
-        if x_var.is_some() || y_var.is_some() {
-            return Some(AnchorTable::format_3(
-                x,
-                y,
-                x_var.map(Into::into),
-                y_var.map(Into::into),
-            ));
-        }
+        let x = self.resolve_metric(&x);
+        let y = self.resolve_metric(&y);
+        let mut anchor = Anchor {
+            x,
+            y,
+            contourpoint: None,
+        };
 
         if let Some(point) = item.contourpoint() {
             match point.parse_unsigned() {
-                Some(point) => Some(AnchorTable::format_2(x, y, point)),
+                Some(point) => anchor.contourpoint = Some(point),
                 None => panic!("negative contourpoint, go fix your parser"),
             }
-        } else if let Some((x_coord, y_coord)) = item.devices() {
-            Some(AnchorTable::format_3(
-                x,
-                y,
-                x_coord.compile().map(Into::into),
-                y_coord.compile().map(Into::into),
-            ))
-        } else {
-            Some(AnchorTable::format_1(x, y))
+        } else if let Some((x_dev, y_dev)) = item.devices() {
+            anchor.x.device_or_deltas = x_dev.compile().into();
+            anchor.y.device_or_deltas = y_dev.compile().into();
         }
+        Some(anchor)
     }
 
     fn define_condition_set(&mut self, node: typed::ConditionSet) {

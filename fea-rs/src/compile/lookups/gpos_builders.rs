@@ -5,16 +5,19 @@ use std::collections::{BTreeMap, HashMap};
 use smol_str::SmolStr;
 use write_fonts::{
     tables::{
-        gpos::{self as write_gpos, AnchorTable, MarkRecord, ValueFormat, ValueRecord},
+        gpos::{self as write_gpos, MarkRecord, ValueFormat, ValueRecord as RawValueRecord},
         layout::CoverageTable,
-        variations::ivs_builder::VariationIndexRemapping,
+        variations::ivs_builder::VariationStoreBuilder,
     },
     types::GlyphId,
 };
 
-use crate::common::GlyphSet;
+use crate::{
+    common::GlyphSet,
+    compile::metrics::{Anchor, ValueRecord},
+};
 
-use super::{Builder, ClassDefBuilder2, VariationIndexContainingLookup};
+use super::{Builder, ClassDefBuilder2};
 
 #[derive(Clone, Debug, Default)]
 pub struct SinglePosBuilder {
@@ -35,19 +38,11 @@ impl SinglePosBuilder {
     }
 }
 
-impl VariationIndexContainingLookup for SinglePosBuilder {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        self.items
-            .values_mut()
-            .for_each(|x| x.remap_variation_indices(key_map))
-    }
-}
-
 impl Builder for SinglePosBuilder {
     type Output = Vec<write_gpos::SinglePos>;
 
-    fn build(self) -> Self::Output {
-        fn build_subtable(items: BTreeMap<GlyphId, &ValueRecord>) -> write_gpos::SinglePos {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
+        fn build_subtable(items: BTreeMap<GlyphId, &RawValueRecord>) -> write_gpos::SinglePos {
             let first = *items.values().next().unwrap();
             let use_format_1 = first.format().is_empty() || items.values().all(|val| val == &first);
             let coverage: CoverageTable = items.keys().copied().collect();
@@ -58,21 +53,26 @@ impl Builder for SinglePosBuilder {
             }
         }
         const NEW_SUBTABLE_COST: usize = 10;
+        let items = self
+            .items
+            .into_iter()
+            .map(|(glyph, anchor)| (glyph, anchor.build(var_store)))
+            .collect::<BTreeMap<_, _>>();
 
         // list of sets of glyph ids which will end up in their own subtables
         let mut subtables = Vec::new();
-        let mut group_by_record: HashMap<&ValueRecord, BTreeMap<GlyphId, &ValueRecord>> =
+        let mut group_by_record: HashMap<&RawValueRecord, BTreeMap<GlyphId, &RawValueRecord>> =
             Default::default();
 
         // first group by specific record; glyphs that share a record can use
         // the more efficient format-1 subtable type
-        for (gid, value) in &self.items {
+        for (gid, value) in &items {
             group_by_record
                 .entry(value)
                 .or_default()
                 .insert(*gid, value);
         }
-        let mut group_by_format: HashMap<ValueFormat, BTreeMap<GlyphId, &ValueRecord>> =
+        let mut group_by_format: HashMap<ValueFormat, BTreeMap<GlyphId, &RawValueRecord>> =
             Default::default();
         for (value, glyphs) in group_by_record {
             // if this saves us size, use format 1
@@ -143,23 +143,6 @@ impl Default for ClassPairPosSubtable {
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct ClassPairPosBuilder(BTreeMap<(ValueFormat, ValueFormat), Vec<ClassPairPosSubtable>>);
-
-impl VariationIndexContainingLookup for PairPosBuilder {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        self.pairs
-            .0
-            .values_mut()
-            .flat_map(|x| x.values_mut())
-            .chain(self.classes.0.values_mut().flat_map(|x| {
-                x.iter_mut()
-                    .flat_map(|x| x.items.values_mut().flat_map(|x| x.values_mut()))
-            }))
-            .for_each(|v| {
-                v.0.remap_variation_indices(key_map);
-                v.1.remap_variation_indices(key_map);
-            });
-    }
-}
 
 impl ClassPairPosBuilder {
     fn insert(
@@ -249,9 +232,9 @@ impl PairPosBuilder {
 impl Builder for PairPosBuilder {
     type Output = Vec<write_gpos::PairPos>;
 
-    fn build(self) -> Self::Output {
-        let mut out = self.pairs.build();
-        out.extend(self.classes.build());
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
+        let mut out = self.pairs.build(var_store);
+        out.extend(self.classes.build(var_store));
         out
     }
 }
@@ -259,7 +242,7 @@ impl Builder for PairPosBuilder {
 impl Builder for GlyphPairPosBuilder {
     type Output = Vec<write_gpos::PairPos>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         let mut split_by_format = BTreeMap::<_, BTreeMap<_, Vec<_>>>::default();
         for (g1, map) in self.0 {
             for (g2, (v1, v2)) in map {
@@ -268,7 +251,11 @@ impl Builder for GlyphPairPosBuilder {
                     .or_default()
                     .entry(g1)
                     .or_default()
-                    .push(write_gpos::PairValueRecord::new(g2, v1, v2));
+                    .push(write_gpos::PairValueRecord::new(
+                        g2,
+                        v1.build(var_store),
+                        v2.build(var_store),
+                    ));
             }
         }
 
@@ -286,18 +273,20 @@ impl Builder for GlyphPairPosBuilder {
 impl Builder for ClassPairPosBuilder {
     type Output = Vec<write_gpos::PairPos>;
 
-    fn build(self) -> Self::Output {
-        self.0
-            .into_values()
-            .flat_map(|subs| subs.into_iter().map(Builder::build))
-            .collect()
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
+        // not an iterator because we have funky lifetime issues
+        let mut result = Vec::new();
+        for sub in self.0.into_values().flat_map(|subs| subs.into_iter()) {
+            result.push(sub.build(var_store));
+        }
+        result
     }
 }
 
 impl Builder for ClassPairPosSubtable {
     type Output = write_gpos::PairPos;
 
-    fn build(self) -> Self::Output {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         assert!(!self.items.is_empty(), "filter before here");
         // we have a set of classes/values with a single valueformat
 
@@ -309,8 +298,8 @@ impl Builder for ClassPairPosSubtable {
             .and_then(|val| val.values().next())
             .map(|(v1, v2)| {
                 write_gpos::Class2Record::new(
-                    ValueRecord::new().with_explicit_value_format(v1.format()),
-                    ValueRecord::new().with_explicit_value_format(v2.format()),
+                    RawValueRecord::new().with_explicit_value_format(v1.format()),
+                    RawValueRecord::new().with_explicit_value_format(v2.format()),
                 )
             })
             .unwrap();
@@ -326,7 +315,8 @@ impl Builder for ClassPairPosSubtable {
             let mut records = vec![empty_record.clone(); class2map.len() + 1];
             for (class, (v1, v2)) in stuff {
                 let idx = class2map.get(&class).unwrap();
-                records[*idx as usize] = write_gpos::Class2Record::new(v1.clone(), v2.clone());
+                records[*idx as usize] =
+                    write_gpos::Class2Record::new(v1.build(var_store), v2.build(var_store));
             }
             out[*idx as usize] = write_gpos::Class1Record::new(records);
         }
@@ -336,42 +326,31 @@ impl Builder for ClassPairPosSubtable {
 
 #[derive(Clone, Debug, Default)]
 pub struct CursivePosBuilder {
-    items: BTreeMap<GlyphId, write_gpos::EntryExitRecord>,
-}
-
-impl VariationIndexContainingLookup for CursivePosBuilder {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        self.items
-            .values_mut()
-            .flat_map(|record| {
-                record
-                    .entry_anchor
-                    .as_mut()
-                    .into_iter()
-                    .chain(record.exit_anchor.as_mut())
-            })
-            .for_each(|anchor| anchor.remap_variation_indices(key_map))
-    }
+    // (entry, exit)
+    items: BTreeMap<GlyphId, (Option<Anchor>, Option<Anchor>)>,
 }
 
 impl CursivePosBuilder {
-    pub fn insert(
-        &mut self,
-        glyph: GlyphId,
-        entry: Option<AnchorTable>,
-        exit: Option<AnchorTable>,
-    ) {
-        let record = write_gpos::EntryExitRecord::new(entry, exit);
-        self.items.insert(glyph, record);
+    pub fn insert(&mut self, glyph: GlyphId, entry: Option<Anchor>, exit: Option<Anchor>) {
+        self.items.insert(glyph, (entry, exit));
     }
 }
 
 impl Builder for CursivePosBuilder {
     type Output = Vec<write_gpos::CursivePosFormat1>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         let coverage = self.items.keys().copied().collect();
-        let records = self.items.into_values().collect();
+        let records = self
+            .items
+            .into_values()
+            .map(|(entry, exit)| {
+                write_gpos::EntryExitRecord::new(
+                    entry.map(|x| x.build(var_store)),
+                    exit.map(|x| x.build(var_store)),
+                )
+            })
+            .collect();
         vec![write_gpos::CursivePosFormat1::new(coverage, records)]
     }
 }
@@ -379,17 +358,10 @@ impl Builder for CursivePosBuilder {
 // shared between several tables
 #[derive(Clone, Debug, Default)]
 struct MarkList {
-    glyphs: BTreeMap<GlyphId, MarkRecord>,
+    // (class id, anchor)
+    glyphs: BTreeMap<GlyphId, (u16, Anchor)>,
     // map class names to their idx for this table
     classes: HashMap<SmolStr, u16>,
-}
-
-impl VariationIndexContainingLookup for MarkList {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        self.glyphs
-            .values_mut()
-            .for_each(|mark| mark.mark_anchor.remap_variation_indices(key_map))
-    }
 }
 
 impl MarkList {
@@ -400,19 +372,20 @@ impl MarkList {
         &mut self,
         glyph: GlyphId,
         class: SmolStr,
-        anchor: AnchorTable,
+        anchor: Anchor,
     ) -> Result<u16, PreviouslyAssignedClass> {
         let next_id = self.classes.len().try_into().unwrap();
         let id = *self.classes.entry(class).or_insert(next_id);
         if let Some(prev) = self
             .glyphs
-            .insert(glyph, MarkRecord::new(id, anchor))
-            .filter(|prev| prev.mark_class != id)
+            //.insert(glyph, MarkRecord::new(id, anchor))
+            .insert(glyph, (id, anchor))
+            .filter(|prev| prev.0 != id)
         {
             let class = self
                 .classes
                 .iter()
-                .find_map(|(name, idx)| (*idx == prev.mark_class).then(|| name.clone()))
+                .find_map(|(name, idx)| (*idx == prev.0).then(|| name.clone()))
                 .unwrap();
 
             return Err(PreviouslyAssignedClass {
@@ -438,9 +411,14 @@ impl MarkList {
 impl Builder for MarkList {
     type Output = (CoverageTable, write_gpos::MarkArray);
 
-    fn build(self) -> Self::Output {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         let coverage = self.glyphs().collect();
-        let array = write_gpos::MarkArray::new(self.glyphs.into_values().collect());
+        let array = write_gpos::MarkArray::new(
+            self.glyphs
+                .into_values()
+                .map(|(class, anchor)| MarkRecord::new(class, anchor.build(var_store)))
+                .collect(),
+        );
         (coverage, array)
     }
 }
@@ -449,17 +427,7 @@ impl Builder for MarkList {
 #[derive(Clone, Debug, Default)]
 pub struct MarkToBaseBuilder {
     marks: MarkList,
-    bases: BTreeMap<GlyphId, Vec<(u16, AnchorTable)>>,
-}
-
-impl VariationIndexContainingLookup for MarkToBaseBuilder {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        self.marks.remap_variation_indices(key_map);
-        self.bases
-            .values_mut()
-            .flat_map(|vals| vals.iter_mut().map(|(_, anchor)| anchor))
-            .for_each(|anchor| anchor.remap_variation_indices(key_map))
-    }
+    bases: BTreeMap<GlyphId, Vec<(u16, Anchor)>>,
 }
 
 /// An error indicating a given glyph has been assigned to multiple mark classes
@@ -480,13 +448,13 @@ impl MarkToBaseBuilder {
         &mut self,
         glyph: GlyphId,
         class: SmolStr,
-        anchor: AnchorTable,
+        anchor: Anchor,
     ) -> Result<u16, PreviouslyAssignedClass> {
         self.marks.insert(glyph, class, anchor)
     }
 
     /// Insert a new base glyph.
-    pub fn insert_base(&mut self, glyph: GlyphId, class: &SmolStr, anchor: AnchorTable) {
+    pub fn insert_base(&mut self, glyph: GlyphId, class: &SmolStr, anchor: Anchor) {
         let class = self.marks.get_class(class);
         self.bases.entry(glyph).or_default().push((class, anchor))
     }
@@ -505,18 +473,18 @@ impl MarkToBaseBuilder {
 impl Builder for MarkToBaseBuilder {
     type Output = Vec<write_gpos::MarkBasePosFormat1>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         let MarkToBaseBuilder { marks, bases } = self;
         let n_classes = marks.classes.len();
 
-        let (mark_coverage, mark_array) = marks.build();
+        let (mark_coverage, mark_array) = marks.build(var_store);
         let base_coverage = bases.keys().copied().collect();
         let base_records = bases
             .into_values()
             .map(|anchors| {
                 let mut anchor_offsets = vec![None; n_classes];
                 for (class, anchor) in anchors {
-                    anchor_offsets[class as usize] = Some(anchor);
+                    anchor_offsets[class as usize] = Some(anchor.build(var_store));
                 }
                 write_gpos::BaseRecord::new(anchor_offsets)
             })
@@ -534,7 +502,7 @@ impl Builder for MarkToBaseBuilder {
 #[derive(Clone, Debug, Default)]
 pub struct MarkToLigBuilder {
     marks: MarkList,
-    ligatures: BTreeMap<GlyphId, Vec<BTreeMap<SmolStr, AnchorTable>>>,
+    ligatures: BTreeMap<GlyphId, Vec<BTreeMap<SmolStr, Anchor>>>,
 }
 
 impl MarkToLigBuilder {
@@ -542,12 +510,12 @@ impl MarkToLigBuilder {
         &mut self,
         glyph: GlyphId,
         class: SmolStr,
-        anchor: AnchorTable,
+        anchor: Anchor,
     ) -> Result<u16, PreviouslyAssignedClass> {
         self.marks.insert(glyph, class, anchor)
     }
 
-    pub fn add_lig(&mut self, glyph: GlyphId, components: Vec<BTreeMap<SmolStr, AnchorTable>>) {
+    pub fn add_lig(&mut self, glyph: GlyphId, components: Vec<BTreeMap<SmolStr, Anchor>>) {
         self.ligatures.insert(glyph, components);
     }
 
@@ -560,20 +528,10 @@ impl MarkToLigBuilder {
     }
 }
 
-impl VariationIndexContainingLookup for MarkToLigBuilder {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        self.marks.remap_variation_indices(key_map);
-        self.ligatures
-            .values_mut()
-            .flat_map(|vals| vals.iter_mut().flat_map(|tree| tree.values_mut()))
-            .for_each(|anchor| anchor.remap_variation_indices(key_map))
-    }
-}
-
 impl Builder for MarkToLigBuilder {
     type Output = Vec<write_gpos::MarkLigPosFormat1>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         let MarkToLigBuilder { marks, ligatures } = self;
         let n_classes = marks.classes.len();
 
@@ -591,7 +549,7 @@ impl Builder for MarkToLigBuilder {
                         let mut anchor_offsets = vec![None; n_classes];
                         for (class, anchor) in anchors {
                             let class_idx = marks.get_class(&class);
-                            anchor_offsets[class_idx as usize] = Some(anchor);
+                            anchor_offsets[class_idx as usize] = Some(anchor.build(var_store));
                         }
                         write_gpos::ComponentRecord::new(anchor_offsets)
                     })
@@ -600,7 +558,7 @@ impl Builder for MarkToLigBuilder {
             })
             .collect();
         let ligature_array = write_gpos::LigatureArray::new(ligature_array);
-        let (mark_coverage, mark_array) = marks.build();
+        let (mark_coverage, mark_array) = marks.build(var_store);
         vec![write_gpos::MarkLigPosFormat1::new(
             mark_coverage,
             ligature_coverage,
@@ -614,7 +572,7 @@ impl Builder for MarkToLigBuilder {
 #[derive(Clone, Debug, Default)]
 pub struct MarkToMarkBuilder {
     attaching_marks: MarkList,
-    base_marks: BTreeMap<GlyphId, Vec<(u16, AnchorTable)>>,
+    base_marks: BTreeMap<GlyphId, Vec<(u16, Anchor)>>,
 }
 
 impl MarkToMarkBuilder {
@@ -626,13 +584,13 @@ impl MarkToMarkBuilder {
         &mut self,
         glyph: GlyphId,
         class: SmolStr,
-        anchor: AnchorTable,
+        anchor: Anchor,
     ) -> Result<u16, PreviouslyAssignedClass> {
         self.attaching_marks.insert(glyph, class, anchor)
     }
 
     /// Insert a new mark2 (base) glyph
-    pub fn insert_mark2(&mut self, glyph: GlyphId, class: &SmolStr, anchor: AnchorTable) {
+    pub fn insert_mark2(&mut self, glyph: GlyphId, class: &SmolStr, anchor: Anchor) {
         let id = self.attaching_marks.get_class(class);
         self.base_marks.entry(glyph).or_default().push((id, anchor))
     }
@@ -648,34 +606,24 @@ impl MarkToMarkBuilder {
     }
 }
 
-impl VariationIndexContainingLookup for MarkToMarkBuilder {
-    fn remap_variation_indices(&mut self, key_map: &VariationIndexRemapping) {
-        self.attaching_marks.remap_variation_indices(key_map);
-        self.base_marks
-            .values_mut()
-            .flat_map(|vals| vals.iter_mut().map(|(_, anchor)| anchor))
-            .for_each(|anchor| anchor.remap_variation_indices(key_map))
-    }
-}
-
 impl Builder for MarkToMarkBuilder {
     type Output = Vec<write_gpos::MarkMarkPosFormat1>;
 
-    fn build(self) -> Self::Output {
+    fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         let MarkToMarkBuilder {
             attaching_marks,
             base_marks,
         } = self;
         let n_classes = attaching_marks.classes.len();
 
-        let (mark_coverage, mark_array) = attaching_marks.build();
+        let (mark_coverage, mark_array) = attaching_marks.build(var_store);
         let mark2_coverage = base_marks.keys().copied().collect();
         let mark2_records = base_marks
             .into_values()
             .map(|anchors| {
                 let mut anchor_offsets = vec![None; n_classes];
                 for (class, anchor) in anchors {
-                    anchor_offsets[class as usize] = Some(anchor);
+                    anchor_offsets[class as usize] = Some(anchor.build(var_store));
                 }
                 write_gpos::Mark2Record::new(anchor_offsets)
             })
