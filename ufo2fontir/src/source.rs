@@ -19,7 +19,7 @@ use fontir::{
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::{Input, Source},
-    stateset::{StateIdentifier, StateSet},
+    stateset::StateSet,
 };
 use indexmap::IndexSet;
 use log::{debug, log_enabled, trace, warn, Level};
@@ -228,10 +228,7 @@ impl DesignSpaceIrSource {
             .ok_or_else(|| Error::NoStateForGlyph(glyph_name.clone()))?;
         let mut glif_files = HashMap::new();
         let cache = self.cache.as_ref().unwrap();
-        for state_key in stateset.keys() {
-            let StateIdentifier::File(glif_file) = state_key else {
-                return Err(Error::UnexpectedState);
-            };
+        for glif_file in stateset.tracked_paths() {
             let locations = cache
                 .location_of(glif_file)
                 .ok_or_else(|| Error::NoLocationsForGlyph(glyph_name.clone()))?;

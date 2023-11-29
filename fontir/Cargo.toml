@@ -33,7 +33,7 @@ write-fonts.workspace = true  # for pens
 chrono.workspace = true
 
 # unique to me!
-blake3 = "1.3.3"
+blake3 = { version = "1.3.3", features = ["serde"] }
 
 [dev-dependencies]
 diff.workspace = true
