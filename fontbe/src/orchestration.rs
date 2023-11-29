@@ -4,7 +4,7 @@ use std::{
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::Arc, collections::BTreeMap,
 };
 
 use fea_rs::{
@@ -75,7 +75,8 @@ pub enum WorkId {
     Features,
     Avar,
     Cmap,
-    Font,
+    PreliminaryFont,
+    FinalFont,
     Fvar,
     Glyf,
     GlyfFragment(GlyphName),
@@ -105,7 +106,8 @@ impl Identifier for WorkId {
             WorkId::Features => "BeFeatures",
             WorkId::Avar => "BeAvar",
             WorkId::Cmap => "BeCmap",
-            WorkId::Font => "BeFont",
+            WorkId::PreliminaryFont => "BePreliminaryFont",
+            WorkId::FinalFont => "BeFinalFont",
             WorkId::Fvar => "BeFvar",
             WorkId::Glyf => "BeGlyf",
             WorkId::GlyfFragment(..) => "BeGlyfFragment",
@@ -306,6 +308,22 @@ impl TupleBuilder {
             Tuple::new(self.peak),
             Tuple::new(self.max),
         )
+    }
+}
+
+/// Compiled binary font tables
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BinaryTables {
+    pub tables: BTreeMap<Tag, Vec<u8>>,
+}
+
+impl Persistable for BinaryTables {
+    fn read(from: &mut dyn Read) -> Self {
+        bincode::deserialize_from(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        bincode::serialize_into(to, &self).unwrap();
     }
 }
 
@@ -689,6 +707,7 @@ pub struct Context {
     pub kerning: BeContextItem<Kerning>,
     pub marks: BeContextItem<Marks>,
     pub stat: BeContextItem<BeValue<Stat>>,
+    pub preliminary_font: BeContextItem<BinaryTables>,
     pub font: BeContextItem<Bytes>,
 }
 
@@ -722,6 +741,7 @@ impl Context {
             kerning: self.kerning.clone_with_acl(acl.clone()),
             marks: self.marks.clone_with_acl(acl.clone()),
             stat: self.stat.clone_with_acl(acl.clone()),
+            preliminary_font: self.preliminary_font.clone_with_acl(acl.clone()),
             font: self.font.clone_with_acl(acl),
         }
     }
@@ -771,7 +791,8 @@ impl Context {
                 persistent_storage.clone(),
             ),
             stat: ContextItem::new(WorkId::Stat.into(), acl.clone(), persistent_storage.clone()),
-            font: ContextItem::new(WorkId::Font.into(), acl, persistent_storage),
+            preliminary_font: ContextItem::new(WorkId::PreliminaryFont.into(), acl.clone(), persistent_storage.clone()),
+            font: ContextItem::new(WorkId::FinalFont.into(), acl, persistent_storage),
         }
     }
 
@@ -793,7 +814,7 @@ impl Context {
     }
 
     pub fn font_file(&self) -> PathBuf {
-        self.persistent_storage.paths.target_file(&WorkId::Font)
+        self.persistent_storage.paths.target_file(&WorkId::FinalFont)
     }
 }
 

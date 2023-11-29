@@ -83,7 +83,8 @@ impl Paths {
             WorkId::Os2 => self.build_dir.join("os2.table"),
             WorkId::Post => self.build_dir.join("post.table"),
             WorkId::Stat => self.build_dir.join("stat.table"),
-            WorkId::Font => self
+            WorkId::PreliminaryFont => self.build_dir.join("preliminary_font.bin"),
+            WorkId::FinalFont => self
                 .output_file
                 .as_ref()
                 .map(|p| p.to_path_buf())

@@ -330,11 +330,12 @@ fn add_font_be_job(workload: &mut Workload) -> Result<(), Error> {
     let glyphs_changed = workload.change_detector.glyphs_changed();
 
     // If glyphs or features changed we better do the thing
-    let work = create_font_work();
-    workload.add(
-        work.into(),
-        !glyphs_changed.is_empty() || workload.change_detector.feature_be_change(),
-    );
+    for work in create_font_work() {
+        workload.add(
+            work.into(),
+            !glyphs_changed.is_empty() || workload.change_detector.feature_be_change(),
+        );
+    }
     Ok(())
 }
 
@@ -643,7 +644,7 @@ mod tests {
             BeWorkIdentifier::Features.into(),
             BeWorkIdentifier::Avar.into(),
             BeWorkIdentifier::Cmap.into(),
-            BeWorkIdentifier::Font.into(),
+            BeWorkIdentifier::FinalFont.into(),
             BeWorkIdentifier::Fvar.into(),
             BeWorkIdentifier::Glyf.into(),
             BeWorkIdentifier::Gpos.into(),
@@ -750,7 +751,7 @@ mod tests {
                 FeWorkIdentifier::Anchor("bar".into()).into(),
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Cmap.into(),
-                BeWorkIdentifier::Font.into(),
+                BeWorkIdentifier::FinalFont.into(),
                 BeWorkIdentifier::Glyf.into(),
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
@@ -784,7 +785,7 @@ mod tests {
                 AnyWorkId::Fe(FeWorkIdentifier::Features),
                 FeWorkIdentifier::Kerning.into(),
                 BeWorkIdentifier::Features.into(),
-                BeWorkIdentifier::Font.into(),
+                BeWorkIdentifier::FinalFont.into(),
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
                 BeWorkIdentifier::Gdef.into(),
@@ -889,7 +890,7 @@ mod tests {
                 AnyWorkId::Fe(FeWorkIdentifier::Features),
                 AnyWorkId::Fe(FeWorkIdentifier::Kerning),
                 BeWorkIdentifier::Features.into(),
-                BeWorkIdentifier::Font.into(),
+                BeWorkIdentifier::FinalFont.into(),
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
                 BeWorkIdentifier::Gdef.into(),
