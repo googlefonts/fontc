@@ -5,13 +5,14 @@ use std::{
     sync::Arc,
 };
 
-use fea_rs::compile::{MarkToBaseBuilder, MarkToMarkBuilder};
+use fea_rs::compile::{MarkToBaseBuilder, MarkToMarkBuilder, PreviouslyAssignedClass};
 use fontdrasil::{
     orchestration::{Access, Work},
     types::GlyphName,
 };
 
 use ordered_float::OrderedFloat;
+use smol_str::SmolStr;
 use write_fonts::types::GlyphId;
 
 use crate::{
@@ -217,7 +218,9 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
                 for (mark_name, mark_anchor) in group.marks.iter() {
                     let gid = gid(mark_name)?;
                     let anchor = resolve_anchor(mark_anchor, &static_metadata)?;
-                    mark_base.insert_mark(gid, group_name.0.clone(), anchor)?;
+                    mark_base
+                        .insert_mark(gid, group_name.0.clone(), anchor)
+                        .map_err(|err| map_prev_class_error(err, &group_name.0, mark_name))?;
                 }
 
                 for (base_name, base_anchor) in group.bases.iter() {
@@ -239,7 +242,9 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
             let mut mark_mark = MarkToMarkBuilder::default();
             for (mark_name, mark_anchor) in marks {
                 let anchor = resolve_anchor(mark_anchor, &static_metadata)?;
-                mark_mark.insert_mark1(gid(mark_name)?, group_name.0.clone(), anchor)?;
+                mark_mark
+                    .insert_mark1(gid(mark_name)?, group_name.0.clone(), anchor)
+                    .map_err(|err| map_prev_class_error(err, &group_name.0, mark_name))?;
             }
 
             for (base_name, base_anchor) in bases {
@@ -252,6 +257,14 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         context.marks.set(all_marks);
 
         Ok(())
+    }
+}
+
+fn map_prev_class_error(err: PreviouslyAssignedClass, class: &SmolStr, glyph: &GlyphName) -> Error {
+    Error::PreviouslyAssignedMarkClass {
+        old_class: err.class,
+        new_class: class.to_owned(),
+        glyph: glyph.to_owned(),
     }
 }
 
