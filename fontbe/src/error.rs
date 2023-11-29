@@ -1,10 +1,11 @@
 use std::{fmt::Display, io, path::PathBuf};
 
-use fea_rs::compile::{error::CompilerError, PreviouslyAssignedClass};
+use fea_rs::compile::error::CompilerError;
 use fontdrasil::types::GlyphName;
 use fontir::{
     error::VariationModelError, orchestration::WorkId as FeWorkId, variations::DeltaError,
 };
+use smol_str::SmolStr;
 use thiserror::Error;
 use write_fonts::{
     read::ReadError,
@@ -71,8 +72,12 @@ pub enum Error {
     MissingGlyphId(GlyphName),
     #[error("No glyph class '{0}'")]
     MissingGlyphClass(GlyphName),
-    #[error("Multiple assignments for class: {0:?}")]
-    PreviouslyAssignedClass(#[from] PreviouslyAssignedClass),
+    #[error("Mark glyph '{glyph}' in conflicting classes '{old_class}' and '{new_class}'")]
+    PreviouslyAssignedMarkClass {
+        old_class: SmolStr,
+        new_class: SmolStr,
+        glyph: GlyphName,
+    },
 }
 
 #[derive(Debug)]
