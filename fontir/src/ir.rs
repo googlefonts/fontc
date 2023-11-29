@@ -26,10 +26,6 @@ use fontdrasil::{
 use crate::{
     error::{PathConversionError, VariationModelError, WorkError},
     orchestration::{IdAware, Persistable, WorkId},
-    serde::{
-        GlobalMetricsSerdeRepr, GlyphOrderSerdeRepr, GlyphSerdeRepr, MiscSerdeRepr,
-        StaticMetadataSerdeRepr,
-    },
     variations::VariationModel,
 };
 
@@ -41,7 +37,6 @@ const DEFAULT_VENDOR_ID_TAG: Tag = Tag::new(b"NONE");
 /// For example, upem, axis definitions, etc, as distinct from
 /// metadata that varies across design space such as ascender/descender.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(from = "StaticMetadataSerdeRepr", into = "StaticMetadataSerdeRepr")]
 pub struct StaticMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/head>.
     pub units_per_em: u16,
@@ -84,7 +79,6 @@ pub struct StaticMetadata {
 ///
 /// <https://learn.microsoft.com/en-us/typography/opentype/spec/os2>
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(from = "MiscSerdeRepr", into = "MiscSerdeRepr")]
 pub struct MiscMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#fstype>
     pub fs_type: Option<u16>,
@@ -114,7 +108,6 @@ pub struct MiscMetadata {
 ///
 /// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
-#[serde(from = "GlyphOrderSerdeRepr", into = "GlyphOrderSerdeRepr")]
 pub struct GlyphOrder(IndexSet<GlyphName>);
 
 impl Extend<GlyphName> for GlyphOrder {
@@ -319,7 +312,6 @@ impl StaticMetadata {
 /// Represents the values of these metrics at a specific position in design space.
 /// At a minimum should be defined at the default location.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(from = "GlobalMetricsSerdeRepr", into = "GlobalMetricsSerdeRepr")]
 pub struct GlobalMetrics(
     pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f32>>>,
 );
@@ -917,7 +909,6 @@ impl AnchorBuilder {
 /// If defined in many locations, presumed to vary continuously
 /// between positions and required to have variation compatible structure.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(from = "GlyphSerdeRepr", into = "GlyphSerdeRepr")]
 pub struct Glyph {
     pub name: GlyphName,
     /// Whether to "export" in source terms
