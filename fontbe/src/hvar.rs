@@ -154,14 +154,17 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::Glyph(..))
-                    | AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-            )
-        }))
+        Access::Custom(
+            "Hvar::Read",
+            Arc::new(|id| {
+                matches!(
+                    id,
+                    AnyWorkId::Fe(FeWorkId::Glyph(..))
+                        | AnyWorkId::Fe(FeWorkId::StaticMetadata)
+                        | AnyWorkId::Fe(FeWorkId::GlyphOrder)
+                )
+            }),
+        )
     }
 
     /// Generate [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR)

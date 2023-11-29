@@ -29,7 +29,7 @@ pub enum Access<I: Identifier> {
     /// Access to multiple resources is permitted
     Set(HashSet<I>),
     /// A closure is used to determine access
-    Custom(Arc<dyn Fn(&I) -> bool + Send + Sync>),
+    Custom(&'static str, Arc<dyn Fn(&I) -> bool + Send + Sync>),
 }
 
 impl<I: Identifier> Debug for Access<I> {
@@ -40,7 +40,7 @@ impl<I: Identifier> Debug for Access<I> {
             Self::All => write!(f, "All"),
             Self::One(arg0) => f.debug_tuple("One").field(arg0).finish(),
             Self::Set(arg0) => f.debug_tuple("Set").field(arg0).finish(),
-            Self::Custom(..) => write!(f, "Custom"),
+            Self::Custom(desc, ..) => write!(f, "Custom({desc})"),
         }
     }
 }
@@ -135,8 +135,8 @@ impl<I: Identifier + Send + Sync + 'static> AccessControlList<I> {
 
 impl<I: Identifier> Access<I> {
     /// Create a new access rule with custom logic
-    pub fn custom<F: Fn(&I) -> bool + Send + Sync + 'static>(func: F) -> Self {
-        Access::Custom(Arc::new(func))
+    pub fn custom<F: Fn(&I) -> bool + Send + Sync + 'static>(desc: &'static str, func: F) -> Self {
+        Access::Custom(desc, Arc::new(func))
     }
 
     pub fn all() -> Self {
@@ -154,6 +154,14 @@ impl<I: Identifier> Access<I> {
         Self::One(allow_id)
     }
 
+    pub fn set(allow_ids: HashSet<I>) -> Self {
+        match allow_ids.len() {
+            0 => Access::None,
+            1 => Access::One(allow_ids.into_iter().next().unwrap()),
+            _ => Access::Set(allow_ids),
+        }
+    }
+
     /// Check whether a given id is allowed per this rule.
     pub fn check(&self, id: &I) -> bool {
         match self {
@@ -162,7 +170,7 @@ impl<I: Identifier> Access<I> {
             Access::All => true,
             Access::One(allow) => id == allow,
             Access::Set(ids) => ids.contains(id),
-            Access::Custom(f) => f(id),
+            Access::Custom(_, f) => f(id),
         }
     }
 }
@@ -192,14 +200,14 @@ fn assert_access_many<I: Identifier>(
         AccessCheck::Any => ids.iter().any(|id| access.check(id)),
     };
     if !allow {
-        panic!("Illegal {desc} of {demand} {ids:?}");
+        panic!("Illegal {desc} of {demand} {ids:?}, allowed {access:?}");
     }
 }
 
 fn assert_access_one<I: Identifier>(access: &Access<I>, id: &I, desc: &str) {
     let allow = access.check(id);
     if !allow {
-        panic!("Illegal {desc} of {id:?}");
+        panic!("Illegal {desc} of {id:?}, allowed {access:?}");
     }
 }
 

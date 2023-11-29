@@ -25,12 +25,15 @@ impl Work<Context, AnyWorkId, Error> for CmapWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::GlyphOrder) | AnyWorkId::Fe(FeWorkId::Glyph(..))
-            )
-        }))
+        Access::Custom(
+            "Cmap::Read",
+            Arc::new(|id| {
+                matches!(
+                    id,
+                    AnyWorkId::Fe(FeWorkId::GlyphOrder) | AnyWorkId::Fe(FeWorkId::Glyph(..))
+                )
+            }),
+        )
     }
 
     /// Generate [cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap)

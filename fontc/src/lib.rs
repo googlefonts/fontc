@@ -42,7 +42,10 @@ use fontbe::{
 };
 
 use fontdrasil::types::GlyphName;
-use fontir::{glyph::create_glyph_order_work, source::DeleteWork};
+use fontir::{
+    glyph::{create_glyph_order_work, create_glyph_touchup_work},
+    source::DeleteWork,
+};
 
 use fontbe::orchestration::Context as BeContext;
 use fontbe::paths::Paths as BePaths;
@@ -209,8 +212,9 @@ fn add_glyph_ir_jobs(workload: &mut Workload) -> Result<(), Error> {
         .change_detector
         .ir_source()
         .create_glyph_ir_work(&glyphs_changed, workload.change_detector.current_inputs())?;
-    for work in glyph_work {
+    for (work, glyph_name) in glyph_work.into_iter().zip(glyphs_changed) {
         workload.add(work.into(), true);
+        workload.add(create_glyph_touchup_work(glyph_name).into(), true);
     }
 
     Ok(())
@@ -673,6 +677,11 @@ mod tests {
         expected.extend(
             glyphs
                 .iter()
+                .map(|n| FeWorkIdentifier::GlyphTouchup((*n).into()).into()),
+        );
+        expected.extend(
+            glyphs
+                .iter()
                 .map(|n| FeWorkIdentifier::Anchor((*n).into()).into()),
         );
         expected.extend(
@@ -747,6 +756,7 @@ mod tests {
         assert_eq!(
             vec![
                 AnyWorkId::Fe(FeWorkIdentifier::Glyph("bar".into())),
+                AnyWorkId::Fe(FeWorkIdentifier::GlyphTouchup("bar".into())),
                 FeWorkIdentifier::Anchor("bar".into()).into(),
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Cmap.into(),
@@ -2502,5 +2512,48 @@ mod tests {
 
         // We had a bug where it was 2
         assert_eq!(1, mark_base_lookups(&gpos).len());
+    }
+
+    #[test]
+    fn compile_nested_components_prefer_simple() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let mut args = Args::for_test(build_dir, "glyphs3/ComponentComponents.glyphs");
+        args.prefer_simple_glyphs = true;
+        let result = compile(Args::for_test(
+            build_dir,
+            "glyphs3/ComponentComponents.glyphs",
+        ));
+
+        // Our deeply nested component w/contours should have become simple
+        let glyph = result.fe_context.glyphs.get(&FeWorkIdentifier::Glyph(
+            "component_component_and_contour".into(),
+        ));
+        let instance = glyph.default_instance();
+        assert_eq!(
+            (instance.contours.is_empty(), instance.components.is_empty()),
+            (false, true),
+            "{instance:?} should have only contours"
+        );
+    }
+
+    #[test]
+    fn compile_nested_components_prefer_components() {
+        let temp_dir = tempdir().unwrap();
+        let build_dir = temp_dir.path();
+        let mut args = Args::for_test(build_dir, "glyphs3/ComponentComponents.glyphs");
+        args.prefer_simple_glyphs = false;
+        let result = compile(args);
+
+        // Our deeply nested component w/contours should have had it's contours hoisted out
+        let glyph = result.fe_context.glyphs.get(&FeWorkIdentifier::Glyph(
+            "component_component_and_contour".into(),
+        ));
+        let instance = glyph.default_instance();
+        assert_eq!(
+            (instance.contours.is_empty(), instance.components.is_empty()),
+            (true, false),
+            "{instance:?} should have only components"
+        );
     }
 }

@@ -199,28 +199,28 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::Glyph(..))
-                    | AnyWorkId::Fe(FeWorkId::GlobalMetrics)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Be(WorkId::GlyfFragment(..))
-                    | AnyWorkId::Be(WorkId::Head)
-            )
-        }))
+        Access::Custom(
+            "MetricsAndLimits::Read",
+            Arc::new(|id| {
+                matches!(
+                    id,
+                    AnyWorkId::Fe(FeWorkId::Glyph(..))
+                        | AnyWorkId::Fe(FeWorkId::GlobalMetrics)
+                        | AnyWorkId::Fe(FeWorkId::GlyphOrder)
+                        | AnyWorkId::Be(WorkId::GlyfFragment(..))
+                        | AnyWorkId::Be(WorkId::Head)
+                )
+            }),
+        )
     }
 
     fn write_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Be(WorkId::Hmtx)
-                    | AnyWorkId::Be(WorkId::Hhea)
-                    | AnyWorkId::Be(WorkId::Maxp)
-                    | AnyWorkId::Be(WorkId::Head)
-            )
-        }))
+        Access::set(HashSet::from([
+            AnyWorkId::Be(WorkId::Hmtx),
+            AnyWorkId::Be(WorkId::Hhea),
+            AnyWorkId::Be(WorkId::Maxp),
+            AnyWorkId::Be(WorkId::Head),
+        ]))
     }
 
     fn also_completes(&self) -> Vec<AnyWorkId> {
