@@ -26,10 +26,7 @@ use fontdrasil::{
 use crate::{
     error::{PathConversionError, VariationModelError, WorkError},
     orchestration::{IdAware, Persistable, WorkId},
-    serde::{
-        GlobalMetricsSerdeRepr, GlyphOrderSerdeRepr, GlyphSerdeRepr, MiscSerdeRepr,
-        StaticMetadataSerdeRepr,
-    },
+    serde::{GlobalMetricsSerdeRepr, GlyphSerdeRepr, MiscSerdeRepr, StaticMetadataSerdeRepr},
     variations::VariationModel,
 };
 
@@ -114,7 +111,6 @@ pub struct MiscMetadata {
 ///
 /// <https://rsheeter.github.io/font101/#glyph-ids-and-the-cmap-table>
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
-#[serde(from = "GlyphOrderSerdeRepr", into = "GlyphOrderSerdeRepr")]
 pub struct GlyphOrder(IndexSet<GlyphName>);
 
 impl Extend<GlyphName> for GlyphOrder {

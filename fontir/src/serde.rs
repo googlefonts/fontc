@@ -12,8 +12,8 @@ use write_fonts::{tables::os2::SelectionFlags, types::Tag};
 
 use crate::{
     ir::{
-        GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder, MiscMetadata,
-        NameKey, NamedInstance, PostscriptNames, StaticMetadata,
+        GlobalMetric, GlobalMetrics, Glyph, GlyphBuilder, GlyphInstance, MiscMetadata, NameKey,
+        NamedInstance, PostscriptNames, StaticMetadata,
     },
     stateset::{FileState, MemoryState, State, StateIdentifier, StateSet},
 };
@@ -57,21 +57,6 @@ impl From<StaticMetadata> for StaticMetadataSerdeRepr {
             postscript_names: from.postscript_names,
             misc: from.misc.into(),
         }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct GlyphOrderSerdeRepr(Vec<String>);
-
-impl From<GlyphOrderSerdeRepr> for GlyphOrder {
-    fn from(value: GlyphOrderSerdeRepr) -> Self {
-        value.0.into_iter().map(|v| v.into()).collect()
-    }
-}
-
-impl From<GlyphOrder> for GlyphOrderSerdeRepr {
-    fn from(value: GlyphOrder) -> Self {
-        GlyphOrderSerdeRepr(value.into_iter().map(|v| v.to_string()).collect())
     }
 }
 
