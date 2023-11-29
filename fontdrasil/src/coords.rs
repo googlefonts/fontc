@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use write_fonts::types::{F2Dot14, Fixed, Tag};
 
 use crate::{
-    piecewise_linear_map::PiecewiseLinearMap, serde::CoordConverterSerdeRepr, types::Axis,
+    piecewise_linear_map::PiecewiseLinearMap,
+    serde::{CoordConverterSerdeRepr, LocationSerdeRepr},
+    types::Axis,
 };
 
 /// A coordinate in some arbitrary space the designer dreamed up.
@@ -43,7 +45,9 @@ pub struct NormalizedCoord(OrderedFloat<f32>);
 /// E.g. a user location is a `Location<UserCoord>`. Hashable so it can do things like be
 /// the key for a map of sources by location.
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Location<T>(BTreeMap<Tag, T>);
+#[serde(from = "LocationSerdeRepr<T>", into = "LocationSerdeRepr<T>")]
+// we need this trait bound here for our serde impl to work
+pub struct Location<T: Clone>(pub(crate) BTreeMap<Tag, T>);
 
 pub type DesignLocation = Location<DesignCoord>;
 pub type UserLocation = Location<UserCoord>;
