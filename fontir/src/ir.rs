@@ -27,8 +27,8 @@ use crate::{
     error::{PathConversionError, VariationModelError, WorkError},
     orchestration::{IdAware, Persistable, WorkId},
     serde::{
-        GlobalMetricsSerdeRepr, GlyphOrderSerdeRepr, GlyphSerdeRepr, KerningSerdeRepr,
-        MiscSerdeRepr, StaticMetadataSerdeRepr,
+        GlobalMetricsSerdeRepr, GlyphOrderSerdeRepr, GlyphSerdeRepr, MiscSerdeRepr,
+        StaticMetadataSerdeRepr,
     },
     variations::VariationModel,
 };
@@ -206,7 +206,6 @@ type KernValues = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
 /// In UFO terms, roughly [groups.plist](https://unifiedfontobject.org/versions/ufo3/groups.plist/)
 /// and [kerning.plist](https://unifiedfontobject.org/versions/ufo3/kerning.plist/) combined.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-#[serde(from = "KerningSerdeRepr", into = "KerningSerdeRepr")]
 pub struct Kerning {
     pub groups: BTreeMap<GroupName, BTreeSet<GlyphName>>,
     /// An adjustment to the space *between* two glyphs in logical order.
