@@ -19,7 +19,8 @@ use crate::{
 
 use super::{Builder, ClassDefBuilder2};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SinglePosBuilder {
     items: BTreeMap<GlyphId, ValueRecord>,
 }
@@ -190,6 +191,11 @@ impl ClassPairPosSubtable {
 }
 
 impl PairPosBuilder {
+    /// Returns `true` if no rules have been added to this builder
+    pub fn is_empty(&self) -> bool {
+        self.pairs.0.is_empty() && self.classes.0.is_empty()
+    }
+
     /// Insert a new kerning pair
     pub fn insert_pair(
         &mut self,
@@ -324,7 +330,8 @@ impl Builder for ClassPairPosSubtable {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CursivePosBuilder {
     // (entry, exit)
     items: BTreeMap<GlyphId, (Option<Anchor>, Option<Anchor>)>,
@@ -356,7 +363,8 @@ impl Builder for CursivePosBuilder {
 }
 
 // shared between several tables
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct MarkList {
     // (class id, anchor)
     glyphs: BTreeMap<GlyphId, (u16, Anchor)>,
@@ -424,7 +432,8 @@ impl Builder for MarkList {
 }
 
 /// A builder for GPOS Lookup Type 4, Mark-to-Base
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MarkToBaseBuilder {
     marks: MarkList,
     bases: BTreeMap<GlyphId, Vec<(u16, Anchor)>>,
@@ -437,6 +446,19 @@ pub struct PreviouslyAssignedClass {
     pub glyph_id: GlyphId,
     /// The name of the previous class
     pub class: SmolStr,
+}
+
+impl std::error::Error for PreviouslyAssignedClass {}
+
+impl std::fmt::Display for PreviouslyAssignedClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Glyph '{}' was previously assigned to class '{}'",
+            self.glyph_id.to_u16(),
+            self.class
+        )
+    }
 }
 
 impl MarkToBaseBuilder {
@@ -499,7 +521,8 @@ impl Builder for MarkToBaseBuilder {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MarkToLigBuilder {
     marks: MarkList,
     ligatures: BTreeMap<GlyphId, Vec<BTreeMap<SmolStr, Anchor>>>,
@@ -569,7 +592,8 @@ impl Builder for MarkToLigBuilder {
 }
 
 /// A builder for GPOS Type 6 (Mark-to-Mark)
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MarkToMarkBuilder {
     attaching_marks: MarkList,
     base_marks: BTreeMap<GlyphId, Vec<(u16, Anchor)>>,

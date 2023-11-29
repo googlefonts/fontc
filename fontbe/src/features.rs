@@ -16,10 +16,7 @@ use log::{debug, error, trace, warn};
 use ordered_float::OrderedFloat;
 
 use fea_rs::{
-    compile::{
-        Compilation, FeatureBuilder, FeatureProvider, MarkToBaseBuilder, MarkToMarkBuilder,
-        PairPosBuilder, VariationInfo,
-    },
+    compile::{Compilation, FeatureBuilder, FeatureProvider, VariationInfo},
     parse::{SourceLoadError, SourceResolver},
     Compiler,
 };
@@ -197,15 +194,11 @@ impl<'a> FeatureWriter<'a> {
         if self.kerning.is_empty() {
             return Ok(());
         }
-        let mut ppos_subtables = PairPosBuilder::default();
-
-        for kern in self.kerning.kerns() {
-            kern.insert_into(&mut ppos_subtables);
-        }
+        let pairpos_subtables = self.kerning.lookups.clone();
 
         // now we have a builder for the pairpos subtables, so we can make
         // a lookup:
-        let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, vec![ppos_subtables])];
+        let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, pairpos_subtables)];
         builder.add_to_default_language_systems(Tag::new(b"kern"), &lookups);
 
         {
@@ -242,58 +235,20 @@ impl<'a> FeatureWriter<'a> {
         let mut mark_mark_lookups = Vec::new();
 
         for mark_base in marks.mark_base.iter() {
-            let mut mark_base_builder = MarkToBaseBuilder::default();
-            for mark in mark_base.marks.iter() {
-                mark_base_builder
-                    .insert_mark(
-                        mark.gid,
-                        mark_base.class.clone(),
-                        mark.create_anchor_table(),
-                    )
-                    .map_err(Error::PreviouslyAssignedClass)?;
-            }
-
-            for base in mark_base.bases.iter() {
-                mark_base_builder.insert_base(
-                    base.gid,
-                    &mark_base.class,
-                    base.create_anchor_table(),
-                )
-            }
-
             // each mark to base it's own lookup, whch differs from fontmake
             mark_base_lookups.push(builder.add_lookup(
                 LookupFlag::default(),
                 None,
-                vec![mark_base_builder],
+                vec![mark_base.to_owned()],
             ));
         }
 
         // If a mark has anchors that are themselves marks what we got here is a mark to mark
         for mark_mark in marks.mark_mark.iter() {
-            let mut mark_mark_builder = MarkToMarkBuilder::default();
-
-            for mark in mark_mark.attaching_marks.iter() {
-                mark_mark_builder
-                    .insert_mark1(
-                        mark.gid,
-                        mark_mark.class.clone(),
-                        mark.create_anchor_table(),
-                    )
-                    .map_err(Error::PreviouslyAssignedClass)?;
-            }
-
-            for base in mark_mark.base_marks.iter() {
-                mark_mark_builder.insert_mark2(
-                    base.gid,
-                    &mark_mark.class,
-                    base.create_anchor_table(),
-                );
-            }
             mark_mark_lookups.push(builder.add_lookup(
                 LookupFlag::default(),
-                Some(mark_mark.filter_set.clone().into()),
-                vec![mark_mark_builder],
+                None,
+                vec![mark_mark.to_owned()],
             ));
         }
 

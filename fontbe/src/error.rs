@@ -72,7 +72,7 @@ pub enum Error {
     #[error("No glyph class '{0}'")]
     MissingGlyphClass(GlyphName),
     #[error("Multiple assignments for class: {0:?}")]
-    PreviouslyAssignedClass(PreviouslyAssignedClass),
+    PreviouslyAssignedClass(#[from] PreviouslyAssignedClass),
 }
 
 #[derive(Debug)]
