@@ -233,12 +233,6 @@ def stat_like_fontmake(ttx):
     # So until such time as we start writing format 4 axis value tables it doesn't matter
     ver.attrib["value"] = "0x00010001"
 
-    # fontc reporting a blank axis value array isn't a very interesting diff
-    axis_values = select_one(el, "AxisValueArray")
-    if len(axis_values) == 0:
-        axis_values.getparent().remove(axis_values)
-
-
 def reduce_diff_noise(fontc, fontmake):
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
