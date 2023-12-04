@@ -448,6 +448,7 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
             static_metadata.default_location().clone(),
             static_metadata.units_per_em,
             font.default_master().x_height().map(|v| v.0 as f32),
+            static_metadata.italic_angle.into_inner(),
         );
 
         for master in font.masters.iter() {

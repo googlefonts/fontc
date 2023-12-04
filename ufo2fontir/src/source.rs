@@ -921,6 +921,7 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
                 })?
                 .x_height
                 .map(|v| v as f32),
+            static_metadata.italic_angle.into_inner(),
         );
         for source in self
             .designspace
@@ -935,11 +936,6 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
 
             metrics.set_if_some(GlobalMetric::Ascender, pos.clone(), font_info.ascender);
             metrics.set_if_some(GlobalMetric::Descender, pos.clone(), font_info.descender);
-            metrics.set_if_some(
-                GlobalMetric::CaretSlopeRise,
-                pos.clone(),
-                font_info.open_type_hhea_caret_slope_rise.map(|v| v as f64),
-            );
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), font_info.cap_height);
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), font_info.x_height);
             metrics.set_if_some(
@@ -981,6 +977,21 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
                 GlobalMetric::HheaLineGap,
                 pos.clone(),
                 font_info.open_type_hhea_line_gap.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::CaretSlopeRise,
+                pos.clone(),
+                font_info.open_type_hhea_caret_slope_rise.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::CaretSlopeRun,
+                pos.clone(),
+                font_info.open_type_hhea_caret_slope_run.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::CaretOffset,
+                pos.clone(),
+                font_info.open_type_hhea_caret_offset.map(|v| v as f64),
             );
         }
 

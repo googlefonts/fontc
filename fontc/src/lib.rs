@@ -2525,4 +2525,28 @@ mod tests {
     fn italic_angle_in_designspace() {
         assert_post_italic_angle("designspace_from_glyphs/SlantedFont.designspace", -12.0);
     }
+
+    fn assert_hhea_caret_slope(source: &str, expected_slope_rise: i16, expected_slope_run: i16) {
+        let compile = TestCompile::compile_source(source);
+        let hhea = compile.font().hhea().unwrap();
+
+        assert_eq!(expected_slope_rise, hhea.caret_slope_rise());
+        assert_eq!(expected_slope_run, hhea.caret_slope_run());
+        assert_eq!(0, hhea.caret_offset());
+    }
+
+    #[test]
+    fn default_caret_slope_in_glyphs2() {
+        assert_hhea_caret_slope("glyphs2/SlantedFont.glyphs", 1000, 213);
+    }
+
+    #[test]
+    fn default_caret_slope_in_glyphs3() {
+        assert_hhea_caret_slope("glyphs3/SlantedFont.glyphs", 1000, 213);
+    }
+
+    #[test]
+    fn default_caret_slope_in_designspace() {
+        assert_hhea_caret_slope("designspace_from_glyphs/SlantedFont.designspace", 1000, 213);
+    }
 }
