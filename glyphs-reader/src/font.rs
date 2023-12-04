@@ -42,6 +42,7 @@ pub struct RawAxisUserToDesignMap(Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>);
 #[derive(Debug, PartialEq, Hash)]
 pub struct Font {
     pub units_per_em: u16,
+    pub fs_type: Option<u16>,
     pub use_typo_metrics: Option<bool>,
     pub has_wws_names: Option<bool>,
     pub axes: Vec<Axis>,
@@ -342,6 +343,13 @@ impl CustomParameters {
             None
         })
     }
+
+    fn fs_type(&self) -> Option<&Vec<i64>> {
+        let Some(CustomParameterValue::FsType(bits)) = self.get("fsType") else {
+            return None;
+        };
+        Some(bits)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -353,6 +361,7 @@ enum CustomParameterValue {
     AxisLocations(Vec<AxisLocation>),
     GlyphOrder(Vec<String>),
     VirtualMaster(Vec<AxisLocation>),
+    FsType(Vec<i64>),
 }
 
 /// Hand-parse these because they take multiple shapes
@@ -441,6 +450,12 @@ impl FromPlist for CustomParameters {
                                 };
                                 value =
                                     Some(CustomParameterValue::VirtualMaster(tokenizer.parse()?));
+                            }
+                            _ if name == Some(String::from("fsType")) => {
+                                let Token::OpenParen = peek else {
+                                    return Err(Error::UnexpectedChar('('));
+                                };
+                                value = Some(CustomParameterValue::FsType(tokenizer.parse()?));
                             }
                             _ => tokenizer.skip_rec()?,
                         }
@@ -1840,6 +1855,11 @@ impl TryFrom<RawFont> for Font {
         };
         let units_per_em = units_per_em.try_into().map_err(Error::InvalidUpem)?;
 
+        let fs_type = from
+            .custom_parameters
+            .fs_type()
+            .map(|bits| bits.iter().map(|bit| 1 << bit).sum());
+
         let mut names = BTreeMap::new();
         for name in from.properties {
             // TODO: we only support dflt, .glyphs l10n names are ignored
@@ -1908,6 +1928,7 @@ impl TryFrom<RawFont> for Font {
 
         Ok(Font {
             units_per_em,
+            fs_type,
             use_typo_metrics,
             has_wws_names,
             axes,
@@ -2727,5 +2748,23 @@ mod tests {
                 .map(|(name, glyph)| (name.as_str(), glyph.export))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn read_fstype_none() {
+        let font = Font::load(&glyphs3_dir().join("infinity.glyphs")).unwrap();
+        assert!(font.fs_type.is_none());
+    }
+
+    #[test]
+    fn read_fstype_zero() {
+        let font = Font::load(&glyphs3_dir().join("fstype_0x0000.glyphs")).unwrap();
+        assert_eq!(Some(0), font.fs_type);
+    }
+
+    #[test]
+    fn read_fstype_bits() {
+        let font = Font::load(&glyphs3_dir().join("fstype_0x0104.glyphs")).unwrap();
+        assert_eq!(Some(0x104), font.fs_type);
     }
 }

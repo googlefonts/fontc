@@ -86,6 +86,7 @@ impl GlyphsIrSource {
         // Explicitly field by field so if we add more compiler will force us to update here
         let font = Font {
             units_per_em: font.units_per_em,
+            fs_type: font.fs_type,
             use_typo_metrics: font.use_typo_metrics,
             has_wws_names: font.has_wws_names,
             axes: font.axes.clone(),
@@ -115,6 +116,7 @@ impl GlyphsIrSource {
         // Explicitly field by field so if we add more compiler will force us to update here
         let font = Font {
             units_per_em: font.units_per_em,
+            fs_type: None,
             use_typo_metrics: font.use_typo_metrics,
             has_wws_names: None,
             axes: font.axes.clone(),
@@ -370,8 +372,8 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
                 Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
         }
 
-        // <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
-        static_metadata.misc.fs_type = Some(1 << 3);
+        // Default per <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
+        static_metadata.misc.fs_type = font.fs_type.or(Some(1 << 3));
 
         // <https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/builder/custom_params.py#L1116-L1125>
         static_metadata.misc.underline_thickness = 50.0.into();
@@ -1531,5 +1533,17 @@ mod tests {
                 is_export("space"),
             ]
         );
+    }
+
+    #[test]
+    fn reads_fs_type_0x0000() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("fstype_0x0000.glyphs"));
+        assert_eq!(Some(0), context.static_metadata.get().misc.fs_type);
+    }
+
+    #[test]
+    fn reads_fs_type_0x0104() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("fstype_0x0104.glyphs"));
+        assert_eq!(Some(0x104), context.static_metadata.get().misc.fs_type);
     }
 }

@@ -1,0 +1,42 @@
+{
+.appVersion = "3219";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = fsType;
+value = (
+2,
+8
+);
+}
+);
+date = "2023-09-20 08:55:41 +0000";
+familyName = fstype;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = fstype;
+layers = (
+{
+layerId = m01;
+width = 600;
+}
+);
+}
+);
+unitsPerEm = 1000;
+}
