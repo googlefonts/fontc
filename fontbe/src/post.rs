@@ -4,7 +4,10 @@ use std::collections::HashSet;
 
 use fontdrasil::orchestration::{Access, Work};
 use fontir::orchestration::WorkId as FeWorkId;
-use write_fonts::{tables::post::Post, types::FWord};
+use write_fonts::{
+    tables::post::Post,
+    types::{FWord, Fixed},
+};
 
 use crate::{
     error::Error,
@@ -43,6 +46,7 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
                 .iter()
                 .map(|g| postscript_names.get(g).unwrap_or(g).as_str()),
         );
+        post.italic_angle = Fixed::from_f64(static_metadata.italic_angle.into_inner());
         post.underline_position = FWord::new(static_metadata.misc.underline_position.0 as i16);
         post.underline_thickness = FWord::new(static_metadata.misc.underline_thickness.0 as i16);
         context.post.set_unconditionally(post.into());

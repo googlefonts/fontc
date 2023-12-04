@@ -763,6 +763,10 @@ impl FontMaster {
     pub fn cap_height(&self) -> Option<OrderedFloat<f64>> {
         self.read_metric("cap height")
     }
+
+    pub fn italic_angle(&self) -> Option<OrderedFloat<f64>> {
+        self.read_metric("italic angle")
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]

@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="slnt" name="Slant" minimum="-12" maximum="0" default="-12"/>
+  </axes>
+  <sources>
+    <source filename="SlantedFont-Italic.ufo" name="Slanted Font Italic" familyname="Slanted Font" stylename="Italic">
+      <lib copy="1"/>
+      <groups copy="1"/>
+      <features copy="1"/>
+      <info copy="1"/>
+      <location>
+        <dimension name="Slant" xvalue="-12"/>
+      </location>
+    </source>
+    <source filename="SlantedFont-Regular.ufo" name="Slanted Font Regular" familyname="Slanted Font" stylename="Regular">
+      <location>
+        <dimension name="Slant" xvalue="0"/>
+      </location>
+    </source>
+  </sources>
+</designspace>

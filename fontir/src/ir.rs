@@ -71,6 +71,11 @@ pub struct StaticMetadata {
     /// <https://github.com/adobe-type-tools/agl-specification>
     pub postscript_names: PostscriptNames,
 
+    /// Italic angle in counter-clockwise degrees from the vertical. Zero for
+    /// upright fonts, negative for right-leaning fonts.
+    /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/post>.
+    pub italic_angle: OrderedFloat<f64>,
+
     /// Miscellaneous font-wide data that didn't seem worthy of top billing
     pub misc: MiscMetadata,
 }
@@ -247,6 +252,7 @@ impl StaticMetadata {
         named_instances: Vec<NamedInstance>,
         glyph_locations: HashSet<NormalizedLocation>,
         postscript_names: PostscriptNames,
+        italic_angle: f64,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
         let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
@@ -283,6 +289,7 @@ impl StaticMetadata {
             variation_model,
             default_location,
             postscript_names,
+            italic_angle: italic_angle.into(),
             misc: MiscMetadata {
                 fs_type: None, // default is, sigh, inconsistent across source formats
                 selection_flags: Default::default(),
@@ -331,7 +338,6 @@ pub enum GlobalMetric {
     CapHeight,
     CaretSlopeRise,
     XHeight,
-    ItalicAngle,
     YSubscriptXSize,
     YSubscriptYSize,
     YSubscriptXOffset,
@@ -401,7 +407,6 @@ impl GlobalMetrics {
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L360
         let italic_angle = 0.0;
-        set(GlobalMetric::ItalicAngle, italic_angle);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L133-L150
         set(GlobalMetric::CaretSlopeRise, 1.0);
@@ -481,7 +486,6 @@ impl GlobalMetrics {
             caret_slope_rise: self.get(GlobalMetric::CaretSlopeRise, pos),
             cap_height: self.get(GlobalMetric::CapHeight, pos),
             x_height: self.get(GlobalMetric::XHeight, pos),
-            italic_angle: self.get(GlobalMetric::ItalicAngle, pos),
             y_subscript_x_size: self.get(GlobalMetric::YSubscriptXSize, pos),
             y_subscript_y_size: self.get(GlobalMetric::YSubscriptYSize, pos),
             y_subscript_x_offset: self.get(GlobalMetric::YSubscriptXOffset, pos),
@@ -519,7 +523,6 @@ pub struct GlobalMetricsInstance {
     pub caret_slope_rise: OrderedFloat<f32>,
     pub cap_height: OrderedFloat<f32>,
     pub x_height: OrderedFloat<f32>,
-    pub italic_angle: OrderedFloat<f32>,
     pub y_subscript_x_size: OrderedFloat<f32>,
     pub y_subscript_y_size: OrderedFloat<f32>,
     pub y_subscript_x_offset: OrderedFloat<f32>,
@@ -1554,6 +1557,7 @@ mod tests {
                 ),
             ]),
             postscript_names: HashMap::from([("lhs".into(), "rhs".into())]),
+            italic_angle: 0.0.into(),
             misc: MiscMetadata {
                 fs_type: None,
                 selection_flags: SelectionFlags::default(),
