@@ -282,8 +282,12 @@ impl<'a> Workload<'a> {
         }
     }
 
-    fn can_run_all_or_one(&self, all_or_one: &AccessType<AnyWorkId>) -> bool {
-        match all_or_one {
+    /// Check if a dependency is fulfilled, that is it's output is available
+    fn is_dep_fulfilled(&self, dep: &AccessType<AnyWorkId>) -> bool {
+        // If the dependency is on the variant we can simply check the count
+        // otherwise we have to check the specific job for completion. Checking the
+        // count will return true even if the "I'm done" message hasn't been received yet.
+        match dep {
             AccessType::SpecificInstanceOfVariant(id) => {
                 !self.jobs_pending.contains_key(&id.clone())
             }
@@ -312,17 +316,18 @@ impl<'a> Workload<'a> {
             AnyAccess::Fe(access) => match access {
                 Access::None => true,
                 Access::Unknown => false,
-                Access::SpecificInstanceOfVariant(id) => self
-                    .can_run_all_or_one(&AccessType::SpecificInstanceOfVariant(id.clone().into())),
+                Access::SpecificInstanceOfVariant(id) => {
+                    self.is_dep_fulfilled(&AccessType::SpecificInstanceOfVariant(id.clone().into()))
+                }
                 Access::Variant(id) => {
-                    self.can_run_all_or_one(&AccessType::Variant(id.clone().into()))
+                    self.is_dep_fulfilled(&AccessType::Variant(id.clone().into()))
                 }
                 Access::Set(ids) => ids.iter().all(|id| match id {
-                    AccessType::SpecificInstanceOfVariant(id) => self.can_run_all_or_one(
+                    AccessType::SpecificInstanceOfVariant(id) => self.is_dep_fulfilled(
                         &AccessType::SpecificInstanceOfVariant(id.clone().into()),
                     ),
                     AccessType::Variant(exemplar) => {
-                        self.can_run_all_or_one(&AccessType::Variant(exemplar.clone().into()))
+                        self.is_dep_fulfilled(&AccessType::Variant(exemplar.clone().into()))
                     }
                 }),
                 Access::All => !self.anything_else_pending(&job.id),
@@ -331,10 +336,10 @@ impl<'a> Workload<'a> {
                 Access::None => true,
                 Access::Unknown => false,
                 Access::SpecificInstanceOfVariant(id) => {
-                    self.can_run_all_or_one(&AccessType::SpecificInstanceOfVariant(id.clone()))
+                    self.is_dep_fulfilled(&AccessType::SpecificInstanceOfVariant(id.clone()))
                 }
-                Access::Variant(id) => self.can_run_all_or_one(&AccessType::Variant(id.clone())),
-                Access::Set(ids) => ids.iter().all(|id| self.can_run_all_or_one(id)),
+                Access::Variant(id) => self.is_dep_fulfilled(&AccessType::Variant(id.clone())),
+                Access::Set(ids) => ids.iter().all(|id| self.is_dep_fulfilled(id)),
                 Access::All => !self.anything_else_pending(&job.id),
             },
         }
