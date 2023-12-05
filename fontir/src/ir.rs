@@ -337,6 +337,8 @@ pub enum GlobalMetric {
     Os2WinDescent,
     CapHeight,
     CaretSlopeRise,
+    CaretSlopeRun,
+    CaretOffset,
     XHeight,
     YSubscriptXSize,
     YSubscriptYSize,
@@ -353,9 +355,9 @@ pub enum GlobalMetric {
 /// Adjust Y offset based on italic angle, to get X offset.
 ///
 ///  <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L571-L573>
-fn adjust_offset(offset: f32, angle: f32) -> f32 {
-    if angle.abs() >= f32::EPSILON {
-        offset * (-angle).to_radians().tan()
+fn adjust_offset(offset: f32, angle: f64) -> f32 {
+    if angle.abs() >= f64::EPSILON {
+        ((offset as f64) * (-angle).to_radians().tan()) as f32
     } else {
         0.0
     }
@@ -367,6 +369,7 @@ impl GlobalMetrics {
         default_location: NormalizedLocation,
         units_per_em: u16,
         x_height: Option<f32>,
+        italic_angle: f64,
     ) -> GlobalMetrics {
         let mut metrics = GlobalMetrics(HashMap::new());
         let mut set = |metric, value| metrics.set(metric, default_location.clone(), value);
@@ -405,11 +408,22 @@ impl GlobalMetrics {
         let x_height = x_height.unwrap_or(0.5 * units_per_em as f32);
         set(GlobalMetric::XHeight, x_height);
 
-        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L360
-        let italic_angle = 0.0;
-
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L133-L150
-        set(GlobalMetric::CaretSlopeRise, 1.0);
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L153-L163
+        if italic_angle == 0.0 {
+            set(GlobalMetric::CaretSlopeRise, 1.0);
+            set(GlobalMetric::CaretSlopeRun, 0.0);
+        } else {
+            let slope_rise = 1000.0;
+            set(GlobalMetric::CaretSlopeRise, slope_rise);
+            set(
+                GlobalMetric::CaretSlopeRun,
+                adjust_offset(slope_rise, italic_angle),
+            );
+        }
+
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L367
+        set(GlobalMetric::CaretOffset, 0.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L575-L616
         let y_subscript_x_size = units_per_em as f32 * 0.65;
@@ -484,6 +498,8 @@ impl GlobalMetrics {
             ascender: self.get(GlobalMetric::Ascender, pos),
             descender: self.get(GlobalMetric::Descender, pos),
             caret_slope_rise: self.get(GlobalMetric::CaretSlopeRise, pos),
+            caret_slope_run: self.get(GlobalMetric::CaretSlopeRun, pos),
+            caret_offset: self.get(GlobalMetric::CaretOffset, pos),
             cap_height: self.get(GlobalMetric::CapHeight, pos),
             x_height: self.get(GlobalMetric::XHeight, pos),
             y_subscript_x_size: self.get(GlobalMetric::YSubscriptXSize, pos),
@@ -521,6 +537,8 @@ pub struct GlobalMetricsInstance {
     pub ascender: OrderedFloat<f32>,
     pub descender: OrderedFloat<f32>,
     pub caret_slope_rise: OrderedFloat<f32>,
+    pub caret_slope_run: OrderedFloat<f32>,
+    pub caret_offset: OrderedFloat<f32>,
     pub cap_height: OrderedFloat<f32>,
     pub x_height: OrderedFloat<f32>,
     pub y_subscript_x_size: OrderedFloat<f32>,

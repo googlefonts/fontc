@@ -302,18 +302,19 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             ascender: FWord::new(default_metrics.hhea_ascender.into_inner().ot_round()),
             descender: FWord::new(default_metrics.hhea_descender.into_inner().ot_round()),
             line_gap: FWord::new(default_metrics.hhea_line_gap.into_inner().ot_round()),
-            caret_slope_rise: default_metrics.caret_slope_rise.into_inner().ot_round(),
             advance_width_max: glyph_limits.advance_width_max.into(),
             min_left_side_bearing,
             min_right_side_bearing,
             x_max_extent,
+            caret_slope_rise: default_metrics.caret_slope_rise.into_inner().ot_round(),
+            caret_slope_run: default_metrics.caret_slope_run.into_inner().ot_round(),
+            caret_offset: default_metrics.caret_offset.into_inner().ot_round(),
             number_of_long_metrics: long_metrics.len().try_into().map_err(|_| {
                 Error::OutOfBounds {
                     what: "number_of_long_metrics".into(),
                     value: format!("{}", long_metrics.len()),
                 }
             })?,
-            ..Default::default()
         };
         context.hhea.set_unconditionally(hhea.into());
 
