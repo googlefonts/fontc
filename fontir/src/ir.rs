@@ -94,9 +94,6 @@ pub struct MiscMetadata {
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#achvendid>
     pub vendor_id: Tag,
 
-    pub underline_thickness: OrderedFloat<f32>,
-    pub underline_position: OrderedFloat<f32>,
-
     /// UFO appears to allow negative major versions.
     ///
     /// See <https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#generic-identification-information>
@@ -294,8 +291,6 @@ impl StaticMetadata {
                 fs_type: None, // default is, sigh, inconsistent across source formats
                 selection_flags: Default::default(),
                 vendor_id: DEFAULT_VENDOR_ID_TAG,
-                underline_thickness: 0.0.into(),
-                underline_position: 0.0.into(),
                 // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L353-L354
                 version_major: 0,
                 version_minor: 0,
@@ -339,6 +334,8 @@ pub enum GlobalMetric {
     CaretSlopeRise,
     CaretSlopeRun,
     CaretOffset,
+    UnderlineThickness,
+    UnderlinePosition,
     XHeight,
     YSubscriptXSize,
     YSubscriptYSize,
@@ -450,6 +447,14 @@ impl GlobalMetrics {
         set(GlobalMetric::YStrikeoutSize, 0.05 * units_per_em as f32);
         set(GlobalMetric::YStrikeoutPosition, x_height * 0.6);
 
+        // ufo2ft and Glyphs.app have different defaults for the post.underlinePosition:
+        // the former uses 0.075*UPEM whereas the latter 0.1*UPEM (both use the same
+        // underlineThickness 0.05*UPEM). We prefer to match Glyphs.app as more widely used.
+        // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L313-L322
+        // https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/builder/custom_params.py#L1116-L1125
+        set(GlobalMetric::UnderlineThickness, 0.05 * units_per_em as f32);
+        set(GlobalMetric::UnderlinePosition, -0.1 * units_per_em as f32);
+
         metrics
     }
 
@@ -520,6 +525,8 @@ impl GlobalMetrics {
             hhea_ascender: self.get(GlobalMetric::HheaAscender, pos),
             hhea_descender: self.get(GlobalMetric::HheaDescender, pos),
             hhea_line_gap: self.get(GlobalMetric::HheaLineGap, pos),
+            underline_thickness: self.get(GlobalMetric::UnderlineThickness, pos),
+            underline_position: self.get(GlobalMetric::UnderlinePosition, pos),
         }
     }
 
@@ -559,6 +566,8 @@ pub struct GlobalMetricsInstance {
     pub hhea_ascender: OrderedFloat<f32>,
     pub hhea_descender: OrderedFloat<f32>,
     pub hhea_line_gap: OrderedFloat<f32>,
+    pub underline_thickness: OrderedFloat<f32>,
+    pub underline_position: OrderedFloat<f32>,
 }
 
 /// Helps accumulate 'name' values.
@@ -1580,8 +1589,6 @@ mod tests {
                 fs_type: None,
                 selection_flags: SelectionFlags::default(),
                 vendor_id: Tag::from_be_bytes(*b"DUCK"),
-                underline_thickness: 0.15.into(),
-                underline_position: 16.0.into(),
                 version_major: 42,
                 version_minor: 24,
                 head_flags: 42,

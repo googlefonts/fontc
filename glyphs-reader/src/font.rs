@@ -293,6 +293,15 @@ impl CustomParameters {
         Some(*i)
     }
 
+    fn float(&self, name: &str) -> Option<OrderedFloat<f64>> {
+        let value = self.get(name)?;
+        match value {
+            CustomParameterValue::Int(i) => Some((*i as f64).into()),
+            CustomParameterValue::Float(f) => Some(*f),
+            _ => None,
+        }
+    }
+
     fn bool(&self, name: &str) -> Option<bool> {
         self.int(name).map(|v| v == 1)
     }
@@ -734,6 +743,8 @@ pub struct FontMaster {
     pub hhea_ascender: Option<i64>,
     pub hhea_descender: Option<i64>,
     pub hhea_line_gap: Option<i64>,
+    pub underline_thickness: Option<OrderedFloat<f64>>,
+    pub underline_position: Option<OrderedFloat<f64>>,
 }
 
 impl FontMaster {
@@ -1907,6 +1918,8 @@ impl TryFrom<RawFont> for Font {
                 hhea_ascender: m.custom_parameters.int("hheaAscender"),
                 hhea_descender: m.custom_parameters.int("hheaDescender"),
                 hhea_line_gap: m.custom_parameters.int("hheaLineGap"),
+                underline_thickness: m.custom_parameters.float("underlineThickness"),
+                underline_position: m.custom_parameters.float("underlinePosition"),
             })
             .collect();
 

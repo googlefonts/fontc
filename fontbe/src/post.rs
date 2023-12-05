@@ -7,6 +7,7 @@ use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
     tables::post::Post,
     types::{FWord, Fixed},
+    OtRound,
 };
 
 use crate::{
@@ -29,6 +30,7 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
     fn read_access(&self) -> Access<AnyWorkId> {
         Access::Set(HashSet::from([
             FeWorkId::StaticMetadata.into(),
+            FeWorkId::GlobalMetrics.into(),
             FeWorkId::GlyphOrder.into(),
         ]))
     }
@@ -39,6 +41,11 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
         // TODO optionally drop glyph names with format 3.0.
         // TODO a more serious post
         let static_metadata = context.ir.static_metadata.get();
+        let metrics = context
+            .ir
+            .global_metrics
+            .get()
+            .at(static_metadata.default_location());
         let postscript_names = &static_metadata.postscript_names;
         let glyph_order = context.ir.glyph_order.get();
         let mut post = Post::new_v2(
@@ -47,8 +54,8 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
                 .map(|g| postscript_names.get(g).unwrap_or(g).as_str()),
         );
         post.italic_angle = Fixed::from_f64(static_metadata.italic_angle.into_inner());
-        post.underline_position = FWord::new(static_metadata.misc.underline_position.0 as i16);
-        post.underline_thickness = FWord::new(static_metadata.misc.underline_thickness.0 as i16);
+        post.underline_position = FWord::new(metrics.underline_position.ot_round());
+        post.underline_thickness = FWord::new(metrics.underline_thickness.ot_round());
         context.post.set_unconditionally(post.into());
         Ok(())
     }
