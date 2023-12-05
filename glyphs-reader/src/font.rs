@@ -2402,6 +2402,18 @@ mod tests {
     }
 
     #[test]
+    fn vf_origin_unquoted_string() {
+        // the 'Variable Font Origin' custom parameter has the value `m01`,
+        // un un-quoted plist string, which happens to be the default master.id
+        // that Glyphs.app assigns to the predefined 'Regular' master that any
+        // "New Font" comes with when it is first crated.
+        // We just test that we do not crash attempting to parse the unquoted
+        // string as an integer.
+        let font = Font::load(&glyphs3_dir().join("CustomOrigin.glyphs")).unwrap();
+        assert_eq!(1, font.default_master_idx);
+    }
+
+    #[test]
     fn glyph_order_default_is_file_order() {
         let font = Font::load(&glyphs3_dir().join("WghtVar.glyphs")).unwrap();
         assert_eq!(
