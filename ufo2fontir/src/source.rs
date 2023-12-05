@@ -847,18 +847,6 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
         // <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
         static_metadata.misc.fs_type = Some(1 << 2);
 
-        // <https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L313-L322>
-        static_metadata.misc.underline_thickness = font_info_at_default
-            .postscript_underline_thickness
-            .map(|v| v as f32)
-            .unwrap_or(0.05 * units_per_em as f32)
-            .into();
-        static_metadata.misc.underline_position = font_info_at_default
-            .postscript_underline_position
-            .map(|v| v as f32)
-            .unwrap_or(-0.075 * units_per_em as f32)
-            .into();
-
         static_metadata.misc.version_major = font_info_at_default
             .version_major
             .unwrap_or(static_metadata.misc.version_major);
@@ -922,6 +910,14 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
                 .x_height
                 .map(|v| v as f32),
             static_metadata.italic_angle.into_inner(),
+        );
+        // ufo2ft default underline position differs from fontir/Glyphs.app's so
+        // we override it here.
+        // https://github.com/googlefonts/ufo2ft/blob/a421acc/Lib/ufo2ft/fontInfoData.py#L319-L322
+        metrics.set(
+            GlobalMetric::UnderlinePosition,
+            static_metadata.default_location().clone(),
+            -0.075 * static_metadata.units_per_em as f32,
         );
         for source in self
             .designspace
@@ -992,6 +988,16 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
                 GlobalMetric::CaretOffset,
                 pos.clone(),
                 font_info.open_type_hhea_caret_offset.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::UnderlineThickness,
+                pos.clone(),
+                font_info.postscript_underline_thickness,
+            );
+            metrics.set_if_some(
+                GlobalMetric::UnderlinePosition,
+                pos.clone(),
+                font_info.postscript_underline_position,
             );
         }
 
@@ -1726,6 +1732,8 @@ mod tests {
                 hhea_ascender: 1194.0.into(),
                 hhea_descender: (-290.0).into(),
                 hhea_line_gap: 43.0.into(),
+                underline_thickness: 50.0.into(),
+                underline_position: (-75.0).into(),
                 ..Default::default()
             },
             default_metrics
@@ -1781,20 +1789,6 @@ mod tests {
                 (UserCoord::new(700.0), NormalizedCoord::new(1.0)),
             ],
             metric_locations
-        );
-    }
-
-    #[test]
-    fn default_underline_settings() {
-        let (_, context) = build_static_metadata("wght_var.designspace", default_test_flags());
-        let static_metadata = &context.static_metadata.get();
-        assert_eq!(
-            (1000, 50.0, -75.0),
-            (
-                static_metadata.units_per_em,
-                static_metadata.misc.underline_thickness.0,
-                static_metadata.misc.underline_position.0
-            )
         );
     }
 

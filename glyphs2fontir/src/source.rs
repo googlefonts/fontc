@@ -385,10 +385,6 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
         // Default per <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
         static_metadata.misc.fs_type = font.fs_type.or(Some(1 << 3));
 
-        // <https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/builder/custom_params.py#L1116-L1125>
-        static_metadata.misc.underline_thickness = 50.0.into();
-        static_metadata.misc.underline_position = (-100.0).into();
-
         static_metadata.misc.version_major = font.version_major;
         static_metadata.misc.version_minor = font.version_minor;
 
@@ -497,6 +493,16 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
                 pos.clone(),
                 master.hhea_line_gap.map(|v| v as f64),
             );
+            metrics.set_if_some(
+                GlobalMetric::UnderlineThickness,
+                pos.clone(),
+                master.underline_thickness,
+            );
+            metrics.set_if_some(
+                GlobalMetric::UnderlinePosition,
+                pos.clone(),
+                master.underline_position,
+            )
         }
 
         context.global_metrics.set(metrics);
@@ -1427,6 +1433,8 @@ mod tests {
                 hhea_ascender: 1000.0.into(),
                 hhea_descender: (-200.0).into(),
                 hhea_line_gap: 0.0.into(),
+                underline_thickness: 50.0.into(),
+                underline_position: (-100.0).into(),
                 ..Default::default()
             },
             default_metrics
@@ -1439,20 +1447,6 @@ mod tests {
         assert_eq!(
             Tag::new(b"RODS"),
             context.static_metadata.get().misc.vendor_id
-        );
-    }
-
-    #[test]
-    fn default_underline_settings() {
-        let (_, context) = build_static_metadata(glyphs3_dir().join("Oswald-O.glyphs"));
-        let static_metadata = context.static_metadata.get();
-        assert_eq!(
-            (1000, 50.0, -100.0),
-            (
-                static_metadata.units_per_em,
-                static_metadata.misc.underline_thickness.0,
-                static_metadata.misc.underline_position.0
-            )
         );
     }
 
