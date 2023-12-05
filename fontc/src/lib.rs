@@ -2503,4 +2503,26 @@ mod tests {
         // We had a bug where it was 2
         assert_eq!(1, mark_base_lookups(&gpos).len());
     }
+
+    fn assert_post_italic_angle(source: &str, expected_angle: f32) {
+        let compile = TestCompile::compile_source(source);
+        let post = compile.font().post().unwrap();
+
+        assert_eq!(expected_angle, post.italic_angle().to_f32());
+    }
+
+    #[test]
+    fn italic_angle_in_glyphs2() {
+        assert_post_italic_angle("glyphs2/SlantedFont.glyphs", -12.0);
+    }
+
+    #[test]
+    fn italic_angle_in_glyphs3() {
+        assert_post_italic_angle("glyphs3/SlantedFont.glyphs", -12.0);
+    }
+
+    #[test]
+    fn italic_angle_in_designspace() {
+        assert_post_italic_angle("designspace_from_glyphs/SlantedFont.designspace", -12.0);
+    }
 }

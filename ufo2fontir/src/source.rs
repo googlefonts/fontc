@@ -825,6 +825,9 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             PostscriptNames::default()
         };
 
+        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L360
+        let italic_angle = font_info_at_default.italic_angle.unwrap_or(0.0);
+
         let mut static_metadata = StaticMetadata::new(
             units_per_em,
             names,
@@ -832,6 +835,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             named_instances,
             glyph_locations,
             postscript_names,
+            italic_angle,
         )
         .map_err(WorkError::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;

@@ -357,6 +357,15 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             _ => SelectionFlags::REGULAR,
         };
 
+        // negate the italic angle because it's clockwise in Glyphs.app whereas it's
+        // counter-clockwise in UFO/OpenType and our GlobalMetrics follow the latter
+        // https://github.com/googlefonts/glyphsLib/blob/f162e7/Lib/glyphsLib/builder/masters.py#L36
+        let italic_angle = font
+            .default_master()
+            .italic_angle()
+            .map(|v| -v.into_inner())
+            .unwrap_or(0.0);
+
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
             names(font),
@@ -364,6 +373,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             named_instances,
             glyph_locations,
             Default::default(), // TODO: impl reading PS names from Glyphs
+            italic_angle,
         )
         .map_err(WorkError::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;

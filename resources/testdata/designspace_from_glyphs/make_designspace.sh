@@ -18,3 +18,4 @@ generate_designspace resources/testdata/glyphs3/IntermediateLayer.glyphs
 generate_designspace resources/testdata/glyphs3/WghtVar.glyphs
 generate_designspace resources/testdata/glyphs3/WghtVar_Anchors.glyphs
 generate_designspace resources/testdata/glyphs3/WghtVar_NoExport.glyphs
+generate_designspace resources/testdata/glyphs3/SlantedFont.glyphs

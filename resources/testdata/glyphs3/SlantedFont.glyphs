@@ -1,0 +1,158 @@
+{
+.appVersion = "3227";
+.formatVersion = 3;
+axes = (
+{
+name = Slant;
+tag = slnt;
+}
+);
+customParameters = (
+{
+name = "Variable Font Origin";
+value = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+}
+);
+date = "2023-12-05 14:28:33 +0000";
+familyName = "Slanted Font";
+fontMaster = (
+{
+axesValues = (
+-12
+);
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+pos = 12;
+}
+);
+name = Italic;
+},
+{
+axesValues = (
+0
+);
+id = "5FEBE59E-1D0D-4C76-8E57-A18681621D7E";
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = I;
+lastChange = "2023-12-05 14:31:49 +0000";
+layers = (
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(194,0,l),
+(271,0,l),
+(419,700,l),
+(338,700,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "5FEBE59E-1D0D-4C76-8E57-A18681621D7E";
+shapes = (
+{
+closed = 1;
+nodes = (
+(253,0,l),
+(331,0,l),
+(331,700,l),
+(253,700,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 73;
+},
+{
+glyphname = space;
+lastChange = "2023-12-05 14:44:13 +0000";
+layers = (
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 200;
+},
+{
+layerId = "5FEBE59E-1D0D-4C76-8E57-A18681621D7E";
+width = 200;
+}
+);
+unicode = 32;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
