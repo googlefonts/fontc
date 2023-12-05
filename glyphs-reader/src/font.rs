@@ -355,6 +355,7 @@ impl CustomParameters {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum CustomParameterValue {
     Int(i64),
+    Float(OrderedFloat<f64>),
     String(String),
     Axes(Vec<Axis>),
     AxesMappings(Vec<AxisMapping>),
@@ -393,22 +394,16 @@ impl FromPlist for CustomParameters {
                     "value" => {
                         let peek = tokenizer.peek()?;
                         match peek {
-                            // VendorID is a string but doesn't feel it needs quotes
-                            Token::Atom(..) if name == Some(String::from("vendorID")) => {
-                                let token = tokenizer.lex()?;
-                                let Token::Atom(val) = token else {
-                                    return Err(Error::UnexpectedDataType {
-                                        expected: "Atom",
-                                        found: token.name(),
-                                    });
-                                };
-                                value = Some(CustomParameterValue::String(val.to_string()));
-                            }
                             Token::Atom(..) => {
                                 let Token::Atom(val) = tokenizer.lex()? else {
                                     panic!("That shouldn't happen");
                                 };
-                                value = Some(CustomParameterValue::Int(val.parse().unwrap()));
+                                value = match Plist::parse(val)? {
+                                    Plist::Integer(i) => Some(CustomParameterValue::Int(i)),
+                                    Plist::Float(f) => Some(CustomParameterValue::Float(f)),
+                                    Plist::String(s) => Some(CustomParameterValue::String(s)),
+                                    _ => panic!("atom has to be int, float, or string"),
+                                };
                             }
                             Token::OpenBrace if name == Some(String::from("Axis Mappings")) => {
                                 let mappings: Vec<AxisMapping> = tokenizer
@@ -2399,6 +2394,18 @@ mod tests {
     fn vf_origin_multi_axis_custom() {
         let font = Font::load(&glyphs3_dir().join("WghtVar_3master_CustomOrigin.glyphs")).unwrap();
         assert_eq!(2, font.default_master_idx);
+    }
+
+    #[test]
+    fn vf_origin_unquoted_string() {
+        // the 'Variable Font Origin' custom parameter has the value `m01`,
+        // un un-quoted plist string, which happens to be the default master.id
+        // that Glyphs.app assigns to the predefined 'Regular' master that any
+        // "New Font" comes with when it is first crated.
+        // We just test that we do not crash attempting to parse the unquoted
+        // string as an integer.
+        let font = Font::load(&glyphs3_dir().join("CustomOrigin.glyphs")).unwrap();
+        assert_eq!(1, font.default_master_idx);
     }
 
     #[test]
