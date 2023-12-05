@@ -5,19 +5,19 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Unrecognized source")]
+    #[error("Unrecognized source {0}")]
     UnrecognizedSource(PathBuf),
-    #[error("yaml error")]
+    #[error("yaml error: '{0}'")]
     YamlSerError(#[from] serde_yaml::Error),
-    #[error("IO failures")]
+    #[error("IO error: '{0}'")]
     IoError(#[from] io::Error),
-    #[error("Font IR error")]
+    #[error("Font IR error: '{0}'")]
     FontIrError(#[from] fontir::error::Error),
     #[error("Unable to produce IR")]
     IrGenerationError,
-    #[error("Does not exist")]
+    #[error("Missing file '{0}'")]
     FileExpected(PathBuf),
-    #[error("At least one work item failed")]
+    #[error("Tasks failed: {0:?}")]
     TasksFailed(Vec<(AnyWorkId, String)>),
     #[error("Invalid regex")]
     BadRegex(#[from] regex::Error),
