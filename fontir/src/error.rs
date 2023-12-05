@@ -12,11 +12,11 @@ use write_fonts::types::{InvalidTag, Tag};
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Directory expected")]
+    #[error("Missing directory '{0}'")]
     DirectoryExpected(PathBuf),
-    #[error("File expected")]
+    #[error("Missing expected file '{0}'")]
     FileExpected(PathBuf),
-    #[error("IO failure")]
+    #[error("IO failure: '{0}'")]
     IoError(#[from] io::Error),
     #[error("Unable to parse {0:?}: {1}")]
     ParseError(PathBuf, String),
@@ -24,11 +24,11 @@ pub enum Error {
     NoAxisDefinitions(String),
     #[error("Axis {0} has no entry in axes")]
     NoEntryInAxes(String),
-    #[error("Axis definitions are inconsistent")]
+    #[error("Axis definitions are inconsistent: '{0}'")]
     InconsistentAxisDefinitions(String),
-    #[error("Illegible source")]
+    #[error("Illegible source: '{0}'")]
     UnableToLoadSource(Box<dyn error::Error>),
-    #[error("Missing layer")]
+    #[error("Missing layer '{0}'")]
     NoSuchLayer(String),
     #[error("No files associated with glyph {0}")]
     NoStateForGlyph(GlyphName),
@@ -58,17 +58,17 @@ pub enum Error {
 /// An async work error, hence one that must be Send
 #[derive(Debug, Error)]
 pub enum WorkError {
-    #[error("IO failure")]
+    #[error("IO failure: '{0}'")]
     IoError(#[from] io::Error),
     // I can't use Box(<dyn error::Error>) here because it's not Send, but
     // if I convert error to string I lose the backtrace... What to do?
     #[error("Conversion of glyph '{0:?}' to IR failed: {1}")]
     GlyphIrWorkError(GlyphName, String),
-    #[error("yaml error")]
+    #[error("yaml error: '{0}'")]
     YamlSerError(#[from] serde_yaml::Error),
     #[error("No axes are defined")]
     NoAxisDefinitions,
-    #[error("Axis definitions are inconsistent")]
+    #[error("Axis definitions are inconsistent: '{0}'")]
     InconsistentAxisDefinitions(String),
     #[error("'{0}' has no position on {1}")]
     NoAxisPosition(GlyphName, String),
