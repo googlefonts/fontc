@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use clap::{ArgAction, Parser};
 use fontir::orchestration::Flags;
-use serde::{Deserialize, Serialize};
+use regex::Regex;
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// What font can we build for you today?
 #[derive(Serialize, Deserialize, Parser, Debug, Clone, PartialEq)]
@@ -60,8 +61,8 @@ pub struct Args {
     pub build_dir: PathBuf,
 
     /// Glyph names must match this regex to be processed
-    #[arg(short, long, default_value = None)]
-    pub glyph_name_filter: Option<String>,
+    #[arg(short, long, default_value = None, value_parser = ValidatedRegex::parse)]
+    pub glyph_name_filter: Option<ValidatedRegex>,
 
     /// Set to skip compilation of OpenType Layout features
     #[arg(long, default_value = "false")]
@@ -89,6 +90,13 @@ pub struct Args {
     #[arg(long = "vv", default_value = "false")]
     pub verbose_version: bool,
 }
+
+/// A wrapper around a validated regex string
+///
+/// This is a wrapper because the Regex type itself does not implement PartialEq or
+/// the serde traits, which we require.
+#[derive(Clone, Debug)]
+pub struct ValidatedRegex(Regex);
 
 impl Args {
     /// Collect various relevant flags into a [`Flags`] object.
@@ -147,6 +155,47 @@ impl Args {
     }
 }
 
+impl ValidatedRegex {
+    /// Create a new regex from a raw string.
+    ///
+    /// We use a string as the error type because this is mainly
+    /// designed to be used with clap.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        Regex::new(s).map_err(|e| e.to_string()).map(ValidatedRegex)
+    }
+
+    /// Return the inner [`Regex`].
+    pub fn into_inner(self) -> Regex {
+        self.0
+    }
+}
+
+impl PartialEq for ValidatedRegex {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_str() == other.0.as_str()
+    }
+}
+
+impl<'de> Deserialize<'de> for ValidatedRegex {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Regex::new(&s)
+            .map_err(|e| serde::de::Error::custom(format!("invalid regex: '{e}'")))
+            .map(ValidatedRegex)
+    }
+}
+
+impl Serialize for ValidatedRegex {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.as_str().serialize(serializer)
+    }
+}
 #[cfg(test)]
 mod tests {
     use clap::Parser;

@@ -19,8 +19,6 @@ pub enum Error {
     FileExpected(PathBuf),
     #[error("Tasks failed: {0:?}")]
     TasksFailed(Vec<(AnyWorkId, String)>),
-    #[error("Invalid regex")]
-    BadRegex(#[from] regex::Error),
     #[error("Unable to proceed; {0} jobs stuck pending")]
     UnableToProceed(usize),
 }
