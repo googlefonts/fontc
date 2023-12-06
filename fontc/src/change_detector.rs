@@ -70,9 +70,8 @@ impl ChangeDetector {
         let glyph_name_filter = config
             .args
             .glyph_name_filter
-            .map(|raw_filter| Regex::new(&raw_filter))
-            .transpose()
-            .map_err(Error::BadRegex)?;
+            .clone()
+            .map(|reg| reg.into_inner());
 
         if let Some(regex) = &glyph_name_filter {
             current_inputs.glyphs.retain(|glyph_name, _| {
