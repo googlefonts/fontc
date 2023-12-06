@@ -14,7 +14,7 @@ use write_fonts::read::{
         },
         layout::{DeviceOrVariationIndex, LookupFlag},
     },
-    types::{GlyphId, Tag},
+    types::GlyphId,
     FontData, FontRef, ReadError, TableProvider,
 };
 
@@ -27,9 +27,10 @@ use crate::{
 
 pub(crate) fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> Result<(), Error> {
     writeln!(f, "# GPOS #")?;
-    let table = font
-        .gpos()
-        .map_err(|_| Error::MissingTable(Tag::new(b"GPOS")))?;
+    let Some(table) = font.gpos().ok() else {
+        // no GPOS table, nothing to do
+        return Ok(());
+    };
     let gdef = font.gdef().ok();
     let var_store = gdef
         .as_ref()
