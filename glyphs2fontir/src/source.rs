@@ -479,6 +479,56 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
                 master.win_descent.map(|v| v as f64),
             );
             metrics.set_if_some(
+                GlobalMetric::StrikeoutPosition,
+                pos.clone(),
+                master.strikeout_position.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::StrikeoutSize,
+                pos.clone(),
+                master.strikeout_size.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SubscriptXOffset,
+                pos.clone(),
+                master.subscript_x_offset.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SubscriptXSize,
+                pos.clone(),
+                master.subscript_x_size.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SubscriptYOffset,
+                pos.clone(),
+                master.subscript_y_offset.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SubscriptYSize,
+                pos.clone(),
+                master.subscript_y_size.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SuperscriptXOffset,
+                pos.clone(),
+                master.superscript_x_offset.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SuperscriptXSize,
+                pos.clone(),
+                master.superscript_x_size.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SuperscriptYOffset,
+                pos.clone(),
+                master.superscript_y_offset.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SuperscriptYSize,
+                pos.clone(),
+                master.superscript_y_size.map(|v| v as f64),
+            );
+            metrics.set_if_some(
                 GlobalMetric::HheaAscender,
                 pos.clone(),
                 master.hhea_ascender.map(|v| v as f64),

@@ -960,6 +960,60 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
                 font_info.open_type_os2_win_descent.map(|v| v as f64),
             );
             metrics.set_if_some(
+                GlobalMetric::StrikeoutPosition,
+                pos.clone(),
+                font_info.open_type_os2_strikeout_position.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::StrikeoutSize,
+                pos.clone(),
+                font_info.open_type_os2_strikeout_size.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SubscriptXOffset,
+                pos.clone(),
+                font_info.open_type_os2_subscript_x_offset.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SubscriptXSize,
+                pos.clone(),
+                font_info.open_type_os2_subscript_x_size.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SubscriptYOffset,
+                pos.clone(),
+                font_info.open_type_os2_subscript_y_offset.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SubscriptYSize,
+                pos.clone(),
+                font_info.open_type_os2_subscript_y_size.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SuperscriptXOffset,
+                pos.clone(),
+                font_info
+                    .open_type_os2_superscript_x_offset
+                    .map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SuperscriptXSize,
+                pos.clone(),
+                font_info.open_type_os2_superscript_x_size.map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SuperscriptYOffset,
+                pos.clone(),
+                font_info
+                    .open_type_os2_superscript_y_offset
+                    .map(|v| v as f64),
+            );
+            metrics.set_if_some(
+                GlobalMetric::SuperscriptYSize,
+                pos.clone(),
+                font_info.open_type_os2_superscript_y_size.map(|v| v as f64),
+            );
+            metrics.set_if_some(
                 GlobalMetric::HheaAscender,
                 pos.clone(),
                 font_info.open_type_hhea_ascender.map(|v| v as f64),
