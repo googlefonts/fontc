@@ -116,7 +116,12 @@ impl CoordConverter {
 
     /// Walk the vertices of the mappings, viewing the user/design/normalized value at each stop.
     pub fn iter(&self) -> impl Iterator<Item = (UserCoord, DesignCoord, NormalizedCoord)> + '_ {
-        CoordConverterIter::new(self)
+        self.user_to_design.iter().map(|(user, design)| {
+            let user = UserCoord::new(user);
+            let design = DesignCoord::new(design);
+            let normalized = user.to_normalized(self);
+            (user, design, normalized)
+        })
     }
 
     /// How many mapping points exist
@@ -126,35 +131,6 @@ impl CoordConverter {
 
     pub fn is_empty(&self) -> bool {
         self.user_to_design.len() == 0
-    }
-}
-
-struct CoordConverterIter<'a> {
-    idx: usize,
-    converter: &'a CoordConverter,
-}
-
-impl<'a> CoordConverterIter<'a> {
-    fn new(converter: &'a CoordConverter) -> Self {
-        CoordConverterIter { idx: 0, converter }
-    }
-}
-
-impl<'a> Iterator for CoordConverterIter<'a> {
-    type Item = (UserCoord, DesignCoord, NormalizedCoord);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.idx >= self.converter.user_to_design.len() {
-            return None;
-        }
-
-        let user = UserCoord::new(self.converter.user_to_design.from[self.idx]);
-        let design = DesignCoord::new(self.converter.user_to_design.to[self.idx]);
-        let normalized = user.to_normalized(self.converter);
-
-        let result = (user, design, normalized);
-        self.idx += 1;
-        Some(result)
     }
 }
 
