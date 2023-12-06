@@ -377,6 +377,18 @@ impl<T> Clone for Coord<T> {
 
 impl<T> Copy for Coord<T> {}
 
+impl<Space> PartialEq<f32> for Coord<Space> {
+    fn eq(&self, other: &f32) -> bool {
+        self.coord.as_ref() == other
+    }
+}
+
+impl<Space> PartialEq<Coord<Space>> for f32 {
+    fn eq(&self, other: &Coord<Space>) -> bool {
+        other == self
+    }
+}
+
 impl<Space> Serialize for Location<Space> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -444,7 +456,6 @@ impl Debug for NormalizedLocation {
 
 #[cfg(test)]
 mod tests {
-    use ordered_float::OrderedFloat;
 
     use super::{CoordConverter, DesignCoord, UserCoord};
 
@@ -484,24 +495,9 @@ mod tests {
     pub fn lexend_weight_internal_basics() {
         let (examples, default_idx) = lexend_weight_mapping();
         let converter = CoordConverter::new(examples, default_idx);
-        assert_eq!(
-            OrderedFloat(-1.0),
-            DesignCoord::new(26.0)
-                .to_normalized(&converter)
-                .into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(0.0),
-            DesignCoord::new(90.0)
-                .to_normalized(&converter)
-                .into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(1.0),
-            DesignCoord::new(190.0)
-                .to_normalized(&converter)
-                .into_inner()
-        );
+        assert_eq!(-1.0, DesignCoord::new(26.0).to_normalized(&converter));
+        assert_eq!(0.0, DesignCoord::new(90.0).to_normalized(&converter));
+        assert_eq!(1.0, DesignCoord::new(190.0).to_normalized(&converter));
     }
 
     #[test]
@@ -511,32 +507,11 @@ mod tests {
 
         // 200 and 500 (user) are pushed way toward the left/right respectively
         // But design:normalized doesn't care, it's linear from default=>max and default=>min
-        assert_eq!(
-            OrderedFloat(-1.0),
-            DesignCoord::new(0.0).to_normalized(&converter).into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(-0.5),
-            DesignCoord::new(5.0).to_normalized(&converter).into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(0.0),
-            DesignCoord::new(10.0)
-                .to_normalized(&converter)
-                .into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(0.5),
-            DesignCoord::new(15.0)
-                .to_normalized(&converter)
-                .into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(1.0),
-            DesignCoord::new(20.0)
-                .to_normalized(&converter)
-                .into_inner()
-        );
+        assert_eq!(-1.0, DesignCoord::new(0.0).to_normalized(&converter));
+        assert_eq!(-0.5, DesignCoord::new(5.0).to_normalized(&converter));
+        assert_eq!(0.0, DesignCoord::new(10.0).to_normalized(&converter));
+        assert_eq!(0.5, DesignCoord::new(15.0).to_normalized(&converter));
+        assert_eq!(1.0, DesignCoord::new(20.0).to_normalized(&converter));
     }
 
     #[test]
@@ -548,51 +523,21 @@ mod tests {
 
         // User : Design warps; 100..200 are squeezed into a small leftward slice
         // 150 is halfway between 100 and 200
-        assert_eq!(
-            OrderedFloat(0.0),
-            UserCoord::new(100.0).to_design(&converter).into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(0.5),
-            UserCoord::new(150.0).to_design(&converter).into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(1.0),
-            UserCoord::new(200.0).to_design(&converter).into_inner()
-        );
+        assert_eq!(0.0, UserCoord::new(100.0).to_design(&converter));
+        assert_eq!(0.5, UserCoord::new(150.0).to_design(&converter));
+        assert_eq!(1.0, UserCoord::new(200.0).to_design(&converter));
 
-        assert_eq!(
-            OrderedFloat(-1.0),
-            UserCoord::new(100.0).to_normalized(&converter).into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(-0.95),
-            UserCoord::new(150.0).to_normalized(&converter).into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(-0.9),
-            UserCoord::new(200.0).to_normalized(&converter).into_inner()
-        );
+        assert_eq!(-1.0, UserCoord::new(100.0).to_normalized(&converter));
+        assert_eq!(-0.95, UserCoord::new(150.0).to_normalized(&converter));
+        assert_eq!(-0.9, UserCoord::new(200.0).to_normalized(&converter));
 
         // 200..400 covers a massive slice!
         // 300 is halway to 400 (breaking news!)
-        assert_eq!(
-            OrderedFloat(5.5),
-            UserCoord::new(300.0).to_design(&converter).into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(10.0),
-            UserCoord::new(400.0).to_design(&converter).into_inner()
-        );
+        assert_eq!(5.5, UserCoord::new(300.0).to_design(&converter));
+        assert_eq!(10.0, UserCoord::new(400.0).to_design(&converter));
 
-        assert_eq!(
-            OrderedFloat(-0.45),
-            UserCoord::new(300.0).to_normalized(&converter).into_inner()
-        );
-        assert_eq!(
-            OrderedFloat(0.0),
-            UserCoord::new(400.0).to_normalized(&converter).into_inner()
-        );
+        assert_eq!(-0.45, UserCoord::new(300.0).to_normalized(&converter));
+        assert_eq!(0.0, UserCoord::new(400.0).to_normalized(&converter));
     }
 
     #[test]
