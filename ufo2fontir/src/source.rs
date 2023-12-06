@@ -8,7 +8,7 @@ use std::{
 use chrono::{DateTime, NaiveDateTime, Utc};
 use fontdrasil::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
-    orchestration::{Access, Work},
+    orchestration::{Access, AccessBuilder, Work},
     types::{GlyphName, GroupName},
 };
 use fontir::{
@@ -884,7 +884,7 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::One(WorkId::StaticMetadata)
+        Access::Variant(WorkId::StaticMetadata)
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
@@ -1114,7 +1114,10 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::Set(HashSet::from([WorkId::StaticMetadata, WorkId::GlyphOrder]))
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::GlyphOrder)
+            .build()
     }
 
     /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
@@ -1264,14 +1267,14 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::One(WorkId::StaticMetadata)
+        Access::Variant(WorkId::StaticMetadata)
     }
 
     fn write_access(&self) -> Access<WorkId> {
-        Access::Set(HashSet::from([
-            WorkId::Glyph(self.glyph_name.clone()),
-            WorkId::Anchor(self.glyph_name.clone()),
-        ]))
+        AccessBuilder::new()
+            .specific_instance(WorkId::Glyph(self.glyph_name.clone()))
+            .specific_instance(WorkId::Anchor(self.glyph_name.clone()))
+            .build()
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
@@ -1324,7 +1327,7 @@ mod tests {
 
     use fontdrasil::{
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
-        orchestration::Access,
+        orchestration::{Access, AccessBuilder},
         types::{AnchorName, GlyphName},
     };
     use fontir::{
@@ -1409,11 +1412,11 @@ mod tests {
             input,
         );
         let task_context = context.copy_for_work(
-            Access::none(),
-            Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
-            ])),
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .build(),
         );
         source
             .create_static_metadata_work(&context.input)
@@ -1425,8 +1428,8 @@ mod tests {
 
     fn build_glyph_order(context: &Context) {
         let task_context = context.copy_for_work(
-            Access::one(WorkId::PreliminaryGlyphOrder),
-            Access::one(WorkId::GlyphOrder),
+            Access::Variant(WorkId::PreliminaryGlyphOrder),
+            Access::Variant(WorkId::GlyphOrder),
         );
         task_context
             .glyph_order
@@ -1436,8 +1439,8 @@ mod tests {
     fn build_global_metrics(name: &str) -> (impl Source, Context) {
         let (source, context) = build_static_metadata(name, default_test_flags());
         let task_context = context.copy_for_work(
-            Access::one(WorkId::StaticMetadata),
-            Access::one(WorkId::GlobalMetrics),
+            Access::Variant(WorkId::StaticMetadata),
+            Access::Variant(WorkId::GlobalMetrics),
         );
         source
             .create_global_metric_work(&context.input)
@@ -1452,8 +1455,11 @@ mod tests {
         build_glyph_order(&context);
 
         let task_context = context.copy_for_work(
-            Access::Set(HashSet::from([WorkId::StaticMetadata, WorkId::GlyphOrder])),
-            Access::one(WorkId::Kerning),
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::GlyphOrder)
+                .build(),
+            Access::Variant(WorkId::Kerning),
         );
         source
             .create_kerning_ir_work(&context.input)

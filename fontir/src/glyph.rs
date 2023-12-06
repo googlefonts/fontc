@@ -3,14 +3,11 @@
 //! Notably includes splitting glyphs with contours and components into one new glyph with
 //! the contours and one updated glyph with no contours that references the new gyph as a component.
 
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use fontdrasil::{
     coords::NormalizedLocation,
-    orchestration::{Access, Work},
+    orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
 };
 use kurbo::Affine;
@@ -336,21 +333,19 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                WorkId::Glyph(..)
-                    | WorkId::StaticMetadata
-                    | WorkId::PreliminaryGlyphOrder
-                    | WorkId::GlobalMetrics
-            )
-        }))
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::PreliminaryGlyphOrder)
+            .variant(WorkId::GlobalMetrics)
+            .variant(WorkId::Glyph(GlyphName::NOTDEF))
+            .build()
     }
 
     fn write_access(&self) -> Access<WorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(id, WorkId::Glyph(..) | WorkId::GlyphOrder)
-        }))
+        AccessBuilder::new()
+            .variant(WorkId::GlyphOrder)
+            .variant(WorkId::Glyph(GlyphName::NOTDEF))
+            .build()
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
@@ -522,7 +517,7 @@ mod tests {
         let mut flags = Flags::default();
         flags.set(Flags::EMIT_IR, false); // we don't want to write anything down
         Context::new_root(flags, Paths::new(Path::new("/fake/path")), Input::new())
-            .copy_for_work(Access::all(), Access::all())
+            .copy_for_work(Access::All, Access::All)
     }
 
     struct DeepComponent {

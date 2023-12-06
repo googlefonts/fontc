@@ -3,14 +3,11 @@
 //! Each glyph is built in isolation and then the fragments are collected
 //! and glued together to form a final table.
 
-use std::{
-    collections::{BTreeSet, HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use fontdrasil::{
     coords::{Location, NormalizedCoord, NormalizedLocation},
-    orchestration::{Access, Work},
+    orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
 };
 use fontir::{
@@ -324,10 +321,10 @@ impl Work<Context, AnyWorkId, Error> for GlyphWork {
     }
 
     fn write_access(&self) -> Access<AnyWorkId> {
-        Access::Set(HashSet::from([
-            WorkId::GlyfFragment(self.glyph_name.clone()).into(),
-            WorkId::GvarFragment(self.glyph_name.clone()).into(),
-        ]))
+        AccessBuilder::new()
+            .specific_instance(WorkId::GlyfFragment(self.glyph_name.clone()))
+            .specific_instance(WorkId::GvarFragment(self.glyph_name.clone()))
+            .build()
     }
 
     fn also_completes(&self) -> Vec<AnyWorkId> {
@@ -853,26 +850,20 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Be(WorkId::GlyfFragment(..))
-            )
-        }))
+        AccessBuilder::new()
+            .variant(FeWorkId::StaticMetadata)
+            .variant(FeWorkId::GlyphOrder)
+            .variant(WorkId::GlyfFragment(GlyphName::NOTDEF))
+            .build()
     }
 
     fn write_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Be(WorkId::Glyf)
-                    | AnyWorkId::Be(WorkId::Loca)
-                    | AnyWorkId::Be(WorkId::LocaFormat)
-                    | AnyWorkId::Be(WorkId::GlyfFragment(..))
-            )
-        }))
+        AccessBuilder::new()
+            .variant(AnyWorkId::Be(WorkId::Glyf))
+            .variant(AnyWorkId::Be(WorkId::Loca))
+            .variant(AnyWorkId::Be(WorkId::LocaFormat))
+            .variant(WorkId::GlyfFragment(GlyphName::NOTDEF))
+            .build()
     }
 
     fn also_completes(&self) -> Vec<AnyWorkId> {

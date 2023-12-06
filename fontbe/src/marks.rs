@@ -7,7 +7,7 @@ use std::{
 
 use fea_rs::compile::{MarkToBaseBuilder, MarkToMarkBuilder, PreviouslyAssignedClass};
 use fontdrasil::{
-    orchestration::{Access, Work},
+    orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
 };
 
@@ -169,14 +169,11 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Custom(Arc::new(|id| {
-            matches!(
-                id,
-                AnyWorkId::Fe(FeWorkId::StaticMetadata)
-                    | AnyWorkId::Fe(FeWorkId::GlyphOrder)
-                    | AnyWorkId::Fe(FeWorkId::Anchor(..))
-            )
-        }))
+        AccessBuilder::new()
+            .variant(FeWorkId::StaticMetadata)
+            .variant(FeWorkId::GlyphOrder)
+            .variant(FeWorkId::Anchor(GlyphName::NOTDEF))
+            .build()
     }
 
     /// Generate mark data structures.

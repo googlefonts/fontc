@@ -1,9 +1,9 @@
 //! Generates a [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head) table.
 
-use std::{collections::HashSet, env};
+use std::env;
 
 use chrono::{DateTime, TimeZone, Utc};
-use fontdrasil::orchestration::{Access, Work};
+use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use log::warn;
 use write_fonts::{
@@ -96,11 +96,11 @@ impl Work<Context, AnyWorkId, Error> for HeadWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        Access::Set(HashSet::from([
-            FeWorkId::StaticMetadata.into(),
-            WorkId::Glyf.into(),
-            WorkId::LocaFormat.into(),
-        ]))
+        AccessBuilder::new()
+            .variant(FeWorkId::StaticMetadata)
+            .variant(WorkId::Glyf)
+            .variant(WorkId::LocaFormat)
+            .build()
     }
 
     /// Generate [head](https://learn.microsoft.com/en-us/typography/opentype/spec/head)

@@ -14,7 +14,7 @@ use fea_rs::{
     GlyphMap, GlyphSet,
 };
 use fontdrasil::{
-    orchestration::{Access, AccessControlList, Identifier, Work},
+    orchestration::{Access, AccessControlList, Identifier, IdentifierDiscriminant, Work},
     types::GlyphName,
 };
 use fontir::{
@@ -101,7 +101,37 @@ pub enum WorkId {
     Stat,
 }
 
-impl Identifier for WorkId {}
+impl Identifier for WorkId {
+    fn discriminant(&self) -> IdentifierDiscriminant {
+        match self {
+            WorkId::Features => "BeFeatures",
+            WorkId::Avar => "BeAvar",
+            WorkId::Cmap => "BeCmap",
+            WorkId::Font => "BeFont",
+            WorkId::Fvar => "BeFvar",
+            WorkId::Glyf => "BeGlyf",
+            WorkId::GlyfFragment(..) => "BeGlyfFragment",
+            WorkId::Gpos => "BeGpos",
+            WorkId::Gsub => "BeGsub",
+            WorkId::Gdef => "BeGdef",
+            WorkId::Gvar => "BeGvar",
+            WorkId::GvarFragment(..) => "BeGvarFragment",
+            WorkId::Head => "BeHead",
+            WorkId::Hhea => "BeHhea",
+            WorkId::Hmtx => "BeHmtx",
+            WorkId::Hvar => "BeHvar",
+            WorkId::Kerning => "BeKerning",
+            WorkId::Loca => "BeLoca",
+            WorkId::LocaFormat => "BeLocaFormat",
+            WorkId::Marks => "BeMarks",
+            WorkId::Maxp => "BeMaxp",
+            WorkId::Name => "BeName",
+            WorkId::Os2 => "BeOs2",
+            WorkId::Post => "BePost",
+            WorkId::Stat => "BeStat",
+        }
+    }
+}
 
 // Identifies work of any type, FE, BE, ... future optimization passes, w/e.
 // Useful because BE work can very reasonably depend on FE work
@@ -113,7 +143,15 @@ pub enum AnyWorkId {
     InternalTiming(&'static str),
 }
 
-impl Identifier for AnyWorkId {}
+impl Identifier for AnyWorkId {
+    fn discriminant(&self) -> IdentifierDiscriminant {
+        match self {
+            AnyWorkId::Fe(id) => id.discriminant(),
+            AnyWorkId::Be(id) => id.discriminant(),
+            AnyWorkId::InternalTiming(..) => "InternalTiming",
+        }
+    }
+}
 
 impl AnyWorkId {
     pub fn unwrap_be(&self) -> &WorkId {

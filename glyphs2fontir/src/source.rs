@@ -11,7 +11,7 @@ use log::{debug, trace, warn};
 
 use fontdrasil::{
     coords::NormalizedCoord,
-    orchestration::{Access, Work},
+    orchestration::{Access, AccessBuilder, Work},
     types::{GlyphName, GroupName},
 };
 use fontir::{
@@ -425,7 +425,7 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::One(WorkId::StaticMetadata)
+        Access::Variant(WorkId::StaticMetadata)
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
@@ -611,7 +611,10 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::Set(HashSet::from([WorkId::GlyphOrder, WorkId::StaticMetadata]))
+        AccessBuilder::new()
+            .variant(WorkId::GlyphOrder)
+            .variant(WorkId::StaticMetadata)
+            .build()
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
@@ -725,14 +728,14 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        Access::One(WorkId::StaticMetadata)
+        Access::Variant(WorkId::StaticMetadata)
     }
 
     fn write_access(&self) -> Access<WorkId> {
-        Access::Set(HashSet::from([
-            WorkId::Glyph(self.glyph_name.clone()),
-            WorkId::Anchor(self.glyph_name.clone()),
-        ]))
+        AccessBuilder::new()
+            .specific_instance(WorkId::Glyph(self.glyph_name.clone()))
+            .specific_instance(WorkId::Anchor(self.glyph_name.clone()))
+            .build()
     }
 
     fn also_completes(&self) -> Vec<WorkId> {
@@ -864,7 +867,7 @@ mod tests {
             CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
             UserLocation,
         },
-        orchestration::Access,
+        orchestration::{Access, AccessBuilder},
         types::{AnchorName, GlyphName},
     };
     use fontir::{
@@ -964,11 +967,11 @@ mod tests {
     fn static_metadata_ir() {
         let (source, context) = context_for(glyphs3_dir().join("WghtVar.glyphs"));
         let task_context = context.copy_for_work(
-            Access::none(),
-            Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
-            ])),
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .build(),
         );
         source
             .create_static_metadata_work(&context.input)
@@ -1005,11 +1008,11 @@ mod tests {
         // Caused index out of bounds due to transposed master and value indices
         let (source, context) = context_for(glyphs2_dir().join("BadIndexing.glyphs"));
         let task_context = context.copy_for_work(
-            Access::none(),
-            Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
-            ])),
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .build(),
         );
         source
             .create_static_metadata_work(&context.input)
@@ -1022,11 +1025,11 @@ mod tests {
     fn loads_axis_mappings_from_glyphs2() {
         let (source, context) = context_for(glyphs2_dir().join("OpszWghtVar_AxisMappings.glyphs"));
         let task_context = context.copy_for_work(
-            Access::none(),
-            Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
-            ])),
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .build(),
         );
         source
             .create_static_metadata_work(&context.input)
@@ -1082,11 +1085,11 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
         let (source, context) = context_for(glyphs_file);
         let task_context = context.copy_for_work(
-            Access::none(),
-            Access::Set(HashSet::from([
-                WorkId::StaticMetadata,
-                WorkId::PreliminaryGlyphOrder,
-            ])),
+            Access::None,
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::PreliminaryGlyphOrder)
+                .build(),
         );
         source
             .create_static_metadata_work(&context.input)
@@ -1099,8 +1102,8 @@ mod tests {
     fn build_global_metrics(glyphs_file: PathBuf) -> (impl Source, Context) {
         let (source, context) = build_static_metadata(glyphs_file);
         let task_context = context.copy_for_work(
-            Access::one(WorkId::StaticMetadata),
-            Access::one(WorkId::GlobalMetrics),
+            Access::Variant(WorkId::StaticMetadata),
+            Access::Variant(WorkId::GlobalMetrics),
         );
         source
             .create_global_metric_work(&context.input)
@@ -1116,15 +1119,18 @@ mod tests {
         // static metadata includes preliminary glyph order; just copy it to be the final one
         context
             .copy_for_work(
-                Access::One(WorkId::PreliminaryGlyphOrder),
-                Access::One(WorkId::GlyphOrder),
+                Access::Variant(WorkId::PreliminaryGlyphOrder),
+                Access::Variant(WorkId::GlyphOrder),
             )
             .glyph_order
             .set((*context.preliminary_glyph_order.get()).clone());
 
         let task_context = context.copy_for_work(
-            Access::Set(HashSet::from([WorkId::StaticMetadata, WorkId::GlyphOrder])),
-            Access::one(WorkId::Kerning),
+            AccessBuilder::new()
+                .variant(WorkId::StaticMetadata)
+                .variant(WorkId::GlyphOrder)
+                .build(),
+            Access::Variant(WorkId::Kerning),
         );
         source
             .create_kerning_ir_work(&context.input)
@@ -1146,11 +1152,11 @@ mod tests {
                 .unwrap();
             for work in work_items.iter() {
                 let task_context = context.copy_for_work(
-                    Access::one(WorkId::StaticMetadata),
-                    Access::Set(HashSet::from([
-                        WorkId::Glyph(glyph_name.clone()),
-                        WorkId::Anchor(glyph_name.clone()),
-                    ])),
+                    Access::Variant(WorkId::StaticMetadata),
+                    AccessBuilder::new()
+                        .specific_instance(WorkId::Glyph(glyph_name.clone()))
+                        .specific_instance(WorkId::Anchor(glyph_name.clone()))
+                        .build(),
                 );
                 work.exec(&task_context)?;
             }
