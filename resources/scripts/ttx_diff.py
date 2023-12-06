@@ -256,10 +256,7 @@ def allow_some_off_by_ones(
         name = fontmake_container.attrib[name_attr]
         fontc_container = select_one(fontc, f"//{container}[@{name_attr}='{name}']")
 
-        fontc_it = fontc_container.iter()
-        for fontmake_el in fontmake_container.iter():
-            fontc_el = next(fontc_it)
-
+        for (fontmake_el, fontc_el) in zip(fontmake_container.iter(), fontc_container.iter()):
             if fontmake_el.tag != fontc_el.tag:
                 break
             if fontmake_el.tag != coord_tag:
