@@ -44,6 +44,11 @@ flags.DEFINE_enum(
     ["both", "fontc", "fontmake", "none"],
     "Which compilers to rebuild with if the output appears to already exist. None is handy when playing with ttx_diff.py itself.",
 )
+flags.DEFINE_float(
+    "off_by_one_budget",
+    0.1,
+    "The percentage of point (glyf) or delta (gvar) values allowed to differ by one without counting as a diff",
+)
 
 
 def run(cmd: MutableSequence, working_dir: Path, log_file: str, **kwargs):
@@ -63,6 +68,8 @@ def run(cmd: MutableSequence, working_dir: Path, log_file: str, **kwargs):
 
 
 def ttx(font_file: Path):
+    if font_file.suffix == ".ttx":
+        return font_file
     ttx_file = font_file.with_suffix(".ttx")
     cmd = [
         "ttx",
@@ -233,7 +240,50 @@ def stat_like_fontmake(ttx):
     # So until such time as we start writing format 4 axis value tables it doesn't matter
     ver.attrib["value"] = "0x00010001"
 
-def reduce_diff_noise(fontc, fontmake):
+
+def allow_some_off_by_ones(
+    build_dir, fontc, fontmake, container, name_attr, coord_holder
+):
+    fontmake_num_coords = len(fontmake.xpath(f"//{container}/{coord_holder}"))
+    off_by_one_budget = int(FLAGS.off_by_one_budget / 100.0 * fontmake_num_coords)
+    spent = 0
+    if off_by_one_budget == 0:
+        return
+
+    coord_tag = coord_holder.rpartition("/")[-1]
+
+    for fontmake_container in fontmake.xpath(f"//{container}"):
+        name = fontmake_container.attrib[name_attr]
+        fontc_container = select_one(fontc, f"//{container}[@{name_attr}='{name}']")
+
+        for (fontmake_el, fontc_el) in zip(fontmake_container.iter(), fontc_container.iter()):
+            if fontmake_el.tag != fontc_el.tag:
+                break
+            if fontmake_el.tag != coord_tag:
+                continue
+
+            for attr in ("x", "y"):
+                delta_x = abs(
+                    float(fontmake_el.attrib[attr]) - float(fontc_el.attrib[attr])
+                )
+                if 0.0 < delta_x <= 1.0:
+                    fontc_el.attrib["adjusted"] = "1"
+                    fontmake_el.attrib["adjusted"] = "1"
+                    fontc_el.attrib[attr] = fontmake_el.attrib[attr]
+                    spent += 1
+                if spent >= off_by_one_budget:
+                    print(
+                        f"WARN: ran out of budget ({off_by_one_budget}) to fix off-by-ones in {container}"
+                    )
+                    return
+
+    if spent > 0:
+        print(
+            f"INFO fixed {spent} off-by-ones in {container} (budget {off_by_one_budget})"
+        )
+
+
+def reduce_diff_noise(build_dir, fontc, fontmake):
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
         name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
@@ -248,6 +298,13 @@ def reduce_diff_noise(fontc, fontmake):
         erase_checksum(ttx)
 
         stat_like_fontmake(ttx)
+
+    allow_some_off_by_ones(
+        build_dir, fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt"
+    )
+    allow_some_off_by_ones(
+        build_dir, fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
+    )
 
 
 def main(argv):
@@ -292,7 +349,7 @@ def main(argv):
         fontc = etree.parse(fontc_ttx)
         fontmake = etree.parse(fontmake_ttx)
 
-        reduce_diff_noise(fontc, fontmake)
+        reduce_diff_noise(build_dir, fontc, fontmake)
 
         print("COMPARISON")
         t1 = {e.tag for e in fontc.getroot()}
