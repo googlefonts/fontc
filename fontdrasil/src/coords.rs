@@ -12,11 +12,7 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use write_fonts::types::{F2Dot14, Fixed, Tag};
 
-use crate::{
-    piecewise_linear_map::PiecewiseLinearMap,
-    serde::{CoordConverterSerdeRepr, LocationSerdeRepr},
-    types::Axis,
-};
+use crate::{piecewise_linear_map::PiecewiseLinearMap, serde::LocationSerdeRepr, types::Axis};
 
 /// A coordinate in some arbitrary space the designer dreamed up.
 ///
@@ -58,7 +54,6 @@ pub type NormalizedLocation = Location<NormalizedCoord>;
 /// Stores [PiecewiseLinearMap]'s in several directions. Sources
 /// suggest <= 10 mappings is typical, we can afford the bytes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(from = "CoordConverterSerdeRepr", into = "CoordConverterSerdeRepr")]
 pub struct CoordConverter {
     pub(crate) default_idx: usize,
     pub(crate) user_to_design: PiecewiseLinearMap,

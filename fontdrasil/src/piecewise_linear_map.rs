@@ -5,8 +5,9 @@
 //! xvalue to a userspace (fvar) value.
 
 use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PiecewiseLinearMap {
     pub(crate) from: Vec<OrderedFloat<f32>>, // sorted, ||'s to
     pub(crate) to: Vec<OrderedFloat<f32>>,   // sorted, ||'s from
