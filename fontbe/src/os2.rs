@@ -268,18 +268,18 @@ fn apply_metrics(os2: &mut Os2, metrics: &GlobalMetricsInstance) {
     os2.s_cap_height = Some(metrics.cap_height.ot_round());
     os2.sx_height = Some(metrics.x_height.ot_round());
 
-    os2.y_subscript_x_size = metrics.y_subscript_x_size.ot_round();
-    os2.y_subscript_y_size = metrics.y_subscript_y_size.ot_round();
-    os2.y_subscript_x_offset = metrics.y_subscript_x_offset.ot_round();
-    os2.y_subscript_y_offset = metrics.y_subscript_y_offset.ot_round();
+    os2.y_subscript_x_size = metrics.subscript_x_size.ot_round();
+    os2.y_subscript_y_size = metrics.subscript_y_size.ot_round();
+    os2.y_subscript_x_offset = metrics.subscript_x_offset.ot_round();
+    os2.y_subscript_y_offset = metrics.subscript_y_offset.ot_round();
 
-    os2.y_superscript_x_size = metrics.y_superscript_x_size.ot_round();
-    os2.y_superscript_y_size = metrics.y_superscript_y_size.ot_round();
-    os2.y_superscript_x_offset = metrics.y_superscript_x_offset.ot_round();
-    os2.y_superscript_y_offset = metrics.y_superscript_y_offset.ot_round();
+    os2.y_superscript_x_size = metrics.superscript_x_size.ot_round();
+    os2.y_superscript_y_size = metrics.superscript_y_size.ot_round();
+    os2.y_superscript_x_offset = metrics.superscript_x_offset.ot_round();
+    os2.y_superscript_y_offset = metrics.superscript_y_offset.ot_round();
 
-    os2.y_strikeout_size = metrics.y_strikeout_size.ot_round();
-    os2.y_strikeout_position = metrics.y_strikeout_position.ot_round();
+    os2.y_strikeout_size = metrics.strikeout_size.ot_round();
+    os2.y_strikeout_position = metrics.strikeout_position.ot_round();
 
     os2.s_typo_ascender = metrics.os2_typo_ascender.ot_round();
     os2.s_typo_descender = metrics.os2_typo_descender.ot_round();

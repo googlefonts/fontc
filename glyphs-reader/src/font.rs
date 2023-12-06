@@ -745,6 +745,16 @@ pub struct FontMaster {
     pub hhea_line_gap: Option<i64>,
     pub underline_thickness: Option<OrderedFloat<f64>>,
     pub underline_position: Option<OrderedFloat<f64>>,
+    pub strikeout_position: Option<i64>,
+    pub strikeout_size: Option<i64>,
+    pub subscript_x_offset: Option<i64>,
+    pub subscript_x_size: Option<i64>,
+    pub subscript_y_offset: Option<i64>,
+    pub subscript_y_size: Option<i64>,
+    pub superscript_x_offset: Option<i64>,
+    pub superscript_x_size: Option<i64>,
+    pub superscript_y_offset: Option<i64>,
+    pub superscript_y_size: Option<i64>,
 }
 
 impl FontMaster {
@@ -1920,6 +1930,16 @@ impl TryFrom<RawFont> for Font {
                 hhea_line_gap: m.custom_parameters.int("hheaLineGap"),
                 underline_thickness: m.custom_parameters.float("underlineThickness"),
                 underline_position: m.custom_parameters.float("underlinePosition"),
+                strikeout_position: m.custom_parameters.int("strikeoutPosition"),
+                strikeout_size: m.custom_parameters.int("strikeoutSize"),
+                subscript_x_offset: m.custom_parameters.int("subscriptXOffset"),
+                subscript_x_size: m.custom_parameters.int("subscriptXSize"),
+                subscript_y_offset: m.custom_parameters.int("subscriptYOffset"),
+                subscript_y_size: m.custom_parameters.int("subscriptYSize"),
+                superscript_x_offset: m.custom_parameters.int("superscriptXOffset"),
+                superscript_x_size: m.custom_parameters.int("superscriptXSize"),
+                superscript_y_offset: m.custom_parameters.int("superscriptYOffset"),
+                superscript_y_size: m.custom_parameters.int("superscriptYSize"),
             })
             .collect();
 

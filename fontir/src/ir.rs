@@ -337,16 +337,16 @@ pub enum GlobalMetric {
     UnderlineThickness,
     UnderlinePosition,
     XHeight,
-    YSubscriptXSize,
-    YSubscriptYSize,
-    YSubscriptXOffset,
-    YSubscriptYOffset,
-    YSuperscriptXSize,
-    YSuperscriptYSize,
-    YSuperscriptXOffset,
-    YSuperscriptYOffset,
-    YStrikeoutSize,
-    YStrikeoutPosition,
+    StrikeoutPosition,
+    StrikeoutSize,
+    SubscriptXOffset,
+    SubscriptXSize,
+    SubscriptYOffset,
+    SubscriptYSize,
+    SuperscriptXOffset,
+    SuperscriptXSize,
+    SuperscriptYOffset,
+    SuperscriptYSize,
 }
 
 /// Adjust Y offset based on italic angle, to get X offset.
@@ -423,29 +423,29 @@ impl GlobalMetrics {
         set(GlobalMetric::CaretOffset, 0.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L575-L616
-        let y_subscript_x_size = units_per_em as f32 * 0.65;
-        let y_subscript_y_size = units_per_em as f32 * 0.60;
-        let y_subscript_y_offset = units_per_em as f32 * 0.075;
-        let y_superscript_y_offset = units_per_em as f32 * 0.35;
-        set(GlobalMetric::YSubscriptXSize, y_subscript_x_size);
-        set(GlobalMetric::YSubscriptYSize, y_subscript_y_size);
+        let subscript_x_size = units_per_em as f32 * 0.65;
+        let subscript_y_size = units_per_em as f32 * 0.60;
+        let subscript_y_offset = units_per_em as f32 * 0.075;
+        let superscript_y_offset = units_per_em as f32 * 0.35;
+        set(GlobalMetric::SubscriptXSize, subscript_x_size);
+        set(GlobalMetric::SubscriptYSize, subscript_y_size);
         set(
-            GlobalMetric::YSubscriptXOffset,
-            adjust_offset(-y_subscript_y_offset, italic_angle),
+            GlobalMetric::SubscriptXOffset,
+            adjust_offset(-subscript_y_offset, italic_angle),
         );
-        set(GlobalMetric::YSubscriptYOffset, y_subscript_y_offset);
+        set(GlobalMetric::SubscriptYOffset, subscript_y_offset);
 
-        set(GlobalMetric::YSuperscriptXSize, y_subscript_x_size);
-        set(GlobalMetric::YSuperscriptYSize, y_subscript_y_size);
+        set(GlobalMetric::SuperscriptXSize, subscript_x_size);
+        set(GlobalMetric::SuperscriptYSize, subscript_y_size);
         set(
-            GlobalMetric::YSuperscriptXOffset,
-            adjust_offset(y_superscript_y_offset, italic_angle),
+            GlobalMetric::SuperscriptXOffset,
+            adjust_offset(superscript_y_offset, italic_angle),
         );
-        set(GlobalMetric::YSuperscriptYOffset, y_superscript_y_offset);
+        set(GlobalMetric::SuperscriptYOffset, superscript_y_offset);
 
         // // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L313-L316
-        set(GlobalMetric::YStrikeoutSize, 0.05 * units_per_em as f32);
-        set(GlobalMetric::YStrikeoutPosition, x_height * 0.6);
+        set(GlobalMetric::StrikeoutSize, 0.05 * units_per_em as f32);
+        set(GlobalMetric::StrikeoutPosition, x_height * 0.6);
 
         // ufo2ft and Glyphs.app have different defaults for the post.underlinePosition:
         // the former uses 0.075*UPEM whereas the latter 0.1*UPEM (both use the same
@@ -507,16 +507,16 @@ impl GlobalMetrics {
             caret_offset: self.get(GlobalMetric::CaretOffset, pos),
             cap_height: self.get(GlobalMetric::CapHeight, pos),
             x_height: self.get(GlobalMetric::XHeight, pos),
-            y_subscript_x_size: self.get(GlobalMetric::YSubscriptXSize, pos),
-            y_subscript_y_size: self.get(GlobalMetric::YSubscriptYSize, pos),
-            y_subscript_x_offset: self.get(GlobalMetric::YSubscriptXOffset, pos),
-            y_subscript_y_offset: self.get(GlobalMetric::YSubscriptYOffset, pos),
-            y_superscript_x_size: self.get(GlobalMetric::YSuperscriptXSize, pos),
-            y_superscript_y_size: self.get(GlobalMetric::YSuperscriptYSize, pos),
-            y_superscript_x_offset: self.get(GlobalMetric::YSuperscriptXOffset, pos),
-            y_superscript_y_offset: self.get(GlobalMetric::YSuperscriptYOffset, pos),
-            y_strikeout_size: self.get(GlobalMetric::YStrikeoutSize, pos),
-            y_strikeout_position: self.get(GlobalMetric::YStrikeoutPosition, pos),
+            subscript_x_size: self.get(GlobalMetric::SubscriptXSize, pos),
+            subscript_y_size: self.get(GlobalMetric::SubscriptYSize, pos),
+            subscript_x_offset: self.get(GlobalMetric::SubscriptXOffset, pos),
+            subscript_y_offset: self.get(GlobalMetric::SubscriptYOffset, pos),
+            superscript_x_size: self.get(GlobalMetric::SuperscriptXSize, pos),
+            superscript_y_size: self.get(GlobalMetric::SuperscriptYSize, pos),
+            superscript_x_offset: self.get(GlobalMetric::SuperscriptXOffset, pos),
+            superscript_y_offset: self.get(GlobalMetric::SuperscriptYOffset, pos),
+            strikeout_size: self.get(GlobalMetric::StrikeoutSize, pos),
+            strikeout_position: self.get(GlobalMetric::StrikeoutPosition, pos),
             os2_typo_ascender: self.get(GlobalMetric::Os2TypoAscender, pos),
             os2_typo_descender: self.get(GlobalMetric::Os2TypoDescender, pos),
             os2_typo_line_gap: self.get(GlobalMetric::Os2TypoLineGap, pos),
@@ -548,16 +548,6 @@ pub struct GlobalMetricsInstance {
     pub caret_offset: OrderedFloat<f32>,
     pub cap_height: OrderedFloat<f32>,
     pub x_height: OrderedFloat<f32>,
-    pub y_subscript_x_size: OrderedFloat<f32>,
-    pub y_subscript_y_size: OrderedFloat<f32>,
-    pub y_subscript_x_offset: OrderedFloat<f32>,
-    pub y_subscript_y_offset: OrderedFloat<f32>,
-    pub y_superscript_x_size: OrderedFloat<f32>,
-    pub y_superscript_y_size: OrderedFloat<f32>,
-    pub y_superscript_x_offset: OrderedFloat<f32>,
-    pub y_superscript_y_offset: OrderedFloat<f32>,
-    pub y_strikeout_size: OrderedFloat<f32>,
-    pub y_strikeout_position: OrderedFloat<f32>,
     pub os2_typo_ascender: OrderedFloat<f32>,
     pub os2_typo_descender: OrderedFloat<f32>,
     pub os2_typo_line_gap: OrderedFloat<f32>,
@@ -566,6 +556,16 @@ pub struct GlobalMetricsInstance {
     pub hhea_ascender: OrderedFloat<f32>,
     pub hhea_descender: OrderedFloat<f32>,
     pub hhea_line_gap: OrderedFloat<f32>,
+    pub strikeout_position: OrderedFloat<f32>,
+    pub strikeout_size: OrderedFloat<f32>,
+    pub subscript_x_offset: OrderedFloat<f32>,
+    pub subscript_x_size: OrderedFloat<f32>,
+    pub subscript_y_offset: OrderedFloat<f32>,
+    pub subscript_y_size: OrderedFloat<f32>,
+    pub superscript_x_offset: OrderedFloat<f32>,
+    pub superscript_x_size: OrderedFloat<f32>,
+    pub superscript_y_offset: OrderedFloat<f32>,
+    pub superscript_y_size: OrderedFloat<f32>,
     pub underline_thickness: OrderedFloat<f32>,
     pub underline_position: OrderedFloat<f32>,
 }
