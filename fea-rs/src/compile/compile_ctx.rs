@@ -8,7 +8,7 @@ use std::{
     ops::Range,
 };
 
-use fontdrasil::coords::{Coord, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord};
+use fontdrasil::coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord};
 use smol_str::SmolStr;
 use write_fonts::{
     tables::{

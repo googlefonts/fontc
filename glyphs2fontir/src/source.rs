@@ -962,7 +962,7 @@ mod tests {
 
     use fontdrasil::{
         coords::{
-            Coord, CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
+            CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord,
             UserLocation,
         },
         orchestration::{Access, AccessBuilder},

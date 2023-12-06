@@ -495,7 +495,7 @@ mod tests {
 
     use fea_rs::compile::VariationInfo;
     use fontdrasil::{
-        coords::{Coord, CoordConverter, DesignCoord, NormalizedCoord, UserCoord},
+        coords::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord},
         types::Axis,
     };
     use fontir::ir::StaticMetadata;

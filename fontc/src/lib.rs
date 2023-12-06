@@ -449,11 +449,7 @@ mod tests {
     use fontbe::orchestration::{
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
     };
-    use fontdrasil::{
-        coords::{Coord, NormalizedCoord},
-        paths::safe_filename,
-        types::GlyphName,
-    };
+    use fontdrasil::{coords::NormalizedCoord, paths::safe_filename, types::GlyphName};
     use fontir::{
         ir::{self, GlyphOrder, KernPair, KernParticipant},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},

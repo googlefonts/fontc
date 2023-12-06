@@ -7,7 +7,7 @@ use std::{
 };
 
 use fontdrasil::{
-    coords::{Coord, NormalizedCoord, NormalizedLocation},
+    coords::{NormalizedCoord, NormalizedLocation},
     types::Axis,
 };
 use log::{log_enabled, trace};
@@ -765,7 +765,7 @@ mod tests {
     };
 
     use fontdrasil::{
-        coords::{Coord, CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
+        coords::{CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
         types::Axis,
     };
     use kurbo::{Point, Vec2};
