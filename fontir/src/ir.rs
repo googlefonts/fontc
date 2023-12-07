@@ -366,14 +366,16 @@ impl GlobalMetrics {
         default_location: NormalizedLocation,
         units_per_em: u16,
         x_height: Option<f32>,
+        ascender: Option<f32>,
+        descender: Option<f32>,
         italic_angle: f64,
     ) -> GlobalMetrics {
         let mut metrics = GlobalMetrics(HashMap::new());
         let mut set = |metric, value| metrics.set(metric, default_location.clone(), value);
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
-        let ascender = 0.8 * units_per_em as f32;
-        let descender = -0.2 * units_per_em as f32;
+        let ascender = ascender.unwrap_or(0.8 * units_per_em as f32);
+        let descender = descender.unwrap_or(-0.2 * units_per_em as f32);
         set(GlobalMetric::Ascender, ascender);
         set(GlobalMetric::Descender, descender);
 
@@ -387,7 +389,7 @@ impl GlobalMetrics {
         set(GlobalMetric::Os2TypoLineGap, typo_line_gap);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L215-L226
-        set(GlobalMetric::Os2TypoAscender, ascender + typo_line_gap);
+        set(GlobalMetric::Os2TypoAscender, ascender);
         set(GlobalMetric::Os2TypoDescender, descender);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L126-L130
@@ -397,8 +399,8 @@ impl GlobalMetrics {
         set(GlobalMetric::HheaLineGap, 0.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L241-L254
-        set(GlobalMetric::Os2WinAscent, ascender);
-        set(GlobalMetric::Os2WinDescent, descender);
+        set(GlobalMetric::Os2WinAscent, ascender + typo_line_gap);
+        set(GlobalMetric::Os2WinDescent, descender.abs());
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
         set(GlobalMetric::CapHeight, 0.7 * units_per_em as f32);

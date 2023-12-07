@@ -440,10 +440,13 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
         );
 
         let static_metadata = context.static_metadata.get();
+        let default_master = font.default_master();
         let mut metrics = GlobalMetrics::new(
             static_metadata.default_location().clone(),
             static_metadata.units_per_em,
-            font.default_master().x_height().map(|v| v.0 as f32),
+            default_master.x_height().map(|v| v.0 as f32),
+            default_master.ascender().map(|v| v.0 as f32),
+            default_master.descender().map(|v| v.0 as f32),
             static_metadata.italic_angle.into_inner(),
         );
 
@@ -1481,13 +1484,13 @@ mod tests {
                 superscript_y_offset: 350.0.into(),
                 strikeout_position: 300.6.into(),
                 strikeout_size: 50.0.into(),
-                os2_typo_ascender: 1000.0.into(),
-                os2_typo_descender: (-200.0).into(),
-                os2_typo_line_gap: 200.0.into(),
-                os2_win_ascent: 800.0.into(),
-                os2_win_descent: (-200.0).into(),
-                hhea_ascender: 1000.0.into(),
-                hhea_descender: (-200.0).into(),
+                os2_typo_ascender: 737.0.into(),
+                os2_typo_descender: (-42.0).into(),
+                os2_typo_line_gap: 421.0.into(),
+                os2_win_ascent: 1158.0.into(),
+                os2_win_descent: 42.0.into(),
+                hhea_ascender: 1158.0.into(),
+                hhea_descender: (-42.0).into(),
                 hhea_line_gap: 0.0.into(),
                 underline_thickness: 50.0.into(),
                 underline_position: (-100.0).into(),
