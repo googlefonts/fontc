@@ -1470,7 +1470,7 @@ mod tests {
                 pos: static_metadata.default_location().clone(),
                 ascender: 737.0.into(),
                 descender: (-42.0).into(),
-                caret_slope_rise: 1.0.into(),
+                caret_slope_rise: 1000.0.into(),
                 cap_height: 702.0.into(),
                 x_height: 501.0.into(),
                 subscript_x_size: 650.0.into(),
