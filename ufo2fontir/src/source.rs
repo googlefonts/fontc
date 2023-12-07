@@ -1220,15 +1220,15 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
             .enumerate()
             .filter(|(idx, source)| !is_glyph_only(source) && *idx != default_master_idx)
         {
-            for (name, entries) in kerning_groups_for(designspace_dir, &glyph_order, source)? {
-                let Some(real_name) = reverse_groups.get(&(KernSide::of(&name), &entries)) else {
+            for (name, entries) in &kerning.groups {
+                let Some(real_name) = reverse_groups.get(&(KernSide::of(name), &entries)) else {
                     warn!(
                         "{name} exists only in {} and will be ignored",
                         source.name.as_ref().unwrap()
                     );
                     continue;
                 };
-                if name == **real_name {
+                if name == *real_name {
                     continue;
                 }
                 warn!(
@@ -1236,7 +1236,7 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
                     source.name.as_ref().unwrap(),
                     default_master.name.as_ref().unwrap()
                 );
-                old_to_new_group_name.insert(name, *real_name);
+                old_to_new_group_name.insert(name.to_owned(), *real_name);
             }
         }
 
