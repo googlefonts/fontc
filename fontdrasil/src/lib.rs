@@ -3,6 +3,6 @@
 pub mod coords;
 pub mod orchestration;
 pub mod paths;
-pub mod piecewise_linear_map;
+mod piecewise_linear_map;
 mod serde;
 pub mod types;
