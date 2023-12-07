@@ -20,7 +20,7 @@ type DefaultAndVariations = (i16, Vec<(VariationRegion, i16)>);
 /// This trait abstracts over that info.
 pub trait VariationInfo {
     /// The error type
-    type Error: Debug + Display;
+    type Error: std::error::Error;
 
     /// If the tag is an axis in this font, it's fvar index and it's [`Axis`] data.
     fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)>;
@@ -35,11 +35,22 @@ pub trait VariationInfo {
     ) -> Result<DefaultAndVariations, Self::Error>;
 }
 
+#[derive(Debug)]
+pub struct NopError;
+
+impl std::error::Error for NopError {}
+
+impl Display for NopError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("nop")
+    }
+}
+
 /// Inert variation info
 pub struct NopVariationInfo;
 
 impl VariationInfo for NopVariationInfo {
-    type Error = &'static str;
+    type Error = NopError;
 
     fn axis(&self, _: Tag) -> Option<(usize, &Axis)> {
         None
@@ -172,7 +183,7 @@ impl MockVariationInfo {
 }
 
 impl VariationInfo for MockVariationInfo {
-    type Error = u32;
+    type Error = NopError;
 
     fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)> {
         self.axes.iter().enumerate().find_map(|(i, axis)| {
