@@ -5,11 +5,13 @@
 //! xvalue to a userspace (fvar) value.
 
 use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PiecewiseLinearMap {
-    pub(crate) from: Vec<OrderedFloat<f32>>, // sorted, ||'s to
-    pub(crate) to: Vec<OrderedFloat<f32>>,   // sorted, ||'s from
+    // these two mappings have identical lengths, by construction
+    from: Vec<OrderedFloat<f32>>, // sorted, ||'s to
+    to: Vec<OrderedFloat<f32>>,   // sorted, ||'s from
 }
 
 impl PiecewiseLinearMap {
@@ -32,6 +34,14 @@ impl PiecewiseLinearMap {
             .zip(self.from.iter().copied())
             .collect();
         PiecewiseLinearMap::new(mappings)
+    }
+
+    /// An iterator over (from, to) values.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (f32, f32)> + '_ {
+        self.from
+            .iter()
+            .zip(self.to.iter())
+            .map(|(from, to)| (from.0, to.0))
     }
 
     /// Based on <https://github.com/fonttools/fonttools/blob/5a0dc4bc8dfaa0c7da146cf902395f748b3cebe5/Lib/fontTools/varLib/models.py#L502>
