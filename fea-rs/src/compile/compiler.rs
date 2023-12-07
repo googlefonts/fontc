@@ -23,27 +23,27 @@ const DEFAULT_N_MESSAGES_TO_PRINT: usize = 100;
 /// This is intended as the principal public API for this crate.
 ///
 /// ```no_run
-/// # use fea_rs::Compiler;
+/// # use fea_rs::{Compiler, compile::{NopFeatureProvider, NopVariationInfo}};
 /// # fn make_glyph_map() -> fea_rs::GlyphMap { todo!() }
 /// let glyph_map = make_glyph_map();
-/// let my_font_bytes = Compiler::new("path/to/features.fea", &glyph_map)
+/// let my_font_bytes = Compiler::<'_, NopFeatureProvider, NopVariationInfo>::new("path/to/features.fea", &glyph_map)
 ///     .verbose(true)
 ///     .compile_binary().unwrap();
 /// ```
-pub struct Compiler<'a> {
+pub struct Compiler<'a, F: FeatureProvider, V: VariationInfo> {
     root_path: OsString,
     project_root: Option<PathBuf>,
     glyph_map: &'a GlyphMap,
     // variable fonts only
-    var_info: Option<&'a dyn VariationInfo>,
-    feature_writer: Option<&'a dyn FeatureProvider>,
+    var_info: Option<&'a V>,
+    feature_writer: Option<&'a F>,
     print_warnings: bool,
     max_n_errors: usize,
     opts: Opts,
     resolver: Option<Box<dyn SourceResolver>>,
 }
 
-impl<'a> Compiler<'a> {
+impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
     /// Configure a new compilation run with a root source and a glyph map.
     ///
     /// In the general case, `root_path` will be a path to a feature file on disk;
@@ -73,13 +73,13 @@ impl<'a> Compiler<'a> {
     }
 
     /// Provide [`VariationInfo`], necessary when compiling features for a variable font.
-    pub fn with_variable_info(mut self, var_info: &'a dyn VariationInfo) -> Self {
+    pub fn with_variable_info(mut self, var_info: &'a V) -> Self {
         self.var_info = Some(var_info);
         self
     }
 
     /// Provide [`FeatureProvider`] to provide additional features during compilation
-    pub fn with_feature_writer(mut self, feature_writer: &'a dyn FeatureProvider) -> Self {
+    pub fn with_feature_writer(mut self, feature_writer: &'a F) -> Self {
         self.feature_writer = Some(feature_writer);
         self
     }

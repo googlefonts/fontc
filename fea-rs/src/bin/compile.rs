@@ -7,7 +7,7 @@ use fea_rs::{
     compile::{
         self,
         error::{FontGlyphOrderError, GlyphOrderError, UfoGlyphOrderError},
-        Compiler, MockVariationInfo, Opts,
+        Compiler, MockVariationInfo, NopFeatureProvider, Opts,
     },
     GlyphMap,
 };
@@ -34,7 +34,7 @@ fn run() -> Result<(), Error> {
 
     let var_info = args.get_var_info().transpose()?;
 
-    let mut compiler =
+    let mut compiler: Compiler<'_, NopFeatureProvider, MockVariationInfo> =
         Compiler::new(fea, &glyph_names).with_opts(Opts::new().make_post_table(args.post));
     if let Some(var_info) = var_info.as_ref() {
         log::info!("compiling with {} mock variation axes", var_info.axes.len());

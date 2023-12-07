@@ -1,7 +1,7 @@
 use std::{fmt::Display, io, path::PathBuf};
 
 use fea_rs::compile::error::CompilerError;
-use fontdrasil::types::GlyphName;
+use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
 use fontir::{
     error::VariationModelError, orchestration::WorkId as FeWorkId, variations::DeltaError,
 };
@@ -78,6 +78,10 @@ pub enum Error {
         new_class: SmolStr,
         glyph: GlyphName,
     },
+    #[error("No variation model for '{0:?}'")]
+    NoVariationModel(NormalizedLocation),
+    #[error("Delta error '{0:?}'")]
+    DeltaError(DeltaError),
 }
 
 #[derive(Debug)]

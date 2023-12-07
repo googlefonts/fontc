@@ -27,11 +27,11 @@ use crate::{
     Diagnostic, GlyphMap, Kind, NodeOrToken,
 };
 
-pub struct ValidationCtx<'a> {
+pub struct ValidationCtx<'a, V: VariationInfo> {
     pub errors: Vec<Diagnostic>,
     glyph_map: &'a GlyphMap,
     source_map: &'a SourceMap,
-    variation_info: Option<&'a dyn VariationInfo>,
+    variation_info: Option<&'a V>,
     default_lang_systems: HashSet<(SmolStr, SmolStr)>,
     seen_non_default_script: bool,
     lookup_defs: HashMap<SmolStr, Token>,
@@ -46,11 +46,11 @@ pub struct ValidationCtx<'a> {
     all_features: HashSet<Tag>,
 }
 
-impl<'a> ValidationCtx<'a> {
+impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     pub(crate) fn new(
         source_map: &'a SourceMap,
         glyph_map: &'a GlyphMap,
-        variation_info: Option<&'a dyn VariationInfo>,
+        variation_info: Option<&'a V>,
     ) -> Self {
         ValidationCtx {
             glyph_map,
