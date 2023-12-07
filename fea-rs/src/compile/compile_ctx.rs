@@ -62,12 +62,12 @@ use super::{
 /// - call `CompilationCtx::build`. This checks if any errors were encountered
 ///   during compilation, and if not converts the accumulated internal state into
 ///   the final output, ready to be written to binary.
-pub struct CompilationCtx<'a> {
+pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     glyph_map: &'a GlyphMap,
     reverse_glyph_map: BTreeMap<GlyphId, GlyphIdent>,
     source_map: &'a SourceMap,
-    variation_info: Option<&'a dyn VariationInfo>,
-    feature_writer: Option<&'a dyn FeatureProvider>,
+    variation_info: Option<&'a V>,
+    feature_writer: Option<&'a F>,
     /// Any errors or warnings generated during compilation.
     pub errors: Vec<Diagnostic>,
     /// Stores any [specified table values][tables] in the input FEA.
@@ -93,12 +93,12 @@ pub struct CompilationCtx<'a> {
     mark_filter_sets: HashMap<GlyphSet, FilterSetId>,
 }
 
-impl<'a> CompilationCtx<'a> {
+impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     pub(crate) fn new(
         glyph_map: &'a GlyphMap,
         source_map: &'a SourceMap,
-        variation_info: Option<&'a dyn VariationInfo>,
-        feature_writer: Option<&'a dyn FeatureProvider>,
+        variation_info: Option<&'a V>,
+        feature_writer: Option<&'a F>,
     ) -> Self {
         CompilationCtx {
             glyph_map,

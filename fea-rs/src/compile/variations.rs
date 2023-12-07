@@ -1,10 +1,15 @@
 //! compiling variable fonts
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+};
 
 use fontdrasil::{coords::NormalizedLocation, types::Axis};
 use ordered_float::OrderedFloat;
 use write_fonts::{tables::variations::VariationRegion, types::Tag};
+
+type DefaultAndVariations = (i16, Vec<(VariationRegion, i16)>);
 
 /// A trait for providing variable font information to the compiler.
 ///
@@ -14,6 +19,9 @@ use write_fonts::{tables::variations::VariationRegion, types::Tag};
 ///
 /// This trait abstracts over that info.
 pub trait VariationInfo {
+    /// The error type
+    type Error: std::error::Error;
+
     /// If the tag is an axis in this font, it's fvar index and it's [`Axis`] data.
     fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)>;
 
@@ -24,10 +32,37 @@ pub trait VariationInfo {
     fn resolve_variable_metric(
         &self,
         locations: &HashMap<NormalizedLocation, i16>,
-    ) -> Result<(i16, Vec<(VariationRegion, i16)>), AnyError>;
+    ) -> Result<DefaultAndVariations, Self::Error>;
 }
 
-pub type AnyError = Box<dyn std::error::Error>;
+#[derive(Debug)]
+pub struct NopError;
+
+impl std::error::Error for NopError {}
+
+impl Display for NopError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("nop")
+    }
+}
+
+/// Inert variation info
+pub struct NopVariationInfo;
+
+impl VariationInfo for NopVariationInfo {
+    type Error = NopError;
+
+    fn axis(&self, _: Tag) -> Option<(usize, &Axis)> {
+        None
+    }
+
+    fn resolve_variable_metric(
+        &self,
+        _: &HashMap<NormalizedLocation, i16>,
+    ) -> Result<DefaultAndVariations, Self::Error> {
+        Ok((0, Default::default()))
+    }
+}
 
 /// A type that implements [`VariationInfo`], for testing and debugging.
 #[derive(Clone, Debug, Default)]
@@ -148,6 +183,8 @@ impl MockVariationInfo {
 }
 
 impl VariationInfo for MockVariationInfo {
+    type Error = NopError;
+
     fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)> {
         self.axes.iter().enumerate().find_map(|(i, axis)| {
             if axis_tag == axis.tag {
@@ -161,7 +198,7 @@ impl VariationInfo for MockVariationInfo {
     fn resolve_variable_metric(
         &self,
         _locations: &HashMap<NormalizedLocation, i16>,
-    ) -> Result<(i16, Vec<(VariationRegion, i16)>), Box<(dyn std::error::Error + 'static)>> {
+    ) -> Result<(i16, Vec<(VariationRegion, i16)>), Self::Error> {
         Ok(Default::default())
     }
 }

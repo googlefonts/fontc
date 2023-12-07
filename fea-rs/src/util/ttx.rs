@@ -13,7 +13,7 @@ use std::{
 use crate::{
     compile::{
         error::{CompilerError, DiagnosticSet},
-        Compiler, MockVariationInfo, Opts,
+        Compiler, MockVariationInfo, NopFeatureProvider, Opts,
     },
     Diagnostic, GlyphIdent, GlyphMap, ParseTree,
 };
@@ -238,9 +238,10 @@ pub(crate) fn run_test(
     fvar: &MockVariationInfo,
 ) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| {
-        let mut compiler = Compiler::new(&path, glyph_map)
-            .print_warnings(std::env::var(super::VERBOSE).is_ok())
-            .with_opts(Opts::new().make_post_table(true));
+        let mut compiler: Compiler<'_, NopFeatureProvider, MockVariationInfo> =
+            Compiler::new(&path, glyph_map)
+                .print_warnings(std::env::var(super::VERBOSE).is_ok())
+                .with_opts(Opts::new().make_post_table(true));
         if is_variable(&path) {
             compiler = compiler.with_variable_info(fvar);
         }

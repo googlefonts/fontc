@@ -3,7 +3,6 @@
 use std::{
     cell::RefCell,
     collections::{BTreeMap, HashMap},
-    error::Error as StdError,
     ffi::{OsStr, OsString},
     fmt::Display,
     fs,
@@ -276,24 +275,8 @@ impl<'a> FeatureProvider for FeatureWriter<'a> {
     }
 }
 
-#[derive(Debug)]
-struct UnsupportedLocationError(NormalizedLocation);
-
-impl UnsupportedLocationError {
-    fn new(loc: NormalizedLocation) -> UnsupportedLocationError {
-        UnsupportedLocationError(loc)
-    }
-}
-
-impl std::error::Error for UnsupportedLocationError {}
-
-impl Display for UnsupportedLocationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "No variation model for {:?}", self.0)
-    }
-}
-
 impl<'a> VariationInfo for FeaVariationInfo<'a> {
+    type Error = Error;
     fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)> {
         self.axes.get(&axis_tag).map(|(i, a)| (*i, *a))
     }
@@ -301,7 +284,7 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
     fn resolve_variable_metric(
         &self,
         values: &HashMap<NormalizedLocation, i16>,
-    ) -> Result<(i16, Vec<(VariationRegion, i16)>), Box<(dyn StdError + 'static)>> {
+    ) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
         let var_model = &self.static_metadata.variation_model;
 
         // Compute deltas using f64 as 1d point and delta, then ship them home as i16
@@ -314,13 +297,14 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
         // TODO: get a model for the location we are asked for so we can support sparseness
         for loc in point_seqs.keys() {
             if !var_model.supports(loc) {
-                return Err(Box::new(UnsupportedLocationError::new(loc.clone())));
+                return Err(Error::NoVariationModel(loc.clone()));
             }
         }
 
         // Only 1 value per region for our input
         let deltas: Vec<_> = var_model
-            .deltas(&point_seqs)?
+            .deltas(&point_seqs)
+            .map_err(Error::DeltaError)?
             .into_iter()
             .map(|(region, values)| {
                 assert!(values.len() == 1, "{} values?!", values.len());

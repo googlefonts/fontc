@@ -19,6 +19,13 @@ pub trait FeatureProvider {
     fn add_features(&self, builder: &mut FeatureBuilder);
 }
 
+/// A nop implementation of [FeatureProvider]
+pub struct NopFeatureProvider;
+
+impl FeatureProvider for NopFeatureProvider {
+    fn add_features(&self, _: &mut FeatureBuilder) {}
+}
+
 /// A structure that allows client code to add additional features to the compilation.
 pub struct FeatureBuilder<'a> {
     pub(crate) language_systems: &'a DefaultLanguageSystems,

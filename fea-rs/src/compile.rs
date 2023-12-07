@@ -13,7 +13,7 @@ use self::{
 use self::error::UfoGlyphOrderError;
 
 pub use compiler::Compiler;
-pub use feature_writer::{FeatureBuilder, FeatureProvider};
+pub use feature_writer::{FeatureBuilder, FeatureProvider, NopFeatureProvider};
 pub use language_system::LanguageSystem;
 pub use lookups::{
     FeatureKey, LookupId, MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder,
@@ -22,7 +22,7 @@ pub use lookups::{
 pub use metrics::{Anchor, ValueRecord};
 pub use opts::Opts;
 pub use output::Compilation;
-pub use variations::{AxisLocation, VariationInfo};
+pub use variations::{AxisLocation, NopVariationInfo, VariationInfo};
 
 #[cfg(any(test, feature = "test", feature = "cli"))]
 pub use variations::MockVariationInfo;
@@ -44,10 +44,10 @@ mod validate;
 mod variations;
 
 /// Run the validation pass, returning any diagnostics.
-pub(crate) fn validate(
+pub(crate) fn validate<V: VariationInfo>(
     node: &ParseTree,
     glyph_map: &GlyphMap,
-    fvar: Option<&dyn VariationInfo>,
+    fvar: Option<&V>,
 ) -> Vec<Diagnostic> {
     let mut ctx = validate::ValidationCtx::new(node.source_map(), glyph_map, fvar);
     ctx.validate_root(&node.typed_root());
