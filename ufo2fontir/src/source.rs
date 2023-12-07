@@ -899,16 +899,16 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
             return Err(WorkError::NoDefaultMaster(self.designspace_file.clone()));
         };
 
+        let default_fontinfo = font_infos.get(&default_master.filename).ok_or_else(|| {
+            WorkError::FileExpected(designspace_dir.join(&default_master.filename))
+        })?;
+
         let mut metrics = GlobalMetrics::new(
             static_metadata.default_location().clone(),
             static_metadata.units_per_em,
-            font_infos
-                .get(&default_master.filename)
-                .ok_or_else(|| {
-                    WorkError::FileExpected(designspace_dir.join(&default_master.filename))
-                })?
-                .x_height
-                .map(|v| v as f32),
+            default_fontinfo.x_height.map(|v| v as f32),
+            default_fontinfo.ascender.map(|v| v as f32),
+            default_fontinfo.descender.map(|v| v as f32),
             static_metadata.italic_angle.into_inner(),
         );
         // ufo2ft default underline position differs from fontir/Glyphs.app's so

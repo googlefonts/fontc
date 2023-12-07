@@ -864,7 +864,8 @@ mod tests {
     #[test]
     fn build_basic_os2() {
         let default_location = NormalizedLocation::new();
-        let mut global_metrics = GlobalMetrics::new(default_location.clone(), 1000, None, 0.0);
+        let mut global_metrics =
+            GlobalMetrics::new(default_location.clone(), 1000, None, None, None, 0.0);
 
         global_metrics.set(GlobalMetric::CapHeight, default_location.clone(), 37.5);
         global_metrics.set(GlobalMetric::XHeight, default_location.clone(), 112.2);
