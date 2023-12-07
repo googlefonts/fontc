@@ -405,19 +405,14 @@ impl GlobalMetrics {
         let x_height = x_height.unwrap_or(0.5 * units_per_em as f32);
         set(GlobalMetric::XHeight, x_height);
 
-        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L133-L150
-        // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L153-L163
-        if italic_angle == 0.0 {
-            set(GlobalMetric::CaretSlopeRise, 1.0);
-            set(GlobalMetric::CaretSlopeRun, 0.0);
-        } else {
-            let slope_rise = 1000.0;
-            set(GlobalMetric::CaretSlopeRise, slope_rise);
-            set(
-                GlobalMetric::CaretSlopeRun,
-                adjust_offset(slope_rise, italic_angle),
-            );
-        }
+        // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L133-L148
+        // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L151-L161
+        let slope_rise = units_per_em as f32;
+        set(GlobalMetric::CaretSlopeRise, slope_rise);
+        set(
+            GlobalMetric::CaretSlopeRun,
+            adjust_offset(slope_rise, italic_angle),
+        );
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L367
         set(GlobalMetric::CaretOffset, 0.0);
