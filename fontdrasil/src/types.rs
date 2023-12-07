@@ -65,6 +65,14 @@ impl AsRef<str> for GlyphName {
     }
 }
 
+// this means if you have a HashSet<GlyphName> you can use &str to check
+// if an item is contained
+impl std::borrow::Borrow<str> for GlyphName {
+    fn borrow(&self) -> &str {
+        self.0.borrow()
+    }
+}
+
 pub type GroupName = GlyphName;
 pub type AnchorName = GlyphName;
 

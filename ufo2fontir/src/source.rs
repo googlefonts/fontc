@@ -1615,7 +1615,7 @@ mod tests {
     pub fn only_glyphs_present_in_default() {
         let (_, inputs) = load_wght_var();
         // bonus_bar is not present in the default master; should discard
-        assert!(!inputs.glyphs.contains_key(&"bonus_bar".into()));
+        assert!(!inputs.glyphs.contains_key("bonus_bar"));
     }
 
     #[test]
