@@ -18,6 +18,10 @@ impl GlyphName {
     /// The name of the undefined glyph
     pub const NOTDEF: GlyphName = GlyphName(SmolStr::new_inline(".notdef"));
 
+    pub fn new(s: impl AsRef<str>) -> Self {
+        Self(SmolStr::new(s))
+    }
+
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
@@ -52,6 +56,12 @@ impl Debug for GlyphName {
 impl Display for GlyphName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl AsRef<str> for GlyphName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 

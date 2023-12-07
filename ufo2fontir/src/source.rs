@@ -513,11 +513,11 @@ fn glyph_order(
         // Add names from ufo glyph order union glyph_names in ufo glyph order
         ufo_order
             .iter()
-            .filter_map(|v| v.as_string().map(|s| s.into()))
+            .filter_map(|v| v.as_string().map(GlyphName::new))
             .filter(|name| glyph_names.contains(name))
             .for_each(|name| {
-                glyph_order.insert(name.clone());
                 pending_add.remove(&name);
+                glyph_order.insert(name);
             });
         // Add anything leftover in sorted order
         let mut pending_add: Vec<_> = pending_add.into_iter().collect();
@@ -1124,7 +1124,7 @@ fn kerning_groups_for(
             let members: BTreeSet<_> = entries
                 .into_iter()
                 .filter_map(|glyph_name| {
-                    let glyph_name = GlyphName::from(glyph_name.as_str());
+                    let glyph_name = GlyphName::new(glyph_name);
                     if glyph_order.contains(&glyph_name) {
                         Some(glyph_name)
                     } else {
@@ -1137,7 +1137,7 @@ fn kerning_groups_for(
                 })
                 .collect();
             if !members.is_empty() {
-                Some((GroupName::from(group_name.as_str()), members))
+                Some((GroupName::new(group_name), members))
             } else {
                 None
             }
