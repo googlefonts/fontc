@@ -1,6 +1,7 @@
 //! Helps coordinate the graph execution for BE
 
 use std::{
+    collections::BTreeMap,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
@@ -14,11 +15,12 @@ use fea_rs::{
     GlyphMap, GlyphSet,
 };
 use fontdrasil::{
+    coords::NormalizedLocation,
     orchestration::{Access, AccessControlList, Identifier, IdentifierDiscriminant, Work},
     types::GlyphName,
 };
 use fontir::{
-    ir::Anchor,
+    ir::{Anchor, KernPair},
     orchestration::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
         PersistentStorage, WorkId as FeWorkIdentifier,
@@ -27,6 +29,7 @@ use fontir::{
 };
 use log::trace;
 
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
 use smol_str::SmolStr;
@@ -68,6 +71,8 @@ pub enum GlyphMerge {
     Cmap,
 }
 
+type KernBlock = usize;
+
 /// Unique identifier of work.
 ///
 /// If there are no fields work is unique.
@@ -90,7 +95,9 @@ pub enum WorkId {
     Hhea,
     Hmtx,
     Hvar,
-    Kerning,
+    KernPairs,
+    KernSegment(KernBlock),
+    Kerns,
     Loca,
     LocaFormat,
     Marks,
@@ -120,7 +127,9 @@ impl Identifier for WorkId {
             WorkId::Hhea => "BeHhea",
             WorkId::Hmtx => "BeHmtx",
             WorkId::Hvar => "BeHvar",
-            WorkId::Kerning => "BeKerning",
+            WorkId::KernPairs => "BeKerning",
+            WorkId::KernSegment(..) => "BeKern",
+            WorkId::Kerns => "BeKernGather",
             WorkId::Loca => "BeLoca",
             WorkId::LocaFormat => "BeLocaFormat",
             WorkId::Marks => "BeMarks",
@@ -352,22 +361,79 @@ impl Persistable for Marks {
     }
 }
 
-/// Precomputed kerning, to the extent possible given that we cannot create temporary var indices in advance.
-///
-/// TODO: update once <https://github.com/googlefonts/fontc/issues/571> is fixed. Then we can build a
-/// [`fea_rs::compile::PairPosBuilder`] in advance.
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Kerning {
+pub struct Kerns {
     pub lookups: Vec<PairPosBuilder>,
 }
 
-impl Kerning {
+impl Kerns {
     pub fn is_empty(&self) -> bool {
         self.lookups.is_empty()
     }
 }
 
+impl Persistable for Kerns {
+    fn read(from: &mut dyn Read) -> Self {
+        bincode::deserialize_from(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        bincode::serialize_into(to, self).unwrap()
+    }
+}
+
+/// Kerning adjustments at various locations
+pub type KernAdjustments = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
+
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Kerning {
+    pub glyph_classes: BTreeMap<GlyphName, GlyphSet>,
+    pub adjustments: Vec<(KernPair, KernAdjustments)>,
+}
+
 impl Persistable for Kerning {
+    fn read(from: &mut dyn Read) -> Self {
+        bincode::deserialize_from(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        bincode::serialize_into(to, self).unwrap()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+pub enum PairPosEntry {
+    Pair(GlyphId, ValueRecordBuilder, GlyphId, ValueRecordBuilder),
+    Class(GlyphSet, ValueRecordBuilder, GlyphSet, ValueRecordBuilder),
+}
+
+impl PairPosEntry {
+    pub(crate) fn add_to(self, builder: &mut PairPosBuilder) {
+        match self {
+            PairPosEntry::Pair(gid0, rec0, gid1, rec1) => {
+                builder.insert_pair(gid0, rec0, gid1, rec1)
+            }
+            PairPosEntry::Class(set0, rec0, set1, rec1) => {
+                builder.insert_classes(set0, rec0, set1, rec1)
+            }
+        }
+    }
+}
+
+/// A chunk of kerning that needs to be fed into a [PairPosBuilder]
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KernSegment {
+    pub(crate) segment: usize,
+    pub(crate) kerns: Vec<PairPosEntry>,
+}
+
+impl IdAware<AnyWorkId> for KernSegment {
+    fn id(&self) -> AnyWorkId {
+        AnyWorkId::Be(WorkId::KernSegment(self.segment))
+    }
+}
+
+impl Persistable for KernSegment {
     fn read(from: &mut dyn Read) -> Self {
         bincode::deserialize_from(from).unwrap()
     }
@@ -529,7 +595,9 @@ pub struct Context {
     pub hhea: BeContextItem<BeValue<Hhea>>,
     pub hmtx: BeContextItem<Bytes>,
     pub hvar: BeContextItem<BeValue<Hvar>>,
-    pub kerning: BeContextItem<Kerning>,
+    pub kern_pairs: BeContextItem<Kerning>,
+    pub kern_segments: BeContextMap<KernSegment>,
+    pub kerns: BeContextItem<Kerns>,
     pub marks: BeContextItem<Marks>,
     pub stat: BeContextItem<BeValue<Stat>>,
     pub font: BeContextItem<Bytes>,
@@ -562,7 +630,9 @@ impl Context {
             hhea: self.hhea.clone_with_acl(acl.clone()),
             hmtx: self.hmtx.clone_with_acl(acl.clone()),
             hvar: self.hvar.clone_with_acl(acl.clone()),
-            kerning: self.kerning.clone_with_acl(acl.clone()),
+            kern_pairs: self.kern_pairs.clone_with_acl(acl.clone()),
+            kern_segments: self.kern_segments.clone_with_acl(acl.clone()),
+            kerns: self.kerns.clone_with_acl(acl.clone()),
             marks: self.marks.clone_with_acl(acl.clone()),
             stat: self.stat.clone_with_acl(acl.clone()),
             font: self.font.clone_with_acl(acl),
@@ -603,8 +673,14 @@ impl Context {
             hhea: ContextItem::new(WorkId::Hhea.into(), acl.clone(), persistent_storage.clone()),
             hmtx: ContextItem::new(WorkId::Hmtx.into(), acl.clone(), persistent_storage.clone()),
             hvar: ContextItem::new(WorkId::Hvar.into(), acl.clone(), persistent_storage.clone()),
-            kerning: ContextItem::new(
-                WorkId::Kerning.into(),
+            kern_pairs: ContextItem::new(
+                WorkId::KernPairs.into(),
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
+            kern_segments: ContextMap::new(acl.clone(), persistent_storage.clone()),
+            kerns: ContextItem::new(
+                WorkId::Kerns.into(),
                 acl.clone(),
                 persistent_storage.clone(),
             ),

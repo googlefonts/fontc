@@ -36,7 +36,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, Kerning, Marks, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, Kerns, Marks, WorkId},
 };
 
 #[derive(Debug)]
@@ -123,7 +123,7 @@ impl<'a> FeaVariationInfo<'a> {
 //except they have slightly different inputs?
 pub(crate) fn resolve_variable_metric<'a>(
     static_metadata: &StaticMetadata,
-    values: impl Iterator<Item = &'a (NormalizedLocation, OrderedFloat<f32>)>,
+    values: impl Iterator<Item = (&'a NormalizedLocation, &'a OrderedFloat<f32>)>,
 ) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
     let var_model = &static_metadata.variation_model;
 
@@ -174,13 +174,13 @@ pub(crate) fn resolve_variable_metric<'a>(
 }
 
 struct FeatureWriter<'a> {
-    kerning: &'a Kerning,
+    kerning: &'a Kerns,
     marks: &'a Marks,
     timing: RefCell<Vec<(&'static str, Instant)>>,
 }
 
 impl<'a> FeatureWriter<'a> {
-    fn new(kerning: &'a Kerning, marks: &'a Marks) -> Self {
+    fn new(kerning: &'a Kerns, marks: &'a Marks) -> Self {
         FeatureWriter {
             marks,
             kerning,
@@ -347,11 +347,11 @@ impl FeatureWork {
         &self,
         static_metadata: &StaticMetadata,
         features: &Features,
-        kerning: &Kerning,
+        kerns: &Kerns,
         marks: &Marks,
     ) -> Result<Compilation, Error> {
         let var_info = FeaVariationInfo::new(static_metadata);
-        let feature_writer = FeatureWriter::new(kerning, marks);
+        let feature_writer = FeatureWriter::new(kerns, marks);
         match features {
             Features::File {
                 fea_file,
@@ -426,7 +426,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
             .variant(FeWorkId::GlyphOrder)
             .variant(FeWorkId::StaticMetadata)
             .variant(FeWorkId::Features)
-            .variant(WorkId::Kerning)
+            .variant(WorkId::Kerns)
             .variant(WorkId::Marks)
             .build()
     }
@@ -442,13 +442,13 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let features = context.ir.features.get();
-        let kerning = context.kerning.get();
+        let kerns = context.kerns.get();
         let marks = context.marks.get();
 
         let result = self.compile(
             &static_metadata,
             features.as_ref(),
-            kerning.as_ref(),
+            kerns.as_ref(),
             marks.as_ref(),
         );
         if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {

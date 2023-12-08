@@ -280,10 +280,14 @@ fn resolve_anchor(
         })
         .unzip();
 
-    let (x_default, x_deltas) =
-        crate::features::resolve_variable_metric(static_metadata, x_values.iter())?;
-    let (y_default, y_deltas) =
-        crate::features::resolve_variable_metric(static_metadata, y_values.iter())?;
+    let (x_default, x_deltas) = crate::features::resolve_variable_metric(
+        static_metadata,
+        x_values.iter().map(|(pos, value)| (pos, value)),
+    )?;
+    let (y_default, y_deltas) = crate::features::resolve_variable_metric(
+        static_metadata,
+        y_values.iter().map(|(pos, value)| (pos, value)),
+    )?;
     Ok(fea_rs::compile::Anchor::new(x_default, y_default)
         .with_x_device(x_deltas)
         .with_y_device(y_deltas))

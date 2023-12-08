@@ -81,6 +81,7 @@ impl JobTimer {
                 let exec_pct =
                     100.0 * (timing.complete - timing.run).as_secs_f64() / end_time.as_secs_f64();
                 let fill = color(&timing.id);
+                // enables use of browser console, e.g. $('g[work='something'])
                 writeln!(
                     out,
                     "  <g work=\"{}\">",
@@ -147,7 +148,9 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::Hhea) => "hhea",
         AnyWorkId::Be(BeWorkIdentifier::Hmtx) => "hmtx",
         AnyWorkId::Be(BeWorkIdentifier::Hvar) => "HVAR",
-        AnyWorkId::Be(BeWorkIdentifier::Kerning) => "kern-be",
+        AnyWorkId::Be(BeWorkIdentifier::KernPairs) => "kern-be",
+        AnyWorkId::Be(BeWorkIdentifier::KernSegment(..)) => "kern-frag",
+        AnyWorkId::Be(BeWorkIdentifier::Kerns) => "kern-gather-be",
         AnyWorkId::Be(BeWorkIdentifier::Loca) => "loca",
         AnyWorkId::Be(BeWorkIdentifier::LocaFormat) => "loca-fmt",
         AnyWorkId::Be(BeWorkIdentifier::Marks) => "Marks",
@@ -188,7 +191,9 @@ fn color(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::Hhea) => "gray",
         AnyWorkId::Be(BeWorkIdentifier::Hmtx) => "v",
         AnyWorkId::Be(BeWorkIdentifier::Hvar) => "gray",
-        AnyWorkId::Be(BeWorkIdentifier::Kerning) => "gray",
+        AnyWorkId::Be(BeWorkIdentifier::KernPairs) => "gray",
+        AnyWorkId::Be(BeWorkIdentifier::KernSegment(..)) => "gray",
+        AnyWorkId::Be(BeWorkIdentifier::Kerns) => "gray",
         AnyWorkId::Be(BeWorkIdentifier::Marks) => "gray",
         AnyWorkId::Be(BeWorkIdentifier::Loca) => "gray",
         AnyWorkId::Be(BeWorkIdentifier::LocaFormat) => "gray",

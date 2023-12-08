@@ -57,6 +57,11 @@ impl Paths {
         self.glyph_dir.join(safe_filename(name, ".gvar"))
     }
 
+    fn kern_slice_file(&self, segment: usize) -> PathBuf {
+        self.build_dir
+            .join(safe_filename(&format!("kern_{segment}"), ".bin"))
+    }
+
     pub fn target_file(&self, id: &WorkId) -> PathBuf {
         match id {
             WorkId::Features => self.build_dir.join("features.marker"),
@@ -76,7 +81,9 @@ impl Paths {
             WorkId::Hhea => self.build_dir.join("hhea.table"),
             WorkId::Hmtx => self.build_dir.join("hmtx.table"),
             WorkId::Hvar => self.build_dir.join("hvar.table"),
-            WorkId::Kerning => self.build_dir.join("kerning.bin"),
+            WorkId::KernPairs => self.build_dir.join("kern_scatter.bin"),
+            WorkId::KernSegment(segment) => self.kern_slice_file(*segment),
+            WorkId::Kerns => self.build_dir.join("kern_gather.bin"),
             WorkId::Marks => self.build_dir.join("marks.bin"),
             WorkId::Maxp => self.build_dir.join("maxp.table"),
             WorkId::Name => self.build_dir.join("name.table"),
