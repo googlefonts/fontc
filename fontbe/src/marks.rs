@@ -269,7 +269,7 @@ fn resolve_anchor(
     anchor: &fontir::ir::Anchor,
     static_metadata: &StaticMetadata,
 ) -> Result<fea_rs::compile::Anchor, Error> {
-    let (x_values, y_values) = anchor
+    let (x_values, y_values): (Vec<_>, Vec<_>) = anchor
         .positions
         .iter()
         .map(|(loc, pt)| {
@@ -281,9 +281,9 @@ fn resolve_anchor(
         .unzip();
 
     let (x_default, x_deltas) =
-        crate::features::resolve_variable_metric(static_metadata, &x_values)?;
+        crate::features::resolve_variable_metric(static_metadata, x_values)?;
     let (y_default, y_deltas) =
-        crate::features::resolve_variable_metric(static_metadata, &y_values)?;
+        crate::features::resolve_variable_metric(static_metadata, y_values)?;
     Ok(fea_rs::compile::Anchor::new(x_default, y_default)
         .with_x_device(x_deltas)
         .with_y_device(y_deltas))

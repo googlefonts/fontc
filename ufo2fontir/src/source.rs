@@ -14,8 +14,9 @@ use fontdrasil::{
 use fontir::{
     error::{Error, WorkError},
     ir::{
-        AnchorBuilder, Features, GlobalMetric, GlobalMetrics, GlyphOrder, KernParticipant, Kerning,
-        NameBuilder, NameKey, NamedInstance, PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
+        AnchorBuilder, Features, GlobalMetric, GlobalMetrics, GlyphOrder, KernParticipant,
+        KerningAtLocation, KerningGroups, NameBuilder, NameKey, NamedInstance, PostscriptNames,
+        StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::{Input, Source},
@@ -397,13 +398,28 @@ impl Source for DesignSpaceIrSource {
         }))
     }
 
-    fn create_kerning_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
+    fn create_kerning_group_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
         self.check_static_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
-        Ok(Box::new(KerningWork {
+        Ok(Box::new(KerningGroupWork {
             designspace_file: cache.designspace_file.clone(),
             designspace: cache.designspace.clone(),
+        }))
+    }
+
+    fn create_kerning_at_ir_work(
+        &self,
+        input: &Input,
+        at: NormalizedLocation,
+    ) -> Result<Box<IrWork>, Error> {
+        self.check_static_metadata(&input.static_metadata)?;
+        let cache = self.cache.as_ref().unwrap();
+
+        Ok(Box::new(KerningAtWork {
+            designspace_file: cache.designspace_file.clone(),
+            designspace: cache.designspace.clone(),
+            at,
         }))
     }
 
@@ -463,9 +479,16 @@ struct FeatureWork {
 }
 
 #[derive(Debug)]
-struct KerningWork {
+struct KerningGroupWork {
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
+}
+
+#[derive(Debug)]
+struct KerningAtWork {
+    designspace_file: PathBuf,
+    designspace: Arc<DesignSpaceDocument>,
+    at: NormalizedLocation,
 }
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
@@ -1162,9 +1185,10 @@ impl KernSide {
     }
 }
 
-impl Work<Context, WorkId, WorkError> for KerningWork {
+/// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
+impl Work<Context, WorkId, WorkError> for KerningGroupWork {
     fn id(&self) -> WorkId {
-        WorkId::Kerning
+        WorkId::KerningGroups
     }
 
     fn read_access(&self) -> Access<WorkId> {
@@ -1174,18 +1198,14 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
             .build()
     }
 
-    /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        debug!("Kerning for {:#?}", self.designspace_file);
+        debug!("Kerning groups for {:#?}", self.designspace_file);
 
         let designspace_dir = self.designspace_file.parent().unwrap();
         let glyph_order = context.glyph_order.get();
         let static_metadata = context.static_metadata.get();
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
-
-        let mut kerning = Kerning::default();
-
         let Some((default_master_idx, default_master)) = default_master(&self.designspace) else {
             return Err(WorkError::NoDefaultMaster(self.designspace_file.clone()));
         };
@@ -1194,11 +1214,14 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
 
         // Based on discussion on https://github.com/googlefonts/ufo2ft/pull/635, take the groups of
         // the default master as the authoritative source on groups
-        kerning.groups = kerning_groups_for(designspace_dir, glyph_order.as_ref(), default_master)?;
+        let mut kerning_groups = KerningGroups {
+            groups: kerning_groups_for(designspace_dir, glyph_order.as_ref(), default_master)?,
+            ..Default::default()
+        };
 
         // Group names are side-specific (public.kern1/2) but the set of glyph names isn't
         // so include side in the key to avoid matching the wrong side
-        let reverse_groups: HashMap<_, _> = kerning
+        let reverse_groups: HashMap<_, _> = kerning_groups
             .groups
             .iter()
             .map(|(k, v)| ((KernSide::of(k), v), k))
@@ -1207,11 +1230,11 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
         // https://gist.github.com/madig/76567a9650de639bbff51ce010783790#file-align-groups-py-L21
         // claims some sources use different names for groups of the same glyphs in different masters
         // so we need to create a renaming map.
-        let mut old_to_new_group_name: HashMap<_, _> = kerning
-            .groups
-            .keys()
-            .map(|name| (name.clone(), name))
-            .collect();
+        kerning_groups.groups.keys().for_each(|name| {
+            kerning_groups
+                .old_to_new_group_names
+                .insert(name.clone(), name.clone());
+        });
 
         for (_, source) in self
             .designspace
@@ -1220,7 +1243,7 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
             .enumerate()
             .filter(|(idx, source)| !is_glyph_only(source) && *idx != default_master_idx)
         {
-            for (name, entries) in &kerning.groups {
+            for (name, entries) in &kerning_groups.groups {
                 let Some(real_name) = reverse_groups.get(&(KernSide::of(name), &entries)) else {
                     warn!(
                         "{name} exists only in {} and will be ignored",
@@ -1236,11 +1259,12 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
                     source.name.as_ref().unwrap(),
                     default_master.name.as_ref().unwrap()
                 );
-                old_to_new_group_name.insert(name.to_owned(), *real_name);
+                kerning_groups
+                    .old_to_new_group_names
+                    .insert(name.to_owned(), (*real_name).clone());
             }
         }
 
-        // Pass 2: now we know all the groups, read all the kerning and update group naming
         for source in self
             .designspace
             .sources
@@ -1248,62 +1272,105 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
             .filter(|s| !is_glyph_only(s))
         {
             let pos = master_locations.get(source.name.as_ref().unwrap()).unwrap();
-            let ufo_dir = designspace_dir.join(&source.filename);
-            let data_request = norad::DataRequest::none().kerning(true);
-            let font = norad::Font::load_requested_data(&ufo_dir, data_request)
-                .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?;
-
-            let resolve = |name: &norad::Name, group_prefix: &str| {
-                let name = name.as_str();
-                if name.starts_with(UFO_KERN1_PREFIX) || name.starts_with(UFO_KERN2_PREFIX) {
-                    // looks like a group, but is it?
-                    if !name.starts_with(group_prefix) {
-                        warn!("'{name}' should have prefix {group_prefix}; ignored");
-                        return None;
-                    }
-                    let group_name = GroupName::from(name);
-                    let Some(group_name) = old_to_new_group_name.get(&group_name) else {
-                        warn!("'{name}' is not a valid group name; ignored");
-                        return None;
-                    };
-                    Some(KernParticipant::Group((**group_name).clone()))
-                } else {
-                    let glyph_name = GlyphName::from(name);
-                    if !glyph_order.contains(&glyph_name) {
-                        warn!("'{name}' refers to a non-existent glyph; ignored");
-                        return None;
-                    }
-                    Some(KernParticipant::Glyph(glyph_name))
-                }
-            };
-
-            for (side1, side2, adjustment) in font.kerning.into_iter().flat_map(|(side1, kerns)| {
-                kerns
-                    .into_iter()
-                    .map(move |(side2, adjustment)| (side1.clone(), side2, adjustment))
-            }) {
-                let (Some(side1), Some(side2)) = (
-                    resolve(&side1, UFO_KERN1_PREFIX),
-                    resolve(&side2, UFO_KERN2_PREFIX),
-                ) else {
-                    warn!(
-                        "{} kerning unable to resolve at least one of '{}', '{}'; ignoring",
-                        source.name.as_ref().unwrap(),
-                        side1.as_str(),
-                        side2.as_str()
-                    );
-                    continue;
-                };
-
-                kerning
-                    .kerns
-                    .entry((side1, side2))
-                    .or_default()
-                    .insert(pos.clone(), (adjustment as f32).into());
-            }
+            kerning_groups.locations.insert(pos.clone());
         }
 
-        context.kerning.set(kerning);
+        context.kerning_groups.set(kerning_groups);
+
+        Ok(())
+    }
+}
+
+/// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
+impl Work<Context, WorkId, WorkError> for KerningAtWork {
+    fn id(&self) -> WorkId {
+        WorkId::KerningAtLocation(self.at.clone())
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .variant(WorkId::StaticMetadata)
+            .variant(WorkId::GlyphOrder)
+            .variant(WorkId::KerningGroups)
+            .build()
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        debug!("Kerning for {:#?} at {:?}", self.designspace_file, self.at);
+
+        let designspace_dir = self.designspace_file.parent().unwrap();
+        let static_metadata = context.static_metadata.get();
+        let glyph_order = context.glyph_order.get();
+        let groups = context.kerning_groups.get();
+        let master_locations =
+            master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
+
+        // We know all the groups, read all the kerning and update group naming
+        let source = self
+            .designspace
+            .sources
+            .iter()
+            .find(|s| {
+                !is_glyph_only(s)
+                    && *master_locations.get(s.name.as_ref().unwrap()).unwrap() == self.at
+            })
+            .unwrap();
+
+        let ufo_dir = designspace_dir.join(&source.filename);
+        let data_request = norad::DataRequest::none().kerning(true);
+        let font = norad::Font::load_requested_data(&ufo_dir, data_request)
+            .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?;
+
+        let resolve = |name: &norad::Name, group_prefix: &str| {
+            let name = name.as_str();
+            if name.starts_with(UFO_KERN1_PREFIX) || name.starts_with(UFO_KERN2_PREFIX) {
+                // looks like a group, but is it?
+                if !name.starts_with(group_prefix) {
+                    warn!("'{name}' should have prefix {group_prefix}; ignored");
+                    return None;
+                }
+                let group_name = GroupName::from(name);
+                let Some(_) = groups.old_to_new_group_names.get(&group_name) else {
+                    warn!("'{name}' is not a valid group name; ignored");
+                    return None;
+                };
+                Some(KernParticipant::Group(group_name))
+            } else {
+                let glyph_name = GlyphName::from(name);
+                if !glyph_order.contains(&glyph_name) {
+                    warn!("'{name}' refers to a non-existent glyph; ignored");
+                    return None;
+                }
+                Some(KernParticipant::Glyph(glyph_name))
+            }
+        };
+
+        let mut kerns = KerningAtLocation {
+            location: self.at.clone(),
+            ..Default::default()
+        };
+        for (side1, side2, adjustment) in font.kerning.into_iter().flat_map(|(side1, kerns)| {
+            kerns
+                .into_iter()
+                .map(move |(side2, adjustment)| (side1.clone(), side2, adjustment))
+        }) {
+            let (Some(side1), Some(side2)) = (
+                resolve(&side1, UFO_KERN1_PREFIX),
+                resolve(&side2, UFO_KERN2_PREFIX),
+            ) else {
+                warn!(
+                    "{} kerning unable to resolve at least one of '{}', '{}'; ignoring",
+                    source.name.as_ref().unwrap(),
+                    side1.as_str(),
+                    side2.as_str()
+                );
+                continue;
+            };
+
+            *kerns.kerns.entry((side1, side2)).or_default() = (adjustment as f32).into();
+        }
+
+        context.kerning_at.set(kerns);
         Ok(())
     }
 }
@@ -1506,20 +1573,28 @@ mod tests {
 
     fn build_kerning(name: &str) -> (impl Source, Context) {
         let (source, context) = build_static_metadata(name, default_test_flags());
-        build_glyph_order(&context);
 
-        let task_context = context.copy_for_work(
-            AccessBuilder::new()
-                .variant(WorkId::StaticMetadata)
-                .variant(WorkId::GlyphOrder)
-                .build(),
-            Access::Variant(WorkId::Kerning),
-        );
-        source
-            .create_kerning_ir_work(&context.input)
-            .unwrap()
-            .exec(&task_context)
+        // static metadata includes preliminary glyph order; just copy it to be the final one
+        context
+            .copy_for_work(
+                Access::Variant(WorkId::PreliminaryGlyphOrder),
+                Access::Variant(WorkId::GlyphOrder),
+            )
+            .glyph_order
+            .set((*context.preliminary_glyph_order.get()).clone());
+
+        let work = source.create_kerning_group_ir_work(&context.input).unwrap();
+        work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
             .unwrap();
+
+        for location in context.kerning_groups.get().locations.iter() {
+            let work = source
+                .create_kerning_at_ir_work(&context.input, location.clone())
+                .unwrap();
+            work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
+                .unwrap();
+        }
+
         (source, context)
     }
 
@@ -1855,7 +1930,7 @@ mod tests {
     #[test]
     fn groups_renamed_to_match_master() {
         let (_, context) = build_kerning("wght_var.designspace");
-        let kerning = context.kerning.get();
+        let kerning = context.kerning_groups.get();
 
         let mut groups: Vec<_> = kerning
             .groups

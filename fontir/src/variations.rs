@@ -765,7 +765,7 @@ mod tests {
     };
 
     use fontdrasil::{
-        coords::{CoordConverter, DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord},
+        coords::{norm_loc, CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
         types::Axis,
     };
     use kurbo::{Point, Vec2};
@@ -805,13 +805,6 @@ mod tests {
                 1,
             ),
         }
-    }
-
-    fn norm_loc(positions: &[(&str, f32)]) -> NormalizedLocation {
-        positions
-            .iter()
-            .map(|(tag, value)| (Tag::from_str(tag).unwrap(), NormalizedCoord::new(*value)))
-            .collect()
     }
 
     fn default_master_weight() -> Vec<(usize, OrderedFloat<f32>)> {

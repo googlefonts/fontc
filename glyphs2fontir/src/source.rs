@@ -10,7 +10,7 @@ use indexmap::IndexSet;
 use log::{debug, trace, warn};
 
 use fontdrasil::{
-    coords::NormalizedCoord,
+    coords::{NormalizedCoord, NormalizedLocation},
     orchestration::{Access, AccessBuilder, Work},
     types::{GlyphName, GroupName},
 };
@@ -18,8 +18,8 @@ use fontir::{
     error::{Error, WorkError},
     ir::{
         self, AnchorBuilder, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder,
-        KernParticipant, Kerning, NameBuilder, NameKey, NamedInstance, StaticMetadata,
-        DEFAULT_VENDOR_ID,
+        KernParticipant, KerningAtLocation, KerningGroups, NameBuilder, NameKey, NamedInstance,
+        StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork, WorkId},
     source::{Input, Source},
@@ -239,13 +239,28 @@ impl Source for GlyphsIrSource {
         }))
     }
 
-    fn create_kerning_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
+    fn create_kerning_group_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error> {
         self.check_static_metadata(&input.static_metadata)?;
 
         let cache = self.cache.as_ref().unwrap();
 
-        Ok(Box::new(KerningWork {
+        Ok(Box::new(KerningGroupWork {
             font_info: cache.font_info.clone(),
+        }))
+    }
+
+    fn create_kerning_at_ir_work(
+        &self,
+        input: &Input,
+        at: NormalizedLocation,
+    ) -> Result<Box<IrWork>, Error> {
+        self.check_static_metadata(&input.static_metadata)?;
+
+        let cache = self.cache.as_ref().unwrap();
+
+        Ok(Box::new(KerningAtWork {
+            font_info: cache.font_info.clone(),
+            at,
         }))
     }
 }
@@ -610,8 +625,14 @@ fn is_kerning_class(name: &str) -> bool {
 }
 
 #[derive(Debug)]
-struct KerningWork {
+struct KerningGroupWork {
     font_info: Arc<FontInfo>,
+}
+
+#[derive(Debug)]
+struct KerningAtWork {
+    font_info: Arc<FontInfo>,
+    at: NormalizedLocation,
 }
 
 #[derive(Debug)]
@@ -658,39 +679,21 @@ fn kern_participant(
     }
 }
 
-impl Work<Context, WorkId, WorkError> for KerningWork {
+impl Work<Context, WorkId, WorkError> for KerningGroupWork {
     fn id(&self) -> WorkId {
-        WorkId::Kerning
+        WorkId::KerningGroups
     }
 
     fn read_access(&self) -> Access<WorkId> {
-        AccessBuilder::new()
-            .variant(WorkId::GlyphOrder)
-            .variant(WorkId::StaticMetadata)
-            .build()
+        Access::None
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
         trace!("Generate IR for kerning");
-        let static_metadata = context.static_metadata.get();
-        let arc_glyph_order = context.glyph_order.get();
-        let glyph_order = arc_glyph_order.as_ref();
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
-        let variable_axes: HashSet<_> = static_metadata.axes.iter().map(|a| a.tag).collect();
-        let master_positions: HashMap<_, _> = font
-            .masters
-            .iter()
-            .map(|m| (&m.id, font_info.locations.get(&m.axes_values).unwrap()))
-            .map(|(id, pos)| {
-                let mut pos = pos.clone();
-                pos.retain(|tag, _| variable_axes.contains(tag));
-                (id, pos)
-            })
-            .collect();
-
-        let mut kerning = Kerning::default();
+        let mut groups = KerningGroups::default();
 
         // If glyph uses a group for either side it goes in that group
         font.glyphs
@@ -711,21 +714,67 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
                     })
             })
             .for_each(|(group_name, glyph_name)| {
-                kerning
+                groups
                     .groups
                     .entry(group_name)
                     .or_default()
                     .insert(glyph_name);
             });
 
+        groups.locations = font
+            .kerning_ltr
+            .iter()
+            .filter_map(
+                |(master_id, _)| match font_info.master_positions.get(master_id) {
+                    Some(pos) => Some(pos),
+                    None => {
+                        warn!("Kerning is present for non-existent master {master_id}");
+                        None
+                    }
+                },
+            )
+            .cloned()
+            .collect();
+
+        context.kerning_groups.set(groups);
+        Ok(())
+    }
+}
+
+impl Work<Context, WorkId, WorkError> for KerningAtWork {
+    fn id(&self) -> WorkId {
+        WorkId::KerningAtLocation(self.at.clone())
+    }
+
+    fn read_access(&self) -> Access<WorkId> {
+        AccessBuilder::new()
+            .variant(WorkId::GlyphOrder)
+            .variant(WorkId::KerningGroups)
+            .build()
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        trace!("Generate IR for kerning at {:?}", self.at);
+        let kerning_groups = context.kerning_groups.get();
+        let groups = &kerning_groups.groups;
+        let arc_glyph_order = context.glyph_order.get();
+        let glyph_order = arc_glyph_order.as_ref();
+        let font_info = self.font_info.as_ref();
+        let font = &font_info.font;
+
+        let mut kerning = KerningAtLocation {
+            location: self.at.clone(),
+            ..Default::default()
+        };
+
         font.kerning_ltr
             .iter()
-            .filter_map(|(master_id, kerns)| match master_positions.get(master_id) {
-                Some(pos) => Some((pos, kerns)),
-                None => {
-                    warn!("Kerning is present for non-existent master {master_id}");
-                    None
-                }
+            // Only the kerns at our location
+            .filter_map(|(master_id, kerns)| {
+                font_info
+                    .master_positions
+                    .get(master_id)
+                    .and_then(|pos| (*pos == self.at).then_some((pos, kerns)))
             })
             .flat_map(|(master_pos, kerns)| {
                 kerns.iter().map(|((side1, side2), adjustment)| {
@@ -733,22 +782,18 @@ impl Work<Context, WorkId, WorkError> for KerningWork {
                 })
             })
             .filter_map(|((side1, side2), pos_adjust)| {
-                let side1 = kern_participant(glyph_order, &kerning.groups, KernSide::Side1, side1);
-                let side2 = kern_participant(glyph_order, &kerning.groups, KernSide::Side2, side2);
+                let side1 = kern_participant(glyph_order, groups, KernSide::Side1, side1);
+                let side2 = kern_participant(glyph_order, groups, KernSide::Side2, side2);
                 let (Some(side1), Some(side2)) = (side1, side2) else {
                     return None;
                 };
                 Some(((side1, side2), pos_adjust))
             })
-            .for_each(|(participants, (pos, value))| {
-                kerning
-                    .kerns
-                    .entry(participants)
-                    .or_default()
-                    .insert(pos, (value as f32).into());
+            .for_each(|(participants, (_, value))| {
+                *kerning.kerns.entry(participants).or_default() = (value as f32).into();
             });
 
-        context.kerning.set(kerning);
+        context.kerning_at.set(kerning);
         Ok(())
     }
 }
@@ -1178,18 +1223,18 @@ mod tests {
             .glyph_order
             .set((*context.preliminary_glyph_order.get()).clone());
 
-        let task_context = context.copy_for_work(
-            AccessBuilder::new()
-                .variant(WorkId::StaticMetadata)
-                .variant(WorkId::GlyphOrder)
-                .build(),
-            Access::Variant(WorkId::Kerning),
-        );
-        source
-            .create_kerning_ir_work(&context.input)
-            .unwrap()
-            .exec(&task_context)
+        let work = source.create_kerning_group_ir_work(&context.input).unwrap();
+        work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
             .unwrap();
+
+        for location in context.kerning_groups.get().locations.iter() {
+            let work = source
+                .create_kerning_at_ir_work(&context.input, location.clone())
+                .unwrap();
+            work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
+                .unwrap();
+        }
+
         (source, context)
     }
 
@@ -1532,12 +1577,12 @@ mod tests {
     #[test]
     fn kern_positions_on_live_axes() {
         let (_, context) = build_kerning(glyphs2_dir().join("KernImplicitAxes.glyphs"));
-        let kerning = context.kerning.get();
-        assert!(!kerning.is_empty(), "{kerning:#?}");
-        let bad_kerns: Vec<_> = kerning
-            .kerns
-            .values()
-            .flat_map(|v| v.keys())
+        let kerns = context.kerning_at.all();
+        assert!(!kerns.is_empty());
+
+        let bad_kerns: Vec<_> = kerns
+            .iter()
+            .map(|(_, kern_at)| &kern_at.location)
             .filter(|pos| !pos.axis_tags().all(|tag| *tag == Tag::new(b"wght")))
             .collect();
         assert!(bad_kerns.is_empty(), "{bad_kerns:#?}");

@@ -6,7 +6,7 @@ use indexmap::IndexSet;
 use log::debug;
 use serde::{Deserialize, Serialize};
 
-use fontdrasil::{orchestration::Work, types::GlyphName};
+use fontdrasil::{coords::NormalizedLocation, orchestration::Work, types::GlyphName};
 
 use crate::{
     error::{Error, WorkError},
@@ -77,10 +77,19 @@ pub trait Source {
     /// When run work should update [Context] with [crate::ir::Features].
     fn create_feature_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
 
-    /// Create a function that could be called to generate or identify kerning.
+    /// Create a function that could be called to produce kerning groups.
     ///
-    /// When run work should update [Context] with [crate::ir::Kerning].
-    fn create_kerning_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
+    /// When run work should update [Context] with [crate::ir::KerningGroups].
+    fn create_kerning_group_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
+
+    /// Create a function that could be called to generate or identify kerning for a location.
+    ///
+    /// When run work should update [Context] with [crate::ir::KerningAtLocation].
+    fn create_kerning_at_ir_work(
+        &self,
+        input: &Input,
+        at: NormalizedLocation,
+    ) -> Result<Box<IrWork>, Error>;
 }
 
 /// The files (in future non-file sources?) that drive various parts of IR

@@ -455,13 +455,8 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
 mod tests {
     use std::{collections::HashSet, path::Path};
 
-    use fontdrasil::{
-        coords::{NormalizedCoord, NormalizedLocation},
-        orchestration::Access,
-        types::GlyphName,
-    };
+    use fontdrasil::{coords::norm_loc, orchestration::Access, types::GlyphName};
     use kurbo::{Affine, BezPath};
-    use write_fonts::types::Tag;
 
     use crate::{
         ir::{Component, Glyph, GlyphBuilder, GlyphInstance, GlyphOrder},
@@ -471,13 +466,6 @@ mod tests {
     };
 
     use super::*;
-
-    fn norm_loc(positions: &[(Tag, f32)]) -> NormalizedLocation {
-        positions
-            .iter()
-            .map(|(tag, value)| (*tag, NormalizedCoord::new(*value)))
-            .collect()
-    }
 
     fn component_instance() -> GlyphInstance {
         GlyphInstance {
@@ -561,10 +549,10 @@ mod tests {
     fn has_components_and_contours_false() {
         let mut glyph = GlyphBuilder::new("duck".into());
         glyph
-            .try_add_source(&norm_loc(&[(Tag::new(b"wght"), 0.0)]), component_instance())
+            .try_add_source(&norm_loc(&[("wght", 0.0)]), component_instance())
             .unwrap();
         glyph
-            .try_add_source(&norm_loc(&[(Tag::new(b"wght"), 1.0)]), contour_instance())
+            .try_add_source(&norm_loc(&[("wght", 1.0)]), contour_instance())
             .unwrap();
         let glyph = glyph.build().unwrap();
         assert!(!has_components_and_contours(&glyph));
@@ -575,7 +563,7 @@ mod tests {
         let mut glyph = GlyphBuilder::new("duck".into());
         glyph
             .try_add_source(
-                &norm_loc(&[(Tag::new(b"wght"), 0.0)]),
+                &norm_loc(&[("wght", 0.0)]),
                 contour_and_component_instance(),
             )
             .unwrap();
@@ -603,10 +591,10 @@ mod tests {
     fn contour_glyph(name: &str) -> Glyph {
         let mut glyph = GlyphBuilder::new(name.into());
         glyph
-            .try_add_source(&norm_loc(&[(Tag::new(b"wght"), 0.0)]), contour_instance())
+            .try_add_source(&norm_loc(&[("wght", 0.0)]), contour_instance())
             .unwrap();
         glyph
-            .try_add_source(&norm_loc(&[(Tag::new(b"wght"), 1.0)]), contour_instance())
+            .try_add_source(&norm_loc(&[("wght", 1.0)]), contour_instance())
             .unwrap();
         glyph.build().unwrap()
     }
@@ -618,10 +606,10 @@ mod tests {
         };
         let mut glyph = GlyphBuilder::new(name.into());
         glyph
-            .try_add_source(&norm_loc(&[(Tag::new(b"wght"), 0.0)]), component.clone())
+            .try_add_source(&norm_loc(&[("wght", 0.0)]), component.clone())
             .unwrap();
         glyph
-            .try_add_source(&norm_loc(&[(Tag::new(b"wght"), 1.0)]), component)
+            .try_add_source(&norm_loc(&[("wght", 1.0)]), component)
             .unwrap();
         glyph.build().unwrap()
     }
@@ -630,13 +618,13 @@ mod tests {
         let mut glyph = GlyphBuilder::new(name.into());
         glyph
             .try_add_source(
-                &norm_loc(&[(Tag::new(b"wght"), 0.0)]),
+                &norm_loc(&[("wght", 0.0)]),
                 contour_and_component_instance(),
             )
             .unwrap();
         glyph
             .try_add_source(
-                &norm_loc(&[(Tag::new(b"wght"), 1.0)]),
+                &norm_loc(&[("wght", 1.0)]),
                 contour_and_component_instance(),
             )
             .unwrap();
@@ -708,7 +696,7 @@ mod tests {
         let mut nested_components = GlyphBuilder::new("g".into());
         nested_components
             .try_add_source(
-                &norm_loc(&[(Tag::new(b"wght"), 0.0)]),
+                &norm_loc(&[("wght", 0.0)]),
                 GlyphInstance {
                     components: vec![
                         Component {
@@ -768,7 +756,7 @@ mod tests {
         let mut glyph = GlyphBuilder::new("g".into());
         glyph
             .try_add_source(
-                &norm_loc(&[(Tag::new(b"wght"), 0.0)]),
+                &norm_loc(&[("wght", 0.0)]),
                 GlyphInstance {
                     components: vec![Component {
                         base: reuse_me.name.clone(),

@@ -81,7 +81,12 @@ impl JobTimer {
                 let exec_pct =
                     100.0 * (timing.complete - timing.run).as_secs_f64() / end_time.as_secs_f64();
                 let fill = color(&timing.id);
-                writeln!(out, "  <g>").unwrap();
+                writeln!(
+                    out,
+                    "  <g work=\"{}\">",
+                    format!("{:?}", timing.id).replace('\"', "")
+                )
+                .unwrap();
                 writeln!(
                     out,
                     "    <rect x=\"{begin_pct:.2}%\" y=\"{box_top}\" width=\"{exec_pct:.2}%\" height=\"{line_height}\"  fill=\"{fill}\" stroke=\"black\" />"
@@ -122,7 +127,8 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)) => "glyph",
         AnyWorkId::Fe(FeWorkIdentifier::GlyphIrDelete(..)) => "rm ir",
         AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) => "glyphorder",
-        AnyWorkId::Fe(FeWorkIdentifier::Kerning) => "kern",
+        AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) => "kerngrps",
+        AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(..)) => "kernat",
         AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => "pre-go",
         AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => "static-meta",
         AnyWorkId::Be(BeWorkIdentifier::Avar) => "avar",
@@ -141,7 +147,7 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::Hhea) => "hhea",
         AnyWorkId::Be(BeWorkIdentifier::Hmtx) => "hmtx",
         AnyWorkId::Be(BeWorkIdentifier::Hvar) => "HVAR",
-        AnyWorkId::Be(BeWorkIdentifier::Kerning) => "Kern",
+        AnyWorkId::Be(BeWorkIdentifier::Kerning) => "kern-be",
         AnyWorkId::Be(BeWorkIdentifier::Loca) => "loca",
         AnyWorkId::Be(BeWorkIdentifier::LocaFormat) => "loca-fmt",
         AnyWorkId::Be(BeWorkIdentifier::Marks) => "Marks",
@@ -162,7 +168,8 @@ fn color(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Fe(FeWorkIdentifier::Glyph(..)) => "#830356",
         AnyWorkId::Fe(FeWorkIdentifier::GlyphIrDelete(..)) => "gray",
         AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) => "gray",
-        AnyWorkId::Fe(FeWorkIdentifier::Kerning) => "gray",
+        AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) => "gray",
+        AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(..)) => "gray",
         AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => "gray",
         AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => "gray",
         AnyWorkId::Be(BeWorkIdentifier::Avar) => "gray",

@@ -1,13 +1,20 @@
 //! Generates a [Kerning] datastructure to be fed to fea-rs
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use fea_rs::{
     compile::{PairPosBuilder, ValueRecord as ValueRecordBuilder},
     GlyphSet,
 };
-use fontdrasil::orchestration::{Access, AccessBuilder, Work};
-use fontir::{ir::KernParticipant, orchestration::WorkId as FeWorkId};
+use fontdrasil::{
+    coords::NormalizedLocation,
+    orchestration::{Access, AccessBuilder, Work},
+};
+use fontir::{
+    ir::{KernPair, KernParticipant},
+    orchestration::WorkId as FeWorkId,
+};
+use ordered_float::OrderedFloat;
 use write_fonts::types::GlyphId;
 
 use crate::{
@@ -31,8 +38,9 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
     fn read_access(&self) -> Access<AnyWorkId> {
         AccessBuilder::new()
             .variant(FeWorkId::StaticMetadata)
-            .variant(FeWorkId::Kerning)
             .variant(FeWorkId::GlyphOrder)
+            .variant(FeWorkId::KerningGroups)
+            .variant(FeWorkId::KerningAtLocation(NormalizedLocation::default()))
             .build()
     }
 
@@ -40,7 +48,9 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();
-        let ir_kerning = context.ir.kerning.get();
+        let ir_groups = context.ir.kerning_groups.get();
+        let ir_kerns = context.ir.kerning_at.all();
+
         let gid = |name| {
             glyph_order
                 .glyph_id(name)
@@ -50,7 +60,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
 
         // convert the groups stored in the Kerning object into the glyph classes
         // expected by fea-rs:
-        let glyph_classes = ir_kerning
+        let glyph_classes = ir_groups
             .groups
             .iter()
             .map(|(class_name, glyph_set)| {
@@ -64,8 +74,25 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
 
         let mut builder = PairPosBuilder::default();
 
+        // Add IR kerns to builder. IR kerns are split by location so put them back together again.
+        // We want to iterate over (left, right), map<location: adjustment>
+        let mut kerns: HashMap<&KernPair, Vec<(NormalizedLocation, OrderedFloat<f32>)>> =
+            HashMap::new();
+        ir_kerns
+            .iter()
+            .map(|(_, kerns)| kerns.as_ref())
+            .flat_map(|kerns_at| {
+                kerns_at
+                    .kerns
+                    .iter()
+                    .map(|(pair, adjustment)| (pair, (kerns_at.location.clone(), *adjustment)))
+            })
+            .for_each(|(pair, (location, adjustment))| {
+                kerns.entry(pair).or_default().push((location, adjustment))
+            });
+
         // now for each kerning entry, directly add a rule to the builder:
-        for ((left, right), values) in &ir_kerning.kerns {
+        for ((left, right), values) in kerns {
             let (default_value, deltas) = resolve_variable_metric(&static_metadata, values)?;
             let x_adv_record = ValueRecordBuilder::new()
                 .with_x_advance(default_value)

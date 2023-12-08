@@ -2,7 +2,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     ffi::{OsStr, OsString},
     fmt::Display,
     fs,
@@ -123,12 +123,12 @@ impl<'a> FeaVariationInfo<'a> {
 //except they have slightly different inputs?
 pub(crate) fn resolve_variable_metric(
     static_metadata: &StaticMetadata,
-    values: &BTreeMap<NormalizedLocation, OrderedFloat<f32>>,
+    values: impl IntoIterator<Item = (NormalizedLocation, OrderedFloat<f32>)>,
 ) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
     let var_model = &static_metadata.variation_model;
 
     let point_seqs = values
-        .iter()
+        .into_iter()
         .map(|(pos, value)| (pos.to_owned(), vec![value.0 as f64]))
         .collect();
     let raw_deltas: Vec<_> = var_model

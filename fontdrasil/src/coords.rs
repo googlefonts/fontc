@@ -363,6 +363,21 @@ impl Debug for NormalizedLocation {
     }
 }
 
+/// For testing only
+#[doc(hidden)]
+pub fn norm_loc(positions: &[(&str, f32)]) -> NormalizedLocation {
+    positions
+        .iter()
+        .map(|(tag, value)| {
+            let tag = format!("{tag: <4}")
+                .as_bytes()
+                .try_into()
+                .unwrap_or_else(|_| panic!("Bad tag \"{tag}\""));
+            (Tag::new(&tag), NormalizedCoord::new(*value))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use ordered_float::OrderedFloat;
