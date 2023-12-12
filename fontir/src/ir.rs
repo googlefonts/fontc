@@ -207,7 +207,7 @@ pub struct KerningGroups {
     /// Must be a subset of the master locations.
     pub locations: BTreeSet<NormalizedLocation>,
 
-    /// Optional group renaming map, meant for [KerningAtLocation] to consume
+    /// Optional group renaming map, meant for [KerningInstance] to consume
     ///
     /// The rhs should be the name used in the groups map.
     pub old_to_new_group_names: BTreeMap<GroupName, GroupName>,
@@ -217,7 +217,7 @@ pub struct KerningGroups {
 ///
 /// In UFO terms, roughly [kerning.plist](https://unifiedfontobject.org/versions/ufo3/kerning.plist/).
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-pub struct KerningAtLocation {
+pub struct KerningInstance {
     pub location: NormalizedLocation,
     /// An adjustment to the space *between* two glyphs in logical order.
     ///
@@ -1126,7 +1126,7 @@ impl Persistable for KerningGroups {
     }
 }
 
-impl Persistable for KerningAtLocation {
+impl Persistable for KerningInstance {
     fn read(from: &mut dyn Read) -> Self {
         serde_yaml::from_reader(from).unwrap()
     }
@@ -1136,7 +1136,7 @@ impl Persistable for KerningAtLocation {
     }
 }
 
-impl IdAware<WorkId> for KerningAtLocation {
+impl IdAware<WorkId> for KerningInstance {
     fn id(&self) -> WorkId {
         WorkId::KerningAtLocation(self.location.clone())
     }

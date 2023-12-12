@@ -15,7 +15,7 @@ use fontir::{
     error::{Error, WorkError},
     ir::{
         AnchorBuilder, Features, GlobalMetric, GlobalMetrics, GlyphOrder, KernParticipant,
-        KerningAtLocation, KerningGroups, NameBuilder, NameKey, NamedInstance, PostscriptNames,
+        KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance, PostscriptNames,
         StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
@@ -408,7 +408,7 @@ impl Source for DesignSpaceIrSource {
         }))
     }
 
-    fn create_kerning_at_ir_work(
+    fn create_kerning_instance_ir_work(
         &self,
         input: &Input,
         at: NormalizedLocation,
@@ -416,10 +416,10 @@ impl Source for DesignSpaceIrSource {
         self.check_static_metadata(&input.static_metadata)?;
         let cache = self.cache.as_ref().unwrap();
 
-        Ok(Box::new(KerningAtWork {
+        Ok(Box::new(KerningInstanceWork {
             designspace_file: cache.designspace_file.clone(),
             designspace: cache.designspace.clone(),
-            at,
+            location: at,
         }))
     }
 
@@ -485,10 +485,10 @@ struct KerningGroupWork {
 }
 
 #[derive(Debug)]
-struct KerningAtWork {
+struct KerningInstanceWork {
     designspace_file: PathBuf,
     designspace: Arc<DesignSpaceDocument>,
-    at: NormalizedLocation,
+    location: NormalizedLocation,
 }
 
 fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designspace::Source)> {
@@ -1282,9 +1282,9 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
 }
 
 /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
-impl Work<Context, WorkId, WorkError> for KerningAtWork {
+impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
     fn id(&self) -> WorkId {
-        WorkId::KerningAtLocation(self.at.clone())
+        WorkId::KerningAtLocation(self.location.clone())
     }
 
     fn read_access(&self) -> Access<WorkId> {
@@ -1296,7 +1296,10 @@ impl Work<Context, WorkId, WorkError> for KerningAtWork {
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        debug!("Kerning for {:#?} at {:?}", self.designspace_file, self.at);
+        debug!(
+            "Kerning for {:#?} at {:?}",
+            self.designspace_file, self.location
+        );
 
         let designspace_dir = self.designspace_file.parent().unwrap();
         let static_metadata = context.static_metadata.get();
@@ -1312,7 +1315,7 @@ impl Work<Context, WorkId, WorkError> for KerningAtWork {
             .iter()
             .find(|s| {
                 !is_glyph_only(s)
-                    && *master_locations.get(s.name.as_ref().unwrap()).unwrap() == self.at
+                    && *master_locations.get(s.name.as_ref().unwrap()).unwrap() == self.location
             })
             .unwrap();
 
@@ -1345,8 +1348,8 @@ impl Work<Context, WorkId, WorkError> for KerningAtWork {
             }
         };
 
-        let mut kerns = KerningAtLocation {
-            location: self.at.clone(),
+        let mut kerns = KerningInstance {
+            location: self.location.clone(),
             ..Default::default()
         };
         for (side1, side2, adjustment) in font.kerning.into_iter().flat_map(|(side1, kerns)| {
@@ -1589,7 +1592,7 @@ mod tests {
 
         for location in context.kerning_groups.get().locations.iter() {
             let work = source
-                .create_kerning_at_ir_work(&context.input, location.clone())
+                .create_kerning_instance_ir_work(&context.input, location.clone())
                 .unwrap();
             work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
                 .unwrap();

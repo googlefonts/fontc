@@ -121,9 +121,9 @@ impl<'a> FeaVariationInfo<'a> {
 
 //NOTE: this is basically identical to the same method on FeaVariationInfo,
 //except they have slightly different inputs?
-pub(crate) fn resolve_variable_metric(
+pub(crate) fn resolve_variable_metric<'a>(
     static_metadata: &StaticMetadata,
-    values: impl IntoIterator<Item = (NormalizedLocation, OrderedFloat<f32>)>,
+    values: impl Iterator<Item = &'a (NormalizedLocation, OrderedFloat<f32>)>,
 ) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
     let var_model = &static_metadata.variation_model;
 

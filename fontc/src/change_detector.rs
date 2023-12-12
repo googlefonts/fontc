@@ -123,7 +123,7 @@ impl ChangeDetector {
         let glyphs_deleted = prev_inputs
             .glyphs
             .keys()
-            .filter(|glyph_name| !current_inputs.glyphs.contains_key(glyph_name))
+            .filter(|glyph_name| !current_inputs.glyphs.contains_key(*glyph_name))
             .cloned()
             .collect();
 

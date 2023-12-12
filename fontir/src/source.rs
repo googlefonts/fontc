@@ -84,8 +84,8 @@ pub trait Source {
 
     /// Create a function that could be called to generate or identify kerning for a location.
     ///
-    /// When run work should update [Context] with [crate::ir::KerningAtLocation].
-    fn create_kerning_at_ir_work(
+    /// When run work should update [Context] with [crate::ir::KerningInstance].
+    fn create_kerning_instance_ir_work(
         &self,
         input: &Input,
         at: NormalizedLocation,

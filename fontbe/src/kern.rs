@@ -93,7 +93,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
 
         // now for each kerning entry, directly add a rule to the builder:
         for ((left, right), values) in kerns {
-            let (default_value, deltas) = resolve_variable_metric(&static_metadata, values)?;
+            let (default_value, deltas) = resolve_variable_metric(&static_metadata, values.iter())?;
             let x_adv_record = ValueRecordBuilder::new()
                 .with_x_advance(default_value)
                 .with_x_advance_device(deltas);

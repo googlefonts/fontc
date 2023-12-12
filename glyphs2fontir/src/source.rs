@@ -18,7 +18,7 @@ use fontir::{
     error::{Error, WorkError},
     ir::{
         self, AnchorBuilder, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder,
-        KernParticipant, KerningAtLocation, KerningGroups, NameBuilder, NameKey, NamedInstance,
+        KernParticipant, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
         StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork, WorkId},
@@ -249,7 +249,7 @@ impl Source for GlyphsIrSource {
         }))
     }
 
-    fn create_kerning_at_ir_work(
+    fn create_kerning_instance_ir_work(
         &self,
         input: &Input,
         at: NormalizedLocation,
@@ -258,9 +258,9 @@ impl Source for GlyphsIrSource {
 
         let cache = self.cache.as_ref().unwrap();
 
-        Ok(Box::new(KerningAtWork {
+        Ok(Box::new(KerningInstanceWork {
             font_info: cache.font_info.clone(),
-            at,
+            location: at,
         }))
     }
 }
@@ -630,9 +630,9 @@ struct KerningGroupWork {
 }
 
 #[derive(Debug)]
-struct KerningAtWork {
+struct KerningInstanceWork {
     font_info: Arc<FontInfo>,
-    at: NormalizedLocation,
+    location: NormalizedLocation,
 }
 
 #[derive(Debug)]
@@ -741,9 +741,9 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
     }
 }
 
-impl Work<Context, WorkId, WorkError> for KerningAtWork {
+impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
     fn id(&self) -> WorkId {
-        WorkId::KerningAtLocation(self.at.clone())
+        WorkId::KerningAtLocation(self.location.clone())
     }
 
     fn read_access(&self) -> Access<WorkId> {
@@ -754,7 +754,7 @@ impl Work<Context, WorkId, WorkError> for KerningAtWork {
     }
 
     fn exec(&self, context: &Context) -> Result<(), WorkError> {
-        trace!("Generate IR for kerning at {:?}", self.at);
+        trace!("Generate IR for kerning at {:?}", self.location);
         let kerning_groups = context.kerning_groups.get();
         let groups = &kerning_groups.groups;
         let arc_glyph_order = context.glyph_order.get();
@@ -762,8 +762,8 @@ impl Work<Context, WorkId, WorkError> for KerningAtWork {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
 
-        let mut kerning = KerningAtLocation {
-            location: self.at.clone(),
+        let mut kerning = KerningInstance {
+            location: self.location.clone(),
             ..Default::default()
         };
 
@@ -774,7 +774,7 @@ impl Work<Context, WorkId, WorkError> for KerningAtWork {
                 font_info
                     .master_positions
                     .get(master_id)
-                    .and_then(|pos| (*pos == self.at).then_some((pos, kerns)))
+                    .and_then(|pos| (*pos == self.location).then_some((pos, kerns)))
             })
             .flat_map(|(master_pos, kerns)| {
                 kerns.iter().map(|((side1, side2), adjustment)| {
@@ -1229,7 +1229,7 @@ mod tests {
 
         for location in context.kerning_groups.get().locations.iter() {
             let work = source
-                .create_kerning_at_ir_work(&context.input, location.clone())
+                .create_kerning_instance_ir_work(&context.input, location.clone())
                 .unwrap();
             work.exec(&context.copy_for_work(work.read_access(), work.write_access()))
                 .unwrap();

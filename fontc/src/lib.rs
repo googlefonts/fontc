@@ -203,7 +203,7 @@ fn add_kerning_at_ir_job(workload: &mut Workload, at: NormalizedLocation) -> Res
     let work = workload
         .change_detector
         .ir_source()
-        .create_kerning_at_ir_work(workload.current_inputs(), at.clone())?
+        .create_kerning_instance_ir_work(workload.current_inputs(), at.clone())?
         .into();
     workload.add(work, workload.change_detector.kerning_at_ir_change(at));
     Ok(())
@@ -1793,7 +1793,7 @@ mod tests {
             .collect();
         groups.sort();
 
-        let wght = Tag::from_be_bytes(*b"wght");
+        let wght = Tag::new(b"wght");
         let mut kerns: HashMap<KernPair, Vec<(String, f32)>> = HashMap::new();
         for kern_loc in kerning_groups.locations.iter() {
             assert_eq!(

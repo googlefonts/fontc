@@ -406,7 +406,7 @@ pub struct Context {
     pub glyphs: FeContextMap<ir::Glyph>,
     pub features: FeContextItem<ir::Features>,
     pub kerning_groups: FeContextItem<ir::KerningGroups>,
-    pub kerning_at: FeContextMap<ir::KerningAtLocation>,
+    pub kerning_at: FeContextMap<ir::KerningInstance>,
     pub anchors: FeContextMap<ir::GlyphAnchors>,
 }
 
