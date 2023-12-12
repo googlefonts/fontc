@@ -1,4 +1,7 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use kurbo::BezPath;
 use log::trace;
@@ -7,7 +10,7 @@ use ordered_float::OrderedFloat;
 use write_fonts::types::Tag;
 
 use fontdrasil::{
-    coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
+    coords::{Coord, CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     types::GlyphName,
 };
 use fontir::{
@@ -257,6 +260,8 @@ pub struct FontInfo {
     pub font: Font,
     /// Index by master id
     pub master_indices: HashMap<String, usize>,
+    // Master id => location
+    pub master_positions: HashMap<String, NormalizedLocation>,
     /// Axes values => location for every instance and master
     pub locations: HashMap<Vec<OrderedFloat<f64>>, NormalizedLocation>,
     pub axes: Vec<fontdrasil::types::Axis>,
@@ -300,9 +305,26 @@ impl TryFrom<Font> for FontInfo {
             }))
             .collect();
 
+        let variable_axes: HashSet<_> = axes
+            .iter()
+            .filter(|&a| (!a.is_point()))
+            .map(|a| a.tag)
+            .collect();
+        let master_positions: HashMap<_, _> = font
+            .masters
+            .iter()
+            .map(|m| (&m.id, locations.get(&m.axes_values).unwrap()))
+            .map(|(id, pos)| {
+                let mut pos = pos.clone();
+                pos.retain(|tag, _| variable_axes.contains(tag));
+                (id.clone(), pos)
+            })
+            .collect();
+
         Ok(FontInfo {
             font,
             master_indices,
+            master_positions,
             locations,
             axes,
             axis_indices,

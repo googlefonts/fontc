@@ -72,7 +72,8 @@ enum RecvType {
 fn priority(id: &AnyWorkId) -> u32 {
     match id {
         AnyWorkId::Fe(FeWorkIdentifier::Features) => 99,
-        AnyWorkId::Fe(FeWorkIdentifier::Kerning) => 99,
+        AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) => 99,
+        AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(..)) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => 99,
@@ -253,7 +254,12 @@ impl<'a> Workload<'a> {
         be_job.read_access = deps
     }
 
-    fn handle_success(&mut self, fe_root: &FeContext, success: AnyWorkId, timing: JobTime) {
+    fn handle_success(
+        &mut self,
+        fe_root: &FeContext,
+        success: AnyWorkId,
+        timing: JobTime,
+    ) -> Result<(), Error> {
         log::debug!("{success:?} successful");
 
         self.timer.add(timing);
@@ -277,9 +283,18 @@ impl<'a> Workload<'a> {
             }
         }
 
+        if let AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) = success {
+            let groups = fe_root.kerning_groups.get();
+            for location in groups.locations.iter() {
+                super::add_kerning_at_ir_job(self, location.clone())?;
+            }
+        }
+
         if let AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) = success {
             self.update_be_glyph_work(fe_root, glyph_name);
         }
+
+        Ok(())
     }
 
     /// Check if a dependency is fulfilled, that is it's output is available
@@ -475,11 +490,13 @@ impl<'a> Workload<'a> {
                         // Try to prioritize the critical path based on --emit-timing observation
                         // <https://github.com/googlefonts/fontc/issues/456>, <https://github.com/googlefonts/fontc/pull/565>
                         run_queue.sort_by_cached_key(|(work, ..)| priority(&work.id()));
-
-                        self.timer.add(timing.complete());
                     }
+                    self.timer.add(timing.complete());
 
                     // Spawn for every job that's executable. Each spawn will pull one item from the run queue.
+                    let timing = create_timer(AnyWorkId::InternalTiming("spawn"), nth_wave)
+                        .queued()
+                        .run();
                     for _ in 0..runnable_count {
                         let send = send.clone();
                         let run_queue = run_queue.clone();
@@ -531,20 +548,33 @@ impl<'a> Workload<'a> {
                                 }
                             }
                             let timing = timing.complete();
+
                             if let Err(e) = send.send((id.clone(), result, timing)) {
                                 log::error!("Unable to write {id:?} to completion channel: {e}");
                             }
                         })
                     }
+                    self.timer.add(timing.complete());
                 }
 
-                // Block for things to phone home to say they are done
-                // Then complete everything that has reported since our last check
+                // Complete everything that has reported since our last check
                 if successes.is_empty() {
+                    let timing = create_timer(AnyWorkId::InternalTiming("rc"), nth_wave)
+                        .queued()
+                        .run();
                     self.read_completions(&mut successes, &recv, RecvType::Blocking)?;
-                    successes
-                        .iter()
-                        .for_each(|(s, t)| self.handle_success(fe_root, s.clone(), t.clone()));
+                    self.timer.add(timing.complete());
+                    let timing = create_timer(AnyWorkId::InternalTiming("hs"), nth_wave)
+                        .queued()
+                        .run();
+                    for (success, timing) in successes.iter() {
+                        self.handle_success(fe_root, success.clone(), timing.clone())?;
+                    }
+                    self.timer.add(timing.complete());
+                }
+
+                if launchable.is_empty() && successes.is_empty() {
+                    // We didn't do anything
                 }
             }
             Ok::<(), Error>(())
@@ -721,7 +751,8 @@ impl<'a> Workload<'a> {
                     self.success.insert(id.clone()),
                     "We just did {id:?} a second time?"
                 );
-                self.handle_success(fe_root, id.clone(), timing);
+                self.handle_success(fe_root, id.clone(), timing)
+                    .unwrap_or_else(|e| panic!("Failed to handle success for {id:?}: {e}"));
             } else {
                 for counter in self.counters(id) {
                     counter.fetch_sub(1, Ordering::AcqRel);

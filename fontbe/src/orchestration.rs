@@ -678,7 +678,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use fontdrasil::coords::NormalizedCoord;
+    use fontdrasil::coords::{Coord, NormalizedCoord};
     use fontir::variations::{Tent, VariationRegion};
 
     use super::*;

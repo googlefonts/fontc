@@ -268,14 +268,14 @@ fn assert_access_many<I: Identifier>(
         AccessCheck::Any => ids.iter().any(|id| access.check(id)),
     };
     if !allow {
-        panic!("Illegal {desc} of {demand} {ids:?}");
+        panic!("Illegal {desc} of {demand} {ids:?}. {desc} access: {access:?}");
     }
 }
 
 fn assert_access_one<I: Identifier>(access: &Access<I>, id: &I, desc: &str) {
     let allow = access.check(id);
     if !allow {
-        panic!("Illegal {desc} of {id:?} per {access:?}");
+        panic!("Illegal {desc} of {id:?}. {desc} access: {access:?}");
     }
 }
 

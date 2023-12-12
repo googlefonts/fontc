@@ -12,6 +12,7 @@ use std::{
 use crate::{error::WorkError, ir, paths::Paths, source::Input};
 use bitflags::bitflags;
 use fontdrasil::{
+    coords::NormalizedLocation,
     orchestration::{Access, AccessControlList, Identifier, IdentifierDiscriminant, Work},
     types::GlyphName,
 };
@@ -325,7 +326,8 @@ pub enum WorkId {
     /// The final glyph order. Most things that need glyph order should rely on this.
     GlyphOrder,
     Features,
-    Kerning,
+    KerningGroups,
+    KerningAtLocation(NormalizedLocation),
     Anchor(GlyphName),
 }
 
@@ -338,8 +340,9 @@ impl Identifier for WorkId {
             WorkId::GlyphIrDelete(..) => "IrGlyphDelete",
             WorkId::PreliminaryGlyphOrder => "IrPreliminaryGlyphOrder",
             WorkId::GlyphOrder => "IrGlyphOrder",
-            WorkId::Features => "Features",
-            WorkId::Kerning => "Kerning",
+            WorkId::Features => "IrFeatures",
+            WorkId::KerningGroups => "IrKerningGroups",
+            WorkId::KerningAtLocation(..) => "IrKernAtLoc",
             WorkId::Anchor(..) => "IrAnchor",
         }
     }
@@ -402,7 +405,8 @@ pub struct Context {
     pub global_metrics: FeContextItem<ir::GlobalMetrics>,
     pub glyphs: FeContextMap<ir::Glyph>,
     pub features: FeContextItem<ir::Features>,
-    pub kerning: FeContextItem<ir::Kerning>,
+    pub kerning_groups: FeContextItem<ir::KerningGroups>,
+    pub kerning_at: FeContextMap<ir::KerningInstance>,
     pub anchors: FeContextMap<ir::GlyphAnchors>,
 }
 
@@ -424,7 +428,8 @@ impl Context {
             global_metrics: self.global_metrics.clone_with_acl(acl.clone()),
             glyphs: self.glyphs.clone_with_acl(acl.clone()),
             features: self.features.clone_with_acl(acl.clone()),
-            kerning: self.kerning.clone_with_acl(acl.clone()),
+            kerning_groups: self.kerning_groups.clone_with_acl(acl.clone()),
+            kerning_at: self.kerning_at.clone_with_acl(acl.clone()),
             anchors: self.anchors.clone_with_acl(acl),
         }
     }
@@ -461,7 +466,12 @@ impl Context {
             ),
             glyphs: ContextMap::new(acl.clone(), persistent_storage.clone()),
             features: ContextItem::new(WorkId::Features, acl.clone(), persistent_storage.clone()),
-            kerning: ContextItem::new(WorkId::Kerning, acl.clone(), persistent_storage.clone()),
+            kerning_groups: ContextItem::new(
+                WorkId::KerningGroups,
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
+            kerning_at: ContextMap::new(acl.clone(), persistent_storage.clone()),
             anchors: ContextMap::new(acl, persistent_storage),
         }
     }

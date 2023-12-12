@@ -2,7 +2,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     ffi::{OsStr, OsString},
     fmt::Display,
     fs,
@@ -121,14 +121,14 @@ impl<'a> FeaVariationInfo<'a> {
 
 //NOTE: this is basically identical to the same method on FeaVariationInfo,
 //except they have slightly different inputs?
-pub(crate) fn resolve_variable_metric(
+pub(crate) fn resolve_variable_metric<'a>(
     static_metadata: &StaticMetadata,
-    values: &BTreeMap<NormalizedLocation, OrderedFloat<f32>>,
+    values: impl Iterator<Item = &'a (NormalizedLocation, OrderedFloat<f32>)>,
 ) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
     let var_model = &static_metadata.variation_model;
 
     let point_seqs = values
-        .iter()
+        .into_iter()
         .map(|(pos, value)| (pos.to_owned(), vec![value.0 as f64]))
         .collect();
     let raw_deltas: Vec<_> = var_model
@@ -495,7 +495,7 @@ mod tests {
 
     use fea_rs::compile::VariationInfo;
     use fontdrasil::{
-        coords::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord},
+        coords::{Coord, CoordConverter, DesignCoord, NormalizedCoord, UserCoord},
         types::Axis,
     };
     use fontir::ir::StaticMetadata;

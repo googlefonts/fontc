@@ -19,7 +19,7 @@ use write_fonts::{
 };
 
 use fontdrasil::{
-    coords::{NormalizedCoord, NormalizedLocation, UserLocation},
+    coords::{Coord, NormalizedCoord, NormalizedLocation, UserLocation},
     types::{AnchorName, Axis, GlyphName, GroupName},
 };
 
@@ -193,29 +193,39 @@ impl IntoIterator for GlyphOrder {
 pub type PostscriptNames = HashMap<GlyphName, GlyphName>;
 
 /// In logical (reading) order
-type KernPair = (KernParticipant, KernParticipant);
-type KernValues = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
+pub type KernPair = (KernParticipant, KernParticipant);
 
-/// IR representation of kerning.
+/// IR representation of kerning groups.
 ///
 /// In UFO terms, roughly [groups.plist](https://unifiedfontobject.org/versions/ufo3/groups.plist/)
-/// and [kerning.plist](https://unifiedfontobject.org/versions/ufo3/kerning.plist/) combined.
+/// plus the set of locations that can have kerning.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
-pub struct Kerning {
+pub struct KerningGroups {
     pub groups: BTreeMap<GroupName, BTreeSet<GlyphName>>,
+    /// The locations that have kerning defined.
+    ///
+    /// Must be a subset of the master locations.
+    pub locations: BTreeSet<NormalizedLocation>,
+
+    /// Optional group renaming map, meant for [KerningInstance] to consume
+    ///
+    /// The rhs should be the name used in the groups map.
+    pub old_to_new_group_names: BTreeMap<GroupName, GroupName>,
+}
+
+/// IR representation of kerning for a location.
+///
+/// In UFO terms, roughly [kerning.plist](https://unifiedfontobject.org/versions/ufo3/kerning.plist/).
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
+pub struct KerningInstance {
+    pub location: NormalizedLocation,
     /// An adjustment to the space *between* two glyphs in logical order.
     ///
     /// Maps (side1, side2) => a mapping location:adjustment.
     ///
     /// Used for both LTR and RTL. The BE application differs but the concept
     /// is the same.
-    pub kerns: BTreeMap<KernPair, KernValues>,
-}
-
-impl Kerning {
-    pub fn is_empty(&self) -> bool {
-        self.kerns.is_empty()
-    }
+    pub kerns: BTreeMap<KernPair, OrderedFloat<f32>>,
 }
 
 /// A participant in kerning, one of the entries in a kerning pair.
@@ -1106,13 +1116,29 @@ impl Persistable for Features {
     }
 }
 
-impl Persistable for Kerning {
+impl Persistable for KerningGroups {
     fn read(from: &mut dyn Read) -> Self {
         serde_yaml::from_reader(from).unwrap()
     }
 
     fn write(&self, to: &mut dyn std::io::Write) {
         serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
+impl Persistable for KerningInstance {
+    fn read(from: &mut dyn Read) -> Self {
+        serde_yaml::from_reader(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        serde_yaml::to_writer(to, self).unwrap();
+    }
+}
+
+impl IdAware<WorkId> for KerningInstance {
+    fn id(&self) -> WorkId {
+        WorkId::KerningAtLocation(self.location.clone())
     }
 }
 

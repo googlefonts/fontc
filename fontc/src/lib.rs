@@ -41,7 +41,7 @@ use fontbe::{
     stat::create_stat_work,
 };
 
-use fontdrasil::types::GlyphName;
+use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
 use fontir::{glyph::create_glyph_order_work, source::DeleteWork};
 
 use fontbe::orchestration::Context as BeContext;
@@ -187,12 +187,25 @@ fn add_kerning_be_job(workload: &mut Workload) -> Result<(), Error> {
     Ok(())
 }
 
-fn add_kerning_ir_job(workload: &mut Workload) -> Result<(), Error> {
+fn add_kerning_group_ir_job(workload: &mut Workload) -> Result<(), Error> {
     let work = workload
         .change_detector
         .ir_source()
-        .create_kerning_ir_work(workload.change_detector.current_inputs())?;
-    workload.add(work.into(), workload.change_detector.kerning_ir_change());
+        .create_kerning_group_ir_work(workload.change_detector.current_inputs())?;
+    workload.add(
+        work.into(),
+        workload.change_detector.kerning_groups_ir_change(),
+    );
+    Ok(())
+}
+
+fn add_kerning_at_ir_job(workload: &mut Workload, at: NormalizedLocation) -> Result<(), Error> {
+    let work = workload
+        .change_detector
+        .ir_source()
+        .create_kerning_instance_ir_work(workload.current_inputs(), at.clone())?
+        .into();
+    workload.add(work, workload.change_detector.kerning_at_ir_change(at));
     Ok(())
 }
 
@@ -208,7 +221,7 @@ fn add_glyph_ir_jobs(workload: &mut Workload) -> Result<(), Error> {
     let glyph_work = workload
         .change_detector
         .ir_source()
-        .create_glyph_ir_work(&glyphs_changed, workload.change_detector.current_inputs())?;
+        .create_glyph_ir_work(glyphs_changed, workload.change_detector.current_inputs())?;
     for work in glyph_work {
         workload.add(work.into(), true);
     }
@@ -219,7 +232,7 @@ fn add_glyph_ir_jobs(workload: &mut Workload) -> Result<(), Error> {
 fn add_glyph_be_jobs(workload: &mut Workload) -> Result<(), Error> {
     let glyphs_changed = workload.change_detector.glyphs_changed();
     for glyph_name in glyphs_changed {
-        add_glyph_be_job(workload, glyph_name);
+        add_glyph_be_job(workload, glyph_name.clone());
     }
     Ok(())
 }
@@ -356,7 +369,7 @@ pub fn create_workload(
 
     // FE: f(source) => IR
     add_feature_ir_job(&mut workload)?;
-    add_kerning_ir_job(&mut workload)?;
+    add_kerning_group_ir_job(&mut workload)?;
     add_glyph_ir_jobs(&mut workload)?;
     add_glyph_order_ir_job(&mut workload)?;
 
@@ -402,7 +415,7 @@ pub fn testdata_dir() -> PathBuf {
 mod tests {
 
     use std::{
-        collections::{HashSet, VecDeque},
+        collections::{HashMap, HashSet, VecDeque},
         fs::{self, File},
         io::Read,
         path::{Path, PathBuf},
@@ -415,9 +428,13 @@ mod tests {
     use fontbe::orchestration::{
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
     };
-    use fontdrasil::{coords::NormalizedCoord, paths::safe_filename, types::GlyphName};
+    use fontdrasil::{
+        coords::{Coord, NormalizedCoord},
+        paths::safe_filename,
+        types::GlyphName,
+    };
     use fontir::{
-        ir::{self, GlyphOrder, KernParticipant},
+        ir::{self, GlyphOrder, KernPair, KernParticipant},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
     };
     use indexmap::IndexSet;
@@ -525,8 +542,8 @@ mod tests {
                 build_dir,
                 args: config.args.clone(),
                 work_executed: HashSet::new(),
-                glyphs_changed: change_detector.glyphs_changed(),
-                glyphs_deleted: change_detector.glyphs_deleted(),
+                glyphs_changed: change_detector.glyphs_changed().clone(),
+                glyphs_deleted: change_detector.glyphs_deleted().clone(),
                 fe_context,
                 be_context,
                 raw_font: Vec::new(),
@@ -639,7 +656,11 @@ mod tests {
             FeWorkIdentifier::PreliminaryGlyphOrder.into(),
             FeWorkIdentifier::GlyphOrder.into(),
             FeWorkIdentifier::Features.into(),
-            FeWorkIdentifier::Kerning.into(),
+            FeWorkIdentifier::KerningGroups.into(),
+            FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 0.0)]))
+                .into(),
+            FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 1.0)]))
+                .into(),
             BeWorkIdentifier::Features.into(),
             BeWorkIdentifier::Avar.into(),
             BeWorkIdentifier::Cmap.into(),
@@ -774,7 +795,9 @@ mod tests {
         let result = TestCompile::compile_source("glyphs3/WghtVar.glyphs");
         assert!(result.work_executed.len() > 1);
 
-        fs::remove_file(result.build_dir.join("kerning.yml")).unwrap();
+        fs::remove_file(result.build_dir.join("kern_groups.yml")).unwrap();
+        fs::remove_file(result.build_dir.join("kern_wght_0.00.yml")).unwrap();
+        fs::remove_file(result.build_dir.join("kern_wght_1.00.yml")).unwrap();
 
         let result = TestCompile::compile_again(&result);
         let mut completed = result.work_executed.iter().cloned().collect::<Vec<_>>();
@@ -782,7 +805,11 @@ mod tests {
         assert_eq!(
             vec![
                 AnyWorkId::Fe(FeWorkIdentifier::Features),
-                FeWorkIdentifier::Kerning.into(),
+                FeWorkIdentifier::KerningGroups.into(),
+                FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 0.0)]))
+                    .into(),
+                FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 1.0)]))
+                    .into(),
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Gpos.into(),
@@ -887,7 +914,13 @@ mod tests {
         assert_eq!(
             vec![
                 AnyWorkId::Fe(FeWorkIdentifier::Features),
-                AnyWorkId::Fe(FeWorkIdentifier::Kerning),
+                AnyWorkId::Fe(FeWorkIdentifier::KerningGroups),
+                AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(
+                    NormalizedLocation::for_pos(&[("wght", 0.0)])
+                )),
+                AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(
+                    NormalizedLocation::for_pos(&[("wght", 1.0)])
+                )),
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Gpos.into(),
@@ -1747,9 +1780,9 @@ mod tests {
     fn assert_simple_kerning(source: &str) {
         let result = TestCompile::compile_source(source);
 
-        let kerning = result.fe_context.kerning.get();
+        let kerning_groups = result.fe_context.kerning_groups.get();
 
-        let mut groups: Vec<_> = kerning
+        let mut groups: Vec<_> = kerning_groups
             .groups
             .iter()
             .map(|(name, entries)| {
@@ -1760,25 +1793,36 @@ mod tests {
             .collect();
         groups.sort();
 
-        let mut kerns: Vec<_> = kerning
-            .kerns
-            .iter()
-            .map(|((side1, side2), values)| {
-                (
-                    side1,
-                    side2,
-                    values
-                        .iter()
-                        .map(|(loc, val)| {
-                            assert_eq!(loc.axis_tags().count(), 1, "Should be only wght");
-                            let (axis, pos) = loc.iter().next().unwrap();
-                            (format!("{axis} {}", pos.to_f32()), val.0)
-                        })
-                        .collect::<Vec<_>>(),
-                )
+        let wght = Tag::new(b"wght");
+        let mut kerns: HashMap<KernPair, Vec<(String, f32)>> = HashMap::new();
+        for kern_loc in kerning_groups.locations.iter() {
+            assert_eq!(
+                vec![wght],
+                kern_loc.axis_tags().cloned().collect::<Vec<_>>()
+            );
+
+            let kerns_at = result
+                .fe_context
+                .kerning_at
+                .get(&FeWorkIdentifier::KerningAtLocation(kern_loc.clone()));
+            for (pair, adjustment) in kerns_at.kerns.iter() {
+                kerns.entry(pair.clone()).or_default().push((
+                    format!(
+                        "wght {}",
+                        kern_loc.iter().map(|(_, v)| *v).next().unwrap().to_f32()
+                    ),
+                    adjustment.0,
+                ));
+            }
+        }
+        let mut kerns: Vec<_> = kerns
+            .into_iter()
+            .map(|((left, right), mut values)| {
+                values.sort_by_key(|(s, _)| s.clone());
+                (left, right, values)
             })
             .collect();
-        kerns.sort_by_key(|(side1, side2, _)| (*side1, *side2));
+        kerns.sort_by_key(|(left, right, _)| (left.clone(), right.clone()));
 
         assert_eq!(
             (groups, kerns),
@@ -1791,42 +1835,42 @@ mod tests {
                 ],
                 vec![
                     (
-                        &KernParticipant::Glyph("bracketleft".into()),
-                        &KernParticipant::Glyph("bracketright".into()),
+                        KernParticipant::Glyph("bracketleft".into()),
+                        KernParticipant::Glyph("bracketright".into()),
                         vec![
                             ("wght 0".to_string(), -300.0),
                             ("wght 1".to_string(), -150.0)
                         ],
                     ),
                     (
-                        &KernParticipant::Glyph("exclam".into()),
-                        &KernParticipant::Glyph("exclam".into()),
+                        KernParticipant::Glyph("exclam".into()),
+                        KernParticipant::Glyph("exclam".into()),
                         vec![
                             ("wght 0".to_string(), -360.0),
                             ("wght 1".to_string(), -100.0)
                         ],
                     ),
                     (
-                        &KernParticipant::Glyph("exclam".into()),
-                        &KernParticipant::Glyph("hyphen".into()),
+                        KernParticipant::Glyph("exclam".into()),
+                        KernParticipant::Glyph("hyphen".into()),
                         vec![("wght 0".to_string(), 20.0),],
                     ),
                     (
-                        &KernParticipant::Glyph("exclam".into()),
-                        &KernParticipant::Group("public.kern2.bracketright_L".into()),
+                        KernParticipant::Glyph("exclam".into()),
+                        KernParticipant::Group("public.kern2.bracketright_L".into()),
                         vec![("wght 0".to_string(), -160.0),],
                     ),
                     (
-                        &KernParticipant::Glyph("hyphen".into()),
-                        &KernParticipant::Glyph("hyphen".into()),
+                        KernParticipant::Glyph("hyphen".into()),
+                        KernParticipant::Glyph("hyphen".into()),
                         vec![
                             ("wght 0".to_string(), -150.0),
                             ("wght 1".to_string(), -50.0)
                         ],
                     ),
                     (
-                        &KernParticipant::Group("public.kern1.bracketleft_R".into()),
-                        &KernParticipant::Glyph("exclam".into()),
+                        KernParticipant::Group("public.kern1.bracketleft_R".into()),
+                        KernParticipant::Glyph("exclam".into()),
                         vec![("wght 0".to_string(), -165.0),],
                     ),
                 ],

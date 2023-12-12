@@ -9,7 +9,7 @@ use fontbe::{
 };
 
 use crate::{create_timer, timing::JobTimer, work::AnyWork, workload::Workload, Config, Error};
-use fontdrasil::types::GlyphName;
+use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
 use fontir::{
     orchestration::WorkId as FeWorkIdentifier,
     paths::Paths as IrPaths,
@@ -44,6 +44,10 @@ pub struct ChangeDetector {
     be_paths: BePaths,
     emit_ir: bool,
     skip_features: bool,
+    static_metadata_changed: bool,
+    glyph_order_changed: bool,
+    glyphs_changed: IndexSet<GlyphName>,
+    glyphs_deleted: IndexSet<GlyphName>,
 }
 
 impl Debug for ChangeDetector {
@@ -83,6 +87,46 @@ impl ChangeDetector {
             });
         }
 
+        let static_metadata_changed = current_inputs.static_metadata != prev_inputs.static_metadata
+            || !ir_paths
+                .target_file(&FeWorkIdentifier::StaticMetadata)
+                .is_file();
+
+        let glyph_order_changed = static_metadata_changed
+            || !ir_paths
+                .target_file(&FeWorkIdentifier::GlyphOrder)
+                .is_file();
+
+        let glyphs_changed = if static_metadata_changed || glyph_order_changed {
+            current_inputs.glyphs.keys().cloned().collect()
+        } else {
+            current_inputs
+                .glyphs
+                .iter()
+                .filter_map(
+                    |(glyph_name, curr_state)| match prev_inputs.glyphs.get(glyph_name) {
+                        Some(prev_state) => {
+                            // If the input changed or the output doesn't exist a rebuild is probably in order
+                            (prev_state != curr_state
+                                || !ir_paths
+                                    .target_file(&FeWorkIdentifier::Glyph(glyph_name.clone()))
+                                    .exists())
+                            .then_some(glyph_name)
+                        }
+                        None => Some(glyph_name),
+                    },
+                )
+                .cloned()
+                .collect()
+        };
+
+        let glyphs_deleted = prev_inputs
+            .glyphs
+            .keys()
+            .filter(|glyph_name| !current_inputs.glyphs.contains_key(*glyph_name))
+            .cloned()
+            .collect();
+
         timer.add(time.complete());
 
         Ok(ChangeDetector {
@@ -94,6 +138,10 @@ impl ChangeDetector {
             be_paths,
             emit_ir: config.args.incremental,
             skip_features: config.args.skip_features,
+            static_metadata_changed,
+            glyph_order_changed,
+            glyphs_changed,
+            glyphs_deleted,
         })
     }
 
@@ -201,19 +249,11 @@ impl ChangeDetector {
     // TODO: could this be solved based on work id and also completes?
 
     pub fn static_metadata_ir_change(&self) -> bool {
-        self.current_inputs.static_metadata != self.prev_inputs.static_metadata
-            || !self
-                .ir_paths
-                .target_file(&FeWorkIdentifier::StaticMetadata)
-                .is_file()
+        self.static_metadata_changed
     }
 
     pub fn glyph_order_ir_change(&self) -> bool {
-        self.current_inputs.static_metadata != self.prev_inputs.static_metadata
-            || !self
-                .ir_paths
-                .target_file(&FeWorkIdentifier::GlyphOrder)
-                .is_file()
+        self.glyph_order_changed
     }
 
     pub fn global_metrics_ir_change(&self) -> bool {
@@ -233,7 +273,7 @@ impl ChangeDetector {
                 .is_file()
             || !self
                 .ir_paths
-                .target_file(&FeWorkIdentifier::Kerning)
+                .target_file(&FeWorkIdentifier::KerningGroups)
                 .is_file()
     }
 
@@ -249,7 +289,7 @@ impl ChangeDetector {
 
     pub fn mark_be_change(&self) -> bool {
         // Glyphs produce anchors and we need anchors
-        !self.glyphs_changed().is_empty()
+        !self.glyphs_changed.is_empty()
             || !self
                 .be_paths
                 .target_file(&BeWorkIdentifier::Marks)
@@ -257,20 +297,29 @@ impl ChangeDetector {
     }
 
     pub fn kerning_be_change(&self) -> bool {
-        self.kerning_ir_change()
+        self.kerning_groups_ir_change()
             || !self
                 .be_paths
                 .target_file(&BeWorkIdentifier::Kerning)
                 .is_file()
     }
 
-    pub fn kerning_ir_change(&self) -> bool {
+    pub fn kerning_groups_ir_change(&self) -> bool {
         self.static_metadata_ir_change()
             || self.glyph_order_ir_change()
             || self.current_inputs.features != self.prev_inputs.features
             || !self
                 .ir_paths
-                .target_file(&FeWorkIdentifier::Kerning)
+                .target_file(&FeWorkIdentifier::KerningGroups)
+                .is_file()
+    }
+
+    pub fn kerning_at_ir_change(&self, at: NormalizedLocation) -> bool {
+        self.kerning_groups_ir_change()
+            || self.current_inputs.features != self.prev_inputs.features
+            || !self
+                .ir_paths
+                .target_file(&FeWorkIdentifier::KerningAtLocation(at))
                 .is_file()
     }
 
@@ -295,38 +344,12 @@ impl ChangeDetector {
             || !self.be_paths.target_file(&BeWorkIdentifier::Post).is_file()
     }
 
-    pub fn glyphs_changed(&self) -> IndexSet<GlyphName> {
-        let glyph_iter = self.current_inputs.glyphs.iter();
-
-        if self.static_metadata_ir_change() || self.glyph_order_ir_change() {
-            return glyph_iter.map(|(name, _)| name).cloned().collect();
-        }
-        glyph_iter
-            .filter_map(
-                |(glyph_name, curr_state)| match self.prev_inputs.glyphs.get(glyph_name) {
-                    Some(prev_state) => {
-                        // If the input changed or the output doesn't exist a rebuild is probably in order
-                        (prev_state != curr_state
-                            || !self
-                                .ir_paths
-                                .target_file(&FeWorkIdentifier::Glyph(glyph_name.clone()))
-                                .exists())
-                        .then_some(glyph_name)
-                    }
-                    None => Some(glyph_name),
-                },
-            )
-            .cloned()
-            .collect()
+    pub fn glyphs_changed(&self) -> &IndexSet<GlyphName> {
+        &self.glyphs_changed
     }
 
-    pub fn glyphs_deleted(&self) -> IndexSet<GlyphName> {
-        self.prev_inputs
-            .glyphs
-            .keys()
-            .filter(|glyph_name| !self.current_inputs.glyphs.contains_key(*glyph_name))
-            .cloned()
-            .collect()
+    pub fn glyphs_deleted(&self) -> &IndexSet<GlyphName> {
+        &self.glyphs_deleted
     }
 
     pub fn finish_successfully(self) -> Result<(), Error> {

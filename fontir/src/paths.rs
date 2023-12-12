@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use fontdrasil::paths::safe_filename;
+use fontdrasil::{coords::NormalizedLocation, paths::safe_filename};
 
 use crate::orchestration::WorkId;
 
@@ -52,6 +52,17 @@ impl Paths {
         self.glyph_ir_dir.join(safe_filename(name, ".yml"))
     }
 
+    fn kern_ir_file(&self, location: &NormalizedLocation) -> PathBuf {
+        let filename = "kern_".to_string()
+            + &location
+                .iter()
+                .map(|(tag, pos)| format!("{tag}_{:.2}", pos.to_f32()))
+                .collect::<Vec<_>>()
+                .join("_")
+            + ".yml";
+        self.build_dir.join(filename)
+    }
+
     pub fn target_file(&self, id: &WorkId) -> PathBuf {
         match id {
             WorkId::Anchor(name) => self.anchor_ir_file(name.as_str()),
@@ -64,7 +75,8 @@ impl Paths {
                 self.build_dir.join(format!("delete-{}.yml", name.as_str()))
             }
             WorkId::Features => self.build_dir.join("features.yml"),
-            WorkId::Kerning => self.build_dir.join("kerning.yml"),
+            WorkId::KerningGroups => self.build_dir.join("kern_groups.yml"),
+            WorkId::KerningAtLocation(location) => self.kern_ir_file(location),
         }
     }
 }

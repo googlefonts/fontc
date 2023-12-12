@@ -14,6 +14,12 @@ use write_fonts::types::{F2Dot14, Fixed, Tag};
 
 use crate::{piecewise_linear_map::PiecewiseLinearMap, serde::LocationSerdeRepr, types::Axis};
 
+/// A position on an axis
+pub trait Coord {
+    /// We do *not* provide From because we want conversion to be explicit
+    fn new(value: impl Into<OrderedFloat<f32>>) -> Self;
+}
+
 /// A coordinate in some arbitrary space the designer dreamed up.
 ///
 /// In .designspace, an xvalue. <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#dimension-element>.
@@ -135,11 +141,6 @@ impl CoordConverter {
 }
 
 impl DesignCoord {
-    /// We do *not* provide From because we want conversion to be explicit
-    pub fn new(value: impl Into<OrderedFloat<f32>>) -> DesignCoord {
-        DesignCoord(value.into())
-    }
-
     pub fn to_user(&self, converter: &CoordConverter) -> UserCoord {
         UserCoord::new(converter.design_to_user.map(self.0))
     }
@@ -153,12 +154,25 @@ impl DesignCoord {
     }
 }
 
-impl UserCoord {
-    /// We do *not* provide From because we want conversion to be explicit
-    pub fn new(value: impl Into<OrderedFloat<f32>>) -> UserCoord {
-        UserCoord(value.into())
+impl Coord for UserCoord {
+    fn new(value: impl Into<OrderedFloat<f32>>) -> Self {
+        Self(value.into())
     }
+}
 
+impl Coord for DesignCoord {
+    fn new(value: impl Into<OrderedFloat<f32>>) -> Self {
+        Self(value.into())
+    }
+}
+
+impl Coord for NormalizedCoord {
+    fn new(value: impl Into<OrderedFloat<f32>>) -> Self {
+        Self(value.into())
+    }
+}
+
+impl UserCoord {
     pub fn to_design(&self, converter: &CoordConverter) -> DesignCoord {
         DesignCoord::new(converter.user_to_design.map(self.0))
     }
@@ -179,11 +193,6 @@ impl From<UserCoord> for Fixed {
 }
 
 impl NormalizedCoord {
-    /// We do *not* provide From because we want conversion to be explicit
-    pub fn new(value: impl Into<OrderedFloat<f32>>) -> NormalizedCoord {
-        NormalizedCoord(value.into())
-    }
-
     pub fn to_design(&self, converter: &CoordConverter) -> DesignCoord {
         DesignCoord::new(converter.normalized_to_design.map(self.0))
     }
@@ -227,9 +236,24 @@ impl<T: Copy> From<Vec<(Tag, T)>> for Location<T> {
     }
 }
 
-impl<T: Copy> Location<T> {
+impl<T: Copy + Coord> Location<T> {
     pub fn new() -> Location<T> {
         Location(BTreeMap::new())
+    }
+
+    /// For testing only
+    #[doc(hidden)]
+    pub fn for_pos(positions: &[(&str, f32)]) -> Self {
+        positions
+            .iter()
+            .map(|(tag, value)| {
+                let tag = format!("{tag: <4}")
+                    .as_bytes()
+                    .try_into()
+                    .unwrap_or_else(|_| panic!("Bad tag \"{tag}\""));
+                (Tag::new(&tag), T::new(*value))
+            })
+            .collect()
     }
 
     pub fn insert(&mut self, tag: Tag, pos: T) -> &mut Location<T> {
