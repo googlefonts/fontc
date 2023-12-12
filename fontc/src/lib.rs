@@ -429,7 +429,7 @@ mod tests {
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
     };
     use fontdrasil::{
-        coords::{norm_loc, NormalizedCoord},
+        coords::{Coord, NormalizedCoord},
         paths::safe_filename,
         types::GlyphName,
     };
@@ -657,8 +657,10 @@ mod tests {
             FeWorkIdentifier::GlyphOrder.into(),
             FeWorkIdentifier::Features.into(),
             FeWorkIdentifier::KerningGroups.into(),
-            FeWorkIdentifier::KerningAtLocation(norm_loc(&[("wght", 0.0)])).into(),
-            FeWorkIdentifier::KerningAtLocation(norm_loc(&[("wght", 1.0)])).into(),
+            FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 0.0)]))
+                .into(),
+            FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 1.0)]))
+                .into(),
             BeWorkIdentifier::Features.into(),
             BeWorkIdentifier::Avar.into(),
             BeWorkIdentifier::Cmap.into(),
@@ -804,8 +806,10 @@ mod tests {
             vec![
                 AnyWorkId::Fe(FeWorkIdentifier::Features),
                 FeWorkIdentifier::KerningGroups.into(),
-                FeWorkIdentifier::KerningAtLocation(norm_loc(&[("wght", 0.0)])).into(),
-                FeWorkIdentifier::KerningAtLocation(norm_loc(&[("wght", 1.0)])).into(),
+                FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 0.0)]))
+                    .into(),
+                FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 1.0)]))
+                    .into(),
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Gpos.into(),
@@ -911,12 +915,12 @@ mod tests {
             vec![
                 AnyWorkId::Fe(FeWorkIdentifier::Features),
                 AnyWorkId::Fe(FeWorkIdentifier::KerningGroups),
-                AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(norm_loc(&[(
-                    "wght", 0.0
-                )]))),
-                AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(norm_loc(&[(
-                    "wght", 1.0
-                )]))),
+                AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(
+                    NormalizedLocation::for_pos(&[("wght", 0.0)])
+                )),
+                AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(
+                    NormalizedLocation::for_pos(&[("wght", 1.0)])
+                )),
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Gpos.into(),

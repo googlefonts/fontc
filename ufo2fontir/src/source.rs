@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use fontdrasil::{
-    coords::{DesignLocation, NormalizedLocation, UserCoord},
+    coords::{Coord, DesignLocation, NormalizedLocation, UserCoord},
     orchestration::{Access, AccessBuilder, Work},
     types::{GlyphName, GroupName},
 };

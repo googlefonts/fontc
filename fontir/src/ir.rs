@@ -19,7 +19,7 @@ use write_fonts::{
 };
 
 use fontdrasil::{
-    coords::{NormalizedCoord, NormalizedLocation, UserLocation},
+    coords::{Coord, NormalizedCoord, NormalizedLocation, UserLocation},
     types::{AnchorName, Axis, GlyphName, GroupName},
 };
 

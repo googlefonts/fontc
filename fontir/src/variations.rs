@@ -7,7 +7,7 @@ use std::{
 };
 
 use fontdrasil::{
-    coords::{NormalizedCoord, NormalizedLocation},
+    coords::{Coord, NormalizedCoord, NormalizedLocation},
     types::Axis,
 };
 use log::{log_enabled, trace};
@@ -765,7 +765,7 @@ mod tests {
     };
 
     use fontdrasil::{
-        coords::{norm_loc, CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
+        coords::{Coord, CoordConverter, DesignCoord, NormalizedLocation, UserCoord},
         types::Axis,
     };
     use kurbo::{Point, Vec2};
@@ -826,7 +826,7 @@ mod tests {
     /// 1.0
     #[test]
     fn scalar_at_off_default_for_default() {
-        let loc = norm_loc(&[("wght", 0.2)]);
+        let loc = NormalizedLocation::for_pos(&[("wght", 0.2)]);
         assert_eq!(ONE, VariationRegion::new().scalar_at(&loc));
     }
 
@@ -835,7 +835,7 @@ mod tests {
     /// 0.1
     #[test]
     fn scalar_at_off_default_for_simple_weight() {
-        let loc = norm_loc(&[("wght", 0.2)]);
+        let loc = NormalizedLocation::for_pos(&[("wght", 0.2)]);
         let mut region = VariationRegion::new();
         region.insert(Tag::from_str("wght").unwrap(), (0.0, 2.0, 3.0).into());
         assert_eq!(OrderedFloat(0.1), region.scalar_at(&loc));
@@ -846,7 +846,7 @@ mod tests {
     /// 0.75
     #[test]
     fn scalar_at_for_weight() {
-        let loc = norm_loc(&[("wght", 2.5)]);
+        let loc = NormalizedLocation::for_pos(&[("wght", 2.5)]);
         let mut region = VariationRegion::new();
         region.insert(Tag::from_str("wght").unwrap(), (0.0, 2.0, 4.0).into());
         assert_eq!(OrderedFloat(0.75), region.scalar_at(&loc));
@@ -858,7 +858,7 @@ mod tests {
     /// Note that under font rules a peak of 0 means no influence
     #[test]
     fn scalar_at_for_weight_width_fixup() {
-        let loc = norm_loc(&[("wght", 2.5), ("wdth", 0.0)]);
+        let loc = NormalizedLocation::for_pos(&[("wght", 2.5), ("wdth", 0.0)]);
         let mut region = VariationRegion::new();
         region.insert(Tag::from_str("wght").unwrap(), (0.0, 2.0, 4.0).into());
         region.insert(Tag::from_str("wdth").unwrap(), (-1.0, 0.0, 1.0).into());
@@ -870,7 +870,7 @@ mod tests {
     /// 1.0
     #[test]
     fn scalar_at_for_weight_width_corner() {
-        let loc = norm_loc(&[("wght", 1.0), ("wdth", 1.0)]);
+        let loc = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 1.0)]);
         let mut region = VariationRegion::new();
         region.insert(Tag::from_str("wght").unwrap(), (0.0, 1.0, 1.0).into());
         assert_eq!(OrderedFloat(1.0), region.scalar_at(&loc));
@@ -887,7 +887,10 @@ mod tests {
         let axes = vec![axis("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
 
-        assert_eq!(vec![norm_loc(&[("wght", 0.0)])], model.locations);
+        assert_eq!(
+            vec![NormalizedLocation::for_pos(&[("wght", 0.0)])],
+            model.locations
+        );
         assert_eq!(vec![default_master_weight()], model.delta_weights);
     }
 
@@ -897,7 +900,7 @@ mod tests {
     /// [{}]
     #[test]
     fn delta_weights_for_static_family_many_axes() {
-        let loc = norm_loc(&[("wght", 0.0), ("ital", 0.0), ("wdth", 0.0)]);
+        let loc = NormalizedLocation::for_pos(&[("wght", 0.0), ("ital", 0.0), ("wdth", 0.0)]);
         let locations = HashSet::from([loc.clone()]);
         let axes = vec![axis("wdth"), axis("wght"), axis("ital")];
         let model = VariationModel::new(locations, axes).unwrap();
@@ -913,8 +916,8 @@ mod tests {
     /// [{}, {0: 1.0}]
     #[test]
     fn delta_weights_for_2_master_weight_variable_family() {
-        let weight_0 = norm_loc(&[("wght", 0.0)]);
-        let weight_1 = norm_loc(&[("wght", 1.0)]);
+        let weight_0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let weight_1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let locations = HashSet::from([weight_1.clone(), weight_0.clone()]);
         let axes = vec![axis("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
@@ -933,9 +936,9 @@ mod tests {
     /// [{}, {0: 1.0}, {0: 1.0}]
     #[test]
     fn delta_weights_for_3_master_weight_variable_family() {
-        let weight_minus_1 = norm_loc(&[("wght", -1.0)]);
-        let weight_0 = norm_loc(&[("wght", 0.0)]);
-        let weight_1 = norm_loc(&[("wght", 1.0)]);
+        let weight_minus_1 = NormalizedLocation::for_pos(&[("wght", -1.0)]);
+        let weight_0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let weight_1 = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let locations = HashSet::from([weight_1.clone(), weight_0.clone(), weight_minus_1.clone()]);
         let axes = vec![axis("wght")];
         let model = VariationModel::new(locations, axes).unwrap();
@@ -958,10 +961,10 @@ mod tests {
     /// [{}, {0: 1.0}, {0: 1.0}, {0: 1.0, 1: 1.0, 2: 1.0}]
     #[test]
     fn delta_weights_for_corner_master_weight_width_family() {
-        let wght0_wdth0 = norm_loc(&[("wght", 0.0), ("wdth", 0.0)]);
-        let wght0_wdth1 = norm_loc(&[("wght", 0.0), ("wdth", 1.0)]);
-        let wght1_wdth0 = norm_loc(&[("wght", 1.0), ("wdth", 0.0)]);
-        let wght1_wdth1 = norm_loc(&[("wght", 1.0), ("wdth", 1.0)]);
+        let wght0_wdth0 = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]);
+        let wght0_wdth1 = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 1.0)]);
+        let wght1_wdth0 = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 0.0)]);
+        let wght1_wdth1 = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 1.0)]);
         let locations = HashSet::from([
             wght0_wdth0.clone(),
             wght0_wdth1.clone(),
@@ -997,12 +1000,12 @@ mod tests {
     /// [{}, {0: 1.0}, {0: 1.0}, {0: 1.0}, {0: 1.0}, {0: 1.0}]
     #[test]
     fn delta_weights_for_corner_default_and_fixup_master_weight_width_family() {
-        let default_master = norm_loc(&[("wght", 0.0), ("wdth", 0.0)]);
-        let min_wght_min_wdth = norm_loc(&[("wght", -1.0), ("wdth", -1.0)]);
-        let min_wght_max_wdth = norm_loc(&[("wght", -1.0), ("wdth", 1.0)]);
-        let max_wght_min_wdth = norm_loc(&[("wght", 1.0), ("wdth", -1.0)]);
-        let max_wght_max_wdth = norm_loc(&[("wght", 1.0), ("wdth", 1.0)]);
-        let fixup = norm_loc(&[("wght", 0.5), ("wdth", 0.5)]);
+        let default_master = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]);
+        let min_wght_min_wdth = NormalizedLocation::for_pos(&[("wght", -1.0), ("wdth", -1.0)]);
+        let min_wght_max_wdth = NormalizedLocation::for_pos(&[("wght", -1.0), ("wdth", 1.0)]);
+        let max_wght_min_wdth = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", -1.0)]);
+        let max_wght_max_wdth = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 1.0)]);
+        let fixup = NormalizedLocation::for_pos(&[("wght", 0.5), ("wdth", 0.5)]);
         let locations = HashSet::from([
             // Default master
             default_master.clone(),
@@ -1047,30 +1050,30 @@ mod tests {
     #[test]
     fn delta_weights_for_many_master_weight_width_family() {
         let locations = HashSet::from([
-            norm_loc(&[("wght", 0.55), ("wdth", 0.0)]),
-            norm_loc(&[("wght", -0.55), ("wdth", 0.0)]),
-            norm_loc(&[("wght", -1.0), ("wdth", 0.0)]),
-            norm_loc(&[("wght", 0.0), ("wdth", 1.0)]),
-            norm_loc(&[("wght", 0.66), ("wdth", 1.0)]),
-            norm_loc(&[("wght", 0.66), ("wdth", 0.66)]),
-            norm_loc(&[("wght", 0.0), ("wdth", 0.0)]),
-            norm_loc(&[("wght", 1.0), ("wdth", 1.0)]),
-            norm_loc(&[("wght", 1.0), ("wdth", 0.0)]),
+            NormalizedLocation::for_pos(&[("wght", 0.55), ("wdth", 0.0)]),
+            NormalizedLocation::for_pos(&[("wght", -0.55), ("wdth", 0.0)]),
+            NormalizedLocation::for_pos(&[("wght", -1.0), ("wdth", 0.0)]),
+            NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 1.0)]),
+            NormalizedLocation::for_pos(&[("wght", 0.66), ("wdth", 1.0)]),
+            NormalizedLocation::for_pos(&[("wght", 0.66), ("wdth", 0.66)]),
+            NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]),
+            NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 1.0)]),
+            NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 0.0)]),
         ]);
         let axes = vec![axis("wght"), axis("wdth")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
             vec![
-                norm_loc(&[("wght", 0.0), ("wdth", 0.0)]),
-                norm_loc(&[("wght", -0.55), ("wdth", 0.0)]),
-                norm_loc(&[("wght", -1.0), ("wdth", 0.0)]),
-                norm_loc(&[("wght", 0.55), ("wdth", 0.0)]),
-                norm_loc(&[("wght", 1.0), ("wdth", 0.0)]),
-                norm_loc(&[("wght", 0.0), ("wdth", 1.0)]),
-                norm_loc(&[("wght", 1.0), ("wdth", 1.0)]),
-                norm_loc(&[("wght", 0.66), ("wdth", 1.0)]),
-                norm_loc(&[("wght", 0.66), ("wdth", 0.66)]),
+                NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]),
+                NormalizedLocation::for_pos(&[("wght", -0.55), ("wdth", 0.0)]),
+                NormalizedLocation::for_pos(&[("wght", -1.0), ("wdth", 0.0)]),
+                NormalizedLocation::for_pos(&[("wght", 0.55), ("wdth", 0.0)]),
+                NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 0.0)]),
+                NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 1.0)]),
+                NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 1.0)]),
+                NormalizedLocation::for_pos(&[("wght", 0.66), ("wdth", 1.0)]),
+                NormalizedLocation::for_pos(&[("wght", 0.66), ("wdth", 0.66)]),
             ],
             model.locations
         );
@@ -1114,24 +1117,24 @@ mod tests {
     #[test]
     fn delta_weights_for_foo_bar_family_case_1() {
         let locations = HashSet::from([
-            norm_loc(&[("foo", 0.0), ("bar", 0.0)]),
-            norm_loc(&[("foo", 0.0), ("bar", 0.5)]),
-            norm_loc(&[("foo", 0.0), ("bar", 1.0)]),
-            norm_loc(&[("foo", 1.0), ("bar", 0.0)]),
-            norm_loc(&[("foo", 1.0), ("bar", 0.5)]),
-            norm_loc(&[("foo", 1.0), ("bar", 1.0)]),
+            NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.0)]),
+            NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.5)]),
+            NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 1.0)]),
+            NormalizedLocation::for_pos(&[("foo", 1.0), ("bar", 0.0)]),
+            NormalizedLocation::for_pos(&[("foo", 1.0), ("bar", 0.5)]),
+            NormalizedLocation::for_pos(&[("foo", 1.0), ("bar", 1.0)]),
         ]);
         let axes = vec![axis("bar"), axis("foo")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
             vec![
-                norm_loc(&[("foo", 0.0), ("bar", 0.0)]),
-                norm_loc(&[("foo", 0.0), ("bar", 0.5)]),
-                norm_loc(&[("foo", 0.0), ("bar", 1.0)]),
-                norm_loc(&[("foo", 1.0), ("bar", 0.0)]),
-                norm_loc(&[("foo", 1.0), ("bar", 0.5)]),
-                norm_loc(&[("foo", 1.0), ("bar", 1.0)]),
+                NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.0)]),
+                NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.5)]),
+                NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 1.0)]),
+                NormalizedLocation::for_pos(&[("foo", 1.0), ("bar", 0.0)]),
+                NormalizedLocation::for_pos(&[("foo", 1.0), ("bar", 0.5)]),
+                NormalizedLocation::for_pos(&[("foo", 1.0), ("bar", 1.0)]),
             ],
             model.locations
         );
@@ -1162,28 +1165,28 @@ mod tests {
     #[test]
     fn delta_weights_for_foo_bar_family_case_2() {
         let locations = HashSet::from([
-            norm_loc(&[("foo", 0.0), ("bar", 0.0)]),
-            norm_loc(&[("foo", 0.25), ("bar", 0.0)]),
-            norm_loc(&[("foo", 0.5), ("bar", 0.0)]),
-            norm_loc(&[("foo", 0.75), ("bar", 0.0)]),
-            norm_loc(&[("foo", 1.0), ("bar", 0.0)]),
-            norm_loc(&[("foo", 0.0), ("bar", 0.25)]),
-            norm_loc(&[("foo", 0.0), ("bar", 0.75)]),
-            norm_loc(&[("foo", 0.0), ("bar", 1.0)]),
+            NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.0)]),
+            NormalizedLocation::for_pos(&[("foo", 0.25), ("bar", 0.0)]),
+            NormalizedLocation::for_pos(&[("foo", 0.5), ("bar", 0.0)]),
+            NormalizedLocation::for_pos(&[("foo", 0.75), ("bar", 0.0)]),
+            NormalizedLocation::for_pos(&[("foo", 1.0), ("bar", 0.0)]),
+            NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.25)]),
+            NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.75)]),
+            NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 1.0)]),
         ]);
         let axes = vec![axis("bar"), axis("foo")];
         let model = VariationModel::new(locations, axes).unwrap();
 
         assert_eq!(
             vec![
-                norm_loc(&[("foo", 0.0), ("bar", 0.0)]),
-                norm_loc(&[("foo", 0.0), ("bar", 0.25)]),
-                norm_loc(&[("foo", 0.0), ("bar", 0.75)]),
-                norm_loc(&[("foo", 0.0), ("bar", 1.0)]),
-                norm_loc(&[("foo", 0.25), ("bar", 0.0)]),
-                norm_loc(&[("foo", 0.5), ("bar", 0.0)]),
-                norm_loc(&[("foo", 0.75), ("bar", 0.0)]),
-                norm_loc(&[("foo", 1.0), ("bar", 0.0)]),
+                NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.0)]),
+                NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.25)]),
+                NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 0.75)]),
+                NormalizedLocation::for_pos(&[("foo", 0.0), ("bar", 1.0)]),
+                NormalizedLocation::for_pos(&[("foo", 0.25), ("bar", 0.0)]),
+                NormalizedLocation::for_pos(&[("foo", 0.5), ("bar", 0.0)]),
+                NormalizedLocation::for_pos(&[("foo", 0.75), ("bar", 0.0)]),
+                NormalizedLocation::for_pos(&[("foo", 1.0), ("bar", 0.0)]),
             ],
             model.locations
         );
@@ -1222,10 +1225,10 @@ mod tests {
 
     #[test]
     fn compute_simple_delta_corner_masters() {
-        let origin = norm_loc(&[("wght", 0.0), ("wdth", 0.0)]);
-        let max_wght = norm_loc(&[("wght", 1.0), ("wdth", 0.0)]);
-        let max_wdth = norm_loc(&[("wght", 0.0), ("wdth", 1.0)]);
-        let max_wght_wdth = norm_loc(&[("wght", 1.0), ("wdth", 1.0)]);
+        let origin = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]);
+        let max_wght = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 0.0)]);
+        let max_wdth = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 1.0)]);
+        let max_wght_wdth = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 1.0)]);
         let locations = HashSet::from([
             origin.clone(),
             max_wght.clone(),
@@ -1271,9 +1274,9 @@ mod tests {
 
     #[test]
     fn compute_1d_deltas() {
-        let origin = norm_loc(&[("wght", 0.0)]);
-        let max_wght = norm_loc(&[("wght", 1.0)]);
-        let min_wght = norm_loc(&[("wght", -1.0)]);
+        let origin = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let max_wght = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let min_wght = NormalizedLocation::for_pos(&[("wght", -1.0)]);
         let locations = HashSet::from([origin.clone(), max_wght.clone(), min_wght.clone()]);
         let axes = vec![axis("wght")];
         let model = VariationModel::new(locations, axes).unwrap();

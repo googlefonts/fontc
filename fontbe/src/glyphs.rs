@@ -903,7 +903,7 @@ mod tests {
     use super::*;
 
     use fontdrasil::{
-        coords::{NormalizedCoord, NormalizedLocation},
+        coords::{Coord, NormalizedCoord, NormalizedLocation},
         types::GlyphName,
     };
     use fontir::ir;
