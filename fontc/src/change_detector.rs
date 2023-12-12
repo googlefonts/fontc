@@ -324,7 +324,7 @@ impl ChangeDetector {
         self.prev_inputs
             .glyphs
             .keys()
-            .filter(|glyph_name| !self.current_inputs.glyphs.contains_key(glyph_name))
+            .filter(|glyph_name| !self.current_inputs.glyphs.contains_key(*glyph_name))
             .cloned()
             .collect()
     }
