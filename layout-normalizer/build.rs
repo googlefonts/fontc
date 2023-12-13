@@ -12,7 +12,7 @@ const GLYPH_NAMES_FILE: &str = "glyph_names_codegen.rs";
 static AGLFN: &str = include_str!("aglfn.txt");
 
 fn main() {
-    println!("cargo:rerun-if-changed=resources/aglfn.txt");
+    println!("cargo:rerun-if-changed=aglfn.txt");
     generate_glyph_names();
 }
 
