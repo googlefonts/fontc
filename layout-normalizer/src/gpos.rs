@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::{Debug, Display},
     io,
 };
@@ -423,51 +423,45 @@ fn get_lookup_rules(
 ) -> LookupRules {
     let mut result = Vec::new();
     for (_i, lookup) in lookups.lookups().iter().enumerate() {
-        let mut pairpos = Vec::new();
         let lookup = lookup.unwrap();
         match lookup {
             PositionLookup::Pair(lookup) => {
                 let flag = lookup.lookup_flag();
-                for subt in lookup.subtables().iter() {
-                    let subt = subt.unwrap();
-                    match subt {
-                        PairPos::Format1(subt) => get_pairpos_f1_rules(
-                            &subt,
-                            |rule| pairpos.push(rule),
-                            flag,
-                            delta_computer,
-                        ),
-                        PairPos::Format2(subt) => get_pairpos_f2_rules(
-                            &subt,
-                            |rule| pairpos.push(rule),
-                            flag,
-                            delta_computer,
-                        ),
-                    }
-                }
-                result.push(combine_rules(pairpos));
+                let subs = lookup
+                    .subtables()
+                    .iter()
+                    .flat_map(|sub| sub.ok())
+                    .collect::<Vec<_>>();
+                let rules = get_pairpos_rules(&subs, flag, delta_computer).unwrap();
+                result.push(rules);
             }
             PositionLookup::MarkToBase(lookup) => {
                 let flag = lookup.lookup_flag();
                 let mark_filter_id = flag
                     .use_mark_filtering_set()
                     .then(|| lookup.mark_filtering_set());
-                for subt in lookup.subtables().iter().flat_map(|subt| subt.ok()) {
-                    let rules =
-                        get_mark_base_rules(&subt, flag, mark_filter_id, delta_computer).unwrap();
-                    result.push(rules);
-                }
+                let subs: Vec<_> = lookup
+                    .subtables()
+                    .iter()
+                    .flat_map(|subt| subt.ok())
+                    .collect();
+                let rules =
+                    get_mark_base_rules(&subs, flag, mark_filter_id, delta_computer).unwrap();
+                result.push(rules);
             }
             PositionLookup::MarkToMark(lookup) => {
                 let flag = lookup.lookup_flag();
                 let mark_filter_id = flag
                     .use_mark_filtering_set()
                     .then(|| lookup.mark_filtering_set());
-                for subt in lookup.subtables().iter().flat_map(|subt| subt.ok()) {
-                    let rules =
-                        get_mark_mark_rules(&subt, flag, mark_filter_id, delta_computer).unwrap();
-                    result.push(rules);
-                }
+                let subs: Vec<_> = lookup
+                    .subtables()
+                    .iter()
+                    .flat_map(|subt| subt.ok())
+                    .collect();
+                let rules =
+                    get_mark_mark_rules(&subs, flag, mark_filter_id, delta_computer).unwrap();
+                result.push(rules)
             }
             _other => {
                 // we always want to have as many sets as we have lookups
@@ -494,16 +488,42 @@ fn combine_rules(rules: Vec<PairPosRule>) -> Vec<LookupRule> {
     seen.into_values().map(LookupRule::PairPos).collect()
 }
 
-// okay so we want to return some heterogeneous type here hmhm
-fn get_pairpos_f1_rules(
-    subtable: &PairPosFormat1,
-    mut add_fn: impl FnMut(PairPosRule),
+fn get_pairpos_rules(
+    subtables: &[PairPos],
     flags: LookupFlag,
     delta_computer: Option<&DeltaComputer>,
+) -> Result<Vec<LookupRule>, ReadError> {
+    // so we only take the first coverage hit in each subtable, which means
+    // we just need track what we've seen.
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+    for sub in subtables.iter() {
+        match sub {
+            PairPos::Format1(sub) => {
+                append_pairpos_f1_rules(sub, flags, delta_computer, &mut seen, &mut result);
+            }
+            PairPos::Format2(sub) => {
+                append_pairpos_f2_rules(sub, flags, delta_computer, &mut seen, &mut result);
+            }
+        }
+    }
+    Ok(combine_rules(result))
+}
+
+// okay so we want to return some heterogeneous type here hmhm
+fn append_pairpos_f1_rules(
+    subtable: &PairPosFormat1,
+    flags: LookupFlag,
+    delta_computer: Option<&DeltaComputer>,
+    seen: &mut HashSet<GlyphId>,
+    result: &mut Vec<PairPosRule>,
 ) {
     let coverage = subtable.coverage().unwrap();
     let pairsets = subtable.pair_sets();
     for (gid1, pairset) in coverage.iter().zip(pairsets.iter()) {
+        if !seen.insert(gid1) {
+            continue;
+        }
         let pairset = pairset.unwrap();
         for pairrec in pairset.pair_value_records().iter() {
             let pairrec = pairrec.unwrap();
@@ -513,7 +533,7 @@ fn get_pairpos_f1_rules(
                 ResolvedValueRecord::new(pairrec.value_record1, data, delta_computer).unwrap();
             let record2 =
                 ResolvedValueRecord::new(pairrec.value_record2, data, delta_computer).unwrap();
-            add_fn(PairPosRule {
+            result.push(PairPosRule {
                 first: gid1,
                 second: gid2.into(),
                 record1,
@@ -531,11 +551,12 @@ fn is_noop(value_record: &ValueRecord) -> bool {
         && value_record.y_advance().unwrap_or(0) == 0
 }
 
-fn get_pairpos_f2_rules(
+fn append_pairpos_f2_rules(
     subtable: &PairPosFormat2,
-    mut add_fn: impl FnMut(PairPosRule),
     flags: LookupFlag,
     delta_computer: Option<&DeltaComputer>,
+    seen: &mut HashSet<GlyphId>,
+    result: &mut Vec<PairPosRule>,
 ) {
     let coverage = subtable.coverage().unwrap();
     let class1 = subtable.class_def1().unwrap();
@@ -548,6 +569,9 @@ fn get_pairpos_f2_rules(
     let class1records = subtable.class1_records();
     let data = subtable.offset_data();
     for gid1 in coverage.iter() {
+        if !seen.insert(gid1) {
+            continue;
+        }
         let g1class = class1.get(gid1);
         let class1rec = class1records.get(g1class as _).unwrap();
         for (c2, class2rec) in class1rec.class2_records().iter().enumerate() {
@@ -568,7 +592,7 @@ fn get_pairpos_f2_rules(
                 let record2 =
                     ResolvedValueRecord::new(record2.clone(), data, delta_computer).unwrap();
 
-                add_fn(PairPosRule {
+                result.push(PairPosRule {
                     first: gid1,
                     second: gid2.into(),
                     record1: record1.clone(),
@@ -618,20 +642,50 @@ impl AnyRule for MarkAttachmentRule {
 }
 
 fn get_mark_base_rules(
-    subtable: &MarkBasePosFormat1,
+    subtables: &[MarkBasePosFormat1],
     flags: LookupFlag,
     filter_set: Option<u16>,
     delta_computer: Option<&DeltaComputer>,
 ) -> Result<Vec<LookupRule>, ReadError> {
+    // so we only take the first coverage hit in each subtable, which means
+    // we just need track what we've seen.
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+    for sub in subtables.iter() {
+        append_mark_base_rules(
+            sub,
+            flags,
+            filter_set,
+            delta_computer,
+            &mut seen,
+            &mut result,
+        )?;
+    }
+    Ok(result)
+}
+
+// append the rules for a single subtable
+fn append_mark_base_rules(
+    subtable: &MarkBasePosFormat1,
+    flags: LookupFlag,
+    filter_set: Option<u16>,
+    delta_computer: Option<&DeltaComputer>,
+    visited: &mut HashSet<GlyphId>,
+    result: &mut Vec<LookupRule>,
+) -> Result<(), ReadError> {
     let base_array = subtable.base_array()?;
     let base_records = base_array.base_records();
     let mark_array = subtable.mark_array()?;
     let mark_records = mark_array.mark_records();
 
     let cov_ix_to_mark_gid: HashMap<_, _> = subtable.mark_coverage()?.iter().enumerate().collect();
-    let mut result = Vec::new();
 
     for (base_ix, base_glyph) in subtable.base_coverage()?.iter().enumerate() {
+        if !visited.insert(base_glyph) {
+            // this was included in a previous subtable, so skip it
+            continue;
+        }
+
         let base_record = base_records.get(base_ix)?;
         for (base_anchor_ix, base_anchor) in base_record
             .base_anchors(base_array.offset_data())
@@ -673,24 +727,51 @@ fn get_mark_base_rules(
             result.push(LookupRule::MarkBase(group));
         }
     }
-    Ok(result)
+    Ok(())
 }
 
 fn get_mark_mark_rules(
-    subtable: &MarkMarkPosFormat1,
+    subtables: &[MarkMarkPosFormat1],
     flags: LookupFlag,
     filter_set: Option<u16>,
     delta_computer: Option<&DeltaComputer>,
 ) -> Result<Vec<LookupRule>, ReadError> {
+    // so we only take the first coverage hit in each subtable, which means
+    // we just need track what we've seen.
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+    for sub in subtables.iter() {
+        append_mark_mark_rules(
+            sub,
+            flags,
+            filter_set,
+            delta_computer,
+            &mut seen,
+            &mut result,
+        )?;
+    }
+    Ok(result)
+}
+
+fn append_mark_mark_rules(
+    subtable: &MarkMarkPosFormat1,
+    flags: LookupFlag,
+    filter_set: Option<u16>,
+    delta_computer: Option<&DeltaComputer>,
+    seen: &mut HashSet<GlyphId>,
+    result: &mut Vec<LookupRule>,
+) -> Result<(), ReadError> {
     let base_array = subtable.mark2_array()?;
     let base_records = base_array.mark2_records();
     let mark_array = subtable.mark1_array()?;
     let mark_records = mark_array.mark_records();
 
     let cov_ix_to_mark_gid: HashMap<_, _> = subtable.mark1_coverage()?.iter().enumerate().collect();
-    let mut result = Vec::new();
 
     for (base_ix, base_glyph) in subtable.mark2_coverage()?.iter().enumerate() {
+        if !seen.insert(base_glyph) {
+            continue;
+        }
         let base_record = base_records.get(base_ix).unwrap();
         for (base_anchor_ix, base_anchor) in base_record
             .mark2_anchors(base_array.offset_data())
@@ -732,7 +813,7 @@ fn get_mark_mark_rules(
             result.push(LookupRule::MarkMark(group));
         }
     }
-    Ok(result)
+    Ok(())
 }
 
 impl From<i16> for ResolvedValue {
