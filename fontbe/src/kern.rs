@@ -133,21 +133,34 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
         let mut builder = PairPosBuilder::default();
 
         // Add IR kerns to builder. IR kerns are split by location so put them back together again.
-        // We want to iterate over (left, right), map<location: adjustment>
-        let mut kerns: HashMap<&KernPair, Vec<(NormalizedLocation, OrderedFloat<f32>)>> =
-            HashMap::new();
-        ir_kerns
-            .iter()
-            .map(|(_, kerns)| kerns.as_ref())
-            .flat_map(|kerns_at| {
-                kerns_at
-                    .kerns
-                    .iter()
-                    .map(|(pair, adjustment)| (pair, (kerns_at.location.clone(), *adjustment)))
-            })
+        // We want to iterate over (left, right), vec<(location: adjustment)>
+        // with the vec locations in the same order as the group locations
+        let kern_by_pos: HashMap<_, _> = ir_kerns.iter().map(|(_, ki)| (ki.location.clone(), ki.as_ref())).collect();
+        let mut kerns: HashMap<&KernPair, Vec<(NormalizedLocation, OrderedFloat<f32>)>> = HashMap::new();
+
+        ir_groups.locations.iter()
+            .filter_map(|pos| kern_by_pos.get(pos))
+            .flat_map(|instance| 
+                instance
+                .kerns
+                .iter()
+                .map(|(pair, adjustment)| (pair, (instance.location.clone(), *adjustment))))
             .for_each(|(pair, (location, adjustment))| {
                 kerns.entry(pair).or_default().push((location, adjustment))
             });
+
+        // ir_kerns
+        //     .iter()
+        //     .map(|(_, kerns)| kerns.as_ref())
+        //     .flat_map(|kerns_at| {
+        //         kerns_at
+        //             .kerns
+        //             .iter()
+        //             .map(|(pair, adjustment)| (pair, (kerns_at.location.clone(), *adjustment)))
+        //     })
+        //     .for_each(|(pair, (location, adjustment))| {
+        //         kerns.entry(pair).or_default().push((location, adjustment))
+        //     });
 
         // now for each kerning entry, directly add a rule to the builder:
         for (pair, values) in kerns {
