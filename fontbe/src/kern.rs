@@ -72,6 +72,64 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
             })
             .collect::<BTreeMap<_, _>>();
 
+        let mut pair_values = HashMap::new();
+
+        let mut builder2 = PairPosBuilder::default();
+        for (pair, values) in &ir_groups.complete_kerning {
+            let values: Vec<_> = values.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
+            pair_values.insert(pair.clone(), values.clone());
+
+            let (default_value, deltas) 
+                = resolve_variable_metric(&static_metadata, values.iter())?;
+            let x_adv_record = ValueRecordBuilder::new()
+                .with_x_advance(default_value)
+                .with_x_advance_device(deltas);
+            let empty = ValueRecordBuilder::new();
+            
+            match pair {
+                (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
+                    let (left, right) = (gid(left)?, gid(right)?);
+                    builder2.insert_pair(left, x_adv_record.clone(), right, empty.clone());
+                }
+                (KernParticipant::Group(left), KernParticipant::Group(right)) => {
+                    let left = glyph_classes
+                        .get(left)
+                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?
+                        .clone();
+                    let right = glyph_classes
+                        .get(right)
+                        .ok_or_else(|| Error::MissingGlyphId(right.clone()))?
+                        .clone();
+                    builder2.insert_classes(left, x_adv_record.clone(), right, empty.clone());
+                }
+                // if groups are mixed with glyphs then we enumerate the group
+                (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
+                    let gid0 = GlyphId::new(
+                        glyph_order
+                            .glyph_id(left)
+                            .ok_or_else(|| Error::MissingGlyphId(left.clone()))?
+                            as u16,
+                    );
+                    let right = glyph_classes
+                        .get(&right)
+                        .ok_or_else(|| Error::MissingGlyphId(right.clone()))?;
+                    for gid1 in right.iter() {
+                        builder2.insert_pair(gid0, x_adv_record.clone(), gid1, empty.clone());
+                    }
+                }
+                (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
+                    let left = glyph_classes
+                        .get(left)
+                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
+                    let gid1 = gid(right)?;
+                    for gid0 in left.iter() {
+                        builder2.insert_pair(gid0, x_adv_record.clone(), gid1, empty.clone());
+                    }
+                }
+            }
+        }
+
         let mut builder = PairPosBuilder::default();
 
         // Add IR kerns to builder. IR kerns are split by location so put them back together again.
@@ -92,14 +150,17 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
             });
 
         // now for each kerning entry, directly add a rule to the builder:
-        for ((left, right), values) in kerns {
+        for (pair, values) in kerns {
+
+            pretty_assertions::assert_eq!(Some(&values), pair_values.get(pair), "Mismatch for {pair:?}");
+
             let (default_value, deltas) = resolve_variable_metric(&static_metadata, values.iter())?;
             let x_adv_record = ValueRecordBuilder::new()
                 .with_x_advance(default_value)
                 .with_x_advance_device(deltas);
             let empty = ValueRecordBuilder::new();
 
-            match (left, right) {
+            match pair {
                 (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
                     let (left, right) = (gid(left)?, gid(right)?);
                     builder.insert_pair(left, x_adv_record.clone(), right, empty.clone());
@@ -141,6 +202,11 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
                 }
             }
         }
+
+        if builder != builder2 {
+            panic!("We built mistmached kerning");
+        }
+
 
         let mut kerning = Kerning::default();
         if !builder.is_empty() {

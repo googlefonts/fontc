@@ -1275,6 +1275,105 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
             kerning_groups.locations.insert(pos.clone());
         }
 
+        // TEMPORARY
+        let mut old_to_new_group_name: BTreeMap<GlyphName, GlyphName> = kerning_groups
+            .groups
+            .keys()
+            .map(|name| (name.clone(), name.clone()))
+            .collect();
+
+        for (_, source) in self
+            .designspace
+            .sources
+            .iter()
+            .enumerate()
+            .filter(|(idx, source)| !is_glyph_only(source) && *idx != default_master_idx)
+        {
+            for (name, entries) in &kerning_groups.groups {
+                let Some(real_name) = reverse_groups.get(&(KernSide::of(name), &entries)) else {
+                    warn!(
+                        "{name} exists only in {} and will be ignored",
+                        source.name.as_ref().unwrap()
+                    );
+                    continue;
+                };
+                if name == *real_name {
+                    continue;
+                }
+                warn!(
+                    "{name} in {} matches {real_name} in {} and will be renamed",
+                    source.name.as_ref().unwrap(),
+                    default_master.name.as_ref().unwrap()
+                );
+                old_to_new_group_name.insert(name.to_owned(), (*real_name).clone());
+            }
+        }
+
+        assert_eq!(kerning_groups.old_to_new_group_names, old_to_new_group_name);
+
+        // TEMPORARY
+        for source in self
+            .designspace
+            .sources
+            .iter()
+            .filter(|s| !is_glyph_only(s))
+        {
+            let pos = master_locations.get(source.name.as_ref().unwrap()).unwrap();
+            let ufo_dir = designspace_dir.join(&source.filename);
+            let data_request = norad::DataRequest::none().kerning(true);
+            let font = norad::Font::load_requested_data(&ufo_dir, data_request)
+                .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?;
+
+            let resolve = |name: &norad::Name, group_prefix: &str| {
+                let name = name.as_str();
+                if name.starts_with(UFO_KERN1_PREFIX) || name.starts_with(UFO_KERN2_PREFIX) {
+                    // looks like a group, but is it?
+                    if !name.starts_with(group_prefix) {
+                        warn!("'{name}' should have prefix {group_prefix}; ignored");
+                        return None;
+                    }
+                    let group_name = GroupName::from(name);
+                    let Some(group_name) = old_to_new_group_name.get(&group_name) else {
+                        warn!("'{name}' is not a valid group name; ignored");
+                        return None;
+                    };
+                    Some(KernParticipant::Group((group_name).clone()))
+                } else {
+                    let glyph_name = GlyphName::from(name);
+                    if !glyph_order.contains(&glyph_name) {
+                        warn!("'{name}' refers to a non-existent glyph; ignored");
+                        return None;
+                    }
+                    Some(KernParticipant::Glyph(glyph_name))
+                }
+            };
+
+            for (side1, side2, adjustment) in font.kerning.into_iter().flat_map(|(side1, kerns)| {
+                kerns
+                    .into_iter()
+                    .map(move |(side2, adjustment)| (side1.clone(), side2, adjustment))
+            }) {
+                let (Some(side1), Some(side2)) = (
+                    resolve(&side1, UFO_KERN1_PREFIX),
+                    resolve(&side2, UFO_KERN2_PREFIX),
+                ) else {
+                    warn!(
+                        "{} kerning unable to resolve at least one of '{}', '{}'; ignoring",
+                        source.name.as_ref().unwrap(),
+                        side1.as_str(),
+                        side2.as_str()
+                    );
+                    continue;
+                };
+
+                kerning_groups
+                    .complete_kerning
+                    .entry((side1, side2))
+                    .or_default()
+                    .insert(pos.clone(), (adjustment as f32).into());
+            }
+        }
+
         context.kerning_groups.set(kerning_groups);
 
         Ok(())
@@ -1371,6 +1470,20 @@ impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
             };
 
             *kerns.kerns.entry((side1, side2)).or_default() = (adjustment as f32).into();
+        }                
+
+        for (pair, adjustment) in kerns.kerns.iter() {
+            let Some(group_kerns) = groups.complete_kerning.get(&pair) else {
+                eprintln!("No group_kerns for {pair:?}");
+                continue;
+            };
+            let Some(group_adjustment) = group_kerns.get(&self.location) else {
+                eprintln!("No group_adjustment for {pair:?} at {:?}", self.location);
+                continue;
+            };
+            if *group_adjustment != *adjustment {
+                eprintln!("{pair:?} at {:?} should be {group_adjustment} but is {adjustment}", self.location);
+            }
         }
 
         context.kerning_at.set(kerns);

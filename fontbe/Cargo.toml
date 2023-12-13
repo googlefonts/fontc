@@ -35,6 +35,8 @@ smol_str.workspace = true
 
 chrono.workspace = true
 
+pretty_assertions.workspace = true
+
 [dev-dependencies]
 diff.workspace = true
 ansi_term.workspace = true

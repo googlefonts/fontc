@@ -211,6 +211,9 @@ pub struct KerningGroups {
     ///
     /// The rhs should be the name used in the groups map.
     pub old_to_new_group_names: BTreeMap<GroupName, GroupName>,
+
+    // TEMPORARY
+    pub complete_kerning: BTreeMap<KernPair, BTreeMap<NormalizedLocation, OrderedFloat<f32>>>,
 }
 
 /// IR representation of kerning for a location.
