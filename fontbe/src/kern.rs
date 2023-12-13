@@ -9,10 +9,9 @@ use fea_rs::{
 use fontdrasil::{
     coords::NormalizedLocation,
     orchestration::{Access, AccessBuilder, Work},
-    types::GlyphName,
 };
 use fontir::{
-    ir::{GlyphOrder, KernPair, KernParticipant},
+    ir::{KernPair, KernParticipant},
     orchestration::WorkId as FeWorkId,
 };
 use log::debug;
@@ -22,8 +21,8 @@ use crate::{
     error::Error,
     features::resolve_variable_metric,
     orchestration::{
-        AnyWorkId, BeWork, Context, KernAdjustments, KernSegment, Kerning, Kerns, PairPosEntry,
-        WorkId,
+        AllKerningPairs, AnyWorkId, BeWork, Context, FeaRsKerns, KernAdjustments, KernFragment,
+        PairPosEntry, WorkId,
     },
 };
 
@@ -31,22 +30,25 @@ use crate::{
 /// based on empirical testing
 const KERNS_PER_BLOCK: usize = 2048;
 
+/// Accumulation of all the kerning from IR
 #[derive(Debug)]
-struct KerningWork;
+struct GatherIrKerningWork;
 
+/// A fragment of the kerning from IR that can run in parallel with other fragments
 #[derive(Debug)]
-struct KerningSegmentWork {
+struct KerningFragmentWork {
     segment: usize,
 }
 
+/// Accumulate the result of fragment processing so we can feed it to fea-rs
 #[derive(Debug)]
 struct KerningGatherWork;
 
-pub fn create_kerning_work() -> Box<BeWork> {
-    Box::new(KerningWork {})
+pub fn create_gather_ir_kerning_work() -> Box<BeWork> {
+    Box::new(GatherIrKerningWork {})
 }
 
-pub fn create_kern_segment_work(kern_pairs: &Kerning) -> Vec<Box<BeWork>> {
+pub fn create_kern_segment_work(kern_pairs: &AllKerningPairs) -> Vec<Box<BeWork>> {
     let segments = kern_pairs.adjustments.len().div_ceil(KERNS_PER_BLOCK);
     let mut work: Vec<Box<BeWork>> = Vec::with_capacity(segments);
     debug!(
@@ -55,7 +57,7 @@ pub fn create_kern_segment_work(kern_pairs: &Kerning) -> Vec<Box<BeWork>> {
         segments
     );
     for segment in 0..segments {
-        work.push(Box::new(KerningSegmentWork { segment }));
+        work.push(Box::new(KerningFragmentWork { segment }));
     }
     work
 }
@@ -64,16 +66,9 @@ pub fn create_kerns_work() -> Box<BeWork> {
     Box::new(KerningGatherWork {})
 }
 
-fn gid(glyph_order: &GlyphOrder, name: &GlyphName) -> Result<GlyphId, Error> {
-    glyph_order
-        .glyph_id(name)
-        .map(|gid| GlyphId::new(gid as u16))
-        .ok_or_else(|| Error::MissingGlyphId(name.clone()))
-}
-
-impl Work<Context, AnyWorkId, Error> for KerningWork {
+impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
     fn id(&self) -> AnyWorkId {
-        WorkId::KernPairs.into()
+        WorkId::GatherIrKerning.into()
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
@@ -85,7 +80,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
     }
 
     fn write_access(&self) -> Access<AnyWorkId> {
-        Access::Variant(WorkId::KernPairs.into())
+        Access::Variant(WorkId::GatherIrKerning.into())
     }
 
     /// Generate kerning data structures.
@@ -102,7 +97,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
             .map(|(class_name, glyph_set)| {
                 let glyph_class: GlyphSet = glyph_set
                     .iter()
-                    .map(|name| GlyphId::new(glyph_order.glyph_id(name).unwrap_or(0) as u16))
+                    .map(|name| glyph_order.glyph_id(name).unwrap_or(GlyphId::NOTDEF))
                     .collect();
                 (class_name.clone(), glyph_class)
             })
@@ -134,7 +129,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
             glyph_classes.len(),
             adjustments.len()
         );
-        context.kern_pairs.set(Kerning {
+        context.all_kerning_pairs.set(AllKerningPairs {
             glyph_classes,
             adjustments,
         });
@@ -142,15 +137,15 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
     }
 }
 
-impl Work<Context, AnyWorkId, Error> for KerningSegmentWork {
+impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
     fn id(&self) -> AnyWorkId {
-        WorkId::KernSegment(self.segment).into()
+        WorkId::KernFragment(self.segment).into()
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
         AccessBuilder::new()
             .variant(FeWorkId::StaticMetadata)
-            .variant(WorkId::KernPairs)
+            .variant(WorkId::GatherIrKerning)
             .build()
     }
 
@@ -158,7 +153,7 @@ impl Work<Context, AnyWorkId, Error> for KerningSegmentWork {
         let static_metadata = context.ir.static_metadata.get();
         let arc_glyph_order = context.ir.glyph_order.get();
         let glyph_order = arc_glyph_order.as_ref();
-        let kerning = context.kern_pairs.get();
+        let kerning = context.all_kerning_pairs.get();
         let start = self.segment * KERNS_PER_BLOCK;
         let end = (start + KERNS_PER_BLOCK).min(kerning.adjustments.len());
         assert!(start <= end, "bad range {start}..{end}");
@@ -168,6 +163,11 @@ impl Work<Context, AnyWorkId, Error> for KerningSegmentWork {
         let glyph_classes = &kerning.glyph_classes;
 
         let mut kerns = Vec::new();
+        let gid = |name| {
+            glyph_order
+                .glyph_id(name)
+                .ok_or_else(|| Error::MissingGlyphId(name.clone()))
+        };
         for ((left, right), values) in our_kerns {
             let (default_value, deltas) = resolve_variable_metric(&static_metadata, values.iter())?;
             let x_adv_record = ValueRecordBuilder::new()
@@ -177,7 +177,7 @@ impl Work<Context, AnyWorkId, Error> for KerningSegmentWork {
 
             match (left, right) {
                 (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
-                    let (left, right) = (gid(glyph_order, left)?, gid(glyph_order, right)?);
+                    let (left, right) = (gid(left)?, gid(right)?);
                     kerns.push(PairPosEntry::Pair(
                         left,
                         x_adv_record.clone(),
@@ -203,12 +203,9 @@ impl Work<Context, AnyWorkId, Error> for KerningSegmentWork {
                 }
                 // if groups are mixed with glyphs then we enumerate the group
                 (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
-                    let gid0 = GlyphId::new(
-                        glyph_order
-                            .glyph_id(left)
-                            .ok_or_else(|| Error::MissingGlyphId(left.clone()))?
-                            as u16,
-                    );
+                    let gid0 = glyph_order
+                        .glyph_id(left)
+                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
                     let right = glyph_classes
                         .get(right)
                         .ok_or_else(|| Error::MissingGlyphId(right.clone()))?;
@@ -225,7 +222,7 @@ impl Work<Context, AnyWorkId, Error> for KerningSegmentWork {
                     let left = glyph_classes
                         .get(left)
                         .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
-                    let gid1 = gid(glyph_order, right)?;
+                    let gid1 = gid(right)?;
                     for gid0 in left.iter() {
                         kerns.push(PairPosEntry::Pair(
                             gid0,
@@ -238,7 +235,7 @@ impl Work<Context, AnyWorkId, Error> for KerningSegmentWork {
             }
         }
 
-        context.kern_segments.set(KernSegment {
+        context.kern_fragments.set(KernFragment {
             segment: self.segment,
             kerns,
         });
@@ -249,18 +246,18 @@ impl Work<Context, AnyWorkId, Error> for KerningSegmentWork {
 
 impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
     fn id(&self) -> AnyWorkId {
-        WorkId::Kerns.into()
+        WorkId::GatherBeKerning.into()
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
         AccessBuilder::new()
-            .variant(WorkId::KernPairs) // wait for pairs because kern segments don't spawn until pairs are done
-            .variant(WorkId::KernSegment(0))
+            .variant(WorkId::GatherIrKerning) // wait for pairs because kern segments don't spawn until pairs are done
+            .variant(WorkId::KernFragment(0))
             .build()
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let segments = context.kern_segments.all();
+        let segments = context.kern_fragments.all();
         let mut builder = PairPosBuilder::default();
 
         for ppe in segments
@@ -271,11 +268,11 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
             ppe.add_to(&mut builder);
         }
 
-        let mut kerns = Kerns::default();
+        let mut kerns = FeaRsKerns::default();
         if !builder.is_empty() {
             kerns.lookups = vec![builder];
         }
-        context.kerns.set(kerns);
+        context.fea_rs_kerns.set(kerns);
 
         Ok(())
     }

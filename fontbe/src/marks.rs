@@ -13,11 +13,10 @@ use fontdrasil::{
 
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
-use write_fonts::types::GlyphId;
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, MarkGroup, MarkGroupName, Marks, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, FeaRsMarks, MarkGroup, MarkGroupName, WorkId},
 };
 use fontir::{
     ir::{GlyphAnchors, GlyphOrder, StaticMetadata},
@@ -184,7 +183,6 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         let gid = |name| {
             glyph_order
                 .glyph_id(name)
-                .map(|gid| GlyphId::new(gid as u16))
                 .ok_or_else(|| Error::MissingGlyphId(name.clone()))
         };
 
@@ -198,7 +196,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
 
         let groups = create_mark_to_base_groups(&anchors, &glyph_order);
 
-        let mut all_marks = Marks {
+        let mut all_marks = FeaRsMarks {
             glyphmap: glyph_order
                 .iter()
                 .cloned()
@@ -251,7 +249,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
             all_marks.mark_mark.push(mark_mark);
         }
 
-        context.marks.set(all_marks);
+        context.fea_rs_marks.set(all_marks);
 
         Ok(())
     }

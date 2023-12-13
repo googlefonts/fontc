@@ -300,7 +300,7 @@ impl ChangeDetector {
         self.kerning_groups_ir_change()
             || !self
                 .be_paths
-                .target_file(&BeWorkIdentifier::KernPairs)
+                .target_file(&BeWorkIdentifier::GatherIrKerning)
                 .is_file()
     }
 

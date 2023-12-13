@@ -81,7 +81,7 @@ fn priority(id: &AnyWorkId) -> u32 {
         AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => 99,
-        AnyWorkId::Be(BeWorkIdentifier::KernPairs) => 99,
+        AnyWorkId::Be(BeWorkIdentifier::GatherIrKerning) => 99,
         AnyWorkId::Be(BeWorkIdentifier::Features) => 99,
         AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..)) => 0,
         AnyWorkId::Be(BeWorkIdentifier::GvarFragment(..)) => 0,
@@ -294,8 +294,8 @@ impl<'a> Workload<'a> {
             }
         }
 
-        if let AnyWorkId::Be(BeWorkIdentifier::KernPairs) = success {
-            let kern_pairs = be_root.kern_pairs.get();
+        if let AnyWorkId::Be(BeWorkIdentifier::GatherIrKerning) = success {
+            let kern_pairs = be_root.all_kerning_pairs.get();
             for work in create_kern_segment_work(&kern_pairs) {
                 self.add(work.into(), true);
             }

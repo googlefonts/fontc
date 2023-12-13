@@ -36,7 +36,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, Kerns, Marks, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, FeaRsKerns, FeaRsMarks, WorkId},
 };
 
 #[derive(Debug)]
@@ -174,13 +174,13 @@ pub(crate) fn resolve_variable_metric<'a>(
 }
 
 struct FeatureWriter<'a> {
-    kerning: &'a Kerns,
-    marks: &'a Marks,
+    kerning: &'a FeaRsKerns,
+    marks: &'a FeaRsMarks,
     timing: RefCell<Vec<(&'static str, Instant)>>,
 }
 
 impl<'a> FeatureWriter<'a> {
-    fn new(kerning: &'a Kerns, marks: &'a Marks) -> Self {
+    fn new(kerning: &'a FeaRsKerns, marks: &'a FeaRsMarks) -> Self {
         FeatureWriter {
             marks,
             kerning,
@@ -347,8 +347,8 @@ impl FeatureWork {
         &self,
         static_metadata: &StaticMetadata,
         features: &Features,
-        kerns: &Kerns,
-        marks: &Marks,
+        kerns: &FeaRsKerns,
+        marks: &FeaRsMarks,
     ) -> Result<Compilation, Error> {
         let var_info = FeaVariationInfo::new(static_metadata);
         let feature_writer = FeatureWriter::new(kerns, marks);
@@ -426,7 +426,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
             .variant(FeWorkId::GlyphOrder)
             .variant(FeWorkId::StaticMetadata)
             .variant(FeWorkId::Features)
-            .variant(WorkId::Kerns)
+            .variant(WorkId::GatherBeKerning)
             .variant(WorkId::Marks)
             .build()
     }
@@ -442,8 +442,8 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let features = context.ir.features.get();
-        let kerns = context.kerns.get();
-        let marks = context.marks.get();
+        let kerns = context.fea_rs_kerns.get();
+        let marks = context.fea_rs_marks.get();
 
         let result = self.compile(
             &static_metadata,

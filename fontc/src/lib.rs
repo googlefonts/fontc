@@ -31,7 +31,7 @@ use fontbe::{
     gvar::create_gvar_work,
     head::create_head_work,
     hvar::create_hvar_work,
-    kern::{create_kerning_work, create_kerns_work},
+    kern::{create_gather_ir_kerning_work, create_kerns_work},
     marks::create_mark_work,
     metrics_and_limits::create_metric_and_limit_work,
     name::create_name_work,
@@ -168,7 +168,7 @@ fn add_marks_be_job(workload: &mut Workload) -> Result<(), Error> {
 }
 
 fn add_kern_pair_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = create_kerning_work();
+    let work = create_gather_ir_kerning_work();
     // Features are extremely prone to not making sense when glyphs are filtered
     if workload.change_detector.kerning_be_change() {
         if workload.change_detector.glyph_name_filter().is_some() {
@@ -584,7 +584,11 @@ mod tests {
         }
 
         fn get_glyph_index(&self, name: &str) -> Option<u32> {
-            self.fe_context.glyph_order.get().glyph_id(&name.into())
+            self.fe_context
+                .glyph_order
+                .get()
+                .glyph_id(&name.into())
+                .map(|v| v.to_u16() as u32)
         }
 
         /// Returns the GlyphId (or NOTDEF, if not present)
@@ -696,9 +700,9 @@ mod tests {
             BeWorkIdentifier::Hhea.into(),
             BeWorkIdentifier::Hmtx.into(),
             BeWorkIdentifier::Hvar.into(),
-            BeWorkIdentifier::KernPairs.into(),
-            BeWorkIdentifier::KernSegment(0).into(),
-            BeWorkIdentifier::Kerns.into(),
+            BeWorkIdentifier::GatherIrKerning.into(),
+            BeWorkIdentifier::KernFragment(0).into(),
+            BeWorkIdentifier::GatherBeKerning.into(),
             BeWorkIdentifier::Loca.into(),
             BeWorkIdentifier::LocaFormat.into(),
             BeWorkIdentifier::Marks.into(),
@@ -838,9 +842,9 @@ mod tests {
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
                 BeWorkIdentifier::Gdef.into(),
-                BeWorkIdentifier::KernPairs.into(),
-                BeWorkIdentifier::KernSegment(0).into(),
-                BeWorkIdentifier::Kerns.into(),
+                BeWorkIdentifier::GatherIrKerning.into(),
+                BeWorkIdentifier::KernFragment(0).into(),
+                BeWorkIdentifier::GatherBeKerning.into(),
             ],
             completed
         );
@@ -951,9 +955,9 @@ mod tests {
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
                 BeWorkIdentifier::Gdef.into(),
-                BeWorkIdentifier::KernPairs.into(),
-                BeWorkIdentifier::KernSegment(0).into(),
-                BeWorkIdentifier::Kerns.into(),
+                BeWorkIdentifier::GatherIrKerning.into(),
+                BeWorkIdentifier::KernFragment(0).into(),
+                BeWorkIdentifier::GatherBeKerning.into(),
             ],
             completed
         );
@@ -1493,7 +1497,7 @@ mod tests {
             .get()
             .contains(&GlyphName::NOTDEF));
         assert_eq!(
-            Some(0),
+            Some(GlyphId::NOTDEF),
             result
                 .fe_context
                 .glyph_order
@@ -2245,7 +2249,7 @@ mod tests {
 
         fn width_delta(&self, name: &str, coords: &[NormalizedCoord]) -> f64 {
             let name = GlyphName::from(name);
-            let gid = GlyphId::new(self.glyph_order.glyph_id(&name).unwrap() as u16);
+            let gid = self.glyph_order.glyph_id(&name).unwrap();
             let coords: Vec<F2Dot14> = coords
                 .iter()
                 .map(|coord| F2Dot14::from_f32(coord.into_inner().into()))
