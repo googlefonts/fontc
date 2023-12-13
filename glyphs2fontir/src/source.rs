@@ -743,7 +743,7 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
 
 impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
     fn id(&self) -> WorkId {
-        WorkId::KerningAtLocation(self.location.clone())
+        WorkId::KernInstance(self.location.clone())
     }
 
     fn read_access(&self) -> Access<WorkId> {

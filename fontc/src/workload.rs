@@ -15,6 +15,7 @@ use fontbe::{
     orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
 };
 use fontdrasil::{
+    coords::NormalizedLocation,
     orchestration::{Access, AccessBuilder, AccessType, Identifier, IdentifierDiscriminant},
     types::GlyphName,
 };
@@ -76,7 +77,7 @@ fn priority(id: &AnyWorkId) -> u32 {
     match id {
         AnyWorkId::Fe(FeWorkIdentifier::Features) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) => 99,
-        AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(..)) => 99,
+        AnyWorkId::Fe(FeWorkIdentifier::KernInstance(..)) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::GlyphOrder) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => 99,
@@ -290,8 +291,19 @@ impl<'a> Workload<'a> {
         if let AnyWorkId::Fe(FeWorkIdentifier::KerningGroups) = success {
             let groups = fe_root.kerning_groups.get();
             for location in groups.locations.iter() {
-                super::add_kerning_at_ir_job(self, location.clone())?;
+                super::add_kern_instance_ir_job(self, location.clone())?;
             }
+
+            // https://github.com/googlefonts/fontc/pull/655: don't set read access on GatherIrKerning until we spawn kern instance tasks
+            self.jobs_pending
+                .get_mut(&AnyWorkId::Be(BeWorkIdentifier::GatherIrKerning))
+                .expect("Gather IR Kerning has to be pending")
+                .read_access = AccessBuilder::<AnyWorkId>::new()
+                .variant(FeWorkIdentifier::GlyphOrder)
+                .variant(FeWorkIdentifier::KerningGroups)
+                .variant(FeWorkIdentifier::KernInstance(NormalizedLocation::default()))
+                .build()
+                .into();
         }
 
         if let AnyWorkId::Be(BeWorkIdentifier::GatherIrKerning) = success {

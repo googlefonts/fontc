@@ -6,10 +6,7 @@ use fea_rs::{
     compile::{PairPosBuilder, ValueRecord as ValueRecordBuilder},
     GlyphSet,
 };
-use fontdrasil::{
-    coords::NormalizedLocation,
-    orchestration::{Access, AccessBuilder, Work},
-};
+use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::{
     ir::{KernPair, KernParticipant},
     orchestration::WorkId as FeWorkId,
@@ -72,11 +69,8 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        AccessBuilder::new()
-            .variant(FeWorkId::GlyphOrder)
-            .variant(FeWorkId::KerningGroups)
-            .variant(FeWorkId::KerningAtLocation(NormalizedLocation::default()))
-            .build()
+        // Updated when success for IR kerning groups is received. See https://github.com/googlefonts/fontc/pull/655.
+        Access::Unknown
     }
 
     fn write_access(&self) -> Access<AnyWorkId> {
@@ -104,16 +98,24 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
             .collect::<BTreeMap<_, _>>();
 
         // Add IR kerns to builder. IR kerns are split by location so put them back together again.
-        // We want to iterate over (left, right), map<location: adjustment>
-        let mut adjustments: HashMap<KernPair, KernAdjustments> = HashMap::new();
-        ir_kerns
+        // We want to iterate over (left, right), vec<(location: adjustment)>
+        // with the vec locations in the same order as the group locations
+        let kern_by_pos: HashMap<_, _> = ir_kerns
             .iter()
-            .map(|(_, kerns)| kerns.as_ref())
-            .flat_map(|kerns_at| {
-                kerns_at
+            .map(|(_, ki)| (ki.location.clone(), ki.as_ref()))
+            .collect();
+        // Use a BTreeMap  because it seems the order we process pairs matters. Maybe we should sort instead...?
+        let mut adjustments: BTreeMap<KernPair, KernAdjustments> = Default::default();
+
+        ir_groups
+            .locations
+            .iter()
+            .filter_map(|pos| kern_by_pos.get(pos))
+            .flat_map(|instance| {
+                instance
                     .kerns
                     .iter()
-                    .map(|(pair, adjustment)| (pair, (kerns_at.location.clone(), *adjustment)))
+                    .map(|(pair, adjustment)| (pair, (instance.location.clone(), *adjustment)))
             })
             .for_each(|(pair, (location, adjustment))| {
                 adjustments
@@ -251,23 +253,33 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
 
     fn read_access(&self) -> Access<AnyWorkId> {
         AccessBuilder::new()
-            .variant(WorkId::GatherIrKerning) // wait for pairs because kern segments don't spawn until pairs are done
+            .variant(WorkId::GatherIrKerning) // until this runs there are no kern fragments to await
             .variant(WorkId::KernFragment(0))
             .build()
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
-        let segments = context.kern_fragments.all();
+        debug!("Gather be kerning");
+        let arc_fragments = context.kern_fragments.all();
+        let mut fragments: Vec<_> = arc_fragments
+            .iter()
+            .map(|(_, fragment)| fragment.as_ref())
+            .collect();
+        fragments.sort_by_key(|fragment| fragment.segment);
+
         let mut builder = PairPosBuilder::default();
 
-        for ppe in segments
+        let mut entries = 0;
+        for ppe in fragments
             .iter()
-            .flat_map(|(_, segment)| segment.kerns.iter())
+            .flat_map(|fragment| fragment.kerns.iter())
             .cloned()
         {
             ppe.add_to(&mut builder);
+            entries += 1;
         }
 
+        debug!("{entries} be kerns gathered");
         let mut kerns = FeaRsKerns::default();
         if !builder.is_empty() {
             kerns.lookups = vec![builder];

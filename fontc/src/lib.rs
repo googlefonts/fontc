@@ -167,7 +167,7 @@ fn add_marks_be_job(workload: &mut Workload) -> Result<(), Error> {
     Ok(())
 }
 
-fn add_kern_pair_be_job(workload: &mut Workload) -> Result<(), Error> {
+fn add_gather_ir_kerning_be_job(workload: &mut Workload) -> Result<(), Error> {
     let work = create_gather_ir_kerning_work();
     // Features are extremely prone to not making sense when glyphs are filtered
     if workload.change_detector.kerning_be_change() {
@@ -214,18 +214,23 @@ fn add_kerning_group_ir_job(workload: &mut Workload) -> Result<(), Error> {
         .create_kerning_group_ir_work(workload.change_detector.current_inputs())?;
     workload.add(
         work.into(),
-        workload.change_detector.kerning_groups_ir_change(),
+        workload.change_detector.kerning_groups_ir_change()
+            && !workload.change_detector.should_skip_features(),
     );
     Ok(())
 }
 
-fn add_kerning_at_ir_job(workload: &mut Workload, at: NormalizedLocation) -> Result<(), Error> {
+fn add_kern_instance_ir_job(workload: &mut Workload, at: NormalizedLocation) -> Result<(), Error> {
     let work = workload
         .change_detector
         .ir_source()
         .create_kerning_instance_ir_work(workload.current_inputs(), at.clone())?
         .into();
-    workload.add(work, workload.change_detector.kerning_at_ir_change(at));
+    workload.add(
+        work,
+        workload.change_detector.kerning_at_ir_change(at)
+            && !workload.change_detector.should_skip_features(),
+    );
     Ok(())
 }
 
@@ -403,7 +408,7 @@ pub fn create_workload(
     add_fvar_be_job(&mut workload)?;
     add_gvar_be_job(&mut workload)?;
     add_head_be_job(&mut workload)?;
-    add_kern_pair_be_job(&mut workload)?;
+    add_gather_ir_kerning_be_job(&mut workload)?;
     add_kerns_be_job(&mut workload)?;
     add_marks_be_job(&mut workload)?;
     add_metric_and_limits_job(&mut workload)?;
@@ -682,10 +687,8 @@ mod tests {
             FeWorkIdentifier::GlyphOrder.into(),
             FeWorkIdentifier::Features.into(),
             FeWorkIdentifier::KerningGroups.into(),
-            FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 0.0)]))
-                .into(),
-            FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 1.0)]))
-                .into(),
+            FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 0.0)])).into(),
+            FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 1.0)])).into(),
             BeWorkIdentifier::Features.into(),
             BeWorkIdentifier::Avar.into(),
             BeWorkIdentifier::Cmap.into(),
@@ -833,9 +836,9 @@ mod tests {
             vec![
                 AnyWorkId::Fe(FeWorkIdentifier::Features),
                 FeWorkIdentifier::KerningGroups.into(),
-                FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 0.0)]))
+                FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 0.0)]))
                     .into(),
-                FeWorkIdentifier::KerningAtLocation(NormalizedLocation::for_pos(&[("wght", 1.0)]))
+                FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 1.0)]))
                     .into(),
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Font.into(),
@@ -944,12 +947,12 @@ mod tests {
             vec![
                 AnyWorkId::Fe(FeWorkIdentifier::Features),
                 AnyWorkId::Fe(FeWorkIdentifier::KerningGroups),
-                AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(
-                    NormalizedLocation::for_pos(&[("wght", 0.0)])
-                )),
-                AnyWorkId::Fe(FeWorkIdentifier::KerningAtLocation(
-                    NormalizedLocation::for_pos(&[("wght", 1.0)])
-                )),
+                AnyWorkId::Fe(FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(
+                    &[("wght", 0.0)]
+                ))),
+                AnyWorkId::Fe(FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(
+                    &[("wght", 1.0)]
+                ))),
                 BeWorkIdentifier::Features.into(),
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Gpos.into(),
@@ -1837,7 +1840,7 @@ mod tests {
             let kerns_at = result
                 .fe_context
                 .kerning_at
-                .get(&FeWorkIdentifier::KerningAtLocation(kern_loc.clone()));
+                .get(&FeWorkIdentifier::KernInstance(kern_loc.clone()));
             for (pair, adjustment) in kerns_at.kerns.iter() {
                 kerns.entry(pair.clone()).or_default().push((
                     format!(

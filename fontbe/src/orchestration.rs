@@ -361,7 +361,7 @@ impl Persistable for FeaRsMarks {
 /// Kerns, ready to feed to fea-rs in the form it expects
 ///
 /// The aggregation of all [KernFragment]s.
-#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FeaRsKerns {
     pub lookups: Vec<PairPosBuilder>,
 }
