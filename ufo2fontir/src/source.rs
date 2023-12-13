@@ -1276,7 +1276,6 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
         }
 
         context.kerning_groups.set(kerning_groups);
-
         Ok(())
     }
 }

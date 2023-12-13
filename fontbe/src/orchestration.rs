@@ -1,6 +1,7 @@
 //! Helps coordinate the graph execution for BE
 
 use std::{
+    collections::BTreeMap,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
@@ -14,11 +15,12 @@ use fea_rs::{
     GlyphMap, GlyphSet,
 };
 use fontdrasil::{
+    coords::NormalizedLocation,
     orchestration::{Access, AccessControlList, Identifier, IdentifierDiscriminant, Work},
     types::GlyphName,
 };
 use fontir::{
-    ir::Anchor,
+    ir::{Anchor, KernPair},
     orchestration::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
         PersistentStorage, WorkId as FeWorkIdentifier,
@@ -27,6 +29,7 @@ use fontir::{
 };
 use log::trace;
 
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
 use smol_str::SmolStr;
@@ -68,6 +71,8 @@ pub enum GlyphMerge {
     Cmap,
 }
 
+type KernBlock = usize;
+
 /// Unique identifier of work.
 ///
 /// If there are no fields work is unique.
@@ -90,7 +95,9 @@ pub enum WorkId {
     Hhea,
     Hmtx,
     Hvar,
-    Kerning,
+    GatherIrKerning,
+    KernFragment(KernBlock),
+    GatherBeKerning,
     Loca,
     LocaFormat,
     Marks,
@@ -120,7 +127,9 @@ impl Identifier for WorkId {
             WorkId::Hhea => "BeHhea",
             WorkId::Hmtx => "BeHmtx",
             WorkId::Hvar => "BeHvar",
-            WorkId::Kerning => "BeKerning",
+            WorkId::GatherIrKerning => "BeGatherIr",
+            WorkId::KernFragment(..) => "BeKernFragment",
+            WorkId::GatherBeKerning => "BeGatherKernFragments",
             WorkId::Loca => "BeLoca",
             WorkId::LocaFormat => "BeLocaFormat",
             WorkId::Marks => "BeMarks",
@@ -331,18 +340,15 @@ pub(crate) struct MarkGroup {
     pub(crate) marks: Vec<(GlyphName, Anchor)>,
 }
 
-/// Precomputed marks, to the extent possible given that we cannot create temporary var indices in advance.
-///
-/// TODO: update once <https://github.com/googlefonts/fontc/issues/571> is fixed. Then we can build a
-/// actual fea-rs structs in advance.
+/// Marks, ready to feed to fea-rs in the form it expects
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Marks {
+pub struct FeaRsMarks {
     pub(crate) glyphmap: GlyphMap,
     pub(crate) mark_base: Vec<MarkToBaseBuilder>,
     pub(crate) mark_mark: Vec<MarkToMarkBuilder>,
 }
 
-impl Persistable for Marks {
+impl Persistable for FeaRsMarks {
     fn read(from: &mut dyn Read) -> Self {
         bincode::deserialize_from(from).unwrap()
     }
@@ -352,22 +358,85 @@ impl Persistable for Marks {
     }
 }
 
-/// Precomputed kerning, to the extent possible given that we cannot create temporary var indices in advance.
+/// Kerns, ready to feed to fea-rs in the form it expects
 ///
-/// TODO: update once <https://github.com/googlefonts/fontc/issues/571> is fixed. Then we can build a
-/// [`fea_rs::compile::PairPosBuilder`] in advance.
+/// The aggregation of all [KernFragment]s.
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Kerning {
+pub struct FeaRsKerns {
     pub lookups: Vec<PairPosBuilder>,
 }
 
-impl Kerning {
+impl FeaRsKerns {
     pub fn is_empty(&self) -> bool {
         self.lookups.is_empty()
     }
 }
 
-impl Persistable for Kerning {
+impl Persistable for FeaRsKerns {
+    fn read(from: &mut dyn Read) -> Self {
+        bincode::deserialize_from(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        bincode::serialize_into(to, self).unwrap()
+    }
+}
+
+/// Kerning adjustments at various locations
+pub type KernAdjustments = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
+
+/// Every kerning pair we have, taking from IR.
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AllKerningPairs {
+    pub glyph_classes: BTreeMap<GlyphName, GlyphSet>,
+    pub adjustments: Vec<(KernPair, KernAdjustments)>,
+}
+
+impl Persistable for AllKerningPairs {
+    fn read(from: &mut dyn Read) -> Self {
+        bincode::deserialize_from(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        bincode::serialize_into(to, self).unwrap()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+pub enum PairPosEntry {
+    Pair(GlyphId, ValueRecordBuilder, GlyphId, ValueRecordBuilder),
+    Class(GlyphSet, ValueRecordBuilder, GlyphSet, ValueRecordBuilder),
+}
+
+impl PairPosEntry {
+    pub(crate) fn add_to(self, builder: &mut PairPosBuilder) {
+        match self {
+            PairPosEntry::Pair(gid0, rec0, gid1, rec1) => {
+                builder.insert_pair(gid0, rec0, gid1, rec1)
+            }
+            PairPosEntry::Class(set0, rec0, set1, rec1) => {
+                builder.insert_classes(set0, rec0, set1, rec1)
+            }
+        }
+    }
+}
+
+/// A chunk of kerning that needs to be fed into a [PairPosBuilder]
+///
+/// Points to a slice of [AllKerningPairs].
+#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KernFragment {
+    pub(crate) segment: usize,
+    pub(crate) kerns: Vec<PairPosEntry>,
+}
+
+impl IdAware<AnyWorkId> for KernFragment {
+    fn id(&self) -> AnyWorkId {
+        AnyWorkId::Be(WorkId::KernFragment(self.segment))
+    }
+}
+
+impl Persistable for KernFragment {
     fn read(from: &mut dyn Read) -> Self {
         bincode::deserialize_from(from).unwrap()
     }
@@ -529,8 +598,10 @@ pub struct Context {
     pub hhea: BeContextItem<BeValue<Hhea>>,
     pub hmtx: BeContextItem<Bytes>,
     pub hvar: BeContextItem<BeValue<Hvar>>,
-    pub kerning: BeContextItem<Kerning>,
-    pub marks: BeContextItem<Marks>,
+    pub all_kerning_pairs: BeContextItem<AllKerningPairs>,
+    pub kern_fragments: BeContextMap<KernFragment>,
+    pub fea_rs_kerns: BeContextItem<FeaRsKerns>,
+    pub fea_rs_marks: BeContextItem<FeaRsMarks>,
     pub stat: BeContextItem<BeValue<Stat>>,
     pub font: BeContextItem<Bytes>,
 }
@@ -562,8 +633,10 @@ impl Context {
             hhea: self.hhea.clone_with_acl(acl.clone()),
             hmtx: self.hmtx.clone_with_acl(acl.clone()),
             hvar: self.hvar.clone_with_acl(acl.clone()),
-            kerning: self.kerning.clone_with_acl(acl.clone()),
-            marks: self.marks.clone_with_acl(acl.clone()),
+            all_kerning_pairs: self.all_kerning_pairs.clone_with_acl(acl.clone()),
+            kern_fragments: self.kern_fragments.clone_with_acl(acl.clone()),
+            fea_rs_kerns: self.fea_rs_kerns.clone_with_acl(acl.clone()),
+            fea_rs_marks: self.fea_rs_marks.clone_with_acl(acl.clone()),
             stat: self.stat.clone_with_acl(acl.clone()),
             font: self.font.clone_with_acl(acl),
         }
@@ -603,12 +676,18 @@ impl Context {
             hhea: ContextItem::new(WorkId::Hhea.into(), acl.clone(), persistent_storage.clone()),
             hmtx: ContextItem::new(WorkId::Hmtx.into(), acl.clone(), persistent_storage.clone()),
             hvar: ContextItem::new(WorkId::Hvar.into(), acl.clone(), persistent_storage.clone()),
-            kerning: ContextItem::new(
-                WorkId::Kerning.into(),
+            all_kerning_pairs: ContextItem::new(
+                WorkId::GatherIrKerning.into(),
                 acl.clone(),
                 persistent_storage.clone(),
             ),
-            marks: ContextItem::new(
+            kern_fragments: ContextMap::new(acl.clone(), persistent_storage.clone()),
+            fea_rs_kerns: ContextItem::new(
+                WorkId::GatherBeKerning.into(),
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
+            fea_rs_marks: ContextItem::new(
                 WorkId::Marks.into(),
                 acl.clone(),
                 persistent_storage.clone(),

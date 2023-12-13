@@ -10,7 +10,10 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, TryRecvError};
-use fontbe::orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier};
+use fontbe::{
+    kern::create_kern_segment_work,
+    orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
+};
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, AccessType, Identifier, IdentifierDiscriminant},
     types::GlyphName,
@@ -78,7 +81,7 @@ fn priority(id: &AnyWorkId) -> u32 {
         AnyWorkId::Fe(FeWorkIdentifier::PreliminaryGlyphOrder) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::StaticMetadata) => 99,
         AnyWorkId::Fe(FeWorkIdentifier::GlobalMetrics) => 99,
-        AnyWorkId::Be(BeWorkIdentifier::Kerning) => 99,
+        AnyWorkId::Be(BeWorkIdentifier::GatherIrKerning) => 99,
         AnyWorkId::Be(BeWorkIdentifier::Features) => 99,
         AnyWorkId::Be(BeWorkIdentifier::GlyfFragment(..)) => 0,
         AnyWorkId::Be(BeWorkIdentifier::GvarFragment(..)) => 0,
@@ -257,6 +260,7 @@ impl<'a> Workload<'a> {
     fn handle_success(
         &mut self,
         fe_root: &FeContext,
+        be_root: &BeContext,
         success: AnyWorkId,
         timing: JobTime,
     ) -> Result<(), Error> {
@@ -287,6 +291,13 @@ impl<'a> Workload<'a> {
             let groups = fe_root.kerning_groups.get();
             for location in groups.locations.iter() {
                 super::add_kerning_at_ir_job(self, location.clone())?;
+            }
+        }
+
+        if let AnyWorkId::Be(BeWorkIdentifier::GatherIrKerning) = success {
+            let kern_pairs = be_root.all_kerning_pairs.get();
+            for work in create_kern_segment_work(&kern_pairs) {
+                self.add(work.into(), true);
             }
         }
 
@@ -568,7 +579,7 @@ impl<'a> Workload<'a> {
                         .queued()
                         .run();
                     for (success, timing) in successes.iter() {
-                        self.handle_success(fe_root, success.clone(), timing.clone())?;
+                        self.handle_success(fe_root, be_root, success.clone(), timing.clone())?;
                     }
                     self.timer.add(timing.complete());
                 }
@@ -751,7 +762,7 @@ impl<'a> Workload<'a> {
                     self.success.insert(id.clone()),
                     "We just did {id:?} a second time?"
                 );
-                self.handle_success(fe_root, id.clone(), timing)
+                self.handle_success(fe_root, be_root, id.clone(), timing)
                     .unwrap_or_else(|e| panic!("Failed to handle success for {id:?}: {e}"));
             } else {
                 for counter in self.counters(id) {

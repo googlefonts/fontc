@@ -68,8 +68,6 @@ pub enum Error {
     MissingTable(Tag),
     #[error("Expected an anchor, got {0:?}")]
     ExpectedAnchor(FeWorkId),
-    #[error("No glyph id for '{0}'")]
-    MissingGlyphId(GlyphName),
     #[error("No glyph class '{0}'")]
     MissingGlyphClass(GlyphName),
     #[error("Mark glyph '{glyph}' in conflicting classes '{old_class}' and '{new_class}'")]
@@ -82,6 +80,8 @@ pub enum Error {
     NoVariationModel(NormalizedLocation),
     #[error("Delta error '{0:?}'")]
     DeltaError(DeltaError),
+    #[error("No glyph id for '{0}'")]
+    MissingGlyphId(GlyphName),
 }
 
 #[derive(Debug)]

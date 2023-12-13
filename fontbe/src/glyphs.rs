@@ -21,7 +21,7 @@ use log::{log_enabled, trace, warn};
 use write_fonts::{
     read::{
         tables::glyf::{self, Anchor, Transform},
-        types::{F2Dot14, GlyphId},
+        types::F2Dot14,
     },
     tables::{
         glyf::{
@@ -89,7 +89,6 @@ fn create_component(
         .get()
         .glyph_id(ref_glyph_name)
         .ok_or(GlyphProblem::NotInGlyphOrder)?;
-    let gid = GlyphId::new(gid as u16);
 
     // No known source does point anchoring so we just turn transform into a 2x2 + offset
     let [a, b, c, d, e, f] = transform.as_coeffs();

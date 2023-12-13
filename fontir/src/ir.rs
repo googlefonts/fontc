@@ -14,7 +14,7 @@ use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use write_fonts::{
     tables::os2::SelectionFlags,
-    types::{NameId, Tag},
+    types::{GlyphId, NameId, Tag},
     OtRound,
 };
 
@@ -129,8 +129,11 @@ impl GlyphOrder {
         GlyphOrder(IndexSet::new())
     }
 
-    pub fn glyph_id(&self, name: &GlyphName) -> Option<u32> {
-        self.0.get_index_of(name).map(|i| i as u32)
+    pub fn glyph_id(&self, name: &GlyphName) -> Option<GlyphId> {
+        self.0
+            .get_index_of(name)
+            .map(|i| i as u32)
+            .map(|gid| GlyphId::new(gid as u16))
     }
 
     pub fn glyph_name(&self, index: usize) -> Option<&GlyphName> {
