@@ -764,24 +764,24 @@ impl FontMaster {
             .and_then(|metric| metric.pos)
     }
 
-    pub fn ascender(&self) -> Option<OrderedFloat<f64>> {
-        self.read_metric("ascender")
+    pub fn ascender(&self) -> Option<f64> {
+        self.read_metric("ascender").map(|x| x.into_inner())
     }
 
-    pub fn descender(&self) -> Option<OrderedFloat<f64>> {
-        self.read_metric("descender")
+    pub fn descender(&self) -> Option<f64> {
+        self.read_metric("descender").map(|x| x.into_inner())
     }
 
-    pub fn x_height(&self) -> Option<OrderedFloat<f64>> {
-        self.read_metric("x-height")
+    pub fn x_height(&self) -> Option<f64> {
+        self.read_metric("x-height").map(|x| x.into_inner())
     }
 
-    pub fn cap_height(&self) -> Option<OrderedFloat<f64>> {
-        self.read_metric("cap height")
+    pub fn cap_height(&self) -> Option<f64> {
+        self.read_metric("cap height").map(|x| x.into_inner())
     }
 
-    pub fn italic_angle(&self) -> Option<OrderedFloat<f64>> {
-        self.read_metric("italic angle")
+    pub fn italic_angle(&self) -> Option<f64> {
+        self.read_metric("italic angle").map(|x| x.into_inner())
     }
 }
 
@@ -2217,8 +2217,8 @@ mod tests {
 
     fn assert_wght_var_metrics(font: &Font) {
         let default_master = font.default_master();
-        assert_eq!(737.0, default_master.ascender().unwrap().into_inner());
-        assert_eq!(-42.0, default_master.descender().unwrap().into_inner());
+        assert_eq!(737.0, default_master.ascender().unwrap());
+        assert_eq!(-42.0, default_master.descender().unwrap());
     }
 
     #[test]

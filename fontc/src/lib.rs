@@ -34,6 +34,7 @@ use fontbe::{
     kern::{create_gather_ir_kerning_work, create_kerns_work},
     marks::create_mark_work,
     metrics_and_limits::create_metric_and_limit_work,
+    mvar::create_mvar_work,
     name::create_name_work,
     orchestration::AnyWorkId,
     os2::create_os2_work,
@@ -364,6 +365,16 @@ fn add_hvar_be_job(workload: &mut Workload) -> Result<(), Error> {
     Ok(())
 }
 
+fn add_mvar_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_mvar_work().into();
+    workload.add(
+        work,
+        workload.change_detector.static_metadata_ir_change()
+            || workload.change_detector.global_metrics_ir_change(),
+    );
+    Ok(())
+}
+
 fn add_font_be_job(workload: &mut Workload) -> Result<(), Error> {
     let glyphs_changed = workload.change_detector.glyphs_changed();
 
@@ -413,6 +424,7 @@ pub fn create_workload(
     add_marks_be_job(&mut workload)?;
     add_metric_and_limits_job(&mut workload)?;
     add_hvar_be_job(&mut workload)?;
+    add_mvar_be_job(&mut workload)?;
     add_name_be_job(&mut workload)?;
     add_os2_be_job(&mut workload)?;
     add_post_be_job(&mut workload)?;
@@ -706,6 +718,7 @@ mod tests {
             BeWorkIdentifier::LocaFormat.into(),
             BeWorkIdentifier::Marks.into(),
             BeWorkIdentifier::Maxp.into(),
+            BeWorkIdentifier::Mvar.into(),
             BeWorkIdentifier::Name.into(),
             BeWorkIdentifier::Os2.into(),
             BeWorkIdentifier::Post.into(),
@@ -1342,6 +1355,7 @@ mod tests {
                 Tag::new(b"GDEF"),
                 Tag::new(b"GPOS"),
                 Tag::new(b"HVAR"),
+                Tag::new(b"MVAR"),
                 Tag::new(b"OS/2"),
                 Tag::new(b"STAT"),
                 Tag::new(b"cmap"),

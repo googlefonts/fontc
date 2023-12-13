@@ -50,6 +50,8 @@ pub enum Error {
     OutOfBounds { what: String, value: String },
     #[error("Unable to compute deltas for {0}: {1}")]
     GlyphDeltaError(GlyphName, DeltaError),
+    #[error("Unable to compute deltas for MVAR {0}: {1}")]
+    MvarDeltaError(Tag, DeltaError),
     #[error("Unable to assemble gvar")]
     GvarError(#[from] GvarInputError),
     #[error("Unable to read")]

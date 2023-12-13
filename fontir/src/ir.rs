@@ -362,38 +362,117 @@ pub enum GlobalMetric {
     SuperscriptYSize,
 }
 
+impl GlobalMetric {
+    /// Return the 4-byte tag used to represent a global metric in the `MVAR` table.
+    ///
+    /// `None` if this metric is not associated with an `MVAR` value tag, or if
+    /// we don't support it yet (e.g. vertical typesetting metrics).
+    ///
+    /// <https://learn.microsoft.com/en-us/typography/opentype/spec/mvar#value-tags>
+    pub fn mvar_tag(&self) -> Option<Tag> {
+        // We support the same subset of the metrics defined in the spec
+        // as fonttools does (except vertical ones which we don't support yet):
+        // https://github.com/fonttools/fonttools/blob/0c5cb3b/Lib/fontTools/varLib/mvar.py
+        match self {
+            GlobalMetric::Os2TypoAscender => Some(Tag::new(b"hasc")),
+            GlobalMetric::Os2TypoDescender => Some(Tag::new(b"hdsc")),
+            GlobalMetric::Os2TypoLineGap => Some(Tag::new(b"hlgp")),
+            GlobalMetric::Os2WinAscent => Some(Tag::new(b"hcla")),
+            GlobalMetric::Os2WinDescent => Some(Tag::new(b"hcld")),
+            // TODO: support vertical global metrics
+            // GlobalMetric::VheaAscender => Some(Tag::new(b"vasc")),
+            // GlobalMetric::VheaDescender => Some(Tag::new(b"vdsc")),
+            // GlobalMetric::VheaLineGap => Some(Tag::new(b"vlgp")),
+            GlobalMetric::CaretSlopeRise => Some(Tag::new(b"hcrs")),
+            GlobalMetric::CaretSlopeRun => Some(Tag::new(b"hcrn")),
+            GlobalMetric::CaretOffset => Some(Tag::new(b"hcof")),
+            // GlobalMetric::VheaCaretSlopeRise => Some(Tag::new(b"vcrs")),
+            // GlobalMetric::VheaCaretSlopeRun => Some(Tag::new(b"vcrn")),
+            // GlobalMetric::VheaCaretOffset => Some(Tag::new(b"vcof")),
+            GlobalMetric::XHeight => Some(Tag::new(b"xhgt")),
+            GlobalMetric::CapHeight => Some(Tag::new(b"cpht")),
+            GlobalMetric::SubscriptXSize => Some(Tag::new(b"sbxs")),
+            GlobalMetric::SubscriptYSize => Some(Tag::new(b"sbys")),
+            GlobalMetric::SubscriptXOffset => Some(Tag::new(b"sbxo")),
+            GlobalMetric::SubscriptYOffset => Some(Tag::new(b"sbyo")),
+            GlobalMetric::SuperscriptXSize => Some(Tag::new(b"spxs")),
+            GlobalMetric::SuperscriptYSize => Some(Tag::new(b"spys")),
+            GlobalMetric::SuperscriptXOffset => Some(Tag::new(b"spxo")),
+            GlobalMetric::SuperscriptYOffset => Some(Tag::new(b"spyo")),
+            GlobalMetric::StrikeoutSize => Some(Tag::new(b"strs")),
+            GlobalMetric::StrikeoutPosition => Some(Tag::new(b"stro")),
+            GlobalMetric::UnderlineThickness => Some(Tag::new(b"unds")),
+            GlobalMetric::UnderlinePosition => Some(Tag::new(b"undo")),
+            // TODO gsp0, gsp1, etc. for gasp table
+            _ => None,
+        }
+    }
+}
+
 /// Adjust Y offset based on italic angle, to get X offset.
 ///
 ///  <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L571-L573>
-fn adjust_offset(offset: f32, angle: f64) -> f32 {
+fn adjust_offset(offset: f64, angle: f64) -> f64 {
     if angle.abs() >= f64::EPSILON {
-        ((offset as f64) * (-angle).to_radians().tan()) as f32
+        offset * (-angle).to_radians().tan()
     } else {
         0.0
     }
 }
+
+/// Map of values associated with a given global metric at various locations.
+pub type GlobalMetricValues = HashMap<NormalizedLocation, OrderedFloat<f32>>;
 
 impl GlobalMetrics {
     /// Creates a new [GlobalMetrics] with default values at the default location.
     pub fn new(
         default_location: NormalizedLocation,
         units_per_em: u16,
-        x_height: Option<f32>,
-        ascender: Option<f32>,
-        descender: Option<f32>,
+        x_height: Option<f64>,
+        ascender: Option<f64>,
+        descender: Option<f64>,
         italic_angle: f64,
     ) -> GlobalMetrics {
         let mut metrics = GlobalMetrics(HashMap::new());
-        let mut set = |metric, value| metrics.set(metric, default_location.clone(), value);
+        metrics.populate_defaults(
+            &default_location,
+            units_per_em,
+            x_height,
+            ascender,
+            descender,
+            Some(italic_angle),
+        );
+        metrics
+    }
+
+    /// Populate default values for all metrics at the given location.
+    ///
+    /// This is used to populate the default values for the default location whenever a
+    /// new [GlobalMetrics] is created. But it can also be used to populate the
+    /// default values for other non-default locations, to make these 'dense'
+    /// (i.e. non 'sparse'). That is the current behavior of fontmake when building
+    /// variable fonts from Glyphs or Designspace sources.
+    pub fn populate_defaults(
+        &mut self,
+        location: &NormalizedLocation,
+        units_per_em: u16,
+        x_height: Option<f64>,
+        ascender: Option<f64>,
+        descender: Option<f64>,
+        italic_angle: Option<f64>,
+    ) {
+        let units_per_em = units_per_em as f64;
+
+        let mut set = |metric, value| self.set(metric, location.clone(), value as f32);
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
-        let ascender = ascender.unwrap_or(0.8 * units_per_em as f32);
-        let descender = descender.unwrap_or(-0.2 * units_per_em as f32);
+        let ascender = ascender.unwrap_or(0.8 * units_per_em);
+        let descender = descender.unwrap_or(-0.2 * units_per_em);
         set(GlobalMetric::Ascender, ascender);
         set(GlobalMetric::Descender, descender);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L229-L238
-        let typo_line_gap = units_per_em as f32 * 1.2 + descender - ascender;
+        let typo_line_gap = units_per_em * 1.2 + descender - ascender;
         let typo_line_gap = if typo_line_gap > 0.0 {
             typo_line_gap
         } else {
@@ -416,27 +495,27 @@ impl GlobalMetrics {
         set(GlobalMetric::Os2WinDescent, descender.abs());
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
-        set(GlobalMetric::CapHeight, 0.7 * units_per_em as f32);
-        let x_height = x_height.unwrap_or(0.5 * units_per_em as f32);
+        set(GlobalMetric::CapHeight, 0.7 * units_per_em);
+        let x_height = x_height.unwrap_or(0.5 * units_per_em);
         set(GlobalMetric::XHeight, x_height);
 
         // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L133-L148
         // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L151-L161
-        let slope_rise = units_per_em as f32;
-        set(GlobalMetric::CaretSlopeRise, slope_rise);
+        let italic_angle = italic_angle.unwrap_or(0.0);
+        set(GlobalMetric::CaretSlopeRise, units_per_em);
         set(
             GlobalMetric::CaretSlopeRun,
-            adjust_offset(slope_rise, italic_angle),
+            adjust_offset(units_per_em, italic_angle),
         );
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L367
         set(GlobalMetric::CaretOffset, 0.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L575-L616
-        let subscript_x_size = units_per_em as f32 * 0.65;
-        let subscript_y_size = units_per_em as f32 * 0.60;
-        let subscript_y_offset = units_per_em as f32 * 0.075;
-        let superscript_y_offset = units_per_em as f32 * 0.35;
+        let subscript_x_size = units_per_em * 0.65;
+        let subscript_y_size = units_per_em * 0.60;
+        let subscript_y_offset = units_per_em * 0.075;
+        let superscript_y_offset = units_per_em * 0.35;
         set(GlobalMetric::SubscriptXSize, subscript_x_size);
         set(GlobalMetric::SubscriptYSize, subscript_y_size);
         set(
@@ -454,7 +533,7 @@ impl GlobalMetrics {
         set(GlobalMetric::SuperscriptYOffset, superscript_y_offset);
 
         // // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L313-L316
-        set(GlobalMetric::StrikeoutSize, 0.05 * units_per_em as f32);
+        set(GlobalMetric::StrikeoutSize, 0.05 * units_per_em);
         set(GlobalMetric::StrikeoutPosition, x_height * 0.6);
 
         // ufo2ft and Glyphs.app have different defaults for the post.underlinePosition:
@@ -462,21 +541,16 @@ impl GlobalMetrics {
         // underlineThickness 0.05*UPEM). We prefer to match Glyphs.app as more widely used.
         // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L313-L322
         // https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/builder/custom_params.py#L1116-L1125
-        set(GlobalMetric::UnderlineThickness, 0.05 * units_per_em as f32);
-        set(GlobalMetric::UnderlinePosition, -0.1 * units_per_em as f32);
-
-        metrics
+        set(GlobalMetric::UnderlineThickness, 0.05 * units_per_em);
+        set(GlobalMetric::UnderlinePosition, -0.1 * units_per_em);
     }
 
-    fn values(&self, metric: GlobalMetric) -> &HashMap<NormalizedLocation, OrderedFloat<f32>> {
+    fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
         // We presume that ctor initializes for every GlobalMetric
         self.0.get(&metric).unwrap()
     }
 
-    fn values_mut(
-        &mut self,
-        metric: GlobalMetric,
-    ) -> &mut HashMap<NormalizedLocation, OrderedFloat<f32>> {
+    fn values_mut(&mut self, metric: GlobalMetric) -> &mut GlobalMetricValues {
         self.0.entry(metric).or_default()
     }
 
@@ -540,10 +614,8 @@ impl GlobalMetrics {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (NormalizedLocation, GlobalMetric, f32)> + '_ {
-        self.0
-            .iter()
-            .flat_map(|(m, values)| values.iter().map(|(l, v)| (l.clone(), *m, v.into_inner())))
+    pub fn iter(&self) -> impl Iterator<Item = (&GlobalMetric, &GlobalMetricValues)> + '_ {
+        self.0.iter()
     }
 }
 

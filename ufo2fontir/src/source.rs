@@ -901,6 +901,41 @@ fn is_glyph_only(source: &norad::designspace::Source) -> bool {
     source.layer.is_some()
 }
 
+fn set_default_underline_pos(
+    metrics: &mut GlobalMetrics,
+    location: &NormalizedLocation,
+    units_per_em: u16,
+) {
+    // ufo2ft default underline position differs from fontir/Glyphs.app's so
+    // we override it here.
+    // https://github.com/googlefonts/ufo2ft/blob/a421acc/Lib/ufo2ft/fontInfoData.py#L319-L322
+    metrics.set(
+        GlobalMetric::UnderlinePosition,
+        location.clone(),
+        -0.075 * units_per_em as f32,
+    );
+}
+
+fn populate_default_metrics(
+    metrics: &mut GlobalMetrics,
+    location: &NormalizedLocation,
+    units_per_em: u16,
+    x_height: Option<f64>,
+    ascender: Option<f64>,
+    descender: Option<f64>,
+    italic_angle: Option<f64>,
+) {
+    metrics.populate_defaults(
+        location,
+        units_per_em,
+        x_height,
+        ascender,
+        descender,
+        italic_angle,
+    );
+    set_default_underline_pos(metrics, location, units_per_em);
+}
+
 impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
     fn id(&self) -> WorkId {
         WorkId::GlobalMetrics
@@ -929,18 +964,16 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
         let mut metrics = GlobalMetrics::new(
             static_metadata.default_location().clone(),
             static_metadata.units_per_em,
-            default_fontinfo.x_height.map(|v| v as f32),
-            default_fontinfo.ascender.map(|v| v as f32),
-            default_fontinfo.descender.map(|v| v as f32),
+            default_fontinfo.x_height,
+            default_fontinfo.ascender,
+            default_fontinfo.descender,
             static_metadata.italic_angle.into_inner(),
         );
-        // ufo2ft default underline position differs from fontir/Glyphs.app's so
-        // we override it here.
-        // https://github.com/googlefonts/ufo2ft/blob/a421acc/Lib/ufo2ft/fontInfoData.py#L319-L322
-        metrics.set(
-            GlobalMetric::UnderlinePosition,
-            static_metadata.default_location().clone(),
-            -0.075 * static_metadata.units_per_em as f32,
+        // use ufo2ft's default underline position, different from fontir/Glyphs.app
+        set_default_underline_pos(
+            &mut metrics,
+            static_metadata.default_location(),
+            static_metadata.units_per_em,
         );
         for source in self
             .designspace
@@ -953,8 +986,18 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
                 .get(&source.filename)
                 .ok_or_else(|| WorkError::FileExpected(designspace_dir.join(&source.filename)))?;
 
-            metrics.set_if_some(GlobalMetric::Ascender, pos.clone(), font_info.ascender);
-            metrics.set_if_some(GlobalMetric::Descender, pos.clone(), font_info.descender);
+            if !pos.is_default() {
+                populate_default_metrics(
+                    &mut metrics,
+                    pos,
+                    static_metadata.units_per_em,
+                    font_info.x_height,
+                    font_info.ascender,
+                    font_info.descender,
+                    font_info.italic_angle,
+                );
+            }
+
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), font_info.cap_height);
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), font_info.x_height);
             metrics.set_if_some(
@@ -1913,10 +1956,10 @@ mod tests {
             .global_metrics
             .get()
             .iter()
-            .map(|(loc, ..)| loc)
+            .flat_map(|(.., values)| values.keys())
             .collect::<HashSet<_>>()
             .into_iter()
-            .map(|loc| (only_coord(&loc).to_user(&wght.converter), only_coord(&loc)))
+            .map(|loc| (only_coord(loc).to_user(&wght.converter), only_coord(loc)))
             .collect::<Vec<_>>();
         metric_locations.sort();
 
