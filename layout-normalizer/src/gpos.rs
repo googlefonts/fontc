@@ -51,7 +51,7 @@ pub(crate) fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> R
     // so first we iterate through each feature/language/script set
     for sys in &lang_systems {
         writeln!(f,)?;
-        writeln!(f, "# {}: {}/{} #", sys.feature, sys.script, sys.lang)?;
+        sys.fmt_header(f)?;
 
         // then for each feature/language/script we iterate through
         // all rules, split by the rule (lookup) type

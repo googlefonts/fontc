@@ -1,6 +1,10 @@
 //! general common utilities and types
 
-use std::{collections::BTreeSet, fmt::Display};
+use std::{
+    collections::{BTreeSet, HashMap},
+    fmt::Display,
+    io,
+};
 
 use write_fonts::{
     read::tables::layout::{FeatureList, ScriptList},
@@ -9,11 +13,17 @@ use write_fonts::{
 
 use crate::glyph_names::NameMap;
 
+pub(crate) struct LanguageSystem {
+    script: Tag,
+    lang: Tag,
+}
+
 /// A set of lookups for a specific feature and language system
 pub(crate) struct Feature {
     pub(crate) feature: Tag,
-    pub(crate) script: Tag,
-    pub(crate) lang: Tag,
+    // script/lang; if a feature has identical lookups in multiple langsystems we combine them
+    // (this is to reduce how much we print)
+    pub(crate) lang_systems: Vec<LanguageSystem>,
     pub(crate) lookups: Vec<u16>,
 }
 
@@ -24,24 +34,45 @@ pub(crate) enum GlyphSet {
     Multiple(BTreeSet<GlyphId>),
 }
 
+impl LanguageSystem {
+    fn sort_key(&self) -> impl Ord {
+        (tag_to_int(self.script), tag_to_int(self.lang))
+    }
+}
+
 impl Feature {
     fn sort_key(&self) -> impl Ord {
-        // make it so we always put DFLT/dflt above other tags
-        fn tag_to_int(tag: Tag) -> u32 {
-            if tag == Tag::new(b"DFLT") {
-                0
-            } else if tag == Tag::new(b"dflt") {
-                1
-            } else {
-                u32::from_be_bytes(tag.to_be_bytes())
-            }
-        }
-
         (
             tag_to_int(self.feature),
-            tag_to_int(self.script),
-            tag_to_int(self.lang),
+            self.lang_systems
+                .get(0)
+                .map(|rec| (tag_to_int(rec.script), tag_to_int(rec.lang))),
         )
+    }
+
+    /// the header printed before each feature
+    pub(crate) fn fmt_header(&self, f: &mut dyn io::Write) -> std::io::Result<()> {
+        write!(f, "# {}: ", self.feature)?;
+        let mut first = true;
+        for LanguageSystem { script, lang } in &self.lang_systems {
+            if !first {
+                write!(f, ", ")?;
+            }
+            first = false;
+            write!(f, "{script}/{lang}")?;
+        }
+        write!(f, " #")
+    }
+}
+
+// used in our sorting impls, so we always put DFLT/dflt above other tags
+fn tag_to_int(tag: Tag) -> u32 {
+    if tag == Tag::new(b"DFLT") {
+        0
+    } else if tag == Tag::new(b"dflt") {
+        1
+    } else {
+        u32::from_be_bytes(tag.to_be_bytes())
     }
 }
 
@@ -51,7 +82,8 @@ pub(crate) fn get_lang_systems(
 ) -> Vec<Feature> {
     let data = script_list.offset_data();
 
-    let mut result = script_list
+    let mut group_identical_features = HashMap::new();
+    for (feature, script, lang, lookups) in script_list
         .script_records()
         .iter()
         // first iterate all (script, lang, feature indices)
@@ -83,16 +115,33 @@ pub(crate) fn get_lang_systems(
                     .iter()
                     .map(|x| x.get())
                     .collect();
-                Feature {
-                    feature: rec.feature_tag(),
-                    script,
-                    lang,
-                    lookups,
-                }
+                (rec.feature_tag(), script, lang, lookups)
             })
         })
-        .collect::<Vec<_>>();
+    {
+        // first for each combo of feature + set of lookups, collect which
+        // language systems share it
+        group_identical_features
+            .entry((feature, lookups))
+            .or_insert(Vec::new())
+            .push(LanguageSystem { script, lang });
+    }
 
+    // then combine these into the feature types we return
+
+    let mut result = group_identical_features
+        .into_iter()
+        .map(|((feature, lookups), lang_systems)| Feature {
+            feature,
+            lang_systems,
+            lookups,
+        })
+        .collect::<Vec<_>>();
+    // sort the list of language systems in a given feature
+    result
+        .iter_mut()
+        .for_each(|sys| sys.lang_systems.sort_unstable_by_key(|sys| sys.sort_key()));
+    // then sort the big list of features
     result.sort_unstable_by_key(|sys| sys.sort_key());
 
     result
