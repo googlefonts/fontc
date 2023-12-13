@@ -73,6 +73,7 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
             .collect::<BTreeMap<_, _>>();
 
         let mut pair_values = HashMap::new();
+        let mut pair_deltas = HashMap::new();
 
         let mut builder2 = PairPosBuilder::default();
         for (pair, values) in &ir_groups.complete_kerning {
@@ -82,10 +83,11 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
 
             let (default_value, deltas) 
                 = resolve_variable_metric(&static_metadata, values.iter())?;
+            pair_deltas.insert(pair.clone(), (default_value, deltas.clone()));
             let x_adv_record = ValueRecordBuilder::new()
                 .with_x_advance(default_value)
                 .with_x_advance_device(deltas);
-            let empty = ValueRecordBuilder::new();
+            let empty = ValueRecordBuilder::new();            
             
             match pair {
                 (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
@@ -130,13 +132,12 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
             }
         }
 
-        let mut builder = PairPosBuilder::default();
-
         // Add IR kerns to builder. IR kerns are split by location so put them back together again.
         // We want to iterate over (left, right), vec<(location: adjustment)>
         // with the vec locations in the same order as the group locations
         let kern_by_pos: HashMap<_, _> = ir_kerns.iter().map(|(_, ki)| (ki.location.clone(), ki.as_ref())).collect();
-        let mut kerns: HashMap<&KernPair, Vec<(NormalizedLocation, OrderedFloat<f32>)>> = HashMap::new();
+        // walking the pairs in the same order fixes the problem
+        let mut kerns: BTreeMap<&KernPair, Vec<(NormalizedLocation, OrderedFloat<f32>)>> = Default::default();
 
         ir_groups.locations.iter()
             .filter_map(|pos| kern_by_pos.get(pos))
@@ -149,25 +150,16 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
                 kerns.entry(pair).or_default().push((location, adjustment))
             });
 
-        // ir_kerns
-        //     .iter()
-        //     .map(|(_, kerns)| kerns.as_ref())
-        //     .flat_map(|kerns_at| {
-        //         kerns_at
-        //             .kerns
-        //             .iter()
-        //             .map(|(pair, adjustment)| (pair, (kerns_at.location.clone(), *adjustment)))
-        //     })
-        //     .for_each(|(pair, (location, adjustment))| {
-        //         kerns.entry(pair).or_default().push((location, adjustment))
-        //     });
-
         // now for each kerning entry, directly add a rule to the builder:
+        let mut builder = PairPosBuilder::default();
         for (pair, values) in kerns {
 
-            pretty_assertions::assert_eq!(Some(&values), pair_values.get(pair), "Mismatch for {pair:?}");
+            pretty_assertions::assert_eq!(pair_values.get(pair), Some(&values), "Mismatch for {pair:?}");
 
             let (default_value, deltas) = resolve_variable_metric(&static_metadata, values.iter())?;
+
+            pretty_assertions::assert_eq!(pair_deltas.get(pair), Some(&(default_value, deltas.clone())), "Mismatched deltas for{pair:?}");
+
             let x_adv_record = ValueRecordBuilder::new()
                 .with_x_advance(default_value)
                 .with_x_advance_device(deltas);
@@ -216,8 +208,12 @@ impl Work<Context, AnyWorkId, Error> for KerningWork {
             }
         }
 
-        if builder != builder2 {
-            panic!("We built mistmached kerning");
+        // EXPLORATORY
+        
+
+
+        if builder != builder2 {            
+            panic!("We built mismatched kerning\nsame pairs? {}\nsame classes? {}\n", builder.pairs == builder2.pairs, builder.classes == builder2.classes);
         }
 
 

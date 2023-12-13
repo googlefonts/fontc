@@ -115,13 +115,15 @@ fn cmp_coverage_key(coverage: &CoverageTable) -> impl Ord {
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PairPosBuilder {
-    pairs: GlyphPairPosBuilder,
-    classes: ClassPairPosBuilder,
+    /// meh
+    pub pairs: GlyphPairPosBuilder,
+    /// meh
+    pub classes: ClassPairPosBuilder,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-struct GlyphPairPosBuilder(BTreeMap<GlyphId, BTreeMap<GlyphId, (ValueRecord, ValueRecord)>>);
+pub struct GlyphPairPosBuilder(BTreeMap<GlyphId, BTreeMap<GlyphId, (ValueRecord, ValueRecord)>>);
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -143,7 +145,7 @@ impl Default for ClassPairPosSubtable {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-struct ClassPairPosBuilder(BTreeMap<(ValueFormat, ValueFormat), Vec<ClassPairPosSubtable>>);
+pub struct ClassPairPosBuilder(BTreeMap<(ValueFormat, ValueFormat), Vec<ClassPairPosSubtable>>);
 
 impl ClassPairPosBuilder {
     fn insert(
