@@ -218,10 +218,8 @@ jobs:
 
       - name: ttx, it might be handy to troubleshoot
         run: |
-          pipx run fonttools ttx -l first-roman.ttf
-          pipx run fonttools ttx -l first-italic.ttf
-          pipx run fonttools ttx -l second-roman.ttf
-          pipx run fonttools ttx -l second-italic.ttf
+          diff -u <(pipx run fonttools ttx -l first-roman.ttf) <(pipx run fonttools ttx -l second-roman.ttf)
+          diff -u <(pipx run fonttools ttx -l first-italic.ttf) <(pipx run fonttools ttx -l second-italic.ttf)
 
       - name: Stable Roman?
         run: cmp first-roman.ttf second-roman.ttf
