@@ -31,7 +31,7 @@ pub(crate) struct AllFeatures {
     required_features: HashSet<FeatureKey>,
     pub(crate) size: Option<SizeFeature>,
     pub(crate) aalt: Option<AaltFeature>,
-    pub(crate) stylistic_sets: HashMap<Tag, Vec<NameSpec>>,
+    pub(crate) stylistic_sets: BTreeMap<Tag, Vec<NameSpec>>,
     pub(crate) character_variants: HashMap<Tag, CvParams>,
 }
 
