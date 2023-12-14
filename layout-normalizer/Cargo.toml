@@ -12,6 +12,9 @@ smol_str.workspace = true
 write-fonts.workspace = true
 indexmap.workspace = true
 
+[dev-dependencies]
+fea-rs = { path = "../fea-rs" }
+
 # cargo-release settings
 [package.metadata.release]
 release = false
