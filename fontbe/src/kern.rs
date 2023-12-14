@@ -69,6 +69,7 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
+        // Blocks execution until workload.rs handle_success figures out what we will read, e.g. IR kerning instances is done.
         // Updated when success for IR kerning groups is received. See https://github.com/googlefonts/fontc/pull/655.
         Access::Unknown
     }
@@ -98,8 +99,6 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
             .collect::<BTreeMap<_, _>>();
 
         // Add IR kerns to builder. IR kerns are split by location so put them back together again.
-        // We want to iterate over (left, right), vec<(location: adjustment)>
-        // with the vec locations in the same order as the group locations
         let kern_by_pos: HashMap<_, _> = ir_kerns
             .iter()
             .map(|(_, ki)| (ki.location.clone(), ki.as_ref()))
@@ -107,6 +106,8 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
         // Use a BTreeMap  because it seems the order we process pairs matters. Maybe we should sort instead...?
         let mut adjustments: BTreeMap<KernPair, KernAdjustments> = Default::default();
 
+        // We want to add items to locations in the same order as the group locations
+        // so start with group locations and then find the matching kerning.
         ir_groups
             .locations
             .iter()
