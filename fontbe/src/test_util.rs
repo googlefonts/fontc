@@ -10,8 +10,6 @@ use write_fonts::types::Tag;
 
 #[cfg(test)]
 pub(crate) fn axis(min: f32, default: f32, max: f32) -> Axis {
-    use fontdrasil::coords::Coord;
-
     let mut mappings = Vec::new();
     if min < default {
         mappings.push((UserCoord::new(min), DesignCoord::new(min / 10.0)));

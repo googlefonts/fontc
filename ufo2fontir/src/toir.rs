@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use fontdrasil::{
-    coords::{Coord, CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
+    coords::{CoordConverter, DesignCoord, DesignLocation, NormalizedLocation, UserCoord},
     types::GlyphName,
 };
 use fontir::{

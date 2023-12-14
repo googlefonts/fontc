@@ -6,7 +6,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use fontdrasil::{
-    coords::{Location, NormalizedCoord, NormalizedLocation},
+    coords::NormalizedLocation,
     orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
 };
@@ -246,7 +246,7 @@ fn compute_deltas(
     glyph_name: &GlyphName,
     var_model: &VariationModel,
     should_iup: bool,
-    point_seqs: &HashMap<Location<NormalizedCoord>, Vec<Point>>,
+    point_seqs: &HashMap<NormalizedLocation, Vec<Point>>,
     coords: &Vec<Point>,
     contour_ends: &Vec<usize>,
 ) -> Result<Deltas, Error> {
@@ -902,7 +902,7 @@ mod tests {
     use super::*;
 
     use fontdrasil::{
-        coords::{Coord, NormalizedCoord, NormalizedLocation},
+        coords::{NormalizedCoord, NormalizedLocation},
         types::GlyphName,
     };
     use fontir::ir;

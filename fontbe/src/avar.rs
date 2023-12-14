@@ -1,7 +1,7 @@
 //! Generates a [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar) table.
 
 use fontdrasil::{
-    coords::{Coord, CoordConverter, DesignCoord, NormalizedCoord},
+    coords::{CoordConverter, DesignCoord, NormalizedCoord},
     orchestration::{Access, Work},
     types::Axis,
 };
@@ -123,7 +123,7 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
 #[cfg(test)]
 mod tests {
     use fontdrasil::{
-        coords::{Coord, CoordConverter, DesignCoord, UserCoord},
+        coords::{CoordConverter, DesignCoord, UserCoord},
         types::Axis,
     };
     use std::{cmp, str::FromStr};
