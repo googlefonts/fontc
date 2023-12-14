@@ -163,4 +163,69 @@ jobs:
       - name: cargo test fea-rs
         run: cargo test -p fea-rs
 
+  # Confirm we can still compile GS
+  build-gs:
+    runs-on: ubuntu-latest
+    name: Build GS
+    steps:
+      - name: Check out fontc source repository
+        uses: actions/checkout@v4
+      - name: Install the latest stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build and install fontc
+        run: cd fontc && cargo install --path . --debug
+      - name: Check out font project source repository
+        uses: actions/checkout@v4
+        with:
+          repository: googlefonts/googlesans
+          token: ${{ secrets.GS_READ_FONTC }}
+      - name: Download and unzip OTS v9.1.0
+        run: |
+            curl -OL "https://github.com/khaledhosny/ots/releases/download/v9.1.0/ots-9.1.0-Linux.zip"
+            unzip "ots-9.1.0-Linux.zip" "ots-9.1.0-Linux/ots-sanitize"
+      - name: Compile Roman variable font
+        run: fontc source/GoogleSans/GoogleSans.designspace
+      - name: OTS tests, Roman
+        run: ots-9.1.0-Linux/ots-sanitize build/font.ttf
+      - name: Compile Italic variable font
+        run: fontc source/GoogleSans/GoogleSans-Italic.designspace
+      - name: OTS tests, Italic
+        run: ots-9.1.0-Linux/ots-sanitize build/font.ttf
 
+  # Check if GS build is repeatable, https://github.com/googlefonts/fontc/issues/647
+  build-gs-repeatably:
+    runs-on: ubuntu-latest
+    name: Build GS and get a consistent result
+    steps:
+      - name: Check out fontc source repository
+        uses: actions/checkout@v4
+
+      - name: Install the latest stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build and install fontc
+        run: cd fontc && pwd && cargo install --path .
+
+      - name: Check out font project source repository
+        uses: actions/checkout@v4
+        with:
+          repository: googlefonts/googlesans
+          token: ${{ secrets.GS_READ_FONTC }}
+
+      - name: Compile me once, shame on you
+        run: |
+          rm -rf build
+          echo "TEMPORARY DIAGNOSTICS"
+          pwd
+          ls
+          fontc source/GoogleSans/GoogleSans.designspace
+          cp build/font.ttf ./first.ttf
+
+      - name: Compile me twice, shame on me
+        run: |
+          rm -rf build
+          fontc source/GoogleSans/GoogleSans.designspace
+          cp build/font.ttf ./second.ttf
+
+      - name: Same output?
+        run: cmp first.ttf second.ttf
