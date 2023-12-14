@@ -9,8 +9,8 @@ use indexmap::IndexMap;
 use write_fonts::read::{
     tables::{
         gpos::{
-            AnchorTable, MarkBasePosFormat1, MarkMarkPosFormat1, PairPos, PairPosFormat1,
-            PairPosFormat2, PositionLookup, PositionLookupList, ValueRecord,
+            AnchorTable, ExtensionSubtable, MarkBasePosFormat1, MarkMarkPosFormat1, PairPos,
+            PairPosFormat1, PairPosFormat2, PositionLookup, PositionLookupList, ValueRecord,
         },
         layout::{DeviceOrVariationIndex, LookupFlag},
     },
@@ -462,6 +462,50 @@ fn get_lookup_rules(
                 let rules =
                     get_mark_mark_rules(&subs, flag, mark_filter_id, delta_computer).unwrap();
                 result.push(rules)
+            }
+            PositionLookup::Extension(lookup) => {
+                let flag = lookup.lookup_flag();
+                let mark_filter_id = flag
+                    .use_mark_filtering_set()
+                    .then(|| lookup.mark_filtering_set());
+                let first_sub = lookup.subtables().get(0).ok();
+                let rules = match first_sub {
+                    Some(ExtensionSubtable::MarkToBase(_)) => {
+                        let subs = lookup
+                            .subtables()
+                            .iter()
+                            .flat_map(|sub| match sub {
+                                Ok(ExtensionSubtable::MarkToBase(inner)) => inner.extension().ok(),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+                        get_mark_base_rules(&subs, flag, mark_filter_id, delta_computer).unwrap()
+                    }
+                    Some(ExtensionSubtable::MarkToMark(_)) => {
+                        let subs = lookup
+                            .subtables()
+                            .iter()
+                            .flat_map(|sub| match sub {
+                                Ok(ExtensionSubtable::MarkToMark(inner)) => inner.extension().ok(),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+                        get_mark_mark_rules(&subs, flag, mark_filter_id, delta_computer).unwrap()
+                    }
+                    Some(ExtensionSubtable::Pair(_)) => {
+                        let subs = lookup
+                            .subtables()
+                            .iter()
+                            .flat_map(|sub| match sub {
+                                Ok(ExtensionSubtable::Pair(inner)) => inner.extension().ok(),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
+                        get_pairpos_rules(&subs, flag, delta_computer).unwrap()
+                    }
+                    _ => Vec::new(),
+                };
+                result.push(rules);
             }
             _other => {
                 // we always want to have as many sets as we have lookups
