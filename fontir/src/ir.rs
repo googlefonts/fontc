@@ -1141,7 +1141,7 @@ impl Persistable for KerningInstance {
 
 impl IdAware<WorkId> for KerningInstance {
     fn id(&self) -> WorkId {
-        WorkId::KerningAtLocation(self.location.clone())
+        WorkId::KernInstance(self.location.clone())
     }
 }
 

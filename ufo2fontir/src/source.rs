@@ -1283,7 +1283,7 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
 /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
 impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
     fn id(&self) -> WorkId {
-        WorkId::KerningAtLocation(self.location.clone())
+        WorkId::KernInstance(self.location.clone())
     }
 
     fn read_access(&self) -> Access<WorkId> {
@@ -1372,6 +1372,7 @@ impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
             *kerns.kerns.entry((side1, side2)).or_default() = (adjustment as f32).into();
         }
 
+        debug!("{:?} has {} kern entries", self.location, kerns.kerns.len());
         context.kerning_at.set(kerns);
         Ok(())
     }

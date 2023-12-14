@@ -319,7 +319,7 @@ impl ChangeDetector {
             || self.current_inputs.features != self.prev_inputs.features
             || !self
                 .ir_paths
-                .target_file(&FeWorkIdentifier::KerningAtLocation(at))
+                .target_file(&FeWorkIdentifier::KernInstance(at))
                 .is_file()
     }
 

@@ -327,7 +327,7 @@ pub enum WorkId {
     GlyphOrder,
     Features,
     KerningGroups,
-    KerningAtLocation(NormalizedLocation),
+    KernInstance(NormalizedLocation),
     Anchor(GlyphName),
 }
 
@@ -342,7 +342,7 @@ impl Identifier for WorkId {
             WorkId::GlyphOrder => "IrGlyphOrder",
             WorkId::Features => "IrFeatures",
             WorkId::KerningGroups => "IrKerningGroups",
-            WorkId::KerningAtLocation(..) => "IrKernAtLoc",
+            WorkId::KernInstance(..) => "IrKernInstance",
             WorkId::Anchor(..) => "IrAnchor",
         }
     }

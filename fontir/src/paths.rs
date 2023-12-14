@@ -76,7 +76,7 @@ impl Paths {
             }
             WorkId::Features => self.build_dir.join("features.yml"),
             WorkId::KerningGroups => self.build_dir.join("kern_groups.yml"),
-            WorkId::KerningAtLocation(location) => self.kern_ir_file(location),
+            WorkId::KernInstance(location) => self.kern_ir_file(location),
         }
     }
 }
