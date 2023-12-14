@@ -217,9 +217,10 @@ jobs:
           cp build/font.ttf ./second-italic.ttf
 
       - name: ttx, it might be handy to troubleshoot
+        # tail -n +2 to skip past the first line because it emits the filename
         run: |
-          diff -u <(pipx run fonttools ttx -l first-roman.ttf) <(pipx run fonttools ttx -l second-roman.ttf)
-          diff -u <(pipx run fonttools ttx -l first-italic.ttf) <(pipx run fonttools ttx -l second-italic.ttf)
+          diff -u <(pipx run fonttools ttx -l first-roman.ttf | tail -n +2) <(pipx run fonttools ttx -l second-roman.ttf | tail -n +2)
+          diff -u <(pipx run fonttools ttx -l first-italic.ttf | tail -n +2) <(pipx run fonttools ttx -l second-italic.ttf | tail -n +2)
 
       - name: Stable Roman?
         run: cmp first-roman.ttf second-roman.ttf
