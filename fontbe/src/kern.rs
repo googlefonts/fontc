@@ -1,4 +1,4 @@
-//! Generates a [Kerning] datastructure to be fed to fea-rs
+//! Generates an [FeaRsKerns] datastructure to be fed to fea-rs
 
 use std::collections::{BTreeMap, HashMap};
 

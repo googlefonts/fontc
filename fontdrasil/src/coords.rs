@@ -140,9 +140,8 @@ convert_convenience_methods!(UserSpace, to_user);
 convert_convenience_methods!(DesignSpace, to_design);
 
 /// Converts between Design, User, and Normalized coordinates.
-///
-/// Stores `PiecewiseLinearMap`s in several directions. Sources
-/// suggest <= 10 mappings is typical, we can afford the bytes.
+// Stores `PiecewiseLinearMap`'s in several directions. Sources
+// suggest <= 10 mappings is typical, we can afford the bytes.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CoordConverter {
     pub(crate) default_idx: usize,

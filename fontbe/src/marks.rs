@@ -1,4 +1,4 @@
-//! Generates a [Marks] datastructure to be fed to fea-rs
+//! Generates a [FeaRsMarks] datastructure to be fed to fea-rs
 
 use std::{
     collections::{BTreeMap, BTreeSet},
