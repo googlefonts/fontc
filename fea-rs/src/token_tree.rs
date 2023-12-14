@@ -69,7 +69,7 @@ pub enum NodeOrToken {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct TreeBuilder {
     //TODO: reuse tokens
-    //token_cache: HashMap<Arc<Token>>,
+    //token_cache: BTreeMap<Arc<Token>>,
     // the kind of the parent, and the index in children of the first child.
     parents: Vec<(Kind, usize)>,
     children: Vec<NodeOrToken>,

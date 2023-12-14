@@ -5,7 +5,7 @@
 //! and that other constraints of the spec are upheld.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     ops::Range,
 };
 
@@ -32,18 +32,18 @@ pub struct ValidationCtx<'a, V: VariationInfo> {
     glyph_map: &'a GlyphMap,
     source_map: &'a SourceMap,
     variation_info: Option<&'a V>,
-    default_lang_systems: HashSet<(SmolStr, SmolStr)>,
+    default_lang_systems: BTreeSet<(SmolStr, SmolStr)>,
     seen_non_default_script: bool,
-    lookup_defs: HashMap<SmolStr, Token>,
+    lookup_defs: BTreeMap<SmolStr, Token>,
     // class and position
-    glyph_class_defs: HashMap<SmolStr, Token>,
-    mark_class_defs: HashSet<SmolStr>,
+    glyph_class_defs: BTreeMap<SmolStr, Token>,
+    mark_class_defs: BTreeSet<SmolStr>,
     mark_class_used: Option<Token>,
-    anchor_defs: HashMap<SmolStr, Token>,
-    value_record_defs: HashMap<SmolStr, Token>,
-    condition_set_defs: HashMap<SmolStr, Token>,
-    aalt_referenced_features: HashMap<Tag, typed::Tag>,
-    all_features: HashSet<Tag>,
+    anchor_defs: BTreeMap<SmolStr, Token>,
+    value_record_defs: BTreeMap<SmolStr, Token>,
+    condition_set_defs: BTreeMap<SmolStr, Token>,
+    aalt_referenced_features: BTreeMap<Tag, typed::Tag>,
+    all_features: BTreeSet<Tag>,
 }
 
 impl<'a, V: VariationInfo> ValidationCtx<'a, V> {

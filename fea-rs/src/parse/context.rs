@@ -1,7 +1,7 @@
 //! parsing and resolving includes
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     ffi::OsString,
     ops::Range,
     sync::Arc,
@@ -56,7 +56,7 @@ const MAX_INCLUDE_DEPTH: usize = 50;
 pub(crate) struct ParseContext {
     root_id: FileId,
     sources: Arc<SourceList>,
-    parsed_files: HashMap<FileId, (Node, Vec<Diagnostic>)>,
+    parsed_files: BTreeMap<FileId, (Node, Vec<Diagnostic>)>,
     graph: IncludeGraph,
 }
 
@@ -68,7 +68,7 @@ pub(crate) struct ParseContext {
 #[derive(Clone, Debug, Default)]
 struct IncludeGraph {
     // source file -> (destination file, span-in-source-for-error)
-    nodes: HashMap<FileId, Vec<(FileId, Range<usize>)>>,
+    nodes: BTreeMap<FileId, Vec<(FileId, Range<usize>)>>,
 }
 
 /// An include statement in a source file.
@@ -124,7 +124,7 @@ impl ParseContext {
         let mut sources = SourceLoader::new(resolver);
         let root_id = sources.source_for_path(&path, None)?;
         let mut queue = vec![root_id];
-        let mut parsed_files = HashMap::new();
+        let mut parsed_files = BTreeMap::new();
         let mut includes = IncludeGraph::default();
 
         while let Some(id) = queue.pop() {
@@ -276,7 +276,7 @@ impl IncludeGraph {
         };
 
         let mut stack = vec![(root, edges, 0_usize)];
-        let mut seen = HashSet::new();
+        let mut seen = BTreeSet::new();
         let mut bad_edges = Vec::new();
 
         while let Some((node, edges, cur_edge)) = stack.pop() {

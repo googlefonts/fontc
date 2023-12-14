@@ -6,7 +6,7 @@
 //!
 //! [gdef-spec]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#9b-gdef-table
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use write_fonts::types::GlyphId;
 
@@ -24,7 +24,7 @@ use crate::common::{GlyphClass, GlyphSet};
 /// Data collected from a GDEF block.
 #[derive(Clone, Debug, Default)]
 pub struct GdefBuilder {
-    pub glyph_classes: HashMap<GlyphId, ClassId>,
+    pub glyph_classes: BTreeMap<GlyphId, ClassId>,
     pub attach: BTreeMap<GlyphId, BTreeSet<u16>>,
     pub ligature_pos: BTreeMap<GlyphId, Vec<CaretValue>>,
     pub mark_attach_class: BTreeMap<GlyphId, u16>,

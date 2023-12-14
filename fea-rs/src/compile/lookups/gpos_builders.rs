@@ -1,6 +1,6 @@
 //! GPOS subtable builders
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap};
 
 use smol_str::SmolStr;
 use write_fonts::{
@@ -62,7 +62,7 @@ impl Builder for SinglePosBuilder {
 
         // list of sets of glyph ids which will end up in their own subtables
         let mut subtables = Vec::new();
-        let mut group_by_record: HashMap<&RawValueRecord, BTreeMap<GlyphId, &RawValueRecord>> =
+        let mut group_by_record: BTreeMap<&RawValueRecord, BTreeMap<GlyphId, &RawValueRecord>> =
             Default::default();
 
         // first group by specific record; glyphs that share a record can use
@@ -73,7 +73,7 @@ impl Builder for SinglePosBuilder {
                 .or_default()
                 .insert(*gid, value);
         }
-        let mut group_by_format: HashMap<ValueFormat, BTreeMap<GlyphId, &RawValueRecord>> =
+        let mut group_by_format: BTreeMap<ValueFormat, BTreeMap<GlyphId, &RawValueRecord>> =
             Default::default();
         for (value, glyphs) in group_by_record {
             // if this saves us size, use format 1
@@ -369,7 +369,7 @@ struct MarkList {
     // (class id, anchor)
     glyphs: BTreeMap<GlyphId, (u16, Anchor)>,
     // map class names to their idx for this table
-    classes: HashMap<SmolStr, u16>,
+    classes: BTreeMap<SmolStr, u16>,
 }
 
 impl MarkList {

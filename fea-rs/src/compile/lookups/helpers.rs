@@ -1,6 +1,6 @@
 //! utils and types shared between multiple lookups
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use write_fonts::tables::layout::{ClassDef, ClassDefBuilder};
 
@@ -18,8 +18,8 @@ use crate::common::{GlyphId, GlyphSet};
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct ClassDefBuilder2 {
-    classes: HashSet<GlyphSet>,
-    glyphs: HashSet<GlyphId>,
+    classes: BTreeSet<GlyphSet>,
+    glyphs: BTreeSet<GlyphId>,
     use_class_0: bool,
 }
 
@@ -57,7 +57,7 @@ impl ClassDefBuilder2 {
 
     /// Returns a compiled glyphclass, as well as a mapping from our class objects
     /// to the final class ids
-    pub(crate) fn build(self) -> (ClassDef, HashMap<GlyphSet, u16>) {
+    pub(crate) fn build(self) -> (ClassDef, BTreeMap<GlyphSet, u16>) {
         let mut classes = self.classes.into_iter().collect::<Vec<_>>();
         // we match the sort order used by fonttools, see:
         // <https://github.com/fonttools/fonttools/blob/9a46f9d3ab01e3/Lib/fontTools/otlLib/builder.py#L2677>
@@ -73,7 +73,7 @@ impl ClassDefBuilder2 {
             .into_iter()
             .enumerate()
             .map(|(i, cls)| (cls, i as u16 + add_one))
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
         let class_def = mapping
             .iter()
             .flat_map(|(cls, id)| cls.iter().map(move |gid| (gid, *id)))

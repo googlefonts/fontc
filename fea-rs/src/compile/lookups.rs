@@ -6,7 +6,7 @@ mod gsub_builders;
 mod helpers;
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap},
     convert::TryInto,
 };
 
@@ -72,7 +72,7 @@ pub(crate) struct AllLookups {
     current_name: Option<SmolStr>,
     gpos: Vec<PositionLookup>,
     gsub: Vec<SubstitutionLookup>,
-    named: HashMap<SmolStr, LookupId>,
+    named: BTreeMap<SmolStr, LookupId>,
 }
 
 #[derive(Clone, Debug)]
@@ -162,7 +162,7 @@ pub enum LookupId {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct LookupIdMap {
     // we could consider having this store the final values as u16?
-    mapping: HashMap<LookupId, LookupId>,
+    mapping: BTreeMap<LookupId, LookupId>,
 }
 
 /// Tracks the current lookupflags state
@@ -190,7 +190,7 @@ pub(crate) struct PosSubBuilder<T> {
     // map a feature tag + set of lookups to an index
     features: BTreeMap<(Tag, Vec<LookupIdx>), FeatureIdx>,
     // map a conditionset to a map of target features and the lookups to substitute
-    variations: HashMap<RawConditionSet, HashMap<FeatureIdx, Vec<LookupIdx>>>,
+    variations: BTreeMap<RawConditionSet, BTreeMap<FeatureIdx, Vec<LookupIdx>>>,
 }
 
 impl<T: Default> LookupBuilder<T> {
@@ -569,7 +569,7 @@ impl AllLookups {
 
     pub(crate) fn insert_aalt_lookups(
         &mut self,
-        all_alts: HashMap<GlyphId, Vec<GlyphId>>,
+        all_alts: BTreeMap<GlyphId, Vec<GlyphId>>,
     ) -> Vec<LookupId> {
         let mut single = SingleSubBuilder::default();
         let mut alt = AlternateSubBuilder::default();

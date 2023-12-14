@@ -1,7 +1,7 @@
 //! source files
 
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     ffi::{OsStr, OsString},
     fmt::Debug,
     num::NonZeroU32,
@@ -37,8 +37,8 @@ pub struct Source {
 /// A list of sources in a project.
 #[derive(Debug, Clone, Default)]
 pub struct SourceList {
-    ids: HashMap<OsString, FileId>,
-    sources: HashMap<FileId, Source>,
+    ids: BTreeMap<OsString, FileId>,
+    sources: BTreeMap<FileId, Source>,
 }
 
 pub(crate) struct SourceLoader {

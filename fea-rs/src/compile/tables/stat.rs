@@ -1,6 +1,6 @@
 //! Building the STAT table
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use write_fonts::{
     tables::stat as write_stat,
@@ -69,7 +69,7 @@ impl StatBuilder {
         //HACK: we jump through a bunch of hoops to ensure our output matches
         //feaLib's; in particular we want to add our name table entries grouped by
         //axis.
-        let mut sorted_values = HashMap::<Tag, Vec<_>>::new();
+        let mut sorted_values = BTreeMap::<Tag, Vec<_>>::new();
         let mut sorted_records = self.records.iter().collect::<Vec<_>>();
         sorted_records.sort_by_key(|x| x.ordering);
 

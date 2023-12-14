@@ -1,13 +1,13 @@
 //! helpers for managing tracking language systems
 
-use std::{collections::HashSet, rc::Rc};
+use std::{collections::BTreeSet, rc::Rc};
 
 use write_fonts::types::Tag;
 
 use super::{lookups::FeatureKey, tags};
 
 /// A script/language pair
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[allow(missing_docs)]
 pub struct LanguageSystem {
     pub script: Tag,
@@ -21,7 +21,7 @@ pub struct LanguageSystem {
 pub(crate) struct DefaultLanguageSystems {
     has_explicit_entry: bool,
     // this is me being fancy, because we clone this everytime we start a lookup.
-    items: Rc<HashSet<LanguageSystem>>,
+    items: Rc<BTreeSet<LanguageSystem>>,
 }
 
 impl DefaultLanguageSystems {
@@ -67,7 +67,7 @@ impl Default for DefaultLanguageSystems {
     fn default() -> Self {
         Self {
             has_explicit_entry: false,
-            items: Rc::new(HashSet::from_iter([LanguageSystem::default()])),
+            items: Rc::new(BTreeSet::from_iter([LanguageSystem::default()])),
         }
     }
 }

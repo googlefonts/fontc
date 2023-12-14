@@ -1,6 +1,6 @@
 //! Logic for tracking features during compilation
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use smol_str::SmolStr;
 use write_fonts::{
@@ -19,7 +19,7 @@ use super::{
 pub(crate) struct FeatureLookups {
     /// the base (not variation specific) lookups
     pub(crate) base: Vec<LookupId>,
-    variations: HashMap<ConditionSet, Vec<LookupId>>,
+    variations: BTreeMap<ConditionSet, Vec<LookupId>>,
 }
 
 /// A type to store accumulated features during compilation
@@ -28,11 +28,11 @@ pub(crate) struct FeatureLookups {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AllFeatures {
     features: BTreeMap<FeatureKey, FeatureLookups>,
-    required_features: HashSet<FeatureKey>,
+    required_features: BTreeSet<FeatureKey>,
     pub(crate) size: Option<SizeFeature>,
     pub(crate) aalt: Option<AaltFeature>,
     pub(crate) stylistic_sets: BTreeMap<Tag, Vec<NameSpec>>,
-    pub(crate) character_variants: HashMap<Tag, CvParams>,
+    pub(crate) character_variants: BTreeMap<Tag, CvParams>,
 }
 
 /// Tracking state within a feature block
@@ -45,8 +45,8 @@ pub(crate) struct ActiveFeature {
     condition_set: Option<ConditionSet>,
     default_systems: DefaultLanguageSystems,
     current_lang_sys: Option<LanguageSystem>,
-    lookups: HashMap<LanguageSystem, Vec<LookupId>>,
-    script_default_lookups: HashMap<Tag, Vec<LookupId>>,
+    lookups: BTreeMap<LanguageSystem, Vec<LookupId>>,
+    script_default_lookups: BTreeMap<Tag, Vec<LookupId>>,
 }
 
 /// State required to generate the aalt feature.
@@ -57,9 +57,9 @@ pub(crate) struct ActiveFeature {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AaltFeature {
     aalt_features: Vec<Tag>,
-    pub(crate) all_alts: HashMap<GlyphId, Vec<GlyphId>>,
+    pub(crate) all_alts: BTreeMap<GlyphId, Vec<GlyphId>>,
     // to avoid duplicates
-    all_pairs: HashSet<(GlyphId, GlyphId)>,
+    all_pairs: BTreeSet<(GlyphId, GlyphId)>,
 }
 
 /// Helper for compiling the `size` feature
@@ -98,9 +98,9 @@ pub(crate) enum SpecialVerticalFeatureState {
 /// is maintained in the final output table)
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ConditionSetMap {
-    named_conditionsets: HashMap<SmolStr, ConditionSet>,
+    named_conditionsets: BTreeMap<SmolStr, ConditionSet>,
     // used for sorting
-    reference_order: HashMap<ConditionSet, usize>,
+    reference_order: BTreeMap<ConditionSet, usize>,
 }
 
 impl AllFeatures {
@@ -200,8 +200,8 @@ impl AllFeatures {
     pub(crate) fn build_feature_params(
         &self,
         name_builder: &mut NameBuilder,
-    ) -> HashMap<(Tag, Tag), FeatureParams> {
-        let mut result = HashMap::new();
+    ) -> BTreeMap<(Tag, Tag), FeatureParams> {
+        let mut result = BTreeMap::new();
         if let Some(size) = &self.size {
             result.insert(
                 (tags::GPOS, tags::SIZE),

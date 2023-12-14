@@ -1,7 +1,7 @@
 //! compiling variable fonts
 
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     fmt::{Debug, Display},
 };
 
@@ -31,7 +31,7 @@ pub trait VariationInfo {
     /// as a set of deltas suitable for inclusing in an `ItemVariationStore`.
     fn resolve_variable_metric(
         &self,
-        locations: &HashMap<NormalizedLocation, i16>,
+        locations: &BTreeMap<NormalizedLocation, i16>,
     ) -> Result<DefaultAndVariations, Self::Error>;
 }
 
@@ -58,7 +58,7 @@ impl VariationInfo for NopVariationInfo {
 
     fn resolve_variable_metric(
         &self,
-        _: &HashMap<NormalizedLocation, i16>,
+        _: &BTreeMap<NormalizedLocation, i16>,
     ) -> Result<DefaultAndVariations, Self::Error> {
         Ok((0, Default::default()))
     }
@@ -197,7 +197,7 @@ impl VariationInfo for MockVariationInfo {
 
     fn resolve_variable_metric(
         &self,
-        _locations: &HashMap<NormalizedLocation, i16>,
+        _locations: &BTreeMap<NormalizedLocation, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), Self::Error> {
         Ok(Default::default())
     }

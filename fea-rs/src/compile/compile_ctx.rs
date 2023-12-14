@@ -3,7 +3,7 @@
 //! This is the final stage of the pipeline, which walks the parsed and validated
 //! AST and generates the output.
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap},
     convert::TryInto,
     ops::Range,
 };
@@ -84,13 +84,13 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     active_feature: Option<ActiveFeature>,
     vertical_feature: SpecialVerticalFeatureState,
     script: Option<Tag>,
-    glyph_class_defs: HashMap<SmolStr, GlyphClass>,
-    mark_classes: HashMap<SmolStr, MarkClass>,
-    anchor_defs: HashMap<SmolStr, (Anchor, usize)>,
-    value_record_defs: HashMap<SmolStr, ValueRecord>,
+    glyph_class_defs: BTreeMap<SmolStr, GlyphClass>,
+    mark_classes: BTreeMap<SmolStr, MarkClass>,
+    anchor_defs: BTreeMap<SmolStr, (Anchor, usize)>,
+    value_record_defs: BTreeMap<SmolStr, ValueRecord>,
     conditionset_defs: ConditionSetMap,
-    mark_attach_class_id: HashMap<GlyphSet, u16>,
-    mark_filter_sets: HashMap<GlyphSet, FilterSetId>,
+    mark_attach_class_id: BTreeMap<GlyphSet, u16>,
+    mark_filter_sets: BTreeMap<GlyphSet, FilterSetId>,
 }
 
 impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
@@ -1155,7 +1155,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             return Default::default();
         };
 
-        let mut locations = HashMap::new();
+        let mut locations = BTreeMap::new();
         for metric_loc in metric.location_values() {
             let mut pos = NormalizedLocation::new();
             for axis_value in metric_loc.location().items() {

@@ -3,7 +3,7 @@ use write_fonts::tables::post::Post;
 use super::{GlyphId, GlyphIdent, GlyphName};
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap},
     convert::TryInto,
     iter::FromIterator,
 };
@@ -18,8 +18,8 @@ use std::{
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GlyphMap {
-    names: HashMap<GlyphName, GlyphId>,
-    cids: HashMap<u16, GlyphId>,
+    names: BTreeMap<GlyphName, GlyphId>,
+    cids: BTreeMap<u16, GlyphId>,
 }
 
 impl GlyphMap {
@@ -94,7 +94,7 @@ impl GlyphMap {
 impl FromIterator<u16> for GlyphMap {
     fn from_iter<T: IntoIterator<Item = u16>>(iter: T) -> Self {
         GlyphMap {
-            names: HashMap::new(),
+            names: BTreeMap::new(),
             cids: iter
                 .into_iter()
                 .enumerate()
@@ -112,7 +112,7 @@ impl FromIterator<GlyphName> for GlyphMap {
                 .enumerate()
                 .map(|(i, cid)| (cid, GlyphId::new(i.try_into().unwrap())))
                 .collect(),
-            cids: HashMap::new(),
+            cids: BTreeMap::new(),
         }
     }
 }
@@ -120,8 +120,8 @@ impl FromIterator<GlyphName> for GlyphMap {
 // only intended for testing.
 impl FromIterator<GlyphIdent> for GlyphMap {
     fn from_iter<T: IntoIterator<Item = GlyphIdent>>(iter: T) -> Self {
-        let mut names = HashMap::new();
-        let mut cids = HashMap::new();
+        let mut names = BTreeMap::new();
+        let mut cids = BTreeMap::new();
         for (idx, item) in iter.into_iter().enumerate() {
             let idx = GlyphId::new(idx.try_into().unwrap());
             match item {

@@ -1,6 +1,6 @@
 //! API for the client to manually add additional features
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap};
 
 use write_fonts::{tables::layout::LookupFlag, types::Tag};
 
@@ -32,7 +32,7 @@ pub struct FeatureBuilder<'a> {
     pub(crate) tables: &'a mut Tables,
     pub(crate) lookups: Vec<(LookupId, PositionLookup)>,
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
-    mark_filter_sets: HashMap<GlyphSet, FilterSetId>,
+    mark_filter_sets: BTreeMap<GlyphSet, FilterSetId>,
     // because there may already be defined filter sets from the root fea
     filter_set_id_start: usize,
 }

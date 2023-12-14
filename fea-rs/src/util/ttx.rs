@@ -1,7 +1,7 @@
 //! utilities for compiling and comparing ttx
 
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     env::temp_dir,
     ffi::OsStr,
     fmt::{Debug, Display, Write},
@@ -623,7 +623,7 @@ impl std::fmt::Debug for ReportComparePrinter<'_> {
 }
 
 struct OldResults<'a> {
-    map: Option<HashMap<&'a Path, TestResult>>,
+    map: Option<BTreeMap<&'a Path, TestResult>>,
 }
 
 impl<'a> OldResults<'a> {

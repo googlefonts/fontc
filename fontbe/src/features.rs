@@ -2,7 +2,7 @@
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, BTreeMap},
     ffi::{OsStr, OsString},
     fmt::Display,
     fs,
@@ -283,7 +283,7 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
 
     fn resolve_variable_metric(
         &self,
-        values: &HashMap<NormalizedLocation, i16>,
+        values: &BTreeMap<NormalizedLocation, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
         let var_model = &self.static_metadata.variation_model;
 
@@ -491,7 +491,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeMap, HashSet};
 
     use fea_rs::compile::VariationInfo;
     use fontdrasil::{
@@ -566,7 +566,7 @@ mod tests {
         let var_info = FeaVariationInfo::new(&static_metadata);
 
         let (default, regions) = var_info
-            .resolve_variable_metric(&HashMap::from([
+            .resolve_variable_metric(&BTreeMap::from([
                 (vec![(wght, NormalizedCoord::new(-1.0))].into(), 10),
                 (vec![(wght, NormalizedCoord::new(0.0))].into(), 15),
                 (vec![(wght, NormalizedCoord::new(1.0))].into(), 20),

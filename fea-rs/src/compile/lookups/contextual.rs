@@ -1,7 +1,7 @@
 //! Contextual lookup builders
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap},
     convert::TryInto,
 };
 
@@ -363,7 +363,7 @@ impl ContextBuilder {
 
     fn build_format_1(&self, in_gpos: bool) -> Option<write_layout::SequenceContext> {
         let coverage = self.format_1_coverage()?.build();
-        let mut rule_sets = HashMap::<_, Vec<_>>::new();
+        let mut rule_sets = BTreeMap::<_, Vec<_>>::new();
         for rule in &self.rules {
             let key = rule.first_input_sequence_item().to_glyph().unwrap();
             let seq_lookups = rule.lookup_records(in_gpos);
@@ -506,7 +506,7 @@ impl ChainContextBuilder {
     fn build_format_1(&self, in_gpos: bool) -> Option<write_layout::ChainedSequenceContext> {
         let coverage = self.0.format_1_coverage()?.build();
 
-        let mut rule_sets = HashMap::<_, Vec<_>>::new();
+        let mut rule_sets = BTreeMap::<_, Vec<_>>::new();
         for rule in &self.0.rules {
             let key = rule.first_input_sequence_item().to_glyph().unwrap();
             let seq_lookups = rule.lookup_records(in_gpos);
