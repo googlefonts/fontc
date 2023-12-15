@@ -255,6 +255,7 @@ mod tests {
 
     // to make our tests easier to read, have a special partialeq impl
     impl PartialEq<(u16, &[u16], i16)> for PairPosRule {
+        // (left gid, [right gids], x advance)
         fn eq(&self, other: &(u16, &[u16], i16)) -> bool {
             // bail early because the next comparison allocates -_-
             if self.first.to_u16() != other.0 {
@@ -311,6 +312,7 @@ mod tests {
         // sorted by first glyph
         rules.sort_unstable();
 
+        // (left gid, [right gids], x advance)
         let expected: &[(u16, &[u16], i16)] = &[
             (4, &[7, 8], -808), // from sub3
             (5, &[6], -7),      // sub1

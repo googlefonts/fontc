@@ -178,6 +178,15 @@ impl GlyphSet {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
+        let (left, right) = match self {
+            GlyphSet::Single(gid) => (Some(*gid), None),
+            GlyphSet::Multiple(gids) => (None, Some(gids.iter().copied())),
+        };
+        left.into_iter().chain(right.into_iter().flatten())
+    }
+
     pub(crate) fn printer<'a>(&'a self, names: &'a NameMap) -> impl Display + 'a {
         // A helper for printing one or more glyphs
         struct GlyphPrinter<'a> {

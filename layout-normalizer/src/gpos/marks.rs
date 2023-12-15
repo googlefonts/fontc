@@ -83,7 +83,7 @@ fn append_mark_base_rules(
     flags: LookupFlag,
     filter_set: Option<u16>,
     delta_computer: Option<&DeltaComputer>,
-    visited: &mut HashSet<GlyphId>,
+    seen: &mut HashSet<(GlyphId, GlyphId)>,
     result: &mut Vec<LookupRule>,
 ) -> Result<(), ReadError> {
     let base_array = subtable.base_array()?;
@@ -94,11 +94,6 @@ fn append_mark_base_rules(
     let cov_ix_to_mark_gid: HashMap<_, _> = subtable.mark_coverage()?.iter().enumerate().collect();
 
     for (base_ix, base_glyph) in subtable.base_coverage()?.iter().enumerate() {
-        if !visited.insert(base_glyph) {
-            // this was included in a previous subtable, so skip it
-            continue;
-        }
-
         let base_record = base_records.get(base_ix)?;
         for (base_anchor_ix, base_anchor) in base_record
             .base_anchors(base_array.offset_data())
@@ -119,6 +114,12 @@ fn append_mark_base_rules(
                 let Some(mark_glyph) = cov_ix_to_mark_gid.get(&mark_ix) else {
                     continue;
                 };
+
+                if !seen.insert((base_glyph, *mark_glyph)) {
+                    // this was included in a previous subtable, so skip it
+                    continue;
+                }
+
                 let mark_anchor = mark_record.mark_anchor(mark_array.offset_data())?;
                 let mark_anchor = ResolvedAnchor::new(&mark_anchor, delta_computer)?;
                 marks
@@ -171,7 +172,7 @@ fn append_mark_mark_rules(
     flags: LookupFlag,
     filter_set: Option<u16>,
     delta_computer: Option<&DeltaComputer>,
-    seen: &mut HashSet<GlyphId>,
+    seen: &mut HashSet<(GlyphId, GlyphId)>,
     result: &mut Vec<LookupRule>,
 ) -> Result<(), ReadError> {
     let base_array = subtable.mark2_array()?;
@@ -182,9 +183,6 @@ fn append_mark_mark_rules(
     let cov_ix_to_mark_gid: HashMap<_, _> = subtable.mark1_coverage()?.iter().enumerate().collect();
 
     for (base_ix, base_glyph) in subtable.mark2_coverage()?.iter().enumerate() {
-        if !seen.insert(base_glyph) {
-            continue;
-        }
         let base_record = base_records.get(base_ix).unwrap();
         for (base_anchor_ix, base_anchor) in base_record
             .mark2_anchors(base_array.offset_data())
@@ -205,6 +203,12 @@ fn append_mark_mark_rules(
                 let Some(mark_glyph) = cov_ix_to_mark_gid.get(&mark_ix) else {
                     continue;
                 };
+
+                if !seen.insert((base_glyph, *mark_glyph)) {
+                    // this was included in a previous subtable, so skip it
+                    continue;
+                }
+
                 let mark_anchor = mark_record.mark_anchor(mark_array.offset_data())?;
                 let mark_anchor = ResolvedAnchor::new(&mark_anchor, delta_computer)?;
                 marks
@@ -227,4 +231,121 @@ fn append_mark_mark_rules(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use fea_rs::compile::{Anchor, Builder, MarkToBaseBuilder};
+    use write_fonts::{
+        read::FontRead,
+        tables::{gpos::MarkBasePosFormat1, variations::ivs_builder::VariationStoreBuilder},
+    };
+
+    use super::*;
+
+    trait SimpleMarkBaseBuilder {
+        fn add_mark(&mut self, gid: u16, class: &str, anchor: (i16, i16));
+        fn add_base(&mut self, gid: u16, class: &str, anchor: (i16, i16));
+        fn build_exactly_one_subtable(self) -> MarkBasePosFormat1;
+    }
+
+    impl SimpleMarkBaseBuilder for MarkToBaseBuilder {
+        fn add_mark(&mut self, gid: u16, class: &str, anchor: (i16, i16)) {
+            let anchor = Anchor::new(anchor.0, anchor.1);
+            self.insert_mark(GlyphId::new(gid), class.into(), anchor)
+                .unwrap();
+        }
+
+        fn add_base(&mut self, gid: u16, class: &str, anchor: (i16, i16)) {
+            let anchor = Anchor::new(anchor.0, anchor.1);
+            self.insert_base(GlyphId::new(gid), &class.into(), anchor)
+        }
+
+        fn build_exactly_one_subtable(self) -> MarkBasePosFormat1 {
+            let mut varstore = VariationStoreBuilder::new();
+            let subs = self.build(&mut varstore);
+            assert_eq!(subs.len(), 1);
+            subs.into_iter().next().unwrap()
+        }
+    }
+
+    // further decomposed for testing, so we just see one mark per entry
+    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    struct SimpleAnchorRule {
+        base_gid: GlyphId,
+        mark_gid: GlyphId,
+        base_anchor: (i16, i16),
+        mark_anchor: (i16, i16),
+    }
+    // convert from the enum back to the specific pairpos type.
+    //
+    // I want to change how these types work, but this is fine for now
+    fn extract_rules(rules: Vec<LookupRule>) -> Vec<SimpleAnchorRule> {
+        rules
+            .iter()
+            .map(|rule| match rule {
+                LookupRule::MarkBase(rule) => rule,
+                _ => panic!("only marktobase rules expected here"),
+            })
+            .flat_map(|rule| {
+                rule.marks.iter().flat_map(|(mark_anchor, mark_glyphs)| {
+                    mark_glyphs.iter().map(|mark_gid| SimpleAnchorRule {
+                        mark_gid,
+                        mark_anchor: (mark_anchor.x.default, mark_anchor.y.default),
+                        base_gid: rule.base,
+                        base_anchor: (rule.base_anchor.x.default, rule.base_anchor.y.default),
+                    })
+                })
+            })
+            .collect()
+    }
+    type RawAnchor = (i16, i16);
+
+    impl PartialEq<(u16, RawAnchor, u16, RawAnchor)> for SimpleAnchorRule {
+        fn eq(&self, other: &(u16, RawAnchor, u16, RawAnchor)) -> bool {
+            let (base_id, base_anchor, mark_id, mark_anchor) = *other;
+            self.base_gid.to_u16() == base_id
+                && self.base_anchor == base_anchor
+                && self.mark_gid.to_u16() == mark_id
+                && self.mark_anchor == mark_anchor
+        }
+    }
+
+    #[test]
+    fn first_subtable_wins() {
+        let mut sub1 = MarkToBaseBuilder::default();
+        sub1.add_mark(11, "top", (20, 20));
+        sub1.add_mark(12, "top", (30, 30));
+        sub1.add_base(1, "top", (200, 200));
+
+        let mut sub2 = MarkToBaseBuilder::default();
+        sub2.add_mark(10, "top", (-11, -11));
+        sub2.add_mark(11, "top", (-22, -22)); // dupe, will be ignored
+        sub2.add_base(1, "top", (404, 404));
+
+        let sub1 = sub1.build_exactly_one_subtable();
+        let sub2 = sub2.build_exactly_one_subtable();
+
+        let sub1 = write_fonts::dump_table(&sub1).unwrap();
+        let sub2 = write_fonts::dump_table(&sub2).unwrap();
+
+        let sub1 =
+            write_fonts::read::tables::gpos::MarkBasePosFormat1::read(sub1.as_slice().into())
+                .unwrap();
+        let sub2 =
+            write_fonts::read::tables::gpos::MarkBasePosFormat1::read(sub2.as_slice().into())
+                .unwrap();
+
+        let rules = get_mark_base_rules(&[sub1, sub2], LookupFlag::default(), None, None).unwrap();
+        let mut rules = extract_rules(rules);
+        rules.sort_unstable();
+
+        // (base gid, base anchor, mark gid, mark anchor)
+        let expected: &[(u16, RawAnchor, u16, RawAnchor)] = &[
+            (1, (404, 404), 10, (-11, -11)),
+            (1, (200, 200), 11, (20, 20)),
+            (1, (200, 200), 12, (30, 30)),
+        ];
+        assert_eq!(rules, expected,)
+    }
 }
