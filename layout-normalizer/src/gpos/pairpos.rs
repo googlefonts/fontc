@@ -106,19 +106,20 @@ fn append_pairpos_f1_rules(
     subtable: &PairPosFormat1,
     flags: LookupFlag,
     delta_computer: Option<&DeltaComputer>,
-    seen: &mut HashSet<GlyphId>,
+    seen: &mut HashSet<(GlyphId, GlyphId)>,
     result: &mut Vec<PairPosRule>,
 ) {
     let coverage = subtable.coverage().unwrap();
     let pairsets = subtable.pair_sets();
     for (gid1, pairset) in coverage.iter().zip(pairsets.iter()) {
-        if !seen.insert(gid1) {
-            continue;
-        }
         let pairset = pairset.unwrap();
         for pairrec in pairset.pair_value_records().iter() {
             let pairrec = pairrec.unwrap();
             let gid2 = pairrec.second_glyph();
+            // if a previous subtable had a kern for this pair, skip it here
+            if !seen.insert((gid1, gid2)) {
+                continue;
+            }
             let data = pairset.offset_data();
             let record1 =
                 ResolvedValueRecord::new(pairrec.value_record1, data, delta_computer).unwrap();
@@ -146,7 +147,7 @@ fn append_pairpos_f2_rules(
     subtable: &PairPosFormat2,
     flags: LookupFlag,
     delta_computer: Option<&DeltaComputer>,
-    seen: &mut HashSet<GlyphId>,
+    seen: &mut HashSet<(GlyphId, GlyphId)>,
     result: &mut Vec<PairPosRule>,
 ) {
     let coverage = subtable.coverage().unwrap();
@@ -160,9 +161,6 @@ fn append_pairpos_f2_rules(
     let class1records = subtable.class1_records();
     let data = subtable.offset_data();
     for gid1 in coverage.iter() {
-        if !seen.insert(gid1) {
-            continue;
-        }
         let g1class = class1.get(gid1);
         let class1rec = class1records.get(g1class as _).unwrap();
         for (c2, class2rec) in class1rec.class2_records().iter().enumerate() {
@@ -178,6 +176,9 @@ fn append_pairpos_f2_rules(
                 .flat_map(|c2glyphs| c2glyphs.iter())
                 .copied()
             {
+                if !seen.insert((gid1, gid2)) {
+                    continue;
+                }
                 let record1 =
                     ResolvedValueRecord::new(record1.clone(), data, delta_computer).unwrap();
                 let record2 =
@@ -192,5 +193,132 @@ fn append_pairpos_f2_rules(
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use std::collections::BTreeSet;
+
+    use super::*;
+    use fea_rs::compile::{Builder, PairPosBuilder, ValueRecord};
+    use write_fonts::{
+        read::FontRead,
+        tables::{gpos::PairPos, variations::ivs_builder::VariationStoreBuilder},
+    };
+
+    // a way to bolt a simpler API onto the PairPosBuilder from fea-rs
+    trait SimplePairPosBuilder {
+        fn add_pair(&mut self, gid1: u16, gid2: u16, x_adv: i16);
+        fn add_class(&mut self, class1: &[u16], class2: &[u16], x_adv: i16);
+        fn build_exactly_one_subtable(self) -> PairPos;
+    }
+
+    impl SimplePairPosBuilder for PairPosBuilder {
+        fn add_pair(&mut self, gid1: u16, gid2: u16, x_adv: i16) {
+            self.insert_pair(
+                GlyphId::new(gid1),
+                ValueRecord::new().with_x_advance(x_adv),
+                GlyphId::new(gid2),
+                ValueRecord::new(),
+            )
+        }
+
+        fn add_class(&mut self, class1: &[u16], class2: &[u16], x_adv: i16) {
+            let class1 = class1.iter().copied().map(GlyphId::new).collect();
+            let class2 = class2.iter().copied().map(GlyphId::new).collect();
+            let record1 = ValueRecord::new().with_x_advance(x_adv);
+            self.insert_classes(class1, record1, class2, ValueRecord::new())
+        }
+
+        fn build_exactly_one_subtable(self) -> PairPos {
+            let mut varstore = VariationStoreBuilder::new();
+            let subs = self.build(&mut varstore);
+            assert_eq!(subs.len(), 1);
+            subs.into_iter().next().unwrap()
+        }
+    }
+
+    // convert from the enum back to the specific pairpos type.
+    //
+    // I want to change how these types work, but this is fine for now
+    fn extract_rules(rules: Vec<LookupRule>) -> Vec<PairPosRule> {
+        rules
+            .into_iter()
+            .map(|rule| match rule {
+                LookupRule::PairPos(rule) => rule,
+                _ => panic!("only pairpos rules expected here"),
+            })
+            .collect()
+    }
+
+    // to make our tests easier to read, have a special partialeq impl
+    impl PartialEq<(u16, &[u16], i16)> for PairPosRule {
+        fn eq(&self, other: &(u16, &[u16], i16)) -> bool {
+            // bail early because the next comparison allocates -_-
+            if self.first.to_u16() != other.0 {
+                return false;
+            }
+            let second_matches = match (other.1, &self.second) {
+                ([just_one], GlyphSet::Single(glyph)) => *just_one == glyph.to_u16(),
+                (left, GlyphSet::Multiple(right)) => {
+                    &left
+                        .iter()
+                        .copied()
+                        .map(GlyphId::new)
+                        .collect::<BTreeSet<_>>()
+                        == right
+                }
+                _ => false,
+            };
+            second_matches
+                && self.record1.maybe_just_adv().map(|x| x.default) == Some(other.2)
+                && self.record2.is_zero()
+        }
+    }
+
+    #[test]
+    fn first_subtable_wins() {
+        let mut sub1 = PairPosBuilder::default();
+        sub1.add_pair(5, 6, -7);
+        sub1.add_pair(10, 11, 1011);
+        let sub1 = sub1.build_exactly_one_subtable();
+
+        let mut sub2 = PairPosBuilder::default();
+        // should be ignored:
+        sub2.add_pair(5, 6, -30);
+        sub2.add_pair(5, 7, -30);
+        let sub2 = sub2.build_exactly_one_subtable();
+
+        let mut sub3 = PairPosBuilder::default();
+        // adds (4, 7), (4, 8) and (5, 8) but NOT (5, 7)
+        sub3.add_class(&[4, 5], &[7, 8], -808);
+        let sub3 = sub3.build_exactly_one_subtable();
+
+        // dump tables to bytes
+        let sub1 = write_fonts::dump_table(&sub1).unwrap();
+        let sub2 = write_fonts::dump_table(&sub2).unwrap();
+        let sub3 = write_fonts::dump_table(&sub3).unwrap();
+
+        // read them back as to read-fonts types
+        let sub1 = write_fonts::read::tables::gpos::PairPos::read(sub1.as_slice().into()).unwrap();
+        let sub2 = write_fonts::read::tables::gpos::PairPos::read(sub2.as_slice().into()).unwrap();
+        let sub3 = write_fonts::read::tables::gpos::PairPos::read(sub3.as_slice().into()).unwrap();
+
+        let rules = get_pairpos_rules(&[sub1, sub2, sub3], LookupFlag::empty(), None).unwrap();
+        let mut rules = extract_rules(rules);
+        // sorted by first glyph
+        rules.sort_unstable();
+
+        let expected: &[(u16, &[u16], i16)] = &[
+            (4, &[7, 8], -808), // from sub3
+            (5, &[6], -7),      // sub1
+            (5, &[7], -30),     // sub2
+            (5, &[8], -808),    // sub3
+            (10, &[11], 1011),  //sub 1
+        ];
+
+        assert_eq!(rules, expected);
     }
 }

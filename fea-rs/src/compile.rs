@@ -16,7 +16,7 @@ pub use compiler::Compiler;
 pub use feature_writer::{FeatureBuilder, FeatureProvider, NopFeatureProvider};
 pub use language_system::LanguageSystem;
 pub use lookups::{
-    FeatureKey, LookupId, MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder,
+    Builder, FeatureKey, LookupId, MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder,
     PreviouslyAssignedClass,
 };
 pub use metrics::{Anchor, ValueRecord};
