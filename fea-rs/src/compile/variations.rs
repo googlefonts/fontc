@@ -22,6 +22,9 @@ pub trait VariationInfo {
     /// The error type
     type Error: std::error::Error;
 
+    /// The number of axes in the fvar table
+    fn axis_count(&self) -> u16;
+
     /// If the tag is an axis in this font, it's fvar index and it's [`Axis`] data.
     fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)>;
 
@@ -51,6 +54,10 @@ pub struct NopVariationInfo;
 
 impl VariationInfo for NopVariationInfo {
     type Error = NopError;
+
+    fn axis_count(&self) -> u16 {
+        0
+    }
 
     fn axis(&self, _: Tag) -> Option<(usize, &Axis)> {
         None
@@ -200,6 +207,10 @@ impl VariationInfo for MockVariationInfo {
         _locations: &HashMap<NormalizedLocation, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), Self::Error> {
         Ok(Default::default())
+    }
+
+    fn axis_count(&self) -> u16 {
+        self.axes.len().try_into().unwrap()
     }
 }
 
