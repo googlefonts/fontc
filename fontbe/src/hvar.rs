@@ -166,6 +166,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         let static_metadata = context.ir.static_metadata.get();
         let var_model = &static_metadata.variation_model;
         let glyph_order = context.ir.glyph_order.get();
+        let axis_count = var_model.axes().count().try_into().unwrap();
 
         let mut glyph_width_deltas = AdvanceWidthDeltas::new(var_model.clone());
         for name in glyph_order.iter() {
@@ -177,7 +178,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         // indices (a single ItemVariationData, outer index 0, inner index => gid).
         let mut var_idxes = Vec::new();
         let direct_store = if glyph_width_deltas.is_single_model() {
-            let mut direct_builder = VariationStoreBuilder::new_with_implicit_indices();
+            let mut direct_builder = VariationStoreBuilder::new_with_implicit_indices(axis_count);
             for deltas in glyph_width_deltas.iter() {
                 var_idxes.push(direct_builder.add_deltas(deltas.clone()));
             }
@@ -194,7 +195,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         };
 
         // also build an indirect VariationStore with a DeltaSetIndexMap to map gid => varidx
-        let mut indirect_builder = VariationStoreBuilder::new();
+        let mut indirect_builder = VariationStoreBuilder::new(axis_count);
         for deltas in glyph_width_deltas.iter() {
             var_idxes.push(indirect_builder.add_deltas(deltas.clone()));
         }

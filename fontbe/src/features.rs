@@ -336,6 +336,10 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
 
         Ok((default_value, fears_deltas))
     }
+
+    fn axis_count(&self) -> u16 {
+        self.axes.len().try_into().unwrap()
+    }
 }
 
 impl FeatureWork {

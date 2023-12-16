@@ -184,7 +184,11 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
         // the var store builder is required so that variable metrics/anchors
         // in the GPOS table can be collected into an ItemVariationStore
-        let mut ivs = VariationStoreBuilder::new();
+        let axis_count = self
+            .variation_info
+            .map(|info| info.axis_count())
+            .unwrap_or_default();
+        let mut ivs = VariationStoreBuilder::new(axis_count);
 
         let (mut gsub, mut gpos) = self.lookups.build(&self.features, &mut ivs);
         if !ivs.is_empty() {
