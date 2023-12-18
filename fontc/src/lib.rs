@@ -2639,4 +2639,134 @@ mod tests {
     fn default_caret_slope_in_designspace() {
         assert_hhea_caret_slope("designspace_from_glyphs/SlantedFont.designspace", 1000, 213);
     }
+
+    fn assert_mvar(
+        mvar: write_fonts::read::tables::mvar::Mvar,
+        expected_value_records: Vec<(Tag, u16)>,
+        expected_delta_sets: Vec<Vec<i32>>,
+    ) {
+        assert_eq!(mvar.value_records().len(), expected_value_records.len());
+        let actual_records = mvar
+            .value_records()
+            .iter()
+            .map(|rec| {
+                assert_eq!(rec.delta_set_outer_index(), 0);
+                (rec.value_tag(), rec.delta_set_inner_index())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual_records, expected_value_records);
+
+        let Some(Ok(varstore)) = mvar.item_variation_store() else {
+            panic!("MVAR has no ItemVariationStore?!");
+        };
+
+        assert!(!expected_delta_sets.is_empty());
+        let expected_num_regions = expected_delta_sets[0].len() as u16;
+        assert!(expected_num_regions > 0);
+        assert!(expected_delta_sets
+            .iter()
+            .all(|row| row.len() as u16 == expected_num_regions));
+
+        assert_eq!(
+            varstore.variation_region_list().unwrap().region_count(),
+            expected_num_regions
+        );
+
+        assert_eq!(varstore.item_variation_data_count(), 1);
+        let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
+        assert_eq!(
+            vardata.region_indexes(),
+            (0..expected_num_regions).collect::<Vec<_>>()
+        );
+        assert_eq!(delta_sets(&vardata), expected_delta_sets);
+    }
+
+    #[test]
+    fn mvar_from_designspace() {
+        // This test font contains 3 masters defined over the 'slnt' axis, the middle
+        // one is upright, the other two are slanted backwards and forwards +/-5 degrees.
+        // For the sake of simplicity, all variable global metrics in the back-slanted
+        // master where offset by -5 units, and in the forward-slanted master by +5 units,
+        // so their MVAR records will all point to the same delta set.
+        let compile = TestCompile::compile_source("MVAR.designspace");
+
+        assert_mvar(
+            compile.font().mvar().unwrap(),
+            vec![
+                (Tag::new(b"cpht"), 0),
+                (Tag::new(b"hasc"), 0),
+                (Tag::new(b"hcla"), 0),
+                (Tag::new(b"hcld"), 0),
+                (Tag::new(b"hcof"), 0),
+                (Tag::new(b"hcrn"), 0),
+                (Tag::new(b"hcrs"), 0),
+                (Tag::new(b"hdsc"), 0),
+                (Tag::new(b"hlgp"), 0),
+                (Tag::new(b"sbxo"), 0),
+                (Tag::new(b"sbxs"), 0),
+                (Tag::new(b"sbyo"), 0),
+                (Tag::new(b"sbys"), 0),
+                (Tag::new(b"spxo"), 0),
+                (Tag::new(b"spxs"), 0),
+                (Tag::new(b"spyo"), 0),
+                (Tag::new(b"spys"), 0),
+                (Tag::new(b"stro"), 0),
+                (Tag::new(b"strs"), 0),
+                (Tag::new(b"undo"), 0),
+                (Tag::new(b"unds"), 0),
+                (Tag::new(b"xhgt"), 0),
+            ],
+            vec![vec![5, -5]],
+        );
+    }
+
+    fn assert_mvar_from_glyphs(mvar: write_fonts::read::tables::mvar::Mvar) {
+        // This is almost the same font as MVAR.designspace, with the only difference
+        // that the hhea caret slope rise and offset cannot be tested because Glyphs.app
+        // has no custom parameters for them; only the hhea caret slope run 'hcrn' can
+        // be indirectly tweaked via the italic angle.
+        assert_mvar(
+            mvar,
+            vec![
+                (Tag::new(b"cpht"), 0),
+                (Tag::new(b"hasc"), 0),
+                (Tag::new(b"hcla"), 0),
+                (Tag::new(b"hcld"), 0),
+                // (Tag::new(b"hcof"), ?),
+                // (Tag::new(b"hcrs"), ?),
+                (Tag::new(b"hcrn"), 1),
+                (Tag::new(b"hdsc"), 0),
+                (Tag::new(b"hlgp"), 0),
+                (Tag::new(b"sbxo"), 0),
+                (Tag::new(b"sbxs"), 0),
+                (Tag::new(b"sbyo"), 0),
+                (Tag::new(b"sbys"), 0),
+                (Tag::new(b"spxo"), 0),
+                (Tag::new(b"spxs"), 0),
+                (Tag::new(b"spyo"), 0),
+                (Tag::new(b"spys"), 0),
+                (Tag::new(b"stro"), 0),
+                (Tag::new(b"strs"), 0),
+                (Tag::new(b"undo"), 0),
+                (Tag::new(b"unds"), 0),
+                (Tag::new(b"xhgt"), 0),
+            ],
+            vec![
+                vec![5, -5],   // deltas for everything except 'hcrn'
+                vec![87, -87], // 'hcrn' deltas, derived from the italic angle
+            ],
+        );
+    }
+
+    #[test]
+    fn mvar_from_glyphs2() {
+        let compile = TestCompile::compile_source("glyphs2/MVAR.glyphs");
+        assert_mvar_from_glyphs(compile.font().mvar().unwrap());
+    }
+
+    #[test]
+    fn mvar_from_glyphs3() {
+        let compile = TestCompile::compile_source("glyphs3/MVAR.glyphs");
+        assert_mvar_from_glyphs(compile.font().mvar().unwrap());
+    }
 }
