@@ -758,30 +758,31 @@ pub struct FontMaster {
 }
 
 impl FontMaster {
-    fn read_metric(&self, metric_name: &str) -> Option<OrderedFloat<f64>> {
+    fn read_metric(&self, metric_name: &str) -> Option<f64> {
         self.metric_values
             .get(metric_name)
             .and_then(|metric| metric.pos)
+            .map(|x| x.into_inner())
     }
 
     pub fn ascender(&self) -> Option<f64> {
-        self.read_metric("ascender").map(|x| x.into_inner())
+        self.read_metric("ascender")
     }
 
     pub fn descender(&self) -> Option<f64> {
-        self.read_metric("descender").map(|x| x.into_inner())
+        self.read_metric("descender")
     }
 
     pub fn x_height(&self) -> Option<f64> {
-        self.read_metric("x-height").map(|x| x.into_inner())
+        self.read_metric("x-height")
     }
 
     pub fn cap_height(&self) -> Option<f64> {
-        self.read_metric("cap height").map(|x| x.into_inner())
+        self.read_metric("cap height")
     }
 
     pub fn italic_angle(&self) -> Option<f64> {
-        self.read_metric("italic angle").map(|x| x.into_inner())
+        self.read_metric("italic angle")
     }
 }
 
