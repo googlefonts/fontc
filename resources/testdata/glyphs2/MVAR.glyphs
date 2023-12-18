@@ -1,0 +1,320 @@
+{
+.appVersion = "3228";
+customParameters = (
+{
+name = "Variable Font Origin";
+value = m01;
+},
+{
+name = Axes;
+value = (
+{
+Name = Slant;
+Tag = slnt;
+}
+);
+}
+);
+date = "2023-12-05 15:07:25 +0000";
+familyName = "MVAR Test";
+fontMaster = (
+{
+ascender = 795;
+capHeight = 795;
+custom = "Backslanted 5";
+customParameters = (
+{
+name = typoAscender;
+value = 1025;
+},
+{
+name = typoDescender;
+value = -175;
+},
+{
+name = typoLineGap;
+value = -5;
+},
+{
+name = winAscent;
+value = 1195;
+},
+{
+name = winDescent;
+value = 195;
+},
+{
+name = subscriptXSize;
+value = 645;
+},
+{
+name = subscriptYSize;
+value = 595;
+},
+{
+name = subscriptXOffset;
+value = -5;
+},
+{
+name = subscriptYOffset;
+value = 70;
+},
+{
+name = superscriptXSize;
+value = 645;
+},
+{
+name = superscriptYSize;
+value = 595;
+},
+{
+name = superscriptXOffset;
+value = -5;
+},
+{
+name = superscriptYOffset;
+value = 345;
+},
+{
+name = strikeoutSize;
+value = 45;
+},
+{
+name = strikeoutPosition;
+value = 345;
+},
+{
+name = underlineThickness;
+value = 45;
+},
+{
+name = underlinePosition;
+value = -105;
+},
+{
+name = hheaAscender;
+value = 1025;
+},
+{
+name = hheaDescender;
+value = -175;
+},
+{
+name = hheaLineGap;
+value = -5;
+}
+);
+descender = -175;
+id = "09676F4A-DA0D-41A4-A56F-3296CE3BD503";
+italicAngle = -5;
+weightValue = 5;
+xHeight = 495;
+},
+{
+ascender = 800;
+capHeight = 800;
+customParameters = (
+{
+name = typoAscender;
+value = 1030;
+},
+{
+name = typoDescender;
+value = -170;
+},
+{
+name = typoLineGap;
+value = 0;
+},
+{
+name = winAscent;
+value = 1200;
+},
+{
+name = winDescent;
+value = 200;
+},
+{
+name = subscriptXSize;
+value = 650;
+},
+{
+name = subscriptYSize;
+value = 600;
+},
+{
+name = subscriptXOffset;
+value = 0;
+},
+{
+name = subscriptYOffset;
+value = 75;
+},
+{
+name = superscriptXSize;
+value = 650;
+},
+{
+name = superscriptYSize;
+value = 600;
+},
+{
+name = superscriptXOffset;
+value = 0;
+},
+{
+name = superscriptYOffset;
+value = 350;
+},
+{
+name = strikeoutSize;
+value = 50;
+},
+{
+name = strikeoutPosition;
+value = 350;
+},
+{
+name = underlineThickness;
+value = 50;
+},
+{
+name = underlinePosition;
+value = -100;
+},
+{
+name = hheaAscender;
+value = 1030;
+},
+{
+name = hheaDescender;
+value = -170;
+},
+{
+name = hheaLineGap;
+value = 0;
+}
+);
+descender = -170;
+id = m01;
+weightValue = 0;
+xHeight = 500;
+},
+{
+ascender = 805;
+capHeight = 805;
+custom = "Slanted 5";
+customParameters = (
+{
+name = typoAscender;
+value = 1035;
+},
+{
+name = typoDescender;
+value = -165;
+},
+{
+name = typoLineGap;
+value = 5;
+},
+{
+name = winAscent;
+value = 1205;
+},
+{
+name = winDescent;
+value = 205;
+},
+{
+name = subscriptXSize;
+value = 655;
+},
+{
+name = subscriptYSize;
+value = 605;
+},
+{
+name = subscriptXOffset;
+value = 5;
+},
+{
+name = subscriptYOffset;
+value = 80;
+},
+{
+name = superscriptXSize;
+value = 655;
+},
+{
+name = superscriptYSize;
+value = 605;
+},
+{
+name = superscriptXOffset;
+value = 5;
+},
+{
+name = superscriptYOffset;
+value = 355;
+},
+{
+name = strikeoutSize;
+value = 55;
+},
+{
+name = strikeoutPosition;
+value = 355;
+},
+{
+name = underlineThickness;
+value = 55;
+},
+{
+name = underlinePosition;
+value = -95;
+},
+{
+name = hheaAscender;
+value = 1035;
+},
+{
+name = hheaDescender;
+value = -165;
+},
+{
+name = hheaLineGap;
+value = 5;
+}
+);
+descender = -165;
+id = "C47D3F41-6C67-4D60-9BA7-D8A1B8C99700";
+italicAngle = 5;
+weightValue = -5;
+xHeight = 505;
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2023-12-07 13:14:38 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "09676F4A-DA0D-41A4-A56F-3296CE3BD503";
+width = 200;
+},
+{
+layerId = "C47D3F41-6C67-4D60-9BA7-D8A1B8C99700";
+width = 200;
+}
+);
+unicode = 0020;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
