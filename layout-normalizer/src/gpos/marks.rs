@@ -262,7 +262,7 @@ mod tests {
         }
 
         fn build_exactly_one_subtable(self) -> MarkBasePosFormat1 {
-            let mut varstore = VariationStoreBuilder::new();
+            let mut varstore = VariationStoreBuilder::new(0);
             let subs = self.build(&mut varstore);
             assert_eq!(subs.len(), 1);
             subs.into_iter().next().unwrap()
