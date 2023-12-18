@@ -185,7 +185,7 @@ jobs:
           token: ${{ secrets.GS_READ_FONTC }}
 
       - name: Pin SOURCE_DATE_EPOCH
-        run: export SOURCE_DATE_EPOCH=$(date +%s)
+        run: echo "SOURCE_DATE_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Compile me once, shame on you
         run: |
