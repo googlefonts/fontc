@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="slnt" name="Slant" minimum="-5" maximum="5" default="0"/>
+  </axes>
+  <sources>
+    <source filename="MVAR-Backslanted5.ufo" name="MVAR Backslanted 5">
+      <location>
+        <dimension name="Slant" xvalue="5"/>
+      </location>
+    </source>
+    <source filename="MVAR-Regular.ufo" name="MVAR Regular">
+      <location>
+        <dimension name="Slant" xvalue="0"/>
+      </location>
+    </source>
+    <source filename="MVAR-Slanted5.ufo" name="MVAR Slanted 5">
+      <location>
+        <dimension name="Slant" xvalue="-5"/>
+      </location>
+    </source>
+  </sources>
+</designspace>
