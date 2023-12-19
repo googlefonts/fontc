@@ -188,39 +188,12 @@ fn append_mark_mark_rules(
 
 #[cfg(test)]
 mod tests {
-    use fea_rs::compile::{Anchor, Builder, MarkToBaseBuilder};
-    use write_fonts::{
-        read::FontRead,
-        tables::{gpos::MarkBasePosFormat1, variations::ivs_builder::VariationStoreBuilder},
-    };
+    use fea_rs::compile::MarkToBaseBuilder;
+    use write_fonts::read::FontRead;
+
+    use crate::test_helpers::SimpleMarkBaseBuilder;
 
     use super::*;
-
-    trait SimpleMarkBaseBuilder {
-        fn add_mark(&mut self, gid: u16, class: &str, anchor: (i16, i16));
-        fn add_base(&mut self, gid: u16, class: &str, anchor: (i16, i16));
-        fn build_exactly_one_subtable(self) -> MarkBasePosFormat1;
-    }
-
-    impl SimpleMarkBaseBuilder for MarkToBaseBuilder {
-        fn add_mark(&mut self, gid: u16, class: &str, anchor: (i16, i16)) {
-            let anchor = Anchor::new(anchor.0, anchor.1);
-            self.insert_mark(GlyphId::new(gid), class.into(), anchor)
-                .unwrap();
-        }
-
-        fn add_base(&mut self, gid: u16, class: &str, anchor: (i16, i16)) {
-            let anchor = Anchor::new(anchor.0, anchor.1);
-            self.insert_base(GlyphId::new(gid), &class.into(), anchor)
-        }
-
-        fn build_exactly_one_subtable(self) -> MarkBasePosFormat1 {
-            let mut varstore = VariationStoreBuilder::new(0);
-            let subs = self.build(&mut varstore);
-            assert_eq!(subs.len(), 1);
-            subs.into_iter().next().unwrap()
-        }
-    }
 
     // further decomposed for testing, so we just see one mark per entry
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

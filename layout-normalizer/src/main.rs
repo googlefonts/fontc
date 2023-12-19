@@ -10,6 +10,9 @@ mod gpos;
 mod gsub;
 mod variations;
 
+#[cfg(test)]
+mod test_helpers;
+
 use std::{fs::File, io::Write};
 
 use clap::Parser;
