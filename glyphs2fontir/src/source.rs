@@ -378,7 +378,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
         let italic_angle = font
             .default_master()
             .italic_angle()
-            .map(|v| -v.into_inner())
+            .map(|v| -v)
             .unwrap_or(0.0);
 
         let mut static_metadata = StaticMetadata::new(
@@ -459,16 +459,26 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
         let mut metrics = GlobalMetrics::new(
             static_metadata.default_location().clone(),
             static_metadata.units_per_em,
-            default_master.x_height().map(|v| v.0 as f32),
-            default_master.ascender().map(|v| v.0 as f32),
-            default_master.descender().map(|v| v.0 as f32),
+            default_master.x_height(),
+            default_master.ascender(),
+            default_master.descender(),
             static_metadata.italic_angle.into_inner(),
         );
 
         for master in font.masters.iter() {
             let pos = font_info.locations.get(&master.axes_values).unwrap();
-            metrics.set_if_some(GlobalMetric::Ascender, pos.clone(), master.ascender());
-            metrics.set_if_some(GlobalMetric::Descender, pos.clone(), master.descender());
+            if !pos.is_default() {
+                metrics.populate_defaults(
+                    pos,
+                    static_metadata.units_per_em,
+                    master.x_height(),
+                    master.ascender(),
+                    master.descender(),
+                    // turn clockwise angle counter-clockwise
+                    master.italic_angle().map(|v| -v),
+                );
+            }
+
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), master.cap_height());
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), master.x_height());
             metrics.set_if_some(
