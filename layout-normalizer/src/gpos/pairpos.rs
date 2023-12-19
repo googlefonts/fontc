@@ -14,7 +14,7 @@ use crate::{common::GlyphSet, glyph_names::NameMap, variations::DeltaComputer};
 
 use super::{PrintNames, ResolvedValueRecord};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq)]
 pub(super) struct PairPosRule {
     first: GlyphId,
     second: GlyphSet,
@@ -43,6 +43,18 @@ impl Debug for PairPosRule {
             .field("first", &self.first)
             .field("second", &self.second)
             .finish_non_exhaustive()
+    }
+}
+
+impl Ord for PairPosRule {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (&self.first, &self.second).cmp(&(&other.first, &other.second))
+    }
+}
+
+impl PartialOrd for PairPosRule {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

@@ -13,7 +13,7 @@ use crate::{common::GlyphSet, glyph_names::NameMap, variations::DeltaComputer};
 
 use super::{PrintNames, ResolvedAnchor};
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct MarkAttachmentRule {
     base: GlyphId,
     base_anchor: ResolvedAnchor,
@@ -32,6 +32,17 @@ impl PrintNames for MarkAttachmentRule {
             write!(f, "  {anchor} {}", glyphs.printer(names))?;
         }
         Ok(())
+    }
+}
+impl Ord for MarkAttachmentRule {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (&self.base, &self.marks.values().next()).cmp(&(&other.base, &other.marks.values().next()))
+    }
+}
+
+impl PartialOrd for MarkAttachmentRule {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

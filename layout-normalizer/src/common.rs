@@ -56,7 +56,7 @@ pub(crate) struct Lookup<Rule> {
 }
 
 /// a single rule, carrying along info stored in its parent lookup
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SingleRule<'a, Rule> {
     pub rule: &'a Rule,
     pub lookup_id: u16,
@@ -303,6 +303,19 @@ impl<T: PrintNames> SingleRule<'_, T> {
             names,
             item: self.rule,
         }
+    }
+}
+
+// if two rules are glyphwise equal, sort by lookup id
+impl<T: Ord> Ord for SingleRule<'_, T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.rule, self.lookup_id).cmp(&(other.rule, other.lookup_id))
+    }
+}
+
+impl<T: Ord> PartialOrd for SingleRule<'_, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
