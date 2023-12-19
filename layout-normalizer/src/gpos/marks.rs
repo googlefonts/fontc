@@ -14,7 +14,7 @@ use crate::{common::GlyphSet, glyph_names::NameMap, variations::DeltaComputer};
 use super::{PrintNames, ResolvedAnchor};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct MarkAttachmentRule {
+pub(crate) struct MarkAttachmentRule {
     base: GlyphId,
     base_anchor: ResolvedAnchor,
     marks: BTreeMap<ResolvedAnchor, GlyphSet>,
@@ -32,6 +32,24 @@ impl PrintNames for MarkAttachmentRule {
             write!(f, "  {anchor} {}", glyphs.printer(names))?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl MarkAttachmentRule {
+    pub(crate) fn iter_simple_rules(
+        &self,
+    ) -> impl Iterator<Item = super::test_helpers::SimpleAnchorRule> + '_ {
+        self.marks.iter().flat_map(|(mark_anchor, mark_glyphs)| {
+            mark_glyphs
+                .iter()
+                .map(|mark_gid| super::test_helpers::SimpleAnchorRule {
+                    mark_gid,
+                    mark_anchor: (mark_anchor.x.default, mark_anchor.y.default),
+                    base_gid: self.base,
+                    base_anchor: (self.base_anchor.x.default, self.base_anchor.y.default),
+                })
+        })
     }
 }
 
@@ -182,77 +200,12 @@ fn append_mark_mark_rules(
 
 #[cfg(test)]
 mod tests {
-    use fea_rs::compile::{Anchor, Builder, MarkToBaseBuilder};
-    use write_fonts::{
-        read::FontRead,
-        tables::{gpos::MarkBasePosFormat1, variations::ivs_builder::VariationStoreBuilder},
-    };
+    use fea_rs::compile::MarkToBaseBuilder;
+    use write_fonts::read::FontRead;
+
+    use super::super::test_helpers::{self, RawAnchor, SimpleMarkBaseBuilder};
 
     use super::*;
-
-    trait SimpleMarkBaseBuilder {
-        fn add_mark(&mut self, gid: u16, class: &str, anchor: (i16, i16));
-        fn add_base(&mut self, gid: u16, class: &str, anchor: (i16, i16));
-        fn build_exactly_one_subtable(self) -> MarkBasePosFormat1;
-    }
-
-    impl SimpleMarkBaseBuilder for MarkToBaseBuilder {
-        fn add_mark(&mut self, gid: u16, class: &str, anchor: (i16, i16)) {
-            let anchor = Anchor::new(anchor.0, anchor.1);
-            self.insert_mark(GlyphId::new(gid), class.into(), anchor)
-                .unwrap();
-        }
-
-        fn add_base(&mut self, gid: u16, class: &str, anchor: (i16, i16)) {
-            let anchor = Anchor::new(anchor.0, anchor.1);
-            self.insert_base(GlyphId::new(gid), &class.into(), anchor)
-        }
-
-        fn build_exactly_one_subtable(self) -> MarkBasePosFormat1 {
-            let mut varstore = VariationStoreBuilder::new(0);
-            let subs = self.build(&mut varstore);
-            assert_eq!(subs.len(), 1);
-            subs.into_iter().next().unwrap()
-        }
-    }
-
-    // further decomposed for testing, so we just see one mark per entry
-    #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-    struct SimpleAnchorRule {
-        base_gid: GlyphId,
-        mark_gid: GlyphId,
-        base_anchor: (i16, i16),
-        mark_anchor: (i16, i16),
-    }
-    // convert from the enum back to the specific pairpos type.
-    //
-    // I want to change how these types work, but this is fine for now
-    fn extract_rules(rules: Vec<MarkAttachmentRule>) -> Vec<SimpleAnchorRule> {
-        rules
-            .iter()
-            .flat_map(|rule| {
-                rule.marks.iter().flat_map(|(mark_anchor, mark_glyphs)| {
-                    mark_glyphs.iter().map(|mark_gid| SimpleAnchorRule {
-                        mark_gid,
-                        mark_anchor: (mark_anchor.x.default, mark_anchor.y.default),
-                        base_gid: rule.base,
-                        base_anchor: (rule.base_anchor.x.default, rule.base_anchor.y.default),
-                    })
-                })
-            })
-            .collect()
-    }
-    type RawAnchor = (i16, i16);
-
-    impl PartialEq<(u16, RawAnchor, u16, RawAnchor)> for SimpleAnchorRule {
-        fn eq(&self, other: &(u16, RawAnchor, u16, RawAnchor)) -> bool {
-            let (base_id, base_anchor, mark_id, mark_anchor) = *other;
-            self.base_gid.to_u16() == base_id
-                && self.base_anchor == base_anchor
-                && self.mark_gid.to_u16() == mark_id
-                && self.mark_anchor == mark_anchor
-        }
-    }
 
     #[test]
     fn first_subtable_wins() {
@@ -280,7 +233,7 @@ mod tests {
                 .unwrap();
 
         let rules = get_mark_base_rules(&[sub1, sub2], None).unwrap();
-        let mut rules = extract_rules(rules);
+        let mut rules = test_helpers::SimpleAnchorRule::from_mark_rules(&rules);
         rules.sort_unstable();
 
         // (base gid, base anchor, mark gid, mark anchor)

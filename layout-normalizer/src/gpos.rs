@@ -19,10 +19,13 @@ use crate::{
     variations::DeltaComputer,
 };
 
-use self::{marks::MarkAttachmentRule, pairpos::PairPosRule};
-
 mod marks;
 mod pairpos;
+
+#[cfg(test)]
+mod test_helpers;
+
+use self::{marks::MarkAttachmentRule, pairpos::PairPosRule};
 
 pub(crate) fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> Result<(), Error> {
     writeln!(f, "# GPOS #")?;

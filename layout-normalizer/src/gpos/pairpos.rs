@@ -178,45 +178,12 @@ fn append_pairpos_f2_rules(
 mod tests {
 
     use std::collections::BTreeSet;
+    use write_fonts::read::FontRead;
+
+    use super::super::test_helpers::SimplePairPosBuilder;
+    use fea_rs::compile::PairPosBuilder;
 
     use super::*;
-    use fea_rs::compile::{Builder, PairPosBuilder, ValueRecord};
-    use write_fonts::{
-        read::FontRead,
-        tables::{gpos::PairPos, variations::ivs_builder::VariationStoreBuilder},
-    };
-
-    // a way to bolt a simpler API onto the PairPosBuilder from fea-rs
-    trait SimplePairPosBuilder {
-        fn add_pair(&mut self, gid1: u16, gid2: u16, x_adv: i16);
-        fn add_class(&mut self, class1: &[u16], class2: &[u16], x_adv: i16);
-        fn build_exactly_one_subtable(self) -> PairPos;
-    }
-
-    impl SimplePairPosBuilder for PairPosBuilder {
-        fn add_pair(&mut self, gid1: u16, gid2: u16, x_adv: i16) {
-            self.insert_pair(
-                GlyphId::new(gid1),
-                ValueRecord::new().with_x_advance(x_adv),
-                GlyphId::new(gid2),
-                ValueRecord::new(),
-            )
-        }
-
-        fn add_class(&mut self, class1: &[u16], class2: &[u16], x_adv: i16) {
-            let class1 = class1.iter().copied().map(GlyphId::new).collect();
-            let class2 = class2.iter().copied().map(GlyphId::new).collect();
-            let record1 = ValueRecord::new().with_x_advance(x_adv);
-            self.insert_classes(class1, record1, class2, ValueRecord::new())
-        }
-
-        fn build_exactly_one_subtable(self) -> PairPos {
-            let mut varstore = VariationStoreBuilder::new(0);
-            let subs = self.build(&mut varstore);
-            assert_eq!(subs.len(), 1);
-            subs.into_iter().next().unwrap()
-        }
-    }
 
     // to make our tests easier to read, have a special partialeq impl
     impl PartialEq<(u16, &[u16], i16)> for PairPosRule {
