@@ -380,6 +380,7 @@ impl GlobalMetric {
             GlobalMetric::Os2WinAscent => Some(Tag::new(b"hcla")),
             GlobalMetric::Os2WinDescent => Some(Tag::new(b"hcld")),
             // TODO: support vertical global metrics
+            // https://github.com/googlefonts/fontc/issues/668
             // GlobalMetric::VheaAscender => Some(Tag::new(b"vasc")),
             // GlobalMetric::VheaDescender => Some(Tag::new(b"vdsc")),
             // GlobalMetric::VheaLineGap => Some(Tag::new(b"vlgp")),

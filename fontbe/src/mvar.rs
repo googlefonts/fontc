@@ -144,7 +144,8 @@ impl Work<Context, AnyWorkId, Error> for MvarWork {
 
         let mut mvar_builder = MvarBuilder::new(var_model.clone());
         for (metric, values) in metrics.iter() {
-            // maybe we should get rid of GlobalMetric variants that aren't MVAR-relevant?
+            // some of the GlobalMetric variants are not MVAR-relevant, e.g.
+            // hhea ascender/descender/lineGap so we just skip those
             if let Some(mvar_tag) = metric.mvar_tag() {
                 mvar_builder.add_sources(mvar_tag, values)?;
             }
