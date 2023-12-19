@@ -8,6 +8,7 @@ use std::{
 
 use write_fonts::{
     read::tables::layout::{FeatureList, ScriptList},
+    tables::layout::LookupFlag,
     types::{GlyphId, Tag},
 };
 
@@ -16,6 +17,11 @@ use crate::glyph_names::NameMap;
 pub(crate) struct LanguageSystem {
     script: Tag,
     lang: Tag,
+}
+
+/// A trait for things that need a gid->name map to be printed
+pub(crate) trait PrintNames {
+    fn fmt_names(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result;
 }
 
 /// A set of lookups for a specific feature and language system
@@ -32,6 +38,30 @@ pub(crate) struct Feature {
 pub(crate) enum GlyphSet {
     Single(GlyphId),
     Multiple(BTreeSet<GlyphId>),
+}
+
+/// A decomposed lookup.
+///
+/// This contains all the rules from all subtables in a lookup, normalized.
+///
+/// 'normalized' means that we don't care about the different subtable formats,
+/// and that we do things like discard rules that occur in later subtables if
+/// that rule would not be reached by a shaping implementation.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Lookup<Rule> {
+    pub lookup_id: u16,
+    flag: LookupFlag,
+    filter_set: Option<u16>,
+    rules: Vec<Rule>,
+}
+
+/// a single rule, carrying along info stored in its parent lookup
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct SingleRule<'a, Rule> {
+    pub rule: &'a Rule,
+    pub lookup_id: u16,
+    flag: LookupFlag,
+    filter_set: Option<u16>,
 }
 
 impl LanguageSystem {
@@ -221,6 +251,57 @@ impl GlyphSet {
         GlyphPrinter {
             glyphs: self,
             names,
+        }
+    }
+}
+
+impl<Rule> Lookup<Rule> {
+    pub fn new(
+        lookup_id: usize,
+        rules: Vec<Rule>,
+        flag: LookupFlag,
+        filter_set: impl Into<Option<u16>>,
+    ) -> Self {
+        Lookup {
+            lookup_id: lookup_id.try_into().unwrap(),
+            flag,
+            filter_set: filter_set.into(),
+            rules,
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = SingleRule<Rule>> + '_ {
+        self.rules.iter().map(|rule| SingleRule {
+            lookup_id: self.lookup_id,
+            flag: self.flag,
+            filter_set: self.filter_set,
+            rule,
+        })
+    }
+}
+
+impl<T> SingleRule<'_, T> {
+    pub fn lookup_flags(&self) -> (LookupFlag, Option<u16>) {
+        (self.flag, self.filter_set)
+    }
+}
+
+impl<T: PrintNames> SingleRule<'_, T> {
+    pub fn printer<'a>(&'a self, names: &'a NameMap) -> impl std::fmt::Display + 'a {
+        struct Printer<'a, T> {
+            names: &'a NameMap,
+            item: &'a T,
+        }
+
+        impl<T: PrintNames> std::fmt::Display for Printer<'_, T> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.item.fmt_names(f, self.names)
+            }
+        }
+
+        Printer {
+            names,
+            item: self.rule,
         }
     }
 }
