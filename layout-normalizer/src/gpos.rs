@@ -449,3 +449,63 @@ impl Display for ResolvedAnchor {
         write!(f, "@(x: {}, y: {})", self.x, self.y)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use fea_rs::compile::PairPosBuilder;
+
+    use super::*;
+    use crate::test_helpers::SimplePairPosBuilder;
+    use write_fonts::{
+        read::FontRead,
+        tables::{gpos as wgpos, layout as wlayout},
+    };
+
+    fn make_lookup(subtable: wgpos::PairPos) -> wgpos::PositionLookup {
+        wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![subtable], 0))
+    }
+
+    #[test]
+    fn merge_pairpos_lookups() {
+        let mut sub1 = PairPosBuilder::default();
+        sub1.add_pair(1, 4, 20);
+        sub1.add_pair(1, 5, -10);
+        let sub1 = sub1.build_exactly_one_subtable();
+
+        let mut sub2 = PairPosBuilder::default();
+        // this class overlaps with the previous for the pair (1, 4)
+        sub2.add_class(&[1, 2], &[3, 4], 7);
+        let sub2 = sub2.build_exactly_one_subtable();
+
+        let lookup1 = make_lookup(sub1);
+        let lookup2 = make_lookup(sub2);
+        let lookup_list = wlayout::LookupList::new(vec![lookup1, lookup2]);
+        let lookup_list = write_fonts::dump_table(&lookup_list).unwrap();
+        let lookup_list = write_fonts::read::tables::gpos::PositionLookupList::read(
+            lookup_list.as_slice().into(),
+        )
+        .unwrap();
+
+        let rules = get_lookup_rules(&lookup_list, None);
+
+        let our_rules = rules
+            .pairpos_rules(&[0, 1])
+            .into_iter()
+            .map(|r| r.rule.to_owned())
+            .collect::<Vec<_>>();
+
+        // (left gid, [right gids], x advance)
+        //let expected: &[(u16, &[u16], i16)] = &[
+        //(1, &[3], 7),
+        //(1, &[4], 27),
+        //(1, &[5], -10),  // sub1
+        //(2, &[3, 4], 7), // sub2
+        //];
+
+        //let expected = "# 4 PairPos rules\n\
+        //# lookupflag\n\
+        //"
+
+        assert_eq!(our_rules, expected);
+    }
+}

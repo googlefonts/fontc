@@ -21,6 +21,15 @@ include!(concat!(env!("OUT_DIR"), "/glyph_names_codegen.rs"));
 pub struct NameMap(pub(crate) BTreeMap<GlyphId, SmolStr>);
 
 impl NameMap {
+    /// a map that just uses the numeric id as the 'name'
+    #[cfg(test)]
+    pub(crate) fn new_for_test() -> Self {
+        let inner = (0u16..=1000)
+            .map(|id| (GlyphId::new(id), SmolStr::new(1.to_string())))
+            .collect();
+        Self(inner)
+    }
+
     /// Returns a human readable name for this gid.
     ///
     /// This will panic if the gid is not in the font used to create this map.
