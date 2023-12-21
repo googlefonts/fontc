@@ -1,22 +1,18 @@
 use std::{
-    any::Any,
     collections::{HashMap, HashSet},
     fmt::Debug,
 };
 
 use indexmap::IndexMap;
 use write_fonts::read::{
-    tables::{
-        gpos::{PairPos, PairPosFormat1, PairPosFormat2, ValueRecord},
-        layout::LookupFlag,
-    },
+    tables::gpos::{PairPos, PairPosFormat1, PairPosFormat2, ValueRecord},
     types::GlyphId,
     ReadError,
 };
 
 use crate::{common::GlyphSet, glyph_names::NameMap, variations::DeltaComputer};
 
-use super::{AnyRule, LookupRule, LookupType, ResolvedValueRecord};
+use super::{PrintNames, ResolvedValueRecord};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct PairPosRule {
@@ -24,15 +20,10 @@ pub(super) struct PairPosRule {
     second: GlyphSet,
     record1: ResolvedValueRecord,
     record2: ResolvedValueRecord,
-    flags: LookupFlag,
 }
 
-impl AnyRule for PairPosRule {
-    fn lookup_flags(&self) -> (LookupFlag, Option<u16>) {
-        (self.flags, None)
-    }
-
-    fn fmt_impl(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
+impl PrintNames for PairPosRule {
+    fn fmt_names(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
         let g1 = names.get(self.first);
         let g2 = self.second.printer(names);
         let v1 = &self.record1;
@@ -43,14 +34,6 @@ impl AnyRule for PairPosRule {
         } else {
             Ok(())
         }
-    }
-
-    fn lookup_type(&self) -> LookupType {
-        LookupType::PairPos
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -64,7 +47,7 @@ impl Debug for PairPosRule {
 }
 
 // combine any rules where the first glyph and the value records are identical.
-fn combine_rules(rules: Vec<PairPosRule>) -> Vec<LookupRule> {
+fn combine_rules(rules: Vec<PairPosRule>) -> Vec<PairPosRule> {
     let mut seen = IndexMap::<_, PairPosRule>::new();
     for rule in rules {
         match seen.entry((rule.first, rule.record1.clone(), rule.record2.clone())) {
@@ -76,14 +59,13 @@ fn combine_rules(rules: Vec<PairPosRule>) -> Vec<LookupRule> {
             }
         }
     }
-    seen.into_values().map(LookupRule::PairPos).collect()
+    seen.into_values().collect()
 }
 
 pub(super) fn get_pairpos_rules(
     subtables: &[PairPos],
-    flags: LookupFlag,
     delta_computer: Option<&DeltaComputer>,
-) -> Result<Vec<LookupRule>, ReadError> {
+) -> Result<Vec<PairPosRule>, ReadError> {
     // so we only take the first coverage hit in each subtable, which means
     // we just need track what we've seen.
     let mut seen = HashSet::new();
@@ -91,10 +73,10 @@ pub(super) fn get_pairpos_rules(
     for sub in subtables.iter() {
         match sub {
             PairPos::Format1(sub) => {
-                append_pairpos_f1_rules(sub, flags, delta_computer, &mut seen, &mut result);
+                append_pairpos_f1_rules(sub, delta_computer, &mut seen, &mut result);
             }
             PairPos::Format2(sub) => {
-                append_pairpos_f2_rules(sub, flags, delta_computer, &mut seen, &mut result);
+                append_pairpos_f2_rules(sub, delta_computer, &mut seen, &mut result);
             }
         }
     }
@@ -104,7 +86,6 @@ pub(super) fn get_pairpos_rules(
 // okay so we want to return some heterogeneous type here hmhm
 fn append_pairpos_f1_rules(
     subtable: &PairPosFormat1,
-    flags: LookupFlag,
     delta_computer: Option<&DeltaComputer>,
     seen: &mut HashSet<(GlyphId, GlyphId)>,
     result: &mut Vec<PairPosRule>,
@@ -130,7 +111,6 @@ fn append_pairpos_f1_rules(
                 second: gid2.into(),
                 record1,
                 record2,
-                flags,
             })
         }
     }
@@ -145,7 +125,6 @@ fn is_noop(value_record: &ValueRecord) -> bool {
 
 fn append_pairpos_f2_rules(
     subtable: &PairPosFormat2,
-    flags: LookupFlag,
     delta_computer: Option<&DeltaComputer>,
     seen: &mut HashSet<(GlyphId, GlyphId)>,
     result: &mut Vec<PairPosRule>,
@@ -189,7 +168,6 @@ fn append_pairpos_f2_rules(
                     second: gid2.into(),
                     record1: record1.clone(),
                     record2: record2.clone(),
-                    flags,
                 })
             }
         }
@@ -238,19 +216,6 @@ mod tests {
             assert_eq!(subs.len(), 1);
             subs.into_iter().next().unwrap()
         }
-    }
-
-    // convert from the enum back to the specific pairpos type.
-    //
-    // I want to change how these types work, but this is fine for now
-    fn extract_rules(rules: Vec<LookupRule>) -> Vec<PairPosRule> {
-        rules
-            .into_iter()
-            .map(|rule| match rule {
-                LookupRule::PairPos(rule) => rule,
-                _ => panic!("only pairpos rules expected here"),
-            })
-            .collect()
     }
 
     // to make our tests easier to read, have a special partialeq impl
@@ -307,9 +272,7 @@ mod tests {
         let sub2 = write_fonts::read::tables::gpos::PairPos::read(sub2.as_slice().into()).unwrap();
         let sub3 = write_fonts::read::tables::gpos::PairPos::read(sub3.as_slice().into()).unwrap();
 
-        let rules = get_pairpos_rules(&[sub1, sub2, sub3], LookupFlag::empty(), None).unwrap();
-        let mut rules = extract_rules(rules);
-        // sorted by first glyph
+        let mut rules = get_pairpos_rules(&[sub1, sub2, sub3], None).unwrap();
         rules.sort_unstable();
 
         // (left gid, [right gids], x advance)

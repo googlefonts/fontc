@@ -1,38 +1,27 @@
 use std::{
-    any::Any,
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
 };
 
 use write_fonts::read::{
-    tables::{
-        gpos::{MarkBasePosFormat1, MarkMarkPosFormat1},
-        layout::LookupFlag,
-    },
+    tables::gpos::{MarkBasePosFormat1, MarkMarkPosFormat1},
     types::GlyphId,
     ReadError,
 };
 
 use crate::{common::GlyphSet, glyph_names::NameMap, variations::DeltaComputer};
 
-use super::{AnyRule, LookupRule, LookupType, ResolvedAnchor};
+use super::{PrintNames, ResolvedAnchor};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct MarkAttachmentRule {
-    kind: LookupType,
-    flags: LookupFlag,
     base: GlyphId,
     base_anchor: ResolvedAnchor,
     marks: BTreeMap<ResolvedAnchor, GlyphSet>,
-    filter_set: Option<u16>,
 }
 
-impl AnyRule for MarkAttachmentRule {
-    fn lookup_flags(&self) -> (LookupFlag, Option<u16>) {
-        (self.flags, self.filter_set)
-    }
-
-    fn fmt_impl(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
+impl PrintNames for MarkAttachmentRule {
+    fn fmt_names(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
         let base_name = names.get(self.base);
         writeln!(f, "{base_name} {}", self.base_anchor)?;
         for (i, (anchor, glyphs)) in self.marks.iter().enumerate() {
@@ -44,35 +33,18 @@ impl AnyRule for MarkAttachmentRule {
         }
         Ok(())
     }
-
-    fn lookup_type(&self) -> LookupType {
-        self.kind
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 }
 
 pub(super) fn get_mark_base_rules(
     subtables: &[MarkBasePosFormat1],
-    flags: LookupFlag,
-    filter_set: Option<u16>,
     delta_computer: Option<&DeltaComputer>,
-) -> Result<Vec<LookupRule>, ReadError> {
+) -> Result<Vec<MarkAttachmentRule>, ReadError> {
     // so we only take the first coverage hit in each subtable, which means
     // we just need track what we've seen.
     let mut seen = HashSet::new();
     let mut result = Vec::new();
     for sub in subtables.iter() {
-        append_mark_base_rules(
-            sub,
-            flags,
-            filter_set,
-            delta_computer,
-            &mut seen,
-            &mut result,
-        )?;
+        append_mark_base_rules(sub, delta_computer, &mut seen, &mut result)?;
     }
     Ok(result)
 }
@@ -80,11 +52,9 @@ pub(super) fn get_mark_base_rules(
 // append the rules for a single subtable
 fn append_mark_base_rules(
     subtable: &MarkBasePosFormat1,
-    flags: LookupFlag,
-    filter_set: Option<u16>,
     delta_computer: Option<&DeltaComputer>,
     seen: &mut HashSet<(GlyphId, GlyphId)>,
-    result: &mut Vec<LookupRule>,
+    result: &mut Vec<MarkAttachmentRule>,
 ) -> Result<(), ReadError> {
     let base_array = subtable.base_array()?;
     let base_records = base_array.base_records();
@@ -128,17 +98,14 @@ fn append_mark_base_rules(
                     .add(*mark_glyph);
             }
             let group = MarkAttachmentRule {
-                flags,
                 base: base_glyph,
                 base_anchor,
                 marks: marks
                     .into_iter()
                     .map(|(anchor, glyphs)| (anchor, glyphs))
                     .collect(),
-                kind: LookupType::MarkToBase,
-                filter_set,
             };
-            result.push(LookupRule::MarkBase(group));
+            result.push(group);
         }
     }
     Ok(())
@@ -146,34 +113,23 @@ fn append_mark_base_rules(
 
 pub(super) fn get_mark_mark_rules(
     subtables: &[MarkMarkPosFormat1],
-    flags: LookupFlag,
-    filter_set: Option<u16>,
     delta_computer: Option<&DeltaComputer>,
-) -> Result<Vec<LookupRule>, ReadError> {
+) -> Result<Vec<MarkAttachmentRule>, ReadError> {
     // so we only take the first coverage hit in each subtable, which means
     // we just need track what we've seen.
     let mut seen = HashSet::new();
     let mut result = Vec::new();
     for sub in subtables.iter() {
-        append_mark_mark_rules(
-            sub,
-            flags,
-            filter_set,
-            delta_computer,
-            &mut seen,
-            &mut result,
-        )?;
+        append_mark_mark_rules(sub, delta_computer, &mut seen, &mut result)?;
     }
     Ok(result)
 }
 
 fn append_mark_mark_rules(
     subtable: &MarkMarkPosFormat1,
-    flags: LookupFlag,
-    filter_set: Option<u16>,
     delta_computer: Option<&DeltaComputer>,
     seen: &mut HashSet<(GlyphId, GlyphId)>,
-    result: &mut Vec<LookupRule>,
+    result: &mut Vec<MarkAttachmentRule>,
 ) -> Result<(), ReadError> {
     let base_array = subtable.mark2_array()?;
     let base_records = base_array.mark2_records();
@@ -217,17 +173,14 @@ fn append_mark_mark_rules(
                     .add(*mark_glyph);
             }
             let group = MarkAttachmentRule {
-                flags,
                 base: base_glyph,
                 base_anchor,
                 marks: marks
                     .into_iter()
                     .map(|(anchor, glyphs)| (anchor, glyphs))
                     .collect(),
-                kind: LookupType::MarkToMark,
-                filter_set,
             };
-            result.push(LookupRule::MarkMark(group));
+            result.push(group);
         }
     }
     Ok(())
@@ -280,13 +233,9 @@ mod tests {
     // convert from the enum back to the specific pairpos type.
     //
     // I want to change how these types work, but this is fine for now
-    fn extract_rules(rules: Vec<LookupRule>) -> Vec<SimpleAnchorRule> {
+    fn extract_rules(rules: Vec<MarkAttachmentRule>) -> Vec<SimpleAnchorRule> {
         rules
             .iter()
-            .map(|rule| match rule {
-                LookupRule::MarkBase(rule) => rule,
-                _ => panic!("only marktobase rules expected here"),
-            })
             .flat_map(|rule| {
                 rule.marks.iter().flat_map(|(mark_anchor, mark_glyphs)| {
                     mark_glyphs.iter().map(|mark_gid| SimpleAnchorRule {
@@ -336,7 +285,7 @@ mod tests {
             write_fonts::read::tables::gpos::MarkBasePosFormat1::read(sub2.as_slice().into())
                 .unwrap();
 
-        let rules = get_mark_base_rules(&[sub1, sub2], LookupFlag::default(), None, None).unwrap();
+        let rules = get_mark_base_rules(&[sub1, sub2], None).unwrap();
         let mut rules = extract_rules(rules);
         rules.sort_unstable();
 
