@@ -4,13 +4,18 @@ use std::{
     io,
 };
 
-use write_fonts::read::{
-    tables::{
-        gdef::MarkGlyphSets,
-        gpos::{AnchorTable, ExtensionSubtable, PositionLookup, PositionLookupList, ValueRecord},
-        layout::{DeviceOrVariationIndex, LookupFlag},
+use write_fonts::{
+    read::{
+        tables::{
+            gdef::MarkGlyphSets,
+            gpos::{
+                AnchorTable, ExtensionSubtable, PositionLookup, PositionLookupList, ValueRecord,
+            },
+            layout::{DeviceOrVariationIndex, LookupFlag},
+        },
+        FontData, FontRef, ReadError, TableProvider,
     },
-    FontData, FontRef, ReadError, TableProvider,
+    types::GlyphId,
 };
 
 use crate::{
@@ -315,28 +320,82 @@ impl LookupRules {
     }
 
     fn markbase_rules<'a>(&'a self, lookups: &[u16]) -> Vec<SingleRule<'a, MarkAttachmentRule>> {
-        //TODO: in here we will do the normalizing of items that appear in multiple lookups
-        let mut all_rules = self
+        let lookups = self
             .markbase
             .iter()
             .filter(|lookup| lookups.contains(&lookup.lookup_id))
-            .flat_map(|lookup| lookup.iter())
             .collect::<Vec<_>>();
-        all_rules.sort_unstable();
-        all_rules
+        normalize_mark_lookups(&lookups)
     }
 
     fn markmark_rules<'a>(&'a self, lookups: &[u16]) -> Vec<SingleRule<'a, MarkAttachmentRule>> {
-        //TODO: in here we will do the normalizing of items that appear in multiple lookups
-        let mut all_rules = self
+        let lookups = self
             .markmark
             .iter()
             .filter(|lookup| lookups.contains(&lookup.lookup_id))
-            .flat_map(|lookup| lookup.iter())
             .collect::<Vec<_>>();
-        all_rules.sort_unstable();
-        all_rules
+        normalize_mark_lookups(&lookups)
     }
+}
+
+// impl shared between markbase and markmark
+fn normalize_mark_lookups<'a>(
+    lookups: &[&'a Lookup<MarkAttachmentRule>],
+) -> Vec<SingleRule<'a, MarkAttachmentRule>> {
+    // normalizing marks is just "last writer wins", e.g. we want to ignore any
+    // mark rules that would be superseded in a subsequent lookup.
+
+    // in practice this means:
+    // - collect all the lookups
+    // - walk them in order, creating a map of (base, mark) -> id of last containing lookup
+    // - then do it again, this time removing marks from earlier lookups?
+    // - it's a bit gross
+    // - but computer not care, computer count fast
+
+    // a little helper used below
+    fn prune_shadowed_marks<'a>(
+        mut rule: SingleRule<'a, MarkAttachmentRule>,
+        last_seen: &HashMap<(GlyphId, GlyphId), usize>,
+        lookup_id: usize,
+    ) -> Option<SingleRule<'a, MarkAttachmentRule>> {
+        let to_remove = rule
+            .rule()
+            .iter_base_mark_pairs()
+            .filter_map(|pair| (last_seen.get(&pair) != Some(&lookup_id)).then_some(pair.1))
+            .collect::<Vec<_>>();
+
+        if to_remove.is_empty() {
+            return Some(rule);
+        }
+
+        // if, after removing marks, the rule is empty, we discard it
+        if rule.rule_mut().remove_marks(&to_remove) {
+            Some(rule)
+        } else {
+            None
+        }
+    }
+
+    let mut last_seen = HashMap::new();
+    for (i, lookup) in lookups.iter().enumerate() {
+        for rule in lookup.iter() {
+            for (base, mark) in rule.rule().iter_base_mark_pairs() {
+                last_seen.insert((base, mark), i);
+            }
+        }
+    }
+
+    // now we have a map of (base, mark) -> last_containing_lookup.
+    let mut result = Vec::new();
+    for (i, lookup) in lookups.iter().enumerate() {
+        for rule in lookup.iter() {
+            let rule = prune_shadowed_marks(rule, &last_seen, i);
+            result.extend(rule);
+        }
+    }
+
+    result.sort_unstable();
+    result
 }
 
 fn get_lookup_rules(
@@ -515,18 +574,14 @@ impl Display for ResolvedAnchor {
 
 #[cfg(test)]
 mod tests {
-    use fea_rs::compile::PairPosBuilder;
+    use fea_rs::compile::{MarkToBaseBuilder, PairPosBuilder};
 
-    use super::test_helpers::SimplePairPosBuilder;
+    use super::test_helpers::{RawAnchor, SimpleMarkBaseBuilder, SimplePairPosBuilder};
     use super::*;
     use write_fonts::{
         read::FontRead,
         tables::{gpos as wgpos, layout as wlayout},
     };
-
-    fn make_lookup(subtable: wgpos::PairPos) -> wgpos::PositionLookup {
-        wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![subtable], 0))
-    }
 
     #[test]
     fn merge_pairpos_lookups() {
@@ -540,8 +595,10 @@ mod tests {
         sub2.add_class(&[1, 2], &[3, 4], 7);
         let sub2 = sub2.build_exactly_one_subtable();
 
-        let lookup1 = make_lookup(sub1);
-        let lookup2 = make_lookup(sub2);
+        let lookup1 =
+            wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![sub1], 0));
+        let lookup2 =
+            wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![sub2], 0));
         let lookup_list = wlayout::LookupList::new(vec![lookup1, lookup2]);
         let lookup_list = write_fonts::dump_table(&lookup_list).unwrap();
         let lookup_list = write_fonts::read::tables::gpos::PositionLookupList::read(
@@ -566,5 +623,64 @@ mod tests {
         ];
 
         assert_eq!(our_rules, expected);
+    }
+
+    #[test]
+    fn merge_mark_base_lookups() {
+        // overlaps completely with the next lookup, so this should all be discarded
+        let mut sub0 = MarkToBaseBuilder::default();
+        sub0.add_mark(11, "top", (999, 999));
+        sub0.add_mark(12, "top", (998, 998));
+        sub0.add_base(1, "top", (777, 777));
+
+        let mut sub1 = MarkToBaseBuilder::default();
+        sub1.add_mark(11, "top", (11, 11));
+        sub1.add_mark(12, "top", (12, 12));
+        sub1.add_base(1, "top", (101, 101));
+
+        let mut sub2 = MarkToBaseBuilder::default();
+        sub2.add_mark(10, "top", (-10, -10));
+        sub2.add_mark(11, "top", (-11, -11));
+        sub2.add_base(1, "top", (-101, -101));
+
+        let sub1 = sub1.build_exactly_one_subtable();
+        let sub2 = sub2.build_exactly_one_subtable();
+
+        let lookup1 = wgpos::PositionLookup::MarkToBase(wlayout::Lookup::new(
+            LookupFlag::empty(),
+            vec![sub1],
+            0,
+        ));
+        let lookup2 = wgpos::PositionLookup::MarkToBase(wlayout::Lookup::new(
+            LookupFlag::empty(),
+            vec![sub2],
+            0,
+        ));
+
+        let lookup_list = wlayout::LookupList::new(vec![lookup1, lookup2]);
+        let lookup_list = write_fonts::dump_table(&lookup_list).unwrap();
+        let lookup_list = write_fonts::read::tables::gpos::PositionLookupList::read(
+            lookup_list.as_slice().into(),
+        )
+        .unwrap();
+
+        let rules = get_lookup_rules(&lookup_list, None);
+
+        let mark_base_rules = rules
+            .markbase_rules(&[0, 1])
+            .into_iter()
+            .map(|r| r.rule().to_owned())
+            .collect::<Vec<_>>();
+        let mark_base_rules = test_helpers::SimpleAnchorRule::from_mark_rules(&mark_base_rules);
+
+        // (base gid, base anchor, mark gid, mark anchor)
+        // NOTE: ordered by base gid, then base anchor, then mark anchor
+        let expected: &[(u16, RawAnchor, u16, RawAnchor)] = &[
+            (1, (-101, -101), 11, (-11, -11)),
+            (1, (-101, -101), 10, (-10, -10)),
+            (1, (101, 101), 12, (12, 12)),
+        ];
+
+        assert_eq!(mark_base_rules, expected,)
     }
 }

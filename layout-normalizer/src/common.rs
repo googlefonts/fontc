@@ -35,7 +35,7 @@ pub(crate) struct Feature {
 }
 
 /// A type to represent either one or multiple glyphs
-#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum GlyphSet {
     Single(GlyphId),
     Multiple(BTreeSet<GlyphId>),
@@ -185,6 +185,13 @@ pub(crate) fn get_lang_systems(
 }
 
 impl GlyphSet {
+    pub(crate) fn is_empty(&self) -> bool {
+        match self {
+            GlyphSet::Single(_) => false,
+            GlyphSet::Multiple(set) => set.is_empty(),
+        }
+    }
+
     pub(crate) fn make_set(&mut self) {
         if let GlyphSet::Single(gid) = self {
             *self = GlyphSet::Multiple(BTreeSet::from([*gid]))
@@ -204,6 +211,25 @@ impl GlyphSet {
         }
     }
 
+    /// Remove any glyphs in the provided slice from self.
+    ///
+    /// # Note
+    ///
+    /// This can result in an empty glyph set, which is not meaningful to us.
+    /// It is the responsibility of the caller to check for an empty set and
+    /// handle it appropriately.
+    pub(crate) fn remove_glyphs(&mut self, glyphs: &[GlyphId]) {
+        match self {
+            GlyphSet::Multiple(set) => set.retain(|gid| !glyphs.contains(gid)),
+            // I initially imagined this type always had one or more glyphs,
+            // so this is a funny case.
+            GlyphSet::Single(gid) if glyphs.contains(gid) => {
+                *self = GlyphSet::Multiple(BTreeSet::new());
+            }
+            GlyphSet::Single(_) => (),
+        }
+    }
+
     pub(crate) fn add(&mut self, gid: GlyphId) {
         // if we're a single glyph, don't turn into a set if we're adding ourselves
         if matches!(self, GlyphSet::Single(x) if *x == gid) {
@@ -215,7 +241,6 @@ impl GlyphSet {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
         let (left, right) = match self {
             GlyphSet::Single(gid) => (Some(*gid), None),
@@ -321,6 +346,23 @@ impl<T: PrintNames + Clone> SingleRule<'_, T> {
             names,
             item: self.rule.as_ref(),
         }
+    }
+}
+
+impl Ord for GlyphSet {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (GlyphSet::Single(left), GlyphSet::Single(right)) => left.cmp(right),
+            (GlyphSet::Single(left), GlyphSet::Multiple(right)) => Some(left).cmp(&right.first()),
+            (GlyphSet::Multiple(left), GlyphSet::Single(right)) => left.first().cmp(&Some(right)),
+            (GlyphSet::Multiple(left), GlyphSet::Multiple(right)) => left.cmp(right),
+        }
+    }
+}
+
+impl PartialOrd for GlyphSet {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
