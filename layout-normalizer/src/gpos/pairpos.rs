@@ -3,7 +3,6 @@ use std::{
     fmt::Debug,
 };
 
-use indexmap::IndexMap;
 use write_fonts::read::{
     tables::gpos::{PairPos, PairPosFormat1, PairPosFormat2, ValueRecord},
     types::GlyphId,
@@ -16,10 +15,17 @@ use super::{PrintNames, ResolvedValueRecord};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct PairPosRule {
-    first: GlyphId,
-    second: GlyphSet,
-    record1: ResolvedValueRecord,
-    record2: ResolvedValueRecord,
+    pub first: GlyphId,
+    pub second: GlyphSet,
+    pub record1: ResolvedValueRecord,
+    pub record2: ResolvedValueRecord,
+}
+
+impl PairPosRule {
+    pub fn merge(&mut self, other: &Self) {
+        self.record1.add_in_place(&other.record1);
+        self.record2.add_in_place(&other.record2);
+    }
 }
 
 impl PrintNames for PairPosRule {
@@ -46,22 +52,6 @@ impl Debug for PairPosRule {
     }
 }
 
-// combine any rules where the first glyph and the value records are identical.
-fn combine_rules(rules: Vec<PairPosRule>) -> Vec<PairPosRule> {
-    let mut seen = IndexMap::<_, PairPosRule>::new();
-    for rule in rules {
-        match seen.entry((rule.first, rule.record1.clone(), rule.record2.clone())) {
-            indexmap::map::Entry::Occupied(mut entry) => {
-                entry.get_mut().second.combine(rule.second)
-            }
-            indexmap::map::Entry::Vacant(entry) => {
-                entry.insert(rule);
-            }
-        }
-    }
-    seen.into_values().collect()
-}
-
 pub(super) fn get_pairpos_rules(
     subtables: &[PairPos],
     delta_computer: Option<&DeltaComputer>,
@@ -80,7 +70,7 @@ pub(super) fn get_pairpos_rules(
             }
         }
     }
-    Ok(combine_rules(result))
+    Ok(result)
 }
 
 // okay so we want to return some heterogeneous type here hmhm
@@ -244,11 +234,12 @@ mod tests {
 
         // (left gid, [right gids], x advance)
         let expected: &[(u16, &[u16], i16)] = &[
-            (4, &[7, 8], -808), // from sub3
-            (5, &[6], -7),      // sub1
-            (5, &[7], -30),     // sub2
-            (5, &[8], -808),    // sub3
-            (10, &[11], 1011),  //sub 1
+            (4, &[7], -808),   // from sub3
+            (4, &[8], -808),   // from sub3
+            (5, &[6], -7),     // sub1
+            (5, &[7], -30),    // sub2
+            (5, &[8], -808),   // sub3
+            (10, &[11], 1011), //sub 1
         ];
 
         assert_eq!(rules, expected);
