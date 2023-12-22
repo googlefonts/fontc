@@ -277,13 +277,13 @@ impl LookupRules {
             .filter(|lookup| lookups.contains(&lookup.lookup_id))
             .flat_map(|lookup| lookup.iter())
         {
-            match pairmap.entry((rule.rule.first, rule.rule.second.clone())) {
+            match pairmap.entry((rule.rule().first, rule.rule().second.clone())) {
                 hash_map::Entry::Vacant(entry) => {
                     entry.insert(rule);
                 }
                 hash_map::Entry::Occupied(mut entry) => {
-                    let prev_rule = entry.get_mut().rule.to_mut();
-                    prev_rule.merge(&rule.rule);
+                    let prev_rule = entry.get_mut().rule_mut();
+                    prev_rule.merge(rule.rule());
                 }
             };
         }
@@ -293,9 +293,9 @@ impl LookupRules {
         let mut seen = HashMap::<_, _>::new();
         for rule in pairmap.into_values() {
             match seen.entry((
-                rule.rule.first,
-                rule.rule.record1.clone(),
-                rule.rule.record2.clone(),
+                rule.rule().first,
+                rule.rule().record1.clone(),
+                rule.rule().record2.clone(),
             )) {
                 hash_map::Entry::Vacant(entry) => {
                     entry.insert(rule);
@@ -303,10 +303,9 @@ impl LookupRules {
                 hash_map::Entry::Occupied(mut entry) => {
                     entry
                         .get_mut()
-                        .rule
-                        .to_mut()
+                        .rule_mut()
                         .second
-                        .combine(&rule.rule.second);
+                        .combine(&rule.rule().second);
                 }
             }
         }
@@ -555,7 +554,7 @@ mod tests {
         let our_rules = rules
             .pairpos_rules(&[0, 1])
             .into_iter()
-            .map(|r| r.rule.as_ref().to_owned())
+            .map(|r| r.rule().to_owned())
             .collect::<Vec<_>>();
 
         // (left gid, [right gids], x advance)

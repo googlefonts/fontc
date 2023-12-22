@@ -65,7 +65,7 @@ where
     // this is one of rare times that Cow makes sense; the vast majority of
     // the time this is borrowed from a lookup unchanged, but *occasionally* if
     // there is overlap between two lookups we need to clone and mutate it.
-    pub rule: Cow<'a, Rule>,
+    rule: Cow<'a, Rule>,
     pub lookup_id: u16,
     flag: LookupFlag,
     filter_set: Option<u16>,
@@ -293,6 +293,14 @@ impl<Rule> Lookup<Rule> {
 impl<T: Clone> SingleRule<'_, T> {
     pub fn lookup_flags(&self) -> (LookupFlag, Option<u16>) {
         (self.flag, self.filter_set)
+    }
+
+    pub fn rule(&self) -> &T {
+        self.rule.as_ref()
+    }
+
+    pub fn rule_mut(&mut self) -> &mut T {
+        self.rule.to_mut()
     }
 }
 
