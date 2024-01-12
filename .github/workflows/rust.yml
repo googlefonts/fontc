@@ -189,24 +189,36 @@ jobs:
           which ttx
           ttx --version
 
-      - name: Check out font project source repository
+      - name: Check out GS source repository
         uses: actions/checkout@v4
         with:
           repository: googlefonts/googlesans
           path: googlesans
           token: ${{ secrets.GS_READ_FONTC }}
 
+      - name: Check out Oswald source repository
+        uses: actions/checkout@v4
+        with:
+          repository: googlefonts/OswaldFont
+          path: oswald
+
       - name: Pin SOURCE_DATE_EPOCH
         run: echo "SOURCE_DATE_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
-      - name: Compile Roman twice
+      - name: Compile GS Roman twice
         run: ./resources/scripts/repeatable-builds.sh googlesans/source/GoogleSans/GoogleSans.designspace
 
-      - name: Compile Italic twice
+      - name: Compile GS Italic twice
         run: ./resources/scripts/repeatable-builds.sh googlesans/source/GoogleSans/GoogleSans-Italic.designspace
 
-      - name: OTS tests, Roman
+      - name: Compile Oswald twice
+        run: ./resources/scripts/repeatable-builds.sh oswald/sources/Oswald.glyphs
+
+      - name: OTS tests, GS Roman
         run: ots-9.1.0-Linux/ots-sanitize build/GoogleSans.ttf
 
-      - name: OTS tests, Italic
+      - name: OTS tests, GS Italic
         run: ots-9.1.0-Linux/ots-sanitize build/GoogleSans-Italic.ttf
+
+      - name: OTS tests, Oswald
+        run: ots-9.1.0-Linux/ots-sanitize build/Oswald.ttf
