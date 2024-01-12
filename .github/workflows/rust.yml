@@ -219,3 +219,8 @@ jobs:
 
       - name: OTS tests, Oswald
         run: ots-9.1.0-Linux/ots-sanitize build/Oswald.ttf
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          path: build/*.ttf
