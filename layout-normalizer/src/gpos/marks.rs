@@ -100,10 +100,7 @@ fn append_mark_base_rules(
             let group = MarkAttachmentRule {
                 base: base_glyph,
                 base_anchor,
-                marks: marks
-                    .into_iter()
-                    .map(|(anchor, glyphs)| (anchor, glyphs))
-                    .collect(),
+                marks,
             };
             result.push(group);
         }
@@ -175,10 +172,7 @@ fn append_mark_mark_rules(
             let group = MarkAttachmentRule {
                 base: base_glyph,
                 base_anchor,
-                marks: marks
-                    .into_iter()
-                    .map(|(anchor, glyphs)| (anchor, glyphs))
-                    .collect(),
+                marks,
             };
             result.push(group);
         }

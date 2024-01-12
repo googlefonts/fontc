@@ -75,7 +75,7 @@ impl Feature {
         (
             tag_to_int(self.feature),
             self.lang_systems
-                .get(0)
+                .first()
                 .map(|rec| (tag_to_int(rec.script), tag_to_int(rec.lang))),
         )
     }
