@@ -202,9 +202,6 @@ jobs:
           repository: googlefonts/OswaldFont
           path: oswald
 
-      - name: Pin SOURCE_DATE_EPOCH
-        run: echo "SOURCE_DATE_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
-
       - name: Compile GS Roman twice
         run: ./resources/scripts/repeatable-builds.sh googlesans/source/GoogleSans/GoogleSans.designspace
 
