@@ -1,0 +1,33 @@
+name: GS Test Build
+
+on:
+  pull_request:
+
+jobs:
+  build-gs:
+    runs-on: ubuntu-latest
+    name: Build GS variable fonts
+    steps:
+      - name: Check out fontc source repository
+        uses: actions/checkout@v4
+      - name: Install the latest stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build and install fontc
+        run: cd fontc && cargo install --path . --debug
+      - name: Check out font project source repository
+        uses: actions/checkout@v4
+        with:
+          repository: googlefonts/googlesans
+          token: ${{ secrets.GS_READ_FONTC }}
+      - name: Download and unzip OTS v9.1.0
+        run: |
+            curl -OL "https://github.com/khaledhosny/ots/releases/download/v9.1.0/ots-9.1.0-Linux.zip"
+            unzip "ots-9.1.0-Linux.zip" "ots-9.1.0-Linux/ots-sanitize"
+      - name: Compile Roman variable font
+        run: fontc source/GoogleSans/GoogleSans.designspace
+      - name: OTS tests, Roman
+        run: ots-9.1.0-Linux/ots-sanitize build/font.ttf
+      - name: Compile Italic variable font
+        run: fontc source/GoogleSans/GoogleSans-Italic.designspace
+      - name: OTS tests, Italic
+        run: ots-9.1.0-Linux/ots-sanitize build/font.ttf
