@@ -280,11 +280,15 @@ fn resolve_anchor(
 
     let (x_default, x_deltas) = crate::features::resolve_variable_metric(
         static_metadata,
-        x_values.iter().map(|(pos, value)| (pos, value)),
+        // If I do map(|(pos, value)| (pos, value)) to destructure the tuple and
+        // convert &(T, V) => (&T, &V) as the values parameter expects, then
+        // clippy complains about the seemingly no-op identity map:
+        // https://rust-lang.github.io/rust-clippy/master/index.html#/map_identity
+        x_values.iter().map(|item| (&item.0, &item.1)),
     )?;
     let (y_default, y_deltas) = crate::features::resolve_variable_metric(
         static_metadata,
-        y_values.iter().map(|(pos, value)| (pos, value)),
+        y_values.iter().map(|item| (&item.0, &item.1)),
     )?;
     Ok(fea_rs::compile::Anchor::new(x_default, y_default)
         .with_x_device(x_deltas)

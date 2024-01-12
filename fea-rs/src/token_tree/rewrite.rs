@@ -51,7 +51,7 @@ impl<'a, 'b> ReparseCtx<'a, 'b> {
     fn eat_trivia(&mut self) {
         while self
             .in_buf
-            .get(0)
+            .first()
             .map(|t| t.kind().is_trivia())
             .unwrap_or(false)
         {
