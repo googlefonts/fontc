@@ -253,10 +253,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
-        AccessBuilder::new()
-            .variant(WorkId::GatherIrKerning) // until this runs there are no kern fragments to await
-            .variant(WorkId::KernFragment(0))
-            .build()
+        Access::Unknown // https://github.com/googlefonts/fontc/issues/647: don't enable until KernFragment's spawn
     }
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
