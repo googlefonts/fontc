@@ -311,6 +311,15 @@ impl<'a> Workload<'a> {
             for work in create_kern_segment_work(&kern_pairs) {
                 self.add(work.into(), true);
             }
+
+            // https://github.com/googlefonts/fontc/issues/647: it is now safe to set read access on segment gathering
+            self.jobs_pending
+                .get_mut(&AnyWorkId::Be(BeWorkIdentifier::GatherBeKerning))
+                .expect("Gather BE Kerning has to be pending")
+                .read_access = AccessBuilder::<AnyWorkId>::new()
+                .variant(BeWorkIdentifier::KernFragment(0))
+                .build()
+                .into();
         }
 
         if let AnyWorkId::Fe(FeWorkIdentifier::Glyph(glyph_name)) = success {
