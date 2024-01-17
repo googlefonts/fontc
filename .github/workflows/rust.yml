@@ -13,7 +13,7 @@ name: Continuous integration
 # https://github.com/googlefonts/fontations/blob/main/.github/workflows/rust.yml.
 # other than the list of crates for cargo check no std
 
-jobs:  
+jobs:
   check:
     name: Rustfmt
     runs-on: ubuntu-latest
@@ -178,55 +178,49 @@ jobs:
       - name: Build and install fontc (release mode)
         run: cd fontc && pwd && cargo install --path .
 
-      - name: Check out font project source repository
-        uses: actions/checkout@v4
-        with:
-          repository: googlefonts/googlesans
-          token: ${{ secrets.GS_READ_FONTC }}
-
-      - name: Pin SOURCE_DATE_EPOCH
-        run: echo "SOURCE_DATE_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
-
-      - name: Compile me once, shame on you
-        run: |
-          rm -rf build
-          fontc source/GoogleSans/GoogleSans.designspace
-          cp build/font.ttf ./first-roman.ttf
-          rm -rf build
-          fontc source/GoogleSans/GoogleSans-Italic.designspace
-          cp build/font.ttf ./first-italic.ttf
-
       - name: Fetch OTS
         run: |
             curl -OL "https://github.com/khaledhosny/ots/releases/download/v9.1.0/ots-9.1.0-Linux.zip"
             unzip "ots-9.1.0-Linux.zip" "ots-9.1.0-Linux/ots-sanitize"
 
-      - name: OTS tests, Roman
-        run: ots-9.1.0-Linux/ots-sanitize build/font.ttf
-
-      - name: OTS tests, Italic
-        run: ots-9.1.0-Linux/ots-sanitize build/font.ttf
-
-      - name: Compile me twice, shame on me
-        run: |
-          rm -rf build
-          fontc source/GoogleSans/GoogleSans.designspace
-          cp build/font.ttf ./second-roman.ttf
-          rm -rf build
-          fontc source/GoogleSans/GoogleSans-Italic.designspace
-          cp build/font.ttf ./second-italic.ttf
-
-      - name: ttx, it might be handy to troubleshoot
-        # tail -n +2 to skip past the first line because it emits the filename
+      - name: Install ttx
         run: |
           pipx install fonttools
           which ttx
           ttx --version
-          diff -u <(ttx -l first-roman.ttf | tail -n +2) <(ttx -l second-roman.ttf | tail -n +2)
-          diff -u <(ttx -l first-italic.ttf | tail -n +2) <(ttx -l second-italic.ttf | tail -n +2)
 
-      - name: Stable Roman?
-        run: cmp first-roman.ttf second-roman.ttf
+      - name: Check out GS source repository
+        uses: actions/checkout@v4
+        with:
+          repository: googlefonts/googlesans
+          path: googlesans
+          token: ${{ secrets.GS_READ_FONTC }}
 
-      - name: Stable Italic?
-        run: cmp first-italic.ttf second-italic.ttf
+      - name: Check out Oswald source repository
+        uses: actions/checkout@v4
+        with:
+          repository: googlefonts/OswaldFont
+          path: oswald
+
+      - name: Compile GS Roman twice
+        run: ./resources/scripts/repeatable-builds.sh googlesans/source/GoogleSans/GoogleSans.designspace
+
+      - name: Compile GS Italic twice
+        run: ./resources/scripts/repeatable-builds.sh googlesans/source/GoogleSans/GoogleSans-Italic.designspace
+
+      - name: Compile Oswald twice
+        run: ./resources/scripts/repeatable-builds.sh oswald/sources/Oswald.glyphs
+
+      - name: OTS tests, GS Roman
+        run: ots-9.1.0-Linux/ots-sanitize build/GoogleSans.ttf
+
+      - name: OTS tests, GS Italic
+        run: ots-9.1.0-Linux/ots-sanitize build/GoogleSans-Italic.ttf
+
+      - name: OTS tests, Oswald
+        run: ots-9.1.0-Linux/ots-sanitize build/Oswald.ttf
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          path: build/*.ttf
