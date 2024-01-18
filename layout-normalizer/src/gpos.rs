@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::{Debug, Display},
     io,
 };
@@ -19,10 +20,13 @@ use crate::{
     variations::DeltaComputer,
 };
 
-use self::{marks::MarkAttachmentRule, pairpos::PairPosRule};
-
 mod marks;
 mod pairpos;
+
+#[cfg(test)]
+mod test_helpers;
+
+use self::{marks::MarkAttachmentRule, pairpos::PairPosRule};
 
 pub(crate) fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> Result<(), Error> {
     writeln!(f, "# GPOS #")?;
@@ -66,7 +70,7 @@ pub(crate) fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> R
     Ok(())
 }
 
-fn print_rules<T: PrintNames>(
+fn print_rules<T: PrintNames + Clone>(
     f: &mut dyn io::Write,
     type_name: &str,
     rules: &[SingleRule<T>],
@@ -182,6 +186,13 @@ impl ResolvedValueRecord {
             && self.y_placement.is_zero()
             && self.x_placement.is_zero()
     }
+
+    fn add_in_place(&mut self, other: &Self) {
+        self.x_advance.add_in_place(&other.x_advance);
+        self.y_advance.add_in_place(&other.y_advance);
+        self.x_placement.add_in_place(&other.x_placement);
+        self.y_placement.add_in_place(&other.y_placement);
+    }
 }
 
 impl ResolvedAnchor {
@@ -228,6 +239,22 @@ impl ResolvedValue {
     fn is_zero(&self) -> bool {
         self.default == 0 && self.device_or_deltas.is_none()
     }
+
+    fn add_in_place(&mut self, other: &ResolvedValue) {
+        self.default += other.default;
+        // note: in theory there could be Device tables here, in which case
+        // we are just dropping the second one; in practice Device tables are
+        // basically unused, and are completely unused in Google Fonts fonts
+        if let (Some(DeviceOrDeltas::Deltas(d1)), Some(DeviceOrDeltas::Deltas(d2))) = (
+            self.device_or_deltas.as_mut(),
+            other.device_or_deltas.as_ref(),
+        ) {
+            // these aren't deltas, but rather the resolved value at each
+            // defined master location, so they should always be equal.
+            assert_eq!(d1.len(), d2.len());
+            d1.iter_mut().zip(d2.iter()).for_each(|(d1, d2)| *d1 += d2)
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -240,15 +267,51 @@ struct LookupRules {
 
 impl LookupRules {
     fn pairpos_rules<'a>(&'a self, lookups: &[u16]) -> Vec<SingleRule<'a, PairPosRule>> {
-        //TODO: in here we will do the normalizing of items that appear in multiple lookups
-        let mut all_rules = self
+        use std::collections::hash_map;
+        // so these rules are currently decomposed, (each rule is for a
+        // single pair of glyphs) so we want to normalize them and then combine.
+        let mut pairmap = HashMap::<_, _>::new();
+        for rule in self
             .pairpos
             .iter()
             .filter(|lookup| lookups.contains(&lookup.lookup_id))
             .flat_map(|lookup| lookup.iter())
-            .collect::<Vec<_>>();
-        all_rules.sort_unstable();
-        all_rules
+        {
+            match pairmap.entry((rule.rule().first, rule.rule().second.clone())) {
+                hash_map::Entry::Vacant(entry) => {
+                    entry.insert(rule);
+                }
+                hash_map::Entry::Occupied(mut entry) => {
+                    let prev_rule = entry.get_mut().rule_mut();
+                    prev_rule.merge(rule.rule());
+                }
+            };
+        }
+
+        // now for any given first glyph + adjustment if there are multiple
+        // second glyphs we combine these
+        let mut seen = HashMap::<_, _>::new();
+        for rule in pairmap.into_values() {
+            match seen.entry((
+                rule.rule().first,
+                rule.rule().record1.clone(),
+                rule.rule().record2.clone(),
+            )) {
+                hash_map::Entry::Vacant(entry) => {
+                    entry.insert(rule);
+                }
+                hash_map::Entry::Occupied(mut entry) => {
+                    entry
+                        .get_mut()
+                        .rule_mut()
+                        .second
+                        .combine(&rule.rule().second);
+                }
+            }
+        }
+        let mut result: Vec<_> = seen.into_values().collect();
+        result.sort_unstable();
+        result
     }
 
     fn markbase_rules<'a>(&'a self, lookups: &[u16]) -> Vec<SingleRule<'a, MarkAttachmentRule>> {
@@ -447,5 +510,61 @@ impl Display for ResolvedValue {
 impl Display for ResolvedAnchor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "@(x: {}, y: {})", self.x, self.y)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use fea_rs::compile::PairPosBuilder;
+
+    use super::test_helpers::SimplePairPosBuilder;
+    use super::*;
+    use write_fonts::{
+        read::FontRead,
+        tables::{gpos as wgpos, layout as wlayout},
+    };
+
+    fn make_lookup(subtable: wgpos::PairPos) -> wgpos::PositionLookup {
+        wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![subtable], 0))
+    }
+
+    #[test]
+    fn merge_pairpos_lookups() {
+        let mut sub1 = PairPosBuilder::default();
+        sub1.add_pair(1, 4, 20);
+        sub1.add_pair(1, 5, -10);
+        let sub1 = sub1.build_exactly_one_subtable();
+
+        let mut sub2 = PairPosBuilder::default();
+        // this class overlaps with the previous for the pair (1, 4)
+        sub2.add_class(&[1, 2], &[3, 4], 7);
+        let sub2 = sub2.build_exactly_one_subtable();
+
+        let lookup1 = make_lookup(sub1);
+        let lookup2 = make_lookup(sub2);
+        let lookup_list = wlayout::LookupList::new(vec![lookup1, lookup2]);
+        let lookup_list = write_fonts::dump_table(&lookup_list).unwrap();
+        let lookup_list = write_fonts::read::tables::gpos::PositionLookupList::read(
+            lookup_list.as_slice().into(),
+        )
+        .unwrap();
+
+        let rules = get_lookup_rules(&lookup_list, None);
+
+        let our_rules = rules
+            .pairpos_rules(&[0, 1])
+            .into_iter()
+            .map(|r| r.rule().to_owned())
+            .collect::<Vec<_>>();
+
+        // (left gid, [right gids], x advance)
+        let expected: &[(u16, &[u16], i16)] = &[
+            (1, &[3], 7),
+            (1, &[4], 27),
+            (1, &[5], -10),  // sub1
+            (2, &[3, 4], 7), // sub2
+        ];
+
+        assert_eq!(our_rules, expected);
     }
 }

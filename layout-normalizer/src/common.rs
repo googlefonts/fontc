@@ -1,6 +1,7 @@
 //! general common utilities and types
 
 use std::{
+    borrow::Cow,
     collections::{BTreeSet, HashMap},
     fmt::Display,
     io,
@@ -34,7 +35,7 @@ pub(crate) struct Feature {
 }
 
 /// A type to represent either one or multiple glyphs
-#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub(crate) enum GlyphSet {
     Single(GlyphId),
     Multiple(BTreeSet<GlyphId>),
@@ -57,8 +58,14 @@ pub(crate) struct Lookup<Rule> {
 
 /// a single rule, carrying along info stored in its parent lookup
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct SingleRule<'a, Rule> {
-    pub rule: &'a Rule,
+pub(crate) struct SingleRule<'a, Rule>
+where
+    Rule: Clone,
+{
+    // this is one of rare times that Cow makes sense; the vast majority of
+    // the time this is borrowed from a lookup unchanged, but *occasionally* if
+    // there is overlap between two lookups we need to clone and mutate it.
+    rule: Cow<'a, Rule>,
     pub lookup_id: u16,
     flag: LookupFlag,
     filter_set: Option<u16>,
@@ -184,16 +191,16 @@ impl GlyphSet {
         }
     }
 
-    pub(crate) fn combine(&mut self, other: GlyphSet) {
+    pub(crate) fn combine(&mut self, other: &GlyphSet) {
         self.make_set();
         let GlyphSet::Multiple(gids) = self else {
             unreachable!()
         };
         match other {
             GlyphSet::Single(gid) => {
-                gids.insert(gid);
+                gids.insert(*gid);
             }
-            GlyphSet::Multiple(mut multi) => gids.append(&mut multi),
+            GlyphSet::Multiple(multi) => gids.extend(multi.iter().copied()),
         }
     }
 
@@ -270,23 +277,34 @@ impl<Rule> Lookup<Rule> {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = SingleRule<Rule>> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = SingleRule<Rule>> + '_
+    where
+        Rule: Clone,
+    {
         self.rules.iter().map(|rule| SingleRule {
             lookup_id: self.lookup_id,
             flag: self.flag,
             filter_set: self.filter_set,
-            rule,
+            rule: Cow::Borrowed(rule),
         })
     }
 }
 
-impl<T> SingleRule<'_, T> {
+impl<T: Clone> SingleRule<'_, T> {
     pub fn lookup_flags(&self) -> (LookupFlag, Option<u16>) {
         (self.flag, self.filter_set)
     }
+
+    pub fn rule(&self) -> &T {
+        self.rule.as_ref()
+    }
+
+    pub fn rule_mut(&mut self) -> &mut T {
+        self.rule.to_mut()
+    }
 }
 
-impl<T: PrintNames> SingleRule<'_, T> {
+impl<T: PrintNames + Clone> SingleRule<'_, T> {
     pub fn printer<'a>(&'a self, names: &'a NameMap) -> impl std::fmt::Display + 'a {
         struct Printer<'a, T> {
             names: &'a NameMap,
@@ -301,7 +319,7 @@ impl<T: PrintNames> SingleRule<'_, T> {
 
         Printer {
             names,
-            item: self.rule,
+            item: self.rule.as_ref(),
         }
     }
 }
