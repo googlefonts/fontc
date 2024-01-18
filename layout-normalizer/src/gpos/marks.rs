@@ -15,7 +15,7 @@ use super::{PrintNames, ResolvedAnchor};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct MarkAttachmentRule {
-    base: GlyphId,
+    pub base: GlyphId,
     base_anchor: ResolvedAnchor,
     marks: BTreeMap<ResolvedAnchor, GlyphSet>,
 }
@@ -35,8 +35,25 @@ impl PrintNames for MarkAttachmentRule {
     }
 }
 
-#[cfg(test)]
 impl MarkAttachmentRule {
+    pub(crate) fn iter_base_mark_pairs(&self) -> impl Iterator<Item = (GlyphId, GlyphId)> + '_ {
+        self.marks
+            .values()
+            .flat_map(|set| set.iter())
+            .map(|mark| (self.base, mark))
+    }
+
+    // returns `true` if we have marks remaining after removing this set
+    pub(crate) fn remove_marks(&mut self, marks: &[GlyphId]) -> bool {
+        self.marks.retain(|_, v| {
+            v.remove_glyphs(marks);
+            !v.is_empty()
+        });
+
+        !self.marks.is_empty()
+    }
+
+    #[cfg(test)]
     pub(crate) fn iter_simple_rules(
         &self,
     ) -> impl Iterator<Item = super::test_helpers::SimpleAnchorRule> + '_ {

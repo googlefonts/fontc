@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use fea_rs::compile::{Anchor, Builder, MarkToBaseBuilder, PairPosBuilder, ValueRecord};
 use write_fonts::{
     tables::{
@@ -68,7 +70,7 @@ impl SimpleMarkBaseBuilder for MarkToBaseBuilder {
 }
 
 // further decomposed for testing, so we just see one mark per entry
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SimpleAnchorRule {
     pub base_gid: GlyphId,
     pub mark_gid: GlyphId,
@@ -85,6 +87,19 @@ impl PartialEq<(u16, RawAnchor, u16, RawAnchor)> for SimpleAnchorRule {
             && self.base_anchor == base_anchor
             && self.mark_gid.to_u16() == mark_id
             && self.mark_anchor == mark_anchor
+    }
+}
+
+impl Debug for SimpleAnchorRule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let base = self.base_gid.to_u16();
+        let mark = self.mark_gid.to_u16();
+        let (base_x, base_y) = self.base_anchor;
+        let (mark_x, mark_y) = self.mark_anchor;
+        write!(
+            f,
+            "({base}, ({base_x}, {base_y}), {mark}, ({mark_x}, {mark_y}))"
+        )
     }
 }
 
