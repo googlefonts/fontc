@@ -146,7 +146,8 @@ impl<'a> Filter<'a> {
 ///
 /// `filter` is an optional comma-separated list of strings. If present, only
 /// tests which contain one of the strings in the list will be run.
-pub fn run_all_tests(fonttools_data_dir: impl AsRef<Path>, filter: Option<&String>) -> Report {
+pub fn run_fonttools_tests(filter: Option<&String>) -> Report {
+    let fonttools_data_dir = test_data_dir().join("fonttools-tests");
     let glyph_map = fonttools_test_glyph_order();
     let filter = Filter::new(filter);
     let var_info = make_var_info();
@@ -504,24 +505,37 @@ pub fn plain_text_diff(left: &str, right: &str) -> String {
     result
 }
 
-/// Generate the sample glyph map.
+/// return the path to the test-data directory.
 ///
-/// This is the glyph map used in the feaLib test suite.
-pub(crate) fn fonttools_test_glyph_order() -> GlyphMap {
+/// This figures out if we're running from the crate root or the project root.
+fn test_data_dir() -> PathBuf {
     let cwd = std::env::current_dir().expect("could not retrieve current directory");
     // hack: during testing cwd is the crate root, but when running a binary
     // it may be the project root
     let path = if cwd.ends_with("fea-rs") {
         assert!(!cwd.parent().expect("always presnt").ends_with("fea-rs"));
-        "./test-data/simple_glyph_order.txt"
+        "./test-data"
     } else {
-        "./fea-rs/test-data/simple_glyph_order.txt"
+        "./fea-rs/test-data"
     };
-    if !Path::new(path).exists() {
+    let path = Path::new(path);
+    if !path.exists() {
         panic!(
-            "could not locate glyph order file (cwd '{}', path '{path}' )",
+            "could not locate fea-rs test-data. Please run from crate or project root. (cwd '{}')",
             cwd.display()
         );
+    }
+    path.to_owned()
+}
+
+/// Generate the sample glyph map.
+///
+/// This is the glyph map used in the feaLib test suite.
+pub(crate) fn fonttools_test_glyph_order() -> GlyphMap {
+    let mut path = test_data_dir();
+    path.push("simple_glyph_order.txt");
+    if !path.exists() {
+        panic!("could not locate glyph map at {}", path.display());
     }
     let order_str = std::fs::read_to_string(path).unwrap();
     crate::compile::parse_glyph_order(&order_str)
