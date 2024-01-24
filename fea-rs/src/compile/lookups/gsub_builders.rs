@@ -236,12 +236,9 @@ impl Builder for LigatureSubBuilder {
             .items
             .into_values()
             .map(|mut ligs| {
-                ligs.sort_unstable_by(|(lig1, _), (lig2, _)| {
-                    // sort first decending by len, then lexicographically; we want
-                    // longer sequences ahead of shorter ones, while also being
-                    // deterministic.
-                    (lig2.len(), lig1).cmp(&(lig1.len(), lig2))
-                });
+                // we want to sort longer items first, but otherwise preserve
+                // the order provided by the user.
+                ligs.sort_by_key(|(lig, _)| std::cmp::Reverse(lig.len()));
                 write_gsub::LigatureSet::new(
                     ligs.into_iter()
                         .map(|(components, lig_glyph)| {

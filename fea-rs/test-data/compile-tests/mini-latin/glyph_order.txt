@@ -97,7 +97,9 @@ bar
 braceright
 asciitilde
 f_f
+f_i
 f_f_i
+f_f_f
 g.salt
 zero.osf
 one.osf
