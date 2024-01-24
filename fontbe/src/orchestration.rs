@@ -214,6 +214,10 @@ impl Glyph {
         matches!(&self.data, RawGlyph::Simple(_))
     }
 
+    pub fn is_composite(&self) -> bool {
+        matches!(&self.data, RawGlyph::Composite(_))
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         dump_table(&self.data).unwrap()
     }

@@ -765,7 +765,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
     let mut bbox_acquired: HashMap<GlyphName, Rect> = HashMap::new();
     let mut composites = glyphs
         .values()
-        .filter(|glyph| !glyph.is_simple())
+        .filter(|glyph| glyph.is_composite())
         .collect::<Vec<_>>();
 
     trace!("Resolve bbox for {} composites", composites.len());
@@ -776,7 +776,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
         for composite in composites.iter() {
             let glyph_name = &composite.name;
             let RawGlyph::Composite(composite) = &composite.data else {
-                panic!("Only composites should be in our vector of composites!!");
+                unreachable!("we just checked that these are all composites");
             };
 
             let mut missing_boxes = false;
@@ -794,6 +794,7 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
                             .map(|g| g.as_ref().clone())
                             .and_then(|g| match &g.data {
                                 RawGlyph::Composite(..) => None,
+                                RawGlyph::Empty => None,
                                 RawGlyph::Simple(simple_glyph) => Some(bbox2rect(simple_glyph.bbox)),
                             })
                     });

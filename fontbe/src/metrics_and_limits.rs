@@ -85,8 +85,7 @@ impl FontLimits {
     fn update(&mut self, id: GlyphId, advance: u16, glyph: &Glyph) {
         // min side bearings are only for non-empty glyphs
         // we will presume only simple glyphs with no contours are empty
-        if !glyph.data.is_empty() {
-            let bbox = glyph.data.bbox();
+        if let Some(bbox) = glyph.data.bbox() {
             let left_side_bearing = bbox.x_min;
             // aw - (lsb + xMax - xMin) ... but if lsb == xMin then just advance - xMax?
             let right_side_bearing: i16 = match advance as i32 - bbox.x_max as i32 {
@@ -107,42 +106,39 @@ impl FontLimits {
                 .map(|v| max(v, bbox.x_max))
                 .or(Some(bbox.x_max));
             self.advance_width_max = max(self.advance_width_max, advance);
+            self.bbox = self.bbox.map(|b| b.union(bbox)).or(Some(bbox));
         }
 
-        let bbox = glyph.data.bbox();
-        self.bbox = self.bbox.map(|b| b.union(bbox)).or(Some(bbox));
-
-        match &glyph.data {
+        let glyph_info = match &glyph.data {
             RawGlyph::Simple(simple) => {
                 let num_points = simple.contours().iter().map(Contour::len).sum::<usize>() as u16;
                 let num_contours = simple.contours().len() as u16;
                 self.max_points = max(self.max_points, num_points);
                 self.max_contours = max(self.max_contours, num_contours);
-                self.glyph_info.insert(
-                    id,
-                    GlyphInfo {
-                        limits: Some(GlyphLimits {
-                            max_points: num_points,
-                            max_contours: num_contours,
-                            max_depth: 0,
-                        }),
-                        components: None,
-                    },
-                )
+                GlyphInfo {
+                    limits: Some(GlyphLimits {
+                        max_points: num_points,
+                        max_contours: num_contours,
+                        max_depth: 0,
+                    }),
+                    components: None,
+                }
             }
             RawGlyph::Composite(composite) => {
                 let num_components = composite.components().len() as u16;
                 self.max_component_elements = max(self.max_component_elements, num_components);
                 let components = Some(composite.components().iter().map(|c| c.glyph).collect());
-                self.glyph_info.insert(
-                    id,
-                    GlyphInfo {
-                        limits: None,
-                        components,
-                    },
-                )
+                GlyphInfo {
+                    limits: None,
+                    components,
+                }
             }
+            RawGlyph::Empty => GlyphInfo {
+                limits: Some(GlyphLimits::default()),
+                components: None,
+            },
         };
+        self.glyph_info.insert(id, glyph_info);
     }
 
     fn update_composite_limits(&mut self) -> GlyphLimits {
@@ -257,7 +253,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
                 glyph_limits.update(gid, advance, &glyph);
                 LongMetric {
                     advance,
-                    side_bearing: glyph.data.bbox().x_min,
+                    side_bearing: glyph.data.bbox().map(|bbox| bbox.x_min).unwrap_or_default(),
                 }
             })
             .collect();
