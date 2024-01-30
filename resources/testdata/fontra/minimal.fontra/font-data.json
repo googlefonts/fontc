@@ -1,0 +1,30 @@
+{
+"unitsPerEm": 1000,
+"customData": {
+"fontra.sourceStatusFieldDefinitions": [
+{
+"label": "In progress",
+"color": [
+1.0,
+0.0,
+0.0,
+1.0
+],
+"value": 0,
+"isDefault": true
+}
+]
+},
+"axes": [
+{
+"name": "Weight",
+"label": "wght",
+"tag": "wght",
+"minValue": 200.0,
+"defaultValue": 200.0,
+"maxValue": 900.0,
+"hidden": false
+}
+],
+"sources": []
+}
