@@ -7,6 +7,7 @@ use fontbe::{
     orchestration::{AnyWorkId, WorkId as BeWorkIdentifier},
     paths::Paths as BePaths,
 };
+use fontra2fontir::source::FontraIrSource;
 
 use crate::{create_timer, timing::JobTimer, work::AnyWork, workload::Workload, Config, Error};
 use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
@@ -375,6 +376,7 @@ fn ir_source(source: &Path) -> Result<Box<dyn Source>, Error> {
         "designspace" => Ok(Box::new(DesignSpaceIrSource::new(source.to_path_buf())?)),
         "glyphs" => Ok(Box::new(GlyphsIrSource::new(source.to_path_buf()))),
         "glyphspackage" => Ok(Box::new(GlyphsIrSource::new(source.to_path_buf()))),
+        "fontra" => Ok(Box::new(FontraIrSource::new(source.to_path_buf()))),
         _ => Err(Error::UnrecognizedSource(source.to_path_buf())),
     }
 }
