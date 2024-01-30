@@ -16,6 +16,7 @@ fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 fontbe = { version = "0.0.1", path = "../fontbe" }
 fontir = { version = "0.0.1", path = "../fontir" }
 glyphs2fontir = { version = "0.0.1", path = "../glyphs2fontir" }
+fontra2fontir = { version = "0.0.1", path = "../fontra2fontir" }
 ufo2fontir = { version = "0.0.1", path = "../ufo2fontir" }
 
 bitflags.workspace = true
