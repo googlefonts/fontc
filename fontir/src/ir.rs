@@ -149,7 +149,7 @@ impl GlyphOrder {
     }
 
     pub fn remove(&mut self, name: &GlyphName) -> bool {
-        self.0.remove(name)
+        self.0.shift_remove(name)
     }
 
     pub fn difference<'a>(
