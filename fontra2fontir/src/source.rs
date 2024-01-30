@@ -3,12 +3,14 @@ use std::path::PathBuf;
 use fontir::source::Source;
 
 pub struct FontraIrSource {
-    fontra_dir: PathBuf,
+    _fontra_dir: PathBuf,
 }
 
 impl FontraIrSource {
     pub fn new(fontra_dir: PathBuf) -> Self {
-        FontraIrSource { fontra_dir }
+        FontraIrSource {
+            _fontra_dir: fontra_dir,
+        }
     }
 }
 
