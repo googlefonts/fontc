@@ -1047,7 +1047,7 @@ mod tests {
         assert_eq!(1, glyph.contours().len());
         assert_eq!(
             4_usize,
-            glyph.contours().iter().map(|c| c.iter().count()).sum()
+            glyph.contours().iter().map(|c| c.iter().count()).sum::<usize>()
         );
         assert_eq!(
             Bbox {
