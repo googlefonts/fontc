@@ -199,7 +199,14 @@ impl ParseContext {
         }
 
         let mut map = SourceMap::default();
-        let root = self.generate_recurse(self.root_id(), &include_errors, &mut map, 0);
+        let mut root = self.generate_recurse(self.root_id(), &include_errors, &mut map, 0);
+        let needs_update_positions = self.parsed_files.len() > 1;
+        // we need to do this before updating positions, since it mutates and
+        // requires that there exist only one reference (via Arc) to the node
+        drop(self.parsed_files);
+        if needs_update_positions {
+            root.update_positions_from_root();
+        }
         (
             ParseTree {
                 root,

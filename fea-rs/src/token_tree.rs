@@ -1,6 +1,6 @@
 use std::{fmt::Write, io::Write as _};
 
-use std::{cell::Cell, ops::Range, sync::Arc};
+use std::{ops::Range, sync::Arc};
 
 use smol_str::SmolStr;
 
@@ -31,7 +31,8 @@ pub struct Node {
     // NOTE: the absolute position within the tree is not known when the node
     // is created; this is updated (and correct) only when the node has been
     // accessed via a `Cursor`.
-    abs_pos: Cell<u32>,
+    abs_pos: u32,
+    /// The length of the text spanned by this node
     text_len: u32,
     /// true if an error was encountered in this node.
     ///
@@ -48,7 +49,7 @@ pub struct Token {
     /// The [`Kind`] of this token
     pub kind: Kind,
     /// The absolute position in the source where this token starts
-    abs_pos: Cell<u32>,
+    abs_pos: u32,
     /// The token text
     pub text: SmolStr,
 }
@@ -144,7 +145,8 @@ impl<'a> AstSink<'a> {
     }
 
     pub fn finish(self) -> (Node, Vec<Diagnostic>, Vec<IncludeStatement>) {
-        let node = self.builder.finish();
+        let mut node = self.builder.finish();
+        node.update_positions_from_root();
         let mut includes = Vec::new();
         if self.include_statement_count > 0 {
             node.find_include_nodes(&mut includes, self.include_statement_count);
@@ -234,18 +236,37 @@ impl<'a> AstSink<'a> {
 }
 
 impl Node {
-    fn new(kind: Kind, mut children: Vec<NodeOrToken>, error: bool) -> Self {
-        let mut text_len = 0;
-        for child in &mut children {
-            text_len += child.text_len() as u32;
-        }
-
+    fn new(kind: Kind, children: Vec<NodeOrToken>, error: bool) -> Self {
+        let text_len = children.iter().map(|x| x.text_len() as u32).sum();
         Node {
             kind,
             text_len,
-            abs_pos: Cell::new(0),
+            abs_pos: 0,
             children: children.into(),
             error,
+        }
+    }
+
+    /// recursively compute and update the positions of each child.
+    ///
+    /// This should only be called on a root node; it assumes the position
+    /// of the callee is `0`.
+    ///
+    /// This is required in order for us to correctly associate diagnostics
+    /// with their locations in the source.
+    pub(crate) fn update_positions_from_root(&mut self) {
+        self.update_positions_recurse(0)
+    }
+
+    fn update_positions_recurse(&mut self, mut pos: usize) {
+        self.abs_pos = pos as _;
+        let Some(children) = Arc::get_mut(&mut self.children) else {
+            panic!("update_positions should only be called on a newly created node");
+        };
+
+        for child in children {
+            child.update_positions(pos);
+            pos += child.text_len();
         }
     }
 
@@ -279,7 +300,7 @@ impl Node {
     ///
     /// Only correct if this node is accessed via a cursor.
     pub fn range(&self) -> Range<usize> {
-        let start = self.abs_pos.get() as usize;
+        let start = self.abs_pos as usize;
         start..start + (self.text_len as usize)
     }
 
@@ -342,7 +363,7 @@ impl Node {
 
     fn parse_tree_impl(&self, depth: usize, buf: &mut String) -> std::fmt::Result {
         use crate::util::SPACES;
-        let mut pos = self.abs_pos.get();
+        let mut pos = self.abs_pos;
         writeln!(
             buf,
             "{}{}@[{}; {})",
@@ -422,10 +443,10 @@ impl TreeBuilder {
 }
 
 impl NodeOrToken {
-    pub(crate) fn set_abs_pos(&self, pos: usize) {
+    fn update_positions(&mut self, pos: usize) {
         match self {
-            NodeOrToken::Token(t) => t.abs_pos.set(pos as u32),
-            NodeOrToken::Node(n) => n.abs_pos.set(pos as u32),
+            NodeOrToken::Token(t) => t.abs_pos = pos as _,
+            NodeOrToken::Node(n) => n.update_positions_recurse(pos),
         }
     }
 
@@ -515,7 +536,7 @@ impl Token {
         Token {
             kind,
             text,
-            abs_pos: Cell::new(0),
+            abs_pos: 0,
         }
     }
 
@@ -526,7 +547,7 @@ impl Token {
 
     /// The position of this token in its source.
     pub fn range(&self) -> Range<usize> {
-        self.abs_pos.get() as usize..self.abs_pos.get() as usize + self.text.len()
+        self.abs_pos as usize..self.abs_pos as usize + self.text.len()
     }
 }
 
@@ -580,7 +601,7 @@ impl Node {
             f,
             "\n{ws}{}:  abs {} len {} children {}",
             self.kind,
-            self.abs_pos.get(),
+            self.abs_pos,
             self.text_len,
             self.children.len()
         )?;
