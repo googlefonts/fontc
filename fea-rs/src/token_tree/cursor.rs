@@ -19,11 +19,8 @@ struct NodeRef<'a> {
 
 impl<'a> Cursor<'a> {
     pub fn new(root: &'a Node) -> Self {
-        if let Some(child) = root.children.first() {
-            child.set_abs_pos(root.abs_pos.get() as usize);
-        }
         Cursor {
-            pos: root.abs_pos.get() as usize,
+            pos: root.abs_pos as usize,
             current: NodeRef {
                 node: root,
                 fresh: true,
@@ -66,9 +63,6 @@ impl<'a> Cursor<'a> {
         let len = self.current().map(NodeOrToken::text_len).unwrap_or(0);
         self.current.advance();
         self.pos += len;
-        if let Some(current) = self.current() {
-            current.set_abs_pos(self.pos);
-        }
     }
 
     /// Advance the cursor.
@@ -104,9 +98,6 @@ impl<'a> Cursor<'a> {
                 // after ascending, we need to advance
                 self.current.advance();
             }
-        }
-        if let Some(current) = self.current() {
-            current.set_abs_pos(self.pos);
         }
     }
 
