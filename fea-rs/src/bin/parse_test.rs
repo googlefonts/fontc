@@ -7,7 +7,7 @@ use std::{
     time::Instant,
 };
 
-use fea_rs::{compile::error::DiagnosticSet, Kind, ParseTree};
+use fea_rs::{DiagnosticSet, Kind, ParseTree};
 
 /// Attempt to parse fea files.
 ///

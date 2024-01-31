@@ -2,11 +2,11 @@
 
 use write_fonts::types::GlyphId;
 
-use crate::{parse::ParseTree, GlyphMap, GlyphName};
+use crate::{parse::ParseTree, DiagnosticSet, GlyphMap, GlyphName};
 
 use self::{
     compile_ctx::CompilationCtx,
-    error::{DiagnosticSet, FontGlyphOrderError, GlyphOrderError},
+    error::{FontGlyphOrderError, GlyphOrderError},
 };
 
 #[cfg(feature = "norad")]

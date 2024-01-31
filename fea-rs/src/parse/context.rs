@@ -10,12 +10,11 @@ use std::{
 use super::source::{Source, SourceLoadError, SourceLoader, SourceResolver};
 use super::{FileId, ParseTree, Parser, SourceList, SourceMap};
 use crate::{
-    compile::error::DiagnosticSet,
     token_tree::{
         typed::{self, AstNode as _},
         AstSink,
     },
-    Diagnostic, GlyphMap, Node,
+    Diagnostic, DiagnosticSet, GlyphMap, Node,
 };
 
 const MAX_INCLUDE_DEPTH: usize = 50;

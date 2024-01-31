@@ -8,13 +8,10 @@ use std::{
 
 use crate::{
     parse::{FileSystemResolver, SourceResolver},
-    GlyphMap,
+    DiagnosticSet, GlyphMap,
 };
 
-use super::{
-    error::{CompilerError, DiagnosticSet},
-    Compilation, FeatureProvider, Opts, VariationInfo,
-};
+use super::{error::CompilerError, Compilation, FeatureProvider, Opts, VariationInfo};
 
 const DEFAULT_N_MESSAGES_TO_PRINT: usize = 100;
 

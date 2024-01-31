@@ -11,11 +11,8 @@ use std::{
 };
 
 use crate::{
-    compile::{
-        error::{CompilerError, DiagnosticSet},
-        Compiler, MockVariationInfo, NopFeatureProvider, Opts,
-    },
-    GlyphIdent, GlyphMap, ParseTree,
+    compile::{error::CompilerError, Compiler, MockVariationInfo, NopFeatureProvider, Opts},
+    DiagnosticSet, GlyphIdent, GlyphMap, ParseTree,
 };
 
 use ansi_term::Color;
@@ -267,7 +264,7 @@ pub(crate) fn run_test(
 
 fn print_diagnostics_if_verbose(diagnostics: &DiagnosticSet) {
     if std::env::var(super::VERBOSE).is_ok() && !diagnostics.is_empty() {
-        eprintln!("{}", diagnostics.to_string(false));
+        eprintln!("{}", diagnostics.display());
     }
 }
 

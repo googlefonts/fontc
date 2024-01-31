@@ -20,7 +20,7 @@ pub(crate) use context::{IncludeStatement, ParseContext};
 pub(crate) use parser::Parser;
 pub(crate) use source::{FileId, Source, SourceList, SourceMap};
 
-use crate::{compile::error::DiagnosticSet, Diagnostic, GlyphMap, Node};
+use crate::{Diagnostic, DiagnosticSet, GlyphMap, Node};
 
 /// Attempt to parse a feature file from disk, including its imports.
 ///
