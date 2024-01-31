@@ -14,6 +14,7 @@ use crate::{util, Diagnostic};
 
 /// Uniquely identifies a source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FileId(NonZeroU32);
 
 /// A single source file, corresponding to a file on disk.
@@ -23,7 +24,8 @@ pub struct FileId(NonZeroU32);
 ///
 /// Note: this type uses `Arc` internally so that it can be safely sent across
 /// threads.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Source {
     id: FileId,
     /// The non-canonicalized path to this source, suitable for printing.
@@ -35,7 +37,8 @@ pub struct Source {
 }
 
 /// A list of sources in a project.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SourceList {
     ids: HashMap<OsString, FileId>,
     sources: HashMap<FileId, Source>,
@@ -48,7 +51,8 @@ pub(crate) struct SourceLoader {
 
 /// A map from positions in a resolved token tree (which may contain the
 /// contents of multiple sources) to locations in specific sources.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SourceMap {
     /// sorted vec of (offset_in_combined_tree, (file_id, offest_in_source_file));
     offsets: Vec<(Range<usize>, (FileId, usize))>,
@@ -133,6 +137,7 @@ where
 /// An implementation of [`SourceResolver`] for the local file system.
 ///
 /// This is the common case.
+#[derive(Default)]
 pub struct FileSystemResolver {
     project_root: PathBuf,
 }

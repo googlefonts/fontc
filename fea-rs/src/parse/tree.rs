@@ -13,7 +13,8 @@ use crate::{token_tree::typed, Diagnostic, Node};
 ///
 /// This is cheap to clone, so it can be attached to diagnostics, allowing them
 /// to print themselves where needed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ParseTree {
     pub(crate) root: Node,
     // Arc so we can send across threads
