@@ -27,10 +27,6 @@ pub use token::Kind;
 pub struct Node {
     /// The ``Kind` of this node.
     kind: Kind,
-    // start of this node relative to start of parent node.
-    // we can use this to more efficiently move to a given offset
-    // TODO: remove if unused
-    rel_pos: u32,
 
     // NOTE: the absolute position within the tree is not known when the node
     // is created; this is updated (and correct) only when the node has been
@@ -241,16 +237,12 @@ impl Node {
     fn new(kind: Kind, mut children: Vec<NodeOrToken>, error: bool) -> Self {
         let mut text_len = 0;
         for child in &mut children {
-            if let NodeOrToken::Node(n) = child {
-                n.rel_pos += text_len;
-            }
             text_len += child.text_len() as u32;
         }
 
         Node {
             kind,
             text_len,
-            rel_pos: 0,
             abs_pos: Cell::new(0),
             children: children.into(),
             error,
@@ -586,10 +578,8 @@ impl Node {
         let ws = &SPACES[..depth * 2];
         write!(
             f,
-            "\n{}{}: rel {} abs {} len {} children {}",
-            ws,
+            "\n{ws}{}:  abs {} len {} children {}",
             self.kind,
-            self.rel_pos,
             self.abs_pos.get(),
             self.text_len,
             self.children.len()
