@@ -62,9 +62,9 @@ fn parse_test_glyph_order() -> GlyphMap {
 fn run_good_test(path: PathBuf, glyphmap: &GlyphMap) -> Result<PathBuf, TestCase> {
     let verbose = std::env::var(crate::util::VERBOSE).is_ok();
     match std::panic::catch_unwind(|| match test_utils::try_parse_file(&path, Some(glyphmap)) {
-        Err((node, errs)) => Err(TestCase {
+        Err((_, errs)) => Err(TestCase {
             path: path.clone(),
-            reason: TestResult::ParseFail(test_utils::stringify_diagnostics(&node, &errs)),
+            reason: TestResult::ParseFail(errs.to_string(false)),
         }),
         Ok(node) => {
             let output = node.root().simple_parse_tree();
@@ -94,8 +94,8 @@ fn run_good_test(path: PathBuf, glyphmap: &GlyphMap) -> Result<PathBuf, TestCase
 
 fn run_bad_test(path: PathBuf) -> Result<PathBuf, TestCase> {
     match std::panic::catch_unwind(|| match test_utils::try_parse_file(&path, None) {
-        Err((node, errs)) => {
-            let msg = test_utils::stringify_diagnostics(&node, &errs);
+        Err((_, errs)) => {
+            let msg = errs.to_string(false);
             let result = test_utils::compare_to_expected_output(&msg, &path, BAD_OUTPUT_EXTENSION);
             if result.is_err() && std::env::var(crate::util::WRITE_RESULTS_VAR).is_ok() {
                 let to_path = path.with_extension(BAD_OUTPUT_EXTENSION);

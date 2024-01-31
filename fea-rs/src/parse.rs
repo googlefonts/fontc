@@ -20,7 +20,7 @@ pub(crate) use context::{IncludeStatement, ParseContext};
 pub(crate) use parser::Parser;
 pub(crate) use source::{FileId, Source, SourceList, SourceMap};
 
-use crate::{Diagnostic, GlyphMap, Node};
+use crate::{compile::error::DiagnosticSet, Diagnostic, GlyphMap, Node};
 
 /// Attempt to parse a feature file from disk, including its imports.
 ///
@@ -41,12 +41,12 @@ pub fn parse_root_file(
     path: impl Into<PathBuf>,
     glyph_map: Option<&GlyphMap>,
     project_root: Option<PathBuf>,
-) -> Result<(ParseTree, Vec<Diagnostic>), SourceLoadError> {
+) -> Result<(ParseTree, DiagnosticSet), SourceLoadError> {
     let path = path.into();
     let project_root =
         project_root.unwrap_or_else(|| path.parent().map(PathBuf::from).unwrap_or_default());
     let resolver = source::FileSystemResolver::new(project_root);
-    parse_root(path.into_os_string(), glyph_map, resolver)
+    parse_root(path.into_os_string(), glyph_map, Box::new(resolver))
 }
 
 /// Entry point for parsing.
@@ -60,13 +60,17 @@ pub fn parse_root_file(
 /// The `glyph_map`, if provided, is used to disambiguate between certain tokens
 /// that are allowed in FEA syntax but which are also legal glyph names. If you
 /// are not compiling the parse results, you can omit it.
+///
+/// This returns an error if a source could not be located; otherwise it returns
+/// a parse tree and a set of diagnostics, even if parsing fails. The caller must
+/// check that there are no errors (via [`DiagnosticSet::has_errors`]) to know
+/// whether or not parsing was successful.
 pub fn parse_root(
     path: OsString,
     glyph_map: Option<&GlyphMap>,
-    resolver: impl SourceResolver + 'static,
-) -> Result<(ParseTree, Vec<Diagnostic>), SourceLoadError> {
-    context::ParseContext::parse(path, glyph_map, Box::new(resolver))
-        .map(|ctx| ctx.generate_parse_tree())
+    resolver: Box<dyn SourceResolver>,
+) -> Result<(ParseTree, DiagnosticSet), SourceLoadError> {
+    context::ParseContext::parse(path, glyph_map, resolver).map(|ctx| ctx.generate_parse_tree())
 }
 
 /// Convenience method to parse a block of FEA from memory.

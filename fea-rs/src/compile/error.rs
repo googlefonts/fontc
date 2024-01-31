@@ -6,7 +6,7 @@ use write_fonts::{read::ReadError, BuilderError};
 
 use crate::{
     parse::{SourceList, SourceLoadError},
-    Diagnostic,
+    Diagnostic, ParseTree,
 };
 
 /// An error that occurs when extracting a glyph order from a UFO.
@@ -57,11 +57,11 @@ pub enum CompilerError {
         #[source]
         SourceLoadError,
     ),
-    #[error("Parsing failed with {} errors\n{}", .0.messages.len(), .0.printer())]
+    #[error("Parsing failed with {} errors\n{}", .0.messages.len(), .0.display())]
     ParseFail(DiagnosticSet),
-    #[error("Validation failed with {} errors\n{}", .0.messages.len(), .0.printer())]
+    #[error("Validation failed with {} errors\n{}", .0.messages.len(), .0.display())]
     ValidationFail(DiagnosticSet),
-    #[error("Compilation failed with {} errors\n{}", .0.messages.len(), .0.printer())]
+    #[error("Compilation failed with {} errors\n{}", .0.messages.len(), .0.display())]
     CompilationFail(DiagnosticSet),
     #[error("{0}")]
     WriteFail(#[from] BuilderError),
@@ -81,6 +81,51 @@ pub struct DiagnosticSet {
 struct DiagnosticDisplayer<'a>(&'a DiagnosticSet);
 
 impl DiagnosticSet {
+    /// Create a new `DiagnosticSet`.
+    pub fn new(messages: Vec<Diagnostic>, tree: &ParseTree, max_to_print: usize) -> Self {
+        Self {
+            messages,
+            sources: tree.sources.clone(),
+            max_to_print,
+        }
+    }
+    /// The number of diagnostic messages
+    pub fn len(&self) -> usize {
+        self.messages.len()
+    }
+
+    /// `true` if there are no diagnostic messages
+    pub fn is_empty(&self) -> bool {
+        self.messages.is_empty()
+    }
+
+    /// `true` if any of the messages in this set indicate hard errors
+    pub fn has_errors(&self) -> bool {
+        self.messages.iter().any(|msg| msg.is_error())
+    }
+
+    /// Set the max number of messages to print.
+    pub fn set_max_to_print(&mut self, max_to_print: usize) {
+        self.max_to_print = max_to_print;
+    }
+
+    /// Remove and return any warnings in this set.
+    pub fn split_off_warnings(&mut self) -> Option<DiagnosticSet> {
+        self.messages.sort_unstable_by_key(|d| d.level);
+        let split_at = self.messages.iter().position(|x| !x.is_error())?;
+        let warnings = self.messages.split_off(split_at);
+        Some(Self {
+            messages: warnings,
+            sources: self.sources.clone(),
+            max_to_print: self.max_to_print,
+        })
+    }
+
+    /// Returns an opaque type that can pretty-print the diagnostics
+    pub fn display(&self) -> impl std::fmt::Display + '_ {
+        DiagnosticDisplayer(self)
+    }
+
     pub(crate) fn write(&self, f: &mut impl std::fmt::Write, colorize: bool) -> std::fmt::Result {
         let mut first = true;
         for err in self.messages.iter().take(self.max_to_print) {
@@ -94,10 +139,6 @@ impl DiagnosticSet {
             writeln!(f, "... and {overflow} more errors")?;
         }
         Ok(())
-    }
-
-    fn printer(&self) -> DiagnosticDisplayer {
-        DiagnosticDisplayer(self)
     }
 
     #[cfg(any(test, feature = "test"))]

@@ -2,11 +2,11 @@
 
 use write_fonts::types::GlyphId;
 
-use crate::{parse::ParseTree, Diagnostic, GlyphMap, GlyphName};
+use crate::{parse::ParseTree, GlyphMap, GlyphName};
 
 use self::{
     compile_ctx::CompilationCtx,
-    error::{FontGlyphOrderError, GlyphOrderError},
+    error::{DiagnosticSet, FontGlyphOrderError, GlyphOrderError},
 };
 
 #[cfg(feature = "norad")]
@@ -48,10 +48,10 @@ pub(crate) fn validate<V: VariationInfo>(
     node: &ParseTree,
     glyph_map: &GlyphMap,
     fvar: Option<&V>,
-) -> Vec<Diagnostic> {
+) -> DiagnosticSet {
     let mut ctx = validate::ValidationCtx::new(node.source_map(), glyph_map, fvar);
     ctx.validate_root(&node.typed_root());
-    ctx.errors
+    DiagnosticSet::new(ctx.errors, node, usize::MAX)
 }
 
 /// A helper function for extracting the glyph order from a UFO
