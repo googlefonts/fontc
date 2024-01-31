@@ -1,16 +1,24 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fs::{self, File},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use fontdrasil::types::GlyphName;
+use fontdrasil::{
+    coords::{CoordConverter, DesignCoord, UserCoord},
+    orchestration::Work,
+    types::{Axis, GlyphName},
+};
 use fontir::{
-    error::Error,
+    error::{Error, WorkError},
+    ir::StaticMetadata,
+    orchestration::{Context, WorkId},
     source::{Input, Source},
     stateset::StateSet,
 };
+use log::debug;
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::Deserialize;
 use write_fonts::types::Tag;
@@ -19,7 +27,7 @@ pub struct FontraIrSource {
     fontdata_file: PathBuf,
     glyphinfo_file: PathBuf,
     glyph_dir: PathBuf,
-    glyph_info: HashMap<GlyphName, (PathBuf, Option<u32>)>,
+    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Option<u32>)>>,
 }
 
 impl FontraIrSource {
@@ -59,11 +67,16 @@ impl FontraIrSource {
     }
 
     fn load_glyphinfo(&mut self) -> Result<(), Error> {
+        if !self.glyph_info.is_empty() {
+            return Ok(());
+        }
+
         // Read the glyph-info file
         let file = File::open(&self.glyphinfo_file).map_err(Error::IoError)?;
 
         // Example files suggest the first line is just the column headers. Hopefully always :)
         // This file is tool generated so it shouldn't be full of human error. Fail if we don't understand.
+        let mut glyph_info = BTreeMap::default();
         for (i, line) in BufReader::new(file).lines().enumerate().skip(1) {
             let line = line.map_err(Error::IoError)?;
             let parts: Vec<_> = line.split(';').collect();
@@ -96,8 +109,8 @@ impl FontraIrSource {
             if !glyph_file.is_file() {
                 return Err(Error::FileExpected(glyph_file));
             }
-            if self
-                .glyph_info
+
+            if glyph_info
                 .insert(glyph_name.clone(), (glyph_file, codepoint))
                 .is_some()
             {
@@ -107,6 +120,7 @@ impl FontraIrSource {
                 ));
             }
         }
+        self.glyph_info = Arc::new(glyph_info);
         Ok(())
     }
 
@@ -150,7 +164,10 @@ impl Source for FontraIrSource {
         _input: &fontir::source::Input,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
         let _font_data = FontData::from_file(&self.fontdata_file)?;
-        todo!()
+        Ok(Box::new(StaticMetadataWork {
+            fontdata_file: self.fontdata_file.clone(),
+            glyph_info: self.glyph_info.clone(),
+        }))
     }
 
     fn create_global_metric_work(
@@ -195,9 +212,9 @@ impl Source for FontraIrSource {
 #[derive(Debug, Clone, Deserialize)]
 struct FontData {
     #[serde(rename = "unitsPerEm")]
-    _units_per_em: u16,
+    units_per_em: u16,
     #[serde(default)]
-    _axes: Vec<FontraAxis>,
+    axes: Vec<FontraAxis>,
 }
 
 impl FontData {
@@ -209,16 +226,114 @@ impl FontData {
 
 #[derive(Debug, Clone, Deserialize)]
 struct FontraAxis {
-    _name: String,
-    _tag: Tag,
-    #[serde(rename = "minValue")]
-    _min_value: f64,
-    #[serde(rename = "defaultValue")]
-    _default_value: f64,
-    #[serde(rename = "maxValue")]
-    _max_value: f64,
+    name: String,
+    tag: Tag,
     #[serde(default)]
-    _mapping: Vec<[f64; 2]>,
+    hidden: bool,
+    #[serde(rename = "minValue")]
+    min_value: f64,
+    #[serde(rename = "defaultValue")]
+    default_value: f64,
+    #[serde(rename = "maxValue")]
+    max_value: f64,
+    #[serde(default)]
+    mapping: Vec<[f64; 2]>,
+}
+
+#[derive(Debug)]
+struct StaticMetadataWork {
+    fontdata_file: PathBuf,
+    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Option<u32>)>>,
+}
+
+fn create_static_metadata(fontdata_file: &Path) -> Result<StaticMetadata, WorkError> {
+    debug!("Static metadata for {:#?}", fontdata_file);
+    let font_data = FontData::from_file(fontdata_file)
+        .map_err(|e| WorkError::ParseError(fontdata_file.to_path_buf(), format!("{e}")))?;
+
+    let axes = font_data
+        .axes
+        .iter()
+        .map(|a| {
+            let min = UserCoord::new(a.min_value as f32);
+            let default = UserCoord::new(a.default_value as f32);
+            let max = UserCoord::new(a.max_value as f32);
+
+            if min > default || max < default {
+                return Err(WorkError::InconsistentAxisDefinitions(format!("{a:?}")));
+            }
+
+            let converter = if !a.mapping.is_empty() {
+                let examples: Vec<_> = a
+                    .mapping
+                    .iter()
+                    .map(|[raw_user, raw_design]| {
+                        (
+                            UserCoord::new(*raw_user as f32),
+                            DesignCoord::new(*raw_design as f32),
+                        )
+                    })
+                    .collect();
+                let default_idx = examples
+                    .iter()
+                    .position(|(u, _)| *u == default)
+                    .ok_or_else(|| WorkError::AxisMustMapDefault(a.tag))?;
+                examples
+                    .iter()
+                    .position(|(u, _)| *u == min)
+                    .ok_or_else(|| WorkError::AxisMustMapMin(a.tag))?;
+                examples
+                    .iter()
+                    .position(|(u, _)| *u == max)
+                    .ok_or_else(|| WorkError::AxisMustMapMax(a.tag))?;
+                CoordConverter::new(examples, default_idx)
+            } else {
+                CoordConverter::unmapped(min, default, max)
+            };
+
+            Ok(Axis {
+                tag: a.tag,
+                name: a.name.clone(),
+                hidden: a.hidden,
+                min,
+                default,
+                max,
+                converter,
+            })
+        })
+        .collect::<Result<_, _>>()?;
+
+    StaticMetadata::new(
+        font_data.units_per_em,
+        Default::default(),
+        axes,
+        Default::default(),
+        Default::default(), // TODO: glyph locations we really do need
+        Default::default(),
+        Default::default(),
+    )
+    .map_err(WorkError::VariationModelError)
+}
+
+impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
+    fn id(&self) -> WorkId {
+        WorkId::StaticMetadata
+    }
+
+    fn also_completes(&self) -> Vec<WorkId> {
+        vec![WorkId::PreliminaryGlyphOrder]
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+        debug!("Static metadata for {:#?}", self.fontdata_file);
+        context
+            .preliminary_glyph_order
+            .set(self.glyph_info.keys().cloned().collect());
+        context
+            .static_metadata
+            .set(create_static_metadata(&self.fontdata_file)?);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -236,17 +351,31 @@ mod tests {
         dir.to_path_buf()
     }
 
-    fn axis_tuples(font_data: &FontData) -> Vec<(&str, Tag, f64, f64, f64)> {
+    fn fontra_axis_tuples(font_data: &FontData) -> Vec<(&str, Tag, f64, f64, f64)> {
         font_data
-            ._axes
+            .axes
             .iter()
             .map(|a| {
                 (
-                    a._name.as_str(),
-                    a._tag,
-                    a._min_value,
-                    a._default_value,
-                    a._max_value,
+                    a.name.as_str(),
+                    a.tag,
+                    a.min_value,
+                    a.default_value,
+                    a.max_value,
+                )
+            })
+            .collect::<Vec<_>>()
+    }
+
+    fn axis_tuples(axes: &[Axis]) -> Vec<(&str, Tag, f64, f64, f64)> {
+        axes.iter()
+            .map(|a| {
+                (
+                    a.name.as_str(),
+                    a.tag,
+                    a.min.to_f32() as f64,
+                    a.default.to_f32() as f64,
+                    a.max.to_f32() as f64,
                 )
             })
             .collect::<Vec<_>>()
@@ -278,10 +407,10 @@ mod tests {
     fn fontdata_of_minimal() {
         let font_data =
             FontData::from_file(&testdata_dir().join("minimal.fontra/font-data.json")).unwrap();
-        assert_eq!(1000, font_data._units_per_em);
+        assert_eq!(1000, font_data.units_per_em);
         assert_eq!(
             vec![("Weight", Tag::from_be_bytes(*b"wght"), 200.0, 200.0, 900.0),],
-            axis_tuples(&font_data)
+            fontra_axis_tuples(&font_data)
         );
     }
 
@@ -289,22 +418,36 @@ mod tests {
     fn fontdata_of_2glyphs() {
         let font_data =
             FontData::from_file(&testdata_dir().join("2glyphs.fontra/font-data.json")).unwrap();
-        assert_eq!(1000, font_data._units_per_em);
+        assert_eq!(1000, font_data.units_per_em);
         assert_eq!(
             vec![
                 ("Weight", Tag::from_be_bytes(*b"wght"), 200.0, 200.0, 900.0),
                 ("Width", Tag::from_be_bytes(*b"wdth"), 50.0, 100.0, 125.0)
             ],
-            axis_tuples(&font_data)
+            fontra_axis_tuples(&font_data)
         );
         let wght = font_data
-            ._axes
+            .axes
             .iter()
-            .find(|a| a._tag == Tag::from_be_bytes(*b"wght"))
+            .find(|a| a.tag == Tag::from_be_bytes(*b"wght"))
             .unwrap();
         assert_eq!(
             vec![[200.0, 0.0], [300.018, 0.095], [900.0, 1.0]],
-            wght._mapping
+            wght.mapping
+        );
+    }
+
+    #[test]
+    fn static_metadata_of_2glyphs() {
+        let fontdata_file = testdata_dir().join("2glyphs.fontra/font-data.json");
+        let static_metadata = create_static_metadata(&fontdata_file).unwrap();
+        assert_eq!(1000, static_metadata.units_per_em);
+        assert_eq!(
+            vec![
+                ("Weight", Tag::from_be_bytes(*b"wght"), 200.0, 200.0, 900.0),
+                ("Width", Tag::from_be_bytes(*b"wdth"), 50.0, 100.0, 125.0)
+            ],
+            axis_tuples(&static_metadata.axes)
         );
     }
 }
