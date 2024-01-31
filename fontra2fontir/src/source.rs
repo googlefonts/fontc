@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
-    fs::File,
+    fs::{self, File},
     io::{BufRead, BufReader},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use fontdrasil::types::GlyphName;
@@ -12,6 +12,8 @@ use fontir::{
     stateset::StateSet,
 };
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use serde::Deserialize;
+use write_fonts::types::Tag;
 
 pub struct FontraIrSource {
     fontdata_file: PathBuf,
@@ -147,6 +149,7 @@ impl Source for FontraIrSource {
         &self,
         _input: &fontir::source::Input,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
+        let _font_data = FontData::from_file(&self.fontdata_file)?;
         todo!()
     }
 
@@ -188,6 +191,36 @@ impl Source for FontraIrSource {
     }
 }
 
+/// serde type used to load font-data
+#[derive(Debug, Clone, Deserialize)]
+struct FontData {
+    #[serde(rename = "unitsPerEm")]
+    _units_per_em: u16,
+    #[serde(default)]
+    _axes: Vec<FontraAxis>,
+}
+
+impl FontData {
+    fn from_file(p: &Path) -> Result<Self, Error> {
+        let raw = fs::read_to_string(p).map_err(Error::IoError)?;
+        serde_json::from_str(&raw).map_err(|e| Error::ParseError(p.to_path_buf(), format!("{e}")))
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct FontraAxis {
+    _name: String,
+    _tag: Tag,
+    #[serde(rename = "minValue")]
+    _min_value: f64,
+    #[serde(rename = "defaultValue")]
+    _default_value: f64,
+    #[serde(rename = "maxValue")]
+    _max_value: f64,
+    #[serde(default)]
+    _mapping: Vec<[f64; 2]>,
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -203,8 +236,24 @@ mod tests {
         dir.to_path_buf()
     }
 
+    fn axis_tuples(font_data: &FontData) -> Vec<(&str, Tag, f64, f64, f64)> {
+        font_data
+            ._axes
+            .iter()
+            .map(|a| {
+                (
+                    a._name.as_str(),
+                    a._tag,
+                    a._min_value,
+                    a._default_value,
+                    a._max_value,
+                )
+            })
+            .collect::<Vec<_>>()
+    }
+
     #[test]
-    fn glyphs_for_minimal() {
+    fn glyph_names_of_minimal() {
         let mut source = FontraIrSource::new(testdata_dir().join("minimal.fontra")).unwrap();
         let inputs = source.inputs().unwrap();
         assert_eq!(
@@ -214,7 +263,7 @@ mod tests {
     }
 
     #[test]
-    fn glyphs_for_2glyphs() {
+    fn glyph_names_of_2glyphs() {
         let mut source = FontraIrSource::new(testdata_dir().join("2glyphs.fontra")).unwrap();
         let inputs = source.inputs().unwrap();
         let mut glyph_names = inputs.glyphs.keys().cloned().collect::<Vec<_>>();
@@ -222,6 +271,40 @@ mod tests {
         assert_eq!(
             vec![GlyphName::new(".notdef"), GlyphName::new("u20089")],
             glyph_names
+        );
+    }
+
+    #[test]
+    fn fontdata_of_minimal() {
+        let font_data =
+            FontData::from_file(&testdata_dir().join("minimal.fontra/font-data.json")).unwrap();
+        assert_eq!(1000, font_data._units_per_em);
+        assert_eq!(
+            vec![("Weight", Tag::from_be_bytes(*b"wght"), 200.0, 200.0, 900.0),],
+            axis_tuples(&font_data)
+        );
+    }
+
+    #[test]
+    fn fontdata_of_2glyphs() {
+        let font_data =
+            FontData::from_file(&testdata_dir().join("2glyphs.fontra/font-data.json")).unwrap();
+        assert_eq!(1000, font_data._units_per_em);
+        assert_eq!(
+            vec![
+                ("Weight", Tag::from_be_bytes(*b"wght"), 200.0, 200.0, 900.0),
+                ("Width", Tag::from_be_bytes(*b"wdth"), 50.0, 100.0, 125.0)
+            ],
+            axis_tuples(&font_data)
+        );
+        let wght = font_data
+            ._axes
+            .iter()
+            .find(|a| a._tag == Tag::from_be_bytes(*b"wght"))
+            .unwrap();
+        assert_eq!(
+            vec![[200.0, 0.0], [300.018, 0.095], [900.0, 1.0]],
+            wght._mapping
         );
     }
 }
