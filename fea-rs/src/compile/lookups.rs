@@ -30,7 +30,7 @@ use write_fonts::{
 use crate::{
     common::{GlyphId, GlyphOrClass, GlyphSet},
     compile::{lookups::contextual::ChainOrNot, metrics::ValueRecord},
-    Kind,
+    Kind, Opts,
 };
 
 use super::{features::AllFeatures, metrics::Anchor, tables::ClassId, tags};
@@ -646,6 +646,7 @@ impl AllLookups {
         &self,
         features: &AllFeatures,
         var_store: &mut VariationStoreBuilder,
+        opts: &Opts,
     ) -> (Option<write_gsub::Gsub>, Option<write_gpos::Gpos>) {
         let mut gpos_builder = PosSubBuilder::new(self.gpos.clone());
         let mut gsub_builder = PosSubBuilder::new(self.gsub.clone());
@@ -661,17 +662,17 @@ impl AllLookups {
             let (gpos_idxes, gsub_idxes) = feature_lookups.split_base_lookups();
             let mut gpos_feat_id = None;
             let mut gsub_feat_id = None;
-            if !gpos_idxes.is_empty() {
+            if opts.compile_gpos && !gpos_idxes.is_empty() {
                 gpos_feat_id = Some(gpos_builder.add(*key, gpos_idxes.clone(), required));
             }
 
-            if !gsub_idxes.is_empty() {
+            if opts.compile_gsub && !gsub_idxes.is_empty() {
                 gsub_feat_id = Some(gsub_builder.add(*key, gsub_idxes.clone(), required));
             }
 
             let variations = feature_lookups.split_variations();
             for (cond, gpos_var_idxes, gsub_var_idxes) in variations {
-                if !gpos_var_idxes.is_empty() {
+                if opts.compile_gpos && !gpos_var_idxes.is_empty() {
                     // add the lookups for the base feature
                     let mut all_ids = gpos_idxes.clone();
                     all_ids.extend(gpos_var_idxes);
@@ -682,7 +683,7 @@ impl AllLookups {
                         .get_or_insert_with(|| gpos_builder.add(*key, Vec::new(), false));
                     gpos_builder.add_variation(*feat_id, cond, all_ids);
                 }
-                if !gsub_var_idxes.is_empty() {
+                if opts.compile_gsub && !gsub_var_idxes.is_empty() {
                     // add the lookups for the base feature
                     let mut all_ids = gsub_idxes.clone();
                     all_ids.extend(gsub_var_idxes);

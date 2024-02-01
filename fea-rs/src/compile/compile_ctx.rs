@@ -193,7 +193,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .unwrap_or_default();
         let mut ivs = VariationStoreBuilder::new(axis_count);
 
-        let (mut gsub, mut gpos) = self.lookups.build(&self.features, &mut ivs);
+        let (mut gsub, mut gpos) = self.lookups.build(&self.features, &mut ivs, &self.opts);
         if !ivs.is_empty() {
             self.tables
                 .gdef
@@ -1777,9 +1777,13 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         } else if let Some(lookup) = typed::LookupBlock::cast(item) {
             self.resolve_lookup_block(lookup);
         } else if let Some(rule) = typed::GsubStatement::cast(item) {
-            self.add_gsub_statement(rule);
+            if self.opts.compile_gsub {
+                self.add_gsub_statement(rule);
+            }
         } else if let Some(rule) = typed::GposStatement::cast(item) {
-            self.add_gpos_statement(rule)
+            if self.opts.compile_gpos {
+                self.add_gpos_statement(rule)
+            }
         } else if item.kind() == Kind::Semi {
             // continue
         } else {

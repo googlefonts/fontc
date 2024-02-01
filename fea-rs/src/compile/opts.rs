@@ -62,3 +62,46 @@ impl Default for Opts {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    static OSWALD_DIR: &str = "./test-data/real-files/oswald";
+    use std::path::Path;
+
+    use crate::{
+        compile::{Compilation, MockVariationInfo, NopFeatureProvider},
+        Compiler,
+    };
+
+    use super::*;
+
+    #[test]
+    fn skip_tables() {
+        fn compile_oswald(opts: Opts) -> Compilation {
+            let glyph_order = Path::new(OSWALD_DIR).join("glyph_order.txt");
+            let features = Path::new(OSWALD_DIR).join("features.fea");
+            let glyph_order = std::fs::read_to_string(glyph_order).unwrap();
+            let glyph_order = crate::compile::parse_glyph_order(&glyph_order).unwrap();
+            Compiler::<NopFeatureProvider, MockVariationInfo>::new(&features, &glyph_order)
+                .with_opts(opts)
+                .compile()
+                .unwrap()
+        }
+
+        // compile everything:
+        let compilation = compile_oswald(Opts::new());
+        assert!(compilation.gpos.is_some());
+        assert!(compilation.gsub.is_some());
+
+        // only gpos
+        let compilation = compile_oswald(Opts::new().compile_gsub(false));
+        assert!(compilation.gpos.is_some());
+        assert!(compilation.gsub.is_none());
+
+        // only gsub
+        let compilation = compile_oswald(Opts::new().compile_gpos(false));
+        assert!(compilation.gpos.is_none());
+        assert!(compilation.gsub.is_some());
+    }
+}
