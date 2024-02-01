@@ -74,7 +74,7 @@ pub trait Source {
 
     /// Create a function that could be called to generate or identify fea file(s).
     ///
-    /// When run work should update [Context] with [crate::ir::Features].
+    /// When run work should update [Context] with [crate::ir::FeaturesSource].
     fn create_feature_ir_work(&self, input: &Input) -> Result<Box<IrWork>, Error>;
 
     /// Create a function that could be called to produce kerning groups.

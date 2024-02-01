@@ -404,7 +404,7 @@ pub struct Context {
     pub glyph_order: FeContextItem<ir::GlyphOrder>,
     pub global_metrics: FeContextItem<ir::GlobalMetrics>,
     pub glyphs: FeContextMap<ir::Glyph>,
-    pub features: FeContextItem<ir::Features>,
+    pub features: FeContextItem<ir::FeaturesSource>,
     pub kerning_groups: FeContextItem<ir::KerningGroups>,
     pub kerning_at: FeContextMap<ir::KerningInstance>,
     pub anchors: FeContextMap<ir::GlyphAnchors>,
