@@ -190,16 +190,7 @@ fn to_ir_path(glyph_name: GlyphName, contour: &FontraContour) -> Result<BezPath,
             contour.points[1..].iter(),
         )?;
     } else {
-        // I think Fontra does the start at the end bit
-        // Rotate right by 1 by way of chaining iterators
-        add_to_path(
-            glyph_name.clone(),
-            &mut path_builder,
-            Iterator::chain(
-                contour.points[contour.points.len() - 1..].iter(),
-                contour.points[..contour.points.len() - 1].iter(),
-            ),
-        )?;
+        add_to_path(glyph_name.clone(), &mut path_builder, contour.points.iter())?;
     }
 
     let path = path_builder.build()?;
@@ -260,6 +251,11 @@ mod tests {
         let glyph_file = testdata_dir().join("2glyphs.fontra/glyphs/u20089.json");
         let fontra_glyph = FontraGlyph::from_file(&glyph_file).unwrap();
         let glyph = to_ir_glyph(default_location, Default::default(), &fontra_glyph).unwrap();
+        for (l, i) in glyph.sources() {
+            for c in i.contours.iter() {
+                eprintln!("<path d=\"{}\" opacity=\"0.5\"/>", c.to_svg());
+            }
+        }
         todo!("check something on {glyph:#?}");
     }
 }
