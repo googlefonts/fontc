@@ -120,12 +120,12 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkErr
     Ok(path)
 }
 
-pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::Features, WorkError> {
+pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::FeaturesSource, WorkError> {
     // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L74
     // TODO: token expansion
     // TODO: implement notes and labels
     let fea_snippets: Vec<_> = features.iter().filter_map(|f| f.str_if_enabled()).collect();
-    Ok(ir::Features::Memory {
+    Ok(ir::FeaturesSource::Memory {
         fea_content: fea_snippets.join("\n\n"),
         include_dir: None,
     })

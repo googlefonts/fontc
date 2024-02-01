@@ -21,7 +21,7 @@ use fea_rs::{
 };
 
 use fontir::{
-    ir::{Features, StaticMetadata},
+    ir::{FeaturesSource, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
 };
 
@@ -350,14 +350,14 @@ impl FeatureWork {
     fn compile(
         &self,
         static_metadata: &StaticMetadata,
-        features: &Features,
+        features: &FeaturesSource,
         kerns: &FeaRsKerns,
         marks: &FeaRsMarks,
     ) -> Result<Compilation, Error> {
         let var_info = FeaVariationInfo::new(static_metadata);
         let feature_writer = FeatureWriter::new(kerns, marks);
         match features {
-            Features::File {
+            FeaturesSource::File {
                 fea_file,
                 include_dir,
             } => {
@@ -367,7 +367,7 @@ impl FeatureWork {
                 }
                 compiler
             }
-            Features::Memory {
+            FeaturesSource::Memory {
                 fea_content,
                 include_dir,
             } => {
@@ -383,7 +383,7 @@ impl FeatureWork {
                 }
                 compiler
             }
-            Features::Empty => {
+            FeaturesSource::Empty => {
                 // There is no user feature file but we could still generate kerning, marks, etc
                 let root = OsString::new();
                 Compiler::new(root.clone(), &marks.glyphmap).with_resolver(InMemoryResolver {
@@ -456,7 +456,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
             marks.as_ref(),
         );
         if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
-            if let Features::Memory { fea_content, .. } = features.as_ref() {
+            if let FeaturesSource::Memory { fea_content, .. } = features.as_ref() {
                 write_debug_fea(context, result.is_err(), "compile failed", fea_content);
             }
         }

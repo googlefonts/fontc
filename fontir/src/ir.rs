@@ -885,12 +885,12 @@ pub struct NamedInstance {
     pub location: UserLocation,
 }
 
-/// Features (Adobe fea).
+/// Source for any feature code (Adobe FEA).
 ///
 /// In time will split gpos/gsub, have different features for different
 /// locations, etc.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub enum Features {
+pub enum FeaturesSource {
     Empty,
     File {
         fea_file: PathBuf,
@@ -902,18 +902,20 @@ pub enum Features {
     },
 }
 
-impl Features {
-    pub fn empty() -> Features {
-        Features::Empty
+impl FeaturesSource {
+    pub fn empty() -> FeaturesSource {
+        FeaturesSource::Empty
     }
-    pub fn from_file(fea_file: PathBuf, include_dir: Option<PathBuf>) -> Features {
-        Features::File {
+
+    pub fn from_file(fea_file: PathBuf, include_dir: Option<PathBuf>) -> FeaturesSource {
+        FeaturesSource::File {
             fea_file,
             include_dir,
         }
     }
-    pub fn from_string(fea_content: String) -> Features {
-        Features::Memory {
+
+    pub fn from_string(fea_content: String) -> FeaturesSource {
+        FeaturesSource::Memory {
             fea_content,
             include_dir: None,
         }
@@ -1182,7 +1184,7 @@ impl Persistable for GlobalMetrics {
     }
 }
 
-impl Persistable for Features {
+impl Persistable for FeaturesSource {
     fn read(from: &mut dyn Read) -> Self {
         serde_yaml::from_reader(from).unwrap()
     }

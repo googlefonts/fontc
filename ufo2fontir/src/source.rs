@@ -14,7 +14,7 @@ use fontdrasil::{
 use fontir::{
     error::{Error, WorkError},
     ir::{
-        AnchorBuilder, Features, GlobalMetric, GlobalMetrics, GlyphOrder, KernParticipant,
+        AnchorBuilder, FeaturesSource, GlobalMetric, GlobalMetrics, GlyphOrder, KernParticipant,
         KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance, PostscriptNames,
         StaticMetadata, DEFAULT_VENDOR_ID,
     },
@@ -1162,9 +1162,9 @@ impl Work<Context, WorkId, WorkError> for FeatureWork {
                 })?;
             context
                 .features
-                .set(Features::from_file(fea_file, Some(include_dir)));
+                .set(FeaturesSource::from_file(fea_file, Some(include_dir)));
         } else {
-            context.features.set(Features::empty());
+            context.features.set(FeaturesSource::empty());
         }
 
         Ok(())
