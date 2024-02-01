@@ -34,6 +34,8 @@ pub struct Compiler<'a, F: FeatureProvider, V: VariationInfo> {
     // variable fonts only
     var_info: Option<&'a V>,
     feature_writer: Option<&'a F>,
+    // this is not in `Opts` because it is specific to the compiler struct;
+    // if you're compiling manually you are responsible for handling warnings.
     print_warnings: bool,
     max_n_errors: usize,
     opts: Opts,
@@ -92,16 +94,6 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
     /// Indicate whether or not warnings should be printed (default is `false`)
     pub fn print_warnings(mut self, warnings: bool) -> Self {
         self.print_warnings = warnings;
-        self
-    }
-
-    /// Specify a maximum number of messages to print when errors occur.
-    ///
-    /// Default is some arbitrary 'reasonable' number (currently 100.) To
-    /// suppress errors, pass `0`. To print all errors, pass a number as large
-    /// as the number of errors you intend to write.
-    pub fn max_error_messages(mut self, max_n_errors: usize) -> Self {
-        self.max_n_errors = max_n_errors;
         self
     }
 
