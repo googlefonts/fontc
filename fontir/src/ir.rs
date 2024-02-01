@@ -1028,7 +1028,7 @@ pub struct Glyph {
     pub emit_to_binary: bool,
     pub codepoints: HashSet<u32>, // single unicodes that each point to this glyph. Typically 0 or 1.
     default_location: NormalizedLocation,
-    sources: HashMap<NormalizedLocation, GlyphInstance>,
+    instances: HashMap<NormalizedLocation, GlyphInstance>,
     has_consistent_2x2_transforms: bool,
 }
 
@@ -1067,52 +1067,54 @@ impl Glyph {
         name: GlyphName,
         emit_to_binary: bool,
         codepoints: HashSet<u32>,
-        sources: HashMap<NormalizedLocation, GlyphInstance>,
+        instances: HashMap<NormalizedLocation, GlyphInstance>,
     ) -> Result<Self, WorkError> {
-        if sources.is_empty() {
+        if instances.is_empty() {
             return Err(WorkError::InvalidSourceGlyph {
                 glyph_name: name,
-                message: "No sources".into(),
+                message: "No instances".into(),
             });
         }
-        let defaults: Vec<_> = sources
+        let defaults: Vec<_> = instances
             .keys()
             .filter(|loc| !loc.iter().any(|(_, c)| c.into_inner() != 0.0))
             .collect();
         if defaults.len() != 1 {
             return Err(WorkError::InvalidSourceGlyph {
                 glyph_name: name,
-                message: format!("Must have exactly 1 default, got {defaults:?} from {sources:?}"),
+                message: format!(
+                    "Must have exactly 1 default, got {defaults:?} from {instances:?}"
+                ),
             });
         }
         let default_location = defaults[0].clone();
-        let has_consistent_2x2_transforms = has_consistent_2x2_transforms(&name, &sources);
+        let has_consistent_2x2_transforms = has_consistent_2x2_transforms(&name, &instances);
         Ok(Glyph {
             name,
             emit_to_binary,
             codepoints,
             default_location,
-            sources,
+            instances,
             has_consistent_2x2_transforms,
         })
     }
 
     pub fn default_instance(&self) -> &GlyphInstance {
-        self.sources.get(&self.default_location).unwrap()
+        self.instances.get(&self.default_location).unwrap()
     }
 
     pub fn sources(&self) -> &HashMap<NormalizedLocation, GlyphInstance> {
-        &self.sources
+        &self.instances
     }
 
     pub fn sources_mut(
         &mut self,
     ) -> impl Iterator<Item = (&NormalizedLocation, &mut GlyphInstance)> {
-        self.sources.iter_mut()
+        self.instances.iter_mut()
     }
 
     pub fn source_mut(&mut self, loc: &NormalizedLocation) -> Option<&mut GlyphInstance> {
-        self.sources.get_mut(loc)
+        self.instances.get_mut(loc)
     }
 
     /// Does the Glyph use the same components, (name, 2x2 transform), for all instances?
@@ -1129,7 +1131,7 @@ impl Glyph {
     ///
     /// See <https://github.com/googlefonts/fontc/issues/291#issuecomment-1557358538>
     pub(crate) fn has_nonidentity_2x2(&self) -> bool {
-        self.sources
+        self.instances
             .values()
             .flat_map(|inst| inst.components.iter())
             .any(|c| c.transform.as_coeffs()[..4] != [1.0, 0.0, 0.0, 1.0])
@@ -1341,7 +1343,7 @@ impl From<Glyph> for GlyphBuilder {
             name: value.name,
             emit_to_binary: value.emit_to_binary,
             codepoints: value.codepoints,
-            sources: value.sources,
+            sources: value.instances,
         }
     }
 }
