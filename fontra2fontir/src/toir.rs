@@ -204,7 +204,11 @@ fn to_ir_path(glyph_name: GlyphName, contour: &FontraContour) -> Result<BezPath,
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use fontdrasil::{coords::NormalizedCoord, types::Axis};
+    use fontir::ir::Glyph;
+    use kurbo::{BezPath, PathEl};
     use write_fonts::types::Tag;
 
     use crate::{
@@ -229,6 +233,36 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
+    fn commands(b: &BezPath) -> String {
+        b.elements()
+            .iter()
+            .map(|e| match e {
+                PathEl::MoveTo(..) => "M",
+                PathEl::LineTo(..) => "L",
+                PathEl::QuadTo(..) => "Q",
+                PathEl::CurveTo(..) => "C",
+                PathEl::ClosePath => "Z",
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    fn assert_contour_compatibility(glyph: &Glyph) {
+        // compatible if all sources have the same drawing commands in the same order
+        let unique_command_seqs = glyph
+            .sources()
+            .iter()
+            .map(|(_, s)| {
+                s.contours
+                    .iter()
+                    .map(commands)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .collect::<HashSet<_>>();
+        assert_eq!(1, unique_command_seqs.len(), "{unique_command_seqs:?}");
+    }
+
     #[test]
     fn static_metadata_of_2glyphs() {
         let fontdata_file = testdata_dir().join("2glyphs.fontra/font-data.json");
@@ -251,11 +285,14 @@ mod tests {
         let glyph_file = testdata_dir().join("2glyphs.fontra/glyphs/u20089.json");
         let fontra_glyph = FontraGlyph::from_file(&glyph_file).unwrap();
         let glyph = to_ir_glyph(default_location, Default::default(), &fontra_glyph).unwrap();
-        for (l, i) in glyph.sources() {
-            for c in i.contours.iter() {
-                eprintln!("<path d=\"{}\" opacity=\"0.5\"/>", c.to_svg());
-            }
-        }
-        todo!("check something on {glyph:#?}");
+        assert_eq!(
+            vec![(2, 0), (2, 0)],
+            glyph
+                .sources()
+                .iter()
+                .map(|(_, s)| (s.contours.len(), s.components.len()))
+                .collect::<Vec<_>>()
+        );
+        assert_contour_compatibility(&glyph);
     }
 }
