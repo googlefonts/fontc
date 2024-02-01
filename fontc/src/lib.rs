@@ -24,7 +24,7 @@ use std::{
 use fontbe::{
     avar::create_avar_work,
     cmap::create_cmap_work,
-    features::FeatureWork,
+    features::{FeatureCompilationWork, FeatureParsingWork},
     font::create_font_work,
     fvar::create_fvar_work,
     glyphs::{create_glyf_loca_work, create_glyf_work},
@@ -128,8 +128,30 @@ fn add_feature_ir_job(workload: &mut Workload) -> Result<(), Error> {
     Ok(())
 }
 
-fn add_feature_be_job(workload: &mut Workload) -> Result<(), Error> {
-    let work = FeatureWork::create();
+fn add_feature_parse_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = FeatureParsingWork::create();
+
+    // copied from below
+    if workload.change_detector.feature_be_change() {
+        if workload.change_detector.glyph_name_filter().is_some() {
+            warn!("Not processing BE Features because a glyph name filter is active");
+        }
+        if workload.change_detector.should_skip_features() {
+            debug!("Not processing BE Features because FEA compilation is disabled");
+        }
+    }
+
+    workload.add(
+        work.into(),
+        workload.change_detector.feature_be_change()
+            && workload.change_detector.glyph_name_filter().is_none()
+            && !workload.change_detector.should_skip_features(),
+    );
+    Ok(())
+}
+
+fn add_feature_comp_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = FeatureCompilationWork::create();
     // Features are extremely prone to not making sense when glyphs are filtered
     if workload.change_detector.feature_be_change() {
         if workload.change_detector.glyph_name_filter().is_some() {
@@ -410,7 +432,9 @@ pub fn create_workload(
     add_glyph_order_ir_job(&mut workload)?;
 
     // BE: f(IR, maybe other BE work) => binary
-    add_feature_be_job(&mut workload)?;
+
+    add_feature_parse_be_job(&mut workload)?;
+    add_feature_comp_be_job(&mut workload)?;
     add_glyph_be_jobs(&mut workload)?;
     add_glyf_loca_be_job(&mut workload)?;
     add_avar_be_job(&mut workload)?;
@@ -698,6 +722,7 @@ mod tests {
             FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 0.0)])).into(),
             FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 1.0)])).into(),
             BeWorkIdentifier::Features.into(),
+            BeWorkIdentifier::FeaturesAst.into(),
             BeWorkIdentifier::Avar.into(),
             BeWorkIdentifier::Cmap.into(),
             BeWorkIdentifier::Font.into(),
@@ -809,6 +834,7 @@ mod tests {
                 AnyWorkId::Fe(FeWorkIdentifier::Glyph("bar".into())),
                 FeWorkIdentifier::Anchor("bar".into()).into(),
                 BeWorkIdentifier::Features.into(),
+                BeWorkIdentifier::FeaturesAst.into(),
                 BeWorkIdentifier::Cmap.into(),
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Glyf.into(),
@@ -850,6 +876,7 @@ mod tests {
                 FeWorkIdentifier::KernInstance(NormalizedLocation::for_pos(&[("wght", 1.0)]))
                     .into(),
                 BeWorkIdentifier::Features.into(),
+                BeWorkIdentifier::FeaturesAst.into(),
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),
@@ -963,6 +990,7 @@ mod tests {
                     &[("wght", 1.0)]
                 ))),
                 BeWorkIdentifier::Features.into(),
+                BeWorkIdentifier::FeaturesAst.into(),
                 BeWorkIdentifier::Font.into(),
                 BeWorkIdentifier::Gpos.into(),
                 BeWorkIdentifier::Gsub.into(),

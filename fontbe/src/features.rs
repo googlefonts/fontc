@@ -15,13 +15,13 @@ use log::{debug, error, trace, warn};
 use ordered_float::OrderedFloat;
 
 use fea_rs::{
-    compile::{Compilation, FeatureBuilder, FeatureProvider, VariationInfo},
-    parse::{SourceLoadError, SourceResolver},
-    Compiler,
+    compile::{error::CompilerError, Compilation, FeatureBuilder, FeatureProvider, VariationInfo},
+    parse::{FileSystemResolver, SourceLoadError, SourceResolver},
+    DiagnosticSet, ParseTree,
 };
 
 use fontir::{
-    ir::{FeaturesSource, StaticMetadata},
+    ir::{FeaturesSource, GlyphOrder, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
 };
 
@@ -36,11 +36,14 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, FeaRsKerns, FeaRsMarks, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, FeaAst, FeaRsKerns, FeaRsMarks, WorkId},
 };
 
 #[derive(Debug)]
-pub struct FeatureWork {}
+pub struct FeatureParsingWork {}
+
+#[derive(Debug)]
+pub struct FeatureCompilationWork {}
 
 // I did not want to make a struct
 // I did not want to clone the content
@@ -52,6 +55,16 @@ struct InMemoryResolver {
     // Our fea might be generated in memory, such as to inject generated kerning,
     // while compiling a disk-based source with a well defined include path
     include_dir: Option<PathBuf>,
+}
+
+impl InMemoryResolver {
+    fn empty() -> Self {
+        InMemoryResolver {
+            content_path: Default::default(),
+            content: "".into(),
+            include_dir: None,
+        }
+    }
 }
 
 impl SourceResolver for InMemoryResolver {
@@ -342,61 +355,41 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
     }
 }
 
-impl FeatureWork {
+impl FeatureCompilationWork {
     pub fn create() -> Box<BeWork> {
-        Box::new(FeatureWork {})
+        Box::new(FeatureCompilationWork {})
     }
 
     fn compile(
         &self,
         static_metadata: &StaticMetadata,
-        features: &FeaturesSource,
+        ast: &FeaAst,
         kerns: &FeaRsKerns,
         marks: &FeaRsMarks,
     ) -> Result<Compilation, Error> {
         let var_info = FeaVariationInfo::new(static_metadata);
         let feature_writer = FeatureWriter::new(kerns, marks);
-        match features {
-            FeaturesSource::File {
-                fea_file,
-                include_dir,
-            } => {
-                let mut compiler = Compiler::new(OsString::from(fea_file), &marks.glyphmap);
-                if let Some(include_dir) = include_dir {
-                    compiler = compiler.with_project_root(include_dir)
-                }
-                compiler
-            }
-            FeaturesSource::Memory {
-                fea_content,
-                include_dir,
-            } => {
-                let root = OsString::new();
-                let mut compiler =
-                    Compiler::new(root.clone(), &marks.glyphmap).with_resolver(InMemoryResolver {
-                        content_path: root,
-                        content: Arc::from(fea_content.as_str()),
-                        include_dir: include_dir.clone(),
-                    });
-                if let Some(include_dir) = include_dir {
-                    compiler = compiler.with_project_root(include_dir)
-                }
-                compiler
-            }
-            FeaturesSource::Empty => {
-                // There is no user feature file but we could still generate kerning, marks, etc
-                let root = OsString::new();
-                Compiler::new(root.clone(), &marks.glyphmap).with_resolver(InMemoryResolver {
-                    content_path: root,
-                    content: Arc::from(""),
-                    include_dir: None,
-                })
-            }
+        // first do the validation pass
+        let diagnostics = fea_rs::compile::validate(&ast.ast, &marks.glyphmap, Some(&var_info));
+        if diagnostics.has_errors() {
+            return Err(CompilerError::ValidationFail(diagnostics).into());
         }
-        .with_variable_info(&var_info)
-        .with_feature_writer(&feature_writer)
-        .compile()
-        .map_err(Error::FeaCompileError)
+        log_fea_warnings("validation", &diagnostics);
+        // then we do the actual compilation pass:
+        match fea_rs::compile::compile(
+            &ast.ast,
+            &marks.glyphmap,
+            Some(&var_info),
+            Some(&feature_writer),
+        ) {
+            Ok((result, warnings)) => {
+                log_fea_warnings("compilation", &warnings);
+                Ok(result)
+            }
+            Err(errors) => Err(Error::FeaCompileError(CompilerError::CompilationFail(
+                errors,
+            ))),
+        }
     }
 }
 
@@ -420,9 +413,9 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
     };
 }
 
-impl Work<Context, AnyWorkId, Error> for FeatureWork {
+impl Work<Context, AnyWorkId, Error> for FeatureParsingWork {
     fn id(&self) -> AnyWorkId {
-        WorkId::Features.into()
+        WorkId::FeaturesAst.into()
     }
 
     fn read_access(&self) -> Access<AnyWorkId> {
@@ -430,6 +423,82 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
             .variant(FeWorkId::GlyphOrder)
             .variant(FeWorkId::StaticMetadata)
             .variant(FeWorkId::Features)
+            .build()
+    }
+
+    fn exec(&self, context: &Context) -> Result<(), Error> {
+        let features = context.ir.features.get();
+        let glyph_order = context.ir.glyph_order.get();
+        let result = self.parse(&features, &glyph_order);
+
+        if let FeaturesSource::Memory { fea_content, .. } = features.as_ref() {
+            write_debug_fea(context, result.is_err(), "compile failed", fea_content);
+        }
+        context.fea_ast.set(result?.into());
+        Ok(())
+    }
+}
+
+impl FeatureParsingWork {
+    pub fn create() -> Box<BeWork> {
+        Box::new(Self {})
+    }
+
+    fn parse(
+        &self,
+        features: &FeaturesSource,
+        glyph_order: &GlyphOrder,
+    ) -> Result<ParseTree, Error> {
+        let (resolver, root_path) = get_resolver_and_root_path(features);
+        let glyph_map = glyph_order.iter().map(|g| g.clone().into_inner()).collect();
+        let (tree, diagnostics) = fea_rs::parse::parse_root(root_path, Some(&glyph_map), resolver)
+            .map_err(CompilerError::SourceLoad)?;
+        if diagnostics.has_errors() {
+            return Err(CompilerError::ParseFail(diagnostics).into());
+        }
+        log_fea_warnings("parsing", &diagnostics);
+        Ok(tree)
+    }
+}
+
+fn get_resolver_and_root_path(features: &FeaturesSource) -> (Box<dyn SourceResolver>, OsString) {
+    match features {
+        FeaturesSource::File {
+            fea_file,
+            include_dir,
+        } => {
+            let project_root = include_dir
+                .clone()
+                .or_else(|| fea_file.parent().map(PathBuf::from))
+                .unwrap_or_default();
+            (
+                Box::new(FileSystemResolver::new(project_root)),
+                fea_file.to_owned().into_os_string(),
+            )
+        }
+        FeaturesSource::Memory {
+            fea_content,
+            include_dir,
+        } => (
+            Box::new(InMemoryResolver {
+                include_dir: include_dir.to_owned(),
+                content_path: OsString::new(),
+                content: fea_content.as_str().into(),
+            }),
+            OsString::new(),
+        ),
+        FeaturesSource::Empty => (Box::new(InMemoryResolver::empty()), Default::default()),
+    }
+}
+
+impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
+    fn id(&self) -> AnyWorkId {
+        WorkId::Features.into()
+    }
+
+    fn read_access(&self) -> Access<AnyWorkId> {
+        AccessBuilder::new()
+            .variant(WorkId::FeaturesAst)
             .variant(WorkId::GatherBeKerning)
             .variant(WorkId::Marks)
             .build()
@@ -445,22 +514,11 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
-        let features = context.ir.features.get();
+        let ast = context.fea_ast.get();
         let kerns = context.fea_rs_kerns.get();
         let marks = context.fea_rs_marks.get();
 
-        let result = self.compile(
-            &static_metadata,
-            features.as_ref(),
-            kerns.as_ref(),
-            marks.as_ref(),
-        );
-        if result.is_err() || context.flags.contains(Flags::EMIT_DEBUG) {
-            if let FeaturesSource::Memory { fea_content, .. } = features.as_ref() {
-                write_debug_fea(context, result.is_err(), "compile failed", fea_content);
-            }
-        }
-        let result = result?;
+        let result = self.compile(&static_metadata, &ast, kerns.as_ref(), marks.as_ref())?;
 
         debug!(
             "Built features, gpos? {} gsub? {} gdef? {}",
@@ -490,6 +548,17 @@ impl Work<Context, AnyWorkId, Error> for FeatureWork {
             .map_err(Error::IoError)?;
         }
         Ok(())
+    }
+}
+
+fn log_fea_warnings(stage: &str, warnings: &DiagnosticSet) {
+    assert!(!warnings.has_errors(), "of course we checked this already");
+    if !warnings.is_empty() {
+        log::debug!(
+            "FEA {stage} produced {} warnings:\n{}",
+            warnings.len(),
+            warnings.display()
+        );
     }
 }
 
