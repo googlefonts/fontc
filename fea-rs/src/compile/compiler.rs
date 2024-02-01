@@ -160,7 +160,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
         let diagnostics = DiagnosticSet::new(messages, &tree, self.max_n_errors);
         print_warnings_return_errors(diagnostics, self.print_warnings, self.max_n_errors)
             .map_err(CompilerError::CompilationFail)?;
-        Ok(ctx.build().unwrap()) // we've taken the errors, so this can't fail
+        Ok(ctx.build().unwrap().0) // we've taken the errors, so this can't fail
     }
 
     /// Compile to a binary font.

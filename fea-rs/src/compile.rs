@@ -44,7 +44,7 @@ mod validate;
 mod variations;
 
 /// Run the validation pass, returning any diagnostics.
-pub(crate) fn validate<V: VariationInfo>(
+pub fn validate<V: VariationInfo>(
     node: &ParseTree,
     glyph_map: &GlyphMap,
     fvar: Option<&V>,
@@ -52,6 +52,29 @@ pub(crate) fn validate<V: VariationInfo>(
     let mut ctx = validate::ValidationCtx::new(node.source_map(), glyph_map, fvar);
     ctx.validate_root(&node.typed_root());
     DiagnosticSet::new(ctx.errors, node, usize::MAX)
+}
+
+/// Run the compilation pass.
+///
+/// If successful, returns the [`Compilation`] result, and any warnings.
+pub fn compile<V: VariationInfo, T: FeatureProvider>(
+    tree: &ParseTree,
+    glyph_map: &GlyphMap,
+    var_info: Option<&V>,
+    extra_features: Option<&T>,
+) -> Result<(Compilation, DiagnosticSet), DiagnosticSet> {
+    let mut ctx = CompilationCtx::new(glyph_map, tree.source_map(), var_info, extra_features);
+    ctx.compile(&tree.typed_root());
+    match ctx.build() {
+        Ok((compilation, warnings)) => {
+            let warnings = DiagnosticSet::new(warnings, tree, usize::MAX);
+            Ok((compilation, warnings))
+        }
+        Err(errors) => {
+            let errors = DiagnosticSet::new(errors, tree, usize::MAX);
+            Err(errors)
+        }
+    }
 }
 
 /// A helper function for extracting the glyph order from a UFO

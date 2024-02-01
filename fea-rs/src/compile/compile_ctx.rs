@@ -170,7 +170,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         self.features.sort_and_dedupe_lookups();
     }
 
-    pub(crate) fn build(&mut self) -> Result<Compilation, Vec<Diagnostic>> {
+    pub(crate) fn build(&mut self) -> Result<(Compilation, Vec<Diagnostic>), Vec<Diagnostic>> {
         if self.errors.iter().any(Diagnostic::is_error) {
             return Err(self.errors.clone());
         }
@@ -237,19 +237,21 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             }
         }
 
-        Ok(Compilation {
-            warnings: self.errors.clone(),
-            head: self.tables.head.as_ref().map(|raw| raw.build(None)),
-            hhea: self.tables.hhea.clone(),
-            vhea: self.tables.vhea.clone(),
-            os2: self.tables.os2.as_ref().map(|raw| raw.build()),
-            gdef,
-            base: self.tables.base.as_ref().map(|raw| raw.build()),
-            name: name_builder.build(),
-            stat,
-            gsub,
-            gpos,
-        })
+        Ok((
+            Compilation {
+                head: self.tables.head.as_ref().map(|raw| raw.build(None)),
+                hhea: self.tables.hhea.clone(),
+                vhea: self.tables.vhea.clone(),
+                os2: self.tables.os2.as_ref().map(|raw| raw.build()),
+                gdef,
+                base: self.tables.base.as_ref().map(|raw| raw.build()),
+                name: name_builder.build(),
+                stat,
+                gsub,
+                gpos,
+            },
+            self.errors.clone(),
+        ))
     }
 
     fn run_feature_writer_if_present(&mut self) {

@@ -139,6 +139,11 @@ impl DiagnosticSet {
         self.max_to_print = max_to_print;
     }
 
+    /// Discard any warnings, keeping only errors
+    pub fn discard_warnings(&mut self) {
+        self.messages.retain(|x| x.is_error());
+    }
+
     /// Remove and return any warnings in this set.
     pub fn split_off_warnings(&mut self) -> Option<DiagnosticSet> {
         self.messages.sort_unstable_by_key(|d| d.level);
