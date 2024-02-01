@@ -143,6 +143,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
             tree.source_map(),
             self.var_info,
             self.feature_writer,
+            self.opts,
         );
         ctx.compile(&tree.typed_root());
 
@@ -157,9 +158,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
 
     /// Compile to a binary font.
     pub fn compile_binary(self) -> Result<Vec<u8>, CompilerError> {
-        let opts = self.opts.clone();
         let glyph_map = self.glyph_map;
-        Ok(self.compile()?.to_binary(glyph_map, opts)?)
+        Ok(self.compile()?.to_binary(glyph_map)?)
     }
 }
 

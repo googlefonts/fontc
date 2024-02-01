@@ -29,7 +29,7 @@ use crate::{
         Token,
     },
     typed::ContextualRuleNode,
-    Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken,
+    Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken, Opts,
 };
 
 use super::{
@@ -68,6 +68,7 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     source_map: &'a SourceMap,
     variation_info: Option<&'a V>,
     feature_writer: Option<&'a F>,
+    opts: Opts,
     /// Any errors or warnings generated during compilation.
     pub errors: Vec<Diagnostic>,
     /// Stores any [specified table values][tables] in the input FEA.
@@ -99,6 +100,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         source_map: &'a SourceMap,
         variation_info: Option<&'a V>,
         feature_writer: Option<&'a F>,
+        opts: Opts,
     ) -> Self {
         CompilationCtx {
             glyph_map,
@@ -122,6 +124,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             script: Default::default(),
             mark_attach_class_id: Default::default(),
             mark_filter_sets: Default::default(),
+            opts,
         }
     }
 
@@ -249,6 +252,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 stat,
                 gsub,
                 gpos,
+                opts: self.opts.clone(),
             },
             self.errors.clone(),
         ))

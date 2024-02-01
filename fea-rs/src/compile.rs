@@ -62,8 +62,9 @@ pub fn compile<V: VariationInfo, T: FeatureProvider>(
     glyph_map: &GlyphMap,
     var_info: Option<&V>,
     extra_features: Option<&T>,
+    opts: Opts,
 ) -> Result<(Compilation, DiagnosticSet), DiagnosticSet> {
-    let mut ctx = CompilationCtx::new(glyph_map, tree.source_map(), var_info, extra_features);
+    let mut ctx = CompilationCtx::new(glyph_map, tree.source_map(), var_info, extra_features, opts);
     ctx.compile(&tree.typed_root());
     match ctx.build() {
         Ok((compilation, warnings)) => {

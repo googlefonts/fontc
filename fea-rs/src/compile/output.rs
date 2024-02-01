@@ -20,6 +20,8 @@ use crate::GlyphMap;
 ///
 /// [`to_binary`]: Compilation::to_binary
 pub struct Compilation {
+    /// The options passed in for this compilation.
+    pub(crate) opts: Opts,
     /// The `head` table, if one was generated
     pub head: Option<wtables::head::Head>,
     /// The `hhea` table, if one was generated
@@ -77,13 +79,13 @@ impl Compilation {
     /// This is a convenience method used for things like testing; if you are
     /// building a font compiler you will probably prefer to manipulate the
     /// generated tables directly.
-    pub fn to_binary(&self, glyph_map: &GlyphMap, opts: Opts) -> Result<Vec<u8>, BuilderError> {
+    pub fn to_binary(&self, glyph_map: &GlyphMap) -> Result<Vec<u8>, BuilderError> {
         // because we often inspect our output with ttx, and ttx fails if maxp is
         // missing, we create a maxp table.
         let mut builder = self.to_font_builder()?;
         let maxp = Maxp::new(glyph_map.len().try_into().unwrap());
         builder.add_table(&maxp)?;
-        if opts.make_post_table {
+        if self.opts.make_post_table {
             let post = glyph_map.make_post_table();
             builder.add_table(&post)?;
         }

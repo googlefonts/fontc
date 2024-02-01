@@ -12,6 +12,8 @@ const DEFAULT_N_MESSAGES_TO_PRINT: usize = 100;
 pub struct Opts {
     pub(crate) make_post_table: bool,
     pub(crate) max_n_errors: usize,
+    pub(crate) compile_gsub: bool,
+    pub(crate) compile_gpos: bool,
 }
 
 impl Opts {
@@ -36,6 +38,18 @@ impl Opts {
         self.max_n_errors = max_n_errors;
         self
     }
+
+    /// Specify whether or not we should compile the GPOS table. Default is `true`.
+    pub fn compile_gpos(mut self, flag: bool) -> Self {
+        self.compile_gpos = flag;
+        self
+    }
+
+    /// Specify whether or not we should compile the GSUB table. Default is `true`.
+    pub fn compile_gsub(mut self, flag: bool) -> Self {
+        self.compile_gsub = flag;
+        self
+    }
 }
 
 impl Default for Opts {
@@ -43,6 +57,8 @@ impl Default for Opts {
         Self {
             make_post_table: false,
             max_n_errors: DEFAULT_N_MESSAGES_TO_PRINT,
+            compile_gsub: true,
+            compile_gpos: true,
         }
     }
 }
