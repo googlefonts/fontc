@@ -14,7 +14,7 @@ use crate::{
         typed::{self, AstNode as _},
         AstSink,
     },
-    Diagnostic, GlyphMap, Node,
+    Diagnostic, DiagnosticSet, GlyphMap, Node,
 };
 
 const MAX_INCLUDE_DEPTH: usize = 50;
@@ -177,7 +177,7 @@ impl ParseContext {
     /// Construct a `ParseTree`, and return any diagnostics.
     ///
     /// This method also performs validation of include statements.
-    pub(crate) fn generate_parse_tree(self) -> (ParseTree, Vec<Diagnostic>) {
+    pub(crate) fn generate_parse_tree(self) -> (ParseTree, DiagnosticSet) {
         let mut all_errors = self
             .parsed_files
             .iter()
@@ -207,13 +207,20 @@ impl ParseContext {
         if needs_update_positions {
             root.update_positions_from_root();
         }
+
+        let diagnostics = DiagnosticSet {
+            messages: all_errors,
+            sources: self.sources.clone(),
+            max_to_print: usize::MAX,
+        };
+
         (
             ParseTree {
                 root,
                 map: Arc::new(map),
                 sources: self.sources,
             },
-            all_errors,
+            diagnostics,
         )
     }
 

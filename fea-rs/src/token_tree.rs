@@ -24,6 +24,7 @@ pub use token::Kind;
 ///
 /// A node is tagged with a `Kind`, and includes any number of child nodes or tokens.
 #[derive(PartialEq, Eq, Clone, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Node {
     /// The ``Kind` of this node.
     kind: Kind,
@@ -45,6 +46,7 @@ pub struct Node {
 
 /// A token is a chunk of text, tagged with a `Kind`.
 #[derive(Debug, PartialEq, Eq, Clone, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Token {
     /// The [`Kind`] of this token
     pub kind: Kind,
@@ -56,6 +58,7 @@ pub struct Token {
 
 /// Either a [`Node`] or a [`Token`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum NodeOrToken {
     /// A node
     Node(Node),

@@ -1,13 +1,8 @@
 //! Error types related to compilation
 
-use std::sync::Arc;
-
 use write_fonts::{read::ReadError, BuilderError};
 
-use crate::{
-    parse::{SourceList, SourceLoadError},
-    Diagnostic,
-};
+use crate::{parse::SourceLoadError, DiagnosticSet};
 
 /// An error that occurs when extracting a glyph order from a UFO.
 #[derive(Clone, Debug, thiserror::Error)]
@@ -57,72 +52,14 @@ pub enum CompilerError {
         #[source]
         SourceLoadError,
     ),
-    #[error("Parsing failed with {} errors\n{}", .0.messages.len(), .0.printer())]
+    #[error("Parsing failed with {} errors\n{}", .0.messages.len(), .0.display())]
     ParseFail(DiagnosticSet),
-    #[error("Validation failed with {} errors\n{}", .0.messages.len(), .0.printer())]
+    #[error("Validation failed with {} errors\n{}", .0.messages.len(), .0.display())]
     ValidationFail(DiagnosticSet),
-    #[error("Compilation failed with {} errors\n{}", .0.messages.len(), .0.printer())]
+    #[error("Compilation failed with {} errors\n{}", .0.messages.len(), .0.display())]
     CompilationFail(DiagnosticSet),
     #[error("{0}")]
     WriteFail(#[from] BuilderError),
-}
-
-/// A set of diagnostics with the associated source info
-#[derive(Clone)]
-pub struct DiagnosticSet {
-    pub(crate) messages: Vec<Diagnostic>,
-    pub(crate) sources: Arc<SourceList>,
-    pub(crate) max_to_print: usize,
-}
-
-// we don't want diagnostic set to impl display itself, because we want to change
-// behaviour based on whether we think we're writing to a terminal, and that is
-// error prone.
-struct DiagnosticDisplayer<'a>(&'a DiagnosticSet);
-
-impl DiagnosticSet {
-    pub(crate) fn write(&self, f: &mut impl std::fmt::Write, colorize: bool) -> std::fmt::Result {
-        let mut first = true;
-        for err in self.messages.iter().take(self.max_to_print) {
-            if !first {
-                writeln!(f)?;
-            }
-            write!(f, "{}", self.sources.format_diagnostic(err, colorize))?;
-            first = false;
-        }
-        if let Some(overflow) = self.messages.len().checked_sub(self.max_to_print) {
-            writeln!(f, "... and {overflow} more errors")?;
-        }
-        Ok(())
-    }
-
-    fn printer(&self) -> DiagnosticDisplayer {
-        DiagnosticDisplayer(self)
-    }
-
-    #[cfg(any(test, feature = "test"))]
-    pub(crate) fn to_string(&self, colorize: bool) -> String {
-        let mut out = String::new();
-        self.write(&mut out, colorize).unwrap();
-        out
-    }
-}
-
-impl std::fmt::Display for DiagnosticDisplayer<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use std::io::IsTerminal;
-        let colorize = std::io::stderr().is_terminal();
-        self.0.write(f, colorize)
-    }
-}
-
-impl std::fmt::Debug for DiagnosticSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DiagnosticSet")
-            .field("messages", &self.messages)
-            .field("tree", &"ParseTree")
-            .finish()
-    }
 }
 
 #[cfg(test)]

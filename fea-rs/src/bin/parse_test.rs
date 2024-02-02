@@ -7,7 +7,7 @@ use std::{
     time::Instant,
 };
 
-use fea_rs::{Diagnostic, Kind, ParseTree};
+use fea_rs::{DiagnosticSet, Kind, ParseTree};
 
 /// Attempt to parse fea files.
 ///
@@ -39,7 +39,7 @@ fn directory_arg(path: &Path) -> std::io::Result<()> {
             log::info!("parsing '{}'", path.display());
             match std::panic::catch_unwind(|| try_parse_file(&path)) {
                 Err(_) => failures.push((path, true)),
-                Ok((_, errs)) if errs.iter().any(|e| e.is_error()) => failures.push((path, false)),
+                Ok((_, errs)) if errs.has_errors() => failures.push((path, false)),
                 Ok((node, _)) => successes.push((path, node)),
             };
         }
@@ -63,9 +63,8 @@ fn single_file_arg(path: &Path, print_tree: bool) {
     let elapsed = time.elapsed();
     if errors.is_empty() || print_tree {
         println!("{}", tree.root().simple_parse_tree());
-    }
-    for diagnostic in &errors {
-        eprintln!("{}", tree.format_diagnostic(diagnostic, true));
+    } else if !errors.is_empty() {
+        eprintln!("{}", errors.display());
     }
 
     let micros = elapsed.as_micros();
@@ -74,7 +73,7 @@ fn single_file_arg(path: &Path, print_tree: bool) {
 }
 
 /// returns the tree and any errors
-fn try_parse_file(path: &Path) -> (ParseTree, Vec<Diagnostic>) {
+fn try_parse_file(path: &Path) -> (ParseTree, DiagnosticSet) {
     fea_rs::parse::parse_root_file(path, None, None).unwrap()
 }
 

@@ -8,13 +8,10 @@ use std::{
 
 use crate::{
     parse::{FileSystemResolver, SourceResolver},
-    Diagnostic, GlyphMap, ParseTree,
+    DiagnosticSet, GlyphMap,
 };
 
-use super::{
-    error::{CompilerError, DiagnosticSet},
-    Compilation, FeatureProvider, Opts, VariationInfo,
-};
+use super::{error::CompilerError, Compilation, FeatureProvider, Opts, VariationInfo};
 
 const DEFAULT_N_MESSAGES_TO_PRINT: usize = 100;
 
@@ -144,10 +141,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
         let (tree, diagnostics) =
             crate::parse::ParseContext::parse(self.root_path, Some(self.glyph_map), resolver)?
                 .generate_parse_tree();
-        print_warnings_return_errors(diagnostics, &tree, self.print_warnings, self.max_n_errors)
+        print_warnings_return_errors(diagnostics, self.print_warnings, self.max_n_errors)
             .map_err(CompilerError::ParseFail)?;
         let diagnostics = super::validate(&tree, self.glyph_map, self.var_info);
-        print_warnings_return_errors(diagnostics, &tree, self.print_warnings, self.max_n_errors)
+        print_warnings_return_errors(diagnostics, self.print_warnings, self.max_n_errors)
             .map_err(CompilerError::ValidationFail)?;
         let mut ctx = super::CompilationCtx::new(
             self.glyph_map,
@@ -159,14 +156,11 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
 
         // we 'take' the errors here because it's easier for us to handle the
         // warnings using our helper method.
-        print_warnings_return_errors(
-            std::mem::take(&mut ctx.errors),
-            &tree,
-            self.print_warnings,
-            self.max_n_errors,
-        )
-        .map_err(CompilerError::CompilationFail)?;
-        Ok(ctx.build().unwrap()) // we've taken the errors, so this can't fail
+        let messages = std::mem::take(&mut ctx.errors);
+        let diagnostics = DiagnosticSet::new(messages, &tree, self.max_n_errors);
+        print_warnings_return_errors(diagnostics, self.print_warnings, self.max_n_errors)
+            .map_err(CompilerError::CompilationFail)?;
+        Ok(ctx.build().unwrap().0) // we've taken the errors, so this can't fail
     }
 
     /// Compile to a binary font.
@@ -178,32 +172,22 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
 }
 
 fn print_warnings_return_errors(
-    mut diagnostics: Vec<Diagnostic>,
-    tree: &ParseTree,
+    mut diagnostics: DiagnosticSet,
     print_warnings: bool,
     max_to_print: usize,
 ) -> Result<(), DiagnosticSet> {
-    use std::io::IsTerminal as _;
-    let is_tty = std::io::stderr().is_terminal();
-    diagnostics.sort_unstable_by_key(|diag| diag.level);
-    let split_at = diagnostics
-        .iter()
-        .position(|x| !x.is_error())
-        .unwrap_or(diagnostics.len());
-    let warnings = diagnostics.split_off(split_at);
-    if print_warnings {
-        for w in warnings {
+    diagnostics.set_max_to_print(max_to_print);
+    let warnings = diagnostics.split_off_warnings();
+    if let Some(warnings) = warnings {
+        if print_warnings {
             // get around a CI check denying eprintln
-            let _ = writeln!(std::io::stderr(), "{}", tree.format_diagnostic(&w, is_tty));
+            let _ = writeln!(std::io::stderr(), "{}", warnings.display());
         }
     }
+
     if diagnostics.is_empty() {
         Ok(())
     } else {
-        Err(DiagnosticSet {
-            messages: diagnostics,
-            sources: tree.sources.clone(),
-            max_to_print,
-        })
+        Err(diagnostics)
     }
 }

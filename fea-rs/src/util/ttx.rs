@@ -11,11 +11,8 @@ use std::{
 };
 
 use crate::{
-    compile::{
-        error::{CompilerError, DiagnosticSet},
-        Compiler, MockVariationInfo, NopFeatureProvider, Opts,
-    },
-    Diagnostic, GlyphIdent, GlyphMap, ParseTree,
+    compile::{error::CompilerError, Compiler, MockVariationInfo, NopFeatureProvider, Opts},
+    DiagnosticSet, GlyphIdent, GlyphMap, ParseTree,
 };
 
 use ansi_term::Color;
@@ -213,12 +210,12 @@ pub fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> +
 pub fn try_parse_file(
     path: &Path,
     glyphs: Option<&GlyphMap>,
-) -> Result<ParseTree, (ParseTree, Vec<Diagnostic>)> {
+) -> Result<ParseTree, (ParseTree, DiagnosticSet)> {
     let (tree, errs) = crate::parse::parse_root_file(path, glyphs, None).unwrap();
-    if errs.iter().any(Diagnostic::is_error) {
+    if errs.has_errors() {
         Err((tree, errs))
     } else {
-        print_diagnostics_if_verbose(&tree, &errs);
+        print_diagnostics_if_verbose(&errs);
         Ok(tree)
     }
 }
@@ -265,22 +262,9 @@ pub(crate) fn run_test(
     .map_err(|reason| TestCase { reason, path })
 }
 
-/// Convert diagnostics to a printable string
-pub fn stringify_diagnostics(root: &ParseTree, diagnostics: &[Diagnostic]) -> String {
-    let mut out = String::new();
-    DiagnosticSet {
-        sources: root.sources.clone(),
-        messages: diagnostics.to_owned(),
-        max_to_print: usize::MAX,
-    }
-    .write(&mut out, false)
-    .unwrap();
-    out
-}
-
-fn print_diagnostics_if_verbose(root: &ParseTree, diagnostics: &[Diagnostic]) {
+fn print_diagnostics_if_verbose(diagnostics: &DiagnosticSet) {
     if std::env::var(super::VERBOSE).is_ok() && !diagnostics.is_empty() {
-        eprintln!("{}", stringify_diagnostics(root, diagnostics));
+        eprintln!("{}", diagnostics.display());
     }
 }
 

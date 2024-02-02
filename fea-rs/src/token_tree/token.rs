@@ -6,6 +6,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 #[repr(u16)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Kind {
     Eof, // the end of the input stream
     // a name or a keyword or any other block of non-whitespace.
