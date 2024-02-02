@@ -12,7 +12,7 @@ use fea_rs::{
     compile::{
         MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder, ValueRecord as ValueRecordBuilder,
     },
-    GlyphMap, GlyphSet,
+    GlyphMap, GlyphSet, ParseTree,
 };
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -81,6 +81,7 @@ type KernBlock = usize;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkId {
     Features,
+    FeaturesAst,
     Avar,
     Cmap,
     Font,
@@ -114,6 +115,7 @@ impl Identifier for WorkId {
     fn discriminant(&self) -> IdentifierDiscriminant {
         match self {
             WorkId::Features => "BeFeatures",
+            WorkId::FeaturesAst => "BeFeaturesAst",
             WorkId::Avar => "BeAvar",
             WorkId::Cmap => "BeCmap",
             WorkId::Font => "BeFont",
@@ -373,6 +375,20 @@ pub struct FeaRsKerns {
     pub lookups: Vec<PairPosBuilder>,
 }
 
+/// The Ast for any user features.
+///
+/// This is a newtype so that we can implement `Persistable`
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct FeaAst {
+    pub ast: ParseTree,
+}
+
+impl From<ParseTree> for FeaAst {
+    fn from(ast: ParseTree) -> FeaAst {
+        FeaAst { ast }
+    }
+}
+
 impl FeaRsKerns {
     pub fn is_empty(&self) -> bool {
         self.lookups.is_empty()
@@ -385,6 +401,16 @@ impl Persistable for FeaRsKerns {
     }
 
     fn write(&self, to: &mut dyn io::Write) {
+        bincode::serialize_into(to, self).unwrap()
+    }
+}
+
+impl Persistable for FeaAst {
+    fn read(from: &mut dyn Read) -> Self {
+        bincode::deserialize_from(from).unwrap()
+    }
+
+    fn write(&self, to: &mut dyn Write) {
         bincode::serialize_into(to, self).unwrap()
     }
 }
@@ -608,6 +634,7 @@ pub struct Context {
     pub mvar: BeContextItem<BeValue<Mvar>>,
     pub all_kerning_pairs: BeContextItem<AllKerningPairs>,
     pub kern_fragments: BeContextMap<KernFragment>,
+    pub fea_ast: BeContextItem<FeaAst>,
     pub fea_rs_kerns: BeContextItem<FeaRsKerns>,
     pub fea_rs_marks: BeContextItem<FeaRsMarks>,
     pub stat: BeContextItem<BeValue<Stat>>,
@@ -647,6 +674,7 @@ impl Context {
             fea_rs_kerns: self.fea_rs_kerns.clone_with_acl(acl.clone()),
             fea_rs_marks: self.fea_rs_marks.clone_with_acl(acl.clone()),
             stat: self.stat.clone_with_acl(acl.clone()),
+            fea_ast: self.fea_ast.clone_with_acl(acl.clone()),
             font: self.font.clone_with_acl(acl),
         }
     }
@@ -699,6 +727,11 @@ impl Context {
             ),
             fea_rs_marks: ContextItem::new(
                 WorkId::Marks.into(),
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
+            fea_ast: ContextItem::new(
+                WorkId::FeaturesAst.into(),
                 acl.clone(),
                 persistent_storage.clone(),
             ),

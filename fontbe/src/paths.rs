@@ -65,6 +65,7 @@ impl Paths {
     pub fn target_file(&self, id: &WorkId) -> PathBuf {
         match id {
             WorkId::Features => self.build_dir.join("features.marker"),
+            WorkId::FeaturesAst => self.build_dir.join("features_ast.marker"),
             WorkId::GlyfFragment(name) => self.glyph_glyf_file(name.as_str()),
             WorkId::GvarFragment(name) => self.glyph_gvar_file(name.as_str()),
             WorkId::Avar => self.build_dir.join("avar.table"),
