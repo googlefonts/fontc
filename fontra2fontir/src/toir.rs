@@ -270,8 +270,8 @@ mod tests {
         assert_eq!(1000, static_metadata.units_per_em);
         assert_eq!(
             vec![
-                ("Weight", Tag::from_be_bytes(*b"wght"), 200.0, 200.0, 900.0),
-                ("Width", Tag::from_be_bytes(*b"wdth"), 50.0, 100.0, 125.0)
+                ("Weight", Tag::new(b"wght"), 200.0, 200.0, 900.0),
+                ("Width", Tag::new(b"wdth"), 50.0, 100.0, 125.0)
             ],
             axis_tuples(&static_metadata.axes)
         );
@@ -279,8 +279,7 @@ mod tests {
 
     #[test]
     fn ir_of_glyph_u20089() {
-        let default_location =
-            vec![(Tag::from_be_bytes(*b"wght"), NormalizedCoord::new(0.0))].into();
+        let default_location = vec![(Tag::new(b"wght"), NormalizedCoord::new(0.0))].into();
         let glyph_file = testdata_dir().join("2glyphs.fontra/glyphs/u20089.json");
         let fontra_glyph = FontraGlyph::from_file(&glyph_file).unwrap();
         let glyph = to_ir_glyph(default_location, Default::default(), &fontra_glyph).unwrap();

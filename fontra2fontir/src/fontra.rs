@@ -207,7 +207,7 @@ mod tests {
                 .unwrap();
         assert_eq!(1000, font_data.units_per_em);
         assert_eq!(
-            vec![("Weight", Tag::from_be_bytes(*b"wght"), 200.0, 200.0, 900.0),],
+            vec![("Weight", Tag::new(b"wght"), 200.0, 200.0, 900.0),],
             axis_tuples(&font_data)
         );
     }
@@ -220,15 +220,15 @@ mod tests {
         assert_eq!(1000, font_data.units_per_em);
         assert_eq!(
             vec![
-                ("Weight", Tag::from_be_bytes(*b"wght"), 200.0, 200.0, 900.0),
-                ("Width", Tag::from_be_bytes(*b"wdth"), 50.0, 100.0, 125.0)
+                ("Weight", Tag::new(b"wght"), 200.0, 200.0, 900.0),
+                ("Width", Tag::new(b"wdth"), 50.0, 100.0, 125.0)
             ],
             axis_tuples(&font_data)
         );
         let wght = font_data
             .axes
             .iter()
-            .find(|a| a.tag == Tag::from_be_bytes(*b"wght"))
+            .find(|a| a.tag == Tag::new(b"wght"))
             .unwrap();
         assert_eq!(
             vec![[200.0, 0.0], [300.018, 0.095], [900.0, 1.0]],
