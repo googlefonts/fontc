@@ -1,0 +1,64 @@
+{
+"name": "uni4E00",
+"sources": [
+{
+"name": "<default>",
+"layerName": "foreground",
+"customData": {
+"fontra.development.status": 4
+}
+},
+{
+"name": "wght=1",
+"layerName": "wght=1",
+"location": {
+"wght": 1.0
+},
+"customData": {
+"fontra.development.status": 0
+}
+}
+],
+"layers": {
+"foreground": {
+"glyph": {
+"components": [
+{
+"name": "VG_4E00_00",
+"transformation": {
+"translateX": 53
+},
+"location": {
+"serif_height": 0,
+"serif_width": 0,
+"weight": 33,
+"width": 900
+}
+}
+],
+"xAdvance": 1000
+}
+},
+"wght=1": {
+"glyph": {
+"components": [
+{
+"name": "VG_4E00_00",
+"transformation": {
+"translateX": 29,
+"translateY": -15
+},
+"location": {
+"serif_height": 60,
+"serif_top_moveH": 6,
+"serif_width": 95,
+"weight": 32,
+"width": 950
+}
+}
+],
+"xAdvance": 1000
+}
+}
+}
+}

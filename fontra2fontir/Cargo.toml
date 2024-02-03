@@ -16,8 +16,6 @@ fontir = { version = "0.0.1", path = "../fontir" }
 
 write-fonts.workspace = true
 
-percent-encoding = "2.3.1"
-
 log.workspace = true
 env_logger.workspace = true
 
