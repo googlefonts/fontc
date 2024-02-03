@@ -237,14 +237,13 @@ mod tests {
         b.elements()
             .iter()
             .map(|e| match e {
-                PathEl::MoveTo(..) => "M",
-                PathEl::LineTo(..) => "L",
-                PathEl::QuadTo(..) => "Q",
-                PathEl::CurveTo(..) => "C",
-                PathEl::ClosePath => "Z",
+                PathEl::MoveTo(..) => 'M',
+                PathEl::LineTo(..) => 'L',
+                PathEl::QuadTo(..) => 'Q',
+                PathEl::CurveTo(..) => 'C',
+                PathEl::ClosePath => 'Z',
             })
-            .collect::<Vec<_>>()
-            .join("")
+            .collect()
     }
 
     fn assert_contour_compatibility(glyph: &Glyph) {
