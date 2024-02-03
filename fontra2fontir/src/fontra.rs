@@ -15,7 +15,7 @@ use serde::Deserialize;
 use write_fonts::types::Tag;
 
 pub(crate) fn glyph_file(glyph_dir: &Path, glyph: GlyphName) -> PathBuf {
-    // TODO: this probably over-encodes. Should be sufficient to get started.
+    // TODO(https://github.com/googlefonts/fontc/issues/688): fontra string => filename algorithm
     let filename = utf8_percent_encode(glyph.as_str(), NON_ALPHANUMERIC);
     glyph_dir.join(filename.to_string() + ".json")
 }
