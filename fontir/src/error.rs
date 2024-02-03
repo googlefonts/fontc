@@ -53,6 +53,8 @@ pub enum Error {
     },
     #[error("Invalid tag")]
     InvalidTag(#[from] InvalidTag),
+    #[error("Invalid data {0}")]
+    InvalidInputData(String),
 }
 
 /// An async work error, hence one that must be Send
@@ -72,6 +74,8 @@ pub enum WorkError {
     InconsistentAxisDefinitions(String),
     #[error("'{0}' has no position on {1}")]
     NoAxisPosition(GlyphName, String),
+    #[error("'{0}' has a position on {1}, what's {1}??")]
+    UnexpectedAxisPosition(GlyphName, String),
     #[error("I am the glyph with gid, {0}")]
     NoGlyphIdForName(String),
     #[error("No Glyph for name {0:?}")]
@@ -146,6 +150,8 @@ pub enum WorkError {
         glyph: GlyphName,
         anchor: AnchorName,
     },
+    #[error("No source with layerName \"{0}\" exists")]
+    NoSourceForName(String),
 }
 
 /// An async work error, hence one that must be Send

@@ -1069,32 +1069,34 @@ impl Glyph {
         name: GlyphName,
         emit_to_binary: bool,
         codepoints: HashSet<u32>,
-        sources: HashMap<NormalizedLocation, GlyphInstance>,
+        instances: HashMap<NormalizedLocation, GlyphInstance>,
     ) -> Result<Self, WorkError> {
-        if sources.is_empty() {
+        if instances.is_empty() {
             return Err(WorkError::InvalidSourceGlyph {
                 glyph_name: name,
-                message: "No sources".into(),
+                message: "No instances".into(),
             });
         }
-        let defaults: Vec<_> = sources
+        let defaults: Vec<_> = instances
             .keys()
             .filter(|loc| !loc.iter().any(|(_, c)| c.into_inner() != 0.0))
             .collect();
         if defaults.len() != 1 {
             return Err(WorkError::InvalidSourceGlyph {
                 glyph_name: name,
-                message: format!("Must have exactly 1 default, got {defaults:?} from {sources:?}"),
+                message: format!(
+                    "Must have exactly 1 default, got {defaults:?} from {instances:?}"
+                ),
             });
         }
         let default_location = defaults[0].clone();
-        let has_consistent_2x2_transforms = has_consistent_2x2_transforms(&name, &sources);
+        let has_consistent_2x2_transforms = has_consistent_2x2_transforms(&name, &instances);
         Ok(Glyph {
             name,
             emit_to_binary,
             codepoints,
             default_location,
-            sources,
+            sources: instances,
             has_consistent_2x2_transforms,
         })
     }
