@@ -34,6 +34,8 @@ pub struct Compiler<'a, F: FeatureProvider, V: VariationInfo> {
     // variable fonts only
     var_info: Option<&'a V>,
     feature_writer: Option<&'a F>,
+    // this is not in `Opts` because it is specific to the compiler struct;
+    // if you're compiling manually you are responsible for handling warnings.
     print_warnings: bool,
     max_n_errors: usize,
     opts: Opts,
@@ -95,16 +97,6 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
         self
     }
 
-    /// Specify a maximum number of messages to print when errors occur.
-    ///
-    /// Default is some arbitrary 'reasonable' number (currently 100.) To
-    /// suppress errors, pass `0`. To print all errors, pass a number as large
-    /// as the number of errors you intend to write.
-    pub fn max_error_messages(mut self, max_n_errors: usize) -> Self {
-        self.max_n_errors = max_n_errors;
-        self
-    }
-
     /// Specify an explicit project root.
     ///
     /// This is useful in cases where import resolution is based on an explicit
@@ -151,6 +143,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
             tree.source_map(),
             self.var_info,
             self.feature_writer,
+            self.opts,
         );
         ctx.compile(&tree.typed_root());
 
@@ -165,9 +158,8 @@ impl<'a, F: FeatureProvider, V: VariationInfo> Compiler<'a, F, V> {
 
     /// Compile to a binary font.
     pub fn compile_binary(self) -> Result<Vec<u8>, CompilerError> {
-        let opts = self.opts.clone();
         let glyph_map = self.glyph_map;
-        Ok(self.compile()?.to_binary(glyph_map, opts)?)
+        Ok(self.compile()?.to_binary(glyph_map)?)
     }
 }
 

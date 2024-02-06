@@ -29,7 +29,7 @@ use crate::{
         Token,
     },
     typed::ContextualRuleNode,
-    Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken,
+    Diagnostic, GlyphIdent, GlyphMap, Kind, NodeOrToken, Opts,
 };
 
 use super::{
@@ -68,6 +68,7 @@ pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     source_map: &'a SourceMap,
     variation_info: Option<&'a V>,
     feature_writer: Option<&'a F>,
+    opts: Opts,
     /// Any errors or warnings generated during compilation.
     pub errors: Vec<Diagnostic>,
     /// Stores any [specified table values][tables] in the input FEA.
@@ -99,6 +100,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         source_map: &'a SourceMap,
         variation_info: Option<&'a V>,
         feature_writer: Option<&'a F>,
+        opts: Opts,
     ) -> Self {
         CompilationCtx {
             glyph_map,
@@ -122,6 +124,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             script: Default::default(),
             mark_attach_class_id: Default::default(),
             mark_filter_sets: Default::default(),
+            opts,
         }
     }
 
@@ -190,7 +193,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .unwrap_or_default();
         let mut ivs = VariationStoreBuilder::new(axis_count);
 
-        let (mut gsub, mut gpos) = self.lookups.build(&self.features, &mut ivs);
+        let (mut gsub, mut gpos) = self.lookups.build(&self.features, &mut ivs, &self.opts);
         if !ivs.is_empty() {
             self.tables
                 .gdef
@@ -249,6 +252,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 stat,
                 gsub,
                 gpos,
+                opts: self.opts.clone(),
             },
             self.errors.clone(),
         ))
@@ -1773,9 +1777,13 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         } else if let Some(lookup) = typed::LookupBlock::cast(item) {
             self.resolve_lookup_block(lookup);
         } else if let Some(rule) = typed::GsubStatement::cast(item) {
-            self.add_gsub_statement(rule);
+            if self.opts.compile_gsub {
+                self.add_gsub_statement(rule);
+            }
         } else if let Some(rule) = typed::GposStatement::cast(item) {
-            self.add_gpos_statement(rule)
+            if self.opts.compile_gpos {
+                self.add_gpos_statement(rule)
+            }
         } else if item.kind() == Kind::Semi {
             // continue
         } else {

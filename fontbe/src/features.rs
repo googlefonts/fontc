@@ -17,7 +17,7 @@ use ordered_float::OrderedFloat;
 use fea_rs::{
     compile::{error::CompilerError, Compilation, FeatureBuilder, FeatureProvider, VariationInfo},
     parse::{FileSystemResolver, SourceLoadError, SourceResolver},
-    DiagnosticSet, ParseTree,
+    DiagnosticSet, Opts, ParseTree,
 };
 
 use fontir::{
@@ -381,6 +381,7 @@ impl FeatureCompilationWork {
             &marks.glyphmap,
             Some(&var_info),
             Some(&feature_writer),
+            Opts::new(),
         ) {
             Ok((result, warnings)) => {
                 log_fea_warnings("compilation", &warnings);

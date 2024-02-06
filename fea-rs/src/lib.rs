@@ -16,7 +16,7 @@ pub mod util;
 mod tests;
 
 pub use common::{GlyphIdent, GlyphMap, GlyphName, GlyphSet};
-pub use compile::Compiler;
+pub use compile::{Compiler, Opts};
 pub use diagnostic::{Diagnostic, DiagnosticSet, Level};
 pub use parse::{ParseTree, TokenSet};
 pub use token_tree::{typed, Kind, Node, NodeOrToken, Token};

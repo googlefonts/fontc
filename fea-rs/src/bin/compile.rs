@@ -33,9 +33,10 @@ fn run() -> Result<(), Error> {
     }
 
     let var_info = args.get_var_info().transpose()?;
+    let opts = args.opts();
 
     let mut compiler: Compiler<'_, NopFeatureProvider, MockVariationInfo> =
-        Compiler::new(fea, &glyph_names).with_opts(Opts::new().make_post_table(args.post));
+        Compiler::new(fea, &glyph_names).with_opts(opts);
     if let Some(var_info) = var_info.as_ref() {
         log::info!("compiling with {} mock variation axes", var_info.axes.len());
         for axis in &var_info.axes {
@@ -53,9 +54,8 @@ fn run() -> Result<(), Error> {
     let compiled = compiler.compile()?;
 
     let path = args.out_path();
-    let opts = Opts::new().make_post_table(args.post);
     let raw_font = compiled
-        .to_binary(&glyph_names, opts)
+        .to_binary(&glyph_names)
         .expect("ttf compile failed");
 
     log::info!("writing {} bytes to {}", raw_font.len(), path.display());
@@ -137,6 +137,12 @@ struct Args {
     /// Optionally write a post table to the generated font
     #[arg(short, long)]
     post: bool,
+
+    #[arg(long)]
+    skip_gpos: bool,
+
+    #[arg(long)]
+    skip_gsub: bool,
 }
 
 impl Args {
@@ -182,6 +188,13 @@ impl Args {
 
     fn glyph_order(&self) -> Option<&Path> {
         self.glyph_order.as_deref()
+    }
+
+    fn opts(&self) -> Opts {
+        Opts::new()
+            .make_post_table(self.post)
+            .compile_gpos(!self.skip_gpos)
+            .compile_gsub(!self.skip_gsub)
     }
 
     fn out_path(&self) -> &Path {
