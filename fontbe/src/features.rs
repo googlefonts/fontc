@@ -393,6 +393,15 @@ impl FeatureCompilationWork {
     }
 }
 
+fn write_debug_glyph_order(context: &Context, glyphs: &GlyphOrder) {
+    let glyph_order_file = context.debug_dir().join("glyph_order.txt");
+    let glyph_order = glyphs.iter().map(|g| g.to_string()).collect::<Vec<_>>();
+    let glyph_order = glyph_order.join("\n");
+    if let Err(e) = fs::write(glyph_order_file, glyph_order) {
+        log::error!("failed to write glyph order to debug/glyph_order.txt: '{e}'");
+    }
+}
+
 fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &str) {
     if !context.flags.contains(Flags::EMIT_DEBUG) {
         if is_error {
@@ -400,15 +409,11 @@ fn write_debug_fea(context: &Context, is_error: bool, why: &str, fea_content: &s
         }
         return;
     }
+
     let debug_file = context.debug_dir().join("features.fea");
     match fs::write(&debug_file, fea_content) {
-        Ok(..) => {
-            if is_error {
-                warn!("{}; fea written to {:?}", why, debug_file)
-            } else {
-                debug!("fea written to {:?}", debug_file);
-            }
-        }
+        Ok(_) if is_error => warn!("{}; fea written to {:?}", why, debug_file),
+        Ok(_) => debug!("fea written to {:?}", debug_file),
         Err(e) => error!("{}; failed to write fea to {:?}: {}", why, debug_file, e),
     };
 }
@@ -431,6 +436,9 @@ impl Work<Context, AnyWorkId, Error> for FeatureParsingWork {
         let glyph_order = context.ir.glyph_order.get();
         let result = self.parse(&features, &glyph_order);
 
+        if context.flags.contains(Flags::EMIT_DEBUG) {
+            write_debug_glyph_order(context, &glyph_order);
+        }
         if let FeaturesSource::Memory { fea_content, .. } = features.as_ref() {
             write_debug_fea(context, result.is_err(), "compile failed", fea_content);
         }
