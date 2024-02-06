@@ -12,6 +12,7 @@ use fontir::{
 };
 use kurbo::BezPath;
 use log::trace;
+use write_fonts::types::Tag;
 
 use crate::fontra::{FontraContour, FontraFontData, FontraGlyph, FontraPoint, PointType};
 
@@ -82,35 +83,44 @@ pub(crate) fn to_ir_static_metadata(
     .map_err(WorkError::VariationModelError)
 }
 
+///
 #[allow(dead_code)] // TEMPORARY
 fn to_ir_glyph(
-    default_location: NormalizedLocation,
+    global_axes: HashMap<&str, Tag>,
     codepoints: HashSet<u32>,
     fontra_glyph: &FontraGlyph,
 ) -> Result<Glyph, WorkError> {
+    let _local_axes: HashMap<_, _> = fontra_glyph
+        .axes
+        .iter()
+        .map(|a| (a.name.as_str(), a))
+        .collect();
+
     let layer_locations: HashMap<_, _> = fontra_glyph
         .sources
         .iter()
-        .map(|s| {
-            let mut location = default_location.clone();
-            for (tag, pos) in s.location.iter() {
-                if !location.contains(*tag) {
-                    return Err(WorkError::UnexpectedAxisPosition(
-                        fontra_glyph.name.clone(),
-                        tag.to_string(),
-                    ));
-                }
-                location.insert(*tag, NormalizedCoord::new(*pos as f32));
-            }
-            Ok((s.layer_name.as_str(), location))
-        })
-        .collect::<Result<_, _>>()?;
+        .map(|s| (s.layer_name.as_str(), &s.location))
+        .collect();
 
     let mut instances = HashMap::new();
     for (layer_name, layer) in fontra_glyph.layers.iter() {
+        // TODO: we need IR VARC support to proceed
+        if !fontra_glyph.axes.is_empty() {
+            todo!("Support local axes");
+        }
+
         let Some(location) = layer_locations.get(layer_name.as_str()) else {
             return Err(WorkError::NoSourceForName(layer_name.clone()));
         };
+        let global_location: NormalizedLocation = global_axes
+            .iter()
+            .map(|(name, tag)| {
+                (
+                    *tag,
+                    NormalizedCoord::new(location.get(*name).copied().unwrap_or_default() as f32),
+                )
+            })
+            .collect();
 
         let contours: Vec<_> = layer
             .glyph
@@ -119,14 +129,22 @@ fn to_ir_glyph(
             .iter()
             .map(|c| to_ir_path(fontra_glyph.name.clone(), c))
             .collect::<Result<_, _>>()?;
-        instances.insert(
-            location.clone(),
-            GlyphInstance {
-                width: layer.glyph.x_advance,
-                contours,
-                ..Default::default()
-            },
-        );
+        if instances
+            .insert(
+                global_location.clone(),
+                GlyphInstance {
+                    width: layer.glyph.x_advance,
+                    contours,
+                    ..Default::default()
+                },
+            )
+            .is_some()
+        {
+            return Err(WorkError::DuplicateNormalizedLocation {
+                what: "Multiple glyph instances".to_string(),
+                loc: global_location,
+            });
+        };
     }
 
     Glyph::new(fontra_glyph.name.clone(), true, codepoints, instances)
@@ -162,7 +180,7 @@ fn add_to_path<'a>(
 
 fn to_ir_path(glyph_name: GlyphName, contour: &FontraContour) -> Result<BezPath, WorkError> {
     // Based on glyphs2fontir/src/toir.rs to_ir_path
-    // TODO: so similar a trait to to let things be added to GlyphPathBuilder would be nice
+    // TODO(https://github.com/googlefonts/fontc/issues/700): share code
     if contour.points.is_empty() {
         return Ok(BezPath::new());
     }
@@ -204,9 +222,9 @@ fn to_ir_path(glyph_name: GlyphName, contour: &FontraContour) -> Result<BezPath,
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
-    use fontdrasil::{coords::NormalizedCoord, types::Axis};
+    use fontdrasil::types::Axis;
     use fontir::ir::Glyph;
     use kurbo::{BezPath, PathEl};
     use write_fonts::types::Tag;
@@ -279,10 +297,14 @@ mod tests {
 
     #[test]
     fn ir_of_glyph_u20089() {
-        let default_location = vec![(Tag::new(b"wght"), NormalizedCoord::new(0.0))].into();
         let glyph_file = testdata_dir().join("2glyphs.fontra/glyphs/u20089.json");
         let fontra_glyph = FontraGlyph::from_file(&glyph_file).unwrap();
-        let glyph = to_ir_glyph(default_location, Default::default(), &fontra_glyph).unwrap();
+        let glyph = to_ir_glyph(
+            HashMap::from([("Weight", Tag::new(b"wght"))]),
+            Default::default(),
+            &fontra_glyph,
+        )
+        .unwrap();
         assert_eq!(
             vec![(2, 0), (2, 0)],
             glyph
