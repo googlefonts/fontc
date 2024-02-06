@@ -16,13 +16,25 @@ use write_fonts::types::Tag;
 const SEPARATOR_CHAR: char = '^';
 
 fn is_reserved_char(c: char) -> bool {
-    let c = c as u32;
-    match c {
-        _ if c < 32 => true,
-        _ if c == 0x7F => true,
-        _ if c == SEPARATOR_CHAR as u32 => true,
-        _ => false,
-    }
+    matches!(
+        c,
+        '\0'..='\x1F'
+            | '\x7F'
+            | SEPARATOR_CHAR
+            | '>'
+            | '|'
+            | '['
+            | '?'
+            | '+'
+            | '\\'
+            | '"'
+            | ':'
+            | '/'
+            | '<'
+            | '%'
+            | ']'
+            | '*'
+    )
 }
 
 fn is_reserved_filename(name: &str) -> bool {
@@ -50,13 +62,15 @@ const BASE_32_CHARS: [char; 32] = [
 
 /// Matches <https://github.com/googlefonts/fontra/blob/15bc0b8401054390484cfb86d509d633d29657a1/src/fontra/backends/filenames.py#L40-L64>
 fn string_to_filename(string: &str, suffix: &str) -> String {
-    let mut code_digits: Vec<_> = (0..string.len())
+    let string_bytes = string.as_bytes();
+    let mut code_digits: Vec<_> = (0..string_bytes.len())
         .step_by(5)
         .map(|i| {
             let mut digit = 0;
             let mut bit = 1;
-            for c in string[i..(i + 5).min(string.len())].chars() {
-                if c.is_ascii_uppercase() {
+            let string = string.as_bytes();
+            for byte in string[i..(i + 5).min(string.len())].iter() {
+                if byte.is_ascii_uppercase() {
                     digit |= bit
                 }
                 bit <<= 1;
@@ -68,17 +82,14 @@ fn string_to_filename(string: &str, suffix: &str) -> String {
         code_digits.pop();
     }
 
-    let mut filename = Vec::new();
+    let mut filename = String::new();
     for (i, c) in string.chars().enumerate() {
         if i == 0 && c == '.' {
-            filename.extend("%2E".chars());
+            filename.push_str("%2E");
         } else if !is_reserved_char(c) {
             filename.push(c);
         } else {
-            let c = c as u32;
-            for c in format!("{c:02X}").chars() {
-                filename.push(c);
-            }
+            filename.push_str(format!("%{:02X}", c as u32).as_str());
         }
     }
 
@@ -97,7 +108,7 @@ fn string_to_filename(string: &str, suffix: &str) -> String {
     for c in suffix.chars() {
         filename.push(c);
     }
-    filename.into_iter().collect()
+    filename
 }
 
 pub(crate) fn glyph_file(glyph_dir: &Path, glyph: GlyphName) -> PathBuf {
@@ -486,6 +497,8 @@ mod tests {
             (".notdef", "%2Enotdef.json"),
             ("4E00", "4E00^2.json"),
             ("VG_4E00_01", "VG_4E00_01^J.json"),
+            ("duck:goose/mallard", "duck%3Agoose%2Fmallard.json"),
+            ("Hi ❤️‍🔥 hru", "Hi ❤️\u{200d}🔥 hru^1.json"),
         ];
         let mut errors = Vec::new();
         for (input, expected) in exemplars {
