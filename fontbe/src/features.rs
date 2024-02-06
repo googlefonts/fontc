@@ -17,7 +17,7 @@ use ordered_float::OrderedFloat;
 use fea_rs::{
     compile::{error::CompilerError, Compilation, FeatureBuilder, FeatureProvider, VariationInfo},
     parse::{FileSystemResolver, SourceLoadError, SourceResolver},
-    DiagnosticSet, Opts, ParseTree,
+    DiagnosticSet, GlyphMap, Opts, ParseTree,
 };
 
 use fontir::{
@@ -369,13 +369,7 @@ impl FeatureCompilationWork {
     ) -> Result<Compilation, Error> {
         let var_info = FeaVariationInfo::new(static_metadata);
         let feature_writer = FeatureWriter::new(kerns, marks);
-        // first do the validation pass
-        let diagnostics = fea_rs::compile::validate(&ast.ast, &marks.glyphmap, Some(&var_info));
-        if diagnostics.has_errors() {
-            return Err(CompilerError::ValidationFail(diagnostics).into());
-        }
-        log_fea_warnings("validation", &diagnostics);
-        // then we do the actual compilation pass:
+        // we've already validated the AST, so we only need to compile
         match fea_rs::compile::compile(
             &ast.ast,
             &marks.glyphmap,
@@ -435,7 +429,10 @@ impl Work<Context, AnyWorkId, Error> for FeatureParsingWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let features = context.ir.features.get();
         let glyph_order = context.ir.glyph_order.get();
-        let result = self.parse(&features, &glyph_order);
+        let static_metadata = context.ir.static_metadata.get();
+        let glyph_map = glyph_order.iter().map(|g| g.clone().into_inner()).collect();
+
+        let result = self.parse(&features, &glyph_map);
 
         if context.flags.contains(Flags::EMIT_DEBUG) {
             write_debug_glyph_order(context, &glyph_order);
@@ -443,7 +440,13 @@ impl Work<Context, AnyWorkId, Error> for FeatureParsingWork {
         if let FeaturesSource::Memory { fea_content, .. } = features.as_ref() {
             write_debug_fea(context, result.is_err(), "compile failed", fea_content);
         }
-        context.fea_ast.set(result?.into());
+
+        let ast = result?;
+        // after parsing we validate; we only need to do this once, and future
+        // work can trust the AST.
+        self.validate(&ast, &glyph_map, &static_metadata)?;
+
+        context.fea_ast.set(ast.into());
         Ok(())
     }
 }
@@ -453,20 +456,30 @@ impl FeatureParsingWork {
         Box::new(Self {})
     }
 
-    fn parse(
-        &self,
-        features: &FeaturesSource,
-        glyph_order: &GlyphOrder,
-    ) -> Result<ParseTree, Error> {
+    fn parse(&self, features: &FeaturesSource, glyph_map: &GlyphMap) -> Result<ParseTree, Error> {
         let (resolver, root_path) = get_resolver_and_root_path(features);
-        let glyph_map = glyph_order.iter().map(|g| g.clone().into_inner()).collect();
-        let (tree, diagnostics) = fea_rs::parse::parse_root(root_path, Some(&glyph_map), resolver)
+        let (tree, diagnostics) = fea_rs::parse::parse_root(root_path, Some(glyph_map), resolver)
             .map_err(CompilerError::SourceLoad)?;
         if diagnostics.has_errors() {
             return Err(CompilerError::ParseFail(diagnostics).into());
         }
         log_fea_warnings("parsing", &diagnostics);
         Ok(tree)
+    }
+
+    fn validate(
+        &self,
+        ast: &ParseTree,
+        glyph_map: &GlyphMap,
+        static_metadata: &StaticMetadata,
+    ) -> Result<(), Error> {
+        let var_info = FeaVariationInfo::new(static_metadata);
+        let diagnostics = fea_rs::compile::validate(ast, glyph_map, Some(&var_info));
+        if diagnostics.has_errors() {
+            return Err(CompilerError::ValidationFail(diagnostics).into());
+        }
+        log_fea_warnings("validation", &diagnostics);
+        Ok(())
     }
 }
 
