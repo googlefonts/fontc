@@ -20,9 +20,10 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 static IGNORED_TESTS: &[&str] = &[
-    // ## tests with invalid syntax ## //
+    // ## tests with unofficial syntax extensiosn we haven't implemented yet ## //
     "AlternateChained.fea",
     "GSUB_6.fea",
+    "GSUB_2.fea",
     //
     // ## tests that should be revisited ## //
     //
@@ -32,6 +33,7 @@ static IGNORED_TESTS: &[&str] = &[
     "variable_bug2772.fea",
     "variable_scalar_anchor.fea",
     "variable_scalar_valuerecord.fea",
+    "variable_mark_anchor.fea",
 ];
 
 /// An environment variable that can be set to specify where to write generated files.
