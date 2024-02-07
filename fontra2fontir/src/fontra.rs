@@ -13,6 +13,9 @@ use fontir::error::Error;
 use serde::Deserialize;
 use write_fonts::types::Tag;
 
+pub(crate) type AxisName = String;
+pub(crate) type LayerName = String;
+
 const SEPARATOR_CHAR: char = '^';
 
 fn is_reserved_char(c: char) -> bool {
@@ -63,13 +66,12 @@ const BASE_32_CHARS: [char; 32] = [
 /// Matches <https://github.com/googlefonts/fontra/blob/15bc0b8401054390484cfb86d509d633d29657a1/src/fontra/backends/filenames.py#L40-L64>
 fn string_to_filename(string: &str, suffix: &str) -> String {
     let string_bytes = string.as_bytes();
-    let mut code_digits: Vec<_> = (0..string_bytes.len())
-        .step_by(5)
-        .map(|i| {
+    let mut code_digits: Vec<_> = string_bytes
+        .chunks(5)
+        .map(|chunk| {
             let mut digit = 0;
             let mut bit = 1;
-            let string = string.as_bytes();
-            for byte in string[i..(i + 5).min(string.len())].iter() {
+            for byte in chunk {
                 if byte.is_ascii_uppercase() {
                     digit |= bit
                 }
@@ -140,7 +142,7 @@ impl FontraFontData {
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct FontraAxis {
-    pub(crate) name: String,
+    pub(crate) name: AxisName,
     pub(crate) tag: Tag,
     #[serde(default)]
     pub(crate) hidden: bool,
@@ -165,7 +167,7 @@ pub(crate) struct FontraGlyph {
     #[serde(default)]
     pub(crate) axes: Vec<FontraGlyphAxis>,
     pub(crate) sources: Vec<FontraSource>,
-    pub(crate) layers: BTreeMap<String, FontraLayer>,
+    pub(crate) layers: BTreeMap<LayerName, FontraLayer>,
 }
 
 /// An axis specific to a glyph meant to be used as a variable component
@@ -189,9 +191,9 @@ pub(crate) struct FontraGlyphAxis {
 pub(crate) struct FontraSource {
     pub(crate) name: String,
     #[serde(rename = "layerName")]
-    pub(crate) layer_name: String,
+    pub(crate) layer_name: LayerName,
     #[serde(default)]
-    pub(crate) location: HashMap<String, f64>,
+    pub(crate) location: HashMap<AxisName, f64>,
     // TODO: locationBase
     #[serde(default)]
     pub(crate) inactive: bool,
@@ -443,7 +445,7 @@ mod tests {
     fn read_simple_contours() {
         let glyph = read_test_glyph("2glyphs.fontra", "u20089");
         assert_eq!(GlyphName::new("u20089"), glyph.name, "{glyph:#?}");
-        let mut layer_names: Vec<_> = glyph.layers.keys().map(|n| n.as_str()).collect();
+        let mut layer_names: Vec<_> = glyph.layers.keys().cloned().collect();
         layer_names.sort();
         assert_eq!(vec!["foreground", "wght=1"], layer_names);
         assert_eq!(
@@ -484,7 +486,7 @@ mod tests {
                     .glyph
                     .components
                     .iter()
-                    .map(|c| (n.clone(), c.name.clone())))
+                    .map(|c| (n.to_string(), c.name.clone())))
                 .collect::<Vec<_>>(),
         );
     }

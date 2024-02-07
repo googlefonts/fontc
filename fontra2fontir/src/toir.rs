@@ -14,7 +14,7 @@ use kurbo::BezPath;
 use log::trace;
 use write_fonts::types::Tag;
 
-use crate::fontra::{FontraContour, FontraFontData, FontraGlyph, FontraPoint, PointType};
+use crate::fontra::{AxisName, FontraContour, FontraFontData, FontraGlyph, FontraPoint, PointType};
 
 pub(crate) fn to_ir_static_metadata(
     font_data: &FontraFontData,
@@ -61,7 +61,7 @@ pub(crate) fn to_ir_static_metadata(
 
             Ok(Axis {
                 tag: a.tag,
-                name: a.name.clone(),
+                name: a.name.to_string(),
                 hidden: a.hidden,
                 min,
                 default,
@@ -86,7 +86,7 @@ pub(crate) fn to_ir_static_metadata(
 ///
 #[allow(dead_code)] // TEMPORARY
 fn to_ir_glyph(
-    global_axes: HashMap<&str, Tag>,
+    global_axes: HashMap<AxisName, Tag>,
     codepoints: HashSet<u32>,
     fontra_glyph: &FontraGlyph,
 ) -> Result<Glyph, WorkError> {
@@ -99,7 +99,7 @@ fn to_ir_glyph(
     let layer_locations: HashMap<_, _> = fontra_glyph
         .sources
         .iter()
-        .map(|s| (s.layer_name.as_str(), &s.location))
+        .map(|s| (&s.layer_name, &s.location))
         .collect();
 
     let mut instances = HashMap::new();
@@ -109,15 +109,15 @@ fn to_ir_glyph(
             todo!("Support local axes");
         }
 
-        let Some(location) = layer_locations.get(layer_name.as_str()) else {
-            return Err(WorkError::NoSourceForName(layer_name.clone()));
+        let Some(location) = layer_locations.get(layer_name) else {
+            return Err(WorkError::NoSourceForName(layer_name.to_string()));
         };
         let global_location: NormalizedLocation = global_axes
             .iter()
             .map(|(name, tag)| {
                 (
                     *tag,
-                    NormalizedCoord::new(location.get(*name).copied().unwrap_or_default() as f32),
+                    NormalizedCoord::new(location.get(name).copied().unwrap_or_default() as f32),
                 )
             })
             .collect();
@@ -300,7 +300,7 @@ mod tests {
         let glyph_file = testdata_dir().join("2glyphs.fontra/glyphs/u20089.json");
         let fontra_glyph = FontraGlyph::from_file(&glyph_file).unwrap();
         let glyph = to_ir_glyph(
-            HashMap::from([("Weight", Tag::new(b"wght"))]),
+            HashMap::from([("Weight".to_string(), Tag::new(b"wght"))]),
             Default::default(),
             &fontra_glyph,
         )
