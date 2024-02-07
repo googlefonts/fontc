@@ -375,11 +375,13 @@ pub struct FeaRsKerns {
     pub lookups: Vec<PairPosBuilder>,
 }
 
-/// The Ast for any user features.
+/// The abstract syntax tree of any user FEA.
 ///
-/// This is a newtype so that we can implement `Persistable`
+/// Before storing the AST, ensure that it has been validated (via [`fea_rs::compile::validate`]).
+/// This does not include features that are generated, such as for kerning or marks.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct FeaAst {
+    /// A validated abstract syntax tree.
     pub ast: ParseTree,
 }
 
