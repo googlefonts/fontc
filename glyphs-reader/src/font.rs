@@ -930,7 +930,7 @@ trait GlyphsV2OrderedAxes {
         })
     }
 
-    fn axis_values(&self, axes: &Vec<Axis>) -> Result<Vec<OrderedFloat<f64>>, Error> {
+    fn axis_values(&self, axes: &[Axis]) -> Result<Vec<OrderedFloat<f64>>, Error> {
         (0..axes.len())
             .map(|nth_axis| self.value_for_nth_axis(nth_axis))
             .collect::<Result<Vec<OrderedFloat<f64>>, Error>>()
