@@ -6,7 +6,7 @@ use std::{
     ffi::OsStr,
     fmt::{Debug, Display, Write},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     time::SystemTime,
 };
 
@@ -112,6 +112,7 @@ pub fn assert_has_ttx_executable() {
     assert!(
         Command::new("ttx")
             .arg("--version")
+            .stdout(Stdio::null())
             .status()
             .map(|s| s.success())
             .unwrap_or(false),
