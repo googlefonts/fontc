@@ -237,7 +237,7 @@ pub(crate) fn run_test(
     glyph_map: &GlyphMap,
     fvar: &MockVariationInfo,
 ) -> Result<PathBuf, TestCase> {
-    match std::panic::catch_unwind(|| {
+    let run_result = std::panic::catch_unwind(|| {
         let mut compiler: Compiler<'_, NopFeatureProvider, MockVariationInfo> =
             Compiler::new(&path, glyph_map)
                 .print_warnings(std::env::var(super::VERBOSE).is_ok())
@@ -256,7 +256,9 @@ pub(crate) fn run_test(
             }
             Ok(result) => compare_ttx(&result, &path),
         }
-    }) {
+    });
+
+    match run_result {
         Err(_) => Err(TestResult::Panic),
         Ok(Err(reason)) => Err(reason),
         Ok(Ok(_)) => return Ok(path),
