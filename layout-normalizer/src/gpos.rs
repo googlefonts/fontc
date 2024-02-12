@@ -8,10 +8,8 @@ use write_fonts::{
     read::{
         tables::{
             gdef::MarkGlyphSets,
-            gpos::{
-                AnchorTable, ExtensionSubtable, PositionLookup, PositionLookupList, ValueRecord,
-            },
-            layout::{DeviceOrVariationIndex, LookupFlag},
+            gpos::{AnchorTable, PositionLookupList, PositionSubtables, ValueRecord},
+            layout::DeviceOrVariationIndex,
         },
         FontData, FontRef, ReadError, TableProvider,
     },
@@ -405,108 +403,35 @@ fn get_lookup_rules(
     let mut result = LookupRules::default();
     for (id, lookup) in lookups.lookups().iter().enumerate() {
         let lookup = lookup.unwrap();
-        let (flag, mark_filter_id) = get_flags_and_filter_set_id(&lookup);
-        match lookup {
-            PositionLookup::Pair(lookup) => {
-                let subs = lookup
-                    .subtables()
-                    .iter()
-                    .flat_map(|sub| sub.ok())
-                    .collect::<Vec<_>>();
+        let flag = lookup.lookup_flag();
+        let mark_filter_id = flag
+            .use_mark_filtering_set()
+            .then_some(lookup.mark_filtering_set());
+        let subtables = lookup.subtables().unwrap();
+        match subtables {
+            PositionSubtables::Pair(subs) => {
+                let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
                 let rules = pairpos::get_pairpos_rules(&subs, delta_computer).unwrap();
                 result.pairpos.push(Lookup::new(id, rules, flag, None));
             }
-            PositionLookup::MarkToBase(lookup) => {
-                let subs: Vec<_> = lookup
-                    .subtables()
-                    .iter()
-                    .flat_map(|subt| subt.ok())
-                    .collect();
+            PositionSubtables::MarkToBase(subs) => {
+                let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
                 let rules = marks::get_mark_base_rules(&subs, delta_computer).unwrap();
                 result
                     .markbase
                     .push(Lookup::new(id, rules, flag, mark_filter_id));
             }
-            PositionLookup::MarkToMark(lookup) => {
-                let subs: Vec<_> = lookup
-                    .subtables()
-                    .iter()
-                    .flat_map(|subt| subt.ok())
-                    .collect();
+            PositionSubtables::MarkToMark(subs) => {
+                let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
                 let rules = marks::get_mark_mark_rules(&subs, delta_computer).unwrap();
                 result
-                    .markmark
+                    .markbase
                     .push(Lookup::new(id, rules, flag, mark_filter_id));
-            }
-            PositionLookup::Extension(lookup) => {
-                let first_sub = lookup.subtables().get(0).ok();
-                match first_sub {
-                    Some(ExtensionSubtable::MarkToBase(_)) => {
-                        let subs = lookup
-                            .subtables()
-                            .iter()
-                            .flat_map(|sub| match sub {
-                                Ok(ExtensionSubtable::MarkToBase(inner)) => inner.extension().ok(),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>();
-                        let rules = marks::get_mark_base_rules(&subs, delta_computer).unwrap();
-                        result
-                            .markbase
-                            .push(Lookup::new(id, rules, flag, mark_filter_id));
-                    }
-                    Some(ExtensionSubtable::MarkToMark(_)) => {
-                        let subs = lookup
-                            .subtables()
-                            .iter()
-                            .flat_map(|sub| match sub {
-                                Ok(ExtensionSubtable::MarkToMark(inner)) => inner.extension().ok(),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>();
-                        let rules = marks::get_mark_mark_rules(&subs, delta_computer).unwrap();
-                        result
-                            .markmark
-                            .push(Lookup::new(id, rules, flag, mark_filter_id));
-                    }
-                    Some(ExtensionSubtable::Pair(_)) => {
-                        let subs = lookup
-                            .subtables()
-                            .iter()
-                            .flat_map(|sub| match sub {
-                                Ok(ExtensionSubtable::Pair(inner)) => inner.extension().ok(),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>();
-                        let rules = pairpos::get_pairpos_rules(&subs, delta_computer).unwrap();
-                        result
-                            .pairpos
-                            .push(Lookup::new(id, rules, flag, mark_filter_id));
-                    }
-                    _ => (),
-                };
             }
             _ => (),
         }
     }
     result
-}
-
-fn get_flags_and_filter_set_id(lookup: &PositionLookup) -> (LookupFlag, Option<u16>) {
-    let (flag, filter_id) = match lookup {
-        PositionLookup::Single(lookup) => (lookup.lookup_flag(), lookup.mark_filtering_set()),
-        PositionLookup::Pair(lookup) => (lookup.lookup_flag(), lookup.mark_filtering_set()),
-        PositionLookup::Cursive(lookup) => (lookup.lookup_flag(), lookup.mark_filtering_set()),
-        PositionLookup::MarkToBase(lookup) => (lookup.lookup_flag(), lookup.mark_filtering_set()),
-        PositionLookup::MarkToLig(lookup) => (lookup.lookup_flag(), lookup.mark_filtering_set()),
-        PositionLookup::MarkToMark(lookup) => (lookup.lookup_flag(), lookup.mark_filtering_set()),
-        PositionLookup::Contextual(lookup) => (lookup.lookup_flag(), lookup.mark_filtering_set()),
-        PositionLookup::ChainContextual(lookup) => {
-            (lookup.lookup_flag(), lookup.mark_filtering_set())
-        }
-        PositionLookup::Extension(lookup) => (lookup.lookup_flag(), lookup.mark_filtering_set()),
-    };
-    (flag, flag.use_mark_filtering_set().then_some(filter_id))
 }
 
 impl From<i16> for ResolvedValue {
@@ -575,6 +500,7 @@ impl Display for ResolvedAnchor {
 #[cfg(test)]
 mod tests {
     use fea_rs::compile::{MarkToBaseBuilder, PairPosBuilder};
+    use write_fonts::tables::layout::LookupFlag;
 
     use super::test_helpers::{RawAnchor, SimpleMarkBaseBuilder, SimplePairPosBuilder};
     use super::*;
