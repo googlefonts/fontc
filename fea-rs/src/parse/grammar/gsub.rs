@@ -126,7 +126,9 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> AstKind {
 
     // now we may be done, or we may have a single inline rule
     if parser.eat(Kind::ByKw) {
-        if glyph::eat_glyph_name_like(parser) {
+        if parser.eat(Kind::NullKw) {
+            // allowed, continue down to 'expect_semi'
+        } else if glyph::eat_glyph_name_like(parser) {
             while glyph::eat_glyph_name_like(parser) {
                 continue;
             }
@@ -145,6 +147,9 @@ fn finish_chain_rule(parser: &mut Parser, recovery: TokenSet) -> AstKind {
     }
 
     if parser.expect_semi() {
+        // this looks like a valid contextual rule, but we will need to
+        // reparse it. This happens automatically when the node is added to
+        // the `AstSink`
         AstKind::GsubNodeNeedsRewrite
     } else {
         AstKind::GsubNode

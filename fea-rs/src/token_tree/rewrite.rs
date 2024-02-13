@@ -168,6 +168,9 @@ pub(crate) fn reparse_contextual_sub_rule(rewriter: &mut ReparseCtx) -> Kind {
     if rewriter.matches(0, Kind::ByKw) {
         rewriter.in_node(Kind::InlineSubNode, |rewriter| {
             rewriter.expect(Kind::ByKw);
+            if rewriter.eat(Kind::NullKw) {
+                return;
+            }
             expect_glyph_or_glyph_class(rewriter);
             while at_glyph_or_glyph_class(rewriter.nth_kind(0)) {
                 eat_glyph_or_glyph_class(rewriter);
