@@ -16,6 +16,10 @@ pub enum Error {
     DirectoryExpected(PathBuf),
     #[error("Missing expected file '{0}'")]
     FileExpected(PathBuf),
+    #[error("No extension identified for '{0}'")]
+    Unrecognized(PathBuf),
+    #[error("No parent for '{0}'")]
+    ParentExpected(PathBuf),
     #[error("IO failure: '{0}'")]
     IoError(#[from] io::Error),
     #[error("Unable to parse {0:?}: {1}")]

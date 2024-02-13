@@ -40,7 +40,7 @@ const UFO_KERN1_PREFIX: &str = "public.kern1.";
 const UFO_KERN2_PREFIX: &str = "public.kern2.";
 
 pub struct DesignSpaceIrSource {
-    designspace_file: PathBuf,
+    designspace_or_ufo: PathBuf,
     designspace: DesignSpaceDocument,
     designspace_dir: PathBuf,
     cache: Option<Cache>,
@@ -145,13 +145,35 @@ pub(crate) fn layer_dir<'a>(
 }
 
 impl DesignSpaceIrSource {
-    pub fn new(designspace_file: PathBuf) -> Result<DesignSpaceIrSource, Error> {
-        let designspace_dir = designspace_file
-            .parent()
-            .expect("designspace file *must* be in a directory")
-            .to_path_buf();
-        let mut designspace = DesignSpaceDocument::load(&designspace_file)
-            .map_err(|e| Error::UnableToLoadSource(Box::new(e)))?;
+    pub fn new(designspace_or_ufo: PathBuf) -> Result<DesignSpaceIrSource, Error> {
+        let Some(designspace_dir) = designspace_or_ufo.parent().map(|d| d.to_path_buf()) else {
+            return Err(Error::ParentExpected(designspace_or_ufo));
+        };
+        let Some(ext) = designspace_or_ufo
+            .extension()
+            .map(|s| s.to_ascii_lowercase())
+        else {
+            return Err(Error::Unrecognized(designspace_or_ufo));
+        };
+        let mut designspace = match ext.to_str() {
+            Some("designspace") => DesignSpaceDocument::load(&designspace_or_ufo)
+                .map_err(|e| Error::UnableToLoadSource(Box::new(e)))?,
+            Some("ufo") => {
+                let Some(filename) = designspace_or_ufo.file_name().and_then(|s| s.to_str()) else {
+                    return Err(Error::DirectoryExpected(designspace_or_ufo));
+                };
+                DesignSpaceDocument {
+                    format: 4.1,
+                    sources: vec![norad::designspace::Source {
+                        filename: filename.to_owned(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }
+            }
+            _ => return Err(Error::Unrecognized(designspace_or_ufo)),
+        };
+
         for (i, source) in designspace.sources.iter_mut().enumerate() {
             if source.name.is_none() {
                 source.name = Some(format!("unnamed_source_{i}"));
@@ -165,7 +187,7 @@ impl DesignSpaceIrSource {
         }
 
         Ok(DesignSpaceIrSource {
-            designspace_file,
+            designspace_or_ufo,
             designspace_dir,
             cache: None,
             designspace,
@@ -175,9 +197,9 @@ impl DesignSpaceIrSource {
     // When things like upem may have changed forget incremental and rebuild the whole thing
     fn static_metadata_state(&self) -> Result<StateSet, Error> {
         let mut font_info = StateSet::new();
-        font_info.track_file(&self.designspace_file)?;
+        font_info.track_file(&self.designspace_or_ufo)?;
         let (default_master_idx, _) = default_master(&self.designspace)
-            .ok_or_else(|| Error::NoDefaultMaster(self.designspace_file.clone()))?;
+            .ok_or_else(|| Error::NoDefaultMaster(self.designspace_or_ufo.clone()))?;
 
         for (idx, source) in self.designspace.sources.iter().enumerate() {
             let ufo_dir = self.designspace_dir.join(&source.filename);
@@ -188,10 +210,8 @@ impl DesignSpaceIrSource {
                 }
 
                 let file = ufo_dir.join(filename);
-                // TODO: this is incorrect; several of these files are optional
-                // File tracking curently assumes you only track extant files so keep it for now
                 if !file.is_file() {
-                    return Err(Error::FileExpected(file));
+                    continue;
                 }
                 font_info.track_file(&file)?;
             }
@@ -260,7 +280,7 @@ impl Source for DesignSpaceIrSource {
         let mut glyph_names: HashSet<GlyphName> = HashSet::new();
 
         let Some((default_master_idx, default_master)) = default_master(&self.designspace) else {
-            return Err(Error::NoDefaultMaster(self.designspace_file.clone()));
+            return Err(Error::NoDefaultMaster(self.designspace_or_ufo.clone()));
         };
         let mut sources_default_first = vec![default_master];
         sources_default_first.extend(
@@ -310,7 +330,7 @@ impl Source for DesignSpaceIrSource {
             debug!("{} glyphs identified", glyph_names.len());
         }
 
-        let ds_dir = self.designspace_file.parent().unwrap();
+        let ds_dir = self.designspace_or_ufo.parent().unwrap();
 
         // We haven't parsed fea files yet, and we don't want to so make the educated guess that
         // any feature file in designspace directory is an include instead of only looking at the
@@ -350,7 +370,7 @@ impl Source for DesignSpaceIrSource {
         self.cache = Some(Cache::new(
             static_metadata.clone(),
             glif_locations,
-            self.designspace_file.clone(),
+            self.designspace_or_ufo.clone(),
             Arc::from(self.designspace.clone()),
             fea_files,
         ));
@@ -816,7 +836,12 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
         let master_locations = master_locations(&axes, &self.designspace.sources);
         let glyph_locations = master_locations.values().cloned().collect();
 
-        let lib_plist = load_plist(&designspace_dir.join(&default_master.filename), "lib.plist")?;
+        let lib_plist =
+            match load_plist(&designspace_dir.join(&default_master.filename), "lib.plist") {
+                Ok(lib_plist) => lib_plist,
+                Err(WorkError::FileExpected(_)) => Default::default(),
+                Err(e) => return Err(e),
+            };
         let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields

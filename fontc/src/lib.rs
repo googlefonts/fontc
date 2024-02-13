@@ -2801,4 +2801,29 @@ mod tests {
         let compile = TestCompile::compile_source("glyphs3/MVAR.glyphs");
         assert_mvar_from_glyphs(compile.font().mvar().unwrap());
     }
+
+    #[test]
+    fn compile_ufo() {
+        let result = TestCompile::compile_source("WghtVar-Bold.ufo");
+        let font = result.font();
+        let name = font.name().unwrap();
+
+        // Expected values based on
+        //  fontmake resources/testdata/WghtVar-Bold.ufo
+        //  ttx -o - -t name master_ttf/WghtVar-Bold.ttf
+        assert_eq!(
+            vec![
+                (NameId::FAMILY_NAME, "Wght Var".to_string()),
+                (NameId::SUBFAMILY_NAME, "Regular".to_string()),
+                (NameId::UNIQUE_ID, "0.000;NONE;WghtVar-Regular".to_string()),
+                (NameId::FULL_NAME, "Wght Var Regular".to_string()),
+                (NameId::VERSION_STRING, "Version 0.000".to_string()),
+                (NameId::POSTSCRIPT_NAME, "WghtVar-Regular".to_string()),
+            ],
+            name.name_record()
+                .iter()
+                .map(|nr| (nr.name_id.get(), resolve_name(&name, nr.name_id()).unwrap()))
+                .collect::<Vec<_>>()
+        );
+    }
 }
