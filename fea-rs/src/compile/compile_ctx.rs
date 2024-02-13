@@ -700,7 +700,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             } else {
                 let target = input.items().next().unwrap().target();
                 let arity = rule.replacements().count();
-                if arity == 1 {
+                if arity == 1 && rule.null().is_none() {
                     let replacement = rule.replacements().next().unwrap();
                     if let Some((target, replacement)) =
                         self.validate_single_sub_inputs(&target, Some(&replacement))
@@ -721,10 +721,13 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                             "Inline multiple substitution must have a single glyph target",
                         );
                     }
-                    let replacements = rule
-                        .replacement_glyphs()
-                        .map(|g| self.resolve_glyph(&g))
-                        .collect();
+                    let replacements = if rule.null().is_some() {
+                        Vec::new()
+                    } else {
+                        rule.replacement_glyphs()
+                            .map(|g| self.resolve_glyph(&g))
+                            .collect()
+                    };
                     if let Some(target_id) = self.resolve_glyph_or_class(&target).iter().next() {
                         let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
                         Some(

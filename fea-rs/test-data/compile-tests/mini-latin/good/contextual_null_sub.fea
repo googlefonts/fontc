@@ -1,0 +1,3 @@
+feature test {
+    sub a b c' by NULL;
+} test;

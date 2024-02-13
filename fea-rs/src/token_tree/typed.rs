@@ -890,6 +890,10 @@ impl InlineSubRule {
     pub(crate) fn replacements(&self) -> impl Iterator<Item = GlyphOrClass> + '_ {
         self.iter().filter_map(GlyphOrClass::cast)
     }
+
+    pub(crate) fn null(&self) -> Option<Null> {
+        self.iter().find_map(Null::cast)
+    }
 }
 
 impl Gpos1 {
