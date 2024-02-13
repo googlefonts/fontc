@@ -27,6 +27,7 @@ use log::{debug, log_enabled, trace, warn, Level};
 use norad::{
     designspace::{self, DesignSpaceDocument},
     fontinfo::StyleMapStyle,
+    Font,
 };
 use write_fonts::{
     tables::os2::SelectionFlags,
@@ -144,14 +145,34 @@ pub(crate) fn layer_dir<'a>(
         .ok_or_else(|| Error::NoSuchLayer(source.filename.clone()))
 }
 
+fn wrap_ufo_in_designspace(ufo_file: &PathBuf) -> Result<DesignSpaceDocument, Error> {
+    let mut designspace = DesignSpaceDocument::default();
+    let ufo =
+        Font::load(ufo_file).map_err(|e| Error::ParseError(ufo_file.clone(), e.to_string()))?;
+    designspace.sources.push(designspace::Source {
+        familyname: ufo.font_info.family_name.clone(),
+        stylename: ufo.font_info.style_name.clone(),
+        name: None,
+        filename: ufo_file.file_name().unwrap().to_string_lossy().to_string(),
+        location: vec![],
+        layer: None,
+    });
+    Ok(designspace)
+}
+
 impl DesignSpaceIrSource {
     pub fn new(designspace_file: PathBuf) -> Result<DesignSpaceIrSource, Error> {
         let designspace_dir = designspace_file
             .parent()
             .expect("designspace file *must* be in a directory")
             .to_path_buf();
-        let mut designspace = DesignSpaceDocument::load(&designspace_file)
-            .map_err(|e| Error::UnableToLoadSource(Box::new(e)))?;
+        let mut designspace = if designspace_file.ends_with(".designspace") {
+            DesignSpaceDocument::load(&designspace_file)
+                .map_err(|e| Error::UnableToLoadSource(Box::new(e)))?
+        } else {
+            wrap_ufo_in_designspace(&designspace_file)
+                .map_err(|e| Error::UnableToLoadSource(Box::new(e)))?
+        };
         for (i, source) in designspace.sources.iter_mut().enumerate() {
             if source.name.is_none() {
                 source.name = Some(format!("unnamed_source_{i}"));
