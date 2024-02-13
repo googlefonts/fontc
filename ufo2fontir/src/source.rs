@@ -703,10 +703,10 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
         NameId::SUBFAMILY_NAME,
         &font_info.style_map_style_name.as_ref().map(|s| {
             match s {
-                norad::fontinfo::StyleMapStyle::Regular => "regular",
-                norad::fontinfo::StyleMapStyle::Italic => "italic",
-                norad::fontinfo::StyleMapStyle::Bold => "bold",
-                norad::fontinfo::StyleMapStyle::BoldItalic => "bold italic",
+                norad::fontinfo::StyleMapStyle::Regular => "Regular",
+                norad::fontinfo::StyleMapStyle::Italic => "Italic",
+                norad::fontinfo::StyleMapStyle::Bold => "Bold",
+                norad::fontinfo::StyleMapStyle::BoldItalic => "Bold Italic",
             }
             .into()
         }),
