@@ -204,7 +204,8 @@ def find_table(ttx, tag):
 
 def select_one(container, xpath):
     el = container.xpath(xpath)
-    assert len(el) == 1, f"Wanted 1 name element, got {len(el)}"
+    if len(el) != 1:
+        raise IndexError(f"Wanted 1 name element, got {len(el)}")
     return el[0]
 
 
@@ -229,7 +230,10 @@ def erase_checksum(ttx):
 
 
 def stat_like_fontmake(ttx):
-    el = find_table(ttx, "STAT")
+    try:
+        el = find_table(ttx, "STAT")
+    except IndexError:
+        return
     ver = select_one(el, "Version")
     if ver.attrib["value"] != "0x00010002":
         # nop
