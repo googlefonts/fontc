@@ -60,8 +60,8 @@ fn to_ir_component(component: &norad::Component) -> ir::Component {
         base: component.base.as_str().into(),
         transform: Affine::new([
             component.transform.x_scale,
-            component.transform.yx_scale,
             component.transform.xy_scale,
+            component.transform.yx_scale,
             component.transform.y_scale,
             component.transform.x_offset,
             component.transform.y_offset,
