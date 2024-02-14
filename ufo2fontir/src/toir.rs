@@ -187,7 +187,7 @@ mod tests {
 
     use fontdrasil::coords::{NormalizedCoord, NormalizedLocation};
     use fontir::ir::AnchorBuilder;
-    use norad::ContourPoint;
+    use norad::{AffineTransform, Component, ContourPoint, Name};
 
     use super::*;
 
@@ -251,5 +251,54 @@ mod tests {
         )
         .unwrap();
         assert_eq!(HashSet::from([0x007C]), glyph.codepoints);
+    }
+
+    #[test]
+    pub fn component_transforms() {
+        let mut c = Component::new(
+            Name::new("A").unwrap(),
+            AffineTransform {
+                x_scale: 1.0,
+                xy_scale: 0.0,
+                yx_scale: 0.0,
+                y_scale: 1.0,
+                x_offset: 0.0,
+                y_offset: 0.0,
+            },
+            None,
+            None,
+        );
+        assert_eq!(
+            to_ir_component(&c).transform,
+            Affine::new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+        );
+
+        c.transform = AffineTransform {
+            x_scale: 1.0,
+            xy_scale: 0.0,
+            yx_scale: 0.0,
+            y_scale: 1.0,
+            x_offset: 10.0,
+            y_offset: 10.0,
+        };
+        assert_eq!(
+            to_ir_component(&c).transform,
+            Affine::new([1.0, 0.0, 0.0, 1.0, 10.0, 10.0])
+        );
+
+        // <component base="a" xScale="0.4366" xyScale="-0.4366" yScale="0.4415" yxScale="0.4415" xOffset="282" yOffset="5" identifier="5402E799"/>
+        c.transform = AffineTransform {
+            x_scale: 0.4366,
+            xy_scale: -0.4366,
+            y_scale: 0.4415,
+            yx_scale: 0.4415,
+            x_offset: 282.0,
+            y_offset: 5.0,
+        };
+        // Switchy switchy!
+        assert_eq!(
+            to_ir_component(&c).transform,
+            Affine::new([0.4366, -0.4366, 0.4415, 0.4415, 282.0, 5.0])
+        );
     }
 }
