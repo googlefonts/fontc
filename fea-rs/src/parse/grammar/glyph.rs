@@ -78,8 +78,11 @@ pub(crate) fn eat_glyph_class_list(parser: &mut Parser, recovery: TokenSet) -> b
         super::greedy(glyph_class_list_member)(parser, recovery);
 
         if !parser.eat(Kind::RSquare) {
-            parser.raw_error(range, "Unclosed glyph class.");
-            parser.err_recover("Expected closing ']'.", recovery);
+            parser.err("Unexpected token, expected glyph or glyph class");
+            parser.eat_until(recovery);
+            if !parser.eat(Kind::RSquare) {
+                parser.raw_error(range, "Unclosed glyph class.")
+            }
         }
     });
     true
