@@ -60,6 +60,12 @@ fn to_ir_component(component: &norad::Component) -> ir::Component {
         base: component.base.as_str().into(),
         transform: Affine::new([
             component.transform.x_scale,
+            // For the 2nd and 3rd field of its 2x3 affine transformation, norad uses
+            // the same labels as fonttools' Transform, respectively `xy` and `yx`.
+            // Elsewhere (e.g. FreeType, Cairo or read-fonts Transform) these labels are
+            // inverted, but their meaning is still the same: i.e. the "y component of
+            // the î basis vector", and "x component of the ĵ basis vector".
+            // See https://github.com/googlefonts/fontc/pull/721
             component.transform.xy_scale,
             component.transform.yx_scale,
             component.transform.y_scale,
