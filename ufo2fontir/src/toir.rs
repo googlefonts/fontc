@@ -292,19 +292,19 @@ mod tests {
             Affine::new([1.0, 0.0, 0.0, 1.0, 10.0, 10.0])
         );
 
-        // <component base="a" xScale="0.4366" xyScale="-0.4366" yScale="0.4415" yxScale="0.4415" xOffset="282" yOffset="5" identifier="5402E799"/>
+        // <component base="a" xScale="0.4366" xyScale="-0.4366" yScale="0.4425" yxScale="0.4415" xOffset="282" yOffset="5" identifier="5402E799"/>
         c.transform = AffineTransform {
             x_scale: 0.4366,
             xy_scale: -0.4366,
-            y_scale: 0.4415,
             yx_scale: 0.4415,
+            y_scale: 0.4425,
             x_offset: 282.0,
             y_offset: 5.0,
         };
         // Switchy switchy!
         assert_eq!(
             to_ir_component(&c).transform,
-            Affine::new([0.4366, -0.4366, 0.4415, 0.4415, 282.0, 5.0])
+            Affine::new([0.4366, -0.4366, 0.4415, 0.4425, 282.0, 5.0])
         );
     }
 }
