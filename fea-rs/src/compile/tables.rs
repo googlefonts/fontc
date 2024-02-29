@@ -27,7 +27,7 @@ mod os2;
 mod stat;
 
 pub(crate) use base::{BaseBuilder, ScriptRecord};
-pub(crate) use gdef::{ClassId, GdefBuilder};
+pub(crate) use gdef::{GdefBuilder, GlyphClassDefExt};
 pub(crate) use name::{NameBuilder, NameSpec};
 pub(crate) use os2::{CodePageRange, Os2Builder};
 pub(crate) use stat::{AxisLocation, AxisRecord, AxisValue, StatBuilder, StatFallbackName};

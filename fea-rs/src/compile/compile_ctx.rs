@@ -13,7 +13,7 @@ use smol_str::SmolStr;
 use write_fonts::{
     tables::{
         self,
-        gdef::CaretValue,
+        gdef::{CaretValue, GlyphClassDef},
         gpos::ValueFormat,
         layout::{ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag},
         variations::ivs_builder::{RemapVariationIndices, VariationStoreBuilder},
@@ -45,7 +45,7 @@ use super::{
     },
     metrics::{Anchor, DeviceOrDeltas, Metric, ValueRecord},
     output::Compilation,
-    tables::{ClassId, ScriptRecord, Tables},
+    tables::{GlyphClassDefExt, ScriptRecord, Tables},
     tags, VariationInfo,
 };
 
@@ -240,6 +240,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             }
         }
 
+        let gdef_classes = self.tables.gdef.as_ref().and_then(|gdef| {
+            (!gdef.glyph_classes_were_inferred).then(|| gdef.glyph_classes.clone())
+        });
+
         Ok((
             Compilation {
                 head: self.tables.head.as_ref().map(|raw| raw.build(None)),
@@ -253,6 +257,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 gsub,
                 gpos,
                 opts: self.opts.clone(),
+                gdef_classes,
             },
             self.errors.clone(),
         ))
@@ -294,6 +299,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let mut gdef = self.tables.gdef.take().unwrap_or_default();
         // infer glyph classes, if they were not declared explicitly
         if gdef.glyph_classes.is_empty() {
+            gdef.glyph_classes_were_inferred = true;
             self.lookups.infer_glyph_classes(|glyph, class_id| {
                 gdef.glyph_classes.insert(glyph, class_id);
             });
@@ -303,7 +309,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 .flat_map(|class| class.members.iter().map(|(cls, _)| cls.iter()))
                 .flatten()
             {
-                gdef.glyph_classes.insert(glyph, ClassId::Mark);
+                gdef.glyph_classes.insert(glyph, GlyphClassDef::Mark);
             }
         }
 
@@ -1691,10 +1697,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
                 typed::GdefTableItem::ClassDef(rule) => {
                     for (class, id) in [
-                        (rule.base_glyphs(), ClassId::Base),
-                        (rule.ligature_glyphs(), ClassId::Ligature),
-                        (rule.mark_glyphs(), ClassId::Mark),
-                        (rule.component_glyphs(), ClassId::Component),
+                        (rule.base_glyphs(), GlyphClassDef::Base),
+                        (rule.ligature_glyphs(), GlyphClassDef::Ligature),
+                        (rule.mark_glyphs(), GlyphClassDef::Mark),
+                        (rule.component_glyphs(), GlyphClassDef::Component),
                     ] {
                         let Some(class) = class else {
                             continue;
@@ -1702,8 +1708,9 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                         if let Err((bad_glyph, old_class)) =
                             gdef.add_glyph_class(self.resolve_glyph_class(&class), id)
                         {
-                            let bad_glyph_name = self.reverse_glyph_map.get(&bad_glyph).unwrap();
-                            self.error(class.range(), format!("class includes glyph '{bad_glyph_name}', already in class {old_class}"));
+                            let bad_name = self.reverse_glyph_map.get(&bad_glyph).unwrap();
+                            let class_name = old_class.display();
+                            self.error(class.range(), format!("class includes glyph '{bad_name}', already in class {class_name}"));
                         }
                     }
                 }
