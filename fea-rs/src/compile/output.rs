@@ -1,7 +1,10 @@
 //! The result of a compilation
 
+use std::collections::HashMap;
+
 use write_fonts::{
-    tables::{self as wtables, maxp::Maxp},
+    tables::{self as wtables, gdef::GlyphClassDef, maxp::Maxp},
+    types::GlyphId,
     BuilderError, FontBuilder,
 };
 
@@ -42,6 +45,11 @@ pub struct Compilation {
     pub gsub: Option<wtables::gsub::Gsub>,
     /// The `GPOS` table, if one was generated
     pub gpos: Option<wtables::gpos::Gpos>,
+    /// Any *explicit* gdef classes declared in the FEA.
+    ///
+    /// This is provided so that the user can reference them if they are going
+    /// to manually generate kerning or markpos lookups.
+    pub gdef_classes: Option<HashMap<GlyphId, GlyphClassDef>>,
 }
 
 impl Compilation {

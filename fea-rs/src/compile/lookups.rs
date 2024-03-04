@@ -14,6 +14,7 @@ use smol_str::SmolStr;
 
 use write_fonts::{
     tables::{
+        gdef::GlyphClassDef,
         gpos::{self as write_gpos},
         gsub as write_gsub,
         layout::{
@@ -33,7 +34,7 @@ use crate::{
     Kind, Opts,
 };
 
-use super::{features::AllFeatures, metrics::Anchor, tables::ClassId, tags};
+use super::{features::AllFeatures, metrics::Anchor, tags};
 
 use contextual::{
     ContextualLookupBuilder, PosChainContextBuilder, PosContextBuilder, ReverseChainBuilder,
@@ -506,19 +507,27 @@ impl AllLookups {
         )));
     }
 
-    pub(crate) fn infer_glyph_classes(&self, mut f: impl FnMut(GlyphId, ClassId)) {
+    pub(crate) fn infer_glyph_classes(&self, mut f: impl FnMut(GlyphId, GlyphClassDef)) {
         for lookup in &self.gpos {
             match lookup {
                 PositionLookup::MarkToBase(lookup) => {
                     for subtable in &lookup.subtables {
-                        subtable.base_glyphs().for_each(|k| f(k, ClassId::Base));
-                        subtable.mark_glyphs().for_each(|k| f(k, ClassId::Mark));
+                        subtable
+                            .base_glyphs()
+                            .for_each(|k| f(k, GlyphClassDef::Base));
+                        subtable
+                            .mark_glyphs()
+                            .for_each(|k| f(k, GlyphClassDef::Mark));
                     }
                 }
                 PositionLookup::MarkToLig(lookup) => {
                     for subtable in &lookup.subtables {
-                        subtable.lig_glyphs().for_each(|k| f(k, ClassId::Ligature));
-                        subtable.mark_glyphs().for_each(|k| f(k, ClassId::Mark));
+                        subtable
+                            .lig_glyphs()
+                            .for_each(|k| f(k, GlyphClassDef::Ligature));
+                        subtable
+                            .mark_glyphs()
+                            .for_each(|k| f(k, GlyphClassDef::Mark));
                     }
                 }
                 PositionLookup::MarkToMark(lookup) => {
@@ -526,7 +535,7 @@ impl AllLookups {
                         subtable
                             .mark1_glyphs()
                             .chain(subtable.mark2_glyphs())
-                            .for_each(|k| f(k, ClassId::Mark));
+                            .for_each(|k| f(k, GlyphClassDef::Mark));
                     }
                 }
                 _ => (),

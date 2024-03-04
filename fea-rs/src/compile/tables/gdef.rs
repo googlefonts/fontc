@@ -7,6 +7,7 @@
 //! [gdef-spec]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#9b-gdef-table
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::Display;
 
 use write_fonts::types::GlyphId;
 
@@ -24,32 +25,17 @@ use crate::common::{GlyphClass, GlyphSet};
 /// Data collected from a GDEF block.
 #[derive(Clone, Debug, Default)]
 pub struct GdefBuilder {
-    pub glyph_classes: HashMap<GlyphId, ClassId>,
+    pub glyph_classes: HashMap<GlyphId, GlyphClassDef>,
+    /// if `true`, then glyph classes were not declared explicitly.
+    ///
+    /// we track this because it is an important distinction when using the
+    /// glyph classes for manually generated kern/markpos lookups
+    pub glyph_classes_were_inferred: bool,
     pub attach: BTreeMap<GlyphId, BTreeSet<u16>>,
     pub ligature_pos: BTreeMap<GlyphId, Vec<CaretValue>>,
     pub mark_attach_class: BTreeMap<GlyphId, u16>,
     pub mark_glyph_sets: Vec<GlyphSet>,
     pub var_store: Option<VariationStoreBuilder>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u16)]
-pub enum ClassId {
-    Base = 1,
-    Ligature = 2,
-    Mark = 3,
-    Component = 4,
-}
-
-impl From<ClassId> for GlyphClassDef {
-    fn from(src: ClassId) -> GlyphClassDef {
-        match src {
-            ClassId::Base => GlyphClassDef::Base,
-            ClassId::Ligature => GlyphClassDef::Ligature,
-            ClassId::Mark => GlyphClassDef::Mark,
-            ClassId::Component => GlyphClassDef::Component,
-        }
-    }
 }
 
 impl GdefBuilder {
@@ -128,8 +114,8 @@ impl GdefBuilder {
         // technically should be a GlyphSet, but we're storing it as individual
         // glyphs and this is private API, so :shrug:
         glyphs: GlyphClass,
-        class: ClassId,
-    ) -> Result<(), (GlyphId, ClassId)> {
+        class: GlyphClassDef,
+    ) -> Result<(), (GlyphId, GlyphClassDef)> {
         for glyph in glyphs.iter() {
             if let Some(prev_class) = self.glyph_classes.insert(glyph, class) {
                 if prev_class != class {
@@ -150,13 +136,18 @@ impl GdefBuilder {
     }
 }
 
-impl std::fmt::Display for ClassId {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+pub(crate) trait GlyphClassDefExt {
+    fn display(&self) -> impl Display;
+}
+
+impl GlyphClassDefExt for GlyphClassDef {
+    fn display(&self) -> impl Display {
         match self {
-            ClassId::Base => write!(f, "Base"),
-            ClassId::Ligature => write!(f, "Ligature"),
-            ClassId::Mark => write!(f, "Mark"),
-            ClassId::Component => write!(f, "Component"),
+            GlyphClassDef::Base => "Base",
+            GlyphClassDef::Ligature => "Ligature",
+            GlyphClassDef::Mark => "Mark",
+            GlyphClassDef::Component => "Component",
+            _ => "Invalid",
         }
     }
 }
