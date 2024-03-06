@@ -1,17 +1,22 @@
 //! Generates an [FeaRsKerns] datastructure to be fed to fea-rs
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use fea_rs::{
     compile::{PairPosBuilder, ValueRecord as ValueRecordBuilder},
     GlyphSet,
 };
-use fontdrasil::orchestration::{Access, AccessBuilder, Work};
+use fontdrasil::{
+    coords::NormalizedLocation,
+    orchestration::{Access, AccessBuilder, Work},
+    types::GlyphName,
+};
 use fontir::{
-    ir::{KernPair, KernParticipant},
+    ir::{KernGroup, KernPair, KernParticipant, KerningGroups, KerningInstance},
     orchestration::WorkId as FeWorkId,
 };
 use log::debug;
+use ordered_float::OrderedFloat;
 use write_fonts::types::GlyphId;
 
 use crate::{
@@ -99,10 +104,12 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
             .collect::<BTreeMap<_, _>>();
 
         // Add IR kerns to builder. IR kerns are split by location so put them back together again.
-        let kern_by_pos: HashMap<_, _> = ir_kerns
+        let mut kern_by_pos: HashMap<_, _> = ir_kerns
             .iter()
-            .map(|(_, ki)| (ki.location.clone(), ki.as_ref()))
+            .map(|(_, ki)| (ki.location.clone(), ki.as_ref().to_owned()))
             .collect();
+
+        align_kerning(&ir_groups, &mut kern_by_pos);
         // Use a BTreeMap  because it seems the order we process pairs matters. Maybe we should sort instead...?
         let mut adjustments: BTreeMap<KernPair, KernAdjustments> = Default::default();
 
@@ -138,6 +145,96 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
         });
         Ok(())
     }
+}
+
+/// 'align' the kerning, ensuring each pair is defined for each location.
+///
+/// missing pairs are filled in via the UFO kerning value lookup algorithm:
+///
+/// <https://unifiedfontobject.org/versions/ufo3/kerning.plist/#kerning-value-lookup-algorithm>
+fn align_kerning(
+    groups: &KerningGroups,
+    instances: &mut HashMap<NormalizedLocation, KerningInstance>,
+) {
+    let union_kerning = instances
+        .values()
+        .flat_map(|instance| instance.kerns.keys())
+        .cloned()
+        .collect::<HashSet<_>>();
+
+    let side1_glyph_to_group_map = groups
+        .groups
+        .iter()
+        .filter(|(group, _)| matches!(group, KernGroup::Side1(_)))
+        .flat_map(|(group, glyphs)| glyphs.iter().map(move |glyph| (glyph, group)))
+        .collect::<HashMap<_, _>>();
+    let side2_glyph_to_group_map = groups
+        .groups
+        .iter()
+        .filter(|(group, _)| matches!(group, KernGroup::Side2(_)))
+        .flat_map(|(group, glyphs)| glyphs.iter().map(move |glyph| (glyph, group)))
+        .collect::<HashMap<_, _>>();
+
+    for instance in instances.values_mut() {
+        let missing_pairs = union_kerning
+            .iter()
+            .filter(|pair| !instance.kerns.contains_key(pair))
+            .collect::<Vec<_>>();
+
+        for pair in missing_pairs {
+            let value = lookup_kerning_value(
+                pair,
+                instance,
+                &side1_glyph_to_group_map,
+                &side2_glyph_to_group_map,
+            );
+            instance.kerns.insert(pair.to_owned(), value);
+        }
+    }
+}
+
+// <https://github.com/fonttools/fonttools/blob/a3b9eddcafca/Lib/fontTools/ufoLib/kerning.py#L1>
+fn lookup_kerning_value(
+    pair: &KernPair,
+    kerning: &KerningInstance,
+    side1_glyphs: &HashMap<&GlyphName, &KernGroup>,
+    side2_glyphs: &HashMap<&GlyphName, &KernGroup>,
+) -> OrderedFloat<f32> {
+    // if already a group, return it, else look for group for glyph
+    fn get_group_if_glyph(
+        side: &KernParticipant,
+        map: &HashMap<&GlyphName, &KernGroup>,
+    ) -> Option<KernParticipant> {
+        match side {
+            KernParticipant::Glyph(glyph) => map
+                .get(&glyph)
+                .map(|group| KernParticipant::Group((*group).clone())),
+            KernParticipant::Group(_) => Some(side.to_owned()),
+        }
+    }
+
+    let (first, second) = pair;
+    // for each side: if it's a group, we only check the group.
+    // if it's a glyph, we check both the glyph as well as the group containing that glyph.
+    let first_group = get_group_if_glyph(first, side1_glyphs);
+    let second_group = get_group_if_glyph(second, side2_glyphs);
+    let first = Some(first).filter(|side| side.is_glyph());
+    let second = Some(second).filter(|side| side.is_glyph());
+
+    for (first, second) in [
+        (first.cloned(), second_group.clone()),
+        (first_group.clone(), second.cloned()),
+        (first_group.clone(), second_group.clone()),
+    ] {
+        if let Some(pair) = first.zip(second) {
+            if let Some(value) = kerning.kerns.get(&pair) {
+                return *value;
+            }
+        }
+    }
+
+    // then fallback to zero
+    0.0.into()
 }
 
 impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
