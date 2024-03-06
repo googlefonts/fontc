@@ -492,7 +492,7 @@ mod tests {
     };
     use fontdrasil::{coords::NormalizedCoord, paths::safe_filename, types::GlyphName};
     use fontir::{
-        ir::{self, GlyphOrder, KernPair, KernParticipant},
+        ir::{self, GlyphOrder, KernGroup, KernPair, KernParticipant},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
     };
     use indexmap::IndexSet;
@@ -1866,7 +1866,7 @@ mod tests {
             .map(|(name, entries)| {
                 let mut entries: Vec<_> = entries.iter().map(|e| e.as_str()).collect();
                 entries.sort();
-                (name.as_str(), entries)
+                (name.to_owned(), entries)
             })
             .collect();
         groups.sort();
@@ -1906,10 +1906,22 @@ mod tests {
             (groups, kerns),
             (
                 vec![
-                    ("public.kern1.bracketleft_R", vec!["bracketleft"],),
-                    ("public.kern1.bracketright_R", vec!["bracketright"],),
-                    ("public.kern2.bracketleft_L", vec!["bracketleft"],),
-                    ("public.kern2.bracketright_L", vec!["bracketright"],),
+                    (
+                        KernGroup::Side1("bracketleft_R".into()),
+                        vec!["bracketleft"],
+                    ),
+                    (
+                        KernGroup::Side1("bracketright_R".into()),
+                        vec!["bracketright"],
+                    ),
+                    (
+                        KernGroup::Side2("bracketleft_L".into()),
+                        vec!["bracketleft"],
+                    ),
+                    (
+                        KernGroup::Side2("bracketright_L".into()),
+                        vec!["bracketright"],
+                    ),
                 ],
                 vec![
                     (
@@ -1935,7 +1947,7 @@ mod tests {
                     ),
                     (
                         KernParticipant::Glyph("exclam".into()),
-                        KernParticipant::Group("public.kern2.bracketright_L".into()),
+                        KernParticipant::Group(KernGroup::Side2("bracketright_L".into())),
                         vec![("wght 0".to_string(), -160.0),],
                     ),
                     (
@@ -1947,12 +1959,12 @@ mod tests {
                         ],
                     ),
                     (
-                        KernParticipant::Group("public.kern1.bracketleft_R".into()),
+                        KernParticipant::Group(KernGroup::Side1("bracketleft_R".into())),
                         KernParticipant::Glyph("exclam".into()),
                         vec![("wght 0".to_string(), -165.0),],
                     ),
                 ],
-            ),
+            )
         );
     }
 

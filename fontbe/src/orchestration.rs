@@ -20,7 +20,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{Anchor, KernPair},
+    ir::{Anchor, KernGroup, KernPair},
     orchestration::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
         PersistentStorage, WorkId as FeWorkIdentifier,
@@ -423,7 +423,7 @@ pub type KernAdjustments = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
 /// Every kerning pair we have, taking from IR.
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AllKerningPairs {
-    pub glyph_classes: BTreeMap<GlyphName, GlyphSet>,
+    pub glyph_classes: BTreeMap<KernGroup, GlyphSet>,
     pub adjustments: Vec<(KernPair, KernAdjustments)>,
 }
 

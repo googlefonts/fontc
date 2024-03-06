@@ -12,12 +12,12 @@ use log::{debug, trace, warn};
 use fontdrasil::{
     coords::{NormalizedCoord, NormalizedLocation},
     orchestration::{Access, AccessBuilder, Work},
-    types::{GlyphName, GroupName},
+    types::GlyphName,
 };
 use fontir::{
     error::{Error, WorkError},
     ir::{
-        self, AnchorBuilder, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder,
+        self, AnchorBuilder, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernGroup,
         KernParticipant, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
         StaticMetadata, DEFAULT_VENDOR_ID,
     },
@@ -608,31 +608,17 @@ impl Work<Context, WorkId, WorkError> for FeatureWork {
     }
 }
 
-/// What side of the kern is this, in logical order
-enum KernSide {
-    Side1,
-    Side2,
+fn parse_kern_group(name: &str) -> Option<KernGroup> {
+    name.strip_prefix(SIDE1_PREFIX)
+        .map(|name| KernGroup::Side1(name.into()))
+        .or_else(|| {
+            name.strip_prefix(SIDE2_PREFIX)
+                .map(|name| KernGroup::Side2(name.into()))
+        })
 }
 
-impl KernSide {
-    fn class_prefix(&self) -> &'static str {
-        match self {
-            KernSide::Side1 => "@MMK_L_",
-            KernSide::Side2 => "@MMK_R_",
-        }
-    }
-
-    fn group_prefix(&self) -> &'static str {
-        match self {
-            KernSide::Side1 => "public.kern1.",
-            KernSide::Side2 => "public.kern2.",
-        }
-    }
-}
-
-fn is_kerning_class(name: &str) -> bool {
-    name.starts_with("@MMK_")
-}
+const SIDE1_PREFIX: &str = "@MMK_L_";
+const SIDE2_PREFIX: &str = "@MMK_R_";
 
 #[derive(Debug)]
 struct KerningGroupWork {
@@ -653,29 +639,19 @@ struct AnchorWork {
 /// See <https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/kerning.py#L53-L72>
 fn kern_participant(
     glyph_order: &GlyphOrder,
-    groups: &BTreeMap<GlyphName, BTreeSet<GlyphName>>,
-    side: KernSide,
+    groups: &BTreeMap<KernGroup, BTreeSet<GlyphName>>,
+    expect_prefix: &str,
     raw_side: &str,
 ) -> Option<KernParticipant> {
-    if is_kerning_class(raw_side) {
-        if raw_side.starts_with(side.class_prefix()) {
-            let group_name = format!(
-                "{}{}",
-                side.group_prefix(),
-                raw_side.strip_prefix(side.class_prefix()).unwrap()
-            );
-            let group = GroupName::from(group_name.as_str());
-            if groups.contains_key(&group) {
-                Some(KernParticipant::Group(group))
-            } else {
-                warn!("Invalid kern side: {raw_side}, no group {group_name}");
-                None
-            }
+    if let Some(group) = parse_kern_group(raw_side) {
+        if !raw_side.starts_with(expect_prefix) {
+            warn!("Invalid kern side: {raw_side}, should have prefix {expect_prefix}",);
+            return None;
+        }
+        if groups.contains_key(&group) {
+            Some(KernParticipant::Group(group))
         } else {
-            warn!(
-                "Invalid kern side: {raw_side}, should have prefix {}",
-                side.class_prefix()
-            );
+            warn!("Invalid kern side: {raw_side}, no group {group:?}");
             None
         }
     } else {
@@ -714,14 +690,14 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
                 glyph
                     .right_kern
                     .iter()
-                    .map(|group| (KernSide::Side1, group))
-                    .chain(glyph.left_kern.iter().map(|group| (KernSide::Side2, group)))
-                    .map(|(side, group_name)| {
-                        (
-                            GroupName::from(format!("{}{}", side.group_prefix(), group_name)),
-                            GlyphName::from(glyph_name.as_str()),
-                        )
-                    })
+                    .map(|group| KernGroup::Side1(group.into()))
+                    .chain(
+                        glyph
+                            .left_kern
+                            .iter()
+                            .map(|group| KernGroup::Side2(group.into())),
+                    )
+                    .map(|group| (group, GlyphName::from(glyph_name.as_str())))
             })
             .for_each(|(group_name, glyph_name)| {
                 groups
@@ -792,8 +768,8 @@ impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
                 })
             })
             .filter_map(|((side1, side2), pos_adjust)| {
-                let side1 = kern_participant(glyph_order, groups, KernSide::Side1, side1);
-                let side2 = kern_participant(glyph_order, groups, KernSide::Side2, side2);
+                let side1 = kern_participant(glyph_order, groups, SIDE1_PREFIX, side1);
+                let side2 = kern_participant(glyph_order, groups, SIDE2_PREFIX, side2);
                 let (Some(side1), Some(side2)) = (side1, side2) else {
                     return None;
                 };
