@@ -191,11 +191,11 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
                 (KernParticipant::Group(left), KernParticipant::Group(right)) => {
                     let left = glyph_classes
                         .get(left)
-                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?
+                        .ok_or_else(|| Error::MissingKernGroup(left.clone()))?
                         .clone();
                     let right = glyph_classes
                         .get(right)
-                        .ok_or_else(|| Error::MissingGlyphId(right.clone()))?
+                        .ok_or_else(|| Error::MissingKernGroup(right.clone()))?
                         .clone();
                     kerns.push(PairPosEntry::Class(
                         left,
@@ -211,7 +211,7 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
                         .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
                     let right = glyph_classes
                         .get(right)
-                        .ok_or_else(|| Error::MissingGlyphId(right.clone()))?;
+                        .ok_or_else(|| Error::MissingKernGroup(right.clone()))?;
                     for gid1 in right.iter() {
                         kerns.push(PairPosEntry::Pair(
                             gid0,
@@ -224,7 +224,7 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
                 (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
                     let left = glyph_classes
                         .get(left)
-                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
+                        .ok_or_else(|| Error::MissingKernGroup(left.clone()))?;
                     let gid1 = gid(right)?;
                     for gid0 in left.iter() {
                         kerns.push(PairPosEntry::Pair(

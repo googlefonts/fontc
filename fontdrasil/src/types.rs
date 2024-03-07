@@ -73,7 +73,6 @@ impl std::borrow::Borrow<str> for GlyphName {
     }
 }
 
-pub type GroupName = GlyphName;
 pub type AnchorName = GlyphName;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

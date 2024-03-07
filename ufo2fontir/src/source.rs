@@ -9,14 +9,14 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use fontdrasil::{
     coords::{DesignLocation, NormalizedLocation, UserCoord},
     orchestration::{Access, AccessBuilder, Work},
-    types::{GlyphName, GroupName},
+    types::GlyphName,
 };
 use fontir::{
     error::{Error, WorkError},
     ir::{
-        AnchorBuilder, FeaturesSource, GlobalMetric, GlobalMetrics, GlyphOrder, KernParticipant,
-        KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance, PostscriptNames,
-        StaticMetadata, DEFAULT_VENDOR_ID,
+        AnchorBuilder, FeaturesSource, GlobalMetric, GlobalMetrics, GlyphOrder, KernGroup,
+        KernParticipant, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
+        PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::{Input, Source},
@@ -1200,16 +1200,17 @@ fn kerning_groups_for(
     designspace_dir: &Path,
     glyph_order: &GlyphOrder,
     source: &norad::designspace::Source,
-) -> Result<BTreeMap<GroupName, BTreeSet<GlyphName>>, WorkError> {
+) -> Result<BTreeMap<KernGroup, BTreeSet<GlyphName>>, WorkError> {
     let ufo_dir = designspace_dir.join(&source.filename);
     let data_request = norad::DataRequest::none().groups(true);
     Ok(norad::Font::load_requested_data(&ufo_dir, data_request)
         .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?
         .groups
         .into_iter()
-        .filter(|(group_name, entries)| {
-            (group_name.starts_with(UFO_KERN1_PREFIX) || group_name.starts_with(UFO_KERN2_PREFIX))
-                && !entries.is_empty()
+        .filter_map(|(group_name, entries)| {
+            KernGroup::from_group_name(group_name.as_str())
+                .filter(|_| !entries.is_empty())
+                .map(|name| (name, entries))
         })
         .filter_map(|(group_name, entries)| {
             let members: BTreeSet<_> = entries
@@ -1228,7 +1229,7 @@ fn kerning_groups_for(
                 })
                 .collect();
             if !members.is_empty() {
-                Some((GroupName::new(group_name), members))
+                Some((group_name, members))
             } else {
                 None
             }
@@ -1236,19 +1237,28 @@ fn kerning_groups_for(
         .collect())
 }
 
-/// What side of the kern is this, in logical order
-#[derive(Debug, PartialEq, Eq, Hash)]
-enum KernSide {
-    Side1,
-    Side2,
+/// UFO specific behaviour for kern groups
+trait KernGroupExt {
+    fn from_group_name(name: &str) -> Option<KernGroup>;
+
+    // used when computing the 'reverse groups'
+    fn side_ord(&self) -> u8;
 }
 
-impl KernSide {
-    fn of(group: &GroupName) -> Option<KernSide> {
-        match group.as_str() {
-            v if v.starts_with(UFO_KERN1_PREFIX) => Some(KernSide::Side1),
-            v if v.starts_with(UFO_KERN2_PREFIX) => Some(KernSide::Side2),
-            _ => None,
+impl KernGroupExt for KernGroup {
+    fn from_group_name(name: &str) -> Option<KernGroup> {
+        name.strip_prefix(UFO_KERN1_PREFIX)
+            .map(|name| Self::Side1(name.into()))
+            .or_else(|| {
+                name.strip_prefix(UFO_KERN2_PREFIX)
+                    .map(|name| Self::Side2(name.into()))
+            })
+    }
+
+    fn side_ord(&self) -> u8 {
+        match self {
+            KernGroup::Side1(_) => 1,
+            KernGroup::Side2(_) => 2,
         }
     }
 }
@@ -1292,7 +1302,7 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
         let reverse_groups: HashMap<_, _> = kerning_groups
             .groups
             .iter()
-            .map(|(k, v)| ((KernSide::of(k), v), k))
+            .map(|(k, v)| ((k.side_ord(), v), k))
             .collect();
 
         // https://gist.github.com/madig/76567a9650de639bbff51ce010783790#file-align-groups-py-L21
@@ -1312,7 +1322,7 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
             .filter(|(idx, source)| !is_glyph_only(source) && *idx != default_master_idx)
         {
             for (name, entries) in &kerning_groups.groups {
-                let Some(real_name) = reverse_groups.get(&(KernSide::of(name), &entries)) else {
+                let Some(real_name) = reverse_groups.get(&(name.side_ord(), &entries)) else {
                     warn!(
                         "{name} exists only in {} and will be ignored",
                         source.name.as_ref().unwrap()
@@ -1392,21 +1402,18 @@ impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
             .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?;
 
         let resolve = |name: &norad::Name, group_prefix: &str| {
-            let name = name.as_str();
-            if name.starts_with(UFO_KERN1_PREFIX) || name.starts_with(UFO_KERN2_PREFIX) {
-                // looks like a group, but is it?
+            if let Some(group_name) = KernGroup::from_group_name(name.as_str()) {
                 if !name.starts_with(group_prefix) {
                     warn!("'{name}' should have prefix {group_prefix}; ignored");
                     return None;
                 }
-                let group_name = GroupName::from(name);
-                let Some(_) = groups.old_to_new_group_names.get(&group_name) else {
+                if groups.old_to_new_group_names.get(&group_name).is_none() {
                     warn!("'{name}' is not a valid group name; ignored");
                     return None;
-                };
+                }
                 Some(KernParticipant::Group(group_name))
             } else {
-                let glyph_name = GlyphName::from(name);
+                let glyph_name = GlyphName::from(name.as_str());
                 if !glyph_order.contains(&glyph_name) {
                     warn!("'{name}' refers to a non-existent glyph; ignored");
                     return None;
@@ -2009,14 +2016,14 @@ mod tests {
             .map(|(name, entries)| {
                 let mut entries: Vec<_> = entries.iter().map(|e| e.as_str()).collect();
                 entries.sort();
-                (name.as_str(), entries)
+                (name.clone(), entries)
             })
             .collect();
         groups.sort();
 
         assert_eq!(
             groups,
-            vec![("public.kern1.correct_name", vec!["bar", "plus"],),],
+            vec![(KernGroup::Side1("correct_name".into()), vec!["bar", "plus"],),],
         );
     }
 

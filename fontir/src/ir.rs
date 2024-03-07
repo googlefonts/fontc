@@ -1,7 +1,7 @@
 //! Font IR types.
 use std::{
     collections::{hash_map::RandomState, BTreeMap, BTreeSet, HashMap, HashSet},
-    fmt::Debug,
+    fmt::{Debug, Display},
     io::Read,
     path::PathBuf,
 };
@@ -11,7 +11,8 @@ use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
 use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
-use serde::{Deserialize, Serialize};
+use serde::{de::Error, Deserialize, Serialize};
+use smol_str::SmolStr;
 use write_fonts::{
     tables::os2::SelectionFlags,
     types::{GlyphId, NameId, Tag},
@@ -20,7 +21,7 @@ use write_fonts::{
 
 use fontdrasil::{
     coords::{NormalizedCoord, NormalizedLocation, UserLocation},
-    types::{AnchorName, Axis, GlyphName, GroupName},
+    types::{AnchorName, Axis, GlyphName},
 };
 
 use crate::{
@@ -204,7 +205,7 @@ pub type KernPair = (KernParticipant, KernParticipant);
 /// plus the set of locations that can have kerning.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 pub struct KerningGroups {
-    pub groups: BTreeMap<GroupName, BTreeSet<GlyphName>>,
+    pub groups: BTreeMap<KernGroup, BTreeSet<GlyphName>>,
     /// The locations that have kerning defined.
     ///
     /// Must be a subset of the master locations.
@@ -213,7 +214,7 @@ pub struct KerningGroups {
     /// Optional group renaming map, meant for [KerningInstance] to consume
     ///
     /// The rhs should be the name used in the groups map.
-    pub old_to_new_group_names: BTreeMap<GroupName, GroupName>,
+    pub old_to_new_group_names: BTreeMap<KernGroup, KernGroup>,
 }
 
 /// IR representation of kerning for a location.
@@ -231,6 +232,16 @@ pub struct KerningInstance {
     pub kerns: BTreeMap<KernPair, OrderedFloat<f32>>,
 }
 
+/// A named set of glyphs with common kerning behaviour
+///
+/// Identical sets can have different behaviour depending on whether or not they
+/// are in the first or second logical position.
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub enum KernGroup {
+    Side1(SmolStr),
+    Side2(SmolStr),
+}
+
 /// A participant in kerning, one of the entries in a kerning pair.
 ///
 /// Concretely, a glyph or a group of glyphs.
@@ -239,7 +250,42 @@ pub struct KerningInstance {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KernParticipant {
     Glyph(GlyphName),
-    Group(GroupName),
+    Group(KernGroup),
+}
+
+impl Display for KernGroup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KernGroup::Side1(name) => write!(f, "side1.{name}"),
+            KernGroup::Side2(name) => write!(f, "side2.{name}"),
+        }
+    }
+}
+
+// we need custom impls here because yaml does not support nested enums
+impl Serialize for KernGroup {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            KernGroup::Side1(name) => serializer.serialize_str(&format!("side1.{name}")),
+            KernGroup::Side2(name) => serializer.serialize_str(&format!("side2.{name}")),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for KernGroup {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.strip_prefix("side1.")
+            .map(|s| KernGroup::Side1(s.into()))
+            .or_else(|| s.strip_prefix("side2.").map(|s| KernGroup::Side2(s.into())))
+            .ok_or_else(|| D::Error::custom(format!("missing side1/side2 prefix: {s}")))
+    }
 }
 
 impl KernParticipant {
