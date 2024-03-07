@@ -1813,7 +1813,7 @@ mod tests {
         // TIL Mac has an epoch of it's own
         let mac_epoch = Utc.with_ymd_and_hms(1904, 1, 1, 0, 0, 0).unwrap();
         let created = mac_epoch
-            .checked_add_signed(Duration::seconds(head.created().as_secs()))
+            .checked_add_signed(Duration::try_seconds(head.created().as_secs()).unwrap())
             .unwrap();
 
         // We should match 2023-05-05 15:11:55 +0000
