@@ -270,9 +270,12 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
         };
         for ((left, right), values) in our_kerns {
             let (default_value, deltas) = resolve_variable_metric(&static_metadata, values.iter())?;
-            let x_adv_record = ValueRecordBuilder::new()
-                .with_x_advance(default_value)
-                .with_x_advance_device(deltas);
+
+            let mut x_adv_record = ValueRecordBuilder::new().with_x_advance(default_value);
+            // only encode deltas if they aren't all zeros
+            if deltas.iter().any(|v| v.1 != 0) {
+                x_adv_record = x_adv_record.with_x_advance_device(deltas);
+            }
             let empty = ValueRecordBuilder::new();
 
             match (left, right) {
