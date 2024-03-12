@@ -933,7 +933,15 @@ impl KernSplitContext {
 
 // <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfcf0b1c/Lib/ufo2ft/featureWriters/baseFeatureWriter.py#L401>
 fn guess_font_scripts(ast: &ParseTree, glyphs: &impl CharMap) -> HashSet<UnicodeShortName> {
-    let mut scripts: HashSet<_> = glyphs
+    let mut scripts = scripts_for_chars(glyphs);
+    // add scripts explicitly defined in fea
+    scripts.extend(get_script_language_systems(ast).keys().cloned());
+    scripts
+}
+
+/// return the set of scripts (based on unicode data) that use this set of glyphs
+fn scripts_for_chars(glyphs: &impl CharMap) -> HashSet<UnicodeShortName> {
+    glyphs
         .iter_glyphs()
         .filter_map(|(_, codepoint)| {
             let mut scripts = super::properties::unicode_script_extensions(codepoint);
@@ -943,11 +951,7 @@ fn guess_font_scripts(ast: &ParseTree, glyphs: &impl CharMap) -> HashSet<Unicode
                 _ => None,
             }
         })
-        .collect();
-
-    // add scripts explicitly defined in fea
-    scripts.extend(get_script_language_systems(ast).keys().cloned());
-    scripts
+        .collect()
 }
 
 // <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfcf0b1c0fa4e133e/Lib/ufo2ft/featureWriters/ast.py#L23>
@@ -1023,4 +1027,73 @@ fn merge_scripts(
     // sort all the pairs; fonttools does that after returning but here works?
     result.values_mut().for_each(|pairs| pairs.sort_unstable());
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct MockCharMap(HashMap<char, GlyphId>);
+
+    impl CharMap for MockCharMap {
+        fn iter_glyphs(&self) -> impl Iterator<Item = (GlyphId, u32)> {
+            self.0.iter().map(|(uv, gid)| (*gid, *uv as u32))
+        }
+    }
+
+    impl MockCharMap {
+        fn make_rule(&self, left: char, right: char, val: i16) -> PairPosEntry {
+            let left = self.0.get(&left).unwrap();
+            let right = self.0.get(&right).unwrap();
+            PairPosEntry::Pair(
+                *left,
+                ValueRecordBuilder::new().with_x_advance(val),
+                *right,
+                ValueRecordBuilder::new(),
+            )
+        }
+    }
+
+    impl FromIterator<char> for MockCharMap {
+        fn from_iter<T: IntoIterator<Item = char>>(iter: T) -> Self {
+            Self(
+                iter.into_iter()
+                    .enumerate()
+                    .map(|(i, c)| (c, GlyphId::new(i as u16 + 1)))
+                    .collect(),
+            )
+        }
+    }
+
+    #[test]
+    fn split_latin_and_cyrillic() {
+        const A_CY: char = 'а';
+        const BE_CY: char = 'б';
+        let charmap: MockCharMap = ['a', 'b', A_CY, BE_CY].into_iter().collect();
+        let known_scripts = scripts_for_chars(&charmap);
+        let pairs = [('a', 'b', 5i16), ('a', 'a', 7), (A_CY, BE_CY, 12)]
+            .into_iter()
+            .map(|(a, b, val)| charmap.make_rule(a, b, val))
+            .collect::<Vec<_>>();
+        let ctx = KernSplitContext::new(&charmap, &known_scripts, None, None).unwrap();
+
+        let pairs_ref = pairs.iter().collect::<Vec<_>>();
+
+        let result = ctx.make_lookups(&pairs_ref);
+        assert_eq!(result.len(), 2);
+
+        let cyrillic: BTreeSet<_> = [UnicodeShortName::from_str("Cyrl").unwrap()]
+            .into_iter()
+            .collect();
+
+        let latn: BTreeSet<_> = [UnicodeShortName::from_str("Latn").unwrap()]
+            .into_iter()
+            .collect();
+
+        let cyr_rules = result.get(&cyrillic).unwrap();
+        assert_eq!(cyr_rules.iter().map(|x| x.len()).sum::<usize>(), 1);
+
+        let latn_rules = result.get(&latn).unwrap();
+        assert_eq!(latn_rules.iter().map(|x| x.len()).sum::<usize>(), 2);
+    }
 }
