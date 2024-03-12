@@ -39,6 +39,11 @@ use crate::{
     orchestration::{AnyWorkId, BeWork, Context, FeaAst, FeaRsKerns, FeaRsMarks, WorkId},
 };
 
+mod kern;
+mod marks;
+pub use kern::{create_gather_ir_kerning_work, create_kern_segment_work, create_kerns_work};
+pub use marks::create_mark_work;
+
 #[derive(Debug)]
 pub struct FeatureParsingWork {}
 

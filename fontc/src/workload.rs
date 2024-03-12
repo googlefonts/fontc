@@ -11,7 +11,7 @@ use std::{
 
 use crossbeam_channel::{Receiver, TryRecvError};
 use fontbe::{
-    kern::create_kern_segment_work,
+    features::create_kern_segment_work,
     orchestration::{AnyWorkId, Context as BeContext, WorkId as BeWorkIdentifier},
 };
 use fontdrasil::{
