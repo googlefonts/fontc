@@ -318,6 +318,9 @@ impl<'a> Workload<'a> {
                 .expect("Gather BE Kerning has to be pending")
                 .read_access = AccessBuilder::<AnyWorkId>::new()
                 .variant(BeWorkIdentifier::KernFragment(0))
+                .variant(BeWorkIdentifier::FeaturesAst)
+                .variant(FeWorkIdentifier::Glyph(GlyphName::NOTDEF))
+                .variant(FeWorkIdentifier::StaticMetadata)
                 .build()
                 .into();
         }

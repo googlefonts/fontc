@@ -8,6 +8,7 @@ mod helpers;
 use std::{
     collections::{BTreeMap, HashMap},
     convert::TryInto,
+    fmt::Debug,
 };
 
 use smol_str::SmolStr;
@@ -182,7 +183,8 @@ pub(crate) struct LookupFlagInfo {
 }
 
 /// A feature associated with a particular script and language.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FeatureKey {
     pub(crate) feature: Tag,
     pub(crate) language: Tag,
@@ -1168,6 +1170,12 @@ impl FeatureKey {
             language,
             script,
         }
+    }
+}
+
+impl Debug for FeatureKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}/{}", self.feature, self.script, self.language)
     }
 }
 

@@ -1,7 +1,8 @@
 //! Helps coordinate the graph execution for BE
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap, HashSet},
+    fmt::Display,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
@@ -10,7 +11,8 @@ use std::{
 
 use fea_rs::{
     compile::{
-        MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder, ValueRecord as ValueRecordBuilder,
+        FeatureKey, MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder,
+        ValueRecord as ValueRecordBuilder,
     },
     GlyphMap, GlyphSet, ParseTree,
 };
@@ -372,7 +374,10 @@ impl Persistable for FeaRsMarks {
 /// The aggregation of all [KernFragment]s.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FeaRsKerns {
-    pub lookups: Vec<PairPosBuilder>,
+    /// ordered!
+    pub lookups: Vec<Vec<PairPosBuilder>>,
+    /// each value is a set of lookups, referenced by their order in array above
+    pub features: HashMap<FeatureKey, Vec<usize>>,
 }
 
 /// The abstract syntax tree of any user FEA.
@@ -437,13 +442,25 @@ impl Persistable for AllKerningPairs {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub enum PairPosEntry {
     Pair(GlyphId, ValueRecordBuilder, GlyphId, ValueRecordBuilder),
     Class(GlyphSet, ValueRecordBuilder, GlyphSet, ValueRecordBuilder),
 }
 
 impl PairPosEntry {
+    /// if a rule is right-to-left, we need to set both x-advance AND x-position
+    ///
+    /// see <https://github.com/unified-font-object/ufo-spec/issues/16#issuecomment-119947719>
+    /// for further details. The tl;dr is that the lookup itself does not have
+    /// any knowledge of writing direction.
+    pub(crate) fn make_rtl_compatible(&mut self) {
+        let record = match self {
+            PairPosEntry::Pair(_, record, _, _) => record,
+            PairPosEntry::Class(_, record, _, _) => record,
+        };
+        record.make_rtl_compatible();
+    }
     pub(crate) fn add_to(self, builder: &mut PairPosBuilder) {
         match self {
             PairPosEntry::Pair(gid0, rec0, gid1, rec1) => {
@@ -452,6 +469,95 @@ impl PairPosEntry {
             PairPosEntry::Class(set0, rec0, set1, rec1) => {
                 builder.insert_classes(set0, rec0, set1, rec1)
             }
+        }
+    }
+
+    /// Returns true if this entry has no glyphs in common with the provided set
+    pub(crate) fn glyphs_are_disjoint(&self, glyphs: &HashSet<GlyphId>) -> bool {
+        self.first_glyphs()
+            .chain(self.second_glyphs())
+            .all(|gid| !glyphs.contains(&gid))
+    }
+
+    /// a helper used when splitting kerns based on script direction
+    pub(crate) fn with_new_glyphs(&self, side1: GlyphSet, side2: GlyphSet) -> Self {
+        let (val1, val2) = match self {
+            PairPosEntry::Pair(_, val1, _, val2) => (val1, val2),
+            PairPosEntry::Class(_, val1, _, val2) => (val1, val2),
+        };
+
+        if side1.len() == 1 && side2.len() == 1 {
+            Self::Pair(
+                side1.iter().next().unwrap(),
+                val1.clone(),
+                side2.iter().next().unwrap(),
+                val2.clone(),
+            )
+        } else {
+            Self::Class(side1, val1.clone(), side2, val2.clone())
+        }
+    }
+
+    pub(crate) fn first_glyphs(&self) -> impl Iterator<Item = GlyphId> + '_ {
+        let (first, second) = match self {
+            PairPosEntry::Pair(gid0, ..) => (Some(*gid0), None),
+            PairPosEntry::Class(set0, ..) => (None, Some(set0)),
+        };
+
+        first
+            .into_iter()
+            .chain(second.into_iter().flat_map(|set| set.iter()))
+    }
+
+    pub(crate) fn second_glyphs(&self) -> impl Iterator<Item = GlyphId> + '_ {
+        let (first, second) = match self {
+            PairPosEntry::Pair(_, _, gid1, _) => (Some(*gid1), None),
+            PairPosEntry::Class(_, _, set1, _) => (None, Some(set1)),
+        };
+
+        first
+            .into_iter()
+            .chain(second.into_iter().flat_map(|set| set.iter()))
+    }
+
+    /// A helper for pretty-printing the rule's glyph or glyphs
+    pub(crate) fn display_glyphs(&self) -> impl Display + '_ {
+        enum DisplayGlyphs<'a> {
+            Pair(GlyphId, GlyphId),
+            Class(&'a GlyphSet, &'a GlyphSet),
+        }
+
+        impl Display for DisplayGlyphs<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    DisplayGlyphs::Pair(one, two) => write!(f, "{one}/{two}"),
+                    DisplayGlyphs::Class(one, two) => {
+                        let mut first = true;
+                        for gid in one.iter() {
+                            if !first {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{gid}")?;
+                            first = false;
+                        }
+                        write!(f, "/")?;
+                        first = true;
+                        for gid in two.iter() {
+                            if !first {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{gid}")?;
+                            first = false;
+                        }
+                        Ok(())
+                    }
+                }
+            }
+        }
+
+        match self {
+            PairPosEntry::Pair(one, _, two, _) => DisplayGlyphs::Pair(*one, *two),
+            PairPosEntry::Class(one, _, two, _) => DisplayGlyphs::Class(one, two),
         }
     }
 }

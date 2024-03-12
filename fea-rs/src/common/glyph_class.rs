@@ -65,8 +65,14 @@ impl GlyphSet {
         self.0.iter().copied()
     }
 
-    pub(crate) fn len(&self) -> usize {
+    /// The number of glyphs in the set
+    pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Returns `true` if the set contains no glyphs
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 

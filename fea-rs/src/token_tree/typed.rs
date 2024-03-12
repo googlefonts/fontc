@@ -420,17 +420,20 @@ impl ContextualRuleNode for Gsub8 {}
 impl ContextualRuleNode for IgnoreRule {}
 
 impl Root {
-    pub(crate) fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
+    /// Iterate over all top-level statements
+    pub fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
         self.iter().filter(|t| !t.kind().is_trivia())
     }
 }
 
 impl LanguageSystem {
-    pub(crate) fn script(&self) -> Tag {
+    /// The script tag
+    pub fn script(&self) -> Tag {
         self.inner.iter_children().find_map(Tag::cast).unwrap()
     }
 
-    pub(crate) fn language(&self) -> Tag {
+    /// The language tag
+    pub fn language(&self) -> Tag {
         self.inner
             .iter_children()
             .skip_while(|t| t.kind() != Kind::Tag)
@@ -451,7 +454,8 @@ impl Tag {
         self.inner.text.parse()
     }
 
-    pub(crate) fn to_raw(&self) -> write_fonts::types::Tag {
+    /// Convert this AST tag into a raw `Tag`
+    pub fn to_raw(&self) -> write_fonts::types::Tag {
         self.parse().expect("tag is exactly 4 bytes")
     }
 }

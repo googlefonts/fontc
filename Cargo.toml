@@ -35,7 +35,6 @@ temp-env = "0.3.3"
 rstest = "0.18.2"
 
 [workspace]
-
 resolver = "2"
 
 members = [
@@ -52,3 +51,6 @@ members = [
     "layout-normalizer",
 ]
 
+[patch.crates-io]
+icu_properties = { version = "1.4", git = "https://github.com/unicode-org/icu4x.git", rev = "728eb44" }
+tinystr = { version = "0.7.5", git = "https://github.com/unicode-org/icu4x.git", rev = "728eb44" }
