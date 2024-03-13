@@ -39,11 +39,13 @@ use crate::{
     orchestration::{AnyWorkId, BeWork, Context, FeaAst, FeaRsKerns, FeaRsMarks, WorkId},
 };
 
+mod common;
 mod kern;
 mod marks;
 mod ot_tags;
 mod properties;
 
+pub(crate) use common::PendingLookup;
 pub use kern::{create_gather_ir_kerning_work, create_kern_segment_work, create_kerns_work};
 pub use marks::create_mark_work;
 
@@ -219,7 +221,13 @@ impl<'a> FeatureWriter<'a> {
             .kerning
             .lookups
             .iter()
-            .map(|lookups| builder.add_lookup(LookupFlag::empty(), None, lookups.to_owned()))
+            .map(|lookup| {
+                builder.add_lookup(
+                    lookup.flags,
+                    lookup.mark_filter_set.clone(),
+                    lookup.subtables.clone(),
+                )
+            })
             .collect::<Vec<_>>();
 
         for (feature, ids) in &self.kerning.features {

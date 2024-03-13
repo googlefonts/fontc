@@ -27,7 +27,7 @@ use log::debug;
 use ordered_float::OrderedFloat;
 use write_fonts::{
     read::{tables::gsub::Gsub, FontRead, ReadError},
-    tables::gdef::GlyphClassDef,
+    tables::{gdef::GlyphClassDef, layout::LookupFlag},
     types::{GlyphId, Tag},
 };
 
@@ -43,7 +43,7 @@ use crate::{
     },
 };
 
-use super::properties::CharMap;
+use super::{properties::CharMap, PendingLookup};
 
 /// On Linux it took ~0.01 ms per loop, try to get enough to make fan out worthwhile
 /// based on empirical testing
@@ -463,11 +463,14 @@ impl KerningGatherWork {
     /// <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L772>
     fn assign_lookups_to_scripts(
         &self,
-        lookups: BTreeMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>>,
+        lookups: BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>>,
         ast: &ParseTree,
         // one of 'kern' or 'dist'
         current_feature: Tag,
-    ) -> (Vec<Vec<PairPosBuilder>>, BTreeMap<FeatureKey, Vec<usize>>) {
+    ) -> (
+        Vec<PendingLookup<PairPosBuilder>>,
+        BTreeMap<FeatureKey, Vec<usize>>,
+    ) {
         let dflt_langs = vec![DFLT_LANG];
 
         let is_kern_feature = current_feature == KERN;
@@ -482,13 +485,15 @@ impl KerningGatherWork {
 
         // in python this part happens earlier, as part of splitKerning.
         for (scripts, lookups) in lookups {
-            let idx = ordered_lookups.len();
-            ordered_lookups.push(lookups);
-            for script in scripts {
-                lookups_by_script
-                    .entry(script)
-                    .or_insert(Vec::new())
-                    .push(idx);
+            for lookup in lookups {
+                let idx = ordered_lookups.len();
+                ordered_lookups.push(lookup);
+                for script in &scripts {
+                    lookups_by_script
+                        .entry(script.to_owned())
+                        .or_insert(Vec::new())
+                        .push(idx);
+                }
             }
         }
 
@@ -568,10 +573,10 @@ impl KerningGatherWork {
 
 fn debug_ordered_lookups(
     features: &BTreeMap<FeatureKey, Vec<usize>>,
-    lookups: &[Vec<PairPosBuilder>],
+    lookups: &[PendingLookup<PairPosBuilder>],
 ) {
-    for (i, subtables) in lookups.iter().enumerate() {
-        let total_rules = subtables.iter().map(|x| x.len()).sum::<usize>();
+    for (i, lookup) in lookups.iter().enumerate() {
+        let total_rules = lookup.subtables.iter().map(|x| x.len()).sum::<usize>();
         log::trace!("lookup {i}, {total_rules} rules");
     }
 
@@ -641,7 +646,7 @@ impl KernSplitContext {
     fn make_lookups(
         &self,
         pairs: &[&PairPosEntry],
-    ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>> {
+    ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>> {
         if !self.opts.ignore_marks {
             let pairs = pairs.iter().map(|x| Cow::Borrowed(*x)).collect::<Vec<_>>();
             return self.make_split_script_kern_lookups(&pairs, false);
@@ -665,21 +670,18 @@ impl KernSplitContext {
     /// Returns a map of scripts: `[lookup]`, where 'scripts' is a set of scripts
     /// referencing the lookups.
     ///
-    /// Although this method always/only returns a single lookup per unique set
-    /// of scripts, we wrap it in a vec because that is what we need at the
-    /// call site.
     // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L694>
     fn make_split_script_kern_lookups(
         &self,
         pairs: &[Cow<PairPosEntry>],
         //TODO: handle marks
         _are_marks: bool,
-    ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>> {
+    ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>> {
         let mut lookups_by_script = BTreeMap::new();
         let kerning_per_script = self.split_kerns(pairs);
         let mut bidi_buf = HashSet::new(); // we can reuse this for each pair
         for (scripts, pairs) in kerning_per_script {
-            let mut lookup = PairPosBuilder::default();
+            let mut builder = PairPosBuilder::default();
             for mut pair in pairs {
                 bidi_buf.clear();
                 for (direction, glyphs) in &self.bidi_glyphs {
@@ -706,8 +708,9 @@ impl KernSplitContext {
                 if pair_is_rtl {
                     pair.make_rtl_compatible();
                 }
-                pair.add_to(&mut lookup);
+                pair.add_to(&mut builder);
             }
+            let lookup = PendingLookup::new(vec![builder], LookupFlag::empty(), None);
             lookups_by_script.insert(scripts, vec![lookup]);
         }
         lookups_by_script
@@ -1092,9 +1095,21 @@ mod tests {
             .collect();
 
         let cyr_rules = result.get(&cyrillic).unwrap();
-        assert_eq!(cyr_rules.iter().map(|x| x.len()).sum::<usize>(), 1);
+        assert_eq!(
+            cyr_rules
+                .iter()
+                .flat_map(|x| x.subtables.iter().map(|sub| sub.len()))
+                .sum::<usize>(),
+            1
+        );
 
         let latn_rules = result.get(&latn).unwrap();
-        assert_eq!(latn_rules.iter().map(|x| x.len()).sum::<usize>(), 2);
+        assert_eq!(
+            latn_rules
+                .iter()
+                .flat_map(|x| x.subtables.iter().map(|sub| sub.len()))
+                .sum::<usize>(),
+            2
+        );
     }
 }
