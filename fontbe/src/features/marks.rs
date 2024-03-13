@@ -290,7 +290,14 @@ fn resolve_anchor(
         static_metadata,
         y_values.iter().map(|item| (&item.0, &item.1)),
     )?;
-    Ok(fea_rs::compile::Anchor::new(x_default, y_default)
-        .with_x_device(x_deltas)
-        .with_y_device(y_deltas))
+
+    let mut anchor = fea_rs::compile::Anchor::new(x_default, y_default);
+    if x_deltas.iter().any(|v| v.1 != 0) {
+        anchor = anchor.with_x_device(x_deltas);
+    }
+    if y_deltas.iter().any(|v| v.1 != 0) {
+        anchor = anchor.with_y_device(y_deltas);
+    }
+
+    Ok(anchor)
 }
