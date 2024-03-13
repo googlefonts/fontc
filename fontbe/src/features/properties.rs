@@ -216,24 +216,23 @@ static SCRIPT_EXCEPTIONS: &[(&str, Tag)] = &[
     ("Zyyy", DFLT_SCRIPT),
     ("Zzzz", DFLT_SCRIPT),
 ];
-//TODO: python maps 'math' to 'Zmth' but 'Mathematical Notation'
-//is not a variant on icu4x's Script? But this is included in
-//some datafiles so might be an oversight? But it's actually not listed
-//in the official list of scripts, so idk?
-static SCRIPT_EXCEPTIONS_REVERSED: &[(Tag, Script)] = &[];
+
+// 'math' is used as a script in opentype features:
+// <https://github.com/harfbuzz/harfbuzz/pull/3417>
+static SCRIPT_EXCEPTIONS_REVERSED: &[(Tag, &str)] = &[(Tag::new(b"math"), "Zmth")];
 
 // I don't know what's going on here, just copying OTTags.py
-static NEW_SCRIPTS: &[(Tag, Script)] = &[
-    (Tag::new(b"bng2"), Script::Bengali),
-    (Tag::new(b"dev2"), Script::Devanagari),
-    (Tag::new(b"gjr2"), Script::Gujarati),
-    (Tag::new(b"gur2"), Script::Gurmukhi),
-    (Tag::new(b"knd2"), Script::Kannada),
-    (Tag::new(b"mlm2"), Script::Malayalam),
-    (Tag::new(b"mym2"), Script::Myanmar),
-    (Tag::new(b"ory2"), Script::Oriya),
-    (Tag::new(b"tel2"), Script::Telugu),
-    (Tag::new(b"tml2"), Script::Tamil),
+static NEW_SCRIPTS: &[(Tag, &str)] = &[
+    (Tag::new(b"bng2"), "Beng"),
+    (Tag::new(b"dev2"), "Deva"),
+    (Tag::new(b"gjr2"), "Gujr"),
+    (Tag::new(b"gur2"), "Guru"),
+    (Tag::new(b"knd2"), "Knda"),
+    (Tag::new(b"mlm2"), "Mlym"),
+    (Tag::new(b"mym2"), "Mymr"),
+    (Tag::new(b"ory2"), "Orya"),
+    (Tag::new(b"tel2"), "Telu"),
+    (Tag::new(b"tml2"), "Taml"),
 ];
 
 // I don't know what's going on here, just copying OTTags.py
@@ -384,8 +383,7 @@ pub(crate) fn ot_tag_to_script(script_tag: Tag) -> Option<UnicodeShortName> {
         .binary_search_exact(&tag)
         .or_else(|| NEW_SCRIPTS.binary_search_exact(&tag))
     {
-        let mapping = Script::enum_to_short_name_mapper();
-        return mapping.get(exception);
+        return Some(UnicodeShortName::from_str(exception).unwrap());
     }
 
     // finally, algorithmic conversion
