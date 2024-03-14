@@ -41,6 +41,9 @@ use crate::{
 
 mod kern;
 mod marks;
+mod ot_tags;
+mod properties;
+
 pub use kern::{create_gather_ir_kerning_work, create_kern_segment_work, create_kerns_work};
 pub use marks::create_mark_work;
 
@@ -211,12 +214,19 @@ impl<'a> FeatureWriter<'a> {
         if self.kerning.is_empty() {
             return Ok(());
         }
-        let pairpos_subtables = self.kerning.lookups.clone();
+        // convert the lookups into lookup ids
+        let lookup_ids = self
+            .kerning
+            .lookups
+            .iter()
+            .map(|lookups| builder.add_lookup(LookupFlag::empty(), None, lookups.to_owned()))
+            .collect::<Vec<_>>();
 
-        // now we have a builder for the pairpos subtables, so we can make
-        // a lookup:
-        let lookups = vec![builder.add_lookup(LookupFlag::empty(), None, pairpos_subtables)];
-        builder.add_to_default_language_systems(Tag::new(b"kern"), &lookups);
+        for (feature, ids) in &self.kerning.features {
+            // get the generated lookup ids based on the stored lookup indices
+            let ids = ids.iter().map(|idx| lookup_ids[*idx]).collect();
+            builder.add_feature(*feature, ids);
+        }
 
         {
             self.timing

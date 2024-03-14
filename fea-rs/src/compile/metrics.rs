@@ -61,6 +61,16 @@ impl ValueRecord {
         Default::default()
     }
 
+    /// Duplicates the x-advance value to x-placement, required for RTL rules.
+    ///
+    /// This is only necessary when a record was originally created without
+    /// knowledge of the writing direction, and then later needs to be modified.
+    pub fn make_rtl_compatible(&mut self) {
+        if self.x_placement.is_none() {
+            self.x_placement = self.x_advance.clone();
+        }
+    }
+
     // these methods just match the existing builder methods on `ValueRecord`
     /// Builder style method to set the default x_placement value
     pub fn with_x_placement(mut self, val: i16) -> Self {

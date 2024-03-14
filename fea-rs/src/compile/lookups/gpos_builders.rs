@@ -196,6 +196,17 @@ impl PairPosBuilder {
         self.pairs.0.is_empty() && self.classes.0.is_empty()
     }
 
+    /// The number of rules in the builder
+    pub fn len(&self) -> usize {
+        self.pairs.0.values().map(|vals| vals.len()).sum::<usize>()
+            + self
+                .classes
+                .0
+                .values()
+                .flat_map(|x| x.iter().map(|y| y.items.values().len()))
+                .sum::<usize>()
+    }
+
     /// Insert a new kerning pair
     pub fn insert_pair(
         &mut self,

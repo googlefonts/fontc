@@ -14,6 +14,8 @@ categories = ["text-processing", "parsing", "graphics"]
 fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 fontir = { version = "0.0.1", path = "../fontir" }
 fea-rs = { version = "0.18.0", path = "../fea-rs", features = ["serde"] }
+icu_properties = "1.4"
+tinystr = {version = "0.7.5", features = ["serde"] }
 
 serde.workspace = true
 bincode.workspace = true

@@ -35,7 +35,6 @@ temp-env = "0.3.3"
 rstest = "0.18.2"
 
 [workspace]
-
 resolver = "2"
 
 members = [
@@ -52,3 +51,8 @@ members = [
     "layout-normalizer",
 ]
 
+# remove this when icu_properties 1.5 is released:
+# https://github.com/unicode-org/icu4x/issues?q=is%3Aopen+is%3Aissue+milestone%3A%221.5+Blocking+⟨P1⟩%22
+[patch.crates-io]
+icu_properties = { version = "1.4", git = "https://github.com/unicode-org/icu4x.git", rev = "728eb44" }
+tinystr = { version = "0.7.5", git = "https://github.com/unicode-org/icu4x.git", rev = "728eb44" }
