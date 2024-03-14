@@ -1,7 +1,7 @@
 //! Helps coordinate the graph execution for BE
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fmt::Display,
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
@@ -377,7 +377,7 @@ pub struct FeaRsKerns {
     /// ordered!
     pub lookups: Vec<Vec<PairPosBuilder>>,
     /// each value is a set of lookups, referenced by their order in array above
-    pub features: HashMap<FeatureKey, Vec<usize>>,
+    pub features: BTreeMap<FeatureKey, Vec<usize>>,
 }
 
 /// The abstract syntax tree of any user FEA.

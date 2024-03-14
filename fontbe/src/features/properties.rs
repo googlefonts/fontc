@@ -12,8 +12,13 @@ use write_fonts::{
     types::{GlyphId, Tag},
 };
 
-// SAFETY: we can easily verify that neither of these strings contains a nul byte.
+use crate::features::ot_tags::{NEW_SCRIPTS, SCRIPT_ALIASES, SCRIPT_EXCEPTIONS_REVERSED};
+
+use super::ot_tags::{DFLT_SCRIPT, INDIC_SCRIPTS, NEW_SCRIPT_TAGS, SCRIPT_EXCEPTIONS, USE_SCRIPTS};
+
+// SAFETY: we can visually verify that these inputs contain only non-null ASCII bytes
 // (this is the only way we can declare these as constants)
+// TODO: remove this if https://github.com/unicode-org/icu4x/pull/4691 is merged/released
 pub const COMMON_SCRIPT: UnicodeShortName =
     unsafe { UnicodeShortName::from_bytes_unchecked(*b"Zyyy") };
 pub const INHERITED_SCRIPT: UnicodeShortName =
@@ -56,8 +61,11 @@ impl CharMap for Vec<(Arc<Glyph>, GlyphId)> {
 
 impl ScriptDirection {
     /// Returns the writing direction for the provided script
+    // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b340c/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L63>
     pub(crate) fn for_script(script: &UnicodeShortName) -> Self {
         match script.as_str() {
+            // this list from
+            // <https://github.com/fonttools/fonttools/blob/8697f91cdc/Lib/fontTools/unicodedata/__init__.py#L141>
             "Zyyy" => ScriptDirection::Auto,
             "Arab" | "Hebr" | "Syrc" | "Thaa" | "Cprt" | "Khar" | "Phnx" | "Nkoo" | "Lydi"
             | "Avst" | "Armi" | "Phli" | "Prti" | "Sarb" | "Orkh" | "Samr" | "Mand" | "Merc"
@@ -199,148 +207,6 @@ pub(crate) fn glyphs_by_bidi_class(
         gsub,
     )
 }
-
-const DFLT_SCRIPT: Tag = Tag::new(b"DFLT");
-
-static SCRIPT_ALIASES: &[(Tag, Tag)] = &[(Tag::new(b"jamo"), Tag::new(b"hang"))];
-
-static SCRIPT_EXCEPTIONS: &[(&str, Tag)] = &[
-    ("Hira", Tag::new(b"kana")),
-    ("Hrkt", Tag::new(b"kana")),
-    ("Laoo", Tag::new(b"lao ")),
-    ("Nkoo", Tag::new(b"nko ")),
-    ("Vaii", Tag::new(b"vai ")),
-    ("Yiii", Tag::new(b"yi  ")),
-    ("Zinh", DFLT_SCRIPT),
-    ("Zmth", Tag::new(b"math")),
-    ("Zyyy", DFLT_SCRIPT),
-    ("Zzzz", DFLT_SCRIPT),
-];
-
-// 'math' is used as a script in opentype features:
-// <https://github.com/harfbuzz/harfbuzz/pull/3417>
-static SCRIPT_EXCEPTIONS_REVERSED: &[(Tag, &str)] = &[(Tag::new(b"math"), "Zmth")];
-
-// I don't know what's going on here, just copying OTTags.py
-static NEW_SCRIPTS: &[(Tag, &str)] = &[
-    (Tag::new(b"bng2"), "Beng"),
-    (Tag::new(b"dev2"), "Deva"),
-    (Tag::new(b"gjr2"), "Gujr"),
-    (Tag::new(b"gur2"), "Guru"),
-    (Tag::new(b"knd2"), "Knda"),
-    (Tag::new(b"mlm2"), "Mlym"),
-    (Tag::new(b"mym2"), "Mymr"),
-    (Tag::new(b"ory2"), "Orya"),
-    (Tag::new(b"tel2"), "Telu"),
-    (Tag::new(b"tml2"), "Taml"),
-];
-
-// I don't know what's going on here, just copying OTTags.py
-static NEW_SCRIPT_TAGS: &[(&str, Tag)] = &[
-    ("Beng", Tag::new(b"bng2")),
-    ("Deva", Tag::new(b"dev2")),
-    ("Gujr", Tag::new(b"gjr2")),
-    ("Guru", Tag::new(b"gur2")),
-    ("Kana", Tag::new(b"knd2")),
-    ("Mlym", Tag::new(b"mlm2")),
-    ("Mymr", Tag::new(b"mym2")),
-    ("Orya", Tag::new(b"ory2")),
-    ("Taml", Tag::new(b"tml2")),
-    ("Telu", Tag::new(b"tel2")),
-];
-
-static INDIC_SCRIPTS: &[&str] = &[
-    "Beng", // Bengali
-    "Deva", // Devanagari
-    "Gujr", // Gujarati
-    "Guru", // Gurmukhi
-    "Knda", // Kannada
-    "Mlym", // Malayalam
-    "Orya", // Oriya
-    "Sinh", // Sinhala
-    "Taml", // Tamil
-    "Telu", // Telugu
-];
-
-static USE_SCRIPTS: &[&str] = &[
-    // Correct as at Unicode 15.0
-    "Adlm", // Adlam
-    "Ahom", // Ahom
-    "Bali", // Balinese
-    "Batk", // Batak
-    "Brah", // Brahmi
-    "Bugi", // Buginese
-    "Buhd", // Buhid
-    "Cakm", // Chakma
-    "Cham", // Cham
-    "Chrs", // Chorasmian
-    "Cpmn", // Cypro Minoan
-    "Diak", // Dives Akuru
-    "Dogr", // Dogra
-    "Dupl", // Duployan
-    "Egyp", // Egyptian Hieroglyphs
-    "Elym", // Elymaic
-    "Gong", // Gunjala Gondi
-    "Gonm", // Masaram Gondi
-    "Gran", // Grantha
-    "Hano", // Hanunoo
-    "Hmng", // Pahawh Hmong
-    "Hmnp", // Nyiakeng Puachue Hmong
-    "Java", // Javanese
-    "Kali", // Kayah Li
-    "Kawi", // Kawi
-    "Khar", // Kharosthi
-    "Khoj", // Khojki
-    "Kits", // Khitan Small Script
-    "Kthi", // Kaithi
-    "Lana", // Tai Tham
-    "Lepc", // Lepcha
-    "Limb", // Limbu
-    "Mahj", // Mahajani
-    "Maka", // Makasar
-    "Mand", // Mandaic
-    "Mani", // Manichaean
-    "Marc", // Marchen
-    "Medf", // Medefaidrin
-    "Modi", // Modi
-    "Mong", // Mongolian
-    "Mtei", // Meetei Mayek
-    "Mult", // Multani
-    "Nagm", // Nag Mundari
-    "Nand", // Nandinagari
-    "Newa", // Newa
-    "Nhks", // Bhaiksuki
-    "Nko ", // Nko
-    "Ougr", // Old Uyghur
-    "Phag", // Phags Pa
-    "Phlp", // Psalter Pahlavi
-    "Plrd", // Miao
-    "Rjng", // Rejang
-    "Rohg", // Hanifi Rohingya
-    "Saur", // Saurashtra
-    "Shrd", // Sharada
-    "Sidd", // Siddham
-    "Sind", // Khudawadi
-    "Sogd", // Sogdian
-    "Sogo", // Old Sogdian
-    "Soyo", // Soyombo
-    "Sund", // Sundanese
-    "Sylo", // Syloti Nagri
-    "Tagb", // Tagbanwa
-    "Takr", // Takri
-    "Tale", // Tai Le
-    "Tavt", // Tai Viet
-    "Tfng", // Tifinagh
-    "Tglg", // Tagalog
-    "Tibt", // Tibetan
-    "Tirh", // Tirhuta
-    "Tnsa", // Tangsa
-    "Toto", // Toto
-    "Vith", // Vithkuqi
-    "Wcho", // Wancho
-    "Yezi", // Yezidi
-    "Zanb", // Zanabazar Square
-];
 
 pub(crate) fn dist_feature_enabled_scripts() -> HashSet<UnicodeShortName> {
     INDIC_SCRIPTS

@@ -443,8 +443,6 @@ impl KerningGatherWork {
 
         let gdef = compilation.gdef_classes;
 
-        // serves as a standin for cmap in the fonttools impl
-
         let pairs = fragments
             .iter()
             .flat_map(|frag| frag.kerns.iter())
@@ -460,22 +458,24 @@ impl KerningGatherWork {
 
     /// returns a vec of lookups (as a vec of subtables), along with a map of features -> lookups
     /// (by order in the first vec)
+    ///
+    /// this based on
+    /// <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L772>
     fn assign_lookups_to_scripts(
         &self,
-        lookups: HashMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>>,
+        lookups: BTreeMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>>,
         ast: &ParseTree,
         // one of 'kern' or 'dist'
         current_feature: Tag,
-    ) -> (Vec<Vec<PairPosBuilder>>, HashMap<FeatureKey, Vec<usize>>) {
+    ) -> (Vec<Vec<PairPosBuilder>>, BTreeMap<FeatureKey, Vec<usize>>) {
         let dflt_langs = vec![DFLT_LANG];
 
         let is_kern_feature = current_feature == KERN;
         assert!(is_kern_feature || current_feature == DIST);
-        // this is based on the _registerLookups fn, and this is where we should start typing
-        let mut lookups_by_script = HashMap::new();
+        let mut lookups_by_script = BTreeMap::new();
         let mut ordered_lookups = Vec::new();
 
-        let fea_langs_by_script: HashMap<_, _> = get_script_language_systems(ast)
+        let fea_langs_by_script: BTreeMap<_, _> = get_script_language_systems(ast)
             .into_values()
             .flat_map(|x| x.into_iter())
             .collect();
@@ -492,8 +492,6 @@ impl KerningGatherWork {
             }
         }
 
-        // now implement the logic from _registerLookups in KernFeatureWriter:
-        // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L772>
         let mut default_lookups = Vec::new();
         if let Some(common_lookups) = lookups_by_script
             .get(&COMMON_SCRIPT)
@@ -504,6 +502,7 @@ impl KerningGatherWork {
         }
 
         //inDesign bugfix:
+        // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L785>
         let dist_enabled_scripts = super::properties::dist_feature_enabled_scripts();
         let (mut ltr_lookups, mut rtl_lookups) = (Vec::new(), Vec::new());
         for (script, lookups) in lookups_by_script
@@ -525,10 +524,9 @@ impl KerningGatherWork {
         }
         default_lookups.sort_unstable();
 
-        let mut features = HashMap::new();
+        let mut features = BTreeMap::new();
         if !default_lookups.is_empty() {
             let languages = fea_langs_by_script.get(&DFLT_SCRIPT).unwrap_or(&dflt_langs);
-            log::debug!("DFLT languages: {languages:?}");
             for lang in languages {
                 features.insert(
                     FeatureKey::new(KERN, *lang, DFLT_SCRIPT),
@@ -552,11 +550,12 @@ impl KerningGatherWork {
 
         for (script, mut lookups) in lookups_by_script {
             lookups.extend(dflt_lookups.iter().copied());
+            lookups.sort_unstable();
+            lookups.dedup();
 
             for tag in super::properties::script_to_ot_tags(&script) {
                 let languages = fea_langs_by_script.get(&tag).unwrap_or(&dflt_langs);
                 for lang in languages {
-                    log::info!("added {} lookups for {tag}/{lang}", lookups.len());
                     features.insert(FeatureKey::new(KERN, *lang, tag), lookups.clone());
                 }
             }
@@ -568,19 +567,19 @@ impl KerningGatherWork {
 }
 
 fn debug_ordered_lookups(
-    features: &HashMap<FeatureKey, Vec<usize>>,
+    features: &BTreeMap<FeatureKey, Vec<usize>>,
     lookups: &[Vec<PairPosBuilder>],
 ) {
     for (i, subtables) in lookups.iter().enumerate() {
         let total_rules = subtables.iter().map(|x| x.len()).sum::<usize>();
-        log::debug!("lookup {i}, {total_rules} rules");
+        log::trace!("lookup {i}, {total_rules} rules");
     }
 
     let mut feature_keys = features.keys().collect::<Vec<_>>();
     feature_keys.sort();
     for feature in feature_keys {
         let indices = features.get(feature).unwrap();
-        log::debug!("feature {feature:?}, lookups {indices:?}");
+        log::trace!("feature {feature:?}, lookups {indices:?}");
     }
 }
 
@@ -642,14 +641,14 @@ impl KernSplitContext {
     fn make_lookups(
         &self,
         pairs: &[&PairPosEntry],
-    ) -> HashMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>> {
+    ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>> {
         if !self.opts.ignore_marks {
             let pairs = pairs.iter().map(|x| Cow::Borrowed(*x)).collect::<Vec<_>>();
             return self.make_split_script_kern_lookups(&pairs, false);
         }
 
         let (base_pairs, mark_pairs) = self.split_base_and_mark_pairs(pairs);
-        let mut result = HashMap::new();
+        let mut result = BTreeMap::new();
         if !base_pairs.is_empty() {
             result = self.make_split_script_kern_lookups(&base_pairs, false);
         }
@@ -675,8 +674,8 @@ impl KernSplitContext {
         pairs: &[Cow<PairPosEntry>],
         //TODO: handle marks
         _are_marks: bool,
-    ) -> HashMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>> {
-        let mut lookups_by_script = HashMap::new();
+    ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>> {
+        let mut lookups_by_script = BTreeMap::new();
         let kerning_per_script = self.split_kerns(pairs);
         let mut bidi_buf = HashSet::new(); // we can reuse this for each pair
         for (scripts, pairs) in kerning_per_script {
@@ -731,7 +730,7 @@ impl KernSplitContext {
 
         kerning_per_script = merge_scripts(kerning_per_script);
         for scripts in kerning_per_script.keys().filter(|x| x.len() > 1) {
-            log::info!("merging kerning lookups for {scripts:?}");
+            log::debug!("merged kerning lookups for {scripts:?}");
         }
 
         kerning_per_script
@@ -972,7 +971,9 @@ fn get_script_language_systems(ast: &ParseTree) -> HashMap<UnicodeShortName, Vec
     let mut unic_script_to_languages = HashMap::new();
     for (ot_script, langs) in languages_by_script {
         let Some(unicode_script) = super::properties::ot_tag_to_script(ot_script) else {
-            log::info!("no unicode script for OT script tag {ot_script}");
+            if ot_script != DFLT_SCRIPT {
+                log::warn!("no unicode script for OT script tag {ot_script}");
+            }
             continue;
         };
         unic_script_to_languages
