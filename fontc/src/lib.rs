@@ -504,6 +504,7 @@ mod tests {
     use skrifa::{
         charmap::Charmap,
         instance::Size,
+        outline::DrawSettings,
         raw::{
             tables::{
                 cmap::{Cmap, CmapSubtable},
@@ -514,7 +515,7 @@ mod tests {
             types::F2Dot14,
             FontData, FontRead, FontReadWithArgs, FontRef, TableProvider,
         },
-        GlyphId, Tag,
+        GlyphId, MetadataProvider, Tag,
     };
     use tempfile::{tempdir, TempDir};
     use write_fonts::{
@@ -1448,19 +1449,18 @@ mod tests {
         let gid = Charmap::new(font).map(ch).unwrap();
 
         let mut bp = CboxPen::new();
-        let mut cx = skrifa::scale::Context::new();
-        cx.new_scaler()
-            .size(Size::new(1000.0))
-            .normalized_coords(
-                coords
-                    .into_iter()
-                    .map(F2Dot14::from_f32)
-                    .collect::<Vec<_>>(),
+        let coords = coords
+            .into_iter()
+            .map(F2Dot14::from_f32)
+            .collect::<Vec<_>>();
+        font.outline_glyphs()
+            .get(gid)
+            .unwrap()
+            .draw(
+                DrawSettings::unhinted(Size::new(1000.0), coords.as_slice()),
+                &mut bp,
             )
-            .build(font)
-            .outline(gid, &mut bp)
             .unwrap();
-
         bp.cbox().unwrap()
     }
 
@@ -1490,7 +1490,7 @@ mod tests {
         }
     }
 
-    impl skrifa::scale::Pen for CboxPen {
+    impl skrifa::outline::OutlinePen for CboxPen {
         fn move_to(&mut self, x: f32, y: f32) {
             self.last_move = Point::new(x as f64, y as f64);
             self.update_bounds(x, y);
