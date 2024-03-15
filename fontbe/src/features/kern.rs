@@ -619,7 +619,7 @@ fn debug_ordered_lookups(
 
 /// All the state needed for splitting kern pairs by script & writing direction
 struct KernSplitContext {
-    /// map of all mark glyphs; bool indicates if mark is spacing
+    /// map of all mark glyphs + whether they are spacing or not
     mark_glyphs: HashMap<GlyphId, MarkSpacing>,
     glyph_scripts: HashMap<GlyphId, HashSet<UnicodeShortName>>,
     bidi_glyphs: HashMap<BidiClass, HashSet<GlyphId>>,
@@ -671,6 +671,7 @@ impl KernSplitContext {
         }
 
         let (base_pairs, mark_pairs) = self.split_base_and_mark_pairs(pairs);
+        dbg!(base_pairs.is_empty(), mark_pairs.is_empty());
         let mut result = BTreeMap::new();
         if !base_pairs.is_empty() {
             result = self.make_split_script_kern_lookups(&base_pairs, false);
@@ -963,7 +964,7 @@ impl KernSplitContext {
                                 (&side1_marks, &side2_marks),
                             ] {
                                 if !side1.is_empty() && !side2.is_empty() {
-                                    base_pairs.push(Cow::Owned(PairPosEntry::Class(
+                                    mark_pairs.push(Cow::Owned(PairPosEntry::Class(
                                         side1.clone(),
                                         val1.clone(),
                                         side2.clone(),
@@ -1103,6 +1104,17 @@ mod tests {
             )
         }
 
+        fn make_class_rule(&self, left: &[char], right: &[char], val: i16) -> PairPosEntry {
+            let left = left.iter().map(|c| self.get(*c)).collect();
+            let right = right.iter().map(|c| self.get(*c)).collect();
+            PairPosEntry::Class(
+                left,
+                ValueRecordBuilder::new().with_x_advance(val),
+                right,
+                ValueRecordBuilder::new(),
+            )
+        }
+
         fn get(&self, c: char) -> GlyphId {
             self.0.get(&c).copied().unwrap()
         }
@@ -1224,5 +1236,47 @@ mod tests {
         assert_eq!(lookups.len(), 1);
 
         assert_eq!(flags_and_rule_count(&lookups[0]), (LookupFlag::empty(), 1));
+    }
+
+    #[test]
+    fn mark_to_base_mixed_class() {
+        const ACUTE_COMB: char = '\u{0301}';
+        const CIRCUM_COMB: char = '\u{302}';
+        let charmap: MockCharMap = ['A', 'B', 'C', ACUTE_COMB, CIRCUM_COMB]
+            .into_iter()
+            .collect();
+        let known_scripts = scripts_for_chars(&charmap);
+        let mark_glyphs = [
+            (charmap.get(ACUTE_COMB), MarkSpacing::NonSpacing),
+            (charmap.get(CIRCUM_COMB), MarkSpacing::NonSpacing),
+        ]
+        .into_iter()
+        .collect();
+        let pairs = vec![
+            charmap.make_rule('A', 'A', 12),
+            charmap.make_class_rule(&['A', 'B'], &[ACUTE_COMB, CIRCUM_COMB, 'C'], -55),
+        ];
+        let ctx = KernSplitContext::new(&charmap, &known_scripts, None, mark_glyphs).unwrap();
+
+        let pairs_ref = pairs.iter().collect::<Vec<_>>();
+        let result = ctx.make_lookups(&pairs_ref);
+
+        let latn: BTreeSet<_> = [LATN].into_iter().collect();
+        assert_eq!(result.len(), 1);
+        let lookups = result.get(&latn).unwrap();
+        assert_eq!(lookups.len(), 2);
+
+        // we should end up splitting this rule into two lookups, because class2 has mixed
+        // base & mark glyphs
+        let bases = &lookups[0];
+        let marks = &lookups[1];
+
+        let mut ignore_marks = LookupFlag::empty();
+        ignore_marks.set_ignore_marks(true);
+
+        assert_eq!(
+            (flags_and_rule_count(bases), flags_and_rule_count(marks)),
+            ((ignore_marks, 2), (LookupFlag::empty(), 1)),
+        );
     }
 }
