@@ -64,7 +64,7 @@ use write_fonts::{
     FontWrite,
 };
 
-use crate::{error::Error, paths::Paths};
+use crate::{error::Error, features::PendingLookup, paths::Paths};
 
 /// What exactly is being assembled from glyphs?
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -375,7 +375,7 @@ impl Persistable for FeaRsMarks {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FeaRsKerns {
     /// ordered!
-    pub lookups: Vec<Vec<PairPosBuilder>>,
+    pub lookups: Vec<PendingLookup<PairPosBuilder>>,
     /// each value is a set of lookups, referenced by their order in array above
     pub features: BTreeMap<FeatureKey, Vec<usize>>,
 }

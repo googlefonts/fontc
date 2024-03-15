@@ -3,6 +3,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    sync::Arc,
 };
 
 use fea_rs::{
@@ -19,7 +20,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{KernGroup, KernPair, KernParticipant, KerningGroups, KerningInstance},
+    ir::{Glyph, KernGroup, KernPair, KernParticipant, KerningGroups, KerningInstance},
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::BidiClass;
@@ -27,7 +28,7 @@ use log::debug;
 use ordered_float::OrderedFloat;
 use write_fonts::{
     read::{tables::gsub::Gsub, FontRead, ReadError},
-    tables::gdef::GlyphClassDef,
+    tables::{gdef::GlyphClassDef, layout::LookupFlag},
     types::{GlyphId, Tag},
 };
 
@@ -43,7 +44,7 @@ use crate::{
     },
 };
 
-use super::properties::CharMap;
+use super::{properties::CharMap, PendingLookup};
 
 /// On Linux it took ~0.01 ms per loop, try to get enough to make fan out worthwhile
 /// based on empirical testing
@@ -68,6 +69,13 @@ struct KerningFragmentWork {
 /// Accumulate the result of fragment processing so we can feed it to fea-rs
 #[derive(Debug)]
 struct KerningGatherWork;
+
+/// Whether or not a given mark glyph is a spacing mark, e.g. has width
+#[derive(Clone, Copy, Debug)]
+enum MarkSpacing {
+    Spacing,
+    NonSpacing,
+}
 
 pub fn create_gather_ir_kerning_work() -> Box<BeWork> {
     Box::new(GatherIrKerningWork {})
@@ -401,7 +409,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
                 )
             })
             .collect::<Vec<_>>();
-        let lookups = self.finalize_kerning(&fragments, &ast.ast, &glyph_map, &glyphs_and_gids)?;
+        let lookups = self.finalize_kerning(&fragments, &ast.ast, &glyph_map, glyphs_and_gids)?;
         context.fea_rs_kerns.set(lookups);
         Ok(())
     }
@@ -416,7 +424,7 @@ impl KerningGatherWork {
         fragments: &[&KernFragment],
         ast: &ParseTree,
         glyph_map: &GlyphMap,
-        glyphs: &impl CharMap,
+        glyphs: Vec<(Arc<Glyph>, GlyphId)>,
     ) -> Result<FeaRsKerns, Error> {
         // ignore diagnostics, they'll get logged during actual GSUB compilation
         let (compilation, _) = fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
@@ -448,8 +456,29 @@ impl KerningGatherWork {
             .flat_map(|frag| frag.kerns.iter())
             .collect::<Vec<_>>();
 
-        let known_scripts = guess_font_scripts(ast, glyphs);
-        let split_ctx = KernSplitContext::new(glyphs, &known_scripts, gsub, gdef)?;
+        let known_scripts = guess_font_scripts(ast, &glyphs);
+        let mark_glyphs = glyphs
+            .iter()
+            .filter_map(|(glyph, gid)| {
+                let is_mark = gdef
+                    .as_ref()
+                    .map(|gdef| gdef.get(gid) == Some(&GlyphClassDef::Mark))
+                    .unwrap_or(false);
+                is_mark.then(|| {
+                    let spacing = if glyph
+                        .sources()
+                        .values()
+                        .all(|instance| instance.width != 0.0)
+                    {
+                        MarkSpacing::Spacing
+                    } else {
+                        MarkSpacing::NonSpacing
+                    };
+                    (*gid, spacing)
+                })
+            })
+            .collect();
+        let split_ctx = KernSplitContext::new(&glyphs, &known_scripts, gsub, mark_glyphs)?;
 
         let lookups = split_ctx.make_lookups(&pairs);
         let (lookups, features) = self.assign_lookups_to_scripts(lookups, ast, KERN);
@@ -463,11 +492,14 @@ impl KerningGatherWork {
     /// <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L772>
     fn assign_lookups_to_scripts(
         &self,
-        lookups: BTreeMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>>,
+        lookups: BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>>,
         ast: &ParseTree,
         // one of 'kern' or 'dist'
         current_feature: Tag,
-    ) -> (Vec<Vec<PairPosBuilder>>, BTreeMap<FeatureKey, Vec<usize>>) {
+    ) -> (
+        Vec<PendingLookup<PairPosBuilder>>,
+        BTreeMap<FeatureKey, Vec<usize>>,
+    ) {
         let dflt_langs = vec![DFLT_LANG];
 
         let is_kern_feature = current_feature == KERN;
@@ -482,13 +514,15 @@ impl KerningGatherWork {
 
         // in python this part happens earlier, as part of splitKerning.
         for (scripts, lookups) in lookups {
-            let idx = ordered_lookups.len();
-            ordered_lookups.push(lookups);
-            for script in scripts {
-                lookups_by_script
-                    .entry(script)
-                    .or_insert(Vec::new())
-                    .push(idx);
+            for lookup in lookups {
+                let idx = ordered_lookups.len();
+                ordered_lookups.push(lookup);
+                for script in &scripts {
+                    lookups_by_script
+                        .entry(script.to_owned())
+                        .or_insert(Vec::new())
+                        .push(idx);
+                }
             }
         }
 
@@ -568,10 +602,10 @@ impl KerningGatherWork {
 
 fn debug_ordered_lookups(
     features: &BTreeMap<FeatureKey, Vec<usize>>,
-    lookups: &[Vec<PairPosBuilder>],
+    lookups: &[PendingLookup<PairPosBuilder>],
 ) {
-    for (i, subtables) in lookups.iter().enumerate() {
-        let total_rules = subtables.iter().map(|x| x.len()).sum::<usize>();
+    for (i, lookup) in lookups.iter().enumerate() {
+        let total_rules = lookup.subtables.iter().map(|x| x.len()).sum::<usize>();
         log::trace!("lookup {i}, {total_rules} rules");
     }
 
@@ -585,7 +619,8 @@ fn debug_ordered_lookups(
 
 /// All the state needed for splitting kern pairs by script & writing direction
 struct KernSplitContext {
-    gdef: Option<HashMap<GlyphId, GlyphClassDef>>,
+    /// map of all mark glyphs + whether they are spacing or not
+    mark_glyphs: HashMap<GlyphId, MarkSpacing>,
     glyph_scripts: HashMap<GlyphId, HashSet<UnicodeShortName>>,
     bidi_glyphs: HashMap<BidiClass, HashSet<GlyphId>>,
     opts: KernSplitOptions,
@@ -609,14 +644,14 @@ impl KernSplitContext {
         glyphs: &impl CharMap,
         known_scripts: &HashSet<UnicodeShortName>,
         gsub: Option<Gsub>,
-        gdef: Option<HashMap<GlyphId, GlyphClassDef>>,
+        mark_glyphs: HashMap<GlyphId, MarkSpacing>,
     ) -> Result<Self, ReadError> {
         let glyph_scripts =
             super::properties::scripts_by_glyph(glyphs, known_scripts, gsub.as_ref())?;
         let bidi_glyphs = super::properties::glyphs_by_bidi_class(glyphs, gsub.as_ref())?;
 
         Ok(Self {
-            gdef,
+            mark_glyphs,
             glyph_scripts,
             bidi_glyphs,
             opts: KernSplitOptions::default(),
@@ -625,29 +660,18 @@ impl KernSplitContext {
         })
     }
 
-    fn mark_glyph_ids(&self) -> HashSet<GlyphId> {
-        self.gdef
-            .as_ref()
-            .map(|classes| {
-                classes
-                    .iter()
-                    .filter_map(|(gid, cls)| (*cls == GlyphClassDef::Mark).then_some(*gid))
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
     // <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfc/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L242>
     fn make_lookups(
         &self,
         pairs: &[&PairPosEntry],
-    ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>> {
+    ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>> {
         if !self.opts.ignore_marks {
             let pairs = pairs.iter().map(|x| Cow::Borrowed(*x)).collect::<Vec<_>>();
             return self.make_split_script_kern_lookups(&pairs, false);
         }
 
         let (base_pairs, mark_pairs) = self.split_base_and_mark_pairs(pairs);
+        dbg!(base_pairs.is_empty(), mark_pairs.is_empty());
         let mut result = BTreeMap::new();
         if !base_pairs.is_empty() {
             result = self.make_split_script_kern_lookups(&base_pairs, false);
@@ -665,21 +689,17 @@ impl KernSplitContext {
     /// Returns a map of scripts: `[lookup]`, where 'scripts' is a set of scripts
     /// referencing the lookups.
     ///
-    /// Although this method always/only returns a single lookup per unique set
-    /// of scripts, we wrap it in a vec because that is what we need at the
-    /// call site.
     // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L694>
     fn make_split_script_kern_lookups(
         &self,
         pairs: &[Cow<PairPosEntry>],
-        //TODO: handle marks
-        _are_marks: bool,
-    ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PairPosBuilder>> {
+        are_marks: bool,
+    ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>> {
         let mut lookups_by_script = BTreeMap::new();
         let kerning_per_script = self.split_kerns(pairs);
         let mut bidi_buf = HashSet::new(); // we can reuse this for each pair
         for (scripts, pairs) in kerning_per_script {
-            let mut lookup = PairPosBuilder::default();
+            let mut builder = PairPosBuilder::default();
             for mut pair in pairs {
                 bidi_buf.clear();
                 for (direction, glyphs) in &self.bidi_glyphs {
@@ -706,11 +726,39 @@ impl KernSplitContext {
                 if pair_is_rtl {
                     pair.make_rtl_compatible();
                 }
-                pair.add_to(&mut lookup);
+                pair.add_to(&mut builder);
             }
+            let lookup = self.make_lookup(builder, !are_marks);
             lookups_by_script.insert(scripts, vec![lookup]);
         }
         lookups_by_script
+    }
+
+    // logic from
+    // <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfc/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L385>
+    fn make_lookup(
+        &self,
+        builder: PairPosBuilder,
+        ignore_marks: bool,
+    ) -> PendingLookup<PairPosBuilder> {
+        let mut flags = LookupFlag::empty();
+        let mut filter_class = None;
+        if ignore_marks && self.opts.ignore_marks {
+            let spacing_marks: GlyphSet = self
+                .mark_glyphs
+                .iter()
+                .filter_map(|(gid, spacing)| {
+                    matches!(spacing, MarkSpacing::Spacing).then_some(*gid)
+                })
+                .collect();
+            if spacing_marks.is_empty() {
+                flags.set_ignore_marks(true);
+            } else {
+                filter_class = Some(spacing_marks);
+                flags.set_use_mark_filtering_set(true);
+            }
+        }
+        PendingLookup::new(vec![builder], flags, filter_class)
     }
 
     // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L842>
@@ -839,10 +887,10 @@ impl KernSplitContext {
         // little helper to tell us what's in a glyphset
         fn classify_glyphset_contents(
             glyph_set: &GlyphSet,
-            marks: &HashSet<GlyphId>,
+            marks: &HashMap<GlyphId, MarkSpacing>,
         ) -> GlyphSetContent {
             glyph_set.iter().fold(GlyphSetContent::Empty, |val, gid| {
-                match (val, marks.contains(&gid)) {
+                match (val, marks.contains_key(&gid)) {
                     (GlyphSetContent::Empty, true) => GlyphSetContent::MarksOnly,
                     (GlyphSetContent::Empty, false) => GlyphSetContent::BasesOnly,
                     (GlyphSetContent::MarksOnly, true) => GlyphSetContent::MarksOnly,
@@ -853,13 +901,15 @@ impl KernSplitContext {
         }
 
         /// split a glyphset into (bases, marks)
-        fn split_glyphs(glyphs: &GlyphSet, marks: &HashSet<GlyphId>) -> (GlyphSet, GlyphSet) {
-            let (x, y): (Vec<_>, Vec<_>) = glyphs.iter().partition(|gid| !marks.contains(gid));
+        fn split_glyphs(
+            glyphs: &GlyphSet,
+            marks: &HashMap<GlyphId, MarkSpacing>,
+        ) -> (GlyphSet, GlyphSet) {
+            let (x, y): (Vec<_>, Vec<_>) = glyphs.iter().partition(|gid| !marks.contains_key(gid));
             (x.into(), y.into())
         }
 
-        let marks = self.mark_glyph_ids();
-        if marks.is_empty() {
+        if self.mark_glyphs.is_empty() {
             return (
                 pairs.iter().map(|x| Cow::Borrowed(*x)).collect(),
                 Vec::new(),
@@ -871,7 +921,8 @@ impl KernSplitContext {
         for pair in pairs {
             match pair {
                 PairPosEntry::Pair(side1, _, side2, _)
-                    if !marks.contains(side1) && !marks.contains(side2) =>
+                    if !self.mark_glyphs.contains_key(side1)
+                        && !self.mark_glyphs.contains_key(side2) =>
                 {
                     base_pairs.push(Cow::Borrowed(*pair))
                 }
@@ -879,8 +930,8 @@ impl KernSplitContext {
 
                 // handle the case where all are marks or bases, first:
                 PairPosEntry::Class(side1, val1, side2, val2) => {
-                    let side1_cls = classify_glyphset_contents(side1, &marks);
-                    let side2_cls = classify_glyphset_contents(side2, &marks);
+                    let side1_cls = classify_glyphset_contents(side1, &self.mark_glyphs);
+                    let side2_cls = classify_glyphset_contents(side2, &self.mark_glyphs);
 
                     match (side1_cls, side2_cls) {
                         (GlyphSetContent::Empty, _) | (_, GlyphSetContent::Empty) => continue,
@@ -895,8 +946,8 @@ impl KernSplitContext {
                             continue;
                         }
                         _ => {
-                            let (side1_bases, side1_marks) = split_glyphs(side1, &marks);
-                            let (side2_bases, side2_marks) = split_glyphs(side2, &marks);
+                            let (side1_bases, side1_marks) = split_glyphs(side1, &self.mark_glyphs);
+                            let (side2_bases, side2_marks) = split_glyphs(side2, &self.mark_glyphs);
 
                             if !side1_bases.is_empty() && !side2_bases.is_empty() {
                                 base_pairs.push(Cow::Owned(PairPosEntry::Class(
@@ -913,7 +964,7 @@ impl KernSplitContext {
                                 (&side1_marks, &side2_marks),
                             ] {
                                 if !side1.is_empty() && !side2.is_empty() {
-                                    base_pairs.push(Cow::Owned(PairPosEntry::Class(
+                                    mark_pairs.push(Cow::Owned(PairPosEntry::Class(
                                         side1.clone(),
                                         val1.clone(),
                                         side2.clone(),
@@ -1034,6 +1085,7 @@ fn merge_scripts(
 mod tests {
     use super::*;
 
+    const LATN: UnicodeShortName = unsafe { UnicodeShortName::from_bytes_unchecked(*b"Latn") };
     struct MockCharMap(HashMap<char, GlyphId>);
 
     impl CharMap for MockCharMap {
@@ -1044,14 +1096,27 @@ mod tests {
 
     impl MockCharMap {
         fn make_rule(&self, left: char, right: char, val: i16) -> PairPosEntry {
-            let left = self.0.get(&left).unwrap();
-            let right = self.0.get(&right).unwrap();
             PairPosEntry::Pair(
-                *left,
+                self.get(left),
                 ValueRecordBuilder::new().with_x_advance(val),
-                *right,
+                self.get(right),
                 ValueRecordBuilder::new(),
             )
+        }
+
+        fn make_class_rule(&self, left: &[char], right: &[char], val: i16) -> PairPosEntry {
+            let left = left.iter().map(|c| self.get(*c)).collect();
+            let right = right.iter().map(|c| self.get(*c)).collect();
+            PairPosEntry::Class(
+                left,
+                ValueRecordBuilder::new().with_x_advance(val),
+                right,
+                ValueRecordBuilder::new(),
+            )
+        }
+
+        fn get(&self, c: char) -> GlyphId {
+            self.0.get(&c).copied().unwrap()
         }
     }
 
@@ -1076,7 +1141,8 @@ mod tests {
             .into_iter()
             .map(|(a, b, val)| charmap.make_rule(a, b, val))
             .collect::<Vec<_>>();
-        let ctx = KernSplitContext::new(&charmap, &known_scripts, None, None).unwrap();
+        let ctx =
+            KernSplitContext::new(&charmap, &known_scripts, None, Default::default()).unwrap();
 
         let pairs_ref = pairs.iter().collect::<Vec<_>>();
 
@@ -1087,14 +1153,130 @@ mod tests {
             .into_iter()
             .collect();
 
-        let latn: BTreeSet<_> = [UnicodeShortName::from_str("Latn").unwrap()]
-            .into_iter()
-            .collect();
+        let latn: BTreeSet<_> = [LATN].into_iter().collect();
 
         let cyr_rules = result.get(&cyrillic).unwrap();
-        assert_eq!(cyr_rules.iter().map(|x| x.len()).sum::<usize>(), 1);
+        assert_eq!(
+            cyr_rules
+                .iter()
+                .flat_map(|x| x.subtables.iter().map(|sub| sub.len()))
+                .sum::<usize>(),
+            1
+        );
 
         let latn_rules = result.get(&latn).unwrap();
-        assert_eq!(latn_rules.iter().map(|x| x.len()).sum::<usize>(), 2);
+        assert_eq!(
+            latn_rules
+                .iter()
+                .flat_map(|x| x.subtables.iter().map(|sub| sub.len()))
+                .sum::<usize>(),
+            2
+        );
+    }
+
+    fn flags_and_rule_count(lookup: &PendingLookup<PairPosBuilder>) -> (LookupFlag, usize) {
+        (
+            lookup.flags,
+            lookup.subtables.iter().map(|sub| sub.len()).sum::<usize>(),
+        )
+    }
+
+    #[test]
+    fn mark_to_base_kern() {
+        const ACUTE_COMB: char = '\u{0301}';
+        let charmap: MockCharMap = ['A', 'B', 'C', ACUTE_COMB].into_iter().collect();
+        let known_scripts = scripts_for_chars(&charmap);
+        let mark_glyphs = [(charmap.get(ACUTE_COMB), MarkSpacing::NonSpacing)]
+            .into_iter()
+            .collect();
+        let pairs = [('A', ACUTE_COMB, -55), ('B', 'C', -30), ('A', 'C', -22)]
+            .into_iter()
+            .map(|(a, b, val)| charmap.make_rule(a, b, val))
+            .collect::<Vec<_>>();
+
+        let ctx = KernSplitContext::new(&charmap, &known_scripts, None, mark_glyphs).unwrap();
+
+        let pairs_ref = pairs.iter().collect::<Vec<_>>();
+        let result = ctx.make_lookups(&pairs_ref);
+
+        let latn: BTreeSet<_> = [LATN].into_iter().collect();
+        assert_eq!(result.len(), 1);
+        let lookups = result.get(&latn).unwrap();
+        assert_eq!(lookups.len(), 2);
+
+        let mut ignore_marks = LookupFlag::empty();
+        ignore_marks.set_ignore_marks(true);
+
+        let bases = &lookups[0];
+        let marks = &lookups[1];
+        assert_eq!(
+            (flags_and_rule_count(bases), flags_and_rule_count(marks)),
+            ((ignore_marks, 2), (LookupFlag::empty(), 1)),
+        );
+    }
+
+    #[test]
+    fn mark_to_base_only() {
+        const ACUTE_COMB: char = '\u{0301}';
+        let charmap: MockCharMap = ['A', 'B', 'C', ACUTE_COMB].into_iter().collect();
+        let known_scripts = scripts_for_chars(&charmap);
+        let mark_glyphs = [(charmap.get(ACUTE_COMB), MarkSpacing::NonSpacing)]
+            .into_iter()
+            .collect();
+        let pairs = vec![charmap.make_rule('A', ACUTE_COMB, -55)];
+
+        let ctx = KernSplitContext::new(&charmap, &known_scripts, None, mark_glyphs).unwrap();
+
+        let pairs_ref = pairs.iter().collect::<Vec<_>>();
+        let result = ctx.make_lookups(&pairs_ref);
+
+        let latn: BTreeSet<_> = [LATN].into_iter().collect();
+        assert_eq!(result.len(), 1);
+        let lookups = result.get(&latn).unwrap();
+        assert_eq!(lookups.len(), 1);
+
+        assert_eq!(flags_and_rule_count(&lookups[0]), (LookupFlag::empty(), 1));
+    }
+
+    #[test]
+    fn mark_to_base_mixed_class() {
+        const ACUTE_COMB: char = '\u{0301}';
+        const CIRCUM_COMB: char = '\u{302}';
+        let charmap: MockCharMap = ['A', 'B', 'C', ACUTE_COMB, CIRCUM_COMB]
+            .into_iter()
+            .collect();
+        let known_scripts = scripts_for_chars(&charmap);
+        let mark_glyphs = [
+            (charmap.get(ACUTE_COMB), MarkSpacing::NonSpacing),
+            (charmap.get(CIRCUM_COMB), MarkSpacing::NonSpacing),
+        ]
+        .into_iter()
+        .collect();
+        let pairs = vec![
+            charmap.make_rule('A', 'A', 12),
+            charmap.make_class_rule(&['A', 'B'], &[ACUTE_COMB, CIRCUM_COMB, 'C'], -55),
+        ];
+        let ctx = KernSplitContext::new(&charmap, &known_scripts, None, mark_glyphs).unwrap();
+
+        let pairs_ref = pairs.iter().collect::<Vec<_>>();
+        let result = ctx.make_lookups(&pairs_ref);
+
+        let latn: BTreeSet<_> = [LATN].into_iter().collect();
+        assert_eq!(result.len(), 1);
+        let lookups = result.get(&latn).unwrap();
+        assert_eq!(lookups.len(), 2);
+
+        // we should end up splitting this rule into two lookups, because class2 has mixed
+        // base & mark glyphs
+        let bases = &lookups[0];
+        let marks = &lookups[1];
+
+        let mut ignore_marks = LookupFlag::empty();
+        ignore_marks.set_ignore_marks(true);
+
+        assert_eq!(
+            (flags_and_rule_count(bases), flags_and_rule_count(marks)),
+            ((ignore_marks, 2), (LookupFlag::empty(), 1)),
+        );
     }
 }
