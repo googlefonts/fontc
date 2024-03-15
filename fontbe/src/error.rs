@@ -11,6 +11,7 @@ use thiserror::Error;
 use write_fonts::{
     read::ReadError,
     tables::{
+        cmap::CmapConflict,
         glyf::MalformedPath,
         gvar::{iup::IupError, GvarInputError},
     },
@@ -87,6 +88,8 @@ pub enum Error {
     MissingGlyphId(GlyphName),
     #[error("Missing kern group {0:?}")]
     MissingKernGroup(KernGroup),
+    #[error("Error making CMap: {0}")]
+    CmapConflict(#[from] CmapConflict),
 }
 
 #[derive(Debug)]
