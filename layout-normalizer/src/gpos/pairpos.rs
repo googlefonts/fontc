@@ -108,9 +108,13 @@ fn append_pairpos_f1_rules(
 
 fn is_noop(value_record: &ValueRecord) -> bool {
     value_record.x_placement().unwrap_or(0) == 0
+        && value_record.x_placement_device.get().is_null()
         && value_record.y_placement().unwrap_or(0) == 0
+        && value_record.y_placement_device.get().is_null()
         && value_record.x_advance().unwrap_or(0) == 0
+        && value_record.x_advance_device.get().is_null()
         && value_record.y_advance().unwrap_or(0) == 0
+        && value_record.y_advance_device.get().is_null()
 }
 
 fn append_pairpos_f2_rules(
