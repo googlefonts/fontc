@@ -16,10 +16,7 @@ pub use error::Error;
 pub use timing::{create_timer, JobTimer};
 use workload::Workload;
 
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::Path};
 
 use fontbe::{
     avar::create_avar_work,
@@ -52,7 +49,11 @@ use fontir::paths::Paths as IrPaths;
 
 use log::{debug, warn};
 
-pub fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
+pub fn require_dir(dir: &Path) -> Result<(), io::Error> {
+    // skip empty paths
+    if dir == Path::new("") {
+        return Ok(());
+    }
     if dir.exists() && !dir.is_dir() {
         panic!("{dir:#?} is taken by something that isn't a directory");
     }
@@ -60,7 +61,7 @@ pub fn require_dir(dir: &Path) -> Result<PathBuf, io::Error> {
         fs::create_dir(dir)?
     }
     debug!("require_dir {:?}", dir);
-    Ok(dir.to_path_buf())
+    Ok(())
 }
 
 pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
@@ -463,13 +464,14 @@ pub fn create_workload(
 }
 
 #[cfg(test)]
-pub fn testdata_dir() -> PathBuf {
+pub fn testdata_dir() -> std::path::PathBuf {
     // cargo test seems to run in the project directory
     // VSCode test seems to run in the workspace directory
     // probe for the file we want in hopes of finding it regardless
+
     ["./resources/testdata", "../resources/testdata"]
         .iter()
-        .map(PathBuf::from)
+        .map(std::path::PathBuf::from)
         .find(|pb| pb.exists())
         .unwrap()
 }
