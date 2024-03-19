@@ -671,7 +671,6 @@ impl KernSplitContext {
         }
 
         let (base_pairs, mark_pairs) = self.split_base_and_mark_pairs(pairs);
-        dbg!(base_pairs.is_empty(), mark_pairs.is_empty());
         let mut result = BTreeMap::new();
         if !base_pairs.is_empty() {
             result = self.make_split_script_kern_lookups(&base_pairs, false);
