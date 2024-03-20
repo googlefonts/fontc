@@ -62,6 +62,7 @@ fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Gly
     simple_glyph.sources.iter_mut().for_each(|(_, inst)| {
         inst.components.clear();
     });
+    simple_glyph.codepoints.clear();
 
     // Find a free name for the contour glyph
     let simple_glyph_name = name_for_derivative(&original.name, glyph_order);
