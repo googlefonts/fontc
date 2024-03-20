@@ -751,10 +751,10 @@ impl KernSplitContext {
                 })
                 .collect();
             if spacing_marks.is_empty() {
-                flags.set_ignore_marks(true);
+                flags |= LookupFlag::IGNORE_MARKS;
             } else {
                 filter_class = Some(spacing_marks);
-                flags.set_use_mark_filtering_set(true);
+                flags |= LookupFlag::USE_MARK_FILTERING_SET;
             }
         }
         PendingLookup::new(vec![builder], flags, filter_class)
@@ -1203,14 +1203,11 @@ mod tests {
         let lookups = result.get(&latn).unwrap();
         assert_eq!(lookups.len(), 2);
 
-        let mut ignore_marks = LookupFlag::empty();
-        ignore_marks.set_ignore_marks(true);
-
         let bases = &lookups[0];
         let marks = &lookups[1];
         assert_eq!(
             (flags_and_rule_count(bases), flags_and_rule_count(marks)),
-            ((ignore_marks, 2), (LookupFlag::empty(), 1)),
+            ((LookupFlag::IGNORE_MARKS, 2), (LookupFlag::empty(), 1)),
         );
     }
 
@@ -1270,12 +1267,9 @@ mod tests {
         let bases = &lookups[0];
         let marks = &lookups[1];
 
-        let mut ignore_marks = LookupFlag::empty();
-        ignore_marks.set_ignore_marks(true);
-
         assert_eq!(
             (flags_and_rule_count(bases), flags_and_rule_count(marks)),
-            ((ignore_marks, 2), (LookupFlag::empty(), 1)),
+            ((LookupFlag::IGNORE_MARKS, 2), (LookupFlag::empty(), 1)),
         );
     }
 }
