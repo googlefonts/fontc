@@ -89,6 +89,111 @@ write-fonts = { git="https://github.com/googlefonts/fontations.git", branch="box
 skrifa = { git="https://github.com/googlefonts/fontations.git", branch="box" }
 ```
 
+## Dependency map
+
+Shows the non-dev dependency relationships among the font-related crates in fontations and fontc.
+
+```mermaid
+%% This is a map of non-dev font-related dependencies.
+%% See https://mermaid.live/edit for a lightweight editing environment for
+%% mermaid diagrams.
+
+graph LR
+    %% First we define the nodes and give them short descriptions.
+    %% We group them into subgraphs by repo so that the visual layout
+    %% maps to the source layout, as this is intended for contributors.
+
+    %% https://github.com/googlefonts/fontations 
+    subgraph fontations[fontations repo]
+        fauntlet[fauntlet\ncompares Skrifa and freetype]
+        font-codegen[font-codegen\nutils for generating code for working with fonts & font tables]
+        font-types[font-types\ndefinitions of types from OpenType and a bit more]
+        otexplorer{{otexplorer\nbinary that prints \nand querys font files}}
+        read-fonts[read-fonts\nparses and reads OpenType fonts]
+        skrifa[skrifa\nhigher level lib for reading OpenType fonts]
+        write-fonts[write-fonts\ncreates and edits font-files]
+    end
+
+    %% https://github.com/googlefonts/fontc
+    subgraph fontc-repo[fontc repo]
+        fea-lsp{{fea-lsp\nexperimental language server for\nAdobe OpenType feature files}}
+        fea-rs[fea-rs\nParses and compiles\nAdobe OpenType feature files]
+        fontbe[fontbe\nthe backend of font compilation\nIR -> binary font]
+        fontc{{fontc\nCLI font compiler}}
+        fontdrasil[fontdrasil\nCommon types and functionality\nshared between all layers of fontc]
+        fontir[fontir\nthe IR for fontc]
+        fontra2fontir[fontra2fontir\nconverts .fontra files to our IR]
+        glyphs-reader[glyphs-reader\nreads Glyphs 2 and Glyphs 3 files]
+        glyphs2fontir[glyphs2fontir\nconverts .glyphs files to our IR]
+        layout-normalizer[layout-normalizer\nnormalizes layout,\n suitable for text diffing]
+        ufo2fontir[ufo2fontir\nconverts from a \n.designspace to our IR]
+    end
+
+    %% https://github.com/linebender/kurbo
+    kurbo[kurbo\n2d curves lib]
+
+    %% https://github.com/linebender/norad
+    norad[norad\nhandles Unified Font Object files]
+
+    %% https://github.com/PistonDevelopers/freetype-rs
+    freetype-rs[freetype-rs\nbindings for the FreeType library]
+
+    %% Now define the edges.
+    %% Made by hand on March 20, 2024, probably not completely correct.
+    %% Should be easy to automate if we want to, main thing is to
+    %% define the crates of interest.
+
+    fauntlet --> skrifa
+    fauntlet --> freetype-rs
+    font-codegen --> font-types
+    otexplorer --> read-fonts
+    otexplorer --> font-types
+    read-fonts --> font-types
+    skrifa --> read-fonts
+    write-fonts --> font-types
+    write-fonts --> read-fonts
+    write-fonts --> kurbo
+
+    fea-lsp --> fea-rs
+    fea-rs --> fontdrasil
+    fea-rs --> write-fonts
+    fontbe --> fontdrasil
+    fontbe --> fontir
+    fontbe --> fea-rs
+    fontbe --> write-fonts
+    fontbe --> kurbo
+    fontc --> fontdrasil
+    fontc --> fontbe
+    fontc --> fontir
+    fontc --> glyphs2fontir
+    fontc --> fontra2fontir
+    fontc --> ufo2fontir
+    fontc --> write-fonts
+    fontc --> skrifa
+    fontdrasil --> write-fonts
+    fontir --> fontdrasil
+    fontir --> kurbo
+    fontir --> write-fonts
+    fontra2fontir --> fontdrasil
+    fontra2fontir --> fontir
+    fontra2fontir --> write-fonts
+    fontra2fontir --> kurbo
+    glyphs-reader --> kurbo
+    glyphs2fontir --> fontdrasil
+    glyphs2fontir --> fontir
+    glyphs2fontir --> glyphs-reader
+    glyphs2fontir --> kurbo
+    glyphs2fontir --> write-fonts
+    layout-normalizer --> write-fonts
+    ufo2fontir --> fontdrasil
+    ufo2fontir --> fontir
+    ufo2fontir --> kurbo
+    ufo2fontir --> write-fonts
+    ufo2fontir --> norad
+
+    norad --> kurbo
+```
+
 ## Comparing branch performance with hyperfine
 
 Only relatively large changes are effectively detected this way:
