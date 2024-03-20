@@ -136,12 +136,14 @@ def build_fontc(source: Path, build_dir: Path, compare: str):
         "--no-production-names",
         "--build-dir",
         ".",
+        "-o",
+        "fontc.ttf",
         str(source),
     ]
     if compare == _COMPARE_GFTOOLS:
         cmd.append("--flatten-components")
         cmd.append("--decompose-transformed-components")
-    return build(cmd, build_dir, "fontc", lambda: (build_dir / "font.ttf",))
+    return build(cmd, build_dir, "fontc", lambda: (build_dir / "fontc.ttf",))
 
 
 def build_fontmake(source: Path, build_dir: Path, compare: str):
@@ -168,12 +170,14 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         ]
     cmd.append(str(source))
 
-    return build(
+    path = build(
         cmd,
         build_dir,
         "fontmake",
         lambda: tuple((build_dir / source.name).rglob("*.ttf")),
     )
+    final_path = build_dir / "fontmake.ttf"
+    return copy(path, final_path)
 
 
 def copy(old, new):
@@ -338,9 +342,9 @@ def main(argv):
         print(f"Compare {compare} in {build_dir}")
 
         fontc_ttf = build_fontc(source.resolve(), build_dir, compare)
-        fontc_ttx = copy(ttx(fontc_ttf), build_dir / "fontc.ttx")
+        fontc_ttx = ttx(fontc_ttf)
         fontmake_ttf = build_fontmake(source.resolve(), build_dir, compare)
-        fontmake_ttx = copy(ttx(fontmake_ttf), build_dir / "fontmake.ttx")
+        fontmake_ttx = ttx(fontmake_ttf)
         fontc_gpos = simple_gpos_output(fontc_ttf, build_dir / "fontc.markkern.txt")
         fontmake_gpos = simple_gpos_output(
             fontmake_ttf, build_dir / "fontmake.markkern.txt"
