@@ -421,8 +421,8 @@ impl Persistable for AllKerningPairs {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub enum PairPosEntry {
-    Pair(GlyphId, ValueRecordBuilder, GlyphId, ValueRecordBuilder),
-    Class(GlyphSet, ValueRecordBuilder, GlyphSet, ValueRecordBuilder),
+    Pair(GlyphId, ValueRecordBuilder, GlyphId),
+    Class(GlyphSet, ValueRecordBuilder, GlyphSet),
 }
 
 impl PairPosEntry {
@@ -433,18 +433,18 @@ impl PairPosEntry {
     /// any knowledge of writing direction.
     pub(crate) fn make_rtl_compatible(&mut self) {
         let record = match self {
-            PairPosEntry::Pair(_, record, _, _) => record,
-            PairPosEntry::Class(_, record, _, _) => record,
+            PairPosEntry::Pair(_, record, _) => record,
+            PairPosEntry::Class(_, record, _) => record,
         };
         record.make_rtl_compatible();
     }
     pub(crate) fn add_to(self, builder: &mut PairPosBuilder) {
         match self {
-            PairPosEntry::Pair(gid0, rec0, gid1, rec1) => {
-                builder.insert_pair(gid0, rec0, gid1, rec1)
+            PairPosEntry::Pair(gid0, rec0, gid1) => {
+                builder.insert_pair(gid0, rec0, gid1, Default::default())
             }
-            PairPosEntry::Class(set0, rec0, set1, rec1) => {
-                builder.insert_classes(set0, rec0, set1, rec1)
+            PairPosEntry::Class(set0, rec0, set1) => {
+                builder.insert_classes(set0, rec0, set1, Default::default())
             }
         }
     }
@@ -458,20 +458,19 @@ impl PairPosEntry {
 
     /// a helper used when splitting kerns based on script direction
     pub(crate) fn with_new_glyphs(&self, side1: GlyphSet, side2: GlyphSet) -> Self {
-        let (val1, val2) = match self {
-            PairPosEntry::Pair(_, val1, _, val2) => (val1, val2),
-            PairPosEntry::Class(_, val1, _, val2) => (val1, val2),
+        let value = match self {
+            PairPosEntry::Pair(_, value, _) => value,
+            PairPosEntry::Class(_, value, _) => value,
         };
 
         if side1.len() == 1 && side2.len() == 1 {
             Self::Pair(
                 side1.iter().next().unwrap(),
-                val1.clone(),
+                value.clone(),
                 side2.iter().next().unwrap(),
-                val2.clone(),
             )
         } else {
-            Self::Class(side1, val1.clone(), side2, val2.clone())
+            Self::Class(side1, value.clone(), side2)
         }
     }
 
@@ -488,8 +487,8 @@ impl PairPosEntry {
 
     pub(crate) fn second_glyphs(&self) -> impl Iterator<Item = GlyphId> + '_ {
         let (first, second) = match self {
-            PairPosEntry::Pair(_, _, gid1, _) => (Some(*gid1), None),
-            PairPosEntry::Class(_, _, set1, _) => (None, Some(set1)),
+            PairPosEntry::Pair(_, _, gid1) => (Some(*gid1), None),
+            PairPosEntry::Class(_, _, set1) => (None, Some(set1)),
         };
 
         first
@@ -533,8 +532,8 @@ impl PairPosEntry {
         }
 
         match self {
-            PairPosEntry::Pair(one, _, two, _) => DisplayGlyphs::Pair(*one, *two),
-            PairPosEntry::Class(one, _, two, _) => DisplayGlyphs::Class(one, two),
+            PairPosEntry::Pair(one, _, two) => DisplayGlyphs::Pair(*one, *two),
+            PairPosEntry::Class(one, _, two) => DisplayGlyphs::Class(one, two),
         }
     }
 }

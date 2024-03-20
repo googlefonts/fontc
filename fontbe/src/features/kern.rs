@@ -307,17 +307,11 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
             if deltas.iter().any(|v| v.1 != 0) {
                 x_adv_record = x_adv_record.with_x_advance_device(deltas);
             }
-            let empty = ValueRecordBuilder::new();
 
             match (left, right) {
                 (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
                     let (left, right) = (gid(left)?, gid(right)?);
-                    kerns.push(PairPosEntry::Pair(
-                        left,
-                        x_adv_record.clone(),
-                        right,
-                        empty.clone(),
-                    ));
+                    kerns.push(PairPosEntry::Pair(left, x_adv_record.clone(), right));
                 }
                 (KernParticipant::Group(left), KernParticipant::Group(right)) => {
                     let left = glyph_classes
@@ -328,12 +322,7 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
                         .get(right)
                         .ok_or_else(|| Error::MissingKernGroup(right.clone()))?
                         .clone();
-                    kerns.push(PairPosEntry::Class(
-                        left,
-                        x_adv_record.clone(),
-                        right,
-                        empty.clone(),
-                    ));
+                    kerns.push(PairPosEntry::Class(left, x_adv_record.clone(), right));
                 }
                 // if groups are mixed with glyphs then we enumerate the group
                 (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
@@ -344,12 +333,7 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
                         .get(right)
                         .ok_or_else(|| Error::MissingKernGroup(right.clone()))?;
                     for gid1 in right.iter() {
-                        kerns.push(PairPosEntry::Pair(
-                            gid0,
-                            x_adv_record.clone(),
-                            gid1,
-                            empty.clone(),
-                        ));
+                        kerns.push(PairPosEntry::Pair(gid0, x_adv_record.clone(), gid1));
                     }
                 }
                 (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
@@ -358,12 +342,7 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
                         .ok_or_else(|| Error::MissingKernGroup(left.clone()))?;
                     let gid1 = gid(right)?;
                     for gid0 in left.iter() {
-                        kerns.push(PairPosEntry::Pair(
-                            gid0,
-                            x_adv_record.clone(),
-                            gid1,
-                            empty.clone(),
-                        ));
+                        kerns.push(PairPosEntry::Pair(gid0, x_adv_record.clone(), gid1));
                     }
                 }
             }
@@ -919,7 +898,7 @@ impl KernSplitContext {
 
         for pair in pairs {
             match pair {
-                PairPosEntry::Pair(side1, _, side2, _)
+                PairPosEntry::Pair(side1, _, side2)
                     if !self.mark_glyphs.contains_key(side1)
                         && !self.mark_glyphs.contains_key(side2) =>
                 {
@@ -928,7 +907,7 @@ impl KernSplitContext {
                 PairPosEntry::Pair(..) => mark_pairs.push(Cow::Borrowed(*pair)),
 
                 // handle the case where all are marks or bases, first:
-                PairPosEntry::Class(side1, val1, side2, val2) => {
+                PairPosEntry::Class(side1, value, side2) => {
                     let side1_cls = classify_glyphset_contents(side1, &self.mark_glyphs);
                     let side2_cls = classify_glyphset_contents(side2, &self.mark_glyphs);
 
@@ -951,9 +930,8 @@ impl KernSplitContext {
                             if !side1_bases.is_empty() && !side2_bases.is_empty() {
                                 base_pairs.push(Cow::Owned(PairPosEntry::Class(
                                     side1_bases.clone(),
-                                    val1.clone(),
+                                    value.clone(),
                                     side2_bases.clone(),
-                                    val2.clone(),
                                 )));
                             }
                             // these various combos all go in the marks group
@@ -965,9 +943,8 @@ impl KernSplitContext {
                                 if !side1.is_empty() && !side2.is_empty() {
                                     mark_pairs.push(Cow::Owned(PairPosEntry::Class(
                                         side1.clone(),
-                                        val1.clone(),
+                                        value.clone(),
                                         side2.clone(),
-                                        val2.clone(),
                                     )));
                                 }
                             }
@@ -1099,19 +1076,13 @@ mod tests {
                 self.get(left),
                 ValueRecordBuilder::new().with_x_advance(val),
                 self.get(right),
-                ValueRecordBuilder::new(),
             )
         }
 
         fn make_class_rule(&self, left: &[char], right: &[char], val: i16) -> PairPosEntry {
             let left = left.iter().map(|c| self.get(*c)).collect();
             let right = right.iter().map(|c| self.get(*c)).collect();
-            PairPosEntry::Class(
-                left,
-                ValueRecordBuilder::new().with_x_advance(val),
-                right,
-                ValueRecordBuilder::new(),
-            )
+            PairPosEntry::Class(left, ValueRecordBuilder::new().with_x_advance(val), right)
         }
 
         fn get(&self, c: char) -> GlyphId {
