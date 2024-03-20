@@ -54,7 +54,7 @@ impl Work<Context, AnyWorkId, Error> for CmapWork {
                     .collect::<Vec<_>>()
             });
 
-        let cmap = Cmap::from_mappings(mappings);
+        let cmap = Cmap::from_mappings(mappings)?;
         context.cmap.set_unconditionally(cmap.into());
         Ok(())
     }
