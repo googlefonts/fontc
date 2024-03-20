@@ -122,15 +122,29 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
 
         // convert the groups stored in the Kerning object into the glyph classes
         // expected by fea-rs:
-        let glyph_classes = ir_groups
+        let groups = ir_groups
             .groups
             .iter()
-            .map(|(class_name, glyph_set)| {
+            .filter_map(|(class_name, glyph_set)| {
                 let glyph_class: GlyphSet = glyph_set
                     .iter()
-                    .map(|name| glyph_order.glyph_id(name).unwrap_or(GlyphId::NOTDEF))
+                    // drop any unknown glyphs
+                    .filter_map(|name| {
+                        let r = glyph_order.glyph_id(name);
+                        if r.is_none() {
+                            log::warn!(
+                                "Skipping unknown glyph '{name}' in kern group '{class_name}'"
+                            );
+                        }
+                        r
+                    })
                     .collect();
-                (class_name.clone(), glyph_class)
+                if glyph_class.is_empty() {
+                    log::warn!("Dropping empty kern group '{class_name}");
+                    None
+                } else {
+                    Some((class_name.clone(), glyph_class))
+                }
             })
             .collect::<BTreeMap<_, _>>();
 
@@ -163,15 +177,34 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
                     .insert(location, adjustment);
             });
 
-        let adjustments: Vec<_> = adjustments.into_iter().collect();
+        let adjustments: Vec<_> = adjustments
+            .into_iter()
+            // drop any rule that references a non-existent group or glyph:
+            .filter(|((left, right), _)| {
+                for side in [left, right] {
+                    match side {
+                        KernParticipant::Group(name) if !groups.contains_key(name) => {
+                            log::warn!("Unknown kern class '{name}' will be skipped");
+                            return false;
+                        }
+                        KernParticipant::Glyph(name) if glyph_order.glyph_id(name).is_none() => {
+                            log::warn!("Unknown kern glyph '{name}' will be skipped");
+                            return false;
+                        }
+                        _ => (),
+                    }
+                }
+                true
+            })
+            .collect();
         debug!(
             "{} ir kerns became {} classes and {} adjustments",
             ir_kerns.len(),
-            glyph_classes.len(),
+            groups.len(),
             adjustments.len()
         );
         context.all_kerning_pairs.set(AllKerningPairs {
-            glyph_classes,
+            groups,
             adjustments,
         });
         Ok(())
@@ -291,14 +324,8 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
 
         // now for each kerning entry, directly add a rule to a builder:
         let our_kerns = &kerning.adjustments[start..end];
-        let glyph_classes = &kerning.glyph_classes;
 
         let mut kerns = Vec::new();
-        let gid = |name| {
-            glyph_order
-                .glyph_id(name)
-                .ok_or_else(|| Error::MissingGlyphId(name.clone()))
-        };
         for ((left, right), values) in our_kerns {
             let (default_value, deltas) = resolve_variable_metric(&static_metadata, values.iter())?;
 
@@ -309,38 +336,30 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
             }
 
             match (left, right) {
+                // these unwraps are all fine because we've already validated the input
                 (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
-                    let (left, right) = (gid(left)?, gid(right)?);
+                    let (left, right) = (
+                        glyph_order.glyph_id(left).unwrap(),
+                        glyph_order.glyph_id(right).unwrap(),
+                    );
                     kerns.push(PairPosEntry::Pair(left, x_adv_record.clone(), right));
                 }
                 (KernParticipant::Group(left), KernParticipant::Group(right)) => {
-                    let left = glyph_classes
-                        .get(left)
-                        .ok_or_else(|| Error::MissingKernGroup(left.clone()))?
-                        .clone();
-                    let right = glyph_classes
-                        .get(right)
-                        .ok_or_else(|| Error::MissingKernGroup(right.clone()))?
-                        .clone();
+                    let left = kerning.get_group(left).unwrap().clone();
+                    let right = kerning.get_group(right).unwrap().clone();
                     kerns.push(PairPosEntry::Class(left, x_adv_record.clone(), right));
                 }
                 // if groups are mixed with glyphs then we enumerate the group
                 (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
-                    let gid0 = glyph_order
-                        .glyph_id(left)
-                        .ok_or_else(|| Error::MissingGlyphId(left.clone()))?;
-                    let right = glyph_classes
-                        .get(right)
-                        .ok_or_else(|| Error::MissingKernGroup(right.clone()))?;
+                    let gid0 = glyph_order.glyph_id(left).unwrap();
+                    let right = kerning.get_group(right).unwrap().clone();
                     for gid1 in right.iter() {
                         kerns.push(PairPosEntry::Pair(gid0, x_adv_record.clone(), gid1));
                     }
                 }
                 (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
-                    let left = glyph_classes
-                        .get(left)
-                        .ok_or_else(|| Error::MissingKernGroup(left.clone()))?;
-                    let gid1 = gid(right)?;
+                    let left = kerning.get_group(left).unwrap().clone();
+                    let gid1 = glyph_order.glyph_id(right).unwrap();
                     for gid0 in left.iter() {
                         kerns.push(PairPosEntry::Pair(gid0, x_adv_record.clone(), gid1));
                     }

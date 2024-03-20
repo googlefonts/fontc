@@ -403,10 +403,21 @@ impl Persistable for FeaAst {
 pub type KernAdjustments = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
 
 /// Every kerning pair we have, taking from IR.
+///
+/// It is an invariant that every group referenced in an adjustment exists in the
+/// groups mapping, and every glyph in a rule (including in all groups) is defined
+/// in the glyph order.
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AllKerningPairs {
-    pub glyph_classes: BTreeMap<KernGroup, GlyphSet>,
+    /// A mapping from named kern groups to the appropriate set of glyphs
+    pub groups: BTreeMap<KernGroup, GlyphSet>,
     pub adjustments: Vec<(KernPair, KernAdjustments)>,
+}
+
+impl AllKerningPairs {
+    pub(crate) fn get_group(&self, group: &KernGroup) -> Option<&GlyphSet> {
+        self.groups.get(group)
+    }
 }
 
 impl Persistable for AllKerningPairs {
