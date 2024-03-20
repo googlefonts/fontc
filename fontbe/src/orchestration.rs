@@ -66,14 +66,6 @@ use write_fonts::{
 
 use crate::{error::Error, features::PendingLookup, paths::Paths};
 
-/// What exactly is being assembled from glyphs?
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum GlyphMerge {
-    Glyf,
-    Loca,
-    Cmap,
-}
-
 type KernBlock = usize;
 
 /// Unique identifier of work.
@@ -325,21 +317,6 @@ impl TupleBuilder {
             Tuple::new(self.max),
         )
     }
-}
-
-/// Prebuilt kern to the extent we can without being able to assign deltas to a value record.
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
-pub enum Kern {
-    Pair {
-        glyph0: GlyphId,
-        glyph1: GlyphId,
-        x_advance: ValueRecordBuilder,
-    },
-    Class {
-        glyphs0: GlyphSet,
-        glyphs1: GlyphSet,
-        x_advance: ValueRecordBuilder,
-    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
