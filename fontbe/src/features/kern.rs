@@ -327,7 +327,11 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
 
         let mut kerns = Vec::new();
         for ((left, right), values) in our_kerns {
-            let (default_value, deltas) = resolve_variable_metric(&static_metadata, values.iter())?;
+            let (default_value, deltas) = resolve_variable_metric(&static_metadata, values.iter())
+                .map_err(|error| Error::KernDeltaError {
+                    pair: (left.clone(), right.clone()),
+                    error,
+                })?;
 
             let mut x_adv_record = ValueRecordBuilder::new().with_x_advance(default_value);
             // only encode deltas if they aren't all zeros

@@ -3,7 +3,8 @@ use std::{fmt::Display, io, path::PathBuf};
 use fea_rs::compile::error::CompilerError;
 use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
 use fontir::{
-    error::VariationModelError, orchestration::WorkId as FeWorkId, variations::DeltaError,
+    error::VariationModelError, ir::KernPair, orchestration::WorkId as FeWorkId,
+    variations::DeltaError,
 };
 use smol_str::SmolStr;
 use thiserror::Error;
@@ -53,6 +54,10 @@ pub enum Error {
     GlyphDeltaError(GlyphName, DeltaError),
     #[error("Unable to compute deltas for MVAR {0}: {1}")]
     MvarDeltaError(Tag, DeltaError),
+    #[error("Unable to compute deltas for anchor on '{0}': '{1}'")]
+    AnchorDeltaError(GlyphName, DeltaError),
+    #[error("Unable to compute deltas for kern pair '{}/{}': '{error}'", .pair.0, .pair.1)]
+    KernDeltaError { pair: KernPair, error: DeltaError },
     #[error("Unable to assemble gvar")]
     GvarError(#[from] GvarInputError),
     #[error("Unable to read")]

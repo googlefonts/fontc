@@ -253,6 +253,15 @@ pub enum KernParticipant {
     Group(KernGroup),
 }
 
+impl Display for KernParticipant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KernParticipant::Glyph(g) => Display::fmt(g, f),
+            KernParticipant::Group(name) => write!(f, "@{name}"),
+        }
+    }
+}
+
 impl Display for KernGroup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
