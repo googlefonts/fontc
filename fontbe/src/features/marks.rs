@@ -212,7 +212,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
 
                 for (mark_name, mark_anchor) in group.marks.iter() {
                     let gid = gid(mark_name)?;
-                    let anchor = resolve_anchor(mark_anchor, &static_metadata)?;
+                    let anchor = resolve_anchor(mark_anchor, &static_metadata, mark_name)?;
                     mark_base
                         .insert_mark(gid, group_name.0.clone(), anchor)
                         .map_err(|err| map_prev_class_error(err, &group_name.0, mark_name))?;
@@ -220,7 +220,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
 
                 for (base_name, base_anchor) in group.bases.iter() {
                     let gid = gid(base_name)?;
-                    let anchor = resolve_anchor(base_anchor, &static_metadata)?;
+                    let anchor = resolve_anchor(base_anchor, &static_metadata, base_name)?;
                     mark_base.insert_base(gid, &group_name.0, anchor);
                 }
 
@@ -236,14 +236,14 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
 
             let mut mark_mark = MarkToMarkBuilder::default();
             for (mark_name, mark_anchor) in marks {
-                let anchor = resolve_anchor(mark_anchor, &static_metadata)?;
+                let anchor = resolve_anchor(mark_anchor, &static_metadata, mark_name)?;
                 mark_mark
                     .insert_mark1(gid(mark_name)?, group_name.0.clone(), anchor)
                     .map_err(|err| map_prev_class_error(err, &group_name.0, mark_name))?;
             }
 
             for (base_name, base_anchor) in bases {
-                let anchor = resolve_anchor(base_anchor, &static_metadata)?;
+                let anchor = resolve_anchor(base_anchor, &static_metadata, base_name)?;
                 mark_mark.insert_mark2(gid(base_name)?, &group_name.0, anchor);
             }
             all_marks.mark_mark.push(mark_mark);
@@ -266,6 +266,7 @@ fn map_prev_class_error(err: PreviouslyAssignedClass, class: &SmolStr, glyph: &G
 fn resolve_anchor(
     anchor: &fontir::ir::Anchor,
     static_metadata: &StaticMetadata,
+    glyph_name: &GlyphName, // just used for error reporting
 ) -> Result<fea_rs::compile::Anchor, Error> {
     let (x_values, y_values): (Vec<_>, Vec<_>) = anchor
         .positions
@@ -285,11 +286,13 @@ fn resolve_anchor(
         // clippy complains about the seemingly no-op identity map:
         // https://rust-lang.github.io/rust-clippy/master/index.html#/map_identity
         x_values.iter().map(|item| (&item.0, &item.1)),
-    )?;
+    )
+    .map_err(|err| Error::AnchorDeltaError(glyph_name.to_owned(), err))?;
     let (y_default, y_deltas) = crate::features::resolve_variable_metric(
         static_metadata,
         y_values.iter().map(|item| (&item.0, &item.1)),
-    )?;
+    )
+    .map_err(|err| Error::AnchorDeltaError(glyph_name.to_owned(), err))?;
 
     let mut anchor = fea_rs::compile::Anchor::new(x_default, y_default);
     if x_deltas.iter().any(|v| v.1 != 0) {

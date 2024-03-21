@@ -23,6 +23,7 @@ use fea_rs::{
 use fontir::{
     ir::{FeaturesSource, GlyphOrder, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
+    variations::DeltaError,
 };
 
 use fontdrasil::{
@@ -147,7 +148,7 @@ impl<'a> FeaVariationInfo<'a> {
 pub(crate) fn resolve_variable_metric<'a>(
     static_metadata: &StaticMetadata,
     values: impl Iterator<Item = (&'a NormalizedLocation, &'a OrderedFloat<f32>)>,
-) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
+) -> Result<(i16, Vec<(VariationRegion, i16)>), DeltaError> {
     let var_model = &static_metadata.variation_model;
 
     let point_seqs = values
@@ -155,8 +156,7 @@ pub(crate) fn resolve_variable_metric<'a>(
         .map(|(pos, value)| (pos.to_owned(), vec![value.0 as f64]))
         .collect();
     let raw_deltas: Vec<_> = var_model
-        .deltas(&point_seqs)
-        .expect("FIXME: MAKE OUR ERROR TYPE SUPPORT ? HERE")
+        .deltas(&point_seqs)?
         .into_iter()
         .map(|(region, values)| {
             assert!(values.len() == 1, "{} values?!", values.len());
@@ -182,10 +182,10 @@ pub(crate) fn resolve_variable_metric<'a>(
         // Array of region axis coordinates records, in the order of axes given in the 'fvar' table.
         let mut region_axes = Vec::with_capacity(static_metadata.axes.len());
         for axis in static_metadata.axes.iter() {
-            let Some(tent) = region.get(&axis.tag) else {
-                todo!("FIXME: add this error conversion!")
-            };
-            region_axes.push(tent.to_region_axis_coords());
+            // all axes in static metadata must be present in region returned
+            // by variation model, which uses those same axes
+            let coords = region.get(&axis.tag).unwrap().to_region_axis_coords();
+            region_axes.push(coords);
         }
         deltas.push((
             write_fonts::tables::variations::VariationRegion { region_axes },
