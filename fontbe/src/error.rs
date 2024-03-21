@@ -3,8 +3,7 @@ use std::{fmt::Display, io, path::PathBuf};
 use fea_rs::compile::error::CompilerError;
 use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
 use fontir::{
-    error::VariationModelError, ir::KernGroup, orchestration::WorkId as FeWorkId,
-    variations::DeltaError,
+    error::VariationModelError, orchestration::WorkId as FeWorkId, variations::DeltaError,
 };
 use smol_str::SmolStr;
 use thiserror::Error;
@@ -86,8 +85,6 @@ pub enum Error {
     DeltaError(DeltaError),
     #[error("No glyph id for '{0}'")]
     MissingGlyphId(GlyphName),
-    #[error("Missing kern group {0:?}")]
-    MissingKernGroup(KernGroup),
     #[error("Error making CMap: {0}")]
     CmapConflict(#[from] CmapConflict),
 }
