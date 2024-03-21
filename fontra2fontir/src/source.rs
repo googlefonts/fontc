@@ -25,7 +25,7 @@ pub struct FontraIrSource {
     fontdata_file: PathBuf,
     glyphinfo_file: PathBuf,
     glyph_dir: PathBuf,
-    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Option<u32>)>>,
+    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>>,
 }
 
 impl FontraIrSource {
@@ -80,30 +80,35 @@ impl FontraIrSource {
             }
             let glyph_name = GlyphName::new(parts[0].trim());
             // TODO: support multiple codepoints
-            let codepoint = parts[1].trim();
-            let codepoint = if !codepoint.is_empty() {
-                let Some(codepoint) = codepoint.strip_prefix("U+") else {
-                    return Err(Error::ParseError(
-                        self.glyphinfo_file.clone(),
-                        format!("Unintelligible codepoint {codepoint:?} at line {i}"),
-                    ));
-                };
-                Some(u32::from_str_radix(codepoint, 16).map_err(|e| {
-                    Error::ParseError(
-                        self.glyphinfo_file.clone(),
-                        format!("Unintelligible codepoint {codepoint:?} at line {i}: {e}"),
-                    )
-                })?)
-            } else {
-                None
-            };
+            let codepoints = parts[1]
+                .split(",")
+                .filter_map(|codepoint| {
+                    let codepoint = codepoint.trim();
+                    if codepoint.is_empty() {
+                        return None;
+                    }
+                    let Some(codepoint) = codepoint.strip_prefix("U+") else {
+                        return Some(Err(Error::ParseError(
+                            self.glyphinfo_file.clone(),
+                            format!("Unintelligible codepoint {codepoint:?} at line {i}"),
+                        )));
+                    };
+                    let r = u32::from_str_radix(codepoint, 16).map_err(|e| {
+                        Error::ParseError(
+                            self.glyphinfo_file.clone(),
+                            format!("Unintelligible codepoint {codepoint:?} at line {i}: {e}"),
+                        )
+                    });
+                    Some(r)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             let glyph_file = fontra::glyph_file(&self.glyph_dir, glyph_name.clone());
             if !glyph_file.is_file() {
                 return Err(Error::FileExpected(glyph_file));
             }
 
             if glyph_info
-                .insert(glyph_name.clone(), (glyph_file, codepoint))
+                .insert(glyph_name.clone(), (glyph_file, codepoints))
                 .is_some()
             {
                 return Err(Error::ParseError(
@@ -203,7 +208,7 @@ impl Source for FontraIrSource {
 #[derive(Debug)]
 struct StaticMetadataWork {
     fontdata_file: PathBuf,
-    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Option<u32>)>>,
+    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>>,
 }
 
 fn create_static_metadata(fontdata_file: &Path) -> Result<StaticMetadata, WorkError> {
@@ -268,10 +273,70 @@ mod tests {
     #[test]
     fn glyph_names_of_mutator_sans() {
         let mut source = FontraIrSource::new(testdata_dir().join("MutatorSans.fontra")).unwrap();
-        let err = source.inputs().unwrap_err();
+        let inputs = source.inputs().unwrap();
+        let mut glyph_names = inputs.glyphs.keys().cloned().collect::<Vec<_>>();
+        glyph_names.sort();
         assert_eq!(
-            "Unable to parse \"../resources/testdata/fontra/MutatorSans.fontra/glyph-info.csv\": Unintelligible codepoint \"0041,U+0061\" at line 1: invalid digit found in string",
-            err.to_string()
-        );
+            vec![
+                "A",
+                "Aacute",
+                "Adieresis",
+                "B",
+                "C",
+                "D",
+                "E",
+                "F",
+                "G",
+                "H",
+                "I",
+                "I.narrow",
+                "IJ",
+                "J",
+                "J.narrow",
+                "K",
+                "L",
+                "M",
+                "N",
+                "O",
+                "P",
+                "Q",
+                "R",
+                "R.alt",
+                "S",
+                "S.closed",
+                "T",
+                "U",
+                "V",
+                "W",
+                "X",
+                "Y",
+                "Z",
+                "acute",
+                "arrowdown",
+                "arrowleft",
+                "arrowright",
+                "arrowup",
+                "colon",
+                "comma",
+                "dieresis",
+                "dot",
+                "em",
+                "nestedcomponents",
+                "nlitest",
+                "period",
+                "quotedblbase",
+                "quotedblleft",
+                "quotedblright",
+                "quotesinglbase",
+                "semicolon",
+                "space",
+                "varcotest1",
+                "varcotest2",
+            ]
+            .into_iter()
+            .map(GlyphName::new)
+            .collect::<Vec<_>>(),
+            glyph_names
+        )
     }
 }
