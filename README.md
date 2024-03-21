@@ -1,4 +1,5 @@
 # fontc
+
 Where in we pursue oxidizing (context: https://github.com/googlefonts/oxidize) fontmake. For context
 around where fontmake came from see [Mr B goes to Vartown](https://github.com/googlefonts/oxidize/blob/main/text/2023-10-18-mrb-goes-to-vartown.md).
 
@@ -6,12 +7,12 @@ Converts source to IR, and then IR to font binary. Aims to be safe, incremental,
 
 References
 
-   * Intermediate Representation (IR)
-      * [Why IR?](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-14-why-ir.md)
-      * [IR notes](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-08-font-compiler-ir.md).
-   * Editor perspective [note from Just](https://github.com/googlefonts/oxidize/issues/21)
-   * [Units](resources/text/units.md)
-      * Fonts have all the best units; distinguishing between them turns out to matter.
+- Intermediate Representation (IR)
+  - [Why IR?](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-14-why-ir.md)
+  - [IR notes](https://github.com/googlefonts/oxidize/blob/main/text/2022-11-08-font-compiler-ir.md).
+- Editor perspective [note from Just](https://github.com/googlefonts/oxidize/issues/21)
+- [Units](resources/text/units.md)
+  - Fonts have all the best units; distinguishing between them turns out to matter.
 
 ## But why?
 
@@ -53,19 +54,17 @@ cargo run --package fontc -- ../google_fonts_sources/sources/ofl/notosanskayahli
 
 As of 6/4/2023 we intend to:
 
-* Get to the point where Oswald compilation matches fontmake
-   * https://github.com/googlefonts/fontc/milestone/4
-* Get to the point where ever more of the families for which we have source compile
+- Get to the point where Oswald compilation matches fontmake
+  - https://github.com/googlefonts/fontc/milestone/4
+- Get to the point where ever more of the families for which we have source compile
   to a form that matches fontmake, or differs only in well understood ways
-* Provide a Glyphs plugin to allow push-button use of the new compiler
-* Once there are no known issues, switch Google Fonts to exclusively use fontc
+- Provide a Glyphs plugin to allow push-button use of the new compiler
+- Once there are no known issues, switch Google Fonts to exclusively use fontc
 
 We are discarding our prior plan to make fontmake (Python) call into Rust as it appears to be
 more complex than initially anticipated and higher risk than migrating on a per-family basis.
 
 For context see https://github.com/googlefonts/oxidize/blob/main/text/2022-07-25-PROPOSAL-build-glyphs-in-rust.md and the discussion on https://github.com/googlefonts/oxidize/pull/33.
-
-
 
 ## Using a local copy of fontations
 
@@ -87,6 +86,44 @@ font-types = { git="https://github.com/googlefonts/fontations.git", branch="box"
 read-fonts = { git="https://github.com/googlefonts/fontations.git", branch="box" }
 write-fonts = { git="https://github.com/googlefonts/fontations.git", branch="box" }
 skrifa = { git="https://github.com/googlefonts/fontations.git", branch="box" }
+```
+
+## Dependency map
+
+Shows the non-dev dependency relationships among the crates in the repo.
+
+```mermaid
+%% This is a map of non-dev font-related dependencies.
+%% See https://mermaid.live/edit for a lightweight editing environment for
+%% mermaid diagrams.
+graph
+    %% First we define the nodes and give them short descriptions.
+    %% We group them into subgraphs by repo so that the visual layout
+    %% maps to the source layout, as this is intended for contributors.
+
+   fontc{{fontc\nCLI font compiler}}
+   fontra2fontir[fontra2fontir\nconverts .fontra files to our IR]
+   glyphs2fontir[glyphs2fontir\nconverts .glyphs files to our IR]
+   ufo2fontir[ufo2fontir\nconverts from a \n.designspace to our IR]
+   fontir[fontir\nthe IR for fontc]
+   fontbe[fontbe\nthe backend of font compilation\nIR -> binary font]
+   fea-rs[fea-rs\nParses and compiles\nAdobe OpenType feature files]
+   fontdrasil[fontdrasil\nCommon types and functionality\nshared between all layers of fontc]
+
+    %% Now define the edges.
+    %% Made by hand on March 20, 2024, probably not completely correct.
+    %% Should be easy to automate if we want to, main thing is to
+    %% define the crates of interest.
+    fontbe --> fontir
+    fontbe --> fea-rs
+    fontc --> fontbe
+    fontc --> fontir
+    fontc --> glyphs2fontir
+    fontc --> fontra2fontir
+    fontc --> ufo2fontir
+    fontra2fontir --> fontir
+    glyphs2fontir --> fontir
+    ufo2fontir --> fontir
 ```
 
 ## Comparing branch performance with hyperfine
@@ -170,7 +207,6 @@ changes, you can set this as your git hooksPath:
 ```sh
 $ git config core.hooksPath "resources/githooks"
 ```
-
 
 ## Releasing
 
