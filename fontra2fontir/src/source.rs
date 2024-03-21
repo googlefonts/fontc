@@ -92,13 +92,12 @@ impl FontraIrSource {
                             format!("Unintelligible codepoint {codepoint:?} at line {i}"),
                         )));
                     };
-                    let r = u32::from_str_radix(codepoint, 16).map_err(|e| {
+                    Some(u32::from_str_radix(codepoint, 16).map_err(|e| {
                         Error::ParseError(
                             self.glyphinfo_file.clone(),
                             format!("Unintelligible codepoint {codepoint:?} at line {i}: {e}"),
                         )
-                    });
-                    Some(r)
+                    }))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let glyph_file = fontra::glyph_file(&self.glyph_dir, glyph_name.clone());
