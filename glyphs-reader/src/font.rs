@@ -1393,9 +1393,7 @@ fn axis_index(from: &RawFont, pred: impl Fn(&Axis) -> bool) -> Option<usize> {
 fn user_to_design_from_axis_mapping(
     from: &RawFont,
 ) -> Option<BTreeMap<String, RawAxisUserToDesignMap>> {
-    let Some(mappings) = from.custom_parameters.axis_mappings() else {
-        return None;
-    };
+    let mappings = from.custom_parameters.axis_mappings()?;
     let mut axis_mappings: BTreeMap<String, RawAxisUserToDesignMap> = BTreeMap::new();
     for mapping in mappings {
         let Some(axis_index) = axis_index(from, |a| a.tag == mapping.tag) else {
