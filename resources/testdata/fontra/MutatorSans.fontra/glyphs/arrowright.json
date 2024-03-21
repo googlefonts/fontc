@@ -1,0 +1,231 @@
+{
+"name": "arrowright",
+"sources": [
+{
+"name": "LightCondensed",
+"layerName": "MutatorSansLightCondensed/foreground",
+"location": {
+"width": 0,
+"weight": 150,
+"italic": 0
+}
+},
+{
+"name": "BoldCondensed",
+"layerName": "MutatorSansBoldCondensed/foreground",
+"location": {
+"width": 0,
+"weight": 850,
+"italic": 0
+}
+},
+{
+"name": "LightWide",
+"layerName": "MutatorSansLightWide/foreground",
+"location": {
+"width": 1000,
+"weight": 150,
+"italic": 0
+}
+},
+{
+"name": "BoldWide",
+"layerName": "MutatorSansBoldWide/foreground",
+"location": {
+"width": 1000,
+"weight": 850,
+"italic": 0
+}
+}
+],
+"layers": {
+"MutatorSansLightCondensed/foreground": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 308,
+"y": 345
+},
+{
+"x": 308,
+"y": 374
+},
+{
+"x": 10,
+"y": 380
+},
+{
+"x": 10,
+"y": 339
+}
+],
+"isClosed": true
+},
+{
+"points": [
+{
+"x": 249,
+"y": 308
+},
+{
+"x": 439,
+"y": 360
+},
+{
+"x": 250,
+"y": 410
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 444
+}
+},
+"MutatorSansBoldCondensed/foreground": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 237,
+"y": 162
+},
+{
+"x": 237,
+"y": 659
+},
+{
+"x": 10,
+"y": 665
+},
+{
+"x": 10,
+"y": 155
+}
+],
+"isClosed": true
+},
+{
+"points": [
+{
+"x": 137,
+"y": -6
+},
+{
+"x": 563,
+"y": 402
+},
+{
+"x": 138,
+"y": 806
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 568
+}
+},
+"MutatorSansLightWide/foreground": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 933,
+"y": 345
+},
+{
+"x": 933,
+"y": 374
+},
+{
+"x": 10,
+"y": 380
+},
+{
+"x": 10,
+"y": 339
+}
+],
+"isClosed": true
+},
+{
+"points": [
+{
+"x": 874,
+"y": 308
+},
+{
+"x": 1064,
+"y": 360
+},
+{
+"x": 875,
+"y": 410
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1069
+}
+},
+"MutatorSansBoldWide/foreground": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 1162,
+"y": 200
+},
+{
+"x": 1162,
+"y": 602
+},
+{
+"x": 10,
+"y": 608
+},
+{
+"x": 10,
+"y": 193
+}
+],
+"isClosed": true
+},
+{
+"points": [
+{
+"x": 987,
+"y": -6
+},
+{
+"x": 1413,
+"y": 401
+},
+{
+"x": 988,
+"y": 806
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 1418
+}
+}
+}
+}

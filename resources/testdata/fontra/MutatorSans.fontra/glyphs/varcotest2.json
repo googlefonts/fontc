@@ -1,0 +1,238 @@
+{
+"name": "varcotest2",
+"axes": [
+{
+"name": "flip",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 100
+},
+{
+"name": "flop",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 100
+}
+],
+"sources": [
+{
+"name": "LightCondensed",
+"layerName": "MutatorSansLightCondensed/foreground",
+"location": {
+"width": 0,
+"weight": 150,
+"italic": 0
+}
+},
+{
+"name": "varco_flip",
+"layerName": "MutatorSansLightCondensed/varco_flip",
+"location": {
+"flip": 100,
+"flop": 0
+}
+},
+{
+"name": "varco_flop",
+"layerName": "MutatorSansLightCondensed/varco_flop",
+"location": {
+"flip": 0,
+"flop": 100
+}
+},
+{
+"name": "weight=850,flip=100",
+"layerName": "weight=850,flip=100",
+"location": {
+"flip": 100,
+"weight": 850
+}
+}
+],
+"layers": {
+"MutatorSansLightCondensed/foreground": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 70,
+"y": 278
+},
+{
+"x": 309,
+"y": 278
+},
+{
+"x": 309,
+"y": 380
+},
+{
+"x": 379,
+"y": 380
+},
+{
+"x": 379,
+"y": 664
+},
+{
+"x": 204,
+"y": 664
+},
+{
+"x": 204,
+"y": 588
+},
+{
+"x": 70,
+"y": 588
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 500
+}
+},
+"MutatorSansLightCondensed/varco_flip": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 70,
+"y": 278
+},
+{
+"x": 452,
+"y": 278
+},
+{
+"x": 452,
+"y": 380
+},
+{
+"x": 522,
+"y": 380
+},
+{
+"x": 522,
+"y": 664
+},
+{
+"x": 204,
+"y": 664
+},
+{
+"x": 204,
+"y": 588
+},
+{
+"x": 70,
+"y": 588
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 500
+}
+},
+"MutatorSansLightCondensed/varco_flop": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 70,
+"y": 37
+},
+{
+"x": 309,
+"y": 37
+},
+{
+"x": 309,
+"y": 139
+},
+{
+"x": 379,
+"y": 139
+},
+{
+"x": 379,
+"y": 664
+},
+{
+"x": 204,
+"y": 664
+},
+{
+"x": 204,
+"y": 588
+},
+{
+"x": 70,
+"y": 588
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 500
+}
+},
+"weight=850,flip=100": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 70,
+"y": 278
+},
+{
+"x": 452,
+"y": 278
+},
+{
+"x": 522,
+"y": 278
+},
+{
+"x": 522,
+"y": 380
+},
+{
+"x": 522,
+"y": 664
+},
+{
+"x": 204,
+"y": 664
+},
+{
+"x": 204,
+"y": 588
+},
+{
+"x": 70,
+"y": 588
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 500
+}
+}
+}
+}

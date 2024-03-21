@@ -1,0 +1,142 @@
+{
+"name": "nlitest",
+"axes": [
+{
+"name": "rotate*1",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 100
+},
+{
+"name": "rotate*2",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 100
+}
+],
+"sources": [
+{
+"name": "<default>",
+"layerName": "<default>",
+"location": {
+"width": 0,
+"weight": 150,
+"italic": 0
+}
+},
+{
+"name": "rotate_1",
+"layerName": "rotate_off",
+"location": {
+"rotate*1": 100
+}
+},
+{
+"name": "rotate_2",
+"layerName": "rotate_off",
+"location": {
+"rotate*2": 100
+}
+},
+{
+"name": "rotate_end",
+"layerName": "rotate_end",
+"location": {
+"rotate*1": 100,
+"rotate*2": 100
+}
+}
+],
+"layers": {
+"<default>": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 0,
+"y": 50
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 50,
+"y": 0
+},
+{
+"x": 0,
+"y": 750
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 750
+}
+},
+"rotate_end": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 0,
+"y": 50
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 50,
+"y": 0
+},
+{
+"x": 750,
+"y": 0
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 750
+}
+},
+"rotate_off": {
+"glyph": {
+"path": {
+"contours": [
+{
+"points": [
+{
+"x": 0,
+"y": 50
+},
+{
+"x": 0,
+"y": 0
+},
+{
+"x": 50,
+"y": 0
+},
+{
+"x": 750,
+"y": 750
+}
+],
+"isClosed": true
+}
+]
+},
+"xAdvance": 750
+}
+}
+}
+}

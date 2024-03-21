@@ -1,0 +1,35 @@
+{
+"name": "nestedcomponents",
+"sources": [
+{
+"name": "<default>",
+"layerName": "<default>",
+"location": {
+"width": 0,
+"weight": 150,
+"italic": 0
+}
+}
+],
+"layers": {
+"<default>": {
+"glyph": {
+"components": [
+{
+"name": "varcotest1",
+"transformation": {
+"translateX": -132,
+"translateY": -108,
+"rotation": -20,
+"scaleX": 0.6,
+"scaleY": 0.6,
+"tCenterX": 432,
+"tCenterY": 356
+}
+}
+],
+"xAdvance": 500
+}
+}
+}
+}

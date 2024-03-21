@@ -1,0 +1,44 @@
+{
+"unitsPerEm": 1000,
+"fontInfo": {},
+"customData": {},
+"axes": [
+{
+"name": "width",
+"label": "width",
+"tag": "wdth",
+"minValue": 0,
+"defaultValue": 0,
+"maxValue": 1000
+},
+{
+"name": "weight",
+"label": "weight",
+"tag": "wght",
+"minValue": 100,
+"defaultValue": 100,
+"maxValue": 900,
+"mapping": [
+[
+100,
+150
+],
+[
+900,
+850
+]
+]
+},
+{
+"name": "italic",
+"label": "italic",
+"tag": "ital",
+"values": [
+0,
+1
+],
+"defaultValue": 0
+}
+],
+"sources": {}
+}
