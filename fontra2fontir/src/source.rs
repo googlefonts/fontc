@@ -80,7 +80,7 @@ impl FontraIrSource {
             }
             let glyph_name = GlyphName::new(parts[0].trim());
             let codepoints = parts[1]
-                .split(",")
+                .split(',')
                 .filter_map(|codepoint| {
                     let codepoint = codepoint.trim();
                     if codepoint.is_empty() {
