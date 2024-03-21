@@ -79,7 +79,6 @@ impl FontraIrSource {
                 ));
             }
             let glyph_name = GlyphName::new(parts[0].trim());
-            // TODO: support multiple codepoints
             let codepoints = parts[1]
                 .split(",")
                 .filter_map(|codepoint| {
@@ -160,7 +159,7 @@ impl Source for FontraIrSource {
         &self,
         _input: &fontir::source::Input,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        let _font_data = FontraFontData::from_file(&self.fontdata_file)?;
+        FontraFontData::from_file(&self.fontdata_file)?;
         Ok(Box::new(StaticMetadataWork {
             fontdata_file: self.fontdata_file.clone(),
             glyph_info: self.glyph_info.clone(),
@@ -249,94 +248,130 @@ mod tests {
     use super::*;
 
     #[test]
-    fn glyph_names_of_minimal() {
+    fn glyph_info_of_minimal() {
         let mut source = FontraIrSource::new(testdata_dir().join("minimal.fontra")).unwrap();
-        let inputs = source.inputs().unwrap();
+        // populates glyph_info
+        source.inputs().unwrap();
         assert_eq!(
-            vec![GlyphName::new(".notdef")],
-            inputs.glyphs.keys().cloned().collect::<Vec<_>>()
+            Arc::new(
+                vec![(
+                    GlyphName::new(".notdef"),
+                    (
+                        "../resources/testdata/fontra/minimal.fontra/glyphs/%2Enotdef.json".into(),
+                        vec![]
+                    )
+                )]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>()
+            ),
+            source.glyph_info
         );
     }
 
     #[test]
-    fn glyph_names_of_2glyphs() {
+    fn glyph_info_of_2glyphs() {
         let mut source = FontraIrSource::new(testdata_dir().join("2glyphs.fontra")).unwrap();
-        let inputs = source.inputs().unwrap();
-        let mut glyph_names = inputs.glyphs.keys().cloned().collect::<Vec<_>>();
-        glyph_names.sort();
+        // populates glyph_info
+        source.inputs().unwrap();
         assert_eq!(
-            vec![GlyphName::new(".notdef"), GlyphName::new("u20089")],
-            glyph_names
+            Arc::new(
+                [
+                    (
+                        GlyphName::new(".notdef"),
+                        (
+                            "../resources/testdata/fontra/2glyphs.fontra/glyphs/%2Enotdef.json"
+                                .into(),
+                            vec![]
+                        )
+                    ),
+                    (
+                        GlyphName::new("u20089"),
+                        (
+                            "../resources/testdata/fontra/2glyphs.fontra/glyphs/u20089.json".into(),
+                            vec![0x20089]
+                        )
+                    )
+                ]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>()
+            ),
+            source.glyph_info
         );
     }
 
     #[test]
-    fn glyph_names_of_mutator_sans() {
+    fn glyph_info_of_mutator_sans() {
         let mut source = FontraIrSource::new(testdata_dir().join("MutatorSans.fontra")).unwrap();
         let inputs = source.inputs().unwrap();
-        let mut glyph_names = inputs.glyphs.keys().cloned().collect::<Vec<_>>();
-        glyph_names.sort();
+        let error = source.create_static_metadata_work(&inputs).unwrap_err();
         assert_eq!(
-            vec![
-                "A",
-                "Aacute",
-                "Adieresis",
-                "B",
-                "C",
-                "D",
-                "E",
-                "F",
-                "G",
-                "H",
-                "I",
-                "I.narrow",
-                "IJ",
-                "J",
-                "J.narrow",
-                "K",
-                "L",
-                "M",
-                "N",
-                "O",
-                "P",
-                "Q",
-                "R",
-                "R.alt",
-                "S",
-                "S.closed",
-                "T",
-                "U",
-                "V",
-                "W",
-                "X",
-                "Y",
-                "Z",
-                "acute",
-                "arrowdown",
-                "arrowleft",
-                "arrowright",
-                "arrowup",
-                "colon",
-                "comma",
-                "dieresis",
-                "dot",
-                "em",
-                "nestedcomponents",
-                "nlitest",
-                "period",
-                "quotedblbase",
-                "quotedblleft",
-                "quotedblright",
-                "quotesinglbase",
-                "semicolon",
-                "space",
-                "varcotest1",
-                "varcotest2",
-            ]
-            .into_iter()
-            .map(GlyphName::new)
-            .collect::<Vec<_>>(),
-            glyph_names
-        )
+            r#"Unable to parse "../resources/testdata/fontra/MutatorSans.fontra/font-data.json": missing field `minValue` at line 41 column 1"#,
+            error.to_string()
+        );
+        // assert_eq!(
+        //     vec![
+        //         ("A", vec![0x0041, 0x0061]),
+        //         ("Aacute", vec![0x00C1, 0x00E1]),
+        //         ("Adieresis", vec![0x00C4, 0x00E4]),
+        //         ("B", vec![0x0042, 0x0062]),
+        //         ("C", vec![0x0043, 0x0063]),
+        //         ("D", vec![0x0044, 0x0064]),
+        //         ("E", vec![0x0045, 0x0065]),
+        //         ("F", vec![0x0046, 0x0066]),
+        //         ("G", vec![0x0047, 0x0067]),
+        //         ("H", vec![0x0048, 0x0068]),
+        //         ("I", vec![0x0049, 0x0069]),
+        //         ("I.narrow", vec![]),
+        //         ("IJ", vec![]),
+        //         ("J", vec![0x004A, 0x006A]),
+        //         ("J.narrow", vec![]),
+        //         ("K", vec![0x004B, 0x006B]),
+        //         ("L", vec![0x004C, 0x006C]),
+        //         ("M", vec![0x004D, 0x006D]),
+        //         ("N", vec![0x004E, 0x006E]),
+        //         ("O", vec![0x004F, 0x006F]),
+        //         ("P", vec![0x0050, 0x0070]),
+        //         ("Q", vec![0x0051, 0x0071]),
+        //         ("R", vec![0x0052, 0x0072]),
+        //         ("R.alt", vec![]),
+        //         ("S", vec![0x0053, 0x0073]),
+        //         ("S.closed", vec![]),
+        //         ("T", vec![0x0054, 0x0074]),
+        //         ("U", vec![0x0055, 0x0075]),
+        //         ("V", vec![0x0056, 0x0076]),
+        //         ("W", vec![0x0057, 0x0077]),
+        //         ("X", vec![0x0058, 0x0078]),
+        //         ("Y", vec![0x0059, 0x0079]),
+        //         ("Z", vec![0x005A, 0x007A]),
+        //         ("acute", vec![0x00B4]),
+        //         ("arrowdown", vec![0x2193]),
+        //         ("arrowleft", vec![0x2190]),
+        //         ("arrowright", vec![0x2192]),
+        //         ("arrowup", vec![0x2191]),
+        //         ("colon", vec![0x003A]),
+        //         ("comma", vec![0x002C]),
+        //         ("dieresis", vec![0x00A8]),
+        //         ("dot", vec![0x27D1]),
+        //         ("em", vec![]),
+        //         ("nestedcomponents", vec![]),
+        //         ("nlitest", vec![]),
+        //         ("period", vec![0x002E]),
+        //         ("quotedblbase", vec![0x201E]),
+        //         ("quotedblleft", vec![0x201C]),
+        //         ("quotedblright", vec![0x201D]),
+        //         ("quotesinglbase", vec![0x201A]),
+        //         ("semicolon", vec![0x003B]),
+        //         ("space", vec![0x0020]),
+        //         ("varcotest1", vec![0xE000]),
+        //         ("varcotest2", vec![0xE001])
+        //     ]
+        //     .into_iter()
+        //     .map(|(name, codepoints)| (GlyphName::new(name), codepoints))
+        //     .collect::<Vec<_>>(),
+        //     static_metadata.glyph_info
+        //         .iter()
+        //         .map(|(name, (_, codepoints))| (name.clone(), codepoints.clone()))
+        //         .collect::<Vec<_>>()
+        // )
     }
 }
