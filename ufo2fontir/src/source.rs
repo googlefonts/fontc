@@ -766,10 +766,7 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
 
 /// <https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-head-table-fields>
 fn try_parse_date(raw_date: Option<&String>) -> Option<DateTime<Utc>> {
-    let Some(raw_date) = raw_date else {
-        return None;
-    };
-
+    let raw_date = raw_date?;
     let parse_result =
         NaiveDateTime::parse_from_str(raw_date, "%Y/%m/%d %H:%M:%S").map(|nd| nd.and_utc());
     if let Err(e) = parse_result {

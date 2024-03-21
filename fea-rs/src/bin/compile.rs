@@ -168,9 +168,7 @@ impl Args {
     }
 
     fn get_var_info(&self) -> Option<Result<MockVariationInfo, Error>> {
-        let Some(path) = self.axis_info() else {
-            return None;
-        };
+        let path = self.axis_info()?;
 
         let contents = match std::fs::read_to_string(path) {
             Ok(s) => s,

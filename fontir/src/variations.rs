@@ -225,17 +225,11 @@ impl VariationModel {
                     master_influences
                         .iter()
                         .filter_map(|(master_idx, master_weight)| {
-                            let Some(result_idx) = model_idx_to_result_idx.get(master_idx) else {
-                                return None;
-                            };
-                            let Some((_, master_deltas)): Option<&(VariationRegion, Vec<V>)> =
-                                result.get(*result_idx)
-                            else {
-                                return None;
-                            };
-                            let Some(delta) = master_deltas.get(idx) else {
-                                return None;
-                            };
+                            let result_idx = model_idx_to_result_idx.get(master_idx)?;
+                            let master_deltas: &Vec<V> = result
+                                .get(*result_idx)
+                                .map(|(_, master_deltas)| master_deltas)?;
+                            let delta = master_deltas.get(idx)?;
                             Some((delta, master_weight.into_inner()))
                         })
                         .fold(initial_vector, |acc, (other, other_weight)| {
