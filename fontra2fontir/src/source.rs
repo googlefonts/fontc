@@ -85,13 +85,13 @@ impl FontraIrSource {
                 let Some(codepoint) = codepoint.strip_prefix("U+") else {
                     return Err(Error::ParseError(
                         self.glyphinfo_file.clone(),
-                        format!("Unintelligible codepoint at line {i}"),
+                        format!("Unintelligible codepoint {codepoint:?} at line {i}"),
                     ));
                 };
                 Some(u32::from_str_radix(codepoint, 16).map_err(|e| {
                     Error::ParseError(
                         self.glyphinfo_file.clone(),
-                        format!("Unintelligible codepoint at line {i}: {e}"),
+                        format!("Unintelligible codepoint {codepoint:?} at line {i}: {e}"),
                     )
                 })?)
             } else {
@@ -262,6 +262,16 @@ mod tests {
         assert_eq!(
             vec![GlyphName::new(".notdef"), GlyphName::new("u20089")],
             glyph_names
+        );
+    }
+
+    #[test]
+    fn glyph_names_of_mutator_sans() {
+        let mut source = FontraIrSource::new(testdata_dir().join("MutatorSans.fontra")).unwrap();
+        let err = source.inputs().unwrap_err();
+        assert_eq!(
+            "Unable to parse \"../resources/testdata/fontra/MutatorSans.fontra/glyph-info.csv\": Unintelligible codepoint \"0041,U+0061\" at line 1: invalid digit found in string",
+            err.to_string()
         );
     }
 }
