@@ -27,7 +27,11 @@ pub(crate) fn to_ir_static_metadata(
             let max = a.constraints.max();
             let (min, max) = match (min, max) {
                 (Some(min), Some(max)) => (min, max),
-                _ => return Err(WorkError::InconsistentAxisDefinitions(format!("Could not determine a minx and max for {a:?}"))),
+                _ => {
+                    return Err(WorkError::InconsistentAxisDefinitions(format!(
+                        "Could not determine a minx and max for {a:?}"
+                    )))
+                }
             };
             let min = UserCoord::new(min as f32);
             let default = UserCoord::new(a.default_value as f32);
