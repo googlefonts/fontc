@@ -146,14 +146,53 @@ pub(crate) struct FontraAxis {
     pub(crate) tag: Tag,
     #[serde(default)]
     pub(crate) hidden: bool,
-    #[serde(rename = "minValue")]
-    pub(crate) min_value: f64,
     #[serde(rename = "defaultValue")]
     pub(crate) default_value: f64,
-    #[serde(rename = "maxValue")]
-    pub(crate) max_value: f64,
     #[serde(default)]
     pub(crate) mapping: Vec<[f64; 2]>,
+
+    #[serde(flatten)]
+    pub(crate) constraints: FontraAxisValueConstraints,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum FontraAxisValueConstraints {
+    Range {
+        #[serde(rename = "minValue")]
+        min_value: f64,
+        #[serde(rename = "maxValue")]
+        max_value: f64,
+    },
+    List {
+        values: Vec<f64>,
+    },
+}
+
+impl FontraAxisValueConstraints {
+    pub(crate) fn min(&self) -> Option<f64> {
+        match self {
+            FontraAxisValueConstraints::Range { min_value, .. } => Some(*min_value),
+            FontraAxisValueConstraints::List { values } => values
+                .iter()
+                .copied()
+                .map(ordered_float::OrderedFloat::from)
+                .min()
+                .map(f64::from),
+        }
+    }
+
+    pub(crate) fn max(&self) -> Option<f64> {
+        match self {
+            FontraAxisValueConstraints::Range { max_value, .. } => Some(*max_value),
+            FontraAxisValueConstraints::List { values } => values
+                .iter()
+                .copied()
+                .map(ordered_float::OrderedFloat::from)
+                .max()
+                .map(f64::from),
+        }
+    }
 }
 
 /// serde type used to load .fontra/glyphs/namelike.json files
@@ -355,9 +394,9 @@ mod tests {
                 (
                     a.name.as_str(),
                     a.tag,
-                    a.min_value,
+                    a.constraints.min().unwrap(),
                     a.default_value,
-                    a.max_value,
+                    a.constraints.max().unwrap(),
                 )
             })
             .collect::<Vec<_>>()
