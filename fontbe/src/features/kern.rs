@@ -20,7 +20,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{Glyph, KernGroup, KernPair, KernParticipant, KerningGroups, KerningInstance},
+    ir::{self, Glyph, KernGroup, KernParticipant, KerningGroups, KerningInstance},
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::BidiClass;
@@ -40,7 +40,7 @@ use crate::{
     },
     orchestration::{
         AllKerningPairs, AnyWorkId, BeWork, Context, FeaRsKerns, KernAdjustments, KernFragment,
-        PairPosEntry, WorkId,
+        KernPair, KernSide, WorkId,
     },
 };
 
@@ -155,8 +155,7 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
             .collect();
 
         align_kerning(&ir_groups, &mut kern_by_pos);
-        // Use a BTreeMap  because it seems the order we process pairs matters. Maybe we should sort instead...?
-        let mut adjustments: BTreeMap<KernPair, KernAdjustments> = Default::default();
+        let mut adjustments: HashMap<ir::KernPair, KernAdjustments> = Default::default();
 
         // We want to add items to locations in the same order as the group locations
         // so start with group locations and then find the matching kerning.
@@ -259,7 +258,7 @@ fn align_kerning(
 
 // <https://github.com/fonttools/fonttools/blob/a3b9eddcafca/Lib/fontTools/ufoLib/kerning.py#L1>
 fn lookup_kerning_value(
-    pair: &KernPair,
+    pair: &ir::KernPair,
     kerning: &KerningInstance,
     side1_glyphs: &HashMap<&GlyphName, &KernGroup>,
     side2_glyphs: &HashMap<&GlyphName, &KernGroup>,
@@ -315,8 +314,7 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
 
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
-        let arc_glyph_order = context.ir.glyph_order.get();
-        let glyph_order = arc_glyph_order.as_ref();
+        let glyph_order = context.ir.glyph_order.get();
         let kerning = context.all_kerning_pairs.get();
         let start = self.segment * KERNS_PER_BLOCK;
         let end = (start + KERNS_PER_BLOCK).min(kerning.adjustments.len());
@@ -325,50 +323,27 @@ impl Work<Context, AnyWorkId, Error> for KerningFragmentWork {
         // now for each kerning entry, directly add a rule to a builder:
         let our_kerns = &kerning.adjustments[start..end];
 
-        let mut kerns = Vec::new();
-        for ((left, right), values) in our_kerns {
+        let mut kerns = Vec::with_capacity(our_kerns.len());
+        for ((side1, side2), values) in our_kerns {
             let (default_value, deltas) = resolve_variable_metric(&static_metadata, values.iter())
                 .map_err(|error| Error::KernDeltaError {
-                    pair: (left.clone(), right.clone()),
+                    pair: (side1.clone(), side2.clone()),
                     error,
                 })?;
 
-            let mut x_adv_record = ValueRecordBuilder::new().with_x_advance(default_value);
+            let mut value = ValueRecordBuilder::new().with_x_advance(default_value);
             // only encode deltas if they aren't all zeros
             if deltas.iter().any(|v| v.1 != 0) {
-                x_adv_record = x_adv_record.with_x_advance_device(deltas);
+                value = value.with_x_advance_device(deltas);
             }
-
-            match (left, right) {
-                // these unwraps are all fine because we've already validated the input
-                (KernParticipant::Glyph(left), KernParticipant::Glyph(right)) => {
-                    let (left, right) = (
-                        glyph_order.glyph_id(left).unwrap(),
-                        glyph_order.glyph_id(right).unwrap(),
-                    );
-                    kerns.push(PairPosEntry::Pair(left, x_adv_record.clone(), right));
-                }
-                (KernParticipant::Group(left), KernParticipant::Group(right)) => {
-                    let left = kerning.get_group(left).unwrap().clone();
-                    let right = kerning.get_group(right).unwrap().clone();
-                    kerns.push(PairPosEntry::Class(left, x_adv_record.clone(), right));
-                }
-                // if groups are mixed with glyphs then we enumerate the group
-                (KernParticipant::Glyph(left), KernParticipant::Group(right)) => {
-                    let gid0 = glyph_order.glyph_id(left).unwrap();
-                    let right = kerning.get_group(right).unwrap().clone();
-                    for gid1 in right.iter() {
-                        kerns.push(PairPosEntry::Pair(gid0, x_adv_record.clone(), gid1));
-                    }
-                }
-                (KernParticipant::Group(left), KernParticipant::Glyph(right)) => {
-                    let left = kerning.get_group(left).unwrap().clone();
-                    let gid1 = glyph_order.glyph_id(right).unwrap();
-                    for gid0 in left.iter() {
-                        kerns.push(PairPosEntry::Pair(gid0, x_adv_record.clone(), gid1));
-                    }
-                }
-            }
+            // groups and glyphs have already been validated
+            let side1 = KernSide::from_ir_side(side1, &glyph_order, &kerning.groups).unwrap();
+            let side2 = KernSide::from_ir_side(side2, &glyph_order, &kerning.groups).unwrap();
+            kerns.push(KernPair {
+                side1,
+                side2,
+                value,
+            })
         }
 
         context.kern_fragments.set(KernFragment {
@@ -453,10 +428,11 @@ impl KerningGatherWork {
 
         let gdef = compilation.gdef_classes;
 
-        let pairs = fragments
+        let mut pairs = fragments
             .iter()
             .flat_map(|frag| frag.kerns.iter())
             .collect::<Vec<_>>();
+        pairs.sort();
 
         let known_scripts = guess_font_scripts(ast, &glyphs);
         let mark_glyphs = glyphs
@@ -665,7 +641,7 @@ impl KernSplitContext {
     // <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfc/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L242>
     fn make_lookups(
         &self,
-        pairs: &[&PairPosEntry],
+        pairs: &[&KernPair],
     ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>> {
         if !self.opts.ignore_marks {
             let pairs = pairs.iter().map(|x| Cow::Borrowed(*x)).collect::<Vec<_>>();
@@ -693,7 +669,7 @@ impl KernSplitContext {
     // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L694>
     fn make_split_script_kern_lookups(
         &self,
-        pairs: &[Cow<PairPosEntry>],
+        pairs: &[Cow<KernPair>],
         are_marks: bool,
     ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>> {
         let mut lookups_by_script = BTreeMap::new();
@@ -712,8 +688,9 @@ impl KernSplitContext {
                     && bidi_buf.contains(&BidiClass::RightToLeft)
                 {
                     log::warn!(
-                        "skipping kern pair with ambigous direction: {}",
-                        pair.display_glyphs()
+                        "skipping kern pair with ambigous direction: {}/{}",
+                        pair.side1,
+                        pair.side2,
                     );
                     continue;
                 }
@@ -765,8 +742,8 @@ impl KernSplitContext {
     // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L842>
     fn split_kerns(
         &self,
-        pairs: &[Cow<PairPosEntry>],
-    ) -> HashMap<BTreeSet<UnicodeShortName>, Vec<PairPosEntry>> {
+        pairs: &[Cow<KernPair>],
+    ) -> HashMap<BTreeSet<UnicodeShortName>, Vec<KernPair>> {
         let mut kerning_per_script = HashMap::new();
         for pair in pairs {
             for (scripts, pair) in self.partition_by_script(pair) {
@@ -788,8 +765,8 @@ impl KernSplitContext {
     // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b340c/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L865>
     fn partition_by_script<'b>(
         &self,
-        pair: &'b PairPosEntry,
-    ) -> impl Iterator<Item = (BTreeSet<UnicodeShortName>, PairPosEntry)> + 'b {
+        pair: &'b KernPair,
+    ) -> impl Iterator<Item = (BTreeSet<UnicodeShortName>, KernPair)> + 'b {
         //TODO: we could definitely make a reusable context and save all this
         //reallocation
         let mut resolved_scripts = HashMap::new();
@@ -876,8 +853,8 @@ impl KernSplitContext {
     /// <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfc/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L441>
     fn split_base_and_mark_pairs<'b>(
         &self,
-        pairs: &[&'b PairPosEntry],
-    ) -> (Vec<Cow<'b, PairPosEntry>>, Vec<Cow<'b, PairPosEntry>>) {
+        pairs: &[&'b KernPair],
+    ) -> (Vec<Cow<'b, KernPair>>, Vec<Cow<'b, KernPair>>) {
         enum GlyphSetContent {
             Empty,
             BasesOnly,
@@ -886,11 +863,11 @@ impl KernSplitContext {
         }
 
         // little helper to tell us what's in a glyphset
-        fn classify_glyphset_contents(
-            glyph_set: &GlyphSet,
+        fn classify_kernside_contents(
+            side: &KernSide,
             marks: &HashMap<GlyphId, MarkSpacing>,
         ) -> GlyphSetContent {
-            glyph_set.iter().fold(GlyphSetContent::Empty, |val, gid| {
+            side.iter().fold(GlyphSetContent::Empty, |val, gid| {
                 match (val, marks.contains_key(&gid)) {
                     (GlyphSetContent::Empty, true) => GlyphSetContent::MarksOnly,
                     (GlyphSetContent::Empty, false) => GlyphSetContent::BasesOnly,
@@ -903,11 +880,20 @@ impl KernSplitContext {
 
         /// split a glyphset into (bases, marks)
         fn split_glyphs(
-            glyphs: &GlyphSet,
+            glyphs: &KernSide,
             marks: &HashMap<GlyphId, MarkSpacing>,
-        ) -> (GlyphSet, GlyphSet) {
-            let (x, y): (Vec<_>, Vec<_>) = glyphs.iter().partition(|gid| !marks.contains_key(gid));
-            (x.into(), y.into())
+        ) -> (KernSide, KernSide) {
+            match glyphs {
+                KernSide::Glyph(gid) if !marks.contains_key(gid) => {
+                    (KernSide::Glyph(*gid), KernSide::empty())
+                }
+                KernSide::Glyph(gid) => (KernSide::empty(), KernSide::Glyph(*gid)),
+                KernSide::Group(glyphs) => {
+                    let (x, y): (Vec<_>, Vec<_>) =
+                        glyphs.iter().partition(|gid| !marks.contains_key(gid));
+                    (KernSide::Group(x.into()), KernSide::Group(y.into()))
+                }
+            }
         }
 
         if self.mark_glyphs.is_empty() {
@@ -920,19 +906,19 @@ impl KernSplitContext {
         let (mut base_pairs, mut mark_pairs) = (Vec::new(), Vec::new());
 
         for pair in pairs {
-            match pair {
-                PairPosEntry::Pair(side1, _, side2)
+            match (&pair.side1, &pair.side2) {
+                (KernSide::Glyph(side1), KernSide::Glyph(side2))
                     if !self.mark_glyphs.contains_key(side1)
                         && !self.mark_glyphs.contains_key(side2) =>
                 {
                     base_pairs.push(Cow::Borrowed(*pair))
                 }
-                PairPosEntry::Pair(..) => mark_pairs.push(Cow::Borrowed(*pair)),
+                (KernSide::Glyph(_), KernSide::Glyph(_)) => mark_pairs.push(Cow::Borrowed(*pair)),
 
                 // handle the case where all are marks or bases, first:
-                PairPosEntry::Class(side1, value, side2) => {
-                    let side1_cls = classify_glyphset_contents(side1, &self.mark_glyphs);
-                    let side2_cls = classify_glyphset_contents(side2, &self.mark_glyphs);
+                (side1, side2) => {
+                    let side1_cls = classify_kernside_contents(side1, &self.mark_glyphs);
+                    let side2_cls = classify_kernside_contents(side2, &self.mark_glyphs);
 
                     match (side1_cls, side2_cls) {
                         (GlyphSetContent::Empty, _) | (_, GlyphSetContent::Empty) => continue,
@@ -946,16 +932,16 @@ impl KernSplitContext {
                             mark_pairs.push(Cow::Borrowed(*pair));
                             continue;
                         }
-                        _ => {
+                        (GlyphSetContent::Mixed, _) | (_, GlyphSetContent::Mixed) => {
                             let (side1_bases, side1_marks) = split_glyphs(side1, &self.mark_glyphs);
                             let (side2_bases, side2_marks) = split_glyphs(side2, &self.mark_glyphs);
 
                             if !side1_bases.is_empty() && !side2_bases.is_empty() {
-                                base_pairs.push(Cow::Owned(PairPosEntry::Class(
-                                    side1_bases.clone(),
-                                    value.clone(),
-                                    side2_bases.clone(),
-                                )));
+                                base_pairs.push(Cow::Owned(KernPair {
+                                    side1: side1_bases.clone(),
+                                    value: pair.value.clone(),
+                                    side2: side2_bases.clone(),
+                                }));
                             }
                             // these various combos all go in the marks group
                             for (side1, side2) in [
@@ -964,11 +950,11 @@ impl KernSplitContext {
                                 (&side1_marks, &side2_marks),
                             ] {
                                 if !side1.is_empty() && !side2.is_empty() {
-                                    mark_pairs.push(Cow::Owned(PairPosEntry::Class(
-                                        side1.clone(),
-                                        value.clone(),
-                                        side2.clone(),
-                                    )));
+                                    mark_pairs.push(Cow::Owned(KernPair {
+                                        side1: side1.clone(),
+                                        value: pair.value.clone(),
+                                        side2: side2.clone(),
+                                    }));
                                 }
                             }
                         }
@@ -1037,8 +1023,8 @@ fn get_script_language_systems(ast: &ParseTree) -> HashMap<UnicodeShortName, Vec
 
 // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b340c/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L946>
 fn merge_scripts(
-    kerning_per_script: HashMap<BTreeSet<UnicodeShortName>, Vec<PairPosEntry>>,
-) -> HashMap<BTreeSet<UnicodeShortName>, Vec<PairPosEntry>> {
+    kerning_per_script: HashMap<BTreeSet<UnicodeShortName>, Vec<KernPair>>,
+) -> HashMap<BTreeSet<UnicodeShortName>, Vec<KernPair>> {
     let mut sets = kerning_per_script.keys().cloned().collect::<Vec<_>>();
     let mut buf = Vec::with_capacity(sets.len());
     let mut did_merge = true;
@@ -1094,18 +1080,23 @@ mod tests {
     }
 
     impl MockCharMap {
-        fn make_rule(&self, left: char, right: char, val: i16) -> PairPosEntry {
-            PairPosEntry::Pair(
-                self.get(left),
-                ValueRecordBuilder::new().with_x_advance(val),
-                self.get(right),
-            )
+        fn make_rule(&self, left: char, right: char, val: i16) -> KernPair {
+            KernPair {
+                side1: KernSide::Glyph(self.get(left)),
+                side2: KernSide::Glyph(self.get(right)),
+                value: ValueRecordBuilder::new().with_x_advance(val),
+            }
         }
 
-        fn make_class_rule(&self, left: &[char], right: &[char], val: i16) -> PairPosEntry {
+        fn make_class_rule(&self, left: &[char], right: &[char], val: i16) -> KernPair {
             let left = left.iter().map(|c| self.get(*c)).collect();
             let right = right.iter().map(|c| self.get(*c)).collect();
-            PairPosEntry::Class(left, ValueRecordBuilder::new().with_x_advance(val), right)
+
+            KernPair {
+                side1: KernSide::Group(left),
+                side2: KernSide::Group(right),
+                value: ValueRecordBuilder::new().with_x_advance(val),
+            }
         }
 
         fn get(&self, c: char) -> GlyphId {
