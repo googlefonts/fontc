@@ -22,20 +22,16 @@ pub(crate) fn to_ir_static_metadata(
     let axes = font_data
         .axes
         .iter()
+        .filter_map(|a| match a {
+            crate::fontra::FontraAxis::Discrete(_) => {
+                panic!("Discrete axes are not yet supported: {a:?}")
+            }
+            crate::fontra::FontraAxis::Continuous(a) => Some(a),
+        })
         .map(|a| {
-            let min = a.constraints.min();
-            let max = a.constraints.max();
-            let (min, max) = match (min, max) {
-                (Some(min), Some(max)) => (min, max),
-                _ => {
-                    return Err(WorkError::InconsistentAxisDefinitions(format!(
-                        "Could not determine a minx and max for {a:?}"
-                    )))
-                }
-            };
-            let min = UserCoord::new(min as f32);
+            let min = UserCoord::new(a.min_value as f32);
             let default = UserCoord::new(a.default_value as f32);
-            let max = UserCoord::new(max as f32);
+            let max = UserCoord::new(a.max_value as f32);
 
             if min > default || max < default {
                 return Err(WorkError::InconsistentAxisDefinitions(format!("{a:?}")));
