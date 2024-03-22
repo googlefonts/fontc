@@ -22,11 +22,12 @@ pub(crate) fn to_ir_static_metadata(
     let axes = font_data
         .axes
         .iter()
-        .filter_map(|a| match a {
+        .map(|a| match a {
             crate::fontra::FontraAxis::Discrete(_) => {
+                // Our IR doesn't yet support discrete axes.
                 panic!("Discrete axes are not yet supported: {a:?}")
             }
-            crate::fontra::FontraAxis::Continuous(a) => Some(a),
+            crate::fontra::FontraAxis::Continuous(a) => a,
         })
         .map(|a| {
             let min = UserCoord::new(a.min_value as f32);

@@ -186,7 +186,7 @@ impl FontraAxis {
 }
 
 /// Corresponds to a Fontra GlobalAxis
-/// https://github.com/googlefonts/fontra/blob/1c330c3e4243611191d9999dd6b4af37cca9daff/src/fontra/core/classes.py#L104
+/// <https://github.com/googlefonts/fontra/blob/1c330c3e4243611191d9999dd6b4af37cca9daff/src/fontra/core/classes.py#L104>
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct FontraContinuousAxis {
     pub(crate) name: AxisName,
@@ -205,7 +205,7 @@ pub(crate) struct FontraContinuousAxis {
 }
 
 /// Corresponds to a Fontra GlobalDiscreteAxis
-/// https://github.com/googlefonts/fontra/blob/1c330c3e4243611191d9999dd6b4af37cca9daff/src/fontra/core/classes.py#L118
+/// <https://github.com/googlefonts/fontra/blob/1c330c3e4243611191d9999dd6b4af37cca9daff/src/fontra/core/classes.py#L118>
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)] // TEMPORARY
 pub(crate) struct FontraDiscreteAxis {
