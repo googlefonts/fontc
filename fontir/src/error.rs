@@ -156,6 +156,8 @@ pub enum WorkError {
     },
     #[error("No source with layerName \"{0}\" exists")]
     NoSourceForName(String),
+    #[error("Source file contained a feature we don't yet support: {0}")]
+    UnsupportedFeature(String),
 }
 
 /// An async work error, hence one that must be Send
