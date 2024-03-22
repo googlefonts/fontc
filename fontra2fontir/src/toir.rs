@@ -23,9 +23,9 @@ pub(crate) fn to_ir_static_metadata(
         .axes
         .iter()
         .map(|a| match a {
-            crate::fontra::FontraAxis::Discrete(_) => Err(WorkError::UnsupportedFeature(format!(
-                "discrete axis {a:?}"
-            ))),
+            crate::fontra::FontraAxis::Discrete(_) => Err(WorkError::UnsupportedConstruct(
+                format!("discrete axis {a:?}"),
+            )),
             crate::fontra::FontraAxis::Continuous(a) => Ok(a),
         })
         .map(|a| {
