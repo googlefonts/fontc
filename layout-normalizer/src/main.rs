@@ -1,19 +1,9 @@
-//! Generating a normalized text representation for layout tables
-//!
-//! This currently supports a subset of GPOS (kerning and marks)
-
-mod args;
-mod common;
-mod error;
-mod glyph_names;
-mod gpos;
-mod gsub;
-mod variations;
+//! CLI app for printing normalized layout tables
 
 use std::{fs::File, io::Write};
 
 use clap::Parser;
-use error::Error;
+use layout_normalizer::{args, Error, NameMap};
 use write_fonts::read::{FileRef, FontRef, ReadError};
 
 fn main() -> Result<(), Error> {
@@ -34,14 +24,14 @@ fn main() -> Result<(), Error> {
     };
 
     let font = get_font(&data, args.index)?;
-    let name_map = glyph_names::make_name_map(&font)?;
+    let name_map = NameMap::from_font(&font)?;
     let to_print = args.table.unwrap_or_default();
     if matches!(to_print, args::Table::All | args::Table::Gpos) {
-        gpos::print(&mut write_target, &font, &name_map)?;
+        layout_normalizer::print_gpos(&mut write_target, &font, &name_map)?;
     }
 
     if matches!(to_print, args::Table::All | args::Table::Gsub) {
-        gsub::print(&mut write_target, &font, &name_map)?;
+        layout_normalizer::print_gsub(&mut write_target, &font, &name_map)?;
     }
 
     Ok(())
