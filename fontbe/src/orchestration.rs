@@ -22,7 +22,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, Anchor, GlyphOrder, KernGroup, KernParticipant},
+    ir::{self, Anchor, GlyphOrder, KernGroup},
     orchestration::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
         PersistentStorage, WorkId as FeWorkIdentifier,
@@ -426,7 +426,7 @@ impl Persistable for AllKerningPairs {
 
 /// One side of a kerning pair, represented as glyph ids
 ///
-/// This parallels the [`KernParticipant`] IR type, with glyph names resolved
+/// This parallels the [`ir::KernSide`] type, with glyph names resolved
 /// to GIDs.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub(crate) enum KernSide {
@@ -458,13 +458,13 @@ impl KernSide {
 
     /// Convert from IR (which uses glyph names) to our representation (using ids)
     pub(crate) fn from_ir_side(
-        ir: &KernParticipant,
+        ir: &ir::KernSide,
         glyphs: &GlyphOrder,
         groups: &BTreeMap<KernGroup, GlyphSet>,
     ) -> Option<Self> {
         match ir {
-            KernParticipant::Glyph(name) => glyphs.glyph_id(name).map(Self::Glyph),
-            KernParticipant::Group(name) => groups.get(name).cloned().map(Self::Group),
+            ir::KernSide::Glyph(name) => glyphs.glyph_id(name).map(Self::Glyph),
+            ir::KernSide::Group(name) => groups.get(name).cloned().map(Self::Group),
         }
     }
 

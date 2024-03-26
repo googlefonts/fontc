@@ -20,7 +20,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, Glyph, KernGroup, KernParticipant, KerningGroups, KerningInstance},
+    ir::{self, Glyph, KernGroup, KerningGroups, KerningInstance},
     orchestration::WorkId as FeWorkId,
 };
 use icu_properties::BidiClass;
@@ -182,11 +182,11 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
             .filter(|((left, right), _)| {
                 for side in [left, right] {
                     match side {
-                        KernParticipant::Group(name) if !groups.contains_key(name) => {
+                        ir::KernSide::Group(name) if !groups.contains_key(name) => {
                             log::warn!("Unknown kern class '{name}' will be skipped");
                             return false;
                         }
-                        KernParticipant::Glyph(name) if glyph_order.glyph_id(name).is_none() => {
+                        ir::KernSide::Glyph(name) if glyph_order.glyph_id(name).is_none() => {
                             log::warn!("Unknown kern glyph '{name}' will be skipped");
                             return false;
                         }
@@ -265,14 +265,14 @@ fn lookup_kerning_value(
 ) -> OrderedFloat<f32> {
     // if already a group, return it, else look for group for glyph
     fn get_group_if_glyph(
-        side: &KernParticipant,
+        side: &ir::KernSide,
         map: &HashMap<&GlyphName, &KernGroup>,
-    ) -> Option<KernParticipant> {
+    ) -> Option<ir::KernSide> {
         match side {
-            KernParticipant::Glyph(glyph) => map
+            ir::KernSide::Glyph(glyph) => map
                 .get(&glyph)
-                .map(|group| KernParticipant::Group((*group).clone())),
-            KernParticipant::Group(_) => Some(side.to_owned()),
+                .map(|group| ir::KernSide::Group((*group).clone())),
+            ir::KernSide::Group(_) => Some(side.to_owned()),
         }
     }
 

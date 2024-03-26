@@ -15,7 +15,7 @@ use fontir::{
     error::{Error, WorkError},
     ir::{
         AnchorBuilder, FeaturesSource, GlobalMetric, GlobalMetrics, GlyphOrder, KernGroup,
-        KernParticipant, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
+        KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
         PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
@@ -1408,14 +1408,14 @@ impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
                     warn!("'{name}' is not a valid group name; ignored");
                     return None;
                 }
-                Some(KernParticipant::Group(group_name))
+                Some(KernSide::Group(group_name))
             } else {
                 let glyph_name = GlyphName::from(name.as_str());
                 if !glyph_order.contains(&glyph_name) {
                     warn!("'{name}' refers to a non-existent glyph; ignored");
                     return None;
                 }
-                Some(KernParticipant::Glyph(glyph_name))
+                Some(KernSide::Glyph(glyph_name))
             }
         };
 

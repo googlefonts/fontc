@@ -18,7 +18,7 @@ use fontir::{
     error::{Error, WorkError},
     ir::{
         self, AnchorBuilder, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernGroup,
-        KernParticipant, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
+        KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
         StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork, WorkId},
@@ -642,14 +642,14 @@ fn kern_participant(
     groups: &BTreeMap<KernGroup, BTreeSet<GlyphName>>,
     expect_prefix: &str,
     raw_side: &str,
-) -> Option<KernParticipant> {
+) -> Option<KernSide> {
     if let Some(group) = parse_kern_group(raw_side) {
         if !raw_side.starts_with(expect_prefix) {
             warn!("Invalid kern side: {raw_side}, should have prefix {expect_prefix}",);
             return None;
         }
         if groups.contains_key(&group) {
-            Some(KernParticipant::Group(group))
+            Some(KernSide::Group(group))
         } else {
             warn!("Invalid kern side: {raw_side}, no group {group:?}");
             None
@@ -657,7 +657,7 @@ fn kern_participant(
     } else {
         let name = GlyphName::from(raw_side);
         if glyph_order.contains(&name) {
-            Some(KernParticipant::Glyph(name))
+            Some(KernSide::Glyph(name))
         } else {
             warn!("Invalid kern side: {raw_side}, no such glyph");
             None

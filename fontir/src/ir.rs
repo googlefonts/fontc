@@ -197,7 +197,7 @@ impl IntoIterator for GlyphOrder {
 pub type PostscriptNames = HashMap<GlyphName, GlyphName>;
 
 /// In logical (reading) order
-pub type KernPair = (KernParticipant, KernParticipant);
+pub type KernPair = (KernSide, KernSide);
 
 /// IR representation of kerning groups.
 ///
@@ -242,22 +242,20 @@ pub enum KernGroup {
     Side2(SmolStr),
 }
 
-/// A participant in kerning, one of the entries in a kerning pair.
-///
-/// Concretely, a glyph or a group of glyphs.
+/// One side of a kern pair, represented as a glyph or group name
 ///
 /// <https://unifiedfontobject.org/versions/ufo3/kerning.plist/#kerning-pair-types>
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum KernParticipant {
+pub enum KernSide {
     Glyph(GlyphName),
     Group(KernGroup),
 }
 
-impl Display for KernParticipant {
+impl Display for KernSide {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            KernParticipant::Glyph(g) => Display::fmt(g, f),
-            KernParticipant::Group(name) => write!(f, "@{name}"),
+            KernSide::Glyph(g) => Display::fmt(g, f),
+            KernSide::Group(name) => write!(f, "@{name}"),
         }
     }
 }
@@ -297,15 +295,15 @@ impl<'de> Deserialize<'de> for KernGroup {
     }
 }
 
-impl KernParticipant {
+impl KernSide {
     #[inline]
     pub fn is_glyph(&self) -> bool {
-        matches!(self, KernParticipant::Glyph(_))
+        matches!(self, KernSide::Glyph(_))
     }
 
     #[inline]
     pub fn is_group(&self) -> bool {
-        matches!(self, KernParticipant::Group(_))
+        matches!(self, KernSide::Group(_))
     }
 }
 
