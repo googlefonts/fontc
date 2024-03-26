@@ -1,7 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 #[derive(Clone, Debug, clap::Parser)]
-pub(crate) struct Args {
+pub struct Args {
     pub font_path: PathBuf,
     #[arg(short, long)]
     /// Optional destination path for writing output. Default is stdout.
