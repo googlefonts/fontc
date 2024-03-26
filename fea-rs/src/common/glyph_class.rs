@@ -36,13 +36,11 @@ pub(crate) struct GlyphClass(Vec<GlyphId>);
 pub struct GlyphSet(Vec<GlyphId>);
 
 impl GlyphClass {
+    /// An empty glyph class
+    pub const EMPTY: Self = GlyphClass(Vec::new());
+
     pub(crate) fn items(&self) -> &[GlyphId] {
         &self.0
-    }
-
-    /// Return a new, empty glyph class
-    pub fn empty() -> Self {
-        Self(Default::default())
     }
 
     /// Return a `GlyphSet` containing the unique glyphs in this class.
@@ -60,6 +58,9 @@ impl GlyphClass {
 }
 
 impl GlyphSet {
+    /// The empty glyph set
+    pub const EMPTY: Self = GlyphSet(Vec::new());
+
     /// Iterate over the glyphs in this class
     pub fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
         self.0.iter().copied()
@@ -131,7 +132,7 @@ impl From<GlyphOrClass> for GlyphClass {
         match src {
             GlyphOrClass::Class(class) => class,
             GlyphOrClass::Glyph(id) => id.into(),
-            GlyphOrClass::Null => GlyphClass::empty(),
+            GlyphOrClass::Null => GlyphClass::EMPTY,
         }
     }
 }

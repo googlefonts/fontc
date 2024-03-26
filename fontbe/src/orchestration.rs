@@ -22,7 +22,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{Anchor, KernGroup, KernPair},
+    ir::{self, Anchor, GlyphOrder, KernGroup, KernParticipant},
     orchestration::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
         PersistentStorage, WorkId as FeWorkIdentifier,
@@ -411,13 +411,7 @@ pub type KernAdjustments = BTreeMap<NormalizedLocation, OrderedFloat<f32>>;
 pub struct AllKerningPairs {
     /// A mapping from named kern groups to the appropriate set of glyphs
     pub groups: BTreeMap<KernGroup, GlyphSet>,
-    pub adjustments: Vec<(KernPair, KernAdjustments)>,
-}
-
-impl AllKerningPairs {
-    pub(crate) fn get_group(&self, group: &KernGroup) -> Option<&GlyphSet> {
-        self.groups.get(group)
-    }
+    pub adjustments: Vec<(ir::KernPair, KernAdjustments)>,
 }
 
 impl Persistable for AllKerningPairs {
@@ -430,32 +424,111 @@ impl Persistable for AllKerningPairs {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
-pub enum PairPosEntry {
-    Pair(GlyphId, ValueRecordBuilder, GlyphId),
-    Class(GlyphSet, ValueRecordBuilder, GlyphSet),
+/// One side of a kerning pair, represented as glyph ids
+///
+/// This parallels the [`KernParticipant`] IR type, with glyph names resolved
+/// to GIDs.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
+pub(crate) enum KernSide {
+    /// A specific glyph
+    Glyph(GlyphId),
+    /// A group of glyphs
+    Group(GlyphSet),
 }
 
-impl PairPosEntry {
+/// A resolved user kern rule
+///
+/// This parallels the [`ir::KernPair`] type, but using glyph ids instead
+/// of glyph names and a finalized value record instead of per-location positions.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
+pub(crate) struct KernPair {
+    pub(crate) side1: KernSide,
+    pub(crate) side2: KernSide,
+    pub(crate) value: ValueRecordBuilder,
+}
+
+impl KernSide {
+    pub(crate) const fn empty() -> Self {
+        Self::Group(GlyphSet::EMPTY)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        matches!(self, KernSide::Group(items) if items.is_empty())
+    }
+
+    /// Convert from IR (which uses glyph names) to our representation (using ids)
+    pub(crate) fn from_ir_side(
+        ir: &KernParticipant,
+        glyphs: &GlyphOrder,
+        groups: &BTreeMap<KernGroup, GlyphSet>,
+    ) -> Option<Self> {
+        match ir {
+            KernParticipant::Glyph(name) => glyphs.glyph_id(name).map(Self::Glyph),
+            KernParticipant::Group(name) => groups.get(name).cloned().map(Self::Group),
+        }
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
+        let (first, second) = match self {
+            Self::Glyph(gid) => (Some(*gid), None),
+            Self::Group(group) => (None, Some(group)),
+        };
+
+        first
+            .into_iter()
+            .chain(second.into_iter().flat_map(|set| set.iter()))
+    }
+}
+
+impl Display for KernSide {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KernSide::Glyph(gid) => write!(f, "{gid}"),
+            KernSide::Group(group) => {
+                let mut first = true;
+                write!(f, "[")?;
+                for gid in group.iter() {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{gid}")?;
+                    first = false;
+                }
+                write!(f, "]")
+            }
+        }
+    }
+}
+
+impl KernPair {
     /// if a rule is right-to-left, we need to set both x-advance AND x-position
     ///
     /// see <https://github.com/unified-font-object/ufo-spec/issues/16#issuecomment-119947719>
     /// for further details. The tl;dr is that the lookup itself does not have
     /// any knowledge of writing direction.
     pub(crate) fn make_rtl_compatible(&mut self) {
-        let record = match self {
-            PairPosEntry::Pair(_, record, _) => record,
-            PairPosEntry::Class(_, record, _) => record,
-        };
-        record.make_rtl_compatible();
+        self.value.make_rtl_compatible()
     }
+
     pub(crate) fn add_to(self, builder: &mut PairPosBuilder) {
-        match self {
-            PairPosEntry::Pair(gid0, rec0, gid1) => {
-                builder.insert_pair(gid0, rec0, gid1, Default::default())
+        match (self.side1, self.side2) {
+            // these unwraps are all fine because we've already validated the input
+            (KernSide::Glyph(side1), KernSide::Glyph(side2)) => {
+                builder.insert_pair(side1, self.value, side2, Default::default());
             }
-            PairPosEntry::Class(set0, rec0, set1) => {
-                builder.insert_classes(set0, rec0, set1, Default::default())
+            (KernSide::Group(side1), KernSide::Group(side2)) => {
+                builder.insert_classes(side1, self.value, side2, Default::default());
+            }
+            // if groups are mixed with glyphs then we enumerate the group
+            (KernSide::Glyph(side1), KernSide::Group(side2)) => {
+                for side2 in side2.iter() {
+                    builder.insert_pair(side1, self.value.clone(), side2, Default::default());
+                }
+            }
+            (KernSide::Group(side1), KernSide::Glyph(side2)) => {
+                for side1 in side1.iter() {
+                    builder.insert_pair(side1, self.value.clone(), side2, Default::default());
+                }
             }
         }
     }
@@ -469,83 +542,35 @@ impl PairPosEntry {
 
     /// a helper used when splitting kerns based on script direction
     pub(crate) fn with_new_glyphs(&self, side1: GlyphSet, side2: GlyphSet) -> Self {
-        let value = match self {
-            PairPosEntry::Pair(_, value, _) => value,
-            PairPosEntry::Class(_, value, _) => value,
+        // for each of our sides, we want to keep groups groups and glyphs glyphs
+        let (side1, side2) = match (&self.side1, &self.side2) {
+            (KernSide::Glyph(_), KernSide::Glyph(_)) => (self.side1.clone(), self.side2.clone()),
+            (KernSide::Glyph(_), KernSide::Group(_)) => {
+                assert_eq!(side1.len(), 1);
+                (self.side1.clone(), KernSide::Group(side2))
+            }
+            (KernSide::Group(_), KernSide::Glyph(_)) => {
+                assert_eq!(side2.len(), 1);
+                (KernSide::Group(side1), self.side2.clone())
+            }
+            _ => {
+                assert!(!side1.is_empty() && !side2.is_empty());
+                (KernSide::Group(side1), KernSide::Group(side2))
+            }
         };
-
-        if side1.len() == 1 && side2.len() == 1 {
-            Self::Pair(
-                side1.iter().next().unwrap(),
-                value.clone(),
-                side2.iter().next().unwrap(),
-            )
-        } else {
-            Self::Class(side1, value.clone(), side2)
+        KernPair {
+            side1,
+            side2,
+            value: self.value.clone(),
         }
     }
 
     pub(crate) fn first_glyphs(&self) -> impl Iterator<Item = GlyphId> + '_ {
-        let (first, second) = match self {
-            PairPosEntry::Pair(gid0, ..) => (Some(*gid0), None),
-            PairPosEntry::Class(set0, ..) => (None, Some(set0)),
-        };
-
-        first
-            .into_iter()
-            .chain(second.into_iter().flat_map(|set| set.iter()))
+        self.side1.iter()
     }
 
     pub(crate) fn second_glyphs(&self) -> impl Iterator<Item = GlyphId> + '_ {
-        let (first, second) = match self {
-            PairPosEntry::Pair(_, _, gid1) => (Some(*gid1), None),
-            PairPosEntry::Class(_, _, set1) => (None, Some(set1)),
-        };
-
-        first
-            .into_iter()
-            .chain(second.into_iter().flat_map(|set| set.iter()))
-    }
-
-    /// A helper for pretty-printing the rule's glyph or glyphs
-    pub(crate) fn display_glyphs(&self) -> impl Display + '_ {
-        enum DisplayGlyphs<'a> {
-            Pair(GlyphId, GlyphId),
-            Class(&'a GlyphSet, &'a GlyphSet),
-        }
-
-        impl Display for DisplayGlyphs<'_> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    DisplayGlyphs::Pair(one, two) => write!(f, "{one}/{two}"),
-                    DisplayGlyphs::Class(one, two) => {
-                        let mut first = true;
-                        for gid in one.iter() {
-                            if !first {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{gid}")?;
-                            first = false;
-                        }
-                        write!(f, "/")?;
-                        first = true;
-                        for gid in two.iter() {
-                            if !first {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{gid}")?;
-                            first = false;
-                        }
-                        Ok(())
-                    }
-                }
-            }
-        }
-
-        match self {
-            PairPosEntry::Pair(one, _, two) => DisplayGlyphs::Pair(*one, *two),
-            PairPosEntry::Class(one, _, two) => DisplayGlyphs::Class(one, two),
-        }
+        self.side2.iter()
     }
 }
 
@@ -555,7 +580,7 @@ impl PairPosEntry {
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KernFragment {
     pub(crate) segment: usize,
-    pub(crate) kerns: Vec<PairPosEntry>,
+    pub(crate) kerns: Vec<KernPair>,
 }
 
 impl IdAware<AnyWorkId> for KernFragment {
@@ -939,5 +964,46 @@ mod tests {
         }
         .to_deltas(&[Tag::new(b"wght")]);
         assert!(deltas.is_empty(), "{deltas:?}");
+    }
+
+    // kerning needs to be sort such that (glyph, glyph) comes first, then
+    // (glyph, class), (class, glyph) and (class, class). This matches the
+    // behaviour of the FEA syntax, and ensures that more specific rules are
+    // applied first
+    #[test]
+    fn kern_pair_sort_order() {
+        let glyph = KernSide::Glyph(GlyphId::new(5));
+        let class_ = KernSide::Group([1, 2, 3, 4].into_iter().map(GlyphId::new).collect());
+        let value = ValueRecordBuilder::new().with_x_advance(420);
+        let glyph_glyph = KernPair {
+            side1: glyph.clone(),
+            side2: glyph.clone(),
+            value: value.clone(),
+        };
+
+        let glyph_class = KernPair {
+            side1: glyph.clone(),
+            side2: class_.clone(),
+            value: value.clone(),
+        };
+
+        let class_glyph = KernPair {
+            side1: class_.clone(),
+            side2: glyph.clone(),
+            value: value.clone(),
+        };
+
+        let class_class = KernPair {
+            side1: class_.clone(),
+            side2: class_.clone(),
+            value: value.clone(),
+        };
+
+        let mut unsorted = [&class_class, &glyph_class, &glyph_glyph, &class_glyph];
+        unsorted.sort();
+        assert_eq!(
+            unsorted,
+            [&glyph_glyph, &glyph_class, &class_glyph, &class_class]
+        );
     }
 }
