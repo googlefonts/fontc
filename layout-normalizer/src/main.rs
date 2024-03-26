@@ -10,7 +10,10 @@ mod gpos;
 mod gsub;
 mod variations;
 
-use std::{fs::File, io::Write};
+use std::{
+    fs::File,
+    io::{BufWriter, Write},
+};
 
 use clap::Parser;
 use error::Error;
@@ -29,7 +32,7 @@ fn main() -> Result<(), Error> {
                 path: path.to_owned(),
                 inner,
             })
-            .map(Box::new)?,
+            .map(|f| Box::new(BufWriter::new(f)))?,
         None => Box::new(std::io::stdout()),
     };
 
@@ -43,6 +46,7 @@ fn main() -> Result<(), Error> {
     if matches!(to_print, args::Table::All | args::Table::Gsub) {
         gsub::print(&mut write_target, &font, &name_map)?;
     }
+    write_target.flush().unwrap();
 
     Ok(())
 }
