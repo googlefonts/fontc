@@ -495,7 +495,7 @@ mod tests {
     };
     use fontdrasil::{coords::NormalizedCoord, paths::safe_filename, types::GlyphName};
     use fontir::{
-        ir::{self, GlyphOrder, KernGroup, KernPair, KernParticipant},
+        ir::{self, GlyphOrder, KernGroup, KernPair, KernSide},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
     };
     use indexmap::IndexSet;
@@ -1928,42 +1928,42 @@ mod tests {
                 ],
                 vec![
                     (
-                        KernParticipant::Glyph("bracketleft".into()),
-                        KernParticipant::Glyph("bracketright".into()),
+                        KernSide::Glyph("bracketleft".into()),
+                        KernSide::Glyph("bracketright".into()),
                         vec![
                             ("wght 0".to_string(), -300.0),
                             ("wght 1".to_string(), -150.0)
                         ],
                     ),
                     (
-                        KernParticipant::Glyph("exclam".into()),
-                        KernParticipant::Glyph("exclam".into()),
+                        KernSide::Glyph("exclam".into()),
+                        KernSide::Glyph("exclam".into()),
                         vec![
                             ("wght 0".to_string(), -360.0),
                             ("wght 1".to_string(), -100.0)
                         ],
                     ),
                     (
-                        KernParticipant::Glyph("exclam".into()),
-                        KernParticipant::Glyph("hyphen".into()),
+                        KernSide::Glyph("exclam".into()),
+                        KernSide::Glyph("hyphen".into()),
                         vec![("wght 0".to_string(), 20.0),],
                     ),
                     (
-                        KernParticipant::Glyph("exclam".into()),
-                        KernParticipant::Group(KernGroup::Side2("bracketright_L".into())),
+                        KernSide::Glyph("exclam".into()),
+                        KernSide::Group(KernGroup::Side2("bracketright_L".into())),
                         vec![("wght 0".to_string(), -160.0),],
                     ),
                     (
-                        KernParticipant::Glyph("hyphen".into()),
-                        KernParticipant::Glyph("hyphen".into()),
+                        KernSide::Glyph("hyphen".into()),
+                        KernSide::Glyph("hyphen".into()),
                         vec![
                             ("wght 0".to_string(), -150.0),
                             ("wght 1".to_string(), -50.0)
                         ],
                     ),
                     (
-                        KernParticipant::Group(KernGroup::Side1("bracketleft_R".into())),
-                        KernParticipant::Glyph("exclam".into()),
+                        KernSide::Group(KernGroup::Side1("bracketleft_R".into())),
+                        KernSide::Glyph("exclam".into()),
                         vec![("wght 0".to_string(), -165.0),],
                     ),
                 ],
