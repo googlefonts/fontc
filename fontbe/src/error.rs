@@ -1,7 +1,10 @@
 use std::{fmt::Display, io, path::PathBuf};
 
 use fea_rs::compile::error::CompilerError;
-use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
+use fontdrasil::{
+    coords::NormalizedLocation,
+    types::{AnchorName, GlyphName},
+};
 use fontir::{
     error::VariationModelError, ir::KernPair, orchestration::WorkId as FeWorkId,
     variations::DeltaError,
@@ -92,6 +95,12 @@ pub enum Error {
     MissingGlyphId(GlyphName),
     #[error("Error making CMap: {0}")]
     CmapConflict(#[from] CmapConflict),
+    #[error("Bad anchor name '{anchor}' for glyph '{glyph}': '{reason}'")]
+    InvalidAnchorName {
+        glyph: GlyphName,
+        anchor: AnchorName,
+        reason: BadAnchorName,
+    },
 }
 
 #[derive(Debug)]
@@ -117,5 +126,25 @@ impl Display for GlyphProblem {
             GlyphProblem::NotInGlyphOrder => "has no entry in glyph order",
         };
         f.write_str(message)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BadAnchorName {
+    // top_0 looks like a ligature base, but 0 is an invalid index
+    ZeroIndex,
+    // _top_1 looks like a numbered mark, which is not allowed
+    NumberedMarkAnchor,
+    // _ is not a valid group name
+    NilMarkGroup,
+}
+
+impl Display for BadAnchorName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BadAnchorName::ZeroIndex => write!(f, "ligature indexes must begin with '1'"),
+            BadAnchorName::NumberedMarkAnchor => write!(f, "mark anchors cannot be numbered"),
+            BadAnchorName::NilMarkGroup => write!(f, "mark anchor key is nil"),
+        }
     }
 }

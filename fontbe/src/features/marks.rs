@@ -8,14 +8,14 @@ use std::{
 use fea_rs::compile::{MarkToBaseBuilder, MarkToMarkBuilder, PreviouslyAssignedClass};
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
-    types::{AnchorName, GlyphName},
+    types::GlyphName,
 };
 
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 
 use crate::{
-    error::Error,
+    error::{BadAnchorName, Error},
     orchestration::{AnyWorkId, BeWork, Context, FeaRsMarks, MarkGroup, WorkId},
 };
 use fontir::{
@@ -38,21 +38,49 @@ type MarkGroupName = SmolStr;
 pub(crate) enum AnchorInfo {
     Base(MarkGroupName),
     Mark(MarkGroupName),
+    Ligature {
+        group_name: MarkGroupName,
+        index: usize,
+    },
 }
 
 impl AnchorInfo {
-    pub(crate) fn new(name: &AnchorName) -> AnchorInfo {
+    // this logic from
+    // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L101>
+    pub(crate) fn new(name: impl AsRef<str>) -> Result<AnchorInfo, BadAnchorName> {
+        let name = name.as_ref();
         // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
-        if let Some(group) = name.as_str().strip_prefix('_') {
-            AnchorInfo::Mark(group.into())
-        } else {
-            AnchorInfo::Base(name.as_str().into())
+        if let Some(mark) = name.strip_prefix('_') {
+            if mark.is_empty() {
+                return Err(BadAnchorName::NilMarkGroup);
+            }
+            if let Some((_, suffix)) = mark.rsplit_once('_') {
+                if suffix.parse::<usize>().is_ok() {
+                    return Err(BadAnchorName::NumberedMarkAnchor);
+                }
+            }
+            return Ok(AnchorInfo::Mark(mark.into()));
+        } else if let Some((name, suffix)) = name.rsplit_once('_') {
+            // _1 suffix means a base in a ligature glyph
+            if let Ok(index) = suffix.parse::<usize>() {
+                if index == 0 {
+                    return Err(BadAnchorName::ZeroIndex);
+                } else {
+                    return Ok(AnchorInfo::Ligature {
+                        group_name: name.into(),
+                        index,
+                    });
+                }
+            }
         }
+        Ok(AnchorInfo::Base(name.into()))
     }
 
     pub(crate) fn group_name(&self) -> MarkGroupName {
         match self {
-            AnchorInfo::Base(group_name) | AnchorInfo::Mark(group_name) => group_name.clone(),
+            AnchorInfo::Base(group_name)
+            | AnchorInfo::Mark(group_name)
+            | AnchorInfo::Ligature { group_name, .. } => group_name.clone(),
         }
     }
 
@@ -64,7 +92,7 @@ impl AnchorInfo {
 fn create_mark_to_base_groups(
     anchors: &BTreeMap<GlyphName, Arc<GlyphAnchors>>,
     glyph_order: &GlyphOrder,
-) -> BTreeMap<MarkGroupName, MarkGroup> {
+) -> Result<BTreeMap<MarkGroupName, MarkGroup>, Error> {
     let mut groups: BTreeMap<MarkGroupName, MarkGroup> = Default::default();
     for (glyph_name, glyph_anchors) in anchors.iter() {
         // We assume the anchor list to be small
@@ -77,7 +105,12 @@ fn create_mark_to_base_groups(
         }
         let mut base = true; // TODO: only a base if user rules allow it
         for anchor in glyph_anchors.anchors.iter() {
-            let anchor_info = AnchorInfo::new(&anchor.name);
+            let anchor_info =
+                AnchorInfo::new(&anchor.name).map_err(|reason| Error::InvalidAnchorName {
+                    glyph: glyph_name.clone(),
+                    anchor: anchor.name.clone(),
+                    reason,
+                })?;
             if anchor_info.is_mark() {
                 base = false;
 
@@ -92,7 +125,12 @@ fn create_mark_to_base_groups(
 
         if base {
             for anchor in glyph_anchors.anchors.iter() {
-                let anchor_info = AnchorInfo::new(&anchor.name);
+                let anchor_info =
+                    AnchorInfo::new(&anchor.name).map_err(|reason| Error::InvalidAnchorName {
+                        glyph: glyph_name.clone(),
+                        anchor: anchor.name.clone(),
+                        reason,
+                    })?;
                 groups
                     .entry(anchor_info.group_name())
                     .or_default()
@@ -101,25 +139,38 @@ fn create_mark_to_base_groups(
             }
         }
     }
-    groups
+    Ok(groups)
 }
 
 fn create_mark_to_mark_groups(
     anchors: &BTreeMap<GlyphName, Arc<GlyphAnchors>>,
     glyph_order: &GlyphOrder,
-) -> BTreeMap<MarkGroupName, MarkGroup> {
+) -> Result<BTreeMap<MarkGroupName, MarkGroup>, Error> {
     // first find the set of glyphs that are marks, i.e. have any mark attachment point.
-    let (mark_glyphs, mark_anchors): (BTreeSet<_>, BTreeSet<_>) = anchors
+    let (mut mark_glyphs, mut mark_anchors): (BTreeSet<_>, BTreeSet<_>) = Default::default();
+
+    for (name, anchor) in anchors
         .iter()
         .filter(|(name, anchors)| glyph_order.contains(name) && contains_marks(anchors))
         .flat_map(|(name, anchors)| {
-            anchors
-                .anchors
-                .iter()
-                .map(|a| AnchorInfo::new(&a.name))
-                .filter_map(|info| info.is_mark().then(|| (name.clone(), info.group_name())))
+            anchors.anchors.iter().map(|a| {
+                (
+                    name.clone(),
+                    AnchorInfo::new(&a.name).map_err(|reason| Error::InvalidAnchorName {
+                        glyph: name.clone(),
+                        anchor: a.name.clone(),
+                        reason,
+                    }),
+                )
+            })
         })
-        .unzip();
+    {
+        let anchor = anchor?;
+        if anchor.is_mark() {
+            mark_glyphs.insert(name.clone());
+            mark_anchors.insert(anchor.group_name());
+        }
+    }
 
     // then iterate again, looking for glyphs that we have identified as marks,
     // but which also have participating base anchors
@@ -130,7 +181,12 @@ fn create_mark_to_mark_groups(
         }
 
         for anchor in &glyph_anchors.anchors {
-            let info = AnchorInfo::new(&anchor.name);
+            let info =
+                AnchorInfo::new(&anchor.name).map_err(|reason| Error::InvalidAnchorName {
+                    glyph: glyph.clone(),
+                    anchor: anchor.name.clone(),
+                    reason,
+                })?;
             // only if this anchor is a base, AND we have a mark in the same group
             if !info.is_mark() && mark_anchors.contains(&info.group_name()) {
                 result
@@ -145,7 +201,12 @@ fn create_mark_to_mark_groups(
     for mark in mark_glyphs {
         let anchors = anchors.get(&mark).unwrap();
         for anchor in &anchors.anchors {
-            let info = AnchorInfo::new(&anchor.name);
+            let info =
+                AnchorInfo::new(&anchor.name).map_err(|reason| Error::InvalidAnchorName {
+                    glyph: mark.clone(),
+                    anchor: anchor.name.clone(),
+                    reason,
+                })?;
             let group = info.group_name();
             if !info.is_mark() {
                 continue;
@@ -155,7 +216,7 @@ fn create_mark_to_mark_groups(
             }
         }
     }
-    result
+    Ok(result)
 }
 
 fn contains_marks(anchors: &GlyphAnchors) -> bool {
@@ -197,7 +258,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
             anchors.insert(glyph_name.clone(), arc_glyph_anchors.clone());
         }
 
-        let groups = create_mark_to_base_groups(&anchors, &glyph_order);
+        let groups = create_mark_to_base_groups(&anchors, &glyph_order)?;
 
         let mut all_marks = FeaRsMarks {
             glyphmap: glyph_order.iter().cloned().collect(),
@@ -227,7 +288,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
             }
         }
 
-        let mkmk_groups = create_mark_to_mark_groups(&anchors, &glyph_order);
+        let mkmk_groups = create_mark_to_mark_groups(&anchors, &glyph_order)?;
         for (group_name, MarkGroup { bases, marks }) in &mkmk_groups {
             if bases.is_empty() || marks.is_empty() {
                 continue;
@@ -302,4 +363,48 @@ fn resolve_anchor(
     }
 
     Ok(anchor)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // from
+    // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/tests/featureWriters/markFeatureWriter_test.py#L34>
+    #[test]
+    fn anchor_names() {
+        assert_eq!(AnchorInfo::new("top"), Ok(AnchorInfo::Base("top".into())));
+        assert_eq!(AnchorInfo::new("top_"), Ok(AnchorInfo::Base("top_".into())));
+        assert_eq!(AnchorInfo::new("top1"), Ok(AnchorInfo::Base("top1".into())));
+        assert_eq!(
+            AnchorInfo::new("_bottom"),
+            Ok(AnchorInfo::Mark("bottom".into()))
+        );
+        assert_eq!(
+            AnchorInfo::new("bottom_2"),
+            Ok(AnchorInfo::Ligature {
+                group_name: "bottom".into(),
+                index: 2
+            })
+        );
+        assert_eq!(
+            AnchorInfo::new("top_right_1"),
+            Ok(AnchorInfo::Ligature {
+                group_name: "top_right".into(),
+                index: 1
+            })
+        );
+    }
+
+    // from
+    // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/tests/featureWriters/markFeatureWriter_test.py#L50-L59>
+    #[test]
+    fn bad_anchor_names() {
+        assert_eq!(
+            AnchorInfo::new("_top_2"),
+            Err(BadAnchorName::NumberedMarkAnchor)
+        );
+        assert_eq!(AnchorInfo::new("_"), Err(BadAnchorName::NilMarkGroup));
+        assert_eq!(AnchorInfo::new("top_0"), Err(BadAnchorName::ZeroIndex));
+    }
 }
