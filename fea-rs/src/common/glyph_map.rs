@@ -1,6 +1,7 @@
 use write_fonts::tables::post::Post;
 
-use super::{GlyphId, GlyphIdent, GlyphName};
+use super::{GlyphId, GlyphIdent};
+use fontdrasil::types::GlyphName;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
@@ -134,7 +135,9 @@ impl FromIterator<GlyphIdent> for GlyphMap {
 }
 
 mod sealed {
-    use super::{super::GlyphIdent, GlyphName};
+    use super::super::GlyphIdent;
+    use fontdrasil::types::GlyphName;
+    use smol_str::SmolStr;
 
     /// Something that is either a Cid or a glyph name.
     ///
@@ -158,9 +161,15 @@ mod sealed {
         }
     }
 
+    impl AsGlyphIdent for SmolStr {
+        fn named(&self) -> Option<&str> {
+            Some(self.as_str())
+        }
+    }
+
     impl AsGlyphIdent for GlyphName {
         fn named(&self) -> Option<&str> {
-            Some(self)
+            Some(self.as_str())
         }
     }
 
@@ -173,7 +182,7 @@ mod sealed {
     impl AsGlyphIdent for GlyphIdent {
         fn named(&self) -> Option<&str> {
             if let GlyphIdent::Name(name) = self {
-                Some(name)
+                Some(name.as_str())
             } else {
                 None
             }
