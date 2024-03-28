@@ -156,6 +156,8 @@ pub enum WorkError {
     },
     #[error("No source with layerName \"{0}\" exists")]
     NoSourceForName(String),
+    #[error("Source file contained a construct we don't yet support: {0}")]
+    UnsupportedConstruct(String),
 }
 
 /// An async work error, hence one that must be Send

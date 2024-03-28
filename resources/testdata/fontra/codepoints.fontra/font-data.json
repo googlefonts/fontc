@@ -1,0 +1,53 @@
+{
+"unitsPerEm": 1000,
+"customData": {
+"fontra.sourceStatusFieldDefinitions": [
+{
+"label": "In progress",
+"color": [
+1.0,
+0.0,
+0.0,
+1.0
+],
+"value": 0,
+"isDefault": true
+}
+]
+},
+"axes": [
+{
+"name": "Weight",
+"label": "wght",
+"tag": "wght",
+"minValue": 200.0,
+"defaultValue": 200.0,
+"maxValue": 900.0,
+"mapping": [
+    [
+    200.0,
+    0.0
+    ],
+    [
+    300.018,
+    0.095
+    ],
+    [
+    900.0,
+    1.0
+    ]
+],
+"hidden": false
+},
+{
+    "name": "Width",
+    "label": "wdth",
+    "tag": "wdth",
+    "minValue": 50.0,
+    "defaultValue": 100.0,
+    "maxValue": 125.0,
+    "hidden": false
+}
+],
+"sources": []
+}
