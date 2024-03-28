@@ -8,7 +8,7 @@ use std::{
 use fea_rs::compile::{MarkToBaseBuilder, MarkToMarkBuilder, PreviouslyAssignedClass};
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
-    types::GlyphName,
+    types::{AnchorName, GlyphName},
 };
 
 use ordered_float::OrderedFloat;
@@ -16,7 +16,7 @@ use smol_str::SmolStr;
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, FeaRsMarks, MarkGroup, MarkGroupName, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, FeaRsMarks, MarkGroup, WorkId},
 };
 use fontir::{
     ir::{GlyphAnchors, GlyphOrder, StaticMetadata},
@@ -30,7 +30,10 @@ pub fn create_mark_work() -> Box<BeWork> {
     Box::new(MarkWork {})
 }
 
-/// The type of an anchor, used when generating mark features
+/// The canonical name shared for a given mark/base pair, e.g. `top` for `top`/`_top`
+type MarkGroupName = SmolStr;
+
+/// The type of a mark anchor, used when generating mark features
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub(crate) enum AnchorInfo {
     Base(MarkGroupName),
@@ -38,12 +41,12 @@ pub(crate) enum AnchorInfo {
 }
 
 impl AnchorInfo {
-    pub(crate) fn new(name: &GlyphName) -> AnchorInfo {
+    pub(crate) fn new(name: &AnchorName) -> AnchorInfo {
         // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
-        if name.as_str().starts_with('_') {
-            AnchorInfo::Mark(MarkGroupName(name.as_str()[1..].into()))
+        if let Some(group) = name.as_str().strip_prefix('_') {
+            AnchorInfo::Mark(group.into())
         } else {
-            AnchorInfo::Base(MarkGroupName(name.as_str().into()))
+            AnchorInfo::Base(name.as_str().into())
         }
     }
 
@@ -210,14 +213,14 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
                     let gid = gid(mark_name)?;
                     let anchor = resolve_anchor(mark_anchor, &static_metadata, mark_name)?;
                     mark_base
-                        .insert_mark(gid, group_name.0.clone(), anchor)
-                        .map_err(|err| map_prev_class_error(err, &group_name.0, mark_name))?;
+                        .insert_mark(gid, group_name.clone(), anchor)
+                        .map_err(|err| map_prev_class_error(err, group_name, mark_name))?;
                 }
 
                 for (base_name, base_anchor) in group.bases.iter() {
                     let gid = gid(base_name)?;
                     let anchor = resolve_anchor(base_anchor, &static_metadata, base_name)?;
-                    mark_base.insert_base(gid, &group_name.0, anchor);
+                    mark_base.insert_base(gid, group_name, anchor);
                 }
 
                 all_marks.mark_base.push(mark_base);
@@ -234,13 +237,13 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
             for (mark_name, mark_anchor) in marks {
                 let anchor = resolve_anchor(mark_anchor, &static_metadata, mark_name)?;
                 mark_mark
-                    .insert_mark1(gid(mark_name)?, group_name.0.clone(), anchor)
-                    .map_err(|err| map_prev_class_error(err, &group_name.0, mark_name))?;
+                    .insert_mark1(gid(mark_name)?, group_name.clone(), anchor)
+                    .map_err(|err| map_prev_class_error(err, group_name, mark_name))?;
             }
 
             for (base_name, base_anchor) in bases {
                 let anchor = resolve_anchor(base_anchor, &static_metadata, base_name)?;
-                mark_mark.insert_mark2(gid(base_name)?, &group_name.0, anchor);
+                mark_mark.insert_mark2(gid(base_name)?, group_name, anchor);
             }
             all_marks.mark_mark.push(mark_mark);
         }

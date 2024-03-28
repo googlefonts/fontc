@@ -34,7 +34,6 @@ use log::trace;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 
-use smol_str::SmolStr;
 use write_fonts::{
     dump_table,
     read::{FontData, FontRead},
@@ -318,9 +317,6 @@ impl TupleBuilder {
         )
     }
 }
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct MarkGroupName(pub(crate) SmolStr);
 
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct MarkGroup {
