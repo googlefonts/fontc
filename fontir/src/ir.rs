@@ -1012,6 +1012,7 @@ impl Anchor {
     }
 }
 
+/// A type for building glyph anchors, reused by different backends
 #[derive(Debug, Clone)]
 pub struct AnchorBuilder {
     glyph_name: GlyphName,
