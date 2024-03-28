@@ -207,7 +207,8 @@ mod tests {
     use super::*;
     use crate::parse::FileId;
     use crate::token_tree::AstSink;
-    use crate::{GlyphMap, GlyphName};
+    use crate::GlyphMap;
+    use fontdrasil::types::GlyphName;
 
     #[test]
     fn name_like() {

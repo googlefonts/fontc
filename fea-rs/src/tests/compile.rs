@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use crate::{
     compile::{error::CompilerError, Compiler, MockVariationInfo, NopFeatureProvider, Opts},
     util::ttx::{self as test_utils, Report, TestCase, TestResult},
-    GlyphMap, GlyphName,
+    GlyphMap,
 };
+use fontdrasil::types::GlyphName;
 
 static ROOT_TEST_DIR: &str = "./test-data/compile-tests";
 static GOOD_DIR: &str = "good";

@@ -197,11 +197,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         let groups = create_mark_to_base_groups(&anchors, &glyph_order);
 
         let mut all_marks = FeaRsMarks {
-            glyphmap: glyph_order
-                .iter()
-                .cloned()
-                .map(GlyphName::into_inner)
-                .collect(),
+            glyphmap: glyph_order.iter().cloned().collect(),
             ..Default::default()
         };
 
