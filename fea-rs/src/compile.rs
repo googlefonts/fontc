@@ -1,8 +1,8 @@
 //! Compiling OpenType Layout tables
 
+use crate::{parse::ParseTree, DiagnosticSet, GlyphMap};
+use fontdrasil::types::GlyphName;
 use write_fonts::types::GlyphId;
-
-use crate::{parse::ParseTree, DiagnosticSet, GlyphMap, GlyphName};
 
 use self::{
     compile_ctx::CompilationCtx,

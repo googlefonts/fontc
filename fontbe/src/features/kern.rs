@@ -369,7 +369,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
         let arc_fragments = context.kern_fragments.all();
         let ast = context.fea_ast.get();
         let glyph_order = context.ir.glyph_order.get();
-        let glyph_map = glyph_order.iter().map(|g| g.clone().into_inner()).collect();
+        let glyph_map = glyph_order.iter().cloned().collect();
         let mut fragments: Vec<_> = arc_fragments
             .iter()
             .map(|(_, fragment)| fragment.as_ref())

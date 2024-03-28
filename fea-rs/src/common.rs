@@ -2,7 +2,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use smol_str::SmolStr;
+use fontdrasil::types::GlyphName;
 pub use write_fonts::types::GlyphId;
 
 mod glyph_class;
@@ -14,9 +14,6 @@ pub use glyph_class::GlyphSet;
 pub use glyph_map::GlyphMap;
 
 use crate::compile::Anchor;
-
-/// A glyph name
-pub type GlyphName = SmolStr;
 
 /// A glyph or glyph class.
 ///

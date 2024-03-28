@@ -453,7 +453,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureParsingWork {
         let features = context.ir.features.get();
         let glyph_order = context.ir.glyph_order.get();
         let static_metadata = context.ir.static_metadata.get();
-        let glyph_map = glyph_order.iter().map(|g| g.clone().into_inner()).collect();
+        let glyph_map = glyph_order.iter().cloned().collect();
 
         let result = self.parse(&features, &glyph_map);
 
