@@ -1,0 +1,19 @@
+{
+"name": ".notdef",
+"sources": [
+{
+"name": "<default>",
+"layerName": "foreground",
+"customData": {
+"fontra.development.status": 0
+}
+}
+],
+"layers": {
+"foreground": {
+"glyph": {
+"xAdvance": 1000
+}
+}
+}
+}

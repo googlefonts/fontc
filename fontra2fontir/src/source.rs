@@ -256,7 +256,7 @@ mod tests {
                 vec![(
                     GlyphName::new(".notdef"),
                     (
-                        "../resources/testdata/fontra/minimal.fontra/glyphs/%2Enotdef.json".into(),
+                        testdata_dir().join("minimal.fontra/glyphs/%2Enotdef.json"),
                         vec![]
                     )
                 )]
@@ -278,15 +278,14 @@ mod tests {
                     (
                         GlyphName::new(".notdef"),
                         (
-                            "../resources/testdata/fontra/2glyphs.fontra/glyphs/%2Enotdef.json"
-                                .into(),
+                            testdata_dir().join("2glyphs.fontra/glyphs/%2Enotdef.json"),
                             vec![]
                         )
                     ),
                     (
                         GlyphName::new("u20089"),
                         (
-                            "../resources/testdata/fontra/2glyphs.fontra/glyphs/u20089.json".into(),
+                            testdata_dir().join("2glyphs.fontra/glyphs/u20089.json"),
                             vec![0x20089]
                         )
                     )
@@ -299,66 +298,20 @@ mod tests {
     }
 
     #[test]
-    fn glyph_info_of_mutator_sans() {
-        let mut source = FontraIrSource::new(testdata_dir().join("MutatorSans.fontra")).unwrap();
+    fn glyph_info_0_1_n_codepoints() {
+        let mut source = FontraIrSource::new(testdata_dir().join("codepoints.fontra")).unwrap();
         // populates glyph_info
         source.inputs().unwrap();
         assert_eq!(
             vec![
+                (".notdef", vec![]),
                 ("A", vec![0x0041, 0x0061]),
                 ("Aacute", vec![0x00C1, 0x00E1]),
-                ("Adieresis", vec![0x00C4, 0x00E4]),
-                ("B", vec![0x0042, 0x0062]),
-                ("C", vec![0x0043, 0x0063]),
-                ("D", vec![0x0044, 0x0064]),
-                ("E", vec![0x0045, 0x0065]),
-                ("F", vec![0x0046, 0x0066]),
-                ("G", vec![0x0047, 0x0067]),
-                ("H", vec![0x0048, 0x0068]),
-                ("I", vec![0x0049, 0x0069]),
-                ("I.narrow", vec![]),
-                ("IJ", vec![]),
-                ("J", vec![0x004A, 0x006A]),
-                ("J.narrow", vec![]),
-                ("K", vec![0x004B, 0x006B]),
-                ("L", vec![0x004C, 0x006C]),
-                ("M", vec![0x004D, 0x006D]),
-                ("N", vec![0x004E, 0x006E]),
-                ("O", vec![0x004F, 0x006F]),
-                ("P", vec![0x0050, 0x0070]),
-                ("Q", vec![0x0051, 0x0071]),
-                ("R", vec![0x0052, 0x0072]),
-                ("R.alt", vec![]),
-                ("S", vec![0x0053, 0x0073]),
-                ("S.closed", vec![]),
-                ("T", vec![0x0054, 0x0074]),
-                ("U", vec![0x0055, 0x0075]),
-                ("V", vec![0x0056, 0x0076]),
-                ("W", vec![0x0057, 0x0077]),
-                ("X", vec![0x0058, 0x0078]),
-                ("Y", vec![0x0059, 0x0079]),
-                ("Z", vec![0x005A, 0x007A]),
-                ("acute", vec![0x00B4]),
-                ("arrowdown", vec![0x2193]),
-                ("arrowleft", vec![0x2190]),
-                ("arrowright", vec![0x2192]),
-                ("arrowup", vec![0x2191]),
-                ("colon", vec![0x003A]),
-                ("comma", vec![0x002C]),
-                ("dieresis", vec![0x00A8]),
-                ("dot", vec![0x27D1]),
-                ("em", vec![]),
-                ("nestedcomponents", vec![]),
-                ("nlitest", vec![]),
-                ("period", vec![0x002E]),
-                ("quotedblbase", vec![0x201E]),
-                ("quotedblleft", vec![0x201C]),
-                ("quotedblright", vec![0x201D]),
-                ("quotesinglbase", vec![0x201A]),
-                ("semicolon", vec![0x003B]),
+                (
+                    "handshake_mediumlight_medium",
+                    vec![0x1FAF1, 0x1F3FC, 0x200D, 0x1FAF2, 0x1F3FD]
+                ),
                 ("space", vec![0x0020]),
-                ("varcotest1", vec![0xE000]),
-                ("varcotest2", vec![0xE001])
             ]
             .into_iter()
             .map(|(name, codepoints)| (GlyphName::new(name), codepoints))

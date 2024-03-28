@@ -1,0 +1,6 @@
+glyph name;code points
+.notdef;
+space;U+0020
+A;U+0041,U+0061
+Aacute;U+00C1,U+00E1
+handshake_mediumlight_medium;U+1FAF1,U+1F3FC,U+200D,U+1FAF2,U+1F3FD
