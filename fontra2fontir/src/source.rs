@@ -25,7 +25,7 @@ pub struct FontraIrSource {
     fontdata_file: PathBuf,
     glyphinfo_file: PathBuf,
     glyph_dir: PathBuf,
-    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Option<u32>)>>,
+    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>>,
 }
 
 impl FontraIrSource {
@@ -79,31 +79,34 @@ impl FontraIrSource {
                 ));
             }
             let glyph_name = GlyphName::new(parts[0].trim());
-            // TODO: support multiple codepoints
-            let codepoint = parts[1].trim();
-            let codepoint = if !codepoint.is_empty() {
-                let Some(codepoint) = codepoint.strip_prefix("U+") else {
-                    return Err(Error::ParseError(
-                        self.glyphinfo_file.clone(),
-                        format!("Unintelligible codepoint at line {i}"),
-                    ));
-                };
-                Some(u32::from_str_radix(codepoint, 16).map_err(|e| {
-                    Error::ParseError(
-                        self.glyphinfo_file.clone(),
-                        format!("Unintelligible codepoint at line {i}: {e}"),
-                    )
-                })?)
-            } else {
-                None
-            };
+            let codepoints = parts[1]
+                .split(',')
+                .filter_map(|codepoint| {
+                    let codepoint = codepoint.trim();
+                    if codepoint.is_empty() {
+                        return None;
+                    }
+                    let Some(codepoint) = codepoint.strip_prefix("U+") else {
+                        return Some(Err(Error::ParseError(
+                            self.glyphinfo_file.clone(),
+                            format!("Unintelligible codepoint {codepoint:?} at line {i}"),
+                        )));
+                    };
+                    Some(u32::from_str_radix(codepoint, 16).map_err(|e| {
+                        Error::ParseError(
+                            self.glyphinfo_file.clone(),
+                            format!("Unintelligible codepoint {codepoint:?} at line {i}: {e}"),
+                        )
+                    }))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             let glyph_file = fontra::glyph_file(&self.glyph_dir, glyph_name.clone());
             if !glyph_file.is_file() {
                 return Err(Error::FileExpected(glyph_file));
             }
 
             if glyph_info
-                .insert(glyph_name.clone(), (glyph_file, codepoint))
+                .insert(glyph_name.clone(), (glyph_file, codepoints))
                 .is_some()
             {
                 return Err(Error::ParseError(
@@ -155,7 +158,7 @@ impl Source for FontraIrSource {
         &self,
         _input: &fontir::source::Input,
     ) -> Result<Box<fontir::orchestration::IrWork>, fontir::error::Error> {
-        let _font_data = FontraFontData::from_file(&self.fontdata_file)?;
+        FontraFontData::from_file(&self.fontdata_file)?;
         Ok(Box::new(StaticMetadataWork {
             fontdata_file: self.fontdata_file.clone(),
             glyph_info: self.glyph_info.clone(),
@@ -203,7 +206,7 @@ impl Source for FontraIrSource {
 #[derive(Debug)]
 struct StaticMetadataWork {
     fontdata_file: PathBuf,
-    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Option<u32>)>>,
+    glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>>,
 }
 
 fn create_static_metadata(fontdata_file: &Path) -> Result<StaticMetadata, WorkError> {
@@ -244,24 +247,80 @@ mod tests {
     use super::*;
 
     #[test]
-    fn glyph_names_of_minimal() {
+    fn glyph_info_of_minimal() {
         let mut source = FontraIrSource::new(testdata_dir().join("minimal.fontra")).unwrap();
-        let inputs = source.inputs().unwrap();
+        // populates glyph_info
+        source.inputs().unwrap();
         assert_eq!(
-            vec![GlyphName::new(".notdef")],
-            inputs.glyphs.keys().cloned().collect::<Vec<_>>()
+            Arc::new(
+                vec![(
+                    GlyphName::new(".notdef"),
+                    (
+                        testdata_dir().join("minimal.fontra/glyphs/%2Enotdef.json"),
+                        vec![]
+                    )
+                )]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>()
+            ),
+            source.glyph_info
         );
     }
 
     #[test]
-    fn glyph_names_of_2glyphs() {
+    fn glyph_info_of_2glyphs() {
         let mut source = FontraIrSource::new(testdata_dir().join("2glyphs.fontra")).unwrap();
-        let inputs = source.inputs().unwrap();
-        let mut glyph_names = inputs.glyphs.keys().cloned().collect::<Vec<_>>();
-        glyph_names.sort();
+        // populates glyph_info
+        source.inputs().unwrap();
         assert_eq!(
-            vec![GlyphName::new(".notdef"), GlyphName::new("u20089")],
-            glyph_names
+            Arc::new(
+                [
+                    (
+                        GlyphName::new(".notdef"),
+                        (
+                            testdata_dir().join("2glyphs.fontra/glyphs/%2Enotdef.json"),
+                            vec![]
+                        )
+                    ),
+                    (
+                        GlyphName::new("u20089"),
+                        (
+                            testdata_dir().join("2glyphs.fontra/glyphs/u20089.json"),
+                            vec![0x20089]
+                        )
+                    )
+                ]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>()
+            ),
+            source.glyph_info
         );
+    }
+
+    #[test]
+    fn glyph_info_0_1_n_codepoints() {
+        let mut source = FontraIrSource::new(testdata_dir().join("codepoints.fontra")).unwrap();
+        // populates glyph_info
+        source.inputs().unwrap();
+        assert_eq!(
+            vec![
+                (".notdef", vec![]),
+                ("A", vec![0x0041, 0x0061]),
+                ("Aacute", vec![0x00C1, 0x00E1]),
+                (
+                    "handshake_mediumlight_medium",
+                    vec![0x1FAF1, 0x1F3FC, 0x200D, 0x1FAF2, 0x1F3FD]
+                ),
+                ("space", vec![0x0020]),
+            ]
+            .into_iter()
+            .map(|(name, codepoints)| (GlyphName::new(name), codepoints))
+            .collect::<Vec<_>>(),
+            source
+                .glyph_info
+                .iter()
+                .map(|(name, (_, codepoints))| (name.clone(), codepoints.clone()))
+                .collect::<Vec<_>>()
+        )
     }
 }

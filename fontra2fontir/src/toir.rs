@@ -22,7 +22,14 @@ pub(crate) fn to_ir_static_metadata(
     let axes = font_data
         .axes
         .iter()
+        .map(|a| match a {
+            crate::fontra::FontraAxis::Discrete(_) => Err(WorkError::UnsupportedConstruct(
+                format!("discrete axis {a:?}"),
+            )),
+            crate::fontra::FontraAxis::Continuous(a) => Ok(a),
+        })
         .map(|a| {
+            let a = a?;
             let min = UserCoord::new(a.min_value as f32);
             let default = UserCoord::new(a.default_value as f32);
             let max = UserCoord::new(a.max_value as f32);

@@ -44,19 +44,84 @@ impl FontraFontData {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct FontraAxis {
+#[serde(untagged)]
+pub(crate) enum FontraAxis {
+    Continuous(FontraContinuousAxis),
+    Discrete(FontraDiscreteAxis),
+}
+
+#[allow(dead_code)] // TEMPORARY
+impl FontraAxis {
+    pub(crate) fn name(&self) -> &AxisName {
+        match self {
+            FontraAxis::Continuous(a) => &a.name,
+            FontraAxis::Discrete(a) => &a.name,
+        }
+    }
+
+    pub(crate) fn tag(&self) -> Tag {
+        match self {
+            FontraAxis::Continuous(a) => a.tag,
+            FontraAxis::Discrete(a) => a.tag,
+        }
+    }
+
+    pub(crate) fn default_value(&self) -> f64 {
+        match self {
+            FontraAxis::Continuous(a) => a.default_value,
+            FontraAxis::Discrete(a) => a.default_value,
+        }
+    }
+
+    pub(crate) fn hidden(&self) -> bool {
+        match self {
+            FontraAxis::Continuous(a) => a.hidden,
+            FontraAxis::Discrete(a) => a.hidden,
+        }
+    }
+
+    /// Pairs of [user, design] defining a pairwise linear map
+    pub(crate) fn mapping(&self) -> &Vec<[f64; 2]> {
+        match self {
+            FontraAxis::Continuous(a) => &a.mapping,
+            FontraAxis::Discrete(a) => &a.mapping,
+        }
+    }
+}
+
+/// Corresponds to a Fontra GlobalAxis
+/// <https://github.com/googlefonts/fontra/blob/1c330c3e4243611191d9999dd6b4af37cca9daff/src/fontra/core/classes.py#L104>
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct FontraContinuousAxis {
     pub(crate) name: AxisName,
     pub(crate) tag: Tag,
     #[serde(default)]
     pub(crate) hidden: bool,
-    #[serde(rename = "minValue")]
-    pub(crate) min_value: f64,
     #[serde(rename = "defaultValue")]
     pub(crate) default_value: f64,
-    #[serde(rename = "maxValue")]
-    pub(crate) max_value: f64,
     #[serde(default)]
     pub(crate) mapping: Vec<[f64; 2]>,
+
+    #[serde(rename = "minValue")]
+    pub(crate) min_value: f64,
+    #[serde(rename = "maxValue")]
+    pub(crate) max_value: f64,
+}
+
+/// Corresponds to a Fontra GlobalDiscreteAxis
+/// <https://github.com/googlefonts/fontra/blob/1c330c3e4243611191d9999dd6b4af37cca9daff/src/fontra/core/classes.py#L118>
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // TEMPORARY
+pub(crate) struct FontraDiscreteAxis {
+    pub(crate) name: AxisName,
+    pub(crate) tag: Tag,
+    #[serde(default)]
+    pub(crate) hidden: bool,
+    #[serde(rename = "defaultValue")]
+    pub(crate) default_value: f64,
+    #[serde(default)]
+    pub(crate) mapping: Vec<[f64; 2]>,
+    values: Vec<f64>,
 }
 
 /// serde type used to load .fontra/glyphs/namelike.json files
@@ -254,6 +319,10 @@ mod tests {
         font_data
             .axes
             .iter()
+            .map(|a| match a {
+                FontraAxis::Continuous(a) => a,
+                FontraAxis::Discrete(a) => panic!("Unexpected discrete axis: {a:#?}"),
+            })
             .map(|a| {
                 (
                     a.name.as_str(),
@@ -310,11 +379,11 @@ mod tests {
         let wght = font_data
             .axes
             .iter()
-            .find(|a| a.tag == Tag::new(b"wght"))
+            .find(|a| a.tag() == Tag::new(b"wght"))
             .unwrap();
         assert_eq!(
             vec![[200.0, 0.0], [300.018, 0.095], [900.0, 1.0]],
-            wght.mapping
+            *wght.mapping()
         );
     }
 
