@@ -177,6 +177,7 @@ impl FontraAxis {
         }
     }
 
+    /// Pairs of [user, design] defining a pairwise linear map
     pub(crate) fn mapping(&self) -> &Vec<[f64; 2]> {
         match self {
             FontraAxis::Continuous(a) => &a.mapping,
