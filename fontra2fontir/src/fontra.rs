@@ -8,110 +8,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use fontdrasil::types::GlyphName;
+use fontdrasil::{paths::string_to_filename, types::GlyphName};
 use fontir::error::Error;
 use serde::Deserialize;
 use write_fonts::types::Tag;
 
 pub(crate) type AxisName = String;
 pub(crate) type LayerName = String;
-
-const SEPARATOR_CHAR: char = '^';
-
-fn is_reserved_char(c: char) -> bool {
-    matches!(
-        c,
-        '\0'..='\x1F'
-            | '\x7F'
-            | SEPARATOR_CHAR
-            | '>'
-            | '|'
-            | '['
-            | '?'
-            | '+'
-            | '\\'
-            | '"'
-            | ':'
-            | '/'
-            | '<'
-            | '%'
-            | ']'
-            | '*'
-    )
-}
-
-fn is_reserved_filename(name: &str) -> bool {
-    matches!(
-        name.to_ascii_uppercase().as_str(),
-        "CON"
-            | "PRN"
-            | "AUX"
-            | "CLOCK$"
-            | "NUL"
-            | "COM1"
-            | "LPT1"
-            | "LPT2"
-            | "LPT3"
-            | "COM2"
-            | "COM3"
-            | "COM4"
-    )
-}
-
-const BASE_32_CHARS: [char; 32] = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
-    'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V',
-];
-
-/// Matches <https://github.com/googlefonts/fontra/blob/15bc0b8401054390484cfb86d509d633d29657a1/src/fontra/backends/filenames.py#L40-L64>
-fn string_to_filename(string: &str, suffix: &str) -> String {
-    let string_bytes = string.as_bytes();
-    let mut code_digits: Vec<_> = string_bytes
-        .chunks(5)
-        .map(|chunk| {
-            let mut digit = 0;
-            let mut bit = 1;
-            for byte in chunk {
-                if byte.is_ascii_uppercase() {
-                    digit |= bit
-                }
-                bit <<= 1;
-            }
-            digit
-        })
-        .collect();
-    while let Some(0) = code_digits.last() {
-        code_digits.pop();
-    }
-
-    let mut filename = String::new();
-    for (i, c) in string.chars().enumerate() {
-        if i == 0 && c == '.' {
-            filename.push_str("%2E");
-        } else if !is_reserved_char(c) {
-            filename.push(c);
-        } else {
-            filename.push_str(format!("%{:02X}", c as u32).as_str());
-        }
-    }
-
-    if code_digits.is_empty() && is_reserved_filename(string) {
-        code_digits.push(0);
-    }
-
-    if !code_digits.is_empty() {
-        filename.push(SEPARATOR_CHAR);
-        for d in code_digits {
-            assert!(d < 32, "We've made a terrible mistake");
-            filename.push(BASE_32_CHARS[d]);
-        }
-    }
-
-    for c in suffix.chars() {
-        filename.push(c);
-    }
-    filename
-}
 
 pub(crate) fn glyph_file(glyph_dir: &Path, glyph: GlyphName) -> PathBuf {
     glyph_dir.join(string_to_filename(glyph.as_str(), ".json"))
