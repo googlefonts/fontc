@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use fontdrasil::{coords::NormalizedLocation, paths::safe_filename};
+use fontdrasil::{coords::NormalizedLocation, paths::string_to_filename};
 
 use crate::orchestration::WorkId;
 
@@ -45,11 +45,11 @@ impl Paths {
     }
 
     fn anchor_ir_file(&self, name: &str) -> PathBuf {
-        self.anchor_ir_dir.join(safe_filename(name, ".yml"))
+        self.anchor_ir_dir.join(string_to_filename(name, ".yml"))
     }
 
     fn glyph_ir_file(&self, name: &str) -> PathBuf {
-        self.glyph_ir_dir.join(safe_filename(name, ".yml"))
+        self.glyph_ir_dir.join(string_to_filename(name, ".yml"))
     }
 
     fn kern_ir_file(&self, location: &NormalizedLocation) -> PathBuf {

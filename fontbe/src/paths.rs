@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use fontdrasil::paths::safe_filename;
+use fontdrasil::paths::string_to_filename;
 
 use crate::orchestration::WorkId;
 
@@ -50,16 +50,18 @@ impl Paths {
     }
 
     fn glyph_glyf_file(&self, name: &str) -> PathBuf {
-        self.glyph_dir.join(safe_filename(name, ".glyf"))
+        self.glyph_dir.join(string_to_filename(name, ".glyf"))
     }
 
     fn glyph_gvar_file(&self, name: &str) -> PathBuf {
-        self.glyph_dir.join(safe_filename(name, ".gvar"))
+        self.glyph_dir.join(string_to_filename(name, ".gvar"))
     }
 
     fn kern_fragment_file(&self, segment: usize) -> PathBuf {
-        self.build_dir
-            .join(safe_filename(&format!("kern_fragment_{segment}"), ".bin"))
+        self.build_dir.join(string_to_filename(
+            &format!("kern_fragment_{segment}"),
+            ".bin",
+        ))
     }
 
     pub fn target_file(&self, id: &WorkId) -> PathBuf {
