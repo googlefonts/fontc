@@ -1524,10 +1524,10 @@ mod tests {
     use fontdrasil::{
         coords::{DesignCoord, DesignLocation, NormalizedCoord, NormalizedLocation, UserCoord},
         orchestration::{Access, AccessBuilder},
-        types::{AnchorName, GlyphName},
+        types::GlyphName,
     };
     use fontir::{
-        ir::{GlobalMetricsInstance, GlyphOrder, NameKey, PostscriptNames},
+        ir::{AnchorKind, GlobalMetricsInstance, GlyphOrder, NameKey, PostscriptNames},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::{Input, Source},
@@ -2034,17 +2034,17 @@ mod tests {
         let mark = context.anchors.get(&WorkId::Anchor(mark_name));
 
         assert_eq!(
-            vec![AnchorName::from("top")],
+            vec![AnchorKind::Base("top".into())],
             base.anchors
                 .iter()
-                .map(|a| a.name.clone())
+                .map(|a| a.kind.clone())
                 .collect::<Vec<_>>()
         );
         assert_eq!(
-            vec![AnchorName::from("_top")],
+            vec![AnchorKind::Mark("top".into())],
             mark.anchors
                 .iter()
-                .map(|a| a.name.clone())
+                .map(|a| a.kind.clone())
                 .collect::<Vec<_>>()
         );
     }

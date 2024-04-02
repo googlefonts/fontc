@@ -952,11 +952,11 @@ mod tests {
             UserLocation,
         },
         orchestration::{Access, AccessBuilder},
-        types::{AnchorName, GlyphName},
+        types::GlyphName,
     };
     use fontir::{
         error::WorkError,
-        ir::{GlobalMetricsInstance, GlyphOrder, NameKey},
+        ir::{AnchorKind, GlobalMetricsInstance, GlyphOrder, NameKey},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::Source,
@@ -1585,17 +1585,17 @@ mod tests {
         let mark = context.anchors.get(&WorkId::Anchor(mark_name));
 
         assert_eq!(
-            vec![AnchorName::from("top")],
+            vec![AnchorKind::Base("top".into())],
             base.anchors
                 .iter()
-                .map(|a| a.name.clone())
+                .map(|a| a.kind.clone())
                 .collect::<Vec<_>>()
         );
         assert_eq!(
-            vec![AnchorName::from("_top")],
+            vec![AnchorKind::Mark("top".into())],
             mark.anchors
                 .iter()
-                .map(|a| a.name.clone())
+                .map(|a| a.kind.clone())
                 .collect::<Vec<_>>()
         );
     }

@@ -8,7 +8,7 @@ use std::{
 use fea_rs::compile::{MarkToBaseBuilder, MarkToMarkBuilder, PreviouslyAssignedClass};
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
-    types::{AnchorName, GlyphName},
+    types::GlyphName,
 };
 
 use ordered_float::OrderedFloat;
@@ -19,7 +19,7 @@ use crate::{
     orchestration::{AnyWorkId, BeWork, Context, FeaRsMarks, MarkGroup, WorkId},
 };
 use fontir::{
-    ir::{GlyphAnchors, GlyphOrder, StaticMetadata},
+    ir::{AnchorKind, GlyphAnchors, GlyphOrder, StaticMetadata},
     orchestration::WorkId as FeWorkId,
 };
 
@@ -32,34 +32,6 @@ pub fn create_mark_work() -> Box<BeWork> {
 
 /// The canonical name shared for a given mark/base pair, e.g. `top` for `top`/`_top`
 type MarkGroupName = SmolStr;
-
-/// The type of a mark anchor, used when generating mark features
-#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
-pub(crate) enum AnchorInfo {
-    Base(MarkGroupName),
-    Mark(MarkGroupName),
-}
-
-impl AnchorInfo {
-    pub(crate) fn new(name: &AnchorName) -> AnchorInfo {
-        // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
-        if let Some(group) = name.as_str().strip_prefix('_') {
-            AnchorInfo::Mark(group.into())
-        } else {
-            AnchorInfo::Base(name.as_str().into())
-        }
-    }
-
-    pub(crate) fn group_name(&self) -> MarkGroupName {
-        match self {
-            AnchorInfo::Base(group_name) | AnchorInfo::Mark(group_name) => group_name.clone(),
-        }
-    }
-
-    pub(crate) fn is_mark(&self) -> bool {
-        matches!(self, AnchorInfo::Mark(_))
-    }
-}
 
 fn create_mark_to_base_groups(
     anchors: &BTreeMap<GlyphName, Arc<GlyphAnchors>>,
@@ -75,29 +47,19 @@ fn create_mark_to_base_groups(
         if !glyph_order.contains(glyph_name) {
             continue;
         }
-        let mut base = true; // TODO: only a base if user rules allow it
         for anchor in glyph_anchors.anchors.iter() {
-            let anchor_info = AnchorInfo::new(&anchor.name);
-            if anchor_info.is_mark() {
-                base = false;
-
-                // TODO: only if user rules allow us to be a mark
-                groups
-                    .entry(anchor_info.group_name())
-                    .or_default()
-                    .marks
-                    .push((glyph_name.clone(), anchor.clone()));
-            }
-        }
-
-        if base {
-            for anchor in glyph_anchors.anchors.iter() {
-                let anchor_info = AnchorInfo::new(&anchor.name);
-                groups
-                    .entry(anchor_info.group_name())
+            match &anchor.kind {
+                fontir::ir::AnchorKind::Base(group) => groups
+                    .entry(group.clone())
                     .or_default()
                     .bases
-                    .push((glyph_name.clone(), anchor.clone()));
+                    .push((glyph_name.clone(), anchor.clone())),
+                fontir::ir::AnchorKind::Mark(group) => groups
+                    .entry(group.clone())
+                    .or_default()
+                    .marks
+                    .push((glyph_name.clone(), anchor.clone())),
+                _ => continue,
             }
         }
     }
@@ -111,13 +73,15 @@ fn create_mark_to_mark_groups(
     // first find the set of glyphs that are marks, i.e. have any mark attachment point.
     let (mark_glyphs, mark_anchors): (BTreeSet<_>, BTreeSet<_>) = anchors
         .iter()
-        .filter(|(name, anchors)| glyph_order.contains(name) && contains_marks(anchors))
+        .filter(|(name, anchors)| glyph_order.contains(name) && anchors.contains_marks())
         .flat_map(|(name, anchors)| {
-            anchors
-                .anchors
-                .iter()
-                .map(|a| AnchorInfo::new(&a.name))
-                .filter_map(|info| info.is_mark().then(|| (name.clone(), info.group_name())))
+            anchors.anchors.iter().filter_map(|anchor| {
+                if let AnchorKind::Mark(group) = &anchor.kind {
+                    Some((name.clone(), group.clone()))
+                } else {
+                    None
+                }
+            })
         })
         .unzip();
 
@@ -130,39 +94,33 @@ fn create_mark_to_mark_groups(
         }
 
         for anchor in &glyph_anchors.anchors {
-            let info = AnchorInfo::new(&anchor.name);
-            // only if this anchor is a base, AND we have a mark in the same group
-            if !info.is_mark() && mark_anchors.contains(&info.group_name()) {
-                result
-                    .entry(info.group_name())
-                    .or_default()
-                    .bases
-                    .push((glyph_anchors.glyph_name.clone(), anchor.clone()));
+            if let AnchorKind::Base(group) = &anchor.kind {
+                // only if this anchor is a base, AND we have a mark in the same group
+                if mark_anchors.contains(group) {
+                    assert_eq!(glyph, &glyph_anchors.glyph_name);
+                    result
+                        .entry(group.clone())
+                        .or_default()
+                        .bases
+                        .push((glyph.clone(), anchor.clone()))
+                }
             }
         }
     }
 
+    // then add the anchors for the mark glyphs, if they exist
     for mark in mark_glyphs {
         let anchors = anchors.get(&mark).unwrap();
         for anchor in &anchors.anchors {
-            let info = AnchorInfo::new(&anchor.name);
-            let group = info.group_name();
-            if !info.is_mark() {
-                continue;
-            }
-            if let Some(group) = result.get_mut(&group) {
-                group.marks.push((mark.clone(), anchor.clone()));
+            if let AnchorKind::Mark(group) = &anchor.kind {
+                // only add mark glyph if there is at least one base
+                if let Some(group) = result.get_mut(group) {
+                    group.marks.push((mark.clone(), anchor.clone()))
+                }
             }
         }
     }
     result
-}
-
-fn contains_marks(anchors: &GlyphAnchors) -> bool {
-    anchors
-        .anchors
-        .iter()
-        .any(|a| a.name.as_str().starts_with('_'))
 }
 
 impl Work<Context, AnyWorkId, Error> for MarkWork {
