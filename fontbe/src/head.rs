@@ -7,7 +7,11 @@ use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use log::warn;
 use write_fonts::{
-    tables::{head::Head, loca::LocaFormat},
+    tables::{
+        head::{Head, MacStyle},
+        loca::LocaFormat,
+        os2::SelectionFlags,
+    },
     types::{Fixed, LongDateTime},
 };
 
@@ -84,6 +88,17 @@ fn apply_font_revision(head: &mut Head, major: i32, minor: u32) {
     head.font_revision = Fixed::from_f64(major + minor);
 }
 
+fn apply_macstyle(head: &mut Head, selection_flags: SelectionFlags) {
+    head.mac_style = MacStyle::empty();
+    if selection_flags.contains(SelectionFlags::BOLD) {
+        head.mac_style |= MacStyle::BOLD;
+    }
+
+    if selection_flags.contains(SelectionFlags::ITALIC) {
+        head.mac_style |= MacStyle::ITALIC;
+    }
+}
+
 fn apply_created_modified(head: &mut Head, created: Option<DateTime<Utc>>) {
     let now = current_timestamp();
     head.created = LongDateTime::new(created.map(seconds_since_mac_epoch).unwrap_or(now));
@@ -119,6 +134,7 @@ impl Work<Context, AnyWorkId, Error> for HeadWork {
             static_metadata.misc.version_minor,
         );
         apply_created_modified(&mut head, static_metadata.misc.created);
+        apply_macstyle(&mut head, static_metadata.misc.selection_flags);
         context.head.set_unconditionally(head.into());
 
         // Defer x/y Min/Max to metrics and limits job
@@ -132,9 +148,9 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use more_asserts::assert_ge;
     use temp_env;
-    use write_fonts::tables::loca::LocaFormat;
+    use write_fonts::tables::{head::MacStyle, loca::LocaFormat, os2::SelectionFlags};
 
-    use crate::head::apply_created_modified;
+    use crate::head::{apply_created_modified, apply_macstyle};
 
     use super::{init_head, seconds_since_mac_epoch};
 
@@ -182,5 +198,18 @@ mod tests {
                 assert_ge!(head.modified.as_secs(), now);
             },
         );
+    }
+
+    #[test]
+    fn apply_head_macstyle() {
+        let mut head = init_head(1000, LocaFormat::Long, 3, 42);
+        apply_macstyle(&mut head, SelectionFlags::ITALIC);
+        assert_eq!(head.mac_style, MacStyle::ITALIC);
+
+        apply_macstyle(&mut head, SelectionFlags::BOLD);
+        assert_eq!(head.mac_style, MacStyle::BOLD);
+
+        apply_macstyle(&mut head, SelectionFlags::BOLD | SelectionFlags::ITALIC);
+        assert_eq!(head.mac_style, MacStyle::BOLD | MacStyle::ITALIC);
     }
 }
