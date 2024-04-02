@@ -1,10 +1,11 @@
-use std::{error, io, path::PathBuf};
+use std::{error, fmt::Display, io, path::PathBuf};
 
 use fontdrasil::{
     coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
-    types::{AnchorName, GlyphName},
+    types::GlyphName,
 };
 use kurbo::Point;
+use smol_str::SmolStr;
 use thiserror::Error;
 use write_fonts::types::{InvalidTag, Tag};
 
@@ -143,19 +144,28 @@ pub enum WorkError {
     AxisMustMapMax(Tag),
     #[error("No kerning group or glyph for name {0:?}")]
     InvalidKernSide(String),
-    #[error("Multiple definitions for glyph {glyph} anchor {anchor} at {loc:?}")]
-    AmbiguousAnchor {
+    #[error("Bad anchor '{anchor}' for glyph '{glyph}': '{reason}'")]
+    BadAnchor {
         glyph: GlyphName,
-        anchor: AnchorName,
-        loc: NormalizedLocation,
-    },
-    #[error("No value at default for glyph {glyph} anchor {anchor}")]
-    NoDefaultForAnchor {
-        glyph: GlyphName,
-        anchor: AnchorName,
+        anchor: SmolStr,
+        reason: BadAnchorReason,
     },
     #[error("No source with layerName \"{0}\" exists")]
     NoSourceForName(String),
+}
+
+/// Reasons an anchor can be malformed
+#[derive(Clone, Debug, PartialEq)]
+pub enum BadAnchorReason {
+    /// Multiple definitions at a given location
+    Ambiguous(NormalizedLocation),
+    NoDefault,
+    // top_0 looks like a ligature base, but 0 is an invalid index
+    ZeroIndex,
+    // _top_1 looks like a numbered mark, which is not allowed
+    NumberedMarkAnchor,
+    // _ is not a valid group name
+    NilMarkGroup,
 }
 
 /// An async work error, hence one that must be Send
@@ -180,4 +190,16 @@ pub enum VariationModelError {
     },
     #[error("{0} is is an axis of variation defined only at a single point")]
     PointAxis(Tag),
+}
+
+impl Display for BadAnchorReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BadAnchorReason::NoDefault => write!(f, "no value at default location"),
+            BadAnchorReason::Ambiguous(loc) => write!(f, "multiple definitions at {loc:?}"),
+            BadAnchorReason::ZeroIndex => write!(f, "ligature indexes must begin with '1'"),
+            BadAnchorReason::NumberedMarkAnchor => write!(f, "mark anchors cannot be numbered"),
+            BadAnchorReason::NilMarkGroup => write!(f, "mark anchor key is nil"),
+        }
+    }
 }

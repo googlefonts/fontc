@@ -73,9 +73,6 @@ impl std::borrow::Borrow<str> for GlyphName {
     }
 }
 
-/// The name of a glyph anchor, direct from the font source
-pub type AnchorName = SmolStr;
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Axis {
     pub name: String,

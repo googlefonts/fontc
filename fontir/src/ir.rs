@@ -21,11 +21,11 @@ use write_fonts::{
 
 use fontdrasil::{
     coords::{NormalizedCoord, NormalizedLocation, UserLocation},
-    types::{AnchorName, Axis, GlyphName},
+    types::{Axis, GlyphName},
 };
 
 use crate::{
-    error::{PathConversionError, VariationModelError, WorkError},
+    error::{BadAnchorReason, PathConversionError, VariationModelError, WorkError},
     orchestration::{IdAware, Persistable, WorkId},
     variations::VariationModel,
 };
@@ -991,6 +991,74 @@ impl GlyphAnchors {
             anchors,
         })
     }
+
+    /// `true` if any of our anchors are mark anchors
+    pub fn contains_marks(&self) -> bool {
+        self.anchors
+            .iter()
+            .any(|a| matches!(a.kind, AnchorKind::Mark(_)))
+    }
+}
+
+/// The name shared by a group of anchors
+///
+/// This is used to determine the relationship between anchors: mark anchors
+/// in the group 'top' attach to the 'top' anchor of base glyphs.
+pub type GroupName = SmolStr;
+
+/// The type of an anchor.
+///
+/// Anchors serve multiple purposes in font sources. By convention, these different
+/// types of anchors are differentiated via naming convention. In IR, we parse
+/// these names to determine the intended type.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum AnchorKind {
+    /// An attachment anchor on a base glyph
+    Base(GroupName),
+    /// An attachment anchor on a mark glyph
+    Mark(GroupName),
+    /// A base attachment on a ligature glyph
+    Ligature { group_name: GroupName, index: usize },
+    /// The enter anchor on a cursive glyph
+    //TODO: flesh these out when we use them. At least in glyphs there can
+    //be multiple (numbered) enter/exit anchors
+    Enter,
+    /// The exit anchor on a cursive gylph
+    Exit,
+    //TODO others? caret? vcaret?
+}
+
+impl AnchorKind {
+    // this logic from
+    // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L101>
+    pub(crate) fn new(name: impl AsRef<str>) -> Result<AnchorKind, BadAnchorReason> {
+        let name = name.as_ref();
+        // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
+        if let Some(mark) = name.strip_prefix('_') {
+            if mark.is_empty() {
+                return Err(BadAnchorReason::NilMarkGroup);
+            }
+            if let Some((_, suffix)) = mark.rsplit_once('_') {
+                if suffix.parse::<usize>().is_ok() {
+                    return Err(BadAnchorReason::NumberedMarkAnchor);
+                }
+            }
+            return Ok(AnchorKind::Mark(mark.into()));
+        } else if let Some((name, suffix)) = name.rsplit_once('_') {
+            // _1 suffix means a base in a ligature glyph
+            if let Ok(index) = suffix.parse::<usize>() {
+                if index == 0 {
+                    return Err(BadAnchorReason::ZeroIndex);
+                } else {
+                    return Ok(AnchorKind::Ligature {
+                        group_name: name.into(),
+                        index,
+                    });
+                }
+            }
+        }
+        Ok(AnchorKind::Base(name.into()))
+    }
 }
 
 /// A variable definition of an anchor.
@@ -998,7 +1066,7 @@ impl GlyphAnchors {
 /// Must have at least one definition, at the default location.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Anchor {
-    pub name: AnchorName,
+    pub kind: AnchorKind,
     pub positions: HashMap<NormalizedLocation, Point>,
 }
 
@@ -1016,7 +1084,7 @@ impl Anchor {
 #[derive(Debug, Clone)]
 pub struct AnchorBuilder {
     glyph_name: GlyphName,
-    anchors: HashMap<AnchorName, HashMap<NormalizedLocation, Point>>,
+    anchors: HashMap<SmolStr, HashMap<NormalizedLocation, Point>>,
 }
 
 impl AnchorBuilder {
@@ -1029,21 +1097,21 @@ impl AnchorBuilder {
 
     pub fn add(
         &mut self,
-        name: AnchorName,
+        anchor_name: SmolStr,
         loc: NormalizedLocation,
         pos: Point,
     ) -> Result<(), WorkError> {
         if self
             .anchors
-            .entry(name.clone())
+            .entry(anchor_name.clone())
             .or_default()
             .insert(loc.clone(), pos)
             .is_some()
         {
-            return Err(WorkError::AmbiguousAnchor {
+            return Err(WorkError::BadAnchor {
                 glyph: self.glyph_name.clone(),
-                anchor: name,
-                loc,
+                anchor: anchor_name,
+                reason: BadAnchorReason::Ambiguous(loc),
             });
         }
         Ok(())
@@ -1051,21 +1119,33 @@ impl AnchorBuilder {
 
     pub fn build(self) -> Result<GlyphAnchors, WorkError> {
         // It would be nice if everyone was defined at default
-        for (anchor, positions) in self.anchors.iter() {
+        for (anchor, positions) in &self.anchors {
             if !positions.keys().any(|loc| !loc.has_any_non_zero()) {
-                return Err(WorkError::NoDefaultForAnchor {
+                return Err(WorkError::BadAnchor {
                     glyph: self.glyph_name.clone(),
                     anchor: anchor.clone(),
+                    reason: BadAnchorReason::NoDefault,
                 });
             }
         }
-        GlyphAnchors::new(
-            self.glyph_name,
-            self.anchors
-                .into_iter()
-                .map(|(name, positions)| Anchor { name, positions })
-                .collect(),
-        )
+
+        let anchors = self
+            .anchors
+            .into_iter()
+            .map(|(name, positions)| {
+                AnchorKind::new(&name)
+                    .map(|type_| Anchor {
+                        kind: type_,
+                        positions,
+                    })
+                    .map_err(|reason| WorkError::BadAnchor {
+                        glyph: self.glyph_name.clone(),
+                        anchor: name,
+                        reason,
+                    })
+            })
+            .collect::<Result<_, _>>()?;
+        GlyphAnchors::new(self.glyph_name, anchors)
     }
 }
 
@@ -2058,5 +2138,44 @@ mod tests {
         let path = builder.build().unwrap();
 
         assert_eq!("M10,0 L0,10 Q5,10 7.5,7.5 Q10,5 10,0 Z", path.to_svg());
+    }
+
+    // from
+    // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/tests/featureWriters/markFeatureWriter_test.py#L34>
+    #[test]
+    fn anchor_names() {
+        assert_eq!(AnchorKind::new("top"), Ok(AnchorKind::Base("top".into())));
+        assert_eq!(AnchorKind::new("top_"), Ok(AnchorKind::Base("top_".into())));
+        assert_eq!(AnchorKind::new("top1"), Ok(AnchorKind::Base("top1".into())));
+        assert_eq!(
+            AnchorKind::new("_bottom"),
+            Ok(AnchorKind::Mark("bottom".into()))
+        );
+        assert_eq!(
+            AnchorKind::new("bottom_2"),
+            Ok(AnchorKind::Ligature {
+                group_name: "bottom".into(),
+                index: 2
+            })
+        );
+        assert_eq!(
+            AnchorKind::new("top_right_1"),
+            Ok(AnchorKind::Ligature {
+                group_name: "top_right".into(),
+                index: 1
+            })
+        );
+    }
+
+    // from
+    // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/tests/featureWriters/markFeatureWriter_test.py#L50-L59>
+    #[test]
+    fn bad_anchor_names() {
+        assert_eq!(
+            AnchorKind::new("_top_2"),
+            Err(BadAnchorReason::NumberedMarkAnchor)
+        );
+        assert_eq!(AnchorKind::new("_"), Err(BadAnchorReason::NilMarkGroup));
+        assert_eq!(AnchorKind::new("top_0"), Err(BadAnchorReason::ZeroIndex));
     }
 }
