@@ -79,6 +79,7 @@ pub enum Error {
     #[error("No glyph class '{0}'")]
     MissingGlyphClass(GlyphName),
     #[error("Mark glyph '{glyph}' in conflicting classes '{old_class}' and '{new_class}'")]
+    //FIXME: this can be deleted eventually, we will manually ensure classes are disjoint
     PreviouslyAssignedMarkClass {
         old_class: SmolStr,
         new_class: SmolStr,
