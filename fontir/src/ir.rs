@@ -1078,6 +1078,16 @@ impl Anchor {
             .map(|(_, p)| *p)
             .unwrap()
     }
+
+    /// If this is a mark, base, or ligature anchor, return the group name
+    pub fn mark_group_name(&self) -> Option<&SmolStr> {
+        match &self.kind {
+            AnchorKind::Base(group_name)
+            | AnchorKind::Mark(group_name)
+            | AnchorKind::Ligature { group_name, .. } => Some(group_name),
+            _ => None,
+        }
+    }
 }
 
 /// A type for building glyph anchors, reused by different backends

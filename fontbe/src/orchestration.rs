@@ -22,7 +22,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir::{self, Anchor, GlyphOrder, KernGroup},
+    ir::{self, GlyphOrder, KernGroup},
     orchestration::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
         PersistentStorage, WorkId as FeWorkIdentifier,
@@ -316,12 +316,6 @@ impl TupleBuilder {
             Tuple::new(self.max),
         )
     }
-}
-
-#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct MarkGroup {
-    pub(crate) bases: Vec<(GlyphName, Anchor)>,
-    pub(crate) marks: Vec<(GlyphName, Anchor)>,
 }
 
 /// Marks, ready to feed to fea-rs in the form it expects
