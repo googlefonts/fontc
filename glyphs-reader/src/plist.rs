@@ -5,6 +5,7 @@ use kurbo::{Affine, Point};
 use ordered_float::OrderedFloat;
 
 use plist_derive::FromPlist;
+use smol_str::SmolStr;
 
 /// A plist dictionary
 pub type Dictionary = BTreeMap<String, Plist>;
@@ -747,6 +748,16 @@ impl FromPlist for String {
         match tokenizer.lex()? {
             Token::Atom(val) => Ok(val.to_string()),
             Token::String(val) => Ok(val.to_string()),
+            _ => Err(Error::ExpectedString),
+        }
+    }
+}
+
+impl FromPlist for SmolStr {
+    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, Error> {
+        match tokenizer.lex()? {
+            Token::Atom(val) => Ok(val.into()),
+            Token::String(val) => Ok(val.into()),
             _ => Err(Error::ExpectedString),
         }
     }

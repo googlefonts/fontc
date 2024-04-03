@@ -17,6 +17,7 @@ use log::{debug, warn};
 use ordered_float::OrderedFloat;
 use plist_derive::FromPlist;
 use regex::Regex;
+use smol_str::SmolStr;
 
 use crate::error::Error;
 use crate::plist::{Plist, Token, Tokenizer, VecDelimiters};
@@ -48,9 +49,9 @@ pub struct Font {
     pub axes: Vec<Axis>,
     pub masters: Vec<FontMaster>,
     pub default_master_idx: usize,
-    pub glyphs: BTreeMap<String, Glyph>,
-    pub glyph_order: Vec<String>,
-    pub glyph_to_codepoints: BTreeMap<String, BTreeSet<u32>>,
+    pub glyphs: BTreeMap<SmolStr, Glyph>,
+    pub glyph_order: Vec<SmolStr>,
+    pub glyph_to_codepoints: BTreeMap<SmolStr, BTreeSet<u32>>,
     // tag => (user:design) tuples
     pub axis_mappings: RawUserToDesignMapping,
     pub virtual_masters: Vec<BTreeMap<String, OrderedFloat<f64>>>,
@@ -170,13 +171,13 @@ impl FeatureSnippet {
 
 #[derive(Debug, PartialEq, Hash)]
 pub struct Glyph {
-    pub glyphname: String,
+    pub glyphname: SmolStr,
     pub export: bool,
     pub layers: Vec<Layer>,
     /// The left kerning group
-    pub left_kern: Option<String>,
+    pub left_kern: Option<SmolStr>,
     /// The right kerning group
-    pub right_kern: Option<String>,
+    pub right_kern: Option<SmolStr>,
 }
 
 #[derive(Debug, PartialEq, Hash)]
@@ -334,7 +335,7 @@ impl CustomParameters {
         Some(locations)
     }
 
-    fn glyph_order(&self) -> Option<&Vec<String>> {
+    fn glyph_order(&self) -> Option<&Vec<SmolStr>> {
         let Some(CustomParameterValue::GlyphOrder(names)) = self.get("glyphOrder") else {
             return None;
         };
@@ -369,7 +370,7 @@ enum CustomParameterValue {
     Axes(Vec<Axis>),
     AxesMappings(Vec<AxisMapping>),
     AxisLocations(Vec<AxisLocation>),
-    GlyphOrder(Vec<String>),
+    GlyphOrder(Vec<SmolStr>),
     VirtualMaster(Vec<AxisLocation>),
     FsType(Vec<i64>),
 }
@@ -566,12 +567,12 @@ pub struct Axis {
 #[derive(Default, Clone, Debug, PartialEq, FromPlist)]
 pub struct RawGlyph {
     pub layers: Vec<RawLayer>,
-    pub glyphname: String,
+    pub glyphname: SmolStr,
     pub export: Option<bool>,
     #[fromplist(alt_name = "leftKerningGroup")]
-    pub kern_left: Option<String>,
+    pub kern_left: Option<SmolStr>,
     #[fromplist(alt_name = "rightKerningGroup")]
-    pub kern_right: Option<String>,
+    pub kern_right: Option<SmolStr>,
     pub unicode: Option<String>,
     #[fromplist(ignore)]
     pub other_stuff: BTreeMap<String, Plist>,
@@ -638,7 +639,7 @@ pub struct RawShape {
     // My Component'ness can be detected by presence of a ref (Glyphs3) or name(Glyphs2) attribute
     // ref is reserved so take advantage of alt names
     #[fromplist(alt_name = "ref", alt_name = "name")]
-    pub glyph_name: Option<String>,
+    pub glyph_name: Option<SmolStr>,
 
     pub transform: Option<String>, // v2
     pub pos: Vec<f64>,             // v3
@@ -655,7 +656,7 @@ pub struct Path {
 #[derive(Default, Clone, Debug, FromPlist)]
 pub struct Component {
     /// The glyph this component references
-    pub name: String,
+    pub name: SmolStr,
     /// meh
     pub transform: Affine,
 }
@@ -711,14 +712,14 @@ pub enum NodeType {
 
 #[derive(Default, Clone, Debug, PartialEq, FromPlist)]
 pub struct RawAnchor {
-    pub name: String,
+    pub name: SmolStr,
     pub pos: Option<Point>,       // v3
     pub position: Option<String>, // v2
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Anchor {
-    pub name: String,
+    pub name: SmolStr,
     pub pos: Point,
 }
 
@@ -1315,9 +1316,9 @@ impl RawFont {
     }
 }
 
-fn parse_glyph_order(raw_font: &RawFont) -> Vec<String> {
+fn parse_glyph_order(raw_font: &RawFont) -> Vec<SmolStr> {
     let mut valid_names: HashSet<_> = raw_font.glyphs.iter().map(|g| &g.glyphname).collect();
-    let mut glyph_order: Vec<String> = Vec::new();
+    let mut glyph_order = Vec::new();
 
     // Add all valid glyphOrder entries in order
     // See https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044627972
@@ -1340,8 +1341,8 @@ fn parse_glyph_order(raw_font: &RawFont) -> Vec<String> {
 }
 
 /// Returns a map from glyph name to codepoint(s).
-fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<String, BTreeSet<u32>> {
-    let mut name_to_cp: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<SmolStr, BTreeSet<u32>> {
+    let mut name_to_cp: BTreeMap<SmolStr, BTreeSet<u32>> = BTreeMap::new();
     raw_font
         .glyphs
         .iter()
@@ -2015,7 +2016,7 @@ impl Font {
         let mut raw_font = RawFont::parse_plist(&fontinfo_data)
             .map_err(|e| Error::ParseError(fontinfo_file.to_path_buf(), format!("{e}")))?;
 
-        let mut glyphs: HashMap<String, RawGlyph> = HashMap::new();
+        let mut glyphs: HashMap<SmolStr, RawGlyph> = HashMap::new();
         let glyphs_dir = glyphs_package.join("glyphs");
         if glyphs_dir.is_dir() {
             for entry in fs::read_dir(glyphs_dir).map_err(Error::IoError)? {
@@ -2051,13 +2052,13 @@ impl Font {
                 let glyph_name = glyph_name
                     .expect_string()
                     .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
-                if glyphs.contains_key(&glyph_name) {
-                    ordered_glyphs.push(glyphs.remove(&glyph_name).unwrap());
+                if let Some(glyph) = glyphs.remove(glyph_name.as_str()) {
+                    ordered_glyphs.push(glyph);
                 }
             }
         }
         // sort the glyphs not in order.plist by their name
-        let mut glyph_names: Vec<String> = glyphs.keys().cloned().collect();
+        let mut glyph_names: Vec<_> = glyphs.keys().cloned().collect();
         glyph_names.sort();
         ordered_glyphs.extend(
             glyph_names
