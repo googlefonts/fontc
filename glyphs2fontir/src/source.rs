@@ -690,13 +690,9 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
                 glyph
                     .right_kern
                     .iter()
-                    .map(|group| KernGroup::Side1(group.into()))
-                    .chain(
-                        glyph
-                            .left_kern
-                            .iter()
-                            .map(|group| KernGroup::Side2(group.into())),
-                    )
+                    .cloned()
+                    .map(KernGroup::Side1)
+                    .chain(glyph.left_kern.iter().cloned().map(KernGroup::Side2))
                     .map(|group| (group, GlyphName::from(glyph_name.as_str())))
             })
             .for_each(|(group_name, glyph_name)| {
