@@ -12,7 +12,7 @@ use std::str::FromStr;
 use std::{fs, path};
 
 use crate::plist::FromPlist;
-use kurbo::{Affine, Point};
+use kurbo::{Affine, Point, Vec2};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
 use plist_derive::FromPlist;
@@ -721,6 +721,28 @@ pub struct RawAnchor {
 pub struct Anchor {
     pub name: SmolStr,
     pub pos: Point,
+}
+
+impl Anchor {
+    // an anchor with this name on a mark glyph is used to adjust positions of other anchors
+    const SPECIAL_ORIGIN_NAME: &'static str = "*origin";
+
+    /// If this anchor is the special '*origin' anchor, return its value as a `Vec2`
+    pub fn special_origin_adjustment(&self) -> Option<Vec2> {
+        if self.name == Self::SPECIAL_ORIGIN_NAME {
+            Some(self.pos.to_vec2())
+        } else {
+            None
+        }
+    }
+
+    /// Returns `true` if this anchor has special semantic meaning
+    ///
+    /// Anchors with not be included in IR.
+    pub fn is_special(&self) -> bool {
+        //TODO: figure out what other names we should be ignoring/handling?
+        self.name == Self::SPECIAL_ORIGIN_NAME
+    }
 }
 
 impl Hash for Anchor {

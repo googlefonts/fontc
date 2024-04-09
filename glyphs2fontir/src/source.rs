@@ -844,8 +844,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             });
         }
 
-        // https://github.com/googlefonts/fontmake-rs/issues/285 glyphs non-spacing marks are 0-width
-        let zero_width = is_nonspacing_mark(&ir_glyph.codepoints, ir_glyph.name.as_str());
+        let is_nonspacing_mark = is_nonspacing_mark(&ir_glyph.codepoints, ir_glyph.name.as_str());
 
         let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
 
@@ -893,7 +892,8 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
             let (contours, components) =
                 to_ir_contours_and_components(self.glyph_name.clone(), &instance.shapes)?;
             let glyph_instance = GlyphInstance {
-                width: if !zero_width {
+                // https://github.com/googlefonts/fontmake-rs/issues/285 glyphs non-spacing marks are 0-width
+                width: if !is_nonspacing_mark {
                     instance.width.into_inner()
                 } else {
                     0.0
@@ -912,8 +912,17 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
                     ))
                 })?;
 
-            for anchor in instance.anchors.iter() {
-                ir_anchors.add(anchor.name.as_str().into(), location.clone(), anchor.pos)?;
+            // if glyph is a non-spacing mark, a special 'origin' anchor may exist,
+            // and we use this to adjust other anchor positions
+            let origin_adjustment = instance
+                .anchors
+                .iter()
+                .find_map(|a| a.special_origin_adjustment())
+                .filter(|_| is_nonspacing_mark)
+                .unwrap_or_default();
+            for anchor in instance.anchors.iter().filter(|a| !a.is_special()) {
+                let pos = anchor.pos - origin_adjustment;
+                ir_anchors.add(anchor.name.clone(), location.clone(), pos)?;
             }
         }
 
