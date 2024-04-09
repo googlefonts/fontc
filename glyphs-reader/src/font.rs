@@ -249,31 +249,31 @@ pub enum Shape {
 #[allow(non_snake_case)]
 struct RawFont {
     #[fromplist(key = ".appVersion")]
-    pub app_version: i64,
+    app_version: i64,
     #[fromplist(key = ".formatVersion")]
-    pub format_version: i64,
-    pub units_per_em: Option<i64>,
-    pub metrics: Vec<RawMetric>,
-    pub family_name: String,
-    pub date: Option<String>,
-    pub copyright: Option<String>,
-    pub designer: Option<String>,
-    pub designerURL: Option<String>,
-    pub manufacturer: Option<String>,
-    pub manufacturerURL: Option<String>,
-    pub versionMajor: Option<i64>,
-    pub versionMinor: Option<i64>,
-    pub axes: Vec<Axis>,
-    pub glyphs: Vec<RawGlyph>,
-    pub font_master: Vec<RawFontMaster>,
-    pub instances: Vec<RawInstance>,
-    pub feature_prefixes: Vec<RawFeature>,
-    pub features: Vec<RawFeature>,
-    pub classes: Vec<RawFeature>,
-    pub properties: Vec<RawName>,
+    format_version: i64,
+    units_per_em: Option<i64>,
+    metrics: Vec<RawMetric>,
+    family_name: String,
+    date: Option<String>,
+    copyright: Option<String>,
+    designer: Option<String>,
+    designerURL: Option<String>,
+    manufacturer: Option<String>,
+    manufacturerURL: Option<String>,
+    versionMajor: Option<i64>,
+    versionMinor: Option<i64>,
+    axes: Vec<Axis>,
+    glyphs: Vec<RawGlyph>,
+    font_master: Vec<RawFontMaster>,
+    instances: Vec<RawInstance>,
+    feature_prefixes: Vec<RawFeature>,
+    features: Vec<RawFeature>,
+    classes: Vec<RawFeature>,
+    properties: Vec<RawName>,
     #[fromplist(alt_name = "kerning")]
-    pub kerning_LTR: Kerning,
-    pub custom_parameters: CustomParameters,
+    kerning_LTR: Kerning,
+    custom_parameters: CustomParameters,
 }
 
 // we use a vec of tuples instead of a map because there can be multiple
@@ -525,34 +525,34 @@ impl FromPlist for AxisMapping {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
-pub struct RawMetric {
+struct RawMetric {
     // So named to let FromPlist populate it from a field called "type"
     type_: Option<String>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
-pub struct RawName {
-    pub key: String,
-    pub value: Option<String>,
-    pub values: Vec<RawNameValue>,
+struct RawName {
+    key: String,
+    value: Option<String>,
+    values: Vec<RawNameValue>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
-pub struct RawNameValue {
-    pub language: String,
-    pub value: String,
+struct RawNameValue {
+    language: String,
+    value: String,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
-pub struct RawFeature {
-    pub automatic: Option<i64>,
-    pub disabled: Option<i64>,
-    pub name: Option<String>,
-    pub tag: Option<String>,
-    pub code: String,
+struct RawFeature {
+    automatic: Option<i64>,
+    disabled: Option<i64>,
+    name: Option<String>,
+    tag: Option<String>,
+    code: String,
 
     #[fromplist(ignore)]
-    pub other_stuff: BTreeMap<String, Plist>,
+    other_stuff: BTreeMap<String, Plist>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
@@ -565,33 +565,33 @@ pub struct Axis {
 }
 
 #[derive(Default, Clone, Debug, PartialEq, FromPlist)]
-pub struct RawGlyph {
-    pub layers: Vec<RawLayer>,
-    pub glyphname: SmolStr,
-    pub export: Option<bool>,
+struct RawGlyph {
+    layers: Vec<RawLayer>,
+    glyphname: SmolStr,
+    export: Option<bool>,
     #[fromplist(alt_name = "leftKerningGroup")]
-    pub kern_left: Option<SmolStr>,
+    kern_left: Option<SmolStr>,
     #[fromplist(alt_name = "rightKerningGroup")]
-    pub kern_right: Option<SmolStr>,
-    pub unicode: Option<String>,
+    kern_right: Option<SmolStr>,
+    unicode: Option<String>,
     #[fromplist(ignore)]
-    pub other_stuff: BTreeMap<String, Plist>,
+    other_stuff: BTreeMap<String, Plist>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, FromPlist)]
-pub struct RawLayer {
-    pub name: String,
-    pub layer_id: String,
-    pub associated_master_id: Option<String>,
-    pub width: OrderedFloat<f64>,
+struct RawLayer {
+    name: String,
+    layer_id: String,
+    associated_master_id: Option<String>,
+    width: OrderedFloat<f64>,
     shapes: Vec<RawShape>,
     paths: Vec<Path>,
     components: Vec<Component>,
-    pub anchors: Vec<RawAnchor>,
+    anchors: Vec<RawAnchor>,
     #[fromplist(alt_name = "attr")]
-    pub attributes: LayerAttributes,
+    attributes: LayerAttributes,
     #[fromplist(ignore)]
-    pub other_stuff: BTreeMap<String, Plist>,
+    other_stuff: BTreeMap<String, Plist>,
 }
 
 impl RawLayer {
@@ -628,23 +628,23 @@ impl RawLayer {
 ///
 /// <https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>
 #[derive(Default, Clone, Debug, PartialEq, FromPlist)]
-pub struct RawShape {
+struct RawShape {
     // TODO: add numerous unsupported attributes
 
     // When I'm a path
-    pub closed: Option<bool>,
-    pub nodes: Vec<Node>,
+    closed: Option<bool>,
+    nodes: Vec<Node>,
 
     // When I'm a component I specifically want all my attributes to end up in other_stuff
     // My Component'ness can be detected by presence of a ref (Glyphs3) or name(Glyphs2) attribute
     // ref is reserved so take advantage of alt names
     #[fromplist(alt_name = "ref", alt_name = "name")]
-    pub glyph_name: Option<SmolStr>,
+    glyph_name: Option<SmolStr>,
 
-    pub transform: Option<String>, // v2
-    pub pos: Vec<f64>,             // v3
-    pub angle: Option<f64>,        // v3
-    pub scale: Vec<f64>,           // v3
+    transform: Option<String>, // v2
+    pos: Vec<f64>,             // v3
+    angle: Option<f64>,        // v3
+    scale: Vec<f64>,           // v3
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, FromPlist)]
@@ -711,10 +711,10 @@ pub enum NodeType {
 }
 
 #[derive(Default, Clone, Debug, PartialEq, FromPlist)]
-pub struct RawAnchor {
-    pub name: SmolStr,
-    pub pos: Option<Point>,       // v3
-    pub position: Option<String>, // v2
+struct RawAnchor {
+    name: SmolStr,
+    pos: Option<Point>,       // v3
+    position: Option<String>, // v2
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -788,43 +788,43 @@ impl FontMaster {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
-pub(crate) struct RawFontMaster {
-    pub id: String,
-    pub name: Option<String>,
+struct RawFontMaster {
+    id: String,
+    name: Option<String>,
 
-    pub weight: Option<String>,
+    weight: Option<String>,
 
-    pub weight_value: Option<OrderedFloat<f64>>,
-    pub interpolation_weight: Option<OrderedFloat<f64>>,
+    weight_value: Option<OrderedFloat<f64>>,
+    interpolation_weight: Option<OrderedFloat<f64>>,
 
-    pub width_value: Option<OrderedFloat<f64>>,
-    pub interpolation_width: Option<OrderedFloat<f64>>,
+    width_value: Option<OrderedFloat<f64>>,
+    interpolation_width: Option<OrderedFloat<f64>>,
 
-    pub custom_value: Option<OrderedFloat<f64>>,
+    custom_value: Option<OrderedFloat<f64>>,
 
-    pub typo_ascender: Option<i64>,
-    pub typo_descender: Option<OrderedFloat<f64>>,
-    pub typo_line_gap: Option<OrderedFloat<f64>>,
-    pub win_ascender: Option<OrderedFloat<f64>>,
-    pub win_descender: Option<OrderedFloat<f64>>,
+    typo_ascender: Option<i64>,
+    typo_descender: Option<OrderedFloat<f64>>,
+    typo_line_gap: Option<OrderedFloat<f64>>,
+    win_ascender: Option<OrderedFloat<f64>>,
+    win_descender: Option<OrderedFloat<f64>>,
 
-    pub axes_values: Vec<OrderedFloat<f64>>,
-    pub metric_values: Vec<RawMetricValue>, // v3
+    axes_values: Vec<OrderedFloat<f64>>,
+    metric_values: Vec<RawMetricValue>, // v3
 
-    pub ascender: Option<OrderedFloat<f64>>,   // v2
-    pub baseline: Option<OrderedFloat<f64>>,   // v2
-    pub descender: Option<OrderedFloat<f64>>,  // v2
-    pub cap_height: Option<OrderedFloat<f64>>, // v2
-    pub x_height: Option<OrderedFloat<f64>>,   // v2
+    ascender: Option<OrderedFloat<f64>>,   // v2
+    baseline: Option<OrderedFloat<f64>>,   // v2
+    descender: Option<OrderedFloat<f64>>,  // v2
+    cap_height: Option<OrderedFloat<f64>>, // v2
+    x_height: Option<OrderedFloat<f64>>,   // v2
     #[fromplist(alt_name = "italic angle")]
-    pub italic_angle: Option<OrderedFloat<f64>>, // v2
+    italic_angle: Option<OrderedFloat<f64>>, // v2
 
-    pub alignment_zones: Vec<String>, // v2
+    alignment_zones: Vec<String>, // v2
 
-    pub custom_parameters: CustomParameters,
+    custom_parameters: CustomParameters,
 
     #[fromplist(ignore)]
-    pub other_stuff: BTreeMap<String, Plist>,
+    other_stuff: BTreeMap<String, Plist>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
@@ -836,12 +836,6 @@ pub struct RawMetricValue {
 impl RawMetricValue {
     fn is_empty(&self) -> bool {
         self.pos.is_none() && self.over.is_none()
-    }
-}
-
-impl RawGlyph {
-    pub fn get_layer(&self, layer_id: &str) -> Option<&RawLayer> {
-        self.layers.iter().find(|l| l.layer_id == layer_id)
     }
 }
 
@@ -873,23 +867,23 @@ impl From<&str> for InstanceType {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
-pub(crate) struct RawInstance {
-    pub name: String,
-    pub exports: Option<i64>,
-    pub active: Option<i64>,
-    pub type_: Option<String>,
-    pub axes_values: Vec<OrderedFloat<f64>>,
+struct RawInstance {
+    name: String,
+    exports: Option<i64>,
+    active: Option<i64>,
+    type_: Option<String>,
+    axes_values: Vec<OrderedFloat<f64>>,
 
-    pub weight_value: Option<OrderedFloat<f64>>,
-    pub interpolation_weight: Option<OrderedFloat<f64>>,
+    weight_value: Option<OrderedFloat<f64>>,
+    interpolation_weight: Option<OrderedFloat<f64>>,
 
-    pub width_value: Option<OrderedFloat<f64>>,
-    pub interpolation_width: Option<OrderedFloat<f64>>,
+    width_value: Option<OrderedFloat<f64>>,
+    interpolation_width: Option<OrderedFloat<f64>>,
 
-    pub custom_value: Option<OrderedFloat<f64>>,
+    custom_value: Option<OrderedFloat<f64>>,
 
-    pub weight_class: Option<String>,
-    pub width_class: Option<String>,
+    weight_class: Option<String>,
+    width_class: Option<String>,
 }
 
 impl RawInstance {
