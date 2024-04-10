@@ -14,6 +14,8 @@ import os
 import shutil
 import subprocess
 
+TARGET_DIR = "glyphs2fontir/glyphdata"
+
 
 def glyph_data():
     files = resources.files(glyphsLib)
@@ -23,10 +25,6 @@ def glyph_data():
     ):
         return GlyphData.from_files(f1, f2)
 
-
-def get_script_dir():
-    script_path = os.path.realpath(__file__)
-    return os.path.dirname(script_path)
 
 def reformat_subcategory(raw):
     if raw == "Decimal Digit":
@@ -41,7 +39,7 @@ BAD_ALT_NAMES = {"perpendicular", "compass", }
 def filter_alt_name(name) -> bool:
      return not (name in BAD_ALT_NAMES)
 
-def codegen_lookup_items2(file):
+def codegen_lookup_items(file):
     for name, attrib in glyph_data().names.items():
         names = [name]
         if "altNames" in attrib:
@@ -57,18 +55,17 @@ def run_rust_codegen_tool(in_path, out_path):
         subprocess.run(["cargo", "run", "--example", "run_phf_codegen", in_path], stdout=f)
 
 def main(_):
-    script_dir = get_script_dir()
     # this script writes preformatted text to this path
-    codegen_input_path = os.path.join(script_dir, "extracted_glyph_data.txt")
+    codegen_input_path = os.path.join(TARGET_DIR, "extracted_glyph_data.txt")
     # we run a little rust program that generates code at this temp path
-    temp_out_path = os.path.join(script_dir, "temp_glyph_data.rs")
+    temp_out_path = os.path.join(TARGET_DIR, "temp_glyph_data.rs")
     # which goes to this final path, which is `include!`ed in fontdrasil
-    final_path = os.path.join(script_dir, "generated_glyph_data.rs")
+    final_path = os.path.join(TARGET_DIR, "generated_glyph_data.rs")
     # we can't write directly to the final path because we truncate to write
     # and then the text is erased which means fontdrasil can't compile
 
     with open(codegen_input_path, "w") as f:
-        codegen_lookup_items2(f)
+        codegen_lookup_items(f)
 
     run_rust_codegen_tool(codegen_input_path, temp_out_path)
     shutil.copy(temp_out_path, final_path)

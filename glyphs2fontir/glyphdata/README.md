@@ -1,7 +1,7 @@
 # glyph data codegen
 
 This directory contains a generated file, `generated_glyph_data.rs`, as well as
-the tool that generates it: a python script `rebuild.py` and a small rust
+the tool that generates it: a python script `rebuild_glyph_data.py` and a small rust
 program, `run_hf_codegen.rs`.
 
 ## data
@@ -16,7 +16,7 @@ not part of unicode, such as various alternatives, ligatures, fractions, etc.
 
 ## How it works
 
-tl;dr: `$(venv) python glyphdata/rebuild.py`.
+tl;dr: `$(venv) python resources/scripts/rebuild.py`.
 
 This script extracts the data from the `glyphsLib` python library and then
 invokes `run_hf_codegen.rs`, which uses the [phf_codegen][] crate to generate a

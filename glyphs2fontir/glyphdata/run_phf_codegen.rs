@@ -1,7 +1,7 @@
 //! part of our codegen process
 //!
-//! The input is a file generated from python using glyphsLib (in rebuild.py)
-//! output is printed to stdout
+//! The input is a file generated from python using glyphsLib (from
+//! resources/scripts/rebuild_glyph_data.py) output is printed to stdout
 //!
 //! see glyphdata/README.md
 

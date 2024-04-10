@@ -15,17 +15,9 @@ ordered-float.workspace = true
 smol_str.workspace = true
 serde.workspace = true
 write-fonts.workspace = true
-phf = { version = "0.11" }
 
 [dev-dependencies]
 diff.workspace = true
 ansi_term.workspace = true
 tempfile.workspace = true
-phf_codegen = "0.11.1"
-
-# this is an 'example' so that we can use dev-dependencies; it is run while
-# rebuilding our glyph data. See glyphdata/README.md
-[[example]]
-name = "run_phf_codegen"
-path = "glyphdata/run_phf_codegen.rs"
 

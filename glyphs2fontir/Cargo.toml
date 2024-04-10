@@ -14,6 +14,7 @@ categories = ["text-processing", "parsing", "graphics"]
 fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 fontir = { version = "0.0.1", path = "../fontir" }
 glyphs-reader = { version = "0.0.1", path = "../glyphs-reader" }
+phf = "0.11"
 
 log.workspace = true
 env_logger.workspace = true
@@ -33,3 +34,11 @@ diff.workspace = true
 ansi_term.workspace = true
 tempfile.workspace = true
 pretty_assertions.workspace = true
+phf_codegen = "0.11.1"
+
+# this is an 'example' so that we can use dev-dependencies; it is run while
+# rebuilding our glyph data. See glyphdata/README.md
+[[example]]
+name = "run_phf_codegen"
+path = "glyphdata/run_phf_codegen.rs"
+
