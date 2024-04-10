@@ -41,6 +41,10 @@ def filter_alt_name(name) -> bool:
 
 def codegen_lookup_items(file):
     for name, attrib in glyph_data().names.items():
+        unicode = attrib.get("unicode")
+        if unicode:
+            unicode = f"0x{unicode}"
+
         names = [name]
         if "altNames" in attrib:
             names.extend( n for n in attrib["altNames"].replace(" ", "").split(",") if filter_alt_name(n) )
@@ -48,11 +52,15 @@ def codegen_lookup_items(file):
         category = attrib.get("category")
         subcategory = reformat_subcategory(attrib.get("subCategory"))
         for name in names:
-            file.write(f"{name}, GlyphInfo::new(Category::{category}, Subcategory::{subcategory})\n")
+            if unicode:
+                file.write(f"{name}, {unicode}, GlyphInfo::new(Category::{category}, Subcategory::{subcategory})\n")
+                unicode = None
+            else:
+                file.write(f"{name}, GlyphInfo::new(Category::{category}, Subcategory::{subcategory})\n")
 
 def run_rust_codegen_tool(in_path, out_path):
     with open(out_path, "w") as f:
-        subprocess.run(["cargo", "run", "--example", "run_phf_codegen", in_path], stdout=f)
+        subprocess.run(["cargo", "run", "--example", "run_phf_codegen", in_path], stdout=f, check=True)
 
 def main(_):
     # this script writes preformatted text to this path

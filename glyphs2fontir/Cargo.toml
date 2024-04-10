@@ -35,6 +35,8 @@ ansi_term.workspace = true
 tempfile.workspace = true
 pretty_assertions.workspace = true
 phf_codegen = "0.11.1"
+# necessary to expose a trait we need in the codegen tool
+phf_shared = "0.11"
 
 # this is an 'example' so that we can use dev-dependencies; it is run while
 # rebuilding our glyph data. See glyphdata/README.md
