@@ -9,6 +9,20 @@ use quick_xml::{
 };
 use smol_str::SmolStr;
 
+/// Information about a glyph
+///
+/// In general this is derived from bundled data files, but these fields can
+/// also be overridden by the font author
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct GlyphInfo {
+    pub name: SmolStr,
+    pub category: Category,
+    pub subcategory: Subcategory,
+    pub unicode: Option<u32>,
+    pub production: Option<SmolStr>,
+    pub alt_names: Vec<SmolStr>,
+}
+
 /// The primary category for a given glyph
 ///
 /// These categories are not the same as the unicode character categories.
@@ -64,14 +78,16 @@ pub enum Subcategory {
     None,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct GlyphInfo {
-    pub name: SmolStr,
-    pub category: Category,
-    pub subcategory: Subcategory,
-    pub unicode: Option<u32>,
-    pub production: Option<SmolStr>,
-    pub alt_names: Vec<SmolStr>,
+impl GlyphInfo {
+    pub fn is_nonspacing_mark(&self) -> bool {
+        matches!(
+            (self.category, self.subcategory),
+            (
+                Category::Mark,
+                Subcategory::Nonspacing | Subcategory::SpacingCombining
+            )
+        )
+    }
 }
 
 /// Parse glyph info entries out of a GlyphData xml file.

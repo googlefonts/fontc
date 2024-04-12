@@ -76,7 +76,7 @@ impl GlyphData {
     /// Look up info for a glyph by name
     ///
     /// This checks primary names first, and alternates afterwards.
-    pub fn for_glyph_name(&self, name: impl AsRef<str>) -> Option<&GlyphInfo> {
+    pub fn get_by_name(&self, name: impl AsRef<str>) -> Option<&GlyphInfo> {
         let name = name.as_ref();
         self.name_map
             .get(name)
@@ -85,7 +85,7 @@ impl GlyphData {
     }
 
     /// Look up info for a glyph by codepoint
-    pub fn for_codepoint(&self, codepoint: u32) -> Option<&GlyphInfo> {
+    pub fn get_by_codepoint(&self, codepoint: u32) -> Option<&GlyphInfo> {
         self.unicode_map
             .get(&codepoint)
             .and_then(|idx| self.data.get(*idx as usize))
@@ -130,19 +130,16 @@ mod tests {
         let merged = merge_data(bundled, overrides);
         let data = GlyphData::new_impl(merged);
 
-        assert_eq!(data.for_glyph_name("A").unwrap().category, Category::Mark);
+        assert_eq!(data.get_by_name("A").unwrap().category, Category::Mark);
     }
 
     #[test]
     fn overrides_from_file() {
         let data = GlyphData::new(Some(Path::new("./data/GlyphData_override_test.xml"))).unwrap();
+        assert_eq!(data.get_by_name("zero").unwrap().category, Category::Other);
+        assert_eq!(data.get_by_name("C").unwrap().category, Category::Number);
         assert_eq!(
-            data.for_glyph_name("zero").unwrap().category,
-            Category::Other
-        );
-        assert_eq!(data.for_glyph_name("C").unwrap().category, Category::Number);
-        assert_eq!(
-            data.for_glyph_name("Yogh").unwrap().production,
+            data.get_by_name("Yogh").unwrap().production,
             Some("Yolo".into())
         );
     }
