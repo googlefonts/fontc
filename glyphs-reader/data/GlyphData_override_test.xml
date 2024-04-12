@@ -1,0 +1,26 @@
+<!--Used to test that user-provided data overrides the bundled data-->
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE glyphData [
+<!ELEMENT glyphData (glyph)+>
+<!ATTLIST glyphData
+	format			CDATA		#IMPLIED>
+<!ELEMENT glyph EMPTY>
+<!ATTLIST glyph
+	unicode			CDATA		#IMPLIED
+	unicodeLegacy	CDATA		#IMPLIED
+	name			CDATA		#REQUIRED
+	category		CDATA		#REQUIRED
+	subCategory		CDATA		#IMPLIED
+	case			CDATA		#IMPLIED
+	direction		CDATA		#IMPLIED
+	script			CDATA		#IMPLIED
+	description		CDATA		#IMPLIED
+	production		CDATA		#IMPLIED
+	altNames		CDATA		#IMPLIED>
+]>
+<glyphData>
+	<glyph unicode="0030" name="zero" category="Other" subCategory="Ligature" description="DIGIT ZERO" />
+	<glyph unicode="0043" name="C" category="Number" case="upper" script="latin" description="LATIN CAPITAL LETTER C" />
+	<glyph unicode="021C" name="Yogh" category="Letter" case="upper" script="latin" production="Yolo" description="LATIN CAPITAL LETTER YOGH" />
+</glyphData>
+

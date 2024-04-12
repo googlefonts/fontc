@@ -1,7 +1,7 @@
 // NOTE: to avoid a bunch of duplication, this file is also `include!`ed from
 // build.rs.
 
-use std::{fmt::Display, num::ParseIntError, str::FromStr};
+use std::{fmt::Display, num::ParseIntError, path::PathBuf, str::FromStr};
 
 use quick_xml::{
     events::{BytesStart, Event},
@@ -66,12 +66,12 @@ pub enum Subcategory {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct GlyphInfo {
-    name: SmolStr,
-    category: Category,
-    subcategory: Subcategory,
-    unicode: Option<u32>,
-    production: Option<SmolStr>,
-    alt_names: Vec<SmolStr>,
+    pub name: SmolStr,
+    pub category: Category,
+    pub subcategory: Subcategory,
+    pub unicode: Option<u32>,
+    pub production: Option<SmolStr>,
+    pub alt_names: Vec<SmolStr>,
 }
 
 /// Parse glyph info entries out of a GlyphData xml file.
@@ -290,6 +290,11 @@ impl Display for Subcategory {
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum GlyphDataError {
+    #[error("Couldn't read user file at '{path}': '{reason}'")]
+    UserFile {
+        path: PathBuf,
+        reason: std::io::ErrorKind,
+    },
     #[error("Error parsing XML: '{0}'")]
     ReaderError(#[from] quick_xml::Error),
     #[error("Error parsing XML attribute: '{0}'")]
