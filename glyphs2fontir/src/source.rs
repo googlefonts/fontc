@@ -93,7 +93,6 @@ impl GlyphsIrSource {
             default_master_idx: font.default_master_idx,
             glyphs: Default::default(),
             glyph_order: Default::default(),
-            glyph_to_codepoints: Default::default(),
             axis_mappings: font.axis_mappings.clone(),
             virtual_masters: Default::default(),
             features: Default::default(),
@@ -123,7 +122,6 @@ impl GlyphsIrSource {
             default_master_idx: font.default_master_idx,
             glyphs: Default::default(),
             glyph_order: Default::default(),
-            glyph_to_codepoints: Default::default(),
             axis_mappings: Default::default(),
             virtual_masters: Default::default(),
             features: Default::default(),
@@ -837,14 +835,10 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         let mut ir_glyph = ir::GlyphBuilder::new(self.glyph_name.clone());
         ir_glyph.emit_to_binary = glyph.export;
 
-        if let Some(codepoints) = font.glyph_to_codepoints.get(self.glyph_name.as_str()) {
-            codepoints.iter().for_each(|cp| {
-                ir_glyph.codepoints.insert(*cp);
-            });
-        }
+        ir_glyph.codepoints.extend(glyph.unicode.iter().copied());
 
         // https://github.com/googlefonts/fontmake-rs/issues/285 glyphs non-spacing marks are 0-width
-        let zero_width = is_nonspacing_mark(&ir_glyph.codepoints, &ir_glyph.name);
+        let zero_width = is_nonspacing_mark(glyph);
 
         let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
 
@@ -937,11 +931,16 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
 // This will eventually need to be replaced with something that can handle
 // custom GlyphData.xml files, as well as handle overrides that are part of the
 // glyph source.
-fn is_nonspacing_mark(codepoints: &HashSet<u32>, name: &GlyphName) -> bool {
+fn is_nonspacing_mark(glyph: &glyphs_reader::Glyph) -> bool {
     static GLYPH_DATA: OnceLock<GlyphData> = OnceLock::new();
     let data = GLYPH_DATA.get_or_init(|| GlyphData::new(None).unwrap());
-    data.get_by_name(name)
-        .or_else(|| codepoints.iter().find_map(|cp| data.get_by_codepoint(*cp)))
+    data.get_by_name(&glyph.glyphname)
+        .or_else(|| {
+            glyph
+                .unicode
+                .iter()
+                .find_map(|cp| data.get_by_codepoint(*cp))
+        })
         .map(|info| (info.is_nonspacing_mark()))
         .unwrap_or(false)
 }

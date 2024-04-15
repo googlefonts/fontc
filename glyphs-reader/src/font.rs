@@ -51,7 +51,6 @@ pub struct Font {
     pub default_master_idx: usize,
     pub glyphs: BTreeMap<SmolStr, Glyph>,
     pub glyph_order: Vec<SmolStr>,
-    pub glyph_to_codepoints: BTreeMap<SmolStr, BTreeSet<u32>>,
     // tag => (user:design) tuples
     pub axis_mappings: RawUserToDesignMapping,
     pub virtual_masters: Vec<BTreeMap<String, OrderedFloat<f64>>>,
@@ -174,6 +173,7 @@ pub struct Glyph {
     pub glyphname: SmolStr,
     pub export: bool,
     pub layers: Vec<Layer>,
+    pub unicode: BTreeSet<u32>,
     /// The left kerning group
     pub left_kern: Option<SmolStr>,
     /// The right kerning group
@@ -1334,21 +1334,11 @@ fn parse_glyph_order(raw_font: &RawFont) -> Vec<SmolStr> {
     glyph_order
 }
 
-/// Returns a map from glyph name to codepoint(s).
-fn parse_codepoints(raw_font: &mut RawFont, radix: u32) -> BTreeMap<SmolStr, BTreeSet<u32>> {
-    let mut name_to_cp: BTreeMap<SmolStr, BTreeSet<u32>> = BTreeMap::new();
-    raw_font
-        .glyphs
-        .iter()
-        .filter_map(|g| g.unicode.as_ref().map(|u| (&g.glyphname, u)))
-        .flat_map(|(g, u)| {
-            u.split(',')
-                .map(|cp| (g.clone(), i64::from_str_radix(cp, radix).unwrap() as u32))
-        })
-        .for_each(|(glyph_name, codepoint)| {
-            name_to_cp.entry(glyph_name).or_default().insert(codepoint);
-        });
-    name_to_cp
+// glyphs2 uses hex, glyphs3 uses base10
+fn parse_codepoint_str(s: &str, radix: u32) -> BTreeSet<u32> {
+    s.split(',')
+        .map(|cp| u32::from_str_radix(cp, radix).unwrap())
+        .collect()
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L578>
@@ -1630,23 +1620,26 @@ impl TryFrom<RawLayer> for Layer {
     }
 }
 
-impl TryFrom<RawGlyph> for Glyph {
-    type Error = Error;
-
-    fn try_from(from: RawGlyph) -> Result<Self, Self::Error> {
+impl RawGlyph {
+    // we pass in the radix because it depends on the version, stored in the font struct
+    fn build(self, codepoint_radix: u32) -> Result<Glyph, Error> {
         let mut instances = Vec::new();
-        for layer in from.layers {
+        for layer in self.layers {
             if layer.is_draft() {
                 continue;
             }
             instances.push(layer.try_into()?);
         }
         Ok(Glyph {
-            glyphname: from.glyphname,
-            export: from.export.unwrap_or(true),
+            glyphname: self.glyphname,
+            export: self.export.unwrap_or(true),
             layers: instances,
-            left_kern: from.kern_left,
-            right_kern: from.kern_right,
+            left_kern: self.kern_left,
+            right_kern: self.kern_right,
+            unicode: self
+                .unicode
+                .map(|s| parse_codepoint_str(&s, codepoint_radix))
+                .unwrap_or_default(),
         })
     }
 }
@@ -1833,7 +1826,6 @@ impl TryFrom<RawFont> for Font {
 
         let radix = if from.is_v2() { 16 } else { 10 };
         let glyph_order = parse_glyph_order(&from);
-        let glyph_to_codepoints = parse_codepoints(&mut from, radix);
 
         let use_typo_metrics = from.custom_parameters.bool("Use Typo Metrics");
         let has_wws_names = from.custom_parameters.bool("Has WWS Names");
@@ -1850,7 +1842,7 @@ impl TryFrom<RawFont> for Font {
 
         let mut glyphs = BTreeMap::new();
         for raw_glyph in from.glyphs.into_iter() {
-            glyphs.insert(raw_glyph.glyphname.clone(), raw_glyph.try_into()?);
+            glyphs.insert(raw_glyph.glyphname.clone(), raw_glyph.build(radix)?);
         }
 
         let mut features = Vec::new();
@@ -1962,7 +1954,7 @@ impl TryFrom<RawFont> for Font {
             default_master_idx,
             glyphs,
             glyph_order,
-            glyph_to_codepoints,
+            //glyph_to_codepoints,
             axis_mappings,
             virtual_masters,
             features,
@@ -2351,8 +2343,8 @@ mod tests {
     fn understand_v2_style_unquoted_hex_unicode() {
         let font = Font::load(&glyphs2_dir().join("Unicode-UnquotedHex.glyphs")).unwrap();
         assert_eq!(
-            &BTreeSet::from([0x1234]),
-            font.glyph_to_codepoints.get("name").unwrap(),
+            BTreeSet::from([0x1234]),
+            font.glyphs.get("name").unwrap().unicode,
         );
         assert_eq!(1, font.glyphs.len());
     }
@@ -2361,8 +2353,8 @@ mod tests {
     fn understand_v2_style_quoted_hex_unicode_sequence() {
         let font = Font::load(&glyphs2_dir().join("Unicode-QuotedHexSequence.glyphs")).unwrap();
         assert_eq!(
-            &BTreeSet::from([0x2044, 0x200D, 0x2215]),
-            font.glyph_to_codepoints.get("name").unwrap(),
+            BTreeSet::from([0x2044, 0x200D, 0x2215]),
+            font.glyphs.get("name").unwrap().unicode,
         );
         assert_eq!(1, font.glyphs.len());
     }
@@ -2371,8 +2363,8 @@ mod tests {
     fn understand_v3_style_unquoted_decimal_unicode() {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDec.glyphs")).unwrap();
         assert_eq!(
-            &BTreeSet::from([182]),
-            font.glyph_to_codepoints.get("name").unwrap()
+            BTreeSet::from([182]),
+            font.glyphs.get("name").unwrap().unicode
         );
         assert_eq!(1, font.glyphs.len());
     }
@@ -2381,8 +2373,8 @@ mod tests {
     fn understand_v3_style_unquoted_decimal_unicode_sequence() {
         let font = Font::load(&glyphs3_dir().join("Unicode-UnquotedDecSequence.glyphs")).unwrap();
         assert_eq!(
-            &BTreeSet::from([1619, 1764]),
-            font.glyph_to_codepoints.get("name").unwrap(),
+            BTreeSet::from([1619, 1764]),
+            font.glyphs.get("name").unwrap().unicode,
         );
         assert_eq!(1, font.glyphs.len());
     }
