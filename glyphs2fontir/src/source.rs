@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     path::PathBuf,
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use chrono::DateTime;
@@ -25,13 +25,12 @@ use fontir::{
     source::{Input, Source},
     stateset::StateSet,
 };
-use glyphs_reader::{Font, InstanceType};
+use glyphs_reader::{glyphdata::GlyphData, Font, InstanceType};
 use write_fonts::{
     tables::os2::SelectionFlags,
     types::{NameId, Tag},
 };
 
-use crate::glyphdata::is_nonspacing_mark;
 use crate::toir::{design_location, to_ir_contours_and_components, to_ir_features, FontInfo};
 
 pub struct GlyphsIrSource {
@@ -845,7 +844,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         }
 
         // https://github.com/googlefonts/fontmake-rs/issues/285 glyphs non-spacing marks are 0-width
-        let zero_width = is_nonspacing_mark(&ir_glyph.codepoints, ir_glyph.name.as_str());
+        let zero_width = is_nonspacing_mark(&ir_glyph.codepoints, &ir_glyph.name);
 
         let mut ir_anchors = AnchorBuilder::new(self.glyph_name.clone());
 
@@ -933,6 +932,18 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         context.glyphs.set(ir_glyph.build()?);
         Ok(())
     }
+}
+
+// This will eventually need to be replaced with something that can handle
+// custom GlyphData.xml files, as well as handle overrides that are part of the
+// glyph source.
+fn is_nonspacing_mark(codepoints: &HashSet<u32>, name: &GlyphName) -> bool {
+    static GLYPH_DATA: OnceLock<GlyphData> = OnceLock::new();
+    let data = GLYPH_DATA.get_or_init(|| GlyphData::new(None).unwrap());
+    data.get_by_name(name)
+        .or_else(|| codepoints.iter().find_map(|cp| data.get_by_codepoint(*cp)))
+        .map(|info| (info.is_nonspacing_mark()))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

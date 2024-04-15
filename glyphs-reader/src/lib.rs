@@ -2,6 +2,7 @@
 
 pub mod error;
 mod font;
+pub mod glyphdata;
 mod plist;
 
 pub use font::{
