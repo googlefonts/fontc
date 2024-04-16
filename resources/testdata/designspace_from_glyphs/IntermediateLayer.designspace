@@ -40,6 +40,14 @@
       </location>
     </source>
   </sources>
+  <variable-fonts>
+    <variable-font name="Regular" filename="IntermediateLayerVF">
+      <axis-subsets>
+        <axis-subset name="Cap Height"/>
+        <axis-subset name="Weight"/>
+      </axis-subsets>
+    </variable-font>
+  </variable-fonts>
   <instances>
     <instance name="Intermediate Layer Regular" familyname="Intermediate Layer" stylename="Regular" filename="../instance_ufo/IntermediateLayer-Regular.ufo" stylemapfamilyname="Intermediate Layer" stylemapstylename="regular">
       <location>
