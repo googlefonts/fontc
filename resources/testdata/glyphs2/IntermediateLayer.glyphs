@@ -1,5 +1,9 @@
 {
-.appVersion = "3226";
+.appVersion = "3300";
+DisplayStrings = (
+I,
+ii
+);
 customParameters = (
 {
 name = "Disable Last Change";
@@ -674,6 +678,18 @@ name = "Tall Caps Black";
 weightClass = Black;
 }
 );
+kerning = {
+"F969B945-4602-464F-B67C-A69BED6E6A4A" = {
+i = {
+i = -50;
+};
+};
+m01 = {
+i = {
+i = -400;
+};
+};
+};
 unitsPerEm = 1000;
 userData = {
 GSDontShowVersionAlert = 1;
