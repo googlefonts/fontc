@@ -9,8 +9,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::Hash;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use std::{fs, path};
 
+use crate::glyphdata::{Category, GlyphData, Subcategory};
 use crate::plist::FromPlist;
 use kurbo::{Affine, Point};
 use log::{debug, warn};
@@ -178,6 +180,20 @@ pub struct Glyph {
     pub left_kern: Option<SmolStr>,
     /// The right kerning group
     pub right_kern: Option<SmolStr>,
+    pub category: Option<Category>,
+    pub sub_category: Option<Subcategory>,
+}
+
+impl Glyph {
+    pub fn is_nonspacing_mark(&self) -> bool {
+        matches!(
+            (self.category, self.sub_category),
+            (
+                Some(Category::Mark),
+                Some(Subcategory::Nonspacing | Subcategory::SpacingCombining)
+            )
+        )
+    }
 }
 
 #[derive(Debug, PartialEq, Hash)]
@@ -574,6 +590,8 @@ struct RawGlyph {
     #[fromplist(alt_name = "rightKerningGroup")]
     kern_right: Option<SmolStr>,
     unicode: Option<String>,
+    category: Option<SmolStr>,
+    sub_category: Option<SmolStr>,
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
 }
@@ -1630,18 +1648,63 @@ impl RawGlyph {
             }
             instances.push(layer.try_into()?);
         }
+        // if category/subcategory were set in the source, we keep them;
+        // otherwise we look them up based on the bundled GlyphData.
+        // (we use this info later to determine GDEF categories, zero the width
+        // on non-spacing marks, etc)
+        let mut category = self
+            .category
+            .map(|cat| Category::from_str(&cat))
+            .transpose()
+            .map_err(|category| Error::BadCategory {
+                glyph: self.glyphname.clone(),
+                category,
+            })?;
+        let mut sub_category = self
+            .sub_category
+            .map(|cat| Subcategory::from_str(&cat))
+            .transpose()
+            .map_err(|category| Error::BadCategory {
+                glyph: self.glyphname.clone(),
+                category,
+            })?;
+
+        let codepoints = self
+            .unicode
+            .map(|s| parse_codepoint_str(&s, codepoint_radix))
+            .unwrap_or_default();
+
+        if category.is_none() || sub_category.is_none() {
+            if let Some((computed_category, computed_subcategory)) =
+                get_glyph_category(&self.glyphname, &codepoints)
+            {
+                // if they were manually set don't change them, otherwise do
+                category = category.or(Some(computed_category));
+                sub_category = sub_category.or(Some(computed_subcategory));
+            }
+        }
+
         Ok(Glyph {
             glyphname: self.glyphname,
             export: self.export.unwrap_or(true),
             layers: instances,
             left_kern: self.kern_left,
             right_kern: self.kern_right,
-            unicode: self
-                .unicode
-                .map(|s| parse_codepoint_str(&s, codepoint_radix))
-                .unwrap_or_default(),
+            unicode: codepoints,
+            category,
+            sub_category,
         })
     }
+}
+
+// This will eventually need to be replaced with something that can handle
+// custom GlyphData.xml files, as well as handle overrides that are part of the
+// glyph source.
+fn get_glyph_category(name: &str, codepoints: &BTreeSet<u32>) -> Option<(Category, Subcategory)> {
+    static GLYPH_DATA: OnceLock<GlyphData> = OnceLock::new();
+    let data = GLYPH_DATA.get_or_init(|| GlyphData::new(None).unwrap());
+    data.get_glyph(name, Some(codepoints))
+        .map(|info| (info.category, info.subcategory))
 }
 
 impl RawFeature {
