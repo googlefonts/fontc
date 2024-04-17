@@ -92,6 +92,7 @@ allowlist+=("fea-rs/src/util/ttx.rs")
 allowlist+=("fea-rs/src/tests/parse.rs")
 allowlist+=("layout-normalizer")
 allowlist+=("glyphs-reader/build.rs")
+allowlist+=("fontdrasil/build.rs")
 
 allowlist=$(join "|" "${allowlist[@]}")
 echo grep -v "($allowlist)"

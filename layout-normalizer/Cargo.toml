@@ -6,6 +6,7 @@ license = "MIT/Apache-2.0"
 publish = false
 
 [dependencies]
+fontdrasil = { path = "../fontdrasil" }
 clap.workspace = true
 thiserror.workspace = true
 smol_str.workspace = true

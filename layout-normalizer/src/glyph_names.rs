@@ -13,9 +13,6 @@ use write_fonts::read::{
 
 use crate::error::Error;
 
-// generated in build.rs
-include!(concat!(env!("OUT_DIR"), "/glyph_names_codegen.rs"));
-
 /// A map for gids to human-readable names
 #[derive(Clone, Debug, Default)]
 pub struct NameMap(pub(crate) BTreeMap<GlyphId, SmolStr>);
@@ -116,10 +113,7 @@ fn reverse_cmap(font: &FontRef) -> Result<HashMap<GlyphId, u32>, Error> {
 /// Given a `char`, returns the postscript name for that `char`s glyph,
 /// if one exists in the aglfn.
 fn glyph_name_for_char(chr: char) -> Option<SmolStr> {
-    GLYPH_NAMES
-        .binary_search_by(|probe| probe.0.cmp(&(chr as u32)))
-        .ok()
-        .map(|idx| GLYPH_NAMES[idx].1.clone())
+    fontdrasil::agl::agl_name_for_char(chr).map(Into::into)
 }
 
 #[cfg(test)]
