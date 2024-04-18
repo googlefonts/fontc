@@ -13,6 +13,8 @@ use std::{
 };
 
 pub use glyphdata_impl::*;
+use icu_properties::GeneralCategory;
+
 use smol_str::SmolStr;
 
 static BUNDLED_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/glyphdata.bin"));
@@ -143,43 +145,45 @@ impl GlyphData {
             return Some((info.category, info.subcategory));
         }
 
-        let Some(base_names) = self.split_ligature_glyph_name(base_name) else {
-            // TODO: fonttools here tries to get a unicode value from the agl,
-            // which we don't currently include anywhere; this feels like a rare
-            // edge case though?
-            return None;
-        };
-        let base_names_attributes: Vec<_> = base_names
-            .iter()
-            .map(|name| self.get_by_name(name))
-            .collect();
-        if let Some(first_attr) = base_names_attributes.first().and_then(Option::as_ref) {
-            // if first is mark, we're a mark
-            if first_attr.category == Category::Mark {
-                return Some((Category::Mark, first_attr.subcategory));
-            } else if first_attr.category == Category::Letter {
-                // if first is letter and rest are marks/separators, we use info from first
-                if base_names_attributes
-                    .iter()
-                    .skip(1)
-                    .filter_map(|attr| attr.map(|attr| attr.category))
-                    .all(|cat| matches!(cat, Category::Mark | Category::Separator))
-                {
-                    return Some((first_attr.category, first_attr.subcategory));
-                } else {
-                    return Some((Category::Letter, Subcategory::Ligature));
+        if let Some(base_names) = self.split_ligature_glyph_name(base_name) {
+            let base_names_attributes: Vec<_> = base_names
+                .iter()
+                .map(|name| self.get_by_name(name))
+                .collect();
+            if let Some(first_attr) = base_names_attributes.first().and_then(Option::as_ref) {
+                // if first is mark, we're a mark
+                if first_attr.category == Category::Mark {
+                    return Some((Category::Mark, first_attr.subcategory));
+                } else if first_attr.category == Category::Letter {
+                    // if first is letter and rest are marks/separators, we use info from first
+                    if base_names_attributes
+                        .iter()
+                        .skip(1)
+                        .filter_map(|attr| attr.map(|attr| attr.category))
+                        .all(|cat| matches!(cat, Category::Mark | Category::Separator))
+                    {
+                        return Some((first_attr.category, first_attr.subcategory));
+                    } else {
+                        return Some((Category::Letter, Subcategory::Ligature));
+                    }
                 }
             }
-        }
-        // if all parts are number, we're number lig:
-        // NOTE: fonttools doesn't do this yet but has a todo, and this gets
-        // us past a test case without needing the agl fallback
-        if base_names_attributes
-            .iter()
-            .map(|attr| attr.map(|x| x.category))
-            .all(|cat| cat == Some(Category::Number))
+        };
+
+        // finally fall back to checking the AGLFN for the base name:
+        if let Some(first_char) = fontdrasil::agl::glyph_name_to_unicode(base_name)
+            .chars()
+            .next()
         {
-            return Some((Category::Number, Subcategory::Ligature));
+            let (category, subcategory) = category_from_icu(first_char);
+
+            // Exception: Something like "one_two" should be a (_, Ligature),
+            // "acutecomb_brevecomb" should however stay (Mark, Nonspacing).
+            if base_name.contains('_') && category != Category::Mark {
+                return Some((category, Subcategory::Ligature));
+            } else {
+                return Some((category, subcategory));
+            }
         }
         None
     }
@@ -247,6 +251,47 @@ impl GlyphData {
     }
 }
 
+// https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L261
+fn category_from_icu(c: char) -> (Category, Subcategory) {
+    match icu_properties::maps::general_category().get(c) {
+        GeneralCategory::Unassigned | GeneralCategory::OtherSymbol => {
+            (Category::Symbol, Subcategory::None)
+        }
+        GeneralCategory::UppercaseLetter
+        | GeneralCategory::LowercaseLetter
+        | GeneralCategory::TitlecaseLetter
+        | GeneralCategory::OtherLetter => (Category::Letter, Subcategory::None),
+        GeneralCategory::ModifierLetter => (Category::Letter, Subcategory::Modifier),
+        GeneralCategory::NonspacingMark => (Category::Mark, Subcategory::Nonspacing),
+        GeneralCategory::SpacingMark => (Category::Mark, Subcategory::SpacingCombining),
+        GeneralCategory::EnclosingMark => (Category::Mark, Subcategory::Enclosing),
+        GeneralCategory::DecimalNumber | GeneralCategory::OtherNumber => {
+            (Category::Number, Subcategory::DecimalDigit)
+        }
+        GeneralCategory::LetterNumber => (Category::Number, Subcategory::None),
+        GeneralCategory::SpaceSeparator => (Category::Separator, Subcategory::Space),
+        GeneralCategory::LineSeparator
+        | GeneralCategory::ParagraphSeparator
+        | GeneralCategory::Control => (Category::Separator, Subcategory::None),
+        GeneralCategory::Format => (Category::Separator, Subcategory::Format),
+        GeneralCategory::PrivateUse => (Category::Letter, Subcategory::Compatibility),
+        GeneralCategory::DashPunctuation => (Category::Punctuation, Subcategory::Dash),
+        GeneralCategory::OpenPunctuation | GeneralCategory::ClosePunctuation => {
+            (Category::Punctuation, Subcategory::Parenthesis)
+        }
+        GeneralCategory::ConnectorPunctuation | GeneralCategory::OtherPunctuation => {
+            (Category::Punctuation, Subcategory::None)
+        }
+        GeneralCategory::InitialPunctuation | GeneralCategory::FinalPunctuation => {
+            (Category::Punctuation, Subcategory::Quote)
+        }
+        GeneralCategory::MathSymbol => (Category::Symbol, Subcategory::Math),
+        GeneralCategory::CurrencySymbol => (Category::Symbol, Subcategory::Currency),
+        GeneralCategory::ModifierSymbol => (Category::Mark, Subcategory::Spacing),
+        GeneralCategory::Surrogate => unreachable!("char cannot represent surrogate code points"),
+    }
+}
+
 fn load_bundled_data() -> Vec<GlyphInfo> {
     bincode::deserialize(BUNDLED_DATA).unwrap()
 }
@@ -311,11 +356,11 @@ mod tests {
 
     // from python glyphsLib: https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d5/tests/glyphdata_test.py#L106
     #[test]
-    fn test_category_py() {
+    fn py_test_category() {
         for (name, expected) in [
             (".notdef", Some((Category::Separator, Subcategory::None))),
             // this test case requires AGL lookup:
-            //("uni000D", Some((Category::Separator, Subcategory::None))),
+            ("uni000D", Some((Category::Separator, Subcategory::None))),
             (
                 "boxHeavyUp",
                 Some((Category::Symbol, Subcategory::Geometry)),
@@ -413,9 +458,19 @@ mod tests {
 
     // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/tests/glyphdata_test.py#L145C5-L153C76
     #[test]
-    fn category_by_unicode_py() {
+    fn py_category_by_unicode() {
         //# "SignU.bn" is a non-standard name not defined in GlyphData.xml
         let result = get_category("SignU.bn", &[0x09C1]);
         assert_eq!(result, Some((Category::Mark, Subcategory::Nonspacing)))
+    }
+
+    // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/tests/glyphdata_test.py#L155C5-L162C1
+    // https://github.com/googlefonts/glyphsLib/issues/232
+    #[test]
+    fn py_bug_232() {
+        let u = get_category("uni07F0", &[]);
+        assert_eq!(u, Some((Category::Mark, Subcategory::Nonspacing)));
+        let g = get_category("longlowtonecomb-nko", &[]);
+        assert_eq!(g, Some((Category::Mark, Subcategory::Nonspacing)));
     }
 }
