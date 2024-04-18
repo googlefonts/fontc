@@ -865,8 +865,15 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             })
             .collect();
 
-        let master_locations = master_locations(&axes, &self.designspace.sources);
-        let glyph_locations = master_locations.values().cloned().collect();
+        let global_locations = master_locations(
+            &axes,
+            self.designspace
+                .sources
+                .iter()
+                .filter(|s| !is_glyph_only(s)),
+        )
+        .into_values()
+        .collect();
 
         let lib_plist =
             match load_plist(&designspace_dir.join(&default_master.filename), "lib.plist") {
@@ -917,7 +924,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             names,
             axes,
             named_instances,
-            glyph_locations,
+            global_locations,
             postscript_names,
             italic_angle,
             glyph_categories,
@@ -1997,7 +2004,7 @@ mod tests {
 
     // Was tripping up on wght_var having two <source> with the same filename, different name and xvalue
     #[test]
-    fn glyph_locations() {
+    fn global_locations() {
         let (_, context) = build_static_metadata("wght_var.designspace", default_test_flags());
         let static_metadata = &context.static_metadata.get();
         let wght = static_metadata.axes.first().unwrap();
@@ -2005,7 +2012,9 @@ mod tests {
         assert_eq!(
             vec![
                 (UserCoord::new(400.0), NormalizedCoord::new(0.0)),
-                (UserCoord::new(600.0), NormalizedCoord::new(0.6666667,)),
+                // this intermediate/sparse layer location is omitted from the global model
+                // because it only contributes glyphs, not metrics or kerning
+                // (UserCoord::new(600.0), NormalizedCoord::new(0.6666667,)),
                 (UserCoord::new(700.0), NormalizedCoord::new(1.0)),
             ],
             static_metadata

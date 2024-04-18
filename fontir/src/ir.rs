@@ -328,7 +328,7 @@ impl StaticMetadata {
         names: HashMap<NameKey, String>,
         axes: Vec<Axis>,
         named_instances: Vec<NamedInstance>,
-        glyph_locations: HashSet<NormalizedLocation>,
+        global_locations: HashSet<NormalizedLocation>,
         postscript_names: PostscriptNames,
         italic_angle: f64,
         gdef_categories: GdefCategories,
@@ -352,7 +352,7 @@ impl StaticMetadata {
                 key_to_name.insert(NameKey::new(name_id_gen.into(), name), name.clone());
             });
 
-        let variation_model = VariationModel::new(glyph_locations, variable_axes.clone())?;
+        let variation_model = VariationModel::new(global_locations, variable_axes.clone())?;
 
         let default_location = axes
             .iter()

@@ -1,10 +1,9 @@
 //! Generates an [HVAR](https://learn.microsoft.com/en-us/typography/opentype/spec/HVAR) table.
 
 use std::any::type_name;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use fontdrasil::orchestration::AccessBuilder;
-use indexmap::IndexMap;
 
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -52,28 +51,25 @@ struct AdvanceWidthDeltas {
     /// Variation axes
     axes: Vec<Axis>,
     /// Sparse variation models, keyed by the set of locations they define
-    models: IndexMap<BTreeSet<NormalizedLocation>, VariationModel>,
+    models: HashMap<BTreeSet<NormalizedLocation>, VariationModel>,
     /// Glyph's advance width deltas sorted by glyph order
     deltas: Vec<Vec<(VariationRegion, i16)>>,
+    /// All the glyph locations that are defined in the font
+    glyph_locations: HashSet<NormalizedLocation>,
 }
 
 impl AdvanceWidthDeltas {
-    fn new(global_model: VariationModel) -> Self {
+    fn new(global_model: VariationModel, glyph_locations: HashSet<NormalizedLocation>) -> Self {
         let axes = global_model.axes().cloned().collect::<Vec<_>>();
         let global_locations = global_model.locations().cloned().collect::<BTreeSet<_>>();
-        // using IndexMap to quickly get a ref to the first entry (in insertion order)
-        // in the global_locations() method below
-        let mut models = IndexMap::new();
+        let mut models = HashMap::new();
         models.insert(global_locations, global_model);
         AdvanceWidthDeltas {
             axes,
             models,
             deltas: Vec::new(),
+            glyph_locations,
         }
-    }
-
-    fn global_locations(&self) -> &BTreeSet<NormalizedLocation> {
-        self.models.first().unwrap().0
     }
 
     fn add(&mut self, glyph: &Glyph) -> Result<(), Error> {
@@ -101,7 +97,7 @@ impl AdvanceWidthDeltas {
             // all other glyph locations...
             if i == 0 && name == GlyphName::NOTDEF {
                 let notdef_width = advance_widths.values().next().unwrap()[0];
-                for loc in self.global_locations().iter() {
+                for loc in self.glyph_locations.iter() {
                     advance_widths
                         .entry(loc.clone())
                         .or_insert_with(|| vec![notdef_width]);
@@ -167,10 +163,18 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         let var_model = &static_metadata.variation_model;
         let glyph_order = context.ir.glyph_order.get();
         let axis_count = var_model.axes().count().try_into().unwrap();
+        let glyphs: Vec<_> = glyph_order
+            .iter()
+            .map(|name| context.ir.glyphs.get(&FeWorkId::Glyph(name.clone())))
+            .collect();
+        let glyph_locations: HashSet<_> = glyphs
+            .iter()
+            .flat_map(|glyph| glyph.sources().keys())
+            .cloned()
+            .collect();
 
-        let mut glyph_width_deltas = AdvanceWidthDeltas::new(var_model.clone());
-        for name in glyph_order.iter() {
-            let glyph = context.ir.glyphs.get(&FeWorkId::Glyph(name.clone()));
+        let mut glyph_width_deltas = AdvanceWidthDeltas::new(var_model.clone(), glyph_locations);
+        for glyph in glyphs.into_iter() {
             glyph_width_deltas.add(glyph.as_ref())?;
         }
 
