@@ -1,6 +1,7 @@
 //! Feature binary compilation.
 
 use std::{
+    borrow::Cow,
     cell::RefCell,
     collections::{HashMap, HashSet},
     ffi::{OsStr, OsString},
@@ -160,16 +161,16 @@ pub(crate) fn resolve_variable_metric<'a>(
 
     // Try to reuse the global model, or make a new sub-model only with the locations we
     // are asked for so we can support sparseness
-    let local_model: VariationModel;
-    let var_model = if locations == global_locations {
-        &static_metadata.variation_model
+    let var_model: Cow<'_, VariationModel> = if locations == global_locations {
+        Cow::Borrowed(&static_metadata.variation_model)
     } else {
-        local_model = VariationModel::new(
-            locations.into_iter().cloned().collect(),
-            static_metadata.axes.clone(),
+        Cow::Owned(
+            VariationModel::new(
+                locations.into_iter().cloned().collect(),
+                static_metadata.axes.clone(),
+            )
+            .unwrap(),
         )
-        .unwrap();
-        &local_model
     };
 
     let raw_deltas: Vec<_> = var_model
@@ -295,16 +296,16 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
 
         // Try to reuse the global model, or make a new sub-model only with the locations we
         // are asked for so we can support sparseness
-        let local_model: VariationModel;
-        let var_model = if locations == global_locations {
-            &self.static_metadata.variation_model
+        let var_model: Cow<'_, VariationModel> = if locations == global_locations {
+            Cow::Borrowed(&self.static_metadata.variation_model)
         } else {
-            local_model = VariationModel::new(
-                locations.into_iter().cloned().collect(),
-                self.static_metadata.axes.clone(),
+            Cow::Owned(
+                VariationModel::new(
+                    locations.into_iter().cloned().collect(),
+                    self.static_metadata.axes.clone(),
+                )
+                .unwrap(),
             )
-            .unwrap();
-            &local_model
         };
 
         // Only 1 value per region for our input
