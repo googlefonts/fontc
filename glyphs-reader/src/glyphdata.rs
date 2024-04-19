@@ -98,7 +98,8 @@ impl GlyphData {
         }
 
         // we don't have info for this glyph: can we synthesize it?
-        // TODO: python does production name here. do we care?
+        // TODO: python does production name here.
+        // see https://github.com/googlefonts/fontc/issues/780
 
         let (category, subcategory) = self.construct_category(name)?;
         Some(Cow::Owned(GlyphInfo {
@@ -134,11 +135,12 @@ impl GlyphData {
 
     // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L199
     fn construct_category(&self, name: &str) -> Option<(Category, Subcategory)> {
+        // in glyphs.app '_' prefix means "no export"
         if name.starts_with('_') {
             return None;
         }
         let base_name = self
-            .split_glyph_name(name)
+            .split_glyph_suffix(name)
             .map(|(base, _)| base)
             .unwrap_or(name);
         if let Some(info) = self.get_by_name(base_name) {
@@ -171,6 +173,12 @@ impl GlyphData {
         };
 
         // finally fall back to checking the AGLFN for the base name:
+        Self::construct_category_via_agl(base_name)
+    }
+
+    // this doesn't need a &self param, but we want it locally close to the
+    // code that calls it, so we'll make it a type method :shrug:
+    fn construct_category_via_agl(base_name: &str) -> Option<(Category, Subcategory)> {
         if let Some(first_char) = fontdrasil::agl::glyph_name_to_unicode(base_name)
             .chars()
             .next()
@@ -188,15 +196,18 @@ impl GlyphData {
         None
     }
 
-    fn split_glyph_name<'a>(&self, name: &'a str) -> Option<(&'a str, &'a str)> {
+    fn split_glyph_suffix<'a>(&self, name: &'a str) -> Option<(&'a str, &'a str)> {
         let multi_suffix = name.bytes().filter(|b| *b == b'.').count() > 1;
         if multi_suffix {
             // with multiple suffixes, try adding them one at a time and seeing if
             // we find a known name.
+            // basically: for 'char.bottom.alt' we want to return (char.bottom, alt)
+            // if
             for idx in name
                 .bytes()
                 .enumerate()
                 .filter_map(|(i, b)| (b == b'.').then_some(i))
+                .skip(1)
             {
                 let (base, suffix) = name.split_at(idx);
                 if self.get_by_name(base).is_some() {
@@ -449,6 +460,15 @@ mod tests {
             (
                 "dal_lam-ar.dlig",
                 Some((Category::Letter, Subcategory::Ligature)),
+            ),
+            ("po-khmer", Some((Category::Letter, Subcategory::None))),
+            (
+                "po-khmer.below",
+                Some((Category::Mark, Subcategory::Nonspacing)),
+            ),
+            (
+                "po-khmer.below.ro",
+                Some((Category::Mark, Subcategory::Nonspacing)),
             ),
         ] {
             let result = get_category(name, &[]);
