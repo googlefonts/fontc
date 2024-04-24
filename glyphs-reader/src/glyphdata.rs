@@ -10,6 +10,7 @@ use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap, HashSet},
     path::Path,
+    sync::OnceLock,
 };
 
 pub use glyphdata_impl::*;
@@ -33,6 +34,12 @@ pub struct GlyphData {
 }
 
 impl GlyphData {
+    /// Return the default glyph data set, derived from GlyphData.xml files
+    pub fn bundled() -> &'static GlyphData {
+        static GLYPH_DATA: OnceLock<GlyphData> = OnceLock::new();
+        GLYPH_DATA.get_or_init(|| GlyphData::new(None).unwrap())
+    }
+
     /// Create a new data set, optionally loading user provided overrides
     pub fn new(user_overrides: Option<&Path>) -> Result<Self, GlyphDataError> {
         let user_overrides = user_overrides

@@ -1,7 +1,13 @@
 //! Propagating anchors from components to their composites
+//!
+//! Glyphs.app has a nice feature where anchors defined in the components
+//! of composite glyphs are copied into the composites themselves. This feature
+//! is not very extensively documented, and the code here is based off the
+//! Objective-C implementation, which was shared with us privately.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
+use indexmap::IndexMap;
 use kurbo::{Affine, Vec2};
 use smol_str::{format_smolstr, SmolStr};
 
@@ -14,28 +20,36 @@ use crate::{
 impl Font {
     /// Copy anchors from component glyphs into their including composites
     pub fn propagate_all_anchors(&mut self) {
-        let todo = depth_sorted_composite_glyphs(&self.glyphs);
-        let mut num_base_glyphs = HashMap::new();
-        for name in todo {
-            // temporarily remove the glyph so we can mess with it without borrowing all glyphs
-            let mut glyph = self.glyphs.remove(&name).unwrap();
-            // we work with indices here to also get around borrowck, because
-            // if we borrow the layers in the loop we cannot set the anchors in the loop body
-            for layer_idx in 0..glyph.layers.len() {
-                let anchors = anchors_traversing_components(
-                    &glyph,
-                    layer_idx,
-                    &self.glyphs,
-                    &mut num_base_glyphs,
-                );
-                if anchors.len() != glyph.layers[layer_idx].anchors.len() {
-                    debug_new_anchors(&anchors, &glyph, layer_idx);
-                }
-                glyph.layers[layer_idx].anchors = anchors;
+        propagate_all_anchors_impl(&mut self.glyphs);
+    }
+}
+
+// the actual implementation: it's easier to test a free fn
+fn propagate_all_anchors_impl(glyphs: &mut BTreeMap<SmolStr, Glyph>) {
+    // the reference implementation does this recursively, but we opt to
+    // implement it by pre-sorting the work to ensure we always process components
+    // first.
+    let todo = depth_sorted_composite_glyphs(glyphs);
+    let mut num_base_glyphs = HashMap::new();
+    let mut done = Vec::new();
+    for name in todo {
+        // temporarily remove the glyph so we can mess with it without borrowing all glyphs
+        let mut glyph = glyphs.remove(&name).unwrap();
+        // we work with indices here to also get around borrowck, because
+        // if we borrow the layers in the loop we can't set the anchors in the loop body
+        for layer_idx in 0..glyph.layers.len() {
+            let anchors =
+                anchors_traversing_components(&glyph, layer_idx, glyphs, &mut num_base_glyphs);
+            if !anchors.is_empty() && layer_idx == 0 {
+                done.push((name.clone(), anchors.clone()));
             }
-            // put the glyph back when we're done
-            self.glyphs.insert(name, glyph);
+            if anchors.len() != glyph.layers[layer_idx].anchors.len() {
+                debug_new_anchors(&anchors, &glyph, layer_idx);
+            }
+            glyph.layers[layer_idx].anchors = anchors;
         }
+        // put the glyph back when we're done
+        glyphs.insert(name, glyph);
     }
 }
 
@@ -80,7 +94,8 @@ fn anchors_traversing_components(
         .any(|anchor| anchor.name.starts_with('_'));
 
     let mut number_of_base_glyphs = 0usize;
-    let mut all_anchors = BTreeMap::new();
+    // we use an index map so we get the same ordering behaviour as python
+    let mut all_anchors = IndexMap::new();
     for (component_idx, component) in layer.components().enumerate() {
         // because we process dependencies first we know that all components
         // referenced have already been propagated
@@ -98,7 +113,7 @@ fn anchors_traversing_components(
         //which we do not currently parse
 
         let anchors = &component_layer.anchors;
-        let scale = get_transform_scale(component.transform);
+        let scale = get_xy_rotation(component.transform);
         let component_number_of_base_glyphs = base_glyph_counts
             .get(&(component.name.clone(), layer_idx))
             .copied()
@@ -175,22 +190,22 @@ fn anchors_traversing_components(
         number_of_base_glyphs += 1;
     }
     if layer.anchors.iter().any(|a| a.name == "_bottom") {
-        all_anchors.remove("top");
-        all_anchors.remove("_top");
+        all_anchors.shift_remove("top");
+        all_anchors.shift_remove("_top");
     }
     if layer.anchors.iter().any(|a| a.name == "_top") {
-        all_anchors.remove("bottom");
-        all_anchors.remove("_bottom");
+        all_anchors.shift_remove("bottom");
+        all_anchors.shift_remove("_bottom");
     }
     base_glyph_counts.insert((glyph.name.clone(), layer_idx), number_of_base_glyphs);
     all_anchors.into_values().collect()
 }
 
-fn get_transform_scale(xform: Affine) -> Vec2 {
+// returns a vec2 where for each axis a negative value indicates that axis is considerd flipped
+fn get_xy_rotation(xform: Affine) -> Vec2 {
     let [xx, xy, _, yy, ..] = xform.as_coeffs();
     let angle = xy.atan2(xx).to_degrees();
     let mut scale = Vec2::new(xx, yy);
-    // scale is inverted if we're rotated?
     if (angle - 180.0).abs() < 0.001 {
         scale *= -1.0;
     }
@@ -316,41 +331,115 @@ fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolS
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
 
-    use crate::{Layer, Shape};
+    use kurbo::Point;
+
+    use crate::{glyphdata::GlyphData, Layer, Shape};
 
     use super::*;
+
+    #[derive(Debug, Default)]
+    struct GlyphSetBuilder(BTreeMap<SmolStr, Glyph>);
+
+    impl GlyphSetBuilder {
+        fn new() -> Self {
+            Default::default()
+        }
+
+        fn build(&self) -> BTreeMap<SmolStr, Glyph> {
+            self.0.clone()
+        }
+
+        fn add_glyph(&mut self, name: &str, build_fn: impl FnOnce(&mut GlyphBuilder)) -> &mut Self {
+            let mut glyph = GlyphBuilder::new(name);
+            build_fn(&mut glyph);
+            self.0.insert(glyph.0.name.clone(), glyph.build());
+            self
+        }
+    }
+    // a little helper to make it easier to generate data for these tests
+    #[derive(Debug, Default)]
+    struct GlyphBuilder(Glyph);
+
+    impl GlyphBuilder {
+        fn new(name: &str) -> Self {
+            let info = GlyphData::bundled().get_glyph(name, None);
+            let mut this = GlyphBuilder(Glyph {
+                name: name.into(),
+                export: true,
+                category: info.as_ref().map(|i| i.category),
+                sub_category: info.as_ref().map(|i| i.subcategory),
+
+                unicode: info.and_then(|i| i.unicode).into_iter().collect(),
+                ..Default::default()
+            });
+            this.add_layer();
+            this
+        }
+
+        fn build(&self) -> Glyph {
+            self.0.clone()
+        }
+
+        /// Add a new layer to a glyph; all other operations work on the last added layer
+        fn add_layer(&mut self) -> &mut Self {
+            self.0.layers.push(Layer {
+                layer_id: format!("layer-{}", self.0.layers.len()),
+                ..Default::default()
+            });
+            self
+        }
+
+        fn last_layer_mut(&mut self) -> &mut Layer {
+            self.0.layers.last_mut().unwrap()
+        }
+
+        #[allow(dead_code)]
+        fn set_category(&mut self, category: Category) -> &mut Self {
+            self.0.category = Some(category);
+            self
+        }
+
+        fn set_subcategory(&mut self, sub_category: Subcategory) -> &mut Self {
+            self.0.sub_category = Some(sub_category);
+            self
+        }
+
+        // use an int for pos to simplify the call site ('0' instead of'0.0')
+        fn add_component(&mut self, name: &str, pos: (u16, u16)) -> &mut Self {
+            self.last_layer_mut()
+                .shapes
+                .push(Shape::Component(Component {
+                    name: name.into(),
+                    transform: Affine::translate((pos.0 as f64, pos.1 as f64)),
+                }));
+            self
+        }
+
+        fn add_anchor(&mut self, name: &str, pos: (u16, u16)) -> &mut Self {
+            self.last_layer_mut().anchors.push(Anchor {
+                name: name.into(),
+                pos: Point::new(pos.0 as _, pos.1 as _),
+            });
+
+            self
+        }
+    }
+
+    impl PartialEq<(&str, (f64, f64))> for Anchor {
+        fn eq(&self, other: &(&str, (f64, f64))) -> bool {
+            self.name == other.0 && self.pos == other.1.into()
+        }
+    }
 
     #[test]
     fn components_by_depth() {
         fn make_glyph(name: &str, components: &[&str]) -> Glyph {
-            let layer = Layer {
-                layer_id: "my_layer".into(),
-                width: 0.0.into(),
-                shapes: components
-                    .iter()
-                    .map(|comp| {
-                        Shape::Component(crate::Component {
-                            name: SmolStr::new(comp),
-                            transform: Default::default(),
-                        })
-                    })
-                    .collect(),
-                associated_master_id: Some("master_id".into()),
-                anchors: Vec::new(),
-                attributes: Default::default(),
-            };
-            Glyph {
-                name: name.into(),
-                export: true,
-                unicode: BTreeSet::from([0]),
-                layers: vec![layer],
-                left_kern: None,
-                right_kern: None,
-                category: None,
-                sub_category: None,
+            let mut builder = GlyphBuilder::new(name);
+            for comp in components {
+                builder.add_component(comp, (0, 0)); // pos doesn't matter for this test
             }
+            builder.build()
         }
 
         let glyphs: &[(&str, &[&str])] = &[
@@ -365,7 +454,7 @@ mod tests {
             ("AEacutebreve", &["AE", "brevecomb_acutecomb"]),
         ];
         let glyphs = glyphs
-            .into_iter()
+            .iter()
             .map(|(name, components)| make_glyph(name, components))
             .map(|glyph| (glyph.name.clone(), glyph))
             .collect();
@@ -387,5 +476,103 @@ mod tests {
         .collect::<Vec<_>>();
 
         assert_eq!(result, expected)
+    }
+
+    #[test]
+    fn no_components_anchors_are_unchanged() {
+        // derived from the observed behaviour of glyphs 3.2.2 (3259)
+        let glyphs = GlyphSetBuilder::new()
+            .add_glyph("A", |glyph| {
+                glyph
+                    .add_anchor("bottom", (234, 0))
+                    .add_anchor("ogonek", (411, 0))
+                    .add_anchor("top", (234, 810));
+            })
+            .add_glyph("acutecomb", |glyph| {
+                glyph
+                    .add_anchor("_top", (0, 578))
+                    .add_anchor("top", (0, 810));
+            })
+            .build();
+
+        let mut glyphs_2 = glyphs.clone();
+        propagate_all_anchors_impl(&mut glyphs_2);
+        assert_eq!(glyphs, glyphs_2, "nothing should change here");
+    }
+
+    #[test]
+    fn basic_composite_anchor() {
+        // derived from the observed behaviour of glyphs 3.2.2 (3259)
+        let mut glyphs = GlyphSetBuilder::new()
+            .add_glyph("A", |glyph| {
+                glyph
+                    .add_anchor("bottom", (234, 0))
+                    .add_anchor("ogonek", (411, 0))
+                    .add_anchor("top", (234, 810));
+            })
+            .add_glyph("acutecomb", |glyph| {
+                glyph
+                    .add_anchor("_top", (0, 578))
+                    .add_anchor("top", (0, 810));
+            })
+            .add_glyph("Aacute", |glyph| {
+                glyph
+                    .add_component("A", (0, 0))
+                    .add_component("acutecomb", (234, 232));
+            })
+            .build();
+        propagate_all_anchors_impl(&mut glyphs);
+
+        let new_glyph = glyphs.get("Aacute").unwrap();
+        assert_eq!(
+            new_glyph.layers[0].anchors,
+            [
+                ("bottom", (234., 0.)),
+                ("ogonek", (411., 0.)),
+                ("top", (234., 1042.))
+            ]
+        );
+    }
+
+    #[test]
+    fn propagate_ligature_anchors() {
+        // derived from the observed behaviour of glyphs 3.2.2 (3259)
+        let mut glyphs = GlyphSetBuilder::new()
+            .add_glyph("I", |glyph| {
+                glyph
+                    .add_anchor("bottom", (103, 0))
+                    .add_anchor("ogonek", (103, 0))
+                    .add_anchor("top", (103, 810))
+                    .add_anchor("topleft", (20, 810));
+            })
+            .add_glyph("J", |glyph| {
+                glyph
+                    .add_anchor("bottom", (133, 0))
+                    .add_anchor("top", (163, 810));
+            })
+            .add_glyph("IJ", |glyph| {
+                glyph
+                    // we need to manually override this, it isn't actually a
+                    // ligature by default
+                    .set_subcategory(Subcategory::Ligature)
+                    .add_component("I", (0, 0))
+                    .add_component("J", (206, 0));
+            })
+            .build();
+        propagate_all_anchors_impl(&mut glyphs);
+        let ij = glyphs.get("IJ").unwrap();
+        // these were derived by running the built in glyphs.app propagate anchors
+        // method from the macro panel
+        assert_eq!(
+            ij.layers[0].anchors,
+            [
+                ("bottom_1", (103., 0.)),
+                ("ogonek_1", (103., 0.)),
+                ("top_1", (103., 810.)),
+                ("topleft_1", (20., 810.)),
+                ("bottom_2", (339., 0.)),
+                ("top_2", (369., 810.))
+            ]
+        )
     }
 }

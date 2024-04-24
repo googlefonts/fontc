@@ -9,7 +9,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::Hash;
 use std::str::FromStr;
-use std::sync::OnceLock;
 use std::{fs, path};
 
 use crate::glyphdata::{Category, GlyphData, Subcategory};
@@ -170,7 +169,7 @@ impl FeatureSnippet {
     }
 }
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Clone, Default, Debug, PartialEq, Hash)]
 pub struct Glyph {
     pub name: SmolStr,
     pub export: bool,
@@ -204,7 +203,7 @@ impl Glyph {
     }
 }
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Hash)]
 pub struct Layer {
     pub layer_id: String,
     pub associated_master_id: Option<String>,
@@ -268,7 +267,7 @@ impl FromPlist for LayerAttributes {
     }
 }
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum Shape {
     Path(Path),
     Component(Component),
@@ -1725,9 +1724,8 @@ impl RawGlyph {
 // custom GlyphData.xml files, as well as handle overrides that are part of the
 // glyph source.
 fn get_glyph_category(name: &str, codepoints: &BTreeSet<u32>) -> Option<(Category, Subcategory)> {
-    static GLYPH_DATA: OnceLock<GlyphData> = OnceLock::new();
-    let data = GLYPH_DATA.get_or_init(|| GlyphData::new(None).unwrap());
-    data.get_glyph(name, Some(codepoints))
+    GlyphData::bundled()
+        .get_glyph(name, Some(codepoints))
         .map(|info| (info.category, info.subcategory))
 }
 
