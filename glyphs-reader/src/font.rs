@@ -172,7 +172,7 @@ impl FeatureSnippet {
 
 #[derive(Debug, PartialEq, Hash)]
 pub struct Glyph {
-    pub glyphname: SmolStr,
+    pub name: SmolStr,
     pub export: bool,
     pub layers: Vec<Layer>,
     pub unicode: BTreeSet<u32>,
@@ -194,6 +194,14 @@ impl Glyph {
             )
         )
     }
+
+    pub(crate) fn has_components(&self) -> bool {
+        self.layers
+            .iter()
+            .flat_map(Layer::components)
+            .next()
+            .is_some()
+    }
 }
 
 #[derive(Debug, PartialEq, Hash)]
@@ -213,6 +221,13 @@ impl Layer {
 
     pub fn is_intermediate(&self) -> bool {
         self.associated_master_id.is_some() && !self.attributes.coordinates.is_empty()
+    }
+
+    pub(crate) fn components(&self) -> impl Iterator<Item = &Component> + '_ {
+        self.shapes.iter().filter_map(|shape| match shape {
+            Shape::Path(_) => None,
+            Shape::Component(comp) => Some(comp),
+        })
     }
 
     // TODO add is_alternate, is_color, etc.
@@ -1694,7 +1709,7 @@ impl RawGlyph {
         }
 
         Ok(Glyph {
-            glyphname: self.glyphname,
+            name: self.glyphname,
             export: self.export.unwrap_or(true),
             layers: instances,
             left_kern: self.kern_left,
@@ -2016,7 +2031,7 @@ impl TryFrom<RawFont> for Font {
             })
             .collect();
 
-        Ok(Font {
+        let mut font = Font {
             units_per_em,
             fs_type,
             use_typo_metrics,
@@ -2026,7 +2041,6 @@ impl TryFrom<RawFont> for Font {
             default_master_idx,
             glyphs,
             glyph_order,
-            //glyph_to_codepoints,
             axis_mappings,
             virtual_masters,
             features,
@@ -2036,7 +2050,10 @@ impl TryFrom<RawFont> for Font {
             version_minor: from.versionMinor.unwrap_or_default() as u32,
             date: from.date,
             kerning_ltr: from.kerning_LTR,
-        })
+        };
+
+        font.propagate_all_anchors();
+        Ok(font)
     }
 }
 
