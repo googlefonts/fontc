@@ -7,6 +7,7 @@ use quick_xml::{
     events::{BytesStart, Event},
     Reader,
 };
+use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
 /// Information about a glyph
@@ -26,9 +27,7 @@ pub struct GlyphInfo {
 /// The primary category for a given glyph
 ///
 /// These categories are not the same as the unicode character categories.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Category {
     Mark,
@@ -43,7 +42,7 @@ pub enum Category {
 
 /// The subcategory of a given glyph
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+    Clone, Copy, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
 )]
 #[repr(u8)]
 pub enum Subcategory {
@@ -75,19 +74,8 @@ pub enum Subcategory {
     SpacingCombining,
     Emoji,
     Enclosing,
+    #[default]
     None,
-}
-
-impl GlyphInfo {
-    pub fn is_nonspacing_mark(&self) -> bool {
-        matches!(
-            (self.category, self.subcategory),
-            (
-                Category::Mark,
-                Subcategory::Nonspacing | Subcategory::SpacingCombining
-            )
-        )
-    }
 }
 
 /// Parse glyph info entries out of a GlyphData xml file.

@@ -9,11 +9,13 @@ edition = "2021"
 
 [dependencies]
 plist_derive = { path = "plist_derive" }
+fontdrasil = { path = "../fontdrasil" }
 quick-xml = "0.31"
 ordered-float.workspace = true
 kurbo.workspace = true
 
 thiserror.workspace = true
+icu_properties.workspace = true
 
 log.workspace = true
 env_logger.workspace = true
