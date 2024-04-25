@@ -659,6 +659,9 @@ struct RawShape {
     #[fromplist(alt_name = "ref", alt_name = "name")]
     glyph_name: Option<SmolStr>,
 
+    // for components, an optional name to rename an anchor
+    // on the target glyph during anchor propagation
+    anchor: Option<SmolStr>,
     transform: Option<String>, // v2
     pos: Vec<f64>,             // v3
     angle: Option<f64>,        // v3
@@ -677,6 +680,11 @@ pub struct Component {
     pub name: SmolStr,
     /// meh
     pub transform: Affine,
+    /// An alternative anchor name used during anchor propagation
+    ///
+    /// For instance, if an acute accent is a component of a ligature glyph,
+    /// we might rename its 'top' anchor to 'top_2'
+    pub anchor: Option<SmolStr>,
 }
 
 impl PartialEq for Component {
@@ -1581,6 +1589,7 @@ impl TryFrom<RawShape> for Shape {
             Shape::Component(Component {
                 name: glyph_name,
                 transform,
+                anchor: from.anchor,
             })
         } else {
             // no ref; presume it's a path
@@ -2859,5 +2868,20 @@ mod tests {
     fn read_fstype_bits() {
         let font = Font::load(&glyphs3_dir().join("fstype_0x0104.glyphs")).unwrap();
         assert_eq!(Some(0x104), font.fs_type);
+    }
+
+    #[test]
+    fn anchor_components() {
+        let font = Font::load(&glyphs3_dir().join("ComponentAnchor.glyphs")).unwrap();
+        let glyph = font.glyphs.get("A_Aacute").unwrap();
+        let acute_comb = glyph.layers[0]
+            .shapes
+            .iter()
+            .find_map(|shape| match shape {
+                Shape::Component(c) if c.name == "acutecomb" => Some(c),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(acute_comb.anchor.as_deref(), Some("top_2"));
     }
 }

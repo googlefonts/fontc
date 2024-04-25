@@ -1,0 +1,164 @@
+{
+.appVersion = "3259";
+.formatVersion = 3;
+DisplayStrings = (
+"",
+"́",
+"",
+"/A_A",
+"/A_A/A_Aacute"
+);
+date = "2024-04-25 15:41:39 +0000";
+familyName = "New Font";
+fontMaster = (
+{
+id = m01;
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = A_A;
+lastChange = "2024-04-25 20:33:02 +0000";
+layers = (
+{
+anchors = (
+{
+name = caret_1;
+pos = (300,0);
+},
+{
+name = top_1;
+pos = (150,700);
+},
+{
+name = top_2;
+pos = (450,700);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(156,621,l),
+(198,621,l),
+(292,136,l),
+(409,628,l),
+(459,637,l),
+(600,1,l),
+(547,0,l),
+(478,357,l),
+(424,359,l),
+(292,3,l),
+(188,345,l),
+(163,345,l),
+(60,0,l),
+(-4,0,l)
+);
+}
+);
+width = 600;
+}
+);
+},
+{
+glyphname = A_Aacute;
+lastChange = "2024-04-25 20:29:19 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+ref = A_A;
+},
+{
+anchor = top_2;
+pos = (115,112);
+ref = acutecomb;
+}
+);
+width = 600;
+}
+);
+},
+{
+glyphname = acutecomb;
+lastChange = "2024-04-25 20:23:00 +0000";
+layers = (
+{
+anchors = (
+{
+name = _top;
+pos = (335,588);
+},
+{
+name = top;
+pos = (353,721);
+}
+);
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(387,733,l),
+(422,723,l),
+(315,612,l),
+(287,618,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 769;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
