@@ -13,7 +13,7 @@ use std::{fs, path};
 
 use crate::glyphdata::{Category, GlyphData, Subcategory};
 use crate::plist::FromPlist;
-use kurbo::{Affine, Point};
+use kurbo::{Affine, Point, Vec2};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
 use plist_derive::FromPlist;
@@ -761,6 +761,16 @@ struct RawAnchor {
 pub struct Anchor {
     pub name: SmolStr,
     pub pos: Point,
+}
+
+impl Anchor {
+    pub(crate) fn is_origin(&self) -> bool {
+        self.name == "*origin"
+    }
+
+    pub(crate) fn origin_delta(&self) -> Option<Vec2> {
+        self.is_origin().then_some(self.pos.to_vec2())
+    }
 }
 
 impl Hash for Anchor {
@@ -2029,7 +2039,7 @@ impl TryFrom<RawFont> for Font {
             })
             .collect();
 
-        let mut font = Font {
+        Ok(Font {
             units_per_em,
             fs_type,
             use_typo_metrics,
@@ -2048,10 +2058,7 @@ impl TryFrom<RawFont> for Font {
             version_minor: from.versionMinor.unwrap_or_default() as u32,
             date: from.date,
             kerning_ltr: from.kerning_LTR,
-        };
-
-        font.propagate_all_anchors();
-        Ok(font)
+        })
     }
 }
 
@@ -2066,6 +2073,14 @@ fn preprocess_unparsed_plist(s: &str) -> Cow<str> {
 
 impl Font {
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
+        let mut font = Self::load_impl(glyphs_file)?;
+        font.propagate_all_anchors();
+        Ok(font)
+    }
+
+    // load without propagating anchors
+    pub(crate) fn load_impl(glyphs_file: impl AsRef<path::Path>) -> Result<Font, Error> {
+        let glyphs_file = glyphs_file.as_ref();
         if glyphs_file.extension() == Some(OsStr::new("glyphspackage")) {
             return Font::load_package(glyphs_file);
         }
