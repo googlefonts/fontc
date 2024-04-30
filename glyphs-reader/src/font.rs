@@ -9,12 +9,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::hash::Hash;
 use std::str::FromStr;
-use std::sync::OnceLock;
 use std::{fs, path};
 
 use crate::glyphdata::{Category, GlyphData, Subcategory};
 use crate::plist::FromPlist;
-use kurbo::{Affine, Point};
+use kurbo::{Affine, Point, Vec2};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
 use plist_derive::FromPlist;
@@ -170,9 +169,9 @@ impl FeatureSnippet {
     }
 }
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Clone, Default, Debug, PartialEq, Hash)]
 pub struct Glyph {
-    pub glyphname: SmolStr,
+    pub name: SmolStr,
     pub export: bool,
     pub layers: Vec<Layer>,
     pub unicode: BTreeSet<u32>,
@@ -194,9 +193,17 @@ impl Glyph {
             )
         )
     }
+
+    pub(crate) fn has_components(&self) -> bool {
+        self.layers
+            .iter()
+            .flat_map(Layer::components)
+            .next()
+            .is_some()
+    }
 }
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Hash)]
 pub struct Layer {
     pub layer_id: String,
     pub associated_master_id: Option<String>,
@@ -213,6 +220,13 @@ impl Layer {
 
     pub fn is_intermediate(&self) -> bool {
         self.associated_master_id.is_some() && !self.attributes.coordinates.is_empty()
+    }
+
+    pub(crate) fn components(&self) -> impl Iterator<Item = &Component> + '_ {
+        self.shapes.iter().filter_map(|shape| match shape {
+            Shape::Path(_) => None,
+            Shape::Component(comp) => Some(comp),
+        })
     }
 
     // TODO add is_alternate, is_color, etc.
@@ -253,7 +267,7 @@ impl FromPlist for LayerAttributes {
     }
 }
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum Shape {
     Path(Path),
     Component(Component),
@@ -747,6 +761,16 @@ struct RawAnchor {
 pub struct Anchor {
     pub name: SmolStr,
     pub pos: Point,
+}
+
+impl Anchor {
+    pub(crate) fn is_origin(&self) -> bool {
+        self.name == "*origin"
+    }
+
+    pub(crate) fn origin_delta(&self) -> Option<Vec2> {
+        self.is_origin().then_some(self.pos.to_vec2())
+    }
 }
 
 impl Hash for Anchor {
@@ -1694,7 +1718,7 @@ impl RawGlyph {
         }
 
         Ok(Glyph {
-            glyphname: self.glyphname,
+            name: self.glyphname,
             export: self.export.unwrap_or(true),
             layers: instances,
             left_kern: self.kern_left,
@@ -1710,9 +1734,8 @@ impl RawGlyph {
 // custom GlyphData.xml files, as well as handle overrides that are part of the
 // glyph source.
 fn get_glyph_category(name: &str, codepoints: &BTreeSet<u32>) -> Option<(Category, Subcategory)> {
-    static GLYPH_DATA: OnceLock<GlyphData> = OnceLock::new();
-    let data = GLYPH_DATA.get_or_init(|| GlyphData::new(None).unwrap());
-    data.get_glyph(name, Some(codepoints))
+    GlyphData::bundled()
+        .get_glyph(name, Some(codepoints))
         .map(|info| (info.category, info.subcategory))
 }
 
@@ -2026,7 +2049,6 @@ impl TryFrom<RawFont> for Font {
             default_master_idx,
             glyphs,
             glyph_order,
-            //glyph_to_codepoints,
             axis_mappings,
             virtual_masters,
             features,
@@ -2051,6 +2073,14 @@ fn preprocess_unparsed_plist(s: &str) -> Cow<str> {
 
 impl Font {
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
+        let mut font = Self::load_impl(glyphs_file)?;
+        font.propagate_all_anchors();
+        Ok(font)
+    }
+
+    // load without propagating anchors
+    pub(crate) fn load_impl(glyphs_file: impl AsRef<path::Path>) -> Result<Font, Error> {
+        let glyphs_file = glyphs_file.as_ref();
         if glyphs_file.extension() == Some(OsStr::new("glyphspackage")) {
             return Font::load_package(glyphs_file);
         }

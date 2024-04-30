@@ -13,6 +13,7 @@ fontdrasil = { path = "../fontdrasil" }
 quick-xml = "0.31"
 ordered-float.workspace = true
 kurbo.workspace = true
+indexmap.workspace = true
 
 thiserror.workspace = true
 icu_properties.workspace = true
