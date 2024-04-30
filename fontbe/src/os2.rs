@@ -2,10 +2,7 @@
 
 use std::{cmp::Ordering, collections::HashSet};
 
-use fontdrasil::{
-    orchestration::{Access, AccessBuilder, Work},
-    types::GlyphName,
-};
+use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::{ir::GlobalMetricsInstance, orchestration::WorkId as FeWorkId};
 use log::warn;
 use write_fonts::{
@@ -808,7 +805,7 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
             .variant(WorkId::Hmtx)
             .variant(WorkId::Gpos)
             .variant(WorkId::Gsub)
-            .variant(FeWorkId::Glyph(GlyphName::NOTDEF))
+            .variant(FeWorkId::ALL_GLYPHS)
             .build()
     }
 

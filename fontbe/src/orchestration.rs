@@ -104,6 +104,14 @@ pub enum WorkId {
     Stat,
 }
 
+impl WorkId {
+    /// An id representing access to all glyf fragments
+    pub const ALL_GLYF_FRAGMENTS: WorkId = WorkId::GlyfFragment(GlyphName::NOTDEF);
+
+    /// An id representing access to all gvar fragments
+    pub const ALL_GVAR_FRAGMENTS: WorkId = WorkId::GvarFragment(GlyphName::NOTDEF);
+}
+
 impl Identifier for WorkId {
     fn discriminant(&self) -> IdentifierDiscriminant {
         match self {

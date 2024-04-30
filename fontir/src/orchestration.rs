@@ -331,6 +331,13 @@ pub enum WorkId {
     Anchor(GlyphName),
 }
 
+impl WorkId {
+    /// An id representing access to all glyphs
+    pub const ALL_GLYPHS: Self = WorkId::Glyph(GlyphName::NOTDEF);
+    /// an id representing access to all anchors
+    pub const ALL_ANCHORS: Self = WorkId::Anchor(GlyphName::NOTDEF);
+}
+
 impl Identifier for WorkId {
     fn discriminant(&self) -> IdentifierDiscriminant {
         match self {

@@ -853,7 +853,7 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
         AccessBuilder::new()
             .variant(FeWorkId::StaticMetadata)
             .variant(FeWorkId::GlyphOrder)
-            .variant(WorkId::GlyfFragment(GlyphName::NOTDEF))
+            .variant(WorkId::ALL_GLYF_FRAGMENTS)
             .build()
     }
 
@@ -862,7 +862,7 @@ impl Work<Context, AnyWorkId, Error> for GlyfLocaWork {
             .variant(AnyWorkId::Be(WorkId::Glyf))
             .variant(AnyWorkId::Be(WorkId::Loca))
             .variant(AnyWorkId::Be(WorkId::LocaFormat))
-            .variant(WorkId::GlyfFragment(GlyphName::NOTDEF))
+            .variant(WorkId::ALL_GLYF_FRAGMENTS)
             .build()
     }
 
