@@ -43,7 +43,7 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
         AccessBuilder::new()
             .variant(FeWorkId::StaticMetadata)
             .variant(FeWorkId::GlyphOrder)
-            .variant(WorkId::GvarFragment(GlyphName::NOTDEF))
+            .variant(WorkId::ALL_GVAR_FRAGMENTS)
             .build()
     }
 

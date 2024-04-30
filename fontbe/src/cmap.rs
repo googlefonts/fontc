@@ -1,9 +1,6 @@
 //! Generates a [cmap](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap) table.
 
-use fontdrasil::{
-    orchestration::{Access, AccessBuilder, Work},
-    types::GlyphName,
-};
+use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 
 use write_fonts::{tables::cmap::Cmap, types::GlyphId};
@@ -28,7 +25,7 @@ impl Work<Context, AnyWorkId, Error> for CmapWork {
     fn read_access(&self) -> Access<AnyWorkId> {
         AccessBuilder::new()
             .variant(FeWorkId::GlyphOrder)
-            .variant(FeWorkId::Glyph(GlyphName::NOTDEF))
+            .variant(FeWorkId::ALL_GLYPHS)
             .build()
     }
 

@@ -6,10 +6,7 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use fontdrasil::{
-    orchestration::{Access, AccessBuilder, Work},
-    types::GlyphName,
-};
+use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 use write_fonts::{
     dump_table,
@@ -201,8 +198,8 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             .variant(FeWorkId::GlobalMetrics)
             .variant(FeWorkId::GlyphOrder)
             .variant(WorkId::Head)
-            .variant(FeWorkId::Glyph(GlyphName::NOTDEF))
-            .variant(WorkId::GlyfFragment(GlyphName::NOTDEF))
+            .variant(FeWorkId::ALL_GLYPHS)
+            .variant(WorkId::ALL_GLYF_FRAGMENTS)
             .build()
     }
 

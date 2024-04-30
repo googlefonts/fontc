@@ -264,7 +264,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         AccessBuilder::new()
             .variant(FeWorkId::StaticMetadata)
             .variant(FeWorkId::GlyphOrder)
-            .variant(FeWorkId::Anchor(GlyphName::NOTDEF))
+            .variant(FeWorkId::ALL_ANCHORS)
             .build()
     }
 

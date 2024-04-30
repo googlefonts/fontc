@@ -339,14 +339,14 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
             .variant(WorkId::StaticMetadata)
             .variant(WorkId::PreliminaryGlyphOrder)
             .variant(WorkId::GlobalMetrics)
-            .variant(WorkId::Glyph(GlyphName::NOTDEF))
+            .variant(WorkId::ALL_GLYPHS)
             .build()
     }
 
     fn write_access(&self) -> Access<WorkId> {
         AccessBuilder::new()
             .variant(WorkId::GlyphOrder)
-            .variant(WorkId::Glyph(GlyphName::NOTDEF))
+            .variant(WorkId::ALL_GLYPHS)
             .build()
     }
 
