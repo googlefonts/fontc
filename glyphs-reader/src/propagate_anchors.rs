@@ -38,10 +38,7 @@ fn propagate_all_anchors_impl(glyphs: &mut BTreeMap<SmolStr, Glyph>) {
     // then only update the actual glyphs after we've done all the work.
     let mut all_anchors = HashMap::new();
     for name in todo {
-        // temporarily remove the glyph so we can mess with it without borrowing all glyphs
         let glyph = glyphs.get(&name).unwrap();
-        // we work with indices here to also get around borrowck, because
-        // if we borrow the layers in the loop we can't set the anchors in the loop body
         for layer in &glyph.layers {
             let anchors = anchors_traversing_components(
                 glyph,
@@ -50,9 +47,7 @@ fn propagate_all_anchors_impl(glyphs: &mut BTreeMap<SmolStr, Glyph>) {
                 &all_anchors,
                 &mut num_base_glyphs,
             );
-            if anchors.len() != layer.anchors.len() {
-                debug_new_anchors(&anchors, glyph, layer);
-            }
+            maybe_log_new_anchors(&anchors, glyph, layer);
             all_anchors.entry(name.clone()).or_default().push(anchors);
         }
     }
@@ -69,25 +64,39 @@ fn propagate_all_anchors_impl(glyphs: &mut BTreeMap<SmolStr, Glyph>) {
     }
 }
 
-fn debug_new_anchors(anchors: &[Anchor], glyph: &Glyph, layer: &Layer) {
-    if !log::log_enabled!(log::Level::Info) {
+fn maybe_log_new_anchors(anchors: &[Anchor], glyph: &Glyph, layer: &Layer) {
+    if !glyph.has_components() || !log::log_enabled!(log::Level::Trace) || anchors == layer.anchors
+    {
         return;
     }
     let prev_names: Vec<_> = layer.anchors.iter().map(|a| &a.name).collect();
     let new_names: Vec<_> = anchors.iter().map(|a| &a.name).collect();
-    log::info!(
+    log::trace!(
         "propagated anchors for ('{}': {prev_names:?} -> {new_names:?}",
         glyph.name,
     );
 }
 
 /// Return the anchors for this glyph, including anchors from components
+///
+/// This function is a reimplmentation of a similarly named function in glyphs.app.
+///
+/// The logic for copying anchors from components into their containing composites
+/// is tricky. Anchors need to be adjusted in various ways:
+///
+/// - a speical "*origin" anchor may exist, which modifies the position of other anchors
+/// - if a component is flipped on the x or y axes, we rename "top" to "bottom"
+///   and/or "left" to "right"
+/// - we need to apply the transform from the component
+/// - we may need to rename an anchor when the component is part of a ligature glyph
 fn anchors_traversing_components<'a>(
     glyph: &'a Glyph,
     layer: &'a Layer,
     glyphs: &BTreeMap<SmolStr, Glyph>,
-    // map of glyph -> anchors, per-layer, updated as we do each glyph
-    visited_anchors: &HashMap<SmolStr, Vec<Vec<Anchor>>>,
+    // map of glyph -> anchors, per-layer, updated as we do each glyph;
+    // since we sort by component depth before doing work, we know that any components
+    // of the current glyph have been done first.
+    done_anchors: &HashMap<SmolStr, Vec<Vec<Anchor>>>,
     // each (glyph, layer) writes its number of base glyphs into this map during traversal
     base_glyph_counts: &mut HashMap<(SmolStr, &'a str), usize>,
 ) -> Vec<Anchor> {
@@ -95,20 +104,10 @@ fn anchors_traversing_components<'a>(
         return Vec::new();
     }
 
-    // if this is a mark and it has anchors, just return them.
+    // if this is a mark and it has anchors, just return them
+    // (as in, don't even look at the components)
     if !layer.anchors.is_empty() && glyph.category == Some(Category::Mark) {
-        let mut anchors = layer.anchors.clone();
-        // if there is an '*origin' anchor, other positions are adjusted by its pos:
-        if let Some(origin) = anchors
-            .iter()
-            .position(Anchor::is_origin)
-            .map(|idx| anchors.remove(idx))
-        {
-            anchors
-                .iter_mut()
-                .for_each(|a| a.pos -= origin.pos.to_vec2())
-        }
-        return anchors;
+        return origin_adjusted_anchors(&layer.anchors).collect();
     }
 
     let is_ligature = glyph.sub_category == Some(Subcategory::Ligature);
@@ -123,27 +122,24 @@ fn anchors_traversing_components<'a>(
     for (component_idx, component) in layer.components().enumerate() {
         // because we process dependencies first we know that all components
         // referenced have already been propagated
-        let Some(anchors) =
+        let Some(mut anchors) =
             // equivalent to the recursive call in the reference impl
-            get_component_layer_anchors(component, layer, glyphs, visited_anchors)
+            get_component_layer_anchors(component, layer, glyphs, done_anchors)
         else {
             log::warn!(
-                "could not get layer '{:?}' for component '{}' of glyph '{}'",
-                layer.associated_master_id,
+                "could not get layer '{}' for component '{}' of glyph '{}'",
+                layer.layer_id,
                 component.name,
                 glyph.name
             );
             continue;
         };
 
-        let mut anchors = anchors.to_owned();
-
         // if this component has an explicitly set attachment anchor, use it
         if let Some(comp_anchor) = component.anchor.as_ref().filter(|_| component_idx > 0) {
             maybe_rename_component_anchor(comp_anchor.to_owned(), &mut anchors);
         }
 
-        let scale = get_xy_rotation(component.transform);
         let component_number_of_base_glyphs = base_glyph_counts
             .get(&(component.name.clone(), layer.layer_id.as_str()))
             .copied()
@@ -154,16 +150,18 @@ fn anchors_traversing_components<'a>(
             .any(|a| a.name.len() >= 2 && a.name.starts_with('_'));
         let comb_has_exit = anchors.iter().any(|a| a.name.ends_with("exit"));
         if !(comb_has_underscore | comb_has_exit) {
-            // we want do delete exit anchors we may have taken from earlier
-            // component glyphs:
+            // delete exit anchors we may have taken from earlier components
+            // (since a glyph should only have one exit anchor, and logically its at the end)
             all_anchors.retain(|name: &SmolStr, _| !name.ends_with("exit"));
         }
 
-        for anchor in anchors {
+        let scale = get_xy_rotation(component.transform);
+        for mut anchor in anchors {
             let new_has_underscore = anchor.name.starts_with('_');
             if (component_idx > 0 || has_underscore) && new_has_underscore {
                 continue;
             }
+            // skip entry anchors on non-first glyphs
             if component_idx > 0 && anchor.name.ends_with("entry") {
                 continue;
             }
@@ -171,14 +169,13 @@ fn anchors_traversing_components<'a>(
             let mut new_anchor_name = rename_anchor_for_scale(&anchor.name, scale);
             if is_ligature
                 && component_number_of_base_glyphs > 0
-                && !new_anchor_name.starts_with('_')
+                && !new_has_underscore
                 && !(new_anchor_name.ends_with("exit") || new_anchor_name.ends_with("entry"))
             {
                 // dealing with marks like top_1 on a ligature
                 new_anchor_name = make_liga_anchor_name(new_anchor_name, number_of_base_glyphs);
             }
 
-            let mut anchor = anchor.to_owned();
             apply_transform_to_anchor(&mut anchor, component.transform);
             anchor.name = new_anchor_name;
             all_anchors.insert(anchor.name.clone(), anchor);
@@ -192,16 +189,7 @@ fn anchors_traversing_components<'a>(
 
     // now we've handled all the anchors from components, so copy over anchors
     // that were explicitly defined on this layer:
-    let origin = layer
-        .anchors
-        .iter()
-        .find_map(Anchor::origin_delta)
-        .unwrap_or_default();
-    all_anchors.extend(layer.anchors.iter().filter(|a| !a.is_origin()).map(|a| {
-        let mut a = a.clone();
-        a.pos -= origin;
-        (a.name.clone(), a)
-    }));
+    all_anchors.extend(origin_adjusted_anchors(&layer.anchors).map(|a| (a.name.clone(), a)));
     let mut has_underscore_anchor = false;
     let mut has_mark_anchor = false;
     let mut component_count_from_anchors = 0;
@@ -227,6 +215,8 @@ fn anchors_traversing_components<'a>(
     if !has_underscore_anchor && number_of_base_glyphs == 0 && has_mark_anchor {
         number_of_base_glyphs += 1;
     }
+    number_of_base_glyphs = number_of_base_glyphs.max(component_count_from_anchors);
+
     if layer.anchors.iter().any(|a| a.name == "_bottom") {
         all_anchors.shift_remove("top");
         all_anchors.shift_remove("_top");
@@ -240,6 +230,25 @@ fn anchors_traversing_components<'a>(
         number_of_base_glyphs,
     );
     all_anchors.into_values().collect()
+}
+
+/// returns an iterator over anchors in the layer, accounting for a possible "*origin" anchor
+///
+/// If that anchor is present it will be used to adjust the positions of other
+/// anchors, and will not be included in the output.
+fn origin_adjusted_anchors(anchors: &[Anchor]) -> impl Iterator<Item = Anchor> + '_ {
+    let origin = anchors
+        .iter()
+        .find_map(Anchor::origin_delta)
+        .unwrap_or_default();
+    anchors
+        .iter()
+        .filter(|a| !a.is_origin())
+        .cloned()
+        .map(move |mut a| {
+            a.pos -= origin;
+            a
+        })
 }
 
 // returns a vec2 where for each axis a negative value indicates that axis is considerd flipped
@@ -273,7 +282,7 @@ fn apply_transform_to_anchor(anchor: &mut Anchor, transform: Affine) {
 }
 
 fn maybe_rename_component_anchor(comp_name: SmolStr, anchors: &mut [Anchor]) {
-    // e.g, go from 'top_1' to 'top'
+    // e.g, go from 'top' to 'top_1'
     let Some((sub_name, _)) = comp_name.as_str().split_once('_') else {
         return;
     };
@@ -333,12 +342,12 @@ fn rename_anchor_for_scale(name: &SmolStr, scale: Vec2) -> SmolStr {
 }
 
 // in glyphs.app this function will synthesize a layer if it is missing.
-fn get_component_layer_anchors<'a>(
+fn get_component_layer_anchors(
     component: &Component,
     layer: &Layer,
     glyphs: &BTreeMap<SmolStr, Glyph>,
-    anchors: &'a HashMap<SmolStr, Vec<Vec<Anchor>>>,
-) -> Option<&'a [Anchor]> {
+    anchors: &HashMap<SmolStr, Vec<Vec<Anchor>>>,
+) -> Option<Vec<Anchor>> {
     let glyph = glyphs.get(&component.name)?;
     glyph
         .layers
@@ -349,7 +358,7 @@ fn get_component_layer_anchors<'a>(
                 .get(&component.name)
                 .and_then(|layers| layers.get(layer_idx))
         })
-        .map(Vec::as_slice)
+        .cloned()
 }
 
 /// returns a list of all glyphs, sorted by component depth.
