@@ -86,6 +86,7 @@ pub(crate) fn to_ir_static_metadata(
         Default::default(), // TODO: glyph locations we really do need
         Default::default(),
         Default::default(),
+        Default::default(),
     )
     .map_err(WorkError::VariationModelError)
 }

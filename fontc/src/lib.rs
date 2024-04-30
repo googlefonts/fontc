@@ -523,6 +523,7 @@ mod tests {
     use write_fonts::{
         dump_table,
         tables::{
+            gdef::GlyphClassDef,
             glyf::{Bbox, Glyph as RawGlyph},
             loca::LocaFormat,
         },
@@ -1766,6 +1767,33 @@ mod tests {
             ),
             "Should set bit 1, Latin-1 Supplement and bit 38, Math Operators",
         );
+    }
+
+    #[test]
+    fn glyphs_app_ir_categories() {
+        let result = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
+        let staticmeta = result.fe_context.static_metadata.get();
+        let categories = &staticmeta.gdef_categories;
+        assert_eq!(categories.get("a"), Some(&GlyphClassDef::Base));
+        assert_eq!(categories.get("acutecomb"), Some(&GlyphClassDef::Mark));
+        assert_eq!(categories.get("brevecomb"), Some(&GlyphClassDef::Mark));
+        assert_eq!(
+            categories.get("brevecomb_acutecomb"),
+            Some(&GlyphClassDef::Mark)
+        );
+        assert_eq!(categories.get("f_a"), Some(&GlyphClassDef::Ligature));
+        assert_eq!(categories.get(".notdef"), None);
+    }
+
+    #[test]
+    fn ufo_app_ir_categories_matches_glyphs() {
+        let glyphs = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
+        let ufo = TestCompile::compile_source("Oswald-glyph-categories/Oswald-Regular.designspace");
+
+        let gmeta = glyphs.fe_context.static_metadata.get();
+        let ufometa = ufo.fe_context.static_metadata.get();
+
+        assert_eq!(gmeta.gdef_categories, ufometa.gdef_categories)
     }
 
     #[test]

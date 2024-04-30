@@ -29,7 +29,7 @@ use norad::{
     fontinfo::StyleMapStyle,
 };
 use write_fonts::{
-    tables::os2::SelectionFlags,
+    tables::{gdef::GlyphClassDef, os2::SelectionFlags},
     types::{InvalidTag, NameId, Tag},
     OtRound,
 };
@@ -582,6 +582,41 @@ fn glyph_order(
     Ok(glyph_order)
 }
 
+fn glyph_categories(
+    lib_plist: &plist::Dictionary,
+) -> Result<BTreeMap<GlyphName, GlyphClassDef>, WorkError> {
+    const OPENTYPE_CATEGORIES: &str = "public.openTypeCategories";
+
+    let categories = match lib_plist.get(OPENTYPE_CATEGORIES) {
+        Some(plist::Value::Dictionary(categories)) => categories,
+        Some(_other) => {
+            return Err(WorkError::ParseError(
+                PathBuf::from("lib.plist"),
+                format!("value for '{OPENTYPE_CATEGORIES}' is not a dictionary"),
+            ))
+        }
+        None => return Ok(Default::default()),
+    };
+
+    let categories = categories
+        .iter()
+        .filter_map(|(name, raw_cat)| match raw_cat.as_string() {
+            Some("base") => Some((GlyphName::new(name), GlyphClassDef::Base)),
+            Some("ligature") => Some((GlyphName::new(name), GlyphClassDef::Ligature)),
+            Some("mark") => Some((GlyphName::new(name), GlyphClassDef::Mark)),
+            Some("component") => Some((GlyphName::new(name), GlyphClassDef::Component)),
+            // this is explicitly allowed, although it doesn't mean anything?
+            // https://unifiedfontobject.org/versions/ufo3/lib.plist/#publicopentypecategories
+            Some("unassigned") => None,
+            Some(_) | None => {
+                log::warn!("unknown value in public.openTypeCategories for glyph '{name}'");
+                None
+            }
+        })
+        .collect();
+    Ok(categories)
+}
+
 fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, WorkError> {
     let postscript_names = match lib_plist.get("public.postscriptNames") {
         Some(value) => {
@@ -840,6 +875,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
                 Err(e) => return Err(e),
             };
         let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
+        let glyph_categories = glyph_categories(&lib_plist)?;
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields
         // Start with the bits from selection flags
@@ -881,6 +917,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             glyph_locations,
             postscript_names,
             italic_angle,
+            glyph_categories,
         )
         .map_err(WorkError::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
