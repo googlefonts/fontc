@@ -16,6 +16,7 @@ const SIGN_RIGHT: char = '>'; // + > →
 const SIGN_LEFT: char = '<'; // - < ←
 
 /// Assert two strings are equal, printing a pretty diff on failure.
+#[cfg(test)]
 #[macro_export]
 macro_rules! assert_eq_str {
     ($left:expr, $right:expr$(,)?) => ({
@@ -48,11 +49,13 @@ macro_rules! paint {
     )
 }
 
+#[cfg(test)]
 pub(crate) struct MyStrs<'a> {
     pub(crate) left: &'a str,
     pub(crate) right: &'a str,
 }
 
+#[cfg(test)]
 impl std::fmt::Display for MyStrs<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write_line_diff(f, self.left, self.right)

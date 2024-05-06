@@ -67,7 +67,7 @@ impl ValueRecord {
     /// knowledge of the writing direction, and then later needs to be modified.
     pub fn make_rtl_compatible(&mut self) {
         if self.x_placement.is_none() {
-            self.x_placement = self.x_advance.clone();
+            self.x_placement.clone_from(&self.x_advance);
         }
     }
 
