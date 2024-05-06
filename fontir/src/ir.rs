@@ -79,7 +79,19 @@ pub struct StaticMetadata {
 
     /// Miscellaneous font-wide data that didn't seem worthy of top billing
     pub misc: MiscMetadata,
-    pub gdef_categories: BTreeMap<GlyphName, GlyphClassDef>,
+    pub gdef_categories: GdefCategories,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+pub struct GdefCategories {
+    /// A map of glyphs to categories.
+    ///
+    /// If this is empty, classes should be inferred.
+    pub categories: BTreeMap<GlyphName, GlyphClassDef>,
+    /// If set, we should prefer categories defined in FEA source to ones here.
+    ///
+    /// This is set for UFO/DS sources, but not for glyphs sources.
+    pub prefer_gdef_categories_in_fea: bool,
 }
 
 /// Metadata primarily feeding the OS/2 table.
@@ -319,7 +331,7 @@ impl StaticMetadata {
         glyph_locations: HashSet<NormalizedLocation>,
         postscript_names: PostscriptNames,
         italic_angle: f64,
-        gdef_categories: BTreeMap<GlyphName, GlyphClassDef>,
+        gdef_categories: GdefCategories,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
         let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
@@ -1844,14 +1856,17 @@ mod tests {
             ]),
             postscript_names: HashMap::from([("lhs".into(), "rhs".into())]),
             italic_angle: 0.0.into(),
-            gdef_categories: [
-                ("a", GlyphClassDef::Base),
-                ("f_f", GlyphClassDef::Ligature),
-                ("acutecomb", GlyphClassDef::Mark),
-            ]
-            .into_iter()
-            .map(|(name, cls)| (GlyphName::new(name), cls))
-            .collect(),
+            gdef_categories: GdefCategories {
+                categories: [
+                    ("a", GlyphClassDef::Base),
+                    ("f_f", GlyphClassDef::Ligature),
+                    ("acutecomb", GlyphClassDef::Mark),
+                ]
+                .into_iter()
+                .map(|(name, cls)| (GlyphName::new(name), cls))
+                .collect(),
+                prefer_gdef_categories_in_fea: false,
+            },
             misc: MiscMetadata {
                 fs_type: None,
                 selection_flags: SelectionFlags::default(),

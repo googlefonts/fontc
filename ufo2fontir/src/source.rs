@@ -14,8 +14,8 @@ use fontdrasil::{
 use fontir::{
     error::{Error, WorkError},
     ir::{
-        AnchorBuilder, FeaturesSource, GlobalMetric, GlobalMetrics, GlyphOrder, KernGroup,
-        KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
+        AnchorBuilder, FeaturesSource, GdefCategories, GlobalMetric, GlobalMetrics, GlyphOrder,
+        KernGroup, KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
         PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
@@ -875,7 +875,10 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
                 Err(e) => return Err(e),
             };
         let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
-        let glyph_categories = glyph_categories(&lib_plist)?;
+        let glyph_categories = glyph_categories(&lib_plist).map(|categories| GdefCategories {
+            categories,
+            prefer_gdef_categories_in_fea: true,
+        })?;
 
         // https://unifiedfontobject.org/versions/ufo3/fontinfo.plist/#opentype-os2-table-fields
         // Start with the bits from selection flags

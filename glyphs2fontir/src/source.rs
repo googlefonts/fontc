@@ -17,9 +17,9 @@ use fontdrasil::{
 use fontir::{
     error::{Error, WorkError},
     ir::{
-        self, AnchorBuilder, AnchorKind, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder,
-        KernGroup, KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
-        StaticMetadata, DEFAULT_VENDOR_ID,
+        self, AnchorBuilder, AnchorKind, GdefCategories, GlobalMetric, GlobalMetrics,
+        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
+        NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork, WorkId},
     source::{Input, Source},
@@ -431,13 +431,18 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
     }
 }
 
-fn make_glyph_categories(font: &Font) -> BTreeMap<GlyphName, GlyphClassDef> {
-    font.glyphs
+fn make_glyph_categories(font: &Font) -> GdefCategories {
+    let categories = font
+        .glyphs
         .iter()
         .filter_map(|(name, glyph)| {
             category_for_glyph(glyph).map(|cat| (GlyphName::new(name), cat))
         })
-        .collect()
+        .collect();
+    GdefCategories {
+        categories,
+        prefer_gdef_categories_in_fea: false,
+    }
 }
 
 /// determine the GDEF category for this glyph, if appropriate

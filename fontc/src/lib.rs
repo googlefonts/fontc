@@ -1773,7 +1773,7 @@ mod tests {
     fn glyphs_app_ir_categories() {
         let result = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
         let staticmeta = result.fe_context.static_metadata.get();
-        let categories = &staticmeta.gdef_categories;
+        let categories = &staticmeta.gdef_categories.categories;
         assert_eq!(categories.get("a"), Some(&GlyphClassDef::Base));
         assert_eq!(categories.get("acutecomb"), Some(&GlyphClassDef::Mark));
         assert_eq!(categories.get("brevecomb"), Some(&GlyphClassDef::Mark));
@@ -1793,7 +1793,21 @@ mod tests {
         let gmeta = glyphs.fe_context.static_metadata.get();
         let ufometa = ufo.fe_context.static_metadata.get();
 
-        assert_eq!(gmeta.gdef_categories, ufometa.gdef_categories)
+        assert_eq!(
+            gmeta.gdef_categories.categories,
+            ufometa.gdef_categories.categories
+        )
+    }
+
+    #[test]
+    fn ufo_and_glyphs_set_prefer_fea_flag() {
+        let glyphs = TestCompile::compile_source("glyphs3/Oswald-glyph-categories.glyphs");
+        let ufo = TestCompile::compile_source("Oswald-glyph-categories/Oswald-Regular.designspace");
+
+        let gmeta = glyphs.fe_context.static_metadata.get();
+        let ufometa = ufo.fe_context.static_metadata.get();
+        assert!(!gmeta.gdef_categories.prefer_gdef_categories_in_fea);
+        assert!(ufometa.gdef_categories.prefer_gdef_categories_in_fea);
     }
 
     #[test]
