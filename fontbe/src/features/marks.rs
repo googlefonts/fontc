@@ -1,8 +1,11 @@
 //! Generates a [FeaRsMarks] datastructure to be fed to fea-rs
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use fea_rs::compile::{MarkToBaseBuilder, MarkToMarkBuilder};
+use fea_rs::{
+    compile::{MarkToBaseBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo},
+    Opts,
+};
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::GlyphName,
@@ -17,7 +20,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, FeaRsMarks, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, FeaAst, FeaRsMarks, WorkId},
 };
 use fontir::{
     ir::{self, AnchorKind, GlyphAnchors, GlyphOrder, StaticMetadata},
@@ -34,9 +37,9 @@ pub fn create_mark_work() -> Box<BeWork> {
 /// The canonical name shared for a given mark/base pair, e.g. `top` for `top`/`_top`
 type MarkGroupName = SmolStr;
 
-#[allow(dead_code)] // a few currently unused fields
 struct MarkLookupBuilder<'a> {
-    gdef_classes: Option<HashMap<GlyphId, GlyphClassDef>>,
+    // extracted from public.openTypeCatgories/GlyphData.xml or FEA
+    gdef_classes: BTreeMap<GlyphName, GlyphClassDef>,
     // pruned, only the anchors we are using
     anchors: BTreeMap<GlyphName, Vec<&'a ir::Anchor>>,
     glyph_order: &'a GlyphOrder,
@@ -83,7 +86,7 @@ impl<'a> MarkLookupBuilder<'a> {
     fn new(
         anchors: Vec<&'a GlyphAnchors>,
         glyph_order: &'a GlyphOrder,
-        gdef_classes: Option<HashMap<GlyphId, GlyphClassDef>>,
+        gdef_classes: BTreeMap<GlyphName, GlyphClassDef>,
         static_metadata: &'a StaticMetadata,
     ) -> Self {
         // first we want to narrow our input down to only anchors that are participating.
@@ -127,11 +130,11 @@ impl<'a> MarkLookupBuilder<'a> {
             !anchors.is_empty()
         });
         Self {
-            gdef_classes,
             anchors: pruned,
             glyph_order,
             fea_scripts: Default::default(),
             static_metadata,
+            gdef_classes,
         }
     }
 
@@ -264,6 +267,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         AccessBuilder::new()
             .variant(FeWorkId::StaticMetadata)
             .variant(FeWorkId::GlyphOrder)
+            .variant(WorkId::FeaturesAst)
             .variant(FeWorkId::ALL_ANCHORS)
             .build()
     }
@@ -273,19 +277,57 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         let static_metadata = context.ir.static_metadata.get();
         let glyph_order = context.ir.glyph_order.get();
         let raw_anchors = context.ir.anchors.all();
+        let ast = context.fea_ast.get();
+        let gdef_classes = get_gdef_classes(&static_metadata, &ast, &glyph_order);
 
         let anchors = raw_anchors
             .iter()
             .map(|(_, anchors)| anchors.as_ref())
             .collect::<Vec<_>>();
 
-        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, None, &static_metadata);
+        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, gdef_classes, &static_metadata);
         let all_marks = ctx.build()?;
 
         context.fea_rs_marks.set(all_marks);
 
         Ok(())
     }
+}
+
+fn get_gdef_classes(
+    meta: &StaticMetadata,
+    ast: &FeaAst,
+    glyph_order: &GlyphOrder,
+) -> BTreeMap<GlyphName, GlyphClassDef> {
+    let glyph_map = glyph_order.iter().cloned().collect();
+    // if we prefer classes defined in fea, compile the fea and see if we have any
+    if meta.gdef_categories.prefer_gdef_categories_in_fea {
+        if let Some(gdef_classes) =
+            fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
+                &ast.ast,
+                &glyph_map,
+                None,
+                None,
+                Opts::new().compile_gpos(false),
+            )
+            .ok()
+            .and_then(|mut comp| comp.0.gdef_classes.take())
+        {
+            return gdef_classes
+                .into_iter()
+                .filter_map(|(g, cls)| {
+                    glyph_order
+                        .glyph_name(g.to_u16() as _)
+                        .cloned()
+                        .map(|name| (name, cls))
+                })
+                .collect();
+        }
+    }
+    // otherwise (we don't care about FEA or nothing is defined) we use the
+    // classes in StaticMetadata (which are from public.openTypeCategories or
+    // GlyphData.xml)
+    meta.gdef_categories.categories.clone()
 }
 
 fn resolve_anchor(
