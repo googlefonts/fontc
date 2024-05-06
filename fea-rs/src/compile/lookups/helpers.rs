@@ -135,6 +135,6 @@ mod tests {
 
         let (_, map) = builder.build();
         assert_eq!(map.get(&c1), map.get(&c2));
-        assert!(map.get(&c3).is_none());
+        assert!(!map.contains_key(&c3));
     }
 }

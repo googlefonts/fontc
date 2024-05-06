@@ -90,7 +90,6 @@ pub(crate) fn to_ir_static_metadata(
     .map_err(WorkError::VariationModelError)
 }
 
-///
 #[allow(dead_code)] // TEMPORARY
 fn to_ir_glyph(
     global_axes: HashMap<AxisName, Tag>,

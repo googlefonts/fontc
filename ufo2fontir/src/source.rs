@@ -1319,7 +1319,7 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
             .filter(|(idx, source)| !is_glyph_only(source) && *idx != default_master_idx)
         {
             for (name, entries) in &kerning_groups.groups {
-                let Some(real_name) = reverse_groups.get(&(name.side_ord(), &entries)) else {
+                let Some(real_name) = reverse_groups.get(&(name.side_ord(), entries)) else {
                     warn!(
                         "{name} exists only in {} and will be ignored",
                         source.name.as_ref().unwrap()
@@ -1404,7 +1404,7 @@ impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
                     warn!("'{name}' should have prefix {group_prefix}; ignored");
                     return None;
                 }
-                if groups.old_to_new_group_names.get(&group_name).is_none() {
+                if !groups.old_to_new_group_names.contains_key(&group_name) {
                     warn!("'{name}' is not a valid group name; ignored");
                     return None;
                 }

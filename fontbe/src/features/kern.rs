@@ -394,7 +394,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
 
 impl KerningGatherWork {
     //. take the kerning fragments and generate the kerning lookups.
-    ///
+    //
     // This includes much of the logic from the ufo2ft KernFeatureWriter
     fn finalize_kerning(
         &self,

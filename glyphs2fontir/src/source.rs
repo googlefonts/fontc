@@ -628,11 +628,6 @@ struct KerningInstanceWork {
     location: NormalizedLocation,
 }
 
-#[derive(Debug)]
-struct AnchorWork {
-    _font_info: Arc<FontInfo>,
-}
-
 /// See <https://github.com/googlefonts/glyphsLib/blob/42bc1db912fd4b66f130fb3bdc63a0c1e774eb38/Lib/glyphsLib/builder/kerning.py#L53-L72>
 fn kern_participant(
     glyph_order: &GlyphOrder,

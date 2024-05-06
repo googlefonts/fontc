@@ -556,7 +556,7 @@ fn cubics_to_quadratics(glyph: CheckedGlyph, units_per_em: u16) -> CheckedGlyph 
 
         // If we are at a move then these are also our new subpath start points
         if let PathEl::MoveTo(..) = elements[0] {
-            subpath_start_pts = prev_el_end_pts.clone();
+            subpath_start_pts.clone_from(&prev_el_end_pts);
         }
     }
 
