@@ -44,7 +44,7 @@ use crate::{
     },
 };
 
-use super::{properties::CharMap, PendingLookup};
+use super::{properties::CharMap, PendingLookup, DFLT_LANG, DFLT_SCRIPT};
 
 /// On Linux it took ~0.01 ms per loop, try to get enough to make fan out worthwhile
 /// based on empirical testing
@@ -53,8 +53,6 @@ const KERN: Tag = Tag::new(b"kern");
 // we don't currently compile this feature, but we will, and it is referenced
 // in places because our impl is based on fonttools.
 const DIST: Tag = Tag::new(b"dist");
-const DFLT_SCRIPT: Tag = Tag::new(b"DFLT");
-const DFLT_LANG: Tag = Tag::new(b"dflt");
 
 /// Accumulation of all the kerning from IR
 #[derive(Debug)]

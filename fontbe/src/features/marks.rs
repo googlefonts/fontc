@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use fea_rs::{
     compile::{MarkToBaseBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo},
-    Opts,
+    typed::{AstNode, LanguageSystem},
+    Opts, ParseTree,
 };
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
@@ -26,6 +27,8 @@ use fontir::{
     ir::{self, AnchorKind, GlyphAnchors, GlyphOrder, StaticMetadata},
     orchestration::WorkId as FeWorkId,
 };
+
+use super::DFLT_SCRIPT;
 
 #[derive(Debug)]
 struct MarkWork {}
@@ -88,6 +91,7 @@ impl<'a> MarkLookupBuilder<'a> {
         glyph_order: &'a GlyphOrder,
         gdef_classes: BTreeMap<GlyphName, GlyphClassDef>,
         static_metadata: &'a StaticMetadata,
+        fea_scripts: HashSet<Tag>,
     ) -> Self {
         // first we want to narrow our input down to only anchors that are participating.
         let mut pruned = BTreeMap::new();
@@ -132,7 +136,7 @@ impl<'a> MarkLookupBuilder<'a> {
         Self {
             anchors: pruned,
             glyph_order,
-            fea_scripts: Default::default(),
+            fea_scripts,
             static_metadata,
             gdef_classes,
         }
@@ -285,13 +289,29 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
             .map(|(_, anchors)| anchors.as_ref())
             .collect::<Vec<_>>();
 
-        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, gdef_classes, &static_metadata);
+        let fea_scripts = get_fea_scripts(&ast.ast);
+        let ctx = MarkLookupBuilder::new(
+            anchors,
+            &glyph_order,
+            gdef_classes,
+            &static_metadata,
+            fea_scripts,
+        );
         let all_marks = ctx.build()?;
 
         context.fea_rs_marks.set(all_marks);
 
         Ok(())
     }
+}
+
+fn get_fea_scripts(ast: &ParseTree) -> HashSet<Tag> {
+    ast.typed_root()
+        .statements()
+        .filter_map(LanguageSystem::cast)
+        .map(|langsys| langsys.script().to_raw())
+        .filter(|tag| *tag != DFLT_SCRIPT)
+        .collect()
 }
 
 fn get_gdef_classes(
