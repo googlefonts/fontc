@@ -664,6 +664,7 @@ mod tests {
             HashSet::from([min_wght, def_wght, max_wght]),
             Default::default(),
             Default::default(),
+            Default::default(),
         )
         .unwrap()
     }

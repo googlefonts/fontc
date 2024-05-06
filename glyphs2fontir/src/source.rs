@@ -17,17 +17,20 @@ use fontdrasil::{
 use fontir::{
     error::{Error, WorkError},
     ir::{
-        self, AnchorBuilder, GlobalMetric, GlobalMetrics, GlyphInstance, GlyphOrder, KernGroup,
-        KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
-        StaticMetadata, DEFAULT_VENDOR_ID,
+        self, AnchorBuilder, AnchorKind, GdefCategories, GlobalMetric, GlobalMetrics,
+        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
+        NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork, WorkId},
     source::{Input, Source},
     stateset::StateSet,
 };
-use glyphs_reader::{Font, InstanceType};
+use glyphs_reader::{
+    glyphdata::{Category, Subcategory},
+    Font, InstanceType,
+};
 use write_fonts::{
-    tables::os2::SelectionFlags,
+    tables::{gdef::GlyphClassDef, os2::SelectionFlags},
     types::{NameId, Tag},
 };
 
@@ -377,6 +380,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             .italic_angle()
             .map(|v| -v)
             .unwrap_or(0.0);
+        let categories = make_glyph_categories(font);
 
         let mut static_metadata = StaticMetadata::new(
             font.units_per_em,
@@ -386,6 +390,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             glyph_locations,
             Default::default(), // TODO: impl reading PS names from Glyphs
             italic_angle,
+            categories,
         )
         .map_err(WorkError::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
@@ -423,6 +428,43 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             .collect();
         context.preliminary_glyph_order.set(glyph_order);
         Ok(())
+    }
+}
+
+fn make_glyph_categories(font: &Font) -> GdefCategories {
+    let categories = font
+        .glyphs
+        .iter()
+        .filter_map(|(name, glyph)| {
+            category_for_glyph(glyph).map(|cat| (GlyphName::new(name), cat))
+        })
+        .collect();
+    GdefCategories {
+        categories,
+        prefer_gdef_categories_in_fea: false,
+    }
+}
+
+/// determine the GDEF category for this glyph, if appropriate
+// see
+// <https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517/Lib/glyphsLib/builder/features.py#L205>
+fn category_for_glyph(glyph: &glyphs_reader::Glyph) -> Option<GlyphClassDef> {
+    let has_attaching_anchor = glyph
+        .layers
+        .iter()
+        .flat_map(|layer| layer.anchors.iter())
+        .any(|anchor| {
+            AnchorKind::new(&anchor.name)
+                .map(|a| a.is_attaching())
+                .unwrap_or(false)
+        });
+    match (glyph.category?, glyph.sub_category.unwrap_or_default()) {
+        (_, Subcategory::Ligature) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
+        (Category::Mark, Subcategory::Nonspacing | Subcategory::SpacingCombining) => {
+            Some(GlyphClassDef::Mark)
+        }
+        _ if has_attaching_anchor => Some(GlyphClassDef::Base),
+        _ => None,
     }
 }
 
@@ -946,15 +988,15 @@ mod tests {
         source::Source,
         stateset::StateSet,
     };
-    use glyphs_reader::Font;
+    use glyphs_reader::{glyphdata::Category, Font};
     use indexmap::IndexSet;
     use write_fonts::types::{NameId, Tag};
 
     use crate::source::names;
 
-    use super::{glyph_states, GlyphsIrSource};
-
     use pretty_assertions::assert_eq;
+
+    use super::*;
 
     fn testdata_dir() -> PathBuf {
         let dir = Path::new("../resources/testdata");
@@ -1352,6 +1394,13 @@ mod tests {
         build_glyphs(&source, &context, &[&"name".into()]).unwrap();
         let glyph = context.glyphs.get(&WorkId::Glyph("name".into()));
         assert_eq!(HashSet::from([1619, 1764]), glyph.codepoints);
+    }
+
+    // check that we're correctly parsing the 'optional 'category' field of glyphs
+    #[test]
+    fn includes_glyph_category_overrides() {
+        let font = Font::load(&glyphs3_dir().join("Oswald-glyph-categories.glyphs")).unwrap();
+        assert_eq!(font.glyphs["b"].category, Some(Category::Number));
     }
 
     // It's so minimal it's a good test

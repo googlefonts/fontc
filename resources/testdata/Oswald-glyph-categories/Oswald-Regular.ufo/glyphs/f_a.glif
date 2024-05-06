@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="f_a" format="2">
+  <advance width="609"/>
+  <anchor x="181" y="578" name="_1"/>
+  <anchor x="432" y="578" name="top.2"/>
+  <outline>
+    <contour>
+      <point x="90" y="0" type="line"/>
+      <point x="592" y="0" type="line"/>
+      <point x="592" y="810" type="line"/>
+      <point x="90" y="810" type="line"/>
+    </contour>
+  </outline>
+</glyph>

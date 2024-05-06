@@ -1,0 +1,13 @@
+# Prefix: Languagesystems
+# automatic
+languagesystem DFLT dflt;
+
+
+feature ccmp {
+# automatic
+lookup ccmp_DFLT_1 {
+	lookupflag 0;
+	sub brevecomb acutecomb by brevecomb_acutecomb;
+} ccmp_DFLT_1;
+
+} ccmp;

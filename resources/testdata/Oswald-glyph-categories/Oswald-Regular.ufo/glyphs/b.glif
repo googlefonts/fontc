@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="b" format="2">
+  <advance width="447"/>
+  <unicode hex="0062"/>
+  <anchor x="224" y="0" name="bottom"/>
+  <anchor x="110" y="810" name="top"/>
+  <outline>
+    <contour>
+      <point x="90" y="0" type="line"/>
+      <point x="592" y="0" type="line"/>
+      <point x="592" y="810" type="line"/>
+      <point x="90" y="810" type="line"/>
+    </contour>
+  </outline>
+  <lib>
+    <dict>
+      <key>com.schriftgestaltung.Glyphs.category</key>
+      <string>Number</string>
+    </dict>
+  </lib>
+</glyph>

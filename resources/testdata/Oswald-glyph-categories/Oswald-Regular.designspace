@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<designspace format="5.0">
+  <axes>
+    <axis tag="wght" name="Weight" minimum="200" maximum="710" default="400">
+      <map input="200" output="200"/>
+      <map input="275" output="300"/>
+      <map input="400" output="400"/>
+      <map input="560" output="500"/>
+      <map input="644" output="600"/>
+      <map input="710" output="700"/>
+    </axis>
+  </axes>
+  <sources>
+    <source filename="Oswald-Regular.ufo" name="Oswald Regular" familyname="Oswald" stylename="Regular">
+      <lib copy="1"/>
+      <groups copy="1"/>
+      <features copy="1"/>
+      <info copy="1"/>
+      <location>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </source>
+  </sources>
+  <instances>
+    <instance name="Oswald Regular" familyname="Oswald" stylename="Regular" filename="../instance_ufo/Oswald-Regular.ufo" stylemapfamilyname="Oswald" stylemapstylename="regular">
+      <location>
+        <dimension name="Weight" xvalue="400"/>
+      </location>
+    </instance>
+  </instances>
+</designspace>

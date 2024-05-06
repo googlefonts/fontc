@@ -14,7 +14,7 @@ use ordered_float::OrderedFloat;
 use serde::{de::Error, Deserialize, Serialize};
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::os2::SelectionFlags,
+    tables::{gdef::GlyphClassDef, os2::SelectionFlags},
     types::{GlyphId, NameId, Tag},
     OtRound,
 };
@@ -79,6 +79,19 @@ pub struct StaticMetadata {
 
     /// Miscellaneous font-wide data that didn't seem worthy of top billing
     pub misc: MiscMetadata,
+    pub gdef_categories: GdefCategories,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+pub struct GdefCategories {
+    /// A map of glyphs to categories.
+    ///
+    /// If this is empty, classes should be inferred.
+    pub categories: BTreeMap<GlyphName, GlyphClassDef>,
+    /// If set, we should prefer categories defined in FEA source to ones here.
+    ///
+    /// This is set for UFO/DS sources, but not for glyphs sources.
+    pub prefer_gdef_categories_in_fea: bool,
 }
 
 /// Metadata primarily feeding the OS/2 table.
@@ -308,6 +321,8 @@ impl KernSide {
 }
 
 impl StaticMetadata {
+    // TODO: we could consider a builder or something for this?
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         units_per_em: u16,
         names: HashMap<NameKey, String>,
@@ -316,6 +331,7 @@ impl StaticMetadata {
         glyph_locations: HashSet<NormalizedLocation>,
         postscript_names: PostscriptNames,
         italic_angle: f64,
+        gdef_categories: GdefCategories,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
         let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
@@ -353,6 +369,7 @@ impl StaticMetadata {
             default_location,
             postscript_names,
             italic_angle: italic_angle.into(),
+            gdef_categories,
             misc: MiscMetadata {
                 fs_type: None, // default is, sigh, inconsistent across source formats
                 selection_flags: Default::default(),
@@ -1031,7 +1048,7 @@ pub enum AnchorKind {
 impl AnchorKind {
     // this logic from
     // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L101>
-    pub(crate) fn new(name: impl AsRef<str>) -> Result<AnchorKind, BadAnchorReason> {
+    pub fn new(name: impl AsRef<str>) -> Result<AnchorKind, BadAnchorReason> {
         let name = name.as_ref();
         // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
         if let Some(mark) = name.strip_prefix('_') {
@@ -1058,6 +1075,13 @@ impl AnchorKind {
             }
         }
         Ok(AnchorKind::Base(name.into()))
+    }
+
+    /// Returns `true` If this is a base or ligature base anchor
+    ///
+    /// (i.e, if it is an anchor that marks attach to)
+    pub fn is_attaching(&self) -> bool {
+        matches!(self, AnchorKind::Base(_) | AnchorKind::Ligature { .. })
     }
 }
 
@@ -1832,6 +1856,17 @@ mod tests {
             ]),
             postscript_names: HashMap::from([("lhs".into(), "rhs".into())]),
             italic_angle: 0.0.into(),
+            gdef_categories: GdefCategories {
+                categories: [
+                    ("a", GlyphClassDef::Base),
+                    ("f_f", GlyphClassDef::Ligature),
+                    ("acutecomb", GlyphClassDef::Mark),
+                ]
+                .into_iter()
+                .map(|(name, cls)| (GlyphName::new(name), cls))
+                .collect(),
+                prefer_gdef_categories_in_fea: false,
+            },
             misc: MiscMetadata {
                 fs_type: None,
                 selection_flags: SelectionFlags::default(),

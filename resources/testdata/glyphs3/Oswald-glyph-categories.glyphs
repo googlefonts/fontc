@@ -1,0 +1,787 @@
+{
+.appVersion = "3258";
+.formatVersion = 3;
+DisplayStrings = (
+"áa",
+"",
+"̆",
+"ắ",
+"/brevecomb_acutecomb",
+"",
+"̆ă",
+"/f_a",
+a,
+b
+);
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = fsType;
+value = (
+);
+},
+{
+name = "Use Typo Metrics";
+value = 1;
+},
+{
+name = "Write lastChange";
+value = 0;
+},
+{
+name = "Axis Mappings";
+value = {
+wght = {
+200 = 200;
+275 = 300;
+400 = 400;
+560 = 500;
+644 = 600;
+710 = 700;
+};
+};
+}
+);
+date = "2017-09-22 11:11:33 +0000";
+familyName = Oswald;
+featurePrefixes = (
+{
+automatic = 1;
+code = "languagesystem DFLT dflt;
+";
+name = Languagesystems;
+}
+);
+features = (
+{
+automatic = 1;
+code = "lookup ccmp_DFLT_1 {
+	lookupflag 0;
+	sub brevecomb acutecomb by brevecomb_acutecomb;
+} ccmp_DFLT_1;
+";
+tag = ccmp;
+}
+);
+fontMaster = (
+{
+axesValues = (
+400
+);
+customParameters = (
+{
+name = typoAscender;
+value = 1193;
+},
+{
+name = typoDescender;
+value = -289;
+},
+{
+name = typoLineGap;
+value = 0;
+},
+{
+name = winAscent;
+value = 1325;
+},
+{
+name = winDescent;
+value = 377;
+},
+{
+name = hheaAscender;
+value = 1193;
+},
+{
+name = hheaDescender;
+value = -289;
+},
+{
+name = hheaLineGap;
+value = 0;
+}
+);
+guides = (
+{
+pos = (-210,-77);
+},
+{
+pos = (263,898);
+},
+{
+pos = (-580,888);
+},
+{
+pos = (-580,433);
+},
+{
+pos = (445,-16);
+}
+);
+id = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+metricValues = (
+{
+over = 7;
+pos = 810;
+},
+{
+over = 7;
+pos = 810;
+},
+{
+over = 8;
+pos = 578;
+},
+{
+over = -9;
+},
+{
+over = -16;
+pos = -190;
+},
+{
+}
+);
+name = Regular;
+userData = {
+GSCornerRadius = 15;
+};
+}
+);
+glyphs = (
+{
+glyphname = a;
+kernLeft = a;
+kernRight = a;
+layers = (
+{
+anchors = (
+{
+name = top;
+pos = (202,578);
+}
+);
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+closed = 1;
+nodes = (
+(207,-8,o),
+(244,40,o),
+(258,85,c),
+(261,58,o),
+(268,21,o),
+(272,0,c),
+(370,0,l),
+(365,37,o),
+(360,85,o),
+(360,139,cs),
+(360,403,ls),
+(360,522,o),
+(316,586,o),
+(202,586,cs),
+(84,586,o),
+(30,527,o),
+(28,399,c),
+(134,395,l),
+(134,424,ls),
+(134,474,o),
+(151,506,o),
+(195,506,cs),
+(245,506,o),
+(253,472,o),
+(253,402,cs),
+(253,361,l),
+(129,312,o),
+(25,270,o),
+(25,126,cs),
+(25,58,o),
+(73,-8,o),
+(141,-8,c)
+);
+},
+{
+closed = 1;
+nodes = (
+(150,84,o),
+(132,112,o),
+(132,159,cs),
+(132,226,o),
+(187,258,o),
+(253,296,c),
+(253,132,l),
+(244,117,o),
+(214,84,o),
+(183,84,cs)
+);
+}
+);
+width = 409;
+}
+);
+unicode = 97;
+userData = {
+com.fontlab.hintData = {
+};
+com.typemytype.robofont.layerData = {
+b = {
+anchors = (
+);
+components = (
+);
+contours = (
+);
+lib = {
+};
+name = a;
+unicodes = (
+);
+width = 1011;
+};
+};
+hhints = {
+};
+position = 564;
+vhints = {
+};
+width = 64;
+};
+},
+{
+glyphname = aacute;
+kernLeft = a;
+kernRight = a;
+layers = (
+{
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+ref = a;
+},
+{
+pos = (202,0);
+ref = acutecomb;
+}
+);
+width = 409;
+}
+);
+unicode = 225;
+},
+{
+glyphname = abreve;
+kernLeft = a;
+kernRight = a;
+layers = (
+{
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+ref = a;
+},
+{
+pos = (203,0);
+ref = brevecomb;
+}
+);
+width = 409;
+}
+);
+unicode = 259;
+},
+{
+glyphname = abreveacute;
+kernLeft = a;
+kernRight = a;
+layers = (
+{
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+ref = a;
+},
+{
+pos = (203,0);
+ref = brevecomb_acutecomb;
+}
+);
+width = 409;
+}
+);
+unicode = 7855;
+},
+{
+glyphname = f_a;
+kernLeft = a;
+kernRight = a;
+layers = (
+{
+anchors = (
+{
+name = _1;
+pos = (181,578);
+},
+{
+name = top.2;
+pos = (432,578);
+}
+);
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+closed = 1;
+nodes = (
+(437,-8,o),
+(474,40,o),
+(488,85,c),
+(491,58,o),
+(498,21,o),
+(502,0,c),
+(600,0,l),
+(595,37,o),
+(590,85,o),
+(590,139,cs),
+(590,403,ls),
+(590,522,o),
+(546,586,o),
+(432,586,cs),
+(314,586,o),
+(260,527,o),
+(258,399,c),
+(364,395,l),
+(364,424,ls),
+(364,474,o),
+(381,506,o),
+(425,506,cs),
+(475,506,o),
+(483,472,o),
+(483,402,cs),
+(483,361,l),
+(359,312,o),
+(255,270,o),
+(255,126,cs),
+(255,58,o),
+(303,-8,o),
+(371,-8,c)
+);
+},
+{
+closed = 1;
+nodes = (
+(380,84,o),
+(362,112,o),
+(362,159,cs),
+(362,226,o),
+(417,258,o),
+(483,296,c),
+(483,132,l),
+(474,117,o),
+(444,84,o),
+(413,84,cs)
+);
+},
+{
+closed = 1;
+nodes = (
+(238,-3,l),
+(238,496,l),
+(238,575,l),
+(238,623,ls),
+(238,668,o),
+(244,698,o),
+(286,698,cs),
+(298,698,o),
+(314,696,o),
+(326,693,c),
+(326,771,l),
+(301,776,o),
+(283,778,o),
+(256,778,cs),
+(147,778,o),
+(131,712,o),
+(131,605,cs),
+(131,575,l),
+(62,575,l),
+(62,496,l),
+(131,496,l),
+(131,-3,l)
+);
+}
+);
+width = 609;
+}
+);
+userData = {
+com.fontlab.hintData = {
+};
+com.typemytype.robofont.layerData = {
+b = {
+anchors = (
+);
+components = (
+);
+contours = (
+);
+lib = {
+};
+name = a;
+unicodes = (
+);
+width = 1011;
+};
+};
+hhints = {
+};
+position = 564;
+vhints = {
+};
+width = 64;
+};
+},
+{
+category = Number;
+glyphname = b;
+kernLeft = h;
+kernRight = o;
+layers = (
+{
+anchors = (
+{
+name = bottom;
+pos = (224,0);
+},
+{
+name = top;
+pos = (110,810);
+}
+);
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+name = Regular;
+shapes = (
+{
+closed = 1;
+nodes = (
+(375,-8,o),
+(404,106,o),
+(404,229,cs),
+(404,369,ls),
+(404,438,o),
+(393,586,o),
+(272,586,cs),
+(223,586,o),
+(188,561,o),
+(163,532,c),
+(163,810,l),
+(56,810,l),
+(56,0,l),
+(163,0,l),
+(163,42,l),
+(187,16,o),
+(220,-8,o),
+(261,-8,cs)
+);
+},
+{
+closed = 1;
+nodes = (
+(208,76,o),
+(182,87,o),
+(163,102,c),
+(163,473,l),
+(182,488,o),
+(207,502,o),
+(235,502,cs),
+(290,502,o),
+(297,441,o),
+(297,369,cs),
+(297,229,ls),
+(297,144,o),
+(294,76,o),
+(239,76,cs)
+);
+}
+);
+width = 447;
+}
+);
+unicode = 98;
+userData = {
+com.typemytype.robofont.layerData = {
+b = {
+anchors = (
+);
+components = (
+);
+contours = (
+);
+lib = {
+};
+name = b;
+unicodes = (
+);
+width = 1077;
+};
+};
+};
+},
+{
+glyphname = .notdef;
+layers = (
+{
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+closed = 1;
+nodes = (
+(592,0,l),
+(592,810,l),
+(90,810,l),
+(90,0,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(193,720,l),
+(489,720,l),
+(489,90,l),
+(193,90,l)
+);
+}
+);
+width = 682;
+}
+);
+},
+{
+glyphname = acutecomb;
+layers = (
+{
+anchors = (
+{
+name = _top;
+pos = (0,578);
+},
+{
+name = top;
+pos = (0,810);
+}
+);
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+closed = 1;
+nodes = (
+(26,626,l),
+(138,824,l),
+(31,824,l),
+(-28,626,l)
+);
+}
+);
+width = 0;
+}
+);
+unicode = 769;
+userData = {
+com.fontlab.hintData = {
+hhints = (
+{
+position = 1243;
+width = 415;
+}
+);
+};
+};
+},
+{
+glyphname = brevecomb;
+layers = (
+{
+anchors = (
+{
+name = _top;
+pos = (-1,578);
+},
+{
+name = top;
+pos = (-1,776);
+}
+);
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+closed = 1;
+nodes = (
+(96,641,o),
+(131,700,o),
+(131,777,c),
+(68,777,l),
+(68,730,o),
+(49,702,o),
+(-1,702,cs),
+(-51,702,o),
+(-69,729,o),
+(-70,777,c),
+(-132,777,l),
+(-132,700,o),
+(-97,641,o),
+(-1,641,cs)
+);
+}
+);
+width = 0;
+}
+);
+unicode = 774;
+userData = {
+com.fontlab.hintData = {
+hhints = (
+{
+position = 1423;
+width = 138;
+}
+);
+vhints = (
+{
+position = 46;
+width = 150;
+},
+{
+position = 415;
+width = 149;
+}
+);
+};
+};
+},
+{
+glyphname = brevecomb_acutecomb;
+layers = (
+{
+anchors = (
+{
+name = _top;
+pos = (-1,578);
+},
+{
+name = top;
+pos = (-1,979);
+}
+);
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+closed = 1;
+nodes = (
+(12,807,l),
+(119,925,l),
+(12,925,l),
+(-52,807,l)
+);
+},
+{
+pos = (0,-19);
+ref = brevecomb;
+}
+);
+width = 0;
+}
+);
+}
+);
+instances = (
+{
+axesValues = (
+400
+);
+instanceInterpolations = {
+"8AC5A1D3-32A8-4416-86FC-94176A419B8F" = 1;
+};
+name = Regular;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+properties = (
+{
+key = copyrights;
+values = (
+{
+language = dflt;
+value = "Copyright 2016 The Oswald Project Authors (https://github.com/googlefonts/OswaldFont)";
+}
+);
+},
+{
+key = designers;
+values = (
+{
+language = dflt;
+value = "Vernon Adams";
+}
+);
+},
+{
+key = designerURL;
+value = "http://www.sansoxygen.com";
+},
+{
+key = licenses;
+values = (
+{
+language = dflt;
+value = "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://scripts.sil.org/OFL";
+}
+);
+},
+{
+key = licenseURL;
+value = "https://scripts.sil.org/OFL";
+},
+{
+key = manufacturers;
+values = (
+{
+language = dflt;
+value = "Vernon Adams";
+}
+);
+},
+{
+key = manufacturerURL;
+value = "http://www.sansoxygen.com";
+},
+{
+key = vendorID;
+value = newt;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 4;
+versionMinor = 103;
+}
