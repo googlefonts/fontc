@@ -20,15 +20,16 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.x"
-    - name: Install dependencies
-      run: pip install maturin twine
     - name: Build sdist
-      run: maturin sdist -o dist
+      uses: PyO3/maturin-action@v1
+      with:
+        command: sdist
+        args: -o dist
     - name: Check metadata
-      run: twine check dist/*.tar.gz
+      run: pipx run twine check dist/*.tar.gz
     - uses: actions/upload-artifact@v4
       with:
-        name: pure
+        name: sdist
         path: |
           dist/*.tar.gz
 
@@ -45,10 +46,11 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: "aarch64-apple-darwin, x86_64-apple-darwin"
-    - name: Install dependencies
-      run: pip install maturin
-    - name: Build wheels - universal2
-      run: maturin build -o dist --target universal2-apple-darwin
+    - name: Build wheel
+      uses: PyO3/maturin-action@v1
+      with:
+        target: universal2-apple-darwin
+        args: --release -o dist
     - name: Install wheel
       run: |
         pip install --no-index --find-links dist/ --force-reinstall fontc
@@ -80,10 +82,11 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ matrix.platform.target }}
-    - name: Install dependencies
-      run: pip install maturin
     - name: Build wheel
-      run: maturin build -o dist --target ${{matrix.platform.target}}
+      uses: PyO3/maturin-action@v1
+      with:
+        target: ${{matrix.platform.target}}
+        args: --release -o dist
     - name: Install wheel
       shell: bash
       run: |
@@ -93,47 +96,32 @@ jobs:
     - name: Upload wheel
       uses: actions/upload-artifact@v4
       with:
-        name: windows
+        name: windows-${{ matrix.platform.python-architecture }}
         path: dist/*.whl
 
   build_linux:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [
+          { target: "x86_64-unknown-linux-musl", image_tag: "x86_64-musl" },
+          { target: "aarch64-unknown-linux-musl", image_tag: "aarch64-musl" },
+        ]
     container:
-      image: docker://quay.io/pypa/manylinux2014_x86_64:latest
-      env:
-        PYTHON_DIR: /opt/python/cp312-cp312m/bin/
+      image: docker://messense/rust-musl-cross:${{ matrix.platform.image_tag }}
     steps:
     # checkout@v4 doesn't work inside the manylinux container:
     # https://github.com/actions/checkout/issues/1487
     - uses: actions/checkout@v3
       with:
         submodules: recursive
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
+    - name: Build Wheels - manylinux
+      uses: PyO3/maturin-action@main
       with:
-        targets: ${{ matrix.platform.target }}
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-    - name: Install dependencies
-      # I haven't figured out how to make $PATH persist throughout the job.
-      # THe `echo "PATH=..." >> GITHUB_ENV` trick doesn't seem to work inside the
-      # docker container. Hence I do export PATH=... each time.
-      run: |
-        export PATH=$PYTHON_DIR:$PATH
-        python --version
-        pip --version
-        pip install -U pip
-        pip install maturin
-    - name: Build wheel
-      run: |
-        export PATH=$PYTHON_DIR:$PATH
-        maturin build -o dist
-    - name: Install wheel
-      run: |
-        export PATH=$PYTHON_DIR:$PATH
-        pip install --no-index --find-links dist/ --force-reinstall fontc
-        which fontc
-        fontc --version
+        target: ${{ matrix.platform.target }}
+        manylinux: auto
+        container: off
+        args: --release -o dist
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:

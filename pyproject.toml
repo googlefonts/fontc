@@ -7,8 +7,6 @@ build-backend = "maturin"
 manifest-path = "fontc/Cargo.toml"
 # treat the project as a Rust binary application: https://www.maturin.rs/bindings#bin
 bindings = "bin"
-# build in --release mode by default
-profile = "release"
 # somehow these standard files aren't included automatically in the sdist,
 # it's better to keep them in there
 include = [
@@ -31,4 +29,4 @@ name = "fontc"
 # version = "0.0.1.post1"
 # Ensure we use the workspace's top-level README.md for the sdist/wheel metadata
 # not the fontc crate's specific README.md
-readme = {file = "README.md"}
+readme = "README.md"
