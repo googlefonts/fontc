@@ -1,0 +1,164 @@
+name: Wheels
+
+on:
+  # only run on version-tagged commits or manually
+  push:
+    tags: ["v*.*.*"]
+  # enables workflow to be run manually
+  # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#workflow_dispatch
+  workflow_dispatch:
+
+jobs:
+  build_sdist:
+    name: Build Source Distribution
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+    - name: Install dependencies
+      run: pip install maturin twine
+    - name: Build sdist
+      run: maturin sdist -o dist
+    - name: Check metadata
+      run: twine check dist/*.tar.gz
+    - uses: actions/upload-artifact@v4
+      with:
+        name: pure
+        path: |
+          dist/*.tar.gz
+
+  build_macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-apple-darwin
+          profile: minimal
+          default: true
+      - name: Install dependencies
+        run: pip install maturin
+      - name: Build wheels - universal2
+        run: maturin build -o dist --target universal2-apple-darwin
+      - name: Install wheel
+        run: |
+          pip install --no-index --find-links dist/ --force-reinstall fontc
+          which fontc
+          fontc --version
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.whl
+
+  build_windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        platform: [
+          { python-architecture: "x64", target: "x86_64-pc-windows-msvc" },
+          { python-architecture: "x86", target: "i686-pc-windows-msvc" },
+        ]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: ${{ matrix.platform.python-architecture }}
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.platform.target }}
+          profile: minimal
+          default: true
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Build wheel
+        run: maturin build -o dist --target ${{matrix.platform.target}}
+      - name: Install wheel
+        shell: bash
+        run: |
+          pip install --no-index --find-links dist/ --force-reinstall fontc
+          which fontc
+          fontc --version
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.whl
+
+  build_linux:
+    runs-on: ubuntu-latest
+    container:
+      image: docker://quay.io/pypa/manylinux2014_x86_64:latest
+      env:
+        PYTHON_DIR: /opt/python/cp312-cp312m/bin/
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        default: true
+    - name: Install dependencies
+      # I haven't figured out how to make $PATH persist throughout the job.
+      # THe `echo "PATH=..." >> GITHUB_ENV` trick doesn't seem to work inside the
+      # docker container. Hence I do export PATH=... each time.
+      run: |
+        export PATH=$PYTHON_DIR:$PATH
+        python --version
+        pip --version
+        pip install -U pip
+        pip install maturin
+    - name: Build wheel
+      run: |
+        export PATH=$PYTHON_DIR:$PATH
+        maturin build -o dist
+    - name: Install wheel
+      run: |
+        export PATH=$PYTHON_DIR:$PATH
+        pip install --no-index --find-links dist/ --force-reinstall fontc
+        which fontc
+        fontc --version
+    - name: Upload wheels
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux
+        path: dist/*.whl
+
+  upload:
+    name: Upload to PyPI on tags
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build_sdist, build_macos, build_windows, build_linux]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        # so that all artifacts are downloaded in the same directory specified by 'path'
+        merge-multiple: true
+        path: dist
+
+    - uses: pypa/gh-action-pypi-publish@v1.4.2
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI_PASSWORD }}
+        skip_existing: true
