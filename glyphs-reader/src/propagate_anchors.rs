@@ -643,6 +643,7 @@ mod tests {
     #[test]
     fn propagate_ligature_anchors() {
         // derived from the observed behaviour of glyphs 3.2.2 (3259)
+        // this is based on the IJ glyph in Oswald (ExtraLight)
         let mut glyphs = GlyphSetBuilder::new()
             .add_glyph("I", |glyph| {
                 glyph
@@ -678,6 +679,44 @@ mod tests {
                 ("topleft_1", (20., 810.)),
                 ("bottom_2", (339., 0.)),
                 ("top_2", (369., 810.))
+            ]
+        )
+    }
+
+    #[test]
+    fn digraphs_arent_ligatures() {
+        // derived from the observed behaviour of glyphs 3.2.2 (3259)
+        // this is based on the IJ glyph in Oswald (ExtraLight)
+        let mut glyphs = GlyphSetBuilder::new()
+            .add_glyph("I", |glyph| {
+                glyph
+                    .add_anchor("bottom", (103, 0))
+                    .add_anchor("ogonek", (103, 0))
+                    .add_anchor("top", (103, 810))
+                    .add_anchor("topleft", (20, 810));
+            })
+            .add_glyph("J", |glyph| {
+                glyph
+                    .add_anchor("bottom", (133, 0))
+                    .add_anchor("top", (163, 810));
+            })
+            .add_glyph("IJ", |glyph| {
+                glyph
+                    .add_component("I", (0, 0))
+                    .add_component("J", (206, 0));
+            })
+            .build();
+        propagate_all_anchors_impl(&mut glyphs);
+        let ij = glyphs.get("IJ").unwrap();
+        // these were derived by running the built in glyphs.app propagate anchors
+        // method from the macro panel
+        assert_eq!(
+            ij.layers[0].anchors,
+            [
+                ("bottom", (339., 0.)),
+                ("ogonek", (103., 0.)),
+                ("top", (369., 810.)),
+                ("topleft", (20., 810.)),
             ]
         )
     }
