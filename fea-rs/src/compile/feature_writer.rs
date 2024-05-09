@@ -32,9 +32,7 @@ pub struct FeatureBuilder<'a> {
     pub(crate) tables: &'a mut Tables,
     pub(crate) lookups: Vec<(LookupId, PositionLookup)>,
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
-    mark_filter_sets: HashMap<GlyphSet, FilterSetId>,
-    // because there may already be defined filter sets from the root fea
-    filter_set_id_start: usize,
+    mark_filter_sets: &'a mut HashMap<GlyphSet, FilterSetId>,
 }
 
 pub trait GposSubtableBuilder: Sized {
@@ -89,15 +87,14 @@ impl<'a> FeatureBuilder<'a> {
     pub(crate) fn new(
         language_systems: &'a DefaultLanguageSystems,
         tables: &'a mut Tables,
-        filter_set_id_start: usize,
+        mark_filter_sets: &'a mut HashMap<GlyphSet, u16>,
     ) -> Self {
         Self {
             language_systems,
             tables,
             lookups: Default::default(),
             features: Default::default(),
-            mark_filter_sets: Default::default(),
-            filter_set_id_start,
+            mark_filter_sets,
         }
     }
 
@@ -147,7 +144,7 @@ impl<'a> FeatureBuilder<'a> {
     }
 
     fn get_filter_set_id(&mut self, cls: GlyphSet) -> FilterSetId {
-        let next_id = self.filter_set_id_start + self.mark_filter_sets.len();
+        let next_id = self.mark_filter_sets.len();
         *self.mark_filter_sets.entry(cls).or_insert_with(|| {
             next_id
                 .try_into()
