@@ -4,7 +4,7 @@ use std::{
 };
 
 use write_fonts::read::{
-    tables::gpos::{MarkBasePosFormat1, MarkMarkPosFormat1},
+    tables::gpos::{MarkBasePosFormat1, MarkLigPosFormat1, MarkMarkPosFormat1},
     types::GlyphId,
     ReadError,
 };
@@ -20,10 +20,42 @@ pub(crate) struct MarkAttachmentRule {
     marks: BTreeMap<ResolvedAnchor, GlyphSet>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct MarkLigaRule {
+    pub base: GlyphId,
+    base_anchors: Vec<Option<ResolvedAnchor>>,
+    marks: BTreeMap<ResolvedAnchor, GlyphSet>,
+}
+
 impl PrintNames for MarkAttachmentRule {
     fn fmt_names(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
         let base_name = names.get(self.base);
         writeln!(f, "{base_name} {}", self.base_anchor)?;
+        for (i, (anchor, glyphs)) in self.marks.iter().enumerate() {
+            if i != 0 {
+                writeln!(f)?;
+            }
+
+            write!(f, "  {anchor} {}", glyphs.printer(names))?;
+        }
+        Ok(())
+    }
+}
+
+impl PrintNames for MarkLigaRule {
+    fn fmt_names(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
+        let base_name = names.get(self.base);
+        write!(f, "{base_name} (lig) [")?;
+        for (i, anchor) in self.base_anchors.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            match anchor {
+                Some(a) => write!(f, "{a}"),
+                None => write!(f, "<NULL>"),
+            }?
+        }
+        writeln!(f, "]")?;
         for (i, (anchor, glyphs)) in self.marks.iter().enumerate() {
             if i != 0 {
                 writeln!(f)?;
@@ -135,6 +167,84 @@ fn append_mark_base_rules(
             let group = MarkAttachmentRule {
                 base: base_glyph,
                 base_anchor,
+                marks,
+            };
+            result.push(group);
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn get_mark_liga_rules(
+    subtables: &[MarkLigPosFormat1],
+    delta_computer: Option<&DeltaComputer>,
+) -> Result<Vec<MarkLigaRule>, ReadError> {
+    // so we only take the first coverage hit in each subtable, which means
+    // we just need track what we've seen.
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+    for sub in subtables.iter() {
+        append_mark_liga_rules(sub, delta_computer, &mut seen, &mut result)?;
+    }
+    Ok(result)
+}
+
+fn append_mark_liga_rules(
+    subtable: &MarkLigPosFormat1,
+    delta_computer: Option<&DeltaComputer>,
+    _seen: &mut HashSet<(GlyphId, GlyphId)>,
+    result: &mut Vec<MarkLigaRule>,
+) -> Result<(), ReadError> {
+    let lig_array = subtable.ligature_array()?;
+    let lig_tables = lig_array.ligature_attaches();
+    let mark_array = subtable.mark_array()?;
+    let mark_records = mark_array.mark_records();
+    let mark_count = subtable.mark_class_count() as usize;
+
+    let cov_ix_to_mark_gid: HashMap<_, _> = subtable.mark_coverage()?.iter().enumerate().collect();
+
+    // okay backing up:
+    // a rule should be one ligature, and one mark class?
+    for (lig_ix, lig_glyph) in subtable.ligature_coverage()?.iter().enumerate() {
+        let lig_attach = lig_tables.get(lig_ix)?;
+
+        for anchor_ix in 0..mark_count {
+            // all the anchors in a given class, for this ligature
+            let comp_anchors = lig_attach
+                .component_records()
+                .iter()
+                .map(|comp| {
+                    comp.and_then(|comp| {
+                        comp.ligature_anchors(lig_attach.offset_data())
+                            .get(anchor_ix)
+                            .map(|anchor| {
+                                anchor.and_then(|a| ResolvedAnchor::new(&a, delta_computer))
+                            })
+                            .transpose()
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let mut marks = BTreeMap::default();
+            for (mark_ix, mark_record) in mark_records.iter().enumerate() {
+                let mark_class = mark_record.mark_class() as usize;
+                if mark_class != anchor_ix {
+                    continue;
+                }
+                let Some(mark_glyph) = cov_ix_to_mark_gid.get(&mark_ix) else {
+                    continue;
+                };
+
+                let mark_anchor = mark_record.mark_anchor(mark_array.offset_data())?;
+                let mark_anchor = ResolvedAnchor::new(&mark_anchor, delta_computer)?;
+                marks
+                    .entry(mark_anchor)
+                    .or_insert_with(|| GlyphSet::from(*mark_glyph))
+                    .add(*mark_glyph);
+            }
+            let group = MarkLigaRule {
+                base: lig_glyph,
+                base_anchors: comp_anchors,
                 marks,
             };
             result.push(group);
