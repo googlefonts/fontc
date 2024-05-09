@@ -3,7 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use fea_rs::{
-    compile::{MarkToBaseBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo},
+    compile::{
+        MarkToBaseBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo, PendingLookup,
+    },
     typed::{AstNode, LanguageSystem},
     Opts, ParseTree,
 };
@@ -15,7 +17,7 @@ use fontdrasil::{
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::gdef::GlyphClassDef,
+    tables::{gdef::GlyphClassDef, layout::LookupFlag},
     types::{GlyphId, Tag},
 };
 
@@ -182,7 +184,7 @@ impl<'a> MarkLookupBuilder<'a> {
     fn make_lookups<T: MarkAttachmentBuilder>(
         &self,
         groups: BTreeMap<MarkGroupName, MarkGroup>,
-    ) -> Result<Vec<T>, Error> {
+    ) -> Result<Vec<PendingLookup<T>>, Error> {
         groups
             .into_iter()
             .filter(|(_, group)| !(group.bases.is_empty() || group.marks.is_empty()))
@@ -200,8 +202,7 @@ impl<'a> MarkLookupBuilder<'a> {
                     let anchor = resolve_anchor(anchor, self.static_metadata, &base_name)?;
                     builder.add_base(gid, &group_name, anchor);
                 }
-
-                Ok(builder)
+                Ok(PendingLookup::new(vec![builder], LookupFlag::empty(), None))
             })
             .collect()
     }

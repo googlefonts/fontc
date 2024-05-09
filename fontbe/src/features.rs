@@ -34,9 +34,7 @@ use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::Axis,
 };
-use write_fonts::{
-    tables::layout::LookupFlag, tables::variations::VariationRegion, types::Tag, OtRound,
-};
+use write_fonts::{tables::variations::VariationRegion, types::Tag, OtRound};
 
 use crate::{
     error::Error,
@@ -269,20 +267,12 @@ impl<'a> FeatureWriter<'a> {
 
         for mark_base in marks.mark_base.iter() {
             // each mark to base it's own lookup, whch differs from fontmake
-            mark_base_lookups.push(builder.add_lookup(PendingLookup::new(
-                vec![mark_base.to_owned()],
-                LookupFlag::empty(),
-                None,
-            )));
+            mark_base_lookups.push(builder.add_lookup(mark_base.clone()));
         }
 
         // If a mark has anchors that are themselves marks what we got here is a mark to mark
         for mark_mark in marks.mark_mark.iter() {
-            mark_mark_lookups.push(builder.add_lookup(PendingLookup::new(
-                vec![mark_mark.to_owned()],
-                LookupFlag::default(),
-                None,
-            )));
+            mark_mark_lookups.push(builder.add_lookup(mark_mark.clone()));
         }
 
         if !mark_base_lookups.is_empty() {

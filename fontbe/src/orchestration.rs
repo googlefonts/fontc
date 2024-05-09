@@ -330,8 +330,8 @@ impl TupleBuilder {
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FeaRsMarks {
     pub(crate) glyphmap: GlyphMap,
-    pub(crate) mark_base: Vec<MarkToBaseBuilder>,
-    pub(crate) mark_mark: Vec<MarkToMarkBuilder>,
+    pub(crate) mark_base: Vec<PendingLookup<MarkToBaseBuilder>>,
+    pub(crate) mark_mark: Vec<PendingLookup<MarkToMarkBuilder>>,
 }
 
 impl Persistable for FeaRsMarks {
