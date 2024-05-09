@@ -1,4 +1,4 @@
-name: Wheels
+name: Release
 
 on:
   # only run on version-tagged commits or manually
@@ -35,13 +35,16 @@ jobs:
     runs-on: ${{ matrix.platform.os }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           architecture: ${{ matrix.platform.python-architecture }}
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform.target }}
+
       # Install gnu-tar because BSD tar is buggy
       # https://github.com/actions/cache/issues/403
       - name: Install GNU tar (macOS)
@@ -49,50 +52,59 @@ jobs:
         run: |
           brew install gnu-tar
           echo "/usr/local/opt/gnu-tar/libexec/gnubin" >> $GITHUB_PATH
+
       - name: Build wheel (macOS universal2) and sdist
         if: matrix.platform.target == 'x86_64-apple-darwin'
         uses: PyO3/maturin-action@v1
         with:
           target: universal2-apple-darwin
           args: --release -o dist --sdist
+
       - name: Build wheel (without sdist)
         if: matrix.platform.target != 'x86_64-apple-darwin'
         uses: PyO3/maturin-action@v1
         with:
           target: ${{matrix.platform.target}}
           args: --release -o dist
+
       - name: Install wheel
         shell: bash
         run: |
           pip install --no-index --find-links dist/ --force-reinstall fontc
           which fontc
           fontc --version
+
       - name: Check sdist metadata
         if: matrix.platform.target == 'x86_64-apple-darwin'
         run: pipx run twine check dist/*.tar.gz
+
       - name: Archive binary
         if: matrix.platform.os != 'windows-latest'
         run: |
           cd target/${{ matrix.platform.target }}/release
           tar czvf ../../../${{ matrix.platform.archive }} fontc
           cd -
+
       - name: Archive binary (windows)
         if: matrix.platform.os == 'windows-latest'
         run: |
           cd target/${{ matrix.platform.target }}/release
           7z a ../../../${{ matrix.platform.archive }} fontc.exe
           cd -
+
       - name: Archive binary (macOS aarch64)
         if: matrix.platform.os == 'macos-latest'
         run: |
           cd target/aarch64-apple-darwin/release
           tar czvf ../../../fontc-aarch64-apple-darwin.tar.gz fontc
           cd -
+
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.platform.target }}
           path: dist
+
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -120,6 +132,7 @@ jobs:
       # checkout@v3 doesn't work inside the manylinux container:
       # https://github.com/actions/checkout/issues/1487
       - uses: actions/checkout@v3
+
       - name: Build Wheels
         uses: PyO3/maturin-action@main
         with:
@@ -127,19 +140,23 @@ jobs:
           manylinux: ${{ matrix.platform.compatibility }}
           container: off
           args: --release -o dist
+
       - name: Install x86_64 wheel
         if: startsWith(matrix.platform.target, 'x86_64')
         run: |
           /usr/bin/python3 -m pip install --no-index --find-links dist/ --force-reinstall fontc
           which fontc
           fontc --version
+
       - name: Archive binary
         run: tar czvf target/release/fontc-${{ matrix.platform.target }}.tar.gz -C target/${{ matrix.platform.target }}/release fontc
+
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.platform.target }}
           path: dist
+
       - name: Upload binary artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -181,6 +198,7 @@ jobs:
         with:
           pattern: binaries-*
           merge-multiple: true
+
       - name: Detect if tag is a pre-release
         id: set_prerelease
         env:
@@ -196,6 +214,7 @@ jobs:
             echo "Tag ${TAG_NAME} does not contain a pre-release suffix"
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
