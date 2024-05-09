@@ -14,75 +14,38 @@ permissions:
   contents: read
 
 jobs:
-  build_sdist:
-    name: Build Source Distribution
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.x"
-    - name: Build sdist
-      uses: PyO3/maturin-action@v1
-      with:
-        command: sdist
-        args: -o dist
-    - name: Check metadata
-      run: pipx run twine check dist/*.tar.gz
-    - uses: actions/upload-artifact@v4
-      with:
-        name: sdist
-        path: |
-          dist/*.tar.gz
-
-  build_macos:
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: "aarch64-apple-darwin, x86_64-apple-darwin"
-    - name: Build wheel
-      uses: PyO3/maturin-action@v1
-      with:
-        target: universal2-apple-darwin
-        args: --release -o dist
-    - name: Install wheel
-      run: |
-        pip install --no-index --find-links dist/ --force-reinstall fontc
-        which fontc
-        fontc --version
-    - name: Upload wheel
-      uses: actions/upload-artifact@v4
-      with:
-        name: universal2-apple-darwin
-        path: dist/*.whl
-
-  build_windows:
-    runs-on: windows-latest
+  build:
+    name: Build ${{ matrix.platform.target }}
     strategy:
       fail-fast: false
       matrix:
-        platform: [
-          { python-architecture: "x64", target: "x86_64-pc-windows-msvc" },
-          { python-architecture: "x86", target: "i686-pc-windows-msvc" },
-        ]
+        platform:
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            python-architecture: x64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            python-architecture: x64
+          - target: i686-pc-windows-msvc
+            os: windows-latest
+            python-architecture: x86
+    runs-on: ${{ matrix.platform.os }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
         architecture: ${{ matrix.platform.python-architecture }}
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ matrix.platform.target }}
-    - name: Build wheel
+    - name: Build wheel (macOS universal2) and sdist
+      if: matrix.platform.target == 'x86_64-apple-darwin'
+      uses: PyO3/maturin-action@v1
+      with:
+        target: universal2-apple-darwin
+        args: --release -o dist --sdist
+    - name: Build wheel (without sdist)
       uses: PyO3/maturin-action@v1
       with:
         target: ${{matrix.platform.target}}
@@ -93,13 +56,19 @@ jobs:
         pip install --no-index --find-links dist/ --force-reinstall fontc
         which fontc
         fontc --version
-    - name: Upload wheel
+    - name: Check sdist metadata
+      if: matrix.platform.target == 'x86_64-apple-darwin'
+      run: pipx run twine check dist/*.tar.gz
+    - name: Upload wheel artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.platform.target }}
-        path: dist/*.whl
+        path: |
+          dist/*.whl
+          dist/*.tar.gz
 
   build_linux:
+    name: Build ${{ matrix.platform.target }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -130,7 +99,7 @@ jobs:
         /usr/bin/python3 -m pip install --no-index --find-links dist/ --force-reinstall fontc
         which fontc
         fontc --version
-    - name: Upload wheels
+    - name: Upload wheel artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.platform.target }}
@@ -138,7 +107,7 @@ jobs:
 
   upload:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build_sdist, build_macos, build_windows, build_linux]
+    needs: [build, build_linux]
     runs-on: ubuntu-latest
     permissions:
       # IMPORTANT: this permission is mandatory for trusted publishing
