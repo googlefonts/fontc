@@ -46,6 +46,7 @@ jobs:
         target: universal2-apple-darwin
         args: --release -o dist --sdist
     - name: Build wheel (without sdist)
+      if: matrix.platform.target != 'x86_64-apple-darwin'
       uses: PyO3/maturin-action@v1
       with:
         target: ${{matrix.platform.target}}
