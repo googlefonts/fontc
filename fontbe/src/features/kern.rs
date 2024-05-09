@@ -583,7 +583,7 @@ fn debug_ordered_lookups(
     lookups: &[PendingLookup<PairPosBuilder>],
 ) {
     for (i, lookup) in lookups.iter().enumerate() {
-        let total_rules = lookup.subtables.iter().map(|x| x.len()).sum::<usize>();
+        let total_rules = lookup.subtables().iter().map(|x| x.len()).sum::<usize>();
         log::trace!("lookup {i}, {total_rules} rules");
     }
 
@@ -1143,7 +1143,7 @@ mod tests {
         assert_eq!(
             cyr_rules
                 .iter()
-                .flat_map(|x| x.subtables.iter().map(|sub| sub.len()))
+                .flat_map(|x| x.subtables().iter().map(|sub| sub.len()))
                 .sum::<usize>(),
             1
         );
@@ -1152,7 +1152,7 @@ mod tests {
         assert_eq!(
             latn_rules
                 .iter()
-                .flat_map(|x| x.subtables.iter().map(|sub| sub.len()))
+                .flat_map(|x| x.subtables().iter().map(|sub| sub.len()))
                 .sum::<usize>(),
             2
         );
@@ -1160,8 +1160,12 @@ mod tests {
 
     fn flags_and_rule_count(lookup: &PendingLookup<PairPosBuilder>) -> (LookupFlag, usize) {
         (
-            lookup.flags,
-            lookup.subtables.iter().map(|sub| sub.len()).sum::<usize>(),
+            lookup.flags(),
+            lookup
+                .subtables()
+                .iter()
+                .map(|sub| sub.len())
+                .sum::<usize>(),
         )
     }
 

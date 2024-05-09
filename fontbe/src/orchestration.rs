@@ -11,7 +11,7 @@ use std::{
 
 use fea_rs::{
     compile::{
-        FeatureKey, MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder,
+        FeatureKey, MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder, PendingLookup,
         ValueRecord as ValueRecordBuilder,
     },
     GlyphMap, GlyphSet, ParseTree,
@@ -63,7 +63,7 @@ use write_fonts::{
     FontWrite,
 };
 
-use crate::{error::Error, features::PendingLookup, paths::Paths};
+use crate::{error::Error, paths::Paths};
 
 type KernBlock = usize;
 
