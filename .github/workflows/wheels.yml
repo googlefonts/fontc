@@ -19,8 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        submodules: recursive
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -42,8 +40,6 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
@@ -78,8 +74,6 @@ jobs:
         ]
     steps:
     - uses: actions/checkout@v4
-      with:
-        submodules: recursive
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
@@ -123,8 +117,6 @@ jobs:
     # checkout@v4 doesn't work inside the manylinux container:
     # https://github.com/actions/checkout/issues/1487
     - uses: actions/checkout@v3
-      with:
-        submodules: recursive
     - name: Build Wheels
       uses: PyO3/maturin-action@main
       with:
