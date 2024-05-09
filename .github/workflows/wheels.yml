@@ -8,6 +8,11 @@ on:
   # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#workflow_dispatch
   workflow_dispatch:
 
+# read-only access to repo contents by default; specific jobs may override it
+# https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs
+permissions:
+  contents: read
+
 jobs:
   build_sdist:
     name: Build Source Distribution
@@ -59,12 +64,13 @@ jobs:
     - name: Upload wheel
       uses: actions/upload-artifact@v4
       with:
-        name: macos
+        name: universal2-apple-darwin
         path: dist/*.whl
 
   build_windows:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         platform: [
           { python-architecture: "x64", target: "x86_64-pc-windows-msvc" },
@@ -96,36 +102,46 @@ jobs:
     - name: Upload wheel
       uses: actions/upload-artifact@v4
       with:
-        name: windows-${{ matrix.platform.python-architecture }}
+        name: ${{ matrix.platform.target }}
         path: dist/*.whl
 
   build_linux:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        platform: [
-          { target: "x86_64-unknown-linux-musl", image_tag: "x86_64-musl", arch: "x86_64" },
-          { target: "aarch64-unknown-linux-musl", image_tag: "aarch64-musl", arch: "aarch64" },
-        ]
+        platform:
+          - target: "x86_64-unknown-linux-musl"
+            image_tag: "x86_64-musl"
+            compatibility: "manylinux2010 musllinux_1_1"
+          - target: "aarch64-unknown-linux-musl"
+            image_tag: "aarch64-musl"
+            compatibility: "manylinux2014 musllinux_1_1"
     container:
-      image: docker://messense/rust-musl-cross:${{ matrix.platform.image_tag }}
+      image: docker://ghcr.io/rust-cross/rust-musl-cross:${{ matrix.platform.image_tag }}
     steps:
     # checkout@v4 doesn't work inside the manylinux container:
     # https://github.com/actions/checkout/issues/1487
     - uses: actions/checkout@v3
       with:
         submodules: recursive
-    - name: Build Wheels - manylinux
+    - name: Build Wheels
       uses: PyO3/maturin-action@main
       with:
         target: ${{ matrix.platform.target }}
-        manylinux: auto
+        manylinux: ${{ matrix.platform.compatibility }}
         container: off
         args: --release -o dist
+    - name: Install x86_64 wheel
+      if: startsWith(matrix.platform.target, 'x86_64')
+      run: |
+        /usr/bin/python3 -m pip install --no-index --find-links dist/ --force-reinstall fontc
+        which fontc
+        fontc --version
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
-        name: linux-${{ matrix.platform.arch }}
+        name: ${{ matrix.platform.target }}
         path: dist/*.whl
 
   upload:
