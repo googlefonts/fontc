@@ -31,42 +31,42 @@ jobs:
             python-architecture: x86
     runs-on: ${{ matrix.platform.os }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-        architecture: ${{ matrix.platform.python-architecture }}
-    - uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: ${{ matrix.platform.target }}
-    - name: Build wheel (macOS universal2) and sdist
-      if: matrix.platform.target == 'x86_64-apple-darwin'
-      uses: PyO3/maturin-action@v1
-      with:
-        target: universal2-apple-darwin
-        args: --release -o dist --sdist
-    - name: Build wheel (without sdist)
-      if: matrix.platform.target != 'x86_64-apple-darwin'
-      uses: PyO3/maturin-action@v1
-      with:
-        target: ${{matrix.platform.target}}
-        args: --release -o dist
-    - name: Install wheel
-      shell: bash
-      run: |
-        pip install --no-index --find-links dist/ --force-reinstall fontc
-        which fontc
-        fontc --version
-    - name: Check sdist metadata
-      if: matrix.platform.target == 'x86_64-apple-darwin'
-      run: pipx run twine check dist/*.tar.gz
-    - name: Upload wheel artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.platform.target }}
-        path: |
-          dist/*.whl
-          dist/*.tar.gz
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: ${{ matrix.platform.python-architecture }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+      - name: Build wheel (macOS universal2) and sdist
+        if: matrix.platform.target == 'x86_64-apple-darwin'
+        uses: PyO3/maturin-action@v1
+        with:
+          target: universal2-apple-darwin
+          args: --release -o dist --sdist
+      - name: Build wheel (without sdist)
+        if: matrix.platform.target != 'x86_64-apple-darwin'
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{matrix.platform.target}}
+          args: --release -o dist
+      - name: Install wheel
+        shell: bash
+        run: |
+          pip install --no-index --find-links dist/ --force-reinstall fontc
+          which fontc
+          fontc --version
+      - name: Check sdist metadata
+        if: matrix.platform.target == 'x86_64-apple-darwin'
+        run: pipx run twine check dist/*.tar.gz
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform.target }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
 
   build_linux:
     name: Build ${{ matrix.platform.target }}
@@ -84,27 +84,27 @@ jobs:
     container:
       image: docker://ghcr.io/rust-cross/rust-musl-cross:${{ matrix.platform.image_tag }}
     steps:
-    # checkout@v4 doesn't work inside the manylinux container:
-    # https://github.com/actions/checkout/issues/1487
-    - uses: actions/checkout@v3
-    - name: Build Wheels
-      uses: PyO3/maturin-action@main
-      with:
-        target: ${{ matrix.platform.target }}
-        manylinux: ${{ matrix.platform.compatibility }}
-        container: off
-        args: --release -o dist
-    - name: Install x86_64 wheel
-      if: startsWith(matrix.platform.target, 'x86_64')
-      run: |
-        /usr/bin/python3 -m pip install --no-index --find-links dist/ --force-reinstall fontc
-        which fontc
-        fontc --version
-    - name: Upload wheel artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.platform.target }}
-        path: dist/*.whl
+      # checkout@v3 doesn't work inside the manylinux container:
+      # https://github.com/actions/checkout/issues/1487
+      - uses: actions/checkout@v3
+      - name: Build Wheels
+        uses: PyO3/maturin-action@main
+        with:
+          target: ${{ matrix.platform.target }}
+          manylinux: ${{ matrix.platform.compatibility }}
+          container: off
+          args: --release -o dist
+      - name: Install x86_64 wheel
+        if: startsWith(matrix.platform.target, 'x86_64')
+        run: |
+          /usr/bin/python3 -m pip install --no-index --find-links dist/ --force-reinstall fontc
+          which fontc
+          fontc --version
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform.target }}
+          path: dist/*.whl
 
   upload:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -116,12 +116,12 @@ jobs:
       id-token: write
 
     steps:
-    - uses: actions/download-artifact@v4
-      with:
-        # so that all artifacts are downloaded in the same directory specified by 'path'
-        merge-multiple: true
-        path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          # so that all artifacts are downloaded in the same directory specified by 'path'
+          merge-multiple: true
+          path: dist
 
-    - uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        skip-existing: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
