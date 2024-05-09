@@ -1112,6 +1112,10 @@ impl Anchor {
             _ => None,
         }
     }
+
+    pub fn is_mark(&self) -> bool {
+        matches!(self.kind, AnchorKind::Mark(_))
+    }
 }
 
 /// A type for building glyph anchors, reused by different backends

@@ -51,6 +51,9 @@ mod properties;
 pub use kern::{create_gather_ir_kerning_work, create_kern_segment_work, create_kerns_work};
 pub use marks::create_mark_work;
 
+const DFLT_SCRIPT: Tag = Tag::new(b"DFLT");
+const DFLT_LANG: Tag = Tag::new(b"dflt");
+
 #[derive(Debug)]
 pub struct FeatureParsingWork {}
 
