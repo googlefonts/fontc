@@ -29,7 +29,10 @@ mod pairpos;
 #[cfg(test)]
 mod test_helpers;
 
-use self::{marks::MarkAttachmentRule, pairpos::PairPosRule};
+use self::{
+    marks::{MarkAttachmentRule, MarkLigaRule},
+    pairpos::PairPosRule,
+};
 
 pub(crate) fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> Result<(), Error> {
     writeln!(f, "# GPOS #")?;
@@ -64,10 +67,12 @@ pub(crate) fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> R
         let pairpos = lookup_rules.pairpos_rules(&sys.lookups);
         let markmark = lookup_rules.markmark_rules(&sys.lookups);
         let markbase = lookup_rules.markbase_rules(&sys.lookups);
+        let markliga = lookup_rules.markliga_rules(&sys.lookups);
 
         print_rules(f, "PairPos", &pairpos, names, mark_glyph_sets.as_ref())?;
         print_rules(f, "MarkToBase", &markbase, names, mark_glyph_sets.as_ref())?;
         print_rules(f, "MarkToMark", &markmark, names, mark_glyph_sets.as_ref())?;
+        print_rules(f, "MarkToLig", &markliga, names, mark_glyph_sets.as_ref())?;
     }
 
     Ok(())
@@ -265,6 +270,7 @@ struct LookupRules {
     pairpos: Vec<Lookup<PairPosRule>>,
     markbase: Vec<Lookup<MarkAttachmentRule>>,
     markmark: Vec<Lookup<MarkAttachmentRule>>,
+    markliga: Vec<Lookup<MarkLigaRule>>,
     // decomposed rules for each lookup, in lookup order
 }
 
@@ -333,6 +339,15 @@ impl LookupRules {
             .filter(|lookup| lookups.contains(&lookup.lookup_id))
             .collect::<Vec<_>>();
         normalize_mark_lookups(&lookups)
+    }
+
+    fn markliga_rules<'a>(&'a self, lookups: &[u16]) -> Vec<SingleRule<'a, MarkLigaRule>> {
+        self.markliga
+            .iter()
+            .filter(|lookup| lookups.contains(&lookup.lookup_id))
+            .inspect(|lookup| eprintln!("liga lookup id {}", lookup.lookup_id))
+            .flat_map(|lookup| lookup.iter())
+            .collect()
     }
 }
 
@@ -426,6 +441,15 @@ fn get_lookup_rules(
                 let rules = marks::get_mark_mark_rules(&subs, delta_computer).unwrap();
                 result
                     .markbase
+                    .push(Lookup::new(id, rules, flag, mark_filter_id));
+            }
+            PositionSubtables::MarkToLig(subs) => {
+                eprintln!("get lookup rules id {id}");
+                let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
+                let rules = marks::get_mark_liga_rules(&subs, delta_computer).unwrap();
+                eprintln!("got {} rules", rules.len());
+                result
+                    .markliga
                     .push(Lookup::new(id, rules, flag, mark_filter_id));
             }
             _ => (),
