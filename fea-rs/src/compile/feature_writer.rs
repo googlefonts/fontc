@@ -46,6 +46,40 @@ pub trait GposSubtableBuilder: Sized {
     ) -> ExternalGposLookup;
 }
 
+/// A lookup generated outside of user FEA
+///
+/// This will be merged into any user-provided features during compilation.
+#[derive(Debug, Default, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PendingLookup<T> {
+    subtables: Vec<T>,
+    flags: LookupFlag,
+    mark_filter_set: Option<GlyphSet>,
+}
+
+impl<T> PendingLookup<T> {
+    /// Create a new lookup.
+    ///
+    /// This can later be added to the feature builder via [`FeatureBuilder::add_lookup`]
+    pub fn new(subtables: Vec<T>, flags: LookupFlag, mark_filter_set: Option<GlyphSet>) -> Self {
+        Self {
+            subtables,
+            flags,
+            mark_filter_set,
+        }
+    }
+
+    /// Return a reference to the subtables in this lookup.
+    pub fn subtables(&self) -> &[T] {
+        &self.subtables
+    }
+
+    /// Return the `LookupFlag` for this lookup.
+    pub fn flags(&self) -> LookupFlag {
+        self.flags
+    }
+}
+
 /// An externally created GPOS lookup.
 ///
 /// This only exists so that we can avoid making our internal types `pub`.
@@ -77,16 +111,17 @@ impl<'a> FeatureBuilder<'a> {
         self.tables.gdef.as_ref()
     }
 
-    /// Create a new lookup.
+    /// Add a lookup to the lookup list.
     ///
-    /// The `LookupId` that is returned can then be included in features
-    pub fn add_lookup<T: GposSubtableBuilder>(
-        &mut self,
-        flags: LookupFlag,
-        filter_set: Option<GlyphSet>,
-        subtables: Vec<T>,
-    ) -> LookupId {
-        let filter_set_id = filter_set.map(|cls| self.get_filter_set_id(cls));
+    /// The `LookupId` that is returned can then be included in features (i.e,
+    /// passed to [`add_feature`](Self::add_feature).)
+    pub fn add_lookup<T: GposSubtableBuilder>(&mut self, lookup: PendingLookup<T>) -> LookupId {
+        let PendingLookup {
+            subtables,
+            flags,
+            mark_filter_set,
+        } = lookup;
+        let filter_set_id = mark_filter_set.map(|cls| self.get_filter_set_id(cls));
         let lookup = T::to_pos_lookup(flags, filter_set_id, subtables);
         let next_id = LookupId::External(self.lookups.len());
         self.lookups.push((next_id, lookup.0));
@@ -113,7 +148,6 @@ impl<'a> FeatureBuilder<'a> {
 
     fn get_filter_set_id(&mut self, cls: GlyphSet) -> FilterSetId {
         let next_id = self.filter_set_id_start + self.mark_filter_sets.len();
-        //.expect("too many filter sets");
         *self.mark_filter_sets.entry(cls).or_insert_with(|| {
             next_id
                 .try_into()

@@ -13,7 +13,7 @@ use self::{
 use self::error::UfoGlyphOrderError;
 
 pub use compiler::Compiler;
-pub use feature_writer::{FeatureBuilder, FeatureProvider, NopFeatureProvider};
+pub use feature_writer::{FeatureBuilder, FeatureProvider, NopFeatureProvider, PendingLookup};
 pub use language_system::LanguageSystem;
 pub use lookups::{
     Builder, FeatureKey, LookupId, MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder,

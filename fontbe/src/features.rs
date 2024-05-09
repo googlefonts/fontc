@@ -15,7 +15,10 @@ use log::{debug, error, trace, warn};
 use ordered_float::OrderedFloat;
 
 use fea_rs::{
-    compile::{error::CompilerError, Compilation, FeatureBuilder, FeatureProvider, VariationInfo},
+    compile::{
+        error::CompilerError, Compilation, FeatureBuilder, FeatureProvider, PendingLookup,
+        VariationInfo,
+    },
     parse::{FileSystemResolver, SourceLoadError, SourceResolver},
     DiagnosticSet, GlyphMap, Opts, ParseTree,
 };
@@ -40,15 +43,16 @@ use crate::{
     orchestration::{AnyWorkId, BeWork, Context, FeaAst, FeaRsKerns, FeaRsMarks, WorkId},
 };
 
-mod common;
 mod kern;
 mod marks;
 mod ot_tags;
 mod properties;
 
-pub(crate) use common::PendingLookup;
 pub use kern::{create_gather_ir_kerning_work, create_kern_segment_work, create_kerns_work};
 pub use marks::create_mark_work;
+
+const DFLT_SCRIPT: Tag = Tag::new(b"DFLT");
+const DFLT_LANG: Tag = Tag::new(b"dflt");
 
 #[derive(Debug)]
 pub struct FeatureParsingWork {}
@@ -221,13 +225,7 @@ impl<'a> FeatureWriter<'a> {
             .kerning
             .lookups
             .iter()
-            .map(|lookup| {
-                builder.add_lookup(
-                    lookup.flags,
-                    lookup.mark_filter_set.clone(),
-                    lookup.subtables.clone(),
-                )
-            })
+            .map(|lookup| builder.add_lookup(lookup.clone()))
             .collect::<Vec<_>>();
 
         for (feature, ids) in &self.kerning.features {
@@ -271,20 +269,20 @@ impl<'a> FeatureWriter<'a> {
 
         for mark_base in marks.mark_base.iter() {
             // each mark to base it's own lookup, whch differs from fontmake
-            mark_base_lookups.push(builder.add_lookup(
-                LookupFlag::default(),
-                None,
+            mark_base_lookups.push(builder.add_lookup(PendingLookup::new(
                 vec![mark_base.to_owned()],
-            ));
+                LookupFlag::empty(),
+                None,
+            )));
         }
 
         // If a mark has anchors that are themselves marks what we got here is a mark to mark
         for mark_mark in marks.mark_mark.iter() {
-            mark_mark_lookups.push(builder.add_lookup(
+            mark_mark_lookups.push(builder.add_lookup(PendingLookup::new(
+                vec![mark_mark.to_owned()],
                 LookupFlag::default(),
                 None,
-                vec![mark_mark.to_owned()],
-            ));
+            )));
         }
 
         if !mark_base_lookups.is_empty() {

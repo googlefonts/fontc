@@ -44,7 +44,7 @@ use crate::{
     },
 };
 
-use super::{properties::CharMap, PendingLookup};
+use super::{properties::CharMap, PendingLookup, DFLT_LANG, DFLT_SCRIPT};
 
 /// On Linux it took ~0.01 ms per loop, try to get enough to make fan out worthwhile
 /// based on empirical testing
@@ -53,8 +53,6 @@ const KERN: Tag = Tag::new(b"kern");
 // we don't currently compile this feature, but we will, and it is referenced
 // in places because our impl is based on fonttools.
 const DIST: Tag = Tag::new(b"dist");
-const DFLT_SCRIPT: Tag = Tag::new(b"DFLT");
-const DFLT_LANG: Tag = Tag::new(b"dflt");
 
 /// Accumulation of all the kerning from IR
 #[derive(Debug)]
@@ -583,7 +581,7 @@ fn debug_ordered_lookups(
     lookups: &[PendingLookup<PairPosBuilder>],
 ) {
     for (i, lookup) in lookups.iter().enumerate() {
-        let total_rules = lookup.subtables.iter().map(|x| x.len()).sum::<usize>();
+        let total_rules = lookup.subtables().iter().map(|x| x.len()).sum::<usize>();
         log::trace!("lookup {i}, {total_rules} rules");
     }
 
@@ -1143,7 +1141,7 @@ mod tests {
         assert_eq!(
             cyr_rules
                 .iter()
-                .flat_map(|x| x.subtables.iter().map(|sub| sub.len()))
+                .flat_map(|x| x.subtables().iter().map(|sub| sub.len()))
                 .sum::<usize>(),
             1
         );
@@ -1152,7 +1150,7 @@ mod tests {
         assert_eq!(
             latn_rules
                 .iter()
-                .flat_map(|x| x.subtables.iter().map(|sub| sub.len()))
+                .flat_map(|x| x.subtables().iter().map(|sub| sub.len()))
                 .sum::<usize>(),
             2
         );
@@ -1160,8 +1158,12 @@ mod tests {
 
     fn flags_and_rule_count(lookup: &PendingLookup<PairPosBuilder>) -> (LookupFlag, usize) {
         (
-            lookup.flags,
-            lookup.subtables.iter().map(|sub| sub.len()).sum::<usize>(),
+            lookup.flags(),
+            lookup
+                .subtables()
+                .iter()
+                .map(|sub| sub.len())
+                .sum::<usize>(),
         )
     }
 
