@@ -271,7 +271,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let mut builder = FeatureBuilder::new(
             &self.default_lang_systems,
             &mut self.tables,
-            self.mark_filter_sets.len(),
+            &mut self.mark_filter_sets,
         );
         writer.add_features(&mut builder);
 

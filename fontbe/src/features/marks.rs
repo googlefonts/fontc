@@ -3,9 +3,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use fea_rs::{
-    compile::{MarkToBaseBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo},
+    compile::{
+        MarkToBaseBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo, PendingLookup,
+    },
     typed::{AstNode, LanguageSystem},
-    Opts, ParseTree,
+    GlyphSet, Opts, ParseTree,
 };
 use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
@@ -15,7 +17,7 @@ use fontdrasil::{
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::gdef::GlyphClassDef,
+    tables::{gdef::GlyphClassDef, layout::LookupFlag},
     types::{GlyphId, Tag},
 };
 
@@ -57,6 +59,20 @@ struct MarkLookupBuilder<'a> {
 struct MarkGroup<'a> {
     bases: Vec<(GlyphName, &'a ir::Anchor)>,
     marks: Vec<(GlyphName, &'a ir::Anchor)>,
+    // if `true`, we will make a mark filter set from the marks in this group
+    // (only true for mkmk)
+    filter_glyphs: bool,
+}
+
+impl MarkGroup<'_> {
+    fn make_filter_glyph_set(&self, glyph_order: &GlyphOrder) -> Option<GlyphSet> {
+        self.filter_glyphs.then(|| {
+            self.marks
+                .iter()
+                .map(|(name, _)| glyph_order.glyph_id(name).unwrap())
+                .collect()
+        })
+    }
 }
 
 // a trait to abstract over two very similar builders
@@ -182,12 +198,15 @@ impl<'a> MarkLookupBuilder<'a> {
     fn make_lookups<T: MarkAttachmentBuilder>(
         &self,
         groups: BTreeMap<MarkGroupName, MarkGroup>,
-    ) -> Result<Vec<T>, Error> {
+    ) -> Result<Vec<PendingLookup<T>>, Error> {
         groups
             .into_iter()
             .filter(|(_, group)| !(group.bases.is_empty() || group.marks.is_empty()))
             .map(|(group_name, group)| {
                 let mut builder = T::default();
+                let filter_set = group.make_filter_glyph_set(self.glyph_order);
+                let mut flags = LookupFlag::empty();
+                flags.set_use_mark_filtering_set(filter_set.is_some());
                 for (mark_name, anchor) in group.marks {
                     // we already filtered to only things in glyph order
                     let gid = self.glyph_order.glyph_id(&mark_name).unwrap();
@@ -200,8 +219,7 @@ impl<'a> MarkLookupBuilder<'a> {
                     let anchor = resolve_anchor(anchor, self.static_metadata, &base_name)?;
                     builder.add_base(gid, &group_name, anchor);
                 }
-
-                Ok(builder)
+                Ok(PendingLookup::new(vec![builder], flags, filter_set))
             })
             .collect()
     }
@@ -260,14 +278,12 @@ impl<'a> MarkLookupBuilder<'a> {
             }
 
             for anchor in glyph_anchors {
-                if let AnchorKind::Base(group) = &anchor.kind {
+                if let AnchorKind::Base(group_name) = &anchor.kind {
                     // only if this anchor is a base, AND we have a mark in the same group
-                    if mark_anchors.contains(group) {
-                        result
-                            .entry(group.clone())
-                            .or_default()
-                            .bases
-                            .push((glyph.clone(), anchor))
+                    if mark_anchors.contains(group_name) {
+                        let group = result.entry(group_name.clone()).or_default();
+                        group.filter_glyphs = true;
+                        group.bases.push((glyph.clone(), anchor))
                     }
                 }
             }
