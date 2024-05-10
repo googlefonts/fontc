@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use fea_rs::{
     compile::{
-        FeatureProvider, MarkToBaseBuilder, MarkToMarkBuilder, NopFeatureProvider,
-        NopVariationInfo, PendingLookup,
+        FeatureProvider, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder,
+        NopFeatureProvider, NopVariationInfo, PendingLookup,
     },
     typed::{AstNode, LanguageSystem},
     GlyphSet, Opts, ParseTree,
@@ -189,13 +189,16 @@ impl<'a> MarkLookupBuilder<'a> {
 
         let mark_base = self.make_lookups::<MarkToBaseBuilder>(mark_base_groups)?;
         let mark_mark = self.make_lookups::<MarkToMarkBuilder>(mark_mark_groups)?;
+        let mark_lig = self.make_mark_to_liga_lookup()?;
         Ok(FeaRsMarks {
             glyphmap: self.glyph_order.iter().cloned().collect(),
             mark_base,
             mark_mark,
+            mark_lig,
         })
     }
 
+    // code shared between mark2base and mark2mark
     fn make_lookups<T: MarkAttachmentBuilder>(
         &self,
         groups: BTreeMap<MarkGroupName, MarkGroup>,
@@ -303,6 +306,64 @@ impl<'a> MarkLookupBuilder<'a> {
             }
         }
         result
+    }
+
+    fn make_mark_to_liga_lookup(&self) -> Result<Vec<PendingLookup<MarkToLigBuilder>>, Error> {
+        let mut liga_anchor_groups = HashSet::new();
+        // in the future we will probably need to split lookups based on script?
+        // but for now let's just make one lookup.
+        let mut builder = MarkToLigBuilder::default();
+
+        for (glyph_name, anchors) in &self.anchor_lists {
+            let is_not_liga = !self.gdef_classes.is_empty()
+                && (self.gdef_classes.get(glyph_name) != Some(&GlyphClassDef::Ligature));
+            if is_not_liga {
+                continue;
+            }
+            let gid = self.glyph_order.glyph_id(glyph_name).unwrap();
+            let Some(max_index) = anchors.iter().filter_map(|a| a.ligature_index()).max() else {
+                continue;
+            };
+            let mut component_anchors = vec![BTreeMap::new(); max_index];
+            for anchor in anchors {
+                if let fontir::ir::AnchorKind::Ligature { group_name, index } = &anchor.kind {
+                    liga_anchor_groups.insert(group_name);
+                    let anchor = resolve_anchor(anchor, self.static_metadata, glyph_name)?;
+                    component_anchors[*index - 1].insert(group_name.clone(), anchor);
+                }
+            }
+            builder.add_lig(gid, component_anchors);
+        }
+
+        for (mark_name, anchors) in self
+            .anchor_lists
+            .iter()
+            .filter(|x| self.mark_glyphs.contains(x.0))
+        {
+            for anchor in anchors.iter().filter(|a| a.is_mark()) {
+                let mark_group = anchor.mark_group_name().unwrap();
+                if !liga_anchor_groups.contains(mark_group) {
+                    continue;
+                }
+
+                let gid = self.glyph_order.glyph_id(mark_name).unwrap();
+                let anchor = resolve_anchor(anchor, self.static_metadata, mark_name)?;
+                if let Err(prev_class) = builder.insert_mark(gid, mark_group.to_owned(), anchor) {
+                    // this can't happen with markbase or markmark because we have one lookup per
+                    // class. Should we be doing something similar for marklig?
+                    log::warn!(
+                        "mark glyph '{mark_name}' in multiple classes: '{}' & '{}'",
+                        prev_class.class,
+                        mark_group
+                    );
+                }
+            }
+        }
+        Ok(vec![PendingLookup::new(
+            vec![builder],
+            LookupFlag::empty(),
+            None,
+        )])
     }
 }
 
@@ -456,24 +517,27 @@ fn resolve_anchor(
 
 impl FeatureProvider for FeaRsMarks {
     fn add_features(&self, builder: &mut fea_rs::compile::FeatureBuilder) {
-        let mut mark_base_lookups = Vec::new();
-        let mut mark_mark_lookups = Vec::new();
+        let mut mark_lookups = Vec::new();
+        let mut mkmk_lookups = Vec::new();
 
         for mark_base in self.mark_base.iter() {
             // each mark to base it's own lookup, whch differs from fontmake
-            mark_base_lookups.push(builder.add_lookup(mark_base.clone()));
+            mark_lookups.push(builder.add_lookup(mark_base.clone()));
+        }
+        for mark_lig in self.mark_lig.iter() {
+            mark_lookups.push(builder.add_lookup(mark_lig.clone()));
         }
 
         // If a mark has anchors that are themselves marks what we got here is a mark to mark
         for mark_mark in self.mark_mark.iter() {
-            mark_mark_lookups.push(builder.add_lookup(mark_mark.clone()));
+            mkmk_lookups.push(builder.add_lookup(mark_mark.clone()));
         }
 
-        if !mark_base_lookups.is_empty() {
-            builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_base_lookups);
+        if !mark_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_lookups);
         }
-        if !mark_mark_lookups.is_empty() {
-            builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
+        if !mkmk_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mkmk_lookups);
         }
     }
 }

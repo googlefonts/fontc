@@ -532,6 +532,7 @@ impl Builder for MarkToBaseBuilder {
     }
 }
 
+/// A builder for GPOS Lookup Type 5, Mark-to-Ligature
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MarkToLigBuilder {
@@ -540,6 +541,10 @@ pub struct MarkToLigBuilder {
 }
 
 impl MarkToLigBuilder {
+    /// Add a new mark glyph.
+    ///
+    /// If this glyph already exists in another mark class, we return the
+    /// previous class; this is likely an error.
     pub fn insert_mark(
         &mut self,
         glyph: GlyphId,
@@ -549,14 +554,21 @@ impl MarkToLigBuilder {
         self.marks.insert(glyph, class, anchor)
     }
 
+    /// Add a ligature base, providing a set of anchors for each component.
+    ///
+    /// There must be an item in the vec for each component in the ligature glyph,
+    /// but the anchors can be sparse; null anchors will be added for any classes
+    /// that are missing.
     pub fn add_lig(&mut self, glyph: GlyphId, components: Vec<BTreeMap<SmolStr, Anchor>>) {
         self.ligatures.insert(glyph, components);
     }
 
+    /// Returns an iterator over all of the mark glyphs
     pub fn mark_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.marks.glyphs()
     }
 
+    /// Returns an iterator over all of the ligature glyphs
     pub fn lig_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.ligatures.keys().copied()
     }

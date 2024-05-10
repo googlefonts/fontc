@@ -1116,6 +1116,14 @@ impl Anchor {
     pub fn is_mark(&self) -> bool {
         matches!(self.kind, AnchorKind::Mark(_))
     }
+
+    /// If this is a ligature anchor, return the index
+    pub fn ligature_index(&self) -> Option<usize> {
+        match self.kind {
+            AnchorKind::Ligature { index, .. } => Some(index),
+            _ => None,
+        }
+    }
 }
 
 /// A type for building glyph anchors, reused by different backends

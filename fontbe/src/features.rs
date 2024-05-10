@@ -241,6 +241,7 @@ impl<'a> FeatureWriter<'a> {
                 .borrow_mut()
                 .push(("Start add marks", Instant::now()));
         }
+
         self.marks.add_features(builder);
 
         {

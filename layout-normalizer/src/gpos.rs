@@ -343,12 +343,14 @@ impl LookupRules {
     }
 
     fn markliga_rules<'a>(&'a self, lookups: &[u16]) -> Vec<SingleRule<'a, MarkLigaRule>> {
-        self.markliga
+        let mut rules = self
+            .markliga
             .iter()
             .filter(|lookup| lookups.contains(&lookup.lookup_id))
-            .inspect(|lookup| eprintln!("liga lookup id {}", lookup.lookup_id))
             .flat_map(|lookup| lookup.iter())
-            .collect()
+            .collect::<Vec<_>>();
+        rules.sort_unstable();
+        rules
     }
 }
 
@@ -445,10 +447,8 @@ fn get_lookup_rules(
                     .push(Lookup::new(id, rules, flag, mark_filter_id));
             }
             PositionSubtables::MarkToLig(subs) => {
-                eprintln!("get lookup rules id {id}");
                 let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
                 let rules = marks::get_mark_liga_rules(&subs, delta_computer).unwrap();
-                eprintln!("got {} rules", rules.len());
                 result
                     .markliga
                     .push(Lookup::new(id, rules, flag, mark_filter_id));
