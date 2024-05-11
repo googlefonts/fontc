@@ -1,3 +1,21 @@
+# This is heavily inspired on
+# https://github.com/PyO3/maturin/blob/main/.github/workflows/release.yml
+# Maturin is a tool to build Rust crates as Python packages with minimal configuration,
+# which uses cargo under the hood and ensures the binaries are compatible with a wide
+# array of platforms and architectures.
+# Although fontc itself is a pure Rust project and as such doesn't use Python,
+# making it available on PyPI as a binary wheel package suitable to be installed by pip
+# increases its reach among font developers accustomed to Python tools.
+#
+# The Release workflow uses maturin to build fontc for Linux (x86_64 and aarch64),
+# Windows (i686 and x86_64) and macOS (universal2 'fat' binary supporting both
+# x86_64 and arm64 architectures), package these as Python wheels, and upload to PyPI.
+# The same fontc binaries are also uploaded as Github Release assets which can be used
+# with `cargo binstall` command. The fontc source is also uploded to crates.io.
+# The workflow runs automatically when a version tag (i.e. starting with 'v') gets
+# pushed, or can be manually triggered from Github Actions interface (in which case
+# artifacts don't get published, just temporarily uploaded to Github Actions).
+
 name: Release
 
 on:
