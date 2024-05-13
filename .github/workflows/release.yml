@@ -198,6 +198,18 @@ jobs:
         with:
           pattern: binaries-*
           merge-multiple: true
+          path: binaries
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: wheels
+
+      - name: Compute checksums
+        run: |
+          sha256sum binaries/*.tar.gz b binaries/*.zip > binaries/checksums.txt
+          echo fontc | pipx run --spec pip-tools pip-compile - --no-index --find-links wheels/ --generate-hashes --output-file wheels/requirements.txt
 
       - name: Detect if tag is a pre-release
         id: set_prerelease
@@ -219,7 +231,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            *.tar.gz
-            *.zip
+            binaries/*.tar.gz
+            binaries/*.zip
+            binaries/checksums.txt
+            wheels/requirements.txt
           prerelease: ${{ steps.set_prerelease.outputs.is_prerelease }}
           generate_release_notes: true
