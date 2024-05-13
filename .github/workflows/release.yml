@@ -214,7 +214,7 @@ jobs:
           sha256sum *.tar.gz *.zip requirements.txt > checksums.txt
 
       - name: Detect if tag is a pre-release
-        id: set_prerelease
+        id: before_release
         env:
           # e.g. v0.1.0a1, v1.2.0b2 or v2.3.0rc3, but not v1.0.0
           PRERELEASE_TAG_PATTERN: "fontc-v[[:digit:]]+\\.[[:digit:]]+\\.[[:digit:]]+([ab]|rc)[[:digit:]]+"
@@ -228,14 +228,17 @@ jobs:
             echo "Tag ${TAG_NAME} does not contain a pre-release suffix"
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+          # strip the redundant 'fontc-' prefix from the Github Release title
+          echo "release_title=${TAG_NAME##*-}" >> "$GITHUB_OUTPUT"
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ steps.before_release.outputs.release_title }}
           files: |
             *.tar.gz
             *.zip
             checksums.txt
             requirements.txt
-          prerelease: ${{ steps.set_prerelease.outputs.is_prerelease }}
+          prerelease: ${{ steps.before_release.outputs.is_prerelease }}
           generate_release_notes: true
