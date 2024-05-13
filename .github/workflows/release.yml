@@ -217,6 +217,22 @@ jobs:
           pattern: binaries-*
           merge-multiple: true
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: wheels
+
+      # this requirements.txt can be used to pip install fontc more securely
+      # https://pip.pypa.io/en/stable/topics/secure-installs/
+      - name: Generate requirements.txt with SHA256 hashes
+        run: |
+          echo fontc | pipx run --spec pip-tools pip-compile - --no-index --find-links wheels/ --no-emit-find-links --generate-hashes --pip-args '--only-binary=:all:' --no-annotate --no-header --output-file requirements.txt
+
+      - name: Compute checksums of release assets
+        run: |
+          sha256sum *.tar.gz *.zip requirements.txt > checksums.txt
+
       - name: Detect if tag is a pre-release
         id: set_prerelease
         env:
@@ -239,6 +255,8 @@ jobs:
           files: |
             *.tar.gz
             *.zip
+            checksums.txt
+            requirements.txt
           prerelease: ${{ steps.set_prerelease.outputs.is_prerelease }}
           generate_release_notes: true
 
