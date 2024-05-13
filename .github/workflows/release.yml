@@ -208,7 +208,7 @@ jobs:
 
       - name: Compute checksums
         run: |
-          sha256sum binaries/*.tar.gz b binaries/*.zip > binaries/checksums.txt
+          sha256sum binaries/*.tar.gz binaries/*.zip > binaries/checksums.txt
           echo fontc | pipx run --spec pip-tools pip-compile - --no-index --find-links wheels/ --generate-hashes --output-file wheels/requirements.txt
 
       - name: Detect if tag is a pre-release
