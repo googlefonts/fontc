@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use write_fonts::{read::ReadError, types::Tag};
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("could not read path '{path}': '{inner}'")]
     Load {
         path: PathBuf,

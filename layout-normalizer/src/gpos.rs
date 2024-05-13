@@ -34,7 +34,8 @@ use self::{
     pairpos::PairPosRule,
 };
 
-pub(crate) fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> Result<(), Error> {
+/// Print normalized GPOS layout rules for the provided font
+pub fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> Result<(), Error> {
     writeln!(f, "# GPOS #")?;
     let Some(table) = font.gpos().ok() else {
         // no GPOS table, nothing to do

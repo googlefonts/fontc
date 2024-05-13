@@ -18,10 +18,44 @@ use crate::error::Error;
 pub struct NameMap(pub(crate) BTreeMap<GlyphId, SmolStr>);
 
 impl NameMap {
+    /// Create a new name mapping for the glyphs in the provided font
+    pub fn from_font(font: &FontRef) -> Result<NameMap, Error> {
+        let num_glyphs = font
+            .maxp()
+            .map_err(|_| Error::MissingTable(Tag::new(b"maxp")))?
+            .num_glyphs();
+        let reverse_cmap = reverse_cmap(font)?;
+        let mut name_map = (1..num_glyphs)
+            .map(|gid| {
+                let gid = GlyphId::new(gid);
+                let name = match reverse_cmap.get(&gid).and_then(|cp| char::from_u32(*cp)) {
+                    Some(codepoint) => match glyph_name_for_char(codepoint) {
+                        Some(name) => name,
+                        // we have a codepoint but it doesn't have a name:
+                        None => {
+                            let raw = codepoint as u32;
+                            let name = if raw <= 0xFFFF {
+                                format!("uni{raw:04X}")
+                            } else {
+                                format!("u{raw:X}")
+                            };
+                            SmolStr::new(name)
+                        }
+                    },
+                    // we have no codepoint, just use glyph ID
+                    None => SmolStr::new(format!("glyph.{:05}", gid.to_u16())),
+                };
+                (gid, name)
+            })
+            .collect::<BTreeMap<_, _>>();
+        name_map.insert(GlyphId::NOTDEF, ".notdef".into());
+
+        Ok(NameMap(name_map))
+    }
     /// Returns a human readable name for this gid.
     ///
     /// This will panic if the gid is not in the font used to create this map.
-    pub(crate) fn get(&self, gid: GlyphId) -> &SmolStr {
+    pub fn get(&self, gid: GlyphId) -> &SmolStr {
         // map contains a name for every gid in the font
         self.0.get(&gid).unwrap()
     }
@@ -30,46 +64,6 @@ impl NameMap {
     pub(crate) fn iter(&self) -> impl Iterator<Item = &SmolStr> + '_ {
         self.0.values()
     }
-}
-
-/// Returns a map of gid -> names
-pub(crate) fn make_name_map(font: &FontRef) -> Result<NameMap, Error> {
-    // okay so:
-    //
-    // - I want to get a map going from glyph ids to names.
-    // - so first i need to go to cmap, and get a map of glyph ids to codepoints.
-    // - there can be multiple codepoints for a glyph?
-    let num_glyphs = font
-        .maxp()
-        .map_err(|_| Error::MissingTable(Tag::new(b"maxp")))?
-        .num_glyphs();
-    let reverse_cmap = reverse_cmap(font)?;
-    let mut name_map = (1..num_glyphs)
-        .map(|gid| {
-            let gid = GlyphId::new(gid);
-            let name = match reverse_cmap.get(&gid).and_then(|cp| char::from_u32(*cp)) {
-                Some(codepoint) => match glyph_name_for_char(codepoint) {
-                    Some(name) => name,
-                    // we have a codepoint but it doesn't have a name:
-                    None => {
-                        let raw = codepoint as u32;
-                        let name = if raw <= 0xFFFF {
-                            format!("uni{raw:04X}")
-                        } else {
-                            format!("u{raw:X}")
-                        };
-                        SmolStr::new(name)
-                    }
-                },
-                // we have no codepoint, just use glyph ID
-                None => SmolStr::new(format!("glyph.{:05}", gid.to_u16())),
-            };
-            (gid, name)
-        })
-        .collect::<BTreeMap<_, _>>();
-    name_map.insert(GlyphId::NOTDEF, ".notdef".into());
-
-    Ok(NameMap(name_map))
 }
 
 fn reverse_cmap(font: &FontRef) -> Result<HashMap<GlyphId, u32>, Error> {
