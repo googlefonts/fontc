@@ -26,7 +26,7 @@ exclude = [
 name = "fontc"
 # comment out 'version' to use the same as Cargo.toml, only override if needed
 # (e.g. for a post-release to fix some packaging issues with a previous release)
-version = "0.0.2a3"
+version = "0.0.2a4"
 # Ensure we use the workspace's top-level README.md for the sdist/wheel metadata
 # not the fontc crate's specific README.md
 readme = "README.md"
