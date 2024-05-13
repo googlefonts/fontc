@@ -228,8 +228,8 @@ jobs:
             echo "Tag ${TAG_NAME} does not contain a pre-release suffix"
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
           fi
-          # strip the redundant 'fontc-' prefix from the Github Release title
-          echo "release_title=${TAG_NAME##*-}" >> "$GITHUB_OUTPUT"
+          # strip the redundant 'fontc-v' prefix from the Github Release title
+          echo "release_title=${TAG_NAME#fontc-v}" >> "$GITHUB_OUTPUT"
 
       - name: Release
         uses: softprops/action-gh-release@v2
