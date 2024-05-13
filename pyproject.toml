@@ -1,0 +1,32 @@
+[build-system]
+requires = ["maturin>=0.12"]
+build-backend = "maturin"
+
+[tool.maturin]
+# maturin needs a manifest with a [package], can't just use the workspace's Cargo.toml
+manifest-path = "fontc/Cargo.toml"
+# treat the project as a Rust binary application: https://www.maturin.rs/bindings#bin
+bindings = "bin"
+# somehow these standard files aren't included automatically in the sdist,
+# it's better to keep them in there
+include = [
+  { path = "README.md", format = "sdist" },
+  { path = "LICENSE", format = "sdist" },
+]
+# without this exclude, maturin installs all fontc/*.rs source files in the
+# site-packages which is useless (maybe it expects to find *.py in there?)
+exclude = [
+  { path = "fontc/**/*", format = "wheel" },
+]
+
+# maturin merges the metadata from Cargo.toml with the pyproject.toml's below,
+# which takes precedence and overrides Cargo.toml
+[project]
+# 'name' key is required for [project]
+name = "fontc"
+# comment out 'version' to use the same as Cargo.toml, only override if needed
+# (e.g. for a post-release to fix some packaging issues with a previous release)
+# version = "0.0.1.post1"
+# Ensure we use the workspace's top-level README.md for the sdist/wheel metadata
+# not the fontc crate's specific README.md
+readme = "README.md"
