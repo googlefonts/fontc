@@ -207,7 +207,7 @@ jobs:
 
       - name: Generate requirements.txt with SHA256 hashes
         run: |
-          echo fontc | pipx run --spec pip-tools pip-compile - --no-index --find-links wheels/ --no-emit-find-links --generate-hashes --output-file requirements.txt
+          echo fontc | pipx run --spec pip-tools pip-compile - --no-index --find-links wheels/ --no-emit-find-links --generate-hashes --pip-args '--only-binary=:all:' --output-file requirements.txt
 
       - name: Compute checksums of release assets
         run: |
