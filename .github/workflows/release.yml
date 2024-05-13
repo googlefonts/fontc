@@ -11,9 +11,9 @@
 # Windows (i686 and x86_64) and macOS (universal2 'fat' binary supporting both
 # x86_64 and arm64 architectures), package these as Python wheels, and upload to PyPI.
 # The same fontc binaries are also uploaded as Github Release assets which can be used
-# with `cargo binstall` command. The fontc source is also uploded to crates.io.
-# The workflow runs automatically when a version tag (i.e. starting with 'v') gets
-# pushed, or can be manually triggered from Github Actions interface (in which case
+# with `cargo binstall` command.
+# The workflow runs automatically when a fontc version tag (i.e. starting with 'fontc-v')
+# gets pushed, or can be manually triggered from Github Actions interface (in which case
 # artifacts don't get published, just temporarily uploaded to Github Actions).
 
 name: Release
@@ -262,19 +262,3 @@ jobs:
             requirements.txt
           prerelease: ${{ steps.before_release.outputs.is_prerelease }}
           generate_release_notes: true
-
-  # TODO: Make sure fontc's Cargo.toml metadata are ok for publishing to crates.io,
-  # maybe publish it the first time manually to reserve a spot. Also store a token
-  # named CRATES_IO_TOKEN in the repository's secrets before un-commenting this:
-  # release-crates-io:
-  #   name: Publish source to crates.io
-  #   runs-on: ubuntu-latest
-  #   if: "startsWith(github.ref, 'refs/tags/v')"
-  #   needs: [release-github]
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: dtolnay/rust-toolchain@stable
-  #     - name: cargo login
-  #       run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
-  #     - name: cargo publish
-  #       run: cargo publish
