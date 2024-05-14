@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use fea_rs::{
     compile::{
-        MarkToBaseBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo, PendingLookup,
+        FeatureProvider, MarkToBaseBuilder, MarkToMarkBuilder, NopFeatureProvider,
+        NopVariationInfo, PendingLookup,
     },
     typed::{AstNode, LanguageSystem},
     GlyphSet, Opts, ParseTree,
@@ -451,4 +452,28 @@ fn resolve_anchor(
     }
 
     Ok(anchor)
+}
+
+impl FeatureProvider for FeaRsMarks {
+    fn add_features(&self, builder: &mut fea_rs::compile::FeatureBuilder) {
+        let mut mark_base_lookups = Vec::new();
+        let mut mark_mark_lookups = Vec::new();
+
+        for mark_base in self.mark_base.iter() {
+            // each mark to base it's own lookup, whch differs from fontmake
+            mark_base_lookups.push(builder.add_lookup(mark_base.clone()));
+        }
+
+        // If a mark has anchors that are themselves marks what we got here is a mark to mark
+        for mark_mark in self.mark_mark.iter() {
+            mark_mark_lookups.push(builder.add_lookup(mark_mark.clone()));
+        }
+
+        if !mark_base_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_base_lookups);
+        }
+        if !mark_mark_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
+        }
+    }
 }

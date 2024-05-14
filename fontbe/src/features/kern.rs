@@ -8,7 +8,7 @@ use std::{
 
 use fea_rs::{
     compile::{
-        FeatureKey, NopFeatureProvider, NopVariationInfo, PairPosBuilder,
+        FeatureKey, FeatureProvider, NopFeatureProvider, NopVariationInfo, PairPosBuilder,
         ValueRecord as ValueRecordBuilder,
     },
     typed::{AstNode, LanguageSystem},
@@ -961,6 +961,26 @@ impl KernSplitContext {
             }
         }
         (base_pairs, mark_pairs)
+    }
+}
+
+impl FeatureProvider for FeaRsKerns {
+    fn add_features(&self, builder: &mut fea_rs::compile::FeatureBuilder) {
+        if self.is_empty() {
+            return;
+        }
+        // convert the lookups into lookup ids
+        let lookup_ids = self
+            .lookups
+            .iter()
+            .map(|lookup| builder.add_lookup(lookup.clone()))
+            .collect::<Vec<_>>();
+
+        for (feature, ids) in &self.features {
+            // get the generated lookup ids based on the stored lookup indices
+            let ids = ids.iter().map(|idx| lookup_ids[*idx]).collect();
+            builder.add_feature(*feature, ids);
+        }
     }
 }
 
