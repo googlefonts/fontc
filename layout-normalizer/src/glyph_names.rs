@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use smol_str::SmolStr;
+use fontdrasil::types::GlyphName;
 use write_fonts::read::{
     tables::cmap::{CmapSubtable, EncodingRecord, PlatformId},
     types::{GlyphId, Tag},
@@ -15,7 +15,7 @@ use crate::error::Error;
 
 /// A map for gids to human-readable names
 #[derive(Clone, Debug, Default)]
-pub struct NameMap(pub(crate) BTreeMap<GlyphId, SmolStr>);
+pub struct NameMap(pub(crate) BTreeMap<GlyphId, GlyphName>);
 
 impl NameMap {
     /// Create a new name mapping for the glyphs in the provided font
@@ -34,16 +34,16 @@ impl NameMap {
                         // we have a codepoint but it doesn't have a name:
                         None => {
                             let raw = codepoint as u32;
-                            let name = if raw <= 0xFFFF {
-                                format!("uni{raw:04X}")
+                            if raw <= 0xFFFF {
+                                smol_str::format_smolstr!("uni{raw:04X}")
                             } else {
-                                format!("u{raw:X}")
-                            };
-                            SmolStr::new(name)
+                                smol_str::format_smolstr!("u{raw:X}")
+                            }
+                            .into()
                         }
                     },
                     // we have no codepoint, just use glyph ID
-                    None => SmolStr::new(format!("glyph.{:05}", gid.to_u16())),
+                    None => smol_str::format_smolstr!("glyph.{:05}", gid.to_u16()).into(),
                 };
                 (gid, name)
             })
@@ -52,16 +52,17 @@ impl NameMap {
 
         Ok(NameMap(name_map))
     }
+
     /// Returns a human readable name for this gid.
     ///
     /// This will panic if the gid is not in the font used to create this map.
-    pub fn get(&self, gid: GlyphId) -> &SmolStr {
+    pub fn get(&self, gid: GlyphId) -> &GlyphName {
         // map contains a name for every gid in the font
         self.0.get(&gid).unwrap()
     }
 
     #[allow(dead_code)]
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &SmolStr> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &GlyphName> + '_ {
         self.0.values()
     }
 }
@@ -104,9 +105,20 @@ fn reverse_cmap(font: &FontRef) -> Result<HashMap<GlyphId, u32>, Error> {
     Ok(reverse_cmap)
 }
 
+impl FromIterator<GlyphName> for NameMap {
+    fn from_iter<T: IntoIterator<Item = GlyphName>>(iter: T) -> Self {
+        Self(
+            iter.into_iter()
+                .enumerate()
+                .map(|(i, name)| (GlyphId::new(i as _), name))
+                .collect(),
+        )
+    }
+}
+
 /// Given a `char`, returns the postscript name for that `char`s glyph,
 /// if one exists in the aglfn.
-fn glyph_name_for_char(chr: char) -> Option<SmolStr> {
+fn glyph_name_for_char(chr: char) -> Option<GlyphName> {
     fontdrasil::agl::agl_name_for_char(chr).map(Into::into)
 }
 

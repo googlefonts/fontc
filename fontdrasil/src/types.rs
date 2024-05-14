@@ -47,6 +47,12 @@ impl From<&str> for GlyphName {
     }
 }
 
+impl From<SmolStr> for GlyphName {
+    fn from(value: SmolStr) -> Self {
+        GlyphName(value)
+    }
+}
+
 impl Debug for GlyphName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
@@ -70,6 +76,12 @@ impl AsRef<str> for GlyphName {
 impl std::borrow::Borrow<str> for GlyphName {
     fn borrow(&self) -> &str {
         self.0.borrow()
+    }
+}
+
+impl PartialEq<&str> for GlyphName {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
     }
 }
 

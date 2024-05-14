@@ -7,7 +7,7 @@ use std::{
 
 use clap::Parser;
 use layout_normalizer::{args, Error, NameMap};
-use write_fonts::read::{FileRef, FontRef, ReadError};
+use write_fonts::read::{FileRef, FontRef, ReadError, TableProvider};
 
 fn main() -> Result<(), Error> {
     let args = args::Args::parse();
@@ -29,12 +29,20 @@ fn main() -> Result<(), Error> {
     let font = get_font(&data, args.index)?;
     let name_map = NameMap::from_font(&font)?;
     let to_print = args.table.unwrap_or_default();
+    let gdef = font.gdef().ok();
     if matches!(to_print, args::Table::All | args::Table::Gpos) {
-        layout_normalizer::print_gpos(&mut write_target, &font, &name_map)?;
+        if let Ok(gpos) = font.gpos() {
+            writeln!(&mut write_target, "# GPOS #")?;
+            layout_normalizer::print_gpos(&mut write_target, &gpos, gdef.as_ref(), &name_map)?;
+        }
     }
 
     if matches!(to_print, args::Table::All | args::Table::Gsub) {
-        layout_normalizer::print_gsub(&mut write_target, &font, &name_map)?;
+        if let Ok(_gsub) = font.gsub() {
+            // we don't currently handle GSUB, and it's not clear we want to?
+            //writeln!(&mut write_target, "# GSUB #")?;
+            //layout_normalizer::print_gsub(&mut write_target, &gsub, gdef.as_ref(), &name_map)?;
+        }
     }
     write_target.flush().unwrap();
 
