@@ -214,30 +214,13 @@ impl<'a> FeatureWriter<'a> {
     }
 
     /// We did most of the work in the kerning job, take the data and populate a builder
-    fn add_kerning_features(&self, builder: &mut FeatureBuilder) -> Result<(), Error> {
-        if self.kerning.is_empty() {
-            return Ok(());
-        }
-        // convert the lookups into lookup ids
-        let lookup_ids = self
-            .kerning
-            .lookups
-            .iter()
-            .map(|lookup| builder.add_lookup(lookup.clone()))
-            .collect::<Vec<_>>();
-
-        for (feature, ids) in &self.kerning.features {
-            // get the generated lookup ids based on the stored lookup indices
-            let ids = ids.iter().map(|idx| lookup_ids[*idx]).collect();
-            builder.add_feature(*feature, ids);
-        }
-
+    fn add_kerning_features(&self, builder: &mut FeatureBuilder) {
+        self.kerning.add_features(builder);
         {
             self.timing
                 .borrow_mut()
                 .push(("End add kerning", Instant::now()));
         }
-        Ok(())
     }
 
     /// Generate mark to base and mark to mark features
@@ -252,50 +235,26 @@ impl<'a> FeatureWriter<'a> {
     /// * <https://github.com/googlefonts/ufo2ft/issues/591>
     /// * <https://github.com/googlefonts/ufo2ft/issues/563>
     //TODO: could we generate as a separate task, and then just add here.
-    fn add_marks(&self, builder: &mut FeatureBuilder) -> Result<(), Error> {
+    fn add_marks(&self, builder: &mut FeatureBuilder) {
         {
             self.timing
                 .borrow_mut()
                 .push(("Start add marks", Instant::now()));
         }
-        let marks = self.marks;
-
-        // Build the actual mark base and mark mark constructs using fea-rs builders
-
-        let mut mark_base_lookups = Vec::new();
-        let mut mark_mark_lookups = Vec::new();
-
-        for mark_base in marks.mark_base.iter() {
-            // each mark to base it's own lookup, whch differs from fontmake
-            mark_base_lookups.push(builder.add_lookup(mark_base.clone()));
-        }
-
-        // If a mark has anchors that are themselves marks what we got here is a mark to mark
-        for mark_mark in marks.mark_mark.iter() {
-            mark_mark_lookups.push(builder.add_lookup(mark_mark.clone()));
-        }
-
-        if !mark_base_lookups.is_empty() {
-            builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_base_lookups);
-        }
-        if !mark_mark_lookups.is_empty() {
-            builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
-        }
+        self.marks.add_features(builder);
 
         {
             self.timing
                 .borrow_mut()
                 .push(("End add marks", Instant::now()));
         }
-        Ok(())
     }
 }
 
 impl<'a> FeatureProvider for FeatureWriter<'a> {
     fn add_features(&self, builder: &mut FeatureBuilder) {
-        // TODO where my error handling
-        self.add_kerning_features(builder).unwrap();
-        self.add_marks(builder).unwrap();
+        self.add_kerning_features(builder);
+        self.add_marks(builder);
     }
 }
 
