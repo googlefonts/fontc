@@ -126,13 +126,13 @@ impl Display for NoIncludePathError {
     }
 }
 
-struct FeaVariationInfo<'a> {
+pub(crate) struct FeaVariationInfo<'a> {
     axes: HashMap<Tag, (usize, &'a Axis)>,
     static_metadata: &'a StaticMetadata,
 }
 
 impl<'a> FeaVariationInfo<'a> {
-    fn new(static_metadata: &'a StaticMetadata) -> FeaVariationInfo<'a> {
+    pub(crate) fn new(static_metadata: &'a StaticMetadata) -> FeaVariationInfo<'a> {
         FeaVariationInfo {
             axes: static_metadata
                 .axes

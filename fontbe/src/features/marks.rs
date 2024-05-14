@@ -24,7 +24,7 @@ use write_fonts::{
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, FeaAst, FeaRsMarks, WorkId},
+    orchestration::{AnyWorkId, BeWork, Context, FeaRsMarks, WorkId},
 };
 use fontir::{
     ir::{self, Anchor, AnchorKind, GlyphAnchors, GlyphOrder, StaticMetadata},
@@ -108,10 +108,11 @@ impl<'a> MarkLookupBuilder<'a> {
     fn new(
         anchors: Vec<&'a GlyphAnchors>,
         glyph_order: &'a GlyphOrder,
-        gdef_classes: BTreeMap<GlyphName, GlyphClassDef>,
         static_metadata: &'a StaticMetadata,
-        fea_scripts: HashSet<Tag>,
+        ast: &ParseTree,
     ) -> Self {
+        let gdef_classes = get_gdef_classes(static_metadata, ast, glyph_order);
+        let fea_scripts = get_fea_scripts(ast);
         // first we want to narrow our input down to only anchors that are participating.
         // in pythonland this is https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L380
         let mut pruned = BTreeMap::new();
@@ -326,23 +327,15 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
         let glyph_order = context.ir.glyph_order.get();
         let raw_anchors = context.ir.anchors.all();
         let ast = context.fea_ast.get();
-        let gdef_classes = get_gdef_classes(&static_metadata, &ast, &glyph_order);
 
         let anchors = raw_anchors
             .iter()
             .map(|(_, anchors)| anchors.as_ref())
             .collect::<Vec<_>>();
 
-        let fea_scripts = get_fea_scripts(&ast.ast);
         // this code is roughly equivalent to what in pythonland happens in
         // setContext: https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L322
-        let ctx = MarkLookupBuilder::new(
-            anchors,
-            &glyph_order,
-            gdef_classes,
-            &static_metadata,
-            fea_scripts,
-        );
+        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, &static_metadata, &ast.ast);
         let all_marks = ctx.build()?;
 
         context.fea_rs_marks.set(all_marks);
@@ -378,7 +371,7 @@ fn get_fea_scripts(ast: &ParseTree) -> HashSet<Tag> {
 
 fn get_gdef_classes(
     meta: &StaticMetadata,
-    ast: &FeaAst,
+    ast: &ParseTree,
     glyph_order: &GlyphOrder,
 ) -> BTreeMap<GlyphName, GlyphClassDef> {
     let glyph_map = glyph_order.iter().cloned().collect();
@@ -386,7 +379,7 @@ fn get_gdef_classes(
     if meta.gdef_categories.prefer_gdef_categories_in_fea {
         if let Some(gdef_classes) =
             fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
-                &ast.ast,
+                ast,
                 &glyph_map,
                 None,
                 None,
@@ -475,5 +468,308 @@ impl FeatureProvider for FeaRsMarks {
         if !mark_mark_lookups.is_empty() {
             builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{ffi::OsStr, sync::Arc};
+
+    use fea_rs::compile::Compilation;
+    use fontdrasil::{
+        coords::{Coord, CoordConverter, NormalizedLocation},
+        types::Axis,
+    };
+    use fontir::ir::{GdefCategories, NamedInstance};
+    use kurbo::Point;
+
+    use write_fonts::{
+        dump_table,
+        read::{
+            tables::{gdef::Gdef as RGdef, gpos::Gpos as RGpos},
+            FontRead,
+        },
+    };
+
+    use crate::features::FeaVariationInfo;
+
+    use super::*;
+
+    /// A helper for testing our mark generation code
+    #[derive(Clone, Debug)]
+    struct MarksInput<const N: usize> {
+        locations: [NormalizedLocation; N],
+        anchors: BTreeMap<GlyphName, Vec<Anchor>>,
+        categories: BTreeMap<GlyphName, GlyphClassDef>,
+        user_fea: Arc<str>,
+    }
+
+    struct AnchorBuilder<const N: usize> {
+        locations: [NormalizedLocation; N],
+        anchors: Vec<Anchor>,
+    }
+
+    impl Default for MarksInput<1> {
+        fn default() -> Self {
+            Self::new([&[0.0]])
+        }
+    }
+
+    impl<const N: usize> AnchorBuilder<N> {
+        /// Add a new anchor, with positions defined for each of our locations
+        ///
+        /// The 'name' should be a raw anchor name, and should be known-good.
+        /// Anchor name tests are in `fontir`.
+        fn add(&mut self, anchor_name: &str, pos: [(i16, i16); N]) -> &mut Self {
+            let positions = pos
+                .into_iter()
+                .enumerate()
+                .map(|(i, pt)| (self.locations[i].clone(), Point::new(pt.0 as _, pt.1 as _)))
+                .collect();
+            let kind = AnchorKind::new(anchor_name).unwrap();
+            self.anchors.push(Anchor { kind, positions });
+            self
+        }
+    }
+
+    impl<const N: usize> MarksInput<N> {
+        /// Create test input with `N` locations
+        fn new(locations: [&[f32]; N]) -> Self {
+            const TAG_NAMES: [Tag; 3] = [Tag::new(b"axs1"), Tag::new(b"axs2"), Tag::new(b"axs3")];
+            let locations = locations
+                .iter()
+                .map(|loc| {
+                    loc.iter()
+                        .enumerate()
+                        .map(|(i, pos)| {
+                            (
+                                *TAG_NAMES.get(i).expect("too many axes in test"),
+                                Coord::new(*pos),
+                            )
+                        })
+                        .collect()
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            Self {
+                user_fea: "languagesystem DFLT dflt;".into(),
+                locations,
+                anchors: Default::default(),
+                categories: Default::default(),
+            }
+        }
+
+        /// Provide custom user FEA.
+        ///
+        /// By default we use a single 'languagesytem DFLT dflt' statement.
+        fn set_user_fea(&mut self, fea: &str) -> &mut Self {
+            self.user_fea = fea.into();
+            self
+        }
+
+        /// Add a glyph with an optional GDEF category.
+        ///
+        /// the `anchors_fn` argument is a closure where anchors can be added
+        /// to the newly added glyph.
+        fn add_glyph(
+            &mut self,
+            name: &str,
+            category: impl Into<Option<GlyphClassDef>>,
+            mut anchors_fn: impl FnMut(&mut AnchorBuilder<N>),
+        ) -> &mut Self {
+            let name: GlyphName = name.into();
+            if let Some(category) = category.into() {
+                self.categories.insert(name.clone(), category);
+            }
+            let mut anchors = AnchorBuilder {
+                locations: self.locations.clone(),
+                anchors: Default::default(),
+            };
+
+            anchors_fn(&mut anchors);
+            self.anchors.insert(name, anchors.anchors);
+            self
+        }
+
+        fn make_static_metadata(&self) -> StaticMetadata {
+            let (min, default, max) = (Coord::new(-1.), Coord::new(0.0), Coord::new(1.0));
+            let axes = self.locations[0]
+                .axis_tags()
+                .map(|tag| Axis {
+                    name: tag.to_string(),
+                    tag: *tag,
+                    min,
+                    default,
+                    max,
+                    hidden: false,
+                    converter: CoordConverter::unmapped(min, default, max),
+                })
+                .collect::<Vec<_>>();
+            let axis_map = axes.iter().map(|a| (a.tag, a)).collect();
+            let named_instances = self
+                .locations
+                .iter()
+                .enumerate()
+                .map(|(i, loc)| NamedInstance {
+                    name: format!("instance{i}"),
+                    location: loc.to_user(&axis_map),
+                })
+                .collect();
+            let glyph_locations = self.locations.iter().cloned().collect();
+            let categories = GdefCategories {
+                categories: self.categories.clone(),
+                prefer_gdef_categories_in_fea: false,
+            };
+            StaticMetadata::new(
+                1000,
+                Default::default(),
+                axes,
+                named_instances,
+                glyph_locations,
+                Default::default(),
+                42.,
+                categories,
+            )
+            .unwrap()
+        }
+
+        fn run_marks_writer(
+            &self,
+            static_metadata: &StaticMetadata,
+            ast: &ParseTree,
+        ) -> FeaRsMarks {
+            let anchors = self
+                .anchors
+                .iter()
+                .map(|(name, anchors)| GlyphAnchors::new(name.clone(), anchors.clone()).unwrap())
+                .collect::<Vec<_>>();
+            let anchorsref = anchors.iter().collect();
+            let glyph_order = self.anchors.keys().cloned().collect();
+
+            let ctx = MarkLookupBuilder::new(anchorsref, &glyph_order, static_metadata, ast);
+
+            ctx.build().unwrap()
+        }
+
+        fn compile(&self) -> Compilation {
+            let static_metadata = self.make_static_metadata();
+            let fea = self.user_fea.clone();
+            let glyph_map = self.anchors.keys().cloned().collect();
+            // first get the AST, which we need to use as input
+            let (ast, _) = fea_rs::parse::parse_root(
+                "memory".into(),
+                Some(&glyph_map),
+                Box::new(move |x: &OsStr| {
+                    if x == "memory" {
+                        Ok(fea.clone())
+                    } else {
+                        unreachable!("our FEA has no include statements");
+                    }
+                }),
+            )
+            .unwrap();
+
+            // then run the marks code in this module:
+            let marks = self.run_marks_writer(&static_metadata, &ast);
+            let var_info = FeaVariationInfo::new(&static_metadata);
+            // then compile with fea-rs, passing in our generated marks:
+            let (result, _) = fea_rs::compile::compile(
+                &ast,
+                &glyph_map,
+                Some(&var_info),
+                Some(&marks),
+                Default::default(),
+            )
+            .unwrap();
+            result
+        }
+
+        /// Build the GPOS & GDEF tables and get a textual representation
+        fn get_normalized_output(&mut self) -> String {
+            let result = self.compile();
+            // okay, so now we have some write-fonts tables; convert to read-fonts
+            let Some(gpos) = result.gpos else {
+                return String::new();
+            };
+            let gpos_bytes = write_fonts::dump_table(&gpos).unwrap();
+            let gdef_bytes = result.gdef.map(|gdef| dump_table(&gdef).unwrap());
+            let gpos = RGpos::read(gpos_bytes.as_slice().into()).unwrap();
+            let gdef = gdef_bytes
+                .as_ref()
+                .map(|b| RGdef::read(b.as_slice().into()).unwrap());
+            let mut buf = Vec::new();
+            let names = self.anchors.keys().cloned().collect();
+
+            // and pass these to layout normalizer
+            layout_normalizer::print_gpos(&mut buf, &gpos, gdef.as_ref(), &names).unwrap();
+            String::from_utf8(buf).unwrap()
+        }
+    }
+
+    // does some cleanup so that we don't need to worry about indentation when comparing strings
+    fn normalize_layout_repr(s: &str) -> String {
+        s.trim().chars().filter(|c| *c != ' ').collect()
+    }
+    macro_rules! assert_eq_ignoring_ws {
+        ($left:expr, $right:expr) => {
+            let left = normalize_layout_repr(&$left);
+            let right = normalize_layout_repr(&$right);
+            pretty_assertions::assert_str_eq!(left, right)
+        };
+    }
+
+    // sanity check that if we don't make empty lookups
+    #[test]
+    fn no_anchors_no_feature() {
+        let out = MarksInput::default()
+            .add_glyph("a", None, |_| {})
+            .add_glyph("acutecomb", None, |_| {})
+            .get_normalized_output();
+
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn attach_a_mark_to_a_base() {
+        let out = MarksInput::default()
+            .add_glyph("A", GlyphClassDef::Base, |anchors| {
+                anchors.add("top", [(100, 400)]);
+            })
+            .add_glyph("acutecomb", GlyphClassDef::Mark, |anchors| {
+                anchors.add("_top", [(50, 50)]);
+            })
+            .get_normalized_output();
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+            # mark: DFLT/dflt ## 1 MarkToBase rules
+            # lookupflag LookupFlag(0)
+            A @(x: 100, y: 400)
+              @(x: 50, y: 50) acutecomb
+            "#
+        );
+    }
+
+    #[test]
+    fn custom_fea() {
+        let out = MarksInput::default()
+            .set_user_fea("languagesystem latn dflt;")
+            .add_glyph("A", GlyphClassDef::Base, |anchors| {
+                anchors.add("top", [(100, 400)]);
+            })
+            .add_glyph("acutecomb", GlyphClassDef::Mark, |anchors| {
+                anchors.add("_top", [(50, 50)]);
+            })
+            .get_normalized_output();
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+            # mark: latn/dflt ## 1 MarkToBase rules
+            # lookupflag LookupFlag(0)
+            A @(x: 100, y: 400)
+              @(x: 50, y: 50) acutecomb
+            "#
+        );
     }
 }
