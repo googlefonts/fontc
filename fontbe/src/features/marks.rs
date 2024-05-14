@@ -353,8 +353,14 @@ fn find_mark_glyphs(
     anchors
         .iter()
         .filter(|(name, anchors)| {
-            (!gdef_classes.is_empty() && gdef_classes.get(*name) == Some(&GlyphClassDef::Mark))
-                && anchors.iter().any(|a| a.is_mark())
+            // if we have some classes, and this is not in the mark class:
+            // not a mark glyph.
+            if !gdef_classes.is_empty() && gdef_classes.get(*name) != Some(&GlyphClassDef::Mark) {
+                return false;
+            }
+            // if we have no classes, or this is in the mark class,
+            // then we just look for the presence of a mark anchor.
+            anchors.iter().any(|a| a.is_mark())
         })
         .map(|(name, _)| name.to_owned())
         .collect()
@@ -831,6 +837,36 @@ mod tests {
               @(x: 5, y: 15) gravecomb
               @(x: 50, y: 50) acutecomb
             "#
+        );
+    }
+
+    //https://github.com/googlefonts/ufo2ft/blob/779bbad84a/tests/featureWriters/markFeatureWriter_test.py#L1438
+    #[test]
+    fn multiple_anchor_classes_base() {
+        let out = MarksInput::default()
+            .add_glyph("a", None, |anchors| {
+                anchors.add("topA", [(515, 581)]);
+            })
+            .add_glyph("e", None, |anchors| {
+                anchors.add("topE", [(-21, 396)]);
+            })
+            .add_glyph("acutecomb", None, |anchors| {
+                anchors
+                    .add("_topA", [(-175, 589)])
+                    .add("_topE", [(-175, 572)]);
+            })
+            .get_normalized_output();
+
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+                # mark: DFLT/dflt ## 2 MarkToBase rules
+                # lookupflag LookupFlag(0)
+                a @(x: 515, y: 581)
+                  @(x: -175, y: 589) acutecomb
+                e @(x: -21, y: 396)
+                  @(x: -175, y: 572) acutecomb
+                "#
         );
     }
 }
