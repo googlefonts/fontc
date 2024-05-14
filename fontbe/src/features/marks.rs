@@ -498,6 +498,7 @@ mod tests {
     /// A helper for testing our mark generation code
     #[derive(Clone, Debug)]
     struct MarksInput<const N: usize> {
+        prefer_gdef_categories_in_fea: bool,
         locations: [NormalizedLocation; N],
         anchors: BTreeMap<GlyphName, Vec<Anchor>>,
         categories: BTreeMap<GlyphName, GlyphClassDef>,
@@ -557,6 +558,7 @@ mod tests {
                 locations,
                 anchors: Default::default(),
                 categories: Default::default(),
+                prefer_gdef_categories_in_fea: false,
             }
         }
 
@@ -565,6 +567,15 @@ mod tests {
         /// By default we use a single 'languagesytem DFLT dflt' statement.
         fn set_user_fea(&mut self, fea: &str) -> &mut Self {
             self.user_fea = fea.into();
+            self
+        }
+
+        /// Set whether or not to prefer GDEF categories defined in FEA vs in metadata
+        ///
+        /// this is 'true' for UFO sources and 'false' for glyphs sources; default
+        /// here is false.
+        fn set_prefer_fea_gdef_categories(&mut self, flag: bool) -> &mut Self {
+            self.prefer_gdef_categories_in_fea = flag;
             self
         }
 
@@ -619,7 +630,7 @@ mod tests {
             let glyph_locations = self.locations.iter().cloned().collect();
             let categories = GdefCategories {
                 categories: self.categories.clone(),
-                prefer_gdef_categories_in_fea: false,
+                prefer_gdef_categories_in_fea: self.prefer_gdef_categories_in_fea,
             };
             StaticMetadata::new(
                 1000,
@@ -719,6 +730,17 @@ mod tests {
         };
     }
 
+    fn simple_test_input() -> MarksInput<1> {
+        let mut out = MarksInput::default();
+        out.add_glyph("A", GlyphClassDef::Base, |anchors| {
+            anchors.add("top", [(100, 400)]);
+        })
+        .add_glyph("acutecomb", GlyphClassDef::Mark, |anchors| {
+            anchors.add("_top", [(50, 50)]);
+        });
+        out
+    }
+
     // sanity check that if we don't make empty lookups
     #[test]
     fn no_anchors_no_feature() {
@@ -732,14 +754,7 @@ mod tests {
 
     #[test]
     fn attach_a_mark_to_a_base() {
-        let out = MarksInput::default()
-            .add_glyph("A", GlyphClassDef::Base, |anchors| {
-                anchors.add("top", [(100, 400)]);
-            })
-            .add_glyph("acutecomb", GlyphClassDef::Mark, |anchors| {
-                anchors.add("_top", [(50, 50)]);
-            })
-            .get_normalized_output();
+        let out = simple_test_input().get_normalized_output();
         assert_eq_ignoring_ws!(
             out,
             r#"
@@ -753,14 +768,8 @@ mod tests {
 
     #[test]
     fn custom_fea() {
-        let out = MarksInput::default()
+        let out = simple_test_input()
             .set_user_fea("languagesystem latn dflt;")
-            .add_glyph("A", GlyphClassDef::Base, |anchors| {
-                anchors.add("top", [(100, 400)]);
-            })
-            .add_glyph("acutecomb", GlyphClassDef::Mark, |anchors| {
-                anchors.add("_top", [(50, 50)]);
-            })
             .get_normalized_output();
         assert_eq_ignoring_ws!(
             out,
@@ -768,6 +777,58 @@ mod tests {
             # mark: latn/dflt ## 1 MarkToBase rules
             # lookupflag LookupFlag(0)
             A @(x: 100, y: 400)
+              @(x: 50, y: 50) acutecomb
+            "#
+        );
+    }
+
+    // shared between two tests below
+    fn gdef_test_input() -> MarksInput<1> {
+        let mut out = simple_test_input();
+        out.set_user_fea(
+            r#"
+            @Bases = [A];
+            @Marks = [acutecomb];
+            table GDEF {
+                GlyphClassDef @Bases, [], @Marks,;
+            } GDEF;
+            "#,
+        )
+        // is not in the FEA classes defined above
+        .add_glyph("gravecomb", GlyphClassDef::Mark, |anchors| {
+            anchors.add("_top", [(5, 15)]);
+        });
+        out
+    }
+
+    #[test]
+    fn prefer_fea_gdef_categories_true() {
+        let out = gdef_test_input()
+            .set_prefer_fea_gdef_categories(true)
+            .get_normalized_output();
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+            # mark: DFLT/dflt ## 1 MarkToBase rules
+            # lookupflag LookupFlag(0)
+            A @(x: 100, y: 400)
+              @(x: 50, y: 50) acutecomb
+            "#
+        );
+    }
+
+    #[test]
+    fn prefer_fea_gdef_categories_false() {
+        let out = gdef_test_input()
+            .set_prefer_fea_gdef_categories(false)
+            .get_normalized_output();
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+            # mark: DFLT/dflt ## 1 MarkToBase rules
+            # lookupflag LookupFlag(0)
+            A @(x: 100, y: 400)
+              @(x: 5, y: 15) gravecomb
               @(x: 50, y: 50) acutecomb
             "#
         );
