@@ -2642,7 +2642,7 @@ mod tests {
                 .default_instance()
                 .components
                 .iter()
-                .any(|c| c.base == "hyphen".into()),
+                .any(|c| c.base == "hyphen"),
             "IR glyph should not reference hyphen {fe_hyphen_consumer:?}"
         );
         let be_hyphen_consumer = result

@@ -261,7 +261,7 @@ impl GlyphSet {
                 match self.glyphs {
                     GlyphSet::Single(single) => {
                         let name = self.names.get(*single);
-                        f.write_str(name)
+                        f.write_str(name.as_str())
                     }
                     GlyphSet::Multiple(glyphs) => {
                         f.write_str("[")?;
@@ -271,7 +271,7 @@ impl GlyphSet {
                             if !first {
                                 f.write_str(",")?;
                             }
-                            f.write_str(name)?;
+                            f.write_str(name.as_str())?;
                             first = false;
                         }
                         f.write_str("]")

@@ -7,11 +7,11 @@ use std::{
 use write_fonts::{
     read::{
         tables::{
-            gdef::MarkGlyphSets,
-            gpos::{AnchorTable, PositionLookupList, PositionSubtables, ValueRecord},
+            gdef::{Gdef, MarkGlyphSets},
+            gpos::{AnchorTable, Gpos, PositionLookupList, PositionSubtables, ValueRecord},
             layout::DeviceOrVariationIndex,
         },
-        FontData, FontRef, ReadError, TableProvider,
+        FontData, ReadError,
     },
     types::GlyphId,
 };
@@ -35,13 +35,12 @@ use self::{
 };
 
 /// Print normalized GPOS layout rules for the provided font
-pub fn print(f: &mut dyn io::Write, font: &FontRef, names: &NameMap) -> Result<(), Error> {
-    writeln!(f, "# GPOS #")?;
-    let Some(table) = font.gpos().ok() else {
-        // no GPOS table, nothing to do
-        return Ok(());
-    };
-    let gdef = font.gdef().ok();
+pub fn print(
+    f: &mut dyn io::Write,
+    table: &Gpos,
+    gdef: Option<&Gdef>,
+    names: &NameMap,
+) -> Result<(), Error> {
     let var_store = gdef
         .as_ref()
         .and_then(|gdef| gdef.item_var_store())
