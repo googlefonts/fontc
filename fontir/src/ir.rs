@@ -1036,13 +1036,11 @@ pub enum AnchorKind {
     Mark(GroupName),
     /// A base attachment on a ligature glyph
     Ligature { group_name: GroupName, index: usize },
-    /// The enter anchor on a cursive glyph
-    //TODO: flesh these out when we use them. At least in glyphs there can
-    //be multiple (numbered) enter/exit anchors
-    Enter,
-    /// The exit anchor on a cursive gylph
-    Exit,
-    //TODO others? caret? vcaret?
+    /// An anchor marking the presence of a ligature component with no anchors.
+    ///
+    /// These are names like '_3'.
+    ComponentMarker(usize),
+    // we will add more anchor kinds in the future like entry/exit
 }
 
 impl AnchorKind {
@@ -1050,17 +1048,34 @@ impl AnchorKind {
     // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L101>
     pub fn new(name: impl AsRef<str>) -> Result<AnchorKind, BadAnchorReason> {
         let name = name.as_ref();
-        // _ prefix means mark. This convention appears to come from FontLab and is now everywhere.
-        if let Some(mark) = name.strip_prefix('_') {
-            if mark.is_empty() {
+        // the '_' char is used as a prefix for marks, and as a space character
+        // in ligature mark names (e.g. top_1, top_2). The funny exception is
+        // names like '_4', (i.e. an underscore followed by a number) which
+        // means "there is an extra component in this ligature but it doesn't
+        // actually have any marks".
+
+        if let Some(suffix) = name.strip_prefix('_') {
+            // first check for the empty ligature case
+            if let Ok(index) = suffix.parse::<usize>() {
+                if index == 0 {
+                    return Err(BadAnchorReason::ZeroIndex);
+                } else {
+                    return Ok(AnchorKind::ComponentMarker(index));
+                }
+            }
+            // error on plain '_'
+            if suffix.is_empty() {
                 return Err(BadAnchorReason::NilMarkGroup);
             }
-            if let Some((_, suffix)) = mark.rsplit_once('_') {
+            // error on '_top_3'
+            if let Some((_, suffix)) = suffix.rsplit_once('_') {
                 if suffix.parse::<usize>().is_ok() {
                     return Err(BadAnchorReason::NumberedMarkAnchor);
                 }
             }
-            return Ok(AnchorKind::Mark(mark.into()));
+            // looks like a mark!
+            return Ok(AnchorKind::Mark(suffix.into()));
+        // does not start with '_', but contains one (looks like a ligature):
         } else if let Some((name, suffix)) = name.rsplit_once('_') {
             // _1 suffix means a base in a ligature glyph
             if let Ok(index) = suffix.parse::<usize>() {
@@ -1074,6 +1089,7 @@ impl AnchorKind {
                 }
             }
         }
+        // no '_' found looks like a base
         Ok(AnchorKind::Base(name.into()))
     }
 
@@ -1115,6 +1131,18 @@ impl Anchor {
 
     pub fn is_mark(&self) -> bool {
         matches!(self.kind, AnchorKind::Mark(_))
+    }
+
+    pub fn is_component_marker(&self) -> bool {
+        matches!(self.kind, AnchorKind::ComponentMarker(_))
+    }
+
+    /// If this is a ligature component anchor, return the index
+    pub fn ligature_index(&self) -> Option<usize> {
+        match self.kind {
+            AnchorKind::Ligature { index, .. } | AnchorKind::ComponentMarker(index) => Some(index),
+            _ => None,
+        }
     }
 }
 
@@ -2214,6 +2242,12 @@ mod tests {
                 index: 1
             })
         );
+    }
+
+    #[test]
+    fn ligature_empty_component_anchor_name() {
+        assert_eq!(AnchorKind::new("_3"), Ok(AnchorKind::ComponentMarker(3)));
+        assert_eq!(AnchorKind::new("_0"), Err(BadAnchorReason::ZeroIndex));
     }
 
     // from
