@@ -25,9 +25,18 @@ impl NameMap {
             .map_err(|_| Error::MissingTable(Tag::new(b"maxp")))?
             .num_glyphs();
         let reverse_cmap = reverse_cmap(font)?;
+        let post = font.post().ok();
         let mut name_map = (1..num_glyphs)
             .map(|gid| {
                 let gid = GlyphId::new(gid);
+                // first check post, then do fallback
+                if let Some(name) = post
+                    .as_ref()
+                    .and_then(|post| post.glyph_name(gid).map(GlyphName::from))
+                {
+                    return (gid, name);
+                }
+                // fallback to unicode or gid
                 let name = match reverse_cmap.get(&gid).and_then(|cp| char::from_u32(*cp)) {
                     Some(codepoint) => match glyph_name_for_char(codepoint) {
                         Some(name) => name,
