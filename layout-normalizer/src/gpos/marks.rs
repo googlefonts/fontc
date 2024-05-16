@@ -14,48 +14,39 @@ use crate::{common::GlyphSet, glyph_names::NameMap, variations::DeltaComputer};
 use super::{PrintNames, ResolvedAnchor};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct MarkAttachmentRule {
-    pub base: GlyphId,
-    base_anchor: ResolvedAnchor,
-    marks: BTreeMap<ResolvedAnchor, GlyphSet>,
+enum BaseAnchors {
+    Base(ResolvedAnchor),
+    Liga(Vec<Option<ResolvedAnchor>>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct MarkLigaRule {
+pub(crate) struct MarkAttachmentRule {
     pub base: GlyphId,
-    base_anchors: Vec<Option<ResolvedAnchor>>,
+    base_anchor: BaseAnchors,
     marks: BTreeMap<ResolvedAnchor, GlyphSet>,
 }
 
 impl PrintNames for MarkAttachmentRule {
     fn fmt_names(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
         let base_name = names.get(self.base);
-        writeln!(f, "{base_name} {}", self.base_anchor)?;
-        for (i, (anchor, glyphs)) in self.marks.iter().enumerate() {
-            if i != 0 {
-                writeln!(f)?;
-            }
+        match &self.base_anchor {
+            BaseAnchors::Base(anchor) => writeln!(f, "{base_name} {}", anchor)?,
 
-            write!(f, "  {anchor} {}", glyphs.printer(names))?;
-        }
-        Ok(())
-    }
-}
-
-impl PrintNames for MarkLigaRule {
-    fn fmt_names(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
-        let base_name = names.get(self.base);
-        write!(f, "{base_name} (lig) [")?;
-        for (i, anchor) in self.base_anchors.iter().enumerate() {
-            if i != 0 {
-                write!(f, ", ")?;
+            BaseAnchors::Liga(anchors) => {
+                write!(f, "{base_name} (lig) [")?;
+                for (i, anchor) in anchors.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    match anchor {
+                        Some(a) => write!(f, "{a}"),
+                        None => write!(f, "<NULL>"),
+                    }?
+                }
+                writeln!(f, "]")?
             }
-            match anchor {
-                Some(a) => write!(f, "{a}"),
-                None => write!(f, "<NULL>"),
-            }?
         }
-        writeln!(f, "]")?;
+
         for (i, (anchor, glyphs)) in self.marks.iter().enumerate() {
             if i != 0 {
                 writeln!(f)?;
@@ -96,7 +87,12 @@ impl MarkAttachmentRule {
                     mark_gid,
                     mark_anchor: (mark_anchor.x.default, mark_anchor.y.default),
                     base_gid: self.base,
-                    base_anchor: (self.base_anchor.x.default, self.base_anchor.y.default),
+                    base_anchor: match &self.base_anchor {
+                        BaseAnchors::Base(a) => (a.x.default, a.y.default),
+                        BaseAnchors::Liga(_) => {
+                            panic!("simple rules only for mark2base or mark2mark");
+                        }
+                    },
                 })
         })
     }
@@ -166,7 +162,7 @@ fn append_mark_base_rules(
             }
             let group = MarkAttachmentRule {
                 base: base_glyph,
-                base_anchor,
+                base_anchor: BaseAnchors::Base(base_anchor),
                 marks,
             };
             result.push(group);
@@ -178,7 +174,7 @@ fn append_mark_base_rules(
 pub(super) fn get_mark_liga_rules(
     subtables: &[MarkLigPosFormat1],
     delta_computer: Option<&DeltaComputer>,
-) -> Result<Vec<MarkLigaRule>, ReadError> {
+) -> Result<Vec<MarkAttachmentRule>, ReadError> {
     // so we only take the first coverage hit in each subtable, which means
     // we just need track what we've seen.
     let mut seen = HashSet::new();
@@ -193,7 +189,7 @@ fn append_mark_liga_rules(
     subtable: &MarkLigPosFormat1,
     delta_computer: Option<&DeltaComputer>,
     _seen: &mut HashSet<(GlyphId, GlyphId)>,
-    result: &mut Vec<MarkLigaRule>,
+    result: &mut Vec<MarkAttachmentRule>,
 ) -> Result<(), ReadError> {
     let lig_array = subtable.ligature_array()?;
     let lig_tables = lig_array.ligature_attaches();
@@ -242,9 +238,9 @@ fn append_mark_liga_rules(
                     .or_insert_with(|| GlyphSet::from(*mark_glyph))
                     .add(*mark_glyph);
             }
-            let group = MarkLigaRule {
+            let group = MarkAttachmentRule {
                 base: lig_glyph,
-                base_anchors: comp_anchors,
+                base_anchor: BaseAnchors::Liga(comp_anchors),
                 marks,
             };
             result.push(group);
@@ -316,7 +312,7 @@ fn append_mark_mark_rules(
             }
             let group = MarkAttachmentRule {
                 base: base_glyph,
-                base_anchor,
+                base_anchor: BaseAnchors::Base(base_anchor),
                 marks,
             };
             result.push(group);
