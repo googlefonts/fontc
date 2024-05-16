@@ -532,6 +532,7 @@ impl Builder for MarkToBaseBuilder {
     }
 }
 
+/// A builder for GPOS Lookup Type 5, Mark-to-Ligature
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MarkToLigBuilder {
@@ -540,6 +541,15 @@ pub struct MarkToLigBuilder {
 }
 
 impl MarkToLigBuilder {
+    /// `true` if this builder contains no rules
+    pub fn is_empty(&self) -> bool {
+        self.ligatures.is_empty()
+    }
+
+    /// Add a new mark glyph.
+    ///
+    /// If this glyph already exists in another mark class, we return the
+    /// previous class; this is likely an error.
     pub fn insert_mark(
         &mut self,
         glyph: GlyphId,
@@ -549,14 +559,58 @@ impl MarkToLigBuilder {
         self.marks.insert(glyph, class, anchor)
     }
 
-    pub fn add_lig(&mut self, glyph: GlyphId, components: Vec<BTreeMap<SmolStr, Anchor>>) {
+    /// Add a ligature base, providing a set of anchors for each component.
+    ///
+    /// There must be an item in the vec for each component in the ligature glyph,
+    /// but the anchors can be sparse; null anchors will be added for any classes
+    /// that are missing.
+    ///
+    /// NOTE: this API closely mimics how the FEA source represents these rules,
+    /// where you process each component in order, with all the marks defined
+    /// for that component; but this is less useful for public API, where you
+    /// are more often dealing with marks a class at a time. For that reason
+    /// we provide an alternative public method below.
+    pub(crate) fn add_ligature_components(
+        &mut self,
+        glyph: GlyphId,
+        components: Vec<BTreeMap<SmolStr, Anchor>>,
+    ) {
         self.ligatures.insert(glyph, components);
     }
 
+    /// Add ligature anchors for a specific mark class.
+    ///
+    /// This can be called multiple times for the same ligature glyph, to add anchors
+    /// for multiple mark classes; however the number of components must be equal
+    /// on each call for a given glyph id.
+    ///
+    /// If a component has no anchor for a given mark class, you must include an
+    /// explicit 'None' in the appropriate ordering.
+    pub fn insert_ligature(
+        &mut self,
+        glyph: GlyphId,
+        class: SmolStr,
+        components: Vec<Option<Anchor>>,
+    ) {
+        let component_list = self.ligatures.entry(glyph).or_default();
+        if component_list.is_empty() {
+            component_list.resize(components.len(), Default::default());
+        } else if component_list.len() != components.len() {
+            log::warn!("mismatched component lengths for anchors in glyph {glyph}");
+        }
+        for (i, anchor) in components.into_iter().enumerate() {
+            if let Some(anchor) = anchor {
+                component_list[i].insert(class.clone(), anchor);
+            }
+        }
+    }
+
+    /// Returns an iterator over all of the mark glyphs
     pub fn mark_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.marks.glyphs()
     }
 
+    /// Returns an iterator over all of the ligature glyphs
     pub fn lig_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
         self.ligatures.keys().copied()
     }
