@@ -1,11 +1,11 @@
 //! Generates a [FeaRsMarks] datastructure to be fed to fea-rs
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
     compile::{
-        FeatureProvider, MarkToBaseBuilder, MarkToMarkBuilder, NopFeatureProvider,
-        NopVariationInfo, PendingLookup,
+        Anchor as FeaAnchor, FeatureProvider, MarkToBaseBuilder, MarkToLigBuilder,
+        MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo, PendingLookup,
     },
     typed::{AstNode, LanguageSystem},
     GlyphSet, Opts, ParseTree,
@@ -41,7 +41,7 @@ pub fn create_mark_work() -> Box<BeWork> {
 }
 
 /// The canonical name shared for a given mark/base pair, e.g. `top` for `top`/`_top`
-type MarkGroupName = SmolStr;
+type GroupName = SmolStr;
 
 struct MarkLookupBuilder<'a> {
     // extracted from public.openTypeCatgories/GlyphData.xml or FEA
@@ -55,10 +55,17 @@ struct MarkLookupBuilder<'a> {
     mark_glyphs: BTreeSet<GlyphName>,
 }
 
+/// Abstract over the difference in anchor shape between mark2lig and mark2base/mark2mark
+#[derive(Debug, Clone, PartialEq)]
+enum BaseOrLigAnchors<T> {
+    Base(T),
+    Ligature(Vec<Option<T>>),
+}
+
 /// The bases and marks in a particular group, e.g. "top" or "bottom"
 #[derive(Default, Debug, Clone, PartialEq)]
 struct MarkGroup<'a> {
-    bases: Vec<(GlyphName, &'a ir::Anchor)>,
+    bases: Vec<(GlyphName, BaseOrLigAnchors<&'a ir::Anchor>)>,
     marks: Vec<(GlyphName, &'a ir::Anchor)>,
     // if `true`, we will make a mark filter set from the marks in this group
     // (only true for mkmk)
@@ -76,31 +83,50 @@ impl MarkGroup<'_> {
     }
 }
 
-// a trait to abstract over two very similar builders
+// a trait to abstract over three very similar builders
 trait MarkAttachmentBuilder: Default {
-    fn add_mark(&mut self, gid: GlyphId, group: &MarkGroupName, anchor: fea_rs::compile::Anchor);
-    fn add_base(&mut self, gid: GlyphId, group: &MarkGroupName, anchor: fea_rs::compile::Anchor);
+    fn add_mark(&mut self, gid: GlyphId, group: &GroupName, anchor: FeaAnchor);
+    fn add_base(&mut self, gid: GlyphId, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>);
 }
 
 impl MarkAttachmentBuilder for MarkToBaseBuilder {
-    fn add_mark(&mut self, gid: GlyphId, group: &MarkGroupName, anchor: fea_rs::compile::Anchor) {
-        //FIXME: precheck groups to ensure no overlap
+    fn add_mark(&mut self, gid: GlyphId, group: &GroupName, anchor: FeaAnchor) {
         let _ = self.insert_mark(gid, group.clone(), anchor);
     }
 
-    fn add_base(&mut self, gid: GlyphId, group: &MarkGroupName, anchor: fea_rs::compile::Anchor) {
-        self.insert_base(gid, group, anchor)
+    fn add_base(&mut self, gid: GlyphId, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>) {
+        match anchor {
+            BaseOrLigAnchors::Base(anchor) => self.insert_base(gid, group, anchor),
+            BaseOrLigAnchors::Ligature(_) => panic!("lig anchors in mark2base builder"),
+        }
     }
 }
 
 impl MarkAttachmentBuilder for MarkToMarkBuilder {
-    fn add_mark(&mut self, gid: GlyphId, group: &MarkGroupName, anchor: fea_rs::compile::Anchor) {
-        //FIXME: precheck groups to ensure no overlap
+    fn add_mark(&mut self, gid: GlyphId, group: &GroupName, anchor: FeaAnchor) {
         let _ = self.insert_mark1(gid, group.clone(), anchor);
     }
 
-    fn add_base(&mut self, gid: GlyphId, group: &MarkGroupName, anchor: fea_rs::compile::Anchor) {
-        self.insert_mark2(gid, group, anchor)
+    fn add_base(&mut self, gid: GlyphId, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>) {
+        match anchor {
+            BaseOrLigAnchors::Base(anchor) => self.insert_mark2(gid, group, anchor),
+            BaseOrLigAnchors::Ligature(_) => panic!("lig anchors in mark2mark to builder"),
+        }
+    }
+}
+
+impl MarkAttachmentBuilder for MarkToLigBuilder {
+    fn add_mark(&mut self, gid: GlyphId, group: &GroupName, anchor: FeaAnchor) {
+        let _ = self.insert_mark(gid, group.clone(), anchor);
+    }
+
+    fn add_base(&mut self, gid: GlyphId, group: &GroupName, anchors: BaseOrLigAnchors<FeaAnchor>) {
+        match anchors {
+            BaseOrLigAnchors::Ligature(anchors) => {
+                self.insert_ligature(gid, group.clone(), anchors)
+            }
+            BaseOrLigAnchors::Base(_) => panic!("base anchors passed to mark2lig builder"),
+        }
     }
 }
 
@@ -148,8 +174,7 @@ impl<'a> MarkLookupBuilder<'a> {
                     AnchorKind::Mark(group) => {
                         mark_groups.insert(group);
                     }
-                    // skip non base/mark anchors
-                    _ => continue,
+                    AnchorKind::ComponentMarker(_) => (),
                 }
                 pruned
                     .entry(anchors.glyph_name.clone())
@@ -168,7 +193,7 @@ impl<'a> MarkLookupBuilder<'a> {
                 anchor
                     .mark_group_name()
                     .map(|group| used_groups.contains(&group))
-                    .unwrap_or(false)
+                    .unwrap_or_else(|| anchor.is_component_marker())
             });
             !anchors.is_empty()
         });
@@ -187,19 +212,23 @@ impl<'a> MarkLookupBuilder<'a> {
     fn build(&self) -> Result<FeaRsMarks, Error> {
         let mark_base_groups = self.make_mark_to_base_groups();
         let mark_mark_groups = self.make_mark_to_mark_groups();
+        let mark_lig_groups = self.make_mark_to_liga_groups();
 
         let mark_base = self.make_lookups::<MarkToBaseBuilder>(mark_base_groups)?;
         let mark_mark = self.make_lookups::<MarkToMarkBuilder>(mark_mark_groups)?;
+        let mark_lig = self.make_lookups::<MarkToLigBuilder>(mark_lig_groups)?;
         Ok(FeaRsMarks {
             glyphmap: self.glyph_order.iter().cloned().collect(),
             mark_base,
             mark_mark,
+            mark_lig,
         })
     }
 
+    // code shared between mark2base and mark2mark
     fn make_lookups<T: MarkAttachmentBuilder>(
         &self,
-        groups: BTreeMap<MarkGroupName, MarkGroup>,
+        groups: BTreeMap<GroupName, MarkGroup>,
     ) -> Result<Vec<PendingLookup<T>>, Error> {
         groups
             .into_iter()
@@ -212,7 +241,7 @@ impl<'a> MarkLookupBuilder<'a> {
                 for (mark_name, anchor) in group.marks {
                     // we already filtered to only things in glyph order
                     let gid = self.glyph_order.glyph_id(&mark_name).unwrap();
-                    let anchor = resolve_anchor(anchor, self.static_metadata, &mark_name)?;
+                    let anchor = resolve_anchor_once(anchor, self.static_metadata, &mark_name)?;
                     builder.add_mark(gid, &group_name, anchor);
                 }
 
@@ -226,7 +255,7 @@ impl<'a> MarkLookupBuilder<'a> {
             .collect()
     }
 
-    fn make_mark_to_base_groups(&self) -> BTreeMap<MarkGroupName, MarkGroup<'a>> {
+    fn make_mark_to_base_groups(&self) -> BTreeMap<GroupName, MarkGroup<'a>> {
         let mut groups = BTreeMap::<_, MarkGroup>::new();
         for (glyph_name, anchors) in &self.anchor_lists {
             let is_mark = self.mark_glyphs.contains(glyph_name);
@@ -237,12 +266,12 @@ impl<'a> MarkLookupBuilder<'a> {
             let treat_as_base = !(is_mark | is_not_base);
             for anchor in anchors {
                 match &anchor.kind {
-                    fontir::ir::AnchorKind::Base(group) if treat_as_base => groups
+                    ir::AnchorKind::Base(group) if treat_as_base => groups
                         .entry(group.clone())
                         .or_default()
                         .bases
-                        .push((glyph_name.clone(), anchor)),
-                    fontir::ir::AnchorKind::Mark(group) if is_mark => groups
+                        .push((glyph_name.clone(), BaseOrLigAnchors::Base(anchor))),
+                    ir::AnchorKind::Mark(group) if is_mark => groups
                         .entry(group.clone())
                         .or_default()
                         .marks
@@ -254,7 +283,7 @@ impl<'a> MarkLookupBuilder<'a> {
         groups
     }
 
-    fn make_mark_to_mark_groups(&self) -> BTreeMap<MarkGroupName, MarkGroup<'a>> {
+    fn make_mark_to_mark_groups(&self) -> BTreeMap<GroupName, MarkGroup<'a>> {
         // first find the set of glyphs that are marks, i.e. have any mark attachment point.
         let (mark_glyphs, mark_anchors): (BTreeSet<_>, BTreeSet<_>) = self
             .anchor_lists
@@ -273,7 +302,7 @@ impl<'a> MarkLookupBuilder<'a> {
 
         // then iterate again, looking for glyphs that we have identified as marks,
         // but which also have participating base anchors
-        let mut result = BTreeMap::<MarkGroupName, MarkGroup>::new();
+        let mut result = BTreeMap::<GroupName, MarkGroup>::new();
         for (glyph, glyph_anchors) in &self.anchor_lists {
             if !mark_glyphs.contains(glyph) {
                 continue;
@@ -285,7 +314,9 @@ impl<'a> MarkLookupBuilder<'a> {
                     if mark_anchors.contains(group_name) {
                         let group = result.entry(group_name.clone()).or_default();
                         group.filter_glyphs = true;
-                        group.bases.push((glyph.clone(), anchor))
+                        group
+                            .bases
+                            .push((glyph.clone(), BaseOrLigAnchors::Base(anchor)))
                     }
                 }
             }
@@ -304,6 +335,69 @@ impl<'a> MarkLookupBuilder<'a> {
             }
         }
         result
+    }
+
+    fn make_mark_to_liga_groups(&self) -> BTreeMap<GroupName, MarkGroup<'_>> {
+        let mut groups = BTreeMap::<_, MarkGroup>::new();
+        let mut liga_anchor_groups = HashSet::new();
+
+        // a temporary buffer, reused for each glyph
+        let mut component_groups = HashMap::new();
+
+        // first do a pass to build up the ligature anchors and track the set
+        // of mark classes used
+        for (glyph_name, anchors) in &self.anchor_lists {
+            // skip anything that is definitely not a ligature glyph
+            let might_be_liga = self.gdef_classes.is_empty()
+                || (self.gdef_classes.get(glyph_name) == Some(&GlyphClassDef::Ligature));
+
+            if !might_be_liga {
+                continue;
+            }
+
+            // skip any glyphs that don't have a ligature anchor
+            let Some(max_index) = anchors.iter().filter_map(|a| a.ligature_index()).max() else {
+                continue;
+            };
+
+            for anchor in anchors {
+                let AnchorKind::Ligature { group_name, index } = &anchor.kind else {
+                    continue;
+                };
+                liga_anchor_groups.insert(group_name);
+                let component_anchors = component_groups
+                    .entry(group_name.clone())
+                    .or_insert_with(|| vec![None; max_index]);
+                component_anchors[*index - 1] = Some(*anchor);
+            }
+
+            for (group_name, anchors) in component_groups.drain() {
+                groups
+                    .entry(group_name)
+                    .or_default()
+                    .bases
+                    .push((glyph_name.clone(), BaseOrLigAnchors::Ligature(anchors)));
+            }
+        }
+
+        // then we do another pass to add the marks in the used classes
+        for (glyph_name, anchors) in &self.anchor_lists {
+            if !self.mark_glyphs.contains(glyph_name) {
+                continue;
+            }
+            for anchor in anchors {
+                if let AnchorKind::Mark(group) = &anchor.kind {
+                    if liga_anchor_groups.contains(group) {
+                        groups
+                            .entry(group.to_owned())
+                            .or_default()
+                            .marks
+                            .push((glyph_name.clone(), anchor));
+                    }
+                }
+            }
+        }
+        groups
     }
 }
 
@@ -412,10 +506,30 @@ fn get_gdef_classes(
 }
 
 fn resolve_anchor(
-    anchor: &fontir::ir::Anchor,
+    anchor: BaseOrLigAnchors<&ir::Anchor>,
+    static_metadata: &StaticMetadata,
+    glyph_name: &GlyphName,
+) -> Result<BaseOrLigAnchors<FeaAnchor>, Error> {
+    match anchor {
+        BaseOrLigAnchors::Base(anchor) => {
+            resolve_anchor_once(anchor, static_metadata, glyph_name).map(BaseOrLigAnchors::Base)
+        }
+        BaseOrLigAnchors::Ligature(anchors) => anchors
+            .into_iter()
+            .map(|a| {
+                a.map(|a| resolve_anchor_once(a, static_metadata, glyph_name))
+                    .transpose()
+            })
+            .collect::<Result<_, _>>()
+            .map(BaseOrLigAnchors::Ligature),
+    }
+}
+
+fn resolve_anchor_once(
+    anchor: &ir::Anchor,
     static_metadata: &StaticMetadata,
     glyph_name: &GlyphName, // just used for error reporting
-) -> Result<fea_rs::compile::Anchor, Error> {
+) -> Result<FeaAnchor, Error> {
     let (x_values, y_values): (Vec<_>, Vec<_>) = anchor
         .positions
         .iter()
@@ -442,7 +556,7 @@ fn resolve_anchor(
     )
     .map_err(|err| Error::AnchorDeltaError(glyph_name.to_owned(), err))?;
 
-    let mut anchor = fea_rs::compile::Anchor::new(x_default, y_default);
+    let mut anchor = FeaAnchor::new(x_default, y_default);
     if x_deltas.iter().any(|v| v.1 != 0) {
         anchor = anchor.with_x_device(x_deltas);
     }
@@ -455,24 +569,27 @@ fn resolve_anchor(
 
 impl FeatureProvider for FeaRsMarks {
     fn add_features(&self, builder: &mut fea_rs::compile::FeatureBuilder) {
-        let mut mark_base_lookups = Vec::new();
-        let mut mark_mark_lookups = Vec::new();
+        let mut mark_lookups = Vec::new();
+        let mut mkmk_lookups = Vec::new();
 
         for mark_base in self.mark_base.iter() {
             // each mark to base it's own lookup, whch differs from fontmake
-            mark_base_lookups.push(builder.add_lookup(mark_base.clone()));
+            mark_lookups.push(builder.add_lookup(mark_base.clone()));
+        }
+        for mark_lig in self.mark_lig.iter() {
+            mark_lookups.push(builder.add_lookup(mark_lig.clone()));
         }
 
         // If a mark has anchors that are themselves marks what we got here is a mark to mark
         for mark_mark in self.mark_mark.iter() {
-            mark_mark_lookups.push(builder.add_lookup(mark_mark.clone()));
+            mkmk_lookups.push(builder.add_lookup(mark_mark.clone()));
         }
 
-        if !mark_base_lookups.is_empty() {
-            builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_base_lookups);
+        if !mark_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_lookups);
         }
-        if !mark_mark_lookups.is_empty() {
-            builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mark_mark_lookups);
+        if !mkmk_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mkmk_lookups);
         }
     }
 }
@@ -736,6 +853,28 @@ mod tests {
         };
     }
 
+    // a test font used in a bunch of python tests:
+    // <https://github.com/googlefonts/ufo2ft/blob/779bbad84/tests/featureWriters/markFeatureWriter_test.py#L21>
+    fn pytest_ufo() -> MarksInput<1> {
+        let mut builder = MarksInput::default();
+        builder
+            .add_glyph("a", None, |anchors| {
+                anchors.add("top", [(100, 200)]);
+            })
+            .add_glyph("f_i", None, |anchors| {
+                anchors.add("top_1", [(100, 500)]);
+                anchors.add("top_2", [(600, 500)]);
+            })
+            .add_glyph("acutecomb", None, |anchors| {
+                anchors.add("_top", [(100, 200)]);
+            })
+            .add_glyph("tildecomb", None, |anchors| {
+                anchors.add("_top", [(100, 200)]);
+                anchors.add("top", [(100, 300)]);
+            });
+        builder
+    }
+
     fn simple_test_input() -> MarksInput<1> {
         let mut out = MarksInput::default();
         out.add_glyph("A", GlyphClassDef::Base, |anchors| {
@@ -768,6 +907,31 @@ mod tests {
             # lookupflag LookupFlag(0)
             A @(x: 100, y: 400)
               @(x: 50, y: 50) acutecomb
+            "#
+        );
+    }
+
+    // https://github.com/googlefonts/ufo2ft/blob/779bbad84a/tests/featureWriters/markFeatureWriter_test.py#L611
+    #[test]
+    fn mark_mkmk_features() {
+        let out = pytest_ufo().get_normalized_output();
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+            # mark: DFLT/dflt ## 1 MarkToBase rules
+            # lookupflag LookupFlag(0)
+            a @(x: 100, y: 200)
+              @(x: 100, y: 200) [acutecomb, tildecomb]
+            # 1 MarkToLig rules
+            # lookupflag LookupFlag(0)
+            f_i (lig) [@(x: 100, y: 500), @(x: 600, y: 500)]
+              @(x: 100, y: 200) [acutecomb, tildecomb]
+
+            # mkmk: DFLT/dflt ## 1 MarkToMark rules
+            # lookupflag LookupFlag(16)
+            # filter glyphs: [acutecomb, tildecomb]
+            tildecomb @(x: 100, y: 300)
+              @(x: 100, y: 200) [acutecomb, tildecomb]
             "#
         );
     }
@@ -866,6 +1030,74 @@ mod tests {
                   @(x: -175, y: 589) acutecomb
                 e @(x: -21, y: 396)
                   @(x: -175, y: 572) acutecomb
+                "#
+        );
+    }
+
+    // https://github.com/googlefonts/ufo2ft/blob/779bbad84a/tests/featureWriters/markFeatureWriter_test.py#L175
+    #[test]
+    fn ligature_null_anchor() {
+        let out = MarksInput::default()
+            .add_glyph("f_i_i", None, |anchors| {
+                anchors
+                    .add("top_1", [(250, 600)])
+                    .add("top_2", [(500, 600)])
+                    .add("_3", [(0, 0)]);
+            })
+            .add_glyph("acutecomb", None, |anchors| {
+                anchors.add("_top", [(100, 200)]);
+            })
+            .get_normalized_output();
+
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+    # mark: DFLT/dflt ## 1 MarkToLig rules
+    # lookupflag LookupFlag(0)
+    f_i_i (lig) [@(x: 250, y: 600), @(x: 500, y: 600), <NULL>]
+    @(x: 100, y: 200) acutecomb
+    "#
+        );
+    }
+
+    // https://github.com/googlefonts/ufo2ft/blob/779bbad84a/tests/featureWriters/markFeatureWriter_test.py#L1543
+    #[test]
+    fn multiple_anchor_classes_liga() {
+        let out = MarksInput::default()
+            .add_glyph("f_i", None, |anchors| {
+                anchors
+                    .add("top_1", [(100, 500)])
+                    .add("top_2", [(600, 500)]);
+            })
+            .add_glyph("f_f", None, |anchors| {
+                anchors
+                    .add("topOther_1", [(101, 501)])
+                    .add("topOther_2", [(601, 501)]);
+            })
+            .add_glyph("f_l", None, |anchors| {
+                anchors
+                    .add("top_1", [(102, 502)])
+                    .add("topOther_2", [(602, 502)]);
+            })
+            .add_glyph("acutecomb", None, |anchors| {
+                anchors.add("_top", [(100, 200)]);
+                anchors.add("_topOther", [(150, 250)]);
+            })
+            .get_normalized_output();
+
+        // we generate conflicting lookups for f_l, but topOther should win
+        // because we order lookups lexicographically over the mark group names
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+                # mark: DFLT/dflt ## 3 MarkToLig rules
+                # lookupflag LookupFlag(0)
+                f_f (lig) [@(x: 101, y: 501), @(x: 601, y: 501)]
+                  @(x: 150, y: 250) acutecomb
+                f_i (lig) [@(x: 100, y: 500), @(x: 600, y: 500)]
+                  @(x: 100, y: 200) acutecomb
+                f_l (lig) [<NULL>, @(x: 602, y: 502)]
+                  @(x: 150, y: 250) acutecomb
                 "#
         );
     }
