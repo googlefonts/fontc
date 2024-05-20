@@ -551,8 +551,8 @@ fn glyph_order(
     // The UFO at the default master *may* elect to specify a glyph order
     // That glyph order *may* deign to overlap with the actual glyph set
     let mut glyph_order = GlyphOrder::new();
+    let mut pending_add: HashSet<_> = glyph_names.clone();
     if let Some(plist::Value::Array(ufo_order)) = lib_plist.get("public.glyphOrder") {
-        let mut pending_add: HashSet<_> = glyph_names.clone();
         // Add names from ufo glyph order union glyph_names in ufo glyph order
         ufo_order
             .iter()
@@ -562,11 +562,11 @@ fn glyph_order(
                 pending_add.remove(&name);
                 glyph_order.insert(name);
             });
-        // Add anything leftover in sorted order
-        let mut pending_add: Vec<_> = pending_add.into_iter().collect();
-        pending_add.sort();
-        glyph_order.extend(pending_add);
     }
+    // Add anything leftover in sorted order
+    let mut pending_add: Vec<_> = pending_add.into_iter().collect();
+    pending_add.sort();
+    glyph_order.extend(pending_add);
     if glyph_order.is_empty() {
         let notdef = ".notdef".into();
         if glyph_names.contains(&notdef) {
@@ -1842,6 +1842,26 @@ mod tests {
         .unwrap();
         // lib.plist specifies plus, so plus goes first and then the rest in alphabetical order
         let expected: GlyphOrder = ["plus", "an-imaginary-one", "bar"]
+            .iter()
+            .map(|s| (*s).into())
+            .collect();
+        assert_eq!(expected, go);
+    }
+
+    #[test]
+    pub fn builds_default_glyph_order() {
+        let go = glyph_order(
+            &Default::default(),
+            &HashSet::from([
+                "bar".into(),
+                "plus".into(),
+                "an-imaginary-one".into(),
+                ".notdef".into(),
+            ]),
+        )
+        .unwrap();
+        // no 'public.glyphOrder' in lib.plist, all glyphs in alphabetical order, except '.notdef'
+        let expected: GlyphOrder = [".notdef", "an-imaginary-one", "bar", "plus"]
             .iter()
             .map(|s| (*s).into())
             .collect();
