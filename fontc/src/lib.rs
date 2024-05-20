@@ -2092,7 +2092,40 @@ mod tests {
                 cbox_of_char(0x49, &font, vec![1.0, 0.0]),  // CPHT=800, wght=400
                 cbox_of_char(0x49, &font, vec![1.0, 1.0]),  // CPHT=800, wght=900
             ]
-        )
+        );
+
+        // interediate glyph layers are expected to be ignored when building variations
+        // for global font metrics or OpenType Layout features; the "IntermediateLayer" test
+        // font contains a kerning pair between 'i' and 'i', defined at Regular (wght=400 or 0.0)
+        // and Black (wght=900 or 1.0 normalized); the fact that 'i' or other glyphs define
+        // additional intermediate layers should not influence the GDEF variation regions used
+        // for GPOS kerning:
+        // https://github.com/googlefonts/fontc/issues/407
+        let gdef = font.gdef().unwrap();
+        let varstore = gdef.item_var_store().unwrap().unwrap();
+        let regions = varstore
+            .variation_region_list()
+            .unwrap()
+            .variation_regions();
+        assert_eq!(regions.len(), 1);
+        let region_coords = regions
+            .get(0)
+            .unwrap()
+            .region_axes()
+            .iter()
+            .map(|coords| {
+                [
+                    coords.start_coord().to_f32(),
+                    coords.peak_coord().to_f32(),
+                    coords.end_coord().to_f32(),
+                ]
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(region_coords, vec![[0.0, 0.0, 0.0], [0.0, 1.0, 1.0]]);
+        assert_eq!(varstore.item_variation_data_count(), 1, "{varstore:#?}");
+        let vardata = varstore.item_variation_data().get(0).unwrap().unwrap();
+        assert_eq!(vardata.region_indexes(), &[0]);
+        assert_eq!(vec![vec![-350]], delta_sets(&vardata));
     }
 
     #[test]
