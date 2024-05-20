@@ -89,14 +89,14 @@ fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, WorkE
 }
 
 /// Create a map from source filename (e.g. x.ufo) => normalized location
-pub fn master_locations(
+pub fn master_locations<'a>(
     axes: &[fontdrasil::types::Axis],
-    sources: &[designspace::Source],
+    sources: impl IntoIterator<Item = &'a designspace::Source>,
 ) -> HashMap<String, NormalizedLocation> {
     let tags_by_name: HashMap<_, _> = axes.iter().map(|a| (a.name.as_str(), a.tag)).collect();
     let axes = axes.iter().map(|a| (a.tag, a)).collect();
     sources
-        .iter()
+        .into_iter()
         .map(|s| {
             (
                 s.name.clone().unwrap(),

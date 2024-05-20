@@ -1,8 +1,9 @@
 //! Feature binary compilation.
 
 use std::{
+    borrow::Cow,
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ffi::{OsStr, OsString},
     fmt::Display,
     fs,
@@ -26,7 +27,7 @@ use fea_rs::{
 use fontir::{
     ir::{FeaturesSource, GlyphOrder, StaticMetadata},
     orchestration::{Flags, WorkId as FeWorkId},
-    variations::DeltaError,
+    variations::{DeltaError, VariationModel},
 };
 
 use fontdrasil::{
@@ -151,12 +152,27 @@ pub(crate) fn resolve_variable_metric<'a>(
     static_metadata: &StaticMetadata,
     values: impl Iterator<Item = (&'a NormalizedLocation, &'a OrderedFloat<f32>)>,
 ) -> Result<(i16, Vec<(VariationRegion, i16)>), DeltaError> {
-    let var_model = &static_metadata.variation_model;
-
-    let point_seqs = values
+    let point_seqs: HashMap<_, _> = values
         .into_iter()
         .map(|(pos, value)| (pos.to_owned(), vec![value.0 as f64]))
         .collect();
+    let locations: HashSet<_> = point_seqs.keys().collect();
+    let global_locations: HashSet<_> = static_metadata.variation_model.locations().collect();
+
+    // Try to reuse the global model, or make a new sub-model only with the locations we
+    // are asked for so we can support sparseness
+    let var_model: Cow<'_, VariationModel> = if locations == global_locations {
+        Cow::Borrowed(&static_metadata.variation_model)
+    } else {
+        Cow::Owned(
+            VariationModel::new(
+                locations.into_iter().cloned().collect(),
+                static_metadata.axes.clone(),
+            )
+            .unwrap(),
+        )
+    };
+
     let raw_deltas: Vec<_> = var_model
         .deltas(&point_seqs)?
         .into_iter()
@@ -268,21 +284,29 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
         &self,
         values: &HashMap<NormalizedLocation, i16>,
     ) -> Result<(i16, Vec<(VariationRegion, i16)>), Error> {
-        let var_model = &self.static_metadata.variation_model;
-
         // Compute deltas using f64 as 1d point and delta, then ship them home as i16
         let point_seqs: HashMap<_, _> = values
             .iter()
             .map(|(pos, value)| (pos.clone(), vec![*value as f64]))
             .collect();
 
-        // We only support use when the point seq is at a location our variation model supports
-        // TODO: get a model for the location we are asked for so we can support sparseness
-        for loc in point_seqs.keys() {
-            if !var_model.supports(loc) {
-                return Err(Error::NoVariationModel(loc.clone()));
-            }
-        }
+        let locations: HashSet<_> = point_seqs.keys().collect();
+        let global_locations: HashSet<_> =
+            self.static_metadata.variation_model.locations().collect();
+
+        // Try to reuse the global model, or make a new sub-model only with the locations we
+        // are asked for so we can support sparseness
+        let var_model: Cow<'_, VariationModel> = if locations == global_locations {
+            Cow::Borrowed(&self.static_metadata.variation_model)
+        } else {
+            Cow::Owned(
+                VariationModel::new(
+                    locations.into_iter().cloned().collect(),
+                    self.static_metadata.axes.clone(),
+                )
+                .unwrap(),
+            )
+        };
 
         // Only 1 value per region for our input
         let deltas: Vec<_> = var_model
