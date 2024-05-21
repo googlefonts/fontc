@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "Common types and utilites used by fontc, a font compiler."
-repository = "https://github.com/googlefonts/fontmake-rs"
+repository = "https://github.com/googlefonts/fontc"
 readme = "README.md"
 categories = ["text-processing", "parsing", "graphics"]
 
