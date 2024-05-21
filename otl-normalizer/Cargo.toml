@@ -1,9 +1,11 @@
 [package]
-name = "layout-normalizer"
-version = "0.1.0"
+name = "otl-normalizer"
+version = "0.0.1"
 edition = "2021"
 license = "MIT/Apache-2.0"
-publish = false
+description = "a normalized text representation of OpenType layout subtables"
+readme = "README.md"
+
 
 [dependencies]
 fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
@@ -16,6 +18,3 @@ indexmap.workspace = true
 [dev-dependencies]
 fea-rs = { version = "0.18.0", path = "../fea-rs" }
 
-# cargo-release settings
-[package.metadata.release]
-release = false

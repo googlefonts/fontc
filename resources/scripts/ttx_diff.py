@@ -88,7 +88,7 @@ def simple_gpos_output(font_file: Path, out_path: Path):
         "cargo",
         "run",
         "-p",
-        "layout-normalizer",
+        "otl-normalizer",
         "--",
         font_file.name,
         "-o",

@@ -50,7 +50,7 @@ members = [
     "fontc",
     "fea-rs",
     "fea-lsp",
-    "layout-normalizer",
+    "otl-normalizer",
 ]
 
 # remove this when icu_properties 1.5 is released:

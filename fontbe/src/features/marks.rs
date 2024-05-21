@@ -719,7 +719,7 @@ mod tests {
             let names = self.anchors.keys().cloned().collect();
 
             // and pass these to layout normalizer
-            layout_normalizer::print_gpos(&mut buf, &gpos, gdef.as_ref(), &names).unwrap();
+            otl_normalizer::print_gpos(&mut buf, &gpos, gdef.as_ref(), &names).unwrap();
             String::from_utf8(buf).unwrap()
         }
     }
