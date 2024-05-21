@@ -3,7 +3,10 @@ name = "glyphs-reader"
 version = "0.0.1"
 license = "MIT/Apache-2.0"
 authors = ["Raph Levien <raph.levien@gmail.com>"]
+description = "Parsing .glyphs source files"
 edition = "2021"
+categories = ["text-processing", "parsing", "graphics"]
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

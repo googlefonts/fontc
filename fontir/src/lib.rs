@@ -1,3 +1,5 @@
+//! Intermediate Representation (IR) types for font compilation
+
 pub mod error;
 pub mod glyph;
 pub mod ir;
