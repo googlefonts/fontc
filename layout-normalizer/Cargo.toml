@@ -6,7 +6,7 @@ license = "MIT/Apache-2.0"
 publish = false
 
 [dependencies]
-fontdrasil = { path = "../fontdrasil" }
+fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 clap.workspace = true
 thiserror.workspace = true
 smol_str.workspace = true
@@ -14,7 +14,7 @@ write-fonts.workspace = true
 indexmap.workspace = true
 
 [dev-dependencies]
-fea-rs = { path = "../fea-rs" }
+fea-rs = { version = "0.18.0", path = "../fea-rs" }
 
 # cargo-release settings
 [package.metadata.release]

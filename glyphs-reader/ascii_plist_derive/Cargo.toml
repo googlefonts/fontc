@@ -1,9 +1,10 @@
 [package]
-name = "plist_derive"
-version = "0.1.0"
+name = "ascii_plist_derive"
+version = "0.0.1"
 authors = ["Raph Levien <raph.levien@gmail.com>"]
 edition = "2021"
 description = "A derive macro for parsing NeXTSTEP (ASCII) plist files"
+readme = "README.md"
 
 [lib]
 proc-macro = true

@@ -43,6 +43,7 @@ members = [
     "fontbe",
     "fontir",
     "glyphs-reader",
+    "glyphs-reader/ascii_plist_derive",
     "glyphs2fontir",
     "fontra2fontir",
     "ufo2fontir",
