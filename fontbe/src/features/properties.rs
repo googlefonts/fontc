@@ -1,12 +1,13 @@
 //! Properties and constants related to unicode data
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     hash::Hash,
     sync::Arc,
 };
 
 use fontir::ir::Glyph;
-use icu_properties::{script::ScriptWithExtensionsBorrowed, BidiClass, Script};
+use icu_properties::{BidiClass, Script};
+use tinystr::tinystr;
 use write_fonts::{
     read::{tables::gsub::Gsub, ReadError},
     types::{GlyphId, Tag},
@@ -16,16 +17,8 @@ use crate::features::ot_tags::{NEW_SCRIPTS, SCRIPT_ALIASES, SCRIPT_EXCEPTIONS_RE
 
 use super::ot_tags::{DFLT_SCRIPT, INDIC_SCRIPTS, NEW_SCRIPT_TAGS, SCRIPT_EXCEPTIONS, USE_SCRIPTS};
 
-// SAFETY: we can visually verify that these inputs contain only non-null ASCII bytes
-// (this is the only way we can declare these as constants)
-// TODO: remove this if https://github.com/unicode-org/icu4x/pull/4691 is merged/released
-pub const COMMON_SCRIPT: UnicodeShortName =
-    unsafe { UnicodeShortName::from_bytes_unchecked(*b"Zyyy") };
-pub const INHERITED_SCRIPT: UnicodeShortName =
-    unsafe { UnicodeShortName::from_bytes_unchecked(*b"Zinh") };
-
-static SCRIPT_DATA: ScriptWithExtensionsBorrowed<'static> =
-    icu_properties::script::script_with_extensions();
+pub const COMMON_SCRIPT: UnicodeShortName = tinystr!(4, "Zyyy");
+pub const INHERITED_SCRIPT: UnicodeShortName = tinystr!(4, "Zinh");
 
 /// The type used by icu4x for script names
 pub type UnicodeShortName = tinystr::TinyAsciiStr<4>;
@@ -89,25 +82,16 @@ impl ScriptDirection {
     }
 }
 
-/// Iterate over the unicode scripts + extensions for the provided codepoint
-///
-/// This returns the scripts as shortnames, because that's what python does.
-/// It would probably make more sense for us to use the Script type defined by
-/// icu4x, but I want to get a more direct port working first.
-pub(crate) fn unicode_script_extensions(
-    c: u32,
-) -> impl Iterator<Item = UnicodeShortName> + 'static {
+/// Iff a codepoint belongs to a single script, return it.
+pub(crate) fn single_script_for_codepoint(cp: u32) -> Option<UnicodeShortName> {
     let lookup = Script::enum_to_short_name_mapper();
-    SCRIPT_DATA
-        .get_script_extensions_val(c)
-        .iter()
-        .map(move |script| {
-            lookup
-                .get(script)
-                // if we get a script it is by definition a 4-char ascii string,
-                // so this unwrap should never fail
-                .expect("names should be available for all defined scripts")
-        })
+    let data = icu_properties::script::script_with_extensions().get_script_extensions_val(cp);
+    let mut scripts = data.iter();
+
+    match (scripts.next(), scripts.next()) {
+        (Some(script), None) => lookup.get(script),
+        _ => None,
+    }
 }
 
 // <https://github.com/googlefonts/ufo2ft/blob/f6b4f42460b340c/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L49>
@@ -124,22 +108,24 @@ fn unicode_bidi_type(c: u32) -> Option<BidiClass> {
 
 // equivalent to the 'classify' method in ufo2ft:
 // <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfcf0b1c0f/Lib/ufo2ft/util.py#L287>
-fn classify<T, F, I, CM>(
+fn classify<T, F, CM>(
     char_map: &CM,
     mut props_fn: F,
     gsub: Option<&Gsub>,
-) -> Result<HashMap<T, HashSet<GlyphId>>, ReadError>
+) -> Result<BTreeMap<T, HashSet<GlyphId>>, ReadError>
 where
-    T: Hash + Eq,
-    I: Iterator<Item = T>,
-    F: FnMut(u32) -> I,
+    T: Ord + Eq,
+    // instead of returning an iterator, pushes items into the provided buffer
+    F: FnMut(u32, &mut Vec<T>),
     CM: CharMap,
 {
-    let mut sets = HashMap::new();
+    let mut sets = BTreeMap::new();
     let mut neutral_glyphs = HashSet::new();
+    let mut buf = Vec::new();
     for (gid, unicode_value) in char_map.iter_glyphs() {
         let mut has_props = false;
-        for prop in props_fn(unicode_value) {
+        props_fn(unicode_value, &mut buf);
+        for prop in buf.drain(..) {
             sets.entry(prop).or_insert(HashSet::new()).insert(gid);
             has_props = true;
         }
@@ -169,23 +155,25 @@ pub(crate) fn scripts_by_glyph(
     gsub: Option<&Gsub>,
 ) -> Result<HashMap<GlyphId, HashSet<UnicodeShortName>>, ReadError> {
     let mut result = HashMap::new();
+    let lookup = Script::enum_to_short_name_mapper();
     for (script, glyphs) in classify(
         glyphs,
-        |cp| {
-            // we need to write this in such a way as to return a single concrete type;
-            // this is basically two branches, one or the other option is always `None`
-            let common = known_scripts.is_empty().then_some(COMMON_SCRIPT);
-            let other_branch = if known_scripts.is_empty() {
-                None
+        |cp, buf| {
+            if known_scripts.is_empty() {
+                buf.push(COMMON_SCRIPT);
             } else {
-                Some(unicode_script_extensions(cp).filter(|script| {
-                    *script == COMMON_SCRIPT
-                        || *script == INHERITED_SCRIPT
-                        || known_scripts.contains(script)
-                }))
-            };
-
-            common.into_iter().chain(other_branch.into_iter().flatten())
+                let data =
+                    icu_properties::script::script_with_extensions().get_script_extensions_val(cp);
+                buf.extend(
+                    data.iter()
+                        .map(|s| lookup.get(s).unwrap())
+                        .filter(|script| {
+                            *script == COMMON_SCRIPT
+                                || *script == INHERITED_SCRIPT
+                                || known_scripts.contains(script)
+                        }),
+                );
+            }
         },
         gsub,
     )? {
@@ -200,10 +188,10 @@ pub(crate) fn scripts_by_glyph(
 pub(crate) fn glyphs_by_bidi_class(
     glyphs: &impl CharMap,
     gsub: Option<&Gsub>,
-) -> Result<HashMap<BidiClass, HashSet<GlyphId>>, ReadError> {
+) -> Result<BTreeMap<BidiClass, HashSet<GlyphId>>, ReadError> {
     classify(
         glyphs,
-        |codepoint| unicode_bidi_type(codepoint).into_iter(),
+        |codepoint, buf| buf.extend(unicode_bidi_type(codepoint)),
         gsub,
     )
 }
