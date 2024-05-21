@@ -45,4 +45,4 @@ more-asserts.workspace = true
 temp-env.workspace = true
 rstest.workspace = true
 pretty_assertions.workspace = true
-layout-normalizer = { path = "../layout-normalizer" }
+otl-normalizer = { version = "0.0.1", path = "../otl-normalizer" }
