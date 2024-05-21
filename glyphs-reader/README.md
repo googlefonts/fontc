@@ -2,9 +2,10 @@
 
 This crate reads Glyphs 2 and Glyphs 3 files.
 
-It should be referenced only by glyphs2fontir.
+It is part of [`fontc`], a font compiler.
 
 ## Origins
+
 Plist code copied from https://github.com/raphlinus/interp-toy/tree/main/glyphstool
 at e87f62c0922ce04ea0cee83d624bd9b7d8eafbd8.
 
@@ -14,4 +15,4 @@ Lightly modified:
 * fixed clippy warnings
 * made Plist Hash
 
-TODO: make from_plist return a Result
+[`fontc`]: https://github.com/googlefonts/fontc

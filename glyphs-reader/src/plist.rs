@@ -4,7 +4,7 @@ use std::{borrow::Cow, fmt::Debug};
 use kurbo::{Affine, Point};
 use ordered_float::OrderedFloat;
 
-use plist_derive::FromPlist;
+use ascii_plist_derive::FromPlist;
 use smol_str::SmolStr;
 
 /// A plist dictionary

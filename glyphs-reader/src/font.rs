@@ -13,10 +13,10 @@ use std::{fs, path};
 
 use crate::glyphdata::{Category, GlyphData, Subcategory};
 use crate::plist::FromPlist;
+use ascii_plist_derive::FromPlist;
 use kurbo::{Affine, Point, Vec2};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
-use plist_derive::FromPlist;
 use regex::Regex;
 use smol_str::SmolStr;
 
