@@ -1,3 +1,4 @@
+//! Backend of the `fontc` font compiler.
 pub mod avar;
 pub mod cmap;
 pub mod error;

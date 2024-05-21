@@ -1,4 +1,4 @@
-//! Generating a normalized text representation for layout tables
+//! Generating a normalized text representation for OpenType layout tables
 //!
 //! This currently supports a subset of GPOS (kerning and marks)
 
