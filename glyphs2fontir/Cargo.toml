@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "Converts www.glyphsapp.com files to font ir for compilation."
-repository = "https://github.com/googlefonts/fontmake-rs"
+repository = "https://github.com/googlefonts/fontc"
 readme = "README.md"
 categories = ["text-processing", "parsing", "graphics"]
 
