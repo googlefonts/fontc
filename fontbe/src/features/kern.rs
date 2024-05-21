@@ -598,7 +598,7 @@ struct KernSplitContext {
     /// map of all mark glyphs + whether they are spacing or not
     mark_glyphs: HashMap<GlyphId, MarkSpacing>,
     glyph_scripts: HashMap<GlyphId, HashSet<UnicodeShortName>>,
-    bidi_glyphs: HashMap<BidiClass, HashSet<GlyphId>>,
+    bidi_glyphs: BTreeMap<BidiClass, HashSet<GlyphId>>,
     opts: KernSplitOptions,
     dflt_scripts: HashSet<UnicodeShortName>,
     common_scripts: HashSet<UnicodeShortName>,
@@ -672,7 +672,7 @@ impl KernSplitContext {
     ) -> BTreeMap<BTreeSet<UnicodeShortName>, Vec<PendingLookup<PairPosBuilder>>> {
         let mut lookups_by_script = BTreeMap::new();
         let kerning_per_script = self.split_kerns(pairs);
-        let mut bidi_buf = HashSet::new(); // we can reuse this for each pair
+        let mut bidi_buf = BTreeSet::new(); // we can reuse this for each pair
         for (scripts, pairs) in kerning_per_script {
             let mut builder = PairPosBuilder::default();
             for mut pair in pairs {
@@ -996,14 +996,7 @@ fn guess_font_scripts(ast: &ParseTree, glyphs: &impl CharMap) -> HashSet<Unicode
 fn scripts_for_chars(glyphs: &impl CharMap) -> HashSet<UnicodeShortName> {
     glyphs
         .iter_glyphs()
-        .filter_map(|(_, codepoint)| {
-            let mut scripts = super::properties::unicode_script_extensions(codepoint);
-            // only if a codepoint has a single script do know it is supported
-            match (scripts.next(), scripts.next()) {
-                (Some(script), None) => Some(script),
-                _ => None,
-            }
-        })
+        .filter_map(|(_, codepoint)| super::properties::single_script_for_codepoint(codepoint))
         .collect()
 }
 
