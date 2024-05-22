@@ -52,3 +52,20 @@ chrono.workspace = true
 
 [build-dependencies]
 vergen = { version = "8.2.6", features = ["build", "cargo", "git", "gitcl", "rustc"] }
+
+# Support for `cargo binstall fontc`.
+# The default Github download URL template used by cargo-binstall doesn't work
+# because our tag is named `fontc-v{version}` instead of just `v{version}`.
+# https://github.com/cargo-bins/cargo-binstall/blob/main/SUPPORT.md
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }{ archive-suffix }"
+# Our binary archives contain just the `fontc` executable, no sub-folders
+bin-dir = "{ bin }{ binary-ext }"
+# We use .tar.gz for Linux/Mac binary archives, .zip for Windows
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.i686-pc-windows-msvc]
+pkg-fmt = "zip"
