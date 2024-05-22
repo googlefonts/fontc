@@ -10,8 +10,8 @@ use write_fonts::{
         tables::{
             gdef::Gdef,
             gsub::{
-                Gsub, SingleSubst, SingleSubstFormat1, SingleSubstFormat2, SubstitutionLookupList,
-                SubstitutionSubtables,
+                Gsub, MultipleSubstFormat1, SingleSubst, SingleSubstFormat1, SingleSubstFormat2,
+                SubstitutionLookupList, SubstitutionSubtables,
             },
         },
         ReadError,
@@ -47,7 +47,9 @@ pub fn print(
         sys.fmt_header(f)?;
 
         let singlesub = lookup_rules.singlesub_rules(&sys.lookups);
+        let multisub = lookup_rules.multisub_rules(&sys.lookups);
         common::print_rules(f, "SingleSub", &singlesub, names, mark_glyph_sets.as_ref())?;
+        common::print_rules(f, "MultiSub", &multisub, names, mark_glyph_sets.as_ref())?;
     }
 
     Ok(())
@@ -56,12 +58,19 @@ pub fn print(
 #[derive(Clone, Debug, Default)]
 struct LookupRules {
     singlesub: Vec<Lookup<SingleSubRule>>,
+    multisub: Vec<Lookup<MultiSubRule>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct SingleSubRule {
     target: GlyphId,
     replacement: GlyphId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct MultiSubRule {
+    target: GlyphId,
+    replacement: Vec<GlyphId>,
 }
 
 impl LookupRules {
@@ -83,7 +92,13 @@ impl LookupRules {
                         .singlesub
                         .push(Lookup::new(id, rules, flag, mark_filter_id));
                 }
-                SubstitutionSubtables::Multiple(_) => (), // do me next
+                SubstitutionSubtables::Multiple(subs) => {
+                    let subs = subs.iter().flat_map(|sub| sub.ok()).collect::<Vec<_>>();
+                    let rules = get_multisub_rules(&subs).unwrap();
+                    result
+                        .multisub
+                        .push(Lookup::new(id, rules, flag, mark_filter_id));
+                }
                 _ => (),
             }
         }
@@ -148,6 +163,22 @@ impl LookupRules {
         all_rules.dedup();
         all_rules
     }
+
+    fn multisub_rules<'a>(&'a self, lookups: &[u16]) -> Vec<SingleRule<'a, MultiSubRule>> {
+        // normalization here is very simple: we're just going to do first-writer-wins
+        // on targets.
+        let mut seen = HashSet::new();
+        let mut result = self
+            .multisub
+            .iter()
+            .filter(|lookup| lookups.contains(&lookup.lookup_id))
+            .flat_map(|lookup| lookup.iter())
+            .filter(|rule| seen.insert(rule.rule().target))
+            .collect::<Vec<_>>();
+        result.sort_unstable();
+        result.dedup();
+        result
+    }
 }
 
 fn get_singlesub_rules(subtables: &[SingleSubst]) -> Result<Vec<SingleSubRule>, ReadError> {
@@ -203,11 +234,51 @@ fn append_singlesub_f2_rules(
     }
 }
 
+fn get_multisub_rules(subtables: &[MultipleSubstFormat1]) -> Result<Vec<MultiSubRule>, ReadError> {
+    let mut result = Vec::new();
+    let mut seen = HashSet::new();
+
+    for sub in subtables {
+        let coverage = sub.coverage()?;
+        let replacements = sub.sequences();
+        for (target, sequence) in coverage.iter().zip(replacements.iter()) {
+            let sequence = sequence?;
+            if seen.insert(target) {
+                result.push(MultiSubRule {
+                    target,
+                    replacement: sequence
+                        .substitute_glyph_ids()
+                        .iter()
+                        .map(|gid| gid.get())
+                        .collect(),
+                });
+            }
+        }
+    }
+
+    Ok(result)
+}
+
 impl PrintNames for SingleSubRule {
     fn fmt_names(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
         let g1 = names.get(self.target);
         let g2 = names.get(self.replacement);
         write!(f, "{g1} -> {g2}")
+    }
+}
+
+impl PrintNames for MultiSubRule {
+    fn fmt_names(&self, f: &mut std::fmt::Formatter<'_>, names: &NameMap) -> std::fmt::Result {
+        let g1 = names.get(self.target);
+        write!(f, "{g1} -> [")?;
+        for (i, g2) in self.replacement.iter().enumerate() {
+            if i > 0 {
+                write!(f, ",")?;
+            }
+            let g2 = names.get(*g2);
+            write!(f, "{g2}")?;
+        }
+        write!(f, "]")
     }
 }
 
