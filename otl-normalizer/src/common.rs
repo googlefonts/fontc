@@ -8,12 +8,15 @@ use std::{
 };
 
 use write_fonts::{
-    read::tables::layout::{FeatureList, ScriptList},
+    read::tables::{
+        gdef::MarkGlyphSets,
+        layout::{FeatureList, ScriptList},
+    },
     tables::layout::LookupFlag,
     types::{GlyphId, Tag},
 };
 
-use crate::glyph_names::NameMap;
+use crate::{glyph_names::NameMap, Error};
 
 pub(crate) struct LanguageSystem {
     script: Tag,
@@ -182,6 +185,46 @@ pub(crate) fn get_lang_systems(
     result.sort_unstable_by_key(|sys| sys.sort_key());
 
     result
+}
+
+pub(crate) fn print_rules<T: PrintNames + Clone>(
+    f: &mut dyn io::Write,
+    type_name: &str,
+    rules: &[SingleRule<T>],
+    names: &NameMap,
+    mark_glyph_sets: Option<&MarkGlyphSets>,
+) -> Result<(), Error> {
+    if rules.is_empty() {
+        return Ok(());
+    }
+
+    writeln!(f, "# {} {type_name} rules", rules.len(),)?;
+    let mut last_flag = None;
+    let mut last_filter_set = None;
+    for rule in rules {
+        let (flags, filter_set_id) = rule.lookup_flags();
+        if last_flag != Some(flags) {
+            writeln!(f, "# lookupflag {flags:?}")?;
+            last_flag = Some(flags);
+        }
+
+        if filter_set_id != last_filter_set {
+            if let Some(filter_id) = filter_set_id {
+                let filter_set = mark_glyph_sets
+                    .as_ref()
+                    .map(|gsets| gsets.coverages().get(filter_id as usize))
+                    .transpose()
+                    .unwrap();
+                let glyphs = filter_set.map(|cov| cov.iter().collect::<GlyphSet>());
+                if let Some(glyphs) = glyphs {
+                    writeln!(f, "# filter glyphs: {}", glyphs.printer(names))?;
+                }
+            }
+        }
+        last_filter_set = filter_set_id;
+        writeln!(f, "{}", rule.printer(names))?;
+    }
+    Ok(())
 }
 
 impl GlyphSet {

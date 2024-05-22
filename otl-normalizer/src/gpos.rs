@@ -7,7 +7,7 @@ use std::{
 use write_fonts::{
     read::{
         tables::{
-            gdef::{Gdef, MarkGlyphSets},
+            gdef::Gdef,
             gpos::{AnchorTable, Gpos, PositionLookupList, PositionSubtables, ValueRecord},
             layout::DeviceOrVariationIndex,
         },
@@ -17,7 +17,7 @@ use write_fonts::{
 };
 
 use crate::{
-    common::{self, GlyphSet, Lookup, PrintNames, SingleRule},
+    common::{self, Lookup, PrintNames, SingleRule},
     error::Error,
     glyph_names::NameMap,
     variations::DeltaComputer,
@@ -66,52 +66,12 @@ pub fn print(
         let markbase = lookup_rules.markbase_rules(&sys.lookups);
         let markliga = lookup_rules.markliga_rules(&sys.lookups);
 
-        print_rules(f, "PairPos", &pairpos, names, mark_glyph_sets.as_ref())?;
-        print_rules(f, "MarkToBase", &markbase, names, mark_glyph_sets.as_ref())?;
-        print_rules(f, "MarkToMark", &markmark, names, mark_glyph_sets.as_ref())?;
-        print_rules(f, "MarkToLig", &markliga, names, mark_glyph_sets.as_ref())?;
+        common::print_rules(f, "PairPos", &pairpos, names, mark_glyph_sets.as_ref())?;
+        common::print_rules(f, "MarkToBase", &markbase, names, mark_glyph_sets.as_ref())?;
+        common::print_rules(f, "MarkToMark", &markmark, names, mark_glyph_sets.as_ref())?;
+        common::print_rules(f, "MarkToLig", &markliga, names, mark_glyph_sets.as_ref())?;
     }
 
-    Ok(())
-}
-
-fn print_rules<T: PrintNames + Clone>(
-    f: &mut dyn io::Write,
-    type_name: &str,
-    rules: &[SingleRule<T>],
-    names: &NameMap,
-    mark_glyph_sets: Option<&MarkGlyphSets>,
-) -> Result<(), Error> {
-    if rules.is_empty() {
-        return Ok(());
-    }
-
-    writeln!(f, "# {} {type_name} rules", rules.len(),)?;
-    let mut last_flag = None;
-    let mut last_filter_set = None;
-    for rule in rules {
-        let (flags, filter_set_id) = rule.lookup_flags();
-        if last_flag != Some(flags) {
-            writeln!(f, "# lookupflag {flags:?}")?;
-            last_flag = Some(flags);
-        }
-
-        if filter_set_id != last_filter_set {
-            if let Some(filter_id) = filter_set_id {
-                let filter_set = mark_glyph_sets
-                    .as_ref()
-                    .map(|gsets| gsets.coverages().get(filter_id as usize))
-                    .transpose()
-                    .unwrap();
-                let glyphs = filter_set.map(|cov| cov.iter().collect::<GlyphSet>());
-                if let Some(glyphs) = glyphs {
-                    writeln!(f, "# filter glyphs: {}", glyphs.printer(names))?;
-                }
-            }
-        }
-        last_filter_set = filter_set_id;
-        writeln!(f, "{}", rule.printer(names))?;
-    }
     Ok(())
 }
 

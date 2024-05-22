@@ -38,10 +38,9 @@ fn main() -> Result<(), Error> {
     }
 
     if matches!(to_print, args::Table::All | args::Table::Gsub) {
-        if let Ok(_gsub) = font.gsub() {
-            // we don't currently handle GSUB, and it's not clear we want to?
-            //writeln!(&mut write_target, "# GSUB #")?;
-            //otl_normalizer::print_gsub(&mut write_target, &gsub, gdef.as_ref(), &name_map)?;
+        if let Ok(gsub) = font.gsub() {
+            writeln!(&mut write_target, "# GSUB #")?;
+            otl_normalizer::print_gsub(&mut write_target, &gsub, gdef.as_ref(), &name_map)?;
         }
     }
     write_target.flush().unwrap();
