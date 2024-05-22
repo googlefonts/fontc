@@ -46,9 +46,9 @@ use gpos_builders::{CursivePosBuilder, MarkToLigBuilder, SinglePosBuilder};
 pub use gpos_builders::{
     MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder, PreviouslyAssignedClass,
 };
-use gsub_builders::{
-    AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder,
-};
+pub use gsub_builders::SingleSubBuilder;
+use gsub_builders::{AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder};
+
 pub(crate) use helpers::ClassDefBuilder2;
 
 /// A simple trait for building lookups

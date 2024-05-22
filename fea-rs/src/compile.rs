@@ -17,7 +17,7 @@ pub use feature_writer::{FeatureBuilder, FeatureProvider, NopFeatureProvider, Pe
 pub use language_system::LanguageSystem;
 pub use lookups::{
     Builder, FeatureKey, LookupId, MarkToBaseBuilder, MarkToMarkBuilder, PairPosBuilder,
-    PreviouslyAssignedClass,
+    PreviouslyAssignedClass, SingleSubBuilder,
 };
 pub use metrics::{Anchor, ValueRecord};
 pub use opts::Opts;

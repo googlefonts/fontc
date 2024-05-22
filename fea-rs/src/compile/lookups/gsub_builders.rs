@@ -9,6 +9,7 @@ use write_fonts::{
 
 use super::Builder;
 
+/// A builder for GSUB type 1 (single substitution) lookups
 #[derive(Clone, Debug, Default)]
 pub struct SingleSubBuilder {
     items: BTreeMap<GlyphId, (GlyphId, PossibleSingleSubFormat)>,
@@ -24,6 +25,7 @@ enum PossibleSingleSubFormat {
 }
 
 impl SingleSubBuilder {
+    /// Insert a new target, replacement pair
     pub fn insert(&mut self, target: GlyphId, replacement: GlyphId) {
         let delta = replacement.to_u16() as i32 - target.to_u16() as i32;
         let delta = i16::try_from(delta)
@@ -32,7 +34,7 @@ impl SingleSubBuilder {
         self.items.insert(target, (replacement, delta));
     }
 
-    pub fn contains_target(&self, target: GlyphId) -> bool {
+    pub(crate) fn contains_target(&self, target: GlyphId) -> bool {
         self.items.contains_key(&target)
     }
 
