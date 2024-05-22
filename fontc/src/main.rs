@@ -35,14 +35,13 @@ fn run() -> Result<(), Error> {
     env_logger::builder()
         .format(|buf, record| {
             let ts = buf.timestamp_micros();
+            let style = buf.default_level_style(record.level());
             writeln!(
                 buf,
-                "[{ts} {} {} {}] {}",
-                // we manually assign all threads a name
-                std::thread::current().name().unwrap_or("unknown"),
+                "[{ts} {:?} {} {style}{}{style:#}] {}",
+                std::thread::current().id(),
                 record.target(),
-                buf.default_level_style(record.level())
-                    .value(record.level()),
+                record.level(),
                 record.args()
             )
         })
