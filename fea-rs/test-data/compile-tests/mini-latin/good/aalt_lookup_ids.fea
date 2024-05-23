@@ -1,0 +1,26 @@
+# ensure that lookup ids are adjusted correctly after aalt
+# lookups are inserted at the front of the lookup list
+
+feature tst1 {
+    # should be lookup idx 1, since 0 will be generated aalt lookup
+    sub a by b;
+} tst1;
+
+feature tst2 {
+    # lookup 2, with the inline lookup being lookup 3
+    sub a b' c by d;
+} tst2;
+
+feature calt {
+    sub x by y;
+} calt;
+
+feature balt {
+sub o by k;
+} balt;
+
+feature aalt {
+    feature calt;
+    feature balt;
+} aalt;
+
