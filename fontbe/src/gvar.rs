@@ -52,6 +52,7 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
         // We built the gvar fragments alongside glyphs, now we need to glue them together into a gvar table
         let static_metadata = context.ir.static_metadata.get();
         let axis_order: Vec<_> = static_metadata.axes.iter().map(|a| a.tag).collect();
+        let axis_count = axis_order.len() as u16;
         let glyph_order = context.ir.glyph_order.get();
 
         let variations: Vec<_> = make_variations(&glyph_order, |glyph_name| {
@@ -60,7 +61,17 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
                 .get(&WorkId::GvarFragment(glyph_name.clone()).into())
                 .to_deltas(&axis_order)
         });
-        let gvar = Gvar::new(variations).map_err(Error::GvarError)?;
+        let mut gvar = Gvar::new(variations).map_err(Error::GvarError)?;
+        // if there are no glyph variations, the gvar.axis_count computed by write-fonts
+        // from these empty deltas is 0, but the spec requires it to be the same as
+        // fvar's axis_count, so we make sure this is the case.
+        // Technically, a gvar table is optional in a variable font, but some
+        // applications expect one to be present, so we always generate one even if
+        // empty, like fonttools does:
+        // https://github.com/googlefonts/fontc/issues/815#issuecomment-2127834077
+        if gvar.axis_count == 0 && axis_count > 0 {
+            gvar.axis_count = axis_count;
+        }
 
         let raw_gvar = dump_table(&gvar)
             .map_err(|e| Error::DumpTableError {
