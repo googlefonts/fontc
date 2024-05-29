@@ -170,7 +170,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         self.finalize_gdef_table();
         self.features
             .finalize_aalt(&mut self.lookups, &self.default_lang_systems);
-        self.features.sort_and_dedupe_lookups();
+        self.features.dedupe_lookups();
     }
 
     pub(crate) fn build(&mut self) -> Result<(Compilation, Vec<Diagnostic>), Vec<Diagnostic>> {
