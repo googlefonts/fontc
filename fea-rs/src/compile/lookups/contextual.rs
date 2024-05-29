@@ -187,16 +187,14 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
                 SubstitutionLookup::Single(subtables) => subtables
                     .subtables
                     .iter()
-                    .all(|subt| target.iter().all(|t| !subt.contains_target(t))),
+                    .all(|subt| subt.can_add(&target, &replacement)),
                 _ => false,
             },
             |flags, mark_set| SubstitutionLookup::Single(LookupBuilder::new(flags, mark_set)),
         );
 
         let SubstitutionLookup::Single(subtables) = lookup else {
-            // we didn't panic here before my refactor but I don't think we
-            // want to fall through. let's find out?
-            panic!("I don't think this should happen?");
+            unreachable!("per logic above we only return this variant");
         };
         let sub = subtables.last_mut().unwrap();
         for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {
@@ -222,9 +220,7 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         );
 
         let SubstitutionLookup::Multiple(subtables) = lookup else {
-            // we didn't panic here before my refactor but I don't think we
-            // want to fall through. let's find out?
-            panic!("I don't think this should happen?");
+            unreachable!("per logic above we only return this variant");
         };
         let sub = subtables.last_mut().unwrap();
         sub.insert(target, replacements);
@@ -248,7 +244,7 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
         );
 
         let SubstitutionLookup::Ligature(subtables) = lookup else {
-            panic!("ahhhhhh");
+            unreachable!("per logic above we only return this variant");
         };
 
         let sub = subtables.last_mut().unwrap();
