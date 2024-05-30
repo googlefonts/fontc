@@ -177,14 +177,13 @@ impl AllFeatures {
         self.aalt = Some(aalt);
     }
 
-    pub(crate) fn sort_and_dedupe_lookups(&mut self) {
+    pub(crate) fn dedupe_lookups(&mut self) {
         // if any duplicate lookups have made their way into our features, remove them;
         // they will be ignored by the shaper anyway.
+        let mut seen = HashSet::new();
         for lookup in self.features.values_mut() {
-            // note that the order of lookups in a feature doesn't matter, they
-            // are processed in the order that they appear in the lookup list.
-            lookup.base.sort_unstable();
-            lookup.base.dedup();
+            seen.clear();
+            lookup.base.retain(|id| seen.insert(*id))
         }
     }
 
