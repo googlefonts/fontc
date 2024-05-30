@@ -1,9 +1,0 @@
-# generated automatically by fea-rs
-# this file represents an acceptable difference between the output of
-# fonttools and the output of fea-rs for a given input.
-L75
->                  <LookupListIndex value="1"/>
-L75
-<                  <LookupListIndex value="2"/>
-L97
-<            <Substitution in="H" out="H.swash"/>

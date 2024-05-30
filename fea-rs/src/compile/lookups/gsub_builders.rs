@@ -7,6 +7,8 @@ use write_fonts::{
     types::{FixedSize, GlyphId},
 };
 
+use crate::common::GlyphOrClass;
+
 use super::Builder;
 
 #[derive(Clone, Debug, Default)]
@@ -32,8 +34,13 @@ impl SingleSubBuilder {
         self.items.insert(target, (replacement, delta));
     }
 
-    pub fn contains_target(&self, target: GlyphId) -> bool {
-        self.items.contains_key(&target)
+    pub(crate) fn can_add(&self, target: &GlyphOrClass, replacement: &GlyphOrClass) -> bool {
+        for (target, replacement) in target.iter().zip(replacement.iter()) {
+            if matches!(self.items.get(&target), Some(x) if x.0 != replacement) {
+                return false;
+            }
+        }
+        true
     }
 
     pub(crate) fn is_empty(&self) -> bool {
