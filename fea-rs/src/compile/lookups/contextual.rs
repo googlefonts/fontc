@@ -688,30 +688,37 @@ impl Builder for SubChainContextBuilder {
 }
 
 // invariant: at least one item must be Some
-fn pick_best_format<T: FontWrite + Validate>(tables: [Option<T>; 3]) -> T {
+fn pick_best_format<T: FontWrite + Validate>(subtables: [Option<Vec<T>>; 3]) -> Vec<T> {
     // first see if there's only one table present, in which case we can exit early:
-    if tables.iter().map(|t| t.is_some() as usize).sum::<usize>() == 1 {
-        return tables.into_iter().find_map(std::convert::identity).unwrap();
+    if subtables.iter().filter(|t| t.is_some()).count() == 1 {
+        return subtables.into_iter().find_map(|opt| opt).unwrap();
     }
 
     // this is written in a sort of funny style so that it's easy to println
     // the computed sizes for debugging
-    tables
+    subtables
         .into_iter()
         .enumerate()
         .filter_map(|(i, table)| table.map(|table| (i + 1, compute_size(&table), table)))
-        .inspect(|(i, size, _table)| {
-            log::trace!("format {i} size {size:?}");
+        .inspect(|(i, size, subtables)| {
+            let n_subtables = subtables.len();
+            log::trace!("format {i} {n_subtables} subtables size {size:?}");
         })
         .min_by_key(|(_, size, _)| *size)
         .unwrap()
         .2
 }
 
-fn compute_size<T: FontWrite + Validate>(item: &T) -> usize {
-    write_fonts::dump_table(item)
+fn compute_size<T: FontWrite + Validate>(subtables: &Vec<T>) -> usize {
+    write_fonts::dump_table(subtables)
         .ok()
-        .map(|x| x.len())
+        .map(|x| {
+            let subtable_len = x.len();
+            // if a format produces more subtables we also account for the fact
+            // that each subtable requires an additional offset in the subtable list
+            let offset_cost = std::mem::size_of::<u16>() * subtables.len();
+            subtable_len + offset_cost
+        })
         .unwrap_or(usize::MAX)
 }
 
