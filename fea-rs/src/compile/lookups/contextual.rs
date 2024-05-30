@@ -213,7 +213,7 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
                 SubstitutionLookup::Multiple(subtables) => subtables
                     .subtables
                     .iter()
-                    .all(|subt| !subt.contains_target(target)),
+                    .all(|subt| subt.can_add(target, &replacements)),
                 _ => false,
             },
             |flags, mark_set| SubstitutionLookup::Multiple(LookupBuilder::new(flags, mark_set)),
