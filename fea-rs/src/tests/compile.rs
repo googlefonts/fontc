@@ -19,12 +19,14 @@ static IMPORT_RESOLUTION_TEST: &str = "./test-data/include-resolution-tests/dir1
 // tests taken directly from fonttools; these require some special handling.
 #[test]
 fn fonttools_tests() -> Result<(), Report> {
+    let _ = env_logger::builder().is_test(true).try_init();
     test_utils::assert_has_ttx_executable();
     test_utils::run_fonttools_tests(None).into_error()
 }
 
 #[test]
 fn should_fail() -> Result<(), Report> {
+    let _ = env_logger::builder().is_test(true).try_init();
     let mut results = Vec::new();
     for (glyph_map, var_info, tests) in iter_test_groups(BAD_DIR) {
         results.extend(
@@ -38,6 +40,7 @@ fn should_fail() -> Result<(), Report> {
 
 #[test]
 fn import_resolution() {
+    let _ = env_logger::builder().is_test(true).try_init();
     let glyph_map = test_utils::fonttools_test_glyph_order();
     let path = PathBuf::from(IMPORT_RESOLUTION_TEST);
     match test_utils::run_test(path, &glyph_map, &Default::default()) {
@@ -48,6 +51,7 @@ fn import_resolution() {
 
 #[test]
 fn should_pass() -> Result<(), Report> {
+    let _ = env_logger::builder().is_test(true).try_init();
     let mut results = Vec::new();
 
     for (glyph_map, var_info, tests) in iter_test_groups(GOOD_DIR) {
