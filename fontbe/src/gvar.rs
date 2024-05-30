@@ -52,6 +52,14 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
         // We built the gvar fragments alongside glyphs, now we need to glue them together into a gvar table
         let static_metadata = context.ir.static_metadata.get();
         let axis_order: Vec<_> = static_metadata.axes.iter().map(|a| a.tag).collect();
+        let axis_count: u16 = axis_order
+            .len()
+            .try_into()
+            // in the unlikely event that we have more than 65535 axes...
+            .map_err(|_| Error::OutOfBounds {
+                what: "axis count".into(),
+                value: axis_order.len().to_string(),
+            })?;
         let glyph_order = context.ir.glyph_order.get();
 
         let variations: Vec<_> = make_variations(&glyph_order, |glyph_name| {
@@ -60,7 +68,7 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
                 .get(&WorkId::GvarFragment(glyph_name.clone()).into())
                 .to_deltas(&axis_order)
         });
-        let gvar = Gvar::new(variations).map_err(Error::GvarError)?;
+        let gvar = Gvar::new(variations, axis_count).map_err(Error::GvarError)?;
 
         let raw_gvar = dump_table(&gvar)
             .map_err(|e| Error::DumpTableError {

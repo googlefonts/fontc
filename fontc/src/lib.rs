@@ -2924,4 +2924,28 @@ mod tests {
                 .collect::<Vec<_>>()
         );
     }
+
+    #[test]
+    fn compile_empty_gvar_with_correct_axis_count() {
+        // The test font contains a 'wght' axis and only 1 UFO source with a variable
+        // FEA that varies the position of glyph 'A' based on the wght axis; the gvar
+        // actually contains no glyph variations. Taken from
+        // https://github.com/googlefonts/fontc/issues/815
+        let result = TestCompile::compile_source("varpos.designspace");
+        let font = result.font();
+
+        let fvar = font.fvar().unwrap();
+        let gvar = font.gvar().unwrap();
+
+        // We assert that axis_count matches fvar's despite the gvar being no-op
+        // (i.e. all glyph variations are empty)
+        assert_eq!(fvar.axis_count(), 1);
+        assert_eq!(fvar.axis_count(), gvar.axis_count());
+        let glyph_count = font.maxp().unwrap().num_glyphs();
+        assert_eq!(gvar.glyph_count(), glyph_count);
+        assert!((0..glyph_count).all(|gid| gvar
+            .glyph_variation_data(GlyphId::new(gid))
+            // read-fonts would return an error when a glyph's variations are empty
+            .is_err()));
+    }
 }

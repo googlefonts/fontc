@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="A" format="2">
+  <advance width="500"/>
+  <unicode hex="0041"/>
+  <outline>
+    <contour>
+      <point x="0" y="500" type="line"/>
+      <point x="0" y="0" type="line"/>
+      <point x="500" y="0" type="line"/>
+      <point x="500" y="500" type="line"/>
+    </contour>
+  </outline>
+  <lib>
+    <dict>
+      <key>xyz.fontra.layer-names</key>
+      <dict>
+        <key>varpos_Regular/public.default</key>
+        <string>&lt;default&gt;</string>
+      </dict>
+      <key>xyz.fontra.source-names</key>
+      <dict>
+        <key>Regular</key>
+        <string>&lt;default&gt;</string>
+      </dict>
+    </dict>
+  </lib>
+</glyph>
