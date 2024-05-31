@@ -199,9 +199,9 @@ fn should_run_test(path: &str) -> bool {
 
 /// Iterate over all the files in a directory with the 'fea' suffix
 pub fn iter_fea_files(path: impl AsRef<Path>) -> impl Iterator<Item = PathBuf> + 'static {
-    let mut dir = path.as_ref().read_dir().unwrap();
+    let mut dir = path.as_ref().read_dir().ok();
     std::iter::from_fn(move || loop {
-        let entry = dir.next()?.unwrap();
+        let entry = dir.as_mut()?.next()?.unwrap();
         let path = entry.path();
         if path.extension() == Some(OsStr::new("fea")) {
             return Some(path);
