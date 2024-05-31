@@ -964,7 +964,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .unwrap()
             .with_gpos_type_5(|subtable| {
                 for base in base_ids.iter() {
-                    subtable.add_lig(base, components.clone());
+                    subtable.add_ligature_components(base, components.clone());
                 }
             })
     }
