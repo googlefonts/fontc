@@ -1,0 +1,5 @@
+error: contourpoint index must be non-negative
+in ./test-data/compile-tests/mini-latin/bad/negative_lig_caret_idx.fea at 3:29
+  | 
+3 |     LigatureCaretByIndex f_f -100;
+  |                              ^^^^

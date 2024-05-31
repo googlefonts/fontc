@@ -1,0 +1,4 @@
+table GDEF {
+    # indices cannot be negative
+    LigatureCaretByIndex f_f -100;
+} GDEF;
