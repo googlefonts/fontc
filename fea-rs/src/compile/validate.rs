@@ -534,7 +534,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 //to resolve glyphs here in order to track that.
                 typed::GdefTableItem::LigatureCaret(node) => {
                     self.validate_glyph_or_class(&node.target());
-                    if let typed::LigatureCaretValue::Pos(node) = node.values() {
+                    if let typed::LigatureCaretValue::Index(node) = node.values() {
                         for idx in node.values() {
                             if idx.parse_unsigned().is_none() {
                                 self.error(idx.range(), "contourpoint index must be non-negative");
