@@ -1,17 +1,16 @@
 {
-.appVersion = "3258";
+.appVersion = "3260";
 .formatVersion = 3;
 DisplayStrings = (
 "áa",
-"",
 "̆",
 "ắ",
 "/brevecomb_acutecomb",
-"",
 "̆ă",
 "/f_a",
 a,
-b
+b,
+"/U1C82"
 );
 axes = (
 {
@@ -692,6 +691,46 @@ ref = brevecomb;
 }
 );
 width = 0;
+}
+);
+},
+{
+glyphname = U1C82;
+layers = (
+{
+anchors = (
+{
+name = bottom;
+pos = (182,0);
+},
+{
+name = top;
+pos = (182,578);
+}
+);
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+closed = 1;
+nodes = (
+(289,-9,o),
+(317,66,o),
+(317,211,cs),
+(317,367,ls),
+(317,512,o),
+(289,587,o),
+(181,587,cs),
+(74,587,o),
+(46,511,o),
+(46,367,cs),
+(46,211,ls),
+(46,66,o),
+(74,-9,o),
+(181,-9,cs)
+);
+}
+);
+width = 363;
 }
 );
 }

@@ -458,9 +458,9 @@ fn category_for_glyph(glyph: &glyphs_reader::Glyph) -> Option<GlyphClassDef> {
                 .map(|a| a.is_attaching())
                 .unwrap_or(false)
         });
-    match (glyph.category?, glyph.sub_category.unwrap_or_default()) {
+    match (glyph.category, glyph.sub_category.unwrap_or_default()) {
         (_, Subcategory::Ligature) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
-        (Category::Mark, Subcategory::Nonspacing | Subcategory::SpacingCombining) => {
+        (Some(Category::Mark), Subcategory::Nonspacing | Subcategory::SpacingCombining) => {
             Some(GlyphClassDef::Mark)
         }
         _ if has_attaching_anchor => Some(GlyphClassDef::Base),
@@ -1401,6 +1401,17 @@ mod tests {
     fn includes_glyph_category_overrides() {
         let font = Font::load(&glyphs3_dir().join("Oswald-glyph-categories.glyphs")).unwrap();
         assert_eq!(font.glyphs["b"].category, Some(Category::Number));
+    }
+
+    #[test]
+    fn category_can_be_none() {
+        let font = Font::load(&glyphs3_dir().join("Oswald-glyph-categories.glyphs")).unwrap();
+        let glyph = &font.glyphs["U1C82"];
+        assert!(glyph.category.is_none());
+
+        // even though glyphs does not assign this a category, we still determine
+        // it is a base based on the presence of base anchors.
+        assert_eq!(category_for_glyph(glyph), Some(GlyphClassDef::Base));
     }
 
     // It's so minimal it's a good test

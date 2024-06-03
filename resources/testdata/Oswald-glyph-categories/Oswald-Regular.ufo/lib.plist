@@ -16,9 +16,12 @@
       <string>acutecomb</string>
       <string>brevecomb</string>
       <string>brevecomb_acutecomb</string>
+      <string>U1C82</string>
     </array>
     <key>public.openTypeCategories</key>
     <dict>
+      <key>U1C82</key>
+      <string>base</string>
       <key>a</key>
       <string>base</string>
       <key>aacute</key>
