@@ -112,3 +112,7 @@ seven.osf
 eight.osf
 nine.osf
 zero.slash
+acutecomb
+brevecomb
+ogonekcomb
+dotbelowcomb

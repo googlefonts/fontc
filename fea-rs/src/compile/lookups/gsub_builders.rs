@@ -170,8 +170,11 @@ impl MultipleSubBuilder {
         self.items.insert(target, replacement);
     }
 
-    pub fn contains_target(&self, target: GlyphId) -> bool {
-        self.items.contains_key(&target)
+    pub fn can_add(&self, target: GlyphId, replacement: &[GlyphId]) -> bool {
+        match self.items.get(&target) {
+            None => true,
+            Some(thing) => thing == replacement,
+        }
     }
 }
 

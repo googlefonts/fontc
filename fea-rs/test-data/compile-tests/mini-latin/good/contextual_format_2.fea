@@ -1,0 +1,16 @@
+# reduced from the ccmp feature in oswald
+feature ccmp {
+    lookup ccmp_Other_1 {
+        @CombiningTopAccents = [acutecomb brevecomb];
+        @CombiningNonTopAccents = [dotbelowcomb ogonekcomb];
+        lookupflag UseMarkFilteringSet @CombiningTopAccents;
+        # we should only generate two lookups; one contextual and one multiple sub,
+        # containing 'sub a by I dotbelowcomb' and 'sub i by I ogonekcomb'
+        sub a' @CombiningTopAccents by I dotbelowcomb;
+        sub i' @CombiningTopAccents by I ogonekcomb;
+        sub a' @CombiningNonTopAccents @CombiningTopAccents by I dotbelowcomb;
+        sub i' @CombiningNonTopAccents @CombiningTopAccents by I ogonekcomb;
+    } ccmp_Other_1;
+} ccmp;
+
+
