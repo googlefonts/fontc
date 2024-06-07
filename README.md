@@ -1,3 +1,5 @@
+[![CI Build Status](https://github.com/googlefonts/fontc/workflows/Continuous%20integration/badge.svg?branch=main)](https://github.com/googlefonts/fontc/actions/workflows/rust.yml?query=workflow%3AContinuous+integration+branch%3Amain)
+
 # fontc
 
 Where in we pursue oxidizing (context: https://github.com/googlefonts/oxidize) fontmake. For context
