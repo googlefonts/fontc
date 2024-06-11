@@ -1,0 +1,3 @@
+lookup what useExtension {
+    sub a by b;
+} what;

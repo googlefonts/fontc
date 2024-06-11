@@ -112,7 +112,9 @@ fn table(parser: &mut Parser) {
 //or     lookup <label>;
 fn lookup_block_or_reference(parser: &mut Parser, recovery: TokenSet) {
     assert!(parser.matches(0, Kind::LookupKw));
-    if parser.matches(2, Kind::LBrace) {
+    if parser.matches(2, Kind::LBrace)
+        || (parser.matches(2, Kind::UseExtensionKw) && parser.matches(3, Kind::LBrace))
+    {
         feature::lookup_block(parser, recovery.union(TokenSet::STATEMENT));
     } else if parser.matches(2, Kind::Semi) {
         parser.in_node(AstKind::LookupRefNode, |parser| {
