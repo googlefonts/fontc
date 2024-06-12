@@ -118,13 +118,7 @@ impl Args {
         flags
     }
 
-    /// Manually create args for testing
-    #[cfg(test)]
-    pub fn for_test(build_dir: &std::path::Path, source: &str) -> Args {
-        use crate::testdata_dir;
-
-        let input_source = testdata_dir().join(source).canonicalize().unwrap();
-
+    pub fn new(build_dir: &std::path::Path, input_source: PathBuf) -> Args {
         Args {
             glyph_name_filter: None,
             input_source: Some(input_source),
@@ -143,6 +137,15 @@ impl Args {
             no_production_names: false,
             verbose_version: false,
         }
+    }
+
+    /// Manually create args for testing
+    #[cfg(test)]
+    pub fn for_test(build_dir: &std::path::Path, source: &str) -> Args {
+        use crate::testdata_dir;
+
+        let input_source = testdata_dir().join(source).canonicalize().unwrap();
+        Self::new(build_dir, input_source)
     }
 
     /// The input source to compile.
