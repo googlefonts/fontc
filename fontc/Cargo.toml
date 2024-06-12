@@ -19,6 +19,8 @@ glyphs2fontir = { version = "0.0.1", path = "../glyphs2fontir" }
 fontra2fontir = { version = "0.0.1", path = "../fontra2fontir" }
 ufo2fontir = { version = "0.0.1", path = "../ufo2fontir" }
 
+google-fonts-sources = "0.1.0"
+
 bitflags.workspace = true
 bincode.workspace = true
 
