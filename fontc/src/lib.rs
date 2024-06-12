@@ -16,8 +16,6 @@ pub use error::Error;
 pub use timing::{create_timer, JobTimer};
 use workload::Workload;
 
-use std::{fs, path::Path};
-
 use fontbe::{
     avar::create_avar_work,
     cmap::create_cmap_work,
@@ -39,9 +37,18 @@ use fontbe::{
     post::create_post_work,
     stat::create_stat_work,
 };
+use std::{
+    fs::{self, OpenOptions},
+    io::BufWriter,
+    path::Path,
+};
 
 use fontdrasil::{coords::NormalizedLocation, types::GlyphName};
-use fontir::{glyph::create_glyph_order_work, source::DeleteWork};
+use fontir::{
+    glyph::create_glyph_order_work,
+    orchestration::{Context as FeContext, Flags},
+    source::DeleteWork,
+};
 
 use fontbe::orchestration::Context as BeContext;
 use fontbe::paths::Paths as BePaths;
@@ -49,7 +56,58 @@ use fontir::paths::Paths as IrPaths;
 
 use log::{debug, warn};
 
+/// Run the compiler with the provided arguments
+pub fn run(args: Args, mut timer: JobTimer) -> Result<(), Error> {
+    let time = create_timer(AnyWorkId::InternalTiming("Init config"), 0)
+        .queued()
+        .run();
+    let (ir_paths, be_paths) = init_paths(&args)?;
+    let config = Config::new(args)?;
+    let prev_inputs = config.init()?;
+    timer.add(time.complete());
+
+    let mut change_detector = ChangeDetector::new(
+        config.clone(),
+        ir_paths.clone(),
+        be_paths.clone(),
+        prev_inputs,
+        &mut timer,
+    )?;
+
+    let workload = create_workload(&mut change_detector, timer)?;
+
+    let fe_root = FeContext::new_root(
+        config.args.flags(),
+        ir_paths,
+        workload.current_inputs().clone(),
+    );
+    let be_root = BeContext::new_root(config.args.flags(), be_paths, &fe_root);
+    let mut timing = workload.exec(&fe_root, &be_root)?;
+
+    if config.args.flags().contains(Flags::EMIT_TIMING) {
+        let path = config.args.build_dir.join("threads.svg");
+        let out_file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&path)
+            .map_err(|source| Error::FileIo {
+                path: path.clone(),
+                source,
+            })?;
+        let mut buf = BufWriter::new(out_file);
+        timing
+            .write_svg(&mut buf)
+            .map_err(|source| Error::FileIo { path, source })?;
+    }
+
+    change_detector.finish_successfully()?;
+
+    write_font_file(&config.args, &be_root)
+}
+
 pub fn require_dir(dir: &Path) -> Result<(), Error> {
+    // skip empty paths
     if dir == Path::new("") {
         return Ok(());
     }
