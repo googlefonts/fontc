@@ -37,6 +37,8 @@ regex.workspace = true
 write-fonts.workspace = true
 clap.workspace = true
 rayon.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
 
 # just for fontc!
 crossbeam-channel = "0.5.6"
@@ -44,7 +46,6 @@ crossbeam-channel = "0.5.6"
 [dev-dependencies]
 diff.workspace = true
 ansi_term.workspace = true
-tempfile.workspace = true
 pretty_assertions.workspace = true
 skrifa.workspace = true
 kurbo.workspace = true
