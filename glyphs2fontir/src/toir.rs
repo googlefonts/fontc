@@ -256,7 +256,7 @@ fn ir_axes(font: &Font) -> Result<Vec<fontdrasil::types::Axis>, Error> {
 
 /// A [Font] with some prework to convert to IR predone.
 #[derive(Debug)]
-pub struct FontInfo {
+pub(crate) struct FontInfo {
     pub font: Font,
     /// Index by master id
     pub master_indices: HashMap<String, usize>,
@@ -265,8 +265,6 @@ pub struct FontInfo {
     /// Axes values => location for every instance and master
     pub locations: HashMap<Vec<OrderedFloat<f64>>, NormalizedLocation>,
     pub axes: Vec<fontdrasil::types::Axis>,
-    /// Index by tag
-    pub axis_indices: HashMap<Tag, usize>,
 }
 
 impl TryFrom<Font> for FontInfo {
@@ -281,11 +279,6 @@ impl TryFrom<Font> for FontInfo {
             .collect();
 
         let axes = ir_axes(&font)?;
-        let axis_indices = axes
-            .iter()
-            .enumerate()
-            .map(|(idx, a)| (a.tag, idx))
-            .collect();
 
         let axes_by_name = axes.iter().map(|a| (a.tag, a)).collect();
         let locations: HashMap<_, _> = font
@@ -327,7 +320,6 @@ impl TryFrom<Font> for FontInfo {
             master_positions,
             locations,
             axes,
-            axis_indices,
         })
     }
 }
