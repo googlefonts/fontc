@@ -9,7 +9,7 @@ use std::{
 };
 
 use fontdrasil::{paths::string_to_filename, types::GlyphName};
-use fontir::error::Error;
+use fontir::error::{BadSource, Error};
 use serde::Deserialize;
 use write_fonts::types::Tag;
 
@@ -20,12 +20,12 @@ pub(crate) fn glyph_file(glyph_dir: &Path, glyph: GlyphName) -> PathBuf {
     glyph_dir.join(string_to_filename(glyph.as_str(), ".json"))
 }
 
-fn from_file<T>(p: &Path) -> Result<T, Error>
+fn from_file<T>(p: &Path) -> Result<T, BadSource>
 where
     for<'a> T: Deserialize<'a>,
 {
-    let raw = fs::read_to_string(p).map_err(Error::IoError)?;
-    serde_json::from_str(&raw).map_err(|e| Error::ParseError(p.to_path_buf(), format!("{e}")))
+    let raw = fs::read_to_string(p).map_err(|e| BadSource::new(p, e))?;
+    serde_json::from_str(&raw).map_err(|e| BadSource::parse(p, e))
 }
 
 /// serde type used to load font-data.json
@@ -38,7 +38,7 @@ pub(crate) struct FontraFontData {
 }
 
 impl FontraFontData {
-    pub(crate) fn from_file(p: &Path) -> Result<Self, Error> {
+    pub(crate) fn from_file(p: &Path) -> Result<Self, BadSource> {
         from_file(p)
     }
 }
@@ -189,7 +189,7 @@ pub(crate) struct FontraGlyphInstance {
 
 impl FontraGlyph {
     #[allow(dead_code)] // TEMPORARY
-    pub(crate) fn from_file(p: &Path) -> Result<Self, Error> {
+    pub(crate) fn from_file(p: &Path) -> Result<Self, BadSource> {
         from_file(p)
     }
 }

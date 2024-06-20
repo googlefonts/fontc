@@ -12,7 +12,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{Error, WorkError},
+    error::{BadSource, BadSourceKind, Error, WorkError},
     ir::{
         AnchorBuilder, FeaturesSource, GdefCategories, GlobalMetric, GlobalMetrics, GlyphOrder,
         KernGroup, KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
@@ -89,15 +89,15 @@ fn glif_files(
     let layer_name = layer_dir(ufo_dir, layer_cache, source)?;
     let glyph_dir = ufo_dir.join(layer_name);
     if !glyph_dir.is_dir() {
-        return Err(Error::DirectoryExpected(glyph_dir));
+        return Err(BadSource::new(glyph_dir, BadSourceKind::ExpectedDirectory).into());
     }
 
     let glyph_list_file = glyph_dir.join("contents.plist");
     if !glyph_list_file.is_file() {
-        return Err(Error::FileExpected(glyph_list_file));
+        return Err(BadSource::new(glyph_list_file, BadSourceKind::ExpectedFile).into());
     }
     let result: BTreeMap<String, PathBuf> = plist::from_file(&glyph_list_file)
-        .map_err(|e| Error::ParseError(glyph_list_file.clone(), e.to_string()))?;
+        .map_err(|e| BadSource::new(&glyph_list_file, BadSourceKind::ParseFail(e.to_string())))?;
 
     if result.is_empty() {
         warn!("{:?} is empty", glyph_list_file);
@@ -109,14 +109,14 @@ fn glif_files(
         .collect())
 }
 
-fn layer_contents(ufo_dir: &Path) -> Result<HashMap<GlyphName, PathBuf>, Error> {
+fn layer_contents(ufo_dir: &Path) -> Result<HashMap<GlyphName, PathBuf>, BadSource> {
     let file = ufo_dir.join("layercontents.plist");
     if !file.is_file() {
         return Ok(HashMap::new());
     }
-    let contents: Vec<(String, PathBuf)> =
-        plist::from_file(&file).map_err(|e| Error::ParseError(file, e.to_string()))?;
-    Ok(contents.into_iter().map(|(k, v)| (k.into(), v)).collect())
+    let contents: Vec<(GlyphName, PathBuf)> = plist::from_file(&file)
+        .map_err(|e| BadSource::new(file, BadSourceKind::ParseFail(e.to_string())))?;
+    Ok(contents.into_iter().collect())
 }
 
 pub(crate) fn layer_dir<'a>(
@@ -146,21 +146,30 @@ pub(crate) fn layer_dir<'a>(
 
 impl DesignSpaceIrSource {
     pub fn new(designspace_or_ufo: PathBuf) -> Result<DesignSpaceIrSource, Error> {
+        Self::load(designspace_or_ufo.clone())
+            .map_err(|kind| BadSource::new(designspace_or_ufo, kind).into())
+    }
+
+    fn load(designspace_or_ufo: PathBuf) -> Result<DesignSpaceIrSource, BadSourceKind> {
         let Some(designspace_dir) = designspace_or_ufo.parent().map(|d| d.to_path_buf()) else {
-            return Err(Error::ParentExpected(designspace_or_ufo));
+            return Err(BadSourceKind::ExpectedParent);
         };
         let Some(ext) = designspace_or_ufo
             .extension()
             .map(|s| s.to_ascii_lowercase())
         else {
-            return Err(Error::Unrecognized(designspace_or_ufo));
+            return Err(BadSourceKind::UnrecognizedExtension);
         };
         let mut designspace = match ext.to_str() {
-            Some("designspace") => DesignSpaceDocument::load(&designspace_or_ufo)
-                .map_err(|e| Error::UnableToLoadSource(Box::new(e)))?,
+            Some("designspace") => {
+                DesignSpaceDocument::load(&designspace_or_ufo).map_err(|e| match e {
+                    norad::error::DesignSpaceLoadError::Io(e) => BadSourceKind::Io(e),
+                    other => BadSourceKind::ParseFail(other.to_string()),
+                })?
+            }
             Some("ufo") => {
                 let Some(filename) = designspace_or_ufo.file_name().and_then(|s| s.to_str()) else {
-                    return Err(Error::DirectoryExpected(designspace_or_ufo));
+                    return Err(BadSourceKind::ExpectedDirectory);
                 };
                 DesignSpaceDocument {
                     format: 4.1,
@@ -171,7 +180,7 @@ impl DesignSpaceIrSource {
                     ..Default::default()
                 }
             }
-            _ => return Err(Error::Unrecognized(designspace_or_ufo)),
+            _ => return Err(BadSourceKind::UnrecognizedExtension),
         };
 
         for (i, source) in designspace.sources.iter_mut().enumerate() {
@@ -307,7 +316,7 @@ impl Source for DesignSpaceIrSource {
 
             for (glyph_name, glif_file) in glif_files(&ufo_dir, &mut layer_cache, source)? {
                 if !glif_file.exists() {
-                    return Err(Error::FileExpected(glif_file));
+                    return Err(BadSource::new(glif_file, BadSourceKind::ExpectedFile).into());
                 }
                 if idx > 0 && !glyph_names.contains(&glyph_name) {
                     warn!("The glyph name '{:?}' exists in {} but not in the default master and will be ignored", glyph_name, source.filename);
@@ -339,8 +348,8 @@ impl Source for DesignSpaceIrSource {
         let mut paths = vec![ds_dir.to_path_buf()];
         while let Some(path) = paths.pop() {
             if path.is_dir() {
-                for entry in path.read_dir().map_err(Error::IoError)? {
-                    let entry = entry.map_err(Error::IoError)?;
+                for entry in path.read_dir().map_err(|e| BadSource::new(&path, e))? {
+                    let entry = entry.map_err(|e| BadSource::new(&path, e))?;
                     paths.push(entry.path());
                 }
             }
