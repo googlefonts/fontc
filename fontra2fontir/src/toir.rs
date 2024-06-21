@@ -7,7 +7,7 @@ use fontdrasil::{
     types::{Axis, GlyphName},
 };
 use fontir::{
-    error::WorkError,
+    error::{BadGlyph, BadGlyphKind, Error, PathConversionError},
     ir::{Glyph, GlyphInstance, GlyphPathBuilder, StaticMetadata},
 };
 use kurbo::BezPath;
@@ -16,16 +16,14 @@ use write_fonts::types::Tag;
 
 use crate::fontra::{AxisName, FontraContour, FontraFontData, FontraGlyph, FontraPoint, PointType};
 
-pub(crate) fn to_ir_static_metadata(
-    font_data: &FontraFontData,
-) -> Result<StaticMetadata, WorkError> {
+pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<StaticMetadata, Error> {
     let axes = font_data
         .axes
         .iter()
         .map(|a| match a {
-            crate::fontra::FontraAxis::Discrete(_) => Err(WorkError::UnsupportedConstruct(
-                format!("discrete axis {a:?}"),
-            )),
+            crate::fontra::FontraAxis::Discrete(_) => {
+                Err(Error::UnsupportedConstruct(format!("discrete axis {a:?}")))
+            }
             crate::fontra::FontraAxis::Continuous(a) => Ok(a),
         })
         .map(|a| {
@@ -35,7 +33,7 @@ pub(crate) fn to_ir_static_metadata(
             let max = UserCoord::new(a.max_value as f32);
 
             if min > default || max < default {
-                return Err(WorkError::InconsistentAxisDefinitions(format!("{a:?}")));
+                return Err(Error::InconsistentAxisDefinitions(format!("{a:?}")));
             }
 
             let converter = if !a.mapping.is_empty() {
@@ -49,18 +47,13 @@ pub(crate) fn to_ir_static_metadata(
                         )
                     })
                     .collect();
+                let has_min_max = examples.iter().any(|(u, _)| *u == min)
+                    && examples.iter().any(|(u, _)| *u == max);
                 let default_idx = examples
                     .iter()
                     .position(|(u, _)| *u == default)
-                    .ok_or_else(|| WorkError::AxisMustMapDefault(a.tag))?;
-                examples
-                    .iter()
-                    .position(|(u, _)| *u == min)
-                    .ok_or_else(|| WorkError::AxisMustMapMin(a.tag))?;
-                examples
-                    .iter()
-                    .position(|(u, _)| *u == max)
-                    .ok_or_else(|| WorkError::AxisMustMapMax(a.tag))?;
+                    .filter(|_| has_min_max)
+                    .ok_or_else(|| Error::MissingAxisMapping(a.tag))?;
                 CoordConverter::new(examples, default_idx)
             } else {
                 CoordConverter::unmapped(min, default, max)
@@ -88,7 +81,7 @@ pub(crate) fn to_ir_static_metadata(
         Default::default(),
         Default::default(),
     )
-    .map_err(WorkError::VariationModelError)
+    .map_err(Error::VariationModelError)
 }
 
 #[allow(dead_code)] // TEMPORARY
@@ -96,7 +89,7 @@ fn to_ir_glyph(
     global_axes: HashMap<AxisName, Tag>,
     codepoints: HashSet<u32>,
     fontra_glyph: &FontraGlyph,
-) -> Result<Glyph, WorkError> {
+) -> Result<Glyph, BadGlyph> {
     let _local_axes: HashMap<_, _> = fontra_glyph
         .axes
         .iter()
@@ -117,7 +110,10 @@ fn to_ir_glyph(
         }
 
         let Some(location) = layer_locations.get(layer_name) else {
-            return Err(WorkError::NoSourceForName(layer_name.to_string()));
+            return Err(BadGlyph::new(
+                fontra_glyph.name.clone(),
+                BadGlyphKind::MissingLayer(layer_name.clone()),
+            ));
         };
         let global_location: NormalizedLocation = global_axes
             .iter()
@@ -147,10 +143,10 @@ fn to_ir_glyph(
             )
             .is_some()
         {
-            return Err(WorkError::DuplicateNormalizedLocation {
-                what: "Multiple glyph instances".to_string(),
-                loc: global_location,
-            });
+            return Err(BadGlyph::new(
+                fontra_glyph.name.clone(),
+                BadGlyphKind::DuplicateLocation(global_location),
+            ));
         };
     }
 
@@ -159,66 +155,59 @@ fn to_ir_glyph(
 
 #[allow(dead_code)] // TEMPORARY
 fn add_to_path<'a>(
-    glyph_name: GlyphName,
     path_builder: &'a mut GlyphPathBuilder,
     points: impl Iterator<Item = &'a FontraPoint>,
-) -> Result<(), WorkError> {
+) -> Result<(), PathConversionError> {
     // Walk through the remaining points, accumulating off-curve points until we see an on-curve
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/pens.py#L92
     for point in points {
-        let point_type = point
-            .point_type()
-            .map_err(|e| WorkError::InvalidSourceGlyph {
-                glyph_name: glyph_name.clone(),
-                message: format!("No point type for {point:?}: {e}"),
-            })?;
+        let point_type = point.point_type()?;
         // Smooth is only relevant to editors so ignore here
         match point_type {
-            PointType::OnCurve | PointType::OnCurveSmooth => path_builder
-                .curve_to((point.x, point.y))
-                .map_err(WorkError::PathConversionError)?,
-            PointType::OffCurveQuad | PointType::OffCurveCubic => path_builder
-                .offcurve((point.x, point.y))
-                .map_err(WorkError::PathConversionError)?,
+            PointType::OnCurve | PointType::OnCurveSmooth => {
+                path_builder.curve_to((point.x, point.y))?
+            }
+            PointType::OffCurveQuad | PointType::OffCurveCubic => {
+                path_builder.offcurve((point.x, point.y))?
+            }
         }
     }
     Ok(())
 }
 
-fn to_ir_path(glyph_name: GlyphName, contour: &FontraContour) -> Result<BezPath, WorkError> {
+fn to_ir_path(glyph_name: GlyphName, contour: &FontraContour) -> Result<BezPath, BadGlyph> {
     // Based on glyphs2fontir/src/toir.rs to_ir_path
     // TODO(https://github.com/googlefonts/fontc/issues/700): share code
     if contour.points.is_empty() {
         return Ok(BezPath::new());
     }
 
-    let mut path_builder = GlyphPathBuilder::new(glyph_name.clone(), contour.points.len());
+    let mut path_builder = GlyphPathBuilder::new(contour.points.len());
 
     if !contour.is_closed {
         let first = contour.points.first().unwrap();
         let first_type = first
             .point_type()
-            .map_err(|e| WorkError::InvalidSourceGlyph {
-                glyph_name: glyph_name.clone(),
-                message: format!("No point type for {first:?}: {e}"),
-            })?;
+            .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
         if first_type.is_off_curve() {
-            return Err(WorkError::InvalidSourceGlyph {
-                glyph_name: glyph_name.clone(),
-                message: String::from("Open path starts with off-curve points"),
-            });
+            return Err(BadGlyph::new(
+                glyph_name.clone(),
+                PathConversionError::Parse("Open path starts with off-curve points".into()),
+            ));
         }
-        path_builder.move_to((first.x, first.y))?;
-        add_to_path(
-            glyph_name.clone(),
-            &mut path_builder,
-            contour.points[1..].iter(),
-        )?;
+        path_builder
+            .move_to((first.x, first.y))
+            .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
+        add_to_path(&mut path_builder, contour.points[1..].iter())
+            .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
     } else {
-        add_to_path(glyph_name.clone(), &mut path_builder, contour.points.iter())?;
+        add_to_path(&mut path_builder, contour.points.iter())
+            .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
     }
 
-    let path = path_builder.build()?;
+    let path = path_builder
+        .build()
+        .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
     trace!(
         "Built a {} entry path for {}",
         path.elements().len(),

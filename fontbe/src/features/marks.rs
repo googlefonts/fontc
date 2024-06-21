@@ -776,7 +776,7 @@ mod tests {
             let anchors = self
                 .anchors
                 .iter()
-                .map(|(name, anchors)| GlyphAnchors::new(name.clone(), anchors.clone()).unwrap())
+                .map(|(name, anchors)| GlyphAnchors::new(name.clone(), anchors.clone()))
                 .collect::<Vec<_>>();
             let anchorsref = anchors.iter().collect();
             let glyph_order = self.anchors.keys().cloned().collect();

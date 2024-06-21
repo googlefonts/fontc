@@ -16,7 +16,7 @@ use ordered_float::OrderedFloat;
 use write_fonts::types::GlyphId;
 
 use crate::{
-    error::WorkError,
+    error::{BadGlyph, BadGlyphKind, Error},
     ir::{Component, Glyph, GlyphBuilder, GlyphOrder},
     orchestration::{Context, Flags, IrWork, WorkId},
 };
@@ -56,7 +56,7 @@ fn name_for_derivative(base_name: &GlyphName, names_in_use: &GlyphOrder) -> Glyp
 /// Returns a tuple of (simple glyph, composite glyph).
 ///
 /// The former contains all the contours, the latter contains all the components.
-fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Glyph), WorkError> {
+fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Glyph), BadGlyph> {
     // Make a simple glyph by erasing the components from it
     let mut simple_glyph = GlyphBuilder::from(original.clone());
     simple_glyph.sources.iter_mut().for_each(|(_, inst)| {
@@ -162,7 +162,7 @@ fn components(glyph: &Glyph, transform: Affine) -> VecDeque<(NormalizedLocation,
 /// At time of writing we only support this if every instance uses the same set of components.
 ///
 /// <https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L165>
-fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), WorkError> {
+fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result<(), BadGlyph> {
     let mut simple = GlyphBuilder::from(original.clone());
     simple
         .sources
@@ -190,16 +190,16 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
         // For now just fail if the component source locations don't match ours, don't try to interpolate
         trace!("'{0}' retains {component:?} at {loc:?}", original.name);
         let Some(inst) = simple.sources.get_mut(&loc) else {
-            return Err(WorkError::GlyphUndefAtNormalizedLocation {
-                glyph_name: simple.name.clone(),
-                pos: loc.clone(),
-            });
+            return Err(BadGlyph::new(
+                simple.name.clone(),
+                BadGlyphKind::UndefinedAtNormalizedLocation(loc.clone()),
+            ));
         };
         let Some(ref_inst) = referenced_glyph.sources().get(&loc) else {
-            return Err(WorkError::GlyphUndefAtNormalizedLocation {
-                glyph_name: referenced_glyph.name.clone(),
-                pos: loc.clone(),
-            });
+            return Err(BadGlyph::new(
+                referenced_glyph.name.clone(),
+                BadGlyphKind::UndefinedAtNormalizedLocation(loc.clone()),
+            ));
         };
 
         for contour in ref_inst.contours.iter() {
@@ -230,7 +230,7 @@ fn move_contours_to_new_component(
     context: &Context,
     new_glyph_order: &mut GlyphOrder,
     glyph: &Glyph,
-) -> Result<(), WorkError> {
+) -> Result<(), BadGlyph> {
     debug!(
         "Hoisting the contours from '{0}' into a new component",
         glyph.name
@@ -253,7 +253,7 @@ fn move_contours_to_new_component(
 /// that no mixed contour+component glyphs exist.
 ///
 /// See <https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/filters/flattenComponents.py>
-fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), WorkError> {
+fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
     // Guard: nothing to see here folks
     if glyph.default_instance().components.is_empty() {
         return Ok(());
@@ -271,10 +271,10 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), WorkError> {
         while let Some(component) = frontier.pop_front() {
             let ref_glyph = context.glyphs.get(&WorkId::Glyph(component.base.clone()));
             let ref_inst = ref_glyph.sources().get(loc).ok_or_else(|| {
-                WorkError::GlyphUndefAtNormalizedLocation {
-                    glyph_name: ref_glyph.name.clone(),
-                    pos: loc.clone(),
-                }
+                BadGlyph::new(
+                    ref_glyph.name.clone(),
+                    BadGlyphKind::UndefinedAtNormalizedLocation(loc.clone()),
+                )
             })?;
             if ref_inst.components.is_empty() {
                 simple.push(component.clone());
@@ -301,7 +301,7 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), WorkError> {
 fn ensure_notdef_exists_and_is_gid_0(
     context: &Context,
     glyph_order: &mut GlyphOrder,
-) -> Result<(), WorkError> {
+) -> Result<(), BadGlyph> {
     // Make sure we have a .notdef and that it's gid 0
     match glyph_order.glyph_id(&GlyphName::NOTDEF) {
         Some(GlyphId::NOTDEF) => (), // .notdef is gid 0; life is good
@@ -329,7 +329,7 @@ fn ensure_notdef_exists_and_is_gid_0(
     Ok(())
 }
 
-impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
+impl Work<Context, WorkId, Error> for GlyphOrderWork {
     fn id(&self) -> WorkId {
         WorkId::GlyphOrder
     }
@@ -350,7 +350,7 @@ impl Work<Context, WorkId, WorkError> for GlyphOrderWork {
             .build()
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         // We should now have access to *all* the glyph IR
         // Some of it may need to be massaged to produce BE glyphs
         // In particular, glyphs with both paths and components need to push the path into a component

@@ -14,7 +14,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{Error, WorkError},
+    error::{BadGlyph, Error, PathConversionError},
     ir::{self, GlyphPathBuilder},
 };
 use glyphs_reader::{Component, FeatureSnippet, Font, NodeType, Path, Shape};
@@ -22,7 +22,7 @@ use glyphs_reader::{Component, FeatureSnippet, Font, NodeType, Path, Shape};
 pub(crate) fn to_ir_contours_and_components(
     glyph_name: GlyphName,
     shapes: &[Shape],
-) -> Result<(Vec<BezPath>, Vec<ir::Component>), WorkError> {
+) -> Result<(Vec<BezPath>, Vec<ir::Component>), BadGlyph> {
     // For most glyphs in most fonts all the shapes are contours so it's a good guess
     let mut contours = Vec::with_capacity(shapes.len());
     let mut components = Vec::new();
@@ -32,7 +32,10 @@ pub(crate) fn to_ir_contours_and_components(
             Shape::Component(component) => {
                 components.push(to_ir_component(glyph_name.clone(), component))
             }
-            Shape::Path(path) => contours.push(to_ir_path(glyph_name.clone(), path)?),
+            Shape::Path(path) => contours.push(
+                to_ir_path(glyph_name.clone(), path)
+                    .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?,
+            ),
         }
     }
 
@@ -55,46 +58,41 @@ fn to_ir_component(glyph_name: GlyphName, component: &Component) -> ir::Componen
 fn add_to_path<'a>(
     path_builder: &'a mut GlyphPathBuilder,
     nodes: impl Iterator<Item = &'a glyphs_reader::Node>,
-) -> Result<(), WorkError> {
+) -> Result<(), PathConversionError> {
     // Walk through the remaining points, accumulating off-curve points until we see an on-curve
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/pens.py#L92
     for node in nodes {
         // Smooth is only relevant to editors so ignore here
         match node.node_type {
-            NodeType::Line | NodeType::LineSmooth => path_builder
-                .line_to((node.pt.x, node.pt.y))
-                .map_err(WorkError::PathConversionError)?,
-            NodeType::Curve | NodeType::CurveSmooth => path_builder
-                .curve_to((node.pt.x, node.pt.y))
-                .map_err(WorkError::PathConversionError)?,
-            NodeType::OffCurve => path_builder
-                .offcurve((node.pt.x, node.pt.y))
-                .map_err(WorkError::PathConversionError)?,
-            NodeType::QCurve | NodeType::QCurveSmooth => path_builder
-                .qcurve_to((node.pt.x, node.pt.y))
-                .map_err(WorkError::PathConversionError)?,
-        }
+            NodeType::Line | NodeType::LineSmooth => path_builder.line_to((node.pt.x, node.pt.y)),
+            NodeType::Curve | NodeType::CurveSmooth => {
+                path_builder.curve_to((node.pt.x, node.pt.y))
+            }
+            NodeType::OffCurve => path_builder.offcurve((node.pt.x, node.pt.y)),
+            NodeType::QCurve | NodeType::QCurveSmooth => {
+                path_builder.qcurve_to((node.pt.x, node.pt.y))
+            }
+        }?
     }
     Ok(())
 }
 
-fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkError> {
+fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, PathConversionError> {
     // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/paths.py#L20
     // See also https://github.com/fonttools/ufoLib2/blob/4d8a9600148b670b0840120658d9aab0b38a9465/src/ufoLib2/pointPens/glyphPointPen.py#L16
     if src_path.nodes.is_empty() {
         return Ok(BezPath::new());
     }
 
-    let mut path_builder = GlyphPathBuilder::new(glyph_name.clone(), src_path.nodes.len());
+    let mut path_builder = GlyphPathBuilder::new(src_path.nodes.len());
 
     // First is a delicate butterfly
     if !src_path.closed {
         let first = src_path.nodes.first().unwrap();
         if first.node_type == NodeType::OffCurve {
-            return Err(WorkError::InvalidSourceGlyph {
-                glyph_name,
-                message: String::from("Open path starts with off-curve points"),
-            });
+            return Err(PathConversionError::Parse(
+                "Open path starts with off-curve points".into(),
+            ));
         }
         path_builder.move_to((first.pt.x, first.pt.y))?;
         add_to_path(&mut path_builder, src_path.nodes[1..].iter())?;
@@ -120,7 +118,7 @@ fn to_ir_path(glyph_name: GlyphName, src_path: &Path) -> Result<BezPath, WorkErr
     Ok(path)
 }
 
-pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::FeaturesSource, WorkError> {
+pub(crate) fn to_ir_features(features: &[FeatureSnippet]) -> Result<ir::FeaturesSource, Error> {
     // Based on https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L74
     // TODO: token expansion
     // TODO: implement notes and labels

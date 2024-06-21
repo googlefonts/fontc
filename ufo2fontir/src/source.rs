@@ -12,7 +12,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{BadSource, BadSourceKind, Error, WorkError},
+    error::{BadSource, BadSourceKind, Error},
     ir::{
         AnchorBuilder, FeaturesSource, GdefCategories, GlobalMetric, GlobalMetrics, GlyphOrder,
         KernGroup, KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
@@ -541,22 +541,22 @@ fn default_master(designspace: &DesignSpaceDocument) -> Option<(usize, &designsp
         .find(|(_, source)| to_design_location(&tags_by_name, &source.location) == default_location)
 }
 
-fn load_plist(ufo_dir: &Path, name: &str) -> Result<plist::Dictionary, WorkError> {
+fn load_plist(ufo_dir: &Path, name: &str) -> Result<plist::Dictionary, BadSource> {
     let lib_plist_file = ufo_dir.join(name);
     if !lib_plist_file.is_file() {
-        return Err(WorkError::FileExpected(lib_plist_file));
+        return Err(BadSource::new(lib_plist_file, BadSourceKind::ExpectedFile));
     }
     plist::Value::from_file(&lib_plist_file)
-        .map_err(|e| WorkError::ParseError(lib_plist_file.clone(), format!("{e}")))?
+        .map_err(|e| BadSource::custom(&lib_plist_file, e))?
         .into_dictionary()
-        .ok_or_else(|| WorkError::ParseError(lib_plist_file, "Not a dictionary".to_string()))
+        .ok_or_else(|| BadSource::custom(lib_plist_file, "not a dictionary"))
 }
 
 // Per https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044596662
 fn glyph_order(
     lib_plist: &plist::Dictionary,
     glyph_names: &HashSet<GlyphName>,
-) -> Result<GlyphOrder, WorkError> {
+) -> Result<GlyphOrder, Error> {
     // The UFO at the default master *may* elect to specify a glyph order
     // That glyph order *may* deign to overlap with the actual glyph set
     let mut glyph_order = GlyphOrder::new();
@@ -593,16 +593,16 @@ fn glyph_order(
 
 fn glyph_categories(
     lib_plist: &plist::Dictionary,
-) -> Result<BTreeMap<GlyphName, GlyphClassDef>, WorkError> {
+) -> Result<BTreeMap<GlyphName, GlyphClassDef>, BadSource> {
     const OPENTYPE_CATEGORIES: &str = "public.openTypeCategories";
 
     let categories = match lib_plist.get(OPENTYPE_CATEGORIES) {
         Some(plist::Value::Dictionary(categories)) => categories,
         Some(_other) => {
-            return Err(WorkError::ParseError(
-                PathBuf::from("lib.plist"),
+            return Err(BadSource::custom(
+                "lib.plist",
                 format!("value for '{OPENTYPE_CATEGORIES}' is not a dictionary"),
-            ))
+            ));
         }
         None => return Ok(Default::default()),
     };
@@ -626,14 +626,11 @@ fn glyph_categories(
     Ok(categories)
 }
 
-fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, WorkError> {
+fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, BadSource> {
     let postscript_names = match lib_plist.get("public.postscriptNames") {
         Some(value) => {
             let postscript_names_lib = value.as_dictionary().ok_or_else(|| {
-                WorkError::ParseError(
-                    PathBuf::from("lib.plist"),
-                    String::from("public.postscriptNames isn't a dictionary"),
-                )
+                BadSource::custom("lib.plist", "public.postscriptNames isn't a dictionary")
             })?;
             postscript_names_lib
                 .iter()
@@ -667,9 +664,7 @@ fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, Wo
     Ok(postscript_names)
 }
 
-fn units_per_em<'a>(
-    font_infos: impl Iterator<Item = &'a norad::FontInfo>,
-) -> Result<u16, WorkError> {
+fn units_per_em<'a>(font_infos: impl Iterator<Item = &'a norad::FontInfo>) -> Result<u16, Error> {
     const MIN_UPEM: f64 = 16.0;
     const MAX_UPEM: f64 = 16384.0;
 
@@ -678,7 +673,7 @@ fn units_per_em<'a>(
             None => None,
             // Per <https://learn.microsoft.com/en-us/typography/opentype/spec/head>, 16..16384
             Some(val) if (MIN_UPEM..=MAX_UPEM).contains(&val) => Some(Ok(val.ot_round())),
-            Some(bad_val) => Some(Err(WorkError::InvalidUpem(format!("{bad_val}")))),
+            Some(bad_val) => Some(Err(Error::InvalidUpem(bad_val))),
         })
         .collect::<Result<_, _>>()?;
 
@@ -688,19 +683,23 @@ fn units_per_em<'a>(
     match upems.as_slice() {
         [] => Ok(1000),
         [one] => Ok(*one),
-        _multiple => Err(WorkError::InconsistentUpem(upems)),
+        _multiple => Err(Error::InconsistentUpem(upems)),
     }
 }
 
-fn files_identical(f1: &Path, f2: &Path) -> Result<bool, WorkError> {
+fn files_identical(f1: &Path, f2: &Path) -> Result<bool, BadSource> {
     if !f1.is_file() {
-        return Err(WorkError::FileExpected(f1.to_path_buf()));
+        return Err(BadSource::new(f1, BadSourceKind::ExpectedFile));
     }
     if !f2.is_file() {
-        return Err(WorkError::FileExpected(f2.to_path_buf()));
+        return Err(BadSource::new(f2, BadSourceKind::ExpectedFile));
     }
-    let m1 = f1.metadata().map_err(WorkError::IoError)?;
-    let m2 = f2.metadata().map_err(WorkError::IoError)?;
+    let m1 = f1
+        .metadata()
+        .map_err(|e| BadSource::new(f1, BadSourceKind::Io(e)))?;
+    let m2 = f2
+        .metadata()
+        .map_err(|e| BadSource::new(f2, BadSourceKind::Io(e)))?;
     if m1.len() != m2.len() {
         return Ok(false);
     }
@@ -713,13 +712,13 @@ fn files_identical(f1: &Path, f2: &Path) -> Result<bool, WorkError> {
 fn font_infos<'a>(
     designspace_dir: &Path,
     designspace: &'a DesignSpaceDocument,
-) -> Result<HashMap<&'a String, norad::FontInfo>, WorkError> {
+) -> Result<HashMap<&'a String, norad::FontInfo>, BadSource> {
     let mut results = HashMap::new();
     for source in designspace.sources.iter() {
         let ufo_dir = designspace_dir.join(&source.filename);
         let data_request = norad::DataRequest::none();
         let font = norad::Font::load_requested_data(&ufo_dir, data_request)
-            .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?;
+            .map_err(|e| BadSource::custom(ufo_dir, e))?;
         results.insert(&source.filename, font.font_info);
     }
     Ok(results)
@@ -819,7 +818,7 @@ fn try_parse_date(raw_date: Option<&String>) -> Option<DateTime<Utc>> {
     parse_result.ok()
 }
 
-impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
+impl Work<Context, WorkId, Error> for StaticMetadataWork {
     fn id(&self) -> WorkId {
         WorkId::StaticMetadata
     }
@@ -828,15 +827,18 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
         vec![WorkId::PreliminaryGlyphOrder]
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Static metadata for {:#?}", self.designspace_file);
         let designspace_dir = self.designspace_file.parent().unwrap();
         let Some((_, default_master)) = default_master(&self.designspace) else {
-            return Err(WorkError::NoDefaultMaster(self.designspace_file.clone()));
+            return Err(Error::NoDefaultMaster(self.designspace_file.clone()));
         };
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
         let font_info_at_default = font_infos.get(&default_master.filename).ok_or_else(|| {
-            WorkError::FileExpected(designspace_dir.join(&default_master.filename))
+            BadSource::new(
+                designspace_dir.join(&default_master.filename),
+                BadSourceKind::ExpectedFile,
+            )
         })?;
 
         let units_per_em = units_per_em(font_infos.values())?;
@@ -887,8 +889,11 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
         let lib_plist =
             match load_plist(&designspace_dir.join(&default_master.filename), "lib.plist") {
                 Ok(lib_plist) => lib_plist,
-                Err(WorkError::FileExpected(_)) => Default::default(),
-                Err(e) => return Err(e),
+                Err(BadSource {
+                    kind: BadSourceKind::ExpectedFile,
+                    ..
+                }) => Default::default(),
+                Err(e) => return Err(e)?,
             };
         let glyph_order = glyph_order(&lib_plist, &self.glyph_names)?;
         let glyph_categories = glyph_categories(&lib_plist).map(|categories| GdefCategories {
@@ -938,11 +943,10 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             italic_angle,
             glyph_categories,
         )
-        .map_err(WorkError::VariationModelError)?;
+        .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
         if let Some(vendor_id) = &font_info_at_default.open_type_os2_vendor_id {
-            static_metadata.misc.vendor_id =
-                Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
+            static_metadata.misc.vendor_id = Tag::from_str(vendor_id).map_err(Error::InvalidTag)?;
         }
 
         // <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
@@ -1014,7 +1018,7 @@ fn populate_default_metrics(
     set_default_underline_pos(metrics, location, units_per_em);
 }
 
-impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
+impl Work<Context, WorkId, Error> for GlobalMetricsWork {
     fn id(&self) -> WorkId {
         WorkId::GlobalMetrics
     }
@@ -1023,7 +1027,7 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
         Access::Variant(WorkId::StaticMetadata)
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Global metrics for {:#?}", self.designspace_file);
         let static_metadata = context.static_metadata.get();
 
@@ -1032,11 +1036,14 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
         let Some((_, default_master)) = default_master(&self.designspace) else {
-            return Err(WorkError::NoDefaultMaster(self.designspace_file.clone()));
+            return Err(Error::NoDefaultMaster(self.designspace_file.clone()));
         };
 
         let default_fontinfo = font_infos.get(&default_master.filename).ok_or_else(|| {
-            WorkError::FileExpected(designspace_dir.join(&default_master.filename))
+            BadSource::new(
+                designspace_dir.join(&default_master.filename),
+                BadSourceKind::ExpectedFile,
+            )
         })?;
 
         let mut metrics = GlobalMetrics::new(
@@ -1060,9 +1067,12 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
             .filter(|s| !is_glyph_only(s))
         {
             let pos = master_locations.get(source.name.as_ref().unwrap()).unwrap();
-            let font_info = font_infos
-                .get(&source.filename)
-                .ok_or_else(|| WorkError::FileExpected(designspace_dir.join(&source.filename)))?;
+            let font_info = font_infos.get(&source.filename).ok_or_else(|| {
+                BadSource::new(
+                    designspace_dir.join(&source.filename),
+                    BadSourceKind::ExpectedFile,
+                )
+            })?;
 
             if !pos.is_default() {
                 populate_default_metrics(
@@ -1205,19 +1215,19 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricsWork {
     }
 }
 
-impl Work<Context, WorkId, WorkError> for FeatureWork {
+impl Work<Context, WorkId, Error> for FeatureWork {
     fn id(&self) -> WorkId {
         WorkId::Features
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Features for {:#?}", self.designspace_file);
 
         let fea_files = self.fea_files.as_ref();
         for fea_file in fea_files.iter().skip(1) {
             if !files_identical(&fea_files[0], fea_file)? {
                 warn!("Bailing out due to non-identical feature files. This is an unnecessary limitation.");
-                return Err(WorkError::FileMismatch(
+                return Err(Error::NonIdenticalFea(
                     fea_files[0].to_path_buf(),
                     fea_file.to_path_buf(),
                 ));
@@ -1232,12 +1242,7 @@ impl Work<Context, WorkId, WorkError> for FeatureWork {
                 .parent()
                 .and_then(|f| f.parent())
                 .map(|v| v.to_path_buf())
-                .ok_or_else(|| {
-                    WorkError::DirectoryExpected(
-                        "Unable to resolve directory of .ufo".to_string(),
-                        fea_file.clone(),
-                    )
-                })?;
+                .ok_or_else(|| BadSource::new(&fea_file, BadSourceKind::ExpectedParent))?;
             context
                 .features
                 .set(FeaturesSource::from_file(fea_file, Some(include_dir)));
@@ -1253,11 +1258,11 @@ fn kerning_groups_for(
     designspace_dir: &Path,
     glyph_order: &GlyphOrder,
     source: &norad::designspace::Source,
-) -> Result<BTreeMap<KernGroup, BTreeSet<GlyphName>>, WorkError> {
+) -> Result<BTreeMap<KernGroup, BTreeSet<GlyphName>>, Error> {
     let ufo_dir = designspace_dir.join(&source.filename);
     let data_request = norad::DataRequest::none().groups(true);
     Ok(norad::Font::load_requested_data(&ufo_dir, data_request)
-        .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?
+        .map_err(|e| BadSource::custom(ufo_dir, e))?
         .groups
         .into_iter()
         .filter_map(|(group_name, entries)| {
@@ -1317,7 +1322,7 @@ impl KernGroupExt for KernGroup {
 }
 
 /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
-impl Work<Context, WorkId, WorkError> for KerningGroupWork {
+impl Work<Context, WorkId, Error> for KerningGroupWork {
     fn id(&self) -> WorkId {
         WorkId::KerningGroups
     }
@@ -1329,7 +1334,7 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
             .build()
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Kerning groups for {:#?}", self.designspace_file);
 
         let designspace_dir = self.designspace_file.parent().unwrap();
@@ -1338,7 +1343,7 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
         let Some((default_master_idx, default_master)) = default_master(&self.designspace) else {
-            return Err(WorkError::NoDefaultMaster(self.designspace_file.clone()));
+            return Err(Error::NoDefaultMaster(self.designspace_file.clone()));
         };
 
         // Step 1: find the groups
@@ -1412,7 +1417,7 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
 }
 
 /// See <https://github.com/googlefonts/ufo2ft/blob/3e0563814cf541f7d8ca2bb7f6e446328e0e5e76/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L302-L357>
-impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
+impl Work<Context, WorkId, Error> for KerningInstanceWork {
     fn id(&self) -> WorkId {
         WorkId::KernInstance(self.location.clone())
     }
@@ -1425,7 +1430,7 @@ impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
             .build()
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!(
             "Kerning for {:#?} at {:?}",
             self.designspace_file, self.location
@@ -1452,7 +1457,7 @@ impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
         let ufo_dir = designspace_dir.join(&source.filename);
         let data_request = norad::DataRequest::none().kerning(true);
         let font = norad::Font::load_requested_data(&ufo_dir, data_request)
-            .map_err(|e| WorkError::ParseError(ufo_dir, format!("{e}")))?;
+            .map_err(|e| BadSource::custom(ufo_dir, e))?;
 
         let resolve = |name: &norad::Name, group_prefix: &str| {
             if let Some(group_name) = KernGroup::from_group_name(name.as_str()) {
@@ -1513,7 +1518,7 @@ struct GlyphIrWork {
     glif_files: HashMap<PathBuf, Vec<DesignLocation>>,
 }
 
-impl Work<Context, WorkId, WorkError> for GlyphIrWork {
+impl Work<Context, WorkId, Error> for GlyphIrWork {
     fn id(&self) -> WorkId {
         WorkId::Glyph(self.glyph_name.clone())
     }
@@ -1533,7 +1538,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         vec![WorkId::Anchor(self.glyph_name.clone())]
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!(
             "Generate glyph IR for {:?} from {:#?}",
             self.glyph_name,
@@ -1590,7 +1595,6 @@ mod tests {
     };
     use norad::designspace;
 
-    use fontir::error::WorkError;
     use pretty_assertions::assert_eq;
     use write_fonts::types::NameId;
 
@@ -2174,7 +2178,7 @@ mod tests {
 
         // Then
         assert!(
-            matches!(err, WorkError::ParseError(_, _)),
+            matches!(err.kind, BadSourceKind::Custom(_)),
             "incorrect error variant"
         );
     }

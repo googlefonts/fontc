@@ -5,7 +5,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::WorkError,
+    error::{BadGlyph, BadSource, Error},
     ir::{self, AnchorBuilder, GlyphPathBuilder},
 };
 use kurbo::{Affine, BezPath};
@@ -28,25 +28,28 @@ pub(crate) fn to_design_location(
         .collect()
 }
 
-fn to_ir_contour(glyph_name: GlyphName, contour: &norad::Contour) -> Result<BezPath, WorkError> {
+fn to_ir_contour(glyph_name: GlyphName, contour: &norad::Contour) -> Result<BezPath, BadGlyph> {
     if contour.points.is_empty() {
         return Ok(BezPath::new());
     }
 
-    let mut path_builder = GlyphPathBuilder::new(glyph_name.clone(), contour.points.len());
+    let mut path_builder = GlyphPathBuilder::new(contour.points.len());
 
     // Walk through the remaining points, accumulating off-curve points until we see an on-curve
     for node in contour.points.iter() {
         match node.typ {
-            norad::PointType::Move => path_builder.move_to((node.x, node.y))?,
-            norad::PointType::Line => path_builder.line_to((node.x, node.y))?,
-            norad::PointType::QCurve => path_builder.qcurve_to((node.x, node.y))?,
-            norad::PointType::Curve => path_builder.curve_to((node.x, node.y))?,
-            norad::PointType::OffCurve => path_builder.offcurve((node.x, node.y))?,
+            norad::PointType::Move => path_builder.move_to((node.x, node.y)),
+            norad::PointType::Line => path_builder.line_to((node.x, node.y)),
+            norad::PointType::QCurve => path_builder.qcurve_to((node.x, node.y)),
+            norad::PointType::Curve => path_builder.curve_to((node.x, node.y)),
+            norad::PointType::OffCurve => path_builder.offcurve((node.x, node.y)),
         }
+        .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
     }
 
-    let path = path_builder.build()?;
+    let path = path_builder
+        .build()
+        .map_err(|e| BadGlyph::new(glyph_name.clone(), e))?;
     trace!(
         "Built a {} entry path for {}",
         path.elements().len(),
@@ -75,7 +78,7 @@ fn to_ir_component(component: &norad::Component) -> ir::Component {
     }
 }
 
-fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, WorkError> {
+fn to_ir_glyph_instance(glyph: &norad::Glyph) -> Result<ir::GlyphInstance, Error> {
     let mut contours = Vec::new();
     for contour in glyph.contours.iter() {
         contours.push(to_ir_contour(glyph.name().as_str().into(), contour)?);
@@ -106,12 +109,12 @@ pub fn master_locations<'a>(
         .collect()
 }
 
-pub fn to_ir_axes(axes: &[designspace::Axis]) -> Result<Vec<fontdrasil::types::Axis>, WorkError> {
+pub fn to_ir_axes(axes: &[designspace::Axis]) -> Result<Vec<fontdrasil::types::Axis>, Error> {
     axes.iter().map(to_ir_axis).collect()
 }
 
-pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, WorkError> {
-    let tag = Tag::from_str(&axis.tag).map_err(WorkError::InvalidTag)?;
+pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, Error> {
+    let tag = Tag::from_str(&axis.tag).map_err(Error::InvalidTag)?;
 
     // <https://fonttools.readthedocs.io/en/latest/designspaceLib/xml.html#axis-element>
     let min = UserCoord::new(axis.minimum.unwrap());
@@ -124,19 +127,18 @@ pub fn to_ir_axis(axis: &designspace::Axis) -> Result<fontdrasil::types::Axis, W
             .iter()
             .map(|map| (UserCoord::new(map.input), DesignCoord::new(map.output)))
             .collect();
+
+        // make sure we have min/max/default mappings:
+        let has_min_max =
+            examples.iter().any(|(u, _)| *u == min) && examples.iter().any(|(u, _)| *u == max);
+
         // # mappings is generally small, repeated linear probing is fine
         let default_idx = examples
             .iter()
             .position(|(u, _)| *u == default)
-            .ok_or_else(|| WorkError::AxisMustMapDefault(tag))?;
-        examples
-            .iter()
-            .position(|(u, _)| *u == min)
-            .ok_or_else(|| WorkError::AxisMustMapMin(tag))?;
-        examples
-            .iter()
-            .position(|(u, _)| *u == max)
-            .ok_or_else(|| WorkError::AxisMustMapMax(tag))?;
+            // error if we don't have all of min/max/default
+            .filter(|_| has_min_max)
+            .ok_or(Error::MissingAxisMapping(tag))?;
         CoordConverter::new(examples, default_idx)
     } else {
         CoordConverter::unmapped(min, default, max)
@@ -157,15 +159,13 @@ pub fn to_ir_glyph(
     emit_to_binary: bool,
     glif_files: &HashMap<&PathBuf, Vec<NormalizedLocation>>,
     anchors: &mut AnchorBuilder,
-) -> Result<ir::Glyph, WorkError> {
+) -> Result<ir::Glyph, Error> {
     let mut glyph = ir::GlyphBuilder::new(glyph_name.clone());
     glyph.emit_to_binary = emit_to_binary;
     for (glif_file, locations) in glif_files {
         let norad_glyph =
-            norad::Glyph::load(glif_file).map_err(|e| WorkError::InvalidSourceGlyph {
-                glyph_name: glyph.name.clone(),
-                message: format!("glif load failed due to {e}"),
-            })?;
+            norad::Glyph::load(glif_file).map_err(|e| BadSource::custom(glif_file, e))?;
+
         norad_glyph.codepoints.iter().for_each(|cp| {
             glyph.codepoints.insert(cp as u32);
         });
@@ -181,7 +181,7 @@ pub fn to_ir_glyph(
             }
         }
     }
-    glyph.build()
+    glyph.build().map_err(Into::into)
 }
 
 #[cfg(test)]

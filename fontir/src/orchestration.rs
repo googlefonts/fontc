@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{error::WorkError, ir, paths::Paths, source::Input};
+use crate::{error::Error, ir, paths::Paths, source::Input};
 use bitflags::bitflags;
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -355,7 +355,7 @@ impl Identifier for WorkId {
     }
 }
 
-pub type IrWork = dyn Work<Context, WorkId, WorkError> + Send;
+pub type IrWork = dyn Work<Context, WorkId, Error> + Send;
 
 pub struct IrPersistentStorage {
     active: bool,

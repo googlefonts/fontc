@@ -11,7 +11,7 @@ use indexmap::IndexSet;
 use kurbo::{Affine, BezPath, PathEl, Point};
 use log::{log_enabled, trace, warn};
 use ordered_float::OrderedFloat;
-use serde::{de::Error, Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Serialize};
 use smol_str::SmolStr;
 use write_fonts::{
     tables::{gdef::GlyphClassDef, os2::SelectionFlags},
@@ -25,7 +25,10 @@ use fontdrasil::{
 };
 
 use crate::{
-    error::{BadAnchorReason, PathConversionError, VariationModelError, WorkError},
+    error::{
+        BadAnchor, BadAnchorReason, BadGlyph, BadGlyphKind, PathConversionError,
+        VariationModelError,
+    },
     orchestration::{IdAware, Persistable, WorkId},
     variations::VariationModel,
 };
@@ -1002,11 +1005,11 @@ pub struct GlyphAnchors {
 }
 
 impl GlyphAnchors {
-    pub fn new(glyph_name: GlyphName, anchors: Vec<Anchor>) -> Result<Self, WorkError> {
-        Ok(GlyphAnchors {
+    pub fn new(glyph_name: GlyphName, anchors: Vec<Anchor>) -> Self {
+        GlyphAnchors {
             glyph_name,
             anchors,
-        })
+        }
     }
 
     /// `true` if any of our anchors are mark anchors
@@ -1166,7 +1169,7 @@ impl AnchorBuilder {
         anchor_name: SmolStr,
         loc: NormalizedLocation,
         pos: Point,
-    ) -> Result<(), WorkError> {
+    ) -> Result<(), BadGlyph> {
         if self
             .anchors
             .entry(anchor_name.clone())
@@ -1174,24 +1177,22 @@ impl AnchorBuilder {
             .insert(loc.clone(), pos)
             .is_some()
         {
-            return Err(WorkError::BadAnchor {
-                glyph: self.glyph_name.clone(),
-                anchor: anchor_name,
-                reason: BadAnchorReason::Ambiguous(loc),
-            });
+            return Err(BadGlyph::new(
+                self.glyph_name.clone(),
+                BadAnchor::new(anchor_name, BadAnchorReason::Ambiguous(loc)),
+            ));
         }
         Ok(())
     }
 
-    pub fn build(self) -> Result<GlyphAnchors, WorkError> {
+    pub fn build(self) -> Result<GlyphAnchors, BadGlyph> {
         // It would be nice if everyone was defined at default
         for (anchor, positions) in &self.anchors {
             if !positions.keys().any(|loc| !loc.has_any_non_zero()) {
-                return Err(WorkError::BadAnchor {
-                    glyph: self.glyph_name.clone(),
-                    anchor: anchor.clone(),
-                    reason: BadAnchorReason::NoDefault,
-                });
+                return Err(BadGlyph::new(
+                    self.glyph_name.clone(),
+                    BadAnchor::new(anchor.clone(), BadAnchorReason::NoDefault),
+                ));
             }
         }
 
@@ -1204,14 +1205,11 @@ impl AnchorBuilder {
                         kind: type_,
                         positions,
                     })
-                    .map_err(|reason| WorkError::BadAnchor {
-                        glyph: self.glyph_name.clone(),
-                        anchor: name,
-                        reason,
-                    })
+                    .map_err(|reason| BadAnchor::new(name, reason))
             })
-            .collect::<Result<_, _>>()?;
-        GlyphAnchors::new(self.glyph_name, anchors)
+            .collect::<Result<_, _>>()
+            .map_err(|e| BadGlyph::new(self.glyph_name.clone(), e))?;
+        Ok(GlyphAnchors::new(self.glyph_name, anchors))
     }
 }
 
@@ -1270,26 +1268,21 @@ impl Glyph {
         emit_to_binary: bool,
         codepoints: HashSet<u32>,
         instances: HashMap<NormalizedLocation, GlyphInstance>,
-    ) -> Result<Self, WorkError> {
+    ) -> Result<Self, BadGlyph> {
         if instances.is_empty() {
-            return Err(WorkError::InvalidSourceGlyph {
-                glyph_name: name,
-                message: "No instances".into(),
-            });
+            return Err(BadGlyph::new(name, BadGlyphKind::NoInstances));
         }
-        let defaults: Vec<_> = instances
+        let mut defaults = instances
             .keys()
-            .filter(|loc| !loc.iter().any(|(_, c)| c.into_inner() != 0.0))
-            .collect();
-        if defaults.len() != 1 {
-            return Err(WorkError::InvalidSourceGlyph {
-                glyph_name: name,
-                message: format!(
-                    "Must have exactly 1 default, got {defaults:?} from {instances:?}"
-                ),
-            });
-        }
-        let default_location = defaults[0].clone();
+            .filter(|loc| !loc.iter().any(|(_, c)| c.into_inner() != 0.0));
+        let default_location = match (defaults.next(), defaults.next()) {
+            (None, _) => return Err(BadGlyph::new(name, BadGlyphKind::NoDefaultLocation)),
+            (Some(_), Some(_)) => {
+                return Err(BadGlyph::new(name, BadGlyphKind::MultipleDefaultLocations))
+            }
+            (Some(pos), None) => pos.to_owned(),
+        };
+
         let has_consistent_2x2_transforms = has_consistent_2x2_transforms(&name, &instances);
         Ok(Glyph {
             name,
@@ -1464,12 +1457,12 @@ impl GlyphBuilder {
         &mut self,
         unique_location: &NormalizedLocation,
         source: GlyphInstance,
-    ) -> Result<(), WorkError> {
+    ) -> Result<(), BadGlyph> {
         if self.sources.contains_key(unique_location) {
-            return Err(WorkError::DuplicateNormalizedLocation {
-                what: format!("glyph '{}' source", self.name.as_str()),
-                loc: unique_location.clone(),
-            });
+            return Err(BadGlyph::new(
+                self.name.clone(),
+                BadGlyphKind::DuplicateLocation(unique_location.clone()),
+            ));
         }
         self.sources.insert(unique_location.clone(), source);
         Ok(())
@@ -1529,7 +1522,7 @@ impl GlyphBuilder {
         }
     }
 
-    pub fn build(self) -> Result<Glyph, WorkError> {
+    pub fn build(self) -> Result<Glyph, BadGlyph> {
         Glyph::new(
             self.name,
             self.emit_to_binary,
@@ -1605,7 +1598,6 @@ impl OnCurve {
 /// convert one contour at a time.
 #[derive(Debug)]
 pub struct GlyphPathBuilder {
-    glyph_name: GlyphName,
     offcurve: Vec<Point>,
     leading_offcurve: Vec<Point>,
     path: Vec<PathEl>,
@@ -1613,13 +1605,12 @@ pub struct GlyphPathBuilder {
 }
 
 impl GlyphPathBuilder {
-    pub fn new(glyph_name: GlyphName, estimated_num_elements: usize) -> GlyphPathBuilder {
+    pub fn new(estimated_num_elements: usize) -> GlyphPathBuilder {
         let mut capacity = estimated_num_elements.next_power_of_two();
         if capacity == estimated_num_elements {
             capacity += 4; // close path often adds a few
         }
         GlyphPathBuilder {
-            glyph_name,
             offcurve: Vec::with_capacity(2),
             leading_offcurve: Vec::new(),
             path: Vec::with_capacity(capacity),
@@ -1633,7 +1624,6 @@ impl GlyphPathBuilder {
     ) -> Result<(), PathConversionError> {
         if !expected(self.offcurve.len()) {
             return Err(PathConversionError::TooManyOffcurvePoints {
-                glyph_name: self.glyph_name.clone(),
                 num_offcurve: self.offcurve.len(),
                 points: self.offcurve.clone(),
             });
@@ -1658,10 +1648,7 @@ impl GlyphPathBuilder {
     /// Cf. "move" in <https://unifiedfontobject.org/versions/ufo3/glyphs/glif/#point-types>
     pub fn move_to(&mut self, p: impl Into<Point>) -> Result<(), PathConversionError> {
         if !self.is_empty() {
-            return Err(PathConversionError::MoveAfterFirstPoint {
-                glyph_name: self.glyph_name.clone(),
-                point: p.into(),
-            });
+            return Err(PathConversionError::MoveAfterFirstPoint { point: p.into() });
         }
         self.begin_path(OnCurve::Move(p.into()))
     }
@@ -1950,7 +1937,7 @@ mod tests {
 
     #[test]
     fn a_qcurve_with_no_offcurve_is_a_line_open_contour() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.move_to((2.0, 2.0)).unwrap(); // open contour
         builder.qcurve_to((4.0, 2.0)).unwrap();
         assert_eq!("M2,2 L4,2", builder.build().unwrap().to_svg());
@@ -1958,7 +1945,7 @@ mod tests {
 
     #[test]
     fn a_qcurve_with_no_offcurve_is_a_line_closed_contour() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.qcurve_to((2.0, 2.0)).unwrap(); // closed, ie not starting with 'move'
         builder.qcurve_to((4.0, 2.0)).unwrap();
         assert_eq!("M2,2 L4,2 L2,2 Z", builder.build().unwrap().to_svg());
@@ -1966,7 +1953,7 @@ mod tests {
 
     #[test]
     fn a_curve_with_no_offcurve_is_a_line_open_contour() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.move_to((2.0, 2.0)).unwrap(); // open contour
         builder.curve_to((4.0, 2.0)).unwrap();
         assert_eq!("M2,2 L4,2", builder.build().unwrap().to_svg());
@@ -1974,7 +1961,7 @@ mod tests {
 
     #[test]
     fn a_curve_with_no_offcurve_is_a_line_closed_contour() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.curve_to((2.0, 2.0)).unwrap(); // closed
         builder.curve_to((4.0, 2.0)).unwrap();
         assert_eq!("M2,2 L4,2 L2,2 Z", builder.build().unwrap().to_svg());
@@ -1982,7 +1969,7 @@ mod tests {
 
     #[test]
     fn a_curve_with_one_offcurve_is_a_single_quad_open_contour() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.move_to((2.0, 2.0)).unwrap(); // open
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.curve_to((4.0, 2.0)).unwrap();
@@ -1991,7 +1978,7 @@ mod tests {
 
     #[test]
     fn a_curve_with_one_offcurve_is_a_single_quad_closed_contour() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.curve_to((2.0, 2.0)).unwrap(); // closed
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.curve_to((4.0, 2.0)).unwrap();
@@ -2000,7 +1987,7 @@ mod tests {
 
     #[test]
     fn a_qcurve_with_one_offcurve_is_a_single_quad_to_open_contour() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.move_to((2.0, 2.0)).unwrap();
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.qcurve_to((4.0, 2.0)).unwrap();
@@ -2009,7 +1996,7 @@ mod tests {
 
     #[test]
     fn a_qcurve_with_one_offcurve_is_a_single_quad_to_closed_contour() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.qcurve_to((2.0, 2.0)).unwrap(); // closed
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.qcurve_to((4.0, 2.0)).unwrap();
@@ -2018,7 +2005,7 @@ mod tests {
 
     #[test]
     fn a_qcurve_with_two_offcurve_is_two_quad_to_open_contour() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.move_to((2.0, 2.0)).unwrap();
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.offcurve((5.0, 4.0)).unwrap();
@@ -2028,7 +2015,7 @@ mod tests {
 
     #[test]
     fn a_qcurve_with_two_offcurve_is_two_quad_to_closed_contour() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.qcurve_to((2.0, 2.0)).unwrap(); // closed
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.offcurve((5.0, 4.0)).unwrap();
@@ -2041,7 +2028,7 @@ mod tests {
 
     #[test]
     fn last_line_always_emits_implied_closing_line() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.line_to((2.0, 2.0)).unwrap();
         builder.line_to((4.0, 2.0)).unwrap();
         // a closing line is implied by Z, but emit it nonetheless
@@ -2050,7 +2037,7 @@ mod tests {
 
     #[test]
     fn last_line_emits_nop_implied_closing_line() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.line_to((2.0, 2.0)).unwrap();
         builder.line_to((4.0, 2.0)).unwrap();
         // duplicate last point, not to be confused with the closing line implied by Z
@@ -2062,7 +2049,7 @@ mod tests {
     fn last_quad_equals_move_no_closing_line() {
         // if last curve point is equal to move, there's no need to disambiguate it from
         // the implicit closing line, so we don't emit one
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.qcurve_to((2.0, 2.0)).unwrap();
         assert_eq!("M2,2 Q3,0 2,2 Z", builder.build().unwrap().to_svg());
@@ -2070,7 +2057,7 @@ mod tests {
 
     #[test]
     fn last_cubic_equals_move_no_closing_line() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.offcurve((0.0, 3.0)).unwrap();
         builder.curve_to((2.0, 2.0)).unwrap();
@@ -2080,7 +2067,7 @@ mod tests {
     #[test]
     fn last_quad_not_equal_move_do_emit_closing_line() {
         // if last point is different from move, then emit the implied closing line
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.line_to((2.0, 2.0)).unwrap();
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.qcurve_to((4.0, 2.0)).unwrap();
@@ -2089,7 +2076,7 @@ mod tests {
 
     #[test]
     fn last_cubic_not_equal_move_do_emit_closing_line() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.line_to((2.0, 2.0)).unwrap();
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.offcurve((0.0, 3.0)).unwrap();
@@ -2106,7 +2093,7 @@ mod tests {
         // to the same path, which begins/ends on the first on-curve point i.e. (2,2).
         let expected = "M2,2 C6,0 0,6 4,2 C3,0 0,3 2,2 Z";
 
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.offcurve((3.0, 0.0)).unwrap();
         builder.offcurve((0.0, 3.0)).unwrap();
         builder.curve_to((2.0, 2.0)).unwrap();
@@ -2115,7 +2102,7 @@ mod tests {
         builder.curve_to((4.0, 2.0)).unwrap();
         assert_eq!(expected, builder.build().unwrap().to_svg());
 
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.offcurve((0.0, 3.0)).unwrap();
         builder.curve_to((2.0, 2.0)).unwrap();
         builder.offcurve((6.0, 0.0)).unwrap();
@@ -2124,7 +2111,7 @@ mod tests {
         builder.offcurve((3.0, 0.0)).unwrap();
         assert_eq!(expected, builder.build().unwrap().to_svg());
 
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.curve_to((2.0, 2.0)).unwrap();
         builder.offcurve((6.0, 0.0)).unwrap();
         builder.offcurve((0.0, 6.0)).unwrap();
@@ -2136,7 +2123,7 @@ mod tests {
 
     #[test]
     fn closed_quadratic_contour_without_oncurve_points() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         // builder.qcurve_to((0.0, 1.0)).unwrap();  // implied
         builder.offcurve((1.0, 1.0)).unwrap();
         builder.offcurve((1.0, -1.0)).unwrap();
@@ -2151,7 +2138,7 @@ mod tests {
     #[test]
     fn invalid_move_after_first_point() {
         // A point of type 'move' must be the first point in an (open) contour.
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.move_to((2.0, 2.0)).unwrap();
         builder.end_path().unwrap();
         // move_to after ending the current subpath is OK
@@ -2159,41 +2146,41 @@ mod tests {
         // but it's an error if we try to do move_to again
         let result = builder.move_to((4.0, 4.0));
 
-        assert!(result.is_err());
-        let Err(PathConversionError::MoveAfterFirstPoint { glyph_name, point }) = result else {
-            panic!("unexpected error: {:?}", result);
-        };
-        assert_eq!("test", glyph_name.as_str());
-        assert_eq!((4.0, 4.0), (point.x, point.y));
+        assert_eq!(
+            result,
+            Err(PathConversionError::MoveAfterFirstPoint {
+                point: (4.0, 4.0).into()
+            })
+        );
 
         builder.end_path().unwrap();
         builder.line_to((5.0, 5.0)).unwrap();
         // can't move_to in the middle of a closed (not starting with move_to) subpath
         let result = builder.move_to((6.0, 6.0));
 
-        assert!(result.is_err());
-        let Err(PathConversionError::MoveAfterFirstPoint { glyph_name, point }) = result else {
-            panic!("unexpected error: {:?}", result);
-        };
-        assert_eq!("test", glyph_name.as_str());
-        assert_eq!((6.0, 6.0), (point.x, point.y));
+        assert_eq!(
+            result,
+            Err(PathConversionError::MoveAfterFirstPoint {
+                point: (6.0, 6.0).into()
+            })
+        );
 
         builder.end_path().unwrap();
         builder.offcurve((7.0, 7.0)).unwrap();
         // can't move_to after an offcurve point
         let result = builder.move_to((8.0, 8.0));
 
-        assert!(result.is_err());
-        let Err(PathConversionError::MoveAfterFirstPoint { glyph_name, point }) = result else {
-            panic!("unexpected error: {:?}", result);
-        };
-        assert_eq!("test", glyph_name.as_str());
-        assert_eq!((8.0, 8.0), (point.x, point.y));
+        assert_eq!(
+            result,
+            Err(PathConversionError::MoveAfterFirstPoint {
+                point: (8.0, 8.0).into()
+            })
+        );
     }
 
     #[test]
     fn closed_path_with_trailing_cubic_offcurves() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.curve_to((10.0, 0.0)).unwrap();
         builder.line_to((0.0, 10.0)).unwrap();
         builder.offcurve((5.0, 10.0)).unwrap();
@@ -2206,7 +2193,7 @@ mod tests {
 
     #[test]
     fn closed_path_with_trailing_quadratic_offcurves() {
-        let mut builder = GlyphPathBuilder::new("test".into(), 0);
+        let mut builder = GlyphPathBuilder::new(0);
         builder.qcurve_to((10.0, 0.0)).unwrap();
         builder.line_to((0.0, 10.0)).unwrap();
         builder.offcurve((5.0, 10.0)).unwrap();

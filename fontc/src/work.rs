@@ -10,7 +10,7 @@ use fontbe::{
 };
 use fontdrasil::orchestration::{Access, AccessType};
 use fontir::{
-    error::WorkError as FeError,
+    error::Error as FeError,
     orchestration::{Context as FeContext, IrWork, WorkId},
 };
 
