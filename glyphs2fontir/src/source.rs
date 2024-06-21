@@ -15,7 +15,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{Error, WorkError},
+    error::{BadSource, Error, WorkError},
     ir::{
         self, AnchorBuilder, AnchorKind, GdefCategories, GlobalMetric, GlobalMetrics,
         GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
@@ -169,8 +169,8 @@ impl Source for GlyphsIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         // We have to read the glyphs file then shred it to figure out if anything changed
         let font_info = FontInfo::try_from(Font::load(&self.glyphs_file).map_err(|e| {
-            Error::ParseError(
-                self.glyphs_file.clone(),
+            BadSource::parse(
+                &self.glyphs_file,
                 format!("Unable to read glyphs file: {e}"),
             )
         })?)?;

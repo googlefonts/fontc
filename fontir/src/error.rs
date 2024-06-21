@@ -1,4 +1,4 @@
-use std::{error, fmt::Display, io, path::PathBuf};
+use std::{fmt::Display, io, path::PathBuf};
 
 use fontdrasil::{
     coords::{DesignCoord, NormalizedCoord, NormalizedLocation, UserCoord, UserLocation},
@@ -9,30 +9,51 @@ use smol_str::SmolStr;
 use thiserror::Error;
 use write_fonts::types::{InvalidTag, Tag};
 
-// TODO: eliminate dyn Error and collapse Error/WorkError
+/// An error related to loading source input files
+#[derive(Debug, Error)]
+#[error("Reading source failed for '{path}': '{kind}'")]
+pub struct BadSource {
+    /// The path to the file where the error occured
+    path: PathBuf,
+    /// The specific error condition encountered
+    kind: BadSourceKind,
+}
 
+/// Conditions under which we can fail to read a source file
+#[derive(Debug)]
+pub enum BadSourceKind {
+    ExpectedDirectory,
+    ExpectedFile,
+    UnrecognizedExtension,
+    ExpectedParent,
+    Io(io::Error),
+    /// Payload is a message to print; this error can originate from various parsers
+    ParseFail(String),
+}
+
+/// An error that occurs when trying to access a file during change tracking
+#[derive(Debug, Error)]
+#[error("Error tracking '{path}': '{source}'")]
+pub struct TrackFileError {
+    path: PathBuf,
+    source: io::Error,
+}
+
+// TODO: collapse Error/WorkError
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Missing directory '{0}'")]
-    DirectoryExpected(PathBuf),
-    #[error("Missing expected file '{0}'")]
-    FileExpected(PathBuf),
-    #[error("No extension identified for '{0}'")]
-    Unrecognized(PathBuf),
-    #[error("No parent for '{0}'")]
-    ParentExpected(PathBuf),
-    #[error("IO failure: '{0}'")]
-    IoError(#[from] io::Error),
-    #[error("Unable to parse {0:?}: {1}")]
-    ParseError(PathBuf, String),
+    /// A source file was not understood
+    #[error(transparent)]
+    BadSource(#[from] BadSource),
+    /// An error occured while attempting to track a file
+    #[error(transparent)]
+    TrackFile(#[from] TrackFileError),
     #[error("Missing required axis values for {0}")]
     NoAxisDefinitions(String),
     #[error("Axis {0} has no entry in axes")]
     NoEntryInAxes(String),
     #[error("Axis definitions are inconsistent: '{0}'")]
     InconsistentAxisDefinitions(String),
-    #[error("Illegible source: '{0}'")]
-    UnableToLoadSource(Box<dyn error::Error>),
     #[error("Missing layer '{0}'")]
     NoSuchLayer(String),
     #[error("No files associated with glyph {0}")]
@@ -202,6 +223,47 @@ impl Display for BadAnchorReason {
             BadAnchorReason::ZeroIndex => write!(f, "ligature indexes must begin with '1'"),
             BadAnchorReason::NumberedMarkAnchor => write!(f, "mark anchors cannot be numbered"),
             BadAnchorReason::NilMarkGroup => write!(f, "mark anchor key is nil"),
+        }
+    }
+}
+
+impl BadSource {
+    pub fn new(path: impl Into<PathBuf>, kind: impl Into<BadSourceKind>) -> Self {
+        Self {
+            path: path.into(),
+            kind: kind.into(),
+        }
+    }
+
+    pub fn parse(path: impl Into<PathBuf>, msg: impl Display) -> Self {
+        Self::new(path, BadSourceKind::ParseFail(msg.to_string()))
+    }
+}
+
+impl TrackFileError {
+    pub(crate) fn new(path: impl Into<PathBuf>, source: io::Error) -> Self {
+        TrackFileError {
+            path: path.into(),
+            source,
+        }
+    }
+}
+
+impl From<std::io::Error> for BadSourceKind {
+    fn from(src: std::io::Error) -> BadSourceKind {
+        BadSourceKind::Io(src)
+    }
+}
+
+impl std::fmt::Display for BadSourceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            BadSourceKind::ExpectedDirectory => f.write_str("expected directory"),
+            BadSourceKind::ExpectedFile => f.write_str("expected file"),
+            BadSourceKind::UnrecognizedExtension => f.write_str("unknown file extension"),
+            BadSourceKind::ExpectedParent => f.write_str("missing parent directory"),
+            BadSourceKind::Io(e) => e.fmt(f),
+            BadSourceKind::ParseFail(e) => f.write_str(e),
         }
     }
 }

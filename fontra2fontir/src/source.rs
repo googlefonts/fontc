@@ -8,7 +8,7 @@ use std::{
 
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
-    error::{Error, WorkError},
+    error::{BadSource, BadSourceKind, Error, WorkError},
     ir::StaticMetadata,
     orchestration::{Context, WorkId},
     source::{Input, Source},
@@ -32,15 +32,15 @@ impl FontraIrSource {
     pub fn new(fontra_dir: PathBuf) -> Result<Self, Error> {
         let fontdata_file = fontra_dir.join("font-data.json");
         if !fontdata_file.is_file() {
-            return Err(Error::FileExpected(fontdata_file));
+            return Err(BadSource::new(fontdata_file, BadSourceKind::ExpectedFile).into());
         }
         let glyphinfo_file = fontra_dir.join("glyph-info.csv");
         if !glyphinfo_file.is_file() {
-            return Err(Error::FileExpected(glyphinfo_file));
+            return Err(BadSource::new(glyphinfo_file, BadSourceKind::ExpectedFile).into());
         }
         let glyph_dir = fontra_dir.join("glyphs");
         if !glyph_dir.is_dir() {
-            return Err(Error::DirectoryExpected(glyph_dir));
+            return Err(BadSource::new(glyph_dir, BadSourceKind::ExpectedDirectory).into());
         }
         Ok(FontraIrSource {
             fontdata_file,
@@ -58,24 +58,28 @@ impl FontraIrSource {
         Ok(font_info)
     }
 
-    fn load_glyphinfo(&mut self) -> Result<(), Error> {
+    fn load_glyphinfo(&mut self) -> Result<(), BadSource> {
         if !self.glyph_info.is_empty() {
             return Ok(());
         }
 
         // Read the glyph-info file
-        let file = File::open(&self.glyphinfo_file).map_err(Error::IoError)?;
+        let file = File::open(&self.glyphinfo_file)
+            .map_err(|e| BadSource::new(&self.glyphinfo_file, e))?;
 
         // Example files suggest the first line is just the column headers. Hopefully always :)
         // This file is tool generated so it shouldn't be full of human error. Fail if we don't understand.
         let mut glyph_info = BTreeMap::default();
         for (i, line) in BufReader::new(file).lines().enumerate().skip(1) {
-            let line = line.map_err(Error::IoError)?;
+            let line =
+                line.map_err(|e| BadSource::new(&self.glyphinfo_file, BadSourceKind::Io(e)))?;
             let parts: Vec<_> = line.split(';').collect();
             if parts.len() != 2 {
-                return Err(Error::ParseError(
-                    self.glyphinfo_file.clone(),
-                    format!("Expected two parts in line {i} separated by ;"),
+                return Err(BadSource::new(
+                    &self.glyphinfo_file,
+                    BadSourceKind::ParseFail(format!(
+                        "Expected two parts in line {i} separated by ;"
+                    )),
                 ));
             }
             let glyph_name = GlyphName::new(parts[0].trim());
@@ -87,14 +91,14 @@ impl FontraIrSource {
                         return None;
                     }
                     let Some(codepoint) = codepoint.strip_prefix("U+") else {
-                        return Some(Err(Error::ParseError(
-                            self.glyphinfo_file.clone(),
+                        return Some(Err(BadSource::parse(
+                            &self.glyphinfo_file,
                             format!("Unintelligible codepoint {codepoint:?} at line {i}"),
                         )));
                     };
                     Some(u32::from_str_radix(codepoint, 16).map_err(|e| {
-                        Error::ParseError(
-                            self.glyphinfo_file.clone(),
+                        BadSource::parse(
+                            &self.glyphinfo_file,
                             format!("Unintelligible codepoint {codepoint:?} at line {i}: {e}"),
                         )
                     }))
@@ -102,15 +106,15 @@ impl FontraIrSource {
                 .collect::<Result<Vec<_>, _>>()?;
             let glyph_file = fontra::glyph_file(&self.glyph_dir, glyph_name.clone());
             if !glyph_file.is_file() {
-                return Err(Error::FileExpected(glyph_file));
+                return Err(BadSource::new(glyph_file, BadSourceKind::ExpectedFile));
             }
 
             if glyph_info
                 .insert(glyph_name.clone(), (glyph_file, codepoints))
                 .is_some()
             {
-                return Err(Error::ParseError(
-                    self.glyphinfo_file.clone(),
+                return Err(BadSource::parse(
+                    &self.glyphinfo_file,
                     format!("Multiple definitions of '{glyph_name}'"),
                 ));
             }
@@ -125,10 +129,10 @@ impl FontraIrSource {
             let mut tracker = StateSet::new();
             tracker.track_file(glyph_file)?;
             if glyph_state.insert(glyph_name.clone(), tracker).is_some() {
-                return Err(Error::ParseError(
-                    self.glyphinfo_file.clone(),
+                Err(BadSource::parse(
+                    &self.glyphinfo_file,
                     format!("Multiple definitions of '{glyph_name}'"),
-                ));
+                ))?;
             }
         }
         Ok(glyph_state)

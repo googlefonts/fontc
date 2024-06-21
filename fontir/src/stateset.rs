@@ -1,4 +1,4 @@
-use crate::serde::StateSetSerdeRepr;
+use crate::{error::TrackFileError, serde::StateSetSerdeRepr};
 use filetime::FileTime;
 use serde::{Deserialize, Serialize};
 
@@ -45,17 +45,21 @@ pub struct MemoryState {
 }
 
 impl FileState {
-    fn of(path: &Path) -> Result<FileState, io::Error> {
-        let metadata = path.metadata()?;
+    fn of(path: &Path) -> Result<FileState, TrackFileError> {
+        let metadata = path.metadata().map_err(|e| TrackFileError::new(path, e))?;
+        let mtime = metadata
+            .modified()
+            .map_err(|e| TrackFileError::new(path, e))
+            .map(FileTime::from_system_time)?;
         Ok(FileState {
-            mtime: FileTime::from_system_time(metadata.modified()?),
+            mtime,
             size: metadata.len(),
         })
     }
 }
 
 impl MemoryState {
-    fn of(thing: impl Hash) -> Result<MemoryState, io::Error> {
+    fn of(thing: impl Hash) -> Result<MemoryState, TrackFileError> {
         let mut hasher = Blake3Hasher::new();
         thing.hash(&mut hasher);
         let hash = hasher.b3.finalize();
@@ -110,7 +114,7 @@ impl StateSet {
     }
 
     /// Pay attention to path, we'd like to know if it changes.
-    pub fn track_file(&mut self, path: &Path) -> Result<(), io::Error> {
+    pub fn track_file(&mut self, path: &Path) -> Result<(), TrackFileError> {
         self.entries.insert(
             StateIdentifier::File(path.to_path_buf()),
             State::File(FileState::of(path)?),
@@ -137,7 +141,7 @@ impl StateSet {
         &mut self,
         identifier: String,
         memory: &(impl Hash + ?Sized),
-    ) -> Result<(), io::Error> {
+    ) -> Result<(), TrackFileError> {
         self.entries.insert(
             StateIdentifier::Memory(identifier),
             State::Memory(MemoryState::of(memory)?),
@@ -242,7 +246,7 @@ impl StateDiff {
 mod tests {
     use std::{
         collections::HashSet,
-        fs, io,
+        fs,
         ops::Add,
         path::{Path, PathBuf},
         time::Duration,
@@ -250,6 +254,8 @@ mod tests {
 
     use filetime::set_file_mtime;
     use tempfile::{tempdir, TempDir};
+
+    use crate::error::TrackFileError;
 
     use super::{StateDiff, StateIdentifier, StateSet};
 
@@ -388,7 +394,7 @@ mod tests {
         (changed, unchanged, fs)
     }
 
-    fn update_file_entries(s: &StateSet) -> Result<StateSet, io::Error> {
+    fn update_file_entries(s: &StateSet) -> Result<StateSet, TrackFileError> {
         let mut state = StateSet::new();
         for key in s.keys() {
             if let StateIdentifier::File(path) = key {

@@ -1,6 +1,7 @@
 use std::{io, path::PathBuf};
 
 use fontbe::orchestration::AnyWorkId;
+use fontir::error::TrackFileError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -11,6 +12,8 @@ pub enum Error {
     YamlSerError(#[from] serde_yaml::Error),
     #[error("IO error: '{0}'")]
     IoError(#[from] io::Error),
+    #[error(transparent)]
+    TrackFile(#[from] TrackFileError),
     #[error("Font IR error: '{0}'")]
     FontIrError(#[from] fontir::error::Error),
     #[error("Unable to produce IR")]

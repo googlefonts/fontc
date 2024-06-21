@@ -1,8 +1,8 @@
 //! State for a (possibly incremental) compiler job
 
-use std::{fs, io, path::PathBuf};
+use std::{fs, path::PathBuf};
 
-use fontir::{paths::Paths as IrPaths, source::Input, stateset::StateSet};
+use fontir::{error::TrackFileError, paths::Paths as IrPaths, source::Input, stateset::StateSet};
 use serde::{Deserialize, Serialize};
 
 use crate::{Args, Error};
@@ -21,9 +21,10 @@ pub struct Config {
 
 impl Config {
     /// Create a new config from the provided cli arguments
-    pub fn new(args: Args) -> Result<Config, io::Error> {
+    pub fn new(args: Args) -> Result<Config, TrackFileError> {
         let mut compiler = StateSet::new();
-        compiler.track_file(&std::env::current_exe()?)?;
+        compiler
+            .track_file(&std::env::current_exe().expect("could not get current executable path"))?;
         Ok(Config { args, compiler })
     }
 
