@@ -169,7 +169,7 @@ impl Source for GlyphsIrSource {
     fn inputs(&mut self) -> Result<Input, Error> {
         // We have to read the glyphs file then shred it to figure out if anything changed
         let font_info = FontInfo::try_from(Font::load(&self.glyphs_file).map_err(|e| {
-            BadSource::parse(
+            BadSource::custom(
                 &self.glyphs_file,
                 format!("Unable to read glyphs file: {e}"),
             )

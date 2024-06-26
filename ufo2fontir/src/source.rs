@@ -96,8 +96,8 @@ fn glif_files(
     if !glyph_list_file.is_file() {
         return Err(BadSource::new(glyph_list_file, BadSourceKind::ExpectedFile).into());
     }
-    let result: BTreeMap<String, PathBuf> = plist::from_file(&glyph_list_file)
-        .map_err(|e| BadSource::new(&glyph_list_file, BadSourceKind::ParseFail(e.to_string())))?;
+    let result: BTreeMap<String, PathBuf> =
+        plist::from_file(&glyph_list_file).map_err(|e| BadSource::custom(&glyph_list_file, e))?;
 
     if result.is_empty() {
         warn!("{:?} is empty", glyph_list_file);
@@ -114,8 +114,8 @@ fn layer_contents(ufo_dir: &Path) -> Result<HashMap<GlyphName, PathBuf>, BadSour
     if !file.is_file() {
         return Ok(HashMap::new());
     }
-    let contents: Vec<(GlyphName, PathBuf)> = plist::from_file(&file)
-        .map_err(|e| BadSource::new(file, BadSourceKind::ParseFail(e.to_string())))?;
+    let contents: Vec<(GlyphName, PathBuf)> =
+        plist::from_file(&file).map_err(|e| BadSource::custom(file, e))?;
     Ok(contents.into_iter().collect())
 }
 
@@ -164,7 +164,7 @@ impl DesignSpaceIrSource {
             Some("designspace") => {
                 DesignSpaceDocument::load(&designspace_or_ufo).map_err(|e| match e {
                     norad::error::DesignSpaceLoadError::Io(e) => BadSourceKind::Io(e),
-                    other => BadSourceKind::ParseFail(other.to_string()),
+                    other => BadSourceKind::Custom(other.to_string()),
                 })?
             }
             Some("ufo") => {
