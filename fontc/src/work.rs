@@ -2,46 +2,11 @@
 //!
 //! Basically enums that can be a FeWhatever or a BeWhatever.
 
-use std::fmt::Display;
-
-use fontbe::{
-    error::Error as BeError,
-    orchestration::{AnyWorkId, BeWork, Context as BeContext},
-};
+use fontbe::orchestration::{AnyWorkId, BeWork, Context as BeContext};
 use fontdrasil::orchestration::{Access, AccessType};
-use fontir::{
-    error::Error as FeError,
-    orchestration::{Context as FeContext, IrWork, WorkId},
-};
+use fontir::orchestration::{Context as FeContext, IrWork, WorkId};
 
-#[derive(Debug)]
-pub enum AnyWorkError {
-    Fe(FeError),
-    Be(BeError),
-    Panic(String),
-}
-
-impl From<BeError> for AnyWorkError {
-    fn from(e: BeError) -> Self {
-        AnyWorkError::Be(e)
-    }
-}
-
-impl From<FeError> for AnyWorkError {
-    fn from(e: FeError) -> Self {
-        AnyWorkError::Fe(e)
-    }
-}
-
-impl Display for AnyWorkError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AnyWorkError::Be(e) => e.fmt(f),
-            AnyWorkError::Fe(e) => e.fmt(f),
-            AnyWorkError::Panic(e) => write!(f, "Job panicked: '{e}'"),
-        }
-    }
-}
+use crate::Error;
 
 // Work of any type, FE, BE, ... some future pass, w/e
 #[derive(Debug)]
@@ -95,7 +60,7 @@ impl AnyWork {
         }
     }
 
-    pub fn exec(&self, context: AnyContext) -> Result<(), AnyWorkError> {
+    pub fn exec(&self, context: AnyContext) -> Result<(), Error> {
         match self {
             AnyWork::Be(work) => work.exec(context.unwrap_be()).map_err(|e| e.into()),
             AnyWork::Fe(work) => work.exec(context.unwrap_fe()).map_err(|e| e.into()),

@@ -357,7 +357,11 @@ impl ChangeDetector {
         if self.emit_ir {
             let current_sources =
                 serde_yaml::to_string(&self.current_inputs).map_err(Error::YamlSerError)?;
-            fs::write(self.ir_paths.ir_input_file(), current_sources).map_err(Error::IoError)
+            let out_path = self.ir_paths.ir_input_file();
+            fs::write(out_path, current_sources).map_err(|source| Error::FileIo {
+                path: out_path.to_owned(),
+                source,
+            })
         } else {
             Ok(())
         }

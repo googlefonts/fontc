@@ -16,7 +16,7 @@ pub use error::Error;
 pub use timing::{create_timer, JobTimer};
 use workload::Workload;
 
-use std::{fs, io, path::Path};
+use std::{fs, path::Path};
 
 use fontbe::{
     avar::create_avar_work,
@@ -49,16 +49,18 @@ use fontir::paths::Paths as IrPaths;
 
 use log::{debug, warn};
 
-pub fn require_dir(dir: &Path) -> Result<(), io::Error> {
-    // skip empty paths
+pub fn require_dir(dir: &Path) -> Result<(), Error> {
     if dir == Path::new("") {
         return Ok(());
     }
     if dir.exists() && !dir.is_dir() {
-        panic!("{dir:#?} is taken by something that isn't a directory");
+        return Err(Error::ExpectedDirectory(dir.to_owned()));
     }
     if !dir.exists() {
-        fs::create_dir(dir)?
+        fs::create_dir(dir).map_err(|source| Error::FileIo {
+            path: dir.to_owned(),
+            source,
+        })?;
     }
     debug!("require_dir {:?}", dir);
     Ok(())
@@ -90,7 +92,10 @@ pub fn init_paths(args: &Args) -> Result<(IrPaths, BePaths), Error> {
     }
     // It's confusing to have leftover debug files
     if be_paths.debug_dir().is_dir() {
-        fs::remove_dir_all(be_paths.debug_dir()).map_err(Error::IoError)?;
+        fs::remove_dir_all(be_paths.debug_dir()).map_err(|source| Error::FileIo {
+            path: be_paths.debug_dir().to_owned(),
+            source,
+        })?;
     }
     if args.emit_debug {
         require_dir(be_paths.debug_dir())?;
@@ -102,7 +107,10 @@ pub fn write_font_file(args: &Args, be_context: &BeContext) -> Result<(), Error>
     // if IR is off the font didn't get written yet (nothing did), otherwise it's done already
     let font_file = be_context.font_file();
     if !args.incremental {
-        fs::write(font_file, be_context.font.get().get()).map_err(Error::IoError)?;
+        fs::write(&font_file, be_context.font.get().get()).map_err(|source| Error::FileIo {
+            path: font_file,
+            source,
+        })?;
     } else if !font_file.exists() {
         return Err(Error::FileExpected(font_file));
     }

@@ -49,7 +49,12 @@ impl Config {
                     .map_err(|_| Error::FileExpected(ir_input_file.to_owned()))?;
             }
             if self.args.incremental {
-                fs::write(config_file, serde_yaml::to_string(self)?)?;
+                fs::write(&config_file, serde_yaml::to_string(self)?).map_err(|source| {
+                    Error::FileIo {
+                        path: config_file,
+                        source,
+                    }
+                })?
             }
         };
 
@@ -57,7 +62,10 @@ impl Config {
             return Ok(Input::new());
         }
 
-        let yml = fs::read_to_string(ir_input_file)?;
+        let yml = fs::read_to_string(ir_input_file).map_err(|source| Error::FileIo {
+            path: ir_input_file.to_owned(),
+            source,
+        })?;
         serde_yaml::from_str(&yml).map_err(Into::into)
     }
 
