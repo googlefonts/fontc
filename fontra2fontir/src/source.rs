@@ -75,11 +75,9 @@ impl FontraIrSource {
                 line.map_err(|e| BadSource::new(&self.glyphinfo_file, BadSourceKind::Io(e)))?;
             let parts: Vec<_> = line.split(';').collect();
             if parts.len() != 2 {
-                return Err(BadSource::new(
+                return Err(BadSource::custom(
                     &self.glyphinfo_file,
-                    BadSourceKind::ParseFail(format!(
-                        "Expected two parts in line {i} separated by ;"
-                    )),
+                    format!("Expected two parts in line {i} separated by ;"),
                 ));
             }
             let glyph_name = GlyphName::new(parts[0].trim());
@@ -91,13 +89,13 @@ impl FontraIrSource {
                         return None;
                     }
                     let Some(codepoint) = codepoint.strip_prefix("U+") else {
-                        return Some(Err(BadSource::parse(
+                        return Some(Err(BadSource::custom(
                             &self.glyphinfo_file,
                             format!("Unintelligible codepoint {codepoint:?} at line {i}"),
                         )));
                     };
                     Some(u32::from_str_radix(codepoint, 16).map_err(|e| {
-                        BadSource::parse(
+                        BadSource::custom(
                             &self.glyphinfo_file,
                             format!("Unintelligible codepoint {codepoint:?} at line {i}: {e}"),
                         )
@@ -113,7 +111,7 @@ impl FontraIrSource {
                 .insert(glyph_name.clone(), (glyph_file, codepoints))
                 .is_some()
             {
-                return Err(BadSource::parse(
+                return Err(BadSource::custom(
                     &self.glyphinfo_file,
                     format!("Multiple definitions of '{glyph_name}'"),
                 ));
@@ -129,7 +127,7 @@ impl FontraIrSource {
             let mut tracker = StateSet::new();
             tracker.track_file(glyph_file)?;
             if glyph_state.insert(glyph_name.clone(), tracker).is_some() {
-                Err(BadSource::parse(
+                Err(BadSource::custom(
                     &self.glyphinfo_file,
                     format!("Multiple definitions of '{glyph_name}'"),
                 ))?;

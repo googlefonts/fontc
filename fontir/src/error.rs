@@ -28,7 +28,7 @@ pub enum BadSourceKind {
     ExpectedParent,
     Io(io::Error),
     /// Payload is a message to print; this error can originate from various parsers
-    ParseFail(String),
+    Custom(String),
 }
 
 /// An error that occurs when trying to access a file during change tracking
@@ -235,8 +235,9 @@ impl BadSource {
         }
     }
 
-    pub fn parse(path: impl Into<PathBuf>, msg: impl Display) -> Self {
-        Self::new(path, BadSourceKind::ParseFail(msg.to_string()))
+    /// A catch-all constructor for additional kinds of errors, such as various parsing failures
+    pub fn custom(path: impl Into<PathBuf>, msg: impl Display) -> Self {
+        Self::new(path, BadSourceKind::Custom(msg.to_string()))
     }
 }
 
@@ -263,7 +264,7 @@ impl std::fmt::Display for BadSourceKind {
             BadSourceKind::UnrecognizedExtension => f.write_str("unknown file extension"),
             BadSourceKind::ExpectedParent => f.write_str("missing parent directory"),
             BadSourceKind::Io(e) => e.fmt(f),
-            BadSourceKind::ParseFail(e) => f.write_str(e),
+            BadSourceKind::Custom(e) => f.write_str(e),
         }
     }
 }

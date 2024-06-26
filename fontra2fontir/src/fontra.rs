@@ -25,7 +25,7 @@ where
     for<'a> T: Deserialize<'a>,
 {
     let raw = fs::read_to_string(p).map_err(|e| BadSource::new(p, e))?;
-    serde_json::from_str(&raw).map_err(|e| BadSource::parse(p, e))
+    serde_json::from_str(&raw).map_err(|e| BadSource::custom(p, e))
 }
 
 /// serde type used to load font-data.json
