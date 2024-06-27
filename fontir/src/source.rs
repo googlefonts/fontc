@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use fontdrasil::{coords::NormalizedLocation, orchestration::Work, types::GlyphName};
 
 use crate::{
-    error::{Error, WorkError},
+    error::Error,
     orchestration::{Context, IrWork, WorkId},
     stateset::StateSet,
 };
@@ -26,16 +26,16 @@ impl DeleteWork {
     }
 }
 
-impl Work<Context, WorkId, WorkError> for DeleteWork {
+impl Work<Context, WorkId, Error> for DeleteWork {
     fn id(&self) -> WorkId {
         WorkId::GlyphIrDelete(self.glyph_name.clone())
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         let path = context.persistent_storage.paths.target_file(&self.id());
         debug!("Delete {:#?}", path);
         if path.exists() {
-            fs::remove_file(&path).map_err(WorkError::IoError)?
+            fs::remove_file(&path).map_err(|source| Error::DeleteFailed { path, source })?
         }
         Ok(())
     }

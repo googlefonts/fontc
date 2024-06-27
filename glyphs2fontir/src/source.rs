@@ -15,7 +15,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    error::{BadSource, Error, WorkError},
+    error::{BadGlyph, BadGlyphKind, BadSource, Error},
     ir::{
         self, AnchorBuilder, AnchorKind, GdefCategories, GlobalMetric, GlobalMetrics,
         GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
@@ -313,7 +313,7 @@ struct StaticMetadataWork {
     glyph_names: Arc<HashSet<GlyphName>>,
 }
 
-impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
+impl Work<Context, WorkId, Error> for StaticMetadataWork {
     fn id(&self) -> WorkId {
         WorkId::StaticMetadata
     }
@@ -322,7 +322,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
         vec![WorkId::PreliminaryGlyphOrder]
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
         debug!(
@@ -392,11 +392,10 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
             italic_angle,
             categories,
         )
-        .map_err(WorkError::VariationModelError)?;
+        .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
         if let Some(vendor_id) = font.vendor_id() {
-            static_metadata.misc.vendor_id =
-                Tag::from_str(vendor_id).map_err(WorkError::InvalidTag)?;
+            static_metadata.misc.vendor_id = Tag::from_str(vendor_id).map_err(Error::InvalidTag)?;
         }
 
         // Default per <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
@@ -473,7 +472,7 @@ struct GlobalMetricWork {
     font_info: Arc<FontInfo>,
 }
 
-impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
+impl Work<Context, WorkId, Error> for GlobalMetricWork {
     fn id(&self) -> WorkId {
         WorkId::GlobalMetrics
     }
@@ -482,7 +481,7 @@ impl Work<Context, WorkId, WorkError> for GlobalMetricWork {
         Access::Variant(WorkId::StaticMetadata)
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
         debug!(
@@ -632,12 +631,12 @@ struct FeatureWork {
     font_info: Arc<FontInfo>,
 }
 
-impl Work<Context, WorkId, WorkError> for FeatureWork {
+impl Work<Context, WorkId, Error> for FeatureWork {
     fn id(&self) -> WorkId {
         WorkId::Features
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("Generate features");
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
@@ -699,7 +698,7 @@ fn kern_participant(
     }
 }
 
-impl Work<Context, WorkId, WorkError> for KerningGroupWork {
+impl Work<Context, WorkId, Error> for KerningGroupWork {
     fn id(&self) -> WorkId {
         WorkId::KerningGroups
     }
@@ -708,7 +707,7 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
         Access::None
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("Generate IR for kerning");
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
@@ -757,7 +756,7 @@ impl Work<Context, WorkId, WorkError> for KerningGroupWork {
     }
 }
 
-impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
+impl Work<Context, WorkId, Error> for KerningInstanceWork {
     fn id(&self) -> WorkId {
         WorkId::KernInstance(self.location.clone())
     }
@@ -769,7 +768,7 @@ impl Work<Context, WorkId, WorkError> for KerningInstanceWork {
             .build()
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("Generate IR for kerning at {:?}", self.location);
         let kerning_groups = context.kerning_groups.get();
         let groups = &kerning_groups.groups;
@@ -825,18 +824,20 @@ fn check_pos(
     positions: &HashSet<NormalizedCoord>,
     axis: &fontdrasil::types::Axis,
     pos: &NormalizedCoord,
-) -> Result<(), WorkError> {
+) -> Result<(), BadGlyph> {
     if !positions.contains(pos) {
-        return Err(WorkError::GlyphUndefAtNormalizedPosition {
-            glyph_name: glyph_name.clone(),
-            axis: axis.tag,
-            pos: *pos,
-        });
+        return Err(BadGlyph::new(
+            glyph_name.clone(),
+            BadGlyphKind::UndefinedAtNormalizedPosition {
+                axis: axis.tag,
+                pos: pos.to_owned(),
+            },
+        ));
     }
     Ok(())
 }
 
-impl Work<Context, WorkId, WorkError> for GlyphIrWork {
+impl Work<Context, WorkId, Error> for GlyphIrWork {
     fn id(&self) -> WorkId {
         WorkId::Glyph(self.glyph_name.clone())
     }
@@ -856,7 +857,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         vec![WorkId::Anchor(self.glyph_name.clone())]
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         trace!("Generate IR for '{}'", self.glyph_name.as_str());
         let font_info = self.font_info.as_ref();
         let font = &font_info.font;
@@ -867,7 +868,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         let glyph = font
             .glyphs
             .get(self.glyph_name.as_str())
-            .ok_or_else(|| WorkError::NoGlyphForName(self.glyph_name.clone()))?;
+            .ok_or_else(|| Error::NoGlyphForName(self.glyph_name.clone()))?;
 
         let mut ir_glyph = ir::GlyphBuilder::new(self.glyph_name.clone());
         ir_glyph.emit_to_binary = glyph.export;
@@ -892,10 +893,11 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
                 .as_ref()
                 .unwrap_or(&instance.layer_id);
             let Some(master_idx) = font_info.master_indices.get(master_id) else {
-                return Err(WorkError::NoMasterForGlyph {
-                    master: master_id.clone(),
-                    glyph: self.glyph_name.clone(),
-                });
+                return Err(BadGlyph::new(
+                    self.glyph_name.clone(),
+                    BadGlyphKind::MissingMaster(master_id.clone()),
+                )
+                .into());
             };
             let master = &font.masters[*master_idx];
             let mut location = font_info
@@ -933,14 +935,7 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
                 components,
             };
 
-            ir_glyph
-                .try_add_source(&location, glyph_instance)
-                .map_err(|e| {
-                    WorkError::AddGlyphSource(format!(
-                        "Unable to add source to {:?} at {:?}: {}",
-                        self.glyph_name, location, e
-                    ))
-                })?;
+            ir_glyph.try_add_source(&location, glyph_instance)?;
 
             for anchor in instance.anchors.iter() {
                 ir_anchors.add(anchor.name.as_str().into(), location.clone(), anchor.pos)?;
@@ -951,10 +946,11 @@ impl Work<Context, WorkId, WorkError> for GlyphIrWork {
         for axis in axes.iter() {
             let default = axis.default.to_normalized(&axis.converter);
             let Some(positions) = axis_positions.get(&axis.tag) else {
-                return Err(WorkError::NoAxisPosition(
+                return Err(BadGlyph::new(
                     self.glyph_name.clone(),
-                    axis.name.clone(),
-                ));
+                    BadGlyphKind::NoAxisPosition(axis.tag),
+                )
+                .into());
             };
             check_pos(&self.glyph_name, positions, axis, &default)?;
         }
@@ -981,7 +977,7 @@ mod tests {
         types::GlyphName,
     };
     use fontir::{
-        error::WorkError,
+        error::Error,
         ir::{AnchorKind, GlobalMetricsInstance, GlyphOrder, NameKey},
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
@@ -1254,7 +1250,7 @@ mod tests {
         source: &impl Source,
         context: &Context,
         glyph_names: &[&GlyphName],
-    ) -> Result<(), WorkError> {
+    ) -> Result<(), Error> {
         for glyph_name in glyph_names {
             let glyph_name = *glyph_name;
             let work_items = source

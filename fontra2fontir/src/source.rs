@@ -8,7 +8,7 @@ use std::{
 
 use fontdrasil::{orchestration::Work, types::GlyphName};
 use fontir::{
-    error::{BadSource, BadSourceKind, Error, WorkError},
+    error::{BadSource, BadSourceKind, Error},
     ir::StaticMetadata,
     orchestration::{Context, WorkId},
     source::{Input, Source},
@@ -211,14 +211,13 @@ struct StaticMetadataWork {
     glyph_info: Arc<BTreeMap<GlyphName, (PathBuf, Vec<u32>)>>,
 }
 
-fn create_static_metadata(fontdata_file: &Path) -> Result<StaticMetadata, WorkError> {
+fn create_static_metadata(fontdata_file: &Path) -> Result<StaticMetadata, Error> {
     debug!("Static metadata for {:#?}", fontdata_file);
-    let font_data = FontraFontData::from_file(fontdata_file)
-        .map_err(|e| WorkError::ParseError(fontdata_file.to_path_buf(), format!("{e}")))?;
+    let font_data = FontraFontData::from_file(fontdata_file)?;
     to_ir_static_metadata(&font_data)
 }
 
-impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
+impl Work<Context, WorkId, Error> for StaticMetadataWork {
     fn id(&self) -> WorkId {
         WorkId::StaticMetadata
     }
@@ -227,7 +226,7 @@ impl Work<Context, WorkId, WorkError> for StaticMetadataWork {
         vec![WorkId::PreliminaryGlyphOrder]
     }
 
-    fn exec(&self, context: &Context) -> Result<(), WorkError> {
+    fn exec(&self, context: &Context) -> Result<(), Error> {
         debug!("Static metadata for {:#?}", self.fontdata_file);
         context
             .preliminary_glyph_order

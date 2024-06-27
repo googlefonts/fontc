@@ -9,7 +9,7 @@ use std::{
 };
 
 use fontdrasil::{paths::string_to_filename, types::GlyphName};
-use fontir::error::{BadSource, Error};
+use fontir::error::{BadSource, PathConversionError};
 use serde::Deserialize;
 use write_fonts::types::Tag;
 
@@ -225,15 +225,16 @@ pub(crate) struct FontraPoint {
 impl FontraPoint {
     /// <https://github.com/googlefonts/fontra/blob/a4edd06837118e583804fd963c22ed806a315b04/src/fontra/core/path.py#L396-L406>
     #[allow(dead_code)] // TEMPORARY
-    pub(crate) fn point_type(&self) -> Result<PointType, Error> {
+    pub(crate) fn point_type(&self) -> Result<PointType, PathConversionError> {
         match (self.smooth, self.raw_type.as_deref()) {
             (false, Some("cubic")) => Ok(PointType::OffCurveCubic),
             (false, Some("quad")) => Ok(PointType::OffCurveQuad),
             (false, None) => Ok(PointType::OnCurve),
             (true, None) => Ok(PointType::OnCurveSmooth),
-            _ => Err(Error::InvalidInputData(format!(
-                "Unrecognized combination, smooth {}, type {:?}",
-                self.smooth, self.raw_type
+            _ => Err(PathConversionError::Parse(format!(
+                "Unrecognized combination, smooth {}, type '{}'",
+                self.smooth,
+                self.raw_type.clone().unwrap_or_default()
             ))),
         }
     }
