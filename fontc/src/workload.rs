@@ -27,7 +27,7 @@ use log::{debug, trace, warn};
 
 use crate::{
     timing::{create_timer, JobTime, JobTimeQueued, JobTimer},
-    work::{AnyAccess, AnyContext, AnyWork, AnyWorkError},
+    work::{AnyAccess, AnyContext, AnyWork},
     ChangeDetector, Error,
 };
 
@@ -37,7 +37,9 @@ pub struct Workload<'a> {
     pub(crate) change_detector: &'a ChangeDetector,
     job_count: usize,
     success: HashSet<AnyWorkId>,
-    error: Vec<(AnyWorkId, String)>,
+    error: Option<Error>,
+    // we count the number of errors encountered but only store the first we see
+    n_failures: usize,
 
     // When K completes also mark all entries in V complete
     also_completes: HashMap<AnyWorkId, Vec<AnyWorkId>>,
@@ -98,6 +100,7 @@ impl<'a> Workload<'a> {
             job_count: 0,
             success: Default::default(),
             error: Default::default(),
+            n_failures: 0,
             also_completes: Default::default(),
             jobs_pending: Default::default(),
             count_pending: Default::default(),
@@ -437,7 +440,7 @@ impl<'a> Workload<'a> {
     pub fn exec(mut self, fe_root: &FeContext, be_root: &BeContext) -> Result<JobTimer, Error> {
         // Async work will send us it's ID on completion
         let (send, recv) =
-            crossbeam_channel::unbounded::<(AnyWorkId, Result<(), AnyWorkError>, JobTime)>();
+            crossbeam_channel::unbounded::<(AnyWorkId, Result<(), Error>, JobTime)>();
 
         // a flag we set if we panic
         let abort_queued_jobs = Arc::new(AtomicBool::new(false));
@@ -570,7 +573,7 @@ impl<'a> Workload<'a> {
                                 Err(err) => {
                                     let msg = get_panic_message(err);
                                     abort.store(true, Ordering::Relaxed);
-                                    Err(AnyWorkError::Panic(msg))
+                                    Err(Error::Panic(msg))
                                 }
                             };
                             // Decrement counters immediately so all-of detection checks true
@@ -618,7 +621,7 @@ impl<'a> Workload<'a> {
         // If ^ exited due to error the scope awaited any live tasks; capture their results
         self.read_completions(&mut Vec::new(), &recv, RecvType::NonBlocking)?;
 
-        if self.error.is_empty() {
+        if self.error.is_none() {
             if self.success.len() != self.job_count {
                 panic!(
                     "No errors but only {}/{} succeeded?!",
@@ -644,7 +647,7 @@ impl<'a> Workload<'a> {
     fn read_completions(
         &mut self,
         successes: &mut Vec<(AnyWorkId, JobTime)>,
-        recv: &Receiver<(AnyWorkId, Result<(), AnyWorkError>, JobTime)>,
+        recv: &Receiver<(AnyWorkId, Result<(), Error>, JobTime)>,
         initial_read: RecvType,
     ) -> Result<(), Error> {
         successes.clear();
@@ -671,8 +674,13 @@ impl<'a> Workload<'a> {
                     inserted
                 }
                 Err(e) => {
-                    log::error!("{completed_id:?} failed {e}");
-                    self.error.push((completed_id.clone(), format!("{e}")));
+                    self.n_failures += 1;
+                    if self.error.is_none() {
+                        self.error = Some(e);
+                    } else {
+                        // the first error will be reported on exit, log the rest:
+                        log::error!("task '{completed_id:?}' failed: '{e}'");
+                    }
                     true
                 }
             } {
@@ -684,7 +692,7 @@ impl<'a> Workload<'a> {
 
             log::debug!(
                 "{}/{} complete, most recently {:?}",
-                self.error.len() + self.success.len(),
+                self.n_failures + self.success.len(),
                 self.job_count,
                 completed_id
             );
@@ -694,10 +702,10 @@ impl<'a> Workload<'a> {
                 opt_complete = Some(completed_id);
             }
         }
-        if !self.error.is_empty() {
-            return Err(Error::TasksFailed(self.error.clone()));
+        match self.error.take() {
+            Some(error) => Err(error),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     #[cfg(test)]

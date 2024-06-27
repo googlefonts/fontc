@@ -25,7 +25,7 @@ fn run() -> Result<(), Error> {
     let args = Args::parse();
     // handle `--vv` verbose version argument request
     if args.verbose_version {
-        print_verbose_version()?;
+        print_verbose_version().map_err(Error::StdioWriteFail)?;
         std::process::exit(0);
     }
     let mut timer = JobTimer::new(Instant::now());
@@ -75,14 +75,20 @@ fn run() -> Result<(), Error> {
     let mut timing = workload.exec(&fe_root, &be_root)?;
 
     if config.args.flags().contains(Flags::EMIT_TIMING) {
+        let path = config.args.build_dir.join("threads.svg");
         let out_file = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .open(config.args.build_dir.join("threads.svg"))
-            .map_err(Error::IoError)?;
+            .open(&path)
+            .map_err(|source| Error::FileIo {
+                path: path.clone(),
+                source,
+            })?;
         let mut buf = BufWriter::new(out_file);
-        timing.write_svg(&mut buf)?
+        timing
+            .write_svg(&mut buf)
+            .map_err(|source| Error::FileIo { path, source })?;
     }
 
     change_detector.finish_successfully()?;
