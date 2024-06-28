@@ -22,7 +22,7 @@ use write_fonts::{
 pub enum Error {
     #[error("IO failure")]
     IoError(#[from] io::Error),
-    #[error("Fea compilation failure {0}")]
+    #[error(transparent)]
     FeaCompileError(#[from] CompilerError),
     #[error("'{0}' {1}")]
     GlyphError(GlyphName, GlyphProblem),
@@ -93,6 +93,8 @@ pub enum Error {
     MissingGlyphId(GlyphName),
     #[error("Error making CMap: {0}")]
     CmapConflict(#[from] CmapConflict),
+    #[error("Progress stalled computing composite bbox: {0:?}")]
+    CompositesStalled(Vec<GlyphName>),
 }
 
 #[derive(Debug)]

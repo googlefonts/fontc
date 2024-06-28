@@ -21,7 +21,7 @@ pub enum Error {
     YamlSerError(#[from] serde_yaml::Error),
     #[error(transparent)]
     TrackFile(#[from] TrackFileError),
-    #[error("Font IR error: '{0}'")]
+    #[error(transparent)]
     FontIrError(#[from] fontir::error::Error),
     #[error(transparent)]
     Backend(#[from] fontbe::error::Error),

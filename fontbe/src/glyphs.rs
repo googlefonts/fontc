@@ -824,7 +824,9 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
         // Kerplode if we didn't make any progress this spin
         composites.retain(|composite| !bbox_acquired.contains_key(&composite.name));
         if pending == composites.len() {
-            panic!("Unable to make progress on composite bbox, stuck at\n{composites:?}");
+            return Err(Error::CompositesStalled(
+                composites.iter().map(|g| g.name.clone()).collect(),
+            ));
         }
     }
 
