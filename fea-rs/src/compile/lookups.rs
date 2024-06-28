@@ -42,9 +42,10 @@ use contextual::{
     SubChainContextBuilder, SubContextBuilder,
 };
 
-use gpos_builders::{CursivePosBuilder, SinglePosBuilder};
+use gpos_builders::SinglePosBuilder;
 pub use gpos_builders::{
-    MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder, PreviouslyAssignedClass,
+    CursivePosBuilder, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder,
+    PreviouslyAssignedClass,
 };
 use gsub_builders::{
     AlternateSubBuilder, LigatureSubBuilder, MultipleSubBuilder, SingleSubBuilder,
@@ -125,6 +126,7 @@ impl_into_pos_lookup!(PairPosBuilder, Pair);
 impl_into_pos_lookup!(MarkToBaseBuilder, MarkToBase);
 impl_into_pos_lookup!(MarkToMarkBuilder, MarkToMark);
 impl_into_pos_lookup!(MarkToLigBuilder, MarkToLig);
+impl_into_pos_lookup!(CursivePosBuilder, Cursive);
 
 #[derive(Clone, Debug)]
 pub(crate) enum SubstitutionLookup {

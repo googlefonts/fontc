@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
     compile::{
-        Anchor as FeaAnchor, FeatureProvider, MarkToBaseBuilder, MarkToLigBuilder,
-        MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo, PendingLookup,
+        Anchor as FeaAnchor, CursivePosBuilder, FeatureProvider, MarkToBaseBuilder,
+        MarkToLigBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo, PendingLookup,
     },
     typed::{AstNode, LanguageSystem},
     GlyphSet, Opts, ParseTree,
@@ -175,6 +175,8 @@ impl<'a> MarkLookupBuilder<'a> {
                         mark_groups.insert(group);
                     }
                     AnchorKind::ComponentMarker(_) => (),
+                    AnchorKind::CursiveEntry => (),
+                    AnchorKind::CursiveExit => (),
                 }
                 pruned
                     .entry(anchors.glyph_name.clone())
@@ -190,10 +192,11 @@ impl<'a> MarkLookupBuilder<'a> {
         // <https://github.com/googlefonts/ufo2ft/blob/6787e37e63530/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L359>
         pruned.retain(|_, anchors| {
             anchors.retain(|anchor| {
-                anchor
-                    .mark_group_name()
-                    .map(|group| used_groups.contains(&group))
-                    .unwrap_or_else(|| anchor.is_component_marker())
+                anchor.is_cursive()
+                    || anchor
+                        .mark_group_name()
+                        .map(|group| used_groups.contains(&group))
+                        .unwrap_or_else(|| anchor.is_component_marker())
             });
             !anchors.is_empty()
         });
@@ -217,11 +220,13 @@ impl<'a> MarkLookupBuilder<'a> {
         let mark_base = self.make_lookups::<MarkToBaseBuilder>(mark_base_groups)?;
         let mark_mark = self.make_lookups::<MarkToMarkBuilder>(mark_mark_groups)?;
         let mark_lig = self.make_lookups::<MarkToLigBuilder>(mark_lig_groups)?;
+        let curs = self.make_cursive_lookups()?;
         Ok(FeaRsMarks {
             glyphmap: self.glyph_order.iter().cloned().collect(),
             mark_base,
             mark_mark,
             mark_lig,
+            curs,
         })
     }
 
@@ -399,6 +404,50 @@ impl<'a> MarkLookupBuilder<'a> {
         }
         groups
     }
+
+    fn make_cursive_lookups(&self) -> Result<Vec<PendingLookup<CursivePosBuilder>>, Error> {
+        let mut builder = CursivePosBuilder::default();
+        let mut flags = LookupFlag::empty();
+        flags.set_ignore_marks(true);
+        flags.set_right_to_left(true);
+        let mut entries = BTreeMap::new();
+        let mut affected_glyphs = BTreeSet::new();
+        let mut exits = BTreeMap::new();
+
+        for (glyph_name, anchors) in &self.anchor_lists {
+            for anchor in anchors {
+                match anchor.kind {
+                    AnchorKind::CursiveEntry => {
+                        entries.insert(glyph_name, anchor);
+                        affected_glyphs.insert(glyph_name);
+                    }
+                    AnchorKind::CursiveExit => {
+                        exits.insert(glyph_name, anchor);
+                        affected_glyphs.insert(glyph_name);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if affected_glyphs.is_empty() {
+            return Ok(vec![]);
+        }
+        for glyph_name in affected_glyphs {
+            let gid = self.glyph_order.glyph_id(glyph_name).unwrap();
+            let entry_anchor = entries
+                .get(glyph_name)
+                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata, glyph_name))
+                .transpose()?;
+            let exit_anchor = exits
+                .get(glyph_name)
+                .map(|anchor| resolve_anchor_once(anchor, self.static_metadata, glyph_name))
+                .transpose()?;
+            builder.insert(gid, entry_anchor, exit_anchor);
+        }
+        // In the future we might to do an LTR/RTL split, but for now return a
+        // vector with one element.
+        Ok(vec![PendingLookup::new(vec![builder], flags, None)])
+    }
 }
 
 impl Work<Context, AnyWorkId, Error> for MarkWork {
@@ -571,6 +620,7 @@ impl FeatureProvider for FeaRsMarks {
     fn add_features(&self, builder: &mut fea_rs::compile::FeatureBuilder) {
         let mut mark_lookups = Vec::new();
         let mut mkmk_lookups = Vec::new();
+        let mut curs_lookups = Vec::new();
 
         for mark_base in self.mark_base.iter() {
             // each mark to base it's own lookup, whch differs from fontmake
@@ -585,11 +635,18 @@ impl FeatureProvider for FeaRsMarks {
             mkmk_lookups.push(builder.add_lookup(mark_mark.clone()));
         }
 
+        for curs in self.curs.iter() {
+            curs_lookups.push(builder.add_lookup(curs.clone()));
+        }
+
         if !mark_lookups.is_empty() {
             builder.add_to_default_language_systems(Tag::new(b"mark"), &mark_lookups);
         }
         if !mkmk_lookups.is_empty() {
             builder.add_to_default_language_systems(Tag::new(b"mkmk"), &mkmk_lookups);
+        }
+        if !curs_lookups.is_empty() {
+            builder.add_to_default_language_systems(Tag::new(b"curs"), &curs_lookups);
         }
     }
 }

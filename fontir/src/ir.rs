@@ -1038,12 +1038,16 @@ pub enum AnchorKind {
     /// An attachment anchor on a mark glyph
     Mark(GroupName),
     /// A base attachment on a ligature glyph
-    Ligature { group_name: GroupName, index: usize },
+    Ligature {
+        group_name: GroupName,
+        index: usize,
+    },
     /// An anchor marking the presence of a ligature component with no anchors.
     ///
     /// These are names like '_3'.
     ComponentMarker(usize),
-    // we will add more anchor kinds in the future like entry/exit
+    CursiveEntry,
+    CursiveExit,
 }
 
 impl AnchorKind {
@@ -1051,6 +1055,14 @@ impl AnchorKind {
     // <https://github.com/googlefonts/ufo2ft/blob/6787e37e6/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L101>
     pub fn new(name: impl AsRef<str>) -> Result<AnchorKind, BadAnchorReason> {
         let name = name.as_ref();
+
+        if name == "entry" {
+            return Ok(AnchorKind::CursiveEntry);
+        }
+        if name == "exit" {
+            return Ok(AnchorKind::CursiveExit);
+        }
+
         // the '_' char is used as a prefix for marks, and as a space character
         // in ligature mark names (e.g. top_1, top_2). The funny exception is
         // names like '_4', (i.e. an underscore followed by a number) which
@@ -1138,6 +1150,11 @@ impl Anchor {
 
     pub fn is_component_marker(&self) -> bool {
         matches!(self.kind, AnchorKind::ComponentMarker(_))
+    }
+
+    pub fn is_cursive(&self) -> bool {
+        matches!(self.kind, AnchorKind::CursiveEntry)
+            || matches!(self.kind, AnchorKind::CursiveExit)
     }
 
     /// If this is a ligature component anchor, return the index

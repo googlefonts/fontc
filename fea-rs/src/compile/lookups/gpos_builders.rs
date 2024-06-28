@@ -341,6 +341,7 @@ impl Builder for ClassPairPosSubtable {
     }
 }
 
+/// A builder for GPOS Lookup Type 3, Cursive Attachment
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CursivePosBuilder {
@@ -349,6 +350,7 @@ pub struct CursivePosBuilder {
 }
 
 impl CursivePosBuilder {
+    /// Insert a new entry/exit anchor pair for a glyph.
     pub fn insert(&mut self, glyph: GlyphId, entry: Option<Anchor>, exit: Option<Anchor>) {
         self.items.insert(glyph, (entry, exit));
     }
