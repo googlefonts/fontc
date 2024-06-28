@@ -11,8 +11,8 @@ use std::{
 
 use fea_rs::{
     compile::{
-        FeatureKey, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder,
-        PendingLookup, ValueRecord as ValueRecordBuilder,
+        CursivePosBuilder, FeatureKey, MarkToBaseBuilder, MarkToLigBuilder, MarkToMarkBuilder,
+        PairPosBuilder, PendingLookup, ValueRecord as ValueRecordBuilder,
     },
     GlyphMap, GlyphSet, ParseTree,
 };
@@ -333,6 +333,7 @@ pub struct FeaRsMarks {
     pub(crate) mark_base: Vec<PendingLookup<MarkToBaseBuilder>>,
     pub(crate) mark_mark: Vec<PendingLookup<MarkToMarkBuilder>>,
     pub(crate) mark_lig: Vec<PendingLookup<MarkToLigBuilder>>,
+    pub(crate) curs: Vec<PendingLookup<CursivePosBuilder>>,
 }
 
 impl Persistable for FeaRsMarks {
