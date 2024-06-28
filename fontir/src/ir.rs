@@ -1035,7 +1035,10 @@ pub enum AnchorKind {
     /// An attachment anchor on a mark glyph
     Mark(GroupName),
     /// A base attachment on a ligature glyph
-    Ligature { group_name: GroupName, index: usize },
+    Ligature {
+        group_name: GroupName,
+        index: usize,
+    },
     /// An anchor marking the presence of a ligature component with no anchors.
     ///
     /// These are names like '_3'.
