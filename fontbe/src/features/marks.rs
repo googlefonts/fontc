@@ -429,6 +429,9 @@ impl<'a> MarkLookupBuilder<'a> {
                 }
             }
         }
+        if affected_glyphs.is_empty() {
+            return Ok(vec![]);
+        }
         for glyph_name in affected_glyphs {
             let gid = self.glyph_order.glyph_id(glyph_name).unwrap();
             let entry_anchor = entries
