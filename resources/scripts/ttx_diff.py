@@ -13,12 +13,34 @@ Usage:
     # rebuild the fontc copy, reuse the prior fontmake copy (if present), and compare
     # useful if you are making changes to fontc meant to narrow the diff
     python resources/scripts/ttx_diff.py --rebuild fontc ../OswaldFont/sources/Oswald.glyphs
+
+JSON:
+    If the `--json` flag is passed, this tool will output JSON.
+
+    If the script exits with a `0` status code, then `stdout` is a JSON dictionary.
+
+    If both compilers ran successfully, this dictionary will have a single key,
+    "success", which will contain a dictionary, where keys are the tags of tables
+    (or another identifier) and the value is either a float representing the
+    'difference ratio' (where 1.0 means identical and 0.0 means maximally
+   dissimilar) or, if only one compiler produced that table, the name of that
+    compiler as a string.
+    For example, the output `{"success": { "GPOS": 0.99, "vmxt": "fontmake" }}`
+    means that the "GPOS" table was 99% similar, and only `fontmake` produced
+    the "vmtx" table (and all other tables were identical).
+
+    If a compiler fails to exit successfully, we will return a dictionary with
+    the single key, "error", where the payload is a dictionary with "source" and
+    "message" fields; "source" is the name of the compiler that failed, and
+    "message" is the contents of stderr, e.g.:
+    `{"error": {"source": "fontmake", "message": "oh no!" }}`
 """
 
 from absl import app
 from absl import flags
 from lxml import etree
 from pathlib import Path
+import json
 import shutil
 import subprocess
 import sys
@@ -34,6 +56,11 @@ FLAGS = flags.FLAGS
 # used instead of a tag for the normalized mark/kern output
 MARK_KERN_NAME = "(mark/kern)"
 
+# we don't print to stdout of we're generating JSON
+def maybe_print(*objects):
+    if FLAGS.json:
+        return
+    print(*objects)
 
 flags.DEFINE_enum(
     "compare",
@@ -52,22 +79,30 @@ flags.DEFINE_float(
     0.1,
     "The percentage of point (glyf) or delta (gvar) values allowed to differ by one without counting as a diff",
 )
+flags.DEFINE_bool("json", False, "print results in machine-readable JSON format")
 
 
 def run(cmd: MutableSequence, working_dir: Path, log_file: str, **kwargs):
     cmd_string = " ".join(cmd)
-    print(f"  (cd {working_dir} && {cmd_string} > {log_file} 2>&1)")
-    log_file = working_dir / log_file
-    with open(log_file, "w") as log_file:
-        subprocess.run(
-            cmd,
-            text=True,
-            check=True,
-            cwd=working_dir,
-            stdout=log_file,
-            stderr=log_file,
-            **kwargs,
-        )
+    maybe_print(f"  (cd {working_dir} && {cmd_string} > {log_file} 2>&1)")
+    log_path = working_dir / log_file
+    try:
+        with open(log_path, "w") as log_file:
+            subprocess.run(
+                cmd,
+                text=True,
+                check=True,
+                cwd=working_dir,
+                stdout=log_file,
+                stderr=log_file,
+                **kwargs,
+            )
+    except subprocess.CalledProcessError as e:
+        # hack: in the JSON case I want to be able to return the stashed output
+        # in the error, so we go full python :)
+        log_contents = open(log_path).read()
+        setattr(e, "_secret_log_stash", log_contents)
+        raise e
 
 
 def ttx(font_file: Path):
@@ -118,7 +153,7 @@ def build(
     if try_skip and len(ttfs) == 1:
         ttx_file = ttfs[0].with_suffix(".ttx")
         if ttx_file.is_file():
-            print(f"skipping {build_tool}")
+            maybe_print(f"skipping {build_tool}")
             return ttx_file
     run(cmd, build_dir, build_tool + ".log", **kwargs)
     ttfs = ttf_find_fn()
@@ -283,13 +318,13 @@ def allow_some_off_by_ones(
                     fontc_el.attrib[attr] = fontmake_el.attrib[attr]
                     spent += 1
                 if spent >= off_by_one_budget:
-                    print(
+                    maybe_print(
                         f"WARN: ran out of budget ({off_by_one_budget}) to fix off-by-ones in {container}"
                     )
                     return
 
     if spent > 0:
-        print(
+        maybe_print(
             f"INFO fixed {spent} off-by-ones in {container} (budget {off_by_one_budget})"
         )
 
@@ -363,6 +398,28 @@ def print_output(build_dir: Path, output: dict[str, dict[str, str]]):
             p2 = build_dir / path_for_output_item(tag, "fontmake")
             print(f"  DIFF '{tag}', {p1} {p2} ({difference:.1%})")
 
+def jsonify_output(output: dict[str, dict[str, str]]):
+    fontc = output["fontc"]
+    fontmake = output["fontmake"]
+    all_tags = set(fontc.keys()) | set(fontmake.keys())
+    out = dict()
+    for tag in all_tags:
+        if tag not in fontc:
+            out[tag] = "fontmake"
+        elif tag not in fontmake:
+            out[tag] = "fontc"
+        else:
+            s1 = fontc[tag]
+            s2 = fontmake[tag]
+            if s1 != s2:
+                ratio = diff_ratio(s1, s2)
+                out[tag] = ratio
+    return {"success": out}
+
+def print_json(output):
+    as_json = json.dumps(output, indent=2)
+    print(as_json)
+
 
 # given the ttx for a font, return a map of tags -> xml text for each root table.
 # also writes the xml to individual files
@@ -391,6 +448,17 @@ def path_for_output_item(tag_or_normalizer_name: str, compiler: str) -> str:
     else:
         return f"{compiler}.{tag_or_normalizer_name}.ttx"
 
+
+# if we're outputing json, format error and output as json, else reraise
+def handle_compiler_error(error: Exception, compiler_name: str, json: bool):
+    if not json:
+        raise error
+    message = getattr(error, "_secret_log_stash", "") or str(error)
+    out = {"error": {"source": compiler_name, "message": message}}
+    print_json(out)
+    sys.exit(0)
+
+
 def main(argv):
     if len(argv) != 2:
         sys.exit("Only one argument, a source file, is expected")
@@ -410,17 +478,30 @@ def main(argv):
 
     comparisons = (FLAGS.compare,)
     if comparisons == ("both",):
+        if FLAGS.json:
+            sys.exit("JSON output does not support multiple comparisons (try --compare default|gftools)")
         comparisons = (_COMPARE_DEFAULTS, _COMPARE_GFTOOLS)
 
     for compare in comparisons:
         build_dir = (root / "build" / compare).relative_to(root)
         build_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Compare {compare} in {build_dir}")
+        maybe_print(f"Compare {compare} in {build_dir}")
 
-        fontc_ttf = build_fontc(source.resolve(), build_dir, compare)
-        fontmake_ttf = build_fontmake(source.resolve(), build_dir, compare)
+        try:
+            fontc_ttf = build_fontc(source.resolve(), build_dir, compare)
+        except Exception as e:
+            handle_compiler_error(e, "fontc", FLAGS.json)
+        try:
+            fontmake_ttf = build_fontmake(source.resolve(), build_dir, compare)
+
+        except Exception as e:
+            handle_compiler_error(e, "fontmake", FLAGS.json)
         output = generate_output(build_dir, fontmake_ttf, fontc_ttf)
-        print_output(build_dir, output)
+        if not FLAGS.json:
+            print_output(build_dir, output)
+        else:
+            output = jsonify_output(output)
+            print_json(output)
 
 if __name__ == "__main__":
     app.run(main)
