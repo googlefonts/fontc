@@ -22,6 +22,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from difflib import SequenceMatcher
 from typing import MutableSequence
 
 
@@ -30,6 +31,8 @@ _COMPARE_GFTOOLS = "gftools"
 
 
 FLAGS = flags.FLAGS
+# used instead of a tag for the normalized mark/kern output
+MARK_KERN_NAME = "(mark/kern)"
 
 
 flags.DEFINE_enum(
@@ -314,6 +317,79 @@ def reduce_diff_noise(build_dir, fontc, fontmake):
         build_dir, fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
     )
 
+# returns a dictionary of {"compiler_name":  {"tag": "xml_text"}}
+def generate_output(build_dir: Path, fontmake_ttf: Path, fontc_ttf: Path):
+    fontc_ttx = ttx(fontc_ttf)
+    fontmake_ttx = ttx(fontmake_ttf)
+    fontc_gpos = simple_gpos_output(fontc_ttf, build_dir / "fontc.markkern.txt")
+    fontmake_gpos = simple_gpos_output(
+        fontmake_ttf, build_dir / "fontmake.markkern.txt"
+    )
+
+    fontc = etree.parse(fontc_ttx)
+    fontmake = etree.parse(fontmake_ttx)
+    reduce_diff_noise(build_dir, fontc, fontmake)
+
+    fontc = extract_comparables(fontc, build_dir, "fontc")
+    fontmake = extract_comparables(fontmake, build_dir, "fontmake")
+    fontc[MARK_KERN_NAME] = fontc_gpos
+    fontmake[MARK_KERN_NAME] = fontmake_gpos
+    return {"fontc": fontc, "fontmake": fontmake}
+
+def print_output(build_dir: Path, output: dict[str, dict[str, str]]):
+    fontc = output["fontc"]
+    fontmake = output["fontmake"]
+    print("COMPARISON")
+    t1 = set(fontc.keys())
+    t2 = set(fontmake.keys())
+    if t1 != t2:
+        if t1 - t2:
+            tags = ", ".join(f"'{t}'" for t in sorted(t1 - t2))
+            print(f"  Only fontc produced {tags}")
+
+        if t2 - t1:
+            tags = ", ".join(f"'{t}'" for t in sorted(t2 - t1))
+            print(f"  Only fontmake produced {tags}")
+
+
+    for tag in sorted(t1 & t2):
+        t1s = fontc[tag]
+        t2s = fontmake[tag]
+        if t1s == t2s:
+            print(f"  Identical '{tag}'")
+        else:
+            difference = diff_ratio(t1s, t2s)
+            p1 = build_dir / path_for_output_item(tag, "fontc")
+            p2 = build_dir / path_for_output_item(tag, "fontmake")
+            print(f"  DIFF '{tag}', {p1} {p2} ({difference:.1%})")
+
+
+# given the ttx for a font, return a map of tags -> xml text for each root table.
+# also writes the xml to individual files
+def extract_comparables(font_xml, build_dir: Path, compiler: str) -> dict[str, str]:
+    comparables = dict()
+    tables = {e.tag: e for e in font_xml.getroot()}
+    for tag in sorted(e.tag for e in font_xml.getroot()):
+        table_str = etree.tostring(tables[tag])
+        path = build_dir / f"{compiler}.{tag}.ttx"
+        path.write_bytes(table_str)
+        comparables[tag] = table_str
+
+    return comparables
+
+
+# the line-wise ratio of difference, i.e. the fraction of lines that are the same
+def diff_ratio(text1: str, text2: str) -> float:
+    lines1 = text1.splitlines()
+    lines2 = text2.splitlines()
+    m = SequenceMatcher(None, lines1, lines2)
+    return m.ratio()
+
+def path_for_output_item(tag_or_normalizer_name: str, compiler: str) -> str:
+    if tag_or_normalizer_name == MARK_KERN_NAME:
+        return f"{compiler}.markkern.txt"
+    else:
+        return f"{compiler}.{tag_or_normalizer_name}.ttx"
 
 def main(argv):
     if len(argv) != 2:
@@ -342,53 +418,9 @@ def main(argv):
         print(f"Compare {compare} in {build_dir}")
 
         fontc_ttf = build_fontc(source.resolve(), build_dir, compare)
-        fontc_ttx = ttx(fontc_ttf)
         fontmake_ttf = build_fontmake(source.resolve(), build_dir, compare)
-        fontmake_ttx = ttx(fontmake_ttf)
-        fontc_gpos = simple_gpos_output(fontc_ttf, build_dir / "fontc.markkern.txt")
-        fontmake_gpos = simple_gpos_output(
-            fontmake_ttf, build_dir / "fontmake.markkern.txt"
-        )
-
-        print("TTX FILES")
-        print("  fontc    ", fontc_ttx)
-        print("  fontmake ", fontmake_ttx)
-
-        fontc = etree.parse(fontc_ttx)
-        fontmake = etree.parse(fontmake_ttx)
-
-        reduce_diff_noise(build_dir, fontc, fontmake)
-
-        print("COMPARISON")
-        t1 = {e.tag for e in fontc.getroot()}
-        t2 = {e.tag for e in fontmake.getroot()}
-        if t1 != t2:
-            if t1 - t2:
-                tags = ", ".join(f"'{t}'" for t in sorted(t1 - t2))
-                print(f"  Only fontc produced {tags}")
-
-            if t2 - t1:
-                tags = ", ".join(f"'{t}'" for t in sorted(t2 - t1))
-                print(f"  Only fontmake produced {tags}")
-
-        t1e = {e.tag: e for e in fontc.getroot()}
-        t2e = {e.tag: e for e in fontmake.getroot()}
-        for tag in sorted(t1 & t2):
-            t1s = etree.tostring(t1e[tag])
-            t2s = etree.tostring(t2e[tag])
-            p1 = build_dir / f"fontc.{tag}.ttx"
-            p1.write_bytes(t1s)
-            p2 = build_dir / f"fontmake.{tag}.ttx"
-            p2.write_bytes(t2s)
-            if t1s == t2s:
-                print(f"  Identical '{tag}'")
-            else:
-                print(f"  DIFF '{tag}', {p1} {p2}")
-                if tag == "GPOS":
-                    p1 = build_dir / "fontc.markkern.txt"
-                    p2 = build_dir / "fontmake.markkern.txt"
-                    print(f"  (mark/kern)  {p1} {p2}")
-
+        output = generate_output(build_dir, fontmake_ttf, fontc_ttf)
+        print_output(build_dir, output)
 
 if __name__ == "__main__":
     app.run(main)
