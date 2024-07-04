@@ -21,10 +21,13 @@ pub(super) struct Args {
     /// Optional path to write out results (as json)
     #[arg(short = 'o', long = "out")]
     pub(super) out_path: Option<PathBuf>,
+    /// for debugging, execute only a given number of fonts
+    #[arg(long)]
+    pub(super) n_fonts: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(super) enum Tasks {
     Compile,
-    // this will expand to include at least 'ttx_diff'
+    Diff,
 }

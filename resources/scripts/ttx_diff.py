@@ -491,7 +491,6 @@ def report_errors_and_exit_if_there_were_any(errors: dict):
         print_json({"error": errors})
     sys.exit(2)
 
-
 def main(argv):
     if len(argv) != 2:
         sys.exit("Only one argument, a source file, is expected")
