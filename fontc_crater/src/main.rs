@@ -9,14 +9,13 @@ use std::{
 use clap::Parser;
 use fontc::JobTimer;
 use google_fonts_sources::RepoInfo;
-use write_fonts::types::Tag;
 
 mod args;
 mod error;
 mod sources;
 mod ttx_diff_runner;
 
-use sources::RepoList;
+use sources::{Config, RepoList};
 
 use args::{Args, Tasks};
 use error::Error;
@@ -170,7 +169,7 @@ fn fetch_and_run_repo<T, E>(
         .iter()
         .flat_map(|filename| {
             let config_path = source_dir.join(filename);
-            load_config(&config_path)
+            Config::load(&config_path)
         })
         .collect::<Vec<_>>();
 
@@ -229,24 +228,6 @@ fn clone_repo(to_dir: &Path, repo: &str) -> Result<(), String> {
         return Err(stderr.into_owned());
     }
     Ok(())
-}
-
-/// Parse and return a config.yaml file for the provided font source
-fn load_config(config_path: &Path) -> Option<Config> {
-    let contents = match std::fs::read_to_string(config_path) {
-        Ok(contents) => contents,
-        Err(e) => {
-            eprintln!("failed to load config at '{}': {e}", config_path.display());
-            return None;
-        }
-    };
-    match serde_yaml::from_str(&contents) {
-        Ok(config) => Some(config),
-        Err(e) => {
-            eprintln!("BAD YAML: {contents}: '{e}'");
-            None
-        }
-    }
 }
 
 impl<T, E> FromIterator<(PathBuf, RunResult<T, E>)> for Results<T, E> {
@@ -320,21 +301,6 @@ impl<T, E> Default for Results<T, E> {
             skipped: Default::default(),
         }
     }
-}
-
-/// Google fonts config file ('config.yaml')
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-// there are a few fields of this that we dont' care about but parse anyway?
-// maybe we will want them later?
-#[allow(dead_code)]
-struct Config {
-    sources: Vec<String>,
-    family_name: Option<String>,
-    #[serde(default)]
-    build_variable: bool,
-    #[serde(default)]
-    axis_order: Vec<Tag>,
 }
 
 impl std::fmt::Display for SkipReason {

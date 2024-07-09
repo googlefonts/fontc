@@ -6,11 +6,47 @@ use std::{
 
 use google_fonts_sources::RepoInfo;
 use serde::{Deserialize, Serialize};
+use write_fonts::types::Tag;
 
 use crate::error::Error;
 
 static CACHED_REPO_INFO_FILE: &str = "google_fonts_repos.json";
 const ONE_WEEK: Duration = Duration::from_secs(60 * 60 * 24 * 7);
+
+/// Google fonts config file ('config.yaml')
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+// there are a few fields of this that we dont' care about but parse anyway?
+// maybe we will want them later?
+#[allow(dead_code)]
+pub(crate) struct Config {
+    pub(crate) sources: Vec<String>,
+    family_name: Option<String>,
+    #[serde(default)]
+    build_variable: bool,
+    #[serde(default)]
+    axis_order: Vec<Tag>,
+}
+
+impl Config {
+    /// Parse and return a config.yaml file for the provided font source
+    pub(crate) fn load(config_path: &Path) -> Option<Self> {
+        let contents = match std::fs::read_to_string(config_path) {
+            Ok(contents) => contents,
+            Err(e) => {
+                eprintln!("failed to load config at '{}': {e}", config_path.display());
+                return None;
+            }
+        };
+        match serde_yaml::from_str(&contents) {
+            Ok(config) => Some(config),
+            Err(e) => {
+                eprintln!("BAD YAML: {contents}: '{e}'");
+                None
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct RepoList {
