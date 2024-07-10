@@ -56,11 +56,13 @@ FLAGS = flags.FLAGS
 # used instead of a tag for the normalized mark/kern output
 MARK_KERN_NAME = "(mark/kern)"
 
+
 # we don't print to stdout of we're generating JSON
 def maybe_print(*objects):
     if FLAGS.json:
         return
     print(*objects)
+
 
 flags.DEFINE_enum(
     "compare",
@@ -79,43 +81,39 @@ flags.DEFINE_float(
     0.1,
     "The percentage of point (glyf) or delta (gvar) values allowed to differ by one without counting as a diff",
 )
-flags.DEFINE_bool("json", False, "print results in machine-readable JSON format")
+flags.DEFINE_bool(
+    "json", False, "print results in machine-readable JSON format")
 
 
-def run(cmd: MutableSequence, working_dir: Path, log_file: str, **kwargs):
-    cmd_string = " ".join(cmd)
-    maybe_print(f"  (cd {working_dir} && {cmd_string} > {log_file} 2>&1)")
-    log_path = working_dir / log_file
-    try:
-        with open(log_path, "w") as log_file:
-            subprocess.run(
-                cmd,
-                text=True,
-                check=True,
-                cwd=working_dir,
-                stdout=log_file,
-                stderr=log_file,
-                **kwargs,
-            )
-    except subprocess.CalledProcessError as e:
-        # hack: in the JSON case I want to be able to return the stashed output
-        # in the error, so we go full python :)
-        log_contents = open(log_path).read()
-        setattr(e, "_secret_log_stash", log_contents)
-        raise e
+# execute a command in the provided working directory.
+# The 'check' argument is passed to subprocess.run; if it is true than an
+# exception will be raised if the command does not exit successfully; otherwise
+# the caller can check the status via the returned `CompletedProcess` object.
+def run(cmd: MutableSequence, working_dir: Path, check=False, **kwargs):
+    cmd_string = " ".join(str(c) for c in cmd)
+    maybe_print(f"  (cd {working_dir} && {cmd_string})")
+    return subprocess.run(
+        cmd,
+        text=True,
+        check=check,
+        cwd=working_dir,
+        capture_output=True,
+        **kwargs,
+    )
 
 
-def ttx(font_file: Path):
-    if font_file.suffix == ".ttx":
-        return font_file
+def ttx(font_file: Path, can_skip: bool):
     ttx_file = font_file.with_suffix(".ttx")
+    if can_skip and ttx_file.is_file():
+        return ttx_file
+
     cmd = [
         "ttx",
         "-o",
         ttx_file.name,
         font_file.name,
     ]
-    run(cmd, font_file.parent, "ttx.log")
+    run(cmd, font_file.parent, check=True)
     return ttx_file
 
 
@@ -137,28 +135,38 @@ def simple_gpos_output(font_file: Path, out_path: Path):
     run(
         cmd,
         font_file.parent,
-        "kernmark.log",
+        check=True,
     )
     copy(temppath, out_path)
     with open(out_path) as f:
         return f.read()
 
 
-# run a font compiler, returning the path of the generated font
+class BuildFail(Exception):
+    """An exception raised if a compiler fails."""
+
+    def __init__(self, cmd: MutableSequence, stderr: str):
+        self.command = list(cmd)
+        self.stderr = stderr
+
+
+# run a font compiler
 def build(
-    cmd: MutableSequence, build_dir: Path, build_tool: str, ttf_find_fn, **kwargs
+    cmd: MutableSequence, build_dir: Path, build_tool: str, **kwargs
 ):
+    if can_skip(build_dir, build_tool):
+        maybe_print((f"skipping {build_tool}"))
+        return
+    output = run(cmd, build_dir, **kwargs)
+    if output.returncode != 0:
+        raise BuildFail(cmd, output.stderr)
+
+
+# return `true` if we can skip this build tool
+def can_skip(build_dir: Path, build_tool: str) -> bool:
     try_skip = FLAGS.rebuild not in [build_tool, "both"]
-    ttfs = ttf_find_fn()
-    if try_skip and len(ttfs) == 1:
-        ttx_file = ttfs[0].with_suffix(".ttx")
-        if ttx_file.is_file():
-            maybe_print(f"skipping {build_tool}")
-            return ttx_file
-    run(cmd, build_dir, build_tool + ".log", **kwargs)
-    ttfs = ttf_find_fn()
-    assert len(ttfs) == 1, ttfs
-    return ttfs[0]
+    ttx_path = build_dir / (build_tool + ".ttx")
+    return try_skip and ttx_path.is_file()
 
 
 def build_fontc(source: Path, build_dir: Path, compare: str):
@@ -181,7 +189,7 @@ def build_fontc(source: Path, build_dir: Path, compare: str):
     if compare == _COMPARE_GFTOOLS:
         cmd.append("--flatten-components")
         cmd.append("--decompose-transformed-components")
-    return build(cmd, build_dir, "fontc", lambda: (build_dir / "fontc.ttf",))
+    return build(cmd, build_dir, "fontc")
 
 
 def build_fontmake(source: Path, build_dir: Path, compare: str):
@@ -189,8 +197,8 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         "fontmake",
         "-o",
         "variable",
-        "--output-dir",
-        str(source.name),
+        "--output-path",
+        "fontmake.ttf",
         "--drop-implied-oncurves",
         # "--keep-direction",
         # no longer required, still useful to get human-readable glyph names in diff
@@ -208,14 +216,11 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         ]
     cmd.append(str(source))
 
-    path = build(
+    return build(
         cmd,
         build_dir,
         "fontmake",
-        lambda: tuple((build_dir / source.name).rglob("*.ttf")),
     )
-    final_path = build_dir / "fontmake.ttf"
-    return copy(path, final_path)
 
 
 def copy(old, new):
@@ -352,13 +357,18 @@ def reduce_diff_noise(build_dir, fontc, fontmake):
         build_dir, fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
     )
 
+
 # returns a dictionary of {"compiler_name":  {"tag": "xml_text"}}
 def generate_output(build_dir: Path, fontmake_ttf: Path, fontc_ttf: Path):
-    fontc_ttx = ttx(fontc_ttf)
-    fontmake_ttx = ttx(fontmake_ttf)
-    fontc_gpos = simple_gpos_output(fontc_ttf, build_dir / "fontc.markkern.txt")
+    # don't run ttx or otl-normalizer if we don't have to:
+    can_skip_fontc = can_skip(build_dir, "fontc")
+    can_skip_fontmake = can_skip(build_dir, "fontmake")
+    fontc_ttx = ttx(fontc_ttf, can_skip_fontc)
+    fontmake_ttx = ttx(fontmake_ttf, can_skip_fontmake)
+    fontc_gpos = simple_gpos_output(
+        fontc_ttf, build_dir / "fontc.markkern.txt", can_skip_fontc)
     fontmake_gpos = simple_gpos_output(
-        fontmake_ttf, build_dir / "fontmake.markkern.txt"
+        fontmake_ttf, build_dir / "fontmake.markkern.txt", can_skip_fontmake
     )
 
     fontc = etree.parse(fontc_ttx)
@@ -370,6 +380,7 @@ def generate_output(build_dir: Path, fontmake_ttf: Path, fontc_ttf: Path):
     fontc[MARK_KERN_NAME] = fontc_gpos
     fontmake[MARK_KERN_NAME] = fontmake_gpos
     return {"fontc": fontc, "fontmake": fontmake}
+
 
 def print_output(build_dir: Path, output: dict[str, dict[str, str]]):
     fontc = output["fontc"]
@@ -386,7 +397,6 @@ def print_output(build_dir: Path, output: dict[str, dict[str, str]]):
             tags = ", ".join(f"'{t}'" for t in sorted(t2 - t1))
             print(f"  Only fontmake produced {tags}")
 
-
     for tag in sorted(t1 & t2):
         t1s = fontc[tag]
         t2s = fontmake[tag]
@@ -397,6 +407,7 @@ def print_output(build_dir: Path, output: dict[str, dict[str, str]]):
             p1 = build_dir / path_for_output_item(tag, "fontc")
             p2 = build_dir / path_for_output_item(tag, "fontmake")
             print(f"  DIFF '{tag}', {p1} {p2} ({difference:.1%})")
+
 
 def jsonify_output(output: dict[str, dict[str, str]]):
     fontc = output["fontc"]
@@ -415,6 +426,7 @@ def jsonify_output(output: dict[str, dict[str, str]]):
                 ratio = diff_ratio(s1, s2)
                 out[tag] = ratio
     return {"success": out}
+
 
 def print_json(output):
     as_json = json.dumps(output, indent=2)
@@ -442,6 +454,7 @@ def diff_ratio(text1: str, text2: str) -> float:
     m = SequenceMatcher(None, lines1, lines2)
     return m.ratio()
 
+
 def path_for_output_item(tag_or_normalizer_name: str, compiler: str) -> str:
     if tag_or_normalizer_name == MARK_KERN_NAME:
         return f"{compiler}.markkern.txt"
@@ -449,14 +462,18 @@ def path_for_output_item(tag_or_normalizer_name: str, compiler: str) -> str:
         return f"{compiler}.{tag_or_normalizer_name}.ttx"
 
 
-# if we're outputing json, format error and output as json, else reraise
-def handle_compiler_error(error: Exception, compiler_name: str, json: bool):
-    if not json:
-        raise error
-    message = getattr(error, "_secret_log_stash", "") or str(error)
-    out = {"error": {"source": compiler_name, "message": message}}
-    print_json(out)
-    sys.exit(0)
+# log or print as json any compilation failures (and exit if there were any)
+def report_errors_and_exit_if_there_were_any(errors: dict):
+    if len(errors) == 0:
+        return
+    for error in errors.values():
+        cmd = error["command"]
+        stderr = error["stderr"]
+        maybe_print(f"command '{cmd}' failed: '{stderr}'")
+
+    if FLAGS.json:
+        print_json({"error": errors})
+    sys.exit(2)
 
 
 def main(argv):
@@ -479,7 +496,8 @@ def main(argv):
     comparisons = (FLAGS.compare,)
     if comparisons == ("both",):
         if FLAGS.json:
-            sys.exit("JSON output does not support multiple comparisons (try --compare default|gftools)")
+            sys.exit(
+                "JSON output does not support multiple comparisons (try --compare default|gftools)")
         comparisons = (_COMPARE_DEFAULTS, _COMPARE_GFTOOLS)
 
     for compare in comparisons:
@@ -487,21 +505,34 @@ def main(argv):
         build_dir.mkdir(parents=True, exist_ok=True)
         maybe_print(f"Compare {compare} in {build_dir}")
 
-        try:
-            fontc_ttf = build_fontc(source.resolve(), build_dir, compare)
-        except Exception as e:
-            handle_compiler_error(e, "fontc", FLAGS.json)
-        try:
-            fontmake_ttf = build_fontmake(source.resolve(), build_dir, compare)
+        failures = dict()
 
-        except Exception as e:
-            handle_compiler_error(e, "fontmake", FLAGS.json)
+        try:
+            build_fontc(source.resolve(), build_dir, compare)
+        except BuildFail as e:
+            failures["fontc"] = {"command": " ".join(
+                e.command), "stderr": e.stderr}
+        try:
+            build_fontmake(source.resolve(), build_dir, compare)
+        except BuildFail as e:
+            failures["fontmake"] = {"command": " ".join(
+                e.command), "stderr": e.stderr}
+
+        report_errors_and_exit_if_there_were_any(failures)
+
+        # if compilation completed, these exist
+        fontmake_ttf = build_dir / "fontmake.ttf"
+        fontc_ttf = build_dir / "fontc.ttf"
+        assert fontmake_ttf.is_file(), fontmake_ttf
+        assert fontc_ttf.is_file(), fontc_ttf
+
         output = generate_output(build_dir, fontmake_ttf, fontc_ttf)
         if not FLAGS.json:
             print_output(build_dir, output)
         else:
             output = jsonify_output(output)
             print_json(output)
+
 
 if __name__ == "__main__":
     app.run(main)
