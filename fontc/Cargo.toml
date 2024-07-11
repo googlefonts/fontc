@@ -19,8 +19,6 @@ glyphs2fontir = { version = "0.0.1", path = "../glyphs2fontir" }
 fontra2fontir = { version = "0.0.1", path = "../fontra2fontir" }
 ufo2fontir = { version = "0.0.1", path = "../ufo2fontir" }
 
-google-fonts-sources = "0.1.0"
-
 bitflags.workspace = true
 bincode.workspace = true
 
@@ -39,8 +37,6 @@ regex.workspace = true
 write-fonts.workspace = true
 clap.workspace = true
 rayon.workspace = true
-serde_json.workspace = true
-tempfile.workspace = true
 
 # just for fontc!
 crossbeam-channel = "0.5.6"
@@ -48,6 +44,7 @@ crossbeam-channel = "0.5.6"
 [dev-dependencies]
 diff.workspace = true
 ansi_term.workspace = true
+tempfile.workspace = true
 pretty_assertions.workspace = true
 skrifa.workspace = true
 kurbo.workspace = true

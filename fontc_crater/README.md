@@ -1,7 +1,13 @@
-# fontc_bulk
+# `fontc_crater`
+
+The `fontc_crater` crate (named after [rust-lang/crater]) is a tool for
+performing compilation and related actions across a large number of source
+fonts.
+
+
 
 ```sh
-$ cargo run --release --bin=fontc_bulk -- compile FONT_CACHE --fonts-repo GOOGLE/FONTS  -o results.json
+$ cargo run --release --p=fontc_crater -- compile FONT_CACHE --fonts-repo GOOGLE/FONTS  -o results.json
 ```
 
 This is a binary for executing font compilation (and possibly other tasks) in
@@ -23,3 +29,4 @@ dump a json dictionary containing the outcome for each source.
 
 [google-fonts-sources]: https://github.com/googlefonts/google-fonts-sources
 [google/fonts]: https://github.com/google/fonts
+[rust-lang/crater]: https://github.com/rust-lang/crater

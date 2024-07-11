@@ -54,12 +54,9 @@ cargo run --package fontc -- ../google_fonts_sources/sources/ofl/notosanskayahli
 
 ### Building lots of fonts at once
 
-There is an included `fontc_bulk` tool that can download and compile multiple
-fonts at once; this is used for evaluating the compiler. You can run this with,
-
-```shell
-cargo run --release --bin=fontc_bulk compile
-```
+There is an included `fontc_crater` tool that can download and compile multiple
+fonts at once; this is used for evaluating the compiler. For more information,
+see `fontc_crater/README.md`.
 
 ## Plan
 
