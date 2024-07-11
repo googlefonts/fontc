@@ -118,26 +118,27 @@ def ttx(font_file: Path, can_skip: bool):
 
 
 # generate a simple text repr for gpos for this font
-def simple_gpos_output(font_file: Path, out_path: Path):
-    temppath = font_file.parent / "markkern.txt"
-    cmd = [
-        "cargo",
-        "run",
-        "-p",
-        "otl-normalizer",
-        "--",
-        font_file.name,
-        "-o",
-        temppath.name,
-        "--table",
-        "gpos",
-    ]
-    run(
-        cmd,
-        font_file.parent,
-        check=True,
-    )
-    copy(temppath, out_path)
+def simple_gpos_output(font_file: Path, out_path: Path, can_skip: bool):
+    if not (can_skip and out_path.is_file()):
+        temppath = font_file.parent / "markkern.txt"
+        cmd = [
+            "cargo",
+            "run",
+            "-p",
+            "otl-normalizer",
+            "--",
+            font_file.name,
+            "-o",
+            temppath.name,
+            "--table",
+            "gpos",
+        ]
+        run(
+            cmd,
+            font_file.parent,
+            check=True,
+        )
+        copy(temppath, out_path)
     with open(out_path) as f:
         return f.read()
 
