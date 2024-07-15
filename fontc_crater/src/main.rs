@@ -9,6 +9,7 @@ use std::{
 use clap::Parser;
 use fontc::JobTimer;
 use google_fonts_sources::RepoInfo;
+use rayon::prelude::*;
 
 mod args;
 mod error;
@@ -127,19 +128,20 @@ enum SkipReason {
     NoConfig,
 }
 
-fn run_all<T: serde::Serialize, E: serde::Serialize>(
+fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
     sources: &[RepoInfo],
     cache_dir: &Path,
     out_path: Option<&Path>,
-    runner: impl Fn(&Path) -> RunResult<T, E>,
+    runner: impl Fn(&Path) -> RunResult<T, E> + Send + Sync,
 ) -> Result<(), Error> {
     let results = sources
-        .iter()
+        .par_iter()
         .flat_map(|info| {
             let font_dir = cache_dir.join(&info.repo_name);
             fetch_and_run_repo(&font_dir, info, |p| runner(p))
         })
-        .collect::<Results<_, _>>();
+        .collect::<Vec<_>>();
+    let results = results.into_iter().collect::<Results<_, _>>();
 
     if let Some(path) = out_path {
         let as_json = serde_json::to_string_pretty(&results).map_err(Error::OutputJson)?;
@@ -154,10 +156,10 @@ fn run_all<T: serde::Serialize, E: serde::Serialize>(
 }
 
 // one repo can contain multiple sources, so we return a vec.
-fn fetch_and_run_repo<T, E>(
+fn fetch_and_run_repo<T: Send, E: Send>(
     font_dir: &Path,
     repo: &RepoInfo,
-    runner: impl Fn(&Path) -> RunResult<T, E>,
+    runner: impl Fn(&Path) -> RunResult<T, E> + Send + Sync,
 ) -> Vec<(PathBuf, RunResult<T, E>)> {
     if !font_dir.exists() && clone_repo(font_dir, &repo.repo_url).is_err() {
         return vec![(font_dir.to_owned(), RunResult::Skipped(SkipReason::GitFail))];

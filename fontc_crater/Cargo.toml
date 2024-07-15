@@ -11,6 +11,8 @@ readme = "README.md"
 fontc = { version = "0.0.1", path = "../fontc" }
 
 google-fonts-sources = "0.1.0"
+
+rayon.workspace = true
 write-fonts.workspace = true
 serde.workspace = true
 thiserror.workspace = true
