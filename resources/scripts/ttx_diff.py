@@ -415,17 +415,29 @@ def jsonify_output(output: dict[str, dict[str, str]]):
     fontmake = output["fontmake"]
     all_tags = set(fontc.keys()) | set(fontmake.keys())
     out = dict()
+    same_lines = 0
+    different_lines = 0
     for tag in all_tags:
         if tag not in fontc:
+            different_lines += len(fontmake[tag])
             out[tag] = "fontmake"
         elif tag not in fontmake:
+            different_lines += len(fontc[tag])
             out[tag] = "fontc"
         else:
             s1 = fontc[tag]
             s2 = fontmake[tag]
             if s1 != s2:
                 ratio = diff_ratio(s1, s2)
+                n_lines = max(len(s1), len(s2))
+                same_lines += int(n_lines * ratio)
+                different_lines += int( n_lines * (1 - ratio))
                 out[tag] = ratio
+            else:
+                same_lines += len(s1)
+
+    overall_diff_ratio = same_lines / (same_lines + different_lines)
+    out["total"] = overall_diff_ratio
     return {"success": out}
 
 
