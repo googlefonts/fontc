@@ -28,23 +28,19 @@ pub(crate) struct Config {
     axis_order: Vec<Tag>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum BadConfig {
+    #[error(transparent)]
+    Read(#[from] std::io::Error),
+    #[error(transparent)]
+    Yaml(serde_yaml::Error),
+}
+
 impl Config {
     /// Parse and return a config.yaml file for the provided font source
-    pub(crate) fn load(config_path: &Path) -> Option<Self> {
-        let contents = match std::fs::read_to_string(config_path) {
-            Ok(contents) => contents,
-            Err(e) => {
-                eprintln!("failed to load config at '{}': {e}", config_path.display());
-                return None;
-            }
-        };
-        match serde_yaml::from_str(&contents) {
-            Ok(config) => Some(config),
-            Err(e) => {
-                eprintln!("BAD YAML: {contents}: '{e}'");
-                None
-            }
-        }
+    pub(crate) fn load(config_path: &Path) -> Result<Self, BadConfig> {
+        let contents = std::fs::read_to_string(config_path)?;
+        serde_yaml::from_str(&contents).map_err(BadConfig::Yaml)
     }
 }
 

@@ -126,6 +126,7 @@ enum SkipReason {
     GitFail,
     /// There was no config.yaml file
     NoConfig,
+    BadConfig(String),
 }
 
 fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
@@ -169,17 +170,26 @@ fn fetch_and_run_repo<T: Send, E: Send>(
     let configs = repo
         .config_files
         .iter()
-        .flat_map(|filename| {
+        .map(|filename| {
             let config_path = source_dir.join(filename);
             Config::load(&config_path)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>();
 
-    if configs.is_empty() {
-        return vec![(
-            font_dir.to_owned(),
-            RunResult::Skipped(SkipReason::NoConfig),
-        )];
+    let configs = match configs {
+        Ok(c) if c.is_empty() => {
+            return vec![(
+                font_dir.to_owned(),
+                RunResult::Skipped(SkipReason::NoConfig),
+            )];
+        }
+        Err(e) => {
+            return vec![(
+                font_dir.to_owned(),
+                RunResult::Skipped(SkipReason::BadConfig(e.to_string())),
+            )]
+        }
+        Ok(c) => c,
     };
 
     // collect to set in case configs duplicate sources
@@ -310,6 +320,7 @@ impl std::fmt::Display for SkipReason {
         match self {
             SkipReason::GitFail => f.write_str("Git checkout failed"),
             SkipReason::NoConfig => f.write_str("No config.yaml file found"),
+            SkipReason::BadConfig(e) => write!(f, "Failed to read config file: '{e}'"),
         }
     }
 }
