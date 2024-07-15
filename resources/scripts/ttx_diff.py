@@ -124,6 +124,7 @@ def simple_gpos_output(font_file: Path, out_path: Path, can_skip: bool):
         cmd = [
             "cargo",
             "run",
+            "--release",
             "-p",
             "otl-normalizer",
             "--",
@@ -174,6 +175,7 @@ def build_fontc(source: Path, build_dir: Path, compare: str):
     cmd = [
         "cargo",
         "run",
+        "--release",
         "-p",
         "fontc",
         "--",
