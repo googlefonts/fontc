@@ -1,0 +1,22 @@
+[package]
+name = "fontc_crater"
+version = "0.1.0"
+edition = "2021"
+license = "MIT/Apache-2.0"
+description = "A compiler for fonts."
+repository = "https://github.com/googlefonts/fontc"
+readme = "README.md"
+
+[dependencies]
+fontc = { version = "0.0.1", path = "../fontc" }
+
+google-fonts-sources = "0.1.0"
+write-fonts.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+clap.workspace = true
+serde_yaml.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+env_logger.workspace = true
+

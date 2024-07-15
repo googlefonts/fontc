@@ -46,19 +46,15 @@ pub enum GlyphOrderError {
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum CompilerError {
-    #[error("{0}")]
-    SourceLoad(
-        #[from]
-        #[source]
-        SourceLoadError,
-    ),
-    #[error("Parsing failed with {} errors\n{}", .0.messages.len(), .0.display())]
+    #[error(transparent)]
+    SourceLoad(#[from] SourceLoadError),
+    #[error("FEA parsing failed with {} errors", .0.messages.len())]
     ParseFail(DiagnosticSet),
-    #[error("Validation failed with {} errors\n{}", .0.messages.len(), .0.display())]
+    #[error("FEA validation failed with {} errors", .0.messages.len())]
     ValidationFail(DiagnosticSet),
-    #[error("Compilation failed with {} errors\n{}", .0.messages.len(), .0.display())]
+    #[error("FEA compilation failed with {} errors", .0.messages.len())]
     CompilationFail(DiagnosticSet),
-    #[error("{0}")]
+    #[error(transparent)]
     WriteFail(#[from] BuilderError),
 }
 

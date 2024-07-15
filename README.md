@@ -52,6 +52,12 @@ Once you have them you could try building them:
 cargo run --package fontc -- ../google_fonts_sources/sources/ofl/notosanskayahli/sources/NotoSansKayahLi.designspace
 ```
 
+### Building lots of fonts at once
+
+There is an included `fontc_crater` tool that can download and compile multiple
+fonts at once; this is used for evaluating the compiler. For more information,
+see `fontc_crater/README.md`.
+
 ## Plan
 
 As of 6/4/2023 we intend to:

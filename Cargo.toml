@@ -51,4 +51,5 @@ members = [
     "fea-rs",
     "fea-lsp",
     "otl-normalizer",
+    "fontc_crater",
 ]
