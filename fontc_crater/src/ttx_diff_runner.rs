@@ -5,10 +5,14 @@ use crate::RunResult;
 static SCRIPT_PATH: &str = "./resources/scripts/ttx_diff.py";
 
 pub(super) fn run_ttx_diff(source: &Path) -> RunResult<DiffOutput, DiffError> {
+    let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
+    let outdir = tempdir.path();
     let output = match Command::new("python")
         .arg(SCRIPT_PATH)
         .args(["--compare", "default"])
         .arg("--json")
+        .arg("--outdir")
+        .arg(outdir)
         .arg(source)
         .output()
     {

@@ -81,6 +81,7 @@ flags.DEFINE_float(
 )
 flags.DEFINE_bool(
     "json", False, "print results in machine-readable JSON format")
+flags.DEFINE_string( "outdir", default=None,  help="directory to store generated files")
 
 
 # execute a command in the provided working directory.
@@ -116,15 +117,15 @@ def ttx(font_file: Path, can_skip: bool):
 
 
 # generate a simple text repr for gpos for this font
-def simple_gpos_output(font_file: Path, out_path: Path, can_skip: bool):
+def simple_gpos_output(cargo_manifest_path: Path, font_file: Path, out_path: Path, can_skip: bool):
     if not (can_skip and out_path.is_file()):
         temppath = font_file.parent / "markkern.txt"
         cmd = [
             "cargo",
             "run",
             "--release",
-            "-p",
-            "otl-normalizer",
+            "--manifest-path",
+            str(cargo_manifest_path),
             "--",
             font_file.name,
             "-o",
@@ -169,13 +170,13 @@ def can_skip(build_dir: Path, build_tool: str) -> bool:
     return try_skip and ttx_path.is_file()
 
 
-def build_fontc(source: Path, build_dir: Path, compare: str):
+def build_fontc(source: Path, fontc_cargo_path: Path, build_dir: Path, compare: str):
     cmd = [
         "cargo",
         "run",
         "--release",
-        "-p",
-        "fontc",
+        "--manifest-path",
+        str(fontc_cargo_path),
         "--",
         # uncomment this to compare output w/ fontmake --keep-direction
         # "--keep-direction",
@@ -363,15 +364,15 @@ def reduce_diff_noise(build_dir, fontc, fontmake):
 
 
 # returns a dictionary of {"compiler_name":  {"tag": "xml_text"}}
-def generate_output(build_dir: Path, fontmake_ttf: Path, fontc_ttf: Path):
+def generate_output(build_dir: Path, otl_norm_cargo_path: Path, fontmake_ttf: Path, fontc_ttf: Path):
     # don't run ttx or otl-normalizer if we don't have to:
     can_skip_fontc = can_skip(build_dir, "fontc")
     can_skip_fontmake = can_skip(build_dir, "fontmake")
     fontc_ttx = ttx(fontc_ttf, can_skip_fontc)
     fontmake_ttx = ttx(fontmake_ttf, can_skip_fontmake)
-    fontc_gpos = simple_gpos_output(
+    fontc_gpos = simple_gpos_output(otl_norm_cargo_path,
         fontc_ttf, build_dir / "fontc.markkern.txt", can_skip_fontc)
-    fontmake_gpos = simple_gpos_output(
+    fontmake_gpos = simple_gpos_output(otl_norm_cargo_path,
         fontmake_ttf, build_dir / "fontmake.markkern.txt", can_skip_fontmake
     )
 
@@ -502,12 +503,18 @@ def main(argv):
     root = Path(".").resolve()
     if root.name != "fontc":
         sys.exit("Expected to be at the root of fontc")
+    fontc_manifest_path = root / "fontc" / "Cargo.toml"
+    otl_norm_manifest_path = root / "otl-normalizer" / "Cargo.toml"
 
     if shutil.which("fontmake") is None:
         sys.exit("No fontmake")
     if shutil.which("ttx") is None:
         sys.exit("No ttx")
 
+    out_dir = root / "build"
+    if FLAGS.outdir is not None:
+        out_dir = Path(FLAGS.outdir).resolve()
+        assert out_dir.exists(), f"output directory {out_dir} does not exist"
     comparisons = (FLAGS.compare,)
     if comparisons == ("both",):
         if FLAGS.json:
@@ -517,14 +524,14 @@ def main(argv):
 
     no_diffs = True
     for compare in comparisons:
-        build_dir = (root / "build" / compare).relative_to(root)
+        build_dir = (out_dir / compare)
         build_dir.mkdir(parents=True, exist_ok=True)
         maybe_print(f"Compare {compare} in {build_dir}")
 
         failures = dict()
 
         try:
-            build_fontc(source.resolve(), build_dir, compare)
+            build_fontc(source.resolve(), fontc_manifest_path, build_dir, compare)
         except BuildFail as e:
             failures["fontc"] = {"command": " ".join(
                 e.command), "stderr": e.stderr}
@@ -542,7 +549,7 @@ def main(argv):
         assert fontmake_ttf.is_file(), fontmake_ttf
         assert fontc_ttf.is_file(), fontc_ttf
 
-        output = generate_output(build_dir, fontmake_ttf, fontc_ttf)
+        output = generate_output(build_dir, otl_norm_manifest_path, fontmake_ttf, fontc_ttf)
         if output["fontc"] == output["fontmake"]:
             maybe_print("output is identical")
             continue
