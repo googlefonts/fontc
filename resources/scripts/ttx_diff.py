@@ -309,7 +309,11 @@ def allow_some_off_by_ones(
 
     for fontmake_container in fontmake.xpath(f"//{container}"):
         name = fontmake_container.attrib[name_attr]
-        fontc_container = select_one(fontc, f"//{container}[@{name_attr}='{name}']")
+        try:
+            fontc_container = select_one(fontc, f"//{container}[@{name_attr}='{name}']")
+        except IndexError as e:
+            maybe_print(f"no item where {name_attr}='{name}' in {container}")
+            continue
 
         for (fontmake_el, fontc_el) in zip(fontmake_container.iter(), fontc_container.iter()):
             if fontmake_el.tag != fontc_el.tag:
