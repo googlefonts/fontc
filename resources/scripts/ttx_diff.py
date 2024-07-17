@@ -196,10 +196,13 @@ def build_fontc(source: Path, build_dir: Path, compare: str):
 
 
 def build_fontmake(source: Path, build_dir: Path, compare: str):
+    buildtype = "variable"
+    if source.suffix == ".ufo":
+        buildtype = "ttf"
     cmd = [
         "fontmake",
         "-o",
-        "variable",
+        buildtype,
         "--output-path",
         "fontmake.ttf",
         "--drop-implied-oncurves",
