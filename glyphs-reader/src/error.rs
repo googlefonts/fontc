@@ -1,6 +1,5 @@
 use std::{io, num::TryFromIntError, path::PathBuf};
 
-use smol_str::SmolStr;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -21,6 +20,4 @@ pub enum Error {
     NotAGlyphsPackage(PathBuf),
     #[error("Invalid plist")]
     WorstPlistEver(#[from] crate::plist::Error),
-    #[error("Unknown glyph category '{category}' for glyph '{glyph}'")]
-    BadCategory { glyph: SmolStr, category: SmolStr },
 }
