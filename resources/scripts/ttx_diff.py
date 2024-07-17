@@ -496,8 +496,8 @@ def main(argv):
         sys.exit("Only one argument, a source file, is expected")
 
     source = Path(argv[1])
-    if not source.is_file():
-        sys.exit(f"No such file: {source}")
+    if not source.exists():
+        sys.exit(f"No such source: {source}")
 
     root = Path(".").resolve()
     if root.name != "fontc":
