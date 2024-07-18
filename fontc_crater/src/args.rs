@@ -2,13 +2,24 @@
 
 use std::path::PathBuf;
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand};
 
-#[derive(Debug, Clone, PartialEq, Parser)]
+#[derive(Debug, PartialEq, Parser)]
 #[command(about = "compile multiple fonts and report the results")]
 pub(super) struct Args {
-    /// The task to perform with each font
-    pub(super) command: Tasks,
+    #[command(subcommand)]
+    pub(super) command: Commands,
+}
+
+#[derive(Debug, Subcommand, PartialEq)]
+pub(super) enum Commands {
+    Compile(RunArgs),
+    Diff(RunArgs),
+    Report(ReportArgs),
+}
+
+#[derive(Debug, PartialEq, clap::Args)]
+pub(super) struct RunArgs {
     /// Directory to store font sources.
     ///
     /// Reusing this directory saves us having to clone all the repos on each run.
@@ -26,8 +37,9 @@ pub(super) struct Args {
     pub(super) n_fonts: Option<usize>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
-pub(super) enum Tasks {
-    Compile,
-    Diff,
+#[derive(Debug, PartialEq, clap::Args)]
+pub(super) struct ReportArgs {
+    pub(super) json_path: PathBuf,
+    #[arg(short, long)]
+    pub(super) verbose: bool,
 }

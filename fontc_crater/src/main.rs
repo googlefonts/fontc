@@ -18,8 +18,9 @@ mod ttx_diff_runner;
 
 use sources::{Config, RepoList};
 
-use args::{Args, Tasks};
+use args::{Args, Commands, ReportArgs};
 use error::Error;
+use ttx_diff_runner::{DiffError, DiffOutput};
 
 fn main() {
     env_logger::init();
@@ -30,33 +31,79 @@ fn main() {
 }
 
 fn run(args: &Args) -> Result<(), Error> {
-    if !args.font_cache.exists() {
-        std::fs::create_dir_all(&args.font_cache).map_err(Error::CacheDir)?;
-    }
-    let sources = RepoList::get_or_create(&args.font_cache, args.fonts_repo.as_deref())?;
+    let run_args = match &args.command {
+        Commands::Compile(args) => args,
+        Commands::Diff(args) => args,
+        Commands::Report(args) => return generate_report(args),
+    };
 
-    let pruned = args.n_fonts.map(|n| prune_sources(&sources.sources, n));
+    if !run_args.font_cache.exists() {
+        std::fs::create_dir_all(&run_args.font_cache).map_err(Error::CacheDir)?;
+    }
+    let sources = RepoList::get_or_create(&run_args.font_cache, run_args.fonts_repo.as_deref())?;
+
+    let pruned = run_args.n_fonts.map(|n| prune_sources(&sources.sources, n));
     let inputs = pruned.as_ref().unwrap_or(&sources.sources);
 
     match args.command {
-        Tasks::Compile => run_all(
+        Commands::Compile { .. } => run_all(
             inputs,
-            &args.font_cache,
-            args.out_path.as_deref(),
+            &run_args.font_cache,
+            run_args.out_path.as_deref(),
             compile_one,
         )?,
-        Tasks::Diff => {
+        Commands::Diff { .. } => {
             ttx_diff_runner::assert_can_run_script();
             run_all(
                 inputs,
-                &args.font_cache,
-                args.out_path.as_deref(),
+                &run_args.font_cache,
+                run_args.out_path.as_deref(),
                 ttx_diff_runner::run_ttx_diff,
             )?;
         }
+        Commands::Report { .. } => unreachable!("handled above"),
     };
-    sources.save(&args.font_cache)?;
+    sources.save(&run_args.font_cache)?;
     Ok(())
+}
+
+fn generate_report(args: &ReportArgs) -> Result<(), Error> {
+    let contents = std::fs::read_to_string(&args.json_path).map_err(Error::InputFile)?;
+    // let's just try and detect the type of the json?
+    if let Ok(results) = serde_json::from_str::<Results<DiffOutput, DiffError>>(&contents) {
+        ttx_diff_runner::print_report(&results, args.verbose);
+    } else {
+        let results = deserialize_compile_json(&contents)?;
+        results.print_summary(args.verbose)
+    }
+    Ok(())
+}
+
+// a map of (string, ()) gets serialized as a list by serde_json
+fn deserialize_compile_json(json_str: &str) -> Result<Results<(), String>, Error> {
+    #[derive(serde::Deserialize)]
+    struct Helper {
+        success: Vec<PathBuf>,
+        failure: BTreeMap<PathBuf, String>,
+        panic: BTreeSet<PathBuf>,
+        skipped: BTreeMap<PathBuf, SkipReason>,
+    }
+
+    serde_json::from_str(json_str)
+        .map_err(Error::InputJson)
+        .map(
+            |Helper {
+                 success,
+                 failure,
+                 panic,
+                 skipped,
+             }| Results {
+                success: success.into_iter().map(|p| (p, ())).collect(),
+                failure,
+                panic,
+                skipped,
+            },
+        )
 }
 
 // only generic so I can write tests
@@ -151,7 +198,7 @@ fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
             error,
         })?;
     } else {
-        results.print_summary();
+        results.print_summary(true);
     }
     Ok(())
 }
@@ -266,7 +313,7 @@ impl<T, E> FromIterator<(PathBuf, RunResult<T, E>)> for Results<T, E> {
 }
 
 impl<T, E> Results<T, E> {
-    fn print_summary(&self) {
+    fn print_summary(&self, verbose: bool) {
         let total = self.success.len() + self.failure.len() + self.panic.len() + self.skipped.len();
 
         println!(
@@ -276,6 +323,9 @@ impl<T, E> Results<T, E> {
             self.failure.len(),
             self.success.len(),
         );
+        if !verbose {
+            return;
+        }
 
         if self.skipped.is_empty() {
             println!("\n#### {} fonts were skipped ####", self.skipped.len());

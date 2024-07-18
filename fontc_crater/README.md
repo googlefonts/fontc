@@ -7,7 +7,7 @@ fonts.
 
 
 ```sh
-$ cargo run --release --p=fontc_crater -- compile FONT_CACHE --fonts-repo GOOGLE/FONTS  -o results.json
+$ cargo run --release -p=fontc_crater -- compile FONT_CACHE --fonts-repo GOOGLE/FONTS  -o results.json
 ```
 
 This is a binary for executing font compilation (and possibly other tasks) in
@@ -26,6 +26,15 @@ directory, where they can be reused between runs.
 
 For detailed output, use the `-o/--out` flag to specify a path where we should
 dump a json dictionary containing the outcome for each source.
+
+## reports
+
+You can generate a report from the saved json by passing it back to
+`fontc_crater`:
+
+```sh
+$ cargo run -p fontc_crater -- report results.json
+```
 
 [google-fonts-sources]: https://github.com/googlefonts/google-fonts-sources
 [google/fonts]: https://github.com/google/fonts

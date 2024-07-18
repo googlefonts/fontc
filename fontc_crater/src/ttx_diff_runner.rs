@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::Path, process::Command};
 
-use crate::RunResult;
+use crate::{Results, RunResult};
 
 static SCRIPT_PATH: &str = "./resources/scripts/ttx_diff.py";
 
@@ -43,11 +43,141 @@ pub(super) fn run_ttx_diff(source: &Path) -> RunResult<DiffOutput, DiffError> {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum DiffOutput {
     Identical,
     Diffs(BTreeMap<String, DiffValue>),
+}
+
+pub(super) fn print_report(results: &Results<DiffOutput, DiffError>, verbose: bool) {
+    let Results {
+        success,
+        failure,
+        panic,
+        skipped,
+    } = &results;
+    let n_total = success.len() + failure.len() + skipped.len() + panic.len();
+    let n_failed = failure.len() + panic.len();
+    let n_identical = success
+        .values()
+        .filter(|x| matches!(x, DiffOutput::Identical))
+        .count();
+    let n_diffs = success.len() - n_identical;
+    println!("### tried to diff {n_total} targets ###");
+    println!(
+        "{n_identical} identical, {n_diffs} diffs, {n_failed} failed, {} skipped",
+        skipped.len()
+    );
+    let total_diff = success
+        .values()
+        .filter_map(|v| match v {
+            DiffOutput::Identical => None,
+            DiffOutput::Diffs(diffs) => diffs.get("total").and_then(|v| match v {
+                DiffValue::Ratio(v) => Some(*v),
+                DiffValue::Only(_) => None,
+            }),
+        })
+        .sum::<f32>();
+    let total_diff = total_diff + (n_identical as f32);
+    let total_diff_with_failures = total_diff / (n_failed + success.len()) as f32 * 100.;
+    let total_diff_no_failures = total_diff / success.len() as f32 * 100.;
+    println!(
+        "total diff score {:.2}% (including failures: {:.2}%)",
+        total_diff_no_failures, total_diff_with_failures
+    );
+
+    let comp_fails = failure
+        .iter()
+        .filter_map(|(k, v)| match v {
+            DiffError::CompileFailed(error) => Some((k, error)),
+            DiffError::Other(_) => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let other_fails = failure
+        .iter()
+        .filter_map(|(k, v)| match v {
+            DiffError::CompileFailed(_) => None,
+            DiffError::Other(e) => Some((k, e)),
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let fontc_fails = comp_fails.values().filter(|x| x.fontc.is_some()).count();
+    let fontmake_fails = comp_fails.values().filter(|x| x.fontmake.is_some()).count();
+
+    println!("{fontc_fails} targets failed on fontc");
+    println!("{fontmake_fails} targets failed on fontmake");
+    println!("{} targets failed for other reasons", other_fails.len());
+
+    if !verbose {
+        println!("\nfor more information, pass --verbose/-v");
+        return;
+    }
+
+    if n_identical != 0 {
+        println!("\n### {n_identical} were identical: ###\n");
+        for path in success
+            .iter()
+            .filter_map(|(k, v)| matches!(v, DiffOutput::Identical).then_some(k))
+        {
+            println!("{}", path.display())
+        }
+    }
+    if !success.is_empty() && n_identical != success.len() {
+        println!(
+            "\n### {} produced diffs: ###\n",
+            success.len() - n_identical
+        );
+        for (path, diff) in success.iter().filter_map(|(k, v)| match v {
+            DiffOutput::Identical => None,
+            DiffOutput::Diffs(diffs) => Some((k, diffs)),
+        }) {
+            let total = diff
+                .get("total")
+                .and_then(|v| match v {
+                    DiffValue::Ratio(r) => Some(*r),
+                    DiffValue::Only(_) => None,
+                })
+                .unwrap();
+            println!("{}: {:.2}%", path.display(), total * 100.);
+        }
+    }
+
+    if !comp_fails.is_empty() {
+        println!(
+            "\n### {} failed to compile on at least one compiler: ###\n",
+            comp_fails.len()
+        );
+
+        for (path, fail) in comp_fails {
+            println!("{}", path.display());
+            if let Some(fail) = &fail.fontc {
+                println!("  {}", fail.command)
+            }
+            if let Some(fail) = &fail.fontmake {
+                println!("  {}", fail.command)
+            }
+        }
+    }
+
+    if !other_fails.is_empty() {
+        println!(
+            "\n### {} failed for other reasons: ###\n",
+            other_fails.len()
+        );
+
+        for (path, reason) in other_fails {
+            println!("{}: '{reason}'", path.display());
+        }
+    }
+
+    if !skipped.is_empty() {
+        println!("\n### {} were skipped: ###\n", skipped.len());
+        for (path, reason) in skipped {
+            println!("{}: '{reason}'", path.display());
+        }
+    }
 }
 
 /// make sure we can find and execute ttx_diff script
@@ -90,7 +220,7 @@ enum RawDiffOutput {
     Error(CompileFailed),
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DiffError {
     CompileFailed(CompileFailed),
