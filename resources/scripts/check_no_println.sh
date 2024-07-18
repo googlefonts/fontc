@@ -94,6 +94,7 @@ allowlist+=("otl-normalizer")
 allowlist+=("glyphs-reader/build.rs")
 allowlist+=("fontdrasil/build.rs")
 allowlist+=("fontc_crater/src/main.rs")
+allowlist+=("fontc_crater/src/ttx_diff_runner.rs")
 
 allowlist=$(join "|" "${allowlist[@]}")
 echo grep -v "($allowlist)"

@@ -17,8 +17,6 @@ Usage:
 JSON:
     If the `--json` flag is passed, this tool will output JSON.
 
-    If the script exits with a `0` status code, then `stdout` is a JSON dictionary.
-
     If both compilers ran successfully, this dictionary will have a single key,
     "success", which will contain a dictionary, where keys are the tags of tables
     (or another identifier) and the value is either a float representing the
@@ -29,11 +27,11 @@ JSON:
     means that the "GPOS" table was 99% similar, and only `fontmake` produced
     the "vmtx" table (and all other tables were identical).
 
-    If a compiler fails to exit successfully, we will return a dictionary with
-    the single key, "error", where the payload is a dictionary with "source" and
-    "message" fields; "source" is the name of the compiler that failed, and
-    "message" is the contents of stderr, e.g.:
-    `{"error": {"source": "fontmake", "message": "oh no!" }}`
+    If one or both of the compilers fail to exit successfully, we will return a
+    dictionary with the single key, "error", where the payload is a dictionary
+    where keys are the name of the compiler that failed, and the body is a
+    dictionary with "command" and "stderr" fields, where the "command" field
+    is the command that was used to run that compiler.
 """
 
 from absl import app
@@ -493,7 +491,6 @@ def report_errors_and_exit_if_there_were_any(errors: dict):
         print_json({"error": errors})
     sys.exit(2)
 
-
 def main(argv):
     if len(argv) != 2:
         sys.exit("Only one argument, a source file, is expected")
@@ -518,6 +515,7 @@ def main(argv):
                 "JSON output does not support multiple comparisons (try --compare default|gftools)")
         comparisons = (_COMPARE_DEFAULTS, _COMPARE_GFTOOLS)
 
+    no_diffs = True
     for compare in comparisons:
         build_dir = (root / "build" / compare).relative_to(root)
         build_dir.mkdir(parents=True, exist_ok=True)
@@ -545,11 +543,22 @@ def main(argv):
         assert fontc_ttf.is_file(), fontc_ttf
 
         output = generate_output(build_dir, fontmake_ttf, fontc_ttf)
+        if output["fontc"] == output["fontmake"]:
+            maybe_print("output is identical")
+            continue
+
+        no_diffs = False
+
         if not FLAGS.json:
             print_output(build_dir, output)
         else:
             output = jsonify_output(output)
             print_json(output)
+
+    if no_diffs:
+        sys.exit(0)
+    else:
+        sys.exit(2)
 
 
 if __name__ == "__main__":

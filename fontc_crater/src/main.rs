@@ -9,13 +9,14 @@ use std::{
 use clap::Parser;
 use fontc::JobTimer;
 use google_fonts_sources::RepoInfo;
-use write_fonts::types::Tag;
+use rayon::prelude::*;
 
 mod args;
 mod error;
 mod sources;
+mod ttx_diff_runner;
 
-use sources::RepoList;
+use sources::{Config, RepoList};
 
 use args::{Args, Tasks};
 use error::Error;
@@ -34,20 +35,76 @@ fn run(args: &Args) -> Result<(), Error> {
     }
     let sources = RepoList::get_or_create(&args.font_cache, args.fonts_repo.as_deref())?;
 
+    let pruned = args.n_fonts.map(|n| prune_sources(&sources.sources, n));
+    let inputs = pruned.as_ref().unwrap_or(&sources.sources);
+
     match args.command {
-        Tasks::Compile => {
-            compile_all(&sources.sources, &args.font_cache, args.out_path.as_deref())?
+        Tasks::Compile => run_all(
+            inputs,
+            &args.font_cache,
+            args.out_path.as_deref(),
+            compile_one,
+        )?,
+        Tasks::Diff => {
+            ttx_diff_runner::assert_can_run_script();
+            run_all(
+                inputs,
+                &args.font_cache,
+                args.out_path.as_deref(),
+                ttx_diff_runner::run_ttx_diff,
+            )?;
         }
     };
     sources.save(&args.font_cache)?;
     Ok(())
 }
 
+// only generic so I can write tests
+fn prune_sources<T: Clone>(sources: &[T], n_items: usize) -> Vec<T> {
+    if n_items == 0 || sources.is_empty() {
+        return Vec::new();
+    }
+
+    if n_items >= sources.len() {
+        return sources.to_owned();
+    }
+
+    // this is probably very dumb? I just want to use modular arithmetic to
+    // take a consistent subset of the input items, and I'm bad at math.
+    // I'm sure there is a better way to do this...
+
+    let ratio = (n_items as f32) / sources.len() as f32;
+    let modus = if ratio <= 0.5 {
+        // floor here and ceil below because we want to err on taking more items,
+        // since we will iter().take() the correct number below
+        (1. / ratio).floor() as usize
+    } else {
+        (1. / (1. - ratio)).ceil() as usize
+    };
+
+    let filter_fn = |n| {
+        // basically: if we want to take 1/8 of items we do n % 6 == 0,
+        // and if we want to take 7/8 of items we do n % 6 != 0
+        if ratio <= 0.5 {
+            n % modus == 0
+        } else {
+            n % modus != 0
+        }
+    };
+
+    sources
+        .iter()
+        .enumerate()
+        .filter_map(|(i, x)| filter_fn(i).then_some(x.clone()))
+        .take(n_items)
+        .collect()
+}
+
 /// Results of all runs
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-struct Results {
-    success: BTreeSet<PathBuf>,
-    failure: BTreeMap<PathBuf, String>,
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct Results<T, E> {
+    success: BTreeMap<PathBuf, T>,
+    failure: BTreeMap<PathBuf, E>,
     panic: BTreeSet<PathBuf>,
     skipped: BTreeMap<PathBuf, SkipReason>,
 }
@@ -55,10 +112,10 @@ struct Results {
 /// The output of trying to run on one font.
 ///
 /// We don't use a normal Result because failure is okay, we will report it all at the end.
-enum RunResult {
+enum RunResult<T, E> {
     Skipped(SkipReason),
-    Success,
-    Fail(String),
+    Success(T),
+    Fail(E),
     Panic,
 }
 
@@ -69,20 +126,23 @@ enum SkipReason {
     GitFail,
     /// There was no config.yaml file
     NoConfig,
+    BadConfig(String),
 }
 
-fn compile_all(
+fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
     sources: &[RepoInfo],
     cache_dir: &Path,
     out_path: Option<&Path>,
+    runner: impl Fn(&Path) -> RunResult<T, E> + Send + Sync,
 ) -> Result<(), Error> {
     let results = sources
-        .iter()
+        .par_iter()
         .flat_map(|info| {
             let font_dir = cache_dir.join(&info.repo_name);
-            fetch_and_run_repo(&font_dir, info)
+            fetch_and_run_repo(&font_dir, info, |p| runner(p))
         })
-        .collect::<Results>();
+        .collect::<Vec<_>>();
+    let results = results.into_iter().collect::<Results<_, _>>();
 
     if let Some(path) = out_path {
         let as_json = serde_json::to_string_pretty(&results).map_err(Error::OutputJson)?;
@@ -97,7 +157,11 @@ fn compile_all(
 }
 
 // one repo can contain multiple sources, so we return a vec.
-fn fetch_and_run_repo(font_dir: &Path, repo: &RepoInfo) -> Vec<(PathBuf, RunResult)> {
+fn fetch_and_run_repo<T: Send, E: Send>(
+    font_dir: &Path,
+    repo: &RepoInfo,
+    runner: impl Fn(&Path) -> RunResult<T, E> + Send + Sync,
+) -> Vec<(PathBuf, RunResult<T, E>)> {
     if !font_dir.exists() && clone_repo(font_dir, &repo.repo_url).is_err() {
         return vec![(font_dir.to_owned(), RunResult::Skipped(SkipReason::GitFail))];
     }
@@ -106,17 +170,26 @@ fn fetch_and_run_repo(font_dir: &Path, repo: &RepoInfo) -> Vec<(PathBuf, RunResu
     let configs = repo
         .config_files
         .iter()
-        .flat_map(|filename| {
+        .map(|filename| {
             let config_path = source_dir.join(filename);
-            load_config(&config_path)
+            Config::load(&config_path)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>();
 
-    if configs.is_empty() {
-        return vec![(
-            font_dir.to_owned(),
-            RunResult::Skipped(SkipReason::NoConfig),
-        )];
+    let configs = match configs {
+        Ok(c) if c.is_empty() => {
+            return vec![(
+                font_dir.to_owned(),
+                RunResult::Skipped(SkipReason::NoConfig),
+            )];
+        }
+        Err(e) => {
+            return vec![(
+                font_dir.to_owned(),
+                RunResult::Skipped(SkipReason::BadConfig(e.to_string())),
+            )]
+        }
+        Ok(c) => c,
     };
 
     // collect to set in case configs duplicate sources
@@ -129,19 +202,19 @@ fn fetch_and_run_repo(font_dir: &Path, repo: &RepoInfo) -> Vec<(PathBuf, RunResu
     sources
         .into_iter()
         .map(|source| {
-            let result = compile_one(&source);
+            eprintln!("running {}", source.display());
+            let result = runner(&source);
             (source, result)
         })
         .collect()
 }
 
-fn compile_one(source_path: &Path) -> RunResult {
+fn compile_one(source_path: &Path) -> RunResult<(), String> {
     let tempdir = tempfile::tempdir().unwrap();
     let args = fontc::Args::new(tempdir.path(), source_path.to_owned());
     let timer = JobTimer::new(Instant::now());
-    eprintln!("compiling {}", source_path.display());
     match std::panic::catch_unwind(|| fontc::run(args, timer)) {
-        Ok(Ok(_)) => RunResult::Success,
+        Ok(Ok(_)) => RunResult::Success(()),
         Ok(Err(e)) => RunResult::Fail(e.to_string()),
         Err(_) => RunResult::Panic,
     }
@@ -169,34 +242,16 @@ fn clone_repo(to_dir: &Path, repo: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Parse and return a config.yaml file for the provided font source
-fn load_config(config_path: &Path) -> Option<Config> {
-    let contents = match std::fs::read_to_string(config_path) {
-        Ok(contents) => contents,
-        Err(e) => {
-            eprintln!("failed to load config at '{}': {e}", config_path.display());
-            return None;
-        }
-    };
-    match serde_yaml::from_str(&contents) {
-        Ok(config) => Some(config),
-        Err(e) => {
-            eprintln!("BAD YAML: {contents}: '{e}'");
-            None
-        }
-    }
-}
-
-impl FromIterator<(PathBuf, RunResult)> for Results {
-    fn from_iter<T: IntoIterator<Item = (PathBuf, RunResult)>>(iter: T) -> Self {
+impl<T, E> FromIterator<(PathBuf, RunResult<T, E>)> for Results<T, E> {
+    fn from_iter<I: IntoIterator<Item = (PathBuf, RunResult<T, E>)>>(iter: I) -> Self {
         let mut out = Results::default();
         for (path, reason) in iter.into_iter() {
             match reason {
                 RunResult::Skipped(reason) => {
                     out.skipped.insert(path, reason);
                 }
-                RunResult::Success => {
-                    out.success.insert(path);
+                RunResult::Success(output) => {
+                    out.success.insert(path, output);
                 }
                 RunResult::Fail(reason) => {
                     out.failure.insert(path, reason);
@@ -210,7 +265,7 @@ impl FromIterator<(PathBuf, RunResult)> for Results {
     }
 }
 
-impl Results {
+impl<T, E> Results<T, E> {
     fn print_summary(&self) {
         let total = self.success.len() + self.failure.len() + self.panic.len() + self.skipped.len();
 
@@ -249,19 +304,15 @@ impl Results {
     }
 }
 
-/// Google fonts config file ('config.yaml')
-#[derive(Clone, Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-// there are a few fields of this that we dont' care about but parse anyway?
-// maybe we will want them later?
-#[allow(dead_code)]
-struct Config {
-    sources: Vec<String>,
-    family_name: Option<String>,
-    #[serde(default)]
-    build_variable: bool,
-    #[serde(default)]
-    axis_order: Vec<Tag>,
+impl<T, E> Default for Results<T, E> {
+    fn default() -> Self {
+        Self {
+            success: Default::default(),
+            failure: Default::default(),
+            panic: Default::default(),
+            skipped: Default::default(),
+        }
+    }
 }
 
 impl std::fmt::Display for SkipReason {
@@ -269,6 +320,27 @@ impl std::fmt::Display for SkipReason {
         match self {
             SkipReason::GitFail => f.write_str("Git checkout failed"),
             SkipReason::NoConfig => f.write_str("No config.yaml file found"),
+            SkipReason::BadConfig(e) => write!(f, "Failed to read config file: '{e}'"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prune_items_smoke_test() {
+        let items = (0usize..100).collect::<Vec<_>>();
+        assert_eq!(prune_sources(&items, 100).len(), 100);
+        assert_eq!(prune_sources(&items, 200).len(), 100);
+        assert_eq!(prune_sources(&items, 101).len(), 100);
+        assert_eq!(prune_sources(&items, 20).len(), 20);
+        assert_eq!(prune_sources(&items, 80).len(), 80);
+        assert_eq!(prune_sources(&items, 9).len(), 9);
+        assert_eq!(
+            prune_sources(&items, 9),
+            &[0, 11, 22, 33, 44, 55, 66, 77, 88]
+        );
     }
 }
