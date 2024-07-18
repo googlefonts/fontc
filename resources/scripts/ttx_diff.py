@@ -196,10 +196,13 @@ def build_fontc(source: Path, build_dir: Path, compare: str):
 
 
 def build_fontmake(source: Path, build_dir: Path, compare: str):
+    buildtype = "variable"
+    if source.suffix == ".ufo":
+        buildtype = "ttf"
     cmd = [
         "fontmake",
         "-o",
-        "variable",
+        buildtype,
         "--output-path",
         "fontmake.ttf",
         "--drop-implied-oncurves",
@@ -496,8 +499,8 @@ def main(argv):
         sys.exit("Only one argument, a source file, is expected")
 
     source = Path(argv[1])
-    if not source.is_file():
-        sys.exit(f"No such file: {source}")
+    if not source.exists():
+        sys.exit(f"No such source: {source}")
 
     root = Path(".").resolve()
     if root.name != "fontc":
