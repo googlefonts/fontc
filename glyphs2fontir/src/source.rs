@@ -457,7 +457,7 @@ fn category_for_glyph(glyph: &glyphs_reader::Glyph) -> Option<GlyphClassDef> {
                 .map(|a| a.is_attaching())
                 .unwrap_or(false)
         });
-    match (glyph.category, glyph.sub_category.unwrap_or_default()) {
+    match (glyph.category, glyph.sub_category) {
         (_, Subcategory::Ligature) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
         (Some(Category::Mark), Subcategory::Nonspacing | Subcategory::SpacingCombining) => {
             Some(GlyphClassDef::Mark)

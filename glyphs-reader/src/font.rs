@@ -180,7 +180,7 @@ pub struct Glyph {
     /// The right kerning group
     pub right_kern: Option<SmolStr>,
     pub category: Option<Category>,
-    pub sub_category: Option<Subcategory>,
+    pub sub_category: Subcategory,
 }
 
 impl Glyph {
@@ -189,7 +189,7 @@ impl Glyph {
             (self.category, self.sub_category),
             (
                 Some(Category::Mark),
-                Some(Subcategory::Nonspacing | Subcategory::SpacingCombining)
+                Subcategory::Nonspacing | Subcategory::SpacingCombining
             )
         )
     }
@@ -1699,22 +1699,22 @@ impl RawGlyph {
         // otherwise we look them up based on the bundled GlyphData.
         // (we use this info later to determine GDEF categories, zero the width
         // on non-spacing marks, etc)
-        let mut category = self
-            .category
-            .map(|cat| Category::from_str(&cat))
-            .transpose()
-            .map_err(|category| Error::BadCategory {
-                glyph: self.glyphname.clone(),
-                category,
-            })?;
-        let mut sub_category = self
-            .sub_category
-            .map(|cat| Subcategory::from_str(&cat))
-            .transpose()
-            .map_err(|category| Error::BadCategory {
-                glyph: self.glyphname.clone(),
-                category,
-            })?;
+        fn parse_category<T>(s: Option<&str>, glyph: &SmolStr) -> Option<T>
+        where
+            T: FromStr<Err = SmolStr>,
+        {
+            match s.filter(|s| !s.is_empty()).map(T::from_str).transpose() {
+                Ok(x) => x,
+                // if we don't know a category ignore it and we'll compute it later
+                Err(err) => {
+                    log::warn!("Unknown category '{err}' for glyph '{glyph}'");
+                    None
+                }
+            }
+        }
+
+        let mut category = parse_category(self.category.as_deref(), &self.glyphname);
+        let mut sub_category = parse_category(self.sub_category.as_deref(), &self.glyphname);
 
         let codepoints = self
             .unicode
@@ -1739,7 +1739,7 @@ impl RawGlyph {
             right_kern: self.kern_right,
             unicode: codepoints,
             category,
-            sub_category,
+            sub_category: sub_category.unwrap_or_default(),
         })
     }
 }
@@ -2220,6 +2220,7 @@ impl From<Affine> for AffineForEqAndHash {
 mod tests {
     use crate::{
         font::{RawAxisUserToDesignMap, RawFeature, RawUserToDesignMapping},
+        glyphdata::{Category, Subcategory},
         plist::FromPlist,
         Font, Node, Shape,
     };
@@ -2960,5 +2961,19 @@ mod tests {
         assert_eq!(get_metric("descender"), Some((Some(-200.), Some(-17.))));
         assert_eq!(get_metric("x-height"), Some((Some(500.), Some(15.))));
         assert_eq!(get_metric("italic angle"), None);
+    }
+
+    // If category is unknown, we should ignore and compute it
+    #[test]
+    fn unknown_glyph_category() {
+        let raw = super::RawGlyph {
+            glyphname: "A".into(),
+            category: Some("Fake".into()),
+            ..Default::default()
+        };
+
+        let cooked = raw.build(16).unwrap();
+        assert_eq!(cooked.category, Some(Category::Letter));
+        assert_eq!(cooked.sub_category, Subcategory::None);
     }
 }

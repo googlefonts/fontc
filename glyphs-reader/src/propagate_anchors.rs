@@ -110,7 +110,7 @@ fn anchors_traversing_components<'a>(
         return origin_adjusted_anchors(&layer.anchors).collect();
     }
 
-    let is_ligature = glyph.sub_category == Some(Subcategory::Ligature);
+    let is_ligature = glyph.sub_category == Subcategory::Ligature;
     let mut has_underscore = layer
         .anchors
         .iter()
@@ -459,7 +459,7 @@ mod tests {
                 name: name.into(),
                 export: true,
                 category: info.as_ref().map(|i| i.category),
-                sub_category: info.as_ref().map(|i| i.subcategory),
+                sub_category: info.as_ref().map(|i| i.subcategory).unwrap_or_default(),
 
                 unicode: info.and_then(|i| i.unicode).into_iter().collect(),
                 ..Default::default()
@@ -492,7 +492,7 @@ mod tests {
         }
 
         fn set_subcategory(&mut self, sub_category: Subcategory) -> &mut Self {
-            self.0.sub_category = Some(sub_category);
+            self.0.sub_category = sub_category;
             self
         }
 
