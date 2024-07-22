@@ -1213,8 +1213,10 @@ impl RawFont {
             })
             .collect();
 
+        let mut non_metric_alignment_zones = vec![vec![]; self.font_master.len()];
+
         // in each font master setup the parallel array
-        for master in self.font_master.iter_mut() {
+        for (i, master) in self.font_master.iter_mut().enumerate() {
             // Copy the v2 metrics from actual fields into the parallel array rig
             // the order matters :(
             let mut metric_values: Vec<_> = [
@@ -1256,9 +1258,47 @@ impl RawFont {
                 // this is quadratic but N is small
                 if let Some(metric) = metric_values.iter_mut().find(|x| x.pos == Some(pos)) {
                     metric.over = Some(over);
+                } else {
+                    non_metric_alignment_zones[i].push((pos, over))
                 }
             }
             master.metric_values = metric_values;
+        }
+
+        // now handle any non-metric alignment zones, converting them to metrics.
+        // first we assign a name to each unique position:
+        let mut new_metrics = HashMap::new();
+        for pos in non_metric_alignment_zones
+            .iter()
+            .flat_map(|master| master.iter().map(|(pos, _)| *pos))
+        {
+            if !new_metrics.contains_key(&pos) {
+                let next_zone = new_metrics.len() + 1;
+                let idx = self.metrics.len();
+                self.metrics.push(RawMetric {
+                    type_: Some(format!("zone {next_zone}")),
+                });
+                new_metrics.insert(pos, idx);
+            }
+        }
+
+        // flip our map, so it's ordered on index:
+        let new_metrics: BTreeMap<_, _> = new_metrics.into_iter().map(|(k, v)| (v, k)).collect();
+
+        // then for each master, add a metric value for each newly named metric
+        for (idx, metrics) in non_metric_alignment_zones.into_iter().enumerate() {
+            for pos_to_add in new_metrics.values().copied() {
+                let to_add = metrics.iter().copied().find_map(|(pos, over)| {
+                    (pos == pos_to_add).then_some(RawMetricValue {
+                        pos: Some(pos),
+                        over: Some(over),
+                    })
+                });
+
+                self.font_master[idx]
+                    .metric_values
+                    .push(to_add.unwrap_or_default());
+            }
         }
         Ok(())
     }
@@ -2222,7 +2262,7 @@ mod tests {
         font::{RawAxisUserToDesignMap, RawFeature, RawUserToDesignMapping},
         glyphdata::{Category, Subcategory},
         plist::FromPlist,
-        Font, Node, Shape,
+        Font, FontMaster, Node, Shape,
     };
     use std::{
         collections::{BTreeMap, BTreeSet, HashSet},
@@ -2942,25 +2982,40 @@ mod tests {
         );
     }
 
+    // a little helper used in tests below
+    impl FontMaster {
+        fn get_metric(&self, name: &str) -> Option<(Option<f64>, Option<f64>)> {
+            self.metric_values
+                .get(name)
+                .map(|raw| (raw.pos.map(|x| x.0), raw.over.map(|x| x.0)))
+        }
+    }
+
     #[test]
     fn v2_alignment_zones_to_metrics() {
         let font = Font::load(&glyphs2_dir().join("alignment_zones_v2.glyphs")).unwrap();
         let master = font.default_master();
 
-        // a little closure for more conveniently accessing a metric value
-        let get_metric = |name: &str| {
-            master
-                .metric_values
-                .get(name)
-                .map(|raw| (raw.pos.map(|x| x.0), raw.over.map(|x| x.0)))
-        };
+        assert_eq!(master.get_metric("ascender"), Some((Some(800.), Some(17.))));
+        assert_eq!(
+            master.get_metric("cap height"),
+            Some((Some(700.), Some(16.)))
+        );
+        assert_eq!(master.get_metric("baseline"), Some((None, Some(-16.))));
+        assert_eq!(
+            master.get_metric("descender"),
+            Some((Some(-200.), Some(-17.)))
+        );
+        assert_eq!(master.get_metric("x-height"), Some((Some(500.), Some(15.))));
+        assert_eq!(master.get_metric("italic angle"), None);
+    }
 
-        assert_eq!(get_metric("ascender"), Some((Some(800.), Some(17.))));
-        assert_eq!(get_metric("cap height"), Some((Some(700.), Some(16.))));
-        assert_eq!(get_metric("baseline"), Some((None, Some(-16.))));
-        assert_eq!(get_metric("descender"), Some((Some(-200.), Some(-17.))));
-        assert_eq!(get_metric("x-height"), Some((Some(500.), Some(15.))));
-        assert_eq!(get_metric("italic angle"), None);
+    #[test]
+    fn v2_preserve_custom_alignment_zones() {
+        let font = Font::load(&glyphs2_dir().join("alignment_zones_v2.glyphs")).unwrap();
+        let master = font.default_master();
+        assert_eq!(master.get_metric("zone 1"), Some((Some(1000.), Some(20.))));
+        assert_eq!(master.get_metric("zone 2"), Some((Some(-100.), Some(-15.))));
     }
 
     // If category is unknown, we should ignore and compute it
