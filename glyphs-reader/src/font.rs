@@ -1226,30 +1226,36 @@ impl RawFont {
                 master.italic_angle,
             ]
             .into_iter()
-            .map(|pos| pos.and_then(|v| (v != 0.0).then_some(v)))
-            .map(|pos| RawMetricValue { pos, over: None })
+            .map(|pos| RawMetricValue {
+                pos: pos.filter(|x| *x != 0.),
+                over: None,
+            })
             .collect();
 
             // "alignmentZones is now a set of over (overshoot) properties attached to metrics"
-            // TODO: are these actually aligned by index or do you just lookup lhs to get over from rhs
-            assert!(
-                master.alignment_zones.len() <= metric_values.len(),
-                "{} should be <= {}",
-                master.alignment_zones.len(),
-                metric_values.len()
-            );
-            for (metric_value, alignment_zone) in
-                metric_values.iter_mut().zip(master.alignment_zones.iter())
-            {
-                // Alignment zones look like {800, 16}, but (800, 16) would be more useful
-                let alignment_zone = alignment_zone.replace('{', "(").replace('}', ")");
-                let values = Vec::<i64>::parse_plist(&alignment_zone)?;
-                if values.len() != 2 {
-                    warn!("Confusing alignment zone {alignment_zone}, skipping");
+            for alignment_zone in &master.alignment_zones {
+                let Some((pos, over)) = parse_alignment_zone(alignment_zone) else {
+                    warn!("Confusing alignment zone '{alignment_zone}', skipping");
                     continue;
                 };
-                if values[1] != 0 {
-                    metric_value.over = Some(OrderedFloat(values[1] as f64));
+
+                // skip zero-height zones
+                if over == 0. {
+                    continue;
+                }
+
+                // special handling for this; we assume it's the baseline, and
+                // we know where that is in our vec (and it has pos: None, set
+                // above)
+                if pos == 0. {
+                    metric_values[1].over = Some(over);
+                    continue;
+                }
+
+                // now look for a metric that has the same position as this zone
+                // this is quadratic but N is small
+                if let Some(metric) = metric_values.iter_mut().find(|x| x.pos == Some(pos)) {
+                    metric.over = Some(over);
                 }
             }
             master.metric_values = metric_values;
@@ -1358,6 +1364,14 @@ impl RawFont {
         self.v2_to_v3_layer_attributes();
         Ok(())
     }
+}
+
+// in the form '{INT, INT}'
+fn parse_alignment_zone(zone: &str) -> Option<(OrderedFloat<f64>, OrderedFloat<f64>)> {
+    let (one, two) = zone.split_once(',')?;
+    let one = one.trim_start_matches(['{', ' ']).parse::<i32>().ok()?;
+    let two = two.trim_start().trim_end_matches('}').parse::<i32>().ok()?;
+    Some((OrderedFloat(one as f64), OrderedFloat(two as f64)))
 }
 
 fn parse_glyph_order(raw_font: &RawFont) -> Vec<SmolStr> {
@@ -2913,5 +2927,38 @@ mod tests {
             })
             .unwrap();
         assert_eq!(acute_comb.anchor.as_deref(), Some("top_2"));
+    }
+
+    #[test]
+    fn parse_alignment_zone_smoke_test() {
+        assert_eq!(
+            super::parse_alignment_zone("{1, -12}").map(|x| (x.0 .0, x.1 .0)),
+            Some((1., -12.))
+        );
+        assert_eq!(
+            super::parse_alignment_zone("{-5001, 12}").map(|x| (x.0 .0, x.1 .0)),
+            Some((-5001., 12.))
+        );
+    }
+
+    #[test]
+    fn v2_alignment_zones_to_metrics() {
+        let font = Font::load(&glyphs2_dir().join("alignment_zones_v2.glyphs")).unwrap();
+        let master = font.default_master();
+
+        // a little closure for more conveniently accessing a metric value
+        let get_metric = |name: &str| {
+            master
+                .metric_values
+                .get(name)
+                .map(|raw| (raw.pos.map(|x| x.0), raw.over.map(|x| x.0)))
+        };
+
+        assert_eq!(get_metric("ascender"), Some((Some(800.), Some(17.))));
+        assert_eq!(get_metric("cap height"), Some((Some(700.), Some(16.))));
+        assert_eq!(get_metric("baseline"), Some((None, Some(-16.))));
+        assert_eq!(get_metric("descender"), Some((Some(-200.), Some(-17.))));
+        assert_eq!(get_metric("x-height"), Some((Some(500.), Some(15.))));
+        assert_eq!(get_metric("italic angle"), None);
     }
 }
