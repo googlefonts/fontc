@@ -1,0 +1,56 @@
+{
+.appVersion = "3260";
+customParameters = (
+{
+disabled = 1;
+name = fsType;
+value = (
+3,
+8
+);
+}
+);
+date = "2024-07-18 16:00:55 +0000";
+familyName = "New Font";
+fontMaster = (
+{
+alignmentZones = (
+"{800, 17}",
+"{700, 16}",
+"{500, 15}",
+"{0, -16}",
+"{-200, -17}"
+);
+ascender = 800;
+capHeight = 700;
+descender = -200;
+id = "CEAF8881-3B30-4737-AC29-09BAEF72AFFD";
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = "CEAF8881-3B30-4737-AC29-09BAEF72AFFD";
+width = 600;
+}
+);
+unicode = 0041;
+},
+{
+glyphname = a;
+layers = (
+{
+layerId = "CEAF8881-3B30-4737-AC29-09BAEF72AFFD";
+width = 600;
+}
+);
+unicode = 0061;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

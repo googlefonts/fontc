@@ -12,7 +12,6 @@ use std::str::FromStr;
 use std::{fs, path};
 
 use crate::glyphdata::{Category, GlyphData, Subcategory};
-use crate::plist::FromPlist;
 use ascii_plist_derive::FromPlist;
 use kurbo::{Affine, Point, Vec2};
 use log::{debug, warn};
@@ -21,7 +20,7 @@ use regex::Regex;
 use smol_str::SmolStr;
 
 use crate::error::Error;
-use crate::plist::{Plist, Token, Tokenizer, VecDelimiters};
+use crate::plist::{FromPlist, Plist, Token, Tokenizer, VecDelimiters};
 
 const V3_METRIC_NAMES: [&str; 6] = [
     "ascender",
@@ -420,15 +419,23 @@ impl FromPlist for CustomParameters {
 
             tokenizer.eat(b'{')?;
 
-            // Can we at least count on always having a name and a value?
+            // these params can have an optional 'disabled' flag set; if present
+            // we just pretend they aren't there.
+            let mut disabled = false;
             let mut name = None;
             let mut value = None;
-            for _ in 0..2 {
+            for _ in 0..3 {
                 let key: String = tokenizer.parse()?;
                 tokenizer.eat(b'=')?;
                 match key.as_str() {
+                    "disabled" => {
+                        let flag = tokenizer.parse::<i64>()?;
+                        disabled = flag != 0;
+                        tokenizer.eat(b';')?;
+                    }
                     "name" => {
                         let the_name: String = tokenizer.parse()?;
+                        tokenizer.eat(b';')?;
                         name = Some(the_name);
                     }
                     "value" => {
@@ -494,13 +501,15 @@ impl FromPlist for CustomParameters {
                             }
                             _ => tokenizer.skip_rec()?,
                         }
+                        // once we've seen the value we're always done
+                        tokenizer.eat(b';')?;
+                        break;
                     }
                     _ => return Err(Error::SomethingWentWrong),
                 }
-                tokenizer.eat(b';')?;
             }
 
-            if let (Some(name), Some(value)) = (name, value) {
+            if let Some((name, value)) = name.zip(value).filter(|_| !disabled) {
                 params.push((name, value));
             }
 
@@ -3030,5 +3039,12 @@ mod tests {
         let cooked = raw.build(16).unwrap();
         assert_eq!(cooked.category, Some(Category::Letter));
         assert_eq!(cooked.sub_category, Subcategory::None);
+    }
+
+    #[test]
+    fn custom_params_disable() {
+        let font = Font::load(&glyphs3_dir().join("custom_param_disable.glyphs")).unwrap();
+
+        assert!(font.fs_type.is_none())
     }
 }
