@@ -73,7 +73,11 @@ fn generate_report(args: &ReportArgs) -> Result<(), Error> {
     if let Ok(results) = serde_json::from_str::<Results<DiffOutput, DiffError>>(&contents) {
         ttx_diff_runner::print_report(&results, args.verbose);
     } else {
-        let results = deserialize_compile_json(&contents)?;
+        let results = serde_json::from_str::<Results<(), String>>(&contents)
+            .map_err(Error::InputJson)
+            // for a while a map of (string: null) was being serialized as a sequence?
+            // so for now we just try parsing both forms
+            .or_else(|_| deserialize_compile_json(&contents))?;
         results.print_summary(args.verbose)
     }
     Ok(())
