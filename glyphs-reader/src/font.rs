@@ -505,7 +505,11 @@ impl FromPlist for CustomParameters {
                         tokenizer.eat(b';')?;
                         break;
                     }
-                    _ => return Err(Error::SomethingWentWrong),
+                    other => {
+                        return Err(Error::Parse(format!(
+                            "unexpected key '{other}' in CustomParams"
+                        )))
+                    }
                 }
             }
 
@@ -1056,8 +1060,8 @@ fn parse_node_from_tokenizer(tokenizer: &mut Tokenizer<'_>) -> Result<Node, crat
     let y: f64 = tokenizer.parse()?;
     tokenizer.eat(b',')?;
     let node_type: String = tokenizer.parse()?;
-    let node_type =
-        NodeType::from_str(&node_type).map_err(|_| crate::plist::Error::SomethingWentWrong)?;
+    let node_type = NodeType::from_str(&node_type)
+        .map_err(|_| crate::plist::Error::Parse(format!("unknown node type '{node_type}'")))?;
 
     // Sometimes there is userData; ignore it
     if tokenizer.eat(b',').is_ok() {
