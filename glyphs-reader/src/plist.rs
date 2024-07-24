@@ -58,9 +58,10 @@ pub enum Error {
         expected: &'static str,
         found: &'static str,
     },
-
-    #[error("Oops, this parser is just broken")]
-    SomethingWentWrong,
+    #[error("Unexpected token '{name}'")]
+    UnexpectedToken { name: &'static str },
+    #[error("parsing failed: '{0}'")]
+    Parse(String),
 }
 
 #[derive(Debug)]
@@ -295,7 +296,7 @@ impl Plist {
                     }
                 }
             }
-            _ => Err(Error::SomethingWentWrong),
+            _ => Err(Error::UnexpectedToken { name: tok.name() }),
         }
     }
 
@@ -637,7 +638,7 @@ impl<'a> Tokenizer<'a> {
                     self.eat(b',')?;
                 }
             }
-            _ => Err(Error::SomethingWentWrong),
+            other => Err(Error::UnexpectedToken { name: other.name() }),
         }
     }
 
@@ -773,7 +774,7 @@ impl FromPlist for Point {
         };
         let coords: Vec<f64> = tokenizer.parse_delimited_vec(delims)?;
         if coords.len() != 2 {
-            return Err(Error::SomethingWentWrong);
+            return Err(Error::Parse("wrong number of coords in point".to_string()));
         }
         Ok((coords[0], coords[1]).into())
     }
