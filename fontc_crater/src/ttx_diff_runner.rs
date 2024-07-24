@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, path::Path, process::Command};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use crate::{Results, RunResult};
 
@@ -68,7 +72,7 @@ pub(super) fn print_report(results: &Results<DiffOutput, DiffError>, verbose: bo
         .filter(|x| matches!(x, DiffOutput::Identical))
         .count();
     let n_diffs = success.len() - n_identical;
-    println!("### tried to diff {n_total} targets ###");
+    println!("### tried to diff {n_total} targets ###\n");
     println!(
         "{n_identical} identical, {n_diffs} diffs, {n_failed} failed, {} skipped",
         skipped.len()
@@ -87,7 +91,7 @@ pub(super) fn print_report(results: &Results<DiffOutput, DiffError>, verbose: bo
     let total_diff_with_failures = total_diff / (n_failed + success.len()) as f32 * 100.;
     let total_diff_no_failures = total_diff / success.len() as f32 * 100.;
     println!(
-        "total diff score {:.2}% (including failures: {:.2}%)",
+        "total diff score {:.2}% (including failures: {:.2}%)\n",
         total_diff_no_failures, total_diff_with_failures
     );
 
@@ -107,11 +111,21 @@ pub(super) fn print_report(results: &Results<DiffOutput, DiffError>, verbose: bo
         })
         .collect::<BTreeMap<_, _>>();
 
-    let fontc_fails = comp_fails.values().filter(|x| x.fontc.is_some()).count();
-    let fontmake_fails = comp_fails.values().filter(|x| x.fontmake.is_some()).count();
+    let (mut fontc_fail, mut fontmake_fail, mut both_fail) =
+        (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
 
-    println!("{fontc_fails} targets failed on fontc");
-    println!("{fontmake_fails} targets failed on fontmake");
+    for (path, fail) in &comp_fails {
+        match (fail.fontc.is_some(), fail.fontmake.is_some()) {
+            (true, false) => fontc_fail.insert(*path),
+            (false, true) => fontmake_fail.insert(*path),
+            (true, true) => both_fail.insert(*path),
+            _ => unreachable!(),
+        };
+    }
+
+    println!("{} targets failed both compilers", both_fail.len());
+    println!("{} targets failed on fontc only", fontc_fail.len(),);
+    println!("{} targets failed on fontmake only", fontmake_fail.len());
     println!("{} targets failed for other reasons", other_fails.len());
 
     if !verbose {
@@ -148,22 +162,20 @@ pub(super) fn print_report(results: &Results<DiffOutput, DiffError>, verbose: bo
         }
     }
 
-    if !comp_fails.is_empty() {
-        println!(
-            "\n### {} failed to compile on at least one compiler: ###\n",
-            comp_fails.len()
-        );
+    fn print_compiler_failures(name: &str, fails: &BTreeSet<&PathBuf>) {
+        if fails.is_empty() {
+            return;
+        }
 
-        for (path, fail) in comp_fails {
-            println!("{}", path.display());
-            if let Some(fail) = &fail.fontc {
-                println!("  {}", fail.command)
-            }
-            if let Some(fail) = &fail.fontmake {
-                println!("  {}", fail.command)
-            }
+        println!("\n### {} failed to compile on {} ###\n", fails.len(), name);
+        for path in fails {
+            println!("{}", path.display())
         }
     }
+
+    print_compiler_failures("both", &both_fail);
+    print_compiler_failures("fontmake", &fontmake_fail);
+    print_compiler_failures("fontc", &fontc_fail);
 
     if !other_fails.is_empty() {
         println!(
