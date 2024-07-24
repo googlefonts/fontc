@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicUsize, Ordering},
     time::Instant,
 };
 
@@ -186,14 +187,30 @@ fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
     out_path: Option<&Path>,
     runner: impl Fn(&Path) -> RunResult<T, E> + Send + Sync,
 ) -> Result<(), Error> {
-    let results = sources
-        .par_iter()
-        .flat_map(|info| {
-            let font_dir = cache_dir.join(&info.repo_name);
-            fetch_and_run_repo(&font_dir, info, |p| runner(p))
+    let mut skipped: Vec<(_, RunResult<T, E>)> = Vec::new();
+    let mut targets = Vec::new();
+    for source in sources {
+        let font_dir = cache_dir.join(&source.repo_name);
+        match get_targets_for_repo(&font_dir, source) {
+            Ok(repo_targets) => targets.extend(repo_targets),
+            Err(e) => skipped.push((font_dir, RunResult::Skipped(e))),
+        }
+    }
+    let total_targets = targets.len();
+    let counter = AtomicUsize::new(0);
+    let results = targets
+        .into_par_iter()
+        .map(|target| {
+            let i = counter.fetch_add(1, Ordering::Relaxed);
+            eprintln!("running {} ({i}/{total_targets})", target.display());
+            let r = runner(&target);
+            (target, r)
         })
         .collect::<Vec<_>>();
-    let results = results.into_iter().collect::<Results<_, _>>();
+    let results = results
+        .into_iter()
+        .chain(skipped)
+        .collect::<Results<_, _>>();
 
     if let Some(path) = out_path {
         let as_json = serde_json::to_string_pretty(&results).map_err(Error::OutputJson)?;
@@ -208,13 +225,9 @@ fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
 }
 
 // one repo can contain multiple sources, so we return a vec.
-fn fetch_and_run_repo<T: Send, E: Send>(
-    font_dir: &Path,
-    repo: &RepoInfo,
-    runner: impl Fn(&Path) -> RunResult<T, E> + Send + Sync,
-) -> Vec<(PathBuf, RunResult<T, E>)> {
+fn get_targets_for_repo(font_dir: &Path, repo: &RepoInfo) -> Result<Vec<PathBuf>, SkipReason> {
     if !font_dir.exists() && clone_repo(font_dir, &repo.repo_url).is_err() {
-        return vec![(font_dir.to_owned(), RunResult::Skipped(SkipReason::GitFail))];
+        return Err(SkipReason::GitFail);
     }
 
     let source_dir = font_dir.join("sources");
@@ -228,18 +241,8 @@ fn fetch_and_run_repo<T: Send, E: Send>(
         .collect::<Result<Vec<_>, _>>();
 
     let configs = match configs {
-        Ok(c) if c.is_empty() => {
-            return vec![(
-                font_dir.to_owned(),
-                RunResult::Skipped(SkipReason::NoConfig),
-            )];
-        }
-        Err(e) => {
-            return vec![(
-                font_dir.to_owned(),
-                RunResult::Skipped(SkipReason::BadConfig(e.to_string())),
-            )]
-        }
+        Ok(c) if c.is_empty() => return Err(SkipReason::NoConfig),
+        Err(e) => return Err(SkipReason::BadConfig(e.to_string())),
         Ok(c) => c,
     };
 
@@ -250,14 +253,7 @@ fn fetch_and_run_repo<T: Send, E: Send>(
         .map(|source| source_dir.join(source))
         .collect::<BTreeSet<_>>();
 
-    sources
-        .into_iter()
-        .map(|source| {
-            eprintln!("running {}", source.display());
-            let result = runner(&source);
-            (source, result)
-        })
-        .collect()
+    Ok(sources.into_iter().collect())
 }
 
 fn compile_one(source_path: &Path) -> RunResult<(), String> {
