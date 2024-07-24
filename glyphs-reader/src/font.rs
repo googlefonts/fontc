@@ -1495,7 +1495,11 @@ fn user_to_design_from_axis_mapping(
     let mut axis_mappings: BTreeMap<String, RawAxisUserToDesignMap> = BTreeMap::new();
     for mapping in mappings {
         let Some(axis_index) = axis_index(from, |a| a.tag == mapping.tag) else {
-            panic!("No such axes: {:?}", mapping.tag);
+            log::warn!(
+                "axis mapping includes tag {:?} not included in font",
+                mapping.tag
+            );
+            continue;
         };
         let axis_name = &from.axes.get(axis_index).unwrap().name;
         for (user, design) in mapping.user_to_design.iter() {
