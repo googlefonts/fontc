@@ -21,14 +21,19 @@ pub enum Plist {
     String(String),
     Integer(i64),
     Float(OrderedFloat<f64>),
+    Data(Vec<u8>),
 }
 
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
     #[error("Unexpected character '{0}'")]
     UnexpectedChar(char),
     #[error("Unterminated string")]
     UnclosedString,
+    #[error("Unterminated data block")]
+    UnclosedData,
+    #[error("Data block did not contain valid paired hex digits")]
+    BadData,
     #[error("Unknown escape code")]
     UnknownEscape,
     #[error("Expected string, found '{token_name}")]
@@ -68,6 +73,7 @@ pub(crate) enum Token<'a> {
     Eof,
     OpenBrace,
     OpenParen,
+    Data(Vec<u8>),
     String(Cow<'a, str>),
     Atom(&'a str),
 }
@@ -175,6 +181,7 @@ impl Plist {
             Plist::Float(..) => "float",
             Plist::Integer(..) => "integer",
             Plist::String(..) => "string",
+            Plist::Data(..) => "data",
         }
     }
 
@@ -251,11 +258,22 @@ impl Plist {
         }
     }
 
+    pub fn expect_data(self) -> Result<Vec<u8>, Error> {
+        match self {
+            Plist::Data(bytes) => Ok(bytes),
+            _other => Err(Error::UnexpectedDataType {
+                expected: "data",
+                found: _other.name(),
+            }),
+        }
+    }
+
     fn parse_rec(s: &str, ix: usize) -> Result<(Plist, usize), Error> {
         let (tok, mut ix) = Token::lex(s, ix)?;
         match tok {
             Token::Atom(s) => Ok((Plist::parse_atom(s), ix)),
             Token::String(s) => Ok((Plist::String(s.into()), ix)),
+            Token::Data(bytes) => Ok((Plist::Data(bytes), ix)),
             Token::OpenBrace => {
                 let mut dict = BTreeMap::new();
                 loop {
@@ -351,8 +369,41 @@ impl Plist {
             Plist::Float(f) => {
                 s.push_str(&format!("{f}"));
             }
+            Plist::Data(data) => {
+                s.push('<');
+                for byte in data {
+                    s.extend(hex_digits_for_byte(*byte))
+                }
+                s.push('>');
+            }
         }
     }
+}
+
+fn hex_digits_for_byte(byte: u8) -> [char; 2] {
+    fn to_hex_digit(val: u8) -> char {
+        match val {
+            0..=9 => ('0' as u32 as u8 + val).into(),
+            10..=15 => (('a' as u32 as u8) + val - 10).into(),
+            _ => unreachable!("only called with values in range 0..=15"),
+        }
+    }
+
+    [to_hex_digit(byte >> 4), to_hex_digit(byte & 0x0f)]
+}
+
+fn byte_from_hex(hex: [u8; 2]) -> Result<u8, Error> {
+    fn hex_digit_to_byte(digit: u8) -> Result<u8, Error> {
+        match digit {
+            b'0'..=b'9' => Ok(digit - b'0'),
+            b'a'..=b'f' => Ok(digit - b'a' + 10),
+            b'A'..=b'F' => Ok(digit - b'A' + 10),
+            _ => Err(Error::BadData),
+        }
+    }
+    let maj = hex_digit_to_byte(hex[0])? << 4;
+    let min = hex_digit_to_byte(hex[1])?;
+    Ok(maj | min)
 }
 
 impl<'a> Token<'a> {
@@ -365,6 +416,22 @@ impl<'a> Token<'a> {
         match b {
             b'{' => Ok((Token::OpenBrace, start + 1)),
             b'(' => Ok((Token::OpenParen, start + 1)),
+            b'<' => {
+                let data_start = start + 1;
+                let data_end = data_start
+                    + s.as_bytes()[data_start..]
+                        .iter()
+                        .position(|b| *b == b'>')
+                        .ok_or(Error::UnclosedData)?;
+                let chunks = s.as_bytes()[data_start..data_end].chunks_exact(2);
+                if !chunks.remainder().is_empty() {
+                    return Err(Error::BadData);
+                }
+                let data = chunks
+                    .map(|x| byte_from_hex(x.try_into().unwrap()))
+                    .collect::<Result<_, _>>()?;
+                Ok((Token::Data(data), data_end + 1))
+            }
             b'"' => {
                 let mut ix = start + 1;
                 let mut cow_start = ix;
@@ -448,9 +515,9 @@ impl<'a> Token<'a> {
         match self {
             Token::Atom(s) => Ok(s.into()),
             Token::String(s) => Ok(s.into()),
-            Token::Eof => Err(Error::NotAString { token_name: "eof" }),
-            Token::OpenBrace => Err(Error::NotAString { token_name: "{" }),
-            Token::OpenParen => Err(Error::NotAString { token_name: "(" }),
+            _ => Err(Error::NotAString {
+                token_name: self.name(),
+            }),
         }
     }
 
@@ -461,6 +528,7 @@ impl<'a> Token<'a> {
             Token::Eof => None,
             Token::OpenBrace => None,
             Token::OpenParen => None,
+            Token::Data(_) => None,
         }
     }
 
@@ -482,6 +550,7 @@ impl<'a> Token<'a> {
             Token::Eof => "Eof",
             Token::OpenBrace => "OpenBrace",
             Token::OpenParen => "OpenParen",
+            Token::Data(_) => "Data",
         }
     }
 }
@@ -613,8 +682,7 @@ impl<'a> Tokenizer<'a> {
     /// Named to match parse_rec.
     pub(crate) fn skip_rec(&mut self) -> Result<(), Error> {
         match self.lex()? {
-            Token::Atom(..) => Ok(()),
-            Token::String(..) => Ok(()),
+            Token::Atom(..) | Token::String(..) | Token::Data(..) => Ok(()),
             Token::OpenBrace => loop {
                 if self.eat(b'}').is_ok() {
                     return Ok(());
@@ -800,7 +868,7 @@ impl FromPlist for Affine {
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::Plist;
+    use super::*;
 
     #[test]
     fn parse_unquoted_strings() {
@@ -832,5 +900,35 @@ mod tests {
             ("value7".into(), Plist::String("-".into())),
         ]));
         assert_eq!(plist, plist_expected);
+    }
+
+    #[test]
+    fn parse_binary_data() {
+        let contents = r#"
+        {
+            mydata = <deadbeef>;
+        }
+            "#;
+        let plist = Plist::parse(contents).unwrap();
+        let data = plist.get("mydata").unwrap().clone().expect_data().unwrap();
+        assert_eq!(data, [0xde, 0xad, 0xbe, 0xef])
+    }
+
+    #[test]
+    fn hex_to_ascii() {
+        assert_eq!(hex_digits_for_byte(0x01), ['0', '1']);
+        assert_eq!(hex_digits_for_byte(0x00), ['0', '0']);
+        assert_eq!(hex_digits_for_byte(0xff), ['f', 'f']);
+        assert_eq!(hex_digits_for_byte(0xf0), ['f', '0']);
+        assert_eq!(hex_digits_for_byte(0x0f), ['0', 'f']);
+    }
+
+    #[test]
+    fn ascii_to_hex() {
+        assert_eq!(byte_from_hex([b'0', b'1']), Ok(0x01));
+        assert_eq!(byte_from_hex([b'0', b'0']), Ok(0x00));
+        assert_eq!(byte_from_hex([b'f', b'f']), Ok(0xff));
+        assert_eq!(byte_from_hex([b'f', b'0']), Ok(0xf0));
+        assert_eq!(byte_from_hex([b'0', b'f']), Ok(0x0f));
     }
 }
