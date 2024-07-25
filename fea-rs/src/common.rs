@@ -3,7 +3,7 @@
 use std::fmt::{Display, Formatter};
 
 use fontdrasil::types::GlyphName;
-pub use write_fonts::types::GlyphId;
+pub use write_fonts::types::GlyphId16;
 
 mod glyph_class;
 mod glyph_map;
@@ -21,7 +21,7 @@ use crate::compile::Anchor;
 #[derive(Debug, Clone)]
 pub(crate) enum GlyphOrClass {
     /// A resolved GlyphId
-    Glyph(GlyphId),
+    Glyph(GlyphId16),
     /// A resolved glyph class
     Class(GlyphClass),
     /// An explicit `<NULL>` glyph
@@ -81,14 +81,14 @@ impl GlyphOrClass {
         }
     }
 
-    pub(crate) fn to_glyph(&self) -> Option<GlyphId> {
+    pub(crate) fn to_glyph(&self) -> Option<GlyphId16> {
         match self {
             GlyphOrClass::Glyph(gid) => Some(*gid),
             _ => None,
         }
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId16> + '_ {
         let mut idx = 0;
         std::iter::from_fn(move || {
             let next = match &self {
@@ -105,12 +105,12 @@ impl GlyphOrClass {
     ///
     /// this is used to create the replacement targets for class -> glyph or
     /// class -> null substitutions.
-    pub(crate) fn into_iter_for_target(self) -> impl Iterator<Item = GlyphId> {
+    pub(crate) fn into_iter_for_target(self) -> impl Iterator<Item = GlyphId16> {
         let mut idx = 0;
         std::iter::from_fn(move || {
             let next = match &self {
                 GlyphOrClass::Glyph(id) if idx == 0 => Some(*id),
-                GlyphOrClass::Null if idx == 0 => Some(GlyphId::NOTDEF),
+                GlyphOrClass::Null if idx == 0 => Some(GlyphId16::NOTDEF),
                 GlyphOrClass::Class(cls) => cls.items().get(idx).copied(),
                 _ => None,
             };

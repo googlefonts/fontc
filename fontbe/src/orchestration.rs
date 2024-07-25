@@ -58,7 +58,7 @@ use write_fonts::{
         stat::Stat,
         variations::Tuple,
     },
-    types::{F2Dot14, GlyphId, Tag},
+    types::{F2Dot14, GlyphId16, Tag},
     validate::Validate,
     FontWrite,
 };
@@ -431,7 +431,7 @@ impl Persistable for AllKerningPairs {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub(crate) enum KernSide {
     /// A specific glyph
-    Glyph(GlyphId),
+    Glyph(GlyphId16),
     /// A group of glyphs
     Group(GlyphSet),
 }
@@ -468,7 +468,7 @@ impl KernSide {
         }
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId16> + '_ {
         let (first, second) = match self {
             Self::Glyph(gid) => (Some(*gid), None),
             Self::Group(group) => (None, Some(group)),
@@ -534,7 +534,7 @@ impl KernPair {
     }
 
     /// Returns true if this entry has no glyphs in common with the provided set
-    pub(crate) fn glyphs_are_disjoint(&self, glyphs: &HashSet<GlyphId>) -> bool {
+    pub(crate) fn glyphs_are_disjoint(&self, glyphs: &HashSet<GlyphId16>) -> bool {
         self.first_glyphs()
             .chain(self.second_glyphs())
             .all(|gid| !glyphs.contains(&gid))
@@ -565,11 +565,11 @@ impl KernPair {
         }
     }
 
-    pub(crate) fn first_glyphs(&self) -> impl Iterator<Item = GlyphId> + '_ {
+    pub(crate) fn first_glyphs(&self) -> impl Iterator<Item = GlyphId16> + '_ {
         self.side1.iter()
     }
 
-    pub(crate) fn second_glyphs(&self) -> impl Iterator<Item = GlyphId> + '_ {
+    pub(crate) fn second_glyphs(&self) -> impl Iterator<Item = GlyphId16> + '_ {
         self.side2.iter()
     }
 }
@@ -972,8 +972,8 @@ mod tests {
     // applied first
     #[test]
     fn kern_pair_sort_order() {
-        let glyph = KernSide::Glyph(GlyphId::new(5));
-        let class_ = KernSide::Group([1, 2, 3, 4].into_iter().map(GlyphId::new).collect());
+        let glyph = KernSide::Glyph(GlyphId16::new(5));
+        let class_ = KernSide::Group([1, 2, 3, 4].into_iter().map(GlyphId16::new).collect());
         let value = ValueRecordBuilder::new().with_x_advance(420);
         let glyph_glyph = KernPair {
             side1: glyph.clone(),

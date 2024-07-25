@@ -1,6 +1,6 @@
 use write_fonts::tables::post::Post;
 
-use super::{GlyphId, GlyphIdent};
+use super::{GlyphId16, GlyphIdent};
 use fontdrasil::types::GlyphName;
 use std::{
     borrow::Cow,
@@ -9,18 +9,18 @@ use std::{
     iter::FromIterator,
 };
 
-/// A glyph map for mapping from raw glyph identifiers to numeral `GlyphId`s.
+/// A glyph map for mapping from raw glyph identifiers to numeral `GlyphId16`s.
 ///
 /// This is used to map from names or CIDS encountered in a FEA file to the actual
-/// GlyphIds that will be used in the final font.
+/// GlyphId16s that will be used in the final font.
 ///
 /// Currently, the only way to construct this type is by calling `collect()`
 /// on an iterator of cids or names.
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GlyphMap {
-    names: HashMap<GlyphName, GlyphId>,
-    cids: HashMap<u16, GlyphId>,
+    names: HashMap<GlyphName, GlyphId16>,
+    cids: HashMap<u16, GlyphId16>,
 }
 
 impl GlyphMap {
@@ -36,7 +36,7 @@ impl GlyphMap {
 
     /// Generates a reverse map of ids -> raw identifers (names or CIDs)
     //  maybe just for testing?
-    pub fn reverse_map(&self) -> BTreeMap<GlyphId, GlyphIdent> {
+    pub fn reverse_map(&self) -> BTreeMap<GlyphId16, GlyphIdent> {
         self.names
             .iter()
             .map(|(name, id)| (*id, GlyphIdent::Name(name.clone())))
@@ -66,8 +66,8 @@ impl GlyphMap {
         }
     }
 
-    /// Return the `GlyphId` for the provided `GlyphIdent`
-    pub fn get<Q: ?Sized + sealed::AsGlyphIdent>(&self, key: &Q) -> Option<GlyphId> {
+    /// Return the `GlyphId16` for the provided `GlyphIdent`
+    pub fn get<Q: ?Sized + sealed::AsGlyphIdent>(&self, key: &Q) -> Option<GlyphId16> {
         if let Some(name) = key.named() {
             self.names.get(name).copied()
         } else if let Some(cid) = key.cid() {
@@ -99,7 +99,7 @@ impl FromIterator<u16> for GlyphMap {
             cids: iter
                 .into_iter()
                 .enumerate()
-                .map(|(i, cid)| (cid, GlyphId::new(i.try_into().unwrap())))
+                .map(|(i, cid)| (cid, GlyphId16::new(i.try_into().unwrap())))
                 .collect(),
         }
     }
@@ -111,7 +111,7 @@ impl FromIterator<GlyphName> for GlyphMap {
             names: iter
                 .into_iter()
                 .enumerate()
-                .map(|(i, cid)| (cid, GlyphId::new(i.try_into().unwrap())))
+                .map(|(i, cid)| (cid, GlyphId16::new(i.try_into().unwrap())))
                 .collect(),
             cids: HashMap::new(),
         }
@@ -124,7 +124,7 @@ impl FromIterator<GlyphIdent> for GlyphMap {
         let mut names = HashMap::new();
         let mut cids = HashMap::new();
         for (idx, item) in iter.into_iter().enumerate() {
-            let idx = GlyphId::new(idx.try_into().unwrap());
+            let idx = GlyphId16::new(idx.try_into().unwrap());
             match item {
                 GlyphIdent::Cid(cid) => cids.insert(cid, idx),
                 GlyphIdent::Name(name) => names.insert(name, idx),

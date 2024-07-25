@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use write_fonts::{
     tables::{self as wtables, gdef::GlyphClassDef, maxp::Maxp},
-    types::GlyphId,
+    types::GlyphId16,
     BuilderError, FontBuilder,
 };
 
@@ -49,7 +49,7 @@ pub struct Compilation {
     ///
     /// This is provided so that the user can reference them if they are going
     /// to manually generate kerning or markpos lookups.
-    pub gdef_classes: Option<HashMap<GlyphId, GlyphClassDef>>,
+    pub gdef_classes: Option<HashMap<GlyphId16, GlyphClassDef>>,
 }
 
 impl Compilation {

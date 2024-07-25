@@ -583,7 +583,7 @@ mod tests {
             types::F2Dot14,
             FontData, FontRead, FontReadWithArgs, FontRef, TableProvider,
         },
-        GlyphId, MetadataProvider, Tag,
+        GlyphId16, MetadataProvider, Tag,
     };
     use tempfile::{tempdir, TempDir};
     use write_fonts::{
@@ -699,10 +699,10 @@ mod tests {
                 .map(|v| v.to_u16() as u32)
         }
 
-        /// Returns the GlyphId (or NOTDEF, if not present)
-        fn get_gid(&self, name: &str) -> GlyphId {
+        /// Returns the GlyphId16 (or NOTDEF, if not present)
+        fn get_gid(&self, name: &str) -> GlyphId16 {
             let raw = self.get_glyph_index(name).unwrap_or_default();
-            GlyphId::new(raw as u16)
+            GlyphId16::new(raw as u16)
         }
 
         fn glyphs(&self) -> Glyphs {
@@ -740,7 +740,7 @@ mod tests {
             )
             .unwrap();
             (0..loca.len())
-                .map(|gid| loca.get_glyf(GlyphId::new(gid as u16), &glyf))
+                .map(|gid| loca.get_glyf(GlyphId16::new(gid as u16).into(), &glyf))
                 .map(|r| r.unwrap())
                 .collect()
         }
@@ -1620,7 +1620,7 @@ mod tests {
             .get()
             .contains(&GlyphName::NOTDEF));
         assert_eq!(
-            Some(GlyphId::NOTDEF),
+            Some(GlyphId16::NOTDEF),
             result
                 .fe_context
                 .glyph_order
@@ -1650,10 +1650,10 @@ mod tests {
 
         assert_eq!(
             vec![
-                GlyphId::new(1),
-                GlyphId::new(2),
-                GlyphId::new(3),
-                GlyphId::new(6),
+                GlyphId16::new(1),
+                GlyphId16::new(2),
+                GlyphId16::new(3),
+                GlyphId16::new(6),
             ],
             [0x20, 0x21, 0x2d, 0x3d]
                 .iter()
@@ -2464,7 +2464,7 @@ mod tests {
                 .map(|coord| F2Dot14::from_f32(coord.into_inner().into()))
                 .collect();
             self.hvar
-                .advance_width_delta(gid, &coords)
+                .advance_width_delta(gid.into(), &coords)
                 .unwrap()
                 .to_f64()
         }
@@ -3010,7 +3010,7 @@ mod tests {
         let glyph_count = font.maxp().unwrap().num_glyphs();
         assert_eq!(gvar.glyph_count(), glyph_count);
         assert!((0..glyph_count).all(|gid| gvar
-            .glyph_variation_data(GlyphId::new(gid))
+            .glyph_variation_data(GlyphId16::new(gid).into())
             // read-fonts would return an error when a glyph's variations are empty
             .is_err()));
     }

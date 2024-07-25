@@ -30,7 +30,7 @@ use write_fonts::{
 };
 
 use crate::{
-    common::{GlyphId, GlyphOrClass, GlyphSet},
+    common::{GlyphId16, GlyphOrClass, GlyphSet},
     compile::{lookups::contextual::ChainOrNot, metrics::ValueRecord},
     Kind, Opts,
 };
@@ -300,7 +300,9 @@ where
             .into_iter()
             .flat_map(|b| b.build(var_store).into_iter())
             .collect();
-        RawLookup::new(self.flags, subtables, self.mark_set.unwrap_or_default())
+        let mut out = RawLookup::new(self.flags, subtables);
+        out.mark_filtering_set = self.mark_set;
+        out
     }
 }
 
@@ -512,7 +514,7 @@ impl AllLookups {
         )));
     }
 
-    pub(crate) fn infer_glyph_classes(&self, mut f: impl FnMut(GlyphId, GlyphClassDef)) {
+    pub(crate) fn infer_glyph_classes(&self, mut f: impl FnMut(GlyphId16, GlyphClassDef)) {
         for lookup in &self.gpos {
             match lookup {
                 PositionLookup::MarkToBase(lookup) => {
@@ -591,7 +593,7 @@ impl AllLookups {
 
     pub(crate) fn insert_aalt_lookups(
         &mut self,
-        all_alts: HashMap<GlyphId, Vec<GlyphId>>,
+        all_alts: HashMap<GlyphId16, Vec<GlyphId16>>,
     ) -> Vec<LookupId> {
         let mut single = SingleSubBuilder::default();
         let mut alt = AlternateSubBuilder::default();
@@ -836,7 +838,7 @@ impl SomeLookup {
         }
     }
 
-    pub(crate) fn add_gpos_type_1(&mut self, id: GlyphId, record: ValueRecord) {
+    pub(crate) fn add_gpos_type_1(&mut self, id: GlyphId16, record: ValueRecord) {
         if let SomeLookup::GposLookup(PositionLookup::Single(table)) = self {
             let subtable = table.last_mut().unwrap();
             subtable.insert(id, record);
@@ -847,8 +849,8 @@ impl SomeLookup {
 
     pub(crate) fn add_gpos_type_2_pair(
         &mut self,
-        one: GlyphId,
-        two: GlyphId,
+        one: GlyphId16,
+        two: GlyphId16,
         val_one: ValueRecord,
         val_two: ValueRecord,
     ) {
@@ -876,7 +878,7 @@ impl SomeLookup {
     }
     pub(crate) fn add_gpos_type_3(
         &mut self,
-        id: GlyphId,
+        id: GlyphId16,
         entry: Option<Anchor>,
         exit: Option<Anchor>,
     ) {
@@ -933,7 +935,7 @@ impl SomeLookup {
         }
     }
 
-    pub(crate) fn add_gsub_type_1(&mut self, id: GlyphId, replacement: GlyphId) {
+    pub(crate) fn add_gsub_type_1(&mut self, id: GlyphId16, replacement: GlyphId16) {
         if let SomeLookup::GsubLookup(SubstitutionLookup::Single(table)) = self {
             let subtable = table.last_mut().unwrap();
             subtable.insert(id, replacement);
@@ -942,7 +944,7 @@ impl SomeLookup {
         }
     }
 
-    pub(crate) fn add_gsub_type_2(&mut self, id: GlyphId, replacement: Vec<GlyphId>) {
+    pub(crate) fn add_gsub_type_2(&mut self, id: GlyphId16, replacement: Vec<GlyphId16>) {
         if let SomeLookup::GsubLookup(SubstitutionLookup::Multiple(table)) = self {
             let subtable = table.last_mut().unwrap();
             subtable.insert(id, replacement);
@@ -951,7 +953,7 @@ impl SomeLookup {
         }
     }
 
-    pub(crate) fn add_gsub_type_3(&mut self, id: GlyphId, alternates: Vec<GlyphId>) {
+    pub(crate) fn add_gsub_type_3(&mut self, id: GlyphId16, alternates: Vec<GlyphId16>) {
         if let SomeLookup::GsubLookup(SubstitutionLookup::Alternate(table)) = self {
             let subtable = table.last_mut().unwrap();
             subtable.insert(id, alternates);
@@ -960,7 +962,7 @@ impl SomeLookup {
         }
     }
 
-    pub(crate) fn add_gsub_type_4(&mut self, target: Vec<GlyphId>, replacement: GlyphId) {
+    pub(crate) fn add_gsub_type_4(&mut self, target: Vec<GlyphId16>, replacement: GlyphId16) {
         if let SomeLookup::GsubLookup(SubstitutionLookup::Ligature(table)) = self {
             let subtable = table.last_mut().unwrap();
             subtable.insert(target, replacement);
@@ -972,7 +974,7 @@ impl SomeLookup {
     pub(crate) fn add_gsub_type_8(
         &mut self,
         backtrack: Vec<GlyphOrClass>,
-        input: BTreeMap<GlyphId, GlyphId>,
+        input: BTreeMap<GlyphId16, GlyphId16>,
         lookahead: Vec<GlyphOrClass>,
     ) {
         if let SomeLookup::GsubLookup(SubstitutionLookup::Reverse(table)) = self {

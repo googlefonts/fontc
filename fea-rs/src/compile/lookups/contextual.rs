@@ -12,7 +12,7 @@ use write_fonts::{
         layout::{self as write_layout, CoverageTableBuilder, LookupFlag},
         variations::ivs_builder::VariationStoreBuilder,
     },
-    types::GlyphId,
+    types::GlyphId16,
     validate::Validate,
     FontWrite,
 };
@@ -205,8 +205,8 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
 
     pub(crate) fn add_anon_gsub_type_2(
         &mut self,
-        target: GlyphId,
-        replacements: Vec<GlyphId>,
+        target: GlyphId16,
+        replacements: Vec<GlyphId16>,
     ) -> LookupId {
         let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
@@ -229,8 +229,8 @@ impl ContextualLookupBuilder<SubstitutionLookup> {
 
     pub(crate) fn add_anon_gsub_type_4(
         &mut self,
-        target: Vec<GlyphId>,
-        replacement: GlyphId,
+        target: Vec<GlyphId16>,
+        replacement: GlyphId16,
     ) -> LookupId {
         let (lookup, id) = self.find_or_create_anon_lookup(
             |existing| match existing {
@@ -273,7 +273,7 @@ pub(crate) struct ReverseChainBuilder {
 #[derive(Clone, Debug)]
 struct ReverseSubRule {
     backtrack: Vec<GlyphOrClass>,
-    context: BTreeMap<GlyphId, GlyphId>,
+    context: BTreeMap<GlyphId16, GlyphId16>,
     lookahead: Vec<GlyphOrClass>,
 }
 
@@ -726,7 +726,7 @@ impl ReverseChainBuilder {
     pub fn add(
         &mut self,
         backtrack: Vec<GlyphOrClass>,
-        context: BTreeMap<GlyphId, GlyphId>,
+        context: BTreeMap<GlyphId16, GlyphId16>,
         lookahead: Vec<GlyphOrClass>,
     ) {
         self.rules.push(ReverseSubRule {

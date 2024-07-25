@@ -9,7 +9,7 @@ use write_fonts::{
         layout::CoverageTable,
         variations::ivs_builder::VariationStoreBuilder,
     },
-    types::GlyphId,
+    types::GlyphId16,
 };
 
 use crate::{
@@ -22,16 +22,16 @@ use super::{Builder, ClassDefBuilder2};
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SinglePosBuilder {
-    items: BTreeMap<GlyphId, ValueRecord>,
+    items: BTreeMap<GlyphId16, ValueRecord>,
 }
 
 impl SinglePosBuilder {
     //TODO: should we track the valueformat here?
-    pub fn insert(&mut self, glyph: GlyphId, record: ValueRecord) {
+    pub fn insert(&mut self, glyph: GlyphId16, record: ValueRecord) {
         self.items.insert(glyph, record);
     }
 
-    pub(crate) fn can_add_rule(&self, glyph: GlyphId, value: &ValueRecord) -> bool {
+    pub(crate) fn can_add_rule(&self, glyph: GlyphId16, value: &ValueRecord) -> bool {
         self.items
             .get(&glyph)
             .map(|existing| existing == value)
@@ -43,7 +43,7 @@ impl Builder for SinglePosBuilder {
     type Output = Vec<write_gpos::SinglePos>;
 
     fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
-        fn build_subtable(items: BTreeMap<GlyphId, &RawValueRecord>) -> write_gpos::SinglePos {
+        fn build_subtable(items: BTreeMap<GlyphId16, &RawValueRecord>) -> write_gpos::SinglePos {
             let first = *items.values().next().unwrap();
             let use_format_1 = first.format().is_empty() || items.values().all(|val| val == &first);
             let coverage: CoverageTable = items.keys().copied().collect();
@@ -62,7 +62,7 @@ impl Builder for SinglePosBuilder {
 
         // list of sets of glyph ids which will end up in their own subtables
         let mut subtables = Vec::new();
-        let mut group_by_record: HashMap<&RawValueRecord, BTreeMap<GlyphId, &RawValueRecord>> =
+        let mut group_by_record: HashMap<&RawValueRecord, BTreeMap<GlyphId16, &RawValueRecord>> =
             Default::default();
 
         // first group by specific record; glyphs that share a record can use
@@ -73,7 +73,7 @@ impl Builder for SinglePosBuilder {
                 .or_default()
                 .insert(*gid, value);
         }
-        let mut group_by_format: HashMap<ValueFormat, BTreeMap<GlyphId, &RawValueRecord>> =
+        let mut group_by_format: HashMap<ValueFormat, BTreeMap<GlyphId16, &RawValueRecord>> =
             Default::default();
         for (value, glyphs) in group_by_record {
             // if this saves us size, use format 1
@@ -121,7 +121,7 @@ pub struct PairPosBuilder {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-struct GlyphPairPosBuilder(BTreeMap<GlyphId, BTreeMap<GlyphId, (ValueRecord, ValueRecord)>>);
+struct GlyphPairPosBuilder(BTreeMap<GlyphId16, BTreeMap<GlyphId16, (ValueRecord, ValueRecord)>>);
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -210,9 +210,9 @@ impl PairPosBuilder {
     /// Insert a new kerning pair
     pub fn insert_pair(
         &mut self,
-        glyph1: GlyphId,
+        glyph1: GlyphId16,
         record1: ValueRecord,
-        glyph2: GlyphId,
+        glyph2: GlyphId16,
         record2: ValueRecord,
     ) {
         // "When specific kern pair rules conflict, the first rule specified is used,
@@ -346,12 +346,12 @@ impl Builder for ClassPairPosSubtable {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CursivePosBuilder {
     // (entry, exit)
-    items: BTreeMap<GlyphId, (Option<Anchor>, Option<Anchor>)>,
+    items: BTreeMap<GlyphId16, (Option<Anchor>, Option<Anchor>)>,
 }
 
 impl CursivePosBuilder {
     /// Insert a new entry/exit anchor pair for a glyph.
-    pub fn insert(&mut self, glyph: GlyphId, entry: Option<Anchor>, exit: Option<Anchor>) {
+    pub fn insert(&mut self, glyph: GlyphId16, entry: Option<Anchor>, exit: Option<Anchor>) {
         self.items.insert(glyph, (entry, exit));
     }
 }
@@ -380,7 +380,7 @@ impl Builder for CursivePosBuilder {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct MarkList {
     // (class id, anchor)
-    glyphs: BTreeMap<GlyphId, (u16, Anchor)>,
+    glyphs: BTreeMap<GlyphId16, (u16, Anchor)>,
     // map class names to their idx for this table
     classes: HashMap<SmolStr, u16>,
 }
@@ -391,7 +391,7 @@ impl MarkList {
     /// Otherwise return the u16 id for this class, in this lookup.
     fn insert(
         &mut self,
-        glyph: GlyphId,
+        glyph: GlyphId16,
         class: SmolStr,
         anchor: Anchor,
     ) -> Result<u16, PreviouslyAssignedClass> {
@@ -417,7 +417,7 @@ impl MarkList {
         Ok(id)
     }
 
-    fn glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
+    fn glyphs(&self) -> impl Iterator<Item = GlyphId16> + Clone + '_ {
         self.glyphs.keys().copied()
     }
 
@@ -449,14 +449,14 @@ impl Builder for MarkList {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MarkToBaseBuilder {
     marks: MarkList,
-    bases: BTreeMap<GlyphId, Vec<(u16, Anchor)>>,
+    bases: BTreeMap<GlyphId16, Vec<(u16, Anchor)>>,
 }
 
 /// An error indicating a given glyph has been assigned to multiple mark classes
 #[derive(Clone, Debug, Default)]
 pub struct PreviouslyAssignedClass {
     /// The ID of the glyph in conflict
-    pub glyph_id: GlyphId,
+    pub glyph_id: GlyphId16,
     /// The name of the previous class
     pub class: SmolStr,
 }
@@ -481,7 +481,7 @@ impl MarkToBaseBuilder {
     /// previous class; this is likely an error.
     pub fn insert_mark(
         &mut self,
-        glyph: GlyphId,
+        glyph: GlyphId16,
         class: SmolStr,
         anchor: Anchor,
     ) -> Result<u16, PreviouslyAssignedClass> {
@@ -489,18 +489,18 @@ impl MarkToBaseBuilder {
     }
 
     /// Insert a new base glyph.
-    pub fn insert_base(&mut self, glyph: GlyphId, class: &SmolStr, anchor: Anchor) {
+    pub fn insert_base(&mut self, glyph: GlyphId16, class: &SmolStr, anchor: Anchor) {
         let class = self.marks.get_class(class);
         self.bases.entry(glyph).or_default().push((class, anchor))
     }
 
     /// Returns an iterator over all of the base glyphs
-    pub fn base_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
+    pub fn base_glyphs(&self) -> impl Iterator<Item = GlyphId16> + Clone + '_ {
         self.bases.keys().copied()
     }
 
     /// Returns an iterator over all of the mark glyphs
-    pub fn mark_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
+    pub fn mark_glyphs(&self) -> impl Iterator<Item = GlyphId16> + Clone + '_ {
         self.marks.glyphs()
     }
 }
@@ -539,7 +539,7 @@ impl Builder for MarkToBaseBuilder {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MarkToLigBuilder {
     marks: MarkList,
-    ligatures: BTreeMap<GlyphId, Vec<BTreeMap<SmolStr, Anchor>>>,
+    ligatures: BTreeMap<GlyphId16, Vec<BTreeMap<SmolStr, Anchor>>>,
 }
 
 impl MarkToLigBuilder {
@@ -554,7 +554,7 @@ impl MarkToLigBuilder {
     /// previous class; this is likely an error.
     pub fn insert_mark(
         &mut self,
-        glyph: GlyphId,
+        glyph: GlyphId16,
         class: SmolStr,
         anchor: Anchor,
     ) -> Result<u16, PreviouslyAssignedClass> {
@@ -574,7 +574,7 @@ impl MarkToLigBuilder {
     /// we provide an alternative public method below.
     pub(crate) fn add_ligature_components(
         &mut self,
-        glyph: GlyphId,
+        glyph: GlyphId16,
         components: Vec<BTreeMap<SmolStr, Anchor>>,
     ) {
         self.ligatures.insert(glyph, components);
@@ -590,7 +590,7 @@ impl MarkToLigBuilder {
     /// explicit 'None' in the appropriate ordering.
     pub fn insert_ligature(
         &mut self,
-        glyph: GlyphId,
+        glyph: GlyphId16,
         class: SmolStr,
         components: Vec<Option<Anchor>>,
     ) {
@@ -608,12 +608,12 @@ impl MarkToLigBuilder {
     }
 
     /// Returns an iterator over all of the mark glyphs
-    pub fn mark_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
+    pub fn mark_glyphs(&self) -> impl Iterator<Item = GlyphId16> + Clone + '_ {
         self.marks.glyphs()
     }
 
     /// Returns an iterator over all of the ligature glyphs
-    pub fn lig_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
+    pub fn lig_glyphs(&self) -> impl Iterator<Item = GlyphId16> + Clone + '_ {
         self.ligatures.keys().copied()
     }
 }
@@ -663,7 +663,7 @@ impl Builder for MarkToLigBuilder {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MarkToMarkBuilder {
     attaching_marks: MarkList,
-    base_marks: BTreeMap<GlyphId, Vec<(u16, Anchor)>>,
+    base_marks: BTreeMap<GlyphId16, Vec<(u16, Anchor)>>,
 }
 
 impl MarkToMarkBuilder {
@@ -673,7 +673,7 @@ impl MarkToMarkBuilder {
     /// previous class; this is likely an error.
     pub fn insert_mark1(
         &mut self,
-        glyph: GlyphId,
+        glyph: GlyphId16,
         class: SmolStr,
         anchor: Anchor,
     ) -> Result<u16, PreviouslyAssignedClass> {
@@ -681,18 +681,18 @@ impl MarkToMarkBuilder {
     }
 
     /// Insert a new mark2 (base) glyph
-    pub fn insert_mark2(&mut self, glyph: GlyphId, class: &SmolStr, anchor: Anchor) {
+    pub fn insert_mark2(&mut self, glyph: GlyphId16, class: &SmolStr, anchor: Anchor) {
         let id = self.attaching_marks.get_class(class);
         self.base_marks.entry(glyph).or_default().push((id, anchor))
     }
 
     /// Returns an iterator over all of the mark1 glyphs
-    pub fn mark1_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
+    pub fn mark1_glyphs(&self) -> impl Iterator<Item = GlyphId16> + Clone + '_ {
         self.attaching_marks.glyphs()
     }
 
     /// Returns an iterator over all of the mark2 glyphs
-    pub fn mark2_glyphs(&self) -> impl Iterator<Item = GlyphId> + Clone + '_ {
+    pub fn mark2_glyphs(&self) -> impl Iterator<Item = GlyphId16> + Clone + '_ {
         self.base_marks.keys().copied()
     }
 }

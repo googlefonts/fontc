@@ -8,7 +8,7 @@ use fontir::{ir::GlyphOrder, orchestration::WorkId as FeWorkId};
 use write_fonts::{
     dump_table,
     tables::gvar::{GlyphDeltas, GlyphVariations, Gvar},
-    types::GlyphId,
+    types::GlyphId16,
 };
 
 use crate::{
@@ -30,7 +30,7 @@ fn make_variations(
     glyph_order
         .iter()
         .enumerate()
-        .map(|(gid, gn)| GlyphVariations::new(GlyphId::new(gid as u16), get_deltas(gn)))
+        .map(|(gid, gn)| GlyphVariations::new(GlyphId16::new(gid as u16).into(), get_deltas(gn)))
         .collect()
 }
 

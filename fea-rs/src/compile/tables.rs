@@ -18,7 +18,7 @@ use write_fonts::{
     types::{Fixed, LongDateTime},
 };
 
-use crate::common::GlyphId;
+use crate::common::GlyphId16;
 
 mod base;
 mod gdef;
@@ -53,8 +53,8 @@ pub(crate) struct HeadBuilder {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct VmtxBuilder {
-    pub origins_y: Vec<(GlyphId, i16)>,
-    pub advances_y: Vec<(GlyphId, i16)>,
+    pub origins_y: Vec<(GlyphId16, i16)>,
+    pub advances_y: Vec<(GlyphId16, i16)>,
 }
 
 // this is the value used in python fonttools when writing this table

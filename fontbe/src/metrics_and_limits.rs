@@ -17,7 +17,7 @@ use write_fonts::{
         maxp::Maxp,
         vmtx::LongMetric,
     },
-    types::{FWord, GlyphId},
+    types::{FWord, GlyphId16},
     OtRound,
 };
 
@@ -43,7 +43,7 @@ struct FontLimits {
     max_points: u16,
     max_contours: u16,
     max_component_elements: u16,
-    glyph_info: HashMap<GlyphId, GlyphInfo>,
+    glyph_info: HashMap<GlyphId16, GlyphInfo>,
     bbox: Option<Bbox>,
 }
 
@@ -51,7 +51,7 @@ struct FontLimits {
 struct GlyphInfo {
     /// For simple glyphs always present. For composites, set by [`FontLimits::update_composite_limits`]
     limits: Option<GlyphLimits>,
-    components: Option<HashSet<GlyphId>>,
+    components: Option<HashSet<GlyphId16>>,
 }
 
 impl GlyphInfo {
@@ -79,7 +79,7 @@ impl GlyphLimits {
 }
 
 impl FontLimits {
-    fn update(&mut self, id: GlyphId, advance: u16, glyph: &Glyph) {
+    fn update(&mut self, id: GlyphId16, advance: u16, glyph: &Glyph) {
         // min side bearings are only for non-empty glyphs
         // we will presume only simple glyphs with no contours are empty
         if let Some(bbox) = glyph.data.bbox() {
@@ -238,7 +238,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             .iter()
             .enumerate()
             .map(|(gid, gn)| {
-                let gid = GlyphId::new(gid as u16);
+                let gid = GlyphId16::new(gid as u16);
                 let advance: u16 = context
                     .ir
                     .glyphs
@@ -365,7 +365,7 @@ mod tests {
         let mut glyph_limits = FontLimits::default();
         // path crafted to give the desired bbox
         glyph_limits.update(
-            GlyphId::new(0),
+            GlyphId16::NOTDEF,
             0,
             &crate::orchestration::Glyph::new(
                 "don't care".into(),
