@@ -6,3 +6,4 @@ fontmake[repacker]==3.8.1
 # our scripts import it directly, so we list it among the top-level requirements.
 fonttools
 lxml
+cdifflib
