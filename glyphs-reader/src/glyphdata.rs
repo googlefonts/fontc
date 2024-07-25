@@ -260,7 +260,7 @@ impl GlyphData {
 
             let new_part = smol_str::format_smolstr!("{part}-{script}");
             // if non-suffixed exists but suffixed doesn't, keep non-suffixed
-            if self.get_by_name(&part).is_some() && self.get_by_name(&new_part).is_none() {
+            if self.get_by_name(part.as_ref()).is_some() && self.get_by_name(&new_part).is_none() {
                 continue;
             }
             *part = new_part;
