@@ -10,7 +10,7 @@ use icu_properties::{BidiClass, Script};
 use tinystr::tinystr;
 use write_fonts::{
     read::{tables::gsub::Gsub, ReadError},
-    types::{GlyphId, Tag},
+    types::{GlyphId16, Tag},
 };
 
 use crate::features::ot_tags::{NEW_SCRIPTS, SCRIPT_ALIASES, SCRIPT_EXCEPTIONS_REVERSED};
@@ -42,11 +42,11 @@ pub trait CharMap {
     ///
     /// Note that a single glyph may appear multiple times, with different
     /// unicode values.
-    fn iter_glyphs(&self) -> impl Iterator<Item = (GlyphId, u32)>;
+    fn iter_glyphs(&self) -> impl Iterator<Item = (GlyphId16, u32)>;
 }
 
-impl CharMap for Vec<(Arc<Glyph>, GlyphId)> {
-    fn iter_glyphs(&self) -> impl Iterator<Item = (GlyphId, u32)> {
+impl CharMap for Vec<(Arc<Glyph>, GlyphId16)> {
+    fn iter_glyphs(&self) -> impl Iterator<Item = (GlyphId16, u32)> {
         self.iter()
             .flat_map(|(glyph, gid)| glyph.codepoints.iter().map(|uv| (*gid, *uv)))
     }
@@ -112,7 +112,7 @@ fn classify<T, F, CM>(
     char_map: &CM,
     mut props_fn: F,
     gsub: Option<&Gsub>,
-) -> Result<BTreeMap<T, HashSet<GlyphId>>, ReadError>
+) -> Result<BTreeMap<T, HashSet<GlyphId16>>, ReadError>
 where
     T: Ord + Eq,
     // instead of returning an iterator, pushes items into the provided buffer
@@ -153,7 +153,7 @@ pub(crate) fn scripts_by_glyph(
     glyphs: &impl CharMap,
     known_scripts: &HashSet<UnicodeShortName>,
     gsub: Option<&Gsub>,
-) -> Result<HashMap<GlyphId, HashSet<UnicodeShortName>>, ReadError> {
+) -> Result<HashMap<GlyphId16, HashSet<UnicodeShortName>>, ReadError> {
     let mut result = HashMap::new();
     let lookup = Script::enum_to_short_name_mapper();
     for (script, glyphs) in classify(
@@ -188,7 +188,7 @@ pub(crate) fn scripts_by_glyph(
 pub(crate) fn glyphs_by_bidi_class(
     glyphs: &impl CharMap,
     gsub: Option<&Gsub>,
-) -> Result<BTreeMap<BidiClass, HashSet<GlyphId>>, ReadError> {
+) -> Result<BTreeMap<BidiClass, HashSet<GlyphId16>>, ReadError> {
     classify(
         glyphs,
         |codepoint, buf| buf.extend(unicode_bidi_type(codepoint)),

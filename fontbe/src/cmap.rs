@@ -3,7 +3,7 @@
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
 use fontir::orchestration::WorkId as FeWorkId;
 
-use write_fonts::{tables::cmap::Cmap, types::GlyphId};
+use write_fonts::{tables::cmap::Cmap, types::GlyphId16};
 
 use crate::{
     error::Error,
@@ -45,7 +45,7 @@ impl Work<Context, AnyWorkId, Error> for CmapWork {
                     .map(|codepoint| {
                         (
                             char::from_u32(*codepoint).expect("We have an invalid codepoint!"),
-                            GlyphId::new(gid as u16),
+                            GlyphId16::new(gid as u16).into(),
                         )
                     })
                     .collect::<Vec<_>>()

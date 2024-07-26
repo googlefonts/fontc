@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use write_fonts::tables::layout::{ClassDef, ClassDefBuilder};
 
-use crate::common::{GlyphId, GlyphSet};
+use crate::common::{GlyphId16, GlyphSet};
 
 // There is a ClassDef builder in write-fonts, but it's a bit anemic.
 //
@@ -19,7 +19,7 @@ use crate::common::{GlyphId, GlyphSet};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct ClassDefBuilder2 {
     classes: HashSet<GlyphSet>,
-    glyphs: HashSet<GlyphId>,
+    glyphs: HashSet<GlyphId16>,
     use_class_0: bool,
 }
 
@@ -89,7 +89,7 @@ mod tests {
     use super::*;
 
     fn make_glyph_class<const N: usize>(glyphs: [u16; N]) -> GlyphSet {
-        glyphs.into_iter().map(GlyphId::new).collect()
+        glyphs.into_iter().map(GlyphId16::new).collect()
     }
 
     #[test]
@@ -97,13 +97,13 @@ mod tests {
         let mut builder = ClassDefBuilder2::new(false);
         builder.checked_add(make_glyph_class([6, 10]));
         let (cls, _) = builder.build();
-        assert_eq!(cls.get(GlyphId::new(6)), 1);
+        assert_eq!(cls.get(GlyphId16::new(6)), 1);
 
         let mut builder = ClassDefBuilder2::new(true);
         builder.checked_add(make_glyph_class([6, 10]));
         let (cls, _) = builder.build();
-        assert_eq!(cls.get(GlyphId::new(6)), 0);
-        assert_eq!(cls.get(GlyphId::new(10)), 0);
+        assert_eq!(cls.get(GlyphId16::new(6)), 0);
+        assert_eq!(cls.get(GlyphId16::new(10)), 0);
     }
 
     #[test]
@@ -116,11 +116,12 @@ mod tests {
         builder.checked_add(make_glyph_class([1, 12]));
         builder.checked_add(make_glyph_class([3, 4]));
         let (cls, _) = builder.build();
-        assert_eq!(cls.get(GlyphId::new(9)), 1);
-        assert_eq!(cls.get(GlyphId::new(1)), 2);
-        assert_eq!(cls.get(GlyphId::new(4)), 3);
+        dbg!(&cls);
+        assert_eq!(cls.get(GlyphId16::new(9)), 1);
+        assert_eq!(cls.get(GlyphId16::new(1)), 2);
+        assert_eq!(cls.get(GlyphId16::new(4)), 3);
         // notdef
-        assert_eq!(cls.get(GlyphId::new(5)), 0);
+        assert_eq!(cls.get(GlyphId16::new(5)), 0);
     }
 
     #[test]

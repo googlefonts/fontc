@@ -5,7 +5,7 @@ use std::{
 
 use write_fonts::read::{
     tables::gpos::{MarkBasePosFormat1, MarkLigPosFormat1, MarkMarkPosFormat1},
-    types::GlyphId,
+    types::GlyphId16,
     ReadError,
 };
 
@@ -21,7 +21,7 @@ enum BaseAnchors {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct MarkAttachmentRule {
-    pub base: GlyphId,
+    pub base: GlyphId16,
     base_anchor: BaseAnchors,
     marks: BTreeMap<ResolvedAnchor, GlyphSet>,
 }
@@ -59,7 +59,7 @@ impl PrintNames for MarkAttachmentRule {
 }
 
 impl MarkAttachmentRule {
-    pub(crate) fn iter_base_mark_pairs(&self) -> impl Iterator<Item = (GlyphId, GlyphId)> + '_ {
+    pub(crate) fn iter_base_mark_pairs(&self) -> impl Iterator<Item = (GlyphId16, GlyphId16)> + '_ {
         self.marks
             .values()
             .flat_map(|set| set.iter())
@@ -67,7 +67,7 @@ impl MarkAttachmentRule {
     }
 
     // returns `true` if we have marks remaining after removing this set
-    pub(crate) fn remove_marks(&mut self, marks: &[GlyphId]) -> bool {
+    pub(crate) fn remove_marks(&mut self, marks: &[GlyphId16]) -> bool {
         self.marks.retain(|_, v| {
             v.remove_glyphs(marks);
             !v.is_empty()
@@ -116,7 +116,7 @@ pub(super) fn get_mark_base_rules(
 fn append_mark_base_rules(
     subtable: &MarkBasePosFormat1,
     delta_computer: Option<&DeltaComputer>,
-    seen: &mut HashSet<(GlyphId, GlyphId)>,
+    seen: &mut HashSet<(GlyphId16, GlyphId16)>,
     result: &mut Vec<MarkAttachmentRule>,
 ) -> Result<(), ReadError> {
     let base_array = subtable.base_array()?;
@@ -188,7 +188,7 @@ pub(super) fn get_mark_liga_rules(
 fn append_mark_liga_rules(
     subtable: &MarkLigPosFormat1,
     delta_computer: Option<&DeltaComputer>,
-    _seen: &mut HashSet<(GlyphId, GlyphId)>,
+    _seen: &mut HashSet<(GlyphId16, GlyphId16)>,
     result: &mut Vec<MarkAttachmentRule>,
 ) -> Result<(), ReadError> {
     let lig_array = subtable.ligature_array()?;
@@ -266,7 +266,7 @@ pub(super) fn get_mark_mark_rules(
 fn append_mark_mark_rules(
     subtable: &MarkMarkPosFormat1,
     delta_computer: Option<&DeltaComputer>,
-    seen: &mut HashSet<(GlyphId, GlyphId)>,
+    seen: &mut HashSet<(GlyphId16, GlyphId16)>,
     result: &mut Vec<MarkAttachmentRule>,
 ) -> Result<(), ReadError> {
     let base_array = subtable.mark2_array()?;

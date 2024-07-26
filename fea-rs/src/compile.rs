@@ -2,7 +2,7 @@
 
 use crate::{parse::ParseTree, DiagnosticSet, GlyphMap};
 use fontdrasil::types::GlyphName;
-use write_fonts::types::GlyphId;
+use write_fonts::types::GlyphId16;
 
 use self::{
     compile_ctx::CompilationCtx,
@@ -145,7 +145,7 @@ pub fn parse_glyph_order(glyphs: &str) -> Result<GlyphMap, GlyphOrderError> {
             }
         })
         .collect::<Result<_, _>>()?;
-    if map.get(".notdef") != Some(GlyphId::NOTDEF) {
+    if map.get(".notdef") != Some(GlyphId16::NOTDEF) {
         Err(GlyphOrderError::MissingNotDef)
     } else {
         Ok(map)
@@ -161,8 +161,8 @@ mod tests {
         let raw = std::fs::read_to_string("./test-data/simple_glyph_order.txt").unwrap();
         let glyph_map = parse_glyph_order(&raw).unwrap();
         assert_eq!(glyph_map.len(), 215);
-        assert_eq!(glyph_map.get("space"), Some(GlyphId::new(1)));
-        assert_eq!(glyph_map.get("e.fina"), Some(GlyphId::new(214)));
+        assert_eq!(glyph_map.get("space"), Some(GlyphId16::new(1)));
+        assert_eq!(glyph_map.get("e.fina"), Some(GlyphId16::new(214)));
         assert!(!glyph_map.contains("e.nada"));
     }
 }

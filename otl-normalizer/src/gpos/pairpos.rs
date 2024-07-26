@@ -5,7 +5,7 @@ use std::{
 
 use write_fonts::read::{
     tables::gpos::{PairPos, PairPosFormat1, PairPosFormat2, ValueRecord},
-    types::GlyphId,
+    types::GlyphId16,
     ReadError,
 };
 
@@ -15,7 +15,7 @@ use super::{PrintNames, ResolvedValueRecord};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct PairPosRule {
-    pub first: GlyphId,
+    pub first: GlyphId16,
     pub second: GlyphSet,
     pub record1: ResolvedValueRecord,
     pub record2: ResolvedValueRecord,
@@ -77,7 +77,7 @@ pub(super) fn get_pairpos_rules(
 fn append_pairpos_f1_rules(
     subtable: &PairPosFormat1,
     delta_computer: Option<&DeltaComputer>,
-    seen: &mut HashSet<(GlyphId, GlyphId)>,
+    seen: &mut HashSet<(GlyphId16, GlyphId16)>,
     result: &mut Vec<PairPosRule>,
 ) {
     let coverage = subtable.coverage().unwrap();
@@ -120,7 +120,7 @@ fn is_noop(value_record: &ValueRecord) -> bool {
 fn append_pairpos_f2_rules(
     subtable: &PairPosFormat2,
     delta_computer: Option<&DeltaComputer>,
-    seen: &mut HashSet<(GlyphId, GlyphId)>,
+    seen: &mut HashSet<(GlyphId16, GlyphId16)>,
     result: &mut Vec<PairPosRule>,
 ) {
     let coverage = subtable.coverage().unwrap();
@@ -193,7 +193,7 @@ mod tests {
                     &left
                         .iter()
                         .copied()
-                        .map(GlyphId::new)
+                        .map(GlyphId16::new)
                         .collect::<BTreeSet<_>>()
                         == right
                 }

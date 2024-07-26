@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, convert::TryFrom};
 
 use write_fonts::{
     tables::{gsub as write_gsub, variations::ivs_builder::VariationStoreBuilder},
-    types::{FixedSize, GlyphId},
+    types::{FixedSize, GlyphId16},
 };
 
 use crate::common::GlyphOrClass;
@@ -13,7 +13,7 @@ use super::Builder;
 
 #[derive(Clone, Debug, Default)]
 pub struct SingleSubBuilder {
-    items: BTreeMap<GlyphId, (GlyphId, PossibleSingleSubFormat)>,
+    items: BTreeMap<GlyphId16, (GlyphId16, PossibleSingleSubFormat)>,
 }
 
 /// Used to divide pairs into subtables as needed.
@@ -26,7 +26,7 @@ enum PossibleSingleSubFormat {
 }
 
 impl SingleSubBuilder {
-    pub fn insert(&mut self, target: GlyphId, replacement: GlyphId) {
+    pub fn insert(&mut self, target: GlyphId16, replacement: GlyphId16) {
         let delta = replacement.to_u16() as i32 - target.to_u16() as i32;
         let delta = i16::try_from(delta)
             .map(PossibleSingleSubFormat::Delta)
@@ -48,7 +48,7 @@ impl SingleSubBuilder {
     }
 
     // used when compiling aalt
-    pub(crate) fn iter_pairs(&self) -> impl Iterator<Item = (GlyphId, GlyphId)> + '_ {
+    pub(crate) fn iter_pairs(&self) -> impl Iterator<Item = (GlyphId16, GlyphId16)> + '_ {
         self.items.iter().map(|(target, (alt, _))| (*target, *alt))
     }
 
@@ -72,13 +72,13 @@ impl Builder for SingleSubBuilder {
             2 + 2; // extra coverage table
 
         const N_GLYPHS_TO_JUSTIFY_EXTRA_SUB1F1: usize =
-            COST_OF_EXTRA_SUB1F1_SUBTABLE / GlyphId::RAW_BYTE_LEN;
+            COST_OF_EXTRA_SUB1F1_SUBTABLE / GlyphId16::RAW_BYTE_LEN;
 
         #[derive(Default)]
         struct SubtableMap {
             // key is the delta between the two gylphs.
-            format1: BTreeMap<i16, Vec<(GlyphId, GlyphId)>>,
-            format2: Vec<(GlyphId, GlyphId)>,
+            format1: BTreeMap<i16, Vec<(GlyphId16, GlyphId16)>>,
+            format2: Vec<(GlyphId16, GlyphId16)>,
         }
 
         impl SubtableMap {
@@ -148,7 +148,7 @@ impl Builder for SingleSubBuilder {
 
 #[derive(Clone, Debug, Default)]
 pub struct MultipleSubBuilder {
-    items: BTreeMap<GlyphId, Vec<GlyphId>>,
+    items: BTreeMap<GlyphId16, Vec<GlyphId16>>,
 }
 
 impl Builder for MultipleSubBuilder {
@@ -166,11 +166,11 @@ impl Builder for MultipleSubBuilder {
 }
 
 impl MultipleSubBuilder {
-    pub fn insert(&mut self, target: GlyphId, replacement: Vec<GlyphId>) {
+    pub fn insert(&mut self, target: GlyphId16, replacement: Vec<GlyphId16>) {
         self.items.insert(target, replacement);
     }
 
-    pub fn can_add(&self, target: GlyphId, replacement: &[GlyphId]) -> bool {
+    pub fn can_add(&self, target: GlyphId16, replacement: &[GlyphId16]) -> bool {
         match self.items.get(&target) {
             None => true,
             Some(thing) => thing == replacement,
@@ -180,11 +180,11 @@ impl MultipleSubBuilder {
 
 #[derive(Clone, Debug, Default)]
 pub struct AlternateSubBuilder {
-    items: BTreeMap<GlyphId, Vec<GlyphId>>,
+    items: BTreeMap<GlyphId16, Vec<GlyphId16>>,
 }
 
 impl AlternateSubBuilder {
-    pub fn insert(&mut self, target: GlyphId, replacement: Vec<GlyphId>) {
+    pub fn insert(&mut self, target: GlyphId16, replacement: Vec<GlyphId16>) {
         self.items.insert(target, replacement);
     }
 
@@ -193,7 +193,7 @@ impl AlternateSubBuilder {
     }
 
     // used when compiling aalt
-    pub(crate) fn iter_pairs(&self) -> impl Iterator<Item = (GlyphId, GlyphId)> + '_ {
+    pub(crate) fn iter_pairs(&self) -> impl Iterator<Item = (GlyphId16, GlyphId16)> + '_ {
         self.items
             .iter()
             .flat_map(|(target, alt)| alt.iter().map(|alt| (*target, *alt)))
@@ -216,11 +216,11 @@ impl Builder for AlternateSubBuilder {
 
 #[derive(Clone, Debug, Default)]
 pub struct LigatureSubBuilder {
-    items: BTreeMap<GlyphId, Vec<(Vec<GlyphId>, GlyphId)>>,
+    items: BTreeMap<GlyphId16, Vec<(Vec<GlyphId16>, GlyphId16)>>,
 }
 
 impl LigatureSubBuilder {
-    pub fn insert(&mut self, target: Vec<GlyphId>, replacement: GlyphId) {
+    pub fn insert(&mut self, target: Vec<GlyphId16>, replacement: GlyphId16) {
         let mut iter = target.into_iter();
         let first = iter.next().unwrap();
         let rest = iter.collect::<Vec<_>>();
@@ -230,7 +230,7 @@ impl LigatureSubBuilder {
             .push((rest, replacement));
     }
 
-    pub fn contains_target(&self, target: GlyphId) -> bool {
+    pub fn contains_target(&self, target: GlyphId16) -> bool {
         //FIXME: we could be more aggressive here, but for now we will force a new
         //lookup anytime the target exists? idk
         self.items.contains_key(&target)

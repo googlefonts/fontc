@@ -22,7 +22,7 @@ use write_fonts::{
 };
 
 use crate::{
-    common::{GlyphClass, GlyphId, GlyphOrClass, GlyphSet, MarkClass},
+    common::{GlyphClass, GlyphId16, GlyphOrClass, GlyphSet, MarkClass},
     parse::SourceMap,
     token_tree::{
         typed::{self, AstNode},
@@ -64,7 +64,7 @@ use super::{
 ///   the final output, ready to be written to binary.
 pub struct CompilationCtx<'a, F: FeatureProvider, V: VariationInfo> {
     glyph_map: &'a GlyphMap,
-    reverse_glyph_map: BTreeMap<GlyphId, GlyphIdent>,
+    reverse_glyph_map: BTreeMap<GlyphId16, GlyphIdent>,
     source_map: &'a SourceMap,
     variation_info: Option<&'a V>,
     feature_writer: Option<&'a F>,
@@ -458,6 +458,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn set_lookup_flag(&mut self, node: typed::LookupFlag) {
+        self.lookup_flags.clear();
         if let Some(number) = node.number() {
             self.lookup_flags.flags =
                 LookupFlag::from_bits_truncate(number.parse_unsigned().unwrap());
@@ -470,10 +471,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         let mut iter = node.values();
         while let Some(next) = iter.next() {
             match next.kind() {
-                Kind::RightToLeftKw => flags.set_right_to_left(true),
-                Kind::IgnoreBaseGlyphsKw => flags.set_ignore_base_glyphs(true),
-                Kind::IgnoreLigaturesKw => flags.set_ignore_ligatures(true),
-                Kind::IgnoreMarksKw => flags.set_ignore_marks(true),
+                Kind::RightToLeftKw => flags |= LookupFlag::RIGHT_TO_LEFT,
+                Kind::IgnoreBaseGlyphsKw => flags |= LookupFlag::IGNORE_BASE_GLYPHS,
+                Kind::IgnoreLigaturesKw => flags |= LookupFlag::IGNORE_LIGATURES,
+                Kind::IgnoreMarksKw => flags |= LookupFlag::IGNORE_MARKS,
 
                 //FIXME: we are not enforcing some requirements here. in particular,
                 // The glyph sets of the referenced classes must not overlap, and the MarkAttachmentType statement can reference at most 15 different classes.
@@ -483,7 +484,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                         .and_then(typed::GlyphClass::cast)
                         .expect("validated");
                     let mark_attach_set = self.resolve_mark_attach_class(&node);
-                    flags.set_mark_attachment_type(mark_attach_set);
+                    flags.set_mark_attachment_class(mark_attach_set);
                 }
                 Kind::UseMarkFilteringSetKw => {
                     let node = iter
@@ -491,7 +492,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                         .and_then(typed::GlyphClass::cast)
                         .expect("validated");
                     let filter_set = self.resolve_mark_filter_set(&node);
-                    flags.set_use_mark_filtering_set(true);
+                    flags |= LookupFlag::USE_MARK_FILTERING_SET;
                     mark_filter_set = Some(filter_set);
                 }
                 other => unreachable!("mark statements have been validated: '{:?}'", other),
@@ -1897,6 +1898,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                         max.to_normalized(&axis.converter).to_f32(),
                     ),
                 }
+                .into()
             })
             .collect();
         let conditionset = ConditionSet::new(conditions);
@@ -1929,11 +1931,11 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         }
     }
 
-    fn resolve_glyph(&mut self, item: &typed::Glyph) -> GlyphId {
+    fn resolve_glyph(&mut self, item: &typed::Glyph) -> GlyphId16 {
         match item {
             typed::Glyph::Named(name) => self.resolve_glyph_name(name),
             typed::Glyph::Cid(name) => self.resolve_cid(name),
-            typed::Glyph::Null(_) => GlyphId::NOTDEF,
+            typed::Glyph::Null(_) => GlyphId16::NOTDEF,
         }
     }
 
@@ -1979,7 +1981,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .unwrap()
     }
 
-    fn resolve_glyph_name(&mut self, name: &typed::GlyphName) -> GlyphId {
+    fn resolve_glyph_name(&mut self, name: &typed::GlyphName) -> GlyphId16 {
         self.glyph_map.get(name.text()).unwrap()
     }
 
@@ -1999,11 +2001,11 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         result
     }
 
-    fn resolve_cid(&mut self, cid: &typed::Cid) -> GlyphId {
+    fn resolve_cid(&mut self, cid: &typed::Cid) -> GlyphId16 {
         self.glyph_map.get(&cid.parse()).unwrap()
     }
 
-    fn add_glyphs_from_range(&mut self, range: &typed::GlyphRange, out: &mut Vec<GlyphId>) {
+    fn add_glyphs_from_range(&mut self, range: &typed::GlyphRange, out: &mut Vec<GlyphId16>) {
         let start = range.start();
         let end = range.end();
 
@@ -2045,7 +2047,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 }
 
-fn sequence_enumerator(sequence: &[GlyphOrClass]) -> Vec<Vec<GlyphId>> {
+fn sequence_enumerator(sequence: &[GlyphOrClass]) -> Vec<Vec<GlyphId16>> {
     assert!(sequence.len() >= 2);
     let split = sequence.split_first();
     let mut result = Vec::new();
@@ -2055,10 +2057,10 @@ fn sequence_enumerator(sequence: &[GlyphOrClass]) -> Vec<Vec<GlyphId>> {
 }
 
 fn sequence_enumerator_impl(
-    prefix: Vec<GlyphId>,
+    prefix: Vec<GlyphId16>,
     left: &GlyphOrClass,
     right: &[GlyphOrClass],
-    acc: &mut Vec<Vec<GlyphId>>,
+    acc: &mut Vec<Vec<GlyphId16>>,
 ) {
     for glyph in left.iter() {
         let mut prefix = prefix.clone();
@@ -2103,16 +2105,16 @@ fn get_reasonable_length_span(node: &NodeOrToken) -> Range<usize> {
 mod tests {
     use super::*;
 
-    fn glyph_id_vec<const N: usize>(ids: [u16; N]) -> Vec<GlyphId> {
-        ids.iter().copied().map(GlyphId::new).collect()
+    fn glyph_id_vec<const N: usize>(ids: [u16; N]) -> Vec<GlyphId16> {
+        ids.iter().copied().map(GlyphId16::new).collect()
     }
 
     #[test]
     fn sequence_enumerator_smoke_test() {
         let sequence = vec![
-            GlyphOrClass::Glyph(GlyphId::new(1)),
-            GlyphOrClass::Class([2_u16, 3, 4].iter().copied().map(GlyphId::new).collect()),
-            GlyphOrClass::Class([8, 9].iter().copied().map(GlyphId::new).collect()),
+            GlyphOrClass::Glyph(GlyphId16::new(1)),
+            GlyphOrClass::Class([2_u16, 3, 4].iter().copied().map(GlyphId16::new).collect()),
+            GlyphOrClass::Class([8, 9].iter().copied().map(GlyphId16::new).collect()),
         ];
 
         assert_eq!(

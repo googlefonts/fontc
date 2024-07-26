@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Display;
 
-use write_fonts::types::GlyphId;
+use write_fonts::types::GlyphId16;
 
 use write_fonts::tables::{
     self,
@@ -25,15 +25,15 @@ use crate::common::{GlyphClass, GlyphSet};
 /// Data collected from a GDEF block.
 #[derive(Clone, Debug, Default)]
 pub struct GdefBuilder {
-    pub glyph_classes: HashMap<GlyphId, GlyphClassDef>,
+    pub glyph_classes: HashMap<GlyphId16, GlyphClassDef>,
     /// if `true`, then glyph classes were not declared explicitly.
     ///
     /// we track this because it is an important distinction when using the
     /// glyph classes for manually generated kern/markpos lookups
     pub glyph_classes_were_inferred: bool,
-    pub attach: BTreeMap<GlyphId, BTreeSet<u16>>,
-    pub ligature_pos: BTreeMap<GlyphId, Vec<CaretValue>>,
-    pub mark_attach_class: BTreeMap<GlyphId, u16>,
+    pub attach: BTreeMap<GlyphId16, BTreeSet<u16>>,
+    pub ligature_pos: BTreeMap<GlyphId16, Vec<CaretValue>>,
+    pub mark_attach_class: BTreeMap<GlyphId16, u16>,
     pub mark_glyph_sets: Vec<GlyphSet>,
     pub var_store: Option<VariationStoreBuilder>,
 }
@@ -115,7 +115,7 @@ impl GdefBuilder {
         // glyphs and this is private API, so :shrug:
         glyphs: GlyphClass,
         class: GlyphClassDef,
-    ) -> Result<(), (GlyphId, GlyphClassDef)> {
+    ) -> Result<(), (GlyphId16, GlyphClassDef)> {
         for glyph in glyphs.iter() {
             if let Some(prev_class) = self.glyph_classes.insert(glyph, class) {
                 if prev_class != class {

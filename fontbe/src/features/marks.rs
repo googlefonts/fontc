@@ -19,7 +19,7 @@ use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 use write_fonts::{
     tables::{gdef::GlyphClassDef, layout::LookupFlag},
-    types::{GlyphId, Tag},
+    types::{GlyphId16, Tag},
 };
 
 use crate::{
@@ -85,16 +85,16 @@ impl MarkGroup<'_> {
 
 // a trait to abstract over three very similar builders
 trait MarkAttachmentBuilder: Default {
-    fn add_mark(&mut self, gid: GlyphId, group: &GroupName, anchor: FeaAnchor);
-    fn add_base(&mut self, gid: GlyphId, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>);
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor);
+    fn add_base(&mut self, gid: GlyphId16, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>);
 }
 
 impl MarkAttachmentBuilder for MarkToBaseBuilder {
-    fn add_mark(&mut self, gid: GlyphId, group: &GroupName, anchor: FeaAnchor) {
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor) {
         let _ = self.insert_mark(gid, group.clone(), anchor);
     }
 
-    fn add_base(&mut self, gid: GlyphId, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>) {
+    fn add_base(&mut self, gid: GlyphId16, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>) {
         match anchor {
             BaseOrLigAnchors::Base(anchor) => self.insert_base(gid, group, anchor),
             BaseOrLigAnchors::Ligature(_) => panic!("lig anchors in mark2base builder"),
@@ -103,11 +103,11 @@ impl MarkAttachmentBuilder for MarkToBaseBuilder {
 }
 
 impl MarkAttachmentBuilder for MarkToMarkBuilder {
-    fn add_mark(&mut self, gid: GlyphId, group: &GroupName, anchor: FeaAnchor) {
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor) {
         let _ = self.insert_mark1(gid, group.clone(), anchor);
     }
 
-    fn add_base(&mut self, gid: GlyphId, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>) {
+    fn add_base(&mut self, gid: GlyphId16, group: &GroupName, anchor: BaseOrLigAnchors<FeaAnchor>) {
         match anchor {
             BaseOrLigAnchors::Base(anchor) => self.insert_mark2(gid, group, anchor),
             BaseOrLigAnchors::Ligature(_) => panic!("lig anchors in mark2mark to builder"),
@@ -116,11 +116,16 @@ impl MarkAttachmentBuilder for MarkToMarkBuilder {
 }
 
 impl MarkAttachmentBuilder for MarkToLigBuilder {
-    fn add_mark(&mut self, gid: GlyphId, group: &GroupName, anchor: FeaAnchor) {
+    fn add_mark(&mut self, gid: GlyphId16, group: &GroupName, anchor: FeaAnchor) {
         let _ = self.insert_mark(gid, group.clone(), anchor);
     }
 
-    fn add_base(&mut self, gid: GlyphId, group: &GroupName, anchors: BaseOrLigAnchors<FeaAnchor>) {
+    fn add_base(
+        &mut self,
+        gid: GlyphId16,
+        group: &GroupName,
+        anchors: BaseOrLigAnchors<FeaAnchor>,
+    ) {
         match anchors {
             BaseOrLigAnchors::Ligature(anchors) => {
                 self.insert_ligature(gid, group.clone(), anchors)
@@ -242,7 +247,9 @@ impl<'a> MarkLookupBuilder<'a> {
                 let mut builder = T::default();
                 let filter_set = group.make_filter_glyph_set(self.glyph_order);
                 let mut flags = LookupFlag::empty();
-                flags.set_use_mark_filtering_set(filter_set.is_some());
+                if filter_set.is_some() {
+                    flags |= LookupFlag::USE_MARK_FILTERING_SET;
+                }
                 for (mark_name, anchor) in group.marks {
                     // we already filtered to only things in glyph order
                     let gid = self.glyph_order.glyph_id(&mark_name).unwrap();
@@ -407,9 +414,7 @@ impl<'a> MarkLookupBuilder<'a> {
 
     fn make_cursive_lookups(&self) -> Result<Vec<PendingLookup<CursivePosBuilder>>, Error> {
         let mut builder = CursivePosBuilder::default();
-        let mut flags = LookupFlag::empty();
-        flags.set_ignore_marks(true);
-        flags.set_right_to_left(true);
+        let flags = LookupFlag::IGNORE_MARKS | LookupFlag::RIGHT_TO_LEFT;
         let mut entries = BTreeMap::new();
         let mut affected_glyphs = BTreeSet::new();
         let mut exits = BTreeMap::new();

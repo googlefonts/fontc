@@ -1,4 +1,4 @@
-use write_fonts::types::GlyphId;
+use write_fonts::types::GlyphId16;
 
 use super::GlyphOrClass;
 
@@ -22,7 +22,7 @@ use super::GlyphOrClass;
 ///
 /// [spec docs]: http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#2g-glyph-classes
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct GlyphClass(Vec<GlyphId>);
+pub(crate) struct GlyphClass(Vec<GlyphId16>);
 
 /// A sorted set of unique glyph ids.
 ///
@@ -33,13 +33,13 @@ pub(crate) struct GlyphClass(Vec<GlyphId>);
 /// and stabily sort, so we ensure that these classes are sorted and deduped.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct GlyphSet(Vec<GlyphId>);
+pub struct GlyphSet(Vec<GlyphId16>);
 
 impl GlyphClass {
     /// An empty glyph class
     pub const EMPTY: Self = GlyphClass(Vec::new());
 
-    pub(crate) fn items(&self) -> &[GlyphId] {
+    pub(crate) fn items(&self) -> &[GlyphId16] {
         &self.0
     }
 
@@ -48,7 +48,7 @@ impl GlyphClass {
         self.iter().collect()
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = GlyphId16> + '_ {
         self.items().iter().copied()
     }
 
@@ -62,7 +62,7 @@ impl GlyphSet {
     pub const EMPTY: Self = GlyphSet(Vec::new());
 
     /// Iterate over the glyphs in this class
-    pub fn iter(&self) -> impl Iterator<Item = GlyphId> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = GlyphId16> + '_ {
         self.0.iter().copied()
     }
 
@@ -77,24 +77,24 @@ impl GlyphSet {
     }
 }
 
-impl std::iter::FromIterator<GlyphId> for GlyphClass {
-    fn from_iter<T: IntoIterator<Item = GlyphId>>(iter: T) -> Self {
+impl std::iter::FromIterator<GlyphId16> for GlyphClass {
+    fn from_iter<T: IntoIterator<Item = GlyphId16>>(iter: T) -> Self {
         GlyphClass(iter.into_iter().collect())
     }
 }
 
 impl<'a> std::iter::IntoIterator for &'a GlyphClass {
-    type Item = &'a GlyphId;
+    type Item = &'a GlyphId16;
 
-    type IntoIter = std::slice::Iter<'a, GlyphId>;
+    type IntoIter = std::slice::Iter<'a, GlyphId16>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
     }
 }
 
-impl From<Vec<GlyphId>> for GlyphClass {
-    fn from(src: Vec<GlyphId>) -> GlyphClass {
+impl From<Vec<GlyphId16>> for GlyphClass {
+    fn from(src: Vec<GlyphId16>) -> GlyphClass {
         GlyphClass(src)
     }
 }
@@ -106,22 +106,22 @@ impl From<GlyphClass> for GlyphSet {
 }
 
 // our base constructor; all other logic goes through here
-impl From<Vec<GlyphId>> for GlyphSet {
-    fn from(mut value: Vec<GlyphId>) -> Self {
+impl From<Vec<GlyphId16>> for GlyphSet {
+    fn from(mut value: Vec<GlyphId16>) -> Self {
         value.sort_unstable();
         value.dedup();
         Self(value)
     }
 }
 
-impl std::iter::FromIterator<GlyphId> for GlyphSet {
-    fn from_iter<T: IntoIterator<Item = GlyphId>>(iter: T) -> Self {
+impl std::iter::FromIterator<GlyphId16> for GlyphSet {
+    fn from_iter<T: IntoIterator<Item = GlyphId16>>(iter: T) -> Self {
         iter.into_iter().collect::<Vec<_>>().into()
     }
 }
 
-impl From<GlyphId> for GlyphClass {
-    fn from(src: GlyphId) -> GlyphClass {
+impl From<GlyphId16> for GlyphClass {
+    fn from(src: GlyphId16) -> GlyphClass {
         let slice: &[_] = &[src];
         GlyphClass(slice.into())
     }

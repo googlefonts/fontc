@@ -13,7 +13,8 @@ use write_fonts::{
         },
         FontData, ReadError,
     },
-    types::GlyphId,
+    tables::layout::LookupFlag,
+    types::GlyphId16,
 };
 
 use crate::{
@@ -365,7 +366,7 @@ fn normalize_mark_lookups<'a>(
     // a little helper used below
     fn prune_shadowed_marks<'a>(
         mut rule: SingleRule<'a, MarkAttachmentRule>,
-        last_seen: &HashMap<(GlyphId, GlyphId), usize>,
+        last_seen: &HashMap<(GlyphId16, GlyphId16), usize>,
         lookup_id: usize,
     ) -> Option<SingleRule<'a, MarkAttachmentRule>> {
         let to_remove = rule
@@ -417,8 +418,9 @@ fn get_lookup_rules(
         let lookup = lookup.unwrap();
         let flag = lookup.lookup_flag();
         let mark_filter_id = flag
-            .use_mark_filtering_set()
-            .then_some(lookup.mark_filtering_set());
+            .contains(LookupFlag::USE_MARK_FILTERING_SET)
+            .then_some(lookup.mark_filtering_set())
+            .flatten();
         let subtables = lookup.subtables().unwrap();
         match subtables {
             PositionSubtables::Pair(subs) => {
@@ -541,9 +543,9 @@ mod tests {
         let sub2 = sub2.build_exactly_one_subtable();
 
         let lookup1 =
-            wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![sub1], 0));
+            wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![sub1]));
         let lookup2 =
-            wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![sub2], 0));
+            wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![sub2]));
         let lookup_list = wlayout::LookupList::new(vec![lookup1, lookup2]);
         let lookup_list = write_fonts::dump_table(&lookup_list).unwrap();
         let lookup_list = write_fonts::read::tables::gpos::PositionLookupList::read(
@@ -594,12 +596,10 @@ mod tests {
         let lookup1 = wgpos::PositionLookup::MarkToBase(wlayout::Lookup::new(
             LookupFlag::empty(),
             vec![sub1],
-            0,
         ));
         let lookup2 = wgpos::PositionLookup::MarkToBase(wlayout::Lookup::new(
             LookupFlag::empty(),
             vec![sub2],
-            0,
         ));
 
         let lookup_list = wlayout::LookupList::new(vec![lookup1, lookup2]);

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use smol_str::SmolStr;
 use write_fonts::{
     tables::layout::{ConditionSet, FeatureParams, SizeParams, StylisticSetParams},
-    types::{GlyphId, Tag, Uint24},
+    types::{GlyphId16, Tag, Uint24},
 };
 
 use super::{
@@ -57,9 +57,9 @@ pub(crate) struct ActiveFeature {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AaltFeature {
     aalt_features: Vec<Tag>,
-    pub(crate) all_alts: HashMap<GlyphId, Vec<GlyphId>>,
+    pub(crate) all_alts: HashMap<GlyphId16, Vec<GlyphId16>>,
     // to avoid duplicates
-    all_pairs: HashSet<(GlyphId, GlyphId)>,
+    all_pairs: HashSet<(GlyphId16, GlyphId16)>,
 }
 
 /// Helper for compiling the `size` feature
@@ -457,15 +457,15 @@ impl AaltFeature {
         &self.aalt_features
     }
 
-    pub(crate) fn add(&mut self, target: GlyphId, alt: GlyphId) {
+    pub(crate) fn add(&mut self, target: GlyphId16, alt: GlyphId16) {
         if self.all_pairs.insert((target, alt)) {
             self.all_alts.entry(target).or_default().push(alt);
         }
     }
 }
 
-impl Extend<(GlyphId, GlyphId)> for AaltFeature {
-    fn extend<T: IntoIterator<Item = (GlyphId, GlyphId)>>(&mut self, iter: T) {
+impl Extend<(GlyphId16, GlyphId16)> for AaltFeature {
+    fn extend<T: IntoIterator<Item = (GlyphId16, GlyphId16)>>(&mut self, iter: T) {
         for (target, alt) in iter.into_iter() {
             self.add(target, alt)
         }

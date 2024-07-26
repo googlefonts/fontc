@@ -29,7 +29,7 @@ use ordered_float::OrderedFloat;
 use write_fonts::{
     read::{tables::gsub::Gsub, FontRead, ReadError},
     tables::{gdef::GlyphClassDef, layout::LookupFlag},
-    types::{GlyphId, Tag},
+    types::{GlyphId16, Tag},
 };
 
 use crate::{
@@ -380,7 +380,7 @@ impl Work<Context, AnyWorkId, Error> for KerningGatherWork {
             .map(|(i, glyphname)| {
                 (
                     context.ir.glyphs.get(&FeWorkId::Glyph(glyphname.clone())),
-                    GlyphId::new(i as u16),
+                    GlyphId16::new(i as u16),
                 )
             })
             .collect::<Vec<_>>();
@@ -399,7 +399,7 @@ impl KerningGatherWork {
         fragments: &[&KernFragment],
         ast: &ParseTree,
         glyph_map: &GlyphMap,
-        glyphs: Vec<(Arc<Glyph>, GlyphId)>,
+        glyphs: Vec<(Arc<Glyph>, GlyphId16)>,
     ) -> Result<FeaRsKerns, Error> {
         // ignore diagnostics, they'll get logged during actual GSUB compilation
         let (compilation, _) = fea_rs::compile::compile::<NopVariationInfo, NopFeatureProvider>(
@@ -596,9 +596,9 @@ fn debug_ordered_lookups(
 /// All the state needed for splitting kern pairs by script & writing direction
 struct KernSplitContext {
     /// map of all mark glyphs + whether they are spacing or not
-    mark_glyphs: HashMap<GlyphId, MarkSpacing>,
-    glyph_scripts: HashMap<GlyphId, HashSet<UnicodeShortName>>,
-    bidi_glyphs: BTreeMap<BidiClass, HashSet<GlyphId>>,
+    mark_glyphs: HashMap<GlyphId16, MarkSpacing>,
+    glyph_scripts: HashMap<GlyphId16, HashSet<UnicodeShortName>>,
+    bidi_glyphs: BTreeMap<BidiClass, HashSet<GlyphId16>>,
     opts: KernSplitOptions,
     dflt_scripts: HashSet<UnicodeShortName>,
     common_scripts: HashSet<UnicodeShortName>,
@@ -620,7 +620,7 @@ impl KernSplitContext {
         glyphs: &impl CharMap,
         known_scripts: &HashSet<UnicodeShortName>,
         gsub: Option<Gsub>,
-        mark_glyphs: HashMap<GlyphId, MarkSpacing>,
+        mark_glyphs: HashMap<GlyphId16, MarkSpacing>,
     ) -> Result<Self, ReadError> {
         let glyph_scripts =
             super::properties::scripts_by_glyph(glyphs, known_scripts, gsub.as_ref())?;
@@ -863,7 +863,7 @@ impl KernSplitContext {
         // little helper to tell us what's in a glyphset
         fn classify_kernside_contents(
             side: &KernSide,
-            marks: &HashMap<GlyphId, MarkSpacing>,
+            marks: &HashMap<GlyphId16, MarkSpacing>,
         ) -> GlyphSetContent {
             side.iter().fold(GlyphSetContent::Empty, |val, gid| {
                 match (val, marks.contains_key(&gid)) {
@@ -879,7 +879,7 @@ impl KernSplitContext {
         /// split a glyphset into (bases, marks)
         fn split_glyphs(
             glyphs: &KernSide,
-            marks: &HashMap<GlyphId, MarkSpacing>,
+            marks: &HashMap<GlyphId16, MarkSpacing>,
         ) -> (KernSide, KernSide) {
             match glyphs {
                 KernSide::Glyph(gid) if !marks.contains_key(gid) => {
@@ -1082,10 +1082,10 @@ mod tests {
     use super::*;
 
     const LATN: UnicodeShortName = unsafe { UnicodeShortName::from_bytes_unchecked(*b"Latn") };
-    struct MockCharMap(HashMap<char, GlyphId>);
+    struct MockCharMap(HashMap<char, GlyphId16>);
 
     impl CharMap for MockCharMap {
-        fn iter_glyphs(&self) -> impl Iterator<Item = (GlyphId, u32)> {
+        fn iter_glyphs(&self) -> impl Iterator<Item = (GlyphId16, u32)> {
             self.0.iter().map(|(uv, gid)| (*gid, *uv as u32))
         }
     }
@@ -1110,7 +1110,7 @@ mod tests {
             }
         }
 
-        fn get(&self, c: char) -> GlyphId {
+        fn get(&self, c: char) -> GlyphId16 {
             self.0.get(&c).copied().unwrap()
         }
     }
@@ -1120,7 +1120,7 @@ mod tests {
             Self(
                 iter.into_iter()
                     .enumerate()
-                    .map(|(i, c)| (c, GlyphId::new(i as u16 + 1)))
+                    .map(|(i, c)| (c, GlyphId16::new(i as u16 + 1)))
                     .collect(),
             )
         }

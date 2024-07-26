@@ -13,7 +13,7 @@ use fontdrasil::{
 use kurbo::Affine;
 use log::{debug, log_enabled, trace};
 use ordered_float::OrderedFloat;
-use write_fonts::types::GlyphId;
+use write_fonts::types::GlyphId16;
 
 use crate::{
     error::{BadGlyph, BadGlyphKind, Error},
@@ -304,7 +304,7 @@ fn ensure_notdef_exists_and_is_gid_0(
 ) -> Result<(), BadGlyph> {
     // Make sure we have a .notdef and that it's gid 0
     match glyph_order.glyph_id(&GlyphName::NOTDEF) {
-        Some(GlyphId::NOTDEF) => (), // .notdef is gid 0; life is good
+        Some(GlyphId16::NOTDEF) => (), // .notdef is gid 0; life is good
         Some(..) => {
             trace!("Move {} to gid 0", GlyphName::NOTDEF);
             glyph_order.set_glyph_id(&GlyphName::NOTDEF, 0);
