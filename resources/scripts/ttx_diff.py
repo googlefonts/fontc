@@ -42,7 +42,7 @@ import json
 import shutil
 import subprocess
 import sys
-from difflib import SequenceMatcher
+from cdifflib import CSequenceMatcher as SequenceMatcher
 from typing import MutableSequence
 
 
