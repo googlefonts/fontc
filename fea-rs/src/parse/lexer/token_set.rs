@@ -119,6 +119,10 @@ impl TokenSet {
 
     pub(crate) const FLOAT_LIKE: TokenSet = TokenSet::new(&[Kind::Number, Kind::Float]);
 
+    /// Used in glyphsapp number values
+    pub(crate) const OPERATORS: TokenSet =
+        TokenSet::new(&[Kind::Hyphen, Kind::Slash, Kind::Plus, Kind::Asterisk]);
+
     pub(crate) const fn new(kinds: &[Kind]) -> TokenSet {
         let mut res = 0u128;
         let mut i = 0;

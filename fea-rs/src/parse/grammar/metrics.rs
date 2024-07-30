@@ -55,6 +55,11 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
     fn value_record_body(parser: &mut Parser, recovery: TokenSet) {
         if eat_metric(parser, recovery) {
             return;
+        } else if !parser.matches(0, Kind::LAngle) {
+            // if we didn't eat a metric but we aren't at a '<' we've errored,
+            // so skip remaining tokens
+            parser.eat_until(recovery);
+            return;
         }
 
         let recovery = recovery.union(TokenSet::new(&[Kind::RAngle]));
@@ -73,12 +78,14 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
         parser.expect_recover(Kind::RAngle, recovery);
     }
 
-    let looks_like_record = parser.matches(0, TokenSet::new(&[Kind::Number, Kind::LParen]))
-        || (parser.matches(0, Kind::LAngle)
-            && parser.matches(
-                1,
-                TokenSet::new(&[Kind::Number, Kind::NullKw]).union(TokenSet::IDENT_LIKE),
-            ));
+    let looks_like_record = parser.matches(
+        0,
+        TokenSet::new(&[Kind::Number, Kind::LParen, Kind::Dollar]),
+    ) || (parser.matches(0, Kind::LAngle)
+        && parser.matches(
+            1,
+            TokenSet::new(&[Kind::Number, Kind::NullKw, Kind::Dollar]).union(TokenSet::IDENT_LIKE),
+        ));
 
     if !looks_like_record {
         return false;
@@ -99,16 +106,22 @@ pub(crate) fn expect_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
     true
 }
 
-/// Eat a metric, which may either be a number or a variable metric.
+/// Eat a metric, which may either be a number, a variable metric, or a glyphsapp 'numbervalue'
+///
+/// (<https://glyphsapp.com/learn/tokens#g-number-values>)
 ///
 /// A variable metric has the syntax `(<location_value>+)`
 /// where `<location_value>` is `<location_spec>:<number>`
 /// and a `<location_spec>` is `<axis_tag>=<number>,+`
+///
+/// a number value has the syntax $ident or ${expr}
 fn eat_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
     // a simple numerical metric
     if parser.eat(Kind::Number) {
         return true;
     // else we expect a variable metric; return if we dont' find a paren
+    } else if parser.matches(0, Kind::Dollar) {
+        return expect_glyphs_number_value(parser, recovery);
     } else if !parser.matches(0, Kind::LParen) {
         return false;
     }
@@ -129,6 +142,43 @@ fn eat_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
         parser.expect_recover(Kind::RParen, recovery)
     });
     true
+}
+
+// $pad or ${pad * 2 + 5}
+fn expect_glyphs_number_value(parser: &mut Parser, recovery: TokenSet) -> bool {
+    parser.in_node(AstKind::GlyphsNumberValueNode, |parser| {
+        assert!(parser.eat(Kind::Dollar));
+        if parser.eat_remap(Kind::Ident, AstKind::GlyphsNumberIdent) {
+            return true;
+        }
+        if parser.matches(0, Kind::LBrace) {
+            let recovery = recovery.add(Kind::RBrace);
+            parser.in_node(AstKind::GlyphsNumberValueExprNode, |parser| {
+                parser.eat_raw();
+                let looks_okay = loop {
+                    // always at least one value
+                    if !(parser.eat_remap(Kind::Ident, AstKind::GlyphsNumberIdent)
+                        || parser.eat(Kind::Number))
+                    {
+                        parser.err("expected ident or number");
+                        break false;
+                    }
+
+                    // if there's not an operator we break, otherwise look for next value
+                    if !parser.eat(TokenSet::OPERATORS) {
+                        break true;
+                    }
+                };
+                if !looks_okay {
+                    parser.eat_until(recovery);
+                }
+                parser.expect_recover(Kind::RBrace, recovery) && looks_okay
+            })
+        } else {
+            parser.err_recover("expected '$ident' or '${{predicate}}'", recovery);
+            false
+        }
+    })
 }
 
 fn expect_variation_location_and_value(parser: &mut Parser, recovery: TokenSet) -> bool {

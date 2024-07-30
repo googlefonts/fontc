@@ -1,0 +1,23 @@
+error: expected '$ident' or '${{predicate}}'
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 3:13
+  | 
+3 |     pos A B $0;
+  |              ^
+
+error: expected ident or number
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 4:20
+  | 
+4 |     pos C D ${pad * * 2};
+  |                     ^
+
+error: Expected } found ID
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 5:18
+  | 
+5 |     pos E F ${pad pad};
+  |                   ^^^
+
+error: expected ident or number
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 6:19
+  | 
+6 |     pos G H ${pad +};
+  |                    ^
