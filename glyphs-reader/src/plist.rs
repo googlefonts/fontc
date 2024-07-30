@@ -8,7 +8,7 @@ use ascii_plist_derive::FromPlist;
 use smol_str::SmolStr;
 
 /// A plist dictionary
-pub type Dictionary = BTreeMap<String, Plist>;
+pub type Dictionary = BTreeMap<SmolStr, Plist>;
 
 /// An array of plist values
 pub type Array = Vec<Plist>;
@@ -16,8 +16,8 @@ pub type Array = Vec<Plist>;
 /// An enum representing a property list.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Plist {
-    Dictionary(BTreeMap<String, Plist>),
-    Array(Vec<Plist>),
+    Dictionary(Dictionary),
+    Array(Array),
     String(String),
     Integer(i64),
     Float(OrderedFloat<f64>),
@@ -193,7 +193,7 @@ impl Plist {
         }
     }
 
-    pub fn as_dict(&self) -> Option<&BTreeMap<String, Plist>> {
+    pub fn as_dict(&self) -> Option<&BTreeMap<SmolStr, Plist>> {
         match self {
             Plist::Dictionary(d) => Some(d),
             _ => None,
@@ -282,7 +282,7 @@ impl Plist {
                         return Ok((Plist::Dictionary(dict), ix));
                     }
                     let (key, next) = Token::lex(s, ix)?;
-                    let key_str = Token::try_into_string(key)?;
+                    let key_str = Token::try_into_smolstr(key)?;
                     let next = Token::expect(s, next, b'=');
                     if next.is_none() {
                         return Err(Error::ExpectedEquals);
@@ -512,7 +512,7 @@ impl<'a> Token<'a> {
         }
     }
 
-    fn try_into_string(self) -> Result<String, Error> {
+    fn try_into_smolstr(self) -> Result<SmolStr, Error> {
         match self {
             Token::Atom(s) => Ok(s.into()),
             Token::String(s) => Ok(s.into()),
@@ -580,8 +580,8 @@ impl From<Vec<Plist>> for Plist {
     }
 }
 
-impl From<BTreeMap<String, Plist>> for Plist {
-    fn from(x: BTreeMap<String, Plist>) -> Plist {
+impl From<Dictionary> for Plist {
+    fn from(x: Dictionary) -> Plist {
         Plist::Dictionary(x)
     }
 }
@@ -625,6 +625,12 @@ where
 {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
         tokenizer.parse_delimited_vec(VecDelimiters::CSV_IN_PARENS)
+    }
+}
+
+impl<T: FromPlist> FromPlist for BTreeMap<SmolStr, T> {
+    fn parse(tokenizer: &mut Tokenizer) -> Result<Self, Error> {
+        tokenizer.parse_map()
     }
 }
 
@@ -689,7 +695,7 @@ impl<'a> Tokenizer<'a> {
                     return Ok(());
                 }
                 let key = self.lex()?;
-                Token::try_into_string(key)?;
+                Token::try_into_smolstr(key)?;
                 self.eat(b'=')?;
                 self.skip_rec()?;
                 self.eat(b';')?;
@@ -729,6 +735,21 @@ impl<'a> Tokenizer<'a> {
             }
             self.eat(delim.sep)?;
         }
+    }
+
+    pub(crate) fn parse_map<T: FromPlist>(&mut self) -> Result<BTreeMap<SmolStr, T>, Error> {
+        self.eat(b'{')?;
+        let mut map = BTreeMap::new();
+        loop {
+            if self.eat(b'}').is_ok() {
+                break;
+            }
+            let key = self.parse::<SmolStr>()?;
+            self.eat(b'=')?;
+            map.insert(key, self.parse()?);
+            self.eat(b';')?;
+        }
+        Ok(map)
     }
 
     pub(crate) fn parse<T>(&mut self) -> Result<T, crate::plist::Error>
@@ -901,6 +922,31 @@ mod tests {
             ("value7".into(), Plist::String("-".into())),
         ]));
         assert_eq!(plist, plist_expected);
+    }
+
+    #[test]
+    fn parse_int_map() {
+        let contents = r#"
+        {
+            foo = 5;
+            bar = 32;
+        }"#;
+
+        let foobar = BTreeMap::<SmolStr, i64>::parse_plist(contents).unwrap();
+        assert_eq!(foobar.get("foo"), Some(&5));
+        assert_eq!(foobar.get("bar"), Some(&32));
+    }
+
+    #[test]
+    #[should_panic(expected = "ExpectedNumber")]
+    fn parse_map_fail() {
+        let contents = r#"
+        {
+            foo = hello;
+            bar = 32;
+        }"#;
+
+        let _foobar = BTreeMap::<SmolStr, i64>::parse_plist(contents).unwrap();
     }
 
     #[test]
