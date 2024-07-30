@@ -919,11 +919,8 @@ mod tests {
         for (g1, g2) in expected.glyphs.values().zip(font.glyphs.values()) {
             assert_eq!(g1.layers.len(), g2.layers.len());
             for (l1, l2) in g1.layers.iter().zip(g2.layers.iter()) {
-                // our anchors end up in a slightly different order, which shouldn't matter?
-                let mut a1 = l1.anchors.clone();
-                let mut a2 = l2.anchors.clone();
-                a1.sort_by_key(|a| a.name.clone());
-                a2.sort_by_key(|a| a.name.clone());
+                let a1 = l1.anchors.clone();
+                let a2 = l2.anchors.clone();
                 assert_eq!(a1, a2, "{}", g1.name);
             }
         }

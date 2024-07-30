@@ -1337,6 +1337,14 @@ name = bottom_1;
 pos = (262,7);
 },
 {
+name = ogonek_1;
+pos = (422,9);
+},
+{
+name = top_1;
+pos = (266,548);
+},
+{
 name = bottom_2;
 pos = (718,8);
 },
@@ -1345,20 +1353,12 @@ name = bottom_3;
 pos = (1242,7);
 },
 {
-name = ogonek_1;
-pos = (422,9);
-},
-{
 name = ogonek_2;
 pos = (898,9);
 },
 {
 name = ogonek_3;
 pos = (1402,9);
-},
-{
-name = top_1;
-pos = (266,548);
 },
 {
 name = top_2;
@@ -1388,6 +1388,14 @@ name = bottom_1;
 pos = (294,5);
 },
 {
+name = ogonek_1;
+pos = (463,13);
+},
+{
+name = top_1;
+pos = (287,559);
+},
+{
 name = bottom_2;
 pos = (831,0);
 },
@@ -1396,20 +1404,12 @@ name = bottom_3;
 pos = (1384,5);
 },
 {
-name = ogonek_1;
-pos = (463,13);
-},
-{
 name = ogonek_2;
 pos = (1019,13);
 },
 {
 name = ogonek_3;
 pos = (1553,13);
-},
-{
-name = top_1;
-pos = (287,559);
 },
 {
 name = top_2;
@@ -1630,20 +1630,20 @@ name = bottom_1;
 pos = (262,7);
 },
 {
-name = bottom_2;
-pos = (767,-247);
-},
-{
 name = ogonek_1;
 pos = (422,9);
 },
 {
-name = ogonek_2;
-pos = (922,9);
-},
-{
 name = top_1;
 pos = (286,760);
+},
+{
+name = bottom_2;
+pos = (767,-247);
+},
+{
+name = ogonek_2;
+pos = (922,9);
 },
 {
 name = top_2;
@@ -1669,20 +1669,20 @@ name = bottom_1;
 pos = (294,5);
 },
 {
-name = bottom_2;
-pos = (849,-253);
-},
-{
 name = ogonek_1;
 pos = (463,13);
 },
 {
-name = ogonek_2;
-pos = (1013,13);
-},
-{
 name = top_1;
 pos = (290,771);
+},
+{
+name = bottom_2;
+pos = (849,-253);
+},
+{
+name = ogonek_2;
+pos = (1013,13);
 },
 {
 name = top_2;
@@ -2492,11 +2492,11 @@ name = _top;
 pos = (323,554);
 },
 {
-name = exit;
-},
-{
 name = top;
 pos = (323,554);
+},
+{
+name = exit;
 }
 );
 layerId = m01;
@@ -2518,11 +2518,11 @@ name = _top;
 pos = (323,554);
 },
 {
-name = exit;
-},
-{
 name = top;
 pos = (323,554);
+},
+{
+name = exit;
 }
 );
 layerId = "D3EE0982-E416-4D68-847E-1544F56AC980";
