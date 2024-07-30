@@ -6,7 +6,7 @@ use clap::Parser;
 use fea_rs::{
     compile::{
         self,
-        error::{FontGlyphOrderError, GlyphOrderError, UfoGlyphOrderError},
+        error::{CompilerError, FontGlyphOrderError, GlyphOrderError, UfoGlyphOrderError},
         Compiler, MockVariationInfo, NopFeatureProvider, Opts,
     },
     GlyphMap,
@@ -80,8 +80,8 @@ enum Error {
     MissingGlyphOrder,
     #[error("Error parsing axis info: L{line}, '{message}'")]
     BadAxisInfo { line: usize, message: String },
-    #[error("{0}")]
-    CompileFail(#[from] compile::error::CompilerError),
+    #[error("{}", .0.display_verbose())]
+    CompileFail(#[from] CompilerError),
 }
 
 /// Compile FEA files
