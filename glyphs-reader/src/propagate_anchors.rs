@@ -859,7 +859,7 @@ mod tests {
             .add_glyph("aacute", |glyph| {
                 glyph
                     .add_component("a", (0, 0))
-                    .add_component("acutecomb", (96, -32));
+                    .add_component("acutecomb", (116, -32));
             })
             .build();
         propagate_all_anchors_impl(&mut glyphs);
