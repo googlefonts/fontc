@@ -1,16 +1,16 @@
-error: expected '$ident' or '${{predicate}}'
+error: expected '$ident' or '${predicate}'
 in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 3:13
   | 
 3 |     pos A B $0;
   |              ^
 
 error: expected ident or number
-in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 4:20
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 4:22
   | 
 4 |     pos C D ${pad * * 2};
-  |                     ^
+  |                       ^
 
-error: Expected } found ID
+error: expected '}' or operator
 in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 5:18
   | 
 5 |     pos E F ${pad pad};
