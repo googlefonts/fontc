@@ -84,3 +84,16 @@ pub fn parse_string(text: impl Into<Arc<str>>) -> (Node, Vec<Diagnostic>) {
     let (node, errs, _) = context::parse_src(&source, None);
     (node, errs)
 }
+
+/// Parse an arbitrary block of FEA text with a specific parsing function.
+///
+/// This can be used to parse any part of the grammar, including elements that
+/// are not valid at the top level.
+#[cfg(test)]
+pub(crate) fn parse_node(text: &str, parser_fn: impl FnOnce(&mut Parser)) -> Node {
+    let mut sink = crate::token_tree::AstSink::new(text, FileId::CURRENT_FILE, None);
+    let mut parser = Parser::new(text, &mut sink);
+    parser_fn(&mut parser);
+    let (root, _errs, _) = sink.finish();
+    root
+}
