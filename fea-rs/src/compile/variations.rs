@@ -36,6 +36,14 @@ pub trait VariationInfo {
         &self,
         locations: &HashMap<NormalizedLocation, i16>,
     ) -> Result<DefaultAndVariations, Self::Error>;
+
+    /// Glyphsapp only: return the [number value] for this name, if defined:
+    ///
+    /// [number values]: https://glyphsapp.com/learn/tokens#g-number-values
+    fn resolve_glyphs_number_value(
+        &self,
+        name: &str,
+    ) -> Result<HashMap<NormalizedLocation, f64>, Self::Error>;
 }
 
 #[derive(Debug)]
@@ -68,6 +76,13 @@ impl VariationInfo for NopVariationInfo {
         _: &HashMap<NormalizedLocation, i16>,
     ) -> Result<DefaultAndVariations, Self::Error> {
         Ok((0, Default::default()))
+    }
+
+    fn resolve_glyphs_number_value(
+        &self,
+        _: &str,
+    ) -> Result<HashMap<NormalizedLocation, f64>, NopError> {
+        Ok(Default::default())
     }
 }
 
@@ -211,6 +226,13 @@ impl VariationInfo for MockVariationInfo {
 
     fn axis_count(&self) -> u16 {
         self.axes.len().try_into().unwrap()
+    }
+
+    fn resolve_glyphs_number_value(
+        &self,
+        _: &str,
+    ) -> Result<HashMap<NormalizedLocation, f64>, NopError> {
+        Ok(Default::default())
     }
 }
 

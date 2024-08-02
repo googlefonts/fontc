@@ -1161,6 +1161,9 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         match metric {
             typed::Metric::Scalar(value) => value.parse_signed().into(),
             typed::Metric::Variable(variable) => self.resolve_variable_metric(variable),
+            typed::Metric::GlyphsAppNumber(number_value) => {
+                self.resolve_glyphs_number_value(number_value)
+            }
         }
     }
 
@@ -1200,6 +1203,51 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             },
             Err(e) => {
                 self.error(metric.range(), format!("failed to compute deltas: '{e}'"));
+                Default::default()
+            }
+        }
+    }
+
+    fn resolve_glyphs_number_value(&mut self, number_value: &typed::GlyphsAppNumber) -> Metric {
+        let Some(var_info) = self.variation_info else {
+            self.error(
+                number_value.range(),
+                "glyphsapp number value only valid when compiling variable font",
+            );
+            return Default::default();
+        };
+
+        let locations = match number_value.value() {
+            typed::GlyphsAppNumberValue::Ident(ident) => var_info
+                .resolve_glyphs_number_value(ident.text())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| (k, v.round() as i16))
+                .collect(),
+            typed::GlyphsAppNumberValue::Expr(expr) => {
+                match super::glyphsapp_syntax_ext::resolve_glyphs_app_expr(&expr, |name| {
+                    var_info
+                        .resolve_glyphs_number_value(name)
+                        .unwrap_or_default()
+                }) {
+                    super::glyphsapp_syntax_ext::ResolvedValue::Scalar(val) => return val.into(),
+                    super::glyphsapp_syntax_ext::ResolvedValue::Variable(val) => val,
+                }
+            }
+        };
+
+        let locations = var_info.resolve_variable_metric(&locations);
+
+        match locations {
+            Ok((default, deltas)) => Metric {
+                default,
+                device_or_deltas: DeviceOrDeltas::Deltas(deltas),
+            },
+            Err(e) => {
+                self.error(
+                    number_value.range(),
+                    format!("failed to resolve number value: '{e}'"),
+                );
                 Default::default()
             }
         }

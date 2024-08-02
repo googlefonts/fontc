@@ -271,7 +271,7 @@ fn take_next_token(text: &str) -> Option<(usize, AstKind)> {
                     .count();
                 return Some((len + decimal_len + 1, AstKind::Float));
             }
-            return Some((len, AstKind::Number));
+            Some((len, AstKind::Number))
         }
         // we're confused
         _ => None,

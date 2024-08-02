@@ -182,6 +182,13 @@ macro_rules! ast_enum {
                     )*
                 }
             }
+
+            // just used for the ast_enum macro
+            #[allow(dead_code)]
+            pub(crate) fn node_(&self) -> Option<&Node> {
+                self.node()
+            }
+
         }
     };
 
@@ -277,6 +284,7 @@ ast_node!(LocationSpecItem, Kind::LocationSpecItemNode);
 ast_enum!(Metric {
     Scalar(Number),
     Variable(VariableMetric),
+    GlyphsAppNumber(GlyphsAppNumber),
 });
 ast_node!(AxisLocation, Kind::AxisLocationNode);
 ast_token!(NumberSuffix, Kind::NumberSuffix);
@@ -391,6 +399,33 @@ ast_enum!(Glyph {
 ast_enum!(GlyphClass {
     Named(GlyphClassName),
     Literal(GlyphClassLiteral),
+});
+
+// glyphs app number values: https://glyphsapp.com/learn/tokens#g-number-values
+ast_node!(GlyphsAppNumber, Kind::GlyphsNumberValueNode);
+ast_node!(GlyphsAppNumberExpr, Kind::GlyphsNumberValueExprNode);
+ast_token!(GlyphsAppNumberName, Kind::GlyphsNumberIdent);
+ast_token!(GlyphsAppOperatorPlus, Kind::Plus);
+ast_token!(GlyphsAppOperatorMinus, Kind::Hyphen);
+ast_token!(GlyphsAppOperatorMul, Kind::Asterisk);
+ast_token!(GlyphsAppOperatorDiv, Kind::Slash);
+
+ast_enum!(GlyphsAppOperator {
+    Plus(GlyphsAppOperatorPlus),
+    Minus(GlyphsAppOperatorMinus),
+    Mul(GlyphsAppOperatorMul),
+    Div(GlyphsAppOperatorDiv),
+});
+
+ast_enum!(GlyphsAppExprItem {
+    Ident(GlyphsAppNumberName),
+    Lit(FloatLike),
+    Operator(GlyphsAppOperator),
+});
+
+ast_enum!(GlyphsAppNumberValue {
+    Expr(GlyphsAppNumberExpr),
+    Ident(GlyphsAppNumberName),
 });
 
 /// A trait for contextual and chain contextual rule nodes.
@@ -1264,7 +1299,7 @@ impl Metric {
     pub(crate) fn parse_simple(&self) -> Option<i16> {
         match self {
             Metric::Scalar(num) => Some(num.parse_signed()),
-            Metric::Variable(_) => None,
+            Metric::Variable(_) | Metric::GlyphsAppNumber(_) => None,
         }
     }
 }
@@ -1718,5 +1753,17 @@ impl FeatureRef {
 
     pub(crate) fn feature(&self) -> Tag {
         self.iter().find_map(Tag::cast).unwrap()
+    }
+}
+
+impl GlyphsAppNumber {
+    pub(crate) fn value(&self) -> GlyphsAppNumberValue {
+        self.iter().find_map(GlyphsAppNumberValue::cast).unwrap()
+    }
+}
+
+impl GlyphsAppNumberExpr {
+    pub(crate) fn items(&self) -> impl Iterator<Item = GlyphsAppExprItem> + '_ {
+        self.iter().filter_map(GlyphsAppExprItem::cast)
     }
 }

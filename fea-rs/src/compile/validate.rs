@@ -44,6 +44,8 @@ pub struct ValidationCtx<'a, V: VariationInfo> {
     condition_set_defs: HashMap<SmolStr, Token>,
     aalt_referenced_features: HashMap<Tag, typed::Tag>,
     all_features: HashSet<Tag>,
+    // we cache these because they're reused a lot and slightly expensive to query
+    glyphs_app_number_idents: HashSet<SmolStr>,
 }
 
 impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
@@ -68,6 +70,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             condition_set_defs: Default::default(),
             aalt_referenced_features: Default::default(),
             all_features: Default::default(),
+            glyphs_app_number_idents: Default::default(),
         }
     }
 
@@ -1280,9 +1283,16 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
     }
 
     fn validate_metric(&mut self, metric: &typed::Metric) {
-        let typed::Metric::Variable(metric) = metric else {
-            return;
-        };
+        match metric {
+            typed::Metric::Scalar(_) => (), // no validation required
+            typed::Metric::Variable(metric) => self.validate_variable_metric(metric),
+            typed::Metric::GlyphsAppNumber(number_value) => {
+                self.validate_glyphsapp_number_value(&number_value.value())
+            }
+        }
+    }
+
+    fn validate_variable_metric(&mut self, metric: &typed::VariableMetric) {
         let Some(var_info) = self.variation_info else {
             self.error(
                 metric.range(),
@@ -1321,6 +1331,64 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 }
             }
         }
+    }
+
+    fn validate_glyphsapp_number_value(&mut self, value: &typed::GlyphsAppNumberValue) {
+        match value {
+            typed::GlyphsAppNumberValue::Expr(expr) => self.validate_glyphsapp_number_expr(expr),
+            typed::GlyphsAppNumberValue::Ident(ident) => self.validate_glyphsapp_number_name(ident),
+        }
+    }
+
+    fn validate_glyphsapp_number_expr(&mut self, expr: &typed::GlyphsAppNumberExpr) {
+        // ensure pattern is (value) [(op) (value)] *and ensure names exist.
+        let mut iter = expr.items();
+        match iter.next() {
+            Some(typed::GlyphsAppExprItem::Operator(op)) => {
+                return self.error(op.range(), "expression must begin with value")
+            }
+            Some(typed::GlyphsAppExprItem::Ident(ident)) => {
+                self.validate_glyphsapp_number_name(&ident)
+            }
+            _ => (),
+        }
+        while let Some(first) = iter.next() {
+            match (&first, iter.next()) {
+                (typed::GlyphsAppExprItem::Operator(_), None) => {
+                    return self.error(first.range(), "expression should end in value")
+                }
+                (
+                    typed::GlyphsAppExprItem::Operator(_),
+                    Some(typed::GlyphsAppExprItem::Operator(op)),
+                ) => return self.error(op.range(), "operator can only follow value"),
+                (typed::GlyphsAppExprItem::Ident(_) | typed::GlyphsAppExprItem::Lit(_), _) => {
+                    return self.error(first.range(), "value cannot follow other value")
+                }
+                (
+                    typed::GlyphsAppExprItem::Operator(_),
+                    Some(typed::GlyphsAppExprItem::Ident(ident)),
+                ) => self.validate_glyphsapp_number_name(&ident),
+                (typed::GlyphsAppExprItem::Operator(_), Some(_)) => (),
+            }
+        }
+    }
+
+    fn validate_glyphsapp_number_name(&mut self, ident: &typed::GlyphsAppNumberName) {
+        let Some(var_info) = self.variation_info else {
+            self.error(
+                ident.range(),
+                "glyphsapp number values only supported in variable font",
+            );
+            return;
+        };
+        if self.glyphs_app_number_idents.contains(ident.text()) {
+            return;
+        }
+        if var_info.resolve_glyphs_number_value(ident.text()).is_ok() {
+            self.glyphs_app_number_idents.insert(ident.text().clone());
+            return;
+        }
+        self.error(ident.range(), "unknown number name");
     }
 }
 

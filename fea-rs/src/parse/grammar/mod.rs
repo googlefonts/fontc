@@ -10,9 +10,9 @@ mod metrics;
 mod table;
 mod variations;
 
-// we use this in a test in edit.rs
+// we use these in tests in various places
 #[cfg(test)]
-pub(crate) use gsub::gsub_rule;
+pub(crate) use self::{gsub::gsub_rule, metrics::expect_glyphs_number_value};
 
 /// Entry point for parsing a FEA file.
 pub fn root(parser: &mut Parser) {
