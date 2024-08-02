@@ -65,7 +65,8 @@ pub struct StaticMetadata {
     /// is an error. This model enforces the no delta at the default location constraint
     /// used in things like gvar.
     pub variation_model: VariationModel,
-
+    /// Glyphsapp only; named numbers defined per-master
+    pub number_values: HashMap<NormalizedLocation, BTreeMap<SmolStr, OrderedFloat<f64>>>,
     default_location: NormalizedLocation,
 
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/name>.
@@ -335,6 +336,9 @@ impl StaticMetadata {
         postscript_names: PostscriptNames,
         italic_angle: f64,
         gdef_categories: GdefCategories,
+        glyphsapp_number_values: Option<
+            HashMap<NormalizedLocation, BTreeMap<SmolStr, OrderedFloat<f64>>>,
+        >,
     ) -> Result<StaticMetadata, VariationModelError> {
         // Point axes are less exciting than ranged ones
         let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
@@ -373,6 +377,7 @@ impl StaticMetadata {
             postscript_names,
             italic_angle: italic_angle.into(),
             gdef_categories,
+            number_values: glyphsapp_number_values.unwrap_or_default(),
             misc: MiscMetadata {
                 fs_type: None, // default is, sigh, inconsistent across source formats
                 selection_flags: Default::default(),
@@ -1913,6 +1918,7 @@ mod tests {
                 lowest_rec_ppm: 42,
                 created: None,
             },
+            number_values: Default::default(),
         }
     }
 

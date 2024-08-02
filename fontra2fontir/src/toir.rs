@@ -80,6 +80,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<Static
         Default::default(),
         Default::default(),
         Default::default(),
+        None,
     )
     .map_err(Error::VariationModelError)
 }

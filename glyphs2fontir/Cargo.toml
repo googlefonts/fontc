@@ -15,6 +15,7 @@ fontdrasil = { version = "0.0.1", path = "../fontdrasil" }
 fontir = { version = "0.0.1", path = "../fontir" }
 glyphs-reader = { version = "0.0.1", path = "../glyphs-reader" }
 
+smol_str.workspace = true
 log.workspace = true
 env_logger.workspace = true
 
