@@ -1,0 +1,180 @@
+{
+.appVersion = "3260";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+disabled = 1;
+name = fsType;
+value = (
+3,
+8
+);
+}
+);
+date = "2024-07-18 16:00:55 +0000";
+familyName = "New Font";
+fontMaster = (
+{
+axesValues = (
+100
+);
+id = "CEAF8881-3B30-4737-AC29-09BAEF72AFFD";
+metricValues = (
+{
+over = 17;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 15;
+pos = 500;
+},
+{
+over = -16;
+},
+{
+over = -17;
+pos = -200;
+},
+{
+over = -16;
+}
+);
+name = Regular;
+numberValues = (
+12.4
+);
+},
+{
+axesValues = (
+0
+);
+id = "CEE5A249-1BF9-42CE-B12E-5278671ABED7";
+metricValues = (
+{
+over = 16;
+pos = 800;
+},
+{
+over = 16;
+pos = 700;
+},
+{
+over = 16;
+pos = 500;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -200;
+},
+{
+}
+);
+name = Irregular;
+numberValues = (
+0
+);
+}
+);
+glyphs = (
+{
+glyphname = A;
+layers = (
+{
+layerId = "CEAF8881-3B30-4737-AC29-09BAEF72AFFD";
+width = 600;
+},
+{
+layerId = "CEE5A249-1BF9-42CE-B12E-5278671ABED7";
+width = 600;
+}
+);
+unicode = 65;
+},
+{
+glyphname = a;
+lastChange = "2024-07-30 20:14:41 +0000";
+layers = (
+{
+layerId = "CEAF8881-3B30-4737-AC29-09BAEF72AFFD";
+width = 600;
+},
+{
+layerId = "CEE5A249-1BF9-42CE-B12E-5278671ABED7";
+width = 600;
+}
+);
+unicode = 97;
+}
+);
+instances = (
+{
+axesValues = (
+100
+);
+instanceInterpolations = {
+"CEAF8881-3B30-4737-AC29-09BAEF72AFFD" = 1;
+};
+name = Regular;
+},
+{
+axesValues = (
+50
+);
+instanceInterpolations = {
+"CEAF8881-3B30-4737-AC29-09BAEF72AFFD" = 0.5;
+"CEE5A249-1BF9-42CE-B12E-5278671ABED7" = 0.5;
+};
+name = Funtacular;
+},
+{
+axesValues = (
+0
+);
+instanceInterpolations = {
+"CEE5A249-1BF9-42CE-B12E-5278671ABED7" = 1;
+};
+name = Irregular;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+numbers = (
+{
+name = foo;
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
