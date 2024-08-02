@@ -1,5 +1,7 @@
 //! Error types related to compilation
 
+use std::fmt::Display;
+
 use write_fonts::{read::ReadError, BuilderError};
 
 use crate::{parse::SourceLoadError, DiagnosticSet};
@@ -56,6 +58,26 @@ pub enum CompilerError {
     CompilationFail(DiagnosticSet),
     #[error(transparent)]
     WriteFail(#[from] BuilderError),
+}
+
+impl CompilerError {
+    /// Return a `Display` type that reports the location and nature of syntax errors
+    pub fn display_verbose(&self) -> impl Display + '_ {
+        struct Verbose<'a>(&'a CompilerError);
+        impl std::fmt::Display for Verbose<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "{}", self.0)?;
+                let diagnostic = match self.0 {
+                    CompilerError::ParseFail(x)
+                    | CompilerError::ValidationFail(x)
+                    | CompilerError::CompilationFail(x) => x,
+                    _ => return Ok(()),
+                };
+                write!(f, "\n{}", diagnostic.display())
+            }
+        }
+        Verbose(self)
+    }
 }
 
 #[cfg(test)]
