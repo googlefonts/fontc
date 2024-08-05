@@ -303,6 +303,12 @@ struct RawFont {
     #[fromplist(alt_name = "kerning")]
     kerning_LTR: Kerning,
     custom_parameters: CustomParameters,
+    numbers: Vec<NumberName>,
+}
+
+#[derive(Default, Debug, PartialEq, FromPlist)]
+struct NumberName {
+    name: SmolStr,
 }
 
 // we use a vec of tuples instead of a map because there can be multiple
@@ -799,6 +805,7 @@ pub struct FontMaster {
     pub name: String,
     pub axes_values: Vec<OrderedFloat<f64>>,
     metric_values: BTreeMap<String, RawMetricValue>,
+    pub number_values: BTreeMap<SmolStr, OrderedFloat<f64>>,
     pub typo_ascender: Option<i64>,
     pub typo_descender: Option<i64>,
     pub typo_line_gap: Option<i64>,
@@ -885,6 +892,7 @@ struct RawFontMaster {
     alignment_zones: Vec<String>, // v2
 
     custom_parameters: CustomParameters,
+    number_values: Vec<OrderedFloat<f64>>,
 
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
@@ -2072,6 +2080,12 @@ impl TryFrom<RawFont> for Font {
                     })
                     .filter(|(_, metric)| !metric.is_empty())
                     .collect(),
+                number_values: from
+                    .numbers
+                    .iter()
+                    .zip(m.number_values.iter())
+                    .map(|(k, v)| (k.name.clone(), *v))
+                    .collect(),
                 typo_ascender: m.custom_parameters.int("typoAscender"),
                 typo_descender: m.custom_parameters.int("typoDescender"),
                 typo_line_gap: m.custom_parameters.int("typoLineGap"),
@@ -3054,5 +3068,18 @@ mod tests {
         let font = Font::load(&glyphs3_dir().join("custom_param_disable.glyphs")).unwrap();
 
         assert!(font.fs_type.is_none())
+    }
+
+    #[test]
+    fn parse_numbers() {
+        let font = Font::load(&glyphs3_dir().join("number_value.glyphs")).unwrap();
+        assert_eq!(
+            font.masters[0].number_values.get("foo"),
+            Some(&OrderedFloat(12.4f64))
+        );
+        assert_eq!(
+            font.masters[1].number_values.get("foo"),
+            Some(&OrderedFloat(0f64))
+        );
     }
 }
