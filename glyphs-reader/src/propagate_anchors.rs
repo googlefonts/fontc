@@ -797,16 +797,9 @@ mod tests {
     }
 
     #[test]
-    fn origin_anchor() {
+    fn component_anchor() {
         // derived from the observed behaviour of glyphs 3.2.2 (3259)
         let mut glyphs = GlyphSetBuilder::new()
-            .add_glyph("a", |glyph| {
-                glyph
-                    .add_anchor("*origin", (-20, 0))
-                    .add_anchor("bottom", (242, 7))
-                    .add_anchor("ogonek", (402, 9))
-                    .add_anchor("top", (246, 548));
-            })
             .add_glyph("acutecomb", |glyph| {
                 glyph
                     .add_anchor("_top", (150, 580))
@@ -843,6 +836,41 @@ mod tests {
                 ("ogonek_2", (902., 9.)),
                 ("top_1", (227., 548.)),
                 ("top_2", (766., 760.)),
+            ]
+        );
+    }
+
+    #[test]
+    fn origin_anchor() {
+        // derived from the observed behaviour of glyphs 3.2.2 (3259)
+        let mut glyphs = GlyphSetBuilder::new()
+            .add_glyph("a", |glyph| {
+                glyph
+                    .add_anchor("*origin", (-20, 0))
+                    .add_anchor("bottom", (242, 7))
+                    .add_anchor("ogonek", (402, 9))
+                    .add_anchor("top", (246, 548));
+            })
+            .add_glyph("acutecomb", |glyph| {
+                glyph
+                    .add_anchor("_top", (150, 580))
+                    .add_anchor("top", (170, 792));
+            })
+            .add_glyph("aacute", |glyph| {
+                glyph
+                    .add_component("a", (0, 0))
+                    .add_component("acutecomb", (116, -32));
+            })
+            .build();
+        propagate_all_anchors_impl(&mut glyphs);
+
+        let new_glyph = glyphs.get("aacute").unwrap();
+        assert_eq!(
+            new_glyph.layers[0].anchors,
+            [
+                ("bottom", (262.0, 7.0)),
+                ("ogonek", (422.0, 9.0)),
+                ("top", (286.0, 760.0)),
             ]
         );
     }
