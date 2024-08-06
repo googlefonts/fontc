@@ -4,4 +4,7 @@ feature test {
     pos C D ${pad * * 2};
     pos E F ${pad pad};
     pos G H ${pad +};
+    pos I J ${pad * (2 + 3)};
+    pos K L -$pad;
+    pos M N ${4 - -pad};
 } test;

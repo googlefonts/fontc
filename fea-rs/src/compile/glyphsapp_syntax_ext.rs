@@ -219,4 +219,15 @@ mod tests {
         let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
         assert!(ordered_eq(&val, [4i16, 10]));
     }
+
+    #[test]
+    fn bare_values() {
+        let expr = parse_expr("${padding}");
+        let val: ResolvedValue = resolve_glyphs_app_expr(&expr, |_| simple_number_value());
+        assert!(ordered_eq(&val, [10i16, 23]));
+
+        let expr = parse_expr("${42}");
+        let val = resolve_glyphs_app_expr(&expr, |_| Default::default());
+        assert_eq!(val, ResolvedValue::Scalar(42));
+    }
 }

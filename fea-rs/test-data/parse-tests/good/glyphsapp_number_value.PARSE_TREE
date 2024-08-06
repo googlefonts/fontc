@@ -1,7 +1,7 @@
-FILE@[0; 204)
+FILE@[0; 247)
   #@0 "# https://glyphsapp.com/learn/tokens#g-number-values"
   WS@52 "\n"
-    FeatureNode@[53; 203)
+    FeatureNode@[53; 246)
       FeatureKw@53 "feature"
       WS@60 " "
       Tag@61 "test"
@@ -115,9 +115,47 @@ FILE@[0; 204)
                       }@192 "}"
               >@193 ">"
           ;@194 ";"
-      WS@195 "\n"
-      }@196 "}"
-      WS@197 " "
-      Tag@198 "test"
-      ;@202 ";"
-  WS@203 "\n"
+      WS@195 "\n    "
+        GposType2@[200; 238)
+          PosKw@200 "pos"
+          WS@203 " "
+          GlyphName@204 "G"
+          WS@205 " "
+          GlyphName@206 "H"
+          WS@207 " "
+            ValueRecordNode@[208; 237)
+              <@208 "<"
+                GlyphsNumberValueNode@[209; 215)
+                  $@209 "$"
+                    GlyphsNumberValueExprNode@[210; 215)
+                      {@210 "{"
+                      GlyphsNumberIdent@211 "pad"
+                      }@214 "}"
+              WS@215 " "
+                GlyphsNumberValueNode@[216; 229)
+                  $@216 "$"
+                    GlyphsNumberValueExprNode@[217; 229)
+                      {@217 "{"
+                      GlyphsNumberIdent@218 "pad"
+                      WS@221 " "
+                      -@222 "-"
+                      WS@223 " "
+                      FLOAT@224 "-2.2"
+                      }@228 "}"
+              WS@229 " "
+                GlyphsNumberValueNode@[230; 234)
+                  $@230 "$"
+                    GlyphsNumberValueExprNode@[231; 234)
+                      {@231 "{"
+                      NUM@232 "3"
+                      }@233 "}"
+              WS@234 " "
+              NUM@235 "0"
+              >@236 ">"
+          ;@237 ";"
+      WS@238 "\n"
+      }@239 "}"
+      WS@240 " "
+      Tag@241 "test"
+      ;@245 ";"
+  WS@246 "\n"

@@ -45,6 +45,7 @@ pub struct ValidationCtx<'a, V: VariationInfo> {
     aalt_referenced_features: HashMap<Tag, typed::Tag>,
     all_features: HashSet<Tag>,
     // we cache these because they're reused a lot and slightly expensive to query
+    // see <https://glyphsapp.com/learn/tokens#g-number-values>
     glyphs_app_number_idents: HashSet<SmolStr>,
 }
 

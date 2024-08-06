@@ -226,6 +226,10 @@ fn eat_expr_body(parser: &mut Parser) -> bool {
             if !parser.split_remap_current(Kind::Ident, split_ident_with_hyphen) {
                 return false;
             }
+        } else {
+            // any other token here is an error
+            parser.err("expected value, operator, or '}'");
+            return false;
         }
     }
 }
