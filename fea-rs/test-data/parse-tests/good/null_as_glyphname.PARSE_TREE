@@ -1,0 +1,18 @@
+FILE@[0; 91)
+  #@0 "# per the spec NULL should be \'\\NULL\' but we\'ve decided to accept this"
+  WS@70 "\n"
+    GlyphClassDefNode@[71; 90)
+      @GlyphClass@71 "@name"
+      WS@76 " "
+      =@77 "="
+      WS@78 " "
+        GlyphClass@[79; 89)
+          [@79 "["
+          GlyphName@80 "A"
+          WS@81 " "
+          GlyphName@82 "b"
+          WS@83 " "
+          GlyphName@84 "NULL"
+          ]@88 "]"
+      ;@89 ";"
+  WS@90 "\n"

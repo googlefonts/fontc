@@ -1,0 +1,2 @@
+# per the spec NULL should be '\NULL' but we've decided to accept this
+@name = [A b NULL];
