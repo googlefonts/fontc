@@ -29,6 +29,8 @@ use glyphs_reader::{
     glyphdata::{Category, Subcategory},
     Font, InstanceType,
 };
+use ordered_float::OrderedFloat;
+use smol_str::SmolStr;
 use write_fonts::{
     tables::{gdef::GlyphClassDef, os2::SelectionFlags},
     types::{NameId, Tag},
@@ -357,6 +359,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .map(|m| font_info.locations.get(&m.axes_values).cloned().unwrap())
             .collect();
 
+        let number_values = get_number_values(font_info, font);
+
         let selection_flags = match font.use_typo_metrics.unwrap_or_default() {
             true => SelectionFlags::USE_TYPO_METRICS,
             false => SelectionFlags::empty(),
@@ -391,6 +395,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             Default::default(), // TODO: impl reading PS names from Glyphs
             italic_angle,
             categories,
+            number_values,
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
@@ -442,6 +447,24 @@ fn make_glyph_categories(font: &Font) -> GdefCategories {
         categories,
         prefer_gdef_categories_in_fea: false,
     }
+}
+
+fn get_number_values(
+    fontinfo: &FontInfo,
+    font: &Font,
+) -> Option<HashMap<NormalizedLocation, BTreeMap<SmolStr, OrderedFloat<f64>>>> {
+    if font.default_master().number_values.is_empty() {
+        return None;
+    }
+    let values = font
+        .masters
+        .iter()
+        .map(|m| {
+            let location = fontinfo.locations.get(&m.axes_values).cloned().unwrap();
+            (location, m.number_values.clone())
+        })
+        .collect();
+    Some(values)
 }
 
 /// determine the GDEF category for this glyph, if appropriate

@@ -160,6 +160,15 @@ pub enum Kind {
     CharacterKw,               // cv01-cv99
     Path,
 
+    // $; used to denote glyphs syntax
+    Dollar,
+    // +; an operator in glyphs syntax
+    Plus,
+    // *; an operator in glyphs syntax
+    Asterisk,
+    // '/': an operator in glyphs syntax
+    Slash,
+
     Tombstone, // a placeholder value
 }
 
@@ -409,6 +418,10 @@ impl Kind {
             Self::SampleTextNameIdKw => AstKind::SampleTextNameIdKw,
             Self::ParamUiLabelNameIdKw => AstKind::ParamUiLabelNameIdKw,
             Self::CharacterKw => AstKind::CharacterKw,
+            Self::Dollar => AstKind::Dollar,
+            Self::Plus => AstKind::Plus,
+            Self::Asterisk => AstKind::Asterisk,
+            Self::Slash => AstKind::Slash,
         }
     }
 }
@@ -540,6 +553,10 @@ impl std::fmt::Display for Kind {
             Self::SampleTextNameIdKw => write!(f, "SampleTextNameId"),
             Self::ParamUiLabelNameIdKw => write!(f, "ParamUiLabelNameId"),
             Self::CharacterKw => write!(f, "CharacterKw"),
+            Self::Dollar => write!(f, "$"),
+            Self::Plus => write!(f, "+"),
+            Self::Asterisk => write!(f, "*"),
+            Self::Slash => write!(f, "/"),
         }
     }
 }

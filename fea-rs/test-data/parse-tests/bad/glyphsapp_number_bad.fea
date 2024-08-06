@@ -1,0 +1,10 @@
+# https://glyphsapp.com/learn/tokens#g-number-values
+feature test {
+    pos A B $0;
+    pos C D ${pad * * 2};
+    pos E F ${pad pad};
+    pos G H ${pad +};
+    pos I J ${pad * (2 + 3)};
+    pos K L -$pad;
+    pos M N ${4 - -pad};
+} test;

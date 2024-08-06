@@ -1,0 +1,47 @@
+error: expected '$ident' or '${predicate}'
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 3:13
+  | 
+3 |     pos A B $0;
+  |              ^
+
+error: expected ident or number
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 4:22
+  | 
+4 |     pos C D ${pad * * 2};
+  |                       ^
+
+error: expected '}' or operator
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 5:18
+  | 
+5 |     pos E F ${pad pad};
+  |                   ^^^
+
+error: expected ident or number
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 6:19
+  | 
+6 |     pos G H ${pad +};
+  |                    ^
+
+error: expected value, operator, or '}'
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 7:20
+  | 
+7 |     pos I J ${pad * (2 + 3)};
+  |                     ^
+
+error: expected marked glyph
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 8:12
+  | 
+8 |     pos K L -$pad;
+  |             ^
+
+warning: ';' should only follow a statement
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 8:17
+  | 
+8 |     pos K L -$pad;
+  |                  ^
+
+error: expected ident or number
+in ./test-data/parse-tests/bad/glyphsapp_number_bad.fea at 9:19
+  | 
+9 |     pos M N ${4 - -pad};
+  |                    ^^^

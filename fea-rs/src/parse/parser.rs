@@ -30,6 +30,7 @@ pub struct Parser<'a, 'b> {
     sink: &'b mut AstSink<'a>,
     text: &'a str,
     buf: [PendingToken; LOOKAHEAD],
+    split_buf: Vec<(Range<usize>, Kind)>,
 }
 
 /// A non-trivia token, as well as any trivia preceding that token.
@@ -72,6 +73,7 @@ impl<'b, 'a> Parser<'a, 'b> {
             lexer: Lexer::new(text),
             sink,
             text,
+            split_buf: Default::default(),
             buf: [PendingToken::EMPTY; LOOKAHEAD],
         };
 
@@ -179,6 +181,63 @@ impl<'b, 'a> Parser<'a, 'b> {
                 .error(Diagnostic::error(FileId::CURRENT_FILE, range, error));
             self.buf[LOOKAHEAD_MAX].token.kind = replace_kind;
         }
+    }
+
+    /// a hack for working with the glyphsapp syntax extension.
+    ///
+    /// In this syntax we will encounter things like '$(pad-2)'. because '-' is
+    /// a valid character in idents, the whole unit 'pad-2' is lexed as an ident.
+    ///
+    /// In this particular context, though, we want to parse it as 'pad' '-' '2'.
+    ///
+    /// This function takes a 'split_fn' argument that is passed the token text
+    /// and an empty buffer; if the caller wants to split the token then they
+    /// must populate the buffer with the range and kind of each new token.
+    ///
+    /// If no ranges are added to the buffer, this function does nothing.
+    ///
+    /// Returns `true` if the token was split, and `false` otherwise.`
+    ///
+    /// # Panics
+    ///
+    /// The ranges must cover the entire provided text, and cannot overlap, or
+    /// this fn will panic.
+    pub(crate) fn split_remap_current(
+        &mut self,
+        // the kind of the current token; if these don't match we nop
+        kind: impl TokenComparable,
+        split_fn: impl FnOnce(&str, &mut Vec<(Range<usize>, Kind)>),
+    ) -> bool {
+        if !self.matches(0, kind) {
+            return false;
+        }
+        // temporarily take buffer to get around borrowck
+        let mut buf = std::mem::take(&mut self.split_buf);
+        let text = self.current_token_text();
+        split_fn(text, &mut buf);
+        if buf.is_empty() {
+            // put back the buffer to reuse later
+            self.split_buf = buf;
+            return false;
+        }
+
+        let mut prev_end = 0;
+        for (range, kind) in buf.drain(..) {
+            assert_eq!(range.start, prev_end, "split cannot have gaps");
+            prev_end = range.end;
+            let len = range.end.checked_sub(range.start).unwrap();
+            self.sink.token(kind, len);
+        }
+        assert_eq!(
+            prev_end,
+            self.current_token_text().len(),
+            "split must use whole token"
+        );
+        self.advance();
+        // put the buffer back so we can reuse it
+        self.split_buf = buf;
+
+        true
     }
 
     /// Eat if the current token matches.

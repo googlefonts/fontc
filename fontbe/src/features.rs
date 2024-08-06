@@ -347,6 +347,18 @@ impl<'a> VariationInfo for FeaVariationInfo<'a> {
     fn axis_count(&self) -> u16 {
         self.axes.len().try_into().unwrap()
     }
+
+    fn resolve_glyphs_number_value(
+        &self,
+        name: &str,
+    ) -> Result<HashMap<NormalizedLocation, f64>, Error> {
+        Ok(self
+            .static_metadata
+            .number_values
+            .iter()
+            .map(|(loc, names)| (loc.clone(), names.get(name).copied().unwrap_or_default().0))
+            .collect())
+    }
 }
 
 impl FeatureCompilationWork {
@@ -636,6 +648,7 @@ mod tests {
             Default::default(),
             Default::default(),
             Default::default(),
+            None,
         )
         .unwrap()
     }

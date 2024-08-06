@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::parse::{
     lexer::{Kind, TokenSet},
     Parser,
@@ -55,6 +57,11 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
     fn value_record_body(parser: &mut Parser, recovery: TokenSet) {
         if eat_metric(parser, recovery) {
             return;
+        } else if !parser.matches(0, Kind::LAngle) {
+            // if we didn't eat a metric but we aren't at a '<' we've errored,
+            // so skip remaining tokens
+            parser.eat_until(recovery);
+            return;
         }
 
         let recovery = recovery.union(TokenSet::new(&[Kind::RAngle]));
@@ -73,12 +80,14 @@ pub(crate) fn eat_value_record(parser: &mut Parser, recovery: TokenSet) -> bool 
         parser.expect_recover(Kind::RAngle, recovery);
     }
 
-    let looks_like_record = parser.matches(0, TokenSet::new(&[Kind::Number, Kind::LParen]))
-        || (parser.matches(0, Kind::LAngle)
-            && parser.matches(
-                1,
-                TokenSet::new(&[Kind::Number, Kind::NullKw]).union(TokenSet::IDENT_LIKE),
-            ));
+    let looks_like_record = parser.matches(
+        0,
+        TokenSet::new(&[Kind::Number, Kind::LParen, Kind::Dollar]),
+    ) || (parser.matches(0, Kind::LAngle)
+        && parser.matches(
+            1,
+            TokenSet::new(&[Kind::Number, Kind::NullKw, Kind::Dollar]).union(TokenSet::IDENT_LIKE),
+        ));
 
     if !looks_like_record {
         return false;
@@ -99,16 +108,22 @@ pub(crate) fn expect_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
     true
 }
 
-/// Eat a metric, which may either be a number or a variable metric.
+/// Eat a metric, which may either be a number, a variable metric, or a glyphsapp 'numbervalue'
+///
+/// (<https://glyphsapp.com/learn/tokens#g-number-values>)
 ///
 /// A variable metric has the syntax `(<location_value>+)`
 /// where `<location_value>` is `<location_spec>:<number>`
 /// and a `<location_spec>` is `<axis_tag>=<number>,+`
+///
+/// a number value has the syntax $ident or ${expr}
 fn eat_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
     // a simple numerical metric
     if parser.eat(Kind::Number) {
         return true;
     // else we expect a variable metric; return if we dont' find a paren
+    } else if parser.matches(0, Kind::Dollar) {
+        return expect_glyphs_number_value(parser, recovery);
     } else if !parser.matches(0, Kind::LParen) {
         return false;
     }
@@ -129,6 +144,142 @@ fn eat_metric(parser: &mut Parser, recovery: TokenSet) -> bool {
         parser.expect_recover(Kind::RParen, recovery)
     });
     true
+}
+
+// $pad or ${pad * 2 + 5}
+pub(crate) fn expect_glyphs_number_value(parser: &mut Parser, recovery: TokenSet) -> bool {
+    parser.in_node(AstKind::GlyphsNumberValueNode, |parser| {
+        assert!(parser.eat(Kind::Dollar));
+        if parser.eat_remap(Kind::Ident, AstKind::GlyphsNumberIdent) {
+            return true;
+        }
+        if parser.matches(0, Kind::LBrace) {
+            let recovery = recovery.add(Kind::RBrace).add(Kind::Dollar);
+            parser.in_node(AstKind::GlyphsNumberValueExprNode, |parser| {
+                parser.eat_raw();
+                let looks_okay = eat_expr_body(parser);
+                if !looks_okay {
+                    parser.eat_until(recovery);
+                }
+                parser.expect_recover(Kind::RBrace, recovery) && looks_okay
+            })
+        } else {
+            parser.err_recover("expected '$ident' or '${predicate}'", recovery);
+            false
+        }
+    })
+}
+
+// generally just eat values and operators; we will validate later
+// the one special case is '2-2' which we need to ensure gets parsed as (NUM)(-)(NUM)
+// and not (NUM)(NUM)
+fn eat_expr_body(parser: &mut Parser) -> bool {
+    let mut after_ident_or_number = false;
+    loop {
+        if parser.matches(0, Kind::RBrace) {
+            if !after_ident_or_number {
+                parser.err("expected ident or number");
+                return false;
+            }
+            return true;
+        }
+        // make sure '2-2' becomes 2 - 2
+        if after_ident_or_number
+            && parser.matches(0, TokenSet::FLOAT_LIKE)
+            && parser.current_token_text().starts_with('-')
+        {
+            let kind = parser.nth(0).kind;
+            parser.split_remap_current(TokenSet::FLOAT_LIKE, |text, buf| {
+                buf.push((0..1, AstKind::Hyphen));
+                buf.push((1..text.len(), kind.to_token_kind()));
+            });
+            continue;
+        }
+        if parser.eat(TokenSet::FLOAT_LIKE) {
+            if after_ident_or_number {
+                parser.err("expected '}' or operator");
+                return false;
+            }
+            after_ident_or_number = true;
+            continue;
+        }
+        if parser.eat(TokenSet::OPERATORS) {
+            if !after_ident_or_number {
+                parser.err("expected ident or number");
+                return false;
+            }
+            after_ident_or_number = false;
+            continue;
+        }
+        if parser.matches(0, Kind::Ident) {
+            if !parser.current_token_text().contains(['-', '/']) {
+                if after_ident_or_number {
+                    parser.err("expected '}' or operator");
+                    return false;
+                }
+                parser.eat_remap(Kind::Ident, AstKind::GlyphsNumberIdent);
+                after_ident_or_number = true;
+                continue;
+            }
+            after_ident_or_number = !parser.current_token_text().ends_with(['-', '/']);
+            // if this is an ident and contains '-' or '/' we need to split it up:
+            if !parser.split_remap_current(Kind::Ident, split_ident_with_hyphen) {
+                return false;
+            }
+        } else {
+            // any other token here is an error
+            parser.err("expected value, operator, or '}'");
+            return false;
+        }
+    }
+}
+
+fn split_ident_with_hyphen(mut token: &str, buf: &mut Vec<(Range<usize>, AstKind)>) {
+    let mut pos = 0;
+    while !token.is_empty() {
+        if let Some((len, kind)) = take_next_token(token) {
+            buf.push((pos..pos + len, kind));
+            pos += len;
+            token = &token[len..];
+        } else {
+            // parsing failed; clear the buffer and return
+            buf.clear();
+            return;
+        }
+    }
+}
+
+fn take_next_token(text: &str) -> Option<(usize, AstKind)> {
+    match text.as_bytes()[0] {
+        b'-' => Some((1, AstKind::Hyphen)),
+        b'/' => Some((1, AstKind::Slash)),
+        b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+            let end = text
+                .as_bytes()
+                .iter()
+                .position(|x| [b'-', b'/'].contains(x))
+                .unwrap_or(text.len());
+            Some((end, AstKind::GlyphsNumberIdent))
+        }
+        b'0'..=b'9' => {
+            let len = text
+                .as_bytes()
+                .iter()
+                .take_while(|b| b.is_ascii_digit())
+                .count();
+            if len < text.len() && text.as_bytes()[len] == b'.' {
+                let decimal_len = text
+                    .as_bytes()
+                    .iter()
+                    .take_while(|b| b.is_ascii_digit())
+                    .count();
+                return Some((len + decimal_len + 1, AstKind::Float));
+            }
+            Some((len, AstKind::Number))
+        }
+        // we're confused
+        _ => None,
+    }
 }
 
 fn expect_variation_location_and_value(parser: &mut Parser, recovery: TokenSet) -> bool {

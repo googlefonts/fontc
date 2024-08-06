@@ -109,14 +109,6 @@ mod tests {
 
     use super::*;
 
-    fn make_node(fea: &str, f: impl FnOnce(&mut Parser)) -> Node {
-        let mut sink = AstSink::new(fea, FileId::CURRENT_FILE, None);
-        let mut parser = Parser::new(fea, &mut sink);
-        f(&mut parser);
-        let (root, _errs, _) = sink.finish();
-        root
-    }
-
     #[test]
     fn rewrite() {
         let fea = "\
@@ -141,11 +133,11 @@ feature liga {
 
         let replace_lang = {
             let fea = "languagesystem hihi ohno;";
-            make_node(fea, crate::parse::grammar::language_system)
+            crate::parse::parse_node(fea, crate::parse::grammar::language_system)
         };
         let replace_sub = {
             let fea = "sub gg by w_p;";
-            make_node(fea, |p| {
+            crate::parse::parse_node(fea, |p| {
                 crate::parse::grammar::gsub_rule(p, TokenSet::FEATURE_STATEMENT)
             })
         };

@@ -278,6 +278,15 @@ pub enum Kind {
     StatAxisValueFlagNode,
     CvParamsNameNode,
     AaltFeatureNode,
+
+    // glyphs syntax extension
+    Dollar,
+    Plus,
+    Asterisk,
+    Slash,
+    GlyphsNumberValueNode,
+    GlyphsNumberValueExprNode,
+    GlyphsNumberIdent,
 }
 
 impl Kind {
@@ -546,6 +555,15 @@ impl std::fmt::Display for Kind {
             Self::Os2FamilyClassNode => write!(f, "Os2FamilyClassNode"),
             Self::CvParamsNameNode => write!(f, "CvParamsNameNode"),
             Self::AaltFeatureNode => write!(f, "AaltFeatureNode"),
+
+            //glyphs syntax
+            Self::Dollar => write!(f, "$"),
+            Self::Plus => write!(f, "+"),
+            Self::Slash => write!(f, "/"),
+            Self::Asterisk => write!(f, "*"),
+            Self::GlyphsNumberValueNode => write!(f, "GlyphsNumberValueNode"),
+            Self::GlyphsNumberValueExprNode => write!(f, "GlyphsNumberValueExprNode"),
+            Self::GlyphsNumberIdent => write!(f, "GlyphsNumberIdent"),
         }
     }
 }

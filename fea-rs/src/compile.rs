@@ -33,6 +33,7 @@ pub mod error;
 mod feature_writer;
 mod features;
 mod glyph_range;
+pub(crate) mod glyphsapp_syntax_ext;
 mod language_system;
 mod lookups;
 mod metrics;

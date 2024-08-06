@@ -826,6 +826,7 @@ mod tests {
                 Default::default(),
                 42.,
                 categories,
+                None,
             )
             .unwrap()
         }

@@ -942,6 +942,7 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             postscript_names,
             italic_angle,
             glyph_categories,
+            None,
         )
         .map_err(Error::VariationModelError)?;
         static_metadata.misc.selection_flags = selection_flags;
