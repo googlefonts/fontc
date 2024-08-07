@@ -134,6 +134,12 @@ pub(crate) fn eat_glyph_name_like(parser: &mut Parser) -> bool {
     if parser.matches(0, TokenSet::IDENT_LIKE) {
         eat_and_validate_glyph_name(parser);
         true
+    } else if parser.matches(0, Kind::NullKw) {
+        // this is not technically allowed but is common in noto fonts
+        // and accepted by feaLib so we will accept it as well
+        parser.warn(" when used as glyph name 'NULL' should be escaped ('\\NULL')");
+        parser.eat_remap(Kind::NullKw, AstKind::GlyphName);
+        true
     } else {
         parser.eat(Kind::Cid)
     }
