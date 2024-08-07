@@ -119,6 +119,10 @@ def ttx(font_file: Path, can_skip: bool):
 # run normalizer on both fonts at once; because this is an external process
 # we can use the threading module
 def run_layout_normalizer(cargo_manifest_path: Path, build_dir: Path, fontc_ttf: Path, fontmake_ttf: Path):
+    # a thread that saves its result, from https://stackoverflow.com/a/65447493
+    class ConciseResult(threading.Thread):
+        def run(self):
+            self.result = self._target(*self._args, **self._kwargs)
 
     can_skip_fontc = can_skip(build_dir, "fontc")
     can_skip_fontmake = can_skip(build_dir, "fontmake")
@@ -126,16 +130,16 @@ def run_layout_normalizer(cargo_manifest_path: Path, build_dir: Path, fontc_ttf:
     # processes, but we already have the command running pattern of our `run` fn,
     # which performs logging and other useful things, so just wrapping calls in a
     # Thread object is significantly simpler.
-    t1 = threading.Thread(target=simple_gpos_output, args = [cargo_manifest_path, fontc_ttf, build_dir / "fontc.markkern.txt", can_skip_fontc])
-    t2 = threading.Thread(target=simple_gpos_output, args = [cargo_manifest_path, fontmake_ttf, build_dir / "fontmake.markkern.txt", can_skip_fontmake])
+    t1 = ConciseResult(target=simple_gpos_output, args = [cargo_manifest_path, fontc_ttf, build_dir / "fontc.markkern.txt", can_skip_fontc])
+    t2 = ConciseResult(target=simple_gpos_output, args = [cargo_manifest_path, fontmake_ttf, build_dir / "fontmake.markkern.txt", can_skip_fontmake])
 
     t1.start()
     t2.start()
 
-    fontc_out = t1.join()
-    fontmake_out = t2.join()
+    t1.join()
+    t2.join()
 
-    return (fontc_out, fontmake_out)
+    return (t1.result, t2.result)
 
 # generate a simple text repr for gpos for this font
 def simple_gpos_output(cargo_manifest_path: Path, font_file: Path, out_path: Path, can_skip: bool):
