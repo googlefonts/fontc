@@ -307,12 +307,13 @@ def allow_some_off_by_ones(
         return
 
     coord_tag = coord_holder.rpartition("/")[-1]
+    # put all the containers into a dict to make querying more efficient:
 
+    fontc_items = {x.attrib[name_attr]: x for x in fontc.xpath(f"//{container}")}
     for fontmake_container in fontmake.xpath(f"//{container}"):
         name = fontmake_container.attrib[name_attr]
-        try:
-            fontc_container = select_one(fontc, f"//{container}[@{name_attr}='{name}']")
-        except IndexError as e:
+        fontc_container = fontc_items.get(name)
+        if fontc_container is None:
             maybe_print(f"no item where {name_attr}='{name}' in {container}")
             continue
 
