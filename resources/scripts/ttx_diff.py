@@ -42,9 +42,8 @@ import json
 import shutil
 import subprocess
 import sys
-import threading
 from cdifflib import CSequenceMatcher as SequenceMatcher
-from typing import MutableSequence
+from typing import MutableSequence, Optional
 
 
 _COMPARE_DEFAULTS = "default"
@@ -85,7 +84,7 @@ flags.DEFINE_bool(
 flags.DEFINE_string( "outdir", default=None,  help="directory to store generated files")
 
 
-# execute a command in the provided working directory.
+# execute a process in the provided working directory and wait for completion
 # The 'check' argument is passed to subprocess.run; if it is true than an
 # exception will be raised if the command does not exit successfully; otherwise
 # the caller can check the status via the returned `CompletedProcess` object.
@@ -101,6 +100,18 @@ def run(cmd: MutableSequence, working_dir: Path, check=False, **kwargs):
         **kwargs,
     )
 
+# start a command in the provided working directory without waiting for completion.
+# Returns a Popen instance.
+def launch(cmd: MutableSequence, working_dir: Path, **kwargs):
+    cmd_string = " ".join(str(c) for c in cmd)
+    maybe_print(f"  (cd {working_dir} && {cmd_string})")
+    return subprocess.Popen(
+        cmd,
+        text=True,
+        cwd=working_dir,
+        stderr=subprocess.DEVNULL,
+        **kwargs,
+    )
 
 def ttx(font_file: Path, can_skip: bool):
     ttx_file = font_file.with_suffix(".ttx")
@@ -116,56 +127,48 @@ def ttx(font_file: Path, can_skip: bool):
     run(cmd, font_file.parent, check=True)
     return ttx_file
 
-# run normalizer on both fonts at once; because this is an external process
-# we can use the threading module
+# run normalizer on both fonts at once and return a tuple of (fontc result, fontmake result)
 def run_layout_normalizer(cargo_manifest_path: Path, build_dir: Path, fontc_ttf: Path, fontmake_ttf: Path):
-    # a thread that saves its result, from https://stackoverflow.com/a/65447493
-    class ConciseResult(threading.Thread):
-        def run(self):
-            self.result = self._target(*self._args, **self._kwargs)
+    fontc_out = build_dir / "fontc.markkern.txt"
+    fontmake_out = build_dir / "fontmake.markkern.txt"
+    procs = (
+        launch_gpos_normalizer(cargo_manifest_path, fontc_ttf, fontc_out, can_skip(build_dir, "fontc")),
+        launch_gpos_normalizer(cargo_manifest_path, fontmake_ttf, fontmake_out, can_skip(build_dir, "fontmake")),
+    )
+    pending_error = ""
+    for proc in procs:
+        if proc is None:
+            continue
+        rc = proc.wait()
+        if rc != 0:
+            pending_error += f"Layout normalization failed({rc}) for " + str(proc.args) + ". "
+    if pending_error:
+        raise ValueError(pending_error)
 
-    can_skip_fontc = can_skip(build_dir, "fontc")
-    can_skip_fontmake = can_skip(build_dir, "fontmake")
-    # note: in theory here we would prefer to use Popen directly to spawn the
-    # processes, but we already have the command running pattern of our `run` fn,
-    # which performs logging and other useful things, so just wrapping calls in a
-    # Thread object is significantly simpler.
-    t1 = ConciseResult(target=simple_gpos_output, args = [cargo_manifest_path, fontc_ttf, build_dir / "fontc.markkern.txt", can_skip_fontc])
-    t2 = ConciseResult(target=simple_gpos_output, args = [cargo_manifest_path, fontmake_ttf, build_dir / "fontmake.markkern.txt", can_skip_fontmake])
+    return (fontc_out.read_text(), fontmake_out.read_text())
 
-    t1.start()
-    t2.start()
-
-    t1.join()
-    t2.join()
-
-    return (t1.result, t2.result)
-
-# generate a simple text repr for gpos for this font
-def simple_gpos_output(cargo_manifest_path: Path, font_file: Path, out_path: Path, can_skip: bool):
-    if not (can_skip and out_path.is_file()):
-        temppath = font_file.parent / "markkern.txt"
-        cmd = [
-            "cargo",
-            "run",
-            "--release",
-            "--manifest-path",
-            str(cargo_manifest_path),
-            "--",
-            font_file.name,
-            "-o",
-            temppath.name,
-            "--table",
-            "gpos",
-        ]
-        run(
-            cmd,
-            font_file.parent,
-            check=True,
-        )
-        copy(temppath, out_path)
-    with open(out_path) as f:
-        return f.read()
+# Launch but don't wait for normalizer. Enables parallel normalization.
+# Normalizer creates a simple text repr for gpos for this font
+def launch_gpos_normalizer(cargo_manifest_path: Path, font_file: Path, out_path: Path, can_skip: bool) -> Optional[subprocess.Popen]:
+    if can_skip and out_path.is_file():
+        return None
+    cmd = [
+        "cargo",
+        "run",
+        "--release",
+        "--manifest-path",
+        str(cargo_manifest_path),
+        "--",
+        font_file.name,
+        "-o",
+        str(out_path),
+        "--table",
+        "gpos",
+    ]
+    return launch(
+        cmd,
+        font_file.parent,
+    )    
 
 
 class BuildFail(Exception):
