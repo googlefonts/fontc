@@ -42,7 +42,6 @@ import json
 import shutil
 import subprocess
 import sys
-import threading
 from cdifflib import CSequenceMatcher as SequenceMatcher
 from typing import MutableSequence
 
@@ -116,26 +115,6 @@ def ttx(font_file: Path, can_skip: bool):
     run(cmd, font_file.parent, check=True)
     return ttx_file
 
-# run normalizer on both fonts at once; because this is an external process
-# we can use the threading module
-def run_layout_normalizer(cargo_manifest_path: Path, build_dir: Path, fontc_ttf: Path, fontmake_ttf: Path):
-
-    can_skip_fontc = can_skip(build_dir, "fontc")
-    can_skip_fontmake = can_skip(build_dir, "fontmake")
-    # note: in theory here we would prefer to use Popen directly to spawn the
-    # processes, but we already have the command running pattern of our `run` fn,
-    # which performs logging and other useful things, so just wrapping calls in a
-    # Thread object is significantly simpler.
-    t1 = threading.Thread(target=simple_gpos_output, args = [cargo_manifest_path, fontc_ttf, build_dir / "fontc.markkern.txt", can_skip_fontc])
-    t2 = threading.Thread(target=simple_gpos_output, args = [cargo_manifest_path, fontmake_ttf, build_dir / "fontmake.markkern.txt", can_skip_fontmake])
-
-    t1.start()
-    t2.start()
-
-    fontc_out = t1.join()
-    fontmake_out = t2.join()
-
-    return (fontc_out, fontmake_out)
 
 # generate a simple text repr for gpos for this font
 def simple_gpos_output(cargo_manifest_path: Path, font_file: Path, out_path: Path, can_skip: bool):
@@ -395,12 +374,11 @@ def generate_output(build_dir: Path, otl_norm_cargo_path: Path, fontmake_ttf: Pa
     can_skip_fontmake = can_skip(build_dir, "fontmake")
     fontc_ttx = ttx(fontc_ttf, can_skip_fontc)
     fontmake_ttx = ttx(fontmake_ttf, can_skip_fontmake)
-    (fontc_gpos, fontmake_gpos) = run_layout_normalizer(otl_norm_cargo_path, build_dir, fontc_ttf, fontmake_ttf)
-    # fontc_gpos = simple_gpos_output(otl_norm_cargo_path,
-        # fontc_ttf, build_dir / "fontc.markkern.txt", can_skip_fontc)
-    # fontmake_gpos = simple_gpos_output(otl_norm_cargo_path,
-        # fontmake_ttf, build_dir / "fontmake.markkern.txt", can_skip_fontmake
-    # )
+    fontc_gpos = simple_gpos_output(otl_norm_cargo_path,
+        fontc_ttf, build_dir / "fontc.markkern.txt", can_skip_fontc)
+    fontmake_gpos = simple_gpos_output(otl_norm_cargo_path,
+        fontmake_ttf, build_dir / "fontmake.markkern.txt", can_skip_fontmake
+    )
 
     fontc = etree.parse(fontc_ttx)
     fontmake = etree.parse(fontmake_ttx)
