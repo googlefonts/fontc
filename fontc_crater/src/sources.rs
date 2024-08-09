@@ -83,13 +83,11 @@ impl RepoList {
         if !path.exists() {
             return Ok(None);
         }
-        let string = std::fs::read_to_string(path).map_err(Error::InputFile)?;
-        Some(serde_json::from_str(&string).map_err(Error::InputJson)).transpose()
+        Some(super::try_read_json(path)).transpose()
     }
 
     pub(crate) fn save(&self, cache_dir: &Path) -> Result<(), Error> {
         let path = cache_dir.join(CACHED_REPO_INFO_FILE);
-        let string = serde_json::to_string_pretty(&self).map_err(Error::OutputJson)?;
-        std::fs::write(&path, string).map_err(|error| Error::WriteFile { path, error })
+        super::try_write_json(&self, &path)
     }
 }

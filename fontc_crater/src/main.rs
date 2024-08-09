@@ -17,6 +17,7 @@ mod error;
 mod sources;
 mod ttx_diff_runner;
 
+use serde::{de::DeserializeOwned, Serialize};
 use sources::{Config, RepoList};
 
 use args::{Args, Commands, ReportArgs};
@@ -39,7 +40,7 @@ fn run(args: &Args) -> Result<(), Error> {
     };
 
     if !run_args.font_cache.exists() {
-        std::fs::create_dir_all(&run_args.font_cache).map_err(Error::CacheDir)?;
+        try_create_dir(&run_args.font_cache)?;
     }
     let sources = RepoList::get_or_create(&run_args.font_cache, run_args.fonts_repo.as_deref())?;
 
@@ -69,23 +70,26 @@ fn run(args: &Args) -> Result<(), Error> {
 }
 
 fn generate_report(args: &ReportArgs) -> Result<(), Error> {
-    let contents = std::fs::read_to_string(&args.json_path).map_err(Error::InputFile)?;
+    let contents = try_read_string(&args.json_path)?;
     // let's just try and detect the type of the json?
     if let Ok(results) = serde_json::from_str::<Results<DiffOutput, DiffError>>(&contents) {
         ttx_diff_runner::print_report(&results, args.verbose);
     } else {
         let results = serde_json::from_str::<Results<(), String>>(&contents)
-            .map_err(Error::InputJson)
+            .map_err(|error| Error::ParseJson {
+                path: args.json_path.clone(),
+                error,
+            })
             // for a while a map of (string: null) was being serialized as a sequence?
             // so for now we just try parsing both forms
-            .or_else(|_| deserialize_compile_json(&contents))?;
+            .or_else(|_| deserialize_compile_json(&contents, &args.json_path))?;
         results.print_summary(args.verbose)
     }
     Ok(())
 }
 
 // a map of (string, ()) gets serialized as a list by serde_json
-fn deserialize_compile_json(json_str: &str) -> Result<Results<(), String>, Error> {
+fn deserialize_compile_json(json_str: &str, path: &Path) -> Result<Results<(), String>, Error> {
     #[derive(serde::Deserialize)]
     struct Helper {
         success: Vec<PathBuf>,
@@ -95,7 +99,10 @@ fn deserialize_compile_json(json_str: &str) -> Result<Results<(), String>, Error
     }
 
     serde_json::from_str(json_str)
-        .map_err(Error::InputJson)
+        .map_err(|error| Error::ParseJson {
+            path: path.to_owned(),
+            error,
+        })
         .map(
             |Helper {
                  success,
@@ -213,11 +220,7 @@ fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
         .collect::<Results<_, _>>();
 
     if let Some(path) = out_path {
-        let as_json = serde_json::to_string_pretty(&results).map_err(Error::OutputJson)?;
-        std::fs::write(path, as_json).map_err(|error| Error::WriteFile {
-            path: path.to_owned(),
-            error,
-        })?;
+        try_write_json(&results, path)?;
     } else {
         results.print_summary(true);
     }
@@ -373,6 +376,43 @@ impl std::fmt::Display for SkipReason {
             SkipReason::BadConfig(e) => write!(f, "Failed to read config file: '{e}'"),
         }
     }
+}
+
+fn try_read_string(path: &Path) -> Result<String, Error> {
+    std::fs::read_to_string(path).map_err(|error| Error::ReadFile {
+        path: path.to_owned(),
+        error,
+    })
+}
+
+fn try_read_json<T: DeserializeOwned>(path: &Path) -> Result<T, Error> {
+    try_read_string(path).and_then(|content| {
+        serde_json::from_str(&content).map_err(|error| Error::ParseJson {
+            path: path.to_owned(),
+            error,
+        })
+    })
+}
+
+fn try_write_json<T: Serialize>(obj: &T, path: &Path) -> Result<(), Error> {
+    serde_json::to_string_pretty(&obj)
+        .map_err(|error| Error::WriteJson {
+            path: path.to_owned(),
+            error,
+        })
+        .and_then(|json_str| {
+            std::fs::write(path, json_str).map_err(|error| Error::WriteFile {
+                path: path.to_owned(),
+                error,
+            })
+        })
+}
+
+fn try_create_dir(path: &Path) -> Result<(), Error> {
+    std::fs::create_dir_all(path).map_err(|error| Error::CreateDir {
+        path: path.to_owned(),
+        error,
+    })
 }
 
 #[cfg(test)]
