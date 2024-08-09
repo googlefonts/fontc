@@ -13,6 +13,7 @@ use google_fonts_sources::RepoInfo;
 use rayon::prelude::*;
 
 mod args;
+mod ci;
 mod error;
 mod sources;
 mod ttx_diff_runner;
@@ -37,6 +38,7 @@ fn run(args: &Args) -> Result<(), Error> {
         Commands::Compile(args) => args,
         Commands::Diff(args) => args,
         Commands::Report(args) => return generate_report(args),
+        Commands::Ci(args) => return ci::run_ci(&args),
     };
 
     if !run_args.font_cache.exists() {
@@ -48,22 +50,15 @@ fn run(args: &Args) -> Result<(), Error> {
     let inputs = pruned.as_ref().unwrap_or(&sources.sources);
 
     match args.command {
-        Commands::Compile { .. } => run_all(
-            inputs,
-            &run_args.font_cache,
-            run_args.out_path.as_deref(),
-            compile_one,
-        )?,
+        Commands::Compile { .. } => run_all(inputs, &run_args.font_cache, compile_one)
+            .and_then(|r| print_or_write_results(r, run_args.out_path.as_deref()))?,
         Commands::Diff { .. } => {
             ttx_diff_runner::assert_can_run_script();
-            run_all(
-                inputs,
-                &run_args.font_cache,
-                run_args.out_path.as_deref(),
-                ttx_diff_runner::run_ttx_diff,
-            )?;
+            run_all(inputs, &run_args.font_cache, ttx_diff_runner::run_ttx_diff)
+                .and_then(|r| print_or_write_results(r, run_args.out_path.as_deref()))?
         }
         Commands::Report { .. } => unreachable!("handled above"),
+        Commands::Ci(_) => todo!(),
     };
     sources.save(&run_args.font_cache)?;
     Ok(())
@@ -188,12 +183,11 @@ enum SkipReason {
     BadConfig(String),
 }
 
-fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
+fn run_all<T: Send, E: Send>(
     sources: &[RepoInfo],
     cache_dir: &Path,
-    out_path: Option<&Path>,
     runner: impl Fn(&Path) -> RunResult<T, E> + Send + Sync,
-) -> Result<(), Error> {
+) -> Result<Results<T, E>, Error> {
     let mut skipped: Vec<(_, RunResult<T, E>)> = Vec::new();
     let mut targets = Vec::new();
     for source in sources {
@@ -214,11 +208,13 @@ fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
             (target, r)
         })
         .collect::<Vec<_>>();
-    let results = results
-        .into_iter()
-        .chain(skipped)
-        .collect::<Results<_, _>>();
+    Ok(results.into_iter().chain(skipped).collect())
+}
 
+fn print_or_write_results<T: serde::Serialize + Send, E: serde::Serialize>(
+    results: Results<T, E>,
+    out_path: Option<&Path>,
+) -> Result<(), Error> {
     if let Some(path) = out_path {
         try_write_json(&results, path)?;
     } else {
