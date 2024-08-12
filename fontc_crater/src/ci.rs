@@ -47,7 +47,8 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         Default::default()
     };
 
-    let fontc_rev = get_git_rev();
+    // todo: fontc_repo should be checked out by us, and have a known path
+    let fontc_rev = super::get_git_rev(None).unwrap();
     if prev_runs
         .last()
         .map(|prev| prev.fontc_rev == fontc_rev)
@@ -92,17 +93,4 @@ fn result_path_for_current_date() -> String {
     let now = chrono::Utc::now();
     let timestamp = now.format("%Y-%m-%d-%H%M%S");
     format!("{timestamp}.json")
-}
-
-fn get_git_rev() -> String {
-    let output = std::process::Command::new("git")
-        .arg("rev-parse")
-        .arg("--short")
-        .arg("HEAD")
-        .output()
-        .expect("git rev-parse HEAD should not fail if repo exists");
-    std::str::from_utf8(&output.stdout)
-        .expect("rev is always ascii/hex string")
-        .trim()
-        .to_owned()
 }

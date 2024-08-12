@@ -38,7 +38,7 @@ fn run(args: &Args) -> Result<(), Error> {
         Commands::Compile(args) => args,
         Commands::Diff(args) => args,
         Commands::Report(args) => return generate_report(args),
-        Commands::Ci(args) => return ci::run_ci(&args),
+        Commands::Ci(args) => return ci::run_ci(args),
     };
 
     if !run_args.font_cache.exists() {
@@ -229,6 +229,10 @@ fn get_targets_for_repo(font_dir: &Path, repo: &RepoInfo) -> Result<Vec<PathBuf>
         return Err(SkipReason::GitFail);
     }
 
+    if !checkout_rev(font_dir, &repo.rev) {
+        return Err(SkipReason::GitFail);
+    }
+
     let source_dir = font_dir.join("sources");
     let configs = repo
         .config_files
@@ -286,6 +290,63 @@ fn clone_repo(to_dir: &Path, repo: &str) -> Result<(), String> {
         return Err(stderr.into_owned());
     }
     Ok(())
+}
+
+/// Get the short sha of the current commit in the provided repository.
+///
+/// If no repo provided, run in current directory
+///
+/// returns `None` if the `git` command fails (for instance if the path is not
+/// a git repository)
+fn get_git_rev(repo_path: Option<&Path>) -> Option<String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["rev-parse", "--short", "HEAD"]);
+
+    if let Some(dir) = repo_path {
+        cmd.current_dir(dir);
+    }
+    let output = cmd.output().unwrap();
+
+    Some(
+        std::str::from_utf8(&output.stdout)
+            .expect("rev is always ascii/hex string")
+            .trim()
+            .to_owned(),
+    )
+}
+
+// try to checkout this rev.
+//
+// returns `true` if successful, `false` otherwise (indicating a git error)
+fn checkout_rev(repo_dir: &Path, rev: &str) -> bool {
+    match get_git_rev(Some(repo_dir)) {
+        None => return false,
+        Some(sha) => {
+            // the longer str is on the left, so we check if shorter str is a prefix
+            let (left, right) = if sha.len() > rev.len() {
+                (sha.as_str(), rev)
+            } else {
+                (rev, sha.as_str())
+            };
+            if left.starts_with(right) {
+                return true;
+            }
+        }
+    };
+    // checkouts might be shallow, so unshallow before looking for a rev:
+    let _ = std::process::Command::new("git")
+        .current_dir(repo_dir)
+        .args(["fetch", "--unshallow"])
+        .status();
+
+    eprintln!("checking out '{rev}' in repo {}", repo_dir.display());
+    std::process::Command::new("git")
+        .current_dir(repo_dir)
+        .arg("checkout")
+        .arg(rev)
+        .status()
+        .map(|stat| stat.success())
+        .unwrap_or(false)
 }
 
 impl<T, E> FromIterator<(PathBuf, RunResult<T, E>)> for Results<T, E> {
