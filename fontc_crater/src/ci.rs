@@ -5,14 +5,23 @@
 //! Unlike a normal run, this is expecting to have preexisting results, and to
 //! generate a fuller report that includes comparison with past runs.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use google_fonts_sources::RepoInfo;
 
-use crate::{args::CiArgs, error::Error};
+use crate::{
+    args::CiArgs,
+    error::Error,
+    ttx_diff_runner::{DiffError, DiffOutput},
+    Results,
+};
+
+mod html;
 
 static SUMMARY_FILE: &str = "summary.json";
+
+type DiffResults = Results<DiffOutput, DiffError>;
 
 /// A summary of a single CI run
 
@@ -21,16 +30,29 @@ struct RunSummary {
     began: DateTime<Utc>,
     finished: DateTime<Utc>,
     fontc_rev: String,
-    report_file: PathBuf,
+    results_file: PathBuf,
     // the name of the file listing targets used by this run.
     // it is intended that when this list is updated, the filename is changed.
     input_file: PathBuf,
     stats: super::ttx_diff_runner::Summary,
 }
 
+impl RunSummary {
+    fn try_load_results(&self, target_dir: &Path) -> Option<Result<DiffResults, Error>> {
+        let report_path = target_dir.join(&self.results_file);
+        if !report_path.exists() {
+            return None;
+        }
+        Some(super::try_read_json(&report_path))
+    }
+}
+
 pub(super) fn run_ci(args: &CiArgs) -> Result<(), Error> {
-    super::ttx_diff_runner::assert_can_run_script();
-    run_crater_and_save_results(args)?;
+    if !args.html_only {
+        super::ttx_diff_runner::assert_can_run_script();
+        run_crater_and_save_results(args)?;
+    }
+    html::generate(&args.out_dir)?;
     // now we want to generate an html report, based on this info.
     Ok(())
 }
@@ -80,7 +102,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         began,
         finished,
         fontc_rev,
-        report_file: out_file.into(),
+        results_file: out_file.into(),
         input_file: args.to_run.clone(),
         stats: summary,
     };

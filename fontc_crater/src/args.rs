@@ -47,6 +47,9 @@ pub(super) struct CiArgs {
     /// This should be consistent between runs.
     #[arg(short = 'o', long = "out")]
     pub(super) out_dir: PathBuf,
+    /// only generate html (for the provided out_dir)
+    #[arg(long)]
+    pub(super) html_only: bool,
 }
 
 #[derive(Debug, PartialEq, clap::Args)]

@@ -11,6 +11,7 @@ readme = "README.md"
 fontc = { version = "0.0.1", path = "../fontc" }
 
 google-fonts-sources = "0.2.0"
+maud = "0.26.0"
 
 chrono.workspace = true
 rayon.workspace = true

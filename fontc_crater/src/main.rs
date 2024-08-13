@@ -442,12 +442,20 @@ fn try_read_string(path: &Path) -> Result<String, Error> {
     })
 }
 
-fn try_read_json<T: DeserializeOwned>(path: &Path) -> Result<T, Error> {
+fn try_read_json<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, Error> {
+    let path = path.as_ref();
     try_read_string(path).and_then(|content| {
         serde_json::from_str(&content).map_err(|error| Error::ParseJson {
             path: path.to_owned(),
             error,
         })
+    })
+}
+
+fn try_write_str(s: &str, path: &Path) -> Result<(), Error> {
+    std::fs::write(path, s).map_err(|error| Error::WriteFile {
+        path: path.to_owned(),
+        error,
     })
 }
 
@@ -457,12 +465,7 @@ fn try_write_json<T: Serialize>(obj: &T, path: &Path) -> Result<(), Error> {
             path: path.to_owned(),
             error,
         })
-        .and_then(|json_str| {
-            std::fs::write(path, json_str).map_err(|error| Error::WriteFile {
-                path: path.to_owned(),
-                error,
-            })
-        })
+        .and_then(|json_str| try_write_str(&json_str, path))
 }
 
 fn try_create_dir(path: &Path) -> Result<(), Error> {
