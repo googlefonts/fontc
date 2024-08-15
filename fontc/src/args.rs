@@ -89,6 +89,10 @@ pub struct Args {
     // cargo profile, and cargo optimization level.
     #[arg(long = "vv", default_value = "false")]
     pub verbose_version: bool,
+
+    /// Print additional information about errors, if possible.
+    #[arg(long, short)]
+    pub verbose: bool,
 }
 
 /// A wrapper around a validated regex string
@@ -136,6 +140,7 @@ impl Args {
             keep_direction: false,
             no_production_names: false,
             verbose_version: false,
+            verbose: false,
         }
     }
 

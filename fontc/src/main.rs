@@ -6,16 +6,24 @@ use fontbe::orchestration::AnyWorkId;
 use fontc::{create_timer, Args, Error, JobTimer};
 
 fn main() {
+    let args = Args::parse();
+    let verbose = args.verbose;
+
     // catch and print errors manually, to avoid just seeing the Debug impls
-    if let Err(e) = run() {
+    if let Err(e) = run(args) {
+        if let Error::Backend(fontbe::error::Error::FeaCompileError(e)) = &e {
+            if verbose {
+                let _ = writeln!(std::io::stderr(), "{}", e.display_verbose());
+                std::process::exit(1);
+            }
+        }
         // we have a CI check that forbids eprintln, but we're very clever, so
         let _ = writeln!(std::io::stderr(), "{e}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<(), Error> {
-    let args = Args::parse();
+fn run(args: Args) -> Result<(), Error> {
     // handle `--vv` verbose version argument request
     if args.verbose_version {
         print_verbose_version().map_err(Error::StdioWriteFail)?;
