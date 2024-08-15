@@ -58,41 +58,95 @@ pub(super) enum DiffOutput {
     Diffs(BTreeMap<String, DiffValue>),
 }
 
+/// Summary of one ttx_diff run
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Summary {
+    pub(crate) total_targets: u32,
+    pub(crate) identical: u32,
+    pub(crate) produced_diff: u32,
+    pub(crate) fontc_failed: u32,
+    pub(crate) fontmake_failed: u32,
+    pub(crate) both_failed: u32,
+    pub(crate) other_failure: u32,
+    pub(crate) diff_perc_including_failures: f32,
+    pub(crate) diff_perc_excluding_failures: f32,
+}
+
+impl Summary {
+    pub(crate) fn new(result: &Results<DiffOutput, DiffError>) -> Self {
+        let Results {
+            success,
+            failure,
+            panic,
+            skipped,
+        } = &result;
+        let total_targets = (success.len() + failure.len() + skipped.len() + panic.len()) as u32;
+        let n_failed = failure.len() + panic.len();
+        let identical = success
+            .values()
+            .filter(|x| matches!(x, DiffOutput::Identical))
+            .count() as _;
+        let produced_diff = success.len() as u32 - identical;
+        let total_diff = success
+            .values()
+            .filter_map(|v| match v {
+                DiffOutput::Identical => None,
+                DiffOutput::Diffs(diffs) => diffs.get("total").and_then(|v| match v {
+                    DiffValue::Ratio(v) => Some(*v),
+                    DiffValue::Only(_) => None,
+                }),
+            })
+            .sum::<f32>();
+        let total_diff = total_diff + (identical as f32);
+        let diff_perc_including_failures = total_diff / (n_failed + success.len()) as f32 * 100.;
+        let diff_perc_excluding_failures = total_diff / success.len() as f32 * 100.;
+        let (mut fontc_failed, mut fontmake_failed, mut both_failed, mut other_failure) =
+            (0, 0, 0, 0);
+        for fail in failure.values() {
+            match fail {
+                DiffError::CompileFailed(err) if err.fontc.is_some() && err.fontmake.is_some() => {
+                    both_failed += 1
+                }
+                DiffError::CompileFailed(err) if err.fontc.is_some() => fontc_failed += 1,
+                DiffError::CompileFailed(err) if err.fontmake.is_some() => fontmake_failed += 1,
+                DiffError::CompileFailed(_) => unreachable!(),
+                DiffError::Other(_) => other_failure += 1,
+            }
+        }
+
+        Summary {
+            total_targets,
+            identical,
+            produced_diff,
+            fontc_failed,
+            fontmake_failed,
+            both_failed,
+            other_failure,
+            diff_perc_including_failures,
+            diff_perc_excluding_failures,
+        }
+    }
+}
+
 pub(super) fn print_report(results: &Results<DiffOutput, DiffError>, verbose: bool) {
+    let summary = Summary::new(results);
     let Results {
         success,
         failure,
-        panic,
         skipped,
+        ..
     } = &results;
-    let n_total = success.len() + failure.len() + skipped.len() + panic.len();
-    let n_failed = failure.len() + panic.len();
-    let n_identical = success
-        .values()
-        .filter(|x| matches!(x, DiffOutput::Identical))
-        .count();
-    let n_diffs = success.len() - n_identical;
-    println!("### tried to diff {n_total} targets ###\n");
+    println!("### tried to diff {} targets ###\n", summary.total_targets);
     println!(
-        "{n_identical} identical, {n_diffs} diffs, {n_failed} failed, {} skipped",
+        "{} identical, {} diffs, {} failed, {} skipped",
+        summary.identical,
+        summary.produced_diff,
+        results.failure.len(),
         skipped.len()
     );
-    let total_diff = success
-        .values()
-        .filter_map(|v| match v {
-            DiffOutput::Identical => None,
-            DiffOutput::Diffs(diffs) => diffs.get("total").and_then(|v| match v {
-                DiffValue::Ratio(v) => Some(*v),
-                DiffValue::Only(_) => None,
-            }),
-        })
-        .sum::<f32>();
-    let total_diff = total_diff + (n_identical as f32);
-    let total_diff_with_failures = total_diff / (n_failed + success.len()) as f32 * 100.;
-    let total_diff_no_failures = total_diff / success.len() as f32 * 100.;
     println!(
         "total diff score {:.2}% (including failures: {:.2}%)\n",
-        total_diff_no_failures, total_diff_with_failures
+        summary.diff_perc_excluding_failures, summary.diff_perc_including_failures
     );
 
     let comp_fails = failure
@@ -133,8 +187,8 @@ pub(super) fn print_report(results: &Results<DiffOutput, DiffError>, verbose: bo
         return;
     }
 
-    if n_identical != 0 {
-        println!("\n### {n_identical} were identical: ###\n");
+    if summary.identical != 0 {
+        println!("\n### {} were identical: ###\n", summary.identical);
         for path in success
             .iter()
             .filter_map(|(k, v)| matches!(v, DiffOutput::Identical).then_some(k))
@@ -142,10 +196,10 @@ pub(super) fn print_report(results: &Results<DiffOutput, DiffError>, verbose: bo
             println!("{}", path.display())
         }
     }
-    if !success.is_empty() && n_identical != success.len() {
+    if !success.is_empty() && summary.identical != success.len() as u32 {
         println!(
             "\n### {} produced diffs: ###\n",
-            success.len() - n_identical
+            success.len() as u32 - summary.identical
         );
         for (path, diff) in success.iter().filter_map(|(k, v)| match v {
             DiffOutput::Identical => None,

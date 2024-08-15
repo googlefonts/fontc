@@ -13,10 +13,12 @@ use google_fonts_sources::RepoInfo;
 use rayon::prelude::*;
 
 mod args;
+mod ci;
 mod error;
 mod sources;
 mod ttx_diff_runner;
 
+use serde::{de::DeserializeOwned, Serialize};
 use sources::{Config, RepoList};
 
 use args::{Args, Commands, ReportArgs};
@@ -36,10 +38,11 @@ fn run(args: &Args) -> Result<(), Error> {
         Commands::Compile(args) => args,
         Commands::Diff(args) => args,
         Commands::Report(args) => return generate_report(args),
+        Commands::Ci(args) => return ci::run_ci(args),
     };
 
     if !run_args.font_cache.exists() {
-        std::fs::create_dir_all(&run_args.font_cache).map_err(Error::CacheDir)?;
+        try_create_dir(&run_args.font_cache)?;
     }
     let sources = RepoList::get_or_create(&run_args.font_cache, run_args.fonts_repo.as_deref())?;
 
@@ -47,45 +50,41 @@ fn run(args: &Args) -> Result<(), Error> {
     let inputs = pruned.as_ref().unwrap_or(&sources.sources);
 
     match args.command {
-        Commands::Compile { .. } => run_all(
-            inputs,
-            &run_args.font_cache,
-            run_args.out_path.as_deref(),
-            compile_one,
-        )?,
+        Commands::Compile { .. } => run_all(inputs, &run_args.font_cache, compile_one)
+            .and_then(|r| print_or_write_results(r, run_args.out_path.as_deref()))?,
         Commands::Diff { .. } => {
             ttx_diff_runner::assert_can_run_script();
-            run_all(
-                inputs,
-                &run_args.font_cache,
-                run_args.out_path.as_deref(),
-                ttx_diff_runner::run_ttx_diff,
-            )?;
+            run_all(inputs, &run_args.font_cache, ttx_diff_runner::run_ttx_diff)
+                .and_then(|r| print_or_write_results(r, run_args.out_path.as_deref()))?
         }
         Commands::Report { .. } => unreachable!("handled above"),
+        Commands::Ci(_) => todo!(),
     };
     sources.save(&run_args.font_cache)?;
     Ok(())
 }
 
 fn generate_report(args: &ReportArgs) -> Result<(), Error> {
-    let contents = std::fs::read_to_string(&args.json_path).map_err(Error::InputFile)?;
+    let contents = try_read_string(&args.json_path)?;
     // let's just try and detect the type of the json?
     if let Ok(results) = serde_json::from_str::<Results<DiffOutput, DiffError>>(&contents) {
         ttx_diff_runner::print_report(&results, args.verbose);
     } else {
         let results = serde_json::from_str::<Results<(), String>>(&contents)
-            .map_err(Error::InputJson)
+            .map_err(|error| Error::ParseJson {
+                path: args.json_path.clone(),
+                error,
+            })
             // for a while a map of (string: null) was being serialized as a sequence?
             // so for now we just try parsing both forms
-            .or_else(|_| deserialize_compile_json(&contents))?;
+            .or_else(|_| deserialize_compile_json(&contents, &args.json_path))?;
         results.print_summary(args.verbose)
     }
     Ok(())
 }
 
 // a map of (string, ()) gets serialized as a list by serde_json
-fn deserialize_compile_json(json_str: &str) -> Result<Results<(), String>, Error> {
+fn deserialize_compile_json(json_str: &str, path: &Path) -> Result<Results<(), String>, Error> {
     #[derive(serde::Deserialize)]
     struct Helper {
         success: Vec<PathBuf>,
@@ -95,7 +94,10 @@ fn deserialize_compile_json(json_str: &str) -> Result<Results<(), String>, Error
     }
 
     serde_json::from_str(json_str)
-        .map_err(Error::InputJson)
+        .map_err(|error| Error::ParseJson {
+            path: path.to_owned(),
+            error,
+        })
         .map(
             |Helper {
                  success,
@@ -181,12 +183,11 @@ enum SkipReason {
     BadConfig(String),
 }
 
-fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
+fn run_all<T: Send, E: Send>(
     sources: &[RepoInfo],
     cache_dir: &Path,
-    out_path: Option<&Path>,
     runner: impl Fn(&Path) -> RunResult<T, E> + Send + Sync,
-) -> Result<(), Error> {
+) -> Result<Results<T, E>, Error> {
     let mut skipped: Vec<(_, RunResult<T, E>)> = Vec::new();
     let mut targets = Vec::new();
     for source in sources {
@@ -207,17 +208,15 @@ fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
             (target, r)
         })
         .collect::<Vec<_>>();
-    let results = results
-        .into_iter()
-        .chain(skipped)
-        .collect::<Results<_, _>>();
+    Ok(results.into_iter().chain(skipped).collect())
+}
 
+fn print_or_write_results<T: serde::Serialize + Send, E: serde::Serialize>(
+    results: Results<T, E>,
+    out_path: Option<&Path>,
+) -> Result<(), Error> {
     if let Some(path) = out_path {
-        let as_json = serde_json::to_string_pretty(&results).map_err(Error::OutputJson)?;
-        std::fs::write(path, as_json).map_err(|error| Error::WriteFile {
-            path: path.to_owned(),
-            error,
-        })?;
+        try_write_json(&results, path)?;
     } else {
         results.print_summary(true);
     }
@@ -227,6 +226,10 @@ fn run_all<T: serde::Serialize + Send, E: serde::Serialize + Send>(
 // one repo can contain multiple sources, so we return a vec.
 fn get_targets_for_repo(font_dir: &Path, repo: &RepoInfo) -> Result<Vec<PathBuf>, SkipReason> {
     if !font_dir.exists() && clone_repo(font_dir, &repo.repo_url).is_err() {
+        return Err(SkipReason::GitFail);
+    }
+
+    if !checkout_rev(font_dir, &repo.rev) {
         return Err(SkipReason::GitFail);
     }
 
@@ -287,6 +290,63 @@ fn clone_repo(to_dir: &Path, repo: &str) -> Result<(), String> {
         return Err(stderr.into_owned());
     }
     Ok(())
+}
+
+/// Get the short sha of the current commit in the provided repository.
+///
+/// If no repo provided, run in current directory
+///
+/// returns `None` if the `git` command fails (for instance if the path is not
+/// a git repository)
+fn get_git_rev(repo_path: Option<&Path>) -> Option<String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["rev-parse", "--short", "HEAD"]);
+
+    if let Some(dir) = repo_path {
+        cmd.current_dir(dir);
+    }
+    let output = cmd.output().unwrap();
+
+    Some(
+        std::str::from_utf8(&output.stdout)
+            .expect("rev is always ascii/hex string")
+            .trim()
+            .to_owned(),
+    )
+}
+
+// try to checkout this rev.
+//
+// returns `true` if successful, `false` otherwise (indicating a git error)
+fn checkout_rev(repo_dir: &Path, rev: &str) -> bool {
+    match get_git_rev(Some(repo_dir)) {
+        None => return false,
+        Some(sha) => {
+            // the longer str is on the left, so we check if shorter str is a prefix
+            let (left, right) = if sha.len() > rev.len() {
+                (sha.as_str(), rev)
+            } else {
+                (rev, sha.as_str())
+            };
+            if left.starts_with(right) {
+                return true;
+            }
+        }
+    };
+    // checkouts might be shallow, so unshallow before looking for a rev:
+    let _ = std::process::Command::new("git")
+        .current_dir(repo_dir)
+        .args(["fetch", "--unshallow"])
+        .status();
+
+    eprintln!("checking out '{rev}' in repo {}", repo_dir.display());
+    std::process::Command::new("git")
+        .current_dir(repo_dir)
+        .arg("checkout")
+        .arg(rev)
+        .status()
+        .map(|stat| stat.success())
+        .unwrap_or(false)
 }
 
 impl<T, E> FromIterator<(PathBuf, RunResult<T, E>)> for Results<T, E> {
@@ -373,6 +433,46 @@ impl std::fmt::Display for SkipReason {
             SkipReason::BadConfig(e) => write!(f, "Failed to read config file: '{e}'"),
         }
     }
+}
+
+fn try_read_string(path: &Path) -> Result<String, Error> {
+    std::fs::read_to_string(path).map_err(|error| Error::ReadFile {
+        path: path.to_owned(),
+        error,
+    })
+}
+
+fn try_read_json<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, Error> {
+    let path = path.as_ref();
+    try_read_string(path).and_then(|content| {
+        serde_json::from_str(&content).map_err(|error| Error::ParseJson {
+            path: path.to_owned(),
+            error,
+        })
+    })
+}
+
+fn try_write_str(s: &str, path: &Path) -> Result<(), Error> {
+    std::fs::write(path, s).map_err(|error| Error::WriteFile {
+        path: path.to_owned(),
+        error,
+    })
+}
+
+fn try_write_json<T: Serialize>(obj: &T, path: &Path) -> Result<(), Error> {
+    serde_json::to_string_pretty(&obj)
+        .map_err(|error| Error::WriteJson {
+            path: path.to_owned(),
+            error,
+        })
+        .and_then(|json_str| try_write_str(&json_str, path))
+}
+
+fn try_create_dir(path: &Path) -> Result<(), Error> {
+    std::fs::create_dir_all(path).map_err(|error| Error::CreateDir {
+        path: path.to_owned(),
+        error,
+    })
 }
 
 #[cfg(test)]

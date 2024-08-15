@@ -53,6 +53,9 @@ _COMPARE_GFTOOLS = "gftools"
 FLAGS = flags.FLAGS
 # used instead of a tag for the normalized mark/kern output
 MARK_KERN_NAME = "(mark/kern)"
+# maximum chars of stderr to include when reporting errors; prevents
+# too much bloat when run in CI
+MAX_ERR_LEN = 1000
 
 
 # we don't print to stdout of we're generating JSON
@@ -539,12 +542,12 @@ def main(argv):
             build_fontc(source.resolve(), fontc_manifest_path, build_dir, compare)
         except BuildFail as e:
             failures["fontc"] = {"command": " ".join(
-                e.command), "stderr": e.stderr}
+                e.command), "stderr": e.stderr[:MAX_ERR_LEN]}
         try:
             build_fontmake(source.resolve(), build_dir, compare)
         except BuildFail as e:
             failures["fontmake"] = {"command": " ".join(
-                e.command), "stderr": e.stderr}
+                e.command), "stderr": e.stderr[:MAX_ERR_LEN]}
 
         report_errors_and_exit_if_there_were_any(failures)
 

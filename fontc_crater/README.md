@@ -10,6 +10,12 @@ fonts.
 $ cargo run --release -p=fontc_crater -- compile FONT_CACHE --fonts-repo GOOGLE/FONTS  -o results.json
 ```
 
+or, to run ttx_diff (comparing with fontmake)
+
+```sh
+$ cargo run --release -p=fontc_crater -- diff FONT_CACHE --fonts-repo GOOGLE/FONTS  -o results.json
+```
+
 This is a binary for executing font compilation (and possibly other tasks) in
 bulk.
 
@@ -36,6 +42,16 @@ You can generate a report from the saved json by passing it back to
 $ cargo run -p fontc_crater -- report results.json
 ```
 
+## CI
+
+This binary is also run in CI. In that case, the execution is managed by a
+script in the [`fontc_crater` repo][crater-repo] and results are posted to
+[github pages][crater-results].
+
 [google-fonts-sources]: https://github.com/googlefonts/google-fonts-sources
 [google/fonts]: https://github.com/google/fonts
 [rust-lang/crater]: https://github.com/rust-lang/crater
+[crater-repo]: https://github.com/googlefonts/fontc_crater
+[crater-results]: https://googlefonts.github.io/fontc_crater/
+
+
