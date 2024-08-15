@@ -79,7 +79,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         // eventually we will want an argument to force rerunning, which we'll
         // use when we update fontmake or the input data set
         eprintln!("fontc rev is unchange from last run, skipping");
-        std::process::exit(0);
+        return Ok(());
     }
 
     let inputs: Vec<RepoInfo> = super::try_read_json(&args.to_run)?;
@@ -98,12 +98,18 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
 
     super::try_write_json(&results, &out_path)?;
     let summary = super::ttx_diff_runner::Summary::new(&results);
+    let input_file = args
+        .to_run
+        .file_name()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| args.to_run.clone());
+
     let summary = RunSummary {
         began,
         finished,
         fontc_rev,
         results_file: out_file.into(),
-        input_file: args.to_run.clone(),
+        input_file,
         stats: summary,
     };
 
