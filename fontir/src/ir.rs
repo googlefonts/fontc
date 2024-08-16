@@ -1051,6 +1051,12 @@ pub enum AnchorKind {
     ///
     /// These are names like '_3'.
     ComponentMarker(usize),
+    /// An anchor indicating a caret position in a ligature glyph.
+    ///
+    /// These are names like `caret_1`
+    Caret(usize),
+    /// A vertical caret position in a ligature glyph.
+    VCaret(usize),
     CursiveEntry,
     CursiveExit,
 }
@@ -1066,6 +1072,31 @@ impl AnchorKind {
         }
         if name == "exit" {
             return Ok(AnchorKind::CursiveExit);
+        }
+
+        if let Some(suffix) = name
+            .strip_prefix("caret_")
+            .or_else(|| name.strip_prefix("vcaret_"))
+        {
+            if let Ok(index) = suffix.parse::<usize>() {
+                if index == 0 {
+                    return Err(BadAnchorReason::ZeroIndex);
+                } else if name.starts_with('v') {
+                    return Ok(AnchorKind::VCaret(index));
+                } else {
+                    return Ok(AnchorKind::Caret(index));
+                }
+            } else {
+                if !suffix.is_empty() {
+                    // this is slightly unexpected, so let's at least log:
+                    log::warn!("anchor '{name}' will be treated as a caret");
+                }
+                if name.starts_with('v') {
+                    return Ok(AnchorKind::VCaret(1));
+                } else {
+                    return Ok(AnchorKind::Caret(1));
+                }
+            }
         }
 
         // the '_' char is used as a prefix for marks, and as a space character
@@ -2252,6 +2283,16 @@ mod tests {
                 index: 1
             })
         );
+    }
+
+    #[test]
+    fn caret_anchor_names() {
+        assert_eq!(AnchorKind::new("caret_1"), Ok(AnchorKind::Caret(1)));
+        assert_eq!(AnchorKind::new("vcaret_1"), Ok(AnchorKind::VCaret(1)));
+        assert_eq!(AnchorKind::new("vcaret_0"), Err(BadAnchorReason::ZeroIndex));
+        // fontmake accepts this, so we should too
+        assert_eq!(AnchorKind::new("caret_"), Ok(AnchorKind::Caret(1)));
+        assert_eq!(AnchorKind::new("vcaret_"), Ok(AnchorKind::VCaret(1)));
     }
 
     #[test]

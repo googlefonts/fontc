@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use fea_rs::{
     compile::{
-        Anchor as FeaAnchor, CursivePosBuilder, FeatureProvider, MarkToBaseBuilder,
+        Anchor as FeaAnchor, CaretValue, CursivePosBuilder, FeatureProvider, MarkToBaseBuilder,
         MarkToLigBuilder, MarkToMarkBuilder, NopFeatureProvider, NopVariationInfo, PendingLookup,
     },
     typed::{AstNode, LanguageSystem},
@@ -53,6 +53,7 @@ struct MarkLookupBuilder<'a> {
     // we don't currently use this, because just adding lookups to all scripts works?
     _fea_scripts: HashSet<Tag>,
     mark_glyphs: BTreeSet<GlyphName>,
+    lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
 }
 
 /// Abstract over the difference in anchor shape between mark2lig and mark2base/mark2mark
@@ -141,9 +142,10 @@ impl<'a> MarkLookupBuilder<'a> {
         glyph_order: &'a GlyphOrder,
         static_metadata: &'a StaticMetadata,
         ast: &ParseTree,
-    ) -> Self {
+    ) -> Result<Self, Error> {
         let gdef_classes = get_gdef_classes(static_metadata, ast, glyph_order);
         let fea_scripts = get_fea_scripts(ast);
+        let lig_carets = get_ligature_carets(glyph_order, static_metadata, &anchors)?;
         // first we want to narrow our input down to only anchors that are participating.
         // in pythonland this is https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L380
         let mut pruned = BTreeMap::new();
@@ -179,9 +181,11 @@ impl<'a> MarkLookupBuilder<'a> {
                     AnchorKind::Mark(group) => {
                         mark_groups.insert(group);
                     }
-                    AnchorKind::ComponentMarker(_) => (),
-                    AnchorKind::CursiveEntry => (),
-                    AnchorKind::CursiveExit => (),
+                    AnchorKind::ComponentMarker(_)
+                    | AnchorKind::CursiveEntry
+                    | AnchorKind::CursiveExit
+                    | AnchorKind::Caret(_)
+                    | AnchorKind::VCaret(_) => (),
                 }
                 pruned
                     .entry(anchors.glyph_name.clone())
@@ -207,14 +211,15 @@ impl<'a> MarkLookupBuilder<'a> {
         });
 
         let mark_glyphs = find_mark_glyphs(&pruned, &gdef_classes);
-        Self {
+        Ok(Self {
             anchor_lists: pruned,
             glyph_order,
             _fea_scripts: fea_scripts,
             static_metadata,
             gdef_classes,
             mark_glyphs,
-        }
+            lig_carets,
+        })
     }
 
     fn build(&self) -> Result<FeaRsMarks, Error> {
@@ -232,6 +237,7 @@ impl<'a> MarkLookupBuilder<'a> {
             mark_mark,
             mark_lig,
             curs,
+            lig_carets: self.lig_carets.clone(),
         })
     }
 
@@ -483,7 +489,7 @@ impl Work<Context, AnyWorkId, Error> for MarkWork {
 
         // this code is roughly equivalent to what in pythonland happens in
         // setContext: https://github.com/googlefonts/ufo2ft/blob/8e9e6eb66a/Lib/ufo2ft/featureWriters/markFeatureWriter.py#L322
-        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, &static_metadata, &ast.ast);
+        let ctx = MarkLookupBuilder::new(anchors, &glyph_order, &static_metadata, &ast.ast)?;
         let all_marks = ctx.build()?;
 
         context.fea_rs_marks.set(all_marks);
@@ -621,6 +627,66 @@ fn resolve_anchor_once(
     Ok(anchor)
 }
 
+// equivalent to
+// <https://github.com/googlefonts/ufo2ft/blob/bb79cae53f/Lib/ufo2ft/featureWriters/gdefFeatureWriter.py#L56>
+// the LigCaretList in GDEF is not universally used, but is used by at least CoreText
+// and LibreOffice.
+fn get_ligature_carets(
+    glyph_order: &GlyphOrder,
+    static_metadata: &StaticMetadata,
+    anchors: &[&GlyphAnchors],
+) -> Result<BTreeMap<GlyphId16, Vec<CaretValue>>, Error> {
+    let mut out = BTreeMap::new();
+
+    for glyph_anchor in anchors {
+        let Some(gid) = glyph_order.glyph_id(&glyph_anchor.glyph_name) else {
+            continue;
+        };
+        let carets = glyph_anchor
+            .anchors
+            .iter()
+            .filter_map(|anchor| {
+                make_caret_value(anchor, static_metadata, &glyph_anchor.glyph_name).transpose()
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if !carets.is_empty() {
+            out.insert(gid, carets);
+        }
+    }
+    Ok(out)
+}
+
+fn make_caret_value(
+    anchor: &ir::Anchor,
+    static_metadata: &StaticMetadata,
+    glyph_name: &GlyphName,
+) -> Result<Option<CaretValue>, Error> {
+    if !matches!(anchor.kind, AnchorKind::Caret(_) | AnchorKind::VCaret(_)) {
+        return Ok(None);
+    }
+    let is_vertical = matches!(anchor.kind, AnchorKind::VCaret(_));
+
+    let values = anchor
+        .positions
+        .iter()
+        .map(|(loc, pt)| {
+            let pos = if is_vertical { pt.y } else { pt.x };
+
+            (loc.clone(), OrderedFloat::from(pos as f32))
+        })
+        .collect::<Vec<_>>();
+
+    let (default, deltas) = crate::features::resolve_variable_metric(
+        static_metadata,
+        values.iter().map(|item| (&item.0, &item.1)),
+    )
+    .map_err(|err| Error::AnchorDeltaError(glyph_name.to_owned(), err))?;
+    Ok(Some(CaretValue::Coordinate {
+        default,
+        deltas: deltas.into(),
+    }))
+}
+
 impl FeatureProvider for FeaRsMarks {
     fn add_features(&self, builder: &mut fea_rs::compile::FeatureBuilder) {
         let mut mark_lookups = Vec::new();
@@ -653,6 +719,14 @@ impl FeatureProvider for FeaRsMarks {
         if !curs_lookups.is_empty() {
             builder.add_to_default_language_systems(Tag::new(b"curs"), &curs_lookups);
         }
+        if !self.lig_carets.is_empty()
+            && builder
+                .gdef()
+                .map(|gdef| gdef.ligature_pos.is_empty())
+                .unwrap_or(true)
+        {
+            builder.add_lig_carets(self.lig_carets.clone());
+        }
     }
 }
 
@@ -674,6 +748,7 @@ mod tests {
             tables::{gdef::Gdef as RGdef, gpos::Gpos as RGpos},
             FontRead,
         },
+        tables::gdef::CaretValue as RawCaretValue,
     };
 
     use crate::features::FeaVariationInfo;
@@ -844,7 +919,8 @@ mod tests {
             let anchorsref = anchors.iter().collect();
             let glyph_order = self.anchors.keys().cloned().collect();
 
-            let ctx = MarkLookupBuilder::new(anchorsref, &glyph_order, static_metadata, ast);
+            let ctx =
+                MarkLookupBuilder::new(anchorsref, &glyph_order, static_metadata, ast).unwrap();
 
             ctx.build().unwrap()
         }
@@ -1162,6 +1238,36 @@ mod tests {
                 f_l (lig) [<NULL>, @(x: 602, y: 502)]
                   @(x: 150, y: 250) acutecomb
                 "#
+        );
+    }
+
+    #[test]
+    fn basic_lig_carets() {
+        let out = MarksInput::default()
+            .add_glyph("f_i", None, |anchors| {
+                anchors.add("caret_1", [(100, 0)]);
+            })
+            .add_glyph("v_v", None, |anchors| {
+                anchors.add("vcaret_1", [(0, -222)]);
+            })
+            .compile();
+
+        let gdef = out.gdef.as_ref().unwrap();
+        let lig_carets = gdef.lig_caret_list.as_ref().unwrap();
+        let ff = &lig_carets.lig_glyphs[0].caret_values;
+        assert_eq!(ff.len(), 1);
+        let caret = ff[0].as_ref();
+        assert!(
+            matches!(caret, RawCaretValue::Format1(t) if t.coordinate == 100),
+            "{caret:?}"
+        );
+
+        let vv = &lig_carets.lig_glyphs[1].caret_values;
+        assert_eq!(vv.len(), 1);
+        let caret = vv[0].as_ref();
+        assert!(
+            matches!(caret, RawCaretValue::Format1(t) if t.coordinate == -222),
+            "{caret:?}"
         );
     }
 }
