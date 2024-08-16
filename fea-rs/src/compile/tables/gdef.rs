@@ -18,6 +18,7 @@ use write_fonts::tables::{
         LigGlyph, MarkGlyphSets,
     },
     layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
+    variations::ivs_builder::RemapVariationIndices,
 };
 
 use super::{VariationIndexRemapping, VariationStoreBuilder};
@@ -58,9 +59,10 @@ impl GdefBuilder {
 
         table.mark_glyph_sets_def = self.build_mark_glyph_sets().into();
         // only use the var_store if we had one set at the start of this fn
-        let var_store = Some(var_store).filter(|_| self.var_store.is_some());
-        if let Some((var_store, key_map)) = var_store.map(VariationStoreBuilder::build) {
+        if self.var_store.is_some() {
+            let (var_store, key_map) = var_store.build();
             table.item_var_store.set(var_store);
+            table.remap_variation_indices(&key_map);
             (table, Some(key_map))
         } else {
             (table, None)

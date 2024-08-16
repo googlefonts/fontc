@@ -165,9 +165,9 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         // NOTE: this is the easiest place for us to do this, but we
         // could potentially be more performant by running this in parallel,
         // immediately after parsing?
-        self.run_feature_writer_if_present();
+        let lig_carets = self.run_feature_writer_if_present();
 
-        self.finalize_gdef_table();
+        self.finalize_gdef_table(lig_carets);
         self.features
             .finalize_aalt(&mut self.lookups, &self.default_lang_systems);
         self.features.dedupe_lookups();
@@ -263,9 +263,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
         ))
     }
 
-    fn run_feature_writer_if_present(&mut self) {
+    // returns the ligcaret values; we add them after finalizing gdef
+    fn run_feature_writer_if_present(&mut self) -> BTreeMap<GlyphId16, Vec<CaretValue>> {
         let Some(writer) = self.feature_writer else {
-            return;
+            return Default::default();
         };
 
         let mut builder = FeatureBuilder::new(
@@ -282,6 +283,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             .values_mut()
             .for_each(|feat| feat.base.iter_mut().for_each(|id| *id = id_map.get(*id)));
         self.features.merge_external_features(builder.features);
+        builder.lig_carets
     }
 
     /// Infer/update GDEF table as required.
@@ -294,7 +296,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     ///
     /// <http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#4f-markclass>
     /// <http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#9b-gdef-table>
-    fn finalize_gdef_table(&mut self) {
+    fn finalize_gdef_table(&mut self, generated_lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>) {
         // if the FEA included a GDEF block, use that, otherwise create an empty table
         let mut gdef = self.tables.gdef.take().unwrap_or_default();
         // infer glyph classes, if they were not declared explicitly
@@ -329,6 +331,10 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 .collect::<Vec<_>>();
             sorted.sort_unstable();
             gdef.mark_glyph_sets = sorted.into_iter().map(|(_, cls)| cls).collect();
+        }
+
+        if gdef.ligature_pos.is_empty() {
+            gdef.ligature_pos = generated_lig_carets;
         }
 
         if !gdef.is_empty() {
@@ -1721,7 +1727,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                         typed::LigatureCaretValue::Pos(items) => items
                             .values()
                             .map(|n| CaretValue::Coordinate {
-                                default: n.parse_signed().into(),
+                                default: n.parse_signed(),
                                 deltas: DeviceOrDeltas::None,
                             })
                             .collect(),

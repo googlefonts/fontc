@@ -2,7 +2,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use write_fonts::{tables::layout::LookupFlag, types::Tag};
+use write_fonts::{
+    tables::layout::LookupFlag,
+    types::{GlyphId16, Tag},
+};
 
 use crate::GlyphSet;
 
@@ -11,6 +14,7 @@ use super::{
     language_system::{DefaultLanguageSystems, LanguageSystem},
     lookups::{FeatureKey, FilterSetId, LookupBuilder, LookupId, PositionLookup},
     tables::{GdefBuilder, Tables},
+    CaretValue,
 };
 
 /// A trait that can be implemented by the client to do custom feature writing.
@@ -32,6 +36,7 @@ pub struct FeatureBuilder<'a> {
     pub(crate) tables: &'a mut Tables,
     pub(crate) lookups: Vec<(LookupId, PositionLookup)>,
     pub(crate) features: BTreeMap<FeatureKey, FeatureLookups>,
+    pub(crate) lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>,
     mark_filter_sets: &'a mut HashMap<GlyphSet, FilterSetId>,
 }
 
@@ -95,6 +100,7 @@ impl<'a> FeatureBuilder<'a> {
             lookups: Default::default(),
             features: Default::default(),
             mark_filter_sets,
+            lig_carets: Default::default(),
         }
     }
 
@@ -106,6 +112,11 @@ impl<'a> FeatureBuilder<'a> {
     /// If the FEA text contained an explicit GDEF table block, return its contents
     pub fn gdef(&self) -> Option<&GdefBuilder> {
         self.tables.gdef.as_ref()
+    }
+
+    /// Add caret positions for the GDEF `LigCaretList` table
+    pub fn add_lig_carets(&mut self, lig_carets: BTreeMap<GlyphId16, Vec<CaretValue>>) {
+        self.lig_carets = lig_carets;
     }
 
     /// Add a lookup to the lookup list.
