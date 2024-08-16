@@ -14,13 +14,16 @@ use write_fonts::types::GlyphId16;
 use write_fonts::tables::{
     self,
     gdef::{
-        AttachList, AttachPoint, CaretValue, GlyphClassDef, LigCaretList, LigGlyph, MarkGlyphSets,
+        AttachList, AttachPoint, CaretValue as RawCaretValue, GlyphClassDef, LigCaretList,
+        LigGlyph, MarkGlyphSets,
     },
     layout::{ClassDef, ClassDefBuilder, CoverageTableBuilder},
+    variations::ivs_builder::RemapVariationIndices,
 };
 
 use super::{VariationIndexRemapping, VariationStoreBuilder};
 use crate::common::{GlyphClass, GlyphSet};
+use crate::compile::metrics::CaretValue;
 
 /// Data collected from a GDEF block.
 #[derive(Clone, Debug, Default)]
@@ -40,17 +43,26 @@ pub struct GdefBuilder {
 
 impl GdefBuilder {
     pub fn build(&self) -> (tables::gdef::Gdef, Option<VariationIndexRemapping>) {
+        let mut var_store = self
+            .var_store
+            .clone()
+            // we need to always have a varstore builder in order to build the lig_caret
+            // table, but if we did not have one by now we aren't a variable font, so
+            // we will throw it away after.
+            .unwrap_or_else(|| VariationStoreBuilder::new(0));
         let mut table = tables::gdef::Gdef::new(
             self.build_class_def(),
             self.build_attach_list(),
-            self.build_lig_caret_list(),
+            self.build_lig_caret_list(&mut var_store),
             self.build_mark_attach_class_def(),
         );
 
         table.mark_glyph_sets_def = self.build_mark_glyph_sets().into();
-        if let Some((var_store, key_map)) = self.var_store.clone().map(VariationStoreBuilder::build)
-        {
+        // only use the var_store if we had one set at the start of this fn
+        if self.var_store.is_some() {
+            let (var_store, key_map) = var_store.build();
             table.item_var_store.set(var_store);
+            table.remap_variation_indices(&key_map);
             (table, Some(key_map))
         } else {
             (table, None)
@@ -77,12 +89,25 @@ impl GdefBuilder {
         (!attach_points.is_empty()).then(|| AttachList::new(coverage.build(), attach_points))
     }
 
-    fn build_lig_caret_list(&self) -> Option<LigCaretList> {
+    fn build_lig_caret_list(&self, var_store: &mut VariationStoreBuilder) -> Option<LigCaretList> {
         let mut coverage = CoverageTableBuilder::default();
         let mut lig_glyphs = Vec::new();
         for (glyph, carets) in &self.ligature_pos {
             coverage.add(*glyph);
-            lig_glyphs.push(LigGlyph::new(carets.clone()));
+            let mut carets = carets
+                .iter()
+                .map(|caret| caret.clone().build(var_store))
+                .collect::<Vec<_>>();
+            // TODO: I feel like we shouldn't be sorting these values if they are
+            // point indices? Opened https://github.com/fonttools/fonttools/issues/3608 for
+            // discussion
+            carets.sort_by_key(|c| match c {
+                RawCaretValue::Format1(table) => table.coordinate as i32,
+                RawCaretValue::Format2(table) => table.caret_value_point_index as i32,
+                RawCaretValue::Format3(table) => table.coordinate as i32,
+            });
+
+            lig_glyphs.push(LigGlyph::new(carets));
         }
         (!lig_glyphs.is_empty()).then(|| LigCaretList::new(coverage.build(), lig_glyphs))
     }

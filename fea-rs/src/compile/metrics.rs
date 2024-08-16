@@ -1,6 +1,7 @@
 //! Variable-first metrics, ValueRecords & Anchors
 
 use write_fonts::tables::{
+    gdef::CaretValue as RawCaretValue,
     gpos::{AnchorTable, ValueFormat},
     layout::{Device, DeviceOrVariationIndex, PendingVariationIndex},
     variations::{ivs_builder::VariationStoreBuilder, VariationRegion},
@@ -53,6 +54,23 @@ pub(crate) struct Metric {
     pub default: i16,
     /// An optional device table or delta set
     pub device_or_deltas: DeviceOrDeltas,
+}
+
+/// A value in the GDEF ligature caret list
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum CaretValue {
+    /// An X or Y value (in design units) with optional deltas
+    Coordinate {
+        /// The value at the default location
+        default: i16,
+        /// An optional device table or delta set
+        deltas: DeviceOrDeltas,
+    },
+    /// The index of a contour point to be used as the caret location.
+    ///
+    /// This format is rarely used.
+    PointIndex(u16),
 }
 
 impl ValueRecord {
@@ -286,6 +304,21 @@ impl Anchor {
             AnchorTable::format_2(x, y, point)
         } else {
             AnchorTable::format_1(x, y)
+        }
+    }
+}
+
+impl CaretValue {
+    // var_store is an Option here because this is built at the very end and
+    // lives in GDEF alongside the varstore, so if it's not a variable font we won't
+    // have access to a var store builder at that point.
+    pub(crate) fn build(self, var_store: &mut VariationStoreBuilder) -> RawCaretValue {
+        match self {
+            CaretValue::Coordinate { default, deltas } => match deltas.build(var_store) {
+                Some(deltas) => RawCaretValue::format_3(default, deltas),
+                None => RawCaretValue::format_1(default),
+            },
+            CaretValue::PointIndex(index) => RawCaretValue::format_2(index),
         }
     }
 }
