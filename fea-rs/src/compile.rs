@@ -19,7 +19,7 @@ pub use lookups::{
     Builder, CursivePosBuilder, FeatureKey, LookupId, MarkToBaseBuilder, MarkToLigBuilder,
     MarkToMarkBuilder, PairPosBuilder, PreviouslyAssignedClass,
 };
-pub use metrics::{Anchor, ValueRecord};
+pub use metrics::{Anchor, CaretValue, ValueRecord};
 pub use opts::Opts;
 pub use output::Compilation;
 pub use variations::{AxisLocation, NopVariationInfo, VariationInfo};

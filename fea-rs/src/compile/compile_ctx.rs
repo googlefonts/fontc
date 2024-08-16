@@ -13,7 +13,7 @@ use smol_str::SmolStr;
 use write_fonts::{
     tables::{
         self,
-        gdef::{CaretValue, GlyphClassDef},
+        gdef::GlyphClassDef,
         gpos::ValueFormat,
         layout::{ConditionFormat1, ConditionSet, FeatureVariations, LookupFlag},
         variations::ivs_builder::{RemapVariationIndices, VariationStoreBuilder},
@@ -43,7 +43,7 @@ use super::{
     lookups::{
         AllLookups, FilterSetId, LookupFlagInfo, LookupId, PreviouslyAssignedClass, SomeLookup,
     },
-    metrics::{Anchor, DeviceOrDeltas, Metric, ValueRecord},
+    metrics::{Anchor, CaretValue, DeviceOrDeltas, Metric, ValueRecord},
     output::Compilation,
     tables::{GlyphClassDefExt, ScriptRecord, Tables},
     tags, VariationInfo,
@@ -1717,21 +1717,19 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 typed::GdefTableItem::LigatureCaret(rule) => {
                     let target = rule.target();
                     let glyphs = self.resolve_glyph_or_class(&target);
-                    let mut carets: Vec<_> = match rule.values() {
+                    let carets: Vec<_> = match rule.values() {
                         typed::LigatureCaretValue::Pos(items) => items
                             .values()
-                            .map(|n| CaretValue::format_1(n.parse_signed()))
+                            .map(|n| CaretValue::Coordinate {
+                                default: n.parse_signed().into(),
+                                deltas: DeviceOrDeltas::None,
+                            })
                             .collect(),
                         typed::LigatureCaretValue::Index(items) => items
                             .values()
-                            .map(|n| CaretValue::format_2(n.parse_unsigned().unwrap()))
+                            .map(|n| CaretValue::PointIndex(n.parse_unsigned().unwrap()))
                             .collect(),
                     };
-                    carets.sort_by_key(|c| match c {
-                        CaretValue::Format1(table) => table.coordinate as i32,
-                        CaretValue::Format2(table) => table.caret_value_point_index as i32,
-                        CaretValue::Format3(table) => table.coordinate as i32,
-                    });
                     for glyph in glyphs.iter() {
                         //NOTE: only one rule allowed per glyph; if a glyph already
                         //has carets set, we skip it. We could warn here but this is
