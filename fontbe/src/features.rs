@@ -35,7 +35,11 @@ use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::Axis,
 };
-use write_fonts::{tables::variations::VariationRegion, types::Tag, OtRound};
+use write_fonts::{
+    tables::{layout::ClassDef, variations::VariationRegion},
+    types::Tag,
+    OtRound,
+};
 
 use crate::{
     error::Error,
@@ -526,6 +530,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
 
     fn read_access(&self) -> Access<AnyWorkId> {
         AccessBuilder::new()
+            .variant(FeWorkId::GlyphOrder)
             .variant(WorkId::FeaturesAst)
             .variant(WorkId::GatherBeKerning)
             .variant(WorkId::Marks)
@@ -543,10 +548,29 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
         let ast = context.fea_ast.get();
+        let glyph_order = context.ir.glyph_order.get();
         let kerns = context.fea_rs_kerns.get();
         let marks = context.fea_rs_marks.get();
 
-        let result = self.compile(&static_metadata, &ast, kerns.as_ref(), marks.as_ref())?;
+        let mut result = self.compile(&static_metadata, &ast, kerns.as_ref(), marks.as_ref())?;
+        if result.gdef_classes.is_none() {
+            // there were no explicit gdef categories, so let's use the ones
+            // that were in public.openTypeCatgories or which we computed from
+            // GlyphData.xml
+
+            if let Some(gdef) = result.gdef.as_mut() {
+                let class_def: ClassDef = static_metadata
+                    .gdef_categories
+                    .categories
+                    .iter()
+                    .filter_map(|(name, cls)| {
+                        glyph_order.glyph_id(name).map(|id| (id, *cls as u16))
+                    })
+                    .collect();
+
+                gdef.glyph_class_def.set(class_def);
+            }
+        }
 
         debug!(
             "Built features, gpos? {} gsub? {} gdef? {}",
