@@ -373,6 +373,12 @@ fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolS
     // - a glyph with a component that itself has a component has depth 2, etc
     let mut depths = HashMap::with_capacity(glyphs.len());
     let mut component_buf = Vec::new();
+    // for cycle detection; anytime a glyph is waiting for components (and so is
+    // pushed to the back of the queue) we record its name and the length of the queue.
+    // If we process the same glyph twice without the queue having gotten smaller
+    // (meaning we have gone through everything in the queue) that means we aren't
+    // making progress, and have a cycle.
+    let mut waiting_for_components = HashMap::new();
     for (name, glyph) in glyphs {
         if glyph.has_components() {
             queue.push_back(glyph);
@@ -404,11 +410,20 @@ fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolS
             .flatten()
         {
             // this is only Some if all items were already seen
-            depths.insert(&next.name, depth + 1);
+            depths.insert(&next.name, 1i32.saturating_add(depth));
+            waiting_for_components.remove(&next.name);
         } else {
             // else push to the back to try again after we've done the rest
             // (including the currently missing components)
-            queue.push_back(next);
+            let queue_len = queue.len();
+            if waiting_for_components.insert(&next.name, queue_len) != Some(queue_len) {
+                log::debug!("{} is waiting for components", next.name);
+                queue.push_back(next);
+            } else {
+                // if a glyph has cycles don't return it, since it's useless to us
+                waiting_for_components.remove(&next.name);
+                log::warn!("glyph '{}' has cyclical components", next.name);
+            }
         }
     }
     let mut by_depth = depths
@@ -952,5 +967,42 @@ mod tests {
                 assert_eq!(a1, a2, "{}", g1.name);
             }
         }
+    }
+
+    #[test]
+    fn composite_cycle() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let glyphs = GlyphSetBuilder::new()
+            .add_glyph("A", |glyph| {
+                glyph.add_component("B", (0, 0));
+            })
+            .add_glyph("B", |glyph| {
+                glyph.add_component("A", (0, 0));
+            })
+            .build();
+        // all we actually care about is that this doesn't run forever
+        let sorted = depth_sorted_composite_glyphs(&glyphs);
+        // cycles should be dropped
+        assert!(sorted.is_empty())
+    }
+
+    #[test]
+    fn composite_not_a_cycle() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let glyphs = GlyphSetBuilder::new()
+            .add_glyph("A", |_glyph| {})
+            .add_glyph("B", |glyph| {
+                glyph.add_component("A", (0, 0)).add_component("D", (0, 0));
+            })
+            .add_glyph("C", |_glyph| {})
+            .add_glyph("D", |glyph| {
+                glyph.add_component("E", (0, 0));
+            })
+            .add_glyph("E", |glyph| {
+                glyph.add_component("C", (0, -180));
+            })
+            .build();
+        let sorted = depth_sorted_composite_glyphs(&glyphs);
+        assert_eq!(sorted, ["A", "C", "E", "D", "B"]);
     }
 }
