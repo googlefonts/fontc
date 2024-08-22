@@ -437,6 +437,7 @@ fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolS
 mod tests {
 
     use kurbo::Point;
+    use log::Level;
 
     use crate::{glyphdata::GlyphData, Layer, Shape};
 
@@ -969,7 +970,7 @@ mod tests {
 
     #[test]
     fn composite_cycle() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        testing_logger::setup();
         let glyphs = GlyphSetBuilder::new()
             .add_glyph("A", |glyph| {
                 glyph.add_component("B", (0, 0));
@@ -981,5 +982,46 @@ mod tests {
         // all we actually care about is that this doesn't run forever
         let sorted = depth_sorted_composite_glyphs(&glyphs);
         assert_eq!(sorted.len(), 2);
+
+        testing_logger::validate(|captured_logs| {
+            assert_eq!(captured_logs.len(), 1);
+            assert_eq!(captured_logs[0].level, Level::Warn);
+            assert_eq!(captured_logs[0].body, "glyph 'A' has cyclical components");
+        })
+    }
+
+    #[test]
+    fn no_cycles_hence_no_warnings() {
+        testing_logger::setup();
+        let glyphs = GlyphSetBuilder::new()
+            .add_glyph("A", |glyph| {
+                glyph.add_anchor("top", (0, 0));
+            })
+            .add_glyph("B", |glyph| {
+                glyph.add_component("A", (0, 0)).add_component("D", (0, 0));
+            })
+            .add_glyph("C", |_glyph| {})
+            .add_glyph("D", |glyph| {
+                glyph.add_component("E", (0, 0)).rotate_component(180.0);
+            })
+            .add_glyph("E", |glyph| {
+                glyph
+                    .add_component("C", (0, -180))
+                    .add_anchor("_bottom", (0, 0));
+            })
+            .build();
+
+        let _ = depth_sorted_composite_glyphs(&glyphs);
+
+        testing_logger::validate(|captured_logs| {
+            println!(
+                "{:?}",
+                captured_logs
+                    .iter()
+                    .map(|l| l.body.clone())
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(captured_logs.len(), 0);
+        });
     }
 }
