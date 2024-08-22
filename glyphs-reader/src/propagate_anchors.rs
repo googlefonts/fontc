@@ -5,7 +5,7 @@
 //! is not very extensively documented, and the code here is based off the
 //! Objective-C implementation, which was shared with us privately.
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use indexmap::IndexMap;
 use kurbo::{Affine, Vec2};
@@ -366,8 +366,6 @@ fn get_component_layer_anchors(
 /// That is: a glyph in the list will always occur before any other glyph that
 /// references it as a component.
 fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolStr> {
-    // a sentinal value for if we detect a cycle
-    const CYCLE_DEPTH: i32 = i32::MAX;
     let mut queue = VecDeque::with_capacity(glyphs.len());
     // map of the maximum component depth of a glyph.
     // - a glyph with no components has depth 0,
@@ -375,10 +373,12 @@ fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolS
     // - a glyph with a component that itself has a component has depth 2, etc
     let mut depths = HashMap::with_capacity(glyphs.len());
     let mut component_buf = Vec::new();
-    // for cycle detection; we add glyphs to this set if they are waiting for
-    // components. If we encounter a glyph with a component that is already in
-    // this set, it means we have a cycle
-    let mut waiting_for_components = HashSet::new();
+    // for cycle detection; anytime a glyph is waiting for components (and so is
+    // pushed to the back of the queue) we record its name and the length of the queue.
+    // If we process the same glyph twice without the queue having gotten smaller
+    // (meaning we have gone through everything in the queue) that means we aren't
+    // making progress, and have a cycle.
+    let mut waiting_for_components = HashMap::new();
     for (name, glyph) in glyphs {
         if glyph.has_components() {
             queue.push_back(glyph);
@@ -415,10 +415,12 @@ fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolS
         } else {
             // else push to the back to try again after we've done the rest
             // (including the currently missing components)
-            if waiting_for_components.insert(&next.name) {
+            let queue_len = queue.len();
+            if waiting_for_components.insert(&next.name, queue_len) != Some(queue_len) {
+                log::debug!("{} is waiting for components", next.name);
                 queue.push_back(next);
             } else {
-                depths.insert(&next.name, CYCLE_DEPTH);
+                // if a glyph has cycles don't return it, since it's useless to us
                 waiting_for_components.remove(&next.name);
                 log::warn!("glyph '{}' has cyclical components", next.name);
             }
@@ -980,6 +982,27 @@ mod tests {
             .build();
         // all we actually care about is that this doesn't run forever
         let sorted = depth_sorted_composite_glyphs(&glyphs);
-        assert_eq!(sorted.len(), 2);
+        // cycles should be dropped
+        assert!(sorted.is_empty())
+    }
+
+    #[test]
+    fn composite_not_a_cycle() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        let glyphs = GlyphSetBuilder::new()
+            .add_glyph("A", |_glyph| {})
+            .add_glyph("B", |glyph| {
+                glyph.add_component("A", (0, 0)).add_component("D", (0, 0));
+            })
+            .add_glyph("C", |_glyph| {})
+            .add_glyph("D", |glyph| {
+                glyph.add_component("E", (0, 0));
+            })
+            .add_glyph("E", |glyph| {
+                glyph.add_component("C", (0, -180));
+            })
+            .build();
+        let sorted = depth_sorted_composite_glyphs(&glyphs);
+        assert_eq!(sorted, ["A", "C", "E", "D", "B"]);
     }
 }
