@@ -57,3 +57,8 @@ thead th:nth-child(7) {
   padding-bottom: 10px;
   color: #888;
 }
+
+.diff_group_item .font_path {
+  float: left;
+  width: 50%;
+}

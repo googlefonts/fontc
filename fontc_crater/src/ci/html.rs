@@ -1,8 +1,16 @@
 //! generating html reports from crater results
 
-use std::{collections::HashMap, fmt::Display, ops::Sub, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    fmt::Display,
+    ops::Sub,
+    path::Path,
+};
 
-use crate::error::Error;
+use crate::{
+    error::Error,
+    ttx_diff_runner::{CompilerFailure, DiffError, DiffOutput},
+};
 use maud::{html, Markup};
 
 use super::{DiffResults, RunSummary};
@@ -26,7 +34,7 @@ pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
     crate::try_write_str(&html_text, &outpath)
 }
 
-fn make_html(summary: &[RunSummary], _results: &HashMap<String, DiffResults>) -> String {
+fn make_html(summary: &[RunSummary], results: &HashMap<String, DiffResults>) -> String {
     let table_body = make_table_body(summary);
     let css = include_str!("../../resources/style.css");
     let table = html! {
@@ -47,6 +55,14 @@ fn make_html(summary: &[RunSummary], _results: &HashMap<String, DiffResults>) ->
             (table_body)
         }
     };
+    let detailed_report = match summary {
+        [.., prev, current] => make_detailed_report(
+            results.get(&current.fontc_rev).unwrap(),
+            results.get(&prev.fontc_rev).unwrap(),
+        ),
+        _ => html!(),
+    };
+
     html! {
         (maud::DOCTYPE)
         html {
@@ -63,6 +79,7 @@ fn make_html(summary: &[RunSummary], _results: &HashMap<String, DiffResults>) ->
                         "
                 }
                 (table)
+                (detailed_report)
             }
         }
     }
@@ -153,4 +170,204 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             }
         }
     }
+}
+
+fn make_detailed_report(current: &DiffResults, prev: &DiffResults) -> Markup {
+    let error_report = make_error_report(current, prev);
+    let diff_report = make_diff_report(current, prev);
+    html! {
+        (diff_report)
+        (error_report)
+    }
+}
+
+fn make_diff_report(current: &DiffResults, prev: &DiffResults) -> Markup {
+    fn get_total_diff_ratios(results: &DiffResults) -> BTreeMap<&Path, f32> {
+        results
+            .success
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.as_path(),
+                    match v {
+                        DiffOutput::Identical => 100.0,
+                        DiffOutput::Diffs(d) => d.get("total").unwrap().ratio().unwrap() * 100.0,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    let current_diff = get_total_diff_ratios(current);
+    let prev_diff = get_total_diff_ratios(prev);
+    let mut current_diff = current_diff.into_iter().collect::<Vec<_>>();
+    current_diff.sort_by_key(|(_, r)| -(r * 1e6) as i64);
+
+    let mut items = Vec::new();
+    for (path, ratio) in &current_diff {
+        let prev_ratio = prev_diff.get(path).copied();
+        let delta = prev_ratio.map(|pr| *ratio - pr);
+        let decoration = match delta {
+            None => html!( span.better { (format!("{ratio:+.3}")) }),
+            Some(0.0) => html!("—"),
+            Some(d) if d.is_sign_positive() => html! ( span.better { (format!("{d:+.3}")) } ),
+            Some(d) => html! ( span.worse { (format!("{d:+.3}")) } ),
+        };
+        items.push(html! {
+            div.diff_group_item {
+                div.font_path { (path.display()) }
+                div.diff_result { (format!("{ratio:.3}%")) " " (decoration) }
+            }
+        })
+    }
+
+    html! {
+        div.diff_report {
+            h3 { "results" }
+            @for item in items {
+                (item)
+            }
+        }
+    }
+}
+
+fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
+    let current_fontc = get_compiler_failures(current, "fontc");
+    let prev_fontc = get_compiler_failures(prev, "fontc");
+    let current_fontmake = get_compiler_failures(current, "fontmake");
+    let prev_fontmake = get_compiler_failures(prev, "fontmake");
+
+    let current_both = current_fontc
+        .keys()
+        .copied()
+        .filter(|k| current_fontmake.contains_key(k))
+        .collect::<HashSet<_>>();
+    let prev_both = prev_fontc
+        .keys()
+        .copied()
+        .filter(|k| prev_fontmake.contains_key(k))
+        .collect::<HashSet<_>>();
+
+    let current_other = get_other_failures(current);
+    let prev_other = get_other_failures(prev);
+
+    let fontc = (current_fontc.len() - current_both.len() > 0)
+        .then(|| {
+            make_error_report_group(
+                "fontc",
+                current_fontc
+                    .keys()
+                    .copied()
+                    .filter(|k| !current_both.contains(k))
+                    .map(|k| (k, !prev_fontc.contains_key(k))),
+                |_| html!(),
+            )
+        })
+        .unwrap_or_default();
+
+    let fontmake = (current_fontmake.len() - current_both.len() > 0)
+        .then(|| {
+            make_error_report_group(
+                "fontmake",
+                current_fontmake
+                    .keys()
+                    .copied()
+                    .filter(|k| (!current_both.contains(k)))
+                    .map(|k| (k, !prev_fontmake.contains_key(k))),
+                |_| html!(),
+            )
+        })
+        .unwrap_or_default();
+    let both = (!current_both.is_empty())
+        .then(|| {
+            make_error_report_group(
+                "both",
+                current_both
+                    .iter()
+                    .copied()
+                    .map(|k| (k, !prev_both.contains(k))),
+                |_| html!(),
+            )
+        })
+        .unwrap_or_default();
+
+    let other = (!current_other.is_empty())
+        .then(|| {
+            make_error_report_group(
+                "other",
+                current_other
+                    .keys()
+                    .copied()
+                    .map(|k| (k, !prev_other.contains_key(k))),
+                |_| html!(),
+            )
+        })
+        .unwrap_or_default();
+
+    html! {
+        (fontc)
+        (fontmake)
+        (both)
+        (other)
+    }
+}
+
+fn make_error_report_group<'a>(
+    group_name: &str,
+    paths_and_if_is_new_error: impl Iterator<Item = (&'a Path, bool)>,
+    _details: impl Fn(&Path) -> Markup,
+) -> Markup {
+    let items = make_error_report_group_items(paths_and_if_is_new_error, _details);
+
+    html! {
+        div.error_report {
+            h3 { (group_name) " failures" }
+            div.failures {
+                (items)
+            }
+        }
+    }
+}
+
+fn make_error_report_group_items<'a>(
+    paths_and_if_is_new_error: impl Iterator<Item = (&'a Path, bool)>,
+    _details: impl Fn(&Path) -> Markup,
+) -> Markup {
+    html! {
+        @for (path, is_new) in paths_and_if_is_new_error {
+            div.report_group_item { (path.display()) @if is_new { " 🆕" } }
+        }
+    }
+}
+fn get_other_failures(results: &DiffResults) -> BTreeMap<&Path, &str> {
+    results
+        .failure
+        .iter()
+        .filter_map(|(path, r)| match r {
+            DiffError::CompileFailed(_) => None,
+            DiffError::Other(err) => Some((path.as_path(), err.as_str())),
+        })
+        .collect()
+}
+
+fn get_compiler_failures<'a>(
+    results: &'a DiffResults,
+    compiler: &str,
+) -> BTreeMap<&'a Path, &'a CompilerFailure> {
+    let get_err = |err: &'a DiffError| {
+        let DiffError::CompileFailed(compfail) = err else {
+            return None;
+        };
+        match compiler {
+            "fontc" => compfail.fontc.as_ref(),
+            "fontmake" => compfail.fontmake.as_ref(),
+            _ => panic!("this is quite unexpected"),
+        }
+    };
+
+    results
+        .failure
+        .iter()
+        .flat_map(|(path, r)| get_err(r).map(|e| (path.as_path(), e)))
+        .collect()
 }

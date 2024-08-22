@@ -157,10 +157,10 @@ fn prune_sources<T: Clone>(sources: &[T], n_items: usize) -> Vec<T> {
 /// Results of all runs
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct Results<T, E> {
-    success: BTreeMap<PathBuf, T>,
-    failure: BTreeMap<PathBuf, E>,
-    panic: BTreeSet<PathBuf>,
-    skipped: BTreeMap<PathBuf, SkipReason>,
+    pub(crate) success: BTreeMap<PathBuf, T>,
+    pub(crate) failure: BTreeMap<PathBuf, E>,
+    pub(crate) panic: BTreeSet<PathBuf>,
+    pub(crate) skipped: BTreeMap<PathBuf, SkipReason>,
 }
 
 /// The output of trying to run on one font.
@@ -207,6 +207,10 @@ fn run_all<T: Send, E: Send>(
             let i = counter.fetch_add(1, Ordering::Relaxed);
             eprintln!("running {} ({i}/{total_targets})", target.display());
             let r = runner(&target);
+            let target = target
+                .strip_prefix(cache_dir)
+                .unwrap_or(target.as_path())
+                .to_path_buf();
             (target, r)
         })
         .collect::<Vec<_>>();
