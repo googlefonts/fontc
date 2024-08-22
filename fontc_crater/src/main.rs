@@ -9,7 +9,7 @@ use std::{
 
 use clap::Parser;
 use fontc::JobTimer;
-use google_fonts_sources::RepoInfo;
+use google_fonts_sources::{LoadRepoError, RepoInfo};
 use rayon::prelude::*;
 
 mod args;
@@ -19,7 +19,7 @@ mod sources;
 mod ttx_diff_runner;
 
 use serde::{de::DeserializeOwned, Serialize};
-use sources::{Config, RepoList};
+use sources::RepoList;
 
 use args::{Args, Commands, ReportArgs};
 use error::Error;
@@ -191,10 +191,12 @@ fn run_all<T: Send, E: Send>(
     let mut skipped: Vec<(_, RunResult<T, E>)> = Vec::new();
     let mut targets = Vec::new();
     for source in sources {
-        let font_dir = cache_dir.join(&source.repo_name);
-        match get_targets_for_repo(&font_dir, source) {
+        match source.get_sources(cache_dir) {
             Ok(repo_targets) => targets.extend(repo_targets),
-            Err(e) => skipped.push((font_dir, RunResult::Skipped(e))),
+            Err(e) => skipped.push((
+                cache_dir.join(&source.repo_name),
+                RunResult::Skipped(e.into()),
+            )),
         }
     }
     let total_targets = targets.len();
@@ -223,42 +225,6 @@ fn print_or_write_results<T: serde::Serialize + Send, E: serde::Serialize>(
     Ok(())
 }
 
-// one repo can contain multiple sources, so we return a vec.
-fn get_targets_for_repo(font_dir: &Path, repo: &RepoInfo) -> Result<Vec<PathBuf>, SkipReason> {
-    if !font_dir.exists() && clone_repo(font_dir, &repo.repo_url).is_err() {
-        return Err(SkipReason::GitFail);
-    }
-
-    if !checkout_rev(font_dir, &repo.rev) {
-        return Err(SkipReason::GitFail);
-    }
-
-    let source_dir = font_dir.join("sources");
-    let configs = repo
-        .config_files
-        .iter()
-        .map(|filename| {
-            let config_path = source_dir.join(filename);
-            Config::load(&config_path)
-        })
-        .collect::<Result<Vec<_>, _>>();
-
-    let configs = match configs {
-        Ok(c) if c.is_empty() => return Err(SkipReason::NoConfig),
-        Err(e) => return Err(SkipReason::BadConfig(e.to_string())),
-        Ok(c) => c,
-    };
-
-    // collect to set in case configs duplicate sources
-    let sources = configs
-        .iter()
-        .flat_map(|c| c.sources.iter())
-        .map(|source| source_dir.join(source))
-        .collect::<BTreeSet<_>>();
-
-    Ok(sources.into_iter().collect())
-}
-
 fn compile_one(source_path: &Path) -> RunResult<(), String> {
     let tempdir = tempfile::tempdir().unwrap();
     let args = fontc::Args::new(tempdir.path(), source_path.to_owned());
@@ -268,28 +234,6 @@ fn compile_one(source_path: &Path) -> RunResult<(), String> {
         Ok(Err(e)) => RunResult::Fail(e.to_string()),
         Err(_) => RunResult::Panic,
     }
-}
-
-// on fail returns contents of stderr
-fn clone_repo(to_dir: &Path, repo: &str) -> Result<(), String> {
-    assert!(!to_dir.exists());
-    eprintln!("cloning '{repo}' to {}", to_dir.display());
-    let output = std::process::Command::new("git")
-        // if a repo requires credentials fail instead of waiting
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .arg("clone")
-        .args(["--depth", "1"])
-        .arg(repo)
-        .arg(to_dir)
-        .output()
-        .expect("failed to execute git command");
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("clone failed: '{stderr}'");
-        return Err(stderr.into_owned());
-    }
-    Ok(())
 }
 
 /// Get the short sha of the current commit in the provided repository.
@@ -313,40 +257,6 @@ fn get_git_rev(repo_path: Option<&Path>) -> Option<String> {
             .trim()
             .to_owned(),
     )
-}
-
-// try to checkout this rev.
-//
-// returns `true` if successful, `false` otherwise (indicating a git error)
-fn checkout_rev(repo_dir: &Path, rev: &str) -> bool {
-    match get_git_rev(Some(repo_dir)) {
-        None => return false,
-        Some(sha) => {
-            // the longer str is on the left, so we check if shorter str is a prefix
-            let (left, right) = if sha.len() > rev.len() {
-                (sha.as_str(), rev)
-            } else {
-                (rev, sha.as_str())
-            };
-            if left.starts_with(right) {
-                return true;
-            }
-        }
-    };
-    // checkouts might be shallow, so unshallow before looking for a rev:
-    let _ = std::process::Command::new("git")
-        .current_dir(repo_dir)
-        .args(["fetch", "--unshallow"])
-        .status();
-
-    eprintln!("checking out '{rev}' in repo {}", repo_dir.display());
-    std::process::Command::new("git")
-        .current_dir(repo_dir)
-        .arg("checkout")
-        .arg(rev)
-        .status()
-        .map(|stat| stat.success())
-        .unwrap_or(false)
 }
 
 impl<T, E> FromIterator<(PathBuf, RunResult<T, E>)> for Results<T, E> {
@@ -421,6 +331,18 @@ impl<T, E> Default for Results<T, E> {
             failure: Default::default(),
             panic: Default::default(),
             skipped: Default::default(),
+        }
+    }
+}
+
+impl From<LoadRepoError> for SkipReason {
+    fn from(value: LoadRepoError) -> Self {
+        match value {
+            LoadRepoError::Io(_) | LoadRepoError::GitFail(_) | LoadRepoError::NoCommit { .. } => {
+                SkipReason::GitFail
+            }
+            LoadRepoError::NoConfig => SkipReason::NoConfig,
+            LoadRepoError::BadConfig(e) => SkipReason::BadConfig(e.to_string()),
         }
     }
 }
