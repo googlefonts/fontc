@@ -302,9 +302,9 @@ pub(crate) enum DiffError {
 #[serde(rename_all = "snake_case")]
 pub(crate) struct CompileFailed {
     #[serde(skip_serializing_if = "Option::is_none")]
-    fontc: Option<CompilerFailure>,
+    pub(crate) fontc: Option<CompilerFailure>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fontmake: Option<CompilerFailure>,
+    pub(crate) fontmake: Option<CompilerFailure>,
 }
 
 /// Info regarding the failure of a single compiler
@@ -320,6 +320,15 @@ pub(crate) struct CompilerFailure {
 pub(super) enum DiffValue {
     Ratio(f32),
     Only(String),
+}
+
+impl DiffValue {
+    pub(crate) fn ratio(&self) -> Option<f32> {
+        match self {
+            DiffValue::Ratio(r) => Some(*r),
+            DiffValue::Only(_) => None,
+        }
+    }
 }
 
 #[cfg(test)]
