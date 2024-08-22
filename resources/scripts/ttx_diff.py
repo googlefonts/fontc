@@ -347,7 +347,23 @@ def allow_some_off_by_ones(
         )
 
 
+# the order of lookups in a feature's lookuplist do not matter;
+# fontc always has them in sorted order but fontmake doesn't, so sort them
+def sort_fontmake_feature_lookups(ttx):
+    gpos = ttx.find("GPOS")
+    if not gpos:
+        return
+    features = gpos.xpath("//Feature")
+
+    for feature in features:
+        # the first item is 'Feature', the second always a comment
+        has_value = [el for el in feature.iter() if 'value' in el.attrib]
+        values = sorted(int(v.attrib['value']) for v in has_value)
+        for (i, lookup_index) in enumerate(has_value):
+            lookup_index.attrib['value'] = str(values[i])
+
 def reduce_diff_noise(build_dir, fontc, fontmake):
+    sort_fontmake_feature_lookups(fontmake)
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
         name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
