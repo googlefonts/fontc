@@ -1,0 +1,9 @@
+feature test {
+    @kern1.a = [a];
+    @kern1.c = [c];
+    @kern2.f = [f];
+
+    pos @kern1.a @kern2.f -20;
+    # this should force the earlier rule to use this value format
+    pos @kern1.c @kern2.f <-11 0 5 0>;
+} test;

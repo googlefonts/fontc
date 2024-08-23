@@ -143,7 +143,7 @@ impl Default for ClassPairPosSubtable {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-struct ClassPairPosBuilder(BTreeMap<(ValueFormat, ValueFormat), Vec<ClassPairPosSubtable>>);
+struct ClassPairPosBuilder(Vec<ClassPairPosSubtable>);
 
 impl ClassPairPosBuilder {
     fn insert(
@@ -153,16 +153,10 @@ impl ClassPairPosBuilder {
         class2: GlyphSet,
         record2: ValueRecord,
     ) {
-        let key = (record1.format(), record2.format());
-        let entry = self.0.entry(key).or_default();
-        let add_sub = match entry.last() {
-            None => true,
-            Some(subtable) => !subtable.can_add(&class1, &class2),
-        };
-        if add_sub {
-            entry.push(Default::default());
+        if self.0.last().map(|last| last.can_add(&class1, &class2)) != Some(true) {
+            self.0.push(Default::default())
         }
-        entry
+        self.0
             .last_mut()
             .unwrap()
             .add(class1, class2, record1, record2);
@@ -188,6 +182,19 @@ impl ClassPairPosSubtable {
             .or_default()
             .insert(class2, (record1, record2));
     }
+
+    // determine the union of each of the two value formats
+    //
+    // we need a to ensure that the value format we use can represent all
+    // of the fields present in any of the value records in this subtable.
+    //
+    // see https://github.com/fonttools/fonttools/blob/770917d89e9/Lib/fontTools/otlLib/builder.py#L2066
+    fn compute_value_formats(&self) -> (ValueFormat, ValueFormat) {
+        self.items.values().flat_map(|v| v.values()).fold(
+            (ValueFormat::empty(), ValueFormat::empty()),
+            |(acc1, acc2), (f1, f2)| (acc1 | f1.format(), acc2 | f2.format()),
+        )
+    }
 }
 
 impl PairPosBuilder {
@@ -202,8 +209,8 @@ impl PairPosBuilder {
             + self
                 .classes
                 .0
-                .values()
-                .flat_map(|x| x.iter().map(|y| y.items.values().len()))
+                .iter()
+                .map(|sub| sub.items.values().len())
                 .sum::<usize>()
     }
 
@@ -291,12 +298,7 @@ impl Builder for ClassPairPosBuilder {
     type Output = Vec<write_gpos::PairPos>;
 
     fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
-        // not an iterator because we have funky lifetime issues
-        let mut result = Vec::new();
-        for sub in self.0.into_values().flat_map(|subs| subs.into_iter()) {
-            result.push(sub.build(var_store));
-        }
-        result
+        self.0.into_iter().map(|sub| sub.build(var_store)).collect()
     }
 }
 
@@ -305,21 +307,14 @@ impl Builder for ClassPairPosSubtable {
 
     fn build(self, var_store: &mut VariationStoreBuilder) -> Self::Output {
         assert!(!self.items.is_empty(), "filter before here");
+        let (format1, format2) = self.compute_value_formats();
         // we have a set of classes/values with a single valueformat
 
         // an empty record, if some pair of classes have no entry
-        let empty_record = self
-            .items
-            .values()
-            .next()
-            .and_then(|val| val.values().next())
-            .map(|(v1, v2)| {
-                write_gpos::Class2Record::new(
-                    RawValueRecord::new().with_explicit_value_format(v1.format()),
-                    RawValueRecord::new().with_explicit_value_format(v2.format()),
-                )
-            })
-            .unwrap();
+        let empty_record = write_gpos::Class2Record::new(
+            RawValueRecord::new().with_explicit_value_format(format1),
+            RawValueRecord::new().with_explicit_value_format(format2),
+        );
 
         let (class1def, class1map) = self.classdef_1.build();
         let (class2def, class2map) = self.classdef_2.build();
@@ -332,8 +327,10 @@ impl Builder for ClassPairPosSubtable {
             let mut records = vec![empty_record.clone(); class2map.len() + 1];
             for (class, (v1, v2)) in stuff {
                 let idx = class2map.get(&class).unwrap();
-                records[*idx as usize] =
-                    write_gpos::Class2Record::new(v1.build(var_store), v2.build(var_store));
+                records[*idx as usize] = write_gpos::Class2Record::new(
+                    v1.build(var_store).with_explicit_value_format(format1),
+                    v2.build(var_store).with_explicit_value_format(format2),
+                );
             }
             out[*idx as usize] = write_gpos::Class1Record::new(records);
         }
