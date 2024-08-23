@@ -17,9 +17,9 @@ use fontdrasil::{
 use fontir::{
     error::{BadGlyph, BadGlyphKind, BadSource, Error},
     ir::{
-        self, AnchorBuilder, AnchorKind, GdefCategories, GlobalMetric, GlobalMetrics,
-        GlyphInstance, GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance,
-        NameBuilder, NameKey, NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
+        self, AnchorBuilder, GdefCategories, GlobalMetric, GlobalMetrics, GlyphInstance,
+        GlyphOrder, KernGroup, KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey,
+        NamedInstance, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, IrWork, WorkId},
     source::{Input, Source},
@@ -476,11 +476,9 @@ fn category_for_glyph(glyph: &glyphs_reader::Glyph) -> Option<GlyphClassDef> {
         .layers
         .iter()
         .flat_map(|layer| layer.anchors.iter())
-        .any(|anchor| {
-            AnchorKind::new(&anchor.name)
-                .map(|a| a.is_attaching())
-                .unwrap_or(false)
-        });
+        // glyphsLib considers any anchor that does not start with '_' as an
+        // 'attaching anchor'; see https://github.com/googlefonts/glyphsLib/issues/1024
+        .any(|anchor| !anchor.name.starts_with('_'));
     match (glyph.category, glyph.sub_category) {
         (_, Subcategory::Ligature) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
         (Some(Category::Mark), Subcategory::Nonspacing | Subcategory::SpacingCombining) => {
