@@ -278,6 +278,7 @@ fn try_name_id(name: &str) -> Option<NameId> {
         "trademarks" => Some(NameId::TRADEMARK),
         "manufacturers" => Some(NameId::MANUFACTURER),
         "designers" => Some(NameId::DESIGNER),
+        "descriptions" => Some(NameId::DESCRIPTION),
         "manufacturerURL" => Some(NameId::VENDOR_URL),
         "designerURL" => Some(NameId::DESIGNER_URL),
         "licenses" => Some(NameId::LICENSE_DESCRIPTION),
@@ -1487,6 +1488,10 @@ mod tests {
                 (
                     NameKey::new_bmp_only(NameId::DESIGNER),
                     String::from("Designed by me!")
+                ),
+                (
+                    NameKey::new_bmp_only(NameId::DESCRIPTION),
+                    String::from("The greatest weight var")
                 ),
                 (
                     NameKey::new_bmp_only(NameId::VENDOR_URL),
