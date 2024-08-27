@@ -2687,6 +2687,46 @@ mod tests {
     }
 
     #[test]
+    fn loads_global_axis_mappings_from_instances_glyphs3() {
+        let font = Font::load(&glyphs3_dir().join("WghtVar_Avar_From_Instances.glyphs")).unwrap();
+
+        let wght_idx = font.axes.iter().position(|a| a.tag == "wght").unwrap();
+        assert_eq!(
+            vec![60.0, 80.0, 132.0],
+            font.masters
+                .iter()
+                .map(|m| m.axes_values[wght_idx].into_inner())
+                .collect::<Vec<_>>()
+        );
+        // the default master is the 'Bold' in this test font
+        assert_eq!(
+            (132.0, 2),
+            (
+                font.default_master().axes_values[wght_idx].into_inner(),
+                font.default_master_idx
+            )
+        );
+
+        // Did you load the mappings? DID YOU?!
+        assert_eq!(
+            RawUserToDesignMapping(BTreeMap::from([(
+                "Weight".to_string(),
+                RawAxisUserToDesignMap(vec![
+                    (OrderedFloat(300.0), OrderedFloat(60.0)),
+                    // we expect a map 400:80 here, even though the 'Regular' instance's
+                    // Weight Class property is omitted in the .glyphs source because it
+                    // is equal to its default value (400):
+                    // https://github.com/googlefonts/fontc/issues/905
+                    (OrderedFloat(400.0), OrderedFloat(80.0)),
+                    (OrderedFloat(500.0), OrderedFloat(100.0)),
+                    (OrderedFloat(700.0), OrderedFloat(132.0)),
+                ])
+            ),])),
+            font.axis_mappings
+        );
+    }
+
+    #[test]
     fn fea_for_class() {
         let font = Font::load(&glyphs2_dir().join("Fea_Class.glyphs")).unwrap();
         assert_eq!(
