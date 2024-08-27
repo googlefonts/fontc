@@ -1920,21 +1920,18 @@ fn lookup_class_value(axis_tag: &str, user_class: &str) -> Option<f32> {
     }
 }
 
-fn add_mapping_if_present(
+fn add_mapping_if_new(
     axis_mappings: &mut BTreeMap<String, RawAxisUserToDesignMap>,
     axes: &[Axis],
     axis_tag: &str,
     axes_values: &[OrderedFloat<f64>],
-    value: Option<f64>,
+    value: f64,
 ) {
     let Some(idx) = axes.iter().position(|a| a.tag == axis_tag) else {
         return;
     };
     let axis = &axes[idx];
     let Some(design) = axes_values.get(idx) else {
-        return;
-    };
-    let Some(value) = value else {
         return;
     };
     let user = OrderedFloat(value as f32);
@@ -1955,7 +1952,7 @@ impl Instance {
         let mut axis_mappings = BTreeMap::new();
 
         // TODO loop over same consts as other usage
-        add_mapping_if_present(
+        add_mapping_if_new(
             &mut axis_mappings,
             axes,
             "wght",
@@ -1963,9 +1960,10 @@ impl Instance {
             value
                 .weight_class
                 .as_ref()
-                .map(|v| f64::from_str(v).unwrap()),
+                .map(|v| f64::from_str(v).unwrap())
+                .unwrap_or(400.0),
         );
-        add_mapping_if_present(
+        add_mapping_if_new(
             &mut axis_mappings,
             axes,
             "wdth",
@@ -1973,7 +1971,8 @@ impl Instance {
             value
                 .width_class
                 .as_ref()
-                .map(|v| f64::from_str(v).unwrap()),
+                .map(|v| f64::from_str(v).unwrap())
+                .unwrap_or(100.0),
         );
 
         Instance {
