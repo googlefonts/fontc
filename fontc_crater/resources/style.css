@@ -3,7 +3,7 @@ body {
   font-family: sans-serif;
 }
 
-table {
+#results {
   table-layout: fixed;
   width: 100%;
   border-collapse: collapse;
@@ -14,7 +14,7 @@ tbody td, th {
   text-align: left;
 }
 
-th {
+#results_head .th {
   padding: 5px 5px;
   border-bottom: 1px solid #bbb;
 }
@@ -37,19 +37,19 @@ td.rev {
   font-family: monospace;
 }
 
-thead th:nth-child(1) {
+#results_head th:nth-child(1) {
   width: 17%
 }
 
-thead th:nth-child(4) {
+#results_head th:nth-child(4) {
   width: 8%
 }
 
-thead th:nth-child(5) {
+#results_head th:nth-child(5) {
   width: 9%
 }
 
-thead th:nth-child(7) {
+#results_head th:nth-child(7) {
   width: 9%
 }
 
@@ -58,7 +58,21 @@ thead th:nth-child(7) {
   color: #888;
 }
 
-.diff_group_item .font_path {
-  float: left;
+.backtrace {
+  padding: 10px 20px;
+  border: 1px dashed #ccc;
+  font-family: monospace;
+}
+
+.font_path .diff_result {
+  display: inline-block;
+}
+
+.font_path {
   width: 50%;
+  display: inline-block;
+}
+
+.diff_info {
+  padding: 10px 20px;
 }

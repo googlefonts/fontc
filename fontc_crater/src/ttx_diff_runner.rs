@@ -311,8 +311,8 @@ pub(crate) struct CompileFailed {
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct CompilerFailure {
-    command: String,
-    stderr: String,
+    pub(crate) command: String,
+    pub(crate) stderr: String,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -327,6 +327,18 @@ impl DiffValue {
         match self {
             DiffValue::Ratio(r) => Some(*r),
             DiffValue::Only(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for DiffValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            DiffValue::Ratio(ratio) => {
+                let perc = ratio * 100.;
+                write!(f, "{perc:.3}%")
+            }
+            DiffValue::Only(compiler) => write!(f, "{compiler} only"),
         }
     }
 }

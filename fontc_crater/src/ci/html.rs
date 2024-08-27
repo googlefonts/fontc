@@ -39,8 +39,8 @@ fn make_html(summary: &[RunSummary], results: &HashMap<String, DiffResults>) -> 
     let css = include_str!("../../resources/style.css");
     let table = html! {
         table #results {
-            thead {
-                tr {
+            thead  {
+                tr #results_head {
                     th.date scope="col" { "date" }
                     th.rev scope="col" { "rev" }
                     th.total scope="col" { "targets" }
@@ -205,6 +205,7 @@ fn make_diff_report(current: &DiffResults, prev: &DiffResults) -> Markup {
 
     let mut items = Vec::new();
     for (path, ratio) in &current_diff {
+        let diff_details = current.success.get(*path).unwrap();
         let prev_ratio = prev_diff.get(path).copied();
         let delta = prev_ratio.map(|pr| *ratio - pr);
         let decoration = match delta {
@@ -213,12 +214,16 @@ fn make_diff_report(current: &DiffResults, prev: &DiffResults) -> Markup {
             Some(d) if d.is_sign_positive() => html! ( span.better { (format!("{d:+.3}")) } ),
             Some(d) => html! ( span.worse { (format!("{d:+.3}")) } ),
         };
+        let details = format_diff_report(diff_details);
         items.push(html! {
-            div.diff_group_item {
-                div.font_path { (path.display()) }
-                div.diff_result { (format!("{ratio:.3}%")) " " (decoration) }
+            details {
+                summary {
+                    span.font_path { (path.display()) }
+                    span.diff_result { (format!("{ratio:.3}%")) " " (decoration) }
+                }
+                (details)
             }
-        })
+        });
     }
 
     html! {
@@ -260,7 +265,13 @@ fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
                     .copied()
                     .filter(|k| !current_both.contains(k))
                     .map(|k| (k, !prev_fontc.contains_key(k))),
-                |_| html!(),
+                |path| {
+                    current_fontc
+                        .get(path)
+                        .copied()
+                        .map(format_compiler_error)
+                        .unwrap_or_default()
+                },
             )
         })
         .unwrap_or_default();
@@ -274,7 +285,13 @@ fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
                     .copied()
                     .filter(|k| (!current_both.contains(k)))
                     .map(|k| (k, !prev_fontmake.contains_key(k))),
-                |_| html!(),
+                |path| {
+                    current_fontmake
+                        .get(path)
+                        .copied()
+                        .map(format_compiler_error)
+                        .unwrap_or_default()
+                },
             )
         })
         .unwrap_or_default();
@@ -286,7 +303,25 @@ fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
                     .iter()
                     .copied()
                     .map(|k| (k, !prev_both.contains(k))),
-                |_| html!(),
+                |path| {
+                    let fontc_err = current_fontc
+                        .get(path)
+                        .copied()
+                        .map(format_compiler_error)
+                        .unwrap_or_default();
+                    let fontmake_err = current_fontmake
+                        .get(path)
+                        .copied()
+                        .map(format_compiler_error)
+                        .unwrap_or_default();
+
+                    html! {
+                        .h5 { "fontc" }
+                        (fontc_err)
+                        .h5 { "fontmake" }
+                        (fontmake_err)
+                    }
+                },
             )
         })
         .unwrap_or_default();
@@ -299,7 +334,14 @@ fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
                     .keys()
                     .copied()
                     .map(|k| (k, !prev_other.contains_key(k))),
-                |_| html!(),
+                |path| {
+                    let msg = current_other.get(path).copied().unwrap_or_default();
+                    html! {
+                        div.backtrace {
+                            (msg)
+                        }
+                    }
+                },
             )
         })
         .unwrap_or_default();
@@ -312,12 +354,44 @@ fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
     }
 }
 
+fn format_compiler_error(err: &CompilerFailure) -> Markup {
+    html! {
+            div.backtrace {
+            div.stderr { (err.stderr) }
+
+        }
+    }
+}
+
+fn format_diff_report(current: &DiffOutput) -> Markup {
+    match current {
+        DiffOutput::Identical => html!("identical"),
+        DiffOutput::Diffs(diffs) => html! {
+            table.diff_info {
+                thead {
+                    tr {
+                        th.diff_table scope = "col" { "table" }
+                        th.diff_value scope = "col" { "value" }
+                    }
+                }
+                @for (table, value) in diffs {
+                    tr.table_diff_row {
+                        td.table_diff_name { (table) }
+                        td.table_diff_value { (value) }
+                    }
+                }
+
+            }
+        },
+    }
+}
+
 fn make_error_report_group<'a>(
     group_name: &str,
     paths_and_if_is_new_error: impl Iterator<Item = (&'a Path, bool)>,
-    _details: impl Fn(&Path) -> Markup,
+    details: impl Fn(&Path) -> Markup,
 ) -> Markup {
-    let items = make_error_report_group_items(paths_and_if_is_new_error, _details);
+    let items = make_error_report_group_items(paths_and_if_is_new_error, details);
 
     html! {
         div.error_report {
@@ -331,11 +405,16 @@ fn make_error_report_group<'a>(
 
 fn make_error_report_group_items<'a>(
     paths_and_if_is_new_error: impl Iterator<Item = (&'a Path, bool)>,
-    _details: impl Fn(&Path) -> Markup,
+    details: impl Fn(&Path) -> Markup,
 ) -> Markup {
     html! {
-        @for (path, is_new) in paths_and_if_is_new_error {
-            div.report_group_item { (path.display()) @if is_new { " 🆕" } }
+            @for (path, is_new) in paths_and_if_is_new_error {
+                details.report_group_item {
+                    summary {
+                    (path.display()) @if is_new { " 🆕" }
+                }
+                    (details(path))
+            }
         }
     }
 }
