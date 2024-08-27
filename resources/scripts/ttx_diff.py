@@ -351,7 +351,7 @@ def allow_some_off_by_ones(
 # fontc always has them in sorted order but fontmake doesn't, so sort them
 def sort_fontmake_feature_lookups(ttx):
     gpos = ttx.find("GPOS")
-    if not gpos:
+    if gpos is None:
         return
     features = gpos.xpath("//Feature")
 
