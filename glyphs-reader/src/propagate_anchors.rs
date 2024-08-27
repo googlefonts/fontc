@@ -5,7 +5,7 @@
 //! is not very extensively documented, and the code here is based off the
 //! Objective-C implementation, which was shared with us privately.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap};
 
 use indexmap::IndexMap;
 use kurbo::{Affine, Vec2};
@@ -366,66 +366,74 @@ fn get_component_layer_anchors(
 /// That is: a glyph in the list will always occur before any other glyph that
 /// references it as a component.
 fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolStr> {
-    let mut queue = VecDeque::with_capacity(glyphs.len());
     // map of the maximum component depth of a glyph.
     // - a glyph with no components has depth 0,
     // - a glyph with a component has depth 1,
     // - a glyph with a component that itself has a component has depth 2, etc
-    let mut depths = HashMap::with_capacity(glyphs.len());
-    let mut component_buf = Vec::new();
-    // for cycle detection; anytime a glyph is waiting for components (and so is
-    // pushed to the back of the queue) we record its name and the length of the queue.
-    // If we process the same glyph twice without the queue having gotten smaller
-    // (meaning we have gone through everything in the queue) that means we aren't
-    // making progress, and have a cycle.
-    let mut waiting_for_components = HashMap::new();
-    for (name, glyph) in glyphs {
-        if glyph.has_components() {
-            queue.push_back(glyph);
-        } else {
-            depths.insert(name, 0);
-        }
-    }
 
-    while let Some(next) = queue.pop_front() {
-        // put all components from this glyph to our reuseable buffer
-        component_buf.clear();
-        component_buf.extend(
-            next.layers
+    // For context, in a typical font most glyphs are not composites and composites are not terribly deep
+    // indeterminate_depth is initially all components then empties as we find depths for them
+    let mut indeterminate_depth = Vec::new();
+    let mut depths: HashMap<_, _> = glyphs
+        .iter()
+        .filter_map(|(name, glyph)| {
+            if glyph.has_components() {
+                indeterminate_depth.push(glyph); // maybe some of our components are components
+                None
+            } else {
+                Some((name, 0))
+            }
+        })
+        .collect();
+
+    // Progress is the number of glyphs we processed in a cycle, initially the number of simple glyphs.
+    // If we fail to make progress all that's left is glyphs with cycles or bad references
+    let mut progress = glyphs.len() - indeterminate_depth.len();
+    while progress > 0 {
+        progress = indeterminate_depth.len();
+
+        // We know the depth once every component we rely on has a depth
+        indeterminate_depth.retain(|glyph| {
+            let max_component_depth = glyph
+                .layers
                 .iter()
                 .flat_map(|layer| layer.shapes.iter())
                 .filter_map(|shape| match shape {
-                    Shape::Path(_) => None,
-                    Shape::Component(comp) if !glyphs.contains_key(&comp.name) => None,
-                    Shape::Component(comp) => Some(comp.name.clone()),
-                }),
-        );
-        assert!(!component_buf.is_empty());
-        if let Some(depth) = component_buf
-            .iter()
-            .map(|comp| depths.get(&comp).copied())
-            // this is reducing to option<int>, taking the max depth only
-            // if all components have been seen
-            .reduce(|one, two| one.zip(two).map(|(a, b)| a.max(b)))
-            .flatten()
-        {
-            // this is only Some if all items were already seen
-            depths.insert(&next.name, 1i32.saturating_add(depth));
-            waiting_for_components.remove(&next.name);
-        } else {
-            // else push to the back to try again after we've done the rest
-            // (including the currently missing components)
-            let queue_len = queue.len();
-            if waiting_for_components.insert(&next.name, queue_len) != Some(queue_len) {
-                log::debug!("{} is waiting for components", next.name);
-                queue.push_back(next);
-            } else {
-                // if a glyph has cycles don't return it, since it's useless to us
-                waiting_for_components.remove(&next.name);
-                log::warn!("glyph '{}' has cyclical components", next.name);
+                    Shape::Path(..) => None,
+                    Shape::Component(c) => Some(&c.name),
+                })
+                .map(|name| depths.get(name).copied())
+                .try_fold(0, |acc, e| e.map(|e| acc.max(e)));
+            if let Some(max_component_depth) = max_component_depth {
+                depths.insert(&glyph.name, max_component_depth + 1);
             }
+            max_component_depth.is_none() // retain if we don't yet have an answer
+        });
+
+        progress -= indeterminate_depth.len();
+    }
+
+    // We may have failed some of you
+    if !indeterminate_depth.is_empty() {
+        // Shouldn't we return an error instead of just dropping results?
+        for g in indeterminate_depth.iter() {
+            depths.remove(&g.name);
+        }
+
+        if log::log_enabled!(log::Level::Warn) {
+            let mut names = indeterminate_depth
+                .into_iter()
+                .map(|g| g.name.as_str())
+                .collect::<Vec<_>>();
+            names.sort();
+            log::warn!(
+                "Invalid component graph (cycles or bad refs) for {} glyphs: {:?}",
+                names.len(),
+                names
+            );
         }
     }
+
     let mut by_depth = depths
         .into_iter()
         .map(|(glyph, depth)| (depth, glyph))
