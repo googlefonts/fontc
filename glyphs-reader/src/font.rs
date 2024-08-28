@@ -1951,7 +1951,6 @@ impl Instance {
         let active = value.is_active();
         let mut axis_mappings = BTreeMap::new();
 
-        // TODO loop over same consts as other usage
         add_mapping_if_new(
             &mut axis_mappings,
             axes,
@@ -1963,6 +1962,9 @@ impl Instance {
                 .map(|v| f64::from_str(v).unwrap())
                 .unwrap_or(400.0),
         );
+        // OS/2 width_class gets mapped to 'wdth' percent scale as per:
+        // https://docs.microsoft.com/en-gb/typography/opentype/spec/os2#uswidthclass
+        // https://github.com/googlefonts/glyphsLib/blob/7041311e/Lib/glyphsLib/builder/constants.py#L222
         add_mapping_if_new(
             &mut axis_mappings,
             axes,
@@ -1971,7 +1973,22 @@ impl Instance {
             value
                 .width_class
                 .as_ref()
-                .map(|v| f64::from_str(v).unwrap())
+                .map(|v| {
+                    match i32::from_str(v).unwrap() {
+                        1 => 50.0,  // Ultra-condensed
+                        2 => 62.5,  // Extra-condensed
+                        3 => 75.0,  // Condensed
+                        4 => 87.5,  // Semi-condensed
+                        5 => 100.0, // Medium (normal)
+                        6 => 112.5, // Semi-expanded
+                        7 => 125.0, // Expanded
+                        8 => 150.0, // Extra-expanded
+                        9 => 200.0, // Ultra-expanded
+                        _ => {
+                            panic!("Unsupported instance width_class {}", v);
+                        }
+                    }
+                })
                 .unwrap_or(100.0),
         );
 
