@@ -1942,6 +1942,53 @@ fn add_mapping_if_new(
         .add_if_new(user, OrderedFloat(design.into_inner() as f32));
 }
 
+enum WidthClass {
+    UltraCondensed,
+    ExtraCondensed,
+    Condensed,
+    SemiCondensed,
+    Medium,
+    SemiExpanded,
+    Expanded,
+    ExtraExpanded,
+    UltraExpanded,
+}
+
+impl TryFrom<i32> for WidthClass {
+    type Error = String;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(WidthClass::UltraCondensed),
+            2 => Ok(WidthClass::ExtraCondensed),
+            3 => Ok(WidthClass::Condensed),
+            4 => Ok(WidthClass::SemiCondensed),
+            5 => Ok(WidthClass::Medium),
+            6 => Ok(WidthClass::SemiExpanded),
+            7 => Ok(WidthClass::Expanded),
+            8 => Ok(WidthClass::ExtraExpanded),
+            9 => Ok(WidthClass::UltraExpanded),
+            _ => Err(format!("Unsupported width class value: {}", value)),
+        }
+    }
+}
+
+impl WidthClass {
+    fn to_percent(&self) -> f64 {
+        match self {
+            WidthClass::UltraCondensed => 50.0,
+            WidthClass::ExtraCondensed => 62.5,
+            WidthClass::Condensed => 75.0,
+            WidthClass::SemiCondensed => 87.5,
+            WidthClass::Medium => 100.0,
+            WidthClass::SemiExpanded => 112.5,
+            WidthClass::Expanded => 125.0,
+            WidthClass::ExtraExpanded => 150.0,
+            WidthClass::UltraExpanded => 200.0,
+        }
+    }
+}
+
 impl Instance {
     /// Glyphs 2 instances have fun fields.
     ///
@@ -1973,20 +2020,11 @@ impl Instance {
             value
                 .width_class
                 .as_ref()
-                .map(|v| {
-                    match i32::from_str(v).unwrap() {
-                        1 => 50.0,  // Ultra-condensed
-                        2 => 62.5,  // Extra-condensed
-                        3 => 75.0,  // Condensed
-                        4 => 87.5,  // Semi-condensed
-                        5 => 100.0, // Medium (normal)
-                        6 => 112.5, // Semi-expanded
-                        7 => 125.0, // Expanded
-                        8 => 150.0, // Extra-expanded
-                        9 => 200.0, // Ultra-expanded
-                        _ => {
-                            panic!("Unsupported instance width_class {}", v);
-                        }
+                .map(|v| match WidthClass::try_from(i32::from_str(v).unwrap()) {
+                    Ok(width_class) => width_class.to_percent(),
+                    Err(err) => {
+                        warn!("{}", err);
+                        100.0
                     }
                 })
                 .unwrap_or(100.0),
