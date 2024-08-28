@@ -1,0 +1,430 @@
+{
+.appVersion = "3316";
+.formatVersion = 3;
+DisplayStrings = (
+"![]!",
+"!",
+"-",
+"[",
+"]",
+"="
+);
+axes = (
+{
+name = Width;
+tag = wdth;
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WdthVar;
+fontMaster = (
+{
+axesValues = (
+22
+);
+iconName = Light_Condensed;
+id = m01;
+metricValues = (
+{
+over = 16;
+pos = 737;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -42;
+},
+{
+pos = 702;
+},
+{
+pos = 501;
+}
+);
+name = Condensed;
+},
+{
+axesValues = (
+62
+);
+iconName = Light_Extended;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+metricValues = (
+{
+pos = 800;
+},
+{
+},
+{
+pos = -200;
+},
+{
+pos = 700;
+},
+{
+pos = 500;
+}
+);
+name = Expanded;
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2022-12-01 04:58:12 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 32;
+},
+{
+glyphname = exclam;
+lastChange = "2024-08-28 11:45:41 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(333,183,l),
+(371,585,l),
+(221,585,l),
+(259,182,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(333,0,l),
+(333,107,l),
+(259,107,l),
+(259,0,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(370,176,l),
+(447,605,l),
+(147,605,l),
+(222,174,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(370,-20,l),
+(370,94,l),
+(222,94,l),
+(222,-20,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 33;
+},
+{
+glyphname = hyphen;
+lastChange = "2024-08-28 11:45:55 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(151,250,l,{
+name = hr00;
+}),
+(451,250,l),
+(451,330,l),
+(151,330,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(75,224,l),
+(525,224,l),
+(525,356,l),
+(75,356,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 45;
+},
+{
+glyphname = bracketleft;
+kernLeft = bracketleft_L;
+kernRight = bracketleft_R;
+lastChange = "2024-08-28 11:46:10 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(324,637,l),
+(324,51,l),
+(454,51,l),
+(454,-10,l),
+(259,-10,l),
+(259,696,l),
+(454,696,l),
+(454,637,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(314,629,l),
+(314,58,l),
+(499,58,l),
+(499,-17,l),
+(199,-17,l),
+(199,704,l),
+(499,704,l),
+(499,629,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 91;
+},
+{
+glyphname = bracketright;
+kernLeft = bracketright_L;
+kernRight = bracketright_R;
+lastChange = "2024-08-28 11:46:31 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(259,696,l),
+(454,696,l),
+(454,-10,l),
+(259,-10,l),
+(259,51,l),
+(389,51,l),
+(389,637,l),
+(259,637,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(199,704,l),
+(499,704,l),
+(499,-17,l),
+(199,-17,l),
+(199,58,l),
+(383,58,l),
+(383,629,l),
+(199,629,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 93;
+},
+{
+glyphname = "manual-component";
+lastChange = "2022-12-01 04:57:39 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+pos = (0,100);
+ref = hyphen;
+},
+{
+ref = hyphen;
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+pos = (10,100);
+ref = hyphen;
+scale = (1.15,1.25);
+},
+{
+ref = hyphen;
+}
+);
+width = 600;
+}
+);
+unicode = 61;
+}
+);
+instances = (
+{
+axesValues = (
+22
+);
+instanceInterpolations = {
+m01 = 1;
+};
+name = "Ultra Condensed";
+widthClass = 1;
+},
+{
+axesValues = (
+41
+);
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 0.475;
+m01 = 0.525;
+};
+name = Regular;
+},
+{
+axesValues = (
+62
+);
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 1;
+};
+name = "Ultra Expanded";
+widthClass = 9;
+}
+);
+kerningLTR = {
+m01 = {
+"@MMK_L_bracketleft_R" = {
+exclam = -165;
+};
+bracketleft = {
+bracketright = -300;
+};
+exclam = {
+"@MMK_R_bracketright_L" = -160;
+exclam = -360;
+hyphen = 20;
+};
+hyphen = {
+hyphen = -150;
+};
+};
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
+bracketleft = {
+bracketright = -150;
+};
+exclam = {
+exclam = -100;
+};
+hyphen = {
+hyphen = -50;
+};
+};
+};
+metrics = (
+{
+type = ascender;
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+}
+);
+properties = (
+{
+key = copyrights;
+values = (
+{
+language = dflt;
+value = "Copy!";
+}
+);
+},
+{
+key = descriptions;
+values = (
+{
+language = dflt;
+value = "The greatest width var";
+}
+);
+},
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = WdthVar;
+}
+);
+},
+{
+key = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+key = versionString;
+value = "New Value";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}

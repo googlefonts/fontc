@@ -2686,7 +2686,7 @@ mod tests {
     }
 
     #[test]
-    fn loads_global_axis_mappings_from_instances_glyphs3() {
+    fn loads_global_axis_mappings_from_instances_wght_glyphs3() {
         let font = Font::load(&glyphs3_dir().join("WghtVar_Avar_From_Instances.glyphs")).unwrap();
 
         let wght_idx = font.axes.iter().position(|a| a.tag == "wght").unwrap();
@@ -2719,6 +2719,49 @@ mod tests {
                     (OrderedFloat(400.0), OrderedFloat(80.0)),
                     (OrderedFloat(500.0), OrderedFloat(100.0)),
                     (OrderedFloat(700.0), OrderedFloat(132.0)),
+                ])
+            ),])),
+            font.axis_mappings
+        );
+    }
+
+    #[test]
+    fn loads_global_axis_mappings_from_instances_wdth_glyphs3() {
+        let font = Font::load(&glyphs3_dir().join("WdthVar.glyphs")).unwrap();
+
+        assert_eq!(font.axes.len(), 1);
+        assert_eq!(font.axes[0].tag, "wdth");
+        assert_eq!(
+            vec![22.0, 62.0],
+            font.masters
+                .iter()
+                .map(|m| m.axes_values[0].into_inner())
+                .collect::<Vec<_>>()
+        );
+        // the default master is the 'Condensed' in this test font
+        assert_eq!(
+            (22.0, 0),
+            (
+                font.default_master().axes_values[0].into_inner(),
+                font.default_master_idx
+            )
+        );
+        // Did you load the mappings? DID YOU?!
+        assert_eq!(
+            RawUserToDesignMapping(BTreeMap::from([(
+                "Width".to_string(),
+                RawAxisUserToDesignMap(vec![
+                    // The "1: Ultra-condensed" instance width class corresponds to a
+                    // `wdth` of 50 (user-space), in turn mapped to 22 (design-space).
+                    (OrderedFloat(50.0), OrderedFloat(22.0)),
+                    // We expect a map 100:41 here, even though the 'Regular' instance's
+                    // Width Class property is omitted in the .glyphs source because it
+                    // is equal to its default value "5: Medium (normal)" (or wdth=100):
+                    // https://github.com/googlefonts/fontc/issues/905
+                    (OrderedFloat(100.0), OrderedFloat(41.0)),
+                    // The "9: Ultra-expanded" instance width class corresponds to a
+                    // `wdth` of 200 (user-space), in turn mapped to 62 (design-space).
+                    (OrderedFloat(200.0), OrderedFloat(62.0)),
                 ])
             ),])),
             font.axis_mappings
