@@ -1,0 +1,224 @@
+{
+.appVersion = "3316";
+.formatVersion = 3;
+axes = (
+{
+name = Width;
+tag = wdth;
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WdthVar;
+fontMaster = (
+{
+axesValues = (
+22
+);
+iconName = Light_Condensed;
+id = m01;
+metricValues = (
+{
+over = 16;
+pos = 737;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -42;
+},
+{
+pos = 702;
+},
+{
+pos = 501;
+}
+);
+name = Condensed;
+},
+{
+axesValues = (
+62
+);
+iconName = Light_Extended;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+metricValues = (
+{
+pos = 800;
+},
+{
+},
+{
+pos = -200;
+},
+{
+pos = 700;
+},
+{
+pos = 500;
+}
+);
+name = Expanded;
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2022-12-01 04:58:12 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 32;
+},
+{
+glyphname = hyphen;
+lastChange = "2024-08-28 11:45:55 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(151,250,l,{
+name = hr00;
+}),
+(451,250,l),
+(451,330,l),
+(151,330,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(75,224,l),
+(525,224,l),
+(525,356,l),
+(75,356,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 45;
+}
+);
+instances = (
+{
+axesValues = (
+22
+);
+instanceInterpolations = {
+m01 = 1;
+};
+name = "Ultra Condensed";
+widthClass = 1;
+},
+{
+axesValues = (
+41
+);
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 0.475;
+m01 = 0.525;
+};
+name = Regular;
+},
+{
+axesValues = (
+62
+);
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 1;
+};
+name = "Ultra Expanded";
+widthClass = 9;
+}
+);
+kerningLTR = {
+m01 = {
+"@MMK_L_bracketleft_R" = {
+};
+hyphen = {
+hyphen = -150;
+};
+};
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
+hyphen = {
+hyphen = -50;
+};
+};
+};
+metrics = (
+{
+type = ascender;
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+}
+);
+properties = (
+{
+key = copyrights;
+values = (
+{
+language = dflt;
+value = "Copy!";
+}
+);
+},
+{
+key = descriptions;
+values = (
+{
+language = dflt;
+value = "The greatest width var";
+}
+);
+},
+{
+key = familyNames;
+values = (
+{
+language = dflt;
+value = WdthVar;
+}
+);
+},
+{
+key = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+key = versionString;
+value = "New Value";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}
