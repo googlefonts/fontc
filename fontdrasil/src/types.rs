@@ -7,9 +7,10 @@ use std::fmt::{Debug, Display};
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
-use write_fonts::types::Tag;
+use write_fonts::{types::Tag, OtRound};
 
 use crate::coords::{CoordConverter, UserCoord};
+use crate::piecewise_linear_map::PiecewiseLinearMap;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GlyphName(SmolStr);
@@ -155,5 +156,19 @@ impl WidthClass {
             WidthClass::ExtraExpanded => 150.0,
             WidthClass::UltraExpanded => 200.0,
         }
+    }
+
+    pub fn from_percent(percent: f32) -> Self {
+        let mappings = WidthClass::all_values()
+            .iter()
+            .map(|wc| (wc.to_percent().into(), (*wc as u16).into()))
+            .collect();
+        let v: u16 = PiecewiseLinearMap::new(mappings)
+            .map(percent.into())
+            .into_inner()
+            .ot_round();
+        // PiecewiseLinearMap guarantees that the result is clamped to the range
+        // of valid values, so we can unwrap here.
+        v.try_into().unwrap()
     }
 }
