@@ -833,7 +833,7 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
             .find(|axis| axis.tag == Tag::new(b"wdth"))
             .map(|axis| axis.default.into_inner().0)
             .unwrap_or(100.0);
-        let us_width_class = WidthClass::from_percent(default_wdth) as u16;
+        let us_width_class = WidthClass::nearest(default_wdth) as u16;
 
         let metrics = context
             .ir
