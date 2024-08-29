@@ -13,6 +13,7 @@ use std::{fs, path};
 
 use crate::glyphdata::{Category, GlyphData, Subcategory};
 use ascii_plist_derive::FromPlist;
+use fontdrasil::types::WidthClass;
 use kurbo::{Affine, Point, Vec2};
 use log::{debug, warn};
 use ordered_float::OrderedFloat;
@@ -1942,53 +1943,6 @@ fn add_mapping_if_new(
         .add_if_new(user, OrderedFloat(design.into_inner() as f32));
 }
 
-enum WidthClass {
-    UltraCondensed,
-    ExtraCondensed,
-    Condensed,
-    SemiCondensed,
-    Medium,
-    SemiExpanded,
-    Expanded,
-    ExtraExpanded,
-    UltraExpanded,
-}
-
-impl TryFrom<i32> for WidthClass {
-    type Error = String;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(WidthClass::UltraCondensed),
-            2 => Ok(WidthClass::ExtraCondensed),
-            3 => Ok(WidthClass::Condensed),
-            4 => Ok(WidthClass::SemiCondensed),
-            5 => Ok(WidthClass::Medium),
-            6 => Ok(WidthClass::SemiExpanded),
-            7 => Ok(WidthClass::Expanded),
-            8 => Ok(WidthClass::ExtraExpanded),
-            9 => Ok(WidthClass::UltraExpanded),
-            _ => Err(format!("Unsupported width class value: {}", value)),
-        }
-    }
-}
-
-impl WidthClass {
-    fn to_percent(&self) -> f64 {
-        match self {
-            WidthClass::UltraCondensed => 50.0,
-            WidthClass::ExtraCondensed => 62.5,
-            WidthClass::Condensed => 75.0,
-            WidthClass::SemiCondensed => 87.5,
-            WidthClass::Medium => 100.0,
-            WidthClass::SemiExpanded => 112.5,
-            WidthClass::Expanded => 125.0,
-            WidthClass::ExtraExpanded => 150.0,
-            WidthClass::UltraExpanded => 200.0,
-        }
-    }
-}
-
 impl Instance {
     /// Glyphs 2 instances have fun fields.
     ///
@@ -2009,8 +1963,7 @@ impl Instance {
                 .map(|v| f64::from_str(v).unwrap())
                 .unwrap_or(400.0),
         );
-        // OS/2 width_class gets mapped to 'wdth' percent scale as per:
-        // https://docs.microsoft.com/en-gb/typography/opentype/spec/os2#uswidthclass
+        // OS/2 width_class gets mapped to 'wdth' percent scale, see:
         // https://github.com/googlefonts/glyphsLib/blob/7041311e/Lib/glyphsLib/builder/constants.py#L222
         add_mapping_if_new(
             &mut axis_mappings,
@@ -2020,8 +1973,8 @@ impl Instance {
             value
                 .width_class
                 .as_ref()
-                .map(|v| match WidthClass::try_from(i32::from_str(v).unwrap()) {
-                    Ok(width_class) => width_class.to_percent(),
+                .map(|v| match WidthClass::try_from(u16::from_str(v).unwrap()) {
+                    Ok(width_class) => width_class.to_percent() as f64,
                     Err(err) => {
                         warn!("{}", err);
                         100.0
