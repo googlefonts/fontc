@@ -1457,7 +1457,7 @@ mod tests {
                 ),
                 (
                     NameKey::new_bmp_only(NameId::SUBFAMILY_NAME),
-                    String::from("Regular")
+                    String::from("Bold")
                 ),
                 (
                     NameKey::new_bmp_only(NameId::UNIQUE_ID),
