@@ -820,17 +820,13 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
         // in the same way fontmake does when building a VF:
         // https://github.com/fonttools/fonttools/blob/770917d8/Lib/fontTools/varLib/__init__.py#L1016-L1032
         let default_wght = static_metadata
-            .axes
-            .iter()
-            .find(|axis| axis.tag == Tag::new(b"wght"))
+            .axis(&Tag::new(b"wght"))
             .map(|axis| axis.default.into_inner().0)
             .unwrap_or(400.0);
         let us_weight_class: u16 = default_wght.clamp(1.0, 1000.0).ot_round();
 
         let default_wdth = static_metadata
-            .axes
-            .iter()
-            .find(|axis| axis.tag == Tag::new(b"wdth"))
+            .axis(&Tag::new(b"wdth"))
             .map(|axis| axis.default.into_inner().0)
             .unwrap_or(100.0);
         let us_width_class = WidthClass::nearest(default_wdth) as u16;

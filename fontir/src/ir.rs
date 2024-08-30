@@ -398,6 +398,10 @@ impl StaticMetadata {
     pub fn default_location(&self) -> &NormalizedLocation {
         &self.default_location
     }
+
+    pub fn axis(&self, tag: &Tag) -> Option<&Axis> {
+        self.axes.iter().find(|a| &a.tag == tag)
+    }
 }
 
 /// Global metrics. Ascender/descender, cap height, etc.
