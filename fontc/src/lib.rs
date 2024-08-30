@@ -559,7 +559,11 @@ mod tests {
     use fontbe::orchestration::{
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
     };
-    use fontdrasil::{coords::NormalizedCoord, paths::string_to_filename, types::GlyphName};
+    use fontdrasil::{
+        coords::NormalizedCoord,
+        paths::string_to_filename,
+        types::{GlyphName, WidthClass},
+    };
     use fontir::{
         ir::{self, GlyphOrder, KernGroup, KernPair, KernSide},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
@@ -2779,6 +2783,37 @@ mod tests {
     #[test]
     fn default_fs_type_designspace() {
         assert_fs_type("designspace_from_glyphs/WghtVar.designspace", 1 << 2);
+    }
+
+    #[test]
+    fn os2_weight_class_matches_default_wght() {
+        let compile = TestCompile::compile_source("glyphs3/WghtVar_3master_CustomOrigin.glyphs");
+        let font = compile.font();
+
+        // the default value for 'wght' is 700 (Bold) in this test font
+        assert_eq!(
+            vec![(Tag::from_str("wght").unwrap(), 200.0, 700.0, 700.0)],
+            axes(&font),
+        );
+        // ... which is reflected in the OS/2 table usWeightClass
+        assert_eq!(700, font.os2().unwrap().us_weight_class());
+    }
+
+    #[test]
+    fn os2_width_class_matches_default_wdth() {
+        let compile = TestCompile::compile_source("glyphs3/WdthVar.glyphs");
+        let font = compile.font();
+
+        // the default value for 'wdth' is 50 (UltraCondensed) in this test font
+        assert_eq!(
+            vec![(Tag::from_str("wdth").unwrap(), 50.0, 50.0, 200.0)],
+            axes(&font),
+        );
+        // ... which is reflected in the OS/2 table usWidthClass (UltraCondensed = 1)
+        assert_eq!(
+            WidthClass::UltraCondensed as u16,
+            font.os2().unwrap().us_width_class()
+        );
     }
 
     #[test]

@@ -2,7 +2,10 @@
 
 use std::{cmp::Ordering, collections::HashSet};
 
-use fontdrasil::orchestration::{Access, AccessBuilder, Work};
+use fontdrasil::{
+    orchestration::{Access, AccessBuilder, Work},
+    types::WidthClass,
+};
 use fontir::{ir::GlobalMetricsInstance, orchestration::WorkId as FeWorkId};
 use log::warn;
 use write_fonts::{
@@ -813,6 +816,21 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
 
+        // We set the OS/2.us{Weight,Width}Class to the default value of 'wght'/'wdth' axes
+        // in the same way fontmake does when building a VF:
+        // https://github.com/fonttools/fonttools/blob/770917d8/Lib/fontTools/varLib/__init__.py#L1016-L1032
+        let default_wght = static_metadata
+            .axis(&Tag::new(b"wght"))
+            .map(|axis| axis.default.into_inner().0)
+            .unwrap_or(400.0);
+        let us_weight_class: u16 = default_wght.clamp(1.0, 1000.0).ot_round();
+
+        let default_wdth = static_metadata
+            .axis(&Tag::new(b"wdth"))
+            .map(|axis| axis.default.into_inner().0)
+            .unwrap_or(100.0);
+        let us_width_class = WidthClass::nearest(default_wdth) as u16;
+
         let metrics = context
             .ir
             .global_metrics
@@ -821,6 +839,8 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
         let codepoints = codepoints(context);
 
         let mut os2 = Os2 {
+            us_weight_class,
+            us_width_class,
             fs_type: static_metadata.misc.fs_type.unwrap_or_default(),
             ach_vend_id: static_metadata.misc.vendor_id,
             fs_selection: static_metadata.misc.selection_flags,

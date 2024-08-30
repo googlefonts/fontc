@@ -129,6 +129,12 @@ impl TryFrom<u16> for WidthClass {
 }
 
 impl WidthClass {
+    // Lookup percent using the assigned value of the WidthClass
+    const _PERCENT_LUT: [f32; 10] = [
+        0.0, // no width class has value 0, never used
+        50.0, 62.5, 75.0, 87.5, 100.0, 112.5, 125.0, 150.0, 200.0,
+    ];
+
     pub fn all_values() -> &'static [Self; 9] {
         &[
             WidthClass::UltraCondensed,
@@ -144,16 +150,60 @@ impl WidthClass {
     }
 
     pub fn to_percent(&self) -> f32 {
-        match self {
-            WidthClass::UltraCondensed => 50.0,
-            WidthClass::ExtraCondensed => 62.5,
-            WidthClass::Condensed => 75.0,
-            WidthClass::SemiCondensed => 87.5,
-            WidthClass::Medium => 100.0,
-            WidthClass::SemiExpanded => 112.5,
-            WidthClass::Expanded => 125.0,
-            WidthClass::ExtraExpanded => 150.0,
-            WidthClass::UltraExpanded => 200.0,
-        }
+        Self::_PERCENT_LUT[*self as usize]
+    }
+
+    /// Returns the WidthClass with the nearest percent width
+    pub fn nearest(percent: f32) -> Self {
+        Self::all_values()
+            .iter()
+            .map(|v| (*v, (v.to_percent() - percent).abs()))
+            .reduce(
+                |(w0, d0), (w1, d1)| {
+                    if d1 < d0 {
+                        (w1, d1)
+                    } else {
+                        (w0, d0)
+                    }
+                },
+            )
+            .unwrap()
+            .0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WidthClass;
+
+    #[test]
+    fn all_widths_have_percents_and_they_ascend() {
+        let pcts = WidthClass::all_values()
+            .iter()
+            .map(|v| v.to_percent() as i32)
+            .collect::<Vec<_>>();
+        let mut sorted_pcts = pcts.clone();
+        sorted_pcts.sort();
+        assert_eq!(sorted_pcts, pcts);
+    }
+
+    #[test]
+    fn wdth_from_pct_42() {
+        assert_eq!(WidthClass::UltraCondensed, WidthClass::nearest(42.0));
+    }
+
+    #[test]
+    fn wdth_from_pct_76() {
+        assert_eq!(WidthClass::Condensed, WidthClass::nearest(76.0));
+    }
+
+    #[test]
+    fn wdth_from_pct_99() {
+        assert_eq!(WidthClass::Medium, WidthClass::nearest(99.0));
+    }
+
+    #[test]
+    fn wdth_from_pct_1000() {
+        assert_eq!(WidthClass::UltraExpanded, WidthClass::nearest(1000.0));
     }
 }
