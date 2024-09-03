@@ -362,6 +362,22 @@ def sort_fontmake_feature_lookups(ttx):
         for (i, lookup_index) in enumerate(has_value):
             lookup_index.attrib['value'] = str(values[i])
 
+LOOKUPS_TO_SKIP = set([2, 4, 5, 6]) # pairpos, markbase, marklig, markmark
+
+def remove_mark_and_kern_lookups(ttx):
+    gpos = ttx.find("GPOS")
+    if gpos is None:
+        return
+    for lookup in gpos.xpath("//Lookup"):
+        lookup_type = int(lookup.find("LookupType").attrib["value"])
+        if lookup_type not in LOOKUPS_TO_SKIP:
+            continue
+        # remove all the elements but the type:
+        to_remove = [child for child in lookup if child.tag != "LookupType"]
+        for child in to_remove:
+            lookup.remove(child)
+
+
 def reduce_diff_noise(build_dir, fontc, fontmake):
     sort_fontmake_feature_lookups(fontmake)
     for ttx in (fontc, fontmake):
@@ -378,6 +394,7 @@ def reduce_diff_noise(build_dir, fontc, fontmake):
         erase_checksum(ttx)
 
         stat_like_fontmake(ttx)
+        remove_mark_and_kern_lookups(ttx)
 
     allow_some_off_by_ones(
         build_dir, fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt"
