@@ -75,12 +75,9 @@ fn init_head(units_per_em: u16, loca_format: LocaFormat, flags: u16, lowest_rec_
 fn apply_font_revision(head: &mut Head, major: i32, minor: u32) {
     let major = major as f64;
     let minor = if minor != 0 {
-        // Make minor the decimal part
-        let mut minor = minor as f64;
-        minor /= 10.0_f64.powi(minor.log10().ceil() as i32);
-        // Keep 3 decimal places per OTSpec recommendation
-        minor = (minor * 1000.0).round() / 1000.0;
-        minor
+        // Make minor the decimal part, treating minor as number of thousandths per <https://github.com/googlefonts/fontc/issues/925>
+        // Keep 3 decimal places per OTSpec recommendation. Since minor is thousandths ... we're good.
+        (minor as f64) * 0.001
     } else {
         0.0
     };
@@ -148,11 +145,14 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use more_asserts::assert_ge;
     use temp_env;
-    use write_fonts::tables::{head::MacStyle, loca::LocaFormat, os2::SelectionFlags};
+    use write_fonts::{
+        tables::{head::MacStyle, loca::LocaFormat, os2::SelectionFlags},
+        types::Fixed,
+    };
 
     use crate::head::{apply_created_modified, apply_macstyle};
 
-    use super::{init_head, seconds_since_mac_epoch};
+    use super::{apply_font_revision, init_head, seconds_since_mac_epoch};
 
     #[test]
     fn init_head_simple() {
@@ -211,5 +211,13 @@ mod tests {
 
         apply_macstyle(&mut head, SelectionFlags::BOLD | SelectionFlags::ITALIC);
         assert_eq!(head.mac_style, MacStyle::BOLD | MacStyle::ITALIC);
+    }
+
+    // <https://github.com/googlefonts/fontc/issues/925>
+    #[test]
+    fn minor_version_thousandths() {
+        let mut head = init_head(1000, LocaFormat::Long, 3, 42);
+        apply_font_revision(&mut head, 42, 42);
+        assert_eq!(Fixed::from_f64(42.042), head.font_revision);
     }
 }
