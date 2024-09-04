@@ -215,11 +215,14 @@ fn make_diff_report(current: &DiffResults, prev: &DiffResults) -> Markup {
             Some(d) => html! ( span.worse { (format!("{d:+.3}")) } ),
         };
         let details = format_diff_report(diff_details);
+        // avoid .9995 printing as 100%
+        let ratio_fmt = format!("{:.3}%", (ratio * 1000.0).floor() / 1000.0);
+
         items.push(html! {
             details {
                 summary {
                     span.font_path { (path.display()) }
-                    span.diff_result { (format!("{ratio:.3}%")) " " (decoration) }
+                    span.diff_result { (ratio_fmt) " " (decoration) }
                 }
                 (details)
             }
