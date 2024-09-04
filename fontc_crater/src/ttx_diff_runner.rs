@@ -7,11 +7,15 @@ use std::{
 use crate::{Results, RunResult};
 
 static SCRIPT_PATH: &str = "./resources/scripts/ttx_diff.py";
+// in the format expected by timeout(1)
+static TTX_TIME_BUDGET: &str = "5h";
 
 pub(super) fn run_ttx_diff(source: &Path) -> RunResult<DiffOutput, DiffError> {
     let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
     let outdir = tempdir.path();
-    let output = match Command::new("python")
+    let output = match Command::new("timeout")
+        .arg(TTX_TIME_BUDGET)
+        .arg("python")
         .arg(SCRIPT_PATH)
         .args(["--compare", "default"])
         .arg("--json")
@@ -24,6 +28,7 @@ pub(super) fn run_ttx_diff(source: &Path) -> RunResult<DiffOutput, DiffError> {
         Ok(val) => val,
     };
 
+    let stderr = String::from_utf8_lossy(&output.stderr);
     match output.status.code() {
         // success, diffs are identical
         Some(0) => RunResult::Success(DiffOutput::Identical),
@@ -43,11 +48,9 @@ pub(super) fn run_ttx_diff(source: &Path) -> RunResult<DiffOutput, DiffError> {
             }
             Ok(RawDiffOutput::Error(error)) => RunResult::Fail(DiffError::CompileFailed(error)),
         },
+        Some(124) => RunResult::Fail(DiffError::Other("ttx_diff timed out".to_string())),
         // unhandled exception or sigterm
-        _ => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            RunResult::Fail(DiffError::Other(format!("unknown error '{stderr}'")))
-        }
+        _ => RunResult::Fail(DiffError::Other(format!("unknown error '{stderr}'"))),
     }
 }
 
