@@ -58,8 +58,7 @@ impl GdefBuilder {
         );
 
         table.mark_glyph_sets_def = self.build_mark_glyph_sets().into();
-        // only use the var_store if we had one set at the start of this fn
-        if self.var_store.is_some() {
+        if !var_store.is_empty() {
             let (var_store, key_map) = var_store.build();
             table.item_var_store.set(var_store);
             table.remap_variation_indices(&key_map);
