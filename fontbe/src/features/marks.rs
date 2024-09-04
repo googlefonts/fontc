@@ -20,6 +20,7 @@ use smol_str::SmolStr;
 use write_fonts::{
     tables::{gdef::GlyphClassDef, layout::LookupFlag},
     types::{GlyphId16, Tag},
+    OtRound,
 };
 
 use crate::{
@@ -671,6 +672,10 @@ fn make_caret_value(
         .iter()
         .map(|(loc, pt)| {
             let pos = if is_vertical { pt.y } else { pt.x };
+            // we round here to match fonttools, which can't express non-integer
+            // values in the variable fea that it generates.
+            // https://github.com/googlefonts/ufo2ft/blob/12b68f0c69/Lib/ufo2ft/featureWriters/baseFeatureWriter.py#L435-L436
+            let pos: i16 = pos.ot_round();
 
             (loc.clone(), OrderedFloat::from(pos as f32))
         })
@@ -776,16 +781,41 @@ mod tests {
         }
     }
 
+    // when describing an anchor position we almost always use integers, but
+    // for some tests we want to accept floats so we can verify rounding behaviour.
+    // we define our own trait and impl it for only these two types so that the
+    // compiler doesn't need additional type info when we use int/float literals.
+    trait F32OrI16 {
+        fn to_f64(self) -> f64;
+    }
+
+    impl F32OrI16 for f32 {
+        fn to_f64(self) -> f64 {
+            self as _
+        }
+    }
+
+    impl F32OrI16 for i16 {
+        fn to_f64(self) -> f64 {
+            self as _
+        }
+    }
+
     impl<const N: usize> AnchorBuilder<N> {
         /// Add a new anchor, with positions defined for each of our locations
         ///
         /// The 'name' should be a raw anchor name, and should be known-good.
         /// Anchor name tests are in `fontir`.
-        fn add(&mut self, anchor_name: &str, pos: [(i16, i16); N]) -> &mut Self {
+        fn add<T: F32OrI16>(&mut self, anchor_name: &str, pos: [(T, T); N]) -> &mut Self {
             let positions = pos
                 .into_iter()
                 .enumerate()
-                .map(|(i, pt)| (self.locations[i].clone(), Point::new(pt.0 as _, pt.1 as _)))
+                .map(|(i, pt)| {
+                    (
+                        self.locations[i].clone(),
+                        Point::new(pt.0.to_f64(), pt.1.to_f64()),
+                    )
+                })
                 .collect();
             let kind = AnchorKind::new(anchor_name).unwrap();
             self.anchors.push(Anchor { kind, positions });
@@ -1269,5 +1299,37 @@ mod tests {
             matches!(caret, RawCaretValue::Format1(t) if t.coordinate == -222),
             "{caret:?}"
         );
+    }
+
+    #[test]
+    fn lig_caret_rounding() {
+        use write_fonts::read::tables::gdef as rgdef;
+        // these values are taken from Oswald.glyphs
+        let out = MarksInput::new([&[-1.0], &[0.0], &[1.0]])
+            .add_glyph("f_f", None, |anchors| {
+                anchors.add("caret_1", [(239.0, 0.0), (270.5, 0.0), (304.5, 0.)]);
+            })
+            .compile();
+
+        // we don't have good API on the write-fonts varstore for fetching the
+        // delta values, so we convert to read fonts first
+        let gdef_bytes = write_fonts::dump_table(&out.gdef.unwrap()).unwrap();
+        let gdef = rgdef::Gdef::read(gdef_bytes.as_slice().into()).unwrap();
+        let lig_carets = gdef.lig_caret_list().unwrap().unwrap();
+        let varstore = gdef.item_var_store().unwrap().unwrap();
+        let ivs_data = varstore.item_variation_data().get(0).unwrap().unwrap();
+        let ff = lig_carets.lig_glyphs().get(0).unwrap();
+        let caret = ff.caret_values().get(0).unwrap();
+        let rgdef::CaretValue::Format3(caret) = caret else {
+            panic!("expected variable caret!");
+        };
+        let default = caret.coordinate();
+        let mut values = ivs_data
+            .delta_set(0)
+            .map(|delta| default + (delta as i16))
+            .collect::<Vec<_>>();
+        values.insert(1, default);
+
+        assert_eq!(values, [239, 271, 305]);
     }
 }
