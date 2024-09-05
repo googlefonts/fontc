@@ -334,6 +334,19 @@ impl DiffValue {
     }
 }
 
+impl DiffOutput {
+    pub(crate) fn iter_tables(&self) -> impl Iterator<Item = &str> + '_ {
+        let opt_map = match self {
+            DiffOutput::Identical => None,
+            DiffOutput::Diffs(diffs) => Some(diffs),
+        };
+
+        opt_map
+            .into_iter()
+            .flat_map(|diffs| diffs.keys().map(String::as_str))
+    }
+}
+
 impl std::fmt::Display for DiffValue {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
