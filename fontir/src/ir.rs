@@ -738,6 +738,7 @@ pub struct GlobalMetricsInstance {
 /// Helps accumulate 'name' values.
 ///
 /// See <https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/outlineCompiler.py#L367>.
+#[derive(Default)]
 pub struct NameBuilder {
     names: HashMap<NameKey, String>,
     /// Helps lookup entries in name when all we have is a NameId
@@ -746,18 +747,11 @@ pub struct NameBuilder {
     version_minor: u32,
 }
 
-impl Default for NameBuilder {
-    fn default() -> Self {
-        let mut builder = Self {
-            names: Default::default(),
-            name_to_key: Default::default(),
-            version_major: Default::default(),
-            version_minor: Default::default(),
-        };
-        // Based on diffing fontmake Oswald build
-        builder.add(NameId::SUBFAMILY_NAME, "Regular".to_string());
-        builder
-    }
+const STYLE_MAP_STYLE_NAMES: [&str; 4] = ["regular", "bold", "italic", "bold italic"];
+
+/// Returns true if the style name is one of the four standard style names.
+fn is_ribbi(style_name: &str) -> bool {
+    return STYLE_MAP_STYLE_NAMES.contains(&style_name.to_lowercase().as_str());
 }
 
 impl NameBuilder {
@@ -774,24 +768,17 @@ impl NameBuilder {
     }
 
     pub fn add_if_present(&mut self, name_id: NameId, value: &Option<String>) {
-        let value = if let Some(value) = value {
-            Some(value.clone())
-        } else {
-            default_value(name_id).map(String::from)
-        };
-        if let Some(value) = value {
+        if let Some(value) = value.as_ref().cloned() {
             self.add(name_id, value);
         }
     }
 
     pub fn apply_fallback(&mut self, name_id: NameId, fallbacks: &[NameId]) {
-        if let Some(fallback_id) = fallbacks.iter().find(|n| {
-            let Some(key) = self.name_to_key.get(*n) else {
-                return false;
-            };
-            self.names.contains_key(key)
-        }) {
-            self.add(name_id, self.names[&self.name_to_key[fallback_id]].clone());
+        if self.contains_key(name_id) {
+            return;
+        }
+        if let Some(fallback) = self.get_fallback_or_default(name_id, fallbacks) {
+            self.add(name_id, fallback.to_string());
         }
     }
 
@@ -809,7 +796,60 @@ impl NameBuilder {
         self.names
     }
 
+    pub fn get_fallback_or_default(&self, name_id: NameId, fallbacks: &[NameId]) -> Option<&str> {
+        fallbacks
+            .iter()
+            .find_map(|n| {
+                let key = self.name_to_key.get(n)?;
+                self.names.get(key).map(|s| s.as_str())
+            })
+            .or_else(|| default_value(name_id))
+    }
+
     pub fn apply_default_fallbacks(&mut self, vendor_id: &str) {
+        // If the legacy subfamily isn't set, we fall back to the typographic subfamily;
+        // but because the spec recommends the former to only contain "Regular",
+        // "Bold", "Italic", or "Bold Italic", if this fallback isn't RIBBI already,
+        // we append it to the legacy family name and set the legacy subfamily to the
+        // default "Regular", the same way fontmake does via ufo2ft.
+
+        // https://github.com/googlefonts/ufo2ft/blob/bb79cae53f1c160c7174ebef0d463c7a28a7552a/Lib/ufo2ft/fontInfoData.py#L76
+        let family_suffix = if self.contains_key(NameId::SUBFAMILY_NAME) {
+            // assume this is good, no need to add suffix to family name.
+            None
+        } else {
+            let fallback_subfamily = self
+                .get_fallback_or_default(
+                    NameId::SUBFAMILY_NAME,
+                    &[NameId::TYPOGRAPHIC_SUBFAMILY_NAME],
+                )
+                .unwrap() // safe because SUBFAMILY_NAME has a default_value
+                .to_string();
+
+            let (fallback_subfamily, family_suffix) = if is_ribbi(&fallback_subfamily) {
+                (fallback_subfamily, None)
+            } else {
+                ("Regular".to_string(), Some(fallback_subfamily))
+            };
+
+            self.add(NameId::SUBFAMILY_NAME, fallback_subfamily);
+
+            family_suffix
+        };
+
+        // https://github.com/googlefonts/ufo2ft/blob/bb79cae53f1c160c7174ebef0d463c7a28a7552a/Lib/ufo2ft/fontInfoData.py#L57
+        if !self.contains_key(NameId::FAMILY_NAME) {
+            let mut fallback_family = self
+                .get_fallback_or_default(NameId::FAMILY_NAME, &[NameId::TYPOGRAPHIC_FAMILY_NAME])
+                .unwrap() // safe because FAMILY_NAME has a default_value
+                .to_string();
+            if let Some(family_suffix) = family_suffix.as_ref() {
+                fallback_family.push(' ');
+                fallback_family.push_str(family_suffix);
+            }
+            self.add(NameId::FAMILY_NAME, fallback_family);
+        };
+
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L188
         self.apply_fallback(NameId::TYPOGRAPHIC_FAMILY_NAME, &[NameId::FAMILY_NAME]);
 
