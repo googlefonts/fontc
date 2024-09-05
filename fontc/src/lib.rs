@@ -3049,4 +3049,17 @@ mod tests {
             // read-fonts would return an error when a glyph's variations are empty
             .is_err()));
     }
+
+    // if a font has custom gdef categories defined, create the gdef table and
+    // with the appropriate GlyphClassDef subtable, even if there's no GPOS/GSUB
+    // or no other stuff in GDEF (... to match fontmake, see
+    // <https://github.com/googlefonts/fontmake/issues/1120>)
+    #[test]
+    fn gdef_glyph_categories_without_any_layout() {
+        let compile = TestCompile::compile_source("glyphs3/gdef_categories_no_layout.glyphs");
+        let font = compile.font();
+        let gdef = font.gdef().unwrap();
+        let classdef = gdef.glyph_class_def().unwrap().unwrap();
+        assert_eq!(classdef.iter().count(), 1)
+    }
 }
