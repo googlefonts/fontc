@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     error::Error,
-    ttx_diff_runner::{CompilerFailure, DiffError, DiffOutput},
+    ttx_diff_runner::{CompilerFailure, DiffError, DiffOutput, DiffValue},
 };
 use maud::{html, Markup};
 
@@ -87,60 +87,41 @@ fn make_html(summary: &[RunSummary], results: &HashMap<String, DiffResults>) -> 
 }
 
 fn make_table_body(runs: &[RunSummary]) -> Markup {
-    // make the '+32' or '-1.114' elements that annotate the results
-    fn make_cmp<T: PartialOrd + Copy + Sub<Output = T> + Display>(
-        current: T,
-        prev: Option<T>,
-        more_is_better: bool,
-    ) -> Markup {
-        let Some(prev) = prev else {
-            return Default::default();
-        };
-
-        let diff = current - prev;
-        let diff = format!("{diff:+.3}");
-        match current.partial_cmp(&prev) {
-            Some(std::cmp::Ordering::Equal) | None => Default::default(),
-            Some(std::cmp::Ordering::Greater) if more_is_better => html! { span.better { (diff) } },
-            Some(std::cmp::Ordering::Less) if !more_is_better => html! { span.better { (diff) } },
-            Some(_) => html! { span.worse { (diff) } },
-        }
-    }
     fn make_row(run: &RunSummary, prev: Option<&RunSummary>) -> Markup {
-        let total_diff = make_cmp(
+        let total_diff = make_delta_decoration(
             run.stats.total_targets as i32,
             prev.map(|p| p.stats.total_targets as i32),
-            true,
+            More::IsBetter,
         );
-        let identical_diff = make_cmp(
+        let identical_diff = make_delta_decoration(
             run.stats.identical as i32,
             prev.map(|p| p.stats.identical as i32),
-            true,
+            More::IsBetter,
         );
-        let fontc_err_diff = make_cmp(
+        let fontc_err_diff = make_delta_decoration(
             run.stats.fontc_failed as i32,
             prev.map(|p| p.stats.fontc_failed as i32),
-            false,
+            More::IsWorse,
         );
-        let fontmake_err_diff = make_cmp(
+        let fontmake_err_diff = make_delta_decoration(
             run.stats.fontmake_failed as i32,
             prev.map(|p| p.stats.fontmake_failed as i32),
-            false,
+            More::IsWorse,
         );
-        let both_err_diff = make_cmp(
+        let both_err_diff = make_delta_decoration(
             run.stats.both_failed as i32,
             prev.map(|p| p.stats.both_failed as i32),
-            false,
+            More::IsWorse,
         );
-        let other_err_diff = make_cmp(
+        let other_err_diff = make_delta_decoration(
             run.stats.other_failure as i32,
             prev.map(|p| p.stats.other_failure as i32),
-            false,
+            More::IsWorse,
         );
-        let diff_perc_diff = make_cmp(
+        let diff_perc_diff = make_delta_decoration(
             run.stats.diff_perc_including_failures,
             prev.map(|p| p.stats.diff_perc_including_failures),
-            true,
+            More::IsBetter,
         );
         let diff_fmt = format!("{:.3}", run.stats.diff_perc_including_failures);
         let diff_url = format!(
@@ -180,6 +161,38 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
     }
 }
 
+enum More {
+    IsBetter,
+    IsWorse,
+}
+
+impl More {
+    fn is_better(&self) -> bool {
+        matches!(self, More::IsBetter)
+    }
+}
+
+/// for values that change between runs, make the little decoration span that says like,
+/// "+0.333" or "-5"
+fn make_delta_decoration<T: PartialOrd + Copy + Sub<Output = T> + Display + Default>(
+    current: T,
+    prev: Option<T>,
+    more: More,
+) -> Markup {
+    let delta = prev.map(|prev| current - prev).unwrap_or(current);
+    let diff = format!("{delta:+.3}");
+    match prev.and_then(|prev| current.partial_cmp(&prev)) {
+        Some(std::cmp::Ordering::Equal) => Default::default(),
+        // don't write +0
+        None if current == T::default() => Default::default(),
+        None | Some(std::cmp::Ordering::Greater) if more.is_better() => {
+            html! { span.better { (diff) } }
+        }
+        Some(std::cmp::Ordering::Less) if !more.is_better() => html! { span.better { (diff) } },
+        Some(_) | None => html! { span.worse { (diff) } },
+    }
+}
+
 fn make_detailed_report(current: &DiffResults, prev: &DiffResults) -> Markup {
     let error_report = make_error_report(current, prev);
     let diff_report = make_diff_report(current, prev);
@@ -189,6 +202,7 @@ fn make_detailed_report(current: &DiffResults, prev: &DiffResults) -> Markup {
     }
 }
 
+/// make the list of fonts that were both compiled successfully.
 fn make_diff_report(current: &DiffResults, prev: &DiffResults) -> Markup {
     fn get_total_diff_ratios(results: &DiffResults) -> BTreeMap<&Path, f32> {
         results
@@ -214,15 +228,10 @@ fn make_diff_report(current: &DiffResults, prev: &DiffResults) -> Markup {
     let mut items = Vec::new();
     for (path, ratio) in &current_diff {
         let diff_details = current.success.get(*path).unwrap();
+        let prev_details = prev.success.get(*path);
         let prev_ratio = prev_diff.get(path).copied();
-        let delta = prev_ratio.map(|pr| *ratio - pr);
-        let decoration = match delta {
-            None => html!( span.better { (format!("{ratio:+.3}")) }),
-            Some(0.0) => html!("—"),
-            Some(d) if d.is_sign_positive() => html! ( span.better { (format!("{d:+.3}")) } ),
-            Some(d) => html! ( span.worse { (format!("{d:+.3}")) } ),
-        };
-        let details = format_diff_report(diff_details);
+        let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
+        let details = format_diff_report_details(diff_details, prev_details);
         // avoid .9995 printing as 100%
         let ratio_fmt = format!("{:.3}%", (ratio * 1000.0).floor() / 1000.0);
 
@@ -374,26 +383,67 @@ fn format_compiler_error(err: &CompilerFailure) -> Markup {
     }
 }
 
-fn format_diff_report(current: &DiffOutput) -> Markup {
-    match current {
-        DiffOutput::Identical => html!("identical"),
-        DiffOutput::Diffs(diffs) => html! {
-            table.diff_info {
-                thead {
-                    tr {
-                        th.diff_table scope = "col" { "table" }
-                        th.diff_value scope = "col" { "value" }
-                    }
-                }
-                @for (table, value) in diffs {
-                    tr.table_diff_row {
-                        td.table_diff_name { (table) }
-                        td.table_diff_value { (value) }
-                    }
-                }
+/// for a given diff, the detailed information on per-table changes
+fn format_diff_report_details(current: &DiffOutput, prev: Option<&DiffOutput>) -> Markup {
+    let value_decoration = |table, value: DiffValue| -> Markup {
+        let prev_value = match prev {
+            None => None,
+            Some(DiffOutput::Identical) => Some(DiffValue::Ratio(1.0)),
+            Some(DiffOutput::Diffs(tables)) => tables.get(table).cloned(),
+        };
 
+        match (value, prev_value) {
+            (DiffValue::Ratio(r), None) | (DiffValue::Ratio(r), Some(DiffValue::Only(_))) => {
+                make_delta_decoration(r * 100.0, None, More::IsBetter)
             }
-        },
+            (DiffValue::Ratio(r), Some(DiffValue::Ratio(p))) => {
+                make_delta_decoration(r * 100.0, Some(p * 100.0), More::IsBetter)
+            }
+
+            (DiffValue::Only(_), Some(DiffValue::Ratio(p))) => {
+                make_delta_decoration(0.0, Some(p * 100.), More::IsBetter)
+            }
+            // if only one compiler is writing this and previously none were...
+            // that seems weird/unlikely and I don't see a useful thing to report
+            (DiffValue::Only(_), _) => Default::default(),
+        }
+    };
+
+    let diffs = match current {
+        DiffOutput::Identical => return html!("🥳"),
+        DiffOutput::Diffs(diffs) => diffs,
+    };
+
+    // the current report doesn't include tables that match, but if something
+    // didn't match in the prev report but matches now we still want to include it
+    let all_changed_tables = current
+        .iter_tables()
+        .chain(prev.into_iter().flat_map(|x| x.iter_tables()))
+        .collect::<BTreeSet<_>>();
+
+    let all_items = all_changed_tables
+        .into_iter()
+        .map(|table| {
+            let value = diffs.get(table).cloned().unwrap_or(DiffValue::Ratio(1.0));
+            (table, value)
+        })
+        .collect::<Vec<_>>();
+
+    html! {
+        table.diff_info {
+            thead {
+                tr {
+                    th.diff_table scope = "col" { "table" }
+                    th.diff_value scope = "col" { "value" }
+                }
+            }
+            @for (table, value) in all_items {
+                tr.table_diff_row {
+                    td.table_diff_name { (table) }
+                    td.table_diff_value { (value) " " ( {value_decoration(table, value) }) }
+                }
+            }
+        }
     }
 }
 
