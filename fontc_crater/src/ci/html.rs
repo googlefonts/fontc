@@ -1,7 +1,7 @@
 //! generating html reports from crater results
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::Display,
     ops::Sub,
     path::Path,
@@ -249,12 +249,12 @@ fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
         .keys()
         .copied()
         .filter(|k| current_fontmake.contains_key(k))
-        .collect::<HashSet<_>>();
+        .collect::<BTreeSet<_>>();
     let prev_both = prev_fontc
         .keys()
         .copied()
         .filter(|k| prev_fontmake.contains_key(k))
-        .collect::<HashSet<_>>();
+        .collect::<BTreeSet<_>>();
 
     let current_other = get_other_failures(current);
     let prev_other = get_other_failures(prev);
