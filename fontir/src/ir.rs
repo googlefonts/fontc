@@ -1866,7 +1866,7 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use fontdrasil::coords::{CoordConverter, NormalizedCoord, UserCoord};
-    use write_fonts::tables::os2::SelectionFlags;
+    use write_fonts::{tables::os2::SelectionFlags, types::NameId};
 
     use crate::{error::PathConversionError, ir::Axis, variations::VariationModel};
 
@@ -2315,5 +2315,167 @@ mod tests {
         );
         assert_eq!(AnchorKind::new("_"), Err(BadAnchorReason::NilMarkGroup));
         assert_eq!(AnchorKind::new("top_0"), Err(BadAnchorReason::ZeroIndex));
+    }
+
+    fn assert_names(expected: &[(NameId, &str)], actual: HashMap<NameKey, String>) {
+        let mut actual: Vec<_> = actual
+            .iter()
+            .map(|(k, v)| (k.name_id, v.as_str()))
+            .collect();
+        actual.sort_by_key(|(k, _)| *k);
+        assert_eq!(expected, actual.as_slice());
+    }
+
+    fn assert_name(names: &HashMap<NameKey, String>, expected: &str, name_id: NameId) {
+        assert_eq!(
+            Some(expected),
+            names
+                .get(&NameKey::new(name_id, expected))
+                .map(String::as_str)
+        );
+    }
+
+    #[test]
+    fn empty_name_builder_default_fallbacks() {
+        let mut builder = NameBuilder::default();
+        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
+        let names = builder.into_inner();
+
+        assert_names(
+            &[
+                (NameId::FAMILY_NAME, "New Font"),
+                (NameId::SUBFAMILY_NAME, "Regular"),
+                (NameId::UNIQUE_ID, "0.000;NONE;NewFont-Regular"),
+                (NameId::FULL_NAME, "New Font Regular"),
+                (NameId::VERSION_STRING, "Version 0.000"),
+                (NameId::POSTSCRIPT_NAME, "NewFont-Regular"),
+            ],
+            names,
+        )
+    }
+
+    #[test]
+    fn fallback_version_and_unique_id() {
+        let mut builder = NameBuilder::default();
+        builder.set_version(1, 2);
+        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
+        let names = builder.into_inner();
+
+        assert_name(&names, "Version 1.002", NameId::VERSION_STRING);
+        assert_name(&names, "1.002;NONE;NewFont-Regular", NameId::UNIQUE_ID);
+    }
+
+    #[test]
+    fn fallbacks_from_ribbi_typographic_names() {
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Family".into());
+        builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Bold Italic".into());
+        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
+        let names = builder.into_inner();
+
+        assert_names(
+            &[
+                (NameId::FAMILY_NAME, "Family"),
+                (NameId::SUBFAMILY_NAME, "Bold Italic"),
+                (NameId::UNIQUE_ID, "0.000;NONE;Family-BoldItalic"),
+                (NameId::FULL_NAME, "Family Bold Italic"),
+                (NameId::VERSION_STRING, "Version 0.000"),
+                (NameId::POSTSCRIPT_NAME, "Family-BoldItalic"),
+            ],
+            names,
+        )
+    }
+
+    #[test]
+    fn fallbacks_from_non_ribbi_typographic_names() {
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Family".into());
+        builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Subfamily".into());
+        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
+        let names = builder.into_inner();
+
+        assert_names(
+            &[
+                (NameId::FAMILY_NAME, "Family Subfamily"),
+                (NameId::SUBFAMILY_NAME, "Regular"),
+                (NameId::UNIQUE_ID, "0.000;NONE;Family-Subfamily"),
+                (NameId::FULL_NAME, "Family Subfamily"),
+                (NameId::VERSION_STRING, "Version 0.000"),
+                (NameId::POSTSCRIPT_NAME, "Family-Subfamily"),
+                (NameId::TYPOGRAPHIC_FAMILY_NAME, "Family"),
+                (NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Subfamily"),
+            ],
+            names,
+        )
+    }
+
+    #[test]
+    fn both_legacy_and_typo_names_defined_and_distinct() {
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::FAMILY_NAME, "Legacy Family".into());
+        builder.add(NameId::SUBFAMILY_NAME, "Regular".into());
+        builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Family".into());
+        builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Subfamily".into());
+        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
+        let names = builder.into_inner();
+
+        assert_names(
+            &[
+                (NameId::FAMILY_NAME, "Legacy Family"),
+                (NameId::SUBFAMILY_NAME, "Regular"),
+                (NameId::UNIQUE_ID, "0.000;NONE;Family-Subfamily"),
+                (NameId::FULL_NAME, "Family Subfamily"),
+                (NameId::VERSION_STRING, "Version 0.000"),
+                (NameId::POSTSCRIPT_NAME, "Family-Subfamily"),
+                (NameId::TYPOGRAPHIC_FAMILY_NAME, "Family"),
+                (NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Subfamily"),
+            ],
+            names,
+        )
+    }
+
+    #[test]
+    fn both_legacy_and_typo_names_defined_and_same() {
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::FAMILY_NAME, "Family".into());
+        builder.add(NameId::SUBFAMILY_NAME, "Subfamily".into());
+        builder.add(NameId::TYPOGRAPHIC_FAMILY_NAME, "Family".into());
+        builder.add(NameId::TYPOGRAPHIC_SUBFAMILY_NAME, "Subfamily".into());
+        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
+        let names = builder.into_inner();
+
+        assert_names(
+            &[
+                (NameId::FAMILY_NAME, "Family"),
+                (NameId::SUBFAMILY_NAME, "Subfamily"),
+                (NameId::UNIQUE_ID, "0.000;NONE;Family-Subfamily"),
+                (NameId::FULL_NAME, "Family Subfamily"),
+                (NameId::VERSION_STRING, "Version 0.000"),
+                (NameId::POSTSCRIPT_NAME, "Family-Subfamily"),
+                // duplicate typographic names are not included
+            ],
+            names,
+        )
+    }
+
+    #[test]
+    fn only_legacy_family_and_subfamily_defined() {
+        let mut builder = NameBuilder::default();
+        builder.add(NameId::FAMILY_NAME, "Family".into());
+        builder.add(NameId::SUBFAMILY_NAME, "Italic".into());
+        builder.apply_default_fallbacks(DEFAULT_VENDOR_ID);
+        let names = builder.into_inner();
+
+        assert_names(
+            &[
+                (NameId::FAMILY_NAME, "Family"),
+                (NameId::SUBFAMILY_NAME, "Italic"),
+                (NameId::UNIQUE_ID, "0.000;NONE;Family-Italic"),
+                (NameId::FULL_NAME, "Family Italic"),
+                (NameId::VERSION_STRING, "Version 0.000"),
+                (NameId::POSTSCRIPT_NAME, "Family-Italic"),
+            ],
+            names,
+        )
     }
 }
