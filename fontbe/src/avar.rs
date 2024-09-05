@@ -1,7 +1,7 @@
 //! Generates a [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar) table.
 
 use fontdrasil::{
-    coords::{CoordConverter, DesignCoord, NormalizedCoord},
+    coords::NormalizedCoord,
     orchestration::{Access, Work},
     types::Axis,
 };
@@ -40,15 +40,7 @@ fn default_segment_map() -> SegmentMaps {
 }
 
 fn to_segment_map(axis: &Axis) -> SegmentMaps {
-    // default normalization
-    let default_converter = CoordConverter::new(
-        vec![
-            (axis.min, DesignCoord::new(-1.0)),
-            (axis.default, DesignCoord::new(0.0)),
-            (axis.max, DesignCoord::new(1.0)),
-        ],
-        1,
-    );
+    let default_converter = axis.default_converter();
 
     // We have to walk twice but we don't expect there to be a lot of values so don't stress
 
@@ -197,6 +189,31 @@ mod tests {
         assert_eq!(
             vec![(-1.0, -1.0), (0.0, 0.0), (0.3333, 0.4943), (1.0, 1.0),],
             dump(to_segment_map(&axis(mappings, 0)))
+        );
+    }
+
+    #[test]
+    fn zero_zero_map_should_always_be_present() {
+        // "wdth" axis mappings from NotoSerif.glyphspackage, followed by the
+        // expected avar mappings.
+        // A change in the implementation of core::slice::binary_search in Rust
+        // 1.83-nightly was causing the 0:0 map to be omitted from the avar table.
+        // https://github.com/googlefonts/fontc/issues/933
+        let mappings = vec![
+            (UserCoord::new(62.5), DesignCoord::new(70.0)),
+            (UserCoord::new(75.0), DesignCoord::new(79.0)),
+            (UserCoord::new(87.5), DesignCoord::new(89.0)),
+            (UserCoord::new(100.0), DesignCoord::new(100.0)),
+        ];
+        assert_eq!(
+            vec![
+                (-1.0, -1.0),
+                (-0.6667, -0.7),
+                (-0.3333, -0.3666),
+                (0.0, 0.0),
+                (1.0, 1.0)
+            ],
+            dump(to_segment_map(&axis(mappings, 3)))
         );
     }
 }

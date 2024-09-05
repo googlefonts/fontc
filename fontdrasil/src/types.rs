@@ -100,6 +100,11 @@ impl Axis {
     pub fn is_point(&self) -> bool {
         self.min == self.default && self.max == self.default
     }
+
+    /// Initialize a `CoordConverter` for the default normalization from this axis user space.
+    pub fn default_converter(&self) -> CoordConverter {
+        CoordConverter::default_normalization(self.min, self.default, self.max)
+    }
 }
 
 // OS/2 width class
