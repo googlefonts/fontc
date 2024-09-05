@@ -1,7 +1,7 @@
 //! Generates a [avar](https://learn.microsoft.com/en-us/typography/opentype/spec/avar) table.
 
 use fontdrasil::{
-    coords::{CoordConverter, DesignCoord, NormalizedCoord},
+    coords::NormalizedCoord,
     orchestration::{Access, Work},
     types::Axis,
 };
@@ -40,18 +40,7 @@ fn default_segment_map() -> SegmentMaps {
 }
 
 fn to_segment_map(axis: &Axis) -> SegmentMaps {
-    // default normalization
-    let mut default_mappings = Vec::new();
-    let mut default_idx = 0;
-    if axis.min < axis.default {
-        default_mappings.push((axis.min, DesignCoord::new(-1.0)));
-        default_idx = 1;
-    }
-    default_mappings.push((axis.default, DesignCoord::new(0.0)));
-    if axis.max > axis.default {
-        default_mappings.push((axis.max, DesignCoord::new(1.0)));
-    }
-    let default_converter = CoordConverter::new(default_mappings, default_idx);
+    let default_converter = axis.default_converter();
 
     // We have to walk twice but we don't expect there to be a lot of values so don't stress
 

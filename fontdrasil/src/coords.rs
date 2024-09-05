@@ -191,6 +191,28 @@ impl CoordConverter {
         }
     }
 
+    /// Initialize default converter from user to predefined -1.0/0.0/1.0 normalized coords.
+    ///
+    /// This is normally the first step of `avar` normalization.
+    /// <https://learn.microsoft.com/en-us/typography/opentype/spec/avar#overview>
+    pub fn default_normalization(
+        min: UserCoord,
+        default: UserCoord,
+        max: UserCoord,
+    ) -> CoordConverter {
+        let mut default_mappings = Vec::new();
+        let mut default_idx = 0;
+        if min < default {
+            default_mappings.push((min, DesignCoord::new(-1.0)));
+            default_idx = 1;
+        }
+        default_mappings.push((default, DesignCoord::new(0.0)));
+        if max > default {
+            default_mappings.push((max, DesignCoord::new(1.0)));
+        }
+        CoordConverter::new(default_mappings, default_idx)
+    }
+
     /// Initialize a converter from just min/default/max user coords, e.g. a source with no mapping
     pub fn unmapped(min: UserCoord, default: UserCoord, max: UserCoord) -> CoordConverter {
         let mut mappings = vec![
@@ -456,7 +478,7 @@ impl Debug for NormalizedLocation {
 #[cfg(test)]
 mod tests {
 
-    use super::{CoordConverter, DesignCoord, UserCoord};
+    use super::{CoordConverter, DesignCoord, NormalizedCoord, UserCoord};
 
     // From <https://github.com/googlefonts/fontmake-rs/blob/main/resources/text/units.md>
     fn lexend_weight_mapping() -> (Vec<(UserCoord, DesignCoord)>, usize) {
@@ -580,6 +602,72 @@ mod tests {
             )
             .default_idx,
             1
+        );
+    }
+
+    #[test]
+    fn default_normalization() {
+        let converter = CoordConverter::default_normalization(
+            UserCoord::new(50.0),
+            UserCoord::new(100.0),
+            UserCoord::new(150.0),
+        );
+
+        assert_eq!(converter.len(), 3);
+        assert_eq!(converter.default_idx, 1);
+        assert_eq!(
+            UserCoord::new(50.0).to_normalized(&converter),
+            NormalizedCoord::new(-1.0)
+        );
+        assert_eq!(
+            UserCoord::new(100.0).to_normalized(&converter),
+            NormalizedCoord::new(0.0)
+        );
+        assert_eq!(
+            UserCoord::new(150.0).to_normalized(&converter),
+            NormalizedCoord::new(1.0)
+        );
+    }
+
+    #[test]
+    fn default_normalization_contains_no_duplicates_when_min_equals_default() {
+        // https://github.com/googlefonts/fontc/issues/933
+        let converter = CoordConverter::default_normalization(
+            UserCoord::new(50.0),
+            UserCoord::new(50.0),
+            UserCoord::new(100.0),
+        );
+
+        assert_eq!(converter.len(), 2);
+        assert_eq!(converter.default_idx, 0);
+        assert_eq!(
+            UserCoord::new(50.0).to_normalized(&converter),
+            NormalizedCoord::new(0.0)
+        );
+        assert_eq!(
+            UserCoord::new(100.0).to_normalized(&converter),
+            NormalizedCoord::new(1.0)
+        );
+    }
+
+    #[test]
+    fn default_normalization_contains_no_duplicates_when_max_equals_default() {
+        // https://github.com/googlefonts/fontc/issues/933
+        let converter = CoordConverter::default_normalization(
+            UserCoord::new(50.0),
+            UserCoord::new(100.0),
+            UserCoord::new(100.0),
+        );
+
+        assert_eq!(converter.len(), 2);
+        assert_eq!(converter.default_idx, 1);
+        assert_eq!(
+            UserCoord::new(50.0).to_normalized(&converter),
+            NormalizedCoord::new(-1.0)
+        );
+        assert_eq!(
+            UserCoord::new(100.0).to_normalized(&converter),
+            NormalizedCoord::new(0.0)
         );
     }
 }
