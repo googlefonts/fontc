@@ -143,10 +143,18 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             true,
         );
         let diff_fmt = format!("{:.3}", run.stats.diff_perc_including_failures);
+        let diff_url = format!(
+            "https://github.com/googlefonts/fontc/compare/{}...{}/",
+            prev.as_ref()
+                .map(|p| p.fontc_rev.as_str())
+                .unwrap_or(run.fontc_rev.as_str()),
+            run.fontc_rev,
+        );
+        let short_rev = run.fontc_rev.get(..16).unwrap_or(run.fontc_rev.as_str());
         html! {
             tr.run {
                 td.date { (run.began.format("%Y-%m-%d %H:%M:%S")) }
-                td.rev { ( run.fontc_rev.get(..16).unwrap_or(run.fontc_rev.as_str()) ) }
+                td.rev { a href=(diff_url) { (short_rev) } }
                 td.total {  ( run.stats.total_targets) " " (total_diff) }
                 td.identical {  (run.stats.identical) " " (identical_diff)  }
                 td.fontc_err {  (run.stats.fontc_failed) " " (fontc_err_diff)  }
