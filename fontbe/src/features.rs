@@ -553,23 +553,20 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
         let marks = context.fea_rs_marks.get();
 
         let mut result = self.compile(&static_metadata, &ast, kerns.as_ref(), marks.as_ref())?;
-        if result.gdef_classes.is_none() {
-            // there were no explicit gdef categories, so let's use the ones
-            // that were in public.openTypeCatgories or which we computed from
-            // GlyphData.xml
+        if result.gdef_classes.is_none() && !static_metadata.gdef_categories.categories.is_empty() {
+            // the FEA did not contain an explicit GDEF block with glyph categories,
+            // so let's use the ones from the source, if present (i.e. from
+            // `public.openTypeCatgories` or computed from GlyphData.xml
 
-            if let Some(gdef) = result.gdef.as_mut() {
-                let class_def: ClassDef = static_metadata
-                    .gdef_categories
-                    .categories
-                    .iter()
-                    .filter_map(|(name, cls)| {
-                        glyph_order.glyph_id(name).map(|id| (id, *cls as u16))
-                    })
-                    .collect();
+            let gdef = result.gdef.get_or_insert_with(Default::default);
+            let class_def: ClassDef = static_metadata
+                .gdef_categories
+                .categories
+                .iter()
+                .filter_map(|(name, cls)| glyph_order.glyph_id(name).map(|id| (id, *cls as u16)))
+                .collect();
 
-                gdef.glyph_class_def.set(class_def);
-            }
+            gdef.glyph_class_def.set(class_def);
         }
 
         debug!(
