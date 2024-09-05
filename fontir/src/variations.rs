@@ -807,8 +807,11 @@ mod tests {
     }
 
     /// Python
+    ///
+    /// ```text
     /// >>> supportScalar({}, {})
     /// 1.0
+    /// ```
     #[test]
     fn scalar_at_default_for_default() {
         let loc = NormalizedLocation::new();
@@ -816,8 +819,11 @@ mod tests {
     }
 
     /// Python
+    ///
+    /// ```text
     /// >>> supportScalar({'wght':.2}, {})
     /// 1.0
+    /// ```
     #[test]
     fn scalar_at_off_default_for_default() {
         let loc = NormalizedLocation::for_pos(&[("wght", 0.2)]);
@@ -825,8 +831,11 @@ mod tests {
     }
 
     /// Python
+    ///
+    /// ```text
     /// >>> supportScalar({'wght':.2}, {'wght':(0,2,3)})
     /// 0.1
+    /// ```
     #[test]
     fn scalar_at_off_default_for_simple_weight() {
         let loc = NormalizedLocation::for_pos(&[("wght", 0.2)]);
@@ -836,8 +845,11 @@ mod tests {
     }
 
     /// Python
+    ///
+    /// ```text
     /// >>> supportScalar({'wght':2.5}, {'wght':(0,2,4)})
     /// 0.75
+    /// ```
     #[test]
     fn scalar_at_for_weight() {
         let loc = NormalizedLocation::for_pos(&[("wght", 2.5)]);
@@ -847,8 +859,11 @@ mod tests {
     }
 
     /// Python
+    ///
+    /// ```text
     /// >>> supportScalar({'wght':2.5, 'wdth':0}, {'wght':(0,2,4), 'wdth':(-1,0,+1)})
     /// 0.75
+    /// ```
     /// Note that under font rules a peak of 0 means no influence
     #[test]
     fn scalar_at_for_weight_width_fixup() {
@@ -860,8 +875,11 @@ mod tests {
     }
 
     /// Python
+    ///
+    /// ```text
     /// >>> supportScalar({'wght':1, 'wdth':1}, {'wght':(0, 1, 1)})
     /// 1.0
+    /// ```
     #[test]
     fn scalar_at_for_weight_width_corner() {
         let loc = NormalizedLocation::for_pos(&[("wght", 1.0), ("wdth", 1.0)]);
@@ -870,10 +888,12 @@ mod tests {
         assert_eq!(OrderedFloat(1.0), region.scalar_at(&loc));
     }
 
+    /// ```text
     /// `>>> models.VariationModel([{'wght':0}]).locations`
     /// `[{}]`
     /// `>>> pprint(models.VariationModel([{'wght':0}]).deltaWeights)`
     /// `[{}]`
+    /// ```
     #[test]
     fn delta_weights_for_static_family_one_axis() {
         let loc = NormalizedLocation::new();
@@ -888,10 +908,12 @@ mod tests {
         assert_eq!(vec![default_master_weight()], model.delta_weights);
     }
 
+    /// ```text
     /// `>>> models.VariationModel([{'wght':0, 'ital': 0, 'wdth': 0}]).locations`
     /// `[{}]`
     /// `>>> pprint(models.VariationModel([{'wght':0, 'ital': 0, 'wdth': 0}]).deltaWeights)`
     /// `[{}]`
+    /// ```
     #[test]
     fn delta_weights_for_static_family_many_axes() {
         let loc = NormalizedLocation::for_pos(&[("wght", 0.0), ("ital", 0.0), ("wdth", 0.0)]);
@@ -904,10 +926,13 @@ mod tests {
     }
 
     /// # two-master weight family
+    ///
+    /// ```text
     /// `>>> models.VariationModel([{'wght':0}, {'wght': 1}]).locations`
     /// `[{}, {'wght': 1}]`
     /// `>>> pprint(models.VariationModel([{'wght':0}, {'wght': 1}]).deltaWeights)`
     /// `[{}, {0: 1.0}]`
+    /// ```
     #[test]
     fn delta_weights_for_2_master_weight_variable_family() {
         let weight_0 = NormalizedLocation::for_pos(&[("wght", 0.0)]);
@@ -924,10 +949,13 @@ mod tests {
     }
 
     /// # three-master weight family
+    ///
+    /// ```text
     /// `>>> models.VariationModel([{'wght':-1}, {'wght': 0}, {'wght': 1}]).locations`
     /// `[{}, {'wght': -1}, {'wght': 1}]`
     /// `>>> models.VariationModel([{'wght':-1}, {'wght': 0}, {'wght': 1}]).deltaWeights`
     /// `[{}, {0: 1.0}, {0: 1.0}]`
+    /// ```
     #[test]
     fn delta_weights_for_3_master_weight_variable_family() {
         let weight_minus_1 = NormalizedLocation::for_pos(&[("wght", -1.0)]);
@@ -949,10 +977,13 @@ mod tests {
     }
 
     /// # corner-master weight + width
+    ///
+    /// ```text
     /// `>>> models.VariationModel([{'wght':0, 'wdth': 0}, {'wght':1, 'wdth': 0}, {'wght':0, 'wdth': 1}, {'wght':1, 'wdth': 1}]).locations`
     /// `[{}, {'wdth': 1}, {'wght': 1}, {'wght': 1, 'wdth': 1}]`
     /// `>>> models.VariationModel([{'wght':0, 'wdth': 0}, {'wght':1, 'wdth': 0}, {'wght':0, 'wdth': 1}, {'wght':1, 'wdth': 1}]).deltaWeights`
     /// `[{}, {0: 1.0}, {0: 1.0}, {0: 1.0, 1: 1.0, 2: 1.0}]`
+    /// ```
     #[test]
     fn delta_weights_for_corner_master_weight_width_family() {
         let wght0_wdth0 = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]);
@@ -988,10 +1019,12 @@ mod tests {
     }
 
     /// # corner-master weight + width rig with a default master and a fixup
+    /// ```text
     /// `>>> models.VariationModel([{'wght':0, 'wdth': 0}, {'wght':-1, 'wdth': -1}, {'wght':-1, 'wdth': 1}, {'wght':1, 'wdth': -1}, {'wght':1, 'wdth': 1}, {'wght':0.5, 'wdth': 0.5}], axisOrder=['wght', 'wdth']).locations`
     /// `[{}, {'wght': -1, 'wdth': -1}, {'wght': -1, 'wdth': 1}, {'wght': 1, 'wdth': -1}, {'wght': 0.5, 'wdth': 0.5}, {'wght': 1, 'wdth': 1}]`
     /// `>>> models.VariationModel([{'wght':0, 'wdth': 0}, {'wght':-1, 'wdth': -1}, {'wght':-1, 'wdth': 1}, {'wght':1, 'wdth': -1}, {'wght':1, 'wdth': 1}, {'wght':0.5, 'wdth': 0.5}], axisOrder=['wght', 'wdth']).deltaWeights`
     /// `[{}, {0: 1.0}, {0: 1.0}, {0: 1.0}, {0: 1.0}, {0: 1.0}]`
+    /// ```
     #[test]
     fn delta_weights_for_corner_default_and_fixup_master_weight_width_family() {
         let default_master = NormalizedLocation::for_pos(&[("wght", 0.0), ("wdth", 0.0)]);
