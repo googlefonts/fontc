@@ -73,6 +73,13 @@ fn to_segment_map(axis: &Axis) -> SegmentMaps {
         mappings.push((NormalizedCoord::new(1.0), NormalizedCoord::new(1.0)));
     }
 
+    // Ensure the default normalization is in the mappings
+    let zero_zero = (NormalizedCoord::new(0.0), NormalizedCoord::new(0.0));
+    match mappings.binary_search(&zero_zero) {
+        Ok(_) => {}
+        Err(pos) => mappings.insert(pos, zero_zero),
+    }
+
     // avar maps from the default normalization to the actual one,
     // using normalized values on both sides.
     // All identity mappings are not interesting so we return the default mapping.
