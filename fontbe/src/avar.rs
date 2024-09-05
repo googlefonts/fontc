@@ -41,14 +41,17 @@ fn default_segment_map() -> SegmentMaps {
 
 fn to_segment_map(axis: &Axis) -> SegmentMaps {
     // default normalization
-    let default_converter = CoordConverter::new(
-        vec![
-            (axis.min, DesignCoord::new(-1.0)),
-            (axis.default, DesignCoord::new(0.0)),
-            (axis.max, DesignCoord::new(1.0)),
-        ],
-        1,
-    );
+    let mut default_mappings = Vec::new();
+    let mut default_idx = 0;
+    if axis.min < axis.default {
+        default_mappings.push((axis.min, DesignCoord::new(-1.0)));
+        default_idx = 1;
+    }
+    default_mappings.push((axis.default, DesignCoord::new(0.0)));
+    if axis.max > axis.default {
+        default_mappings.push((axis.max, DesignCoord::new(1.0)));
+    }
+    let default_converter = CoordConverter::new(default_mappings, default_idx);
 
     // We have to walk twice but we don't expect there to be a lot of values so don't stress
 
