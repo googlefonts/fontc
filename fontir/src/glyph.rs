@@ -298,6 +298,32 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
     Ok(())
 }
 
+fn apply_optional_transformations(
+    context: &Context,
+    new_glyph_order: &GlyphOrder,
+) -> Result<(), BadGlyph> {
+    if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
+        for glyph_name in new_glyph_order.iter() {
+            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
+            flatten_glyph(context, &glyph)?;
+        }
+    }
+
+    if context
+        .flags
+        .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS)
+    {
+        for glyph_name in new_glyph_order.iter() {
+            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
+            if glyph.has_nonidentity_2x2() {
+                convert_components_to_contours(context, &glyph)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn ensure_notdef_exists_and_is_gid_0(
     context: &Context,
     glyph_order: &mut GlyphOrder,
@@ -398,24 +424,7 @@ impl Work<Context, WorkId, Error> for GlyphOrderWork {
         }
         drop(original_glyphs); // lets not accidentally use that from here on
 
-        if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
-            for glyph_name in new_glyph_order.iter() {
-                let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
-                flatten_glyph(context, &glyph)?;
-            }
-        }
-
-        if context
-            .flags
-            .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS)
-        {
-            for glyph_name in new_glyph_order.iter() {
-                let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
-                if glyph.has_nonidentity_2x2() {
-                    convert_components_to_contours(context, &glyph)?;
-                }
-            }
-        }
+        apply_optional_transformations(context, &new_glyph_order)?;
 
         // Resolve component references to glyphs that are not retained by conversion to contours
         // Glyphs have to have consistent components at this point so it's safe to just check the default
