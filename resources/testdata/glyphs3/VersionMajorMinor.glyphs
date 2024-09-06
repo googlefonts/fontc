@@ -4,10 +4,19 @@ familyName = "Meh";
 glyphs = (
 	{
 		glyphname = meh;
-		layers = ();
+		layers = (
+			{
+				layerId = m01;
+			}
+		);
 	}
 );
-fontMaster = ();
+fontMaster = (
+	{
+		id = m01;
+		name = Regular;
+	}
+);
 unitsPerEm = 1000;
 versionMajor = 42;
 versionMinor = 43;

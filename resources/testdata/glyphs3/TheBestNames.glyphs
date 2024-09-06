@@ -11,6 +11,12 @@ name = Weight;
 tag = wght;
 }
 );
+customParameters = (
+{
+name = "Variable Font Origin";
+value = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+}
+);
 date = "2022-12-01 04:52:20 +0000";
 familyName = FamilyName;
 fontMaster = (

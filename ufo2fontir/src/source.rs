@@ -734,14 +734,7 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
 
     // Name's that get individual fields
     builder.add_if_present(NameId::COPYRIGHT_NOTICE, &font_info.copyright);
-    builder.add_if_present(
-        NameId::FAMILY_NAME,
-        &font_info
-            .style_map_family_name
-            .as_ref()
-            .or(font_info.family_name.as_ref())
-            .cloned(),
-    );
+    builder.add_if_present(NameId::FAMILY_NAME, &font_info.style_map_family_name);
     builder.add_if_present(
         NameId::SUBFAMILY_NAME,
         &font_info.style_map_style_name.as_ref().map(|s| {
@@ -756,10 +749,6 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
     );
     builder.add_if_present(NameId::UNIQUE_ID, &font_info.open_type_name_unique_id);
     builder.add_if_present(NameId::VERSION_STRING, &font_info.open_type_name_version);
-    builder.add_if_present(
-        NameId::TYPOGRAPHIC_FAMILY_NAME,
-        &font_info.open_type_name_preferred_family_name,
-    );
     builder.add_if_present(NameId::POSTSCRIPT_NAME, &font_info.postscript_font_name);
     builder.add_if_present(NameId::TRADEMARK, &font_info.trademark);
     builder.add_if_present(NameId::MANUFACTURER, &font_info.open_type_name_manufacturer);
@@ -775,6 +764,22 @@ fn names(font_info: &norad::FontInfo) -> HashMap<NameKey, String> {
         &font_info.open_type_name_license,
     );
     builder.add_if_present(NameId::LICENSE_URL, &font_info.open_type_name_license_url);
+    builder.add_if_present(
+        NameId::TYPOGRAPHIC_FAMILY_NAME,
+        &font_info
+            .open_type_name_preferred_family_name
+            .as_ref()
+            .or(font_info.family_name.as_ref())
+            .cloned(),
+    );
+    builder.add_if_present(
+        NameId::TYPOGRAPHIC_SUBFAMILY_NAME,
+        &font_info
+            .open_type_name_preferred_subfamily_name
+            .as_ref()
+            .or(font_info.style_name.as_ref())
+            .cloned(),
+    );
     builder.add_if_present(
         NameId::COMPATIBLE_FULL_NAME,
         &font_info.open_type_name_compatible_full_name,
