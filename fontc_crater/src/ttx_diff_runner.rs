@@ -253,8 +253,21 @@ pub(super) fn print_report(results: &Results<DiffOutput, DiffError>, verbose: bo
     }
 }
 
+fn assert_has_timeout_coreutil() {
+    match Command::new("which").arg("timeout").output() {
+        Ok(out) if out.status.success() => return,
+        Err(e) => eprintln!("'which' failed!? '{e}'"),
+        Ok(_) => eprintln!("could not find 'timeout'. You may need to install coreutils (on macos, `brew install coreutils`)"),
+    }
+    std::process::exit(1);
+}
+
 /// make sure we can find and execute ttx_diff script
 pub(super) fn assert_can_run_script() {
+    // first check that we can find timeout(1) (not present on macOS by default,
+    // install via homebrew)
+    assert_has_timeout_coreutil();
+    // then check that we can run the ttx_diff script itself
     let path = Path::new(SCRIPT_PATH);
     if !path.exists() {
         eprintln!(
