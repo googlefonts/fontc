@@ -533,6 +533,14 @@ mod tests {
             context.glyphs.set(self.shallow_component.clone());
             context.glyphs.set(self.deep_component.clone());
         }
+
+        fn glyph_order(&self) -> GlyphOrder {
+            let mut order = GlyphOrder::new();
+            order.insert(self.simple_glyph.name.clone());
+            order.insert(self.shallow_component.name.clone());
+            order.insert(self.deep_component.name.clone());
+            order
+        }
     }
 
     fn deep_component() -> DeepComponent {
@@ -880,6 +888,14 @@ mod tests {
         assert!(glyph.has_consistent_components());
     }
 
+    fn assert_is_simple_glyph(context: &Context, glyph_name: GlyphName) {
+        let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name));
+        assert!(glyph
+            .sources()
+            .values()
+            .all(|inst| !inst.contours.is_empty() && inst.components.is_empty()));
+    }
+
     fn assert_is_flattened_component(context: &Context, glyph_name: GlyphName) {
         let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name));
         for (loc, inst) in glyph.sources().iter() {
@@ -912,6 +928,31 @@ mod tests {
         let context = test_context();
         test_data.write_to(&context);
         flatten_glyph(&context, &test_data.deep_component).unwrap();
+        assert_is_flattened_component(&context, test_data.deep_component.name);
+    }
+
+    #[test]
+    fn decompose_transformed_and_flatten_components() {
+        // when both flags are set, the flattening should happen last, after
+        // the decomposition of the transformed components
+        // https://github.com/googlefonts/fontc/issues/929
+        let test_data = deep_component();
+        let mut context = test_context();
+        context
+            .flags
+            .set(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS, true);
+        context.flags.set(Flags::FLATTEN_COMPONENTS, true);
+        test_data.write_to(&context);
+
+        apply_optional_transformations(&context, &test_data.glyph_order()).unwrap();
+
+        // the shallow_component had a non-identity 2x2 transform so it was
+        // converted to a simple glyph
+        assert_is_simple_glyph(&context, test_data.shallow_component.name);
+        // the deep_component glyph should still be a composite but no longer nested;
+        // if flattening happened first, it would have been converted to a simple glyph,
+        // because the non-id 2x2 transform of the shallow_component would have
+        // infected the deep_component and caused it to be decomposed.
         assert_is_flattened_component(&context, test_data.deep_component.name);
     }
 }
