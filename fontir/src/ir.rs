@@ -747,11 +747,12 @@ pub struct NameBuilder {
     version_minor: u32,
 }
 
-const STYLE_MAP_STYLE_NAMES: [&str; 4] = ["regular", "bold", "italic", "bold italic"];
-
 /// Returns true if the style name is one of the four standard style names.
 fn is_ribbi(style_name: &str) -> bool {
-    return STYLE_MAP_STYLE_NAMES.contains(&style_name.to_lowercase().as_str());
+    matches!(
+        style_name.to_lowercase().as_str(),
+        "regular" | "italic" | "bold" | "bold italic"
+    )
 }
 
 impl NameBuilder {
@@ -806,6 +807,16 @@ impl NameBuilder {
             .or_else(|| default_value(name_id))
     }
 
+    /// Fetch a fallback that definitely has a value in a String
+    ///
+    /// Only safe to use with names that have default valuesa to fall back to
+    /// if the fallback itself is missing.
+    fn fallback_string(&self, name_id: NameId, fallback: NameId) -> String {
+        self.get_fallback_or_default(name_id, &[fallback])
+            .unwrap()
+            .to_string()
+    }
+
     pub fn apply_default_fallbacks(&mut self, vendor_id: &str) {
         // If the legacy subfamily isn't set, we fall back to the typographic subfamily;
         // but because the spec recommends the former to only contain "Regular",
@@ -818,13 +829,8 @@ impl NameBuilder {
             // assume this is good, no need to add suffix to family name.
             None
         } else {
-            let fallback_subfamily = self
-                .get_fallback_or_default(
-                    NameId::SUBFAMILY_NAME,
-                    &[NameId::TYPOGRAPHIC_SUBFAMILY_NAME],
-                )
-                .unwrap() // safe because SUBFAMILY_NAME has a default_value
-                .to_string();
+            let fallback_subfamily =
+                self.fallback_string(NameId::SUBFAMILY_NAME, NameId::TYPOGRAPHIC_SUBFAMILY_NAME);
 
             let (fallback_subfamily, family_suffix) = if is_ribbi(&fallback_subfamily) {
                 (fallback_subfamily, None)
@@ -839,10 +845,8 @@ impl NameBuilder {
 
         // https://github.com/googlefonts/ufo2ft/blob/bb79cae53f1c160c7174ebef0d463c7a28a7552a/Lib/ufo2ft/fontInfoData.py#L57
         if !self.contains_key(NameId::FAMILY_NAME) {
-            let mut fallback_family = self
-                .get_fallback_or_default(NameId::FAMILY_NAME, &[NameId::TYPOGRAPHIC_FAMILY_NAME])
-                .unwrap() // safe because FAMILY_NAME has a default_value
-                .to_string();
+            let mut fallback_family =
+                self.fallback_string(NameId::FAMILY_NAME, NameId::TYPOGRAPHIC_FAMILY_NAME);
             if let Some(family_suffix) = family_suffix.as_ref() {
                 fallback_family.push(' ');
                 fallback_family.push_str(family_suffix);
