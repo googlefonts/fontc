@@ -298,26 +298,36 @@ fn flatten_glyph(context: &Context, glyph: &Glyph) -> Result<(), BadGlyph> {
     Ok(())
 }
 
+/// Run some optional transformations on the glyphs listed.
+///
+/// This includes decomposing components with non-identity 2x2 transforms
+/// and flattening nested composite glyphs so that they all have depth 1
+/// (no components that reference components).
 fn apply_optional_transformations(
     context: &Context,
-    new_glyph_order: &GlyphOrder,
+    glyph_order: &GlyphOrder,
 ) -> Result<(), BadGlyph> {
-    if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
-        for glyph_name in new_glyph_order.iter() {
-            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
-            flatten_glyph(context, &glyph)?;
-        }
-    }
-
+    // If both --flatten-components and --decompose-transformed-components flags
+    // are set, we want to decompose any transformed components first and *then*
+    // flatten the rest. That's how fontmake (ufo2ft) does, and also tends to
+    // keep more components, which usually means smaller glyf size.
+    // https://github.com/googlefonts/fontc/issues/929
     if context
         .flags
         .contains(Flags::DECOMPOSE_TRANSFORMED_COMPONENTS)
     {
-        for glyph_name in new_glyph_order.iter() {
+        for glyph_name in glyph_order.iter() {
             let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
             if glyph.has_nonidentity_2x2() {
                 convert_components_to_contours(context, &glyph)?;
             }
+        }
+    }
+
+    if context.flags.contains(Flags::FLATTEN_COMPONENTS) {
+        for glyph_name in glyph_order.iter() {
+            let glyph = context.glyphs.get(&WorkId::Glyph(glyph_name.clone()));
+            flatten_glyph(context, &glyph)?;
         }
     }
 
