@@ -2,8 +2,9 @@
 
 # fontc
 
-Where in we pursue oxidizing (context: https://github.com/googlefonts/oxidize) fontmake. For context
-around where fontmake came from see [Mr B goes to Vartown](https://github.com/googlefonts/oxidize/blob/main/text/2023-10-18-mrb-goes-to-vartown.md).
+Where in we pursue oxidizing [fontmake](https://github.com/googlefonts/fontmake).
+For context around where fontmake came from see
+[Mr B goes to Vartown](https://github.com/googlefonts/oxidize/blob/main/text/2023-10-18-mrb-goes-to-vartown.md).
 
 Converts source to IR, and then IR to font binary. Aims to be safe, incremental, and fast.
 
@@ -18,9 +19,23 @@ References
 
 ## But why?
 
+Two main reasons:
+
+1. Speed
+   * The python compiler is too slow and we don't think we can plausibly make it fast enough
+1. A key part of Google Fonts technical strategy is to get off both Python and C++, consolidating on Rust
+   * Rust enables us to write fast code that integrates well with our serving stack
+   * See https://github.com/googlefonts/oxidize
+  
+So, Rust compiler time!
+
 ![image](https://github.com/googlefonts/fontc/assets/6466432/669778a7-5efa-43f8-8380-2f71bfc49f3f)
 
 (https://xkcd.com/303/ remix)
+
+## Are we there yet?
+
+https://googlefonts.github.io/fontc_crater/ tracks our progress in making the new compiler match the old one.
 
 ## Getting started
 
