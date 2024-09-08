@@ -430,8 +430,12 @@ impl AllLookups {
     }
 
     /// Returns `true` if there is an active lookup of this kind
-    pub(crate) fn has_current_kind(&self, kind: Kind) -> bool {
-        self.current.as_ref().map(SomeLookup::kind) == Some(kind)
+    pub(crate) fn has_current_kind(&self, kind: Kind, flags: LookupFlagInfo) -> bool {
+        self.current.as_ref().map_or(false, |current| {
+            current.kind() == kind
+                && current.flags() == flags.flags
+                && current.mark_set() == flags.mark_filter_set
+        })
     }
 
     // `false` if we didn't have an active lookup
@@ -493,7 +497,7 @@ impl AllLookups {
     }
 
     pub(crate) fn promote_single_sub_to_multi_if_necessary(&mut self) {
-        if !self.has_current_kind(Kind::GsubType1) {
+        if !self.has_current_kind(Kind::GsubType1, LookupFlagInfo::default()) {
             return;
         }
         let Some(SomeLookup::GsubLookup(SubstitutionLookup::Single(lookup))) = self.current.take()
@@ -835,6 +839,58 @@ impl SomeLookup {
                 PositionLookup::Contextual(_) => Kind::GposType7,
                 PositionLookup::ChainedContextual(_) => Kind::GposType8,
             },
+        }
+    }
+
+    fn flags(&self) -> LookupFlag {
+        match self {
+            SomeLookup::GsubLookup(lookup) => match lookup {
+                SubstitutionLookup::Single(lookup) => lookup.flags,
+                SubstitutionLookup::Multiple(lookup) => lookup.flags,
+                SubstitutionLookup::Alternate(lookup) => lookup.flags,
+                SubstitutionLookup::Ligature(lookup) => lookup.flags,
+                SubstitutionLookup::Contextual(lookup) => lookup.flags,
+                SubstitutionLookup::ChainedContextual(lookup) => lookup.flags,
+                SubstitutionLookup::Reverse(lookup) => lookup.flags,
+            },
+            SomeLookup::GposLookup(lookup) => match lookup {
+                PositionLookup::Single(lookup) => lookup.flags,
+                PositionLookup::Pair(lookup) => lookup.flags,
+                PositionLookup::Cursive(lookup) => lookup.flags,
+                PositionLookup::MarkToBase(lookup) => lookup.flags,
+                PositionLookup::MarkToLig(lookup) => lookup.flags,
+                PositionLookup::MarkToMark(lookup) => lookup.flags,
+                PositionLookup::Contextual(lookup) => lookup.flags,
+                PositionLookup::ChainedContextual(lookup) => lookup.flags,
+            },
+            SomeLookup::GposContextual(lookup) => lookup.flags,
+            SomeLookup::GsubContextual(lookup) => lookup.flags,
+        }
+    }
+
+    fn mark_set(&self) -> Option<FilterSetId> {
+        match self {
+            SomeLookup::GsubLookup(lookup) => match lookup {
+                SubstitutionLookup::Single(lookup) => lookup.mark_set,
+                SubstitutionLookup::Multiple(lookup) => lookup.mark_set,
+                SubstitutionLookup::Alternate(lookup) => lookup.mark_set,
+                SubstitutionLookup::Ligature(lookup) => lookup.mark_set,
+                SubstitutionLookup::Contextual(lookup) => lookup.mark_set,
+                SubstitutionLookup::ChainedContextual(lookup) => lookup.mark_set,
+                SubstitutionLookup::Reverse(lookup) => lookup.mark_set,
+            },
+            SomeLookup::GposLookup(lookup) => match lookup {
+                PositionLookup::Single(lookup) => lookup.mark_set,
+                PositionLookup::Pair(lookup) => lookup.mark_set,
+                PositionLookup::Cursive(lookup) => lookup.mark_set,
+                PositionLookup::MarkToBase(lookup) => lookup.mark_set,
+                PositionLookup::MarkToLig(lookup) => lookup.mark_set,
+                PositionLookup::MarkToMark(lookup) => lookup.mark_set,
+                PositionLookup::Contextual(lookup) => lookup.mark_set,
+                PositionLookup::ChainedContextual(lookup) => lookup.mark_set,
+            },
+            SomeLookup::GposContextual(lookup) => lookup.mark_set,
+            SomeLookup::GsubContextual(lookup) => lookup.mark_set,
         }
     }
 
