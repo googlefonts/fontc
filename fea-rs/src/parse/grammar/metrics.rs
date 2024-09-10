@@ -429,6 +429,8 @@ pub(crate) fn expect_name_record(parser: &mut Parser, recovery: TokenSet) {
 
 #[cfg(test)]
 mod tests {
+    use crate::typed::AstNode;
+
     use super::super::debug_parse_output;
     use super::*;
 
@@ -500,5 +502,18 @@ mod tests {
             expect_metric(parser, TokenSet::EMPTY);
         });
         assert!(errstr.contains("expected variation location"), "{errstr}");
+    }
+
+    // https://github.com/googlefonts/fontc/issues/948
+    #[test]
+    fn glyphs_value_syntax() {
+        let fea = "<0 $hi 0 0>";
+        let (token, _err, _) = debug_parse_output(fea, |parser| {
+            expect_value_record(parser, TokenSet::EMPTY);
+        });
+
+        let valrecord = crate::typed::ValueRecord::cast(&token).unwrap();
+        assert!(valrecord.advance().is_none());
+        assert!(valrecord.placement().is_some());
     }
 }
