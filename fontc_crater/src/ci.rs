@@ -5,10 +5,7 @@
 //! Unlike a normal run, this is expecting to have preexisting results, and to
 //! generate a fuller report that includes comparison with past runs.
 
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use google_fonts_sources::RepoInfo;

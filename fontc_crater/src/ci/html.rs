@@ -4,7 +4,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fmt::Display,
     ops::Sub,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use crate::{
@@ -20,6 +20,9 @@ static HTML_FILE: &str = "index.html";
 pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
     let summary_path = target_dir.join(super::SUMMARY_FILE);
     let summary: Vec<RunSummary> = crate::try_read_json(&summary_path)?;
+    let sources_path = target_dir.join(super::SOURCES_FILE);
+    let sources: BTreeMap<PathBuf, String> =
+        super::load_json_if_exists_else_default(&sources_path)?;
     let details = summary
         .iter()
         .flat_map(|run| match run.try_load_results(target_dir) {
@@ -29,12 +32,16 @@ pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
         })
         .collect::<Result<HashMap<_, _>, _>>()?;
 
-    let html_text = make_html(&summary, &details);
+    let html_text = make_html(&summary, &sources, &details);
     let outpath = target_dir.join(HTML_FILE);
     crate::try_write_str(&html_text, &outpath)
 }
 
-fn make_html(summary: &[RunSummary], results: &HashMap<String, DiffResults>) -> String {
+fn make_html(
+    summary: &[RunSummary],
+    sources: &BTreeMap<PathBuf, String>,
+    results: &HashMap<String, DiffResults>,
+) -> String {
     let table_body = make_table_body(summary);
     let css = include_str!("../../resources/style.css");
     let table = html! {
@@ -59,6 +66,7 @@ fn make_html(summary: &[RunSummary], results: &HashMap<String, DiffResults>) -> 
         [.., prev, current] => make_detailed_report(
             results.get(&current.fontc_rev).unwrap(),
             results.get(&prev.fontc_rev).unwrap(),
+            sources,
         ),
         _ => html!(),
     };
@@ -193,9 +201,13 @@ fn make_delta_decoration<T: PartialOrd + Copy + Sub<Output = T> + Display + Defa
     }
 }
 
-fn make_detailed_report(current: &DiffResults, prev: &DiffResults) -> Markup {
-    let error_report = make_error_report(current, prev);
-    let diff_report = make_diff_report(current, prev);
+fn make_detailed_report(
+    current: &DiffResults,
+    prev: &DiffResults,
+    sources: &BTreeMap<PathBuf, String>,
+) -> Markup {
+    let error_report = make_error_report(current, prev, sources);
+    let diff_report = make_diff_report(current, prev, sources);
     html! {
         (diff_report)
         (error_report)
@@ -203,7 +215,11 @@ fn make_detailed_report(current: &DiffResults, prev: &DiffResults) -> Markup {
 }
 
 /// make the list of fonts that were both compiled successfully.
-fn make_diff_report(current: &DiffResults, prev: &DiffResults) -> Markup {
+fn make_diff_report(
+    current: &DiffResults,
+    prev: &DiffResults,
+    sources: &BTreeMap<PathBuf, String>,
+) -> Markup {
     fn get_total_diff_ratios(results: &DiffResults) -> BTreeMap<&Path, f32> {
         results
             .success
@@ -219,6 +235,8 @@ fn make_diff_report(current: &DiffResults, prev: &DiffResults) -> Markup {
             })
             .collect()
     }
+
+    let get_repo_url = |path: &Path| sources.get(path).map(String::as_str).unwrap_or("#");
 
     let current_diff = get_total_diff_ratios(current);
     let prev_diff = get_total_diff_ratios(prev);
@@ -238,7 +256,9 @@ fn make_diff_report(current: &DiffResults, prev: &DiffResults) -> Markup {
         items.push(html! {
             details {
                 summary {
-                    span.font_path { (path.display()) }
+                    span.font_path {
+                        a href = ({ get_repo_url(path) }) { (path.display()) }
+                    }
                     span.diff_result { (ratio_fmt) " " (decoration) }
                 }
                 (details)
@@ -256,7 +276,11 @@ fn make_diff_report(current: &DiffResults, prev: &DiffResults) -> Markup {
     }
 }
 
-fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
+fn make_error_report(
+    current: &DiffResults,
+    prev: &DiffResults,
+    sources: &BTreeMap<PathBuf, String>,
+) -> Markup {
     let current_fontc = get_compiler_failures(current, "fontc");
     let prev_fontc = get_compiler_failures(prev, "fontc");
     let current_fontmake = get_compiler_failures(current, "fontmake");
@@ -292,6 +316,7 @@ fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
                         .map(format_compiler_error)
                         .unwrap_or_default()
                 },
+                sources,
             )
         })
         .unwrap_or_default();
@@ -312,6 +337,7 @@ fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
                         .map(format_compiler_error)
                         .unwrap_or_default()
                 },
+                sources,
             )
         })
         .unwrap_or_default();
@@ -342,6 +368,7 @@ fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
                         (fontmake_err)
                     }
                 },
+                sources,
             )
         })
         .unwrap_or_default();
@@ -362,6 +389,7 @@ fn make_error_report(current: &DiffResults, prev: &DiffResults) -> Markup {
                         }
                     }
                 },
+                sources,
             )
         })
         .unwrap_or_default();
@@ -451,8 +479,9 @@ fn make_error_report_group<'a>(
     group_name: &str,
     paths_and_if_is_new_error: impl Iterator<Item = (&'a Path, bool)>,
     details: impl Fn(&Path) -> Markup,
+    sources: &BTreeMap<PathBuf, String>,
 ) -> Markup {
-    let items = make_error_report_group_items(paths_and_if_is_new_error, details);
+    let items = make_error_report_group_items(paths_and_if_is_new_error, details, sources);
 
     html! {
         div.error_report {
@@ -467,12 +496,15 @@ fn make_error_report_group<'a>(
 fn make_error_report_group_items<'a>(
     paths_and_if_is_new_error: impl Iterator<Item = (&'a Path, bool)>,
     details: impl Fn(&Path) -> Markup,
+    sources: &BTreeMap<PathBuf, String>,
 ) -> Markup {
+    let get_repo_url = |path: &Path| sources.get(path).map(String::as_str).unwrap_or("#");
     html! {
             @for (path, is_new) in paths_and_if_is_new_error {
                 details.report_group_item {
                     summary {
-                    (path.display()) @if is_new { " 🆕" }
+                        a href = ({ get_repo_url(path) }) { (path.display()) }
+                         @if is_new { " 🆕" }
                 }
                     (details(path))
             }
