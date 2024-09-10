@@ -82,6 +82,7 @@ impl Summary {
             failure,
             panic,
             skipped,
+            ..
         } = &result;
         let total_targets = (success.len() + failure.len() + skipped.len() + panic.len()) as u32;
         let n_failed = failure.len() + panic.len();
