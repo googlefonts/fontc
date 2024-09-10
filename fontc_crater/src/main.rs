@@ -10,7 +10,7 @@ use std::{
 use clap::Parser;
 use fontc::JobTimer;
 use google_fonts_sources::{LoadRepoError, RepoInfo};
-use rayon::prelude::*;
+use rayon::{prelude::*, ThreadPoolBuilder};
 
 mod args;
 mod ci;
@@ -201,19 +201,27 @@ fn run_all<T: Send, E: Send>(
     }
     let total_targets = targets.len();
     let counter = AtomicUsize::new(0);
-    let results = targets
-        .into_par_iter()
-        .map(|target| {
-            let i = counter.fetch_add(1, Ordering::Relaxed);
-            eprintln!("running {} ({i}/{total_targets})", target.display());
-            let r = runner(&target);
-            let target = target
-                .strip_prefix(cache_dir)
-                .unwrap_or(target.as_path())
-                .to_path_buf();
-            (target, r)
-        })
-        .collect::<Vec<_>>();
+    let currently_running = AtomicUsize::new(0);
+    let threadpool = ThreadPoolBuilder::new().build().unwrap();
+
+    let results = threadpool.install(|| {
+        targets
+            .into_par_iter()
+            .map(|target| {
+                let i = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                currently_running.fetch_add(1, Ordering::Relaxed);
+                eprintln!("starting {} ({i}/{total_targets})", target.display());
+                let r = runner(&target);
+                let n_running = currently_running.fetch_sub(1, Ordering::Relaxed);
+                eprintln!("finished {} ({n_running} active)", target.display());
+                let target = target
+                    .strip_prefix(cache_dir)
+                    .unwrap_or(target.as_path())
+                    .to_path_buf();
+                (target, r)
+            })
+            .collect::<Vec<_>>()
+    });
     Ok(results.into_iter().chain(skipped).collect())
 }
 
