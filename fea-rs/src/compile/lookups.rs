@@ -179,7 +179,7 @@ pub(crate) struct LookupIdMap {
 }
 
 /// Tracks the current lookupflags state
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct LookupFlagInfo {
     pub(crate) flags: LookupFlag,
     pub(crate) mark_filter_set: Option<FilterSetId>,
@@ -430,12 +430,12 @@ impl AllLookups {
     }
 
     /// Returns `true` if there is an active lookup of this kind
-    pub(crate) fn has_current_kind(&self, kind: Kind, flags: LookupFlagInfo) -> bool {
-        self.current.as_ref().map_or(false, |current| {
-            current.kind() == kind
-                && current.flags() == flags.flags
-                && current.mark_set() == flags.mark_filter_set
-        })
+    pub(crate) fn has_current_kind(&self, kind: Kind) -> bool {
+        self.current.as_ref().map(SomeLookup::kind) == Some(kind)
+    }
+
+    pub(crate) fn has_same_flags(&self, flags: LookupFlagInfo) -> bool {
+        self.current.as_ref().map(SomeLookup::flags) == Some(flags)
     }
 
     // `false` if we didn't have an active lookup
@@ -497,7 +497,7 @@ impl AllLookups {
     }
 
     pub(crate) fn promote_single_sub_to_multi_if_necessary(&mut self) {
-        if !self.has_current_kind(Kind::GsubType1, LookupFlagInfo::default()) {
+        if !self.has_current_kind(Kind::GsubType1) {
             return;
         }
         let Some(SomeLookup::GsubLookup(SubstitutionLookup::Single(lookup))) = self.current.take()
@@ -842,55 +842,31 @@ impl SomeLookup {
         }
     }
 
-    fn flags(&self) -> LookupFlag {
+    fn flags(&self) -> LookupFlagInfo {
         match self {
-            SomeLookup::GsubLookup(lookup) => match lookup {
-                SubstitutionLookup::Single(lookup) => lookup.flags,
-                SubstitutionLookup::Multiple(lookup) => lookup.flags,
-                SubstitutionLookup::Alternate(lookup) => lookup.flags,
-                SubstitutionLookup::Ligature(lookup) => lookup.flags,
-                SubstitutionLookup::Contextual(lookup) => lookup.flags,
-                SubstitutionLookup::ChainedContextual(lookup) => lookup.flags,
-                SubstitutionLookup::Reverse(lookup) => lookup.flags,
+            SomeLookup::GsubLookup(l) => match l {
+                SubstitutionLookup::Single(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                SubstitutionLookup::Multiple(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                SubstitutionLookup::Alternate(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                SubstitutionLookup::Ligature(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                SubstitutionLookup::Contextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                SubstitutionLookup::ChainedContextual(l) => {
+                    LookupFlagInfo::new(l.flags, l.mark_set)
+                }
+                SubstitutionLookup::Reverse(l) => LookupFlagInfo::new(l.flags, l.mark_set),
             },
-            SomeLookup::GposLookup(lookup) => match lookup {
-                PositionLookup::Single(lookup) => lookup.flags,
-                PositionLookup::Pair(lookup) => lookup.flags,
-                PositionLookup::Cursive(lookup) => lookup.flags,
-                PositionLookup::MarkToBase(lookup) => lookup.flags,
-                PositionLookup::MarkToLig(lookup) => lookup.flags,
-                PositionLookup::MarkToMark(lookup) => lookup.flags,
-                PositionLookup::Contextual(lookup) => lookup.flags,
-                PositionLookup::ChainedContextual(lookup) => lookup.flags,
+            SomeLookup::GposLookup(l) => match l {
+                PositionLookup::Single(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::Pair(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::Cursive(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::MarkToBase(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::MarkToLig(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::MarkToMark(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::Contextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::ChainedContextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
             },
-            SomeLookup::GposContextual(lookup) => lookup.flags,
-            SomeLookup::GsubContextual(lookup) => lookup.flags,
-        }
-    }
-
-    fn mark_set(&self) -> Option<FilterSetId> {
-        match self {
-            SomeLookup::GsubLookup(lookup) => match lookup {
-                SubstitutionLookup::Single(lookup) => lookup.mark_set,
-                SubstitutionLookup::Multiple(lookup) => lookup.mark_set,
-                SubstitutionLookup::Alternate(lookup) => lookup.mark_set,
-                SubstitutionLookup::Ligature(lookup) => lookup.mark_set,
-                SubstitutionLookup::Contextual(lookup) => lookup.mark_set,
-                SubstitutionLookup::ChainedContextual(lookup) => lookup.mark_set,
-                SubstitutionLookup::Reverse(lookup) => lookup.mark_set,
-            },
-            SomeLookup::GposLookup(lookup) => match lookup {
-                PositionLookup::Single(lookup) => lookup.mark_set,
-                PositionLookup::Pair(lookup) => lookup.mark_set,
-                PositionLookup::Cursive(lookup) => lookup.mark_set,
-                PositionLookup::MarkToBase(lookup) => lookup.mark_set,
-                PositionLookup::MarkToLig(lookup) => lookup.mark_set,
-                PositionLookup::MarkToMark(lookup) => lookup.mark_set,
-                PositionLookup::Contextual(lookup) => lookup.mark_set,
-                PositionLookup::ChainedContextual(lookup) => lookup.mark_set,
-            },
-            SomeLookup::GposContextual(lookup) => lookup.mark_set,
-            SomeLookup::GsubContextual(lookup) => lookup.mark_set,
+            SomeLookup::GposContextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+            SomeLookup::GsubContextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
         }
     }
 
