@@ -7,7 +7,6 @@ use fontdrasil::{
     types::WidthClass,
 };
 use fontir::{ir::GlobalMetricsInstance, orchestration::WorkId as FeWorkId};
-use log::warn;
 use write_fonts::{
     read::{tables::hmtx::Hmtx, FontData, TopLevelTable},
     tables::{gsub::SubstitutionLookup, os2::Os2},
@@ -491,10 +490,10 @@ fn apply_max_context(os2: &mut Os2, context: &Context) {
     if let Some(arc_gpos) = context.gpos.try_get() {
         if let Some(gpos) = &arc_gpos.0 {
             let lookups = &gpos.lookup_list.lookups;
-            warn!(
-                "max context for gpos not implemented, {} position lookups being ignored",
-                lookups.len()
-            );
+            let gpos_max = lookups
+                .iter()
+                .fold(0, |max_ctx, lookup| max_ctx.max(lookup.max_context()));
+            max_context = max_context.max(gpos_max)
         }
     }
 

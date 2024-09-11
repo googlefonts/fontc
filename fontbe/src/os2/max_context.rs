@@ -4,16 +4,20 @@
 
 use write_fonts::{
     tables::{
+        gpos::{
+            ExtensionSubtable as GposExt, PositionChainContext, PositionLookup,
+            PositionSequenceContext,
+        },
         gsub::{
-            AlternateSubstFormat1, ExtensionSubtable, LigatureSubstFormat1, MultipleSubstFormat1,
-            ReverseChainSingleSubstFormat1, SingleSubst, SubstitutionChainContext,
-            SubstitutionLookup, SubstitutionSequenceContext,
+            ExtensionSubtable as GsubExt, LigatureSubstFormat1, ReverseChainSingleSubstFormat1,
+            SubstitutionChainContext, SubstitutionLookup, SubstitutionSequenceContext,
         },
         layout::{
             ChainedClassSequenceRule, ChainedClassSequenceRuleSet, ChainedSequenceContext,
             ChainedSequenceContextFormat1, ChainedSequenceContextFormat2, ChainedSequenceRule,
-            ChainedSequenceRuleSet, ClassSequenceRule, ClassSequenceRuleSet, SequenceContext,
-            SequenceContextFormat1, SequenceContextFormat2, SequenceRule, SequenceRuleSet,
+            ChainedSequenceRuleSet, ClassSequenceRule, ClassSequenceRuleSet, Lookup,
+            SequenceContext, SequenceContextFormat1, SequenceContextFormat2, SequenceRule,
+            SequenceRuleSet,
         },
     },
     NullableOffsetMarker, OffsetMarker,
@@ -165,27 +169,6 @@ pub(super) trait MaxContext {
     fn max_context(&self) -> u16;
 }
 
-/// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L27>
-impl MaxContext for SingleSubst {
-    fn max_context(&self) -> u16 {
-        1
-    }
-}
-
-/// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L27>
-impl MaxContext for MultipleSubstFormat1 {
-    fn max_context(&self) -> u16 {
-        1
-    }
-}
-
-/// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L27>
-impl MaxContext for AlternateSubstFormat1 {
-    fn max_context(&self) -> u16 {
-        1
-    }
-}
-
 /// <https://github.com/fonttools/fonttools/blob/bf77873d5a0ea7462664c8335c8cc7ea9e48ca18/Lib/fontTools/otlLib/maxContextCalc.py#L35-L39>
 impl MaxContext for LigatureSubstFormat1 {
     fn max_context(&self) -> u16 {
@@ -201,6 +184,19 @@ impl MaxContext for LigatureSubstFormat1 {
 
 /// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L41-L43>
 impl MaxContext for SubstitutionSequenceContext {
+    fn max_context(&self) -> u16 {
+        match self as &SequenceContext {
+            SequenceContext::Format1(format1) => max_context_of_contextual_subtable(&format1),
+            SequenceContext::Format2(format2) => max_context_of_contextual_subtable(&format2),
+            SequenceContext::Format3(format3) => {
+                max_context_of_rule(0, format3.seq_lookup_records.len())
+            }
+        }
+    }
+}
+
+/// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L41-L43>
+impl MaxContext for PositionSequenceContext {
     fn max_context(&self) -> u16 {
         match self as &SequenceContext {
             SequenceContext::Format1(format1) => max_context_of_contextual_subtable(&format1),
@@ -229,16 +225,32 @@ impl MaxContext for SubstitutionChainContext {
     }
 }
 
-impl MaxContext for ExtensionSubtable {
+/// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L45-L49>
+impl MaxContext for PositionChainContext {
+    fn max_context(&self) -> u16 {
+        match self as &ChainedSequenceContext {
+            ChainedSequenceContext::Format1(format1) => {
+                max_context_of_contextual_subtable(&format1)
+            }
+            ChainedSequenceContext::Format2(format2) => {
+                max_context_of_contextual_subtable(&format2)
+            }
+            ChainedSequenceContext::Format3(format3) => {
+                max_context_of_rule(0, format3.seq_lookup_records.len())
+            }
+        }
+    }
+}
+
+impl MaxContext for GsubExt {
     fn max_context(&self) -> u16 {
         match self {
-            ExtensionSubtable::Single(inner) => inner.extension.max_context(),
-            ExtensionSubtable::Multiple(inner) => inner.extension.max_context(),
-            ExtensionSubtable::Alternate(inner) => inner.extension.max_context(),
-            ExtensionSubtable::Ligature(inner) => inner.extension.max_context(),
-            ExtensionSubtable::Contextual(inner) => inner.extension.max_context(),
-            ExtensionSubtable::ChainContextual(inner) => inner.extension.max_context(),
-            ExtensionSubtable::Reverse(inner) => inner.extension.max_context(),
+            // <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L27>
+            GsubExt::Single(_) | GsubExt::Multiple(_) | GsubExt::Alternate(_) => 1,
+            GsubExt::Ligature(inner) => inner.extension.max_context(),
+            GsubExt::Contextual(inner) => inner.extension.max_context(),
+            GsubExt::ChainContextual(inner) => inner.extension.max_context(),
+            GsubExt::Reverse(inner) => inner.extension.max_context(),
         }
     }
 }
@@ -253,34 +265,60 @@ impl MaxContext for ReverseChainSingleSubstFormat1 {
     }
 }
 
-impl MaxContext for &SubstitutionLookup {
+impl MaxContext for SubstitutionLookup {
     fn max_context(&self) -> u16 {
         match self {
-            SubstitutionLookup::Single(inner) => {
-                inner.subtables.iter().map(|s| s.max_context()).max()
-            }
-            SubstitutionLookup::Multiple(inner) => {
-                inner.subtables.iter().map(|s| s.max_context()).max()
-            }
-            SubstitutionLookup::Alternate(inner) => {
-                inner.subtables.iter().map(|s| s.max_context()).max()
-            }
-            SubstitutionLookup::Ligature(inner) => {
-                inner.subtables.iter().map(|s| s.max_context()).max()
-            }
-            SubstitutionLookup::Contextual(inner) => {
-                inner.subtables.iter().map(|s| s.max_context()).max()
-            }
-            SubstitutionLookup::ChainContextual(inner) => {
-                inner.subtables.iter().map(|s| s.max_context()).max()
-            }
-            SubstitutionLookup::Extension(inner) => {
-                inner.subtables.iter().map(|s| s.max_context()).max()
-            }
-            SubstitutionLookup::Reverse(inner) => {
-                inner.subtables.iter().map(|s| s.max_context()).max()
-            }
+            // <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L27>
+            SubstitutionLookup::Single(_)
+            | SubstitutionLookup::Multiple(_)
+            | SubstitutionLookup::Alternate(_) => 1u16,
+            SubstitutionLookup::Ligature(sub) => sub.max_context(),
+            SubstitutionLookup::Contextual(sub) => sub.max_context(),
+            SubstitutionLookup::ChainContextual(sub) => sub.max_context(),
+            SubstitutionLookup::Extension(sub) => sub.max_context(),
+            SubstitutionLookup::Reverse(sub) => sub.max_context(),
         }
-        .unwrap_or_default()
+    }
+}
+
+impl MaxContext for PositionLookup {
+    fn max_context(&self) -> u16 {
+        match self {
+            PositionLookup::Single(_) => 1,
+            PositionLookup::Pair(_) => 2,
+            // these four types are ignored in fonttools:
+            // https://github.com/fonttools/fonttools/blob/11343ed64c/Lib/fontTools/otlLib/maxContextCalc.py#L20
+            PositionLookup::Cursive(_)
+            | PositionLookup::MarkToBase(_)
+            | PositionLookup::MarkToLig(_)
+            | PositionLookup::MarkToMark(_) => 0,
+            PositionLookup::Contextual(sub) => sub.max_context(),
+            PositionLookup::ChainContextual(sub) => sub.max_context(),
+            PositionLookup::Extension(sub) => sub.max_context(),
+        }
+    }
+}
+
+impl MaxContext for GposExt {
+    fn max_context(&self) -> u16 {
+        match self {
+            GposExt::Single(_) => 1,
+            GposExt::Pair(_) => 2,
+            GposExt::Cursive(_)
+            | GposExt::MarkToBase(_)
+            | GposExt::MarkToLig(_)
+            | GposExt::MarkToMark(_) => 0,
+            GposExt::Contextual(inner) => inner.extension.max_context(),
+            GposExt::ChainContextual(inner) => inner.extension.max_context(),
+        }
+    }
+}
+impl<T: MaxContext> MaxContext for Lookup<T> {
+    fn max_context(&self) -> u16 {
+        self.subtables
+            .iter()
+            .map(|sub| sub.max_context())
+            .max()
+            .unwrap_or_default()
     }
 }
