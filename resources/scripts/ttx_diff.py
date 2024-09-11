@@ -244,13 +244,22 @@ def name_id_to_name(ttx, xpath, attr):
         )
     }
     for el in ttx.xpath(xpath):
-        if attr not in el.attrib:
-            continue
-        # names <= 255 have specific assigned slots, names > 255 not
-        name_id = int(el.attrib[attr])
-        if name_id <= 255:
-            continue
-        el.attrib[attr] = id_to_name[el.attrib[attr]]
+        if attr is None:
+            if el.text is None:
+                continue
+            name_id = int(el.text)
+            # names <= 255 have specific assigned slots, names > 255 not
+            if name_id <= 255:
+                continue
+            el.text = id_to_name[el.text]
+        else:
+            if attr not in el.attrib:
+                continue
+            # names <= 255 have specific assigned slots, names > 255 not
+            name_id = int(el.attrib[attr])
+            if name_id <= 255:
+                continue
+            el.attrib[attr] = id_to_name[el.attrib[attr]]
 
 
 def find_table(ttx, tag):
@@ -383,6 +392,8 @@ def reduce_diff_noise(build_dir, fontc, fontmake):
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
         name_id_to_name(ttx, "//NamedInstance", "subfamilyNameID")
+        name_id_to_name(ttx, "//AxisNameID", "value")
+        name_id_to_name(ttx, "//AxisNameID", None)
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
         drop_weird_names(ttx)
