@@ -1086,12 +1086,7 @@ impl ValueRecord {
     }
 
     pub(crate) fn placement(&self) -> Option<[Metric; 4]> {
-        if self
-            .iter()
-            .filter(|t| t.kind() == Kind::Number || t.kind() == Kind::VariableMetricNode)
-            .count()
-            == 4
-        {
+        if self.iter().filter_map(Metric::cast).count() == 4 {
             let mut iter = self.iter().filter_map(Metric::cast);
             return Some([
                 iter.next().unwrap(),
