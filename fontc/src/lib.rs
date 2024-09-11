@@ -608,6 +608,7 @@ mod tests {
             },
             TableRef,
         },
+        tables::layout::LookupFlag,
         types::NameId,
     };
 
@@ -2656,10 +2657,12 @@ mod tests {
         let result = TestCompile::compile_source("glyphs3/Oswald-AE-comb.glyphs");
         let font = result.font();
         let gpos = font.gpos().unwrap();
+        let gdef = font.gdef().unwrap();
         let acutecomb = result.get_gid("acutecomb");
         let brevecomb = result.get_gid("brevecomb");
         let tildecomb = result.get_gid("tildecomb");
         let macroncomb = result.get_gid("macroncomb");
+        let breveinvertedcomb = result.get_gid("breveinvertedcomb");
 
         let mark_mark_lookups = gpos
             .lookup_list()
@@ -2670,14 +2673,20 @@ mod tests {
                 Ok(PositionLookup::MarkToMark(lookup)) => Some(lookup),
                 _ => None,
             })
-            .flat_map(|lookup| lookup.subtables().iter())
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-        assert_eq!(mark_mark_lookups.len(), 1);
+            .collect::<Vec<_>>();
+        assert_eq!(mark_mark_lookups.len(), 2);
+
+        let mark_mark_lookup = mark_mark_lookups.first().unwrap();
+        let mark_mark_subtables = mark_mark_lookup
+            .subtables()
+            .iter()
+            .map(|s| s.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(mark_mark_subtables.len(), 1);
 
         let mut bases = Vec::new();
         let mut marks = Vec::new();
-        for sub in &mark_mark_lookups {
+        for sub in &mark_mark_subtables {
             let mark_cov = sub.mark1_coverage().unwrap();
             let base_cov = sub.mark2_coverage().unwrap();
             let mark1array = sub.mark1_array().unwrap();
@@ -2727,7 +2736,38 @@ mod tests {
                 (acutecomb, vec![(0, 810)]),
                 (brevecomb, vec![(-1, 776)]),
                 (tildecomb, vec![(0, 776)]),
-                (macroncomb, vec![(0, 810)])
+                (macroncomb, vec![(0, 810)]),
+                (breveinvertedcomb, vec![(-1, 776)]),
+            ]
+        );
+
+        let mark_filter_id = mark_mark_lookup
+            .lookup_flag()
+            .contains(LookupFlag::USE_MARK_FILTERING_SET)
+            .then_some(mark_mark_lookup.mark_filtering_set())
+            .flatten();
+        assert_eq!(mark_filter_id, Some(0));
+
+        let mark_filter_set = gdef
+            .mark_glyph_sets_def()
+            .unwrap()
+            .as_ref()
+            .map(|sets| {
+                sets.coverages()
+                    .get(mark_filter_id.unwrap().into())
+                    .unwrap()
+            })
+            .map(|cov| cov.iter().collect::<Vec<_>>())
+            .unwrap();
+
+        assert_eq!(
+            mark_filter_set,
+            vec![
+                acutecomb,
+                brevecomb,
+                tildecomb,
+                macroncomb,
+                breveinvertedcomb
             ]
         );
     }
