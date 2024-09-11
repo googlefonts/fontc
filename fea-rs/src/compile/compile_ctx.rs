@@ -538,7 +538,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn ensure_current_lookup_type(&mut self, kind: Kind) -> &mut SomeLookup {
-        if !self.lookups.has_current_kind(kind) {
+        if !self.lookups.has_current_kind(kind) || !self.lookups.has_same_flags(self.lookup_flags) {
             //FIXME: find another way of ensuring that named lookup blocks don't
             //contain mismatched rules
             //assert!(!self.lookups.is_named(), "ensure rule type in validation");
@@ -598,7 +598,9 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
             for target in target.iter() {
                 lookup.add_gsub_type_2(target, vec![]);
             }
-        } else if self.lookups.has_current_kind(Kind::GsubType2) {
+        } else if self.lookups.has_current_kind(Kind::GsubType2)
+            && self.lookups.has_same_flags(self.lookup_flags)
+        {
             // we combine chains of mixed single & multi-sub rules into multi-sub lookups
             let lookup = self.ensure_current_lookup_type(Kind::GsubType2);
             for (target, replacement) in target.iter().zip(replacement.into_iter_for_target()) {

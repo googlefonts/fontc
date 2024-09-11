@@ -179,7 +179,7 @@ pub(crate) struct LookupIdMap {
 }
 
 /// Tracks the current lookupflags state
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct LookupFlagInfo {
     pub(crate) flags: LookupFlag,
     pub(crate) mark_filter_set: Option<FilterSetId>,
@@ -432,6 +432,10 @@ impl AllLookups {
     /// Returns `true` if there is an active lookup of this kind
     pub(crate) fn has_current_kind(&self, kind: Kind) -> bool {
         self.current.as_ref().map(SomeLookup::kind) == Some(kind)
+    }
+
+    pub(crate) fn has_same_flags(&self, flags: LookupFlagInfo) -> bool {
+        self.current.as_ref().map(SomeLookup::flags) == Some(flags)
     }
 
     // `false` if we didn't have an active lookup
@@ -835,6 +839,34 @@ impl SomeLookup {
                 PositionLookup::Contextual(_) => Kind::GposType7,
                 PositionLookup::ChainedContextual(_) => Kind::GposType8,
             },
+        }
+    }
+
+    fn flags(&self) -> LookupFlagInfo {
+        match self {
+            SomeLookup::GsubLookup(l) => match l {
+                SubstitutionLookup::Single(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                SubstitutionLookup::Multiple(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                SubstitutionLookup::Alternate(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                SubstitutionLookup::Ligature(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                SubstitutionLookup::Contextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                SubstitutionLookup::ChainedContextual(l) => {
+                    LookupFlagInfo::new(l.flags, l.mark_set)
+                }
+                SubstitutionLookup::Reverse(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+            },
+            SomeLookup::GposLookup(l) => match l {
+                PositionLookup::Single(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::Pair(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::Cursive(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::MarkToBase(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::MarkToLig(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::MarkToMark(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::Contextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+                PositionLookup::ChainedContextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+            },
+            SomeLookup::GposContextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
+            SomeLookup::GsubContextual(l) => LookupFlagInfo::new(l.flags, l.mark_set),
         }
     }
 

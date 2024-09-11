@@ -1,0 +1,7 @@
+feature test {
+  lookupflag IgnoreMarks;
+    sub b' by c;
+
+  lookupflag UseMarkFilteringSet [acutecomb];
+    sub a' acutecomb by b;
+} test;

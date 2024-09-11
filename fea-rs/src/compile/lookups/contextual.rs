@@ -28,8 +28,8 @@ use super::{
 /// bunch of anonymous lookups.
 #[derive(Debug, Clone)]
 pub(crate) struct ContextualLookupBuilder<T> {
-    flags: LookupFlag,
-    mark_set: Option<FilterSetId>,
+    pub(super) flags: LookupFlag,
+    pub(super) mark_set: Option<FilterSetId>,
     subtables: Vec<ContextBuilder>,
     /// anonymous lookups that are not modifiable
     ///
