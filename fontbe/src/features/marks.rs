@@ -80,6 +80,11 @@ impl MarkGroup<'_> {
             self.marks
                 .iter()
                 .map(|(name, _)| glyph_order.glyph_id(name).unwrap())
+                .chain(
+                    self.bases
+                        .iter()
+                        .map(|(name, _)| glyph_order.glyph_id(name).unwrap()),
+                )
                 .collect()
         })
     }

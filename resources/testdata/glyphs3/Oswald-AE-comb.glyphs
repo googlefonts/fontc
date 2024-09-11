@@ -1735,6 +1735,87 @@ width = 278;
 };
 };
 };
+},
+{
+glyphname = breveinvertedcomb;
+layers = (
+{
+anchors = (
+{
+name = _top.a;
+pos = (0,578);
+},
+{
+name = top;
+pos = (0,810);
+},
+{
+name = top.a;
+pos = (0,810);
+}
+);
+layerId = "FCD7E481-103E-4A6C-AD70-01DA443B2AD0";
+shapes = (
+{
+pos = (0,1389);
+ref = brevecomb;
+scale = (1,-1);
+}
+);
+width = 100;
+},
+{
+anchors = (
+{
+name = _top.a;
+pos = (0,578);
+},
+{
+name = top;
+pos = (-1,776);
+},
+{
+name = top.a;
+pos = (0,776);
+}
+);
+layerId = "8AC5A1D3-32A8-4416-86FC-94176A419B8F";
+shapes = (
+{
+pos = (0,1417);
+ref = brevecomb;
+scale = (1,-1);
+}
+);
+width = 0;
+},
+{
+anchors = (
+{
+name = _top.a;
+pos = (0,578);
+},
+{
+name = top;
+pos = (0,802);
+},
+{
+name = top.a;
+pos = (0,802);
+}
+);
+layerId = "F66B25F0-8957-42F3-9BF7-6C5DDCB0258B";
+shapes = (
+{
+pos = (0,1442);
+ref = brevecomb;
+scale = (1,-1);
+}
+);
+width = 0;
+}
+);
+unicode = 785;
 }
 );
 instances = (
