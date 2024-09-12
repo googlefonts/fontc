@@ -585,125 +585,153 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
 
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), master.cap_height());
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), master.x_height());
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::Os2TypoAscender,
                 pos.clone(),
-                master.typo_ascender.map(|v| v as f64),
-                font.typo_ascender.map(|v| v as f64),
+                master
+                    .typo_ascender
+                    .or(font.typo_ascender)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::Os2TypoDescender,
                 pos.clone(),
-                master.typo_descender.map(|v| v as f64),
-                font.typo_descender.map(|v| v as f64),
+                master
+                    .typo_descender
+                    .or(font.typo_descender)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::Os2TypoLineGap,
                 pos.clone(),
-                master.typo_line_gap.map(|v| v as f64),
-                font.typo_line_gap.map(|v| v as f64),
+                master
+                    .typo_line_gap
+                    .or(font.typo_line_gap)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::Os2WinAscent,
                 pos.clone(),
-                master.win_ascent.map(|v| v as f64),
-                font.win_ascent.map(|v| v as f64),
+                master.win_ascent.or(font.win_ascent).map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::Os2WinDescent,
                 pos.clone(),
-                master.win_descent.map(|v| v as f64),
-                font.win_descent.map(|v| v as f64),
+                master.win_descent.or(font.win_descent).map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::StrikeoutPosition,
                 pos.clone(),
-                master.strikeout_position.map(|v| v as f64),
-                font.strikeout_position.map(|v| v as f64),
+                master
+                    .strikeout_position
+                    .or(font.strikeout_position)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::StrikeoutSize,
                 pos.clone(),
-                master.strikeout_size.map(|v| v as f64),
-                font.strikeout_size.map(|v| v as f64),
+                master
+                    .strikeout_size
+                    .or(font.strikeout_size)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::SubscriptXOffset,
                 pos.clone(),
-                master.subscript_x_offset.map(|v| v as f64),
-                font.subscript_x_offset.map(|v| v as f64),
+                master
+                    .subscript_x_offset
+                    .or(font.subscript_x_offset)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::SubscriptXSize,
                 pos.clone(),
-                master.subscript_x_size.map(|v| v as f64),
-                font.subscript_x_size.map(|v| v as f64),
+                master
+                    .subscript_x_size
+                    .or(font.subscript_x_size)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::SubscriptYOffset,
                 pos.clone(),
-                master.subscript_y_offset.map(|v| v as f64),
-                font.subscript_y_offset.map(|v| v as f64),
+                master
+                    .subscript_y_offset
+                    .or(font.subscript_y_offset)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::SubscriptYSize,
                 pos.clone(),
-                master.subscript_y_size.map(|v| v as f64),
-                font.subscript_y_size.map(|v| v as f64),
+                master
+                    .subscript_y_size
+                    .or(font.subscript_y_size)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::SuperscriptXOffset,
                 pos.clone(),
-                master.superscript_x_offset.map(|v| v as f64),
-                font.superscript_x_offset.map(|v| v as f64),
+                master
+                    .superscript_x_offset
+                    .or(font.superscript_x_offset)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::SuperscriptXSize,
                 pos.clone(),
-                master.superscript_x_size.map(|v| v as f64),
-                font.superscript_x_size.map(|v| v as f64),
+                master
+                    .superscript_x_size
+                    .or(font.superscript_x_size)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::SuperscriptYOffset,
                 pos.clone(),
-                master.superscript_y_offset.map(|v| v as f64),
-                font.superscript_y_offset.map(|v| v as f64),
+                master
+                    .superscript_y_offset
+                    .or(font.superscript_y_offset)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::SuperscriptYSize,
                 pos.clone(),
-                master.superscript_y_size.map(|v| v as f64),
-                font.superscript_y_size.map(|v| v as f64),
+                master
+                    .superscript_y_size
+                    .or(font.superscript_y_size)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::HheaAscender,
                 pos.clone(),
-                master.hhea_ascender.map(|v| v as f64),
-                font.hhea_ascender.map(|v| v as f64),
+                master
+                    .hhea_ascender
+                    .or(font.hhea_ascender)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::HheaDescender,
                 pos.clone(),
-                master.hhea_descender.map(|v| v as f64),
-                font.hhea_descender.map(|v| v as f64),
+                master
+                    .hhea_descender
+                    .or(font.hhea_descender)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::HheaLineGap,
                 pos.clone(),
-                master.hhea_line_gap.map(|v| v as f64),
-                font.hhea_line_gap.map(|v| v as f64),
+                master
+                    .hhea_line_gap
+                    .or(font.hhea_line_gap)
+                    .map(|v| v as f64),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::UnderlineThickness,
                 pos.clone(),
-                master.underline_thickness,
-                font.underline_thickness,
+                master.underline_thickness.or(font.underline_thickness),
             );
-            metrics.set_if_some_or_fallback(
+            metrics.set_if_some(
                 GlobalMetric::UnderlinePosition,
                 pos.clone(),
-                master.underline_position,
-                font.underline_position,
+                master.underline_position.or(font.underline_position),
             )
         }
 

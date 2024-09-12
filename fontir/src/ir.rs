@@ -664,20 +664,6 @@ impl GlobalMetrics {
         }
     }
 
-    pub fn set_if_some_or_fallback(
-        self: &mut GlobalMetrics,
-        metric: GlobalMetric,
-        pos: NormalizedLocation,
-        maybe_value: Option<impl Into<OrderedFloat<f64>>>,
-        maybe_fallback: Option<impl Into<OrderedFloat<f64>>>,
-    ) {
-        if let Some(value) = maybe_value {
-            self.set(metric, pos, value.into().into_inner() as f32);
-        } else if let Some(fallback) = maybe_fallback {
-            self.set(metric, pos, fallback.into().into_inner() as f32);
-        }
-    }
-
     pub fn at(&self, pos: &NormalizedLocation) -> GlobalMetricsInstance {
         GlobalMetricsInstance {
             pos: pos.clone(),
