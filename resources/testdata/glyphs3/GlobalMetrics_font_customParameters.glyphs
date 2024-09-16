@@ -1,0 +1,202 @@
+{
+.appVersion = "3316";
+.formatVersion = 3;
+DisplayStrings = (
+"",
+" "
+);
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = fsType;
+value = (
+);
+},
+{
+name = "Use Typo Metrics";
+value = 1;
+},
+{
+name = typoAscender;
+value = 950;
+},
+{
+name = typoDescender;
+value = -350;
+},
+{
+name = typoLineGap;
+value = 0;
+},
+{
+name = hheaAscender;
+value = 950;
+},
+{
+name = hheaDescender;
+value = -350;
+},
+{
+name = hheaLineGap;
+value = 0;
+},
+{
+name = winAscent;
+value = 1185;
+},
+{
+name = winDescent;
+value = 420;
+},
+{
+name = underlineThickness;
+value = 50;
+},
+{
+name = underlinePosition;
+value = -300;
+}
+);
+date = "2024-09-11 20:25:35 +0000";
+familyName = "GlobalMetrics Font Test";
+fontMaster = (
+{
+axesValues = (
+0
+);
+iconName = Light;
+id = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = 660;
+},
+{
+pos = 478;
+},
+{
+},
+{
+pos = -200;
+},
+{
+}
+);
+name = ExtraLight;
+},
+{
+axesValues = (
+1000
+);
+customParameters = (
+{
+name = typoAscender;
+value = 1000;
+},
+{
+name = typoDescender;
+value = -400;
+},
+{
+name = hheaAscender;
+value = 1000;
+},
+{
+name = hheaDescender;
+value = -400;
+}
+);
+iconName = Bold;
+id = "42B3044F-4D5A-45CA-9EB7-C1889731596B";
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = 650;
+},
+{
+pos = 500;
+},
+{
+},
+{
+pos = -200;
+},
+{
+}
+);
+name = Black;
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2024-09-11 21:06:25 +0000";
+layers = (
+{
+layerId = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";
+width = 200;
+},
+{
+layerId = "42B3044F-4D5A-45CA-9EB7-C1889731596B";
+width = 200;
+}
+);
+unicode = 32;
+}
+);
+instances = (
+{
+axesValues = (
+368
+);
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 400;
+}
+);
+}
+);
+instanceInterpolations = {
+"0CAB57D4-4FC4-49C3-B456-FB7666EAA712" = 0.632;
+"42B3044F-4D5A-45CA-9EB7-C1889731596B" = 0.368;
+};
+name = Regular;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

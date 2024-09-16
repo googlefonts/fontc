@@ -107,6 +107,26 @@ impl GlyphsIrSource {
             version_minor: Default::default(),
             date: None,
             kerning_ltr: Default::default(),
+            typo_ascender: font.typo_ascender,
+            typo_descender: font.typo_descender,
+            typo_line_gap: font.typo_line_gap,
+            win_ascent: font.win_ascent,
+            win_descent: font.win_descent,
+            hhea_ascender: font.hhea_ascender,
+            hhea_descender: font.hhea_descender,
+            hhea_line_gap: font.hhea_line_gap,
+            underline_thickness: font.underline_thickness,
+            underline_position: font.underline_position,
+            strikeout_position: font.strikeout_position,
+            strikeout_size: font.strikeout_size,
+            subscript_x_offset: font.subscript_x_offset,
+            subscript_x_size: font.subscript_x_size,
+            subscript_y_offset: font.subscript_y_offset,
+            subscript_y_size: font.subscript_y_size,
+            superscript_x_offset: font.superscript_x_offset,
+            superscript_x_size: font.superscript_x_size,
+            superscript_y_offset: font.superscript_y_offset,
+            superscript_y_size: font.superscript_y_size,
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -136,6 +156,26 @@ impl GlyphsIrSource {
             version_minor: Default::default(),
             date: None,
             kerning_ltr: font.kerning_ltr.clone(),
+            typo_ascender: font.typo_ascender,
+            typo_descender: font.typo_descender,
+            typo_line_gap: font.typo_line_gap,
+            win_ascent: font.win_ascent,
+            win_descent: font.win_descent,
+            hhea_ascender: font.hhea_ascender,
+            hhea_descender: font.hhea_descender,
+            hhea_line_gap: font.hhea_line_gap,
+            underline_thickness: font.underline_thickness,
+            underline_position: font.underline_position,
+            strikeout_position: font.strikeout_position,
+            strikeout_size: font.strikeout_size,
+            subscript_x_offset: font.subscript_x_offset,
+            subscript_x_size: font.subscript_x_size,
+            subscript_y_offset: font.subscript_y_offset,
+            subscript_y_size: font.subscript_y_size,
+            superscript_x_offset: font.superscript_x_offset,
+            superscript_x_size: font.superscript_x_size,
+            superscript_y_offset: font.superscript_y_offset,
+            superscript_y_size: font.superscript_y_size,
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -548,102 +588,150 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             metrics.set_if_some(
                 GlobalMetric::Os2TypoAscender,
                 pos.clone(),
-                master.typo_ascender.map(|v| v as f64),
+                master
+                    .typo_ascender
+                    .or(font.typo_ascender)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::Os2TypoDescender,
                 pos.clone(),
-                master.typo_descender.map(|v| v as f64),
+                master
+                    .typo_descender
+                    .or(font.typo_descender)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::Os2TypoLineGap,
                 pos.clone(),
-                master.typo_line_gap.map(|v| v as f64),
+                master
+                    .typo_line_gap
+                    .or(font.typo_line_gap)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::Os2WinAscent,
                 pos.clone(),
-                master.win_ascent.map(|v| v as f64),
+                master.win_ascent.or(font.win_ascent).map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::Os2WinDescent,
                 pos.clone(),
-                master.win_descent.map(|v| v as f64),
+                master.win_descent.or(font.win_descent).map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::StrikeoutPosition,
                 pos.clone(),
-                master.strikeout_position.map(|v| v as f64),
+                master
+                    .strikeout_position
+                    .or(font.strikeout_position)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::StrikeoutSize,
                 pos.clone(),
-                master.strikeout_size.map(|v| v as f64),
+                master
+                    .strikeout_size
+                    .or(font.strikeout_size)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::SubscriptXOffset,
                 pos.clone(),
-                master.subscript_x_offset.map(|v| v as f64),
+                master
+                    .subscript_x_offset
+                    .or(font.subscript_x_offset)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::SubscriptXSize,
                 pos.clone(),
-                master.subscript_x_size.map(|v| v as f64),
+                master
+                    .subscript_x_size
+                    .or(font.subscript_x_size)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::SubscriptYOffset,
                 pos.clone(),
-                master.subscript_y_offset.map(|v| v as f64),
+                master
+                    .subscript_y_offset
+                    .or(font.subscript_y_offset)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::SubscriptYSize,
                 pos.clone(),
-                master.subscript_y_size.map(|v| v as f64),
+                master
+                    .subscript_y_size
+                    .or(font.subscript_y_size)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::SuperscriptXOffset,
                 pos.clone(),
-                master.superscript_x_offset.map(|v| v as f64),
+                master
+                    .superscript_x_offset
+                    .or(font.superscript_x_offset)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::SuperscriptXSize,
                 pos.clone(),
-                master.superscript_x_size.map(|v| v as f64),
+                master
+                    .superscript_x_size
+                    .or(font.superscript_x_size)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::SuperscriptYOffset,
                 pos.clone(),
-                master.superscript_y_offset.map(|v| v as f64),
+                master
+                    .superscript_y_offset
+                    .or(font.superscript_y_offset)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::SuperscriptYSize,
                 pos.clone(),
-                master.superscript_y_size.map(|v| v as f64),
+                master
+                    .superscript_y_size
+                    .or(font.superscript_y_size)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::HheaAscender,
                 pos.clone(),
-                master.hhea_ascender.map(|v| v as f64),
+                master
+                    .hhea_ascender
+                    .or(font.hhea_ascender)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::HheaDescender,
                 pos.clone(),
-                master.hhea_descender.map(|v| v as f64),
+                master
+                    .hhea_descender
+                    .or(font.hhea_descender)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::HheaLineGap,
                 pos.clone(),
-                master.hhea_line_gap.map(|v| v as f64),
+                master
+                    .hhea_line_gap
+                    .or(font.hhea_line_gap)
+                    .map(|v| v as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::UnderlineThickness,
                 pos.clone(),
-                master.underline_thickness,
+                master.underline_thickness.or(font.underline_thickness),
             );
             metrics.set_if_some(
                 GlobalMetric::UnderlinePosition,
                 pos.clone(),
-                master.underline_position,
+                master.underline_position.or(font.underline_position),
             )
         }
 
@@ -1710,5 +1798,110 @@ mod tests {
     fn reads_fs_type_0x0104() {
         let (_, context) = build_static_metadata(glyphs3_dir().join("fstype_0x0104.glyphs"));
         assert_eq!(Some(0x104), context.static_metadata.get().misc.fs_type);
+    }
+
+    #[test]
+    fn captures_global_metrics_from_font() {
+        let (_, context) =
+            build_global_metrics(glyphs3_dir().join("GlobalMetrics_font_customParameters.glyphs"));
+        let static_metadata = &context.static_metadata.get();
+        let default_metrics = context
+            .global_metrics
+            .get()
+            .at(static_metadata.default_location());
+        assert_eq!(
+            GlobalMetricsInstance {
+                pos: static_metadata.default_location().clone(),
+                ascender: 800.0.into(),
+                descender: (-200.0).into(),
+                caret_slope_rise: 1000.0.into(),
+                cap_height: 660.0.into(),
+                x_height: 478.0.into(),
+                subscript_x_size: 650.0.into(),
+                subscript_y_size: 600.0.into(),
+                subscript_y_offset: 75.0.into(),
+                superscript_x_size: 650.0.into(),
+                superscript_y_size: 600.0.into(),
+                superscript_y_offset: 350.0.into(),
+                strikeout_position: 286.8.into(),
+                strikeout_size: 50.0.into(),
+                os2_typo_ascender: 950.0.into(),
+                os2_typo_descender: (-350.0).into(),
+                os2_typo_line_gap: 0.0.into(),
+                os2_win_ascent: 1185.0.into(),
+                os2_win_descent: 420.0.into(),
+                hhea_ascender: 950.0.into(),
+                hhea_descender: (-350.0).into(),
+                hhea_line_gap: 0.0.into(),
+                underline_thickness: 50.0.into(),
+                underline_position: (-300.0).into(),
+                ..Default::default()
+            },
+            default_metrics
+        );
+        let light = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let light_metrics = context.global_metrics.get().at(&light);
+        assert_eq!(
+            GlobalMetricsInstance {
+                pos: light.clone(),
+                ascender: 800.0.into(),
+                descender: (-200.0).into(),
+                caret_slope_rise: 1000.0.into(),
+                cap_height: 660.0.into(),
+                x_height: 478.0.into(),
+                subscript_x_size: 650.0.into(),
+                subscript_y_size: 600.0.into(),
+                subscript_y_offset: 75.0.into(),
+                superscript_x_size: 650.0.into(),
+                superscript_y_size: 600.0.into(),
+                superscript_y_offset: 350.0.into(),
+                strikeout_position: 286.8.into(),
+                strikeout_size: 50.0.into(),
+                os2_typo_ascender: 950.0.into(),
+                os2_typo_descender: (-350.0).into(),
+                os2_typo_line_gap: 0.0.into(),
+                os2_win_ascent: 1185.0.into(),
+                os2_win_descent: 420.0.into(),
+                hhea_ascender: 950.0.into(),
+                hhea_descender: (-350.0).into(),
+                hhea_line_gap: 0.0.into(),
+                underline_thickness: 50.0.into(),
+                underline_position: (-300.0).into(),
+                ..Default::default()
+            },
+            light_metrics
+        );
+        let black = NormalizedLocation::for_pos(&[("wght", 1.0)]);
+        let black_metrics = context.global_metrics.get().at(&black);
+        assert_eq!(
+            GlobalMetricsInstance {
+                pos: black.clone(),
+                ascender: 800.0.into(),
+                descender: (-200.0).into(),
+                caret_slope_rise: 1000.0.into(),
+                cap_height: 650.0.into(),
+                x_height: 500.0.into(),
+                subscript_x_size: 650.0.into(),
+                subscript_y_size: 600.0.into(),
+                subscript_y_offset: 75.0.into(),
+                superscript_x_size: 650.0.into(),
+                superscript_y_size: 600.0.into(),
+                superscript_y_offset: 350.0.into(),
+                strikeout_position: 300.0.into(),
+                strikeout_size: 50.0.into(),
+                os2_typo_ascender: 1000.0.into(),
+                os2_typo_descender: (-400.0).into(),
+                os2_typo_line_gap: 0.0.into(),
+                os2_win_ascent: 1185.0.into(),
+                os2_win_descent: 420.0.into(),
+                hhea_ascender: 1000.0.into(),
+                hhea_descender: (-400.0).into(),
+                hhea_line_gap: 0.0.into(),
+                underline_thickness: 50.0.into(),
+                underline_position: (-300.0).into(),
+                ..Default::default()
+            },
+            black_metrics
+        );
     }
 }

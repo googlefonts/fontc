@@ -64,6 +64,27 @@ pub struct Font {
 
     // master id => { (name or class, name or class) => adjustment }
     pub kerning_ltr: Kerning,
+
+    pub typo_ascender: Option<i64>,
+    pub typo_descender: Option<i64>,
+    pub typo_line_gap: Option<i64>,
+    pub win_ascent: Option<i64>,
+    pub win_descent: Option<i64>,
+    pub hhea_ascender: Option<i64>,
+    pub hhea_descender: Option<i64>,
+    pub hhea_line_gap: Option<i64>,
+    pub underline_thickness: Option<OrderedFloat<f64>>,
+    pub underline_position: Option<OrderedFloat<f64>>,
+    pub strikeout_position: Option<i64>,
+    pub strikeout_size: Option<i64>,
+    pub subscript_x_offset: Option<i64>,
+    pub subscript_x_size: Option<i64>,
+    pub subscript_y_offset: Option<i64>,
+    pub subscript_y_size: Option<i64>,
+    pub superscript_x_offset: Option<i64>,
+    pub superscript_x_size: Option<i64>,
+    pub superscript_y_offset: Option<i64>,
+    pub superscript_y_size: Option<i64>,
 }
 
 /// master id => { (name or class, name or class) => adjustment }
@@ -2010,6 +2031,26 @@ impl TryFrom<RawFont> for Font {
 
         let use_typo_metrics = from.custom_parameters.bool("Use Typo Metrics");
         let has_wws_names = from.custom_parameters.bool("Has WWS Names");
+        let typo_ascender = from.custom_parameters.int("typoAscender");
+        let typo_descender = from.custom_parameters.int("typoDescender");
+        let typo_line_gap = from.custom_parameters.int("typoLineGap");
+        let win_ascent = from.custom_parameters.int("winAscent");
+        let win_descent = from.custom_parameters.int("winDescent");
+        let hhea_ascender = from.custom_parameters.int("hheaAscender");
+        let hhea_descender = from.custom_parameters.int("hheaDescender");
+        let hhea_line_gap = from.custom_parameters.int("hheaLineGap");
+        let underline_thickness = from.custom_parameters.float("underlineThickness");
+        let underline_position = from.custom_parameters.float("underlinePosition");
+        let strikeout_position = from.custom_parameters.int("strikeoutPosition");
+        let strikeout_size = from.custom_parameters.int("strikeoutSize");
+        let subscript_x_offset = from.custom_parameters.int("subscriptXOffset");
+        let subscript_x_size = from.custom_parameters.int("subscriptXSize");
+        let subscript_y_offset = from.custom_parameters.int("subscriptYOffset");
+        let subscript_y_size = from.custom_parameters.int("subscriptYSize");
+        let superscript_x_offset = from.custom_parameters.int("superscriptXOffset");
+        let superscript_x_size = from.custom_parameters.int("superscriptXSize");
+        let superscript_y_offset = from.custom_parameters.int("superscriptYOffset");
+        let superscript_y_size = from.custom_parameters.int("superscriptYSize");
 
         let axes = from.axes.clone();
         let instances: Vec<_> = from
@@ -2150,6 +2191,26 @@ impl TryFrom<RawFont> for Font {
             version_minor: from.versionMinor.unwrap_or_default() as u32,
             date: from.date,
             kerning_ltr: from.kerning_LTR,
+            typo_ascender,
+            typo_descender,
+            typo_line_gap,
+            win_ascent,
+            win_descent,
+            hhea_ascender,
+            hhea_descender,
+            hhea_line_gap,
+            underline_thickness,
+            underline_position,
+            strikeout_position,
+            strikeout_size,
+            subscript_x_offset,
+            subscript_x_size,
+            subscript_y_offset,
+            subscript_y_size,
+            superscript_x_offset,
+            superscript_x_size,
+            superscript_y_offset,
+            superscript_y_size,
         })
     }
 }
@@ -3171,5 +3232,21 @@ mod tests {
             font.masters[1].number_values.get("foo"),
             Some(&OrderedFloat(0f64))
         );
+    }
+
+    #[test]
+    fn read_font_metrics() {
+        let font =
+            Font::load(&glyphs3_dir().join("GlobalMetrics_font_customParameters.glyphs")).unwrap();
+        assert_eq!(Some(950), font.typo_ascender);
+        assert_eq!(Some(-350), font.typo_descender);
+        assert_eq!(Some(0), font.typo_line_gap);
+        assert_eq!(Some(950), font.hhea_ascender);
+        assert_eq!(Some(-350), font.hhea_descender);
+        assert_eq!(Some(0), font.hhea_line_gap);
+        assert_eq!(Some(1185), font.win_ascent);
+        assert_eq!(Some(420), font.win_descent);
+        assert_eq!(Some(OrderedFloat(50_f64)), font.underline_thickness);
+        assert_eq!(Some(OrderedFloat(-300_f64)), font.underline_position);
     }
 }
