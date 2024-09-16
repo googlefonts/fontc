@@ -387,6 +387,7 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
 
         self.vertical_feature.end_feature();
         self.lookup_flags.clear();
+        self.script = None;
     }
 
     fn start_lookup_block(&mut self, name: &Token) {

@@ -1,0 +1,15 @@
+languagesystem DFLT dflt;
+languagesystem latn dflt;
+
+feature test {
+script latn;
+    sub A by B;
+} test;
+
+feature mess {
+    # this feature should also only exist for latn;
+    # we had a bug where we were ignoring this script stmt because we
+    # hadn't cleared the script after the end of the previous feature block.
+    script latn;
+    sub D by E;
+} mess;
