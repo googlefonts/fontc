@@ -109,6 +109,7 @@ fn deserialize_compile_json(json_str: &str, path: &Path) -> Result<Results<(), S
                 failure,
                 panic,
                 skipped,
+                source_repos: Default::default(),
             },
         )
 }
@@ -161,6 +162,8 @@ struct Results<T, E> {
     pub(crate) failure: BTreeMap<PathBuf, E>,
     pub(crate) panic: BTreeSet<PathBuf>,
     pub(crate) skipped: BTreeMap<PathBuf, SkipReason>,
+    #[serde(skip)]
+    pub(crate) source_repos: BTreeMap<PathBuf, String>,
 }
 
 /// The output of trying to run on one font.
@@ -190,9 +193,18 @@ fn run_all<T: Send, E: Send>(
 ) -> Result<Results<T, E>, Error> {
     let mut skipped: Vec<(_, RunResult<T, E>)> = Vec::new();
     let mut targets = Vec::new();
+    let mut source_repos = BTreeMap::new();
     for source in sources {
         match source.get_sources(cache_dir) {
-            Ok(repo_targets) => targets.extend(repo_targets),
+            Ok(repo_targets) => {
+                for target in &repo_targets {
+                    let target = target
+                        .strip_prefix(cache_dir)
+                        .expect("prefix is always present");
+                    source_repos.insert(target.to_path_buf(), source.repo_url.clone());
+                }
+                targets.extend(repo_targets);
+            }
             Err(e) => skipped.push((
                 cache_dir.join(&source.repo_name),
                 RunResult::Skipped(e.into()),
@@ -222,7 +234,9 @@ fn run_all<T: Send, E: Send>(
             })
             .collect::<Vec<_>>()
     });
-    Ok(results.into_iter().chain(skipped).collect())
+    let mut results: Results<T, E> = results.into_iter().chain(skipped).collect();
+    results.source_repos = source_repos;
+    Ok(results)
 }
 
 fn print_or_write_results<T: serde::Serialize + Send, E: serde::Serialize>(
@@ -343,6 +357,7 @@ impl<T, E> Default for Results<T, E> {
             failure: Default::default(),
             panic: Default::default(),
             skipped: Default::default(),
+            source_repos: Default::default(),
         }
     }
 }
