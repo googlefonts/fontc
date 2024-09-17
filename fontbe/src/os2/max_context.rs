@@ -66,11 +66,11 @@ impl RuleSet for SequenceRuleSet {
 
 impl Rule for SequenceRule {
     fn sequence_len(&self) -> usize {
-        self.input_sequence.len()
+        self.input_sequence.len() + 1
     }
 
     fn lookahead_len(&self) -> usize {
-        self.seq_lookup_records.len()
+        0
     }
 }
 
@@ -91,11 +91,11 @@ impl RuleSet for ClassSequenceRuleSet {
 
 impl Rule for ClassSequenceRule {
     fn sequence_len(&self) -> usize {
-        self.input_sequence.len()
+        self.input_sequence.len() + 1
     }
 
     fn lookahead_len(&self) -> usize {
-        self.seq_lookup_records.len()
+        0
     }
 }
 
@@ -116,11 +116,11 @@ impl RuleSet for ChainedSequenceRuleSet {
 
 impl Rule for ChainedSequenceRule {
     fn sequence_len(&self) -> usize {
-        self.input_sequence.len()
+        self.input_sequence.len() + 1
     }
 
     fn lookahead_len(&self) -> usize {
-        self.seq_lookup_records.len()
+        self.lookahead_sequence.len()
     }
 }
 
@@ -145,7 +145,7 @@ impl Rule for ChainedClassSequenceRule {
     }
 
     fn lookahead_len(&self) -> usize {
-        self.seq_lookup_records.len()
+        self.lookahead_sequence.len()
     }
 }
 
@@ -183,62 +183,55 @@ impl MaxContext for LigatureSubstFormat1 {
 }
 
 /// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L41-L43>
+impl MaxContext for SequenceContext {
+    fn max_context(&self) -> u16 {
+        match self as &SequenceContext {
+            SequenceContext::Format1(format1) => max_context_of_contextual_subtable(&format1),
+            SequenceContext::Format2(format2) => max_context_of_contextual_subtable(&format2),
+            SequenceContext::Format3(format3) => max_context_of_rule(format3.coverages.len(), 0),
+        }
+    }
+}
+
 impl MaxContext for SubstitutionSequenceContext {
     fn max_context(&self) -> u16 {
-        match self as &SequenceContext {
-            SequenceContext::Format1(format1) => max_context_of_contextual_subtable(&format1),
-            SequenceContext::Format2(format2) => max_context_of_contextual_subtable(&format2),
-            SequenceContext::Format3(format3) => {
-                max_context_of_rule(0, format3.seq_lookup_records.len())
-            }
-        }
+        self.as_inner().max_context()
     }
 }
 
-/// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L41-L43>
 impl MaxContext for PositionSequenceContext {
     fn max_context(&self) -> u16 {
-        match self as &SequenceContext {
-            SequenceContext::Format1(format1) => max_context_of_contextual_subtable(&format1),
-            SequenceContext::Format2(format2) => max_context_of_contextual_subtable(&format2),
-            SequenceContext::Format3(format3) => {
-                max_context_of_rule(0, format3.seq_lookup_records.len())
-            }
-        }
+        self.as_inner().max_context()
     }
 }
 
 /// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L45-L49>
+impl MaxContext for ChainedSequenceContext {
+    fn max_context(&self) -> u16 {
+        match self {
+            ChainedSequenceContext::Format1(format1) => {
+                max_context_of_contextual_subtable(&format1)
+            }
+            ChainedSequenceContext::Format2(format2) => {
+                max_context_of_contextual_subtable(&format2)
+            }
+            ChainedSequenceContext::Format3(format3) => max_context_of_rule(
+                format3.input_coverages.len(),
+                format3.lookahead_coverages.len(),
+            ),
+        }
+    }
+}
+
 impl MaxContext for SubstitutionChainContext {
     fn max_context(&self) -> u16 {
-        match self as &ChainedSequenceContext {
-            ChainedSequenceContext::Format1(format1) => {
-                max_context_of_contextual_subtable(&format1)
-            }
-            ChainedSequenceContext::Format2(format2) => {
-                max_context_of_contextual_subtable(&format2)
-            }
-            ChainedSequenceContext::Format3(format3) => {
-                max_context_of_rule(0, format3.seq_lookup_records.len())
-            }
-        }
+        self.as_inner().max_context()
     }
 }
 
-/// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L45-L49>
 impl MaxContext for PositionChainContext {
     fn max_context(&self) -> u16 {
-        match self as &ChainedSequenceContext {
-            ChainedSequenceContext::Format1(format1) => {
-                max_context_of_contextual_subtable(&format1)
-            }
-            ChainedSequenceContext::Format2(format2) => {
-                max_context_of_contextual_subtable(&format2)
-            }
-            ChainedSequenceContext::Format3(format3) => {
-                max_context_of_rule(0, format3.seq_lookup_records.len())
-            }
-        }
+        self.as_inner().max_context()
     }
 }
 
