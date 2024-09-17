@@ -5,12 +5,13 @@
 use write_fonts::{
     tables::{
         gpos::{
-            ExtensionSubtable as GposExt, PositionChainContext, PositionLookup,
+            ExtensionSubtable as GposExt, Gpos, PositionChainContext, PositionLookup,
             PositionSequenceContext,
         },
         gsub::{
-            ExtensionSubtable as GsubExt, LigatureSubstFormat1, ReverseChainSingleSubstFormat1,
-            SubstitutionChainContext, SubstitutionLookup, SubstitutionSequenceContext,
+            ExtensionSubtable as GsubExt, Gsub, LigatureSubstFormat1,
+            ReverseChainSingleSubstFormat1, SubstitutionChainContext, SubstitutionLookup,
+            SubstitutionSequenceContext,
         },
         layout::{
             ChainedClassSequenceRule, ChainedClassSequenceRuleSet, ChainedSequenceContext,
@@ -22,6 +23,34 @@ use write_fonts::{
     },
     NullableOffsetMarker, OffsetMarker,
 };
+
+/// main entry point for computing max context.
+///
+/// corresponds to
+/// <https://github.com/fonttools/fonttools/blob/63611d44/Lib/fontTools/otlLib/maxContextCalc.py#L4>
+pub(super) fn compute_max_context_value(gpos: Option<&Gpos>, gsub: Option<&Gsub>) -> u16 {
+    let max_gpos = gpos.map(|gpos| {
+        gpos.lookup_list
+            .lookups
+            .iter()
+            .fold(0, |max_ctx, lookup| max_ctx.max(lookup.max_context()))
+    });
+    let max_gsub = gsub.map(|gsub| {
+        gsub.lookup_list
+            .lookups
+            .iter()
+            .fold(0, |max_ctx, lookup| max_ctx.max(lookup.max_context()))
+    });
+
+    max_gpos
+        .map(|max_gpos| max_gpos.max(max_gsub.unwrap_or_default()))
+        .or(max_gsub)
+        .unwrap_or_default()
+}
+
+pub trait MaxContext {
+    fn max_context(&self) -> u16;
+}
 
 /// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L89-L96>
 fn max_context_of_rule(input_glyph_count: usize, lookahead_glyph_count: usize) -> u16 {
@@ -163,10 +192,6 @@ where
         .map(|rule| rule.context())
         .max()
         .unwrap_or_default()
-}
-
-pub(super) trait MaxContext {
-    fn max_context(&self) -> u16;
 }
 
 /// <https://github.com/fonttools/fonttools/blob/bf77873d5a0ea7462664c8335c8cc7ea9e48ca18/Lib/fontTools/otlLib/maxContextCalc.py#L35-L39>
@@ -313,5 +338,143 @@ impl<T: MaxContext> MaxContext for Lookup<T> {
             .map(|sub| sub.max_context())
             .max()
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use write_fonts::{
+        tables::{
+            gpos::{
+                PairPosFormat1, PairSet, PairValueRecord, PositionLookupList, SinglePosFormat1,
+                ValueRecord,
+            },
+            gsub::{SingleSubstFormat1, SubstitutionLookupList},
+            layout::LookupFlag,
+        },
+        types::GlyphId16,
+    };
+
+    fn make_gids<const N: usize, T: FromIterator<GlyphId16>>(gids: [u16; N]) -> T {
+        gids.into_iter().map(GlyphId16::new).collect()
+    }
+
+    fn make_lookup<T: Default>(subtable: T) -> Lookup<T> {
+        Lookup::new(LookupFlag::empty(), vec![subtable])
+    }
+
+    fn make_singlepos() -> PositionLookup {
+        PositionLookup::Single(make_lookup(
+            SinglePosFormat1::new(make_gids([5u16, 6]), ValueRecord::new().with_x_advance(12))
+                .into(),
+        ))
+    }
+
+    fn make_pairpos() -> PositionLookup {
+        PositionLookup::Pair(make_lookup(
+            PairPosFormat1::new(
+                make_gids([1u16, 2]),
+                vec![
+                    PairSet::new(vec![PairValueRecord::new(
+                        GlyphId16::new(3),
+                        ValueRecord::new().with_x_advance(1),
+                        ValueRecord::default(),
+                    )]),
+                    PairSet::new(vec![PairValueRecord::new(
+                        GlyphId16::new(4),
+                        ValueRecord::new().with_x_advance(5),
+                        ValueRecord::default(),
+                    )]),
+                ],
+            )
+            .into(),
+        ))
+    }
+
+    fn make_singlesub() -> SubstitutionLookup {
+        SubstitutionLookup::Single(make_lookup(
+            SingleSubstFormat1::new(make_gids([12u16, 13]), 4).into(),
+        ))
+    }
+
+    fn make_chain_context<const N: usize, const M: usize>(
+        input: [u16; N],
+        lookahead: [u16; M],
+    ) -> SubstitutionLookup {
+        SubstitutionLookup::ChainContextual(make_lookup(
+            ChainedSequenceContext::Format1(ChainedSequenceContextFormat1::new(
+                make_gids([31]),
+                vec![Some(ChainedSequenceRuleSet::new(vec![
+                    ChainedSequenceRule::new(
+                        // backtrack doesn't count, this shouldn't show up
+                        make_gids([5, 111, 112, 114, 115, 117]),
+                        make_gids(input),
+                        make_gids(lookahead),
+                        vec![],
+                    ),
+                ]))],
+            ))
+            .into(),
+        ))
+    }
+
+    #[test]
+    fn max_context_nothin() {
+        assert_eq!(compute_max_context_value(None, None), 0);
+        assert_eq!(
+            compute_max_context_value(Some(&Default::default()), None),
+            0
+        );
+        assert_eq!(
+            compute_max_context_value(None, Some(&Default::default())),
+            0
+        );
+    }
+
+    #[test]
+    fn max_context_simple() {
+        let gpos = Gpos::new(
+            Default::default(),
+            Default::default(),
+            PositionLookupList::new(vec![make_singlepos()]),
+        );
+
+        assert_eq!(compute_max_context_value(Some(&gpos), None), 1);
+    }
+
+    #[test]
+    fn max_context_both_tables() {
+        let gpos = Gpos::new(
+            Default::default(),
+            Default::default(),
+            PositionLookupList::new(vec![make_pairpos()]),
+        );
+
+        let gsub = Gsub::new(
+            Default::default(),
+            Default::default(),
+            SubstitutionLookupList::new(vec![make_singlesub()]),
+        );
+
+        assert_eq!(compute_max_context_value(Some(&gpos), Some(&gsub)), 2);
+    }
+
+    #[test]
+    fn max_context_kitchen_sink() {
+        let gpos = Gpos::new(
+            Default::default(),
+            Default::default(),
+            PositionLookupList::new(vec![make_singlepos(), make_pairpos()]),
+        );
+
+        let gsub = Gsub::new(
+            Default::default(),
+            Default::default(),
+            SubstitutionLookupList::new(vec![make_singlesub(), make_chain_context([1], [2, 3])]),
+        );
+
+        assert_eq!(compute_max_context_value(Some(&gpos), Some(&gsub)), 4);
     }
 }
