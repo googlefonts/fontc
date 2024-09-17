@@ -7,10 +7,9 @@ use fontdrasil::{
     types::WidthClass,
 };
 use fontir::{ir::GlobalMetricsInstance, orchestration::WorkId as FeWorkId};
-use log::warn;
 use write_fonts::{
     read::{tables::hmtx::Hmtx, FontData, TopLevelTable},
-    tables::{gsub::SubstitutionLookup, os2::Os2},
+    tables::os2::Os2,
     types::Tag,
     OtRound,
 };
@@ -21,7 +20,6 @@ use crate::{
 };
 
 mod max_context;
-use max_context::MaxContext;
 
 /// Used to build a bitfield.
 ///
@@ -477,28 +475,12 @@ fn apply_min_max_char_index(os2: &mut Os2, codepoints: &HashSet<u32>) {
 /// * <https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#gsub-header>
 /// * <https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#gpos-header>
 fn apply_max_context(os2: &mut Os2, context: &Context) {
-    let mut max_context: u16 = 0;
+    let gsub = context.gsub.try_get();
+    let gsub = gsub.as_deref().and_then(|x| x.0.as_ref());
+    let gpos = context.gpos.try_get();
+    let gpos = gpos.as_deref().and_then(|x| x.0.as_ref());
 
-    if let Some(arc_gsub) = context.gsub.try_get() {
-        if let Some(gsub) = &arc_gsub.0 {
-            let lookups = &gsub.lookup_list.lookups;
-            max_context = max_context.max(lookups.iter().fold(0, |max_ctx, lookup| {
-                max_ctx.max((lookup as &SubstitutionLookup).max_context())
-            }));
-        }
-    }
-
-    if let Some(arc_gpos) = context.gpos.try_get() {
-        if let Some(gpos) = &arc_gpos.0 {
-            let lookups = &gpos.lookup_list.lookups;
-            warn!(
-                "max context for gpos not implemented, {} position lookups being ignored",
-                lookups.len()
-            );
-        }
-    }
-
-    os2.us_max_context = Some(max_context);
+    os2.us_max_context = Some(max_context::compute_max_context_value(gpos, gsub));
 }
 
 fn codepoints(context: &Context) -> HashSet<u32> {
