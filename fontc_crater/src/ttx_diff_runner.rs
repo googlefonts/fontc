@@ -36,7 +36,7 @@ pub(super) fn run_ttx_diff(source: &Path) -> RunResult<DiffOutput, DiffError> {
         Some(2) => match serde_json::from_slice::<RawDiffOutput>(&output.stdout) {
             Err(_) => {
                 let output = String::from_utf8_lossy(&output.stdout);
-                eprintln!("MALFORMED JSON? '{output}'");
+                log::error!("MALFORMED JSON? '{output}'");
                 std::process::exit(1);
             }
             Ok(RawDiffOutput::Success(success)) => {

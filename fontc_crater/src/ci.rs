@@ -89,7 +89,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     {
         // eventually we will want an argument to force rerunning, which we'll
         // use when we update fontmake or the input data set
-        eprintln!("fontc rev is unchange from last run, skipping");
+        log::info!("fontc rev is unchange from last run, skipping");
         return Ok(());
     }
 
@@ -109,7 +109,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         .as_ref()
         .map(Path::new)
         .unwrap_or(temp_dir.path());
-    eprintln!("using working dir {}", cache_dir.display());
+    log::info!("using working dir {}", cache_dir.display());
 
     let began = Utc::now();
     let results = super::run_all(&inputs, cache_dir, super::ttx_diff_runner::run_ttx_diff)?;

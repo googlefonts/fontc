@@ -222,10 +222,10 @@ fn run_all<T: Send, E: Send>(
             .map(|target| {
                 let i = counter.fetch_add(1, Ordering::Relaxed) + 1;
                 currently_running.fetch_add(1, Ordering::Relaxed);
-                eprintln!("starting {} ({i}/{total_targets})", target.display());
+                log::debug!("starting {} ({i}/{total_targets})", target.display());
                 let r = runner(&target);
                 let n_running = currently_running.fetch_sub(1, Ordering::Relaxed);
-                eprintln!("finished {} ({n_running} active)", target.display());
+                log::debug!("finished {} ({n_running} active)", target.display());
                 let target = target
                     .strip_prefix(cache_dir)
                     .unwrap_or(target.as_path())
