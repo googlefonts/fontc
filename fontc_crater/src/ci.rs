@@ -23,6 +23,10 @@ mod html;
 static SUMMARY_FILE: &str = "summary.json";
 static SOURCES_FILE: &str = "sources.json";
 
+// this env var can be set by the runner in order to reuse git checkouts
+// between runs.
+static GIT_CACHE_DIR_VAR: &str = "CRATER_GIT_CACHE";
+
 type DiffResults = Results<DiffOutput, DiffError>;
 
 /// A summary of a single CI run
@@ -93,14 +97,22 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let out_file = result_path_for_current_date();
     let out_path = args.out_dir.join(&out_file);
     // for now we are going to be cloning each repo freshly
-    let cache_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let user_cache_dir = std::env::var_os(GIT_CACHE_DIR_VAR).map(PathBuf::from);
+
+    if let Some(user_cache_dir) = user_cache_dir.as_ref() {
+        if !user_cache_dir.exists() {
+            super::try_create_dir(user_cache_dir)?;
+        }
+    }
+    let cache_dir = user_cache_dir
+        .as_ref()
+        .map(Path::new)
+        .unwrap_or(temp_dir.path());
+    eprintln!("using working dir {}", cache_dir.display());
 
     let began = Utc::now();
-    let results = super::run_all(
-        &inputs,
-        cache_dir.path(),
-        super::ttx_diff_runner::run_ttx_diff,
-    )?;
+    let results = super::run_all(&inputs, cache_dir, super::ttx_diff_runner::run_ttx_diff)?;
     let finished = Utc::now();
 
     super::try_write_json(&results, &out_path)?;
