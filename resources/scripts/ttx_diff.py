@@ -521,7 +521,7 @@ def diff_ratio(text1: str, text2: str) -> float:
     lines1 = text1.splitlines()
     lines2 = text2.splitlines()
     m = SequenceMatcher(None, lines1, lines2)
-    return m.ratio()
+    return m.quick_ratio()
 
 
 def path_for_output_item(tag_or_normalizer_name: str, compiler: str) -> str:
