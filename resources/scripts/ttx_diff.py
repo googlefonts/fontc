@@ -44,6 +44,8 @@ import subprocess
 import sys
 from cdifflib import CSequenceMatcher as SequenceMatcher
 from typing import MutableSequence
+from glyphsLib import GSFont
+from fontTools.designspaceLib import DesignSpaceDocument
 
 
 _COMPARE_DEFAULTS = "default"
@@ -199,7 +201,7 @@ def build_fontc(source: Path, fontc_cargo_path: Path, build_dir: Path, compare: 
 
 def build_fontmake(source: Path, build_dir: Path, compare: str):
     buildtype = "variable"
-    if source.suffix == ".ufo":
+    if not source_is_variable(source):
         buildtype = "ttf"
     cmd = [
         "fontmake",
@@ -230,6 +232,17 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         "fontmake",
     )
 
+def source_is_variable(path: Path) -> bool:
+    if path.suffix == ".ufo":
+        return False
+    if path.suffix == ".designspace":
+        dspace = DesignSpaceDocument.fromfile(path)
+        return len(dspace.sources) > 1
+    if path.suffix == ".glyphs" or path.suffix == ".glyphspackage":
+        font = GSFont(path)
+        return len(font.masters) > 1
+    # fallback to variable, the existing default, but we should never get here?
+    return True
 
 def copy(old, new):
     shutil.copyfile(old, new)

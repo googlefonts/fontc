@@ -7,3 +7,4 @@ fontmake[repacker]==3.8.1
 fonttools
 lxml
 cdifflib
+glyphsLib
