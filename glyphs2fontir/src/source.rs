@@ -559,29 +559,10 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
         );
 
         let static_metadata = context.static_metadata.get();
-        let default_master = font.default_master();
-        let mut metrics = GlobalMetrics::new(
-            static_metadata.default_location().clone(),
-            static_metadata.units_per_em,
-            default_master.x_height(),
-            default_master.ascender(),
-            default_master.descender(),
-            static_metadata.italic_angle.into_inner(),
-        );
+        let mut metrics = GlobalMetrics::new();
 
         for master in font.masters.iter() {
             let pos = font_info.locations.get(&master.axes_values).unwrap();
-            if !pos.is_default() {
-                metrics.populate_defaults(
-                    pos,
-                    static_metadata.units_per_em,
-                    master.x_height(),
-                    master.ascender(),
-                    master.descender(),
-                    // turn clockwise angle counter-clockwise
-                    master.italic_angle().map(|v| -v),
-                );
-            }
 
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), master.cap_height());
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), master.x_height());
@@ -732,7 +713,17 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
                 GlobalMetric::UnderlinePosition,
                 pos.clone(),
                 master.underline_position.or(font.underline_position),
-            )
+            );
+
+            metrics.populate_defaults(
+                pos,
+                static_metadata.units_per_em,
+                master.x_height(),
+                master.ascender(),
+                master.descender(),
+                // turn clockwise angle counter-clockwise
+                master.italic_angle().map(|v| -v),
+            );
         }
 
         context.global_metrics.set(metrics);

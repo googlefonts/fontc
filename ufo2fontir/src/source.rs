@@ -997,7 +997,7 @@ fn set_default_underline_pos(
     // ufo2ft default underline position differs from fontir/Glyphs.app's so
     // we override it here.
     // https://github.com/googlefonts/ufo2ft/blob/a421acc/Lib/ufo2ft/fontInfoData.py#L319-L322
-    metrics.set(
+    metrics.set_if_absent(
         GlobalMetric::UnderlinePosition,
         location.clone(),
         -0.075 * units_per_em as f32,
@@ -1013,6 +1013,7 @@ fn populate_default_metrics(
     descender: Option<f64>,
     italic_angle: Option<f64>,
 ) {
+    set_default_underline_pos(metrics, location, units_per_em);
     metrics.populate_defaults(
         location,
         units_per_em,
@@ -1021,7 +1022,6 @@ fn populate_default_metrics(
         descender,
         italic_angle,
     );
-    set_default_underline_pos(metrics, location, units_per_em);
 }
 
 impl Work<Context, WorkId, Error> for GlobalMetricsWork {
@@ -1041,31 +1041,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
         let font_infos = font_infos(designspace_dir, &self.designspace)?;
         let master_locations =
             master_locations(&static_metadata.all_source_axes, &self.designspace.sources);
-        let Some((_, default_master)) = default_master(&self.designspace) else {
-            return Err(Error::NoDefaultMaster(self.designspace_file.clone()));
-        };
 
-        let default_fontinfo = font_infos.get(&default_master.filename).ok_or_else(|| {
-            BadSource::new(
-                designspace_dir.join(&default_master.filename),
-                BadSourceKind::ExpectedFile,
-            )
-        })?;
+        let mut metrics = GlobalMetrics::new();
 
-        let mut metrics = GlobalMetrics::new(
-            static_metadata.default_location().clone(),
-            static_metadata.units_per_em,
-            default_fontinfo.x_height,
-            default_fontinfo.ascender,
-            default_fontinfo.descender,
-            static_metadata.italic_angle.into_inner(),
-        );
-        // use ufo2ft's default underline position, different from fontir/Glyphs.app
-        set_default_underline_pos(
-            &mut metrics,
-            static_metadata.default_location(),
-            static_metadata.units_per_em,
-        );
         for source in self
             .designspace
             .sources
@@ -1079,18 +1057,6 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
                     BadSourceKind::ExpectedFile,
                 )
             })?;
-
-            if !pos.is_default() {
-                populate_default_metrics(
-                    &mut metrics,
-                    pos,
-                    static_metadata.units_per_em,
-                    font_info.x_height,
-                    font_info.ascender,
-                    font_info.descender,
-                    font_info.italic_angle,
-                );
-            }
 
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), font_info.cap_height);
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), font_info.x_height);
@@ -1212,6 +1178,16 @@ impl Work<Context, WorkId, Error> for GlobalMetricsWork {
                 GlobalMetric::UnderlinePosition,
                 pos.clone(),
                 font_info.postscript_underline_position,
+            );
+
+            populate_default_metrics(
+                &mut metrics,
+                pos,
+                static_metadata.units_per_em,
+                font_info.x_height,
+                font_info.ascender,
+                font_info.descender,
+                font_info.italic_angle,
             );
         }
 

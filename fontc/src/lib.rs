@@ -2916,7 +2916,6 @@ mod tests {
         expected_value_records: Vec<(Tag, u16)>,
         expected_delta_sets: Vec<Vec<i32>>,
     ) {
-        assert_eq!(mvar.value_records().len(), expected_value_records.len());
         let actual_records = mvar
             .value_records()
             .iter()
