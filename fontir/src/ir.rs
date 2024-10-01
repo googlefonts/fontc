@@ -408,7 +408,7 @@ impl StaticMetadata {
 ///
 /// Represents the values of these metrics at a specific position in design space.
 /// At a minimum should be defined at the default location.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct GlobalMetrics(
     pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f32>>>,
 );
@@ -509,7 +509,7 @@ pub type GlobalMetricValues = HashMap<NormalizedLocation, OrderedFloat<f32>>;
 impl GlobalMetrics {
     /// Creates a new, empty, [GlobalMetrics]
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Default::default()
     }
 
     /// Populate default values for all metrics at the given location.
@@ -521,7 +521,7 @@ impl GlobalMetrics {
     /// variable fonts from Glyphs or Designspace sources.
     pub fn populate_defaults(
         &mut self,
-        location: &NormalizedLocation,
+        pos: &NormalizedLocation,
         units_per_em: u16,
         x_height: Option<f64>,
         ascender: Option<f64>,
@@ -531,7 +531,7 @@ impl GlobalMetrics {
         let units_per_em = units_per_em as f64;
 
         let mut set_if_absent =
-            |metric, value| self.set_if_absent(metric, location.clone(), value as f32);
+            |metric, value| self.set_if_absent(metric, pos.clone(), value as f32);
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
         let ascender = ascender.unwrap_or(0.8 * units_per_em);
@@ -564,8 +564,10 @@ impl GlobalMetrics {
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
         set_if_absent(GlobalMetric::CapHeight, 0.7 * units_per_em);
-        let x_height = x_height.unwrap_or(0.5 * units_per_em);
-        set_if_absent(GlobalMetric::XHeight, x_height);
+        set_if_absent(
+            GlobalMetric::XHeight,
+            x_height.unwrap_or(0.5 * units_per_em),
+        );
 
         // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L133-L148
         // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L151-L161
@@ -601,17 +603,21 @@ impl GlobalMetrics {
         );
         set_if_absent(GlobalMetric::SuperscriptYOffset, superscript_y_offset);
 
-        // // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L313-L316
-        set_if_absent(GlobalMetric::StrikeoutSize, 0.05 * units_per_em);
-        set_if_absent(GlobalMetric::StrikeoutPosition, x_height * 0.6);
-
         // ufo2ft and Glyphs.app have different defaults for the post.underlinePosition:
         // the former uses 0.075*UPEM whereas the latter 0.1*UPEM (both use the same
         // underlineThickness 0.05*UPEM). We prefer to match Glyphs.app as more widely used.
         // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L313-L322
         // https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/builder/custom_params.py#L1116-L1125
-        set_if_absent(GlobalMetric::UnderlineThickness, 0.05 * units_per_em);
+        let underline_thickness =
+            set_if_absent(GlobalMetric::UnderlineThickness, 0.05 * units_per_em);
         set_if_absent(GlobalMetric::UnderlinePosition, -0.1 * units_per_em);
+
+        // // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L313-L316
+        set_if_absent(GlobalMetric::StrikeoutSize, underline_thickness.0 as f64);
+        set_if_absent(
+            GlobalMetric::StrikeoutPosition,
+            x_height.map(|v| v * 0.6).unwrap_or(units_per_em * 0.22),
+        );
     }
 
     fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
@@ -644,8 +650,8 @@ impl GlobalMetrics {
         metric: GlobalMetric,
         pos: NormalizedLocation,
         value: impl Into<OrderedFloat<f32>>,
-    ) {
-        self.values_mut(metric).entry(pos).or_insert(value.into());
+    ) -> OrderedFloat<f32> {
+        *self.values_mut(metric).entry(pos).or_insert(value.into())
     }
 
     pub fn set_if_some(

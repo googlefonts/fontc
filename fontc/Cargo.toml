@@ -49,6 +49,7 @@ pretty_assertions.workspace = true
 skrifa.workspace = true
 kurbo.workspace = true
 chrono.workspace = true
+ordered-float.workspace = true
 
 [build-dependencies]
 vergen = { version = "8.2.6", features = ["build", "cargo", "git", "gitcl", "rustc"] }

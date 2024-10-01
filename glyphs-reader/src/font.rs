@@ -3246,7 +3246,7 @@ mod tests {
         assert_eq!(Some(0), font.hhea_line_gap);
         assert_eq!(Some(1185), font.win_ascent);
         assert_eq!(Some(420), font.win_descent);
-        assert_eq!(Some(OrderedFloat(50_f64)), font.underline_thickness);
+        assert_eq!(Some(OrderedFloat(42_f64)), font.underline_thickness);
         assert_eq!(Some(OrderedFloat(-300_f64)), font.underline_position);
     }
 }

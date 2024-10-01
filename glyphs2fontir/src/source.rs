@@ -1801,66 +1801,37 @@ mod tests {
             .get()
             .at(static_metadata.default_location());
         assert_eq!(
-            GlobalMetricsInstance {
-                pos: static_metadata.default_location().clone(),
-                ascender: 800.0.into(),
-                descender: (-200.0).into(),
-                caret_slope_rise: 1000.0.into(),
-                cap_height: 660.0.into(),
-                x_height: 478.0.into(),
-                subscript_x_size: 650.0.into(),
-                subscript_y_size: 600.0.into(),
-                subscript_y_offset: 75.0.into(),
-                superscript_x_size: 650.0.into(),
-                superscript_y_size: 600.0.into(),
-                superscript_y_offset: 350.0.into(),
-                strikeout_position: 286.8.into(),
-                strikeout_size: 50.0.into(),
-                os2_typo_ascender: 950.0.into(),
-                os2_typo_descender: (-350.0).into(),
-                os2_typo_line_gap: 0.0.into(),
-                os2_win_ascent: 1185.0.into(),
-                os2_win_descent: 420.0.into(),
-                hhea_ascender: 950.0.into(),
-                hhea_descender: (-350.0).into(),
-                hhea_line_gap: 0.0.into(),
-                underline_thickness: 50.0.into(),
-                underline_position: (-300.0).into(),
-                ..Default::default()
-            },
-            default_metrics
-        );
-        let light = NormalizedLocation::for_pos(&[("wght", 0.0)]);
-        let light_metrics = context.global_metrics.get().at(&light);
-        assert_eq!(
-            GlobalMetricsInstance {
-                pos: light.clone(),
-                ascender: 800.0.into(),
-                descender: (-200.0).into(),
-                caret_slope_rise: 1000.0.into(),
-                cap_height: 660.0.into(),
-                x_height: 478.0.into(),
-                subscript_x_size: 650.0.into(),
-                subscript_y_size: 600.0.into(),
-                subscript_y_offset: 75.0.into(),
-                superscript_x_size: 650.0.into(),
-                superscript_y_size: 600.0.into(),
-                superscript_y_offset: 350.0.into(),
-                strikeout_position: 286.8.into(),
-                strikeout_size: 50.0.into(),
-                os2_typo_ascender: 950.0.into(),
-                os2_typo_descender: (-350.0).into(),
-                os2_typo_line_gap: 0.0.into(),
-                os2_win_ascent: 1185.0.into(),
-                os2_win_descent: 420.0.into(),
-                hhea_ascender: 950.0.into(),
-                hhea_descender: (-350.0).into(),
-                hhea_line_gap: 0.0.into(),
-                underline_thickness: 50.0.into(),
-                underline_position: (-300.0).into(),
-                ..Default::default()
-            },
-            light_metrics
+            (
+                NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                GlobalMetricsInstance {
+                    pos: static_metadata.default_location().clone(),
+                    ascender: 800.0.into(),
+                    descender: (-200.0).into(),
+                    caret_slope_rise: 1000.0.into(),
+                    cap_height: 660.0.into(),
+                    x_height: 478.0.into(),
+                    subscript_x_size: 650.0.into(),
+                    subscript_y_size: 600.0.into(),
+                    subscript_y_offset: 75.0.into(),
+                    superscript_x_size: 650.0.into(),
+                    superscript_y_size: 600.0.into(),
+                    superscript_y_offset: 350.0.into(),
+                    strikeout_position: 286.8.into(),
+                    strikeout_size: 40.0.into(), // fallback to underline thickness
+                    os2_typo_ascender: 950.0.into(),
+                    os2_typo_descender: (-350.0).into(),
+                    os2_typo_line_gap: 0.0.into(),
+                    os2_win_ascent: 1185.0.into(),
+                    os2_win_descent: 420.0.into(),
+                    hhea_ascender: 950.0.into(),
+                    hhea_descender: (-350.0).into(),
+                    hhea_line_gap: 0.0.into(),
+                    underline_thickness: 40.0.into(), // overridden from global value
+                    underline_position: (-300.0).into(),
+                    ..Default::default()
+                }
+            ),
+            (static_metadata.default_location().clone(), default_metrics)
         );
         let black = NormalizedLocation::for_pos(&[("wght", 1.0)]);
         let black_metrics = context.global_metrics.get().at(&black);
@@ -1879,7 +1850,7 @@ mod tests {
                 superscript_y_size: 600.0.into(),
                 superscript_y_offset: 350.0.into(),
                 strikeout_position: 300.0.into(),
-                strikeout_size: 50.0.into(),
+                strikeout_size: 42.0.into(), // fallback to underline thickness
                 os2_typo_ascender: 1000.0.into(),
                 os2_typo_descender: (-400.0).into(),
                 os2_typo_line_gap: 0.0.into(),
@@ -1888,7 +1859,7 @@ mod tests {
                 hhea_ascender: 1000.0.into(),
                 hhea_descender: (-400.0).into(),
                 hhea_line_gap: 0.0.into(),
-                underline_thickness: 50.0.into(),
+                underline_thickness: 42.0.into(), // global value
                 underline_position: (-300.0).into(),
                 ..Default::default()
             },
