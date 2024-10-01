@@ -4,21 +4,27 @@ use clap::Parser;
 
 use fontbe::orchestration::AnyWorkId;
 use fontc::{create_timer, Args, Error, JobTimer};
+use log::{error, warn};
 
 fn main() {
     let args = Args::parse();
-    let verbose = args.verbose;
 
     // catch and print errors manually, to avoid just seeing the Debug impls
     if let Err(e) = run(args) {
+        let mut error_displayed = false;
+        let mut additional = "";
         if let Error::Backend(fontbe::error::Error::FeaCompileError(e)) = &e {
-            if verbose {
-                let _ = writeln!(std::io::stderr(), "{}", e.display_verbose());
-                std::process::exit(1);
+            if log::log_enabled!(log::Level::Warn) {
+                warn!("{}", e.display_verbose());
+                error_displayed = true;
+            } else {
+                additional =
+                    ", set log level to warn or higher (export RUST_LOG=warn) for additional detail"
             }
         }
-        // we have a CI check that forbids eprintln, but we're very clever, so
-        let _ = writeln!(std::io::stderr(), "{e}");
+        if !error_displayed {
+            error!("{e}{additional}");
+        }
         std::process::exit(1);
     }
 }
