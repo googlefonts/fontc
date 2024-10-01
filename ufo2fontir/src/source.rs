@@ -956,7 +956,13 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         }
 
         // <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
-        static_metadata.misc.fs_type = Some(1 << 2);
+        static_metadata.misc.fs_type = Some(
+            font_info_at_default
+                .open_type_os2_type
+                .as_ref()
+                .map(|flags| flags.iter().fold(0_u16, |acc, e| acc | 1 << *e))
+                .unwrap_or(1_u16 << 2),
+        );
 
         static_metadata.misc.version_major = font_info_at_default
             .version_major
@@ -2296,5 +2302,21 @@ mod tests {
                 is_export("space"),
             ]
         );
+    }
+
+    fn assert_fs_type(src: &str, expected: u16) {
+        let (_, context) = build_static_metadata(src, default_test_flags());
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(Some(expected), static_metadata.misc.fs_type);
+    }
+
+    #[test]
+    fn default_fs_type() {
+        assert_fs_type("wght_var.designspace", 1 << 2);
+    }
+
+    #[test]
+    fn obeys_explicit_fs_type() {
+        assert_fs_type("MVAR.designspace", 1 << 3);
     }
 }
