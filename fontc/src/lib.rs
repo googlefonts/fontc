@@ -2824,7 +2824,7 @@ mod tests {
 
     #[test]
     fn default_fs_type_designspace() {
-        assert_fs_type("designspace_from_glyphs/WghtVar.designspace", 1 << 2);
+        assert_fs_type("wght_var.designspace", 1 << 2);
     }
 
     #[test]
