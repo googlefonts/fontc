@@ -55,7 +55,7 @@ value = 420;
 },
 {
 name = underlineThickness;
-value = 50;
+value = 42;
 },
 {
 name = underlinePosition;
@@ -90,6 +90,12 @@ pos = -200;
 }
 );
 name = ExtraLight;
+customParameters = (
+{
+name = underlineThickness;
+value = 40;
+},
+);
 },
 {
 axesValues = (

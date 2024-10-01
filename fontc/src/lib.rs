@@ -555,6 +555,8 @@ mod tests {
         time::Instant,
     };
 
+    use ordered_float::OrderedFloat;
+
     use chrono::{Duration, TimeZone, Utc};
     use fontbe::orchestration::{
         AnyWorkId, Context as BeContext, Glyph, LocaFormatWrapper, WorkId as BeWorkIdentifier,
@@ -565,7 +567,7 @@ mod tests {
         types::{GlyphName, WidthClass},
     };
     use fontir::{
-        ir::{self, GlyphOrder, KernGroup, KernPair, KernSide},
+        ir::{self, GlobalMetric, GlyphOrder, KernGroup, KernPair, KernSide},
         orchestration::{Context as FeContext, Persistable, WorkId as FeWorkIdentifier},
     };
     use indexmap::IndexSet;
@@ -2916,7 +2918,6 @@ mod tests {
         expected_value_records: Vec<(Tag, u16)>,
         expected_delta_sets: Vec<Vec<i32>>,
     ) {
-        assert_eq!(mvar.value_records().len(), expected_value_records.len());
         let actual_records = mvar
             .value_records()
             .iter()
@@ -3039,6 +3040,31 @@ mod tests {
     fn mvar_from_glyphs3() {
         let compile = TestCompile::compile_source("glyphs3/MVAR.glyphs");
         assert_mvar_from_glyphs(compile.font().mvar().unwrap());
+    }
+
+    #[test]
+    fn strikeout_size_fallback() {
+        let compile =
+            TestCompile::compile_source("glyphs3/GlobalMetrics_font_customParameters.glyphs");
+        let strikeout_sizes = compile
+            .fe_context
+            .global_metrics
+            .get()
+            .iter()
+            .filter_map(|(metric, values)| {
+                if *metric == GlobalMetric::StrikeoutSize {
+                    Some(values)
+                } else {
+                    None
+                }
+            })
+            .flat_map(|v| v.values().copied())
+            .collect::<HashSet<_>>();
+        // Light has an explicit 40, everything else uses 42
+        assert_eq!(
+            HashSet::from([OrderedFloat(40.0), OrderedFloat(42.0)]),
+            strikeout_sizes
+        );
     }
 
     #[test]

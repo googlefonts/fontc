@@ -408,7 +408,7 @@ impl StaticMetadata {
 ///
 /// Represents the values of these metrics at a specific position in design space.
 /// At a minimum should be defined at the default location.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct GlobalMetrics(
     pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f32>>>,
 );
@@ -507,25 +507,9 @@ fn adjust_offset(offset: f64, angle: f64) -> f64 {
 pub type GlobalMetricValues = HashMap<NormalizedLocation, OrderedFloat<f32>>;
 
 impl GlobalMetrics {
-    /// Creates a new [GlobalMetrics] with default values at the default location.
-    pub fn new(
-        default_location: NormalizedLocation,
-        units_per_em: u16,
-        x_height: Option<f64>,
-        ascender: Option<f64>,
-        descender: Option<f64>,
-        italic_angle: f64,
-    ) -> GlobalMetrics {
-        let mut metrics = GlobalMetrics(HashMap::new());
-        metrics.populate_defaults(
-            &default_location,
-            units_per_em,
-            x_height,
-            ascender,
-            descender,
-            Some(italic_angle),
-        );
-        metrics
+    /// Creates a new, empty, [GlobalMetrics]
+    pub fn new() -> Self {
+        Default::default()
     }
 
     /// Populate default values for all metrics at the given location.
@@ -537,7 +521,7 @@ impl GlobalMetrics {
     /// variable fonts from Glyphs or Designspace sources.
     pub fn populate_defaults(
         &mut self,
-        location: &NormalizedLocation,
+        pos: &NormalizedLocation,
         units_per_em: u16,
         x_height: Option<f64>,
         ascender: Option<f64>,
@@ -546,13 +530,14 @@ impl GlobalMetrics {
     ) {
         let units_per_em = units_per_em as f64;
 
-        let mut set = |metric, value| self.set(metric, location.clone(), value as f32);
+        let mut set_if_absent =
+            |metric, value| self.set_if_absent(metric, pos.clone(), value as f32);
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
         let ascender = ascender.unwrap_or(0.8 * units_per_em);
         let descender = descender.unwrap_or(-0.2 * units_per_em);
-        set(GlobalMetric::Ascender, ascender);
-        set(GlobalMetric::Descender, descender);
+        set_if_absent(GlobalMetric::Ascender, ascender);
+        set_if_absent(GlobalMetric::Descender, descender);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L229-L238
         let typo_line_gap = units_per_em * 1.2 + descender - ascender;
@@ -561,71 +546,78 @@ impl GlobalMetrics {
         } else {
             0.0
         };
-        set(GlobalMetric::Os2TypoLineGap, typo_line_gap);
+        set_if_absent(GlobalMetric::Os2TypoLineGap, typo_line_gap);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L215-L226
-        set(GlobalMetric::Os2TypoAscender, ascender);
-        set(GlobalMetric::Os2TypoDescender, descender);
+        set_if_absent(GlobalMetric::Os2TypoAscender, ascender);
+        set_if_absent(GlobalMetric::Os2TypoDescender, descender);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L126-L130
-        set(GlobalMetric::HheaAscender, ascender + typo_line_gap);
-        set(GlobalMetric::HheaDescender, descender);
+        set_if_absent(GlobalMetric::HheaAscender, ascender + typo_line_gap);
+        set_if_absent(GlobalMetric::HheaDescender, descender);
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L366
-        set(GlobalMetric::HheaLineGap, 0.0);
+        set_if_absent(GlobalMetric::HheaLineGap, 0.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L241-L254
-        set(GlobalMetric::Os2WinAscent, ascender + typo_line_gap);
-        set(GlobalMetric::Os2WinDescent, descender.abs());
+        set_if_absent(GlobalMetric::Os2WinAscent, ascender + typo_line_gap);
+        set_if_absent(GlobalMetric::Os2WinDescent, descender.abs());
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L48-L55
-        set(GlobalMetric::CapHeight, 0.7 * units_per_em);
-        let x_height = x_height.unwrap_or(0.5 * units_per_em);
-        set(GlobalMetric::XHeight, x_height);
+        set_if_absent(GlobalMetric::CapHeight, 0.7 * units_per_em);
+        set_if_absent(
+            GlobalMetric::XHeight,
+            x_height.unwrap_or(0.5 * units_per_em),
+        );
 
         // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L133-L148
         // https://github.com/googlefonts/ufo2ft/blob/150c2d6a00da9d5854173c8457a553ce03b89cf7/Lib/ufo2ft/fontInfoData.py#L151-L161
         let italic_angle = italic_angle.unwrap_or(0.0);
-        set(GlobalMetric::CaretSlopeRise, units_per_em);
-        set(
+        set_if_absent(GlobalMetric::CaretSlopeRise, units_per_em);
+        set_if_absent(
             GlobalMetric::CaretSlopeRun,
             adjust_offset(units_per_em, italic_angle),
         );
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L367
-        set(GlobalMetric::CaretOffset, 0.0);
+        set_if_absent(GlobalMetric::CaretOffset, 0.0);
 
         // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/outlineCompiler.py#L575-L616
         let subscript_x_size = units_per_em * 0.65;
         let subscript_y_size = units_per_em * 0.60;
         let subscript_y_offset = units_per_em * 0.075;
         let superscript_y_offset = units_per_em * 0.35;
-        set(GlobalMetric::SubscriptXSize, subscript_x_size);
-        set(GlobalMetric::SubscriptYSize, subscript_y_size);
-        set(
+
+        set_if_absent(GlobalMetric::SubscriptXSize, subscript_x_size);
+        set_if_absent(GlobalMetric::SubscriptYSize, subscript_y_size);
+        set_if_absent(
             GlobalMetric::SubscriptXOffset,
             adjust_offset(-subscript_y_offset, italic_angle),
         );
-        set(GlobalMetric::SubscriptYOffset, subscript_y_offset);
+        set_if_absent(GlobalMetric::SubscriptYOffset, subscript_y_offset);
 
-        set(GlobalMetric::SuperscriptXSize, subscript_x_size);
-        set(GlobalMetric::SuperscriptYSize, subscript_y_size);
-        set(
+        set_if_absent(GlobalMetric::SuperscriptXSize, subscript_x_size);
+        set_if_absent(GlobalMetric::SuperscriptYSize, subscript_y_size);
+        set_if_absent(
             GlobalMetric::SuperscriptXOffset,
             adjust_offset(superscript_y_offset, italic_angle),
         );
-        set(GlobalMetric::SuperscriptYOffset, superscript_y_offset);
-
-        // // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L313-L316
-        set(GlobalMetric::StrikeoutSize, 0.05 * units_per_em);
-        set(GlobalMetric::StrikeoutPosition, x_height * 0.6);
+        set_if_absent(GlobalMetric::SuperscriptYOffset, superscript_y_offset);
 
         // ufo2ft and Glyphs.app have different defaults for the post.underlinePosition:
         // the former uses 0.075*UPEM whereas the latter 0.1*UPEM (both use the same
         // underlineThickness 0.05*UPEM). We prefer to match Glyphs.app as more widely used.
         // https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/fontInfoData.py#L313-L322
         // https://github.com/googlefonts/glyphsLib/blob/main/Lib/glyphsLib/builder/custom_params.py#L1116-L1125
-        set(GlobalMetric::UnderlineThickness, 0.05 * units_per_em);
-        set(GlobalMetric::UnderlinePosition, -0.1 * units_per_em);
+        let underline_thickness =
+            set_if_absent(GlobalMetric::UnderlineThickness, 0.05 * units_per_em);
+        set_if_absent(GlobalMetric::UnderlinePosition, -0.1 * units_per_em);
+
+        // // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L313-L316
+        set_if_absent(GlobalMetric::StrikeoutSize, underline_thickness.0 as f64);
+        set_if_absent(
+            GlobalMetric::StrikeoutPosition,
+            x_height.map(|v| v * 0.6).unwrap_or(units_per_em * 0.22),
+        );
     }
 
     fn values(&self, metric: GlobalMetric) -> &GlobalMetricValues {
@@ -653,8 +645,17 @@ impl GlobalMetrics {
         self.values_mut(metric).insert(pos, value.into());
     }
 
+    pub fn set_if_absent(
+        &mut self,
+        metric: GlobalMetric,
+        pos: NormalizedLocation,
+        value: impl Into<OrderedFloat<f32>>,
+    ) -> OrderedFloat<f32> {
+        *self.values_mut(metric).entry(pos).or_insert(value.into())
+    }
+
     pub fn set_if_some(
-        self: &mut GlobalMetrics,
+        &mut self,
         metric: GlobalMetric,
         pos: NormalizedLocation,
         maybe_value: Option<impl Into<OrderedFloat<f64>>>,
