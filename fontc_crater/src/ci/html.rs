@@ -32,7 +32,7 @@ pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
         })
         .collect::<Result<HashMap<_, _>, _>>()?;
 
-    let html_text = make_html(&summary, &sources, &details);
+    let html_text = make_html(&summary, &sources, &details)?;
     let outpath = target_dir.join(HTML_FILE);
     crate::try_write_str(&html_text, &outpath)
 }
@@ -41,7 +41,7 @@ fn make_html(
     summary: &[RunSummary],
     sources: &BTreeMap<PathBuf, String>,
     results: &HashMap<String, DiffResults>,
-) -> String {
+) -> Result<String, Error> {
     let table_body = make_table_body(summary);
     let css = include_str!("../../resources/style.css");
     let table = html! {
@@ -71,7 +71,7 @@ fn make_html(
         _ => html!(),
     };
 
-    html! {
+    let raw_html = html! {
         (maud::DOCTYPE)
         html {
             head {
@@ -91,7 +91,22 @@ fn make_html(
             }
         }
     }
-    .into_string()
+    .into_string();
+    tidy_html(&raw_html)
+}
+
+fn tidy_html(raw_html: &str) -> Result<String, Error> {
+    let opts = tidier::FormatOptions {
+        // indent with tabs to reduce file size.
+        // the '4' option is suggested by the docs; does not mean 4 tabs each indent?
+        indent: tidier::Indent {
+            size: 4,
+            tabs: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    tidier::format(raw_html, false, &opts).map_err(Into::into)
 }
 
 fn make_table_body(runs: &[RunSummary]) -> Markup {
