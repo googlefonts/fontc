@@ -217,7 +217,8 @@ fn align_kerning(
     groups: &KerningGroups,
     instances: &mut HashMap<NormalizedLocation, KerningInstance>,
 ) {
-    let union_kerning = instances
+    // all pairs defined in at least one instance
+    let all_known_pairs = instances
         .values()
         .flat_map(|instance| instance.kerns.keys())
         .cloned()
@@ -237,27 +238,36 @@ fn align_kerning(
         .collect::<HashMap<_, _>>();
 
     for instance in instances.values_mut() {
-        let missing_pairs = union_kerning
-            .iter()
-            .filter(|pair| !instance.kerns.contains_key(pair))
-            .collect::<Vec<_>>();
+        align_instance(
+            &all_known_pairs,
+            &mut instance.kerns,
+            &side1_glyph_to_group_map,
+            &side2_glyph_to_group_map,
+        )
+    }
+}
 
-        for pair in missing_pairs {
-            let value = lookup_kerning_value(
-                pair,
-                instance,
-                &side1_glyph_to_group_map,
-                &side2_glyph_to_group_map,
-            );
-            instance.kerns.insert(pair.to_owned(), value);
-        }
+fn align_instance(
+    all_pairs: &HashSet<ir::KernPair>,
+    instance: &mut BTreeMap<ir::KernPair, OrderedFloat<f32>>,
+    side1_glyphs: &HashMap<&GlyphName, &KernGroup>,
+    side2_glyphs: &HashMap<&GlyphName, &KernGroup>,
+) {
+    let missing_pairs = all_pairs
+        .iter()
+        .filter(|pair| !instance.contains_key(pair))
+        .collect::<Vec<_>>();
+
+    for pair in missing_pairs {
+        let value = lookup_kerning_value(pair, instance, side1_glyphs, side2_glyphs);
+        instance.insert(pair.to_owned(), value);
     }
 }
 
 // <https://github.com/fonttools/fonttools/blob/a3b9eddcafca/Lib/fontTools/ufoLib/kerning.py#L1>
 fn lookup_kerning_value(
     pair: &ir::KernPair,
-    kerning: &KerningInstance,
+    kerning: &BTreeMap<ir::KernPair, OrderedFloat<f32>>,
     side1_glyphs: &HashMap<&GlyphName, &KernGroup>,
     side2_glyphs: &HashMap<&GlyphName, &KernGroup>,
 ) -> OrderedFloat<f32> {
@@ -288,7 +298,7 @@ fn lookup_kerning_value(
         (first_group.clone(), second_group.clone()),
     ] {
         if let Some(pair) = first.zip(second) {
-            if let Some(value) = kerning.kerns.get(&pair) {
+            if let Some(value) = kerning.get(&pair) {
                 return *value;
             }
         }
