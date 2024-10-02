@@ -67,16 +67,23 @@ impl CompilerError {
         impl std::fmt::Display for Verbose<'_> {
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 write!(f, "{}", self.0)?;
-                let diagnostic = match self.0 {
-                    CompilerError::ParseFail(x)
-                    | CompilerError::ValidationFail(x)
-                    | CompilerError::CompilationFail(x) => x,
-                    _ => return Ok(()),
-                };
-                write!(f, "\n{}", diagnostic.display())
+                if let Some(diagnostics) = self.0.diagnostics() {
+                    write!(f, "\n{}", diagnostics.display())?;
+                }
+                Ok(())
             }
         }
         Verbose(self)
+    }
+
+    /// Return the `DiagnosticSet` associated, if any
+    pub fn diagnostics(&self) -> Option<&DiagnosticSet> {
+        match self {
+            CompilerError::ParseFail(x)
+            | CompilerError::ValidationFail(x)
+            | CompilerError::CompilationFail(x) => Some(x),
+            _ => None,
+        }
     }
 }
 

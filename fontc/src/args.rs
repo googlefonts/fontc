@@ -89,6 +89,12 @@ pub struct Args {
     // cargo profile, and cargo optimization level.
     #[arg(long = "vv", default_value = "false")]
     pub verbose_version: bool,
+
+    /// Set the log level, either globally or per module.
+    ///
+    /// See <https://docs.rs/env_logger/latest/env_logger/#enabling-logging> for format.
+    #[arg(long)]
+    pub log: Option<String>,
 }
 
 /// A wrapper around a validated regex string
@@ -136,6 +142,7 @@ impl Args {
             keep_direction: false,
             no_production_names: false,
             verbose_version: false,
+            log: None,
         }
     }
 
