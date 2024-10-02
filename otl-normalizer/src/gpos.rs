@@ -284,7 +284,11 @@ impl LookupRules {
             .filter(|lookup| lookups.contains(&lookup.lookup_id))
             .flat_map(|lookup| lookup.iter())
         {
-            match pairmap.entry((rule.rule().first, rule.rule().second.clone())) {
+            match pairmap.entry((
+                rule.rule().first,
+                rule.rule().second.clone(),
+                rule.lookup_flags(),
+            )) {
                 hash_map::Entry::Vacant(entry) => {
                     entry.insert(rule);
                 }
@@ -301,6 +305,7 @@ impl LookupRules {
         for rule in pairmap.into_values() {
             match seen.entry((
                 rule.rule().first,
+                rule.lookup_flags(),
                 rule.rule().record1.clone(),
                 rule.rule().record2.clone(),
             )) {
@@ -565,6 +570,49 @@ mod tests {
         let expected: &[(u16, &[u16], i16)] = &[
             (1, &[3], 7),
             (1, &[4], 27),
+            (1, &[5], -10),  // sub1
+            (2, &[3, 4], 7), // sub2
+        ];
+
+        assert_eq!(our_rules, expected);
+    }
+
+    #[test]
+    fn no_merge_different_lookupflags() {
+        let mut sub1 = PairPosBuilder::default();
+        sub1.add_pair(1, 4, 20);
+        sub1.add_pair(1, 5, -10);
+        let sub1 = sub1.build_exactly_one_subtable();
+
+        let mut sub2 = PairPosBuilder::default();
+        // this class overlaps with the previous for the pair (1, 4)
+        sub2.add_class(&[1, 2], &[3, 4], 7);
+        let sub2 = sub2.build_exactly_one_subtable();
+
+        let lookup1 =
+            wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::empty(), vec![sub1]));
+        // DIFFERENT LOOKUP FLAG
+        let lookup2 =
+            wgpos::PositionLookup::Pair(wlayout::Lookup::new(LookupFlag::IGNORE_MARKS, vec![sub2]));
+        let lookup_list = wlayout::LookupList::new(vec![lookup1, lookup2]);
+        let lookup_list = write_fonts::dump_table(&lookup_list).unwrap();
+        let lookup_list = write_fonts::read::tables::gpos::PositionLookupList::read(
+            lookup_list.as_slice().into(),
+        )
+        .unwrap();
+
+        let rules = get_lookup_rules(&lookup_list, None);
+
+        let our_rules = rules
+            .pairpos_rules(&[0, 1])
+            .into_iter()
+            .map(|r| r.rule().to_owned())
+            .collect::<Vec<_>>();
+
+        // (left gid, [right gids], x advance)
+        let expected: &[(u16, &[u16], i16)] = &[
+            (1, &[3, 4], 7),
+            (1, &[4], 20),   // is not merged
             (1, &[5], -10),  // sub1
             (2, &[3, 4], 7), // sub2
         ];
