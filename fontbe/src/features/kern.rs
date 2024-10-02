@@ -213,6 +213,9 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
 /// missing pairs are filled in via the UFO kerning value lookup algorithm:
 ///
 /// <https://unifiedfontobject.org/versions/ufo3/kerning.plist/#kerning-value-lookup-algorithm>
+///
+/// in pythonland this happens in ufo2ft, here:
+/// <https://github.com/googlefonts/ufo2ft/blob/5fd168e65a0b0a/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L442>
 fn align_kerning(
     groups: &KerningGroups,
     instances: &mut HashMap<NormalizedLocation, KerningInstance>,
@@ -253,13 +256,17 @@ fn align_instance(
     side1_glyphs: &HashMap<&GlyphName, &KernGroup>,
     side2_glyphs: &HashMap<&GlyphName, &KernGroup>,
 ) {
-    let missing_pairs = all_pairs
-        .iter()
-        .filter(|pair| !instance.contains_key(pair))
-        .collect::<Vec<_>>();
-
-    for pair in missing_pairs {
+    let mut buf = Vec::new();
+    // iterate the pairs that are not present in this instance
+    for pair in all_pairs.iter().filter(|pair| !instance.contains_key(pair)) {
         let value = lookup_kerning_value(pair, instance, side1_glyphs, side2_glyphs);
+
+        // accumulate any additions and add at the end, otherwise newly added
+        // additions could influence the calculation of subsequent values
+        buf.push((pair, value));
+    }
+    // when done all pairs, add them to the instance
+    for (pair, value) in buf {
         instance.insert(pair.to_owned(), value);
     }
 }
