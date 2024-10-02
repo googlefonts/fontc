@@ -234,3 +234,5 @@ $ git config core.hooksPath "resources/githooks"
 ## Releasing
 
 See https://github.com/googlefonts/fontations#releasing
+
+To update the Glyphs plugin see https://github.com/googlefonts/fontc-export-plugin.
