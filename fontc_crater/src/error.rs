@@ -34,4 +34,7 @@ pub(super) enum Error {
         #[source]
         error: std::io::Error,
     },
+
+    #[error("Failed to tidy html: '{0}")]
+    TidyHtml(#[from] tidier::Error),
 }
