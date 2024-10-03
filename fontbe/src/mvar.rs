@@ -60,7 +60,7 @@ impl MvarBuilder {
     fn add_sources(&mut self, mvar_tag: Tag, sources: &GlobalMetricValues) -> Result<(), Error> {
         let sources: HashMap<_, _> = sources
             .iter()
-            .map(|(loc, src)| (loc.clone(), vec![src.into_inner() as f64]))
+            .map(|(loc, src)| (loc.clone(), vec![src.into_inner()]))
             .collect();
         if sources.len() == 1 {
             assert!(sources.keys().next().unwrap().is_default());
@@ -205,7 +205,7 @@ mod tests {
     ) {
         let sources = sources
             .iter()
-            .map(|(loc, value)| ((*loc).clone(), (*value).into()))
+            .map(|(loc, value)| ((*loc).clone(), (*value as f64).into()))
             .collect::<HashMap<_, _>>();
         builder
             .add_sources(Tag::from_str(mvar_tag).unwrap(), &sources)

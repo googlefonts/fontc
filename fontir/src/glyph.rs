@@ -356,8 +356,8 @@ fn ensure_notdef_exists_and_is_gid_0(
             let builder = GlyphBuilder::new_notdef(
                 static_metadata.default_location().clone(),
                 static_metadata.units_per_em,
-                metrics.ascender.0,
-                metrics.descender.0,
+                metrics.ascender.0 as f32,
+                metrics.descender.0 as f32,
             );
             context.glyphs.set(builder.build()?);
         }
