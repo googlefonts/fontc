@@ -60,7 +60,10 @@ pub(crate) fn gpos_rule(parser: &mut Parser, recovery: TokenSet) {
             // now either a single or pair (type A)
             if metrics::eat_value_record(parser, recovery) {
                 if glyph::eat_glyph_or_glyph_class(parser, recovery) {
-                    metrics::expect_value_record(parser, recovery);
+                    // second value record is expected per the spec, but
+                    // skipping it is supported in afdko & feaLib:
+                    // https://github.com/adobe-type-tools/afdko/issues/1757
+                    metrics::eat_value_record(parser, recovery);
                     parser.expect_semi();
                     return AstKind::GposType2;
                 }

@@ -1,0 +1,8 @@
+feature derp {
+    # this is not documented syntax but is treated equivalently to
+    # 'pos a b 30' and is handled by both feaLib and afdko
+    # ( see https://github.com/adobe-type-tools/afdko/issues/1757 )
+    pos a 30 b;
+    # so basically the same as,
+    pos a c 30;
+} derp;
