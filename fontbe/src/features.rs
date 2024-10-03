@@ -603,7 +603,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
 fn log_fea_warnings(stage: &str, warnings: &DiagnosticSet) {
     assert!(!warnings.has_errors(), "of course we checked this already");
     if !warnings.is_empty() {
-        log::debug!(
+        log::warn!(
             "FEA {stage} produced {} warnings:\n{}",
             warnings.len(),
             warnings.display()
