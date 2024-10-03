@@ -89,7 +89,33 @@ fn include(parser: &mut Parser) {
         if !parser.expect(Kind::LParen) {
             advance_to_top_level(parser);
         }
-        if !parser.eat(Kind::Path) {
+
+        // during lexing we include leading and trailing whitespace as
+        // part of the path, but now we want to trim that if the path
+        // contains any non-whitespace.
+        // (we don't do this at lex time because it requires arbitrary lookahead)
+        if !parser.split_remap_current(Kind::Path, |path, buf| {
+            let leading = path.bytes().take_while(|b| b.is_ascii_whitespace()).count();
+            let trailing = path
+                .bytes()
+                .rev()
+                .take_while(|b| b.is_ascii_whitespace())
+                .count();
+            // if no whitespace or all whitespace, call it all a path.
+            // in the latter case, we'll error when we try to read the path.
+            if leading + trailing == 0 || leading == path.len() {
+                buf.push((0..path.len(), AstKind::Path));
+                return;
+            }
+
+            if leading > 0 {
+                buf.push((0..leading, AstKind::Whitespace));
+            }
+            buf.push((leading..path.len() - trailing, AstKind::Path));
+            if trailing > 0 {
+                buf.push((path.len() - trailing..path.len(), AstKind::Whitespace));
+            }
+        }) {
             parser.err("Include statement missing path");
             return advance_to_top_level(parser);
         }
@@ -370,5 +396,38 @@ mod tests {
             Some(123)
         );
         assert_eq!(value_def.name().as_str(), "foo");
+    }
+
+    fn assert_include_path_matches(fea: &str, path: &str) {
+        let (out, errors, _errstr) = debug_parse_output(fea, include);
+        assert!(errors.is_empty(), "{errors:?}");
+
+        let out = typed::Include::cast(&out).unwrap();
+        assert_eq!(out.path().as_str(), path);
+    }
+
+    #[test]
+    fn parse_include_with_space() {
+        assert_include_path_matches("include (myfile.fea);", "myfile.fea");
+    }
+
+    #[test]
+    fn parse_include_leading_ws() {
+        assert_include_path_matches("include( myfile.fea);", "myfile.fea");
+    }
+
+    #[test]
+    fn parse_include_trailing_ws() {
+        assert_include_path_matches("include(myfile.fea );", "myfile.fea");
+    }
+
+    #[test]
+    fn parse_include_leading_and_trailing_ws() {
+        assert_include_path_matches("include( myfile.fea );", "myfile.fea");
+    }
+
+    #[test]
+    fn parse_include_all_whitespace() {
+        assert_include_path_matches("include(  );", "  ");
     }
 }

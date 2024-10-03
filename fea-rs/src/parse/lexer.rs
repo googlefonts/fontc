@@ -48,6 +48,9 @@ impl ExpectingPath {
         *self = match (*self, kind) {
             (ExpectingPath::Ready, Kind::IncludeKw) => ExpectingPath::SawInclude,
             (ExpectingPath::SawInclude, Kind::LParen) => ExpectingPath::InPath,
+            // don't transition if we see whitespace after include, e.g,
+            // include (hi.fea)
+            (ExpectingPath::SawInclude, Kind::Whitespace) => ExpectingPath::SawInclude,
             _ => ExpectingPath::Ready,
         }
     }
@@ -84,6 +87,7 @@ impl<'a> Lexer<'a> {
         let first = self.bump().unwrap_or(EOF);
         let kind = match first {
             EOF => Kind::Eof,
+            _ if self.in_path.in_path() => self.path(),
             byte if is_ascii_whitespace(byte) => self.whitespace(),
             b'#' => self.comment(),
             b'"' => self.string(),
@@ -111,7 +115,6 @@ impl<'a> Lexer<'a> {
             b'+' => Kind::Plus,
             b'/' => Kind::Slash,
             b'n' | b'u' | b'd' if self.after_number_or_float => Kind::NumberSuffix,
-            _ if self.in_path.in_path() => self.path(),
             _ => self.ident(),
         };
         self.in_path.transition(kind);
@@ -445,5 +448,19 @@ mod tests {
         assert_eq!(token_strs[7], "SUFFIX(d)");
         assert_eq!(token_strs[9], "NUM(0)");
         assert_eq!(token_strs[10], "SUFFIX(n)");
+    }
+
+    #[test]
+    fn include_with_spaces() {
+        let fea = "include ( path.fea );";
+        let tokens = tokenize(fea);
+        let token_strs = debug_tokens2(&tokens, fea);
+        assert_eq!(token_strs[0], "IncludeKw");
+        assert_eq!(token_strs[1], "WS( )");
+        assert_eq!(token_strs[2], "(");
+        assert_eq!(token_strs[3], "Path( path.fea )");
+        assert_eq!(token_strs[4], ")");
+        assert_eq!(token_strs[5], ";");
+        assert!(token_strs.get(6).is_none());
     }
 }

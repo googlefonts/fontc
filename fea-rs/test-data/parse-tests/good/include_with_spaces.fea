@@ -1,0 +1,4 @@
+# I guess this is allowed?
+include (size_zero.fea);
+# and heck, why not this too (supported by feaLib and afdko):
+include ( null_as_glyphname.fea );

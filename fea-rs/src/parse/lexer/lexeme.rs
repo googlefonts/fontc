@@ -190,6 +190,7 @@ impl Kind {
                 | Self::Number
                 | Self::NumberSuffix
                 | Self::Cid
+                | Self::Path
         )
     }
 

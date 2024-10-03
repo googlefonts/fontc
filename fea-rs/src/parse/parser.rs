@@ -196,6 +196,9 @@ impl<'b, 'a> Parser<'a, 'b> {
     ///
     /// If no ranges are added to the buffer, this function does nothing.
     ///
+    /// If the token is split, the cursor advances, as if the token had been
+    /// eaten.
+    ///
     /// Returns `true` if the token was split, and `false` otherwise.`
     ///
     /// # Panics
