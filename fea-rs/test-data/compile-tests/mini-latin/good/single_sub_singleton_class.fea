@@ -1,0 +1,7 @@
+feature test {
+    # "if the replacement class is a singleton glyph class, the rule is treated
+    #  as identical to format B" (as if it were a single glyph)
+    # // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#5a-gsub-lookuptype-1-single-substitution
+    sub [a b c] by [d];
+    sub [e f g]' h by [i];
+} test;

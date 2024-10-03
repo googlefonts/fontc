@@ -641,6 +641,14 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                 self.error(replace.unwrap().range(), "cannot sub glyph by glyph class");
                 None
             }
+            // treat singleton class as single glyph, per the spec:
+            // "If the replacement is a singleton glyph class, then the rule
+            // will be treated identically to a format B rule":
+            // http://adobe-type-tools.github.io/afdko/OpenTypeFeatureFileSpecification.html#5a-gsub-lookuptype-1-single-substitution
+            (GlyphOrClass::Class(c1), GlyphOrClass::Class(c2)) if c2.len() == 1 => {
+                let g2 = *c2.into_iter().next().unwrap();
+                Some((GlyphOrClass::Class(c1), GlyphOrClass::Glyph(g2)))
+            }
             (GlyphOrClass::Class(c1), GlyphOrClass::Class(c2)) if c1.len() != c2.len() => {
                 self.error(
                     replace.unwrap().range(),
