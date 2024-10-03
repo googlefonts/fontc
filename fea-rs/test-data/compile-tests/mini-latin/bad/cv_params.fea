@@ -1,0 +1,12 @@
+feature cvNO {
+    # not valid in this feature
+    cvParameters {
+    };
+} cvNO;
+
+feature cv01 {
+    sub a by b;
+    cvParameters {
+    };
+} cv01;
+

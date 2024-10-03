@@ -206,12 +206,18 @@ fn cv_parameters(parser: &mut Parser, recovery: TokenSet) {
                 parser.expect_recover(Kind::RBrace, recovery);
                 parser.expect_semi();
             });
+        } else {
+            parser.err_and_bump("token not valid in cvParameters block");
+            parser.eat_until(recovery);
+            parser.eat(Kind::Semi);
         }
     }
 
-    let entry_recovery = recovery
-        .union(PARAM_KEYWORDS)
-        .union(TokenSet::new(&[LexemeKind::RBrace, LexemeKind::Semi]));
+    let entry_recovery = recovery.union(PARAM_KEYWORDS).union(TokenSet::new(&[
+        LexemeKind::RBrace,
+        LexemeKind::CharacterKw,
+        LexemeKind::Semi,
+    ]));
 
     parser.in_node(Kind::CvParametersKw, |parser| {
         assert!(parser.eat(Kind::CvParametersKw));

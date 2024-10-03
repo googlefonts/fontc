@@ -590,16 +590,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             return self.validate_aalt_feature(node);
         }
 
-        let mut statement_iter = node.statements();
-
-        if tags::is_stylistic_set(tag_raw) {
-            self.validate_stylistic_set_items(&mut statement_iter);
-        }
-
-        if tags::is_character_variant(tag_raw) {
-            self.validate_character_variant_items(&mut statement_iter);
-        }
-        self.validate_feature_statements(tag_raw, statement_iter);
+        self.validate_feature_statements(tag_raw, node.statements());
     }
 
     // shared between features and feature variations
@@ -608,6 +599,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         feature_tag: Tag,
         iter: impl Iterator<Item = &'b NodeOrToken>,
     ) {
+        let mut is_first_item = true;
         for item in iter {
             if item.kind() == Kind::ScriptNode
                 || item.kind() == Kind::LanguageNode
@@ -615,6 +607,34 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                 || item.kind() == Kind::Semi
             {
                 // lgtm
+            } else if let Some(node) = typed::CvParameters::cast(item) {
+                if !tags::is_character_variant(feature_tag) {
+                    self.error(
+                        node.keyword().range(),
+                        "cvParameters block only valid in cv01-cv99 features",
+                    );
+                } else if !is_first_item {
+                    self.error(
+                        node.keyword().range(),
+                        "cvParameters must be first statement in feature block",
+                    );
+                } else {
+                    self.validate_character_variant_items(&node);
+                }
+            } else if let Some(node) = typed::FeatureNames::cast(item) {
+                if !tags::is_stylistic_set(feature_tag) {
+                    self.error(
+                        node.keyword().range(),
+                        "featureNames block only valid in ss01-ss20 features",
+                    );
+                } else if !is_first_item {
+                    self.error(
+                        node.keyword().range(),
+                        "featureNames must be first statement in feature block",
+                    );
+                } else {
+                    self.validate_stylistic_set_items(&node);
+                }
             } else if let Some(node) = typed::LookupRef::cast(item) {
                 self.validate_lookup_ref(&node);
             } else if let Some(node) = typed::LookupBlock::cast(item) {
@@ -642,40 +662,26 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                     format!("unhandled item '{}' in feature", item.kind()),
                 );
             }
+            is_first_item = false;
         }
     }
 
-    fn validate_stylistic_set_items<'b>(
-        &mut self,
-        iter: &mut impl Iterator<Item = &'b NodeOrToken>,
-    ) {
-        let mut iter = iter.peekable();
-        if let Some(node) = iter.peek().and_then(|x| typed::FeatureNames::cast(x)) {
-            for name in node.statements() {
-                self.validate_name_spec(&name);
-            }
-            iter.next();
+    fn validate_stylistic_set_items(&mut self, names: &typed::FeatureNames) {
+        for name in names.statements() {
+            self.validate_name_spec(&name);
         }
     }
 
-    fn validate_character_variant_items<'b>(
-        &mut self,
-        iter: &mut impl Iterator<Item = &'b NodeOrToken>,
-    ) {
-        let mut iter = iter.peekable();
-        if let Some(node) = iter.peek().and_then(|x| typed::CvParameters::cast(x)) {
-            for kind in [
-                Kind::FeatUiLabelNameIdKw,
-                Kind::FeatUiTooltipTextNameIdKw,
-                Kind::SampleTextNameIdKw,
-                Kind::ParamUiLabelNameIdKw,
-            ] {
-                if !node.iter().any(|x| x.kind() == kind) {
-                    self.warning(node.keyword().range(), format!("missing '{kind}' node"));
-                }
+    fn validate_character_variant_items(&mut self, node: &typed::CvParameters) {
+        for kind in [
+            Kind::FeatUiLabelNameIdKw,
+            Kind::FeatUiTooltipTextNameIdKw,
+            Kind::SampleTextNameIdKw,
+            Kind::ParamUiLabelNameIdKw,
+        ] {
+            if !node.iter().any(|x| x.kind() == kind) {
+                self.warning(node.keyword().range(), format!("missing '{kind}' node"));
             }
-
-            iter.next();
         }
     }
 
