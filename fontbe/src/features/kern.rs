@@ -213,6 +213,9 @@ impl Work<Context, AnyWorkId, Error> for GatherIrKerningWork {
 /// missing pairs are filled in via the UFO kerning value lookup algorithm:
 ///
 /// <https://unifiedfontobject.org/versions/ufo3/kerning.plist/#kerning-value-lookup-algorithm>
+///
+/// in pythonland this happens in ufo2ft, here:
+/// <https://github.com/googlefonts/ufo2ft/blob/5fd168e65a0b0a/Lib/ufo2ft/featureWriters/kernFeatureWriter.py#L442>
 fn align_kerning(
     groups: &KerningGroups,
     instances: &mut HashMap<NormalizedLocation, KerningInstance>,
@@ -253,13 +256,17 @@ fn align_instance(
     side1_glyphs: &HashMap<&GlyphName, &KernGroup>,
     side2_glyphs: &HashMap<&GlyphName, &KernGroup>,
 ) {
-    let missing_pairs = all_pairs
-        .iter()
-        .filter(|pair| !instance.contains_key(pair))
-        .collect::<Vec<_>>();
-
-    for pair in missing_pairs {
+    let mut buf = Vec::new();
+    // iterate the pairs that are not present in this instance
+    for pair in all_pairs.iter().filter(|pair| !instance.contains_key(pair)) {
         let value = lookup_kerning_value(pair, instance, side1_glyphs, side2_glyphs);
+
+        // accumulate any additions and add at the end, otherwise newly added
+        // additions could influence the calculation of subsequent values
+        buf.push((pair, value));
+    }
+    // when done all pairs, add them to the instance
+    for (pair, value) in buf {
         instance.insert(pair.to_owned(), value);
     }
 }
@@ -1281,5 +1288,45 @@ mod tests {
             (flags_and_rule_count(bases), flags_and_rule_count(marks)),
             ((LookupFlag::IGNORE_MARKS, 2), (LookupFlag::empty(), 1)),
         );
+    }
+
+    // we had a bug where we were updating the kerning values in place, which
+    // meant the order in which we handled pairs could influence the results
+    #[test]
+    fn alignment_determinism() {
+        let g1 = GlyphName::new("a");
+        let g2 = GlyphName::new("b");
+        let side1 = ir::KernGroup::Side1("aa".into());
+        let side2 = ir::KernGroup::Side2("bb".into());
+        let side1_glyphs = HashMap::from([(&g1, &side1)]);
+        let side2_glyphs = HashMap::from([(&g2, &side2)]);
+
+        let glyph_glyph: ir::KernPair = (g1.clone().into(), g2.clone().into());
+        let glyph_group: ir::KernPair = (g1.clone().into(), side2.clone().into());
+        let group_glyph: ir::KernPair = (side1.clone().into(), g2.clone().into());
+        let group_group: ir::KernPair = (side1.clone().into(), side2.clone().into());
+
+        let all_pairs = HashSet::from([
+            glyph_glyph.clone(),
+            glyph_group.clone(),
+            group_glyph.clone(),
+            group_group.clone(),
+        ]);
+        let mut kerns = BTreeMap::new();
+        kerns.insert(group_group.clone(), OrderedFloat::from(-70.));
+        kerns.insert(group_glyph.clone(), 10.0.into());
+        // explanation:
+        // we need to align glyph_glyph and glyph_group.
+        // - if we do glyph_group first, we will use the group_group value of
+        //   -70, and then when we do glyph_glyph we will use this value, since
+        //   glyph_group is preferred to group_glyph
+        // - but if we do glyph_glyph first, we will use the value from
+        //   group_glyph, which is set.
+
+        // run a few times because triggering depended on hashmap iteration order
+        for _ in 0..20 {
+            align_instance(&all_pairs, &mut kerns, &side1_glyphs, &side2_glyphs);
+            assert_eq!(kerns.get(&glyph_glyph).map(|x| x.0), Some(10.0f32));
+        }
     }
 }

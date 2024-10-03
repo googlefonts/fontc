@@ -324,6 +324,18 @@ impl KernSide {
     }
 }
 
+impl From<GlyphName> for KernSide {
+    fn from(src: GlyphName) -> KernSide {
+        KernSide::Glyph(src)
+    }
+}
+
+impl From<KernGroup> for KernSide {
+    fn from(src: KernGroup) -> KernSide {
+        KernSide::Group(src)
+    }
+}
+
 impl StaticMetadata {
     // TODO: we could consider a builder or something for this?
     #[allow(clippy::too_many_arguments)]
