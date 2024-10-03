@@ -200,8 +200,9 @@ def build_fontc(source: Path, fontc_cargo_path: Path, build_dir: Path, compare: 
 
 
 def build_fontmake(source: Path, build_dir: Path, compare: str):
+    variable = source_is_variable(source)
     buildtype = "variable"
-    if not source_is_variable(source):
+    if not variable:
         buildtype = "ttf"
     cmd = [
         "fontmake",
@@ -217,6 +218,12 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         "--debug-feature-file",
         "debug.fea",
     ]
+    if not variable:
+        # fontmake static builds perform overlaps removal, but fontc can't do that yet.
+        # Disable the filter to make the diff less noisy.
+        # TODO(anthrotype): Remove if/when fontc gains the ability to remove overlaps.
+        # https://github.com/googlefonts/fontc/issues/975
+        cmd.append("--keep-overlaps")
     if compare == _COMPARE_GFTOOLS:
         cmd += [
             "--filter",
