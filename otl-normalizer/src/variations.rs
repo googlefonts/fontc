@@ -1,8 +1,5 @@
 use write_fonts::read::{
-    tables::{
-        layout::VariationIndex,
-        variations::{DeltaSetIndex, ItemVariationStore},
-    },
+    tables::{layout::VariationIndex, variations::ItemVariationStore},
     types::F2Dot14,
     ReadError,
 };
@@ -53,11 +50,7 @@ impl<'a> DeltaComputer<'a> {
         coord: i32,
         idx: VariationIndex,
     ) -> Result<Vec<i32>, ReadError> {
-        // TODO: this deserves an Into?
-        let delta_ix = DeltaSetIndex {
-            outer: idx.delta_set_outer_index(),
-            inner: idx.delta_set_inner_index(),
-        };
+        let delta_ix = idx.into();
         self.locations
             .iter()
             .map(|loc| self.ivs.compute_delta(delta_ix, loc).map(|d| d + coord))
