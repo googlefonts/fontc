@@ -128,7 +128,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
             .map(|(_, node)| node.clone())
             .collect::<Vec<_>>();
         for tag in bad {
-            self.error(tag.range(), "Referenced feature not found.");
+            self.warning(tag.range(), "Referenced feature not found.");
         }
     }
 
