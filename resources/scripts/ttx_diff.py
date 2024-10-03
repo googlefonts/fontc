@@ -606,12 +606,12 @@ def main(argv):
             build_fontc(source.resolve(), fontc_manifest_path, build_dir, compare)
         except BuildFail as e:
             failures["fontc"] = {"command": " ".join(
-                e.command), "stderr": e.stderr[:MAX_ERR_LEN]}
+                e.command), "stderr": e.stderr[-MAX_ERR_LEN:]}
         try:
             build_fontmake(source.resolve(), build_dir, compare)
         except BuildFail as e:
             failures["fontmake"] = {"command": " ".join(
-                e.command), "stderr": e.stderr[:MAX_ERR_LEN]}
+                e.command), "stderr": e.stderr[-MAX_ERR_LEN:]}
 
         report_errors_and_exit_if_there_were_any(failures)
 
