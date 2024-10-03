@@ -1403,6 +1403,11 @@ impl Os2FamilyClass {
 }
 
 impl FeatureNames {
+    pub(crate) fn keyword(&self) -> &Token {
+        debug_assert_eq!(self.iter().next().unwrap().kind(), Kind::FeatureNamesKw);
+        self.iter().next().and_then(|t| t.as_token()).unwrap()
+    }
+
     pub(crate) fn statements(&self) -> impl Iterator<Item = NameSpec> + '_ {
         self.iter().filter_map(NameSpec::cast)
     }

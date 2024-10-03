@@ -1,0 +1,14 @@
+feature ssNO {
+    # not valid in this feature
+    featureNames {
+        name "my cool name";
+    };
+} ssNO;
+
+feature ss01 {
+    sub a by b;
+    featureNames {
+        name "if present, block must be first item in feature";
+    };
+} ss01;
+
