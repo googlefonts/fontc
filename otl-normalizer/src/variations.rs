@@ -44,6 +44,7 @@ impl<'a> DeltaComputer<'a> {
                     .collect(),
             );
         }
+        locations.sort();
         Ok(DeltaComputer { ivs, locations })
     }
 
