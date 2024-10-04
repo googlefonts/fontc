@@ -96,7 +96,7 @@ pub fn parse_entries(xml: &[u8]) -> Result<Vec<GlyphInfo>, GlyphDataError> {
     }
 
     let mut reader = Reader::from_reader(xml);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
 
     check_and_advance_past_preamble(&mut reader)?;
     iter_rows(&mut reader)
