@@ -298,10 +298,10 @@ impl Plist {
             }
             Token::OpenParen => {
                 let mut list = Vec::new();
-                if let Some(ix) = Token::expect(s, ix, b')') {
-                    return Ok((Plist::Array(list), ix));
-                }
                 loop {
+                    if let Some(ix) = Token::expect(s, ix, b')') {
+                        return Ok((Plist::Array(list), ix));
+                    }
                     let (val, next) = Self::parse_rec(s, ix)?;
                     list.push(val);
                     if let Some(ix) = Token::expect(s, next, b')') {
@@ -309,6 +309,9 @@ impl Plist {
                     }
                     if let Some(next) = Token::expect(s, next, b',') {
                         ix = next;
+                        if let Some(next) = Token::expect(s, next, b')') {
+                            return Ok((Plist::Array(list), next));
+                        }
                     } else {
                         return Err(Error::ExpectedComma);
                     }
@@ -710,6 +713,9 @@ impl<'a> Tokenizer<'a> {
                         return Ok(());
                     }
                     self.eat(b',')?;
+                    if self.eat(b')').is_ok() {
+                        return Ok(());
+                    }
                 }
             }
             other => Err(Error::UnexpectedToken { name: other.name() }),
@@ -734,6 +740,10 @@ impl<'a> Tokenizer<'a> {
                 return Ok(list);
             }
             self.eat(delim.sep)?;
+            // handle possible traliing separator
+            if self.eat(delim.end).is_ok() {
+                return Ok(list);
+            }
         }
     }
 
@@ -977,5 +987,46 @@ mod tests {
         assert_eq!(byte_from_hex([b'f', b'f']), Ok(0xff));
         assert_eq!(byte_from_hex([b'f', b'0']), Ok(0xf0));
         assert_eq!(byte_from_hex([b'0', b'f']), Ok(0x0f));
+    }
+
+    // in arrays the trailing comma is optional but supported
+    #[test]
+    fn array_optional_trailing_comma() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        // we include a list that is not parsed in derive because that
+        // takes a second codepath.
+        let trailing = r#"
+        {
+            items = (
+                "a",
+                "b",
+            );
+            skip_me = (
+                "c",
+                "d",
+            );
+        }"#;
+
+        let no_trailing = r#"
+        {
+            items = (
+                "a",
+                "b"
+            );
+            skip_me = (
+                "c",
+                "d"
+            );
+        }"#;
+
+        #[derive(Default, FromPlist)]
+        struct TestMe {
+            items: Vec<String>,
+        }
+
+        let trailing = TestMe::parse_plist(trailing).unwrap();
+        assert_eq!(trailing.items, ["a", "b"]);
+        let no_trailing = TestMe::parse_plist(no_trailing).unwrap();
+        assert_eq!(trailing.items, no_trailing.items);
     }
 }
