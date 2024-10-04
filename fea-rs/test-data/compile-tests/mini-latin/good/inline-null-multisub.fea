@@ -1,0 +1,5 @@
+feature test {
+    # this _looks_ like an inline single-sub rule; it is technically multiple-sub,
+    # but we support it to match fonttools
+    sub a b [c d]' by NULL;
+} test;
