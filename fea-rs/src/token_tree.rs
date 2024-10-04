@@ -263,9 +263,7 @@ impl Node {
 
     fn update_positions_recurse(&mut self, mut pos: usize) {
         self.abs_pos = pos as _;
-        let Some(children) = Arc::get_mut(&mut self.children) else {
-            panic!("update_positions should only be called on a newly created node",);
-        };
+        let children = Arc::make_mut(&mut self.children);
 
         for child in children {
             child.update_positions(pos);
