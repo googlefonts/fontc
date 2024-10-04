@@ -736,6 +736,22 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
                     } else {
                         None
                     }
+                } else if target.is_class() && rule.null().is_some() {
+                    // special case:
+                    // sub a b [c d e]' by NULL; this syntax is supported
+                    // outside contexts, and exists in some fonts.
+
+                    let targets = self.resolve_glyph_or_class(&target);
+                    let lookup = self.ensure_current_lookup_type(Kind::GsubType6);
+                    let mut lookup_id = None;
+                    for target in targets.iter() {
+                        lookup_id = Some(
+                            lookup
+                                .as_gsub_contextual()
+                                .add_anon_gsub_type_2(target, Vec::new()),
+                        );
+                    }
+                    lookup_id
                 } else {
                     if target.is_class() {
                         self.error(
