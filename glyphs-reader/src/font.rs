@@ -1492,7 +1492,7 @@ fn parse_codepoint_str(s: &str, radix: u32) -> BTreeSet<u32> {
 fn default_master_idx(raw_font: &RawFont) -> usize {
     // Prefer an explicit origin
     // https://github.com/googlefonts/fontmake-rs/issues/44
-    raw_font
+    if let Some(Some(master_idx)) = raw_font
         .custom_parameters
         .string("Variable Font Origin")
         .map(|origin| {
@@ -1502,17 +1502,54 @@ fn default_master_idx(raw_font: &RawFont) -> usize {
                 .enumerate()
                 .find(|(_, master)| master.id == origin)
                 .map(|(idx, _)| idx)
-                .unwrap_or(0)
         })
-        // TODO: implement searching for "a base style shared between all masters" as glyphsLib does
-        // Still nothing? - just look for one called Regular
-        .or_else(|| {
-            raw_font
-                .font_master
-                .iter()
-                .position(|m| matches!(m.name.as_deref(), Some("Regular")))
+    {
+        return master_idx;
+    }
+    // Look for a master whose style is shared by all masters, defaulting to 'Regular'
+    let base_style = find_base_style(&raw_font.font_master).unwrap_or("Regular".to_string());
+    if let Some(master_idx) = raw_font
+        .font_master
+        .iter()
+        .position(|m| m.name.as_ref() == Some(&base_style))
+    {
+        return master_idx;
+    }
+    // Second try, this time omit 'Regular' from the master names
+    raw_font
+        .font_master
+        .iter()
+        .position(|m| {
+            m.name
+                .as_ref()
+                .map(|name| {
+                    name.split_whitespace()
+                        .filter(|n| *n != "Regular")
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .as_ref()
+                == Some(&base_style)
         })
-        .unwrap_or_default()
+        .unwrap_or_default() // just pick the first
+}
+
+// Direct port of glyphsLib's find_base_style:
+// https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/axes.py#L652-L663
+fn find_base_style(masters: &[RawFontMaster]) -> Option<String> {
+    let master_names: Vec<_> = masters.iter().filter_map(|m| m.name.as_deref()).collect();
+    if master_names.is_empty() {
+        return None;
+    }
+
+    let mut base_style: Vec<_> = master_names[0].split_whitespace().collect();
+
+    for master_name in master_names {
+        let style: Vec<_> = master_name.split_whitespace().collect();
+        base_style.retain(|word| style.contains(word));
+    }
+
+    Some(base_style.join(" ")).filter(|s| !s.is_empty())
 }
 
 fn axis_index(from: &RawFont, pred: impl Fn(&Axis) -> bool) -> Option<usize> {
@@ -2358,7 +2395,10 @@ impl From<Affine> for AffineForEqAndHash {
 #[cfg(test)]
 mod tests {
     use crate::{
-        font::{RawAxisUserToDesignMap, RawFeature, RawUserToDesignMapping},
+        font::{
+            default_master_idx, RawAxisUserToDesignMap, RawFeature, RawFont, RawFontMaster,
+            RawUserToDesignMapping,
+        },
         glyphdata::{Category, Subcategory},
         plist::FromPlist,
         Font, FontMaster, Node, Shape,
@@ -2373,6 +2413,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use kurbo::{Affine, Point};
+
+    use rstest::rstest;
 
     fn testdata_dir() -> PathBuf {
         // working dir varies CLI vs VSCode
@@ -2681,6 +2723,46 @@ mod tests {
         // string as an integer.
         let font = Font::load(&glyphs3_dir().join("CustomOrigin.glyphs")).unwrap();
         assert_eq!(1, font.default_master_idx);
+    }
+
+    #[rstest]
+    #[case::base_style_without_regular(
+        &[
+            "Expanded Thin Italic",
+            "Expanded Italic",
+            "Expanded Bold Italic",
+        ],
+        1
+    )]
+    #[case::base_style_contains_regular(
+        &[
+            "Regular Foo Bar",
+            "Regular Foo Baz",
+            "Regular Foo",
+        ],
+        2
+    )]
+    #[case::base_style_with_regular_omitted(
+        &[
+            "Condensed Thin",
+            "Condensed Light",
+            "Condensed Regular",
+        ],
+        2
+    )]
+    #[case::default_to_regular(&["Thin", "Light", "Regular", "Medium", "Bold"], 2)]
+    #[case::default_to_first(&["Foo", "Bar", "Baz"], 0)]
+    fn find_default_master(#[case] master_names: &[&str], #[case] expected_idx: usize) {
+        let mut font = RawFont::default();
+        for name in master_names {
+            let master = RawFontMaster {
+                name: Some(name.to_string()),
+                ..Default::default()
+            };
+            font.font_master.push(master);
+        }
+
+        assert_eq!(expected_idx, default_master_idx(&font));
     }
 
     #[test]
