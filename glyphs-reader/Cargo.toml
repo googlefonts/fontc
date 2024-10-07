@@ -34,6 +34,7 @@ bincode.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
+rstest.workspace = true
 
 [build-dependencies]
 quick-xml = "0.36"
