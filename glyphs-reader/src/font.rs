@@ -1499,9 +1499,7 @@ fn default_master_idx(raw_font: &RawFont) -> usize {
             raw_font
                 .font_master
                 .iter()
-                .enumerate()
-                .find(|(_, master)| master.id == origin)
-                .map(|(idx, _)| idx)
+                .position(|master| master.id == origin)
         })
     {
         return master_idx;
