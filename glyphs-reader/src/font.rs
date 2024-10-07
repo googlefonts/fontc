@@ -1506,50 +1506,58 @@ fn default_master_idx(raw_font: &RawFont) -> usize {
     {
         return master_idx;
     }
-    // Look for a master whose style is shared by all masters, defaulting to 'Regular'
-    let base_style = find_base_style(&raw_font.font_master).unwrap_or("Regular".to_string());
-    if let Some(master_idx) = raw_font
+
+    // No explicit origin, try to pick a winner
+
+    // Contenders: (ordinal, words in name) for all masters that have names
+    let contenders = raw_font
         .font_master
         .iter()
-        .position(|m| m.name.as_ref() == Some(&base_style))
-    {
-        return master_idx;
-    }
-    // Second try, this time omit 'Regular' from the master names
-    raw_font
-        .font_master
-        .iter()
-        .position(|m| {
+        .enumerate()
+        .filter_map(|(i, m)| {
             m.name
-                .as_ref()
-                .map(|name| {
-                    name.split_whitespace()
-                        .filter(|n| *n != "Regular")
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
-                .as_ref()
-                == Some(&base_style)
+                .as_deref()
+                .map(|name| (i, whitespace_separated_tokens(name)))
         })
-        .unwrap_or_default() // just pick the first
+        .collect::<Vec<_>>();
+
+    // EARLY EXIT: no contenders, just pick 0
+    if contenders.is_empty() {
+        return 0;
+    }
+
+    // In Python find_base_style <https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/axes.py#L652-L663>
+    let mut common_words = contenders[0].1.clone();
+    for (_, words) in contenders.iter().skip(1) {
+        common_words.retain(|w| words.contains(w));
+    }
+
+    // Find the best match:
+    //   Find the common words in the master names
+    //   If any master is named exactly that, it wins
+    //      "Foo Bar" is the best match for {Foo Bar Donkey, Foo Bar Cat, Foo Bar}
+    //   Otherwise, a master whose name matches the common words if we delete "Regular" wins
+    //      "Foo Bar Regular" is the best match for {Foo Bar Italic, Foo Bar Majestic, Foo Bar Regular}
+    let mut best_idx = 0;
+    for (idx, mut words) in contenders {
+        // if name exactly matches common words you just win
+        if *common_words == words {
+            best_idx = idx;
+            break;
+        }
+
+        // if our words excluding "Regular" match we're the best
+        // a subsequent contender could match exactly so we don't win yet
+        words.retain(|w| *w != "Regular");
+        if *common_words == words {
+            best_idx = idx;
+        }
+    }
+    best_idx
 }
 
-// Direct port of glyphsLib's find_base_style:
-// https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/axes.py#L652-L663
-fn find_base_style(masters: &[RawFontMaster]) -> Option<String> {
-    let master_names: Vec<_> = masters.iter().filter_map(|m| m.name.as_deref()).collect();
-    if master_names.is_empty() {
-        return None;
-    }
-
-    let mut base_style: Vec<_> = master_names[0].split_whitespace().collect();
-
-    for master_name in master_names {
-        let style: Vec<_> = master_name.split_whitespace().collect();
-        base_style.retain(|word| style.contains(word));
-    }
-
-    Some(base_style.join(" ")).filter(|s| !s.is_empty())
+fn whitespace_separated_tokens(s: &str) -> Vec<&str> {
+    s.split_whitespace().collect()
 }
 
 fn axis_index(from: &RawFont, pred: impl Fn(&Axis) -> bool) -> Option<usize> {
@@ -2732,7 +2740,7 @@ mod tests {
             "Expanded Italic",
             "Expanded Bold Italic",
         ],
-        1
+        1 // "Expanded Italic" is common and exactly matches [1]
     )]
     #[case::base_style_contains_regular(
         &[
@@ -2740,7 +2748,7 @@ mod tests {
             "Regular Foo Baz",
             "Regular Foo",
         ],
-        2
+        2 // "Regular Foo" is common and exactly matches [2]
     )]
     #[case::base_style_with_regular_omitted(
         &[
@@ -2748,9 +2756,11 @@ mod tests {
             "Condensed Light",
             "Condensed Regular",
         ],
-        2
+        2 // "Condensed" is common and matches "Condensed Regular"" when "Regular" is ignored
     )]
+    // "" is common and matches "Regular when "Regular" is ignored
     #[case::default_to_regular(&["Thin", "Light", "Regular", "Medium", "Bold"], 2)]
+    // "" is common, nothing matches, just take the first
     #[case::default_to_first(&["Foo", "Bar", "Baz"], 0)]
     fn find_default_master(#[case] master_names: &[&str], #[case] expected_idx: usize) {
         let mut font = RawFont::default();
