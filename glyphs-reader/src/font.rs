@@ -2740,7 +2740,7 @@ mod tests {
             "Expanded Italic",
             "Expanded Bold Italic",
         ],
-        1 // "Expanded Italic" is common and exactly matches [1]
+        "Expanded Italic"  // is common and exactly matches [1]
     )]
     #[case::base_style_contains_regular(
         &[
@@ -2748,7 +2748,7 @@ mod tests {
             "Regular Foo Baz",
             "Regular Foo",
         ],
-        2 // "Regular Foo" is common and exactly matches [2]
+        "Regular Foo" // is common and exactly matches [2]
     )]
     #[case::base_style_with_regular_omitted(
         &[
@@ -2756,13 +2756,17 @@ mod tests {
             "Condensed Light",
             "Condensed Regular",
         ],
-        2 // "Condensed" is common and matches "Condensed Regular"" when "Regular" is ignored
+        // "Condensed" is common and matches "Condensed Regular" when "Regular" is ignored
+        "Condensed Regular"
     )]
     // "" is common and matches "Regular when "Regular" is ignored
-    #[case::default_to_regular(&["Thin", "Light", "Regular", "Medium", "Bold"], 2)]
+    #[case::default_to_regular(
+        &["Thin", "Light", "Regular", "Medium", "Bold"],
+        "Regular"
+    )]
     // "" is common, nothing matches, just take the first
-    #[case::default_to_first(&["Foo", "Bar", "Baz"], 0)]
-    fn find_default_master(#[case] master_names: &[&str], #[case] expected_idx: usize) {
+    #[case::default_to_first(&["Foo", "Bar", "Baz"], "Foo")]
+    fn find_default_master(#[case] master_names: &[&str], #[case] expected: &str) {
         let mut font = RawFont::default();
         for name in master_names {
             let master = RawFontMaster {
@@ -2772,7 +2776,9 @@ mod tests {
             font.font_master.push(master);
         }
 
-        assert_eq!(expected_idx, default_master_idx(&font));
+        let idx = default_master_idx(&font);
+
+        assert_eq!(expected, font.font_master[idx].name.as_deref().unwrap());
     }
 
     #[test]
