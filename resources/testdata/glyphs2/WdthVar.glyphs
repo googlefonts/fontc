@@ -1,0 +1,155 @@
+{
+.appVersion = "3323";
+copyright = "Copy!";
+customParameters = (
+{
+name = description;
+value = "The greatest width var";
+},
+{
+name = familyName;
+value = WdthVar;
+},
+{
+name = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+name = versionString;
+value = "New Value";
+},
+{
+name = Axes;
+value = (
+{
+Name = Width;
+Tag = wdth;
+}
+);
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WdthVar;
+fontMaster = (
+{
+alignmentZones = (
+"{737, 16}",
+"{0, -16}",
+"{-42, -16}"
+);
+ascender = 737;
+capHeight = 702;
+descender = -42;
+iconName = Light_Condensed;
+id = m01;
+weightValue = 22;
+width = Condensed;
+xHeight = 501;
+},
+{
+ascender = 800;
+capHeight = 700;
+custom = Expanded;
+descender = -200;
+iconName = Light_Extended;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+weightValue = 62;
+xHeight = 500;
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2022-12-01 04:58:12 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 0020;
+},
+{
+glyphname = hyphen;
+lastChange = "2024-08-28 11:45:55 +0000";
+layers = (
+{
+layerId = m01;
+paths = (
+{
+closed = 1;
+nodes = (
+"151 250 LINE {name = hr00;}",
+"451 250 LINE",
+"451 330 LINE",
+"151 330 LINE"
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+paths = (
+{
+closed = 1;
+nodes = (
+"75 224 LINE",
+"525 224 LINE",
+"525 356 LINE",
+"75 356 LINE"
+);
+}
+);
+width = 600;
+}
+);
+unicode = 002D;
+}
+);
+instances = (
+{
+interpolationWeight = 22;
+instanceInterpolations = {
+m01 = 1;
+};
+name = "Ultra Condensed";
+widthClass = "Ultra Condensed";
+},
+{
+interpolationWeight = 41;
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 0.475;
+m01 = 0.525;
+};
+name = Regular;
+},
+{
+interpolationWeight = 62;
+instanceInterpolations = {
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = 1;
+};
+name = "Ultra Expanded";
+widthClass = "Ultra Expanded";
+}
+);
+kerning = {
+m01 = {
+hyphen = {
+hyphen = -150;
+};
+};
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
+hyphen = {
+hyphen = -50;
+};
+};
+};
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}

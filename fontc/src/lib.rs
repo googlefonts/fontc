@@ -2842,7 +2842,24 @@ mod tests {
     }
 
     #[test]
-    fn os2_width_class_matches_default_wdth() {
+    fn os2_width_class_matches_default_wdth_glyphs2() {
+        let compile = TestCompile::compile_source("glyphs2/WdthVar.glyphs");
+        let font = compile.font();
+
+        // the default value for 'wdth' is 50 (UltraCondensed) in this test font
+        assert_eq!(
+            vec![(Tag::from_str("wdth").unwrap(), 50.0, 50.0, 200.0)],
+            axes(&font),
+        );
+        // ... which is reflected in the OS/2 table usWidthClass (UltraCondensed = 1)
+        assert_eq!(
+            WidthClass::UltraCondensed as u16,
+            font.os2().unwrap().us_width_class()
+        );
+    }
+
+    #[test]
+    fn os2_width_class_matches_default_wdth_glyphs3() {
         let compile = TestCompile::compile_source("glyphs3/WdthVar.glyphs");
         let font = compile.font();
 
