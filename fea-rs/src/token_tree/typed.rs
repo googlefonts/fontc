@@ -1220,7 +1220,7 @@ impl BaseScriptList {
     fn is_horiz(&self) -> bool {
         match self.iter().next().map(|t| t.kind()) {
             Some(Kind::HorizAxisBaseScriptListKw) => true,
-            Some(Kind::VertAxisBaseTagListKw) => false,
+            Some(Kind::VertAxisBaseScriptListKw) => false,
             other => panic!("unexpected token in BaseScriptList {:?}", other),
         }
     }

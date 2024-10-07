@@ -1,0 +1,9 @@
+# from wavefront: https://github.com/dy/wavefont/blob/b05a72e03358ddc/sources/Wavefont-wdflt%2Crmax%2Camax.ufo/features.fea#L3
+table BASE {
+  HorizAxis.BaseTagList                 ideo;
+  HorizAxis.BaseScriptList  DFLT  ideo  0;
+
+  VertAxis.BaseTagList                  ideo;
+  VertAxis.BaseScriptList   DFLT  ideo     1;
+} BASE;
+
