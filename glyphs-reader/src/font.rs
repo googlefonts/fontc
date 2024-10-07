@@ -1492,10 +1492,10 @@ fn parse_codepoint_str(s: &str, radix: u32) -> BTreeSet<u32> {
 fn default_master_idx(raw_font: &RawFont) -> usize {
     // Prefer an explicit origin
     // https://github.com/googlefonts/fontmake-rs/issues/44
-    if let Some(Some(master_idx)) = raw_font
+    if let Some(master_idx) = raw_font
         .custom_parameters
         .string("Variable Font Origin")
-        .map(|origin| {
+        .and_then(|origin| {
             raw_font
                 .font_master
                 .iter()
