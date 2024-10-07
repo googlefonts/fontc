@@ -1006,7 +1006,7 @@ fn set_default_underline_pos(
     metrics.set_if_absent(
         GlobalMetric::UnderlinePosition,
         location.clone(),
-        -0.075 * units_per_em as f32,
+        -0.075 * units_per_em as f64,
     );
 }
 
@@ -1576,7 +1576,10 @@ mod tests {
         types::GlyphName,
     };
     use fontir::{
-        ir::{AnchorKind, GlobalMetricsInstance, GlyphOrder, NameKey, PostscriptNames},
+        ir::{
+            test_helpers::Round2, AnchorKind, GlobalMetricsInstance, GlyphOrder, NameKey,
+            PostscriptNames,
+        },
         orchestration::{Context, Flags, WorkId},
         paths::Paths,
         source::{Input, Source},
@@ -2014,7 +2017,7 @@ mod tests {
                 underline_position: (-75.0).into(),
                 ..Default::default()
             },
-            default_metrics
+            default_metrics.round2()
         );
     }
 

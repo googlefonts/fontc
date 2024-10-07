@@ -422,7 +422,7 @@ impl StaticMetadata {
 /// At a minimum should be defined at the default location.
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct GlobalMetrics(
-    pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f32>>>,
+    pub(crate) HashMap<GlobalMetric, HashMap<NormalizedLocation, OrderedFloat<f64>>>,
 );
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -516,7 +516,7 @@ fn adjust_offset(offset: f64, angle: f64) -> f64 {
 }
 
 /// Map of values associated with a given global metric at various locations.
-pub type GlobalMetricValues = HashMap<NormalizedLocation, OrderedFloat<f32>>;
+pub type GlobalMetricValues = HashMap<NormalizedLocation, OrderedFloat<f64>>;
 
 impl GlobalMetrics {
     /// Creates a new, empty, [GlobalMetrics]
@@ -542,8 +542,7 @@ impl GlobalMetrics {
     ) {
         let units_per_em = units_per_em as f64;
 
-        let mut set_if_absent =
-            |metric, value| self.set_if_absent(metric, pos.clone(), value as f32);
+        let mut set_if_absent = |metric, value| self.set_if_absent(metric, pos.clone(), value);
 
         // https://github.com/googlefonts/ufo2ft/blob/fca66fe3ea1ea88ffb36f8264b21ce042d3afd05/Lib/ufo2ft/fontInfoData.py#L38-L45
         let ascender = ascender.unwrap_or(0.8 * units_per_em);
@@ -625,7 +624,7 @@ impl GlobalMetrics {
         set_if_absent(GlobalMetric::UnderlinePosition, -0.1 * units_per_em);
 
         // // https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L313-L316
-        set_if_absent(GlobalMetric::StrikeoutSize, underline_thickness.0 as f64);
+        set_if_absent(GlobalMetric::StrikeoutSize, underline_thickness.0);
         set_if_absent(
             GlobalMetric::StrikeoutPosition,
             x_height.map(|v| v * 0.6).unwrap_or(units_per_em * 0.22),
@@ -641,7 +640,7 @@ impl GlobalMetrics {
         self.0.entry(metric).or_default()
     }
 
-    pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f32> {
+    pub fn get(&self, metric: GlobalMetric, pos: &NormalizedLocation) -> OrderedFloat<f64> {
         let Some(value) = self.values(metric).get(pos) else {
             panic!("interpolated metric values are not yet supported");
         };
@@ -652,7 +651,7 @@ impl GlobalMetrics {
         &mut self,
         metric: GlobalMetric,
         pos: NormalizedLocation,
-        value: impl Into<OrderedFloat<f32>>,
+        value: impl Into<OrderedFloat<f64>>,
     ) {
         self.values_mut(metric).insert(pos, value.into());
     }
@@ -661,8 +660,8 @@ impl GlobalMetrics {
         &mut self,
         metric: GlobalMetric,
         pos: NormalizedLocation,
-        value: impl Into<OrderedFloat<f32>>,
-    ) -> OrderedFloat<f32> {
+        value: impl Into<OrderedFloat<f64>>,
+    ) -> OrderedFloat<f64> {
         *self.values_mut(metric).entry(pos).or_insert(value.into())
     }
 
@@ -673,7 +672,7 @@ impl GlobalMetrics {
         maybe_value: Option<impl Into<OrderedFloat<f64>>>,
     ) {
         if let Some(value) = maybe_value {
-            self.set(metric, pos, value.into().into_inner() as f32);
+            self.set(metric, pos, value.into().into_inner());
         }
     }
 
@@ -719,33 +718,86 @@ impl GlobalMetrics {
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct GlobalMetricsInstance {
     pub pos: NormalizedLocation,
-    pub ascender: OrderedFloat<f32>,
-    pub descender: OrderedFloat<f32>,
-    pub caret_slope_rise: OrderedFloat<f32>,
-    pub caret_slope_run: OrderedFloat<f32>,
-    pub caret_offset: OrderedFloat<f32>,
-    pub cap_height: OrderedFloat<f32>,
-    pub x_height: OrderedFloat<f32>,
-    pub os2_typo_ascender: OrderedFloat<f32>,
-    pub os2_typo_descender: OrderedFloat<f32>,
-    pub os2_typo_line_gap: OrderedFloat<f32>,
-    pub os2_win_ascent: OrderedFloat<f32>,
-    pub os2_win_descent: OrderedFloat<f32>,
-    pub hhea_ascender: OrderedFloat<f32>,
-    pub hhea_descender: OrderedFloat<f32>,
-    pub hhea_line_gap: OrderedFloat<f32>,
-    pub strikeout_position: OrderedFloat<f32>,
-    pub strikeout_size: OrderedFloat<f32>,
-    pub subscript_x_offset: OrderedFloat<f32>,
-    pub subscript_x_size: OrderedFloat<f32>,
-    pub subscript_y_offset: OrderedFloat<f32>,
-    pub subscript_y_size: OrderedFloat<f32>,
-    pub superscript_x_offset: OrderedFloat<f32>,
-    pub superscript_x_size: OrderedFloat<f32>,
-    pub superscript_y_offset: OrderedFloat<f32>,
-    pub superscript_y_size: OrderedFloat<f32>,
-    pub underline_thickness: OrderedFloat<f32>,
-    pub underline_position: OrderedFloat<f32>,
+    pub ascender: OrderedFloat<f64>,
+    pub descender: OrderedFloat<f64>,
+    pub caret_slope_rise: OrderedFloat<f64>,
+    pub caret_slope_run: OrderedFloat<f64>,
+    pub caret_offset: OrderedFloat<f64>,
+    pub cap_height: OrderedFloat<f64>,
+    pub x_height: OrderedFloat<f64>,
+    pub os2_typo_ascender: OrderedFloat<f64>,
+    pub os2_typo_descender: OrderedFloat<f64>,
+    pub os2_typo_line_gap: OrderedFloat<f64>,
+    pub os2_win_ascent: OrderedFloat<f64>,
+    pub os2_win_descent: OrderedFloat<f64>,
+    pub hhea_ascender: OrderedFloat<f64>,
+    pub hhea_descender: OrderedFloat<f64>,
+    pub hhea_line_gap: OrderedFloat<f64>,
+    pub strikeout_position: OrderedFloat<f64>,
+    pub strikeout_size: OrderedFloat<f64>,
+    pub subscript_x_offset: OrderedFloat<f64>,
+    pub subscript_x_size: OrderedFloat<f64>,
+    pub subscript_y_offset: OrderedFloat<f64>,
+    pub subscript_y_size: OrderedFloat<f64>,
+    pub superscript_x_offset: OrderedFloat<f64>,
+    pub superscript_x_size: OrderedFloat<f64>,
+    pub superscript_y_offset: OrderedFloat<f64>,
+    pub superscript_y_size: OrderedFloat<f64>,
+    pub underline_thickness: OrderedFloat<f64>,
+    pub underline_position: OrderedFloat<f64>,
+}
+
+#[doc(hidden)]
+pub mod test_helpers {
+    use ordered_float::OrderedFloat;
+
+    use super::GlobalMetricsInstance;
+
+    /// Round to 2 decimal places for testing because sometimes one wants to write 1.5 not 1.499994
+    pub trait Round2 {
+        fn round2(self) -> Self;
+    }
+
+    impl Round2 for OrderedFloat<f64> {
+        fn round2(self) -> Self {
+            OrderedFloat((self.0 * 100.0).round() / 100.0)
+        }
+    }
+
+    impl Round2 for GlobalMetricsInstance {
+        fn round2(self) -> Self {
+            GlobalMetricsInstance {
+                pos: self.pos.clone(),
+                ascender: self.ascender.round2(),
+                descender: self.descender.round2(),
+                caret_slope_rise: self.caret_slope_rise.round2(),
+                cap_height: self.cap_height.round2(),
+                x_height: self.x_height.round2(),
+                subscript_x_size: self.subscript_x_size.round2(),
+                subscript_y_size: self.subscript_y_size.round2(),
+                subscript_y_offset: self.subscript_y_offset.round2(),
+                superscript_x_size: self.superscript_x_size.round2(),
+                superscript_y_size: self.superscript_y_size.round2(),
+                superscript_y_offset: self.superscript_y_offset.round2(),
+                strikeout_position: self.strikeout_position.round2(),
+                strikeout_size: self.strikeout_size.round2(),
+                os2_typo_ascender: self.os2_typo_ascender.round2(),
+                os2_typo_descender: self.os2_typo_descender.round2(),
+                os2_typo_line_gap: self.os2_typo_line_gap.round2(),
+                os2_win_ascent: self.os2_win_ascent.round2(),
+                os2_win_descent: self.os2_win_descent.round2(),
+                hhea_ascender: self.hhea_ascender.round2(),
+                hhea_descender: self.hhea_descender.round2(),
+                hhea_line_gap: self.hhea_line_gap.round2(),
+                underline_thickness: self.underline_thickness.round2(),
+                underline_position: self.underline_position.round2(),
+                caret_slope_run: self.caret_slope_run.round2(),
+                caret_offset: self.caret_offset.round2(),
+                subscript_x_offset: self.subscript_x_offset.round2(),
+                superscript_x_offset: self.superscript_x_offset.round2(),
+            }
+        }
+    }
 }
 
 /// Helps accumulate 'name' values.
@@ -2534,5 +2586,19 @@ mod tests {
             ],
             names,
         )
+    }
+
+    // We had a bug where ((1290 as f64 * 0.35) as f32).ot_round() was 452.
+    // Without the as f32 (caused by GlobalMetrics using f32) it's 451. In Python it's 451.
+    #[test]
+    fn round_like_py() {
+        let pos = NormalizedLocation::for_pos(&[("wght", 0.0)]);
+        let mut metrics = GlobalMetrics::new();
+        metrics.populate_defaults(&pos, 1290, None, None, None, None);
+        let rounded: i16 = metrics
+            .get(GlobalMetric::SuperscriptYOffset, &pos)
+            .0
+            .ot_round();
+        assert_eq!(451, rounded);
     }
 }

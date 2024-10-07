@@ -1091,6 +1091,7 @@ mod tests {
     };
     use glyphs_reader::{glyphdata::Category, Font};
     use indexmap::IndexSet;
+    use ir::test_helpers::Round2;
     use write_fonts::types::{NameId, Tag};
 
     use crate::source::names;
@@ -1676,7 +1677,7 @@ mod tests {
                 underline_position: (-100.0).into(),
                 ..Default::default()
             },
-            default_metrics
+            default_metrics.round2()
         );
     }
 
