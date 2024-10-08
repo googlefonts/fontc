@@ -1,0 +1,88 @@
+{
+.appVersion = "3323";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Write lastChange";
+value = 0;
+},
+{
+name = "Write DisplayStrings";
+value = 0;
+}
+);
+date = "2024-10-08 16:36:05 +0000";
+familyName = "Master Names";
+fontMaster = (
+{
+axesValues = (
+100
+);
+id = m01;
+metricValues = (
+{
+pos = 10;
+}
+);
+name = "Thin Italic";
+},
+{
+axesValues = (
+400
+);
+id = "6A2F1D49-B971-4E48-8DE2-E69486298540";
+metricValues = (
+{
+pos = 10;
+}
+);
+name = Italic;
+},
+{
+axesValues = (
+900
+);
+id = "369A7D90-43AB-4213-A84C-0A5C875E6474";
+metricValues = (
+{
+pos = 10;
+}
+);
+name = "Black Italic";
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "6A2F1D49-B971-4E48-8DE2-E69486298540";
+width = 600;
+},
+{
+layerId = "369A7D90-43AB-4213-A84C-0A5C875E6474";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+metrics = (
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

@@ -2591,6 +2591,11 @@ mod tests {
         assert_load_v2_matches_load_v3("MasterNames", LoadCompare::Glyphs);
     }
 
+    #[test]
+    fn read_master_names_with_italic_2_and_3() {
+        assert_load_v2_matches_load_v3("MasterNames-Italic", LoadCompare::Glyphs);
+    }
+
     fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {
         let glyph = font.glyphs.get(glyph_name).unwrap();
         assert_eq!(1, glyph.layers.len());
