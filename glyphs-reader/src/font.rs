@@ -1369,7 +1369,7 @@ impl RawFont {
             let weight_name = master.weight.take();
             let custom_name = master.custom.take();
             // Remove Nones, empty strings and redundant occurrences of 'Regular'
-            let mut names: Vec<_> = vec![width_name, weight_name, custom_name]
+            let mut names: Vec<_> = [width_name, weight_name, custom_name]
                 .into_iter()
                 .flatten()
                 .filter(|x| !x.is_empty() && x != "Regular")
@@ -1378,8 +1378,9 @@ impl RawFont {
             if let Some(italic_angle) = master.italic_angle {
                 if italic_angle != 0.0
                     && (names.is_empty()
-                        || (!names.contains(&"Italic".into())
-                            && !names.contains(&"Oblique".into())))
+                        || !names
+                            .iter()
+                            .any(|name| name == "Italic" || name == "Oblique"))
                 {
                     names.push("Italic".into());
                 }
