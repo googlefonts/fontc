@@ -260,6 +260,10 @@ value = "The greatest weight var";
 key = copyrights;
 values = (
 {
+language = default;
+value = "Wrong answer";
+},
+{
 language = dflt;
 value = "Copy!";
 }
@@ -337,7 +341,15 @@ value = "Licensed to thrill";
 key = sampleTexts;
 values = (
 {
-language = dflt;
+language = MEH;
+value = "Don't pull this text";
+},
+{
+language = ENG;
+value = "Also bad";
+},
+{
+language = default;
 value = "Sam pull text";
 }
 );
@@ -346,7 +358,11 @@ value = "Sam pull text";
 key = compatibleFullNames;
 values = (
 {
-language = dflt;
+language = WRONG;
+value = "For the BeOS only";
+},
+{
+language = ENG;
 value = "For the Mac's only";
 }
 );
