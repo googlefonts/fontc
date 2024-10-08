@@ -8,7 +8,7 @@ use crate::{Results, RunResult};
 
 static SCRIPT_PATH: &str = "./resources/scripts/ttx_diff.py";
 // in the format expected by timeout(1)
-static TTX_TIME_BUDGET: &str = "5h";
+static TTX_TIME_BUDGET: &str = "20m";
 
 pub(super) fn run_ttx_diff(source: &Path) -> RunResult<DiffOutput, DiffError> {
     let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
@@ -49,8 +49,20 @@ pub(super) fn run_ttx_diff(source: &Path) -> RunResult<DiffOutput, DiffError> {
             Ok(RawDiffOutput::Error(error)) => RunResult::Fail(DiffError::CompileFailed(error)),
         },
         Some(124) => RunResult::Fail(DiffError::Other("ttx_diff timed out".to_string())),
-        // unhandled exception or sigterm
-        _ => RunResult::Fail(DiffError::Other(format!("unknown error '{stderr}'"))),
+        Some(other) => RunResult::Fail(DiffError::Other(format!(
+            "unknown error (status {other}): '{stderr}'"
+        ))),
+        None => {
+            let signal = if cfg!(target_family = "unix") {
+                use std::os::unix::process::ExitStatusExt;
+                output.status.signal().unwrap_or(0)
+            } else {
+                0
+            };
+            RunResult::Fail(DiffError::Other(format!(
+                "unknown error (signal {signal}): '{stderr}'"
+            )))
+        }
     }
 }
 
