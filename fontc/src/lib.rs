@@ -3129,4 +3129,30 @@ mod tests {
         let classdef = gdef.glyph_class_def().unwrap().unwrap();
         assert_eq!(classdef.iter().count(), 1)
     }
+
+    // <https://github.com/googlefonts/fontc/issues/1008>
+    #[test]
+    fn no_names_for_instances_in_a_static_font() {
+        let compile = TestCompile::compile_source("glyphs3/StaticWithInstance.glyphs");
+        let font = compile.font();
+
+        // <https://learn.microsoft.com/en-us/typography/opentype/spec/name#name-ids>
+        let name = font.name().unwrap();
+        let font_specific_names = name
+            .name_record()
+            .iter()
+            .filter_map(|nr| {
+                if nr.name_id().to_u16() > 255 {
+                    Some((nr.name_id(), nr.string(name.string_data()).unwrap()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            font_specific_names.is_empty(),
+            "Should have no font specific names, got {font_specific_names:?}"
+        );
+    }
 }

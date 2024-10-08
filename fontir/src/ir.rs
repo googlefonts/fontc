@@ -355,10 +355,18 @@ impl StaticMetadata {
         // Point axes are less exciting than ranged ones
         let variable_axes: Vec<_> = axes.iter().filter(|a| !a.is_point()).cloned().collect();
 
+        // Named instances of static fonts are unhelpful <https://github.com/googlefonts/fontc/issues/1008>
+        let named_instances = if !variable_axes.is_empty() {
+            named_instances
+        } else {
+            Default::default()
+        };
+
         // Claim names for axes and named instances
         let mut name_id_gen = 255;
         let mut key_to_name = names;
         let mut visited = HashSet::new();
+
         variable_axes
             .iter()
             .map(|axis| &axis.name)
