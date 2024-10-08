@@ -1422,7 +1422,7 @@ impl RawFont {
                 let Some(value) = lookup_class_value(tag, value) else {
                     return Err(Error::UnknownValueName(value.clone()));
                 };
-                let _ = opt.insert(format!("{}", value as i64));
+                let _ = opt.insert(value.to_string());
             }
         }
 
@@ -1943,7 +1943,7 @@ fn raw_feature_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> 
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L220-L249>
-fn lookup_class_value(axis_tag: &str, user_class: &str) -> Option<f32> {
+fn lookup_class_value(axis_tag: &str, user_class: &str) -> Option<u16> {
     let user_class = match user_class {
         value if !value.is_empty() => {
             let mut value = value.to_ascii_lowercase();
@@ -1953,31 +1953,24 @@ fn lookup_class_value(axis_tag: &str, user_class: &str) -> Option<f32> {
         _ => String::from(""),
     };
     match (axis_tag, user_class.as_str()) {
-        ("wght", "thin") => Some(100.0),
-        ("wght", "extralight") => Some(200.0),
-        ("wght", "ultralight") => Some(200.0),
-        ("wght", "light") => Some(300.0),
-        ("wght", "") => Some(400.0),
-        ("wght", "normal") => Some(400.0),
-        ("wght", "regular") => Some(400.0),
-        ("wght", "medium") => Some(500.0),
-        ("wght", "demibold") => Some(600.0),
-        ("wght", "semibold") => Some(600.0),
-        ("wght", "bold") => Some(700.0),
-        ("wght", "ultrabold") => Some(800.0),
-        ("wght", "extrabold") => Some(800.0),
-        ("wght", "black") => Some(900.0),
-        ("wght", "heavy") => Some(900.0),
-        ("wdth", "ultracondensed") => Some(50.0),
-        ("wdth", "extracondensed") => Some(62.5),
-        ("wdth", "condensed") => Some(75.0),
-        ("wdth", "semicondensed") => Some(87.5),
-        ("wdth", "") => Some(100.0),
-        ("wdth", "Medium (normal)") => Some(100.0),
-        ("wdth", "semiexpanded") => Some(112.5),
-        ("wdth", "expanded") => Some(125.0),
-        ("wdth", "extraexpanded") => Some(150.0),
-        ("wdth", "ultraexpanded") => Some(200.0),
+        ("wght", "thin") => Some(100),
+        ("wght", "extralight" | "ultralight") => Some(200),
+        ("wght", "light") => Some(300),
+        ("wght", "" | "normal" | "regular") => Some(400),
+        ("wght", "medium") => Some(500),
+        ("wght", "demibold" | "semibold") => Some(600),
+        ("wght", "bold") => Some(700),
+        ("wght", "ultrabold" | "extrabold") => Some(800),
+        ("wght", "black" | "heavy") => Some(900),
+        ("wdth", "ultracondensed") => Some(1),
+        ("wdth", "extracondensed") => Some(2),
+        ("wdth", "condensed") => Some(3),
+        ("wdth", "semicondensed") => Some(4),
+        ("wdth", "" | "Medium (normal)") => Some(5),
+        ("wdth", "semiexpanded") => Some(6),
+        ("wdth", "expanded") => Some(7),
+        ("wdth", "extraexpanded") => Some(8),
+        ("wdth", "ultraexpanded") => Some(9),
         _ => {
             warn!("Unrecognized ('{axis_tag}', '{user_class}')");
             None

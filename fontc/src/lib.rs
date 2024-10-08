@@ -550,7 +550,6 @@ mod tests {
         fs::{self, File},
         io::Read,
         path::{Path, PathBuf},
-        str::FromStr,
         sync::Arc,
         time::Instant,
     };
@@ -1650,10 +1649,7 @@ mod tests {
         let result = TestCompile::compile_source("glyphs2/WghtVar.glyphs");
         let font = result.font();
 
-        assert_eq!(
-            vec![(Tag::from_str("wght").unwrap(), 400.0, 400.0, 700.0)],
-            axes(&font),
-        );
+        assert_eq!(vec![(Tag::new(b"wght"), 400.0, 400.0, 700.0)], axes(&font),);
 
         assert_eq!(
             vec![
@@ -1674,10 +1670,7 @@ mod tests {
         let result = TestCompile::compile_source("glyphs2/WghtVar_Avar.glyphs");
         let font = result.font();
         // Default 400 is important, it means we found the index of Regular
-        assert_eq!(
-            vec![(Tag::from_str("wght").unwrap(), 300.0, 400.0, 700.0)],
-            axes(&font),
-        );
+        assert_eq!(vec![(Tag::new(b"wght"), 300.0, 400.0, 700.0)], axes(&font),);
 
         let axis_maps: Vec<_> = font
             .avar()
@@ -1967,7 +1960,7 @@ mod tests {
         let name = font.name().unwrap();
         let stat = font.stat().unwrap();
         assert_eq!(
-            ("Regular", vec![Tag::from_str("wght").unwrap(),]),
+            ("Regular", vec![Tag::new(b"wght"),]),
             (
                 resolve_name(&name, stat.elided_fallback_name_id().unwrap())
                     .unwrap()
@@ -2833,24 +2826,32 @@ mod tests {
         let font = compile.font();
 
         // the default value for 'wght' is 700 (Bold) in this test font
-        assert_eq!(
-            vec![(Tag::from_str("wght").unwrap(), 200.0, 700.0, 700.0)],
-            axes(&font),
-        );
+        assert_eq!(vec![(Tag::new(b"wght"), 200.0, 700.0, 700.0)], axes(&font),);
         // ... which is reflected in the OS/2 table usWeightClass
         assert_eq!(700, font.os2().unwrap().us_weight_class());
     }
 
     #[test]
-    fn os2_width_class_matches_default_wdth() {
+    fn os2_width_class_matches_default_wdth_glyphs2() {
+        let compile = TestCompile::compile_source("glyphs2/WdthVar.glyphs");
+        let font = compile.font();
+
+        // the default value for 'wdth' is 50 (UltraCondensed) in this test font
+        assert_eq!(vec![(Tag::new(b"wdth"), 50.0, 50.0, 200.0)], axes(&font),);
+        // ... which is reflected in the OS/2 table usWidthClass (UltraCondensed = 1)
+        assert_eq!(
+            WidthClass::UltraCondensed as u16,
+            font.os2().unwrap().us_width_class()
+        );
+    }
+
+    #[test]
+    fn os2_width_class_matches_default_wdth_glyphs3() {
         let compile = TestCompile::compile_source("glyphs3/WdthVar.glyphs");
         let font = compile.font();
 
         // the default value for 'wdth' is 50 (UltraCondensed) in this test font
-        assert_eq!(
-            vec![(Tag::from_str("wdth").unwrap(), 50.0, 50.0, 200.0)],
-            axes(&font),
-        );
+        assert_eq!(vec![(Tag::new(b"wdth"), 50.0, 50.0, 200.0)], axes(&font),);
         // ... which is reflected in the OS/2 table usWidthClass (UltraCondensed = 1)
         assert_eq!(
             WidthClass::UltraCondensed as u16,
