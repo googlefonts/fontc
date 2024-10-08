@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, convert::TryFrom};
 
 use write_fonts::{
     tables::{gsub as write_gsub, variations::ivs_builder::VariationStoreBuilder},
-    types::{FixedSize, GlyphId16},
+    types::GlyphId16,
 };
 
 use crate::common::GlyphOrClass;
@@ -13,30 +13,17 @@ use super::Builder;
 
 #[derive(Clone, Debug, Default)]
 pub struct SingleSubBuilder {
-    items: BTreeMap<GlyphId16, (GlyphId16, PossibleSingleSubFormat)>,
-}
-
-/// Used to divide pairs into subtables as needed.
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
-enum PossibleSingleSubFormat {
-    // this pair can be format1
-    Delta(i16),
-    // this pair must be format 2 (delta not in i16 range)
-    Format2,
+    items: BTreeMap<GlyphId16, GlyphId16>,
 }
 
 impl SingleSubBuilder {
     pub fn insert(&mut self, target: GlyphId16, replacement: GlyphId16) {
-        let delta = replacement.to_u16() as i32 - target.to_u16() as i32;
-        let delta = i16::try_from(delta)
-            .map(PossibleSingleSubFormat::Delta)
-            .unwrap_or(PossibleSingleSubFormat::Format2);
-        self.items.insert(target, (replacement, delta));
+        self.items.insert(target, replacement);
     }
 
     pub(crate) fn can_add(&self, target: &GlyphOrClass, replacement: &GlyphOrClass) -> bool {
         for (target, replacement) in target.iter().zip(replacement.iter()) {
-            if matches!(self.items.get(&target), Some(x) if x.0 != replacement) {
+            if matches!(self.items.get(&target), Some(x) if *x != replacement) {
                 return false;
             }
         }
@@ -49,7 +36,7 @@ impl SingleSubBuilder {
 
     // used when compiling aalt
     pub(crate) fn iter_pairs(&self) -> impl Iterator<Item = (GlyphId16, GlyphId16)> + '_ {
-        self.items.iter().map(|(target, (alt, _))| (*target, *alt))
+        self.items.iter().map(|(target, alt)| (*target, *alt))
     }
 
     pub(crate) fn promote_to_multi_sub(self) -> MultipleSubBuilder {
@@ -57,7 +44,7 @@ impl SingleSubBuilder {
             items: self
                 .items
                 .into_iter()
-                .map(|(key, (gid, _))| (key, vec![gid]))
+                .map(|(key, gid)| (key, vec![gid]))
                 .collect(),
         }
     }
@@ -67,82 +54,25 @@ impl Builder for SingleSubBuilder {
     type Output = Vec<write_gsub::SingleSubst>;
 
     fn build(self, _: &mut VariationStoreBuilder) -> Self::Output {
-        const COST_OF_EXTRA_SUB1F1_SUBTABLE: usize = 2 + // extra offset
-            2 + 2 + 2 + // format1 table itself
-            2 + 2; // extra coverage table
-
-        const N_GLYPHS_TO_JUSTIFY_EXTRA_SUB1F1: usize =
-            COST_OF_EXTRA_SUB1F1_SUBTABLE / GlyphId16::RAW_BYTE_LEN;
-
-        #[derive(Default)]
-        struct SubtableMap {
-            // key is the delta between the two gylphs.
-            format1: BTreeMap<i16, Vec<(GlyphId16, GlyphId16)>>,
-            format2: Vec<(GlyphId16, GlyphId16)>,
+        if self.items.is_empty() {
+            return Default::default();
         }
+        // if all pairs are equidistant and within the i16 range, find the
+        // common delta
+        let delta = self
+            .items
+            .iter()
+            .map(|(k, v)| v.to_u16() as i32 - k.to_u16() as i32)
+            .reduce(|acc, val| if acc == val { acc } else { i32::MAX })
+            .and_then(|delta| i16::try_from(delta).ok());
 
-        impl SubtableMap {
-            fn from_builder(builder: SingleSubBuilder) -> Self {
-                let mut this = SubtableMap::default();
-                for (g1, (g2, delta)) in builder.items {
-                    match delta {
-                        PossibleSingleSubFormat::Delta(delta) => {
-                            this.format1.entry(delta).or_default().push((g1, g2))
-                        }
-                        PossibleSingleSubFormat::Format2 => this.format2.push((g1, g2)),
-                    }
-                }
-                this
-            }
-
-            fn len(&self) -> usize {
-                self.format1.len() + usize::from(!self.format2.is_empty())
-            }
-
-            fn reduce(&mut self) {
-                if self.len() <= 1 {
-                    return;
-                }
-
-                //TODO: there is an optimization here where we preserve two
-                //(and possibly three?) format1 tables if format2 does not already exist
-
-                let SubtableMap { format1, format2 } = self;
-                format1.retain(|_delta, pairs| {
-                    if pairs.len() < N_GLYPHS_TO_JUSTIFY_EXTRA_SUB1F1 {
-                        format2.extend(pairs.iter().copied());
-                        false
-                    } else {
-                        true
-                    }
-                })
-            }
-
-            fn build(mut self) -> Vec<write_gsub::SingleSubst> {
-                let mut result = Vec::with_capacity(self.len());
-                if !self.format2.is_empty() {
-                    self.format2.sort_unstable();
-                    let coverage = self.format2.iter().copied().map(|(g1, _)| g1).collect();
-                    let subs = self.format2.into_iter().map(|(_, g2)| g2).collect();
-                    result.push(write_gsub::SingleSubst::format_2(coverage, subs));
-                }
-
-                for (delta, pairs) in self.format1 {
-                    let coverage = pairs.into_iter().map(|(g1, _)| g1).collect();
-                    result.push(write_gsub::SingleSubst::format_1(coverage, delta));
-                }
-                result
-            }
+        let coverage = self.items.keys().copied().collect();
+        if let Some(delta) = delta {
+            vec![write_gsub::SingleSubst::format_1(coverage, delta)]
+        } else {
+            let replacements = self.items.values().copied().collect();
+            vec![write_gsub::SingleSubst::format_2(coverage, replacements)]
         }
-
-        // optimal subtable generation:
-        // - sort all pairs into their 'preferred' subtables (everything that
-        // can be in a format 1 table is)
-        // - go through the format1 tables and move small ones into the format 2 table
-
-        let mut map = SubtableMap::from_builder(self);
-        map.reduce();
-        map.build()
     }
 }
 
