@@ -1422,7 +1422,7 @@ impl RawFont {
                 let Some(value) = lookup_class_value(tag, value) else {
                     return Err(Error::UnknownValueName(value.clone()));
                 };
-                let _ = opt.insert(format!("{}", value));
+                let _ = opt.insert(value.to_string());
             }
         }
 
@@ -1954,26 +1954,19 @@ fn lookup_class_value(axis_tag: &str, user_class: &str) -> Option<u16> {
     };
     match (axis_tag, user_class.as_str()) {
         ("wght", "thin") => Some(100),
-        ("wght", "extralight") => Some(200),
-        ("wght", "ultralight") => Some(200),
+        ("wght", "extralight" | "ultralight") => Some(200),
         ("wght", "light") => Some(300),
-        ("wght", "") => Some(400),
-        ("wght", "normal") => Some(400),
-        ("wght", "regular") => Some(400),
+        ("wght", "" | "normal" | "regular") => Some(400),
         ("wght", "medium") => Some(500),
-        ("wght", "demibold") => Some(600),
-        ("wght", "semibold") => Some(600),
+        ("wght", "demibold" | "semibold") => Some(600),
         ("wght", "bold") => Some(700),
-        ("wght", "ultrabold") => Some(800),
-        ("wght", "extrabold") => Some(800),
-        ("wght", "black") => Some(900),
-        ("wght", "heavy") => Some(900),
+        ("wght", "ultrabold" | "extrabold") => Some(800),
+        ("wght", "black" | "heavy") => Some(900),
         ("wdth", "ultracondensed") => Some(1),
         ("wdth", "extracondensed") => Some(2),
         ("wdth", "condensed") => Some(3),
         ("wdth", "semicondensed") => Some(4),
-        ("wdth", "") => Some(5),
-        ("wdth", "Medium (normal)") => Some(5),
+        ("wdth", "" | "Medium (normal)") => Some(5),
         ("wdth", "semiexpanded") => Some(6),
         ("wdth", "expanded") => Some(7),
         ("wdth", "extraexpanded") => Some(8),
