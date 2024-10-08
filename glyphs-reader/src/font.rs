@@ -2133,7 +2133,8 @@ impl TryFrom<RawFont> for Font {
 
         let mut names = BTreeMap::new();
         for name in from.properties {
-            // TODO: we only support dflt, .glyphs l10n names are ignored
+            // We don't support full l10n of names, just the limited capability of glyphsLib
+            // See <https://github.com/googlefonts/fontc/issues/1011>
             name.value
                 .or_else(|| {
                     name.values
@@ -2141,6 +2142,7 @@ impl TryFrom<RawFont> for Font {
                         .find(|v| v.language == "dflt")
                         .map(|v| v.value.clone())
                 })
+                .or_else(|| name.values.first().map(|v| v.value.clone()))
                 .and_then(|value| names.insert(name.key, value));
         }
         names.insert("familyNames".into(), from.family_name);

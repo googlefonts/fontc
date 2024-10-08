@@ -294,6 +294,10 @@ value = "A trade in marks";
 key = manufacturers;
 values = (
 {
+language = ENG;
+value = "Wrong answer :(";
+},
+{
 language = dflt;
 value = "Who made you?!";
 }
@@ -307,8 +311,12 @@ value = "https://example.com/manufacturer";
 key = designers;
 values = (
 {
-language = dflt;
+language = IT_CAN_BE_ANYTHING;
 value = "Designed by me!";
+},
+{
+language = NOT_THIS_ONE;
+value = "Designed by ... you?!";
 }
 );
 },
