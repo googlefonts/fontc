@@ -1,0 +1,188 @@
+{
+.appVersion = "3323";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+},
+{
+name = Width;
+tag = wdth;
+},
+{
+name = Slant;
+tag = slnt;
+}
+);
+customParameters = (
+{
+name = "Write lastChange";
+value = 0;
+},
+{
+name = "Write DisplayStrings";
+value = 0;
+}
+);
+date = "2024-10-08 14:26:05 +0000";
+familyName = "Master Names";
+fontMaster = (
+{
+axesValues = (
+400,
+100,
+0
+);
+id = "DDF631D8-5AEE-4386-B5BF-03993C77B0AA";
+metricValues = (
+{
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+700,
+100,
+0
+);
+id = "D2EB1C31-8ED9-420F-9687-7D982D9A46E5";
+metricValues = (
+{
+}
+);
+name = Bold;
+},
+{
+axesValues = (
+400,
+100,
+-12
+);
+id = "40424968-1876-4FBA-AB58-8534574F0AE7";
+metricValues = (
+{
+pos = 12;
+}
+);
+name = Oblique;
+},
+{
+axesValues = (
+700,
+100,
+-12
+);
+id = "A1ED4D18-7256-4F1D-9E3C-19F01B8B10F5";
+metricValues = (
+{
+pos = 12;
+}
+);
+name = "Bold Oblique";
+},
+{
+axesValues = (
+400,
+75,
+0
+);
+id = m01;
+metricValues = (
+{
+}
+);
+name = Condensed;
+},
+{
+axesValues = (
+700,
+75,
+0
+);
+id = "DFE82E08-3484-4D87-BEAF-2D0CD3BBF55B";
+metricValues = (
+{
+}
+);
+name = "Condensed Bold";
+},
+{
+axesValues = (
+400,
+75,
+-12
+);
+id = "CDEADDDA-C88F-4ADE-A383-D2638CEACD31";
+metricValues = (
+{
+pos = 12;
+}
+);
+name = "Condensed Oblique";
+},
+{
+axesValues = (
+700,
+75,
+-12
+);
+id = "E133C05F-65B2-430F-ABEB-52DE7F7E7147";
+metricValues = (
+{
+pos = 12;
+}
+);
+name = "Condensed Bold Oblique";
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "DDF631D8-5AEE-4386-B5BF-03993C77B0AA";
+width = 600;
+},
+{
+layerId = "D2EB1C31-8ED9-420F-9687-7D982D9A46E5";
+width = 600;
+},
+{
+layerId = "40424968-1876-4FBA-AB58-8534574F0AE7";
+width = 600;
+},
+{
+layerId = "A1ED4D18-7256-4F1D-9E3C-19F01B8B10F5";
+width = 600;
+},
+{
+layerId = "DFE82E08-3484-4D87-BEAF-2D0CD3BBF55B";
+width = 600;
+},
+{
+layerId = "CDEADDDA-C88F-4ADE-A383-D2638CEACD31";
+width = 600;
+},
+{
+layerId = "E133C05F-65B2-430F-ABEB-52DE7F7E7147";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+metrics = (
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

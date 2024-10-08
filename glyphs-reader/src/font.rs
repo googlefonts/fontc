@@ -885,6 +885,8 @@ struct RawFontMaster {
     name: Option<String>,
 
     weight: Option<String>,
+    width: Option<String>,
+    custom: Option<String>,
 
     weight_value: Option<OrderedFloat<f64>>,
     interpolation_weight: Option<OrderedFloat<f64>>,
@@ -1346,19 +1348,48 @@ impl RawFont {
         Ok(())
     }
 
-    fn v2_to_v3_weight(&mut self) -> Result<(), Error> {
+    fn v2_to_v3_master_names(&mut self) -> Result<(), Error> {
+        // in Glyphs 2, masters don't have a single 'name' attribute, but rather
+        // a concatenation of three other optional attributes weirdly called
+        // 'width', 'weight' and 'custom' (in exactly this order).
+        // The first two can only contain few predefined values, the last one is
+        // residual and free-form. They default to 'Regular' when omitted in
+        // the source. See:
+        // https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv2.md
+        // https://github.com/googlefonts/glyphsLib/blob/9d5828d/Lib/glyphsLib/classes.py#L1700-L1711
         for master in self.font_master.iter_mut() {
-            // Don't remove weightValue, we need it to understand axes
-            if master.weight_value.is_none() {
+            // Even though glyphs2 masters don't officially have a 'name' attribute,
+            // some glyphs2 sources produced by more recent versions of Glyphs
+            // sometimes have it (unclear exactly when or from which version on).
+            // We keep the 'name' attribute as is, instead of generating a one.
+            if master.name.is_some() {
                 continue;
             }
-            // Missing = default = Regular per @anthrotype
-            master.name = Some(
-                master
-                    .weight
-                    .take()
-                    .unwrap_or_else(|| String::from("Regular")),
-            );
+            let width_name = master.width.take();
+            let weight_name = master.weight.take();
+            let custom_name = master.custom.take();
+            // Remove Nones, empty strings and redundant occurrences of 'Regular'
+            let mut names: Vec<_> = vec![width_name, weight_name, custom_name]
+                .into_iter()
+                .flatten()
+                .filter(|x| !x.is_empty() && x != "Regular")
+                .collect();
+            // append "Italic" if italic angle != 0
+            if let Some(italic_angle) = master.italic_angle {
+                if italic_angle != 0.0
+                    && (names.is_empty()
+                        || (!names.contains(&"Italic".into())
+                            && !names.contains(&"Oblique".into())))
+                {
+                    names.push("Italic".into());
+                }
+            }
+            // if all are empty, default to "Regular"
+            master.name = if names.is_empty() {
+                Some("Regular".into())
+            } else {
+                Some(names.join(" "))
+            };
         }
         Ok(())
     }
@@ -1439,7 +1470,7 @@ impl RawFont {
 
     /// `<See https://github.com/schriftgestalt/GlyphsSDK/blob/Glyphs3/GlyphsFileFormat/GlyphsFileFormatv3.md#differences-between-version-2>`
     fn v2_to_v3(&mut self) -> Result<(), Error> {
-        self.v2_to_v3_weight()?;
+        self.v2_to_v3_master_names()?;
         self.v2_to_v3_axes()?;
         self.v2_to_v3_metrics()?;
         self.v2_to_v3_names()?;
@@ -2604,6 +2635,16 @@ mod tests {
     #[test]
     fn read_wght_var_noexport_2_and_3() {
         assert_load_v2_matches_load_v3("WghtVar_NoExport", LoadCompare::Glyphs);
+    }
+
+    #[test]
+    fn read_master_names_2_and_3() {
+        assert_load_v2_matches_load_v3("MasterNames", LoadCompare::Glyphs);
+    }
+
+    #[test]
+    fn read_master_names_with_italic_2_and_3() {
+        assert_load_v2_matches_load_v3("MasterNames-Italic", LoadCompare::Glyphs);
     }
 
     fn only_shape_in_only_layer<'a>(font: &'a Font, glyph_name: &str) -> &'a Shape {
