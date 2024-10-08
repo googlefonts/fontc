@@ -704,15 +704,23 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
                     .or(font.hhea_line_gap)
                     .map(|v| v as f64),
             );
+            // 50.0 is the Glyphs default <https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/custom_params.py#L1136-L1156>
             metrics.set_if_some(
                 GlobalMetric::UnderlineThickness,
                 pos.clone(),
-                master.underline_thickness.or(font.underline_thickness),
+                master
+                    .underline_thickness
+                    .or(font.underline_thickness)
+                    .or(Some(OrderedFloat(50.0))),
             );
+            // -100.0 is the Glyphs default <https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/custom_params.py#L1136-L1156>
             metrics.set_if_some(
                 GlobalMetric::UnderlinePosition,
                 pos.clone(),
-                master.underline_position.or(font.underline_position),
+                master
+                    .underline_position
+                    .or(font.underline_position)
+                    .or(Some(OrderedFloat(-100.0))),
             );
 
             metrics.populate_defaults(
@@ -1866,5 +1874,32 @@ mod tests {
             },
             black_metrics
         );
+    }
+
+    fn unique_value(metrics: &GlobalMetrics, metric: GlobalMetric) -> f64 {
+        let values = metrics
+            .iter()
+            .filter_map(|(which_metric, values)| {
+                if metric == *which_metric {
+                    Some(values.values().collect::<HashSet<_>>())
+                } else {
+                    None
+                }
+            })
+            .flat_map(|v| v.into_iter())
+            .collect::<Vec<_>>();
+
+        assert_eq!(1, values.len(), "Too many {metric:?} values: {values:?}");
+        values[0].0
+    }
+
+    #[test]
+    fn glyphs_specific_default_metrics() {
+        // 1290 upem in honor of soft-type-jacquard/sources/Jacquard24Charted.glyphs which used to not match fontmake
+        let (_, context) = build_global_metrics(glyphs3_dir().join("WghtVar1290upem.glyphs"));
+        let metrics = context.global_metrics.get();
+        let underline_pos = unique_value(&metrics, GlobalMetric::UnderlinePosition);
+        let underline_thickness = unique_value(&metrics, GlobalMetric::UnderlineThickness);
+        assert_eq!((-100.0, 50.0), (underline_pos, underline_thickness));
     }
 }
