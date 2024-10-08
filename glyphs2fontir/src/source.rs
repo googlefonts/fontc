@@ -595,10 +595,14 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
                 pos.clone(),
                 master.win_ascent.or(font.win_ascent).map(|v| v as f64),
             );
+            // Some .glyphs files have a negative win descent so abs()
             metrics.set_if_some(
                 GlobalMetric::Os2WinDescent,
                 pos.clone(),
-                master.win_descent.or(font.win_descent).map(|v| v as f64),
+                master
+                    .win_descent
+                    .or(font.win_descent)
+                    .map(|v| v.abs() as f64),
             );
             metrics.set_if_some(
                 GlobalMetric::StrikeoutPosition,
@@ -1687,6 +1691,17 @@ mod tests {
             },
             default_metrics.round2()
         );
+    }
+
+    #[test]
+    fn captures_abs_of_win_descent() {
+        let (_, context) = build_global_metrics(glyphs3_dir().join("MVAR.glyphs"));
+        let static_metadata = &context.static_metadata.get();
+        let default_metrics = context
+            .global_metrics
+            .get()
+            .at(static_metadata.default_location());
+        assert_eq!(200.0, default_metrics.os2_win_descent.0);
     }
 
     #[test]

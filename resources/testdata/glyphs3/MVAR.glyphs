@@ -39,7 +39,7 @@ value = 1195;
 },
 {
 name = winDescent;
-value = 195;
+value = -195;
 },
 {
 name = subscriptXSize;
@@ -145,7 +145,7 @@ value = 1200;
 },
 {
 name = winDescent;
-value = 200;
+value = -200;
 },
 {
 name = subscriptXSize;
@@ -250,7 +250,7 @@ value = 1205;
 },
 {
 name = winDescent;
-value = 205;
+value = -205;
 },
 {
 name = subscriptXSize;
