@@ -2126,15 +2126,35 @@ impl TryFrom<RawFont> for Font {
 
         let mut names = BTreeMap::new();
         for name in from.properties {
-            // TODO: we only support dflt, .glyphs l10n names are ignored
-            name.value
-                .or_else(|| {
-                    name.values
-                        .iter()
-                        .find(|v| v.language == "dflt")
-                        .map(|v| v.value.clone())
-                })
-                .and_then(|value| names.insert(name.key, value));
+            if name.value.is_some() {
+                name.value
+            } else {
+                // We don't support full l10n of names, just the limited capability of glyphsLib
+                // See <https://github.com/googlefonts/fontc/issues/1011>
+                // In order of preference: dflt, default, ENG, whatever is first
+                // <https://github.com/googlefonts/glyphsLib/blob/1cb4fc5ae2cf385df95d2b7768e7ab4eb60a5ac3/Lib/glyphsLib/classes.py#L3155-L3161>
+                name.values
+                    .iter()
+                    .enumerate()
+                    // (score [lower better], index)
+                    .map(|(i, n)| match n.language.as_str() {
+                        "dflt" => (-3, i),
+                        "default" => (-2, i),
+                        "ENG" => (-1, i),
+                        _ => (i as i32, i),
+                    })
+                    .reduce(
+                        |(best_score, best_index), (candidate_score, candidate_index)| {
+                            if best_score < candidate_score {
+                                (best_score, best_index)
+                            } else {
+                                (candidate_score, candidate_index)
+                            }
+                        },
+                    )
+                    .map(|(_, i)| name.values[i].value.clone())
+            }
+            .and_then(|value| names.insert(name.key, value));
         }
         names.insert("familyNames".into(), from.family_name);
         if let Some(version) = names.remove("versionString") {
