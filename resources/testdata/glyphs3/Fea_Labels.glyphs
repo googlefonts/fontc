@@ -20,6 +20,10 @@ value = "Test 1";
 {
 language = ARA;
 value = "اختبار ١";
+},
+{
+language = SKIPME;
+value = "Skip me";
 }
 );
 tag = ss01;
