@@ -1,0 +1,179 @@
+{
+.appVersion = "3317";
+.formatVersion = 3;
+DisplayStrings = (
+" "
+);
+date = "2024-09-11 20:25:35 +0000";
+familyName = "GlobalMetrics Font Test";
+features = (
+{
+automatic = 1;
+code = "sub a by a.ss01;
+sub b by b.ss01;
+";
+labels = (
+{
+language = dflt;
+value = "Test 1";
+},
+{
+language = ARA;
+value = "اختبار ١";
+},
+{
+language = SKIPME;
+value = "Skip me";
+}
+);
+tag = ss01;
+},
+{
+code = "sub c by c.alt;";
+labels = (
+{
+language = ENG;
+value = "Test 2";
+}
+);
+tag = ss02;
+}
+);
+fontMaster = (
+{
+iconName = Light;
+id = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";
+metricValues = (
+{
+pos = 800;
+},
+{
+pos = 660;
+},
+{
+pos = 478;
+},
+{
+},
+{
+pos = -200;
+},
+{
+}
+);
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = a;
+layers = (
+{
+layerId = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";
+width = 600;
+}
+);
+unicode = 97;
+},
+{
+glyphname = b;
+layers = (
+{
+layerId = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";
+width = 600;
+}
+);
+unicode = 98;
+},
+{
+glyphname = c;
+layers = (
+{
+layerId = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";
+width = 600;
+}
+);
+unicode = 99;
+},
+{
+glyphname = c.alt;
+layers = (
+{
+layerId = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";
+width = 600;
+}
+);
+},
+{
+glyphname = a.ss01;
+layers = (
+{
+layerId = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";
+width = 600;
+}
+);
+},
+{
+glyphname = b.ss01;
+layers = (
+{
+layerId = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";
+width = 600;
+}
+);
+},
+{
+glyphname = space;
+lastChange = "2024-09-11 21:06:25 +0000";
+layers = (
+{
+layerId = "0CAB57D4-4FC4-49C3-B456-FB7666EAA712";
+width = 200;
+}
+);
+unicode = 32;
+}
+);
+instances = (
+{
+customParameters = (
+{
+name = "Axis Location";
+value = (
+{
+Axis = Weight;
+Location = 400;
+}
+);
+}
+);
+instanceInterpolations = {
+"0CAB57D4-4FC4-49C3-B456-FB7666EAA712" = 1;
+};
+name = Regular;
+}
+);
+metrics = (
+{
+type = ascender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}

@@ -621,6 +621,7 @@ struct RawFeature {
     name: Option<String>,
     tag: Option<String>,
     code: String,
+    labels: Vec<RawNameValue>,
 
     #[fromplist(ignore)]
     other_stuff: BTreeMap<String, Plist>,
@@ -1915,6 +1916,29 @@ fn get_glyph_category(name: &str, codepoints: &BTreeSet<u32>) -> Option<(Categor
         .map(|info| (info.category, info.subcategory))
 }
 
+// https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/constants.py#L186
+#[rustfmt::skip]
+static GLYPHS_TO_OPENTYPE_LANGUAGE_ID: &[(&str, i32)] = &[
+    ("AFK", 0x0436), ("ARA", 0x0C01), ("ASM", 0x044D), ("AZE", 0x042C), ("BEL", 0x0423),
+    ("BEN", 0x0845), ("BGR", 0x0402), ("BRE", 0x047E), ("CAT", 0x0403), ("CSY", 0x0405),
+    ("DAN", 0x0406), ("DEU", 0x0407), ("ELL", 0x0408), ("ENG", 0x0409), ("ESP", 0x0C0A),
+    ("ETI", 0x0425), ("EUQ", 0x042D), ("FIN", 0x040B), ("FLE", 0x0813), ("FOS", 0x0438),
+    ("FRA", 0x040C), ("FRI", 0x0462), ("GRN", 0x046F), ("GUJ", 0x0447), ("HAU", 0x0468),
+    ("HIN", 0x0439), ("HRV", 0x041A), ("HUN", 0x040E), ("HVE", 0x042B), ("IRI", 0x083C),
+    ("ISL", 0x040F), ("ITA", 0x0410), ("IWR", 0x040D), ("JPN", 0x0411), ("KAN", 0x044B),
+    ("KAT", 0x0437), ("KAZ", 0x043F), ("KHM", 0x0453), ("KOK", 0x0457), ("LAO", 0x0454),
+    ("LSB", 0x082E), ("LTH", 0x0427), ("LVI", 0x0426), ("MAR", 0x044E), ("MKD", 0x042F),
+    ("MLR", 0x044C), ("MLY", 0x043E), ("MNG", 0x0352), ("MTS", 0x043A), ("NEP", 0x0461),
+    ("NLD", 0x0413), ("NOB", 0x0414), ("ORI", 0x0448), ("PAN", 0x0446), ("PAS", 0x0463),
+    ("PLK", 0x0415), ("PTG", 0x0816), ("PTG-BR", 0x0416), ("RMS", 0x0417), ("ROM", 0x0418),
+    ("RUS", 0x0419), ("SAN", 0x044F), ("SKY", 0x041B), ("SLV", 0x0424), ("SQI", 0x041C),
+    ("SRB", 0x081A), ("SVE", 0x041D), ("TAM", 0x0449), ("TAT", 0x0444), ("TEL", 0x044A),
+    ("THA", 0x041E), ("TIB", 0x0451), ("TRK", 0x041F), ("UKR", 0x0422), ("URD", 0x0420),
+    ("USB", 0x042E), ("UYG", 0x0480), ("UZB", 0x0443), ("VIT", 0x042A), ("WEL", 0x0452),
+    ("ZHH", 0x0C04), ("ZHS", 0x0804), ("ZHT", 0x0404),
+    ("dflt", 0x0409),
+];
+
 impl RawFeature {
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L43
     fn autostr(&self) -> String {
@@ -1936,6 +1960,33 @@ impl RawFeature {
 
     fn disabled(&self) -> bool {
         self.disabled == Some(1)
+    }
+
+    // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L134
+    fn feature_names(&self) -> String {
+        if self.labels.is_empty() {
+            return String::new();
+        }
+        let labels = self
+            .labels
+            .iter()
+            .filter_map(|label| {
+                GLYPHS_TO_OPENTYPE_LANGUAGE_ID
+                    .binary_search_by_key(&label.language, |entry| entry.0.to_owned())
+                    .ok()
+                    .map(|index| {
+                        let language_id = &GLYPHS_TO_OPENTYPE_LANGUAGE_ID[index].1;
+                        let name = label.value.replace("\\", "\\005c").replace("\"", "\\0022");
+                        format!("  name 3 1 0x{:04X} \"{}\";", language_id, name)
+                    })
+                    .or_else(|| {
+                        warn!("Unknown feature label language: {}", label.language);
+                        None
+                    })
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("featureNames {{\n{}\n}};\n", labels)
     }
 }
 
@@ -1966,9 +2017,10 @@ fn class_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> {
 fn raw_feature_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> {
     let name = feature.name()?;
     let code = format!(
-        "feature {0} {{\n{1}{2}\n}} {0};",
+        "feature {0} {{\n{1}{2}{3}\n}} {0};",
         name,
         feature.autostr(),
+        feature.feature_names(),
         feature.code
     );
     Ok(FeatureSnippet::new(code, feature.disabled()))
@@ -3070,6 +3122,38 @@ mod tests {
     }
 
     #[test]
+    fn fea_labels() {
+        let font = Font::load(&glyphs3_dir().join("Fea_Labels.glyphs")).unwrap();
+        assert_eq!(
+            vec![
+                concat!(
+                    "feature ss01 {\n",
+                    "# automatic\n",
+                    "featureNames {\n",
+                    "  name 3 1 0x0409 \"Test 1\";\n",
+                    "  name 3 1 0x0C01 \"اختبار ١\";\n",
+                    "};\n",
+                    "sub a by a.ss01;\n",
+                    "sub b by b.ss01;\n\n",
+                    "} ss01;",
+                ),
+                concat!(
+                    "feature ss02 {\n",
+                    "featureNames {\n",
+                    "  name 3 1 0x0409 \"Test 2\";\n",
+                    "};\n",
+                    "sub c by c.alt;\n",
+                    "} ss02;",
+                ),
+            ],
+            font.features
+                .iter()
+                .filter_map(|f| f.str_if_enabled())
+                .collect::<Vec<_>>()
+        )
+    }
+
+    #[test]
     fn tags_make_excellent_names() {
         let raw = RawFeature {
             name: None,
@@ -3077,6 +3161,7 @@ mod tests {
             automatic: None,
             disabled: None,
             code: "blah".to_string(),
+            labels: vec![],
             other_stuff: BTreeMap::new(),
         };
         assert_eq!("aalt", raw.name().unwrap());
