@@ -1964,26 +1964,25 @@ impl RawFeature {
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L134
     fn feature_names(&self) -> String {
         if self.labels.is_empty() {
-            String::new()
-        } else {
-            let labels = self
-                .labels
-                .iter()
-                .map(|label| {
-                    let language_id = GLYPHS_TO_OPENTYPE_LANGUAGE_ID
-                        .iter()
-                        .find(|entry| entry.0 == label.language)
-                        .map(|entry| entry.1)
-                        .unwrap_or_else(|| {
-                            panic!("Unknown feature label language: {}", label.language);
-                        });
-                    let name = label.value.replace("\\", "\\005c").replace("\"", "\\0022");
-                    format!("  name 3 1 0x{:04X} \"{}\";", language_id, name)
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            format!("featureNames {{\n{}\n}};\n", labels)
+            return String::new();
         }
+        let labels = self
+            .labels
+            .iter()
+            .map(|label| {
+                let language_id = GLYPHS_TO_OPENTYPE_LANGUAGE_ID
+                    .iter()
+                    .find(|entry| entry.0 == label.language)
+                    .map(|entry| entry.1)
+                    .unwrap_or_else(|| {
+                        panic!("Unknown feature label language: {}", label.language);
+                    });
+                let name = label.value.replace("\\", "\\005c").replace("\"", "\\0022");
+                format!("  name 3 1 0x{:04X} \"{}\";", language_id, name)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("featureNames {{\n{}\n}};\n", labels)
     }
 }
 
