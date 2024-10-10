@@ -4,7 +4,7 @@ in ./test-data/compile-tests/mini-latin/bad/stylistic_set_names.fea at 3:4
 3 |     featureNames {
   |     ^^^^^^^^^^^^
 
-error: featureNames must be first statement in feature block
+error: featureNames must precede any rules
 in ./test-data/compile-tests/mini-latin/bad/stylistic_set_names.fea at 10:4
    | 
 10 |     featureNames {
