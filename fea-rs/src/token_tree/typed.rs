@@ -671,14 +671,6 @@ impl Feature {
         self.iter().find_map(Tag::cast).unwrap()
     }
 
-    pub(crate) fn stylistic_set_feature_names(&self) -> Option<FeatureNames> {
-        self.statements().next().and_then(FeatureNames::cast)
-    }
-
-    pub(crate) fn character_variant_params(&self) -> Option<CvParameters> {
-        self.statements().next().and_then(CvParameters::cast)
-    }
-
     pub(crate) fn statements(&self) -> impl Iterator<Item = &NodeOrToken> {
         self.iter()
             .skip_while(|t| t.kind() != Kind::LBrace)

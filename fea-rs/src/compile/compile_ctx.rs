@@ -1362,71 +1362,85 @@ impl<'a, F: FeatureProvider, V: VariationInfo> CompilationCtx<'a, F, V> {
     }
 
     fn resolve_stylistic_set_feature(&mut self, tag: Tag, feature: &typed::Feature) {
-        let mut names = Vec::new();
-        if let Some(feature_name) = feature.stylistic_set_feature_names() {
-            for name_spec in feature_name.statements() {
-                let resolved = self.resolve_name_spec(&name_spec);
-                names.push(resolved);
+        let mut names = BTreeMap::new();
+        for item in feature.statements() {
+            if let Some(feature_name) = typed::FeatureNames::cast(item) {
+                for name_spec in feature_name.statements() {
+                    let resolved = self.resolve_name_spec(&name_spec);
+                    // in the case of duplicate names, last writer wins, see
+                    // https://github.com/googlefonts/fontc/issues/1019
+                    let key = resolved.key();
+                    names.insert(key, resolved);
+                }
+                continue;
             }
+            self.resolve_statement(item);
         }
         if !names.is_empty() {
-            self.features.stylistic_sets.insert(tag, names);
-        }
-        for item in feature
-            .statements()
-            .filter(|node| node.kind() != Kind::FeatureNamesKw)
-        {
-            self.resolve_statement(item);
+            self.features
+                .stylistic_sets
+                .insert(tag, names.into_values().collect());
         }
     }
 
     fn resolve_character_variant_feature(&mut self, tag: Tag, feature: &typed::Feature) {
-        if let Some(cv_params) = feature.character_variant_params() {
-            let mut params = CvParams::default();
-            if let Some(node) = cv_params.feat_ui_label_name() {
-                params.feat_ui_label_name = node
-                    .statements()
-                    .map(|x| self.resolve_name_spec(&x))
-                    .collect();
+        let mut seen_cv_params = false;
+        for item in feature.statements() {
+            if let Some(cv_params) = typed::CvParameters::cast(item) {
+                if seen_cv_params {
+                    self.warning(
+                        cv_params.range(),
+                        "Duplicate cvParameters block will be ignored. \
+                        This is not disallowed by the spec, but is not currently supported.",
+                    );
+                } else {
+                    seen_cv_params = true;
+                    let params = self.resolve_cv_params(&cv_params);
+                    self.features.character_variants.insert(tag, params);
+                }
+                continue;
             }
-            if let Some(node) = cv_params.feat_tooltip_text_name() {
-                params.feat_ui_tooltip_text_name = node
-                    .statements()
-                    .map(|x| self.resolve_name_spec(&x))
-                    .collect();
-            }
-            if let Some(node) = cv_params.sample_text_name() {
-                params.sample_text_name = node
-                    .statements()
-                    .map(|x| self.resolve_name_spec(&x))
-                    .collect();
-            }
-            if let Some(node) = cv_params.sample_text_name() {
-                params.sample_text_name = node
-                    .statements()
-                    .map(|x| self.resolve_name_spec(&x))
-                    .collect();
-            }
-            for node in cv_params.param_ui_label_name() {
-                params.param_ui_label_names.push(
-                    node.statements()
-                        .map(|x| self.resolve_name_spec(&x))
-                        .collect(),
-                );
-            }
-            for c in cv_params.characters() {
-                params.characters.push(c.value().parse_char().unwrap());
-            }
-
-            self.features.character_variants.insert(tag, params);
-        }
-
-        for item in feature
-            .statements()
-            .filter(|node| node.kind() != Kind::CvParametersKw)
-        {
             self.resolve_statement(item);
         }
+    }
+
+    fn resolve_cv_params(&mut self, cv_params: &typed::CvParameters) -> CvParams {
+        let mut params = CvParams::default();
+        if let Some(node) = cv_params.feat_ui_label_name() {
+            params.feat_ui_label_name = node
+                .statements()
+                .map(|x| self.resolve_name_spec(&x))
+                .collect();
+        }
+        if let Some(node) = cv_params.feat_tooltip_text_name() {
+            params.feat_ui_tooltip_text_name = node
+                .statements()
+                .map(|x| self.resolve_name_spec(&x))
+                .collect();
+        }
+        if let Some(node) = cv_params.sample_text_name() {
+            params.sample_text_name = node
+                .statements()
+                .map(|x| self.resolve_name_spec(&x))
+                .collect();
+        }
+        if let Some(node) = cv_params.sample_text_name() {
+            params.sample_text_name = node
+                .statements()
+                .map(|x| self.resolve_name_spec(&x))
+                .collect();
+        }
+        for node in cv_params.param_ui_label_name() {
+            params.param_ui_label_names.push(
+                node.statements()
+                    .map(|x| self.resolve_name_spec(&x))
+                    .collect(),
+            );
+        }
+        for c in cv_params.characters() {
+            params.characters.push(c.value().parse_char().unwrap());
+        }
+        params
     }
 
     fn resolve_size_feature(&mut self, feature: &typed::Feature) {

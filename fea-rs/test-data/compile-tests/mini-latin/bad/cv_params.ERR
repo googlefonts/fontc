@@ -4,7 +4,7 @@ in ./test-data/compile-tests/mini-latin/bad/cv_params.fea at 3:4
 3 |     cvParameters {
   |     ^^^^^^^^^^^^
 
-error: cvParameters must be first statement in feature block
+error: cvParameters must precede any rules
 in ./test-data/compile-tests/mini-latin/bad/cv_params.fea at 9:4
   | 
 9 |     cvParameters {

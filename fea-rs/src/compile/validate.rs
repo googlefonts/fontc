@@ -599,7 +599,7 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
         feature_tag: Tag,
         iter: impl Iterator<Item = &'b NodeOrToken>,
     ) {
-        let mut is_first_item = true;
+        let mut has_seen_rule = false;
         for item in iter {
             if item.kind() == Kind::ScriptNode
                 || item.kind() == Kind::LanguageNode
@@ -613,10 +613,10 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                         node.keyword().range(),
                         "cvParameters block only valid in cv01-cv99 features",
                     );
-                } else if !is_first_item {
+                } else if has_seen_rule {
                     self.error(
                         node.keyword().range(),
-                        "cvParameters must be first statement in feature block",
+                        "cvParameters must precede any rules",
                     );
                 } else {
                     self.validate_character_variant_items(&node);
@@ -627,24 +627,28 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                         node.keyword().range(),
                         "featureNames block only valid in ss01-ss20 features",
                     );
-                } else if !is_first_item {
+                } else if has_seen_rule {
                     self.error(
                         node.keyword().range(),
-                        "featureNames must be first statement in feature block",
+                        "featureNames must precede any rules",
                     );
                 } else {
                     self.validate_stylistic_set_items(&node);
                 }
             } else if let Some(node) = typed::LookupRef::cast(item) {
                 self.validate_lookup_ref(&node);
+                has_seen_rule = true;
             } else if let Some(node) = typed::LookupBlock::cast(item) {
                 self.validate_lookup_block(&node, Some(feature_tag));
+                has_seen_rule = true;
             } else if let Some(node) = typed::LookupFlag::cast(item) {
                 self.validate_lookupflag(&node);
             } else if let Some(node) = typed::GsubStatement::cast(item) {
                 self.validate_gsub_statement(&node);
+                has_seen_rule = true;
             } else if let Some(node) = typed::GposStatement::cast(item) {
                 self.validate_gpos_statement(&node);
+                has_seen_rule = true;
             } else if let Some(node) = typed::GlyphClassDef::cast(item) {
                 self.validate_glyph_class_def(&node);
             } else if let Some(node) = typed::MarkClassDef::cast(item) {
@@ -662,7 +666,6 @@ impl<'a, V: VariationInfo> ValidationCtx<'a, V> {
                     format!("unhandled item '{}' in feature", item.kind()),
                 );
             }
-            is_first_item = false;
         }
     }
 

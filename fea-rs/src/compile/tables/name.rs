@@ -70,6 +70,12 @@ impl NameSpec {
         Encoding::new(self.platform_id, self.encoding_id) != Encoding::Unknown
     }
 
+    // used to ensure we only choose one name for a given platform/encoding
+    // when multiple are provided
+    pub(crate) fn key(&self) -> (u16, u16, u16) {
+        (self.platform_id, self.encoding_id, self.language_id)
+    }
+
     pub fn build(&self, name_id: NameId) -> write_fonts::tables::name::NameRecord {
         let string = parse_string(self.platform_id, self.string.trim_matches('"'));
         write_fonts::tables::name::NameRecord::new(
