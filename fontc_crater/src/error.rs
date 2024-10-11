@@ -4,6 +4,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub(super) enum Error {
+    #[error(transparent)]
+    SourceDiscovery(#[from] google_fonts_sources::Error),
     #[error("Failed to load file '{path}': {error}")]
     ReadFile {
         path: PathBuf,

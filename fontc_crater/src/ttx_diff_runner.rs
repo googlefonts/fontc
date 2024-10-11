@@ -1,18 +1,15 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::{collections::BTreeMap, path::Path, process::Command};
 
-use crate::{Results, RunResult};
+use crate::{Results, RunResult, Target};
 
 static SCRIPT_PATH: &str = "./resources/scripts/ttx_diff.py";
 // in the format expected by timeout(1)
 static TTX_TIME_BUDGET: &str = "20m";
 
-pub(super) fn run_ttx_diff(source: &Path) -> RunResult<DiffOutput, DiffError> {
+pub(super) fn run_ttx_diff(cache_dir: &Path, target: &Target) -> RunResult<DiffOutput, DiffError> {
     let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
     let outdir = tempdir.path();
+    let source_path = cache_dir.join(&target.source);
     let output = match Command::new("timeout")
         .arg(TTX_TIME_BUDGET)
         .arg("python")
@@ -21,7 +18,7 @@ pub(super) fn run_ttx_diff(source: &Path) -> RunResult<DiffOutput, DiffError> {
         .arg("--json")
         .arg("--outdir")
         .arg(outdir)
-        .arg(source)
+        .arg(source_path)
         .output()
     {
         Err(e) => return RunResult::Fail(DiffError::Other(e.to_string())),
@@ -90,14 +87,10 @@ pub(crate) struct Summary {
 impl Summary {
     pub(crate) fn new(result: &Results<DiffOutput, DiffError>) -> Self {
         let Results {
-            success,
-            failure,
-            panic,
-            skipped,
-            ..
+            success, failure, ..
         } = &result;
-        let total_targets = (success.len() + failure.len() + skipped.len() + panic.len()) as u32;
-        let n_failed = failure.len() + panic.len();
+        let total_targets = (success.len() + failure.len()) as u32;
+        let n_failed = failure.len();
         let identical = success
             .values()
             .filter(|x| matches!(x, DiffOutput::Identical))
@@ -140,128 +133,6 @@ impl Summary {
             other_failure,
             diff_perc_including_failures,
             diff_perc_excluding_failures,
-        }
-    }
-}
-
-pub(super) fn print_report(results: &Results<DiffOutput, DiffError>, verbose: bool) {
-    let summary = Summary::new(results);
-    let Results {
-        success,
-        failure,
-        skipped,
-        ..
-    } = &results;
-    println!("### tried to diff {} targets ###\n", summary.total_targets);
-    println!(
-        "{} identical, {} diffs, {} failed, {} skipped",
-        summary.identical,
-        summary.produced_diff,
-        results.failure.len(),
-        skipped.len()
-    );
-    println!(
-        "total diff score {:.2}% (including failures: {:.2}%)\n",
-        summary.diff_perc_excluding_failures, summary.diff_perc_including_failures
-    );
-
-    let comp_fails = failure
-        .iter()
-        .filter_map(|(k, v)| match v {
-            DiffError::CompileFailed(error) => Some((k, error)),
-            DiffError::Other(_) => None,
-        })
-        .collect::<BTreeMap<_, _>>();
-
-    let other_fails = failure
-        .iter()
-        .filter_map(|(k, v)| match v {
-            DiffError::CompileFailed(_) => None,
-            DiffError::Other(e) => Some((k, e)),
-        })
-        .collect::<BTreeMap<_, _>>();
-
-    let (mut fontc_fail, mut fontmake_fail, mut both_fail) =
-        (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
-
-    for (path, fail) in &comp_fails {
-        match (fail.fontc.is_some(), fail.fontmake.is_some()) {
-            (true, false) => fontc_fail.insert(*path),
-            (false, true) => fontmake_fail.insert(*path),
-            (true, true) => both_fail.insert(*path),
-            _ => unreachable!(),
-        };
-    }
-
-    println!("{} targets failed both compilers", both_fail.len());
-    println!("{} targets failed on fontc only", fontc_fail.len(),);
-    println!("{} targets failed on fontmake only", fontmake_fail.len());
-    println!("{} targets failed for other reasons", other_fails.len());
-
-    if !verbose {
-        println!("\nfor more information, pass --verbose/-v");
-        return;
-    }
-
-    if summary.identical != 0 {
-        println!("\n### {} were identical: ###\n", summary.identical);
-        for path in success
-            .iter()
-            .filter_map(|(k, v)| matches!(v, DiffOutput::Identical).then_some(k))
-        {
-            println!("{}", path.display())
-        }
-    }
-    if !success.is_empty() && summary.identical != success.len() as u32 {
-        println!(
-            "\n### {} produced diffs: ###\n",
-            success.len() as u32 - summary.identical
-        );
-        for (path, diff) in success.iter().filter_map(|(k, v)| match v {
-            DiffOutput::Identical => None,
-            DiffOutput::Diffs(diffs) => Some((k, diffs)),
-        }) {
-            let total = diff
-                .get("total")
-                .and_then(|v| match v {
-                    DiffValue::Ratio(r) => Some(*r),
-                    DiffValue::Only(_) => None,
-                })
-                .unwrap();
-            println!("{}: {:.2}%", path.display(), total * 100.);
-        }
-    }
-
-    fn print_compiler_failures(name: &str, fails: &BTreeSet<&PathBuf>) {
-        if fails.is_empty() {
-            return;
-        }
-
-        println!("\n### {} failed to compile on {} ###\n", fails.len(), name);
-        for path in fails {
-            println!("{}", path.display())
-        }
-    }
-
-    print_compiler_failures("both", &both_fail);
-    print_compiler_failures("fontmake", &fontmake_fail);
-    print_compiler_failures("fontc", &fontc_fail);
-
-    if !other_fails.is_empty() {
-        println!(
-            "\n### {} failed for other reasons: ###\n",
-            other_fails.len()
-        );
-
-        for (path, reason) in other_fails {
-            println!("{}: '{reason}'", path.display());
-        }
-    }
-
-    if !skipped.is_empty() {
-        println!("\n### {} were skipped: ###\n", skipped.len());
-        for (path, reason) in skipped {
-            println!("{}: '{reason}'", path.display());
         }
     }
 }

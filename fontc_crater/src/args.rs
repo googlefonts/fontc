@@ -1,8 +1,13 @@
 //! CLI args
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
+
+// this env var can be set by the runner in order to reuse git checkouts
+// between runs.
+static GIT_CACHE_DIR_VAR: &str = "CRATER_GIT_CACHE";
+const DEFAULT_CACHE_DIR: &str = "~/.fontc_crater_cache";
 
 #[derive(Debug, PartialEq, Parser)]
 #[command(about = "compile multiple fonts and report the results")]
@@ -13,33 +18,24 @@ pub(super) struct Args {
 
 #[derive(Debug, Subcommand, PartialEq)]
 pub(super) enum Commands {
-    Compile(RunArgs),
-    Diff(RunArgs),
-    Report(ReportArgs),
     Ci(CiArgs),
-}
-
-#[derive(Debug, PartialEq, clap::Args)]
-pub(super) struct RunArgs {
-    /// Directory to store font sources and the google/fonts repo.
-    ///
-    /// Reusing this directory saves us having to clone all the repos on each run.
-    ///
-    /// This directory is also used to write cached results during repo discovery.
-    #[arg(short, long, default_value = "~/.fontc_crater_cache")]
-    pub(super) cache_dir: PathBuf,
-    /// Optional path to write out results (as json)
-    #[arg(short = 'o', long = "out")]
-    pub(super) out_path: Option<PathBuf>,
-    /// for debugging, execute only a given number of fonts
-    #[arg(long)]
-    pub(super) limit: Option<usize>,
 }
 
 #[derive(Debug, PartialEq, clap::Args)]
 pub(super) struct CiArgs {
     /// Path to a json list of repos + revs to run.
     pub(super) to_run: PathBuf,
+    /// Directory to store font sources and the google/fonts repo.
+    ///
+    /// Reusing this directory saves us having to clone all the repos on each run.
+    ///
+    /// This can also be set via the CRATER_GIT_CACHE environment variable,
+    /// although the CLI argument takes precedence.
+    ///
+    /// If no argument is provided, defaults to `~/.fontc_crater_cache`.
+    #[arg(short, long = "cache")]
+    cache_dir: Option<PathBuf>,
+
     /// Directory where results are written.
     ///
     /// This should be consistent between runs.
@@ -50,9 +46,38 @@ pub(super) struct CiArgs {
     pub(super) html_only: bool,
 }
 
-#[derive(Debug, PartialEq, clap::Args)]
-pub(super) struct ReportArgs {
-    pub(super) json_path: PathBuf,
-    #[arg(short, long)]
-    pub(super) verbose: bool,
+impl CiArgs {
+    /// Determine the directory to use for caching git checkouts.
+    ///
+    /// This may be passed at the command line or via an environment variable.
+    pub(crate) fn cache_dir(&self) -> PathBuf {
+        let cache_dir = self
+            .cache_dir
+            .clone()
+            .or_else(|| std::env::var_os(GIT_CACHE_DIR_VAR).map(PathBuf::from))
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_CACHE_DIR));
+
+        if cache_dir.components().any(|comp| comp.as_os_str() == "~") {
+            resolve_home(&cache_dir)
+        } else {
+            cache_dir
+        }
+    }
+}
+
+#[allow(deprecated)]
+fn resolve_home(path: &Path) -> PathBuf {
+    let Some(home_dir) = std::env::home_dir() else {
+        log::warn!("No known home directory, ~ will not be resolved");
+        return path.to_path_buf();
+    };
+    let mut result = PathBuf::new();
+    for c in path.components() {
+        if c.as_os_str() == "~" {
+            result.push(home_dir.clone());
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
