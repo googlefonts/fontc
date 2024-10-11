@@ -1,9 +1,10 @@
-//! Generates the [hmtx](https://learn.microsoft.com/en-us/typography/opentype/spec/hmtx) and
-//! [hhea](https://learn.microsoft.com/en-us/typography/opentype/spec/hhea) tables
+//! Generates the [hmtx](https://learn.microsoft.com/en-us/typography/opentype/spec/hmtx),
+//! [hhea](https://learn.microsoft.com/en-us/typography/opentype/spec/hhea), and
+//! [maxp](https://learn.microsoft.com/en-us/typography/opentype/spec/maxp) tables
 
 use std::{
     cmp::{max, min},
-    collections::{HashMap, HashSet},
+    collections::HashMap,
 };
 
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
@@ -51,7 +52,7 @@ struct FontLimits {
 struct GlyphInfo {
     /// For simple glyphs always present. For composites, set by [`FontLimits::update_composite_limits`]
     limits: Option<GlyphLimits>,
-    components: Option<HashSet<GlyphId16>>,
+    components: Option<Vec<GlyphId16>>,
 }
 
 impl GlyphInfo {
@@ -138,6 +139,7 @@ impl FontLimits {
         self.glyph_info.insert(id, glyph_info);
     }
 
+    // FontTools maxp <https://github.com/fonttools/fonttools/blob/e8146a6d0725d398cfa110cba683946ee762f8e2/Lib/fontTools/ttLib/tables/_m_a_x_p.py#L53>
     fn update_composite_limits(&mut self) -> GlyphLimits {
         let mut pending = self
             .glyph_info
