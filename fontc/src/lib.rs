@@ -1916,7 +1916,7 @@ mod tests {
 
     #[test]
     fn maxp_with_shallow_components() {
-        assert_maxp_composite("glyphs2/Component.glyphs", 1, 4, 1);
+        assert_maxp_composite("glyphs2/Component.glyphs", 1, 8, 2);
     }
 
     #[test]
@@ -3153,6 +3153,23 @@ mod tests {
         assert!(
             font_specific_names.is_empty(),
             "Should have no font specific names, got {font_specific_names:?}"
+        );
+    }
+
+    // <https://github.com/googlefonts/fontc/issues/1022>
+    // We used to mistakenly only count repeat use of the same component once
+    #[test]
+    fn duplicate_components_count_in_maxp() {
+        let compile = TestCompile::compile_source("glyphs3/PixelRef.glyphs");
+        let font = compile.font();
+        let maxp = font.maxp().unwrap();
+        // 3 uses of the "pixel" component which has 4 points
+        assert_eq!(
+            (12, 3),
+            (
+                maxp.max_composite_points().unwrap(),
+                maxp.max_composite_contours().unwrap()
+            )
         );
     }
 }

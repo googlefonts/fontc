@@ -1,0 +1,76 @@
+{
+.formatVersion = 3;
+familyName = WghtVar;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+unicode = 32;
+},
+{
+glyphname = pixel;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(30,0,l),
+(0,0,l),
+(0,30,l),
+(30,30,l)
+);
+}
+);
+width = 30;
+}
+);
+},
+{
+glyphname = hyphen;
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+alignment = -1;
+pos = (60,420);
+ref = pixel;
+},
+{
+alignment = -1;
+pos = (90,420);
+ref = pixel;
+},
+{
+alignment = -1;
+pos = (120,420);
+ref = pixel;
+}
+);
+width = 570;
+}
+);
+unicode = 45;
+}
+);
+
+settings = {
+gridLength = 30;
+};
+unitsPerEm = 1230;
+versionMajor = 1;
+versionMinor = 0;
+}
