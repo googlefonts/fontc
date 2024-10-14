@@ -122,6 +122,59 @@ pub struct MiscMetadata {
     pub lowest_rec_ppm: u16,
 
     pub created: Option<DateTime<Utc>>,
+
+    pub panose: Option<Panose>,
+}
+
+/// PANOSE bytes
+///
+/// <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#panose>
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Panose {
+    pub family_type: u8,
+    pub serif_style: u8,
+    pub weight: u8,
+    pub proportion: u8,
+    pub contrast: u8,
+    pub stroke_variation: u8,
+    pub arm_style: u8,
+    pub letterform: u8,
+    pub midline: u8,
+    pub x_height: u8,
+}
+
+impl From<[u8; 10]> for Panose {
+    fn from(value: [u8; 10]) -> Self {
+        Self {
+            family_type: value[0],
+            serif_style: value[1],
+            weight: value[2],
+            proportion: value[3],
+            contrast: value[4],
+            stroke_variation: value[5],
+            arm_style: value[6],
+            letterform: value[7],
+            midline: value[8],
+            x_height: value[9],
+        }
+    }
+}
+
+impl Panose {
+    pub fn to_bytes(&self) -> [u8; 10] {
+        [
+            self.family_type,
+            self.serif_style,
+            self.weight,
+            self.proportion,
+            self.contrast,
+            self.stroke_variation,
+            self.arm_style,
+            self.letterform,
+            self.midline,
+            self.x_height,
+        ]
+    }
 }
 
 /// The name of every glyph, in the order it will be emitted
@@ -410,6 +463,7 @@ impl StaticMetadata {
                 // <https://github.com/googlefonts/ufo2ft/blob/0d2688cd847d003b41104534d16973f72ef26c40/Lib/ufo2ft/fontInfoData.py#L365>
                 head_flags: 3,
                 created: None,
+                panose: None,
             },
         })
     }
@@ -2069,6 +2123,7 @@ mod tests {
                 head_flags: 42,
                 lowest_rec_ppm: 42,
                 created: None,
+                panose: None,
             },
             number_values: Default::default(),
         }
