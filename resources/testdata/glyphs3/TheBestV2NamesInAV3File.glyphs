@@ -1,0 +1,127 @@
+{
+.appVersion = "3151";
+.formatVersion = 3;
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+copyright = "Copy!";
+customParameters = (
+{
+name = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+name = vendorID;
+value = RODS;
+},
+{
+name = description;
+value = "The greatest weight var";
+},
+{
+name = versionString;
+value = "New Value";
+},
+{
+name = uniqueID;
+value = "We are all unique";
+},
+{
+name = postscriptFullName;
+value = "Full of names";
+},
+{
+name = postscriptFontName;
+value = "Postscript Name";
+},
+{
+name = trademark;
+value = "A trade in marks";
+},
+{
+name = license;
+value = "Licensed to thrill";
+},
+{
+name = sampleText;
+value = "Sam pull text";
+},
+{
+name = compatibleFullName;
+value = "For the Mac's only";
+},
+{
+name = WWSFamilyName;
+value = "We Will Slant you";
+},
+{
+name = Axes;
+value = (
+{
+Name = Weight;
+Tag = wght;
+}
+);
+}
+);
+designer = "Designed by me!";
+designerURL = "https://example.com/designer";
+familyName = FamilyName;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+iconName = Bold;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+metricValues = (
+{
+pos = 800;
+},
+{
+},
+{
+pos = -200;
+},
+{
+pos = 700;
+},
+{
+pos = 500;
+}
+);
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+manufacturer = "Who made you?!";
+manufacturerURL = "https://example.com/manufacturer";
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}
