@@ -564,8 +564,15 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
         for master in font.masters.iter() {
             let pos = font_info.locations.get(&master.axes_values).unwrap();
 
-            metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), master.cap_height());
-            metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), master.x_height());
+            // glyphsLib <https://github.com/googlefonts/glyphsLib/blob/1cb4fc5ae2cf385df95d2b7768e7ab4eb60a5ac3/Lib/glyphsLib/classes.py#L1590-L1601>
+            let cap_height = master.cap_height().unwrap_or(700.0);
+            let x_height = master.x_height().unwrap_or(500.0);
+            let ascender = master.ascender().unwrap_or(800.0);
+            let descender = master.descender().unwrap_or(-200.0);
+
+            metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), Some(cap_height));
+            metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), Some(x_height));
+
             metrics.set_if_some(
                 GlobalMetric::Os2TypoAscender,
                 pos.clone(),
@@ -730,9 +737,9 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             metrics.populate_defaults(
                 pos,
                 static_metadata.units_per_em,
-                master.x_height(),
-                master.ascender(),
-                master.descender(),
+                Some(x_height),
+                Some(ascender),
+                Some(descender),
                 // turn clockwise angle counter-clockwise
                 master.italic_angle().map(|v| -v),
             );
@@ -1909,12 +1916,26 @@ mod tests {
     }
 
     #[test]
-    fn glyphs_specific_default_metrics() {
+    fn glyphs_specific_default_underline_metrics() {
         // 1290 upem in honor of soft-type-jacquard/sources/Jacquard24Charted.glyphs which used to not match fontmake
         let (_, context) = build_global_metrics(glyphs3_dir().join("WghtVar1290upem.glyphs"));
         let metrics = context.global_metrics.get();
         let underline_pos = unique_value(&metrics, GlobalMetric::UnderlinePosition);
         let underline_thickness = unique_value(&metrics, GlobalMetric::UnderlineThickness);
         assert_eq!((-100.0, 50.0), (underline_pos, underline_thickness));
+    }
+
+    #[test]
+    fn glyphs_specific_default_height_metrics() {
+        let (_, context) = build_global_metrics(glyphs3_dir().join("WghtVar1290upem.glyphs"));
+        let metrics = context.global_metrics.get();
+        let x_height = unique_value(&metrics, GlobalMetric::XHeight);
+        let cap_height = unique_value(&metrics, GlobalMetric::CapHeight);
+        let ascender = unique_value(&metrics, GlobalMetric::Ascender);
+        let descender = unique_value(&metrics, GlobalMetric::Descender);
+        assert_eq!(
+            (500.0, 700.0, 800.0, -200.0),
+            (x_height, cap_height, ascender, descender)
+        );
     }
 }
