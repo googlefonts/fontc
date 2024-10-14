@@ -51,7 +51,7 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
             // To match fontmake we should use the font-specific name range and not reuse
             // a well-known name, even if the name matches.
             .filter(|(key, _)| key.name_id.to_u16() > 255)
-            .map(|(key, name)| (name, key.name_id))
+            .map(|(key, name)| (name.as_str(), key.name_id))
             .collect();
 
         context.stat.set_unconditionally(
@@ -62,7 +62,7 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
                     .enumerate()
                     .map(|(idx, a)| AxisRecord {
                         axis_tag: a.tag,
-                        axis_name_id: *reverse_names.get(&a.name).unwrap(),
+                        axis_name_id: *reverse_names.get(a.ui_label_name()).unwrap(),
                         axis_ordering: idx as u16,
                     })
                     .collect::<Vec<_>>()
