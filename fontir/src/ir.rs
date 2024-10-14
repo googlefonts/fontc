@@ -422,14 +422,14 @@ impl StaticMetadata {
 
         variable_axes
             .iter()
-            .map(|axis| &axis.name)
-            .chain(named_instances.iter().map(|ni| &ni.name))
+            .map(|axis| axis.ui_label_name())
+            .chain(named_instances.iter().map(|ni| ni.name.as_ref()))
             .for_each(|name| {
                 if !visited.insert(name) {
                     return;
                 }
                 name_id_gen += 1;
-                key_to_name.insert(NameKey::new(name_id_gen.into(), name), name.clone());
+                key_to_name.insert(NameKey::new(name_id_gen.into(), name), name.to_string());
             });
 
         let variation_model = VariationModel::new(global_locations, variable_axes.clone())?;

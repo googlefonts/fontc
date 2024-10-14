@@ -105,6 +105,36 @@ impl Axis {
     pub fn default_converter(&self) -> CoordConverter {
         CoordConverter::default_normalization(self.min, self.default, self.max)
     }
+
+    /// Display name for the axis.
+    ///
+    /// Some frontends (e.g. designspace) support the notion of an axis' UI label name distinct
+    /// from the axis name; the former is used for displaying the axis in UI and can be
+    /// localised, whereas the latter is only used for internal cross-references.
+    /// In Designspace documents, these are stored in the axes' `<labelname>` elements.
+    /// FontTools uses these to build the name records associated with axis names referenced
+    /// by fvar and STAT tables, or else falls back to the axis.name. fontc doesn't know about
+    /// them until norad is able to parse them (<https://github.com/linebender/norad/issues/323>).
+    /// But even when the labelnames are ommited, there's a special group of registered
+    /// axis names that were common in old MutatorMath source files before the `<labelname>`
+    /// element itself got standardised, which continue to receive a special treatment in
+    /// fonttools: i.e., the lowercase, shortened name gets replaced with a title-case,
+    /// expanded one (e.g. 'weight' => 'Weight', 'optical' => 'Optical Size' etc.).
+    /// For the sake of matching fontmake (which uses fonttools), we do the same here.
+    ///
+    /// For additional info see: <https://github.com/googlefonts/fontc/issues/1020>
+    pub fn ui_label_name(&self) -> &str {
+        // TODO: support localised labelnames when norad does
+        let axis_name = self.name.as_str();
+        match axis_name {
+            "weight" => "Weight",
+            "width" => "Width",
+            "slant" => "Slant",
+            "optical" => "Optical Size",
+            "italic" => "Italic",
+            _ => axis_name,
+        }
+    }
 }
 
 // OS/2 width class

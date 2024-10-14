@@ -1729,6 +1729,51 @@ mod tests {
         })
     }
 
+    #[test]
+    fn standard_axis_names() {
+        // test that we match fonttools' naming of standard axes
+        // https://github.com/googlefonts/fontc/issues/1020
+        let result = TestCompile::compile_source("glyphs3/StandardAxisNames.glyphs");
+        let static_metadata = result.fe_context.static_metadata.get();
+
+        assert_eq!(
+            vec![
+                "weight".to_string(),
+                "width".to_string(),
+                "italic".to_string(),
+                "slant".to_string(),
+                "optical".to_string(),
+                "foobarbaz".to_string(),
+            ],
+            static_metadata
+                .axes
+                .iter()
+                .map(|axis| axis.name.clone())
+                .collect::<Vec<_>>()
+        );
+
+        let font = result.font();
+        let name = font.name().unwrap();
+        let fvar = font.fvar().unwrap();
+
+        assert_eq!(
+            vec![
+                "Weight".to_string(),
+                "Width".to_string(),
+                "Italic".to_string(),
+                "Slant".to_string(),
+                "Optical Size".to_string(),
+                // This axis is not 'standard' so its UI label was not renamed
+                "foobarbaz".to_string(),
+            ],
+            fvar.axes()
+                .unwrap()
+                .iter()
+                .map(|axis| resolve_name(&name, axis.axis_name_id()).unwrap())
+                .collect::<Vec<_>>()
+        )
+    }
+
     fn assert_named_instances(source: &str, expected: Vec<(String, Vec<(&str, f32)>)>) {
         let result = TestCompile::compile_source(source);
         let font = result.font();

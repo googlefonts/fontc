@@ -37,7 +37,7 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
         // To match fontmake we should use the font-specific name range and not reuse
         // a well-known name, even if the name matches.
         .filter(|(key, _)| key.name_id.to_u16() > 255)
-        .map(|(key, name)| (name, key.name_id))
+        .map(|(key, name)| (name.as_str(), key.name_id))
         .collect();
 
     let axes_and_instances = AxisInstanceArrays::new(
@@ -50,7 +50,7 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
                     min_value: ir_axis.min.into(),
                     default_value: ir_axis.default.into(),
                     max_value: ir_axis.max.into(),
-                    axis_name_id: *reverse_names.get(&ir_axis.name).unwrap(),
+                    axis_name_id: *reverse_names.get(ir_axis.ui_label_name()).unwrap(),
                     ..Default::default()
                 };
                 if ir_axis.hidden {
@@ -63,7 +63,7 @@ fn generate_fvar(static_metadata: &StaticMetadata) -> Option<Fvar> {
             .named_instances
             .iter()
             .map(|ni| InstanceRecord {
-                subfamily_name_id: *reverse_names.get(&ni.name).unwrap(),
+                subfamily_name_id: *reverse_names.get(ni.name.as_str()).unwrap(),
                 coordinates: static_metadata
                     .axes
                     .iter()
