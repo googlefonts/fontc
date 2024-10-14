@@ -110,7 +110,7 @@ fn tidy_html(raw_html: &str) -> Result<String, Error> {
 }
 
 fn make_table_body(runs: &[RunSummary]) -> Markup {
-    fn make_row(run: &RunSummary, prev: Option<&RunSummary>) -> Markup {
+    fn make_row(run: &RunSummary, prev: Option<&RunSummary>, is_most_recent: bool) -> Markup {
         let total_diff = make_delta_decoration(
             run.stats.total_targets as i32,
             prev.map(|p| p.stats.total_targets as i32),
@@ -155,16 +155,29 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             run.fontc_rev,
         );
         let short_rev = run.fontc_rev.get(..16).unwrap_or(run.fontc_rev.as_str());
+        let err_cells = if is_most_recent {
+            html! {
+                td.fontc_err { a href = "#fontc-failures" {  (run.stats.fontc_failed) " " (fontc_err_diff)  } }
+                td.fontmake_err { a href = "#fontmake-failures" {  (run.stats.fontmake_failed) " " (fontmake_err_diff)  } }
+                td.both_err { a href = "both-failures" {  (run.stats.both_failed) " " (both_err_diff) } }
+                td.other_err { a href = "other-failures" {  (run.stats.other_failure) " " (other_err_diff)  } }
+            }
+        } else {
+            html! {
+            td.fontc_err {  (run.stats.fontc_failed) " " (fontc_err_diff)  }
+            td.fontmake_err {  (run.stats.fontmake_failed) " " (fontmake_err_diff)  }
+            td.both_err {  (run.stats.both_failed) " " (both_err_diff) }
+            td.other_err {  (run.stats.other_failure) " " (other_err_diff)  }
+            }
+        };
         html! {
             tr.run {
                 td.date { (run.began.format("%Y-%m-%d %H:%M:%S")) }
                 td.rev { a href=(diff_url) { (short_rev) } }
                 td.total {  ( run.stats.total_targets) " " (total_diff) }
                 td.identical {  (run.stats.identical) " " (identical_diff)  }
-                td.fontc_err {  (run.stats.fontc_failed) " " (fontc_err_diff)  }
-                td.fontmake_err {  (run.stats.fontmake_failed) " " (fontmake_err_diff)  }
-                td.both_err {  (run.stats.both_failed) " " (both_err_diff) }
-                td.other_err {  (run.stats.other_failure) " " (other_err_diff)  }
+                (err_cells)
+
                 td.diff_perc {  (diff_fmt) " " (diff_perc_diff) }
             }
         }
@@ -172,7 +185,8 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
 
     let iter = runs.iter().enumerate().map(|(i, run)| {
         let prev = (i > 0).then(|| &runs[i - 1]);
-        make_row(run, prev)
+        let is_last = i == runs.len() - 1;
+        make_row(run, prev, is_last)
     });
 
     html! {
@@ -507,9 +521,10 @@ fn make_error_report_group<'a>(
 ) -> Markup {
     let items = make_error_report_group_items(paths_and_if_is_new_error, details, sources);
 
+    let elem_id = format!("{group_name}-failures");
     html! {
         div.error_report {
-            h3 { (group_name) " failures" }
+            h3 id=(elem_id) { (group_name) " failures" }
             div.failures {
                 (items)
             }
