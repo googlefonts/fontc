@@ -2144,6 +2144,9 @@ impl TryFrom<RawFont> for Font {
     fn try_from(mut from: RawFont) -> Result<Self, Self::Error> {
         if from.is_v2() {
             from.v2_to_v3()?;
+        } else {
+            // <https://github.com/googlefonts/fontc/issues/1029>
+            from.v2_to_v3_names()?;
         }
 
         let radix = if from.is_v2() { 16 } else { 10 };
@@ -3179,6 +3182,14 @@ mod tests {
         let v2 = Font::load(&glyphs2_dir().join("TheBestNames.glyphs")).unwrap();
         let v3 = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
         assert_eq!(v3.names, v2.names);
+    }
+
+    #[test]
+    fn v2_style_names_in_a_v3_file() {
+        let v3_mixed_with_v2 =
+            Font::load(&glyphs3_dir().join("TheBestV2NamesInAV3File.glyphs")).unwrap();
+        let v3 = Font::load(&glyphs3_dir().join("TheBestNames.glyphs")).unwrap();
+        assert_eq!(v3.names, v3_mixed_with_v2.names);
     }
 
     fn assert_wghtvar_avar_master_and_axes(glyphs_file: &Path) {
