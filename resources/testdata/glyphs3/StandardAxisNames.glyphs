@@ -1,0 +1,193 @@
+{
+.appVersion = "3324";
+.formatVersion = 3;
+axes = (
+{
+name = weight;
+tag = wght;
+},
+{
+name = width;
+tag = wdth;
+},
+{
+name = italic;
+tag = ital;
+},
+{
+name = slant;
+tag = slnt;
+},
+{
+name = optical;
+tag = opsz;
+},
+{
+name = foobarbaz;
+tag = FOOB;
+}
+);
+date = "2024-10-10 14:11:11 +0000";
+familyName = "New Font";
+fontMaster = (
+{
+axesValues = (
+0,
+0,
+0,
+0,
+0,
+0
+);
+id = m01;
+metricValues = (
+{
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+0,
+0,
+0,
+0,
+10,
+0
+);
+id = "1FD21B2D-09AF-4981-B811-2D872E70C4D7";
+metricValues = (
+{
+}
+);
+name = Display;
+},
+{
+axesValues = (
+10,
+0,
+0,
+0,
+0,
+0
+);
+id = "FEF7F46C-F4CB-4286-8DAB-0F5B4E3112C4";
+metricValues = (
+{
+}
+);
+name = Bold;
+},
+{
+axesValues = (
+0,
+10,
+0,
+0,
+0,
+0
+);
+id = "35AAE790-B0B9-4EC3-B9E7-BFB27ABD6F7D";
+metricValues = (
+{
+}
+);
+name = Expanded;
+},
+{
+axesValues = (
+0,
+0,
+1,
+0,
+0,
+0
+);
+id = "19C9E9CF-9763-4DDF-A379-0445DCA72D4F";
+metricValues = (
+{
+pos = 10;
+}
+);
+name = Italic;
+},
+{
+axesValues = (
+0,
+0,
+0,
+10,
+0,
+0
+);
+id = "AD527805-E4EB-47AA-92AC-2C0C755E4536";
+metricValues = (
+{
+pos = 10;
+}
+);
+name = Slanted;
+},
+{
+axesValues = (
+0,
+0,
+0,
+0,
+0,
+10
+);
+id = "A4969238-40F2-4056-9F02-70F1E4A1FE86";
+metricValues = (
+{
+}
+);
+name = "Foo Bar Baz";
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2024-10-14 10:45:18 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "1FD21B2D-09AF-4981-B811-2D872E70C4D7";
+width = 600;
+},
+{
+layerId = "FEF7F46C-F4CB-4286-8DAB-0F5B4E3112C4";
+width = 600;
+},
+{
+layerId = "35AAE790-B0B9-4EC3-B9E7-BFB27ABD6F7D";
+width = 600;
+},
+{
+layerId = "19C9E9CF-9763-4DDF-A379-0445DCA72D4F";
+width = 600;
+},
+{
+layerId = "AD527805-E4EB-47AA-92AC-2C0C755E4536";
+width = 600;
+},
+{
+layerId = "A4969238-40F2-4056-9F02-70F1E4A1FE86";
+width = 600;
+}
+);
+unicode = 32;
+}
+);
+metrics = (
+{
+type = "italic angle";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 1;
+versionMinor = 0;
+}
