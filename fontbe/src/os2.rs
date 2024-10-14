@@ -6,7 +6,10 @@ use fontdrasil::{
     orchestration::{Access, AccessBuilder, Work},
     types::WidthClass,
 };
-use fontir::{ir::GlobalMetricsInstance, orchestration::WorkId as FeWorkId};
+use fontir::{
+    ir::{GlobalMetricsInstance, Panose},
+    orchestration::WorkId as FeWorkId,
+};
 use write_fonts::{
     read::{tables::hmtx::Hmtx, FontData, TopLevelTable},
     tables::os2::Os2,
@@ -250,6 +253,13 @@ fn x_avg_char_width(context: &Context) -> Result<i16, Error> {
     };
 
     Ok((total as f32 / count as f32).ot_round())
+}
+
+fn apply_panose(os2: &mut Os2, panose: Option<&Panose>) {
+    let Some(panose) = panose else {
+        return;
+    };
+    os2.panose_10 = panose.to_bytes();
 }
 
 fn apply_metrics(os2: &mut Os2, metrics: &GlobalMetricsInstance) {
@@ -561,6 +571,7 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
 
             ..Default::default()
         };
+        apply_panose(&mut os2, static_metadata.misc.panose.as_ref());
         apply_metrics(&mut os2, &metrics);
         apply_unicode_range(&mut os2, &codepoints);
         apply_codepage_range(&mut os2, &codepoints);

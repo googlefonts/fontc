@@ -16,7 +16,7 @@ use fontir::{
     ir::{
         AnchorBuilder, FeaturesSource, GdefCategories, GlobalMetric, GlobalMetrics, GlyphOrder,
         KernGroup, KernSide, KerningGroups, KerningInstance, NameBuilder, NameKey, NamedInstance,
-        PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
+        Panose, PostscriptNames, StaticMetadata, DEFAULT_VENDOR_ID,
     },
     orchestration::{Context, Flags, IrWork, WorkId},
     source::{Input, Source},
@@ -963,6 +963,21 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 .map(|flags| flags.iter().fold(0_u16, |acc, e| acc | 1 << *e))
                 .unwrap_or(1_u16 << 2),
         );
+
+        if let Some(ot_panose) = &font_info_at_default.open_type_os2_panose {
+            static_metadata.misc.panose = Some(Panose {
+                family_type: ot_panose.family_type as u8,
+                serif_style: ot_panose.serif_style as u8,
+                weight: ot_panose.weight as u8,
+                proportion: ot_panose.proportion as u8,
+                contrast: ot_panose.contrast as u8,
+                stroke_variation: ot_panose.stroke_variation as u8,
+                arm_style: ot_panose.arm_style as u8,
+                letterform: ot_panose.letterform as u8,
+                midline: ot_panose.midline as u8,
+                x_height: ot_panose.x_height as u8,
+            });
+        }
 
         static_metadata.misc.version_major = font_info_at_default
             .version_major
@@ -2321,5 +2336,23 @@ mod tests {
     #[test]
     fn obeys_explicit_fs_type() {
         assert_fs_type("MVAR.designspace", 1 << 3);
+    }
+
+    #[test]
+    fn default_panose() {
+        let (_, context) = build_static_metadata("static.designspace", default_test_flags());
+
+        let static_metadata = context.static_metadata.get();
+        assert_eq!(None, static_metadata.misc.panose);
+    }
+
+    // <https://github.com/googlefonts/fontc/issues/1026>
+    #[test]
+    fn obeys_explicit_panose() {
+        let (_, context) = build_static_metadata("wght_var.designspace", default_test_flags());
+
+        let static_metadata = context.static_metadata.get();
+        let expected: Panose = [2_u8, 11, 5, 2, 4, 5, 4, 2, 2, 4].into();
+        assert_eq!(Some(expected), static_metadata.misc.panose);
     }
 }

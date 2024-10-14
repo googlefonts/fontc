@@ -8,5 +8,19 @@
     <real>801</real>
     <key>familyName</key>
     <string>Wght Var</string>
+    <key>openTypeOS2Panose</key>
+    <!-- different values than regular -->
+    <array>
+      <integer>3</integer>
+      <integer>12</integer>
+      <integer>6</integer>
+      <integer>3</integer>
+      <integer>5</integer>
+      <integer>6</integer>
+      <integer>5</integer>
+      <integer>3</integer>
+      <integer>3</integer>
+      <integer>5</integer>
+    </array>
   </dict>
 </plist>
