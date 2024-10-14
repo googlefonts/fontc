@@ -263,6 +263,11 @@ fn make_diff_report(
         let diff_details = current.success.get(*path).unwrap();
         let prev_details = prev.success.get(*path);
         let prev_ratio = prev_diff.get(path).copied();
+        // don't include 100% matches in results unless they are new
+        if *ratio == 100.0 && prev_ratio == Some(100.0) {
+            continue;
+        }
+
         let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
         let details = format_diff_report_details(diff_details, prev_details);
         // avoid .9995 printing as 100%
@@ -452,8 +457,12 @@ fn format_diff_report_details(current: &DiffOutput, prev: Option<&DiffOutput>) -
         }
     };
 
+    // if we are identical, we use this empty set as a placeholder so the types
+    // work below.
+    let empty = BTreeMap::new();
+
     let diffs = match current {
-        DiffOutput::Identical => return html!("🥳"),
+        DiffOutput::Identical => &empty,
         DiffOutput::Diffs(diffs) => diffs,
     };
 
