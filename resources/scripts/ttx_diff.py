@@ -46,6 +46,7 @@ from cdifflib import CSequenceMatcher as SequenceMatcher
 from typing import MutableSequence
 from glyphsLib import GSFont
 from fontTools.designspaceLib import DesignSpaceDocument
+import time
 
 
 _COMPARE_DEFAULTS = "default"
@@ -121,11 +122,24 @@ def ttx(font_file: Path, can_skip: bool):
     return ttx_file
 
 
-# generate a simple text repr for gpos for this font
+# generate a simple text repr for gpos for this font, with retry
 def simple_gpos_output(cargo_manifest_path: Path, font_file: Path, out_path: Path, can_skip: bool):
+    NUM_RETRIES = 5
+    for i in range(NUM_RETRIES+1):
+        try:
+           return simple_gpos_output_impl(cargo_manifest_path, font_file, out_path, can_skip)
+        except subprocess.CalledProcessError as e:
+            time.sleep(0.1)
+            if i >= NUM_RETRIES:
+                raise e
+            print(f"normalizer failed with code '{e.returncode}'', retrying", file=sys.stderr)
+
+def simple_gpos_output_impl(cargo_manifest_path: Path, font_file: Path, out_path: Path, can_skip: bool):
     if not (can_skip and out_path.is_file()):
         temppath = font_file.parent / "markkern.txt"
         cmd = [
+            "timeout",
+            "10m",
             "cargo",
             "run",
             "--release",
