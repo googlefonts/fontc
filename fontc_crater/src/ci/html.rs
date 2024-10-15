@@ -11,7 +11,7 @@ use crate::{
     error::Error,
     ttx_diff_runner::{CompilerFailure, DiffError, DiffOutput, DiffValue},
 };
-use maud::{html, Markup};
+use maud::{html, Markup, PreEscaped};
 
 use super::{DiffResults, RunSummary};
 
@@ -71,6 +71,22 @@ fn make_html(
         _ => html!(),
     };
 
+    let script = PreEscaped(
+        "
+        <script>
+        // https://developer.mozilla.org/en-US/docs/Web/API/Clipboard/writeText
+        async function copyText(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                console.log(\"Copied \" + text);
+            } catch (error) {
+                console.error(error.message);
+            }
+        }
+        </script>
+    ",
+    );
+
     let raw_html = html! {
         (maud::DOCTYPE)
         html {
@@ -78,6 +94,7 @@ fn make_html(
                 title { "fontc_crater results" }
                 style { (css) }
                 meta charset="utf-8";
+                (script)
             }
             body {
                 h1 { "fontc_crater" }
@@ -159,8 +176,8 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             html! {
                 td.fontc_err { a href = "#fontc-failures" {  (run.stats.fontc_failed) " " (fontc_err_diff)  } }
                 td.fontmake_err { a href = "#fontmake-failures" {  (run.stats.fontmake_failed) " " (fontmake_err_diff)  } }
-                td.both_err { a href = "both-failures" {  (run.stats.both_failed) " " (both_err_diff) } }
-                td.other_err { a href = "other-failures" {  (run.stats.other_failure) " " (other_err_diff)  } }
+                td.both_err { a href = "#both-failures" {  (run.stats.both_failed) " " (both_err_diff) } }
+                td.other_err { a href = "#other-failures" {  (run.stats.other_failure) " " (other_err_diff)  } }
             }
         } else {
             html! {
@@ -230,6 +247,18 @@ fn make_delta_decoration<T: PartialOrd + Copy + Sub<Output = T> + Display + Defa
     }
 }
 
+fn make_repro_cmd(repo_url: &str, repo_path: &Path) -> String {
+    // the first component of the path is the repo, drop that
+    let mut repo_path = repo_path.components();
+    repo_path.next();
+    let repo_path = repo_path.as_path();
+
+    format!(
+        "copyText('python resources/scripts/ttx_diff.py {repo_url}#{}');",
+        repo_path.display()
+    )
+}
+
 fn make_detailed_report(
     current: &DiffResults,
     prev: &DiffResults,
@@ -282,6 +311,8 @@ fn make_diff_report(
             continue;
         }
 
+        let repo_url = get_repo_url(path);
+        let repro_cmd = make_repro_cmd(repo_url, path);
         let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
         let details = format_diff_report_details(diff_details, prev_details);
         // avoid .9995 printing as 100%
@@ -291,7 +322,10 @@ fn make_diff_report(
             details {
                 summary {
                     span.font_path {
-                        a href = ({ get_repo_url(path) }) { (path.display()) }
+                        a href = (repo_url) { (path.display()) }
+                        " ("
+                        a href = "#" onclick = (repro_cmd) { "copy repro" }
+                        ")"
                     }
                     span.diff_result { (ratio_fmt) " " (decoration) }
                 }

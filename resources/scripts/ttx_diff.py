@@ -42,6 +42,7 @@ import json
 import shutil
 import subprocess
 import sys
+from urllib.parse import urlparse
 from cdifflib import CSequenceMatcher as SequenceMatcher
 from typing import MutableSequence
 from glyphsLib import GSFont
@@ -70,7 +71,7 @@ def maybe_print(*objects):
 
 flags.DEFINE_enum(
     "compare",
-    "both",
+    "default",
     ["both", _COMPARE_DEFAULTS, _COMPARE_GFTOOLS],
     "Compare results with default flags, with the flags gftools uses, or both. Default both. Note that as of 5/21/2023 defaults still sets flags for fontmake to match fontc behavior.",
 )
@@ -588,13 +589,34 @@ def report_errors_and_exit_if_there_were_any(errors: dict):
         print_json({"error": errors})
     sys.exit(2)
 
+
+def resolve_source(source: str) -> Path:
+    if source.startswith("git@") or source.startswith("https://"):
+        source_url = urlparse(source)
+        repo_path = source_url.fragment
+        last_path_segment = source_url.path.split("/")[-1]
+        local_repo = (Path(__file__).parent / ".." / ".." / "font_repos" / last_path_segment).resolve()
+        if not local_repo.parent.is_dir():
+            local_repo.parent.mkdir()
+        if not local_repo.is_dir():
+            cmd = ("git", "clone", source_url._replace(fragment="").geturl())
+            print("Running", " ".join(cmd), "in", local_repo.parent)
+            subprocess.run(cmd, cwd=local_repo.parent, check=True)
+        else:
+            print(f"Reusing existing {local_repo}")
+        source = local_repo / repo_path
+    else:
+        source = Path(source)
+    if not source.exists():
+        sys.exit(f"No such source: {source}")
+    return source
+
+
 def main(argv):
     if len(argv) != 2:
         sys.exit("Only one argument, a source file, is expected")
 
-    source = Path(argv[1])
-    if not source.exists():
-        sys.exit(f"No such source: {source}")
+    source = resolve_source(argv[1])
 
     root = Path(".").resolve()
     if root.name != "fontc":
@@ -618,7 +640,7 @@ def main(argv):
                 "JSON output does not support multiple comparisons (try --compare default|gftools)")
         comparisons = (_COMPARE_DEFAULTS, _COMPARE_GFTOOLS)
 
-    no_diffs = True
+    diffs = False
     for compare in comparisons:
         build_dir = (out_dir / compare)
         build_dir.mkdir(parents=True, exist_ok=True)
@@ -650,7 +672,7 @@ def main(argv):
             maybe_print("output is identical")
             continue
 
-        no_diffs = False
+        diffs = True
 
         if not FLAGS.json:
             print_output(build_dir, output)
@@ -658,10 +680,7 @@ def main(argv):
             output = jsonify_output(output)
             print_json(output)
 
-    if no_diffs:
-        sys.exit(0)
-    else:
-        sys.exit(2)
+    sys.exit(diffs * 2)  # 0 or 2
 
 
 if __name__ == "__main__":

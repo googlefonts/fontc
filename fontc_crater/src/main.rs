@@ -2,7 +2,8 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::{Path, PathBuf},
+    ffi::OsStr,
+    path::{self, Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering},
     time::Instant,
 };
@@ -10,6 +11,7 @@ use std::{
 use clap::Parser;
 use fontc::JobTimer;
 use google_fonts_sources::{LoadRepoError, RepoInfo};
+use log::warn;
 use rayon::{prelude::*, ThreadPoolBuilder};
 
 mod args;
@@ -21,7 +23,7 @@ mod ttx_diff_runner;
 use serde::{de::DeserializeOwned, Serialize};
 use sources::RepoList;
 
-use args::{Args, Commands, ReportArgs};
+use args::{Args, Commands, ReportArgs, RunArgs};
 use error::Error;
 use ttx_diff_runner::{DiffError, DiffOutput};
 
@@ -34,33 +36,53 @@ fn main() {
 }
 
 fn run(args: &Args) -> Result<(), Error> {
-    let run_args = match &args.command {
-        Commands::Compile(args) => args,
-        Commands::Diff(args) => args,
-        Commands::Report(args) => return generate_report(args),
-        Commands::Ci(args) => return ci::run_ci(args),
-    };
-
-    if !run_args.font_cache.exists() {
-        try_create_dir(&run_args.font_cache)?;
+    match &args.command {
+        Commands::Compile(args) => compile_and_maybe_diff(args, false),
+        Commands::Diff(args) => compile_and_maybe_diff(args, true),
+        Commands::Report(args) => generate_report(args),
+        Commands::Ci(args) => ci::run_ci(args),
     }
-    let sources = RepoList::get_or_create(&run_args.font_cache)?;
+}
 
-    let pruned = run_args.n_fonts.map(|n| prune_sources(&sources.sources, n));
+#[allow(deprecated)]
+fn resolve_home(path: &Path) -> PathBuf {
+    let Some(home_dir) = std::env::home_dir() else {
+        warn!("No known home directory, ~ will not be resolved");
+        return path.to_path_buf();
+    };
+    let home = path::Component::Normal(OsStr::new("~"));
+    let mut result = PathBuf::new();
+    for c in path.components() {
+        if c == home {
+            result.push(home_dir.clone());
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+fn compile_and_maybe_diff(args: &RunArgs, diff: bool) -> Result<(), Error> {
+    let cache_dir = resolve_home(&args.cache_dir);
+    if !cache_dir.exists() {
+        try_create_dir(&cache_dir)?;
+    }
+    let sources = RepoList::get_or_create(&cache_dir)?;
+
+    let pruned = args.limit.map(|n| prune_sources(&sources.sources, n));
     let inputs = pruned.as_ref().unwrap_or(&sources.sources);
 
-    match args.command {
-        Commands::Compile { .. } => run_all(inputs, &run_args.font_cache, compile_one)
-            .and_then(|r| print_or_write_results(r, run_args.out_path.as_deref()))?,
-        Commands::Diff { .. } => {
-            ttx_diff_runner::assert_can_run_script();
-            run_all(inputs, &run_args.font_cache, ttx_diff_runner::run_ttx_diff)
-                .and_then(|r| print_or_write_results(r, run_args.out_path.as_deref()))?
-        }
-        Commands::Report { .. } => unreachable!("handled above"),
-        Commands::Ci(_) => todo!(),
-    };
-    sources.save(&run_args.font_cache)?;
+    // Courtesy of differing result types we have to be duplicative here :(
+    if diff {
+        ttx_diff_runner::assert_can_run_script();
+        run_all(inputs, &cache_dir, ttx_diff_runner::run_ttx_diff)
+            .and_then(|r| print_or_write_results(r, args.out_path.as_deref()))?;
+    } else {
+        run_all(inputs, &cache_dir, compile_one)
+            .and_then(|r| print_or_write_results(r, args.out_path.as_deref()))?;
+    }
+
+    sources.save(&cache_dir)?;
     Ok(())
 }
 
@@ -114,6 +136,7 @@ fn deserialize_compile_json(json_str: &str, path: &Path) -> Result<Results<(), S
         )
 }
 
+/// Select n_items giving each item an equal chance of selection
 // only generic so I can write tests
 fn prune_sources<T: Clone>(sources: &[T], n_items: usize) -> Vec<T> {
     if n_items == 0 || sources.is_empty() {

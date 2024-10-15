@@ -21,18 +21,19 @@ pub(super) enum Commands {
 
 #[derive(Debug, PartialEq, clap::Args)]
 pub(super) struct RunArgs {
-    /// Directory to store font sources.
+    /// Directory to store font sources and the google/fonts repo.
     ///
     /// Reusing this directory saves us having to clone all the repos on each run.
     ///
     /// This directory is also used to write cached results during repo discovery.
-    pub(super) font_cache: PathBuf,
+    #[arg(short, long, default_value = "~/.fontc_crater_cache")]
+    pub(super) cache_dir: PathBuf,
     /// Optional path to write out results (as json)
     #[arg(short = 'o', long = "out")]
     pub(super) out_path: Option<PathBuf>,
     /// for debugging, execute only a given number of fonts
     #[arg(long)]
-    pub(super) n_fonts: Option<usize>,
+    pub(super) limit: Option<usize>,
 }
 
 #[derive(Debug, PartialEq, clap::Args)]
