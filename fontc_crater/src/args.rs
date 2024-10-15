@@ -27,9 +27,6 @@ pub(super) struct RunArgs {
     ///
     /// This directory is also used to write cached results during repo discovery.
     pub(super) font_cache: PathBuf,
-    /// Path to local checkout of google/fonts repository
-    #[arg(short, long)]
-    pub(super) fonts_repo: Option<PathBuf>,
     /// Optional path to write out results (as json)
     #[arg(short = 'o', long = "out")]
     pub(super) out_path: Option<PathBuf>,
