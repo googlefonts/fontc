@@ -2,6 +2,8 @@
 <glyph name="manual-component" format="2">
   <advance width="600"/>
   <unicode hex="003D"/>
+  <anchor x="279" y="286" name="_top"/>
+  <anchor x="273" y="411" name="top"/>
   <outline>
     <component base="hyphen" yOffset="100"/>
     <component base="hyphen"/>
