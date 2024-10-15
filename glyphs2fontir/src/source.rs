@@ -127,6 +127,8 @@ impl GlyphsIrSource {
             superscript_x_size: font.superscript_x_size,
             superscript_y_offset: font.superscript_y_offset,
             superscript_y_size: font.superscript_y_size,
+            unicode_range_bits: font.unicode_range_bits.clone(),
+            codepage_range_bits: font.codepage_range_bits.clone(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -176,6 +178,8 @@ impl GlyphsIrSource {
             superscript_x_size: font.superscript_x_size,
             superscript_y_offset: font.superscript_y_offset,
             superscript_y_size: font.superscript_y_size,
+            unicode_range_bits: None,
+            codepage_range_bits: None,
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -450,6 +454,15 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         // Default per <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
         static_metadata.misc.fs_type = font.fs_type.or(Some(1 << 3));
+
+        static_metadata.misc.unicode_range_bits = font
+            .unicode_range_bits
+            .as_ref()
+            .map(|bits| bits.iter().copied().collect());
+        static_metadata.misc.codepage_range_bits = font
+            .codepage_range_bits
+            .as_ref()
+            .map(|bits| bits.iter().copied().collect());
 
         static_metadata.misc.version_major = font.version_major;
         static_metadata.misc.version_minor = font.version_minor;
