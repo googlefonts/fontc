@@ -434,6 +434,7 @@ impl CustomParameters {
             return None;
         };
         Some(bits)
+    }
 
     fn panose(&self) -> Option<&Vec<i64>> {
         let Some(CustomParameterValue::Panose(values)) = self.get("panose") else {
@@ -567,6 +568,7 @@ impl FromPlist for CustomParameters {
                                 };
                                 value =
                                     Some(CustomParameterValue::CodepageRange(tokenizer.parse()?));
+                            }
                             _ if name == Some(String::from("panose")) => {
                                 let Token::OpenParen = peek else {
                                     return Err(Error::UnexpectedChar('('));
