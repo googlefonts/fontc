@@ -26,10 +26,29 @@ Name = Weight;
 Tag = wght;
 }
 );
+},
+{
+name = unicodeRanges;
+value = (
+0,
+28,
+52,
+56,
+122
+);
+},
+{
+name = codePageRanges;
+value = (
+"1252",
+"1250",
+"949",
+"437"
+);
 }
 );
 date = "2022-12-01 04:52:20 +0000";
-familyName = WghtVar;
+familyName = WghtVarOS2;
 fontMaster = (
 {
 alignmentZones = (

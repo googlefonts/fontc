@@ -20,4 +20,6 @@ pub enum Error {
     NotAGlyphsPackage(PathBuf),
     #[error("Invalid plist")]
     WorstPlistEver(#[from] crate::plist::Error),
+    #[error("Invalid code page {0}")]
+    InvalidCodePage(u32),
 }

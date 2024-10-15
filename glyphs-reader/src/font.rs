@@ -86,6 +86,8 @@ pub struct Font {
     pub superscript_y_offset: Option<i64>,
     pub superscript_y_size: Option<i64>,
 
+    pub unicode_range_bits: Option<BTreeSet<u32>>,
+    pub codepage_range_bits: Option<BTreeSet<u32>>,
     pub panose: Option<Vec<i64>>,
 }
 
@@ -420,6 +422,20 @@ impl CustomParameters {
         Some(bits)
     }
 
+    fn unicode_range(&self) -> Option<&Vec<i64>> {
+        let Some(CustomParameterValue::UnicodeRange(bits)) = self.get("unicodeRanges") else {
+            return None;
+        };
+        Some(bits)
+    }
+
+    fn codepage_range(&self) -> Option<&Vec<i64>> {
+        let Some(CustomParameterValue::CodepageRange(bits)) = self.get("codePageRanges") else {
+            return None;
+        };
+        Some(bits)
+    }
+
     fn panose(&self) -> Option<&Vec<i64>> {
         let Some(CustomParameterValue::Panose(values)) = self.get("panose") else {
             return None;
@@ -439,6 +455,8 @@ enum CustomParameterValue {
     GlyphOrder(Vec<SmolStr>),
     VirtualMaster(Vec<AxisLocation>),
     FsType(Vec<i64>),
+    UnicodeRange(Vec<i64>),
+    CodepageRange(Vec<i64>),
     Panose(Vec<i64>),
 }
 
@@ -536,6 +554,20 @@ impl FromPlist for CustomParameters {
                                     return Err(Error::UnexpectedChar('('));
                                 };
                                 value = Some(CustomParameterValue::FsType(tokenizer.parse()?));
+                            }
+                            _ if name == Some(String::from("unicodeRanges")) => {
+                                let Token::OpenParen = peek else {
+                                    return Err(Error::UnexpectedChar('('));
+                                };
+                                value =
+                                    Some(CustomParameterValue::UnicodeRange(tokenizer.parse()?));
+                            }
+                            _ if name == Some(String::from("codePageRanges")) => {
+                                let Token::OpenParen = peek else {
+                                    return Err(Error::UnexpectedChar('('));
+                                };
+                                value =
+                                    Some(CustomParameterValue::CodepageRange(tokenizer.parse()?));
                             }
                             _ if name == Some(String::from("panose")) => {
                                 let Token::OpenParen = peek else {
@@ -2154,6 +2186,48 @@ impl Instance {
     }
 }
 
+/// Glyphs appears to use code page identifiers rather than bits
+///
+/// <https://learn.microsoft.com/en-us/typography/opentype/spec/os2#ulcodepagerange>
+fn codepage_range_bit(codepage: u32) -> Result<u32, Error> {
+    Ok(match codepage {
+        1252 => 0,  // Latin 1
+        1250 => 1,  // Latin 2: Eastern Europe
+        1251 => 2,  // Cyrillic
+        1253 => 3,  // Greek
+        1254 => 4,  // Turkish
+        1255 => 5,  // Hebrew
+        1256 => 6,  // Arabic
+        1257 => 7,  // Windows Baltic
+        1258 => 8,  // Vietnamese
+        874 => 16,  // Thai
+        932 => 17,  // JIS/Japan
+        936 => 18,  // Chinese: Simplified PRC and Singapore
+        949 => 19,  // Korean Wansung
+        950 => 20,  // Chinese: Traditional Taiwan and Hong Kong SAR
+        1361 => 21, // Korean Johab
+        869 => 48,  // IBM Greek
+        866 => 49,  // MS-DOS Russian
+        865 => 50,  // MS-DOS Nordic
+        864 => 51,  // Arabic
+        863 => 52,  //	MS-DOS Canadian French
+        862 => 53,  //		Hebrew
+        861 => 54,  //		MS-DOS Icelandic
+        860 => 55,  //		MS-DOS Portuguese
+        857 => 56,  //		IBM Turkish
+        855 => 57,  //	IBM Cyrillic; primarily Russian
+        852 => 58,  //		Latin 2
+        775 => 59,  //		MS-DOS Baltic
+        737 => 60,  //	Greek; former 437 G
+        708 => 61,  //	Arabic; ASMO 708
+        850 => 62,  //	WE/Latin 1
+        437 => 63,  //	US
+
+        v if v < 64 => v, // an actual bit
+        _ => return Err(Error::InvalidCodePage(codepage)),
+    })
+}
+
 impl TryFrom<RawFont> for Font {
     type Error = Error;
 
@@ -2226,6 +2300,21 @@ impl TryFrom<RawFont> for Font {
             .custom_parameters
             .fs_type()
             .map(|bits| bits.iter().map(|bit| 1 << bit).sum());
+
+        let unicode_range_bits = from
+            .custom_parameters
+            .unicode_range()
+            .map(|bits| bits.iter().map(|b| *b as u32).collect());
+
+        let codepage_range_bits = from
+            .custom_parameters
+            .codepage_range()
+            .map(|bits| {
+                bits.iter()
+                    .map(|b| codepage_range_bit(*b as u32))
+                    .collect::<Result<_, Error>>()
+            })
+            .transpose()?;
 
         let panose = from.custom_parameters.panose().cloned();
 
@@ -2372,6 +2461,8 @@ impl TryFrom<RawFont> for Font {
             superscript_x_size,
             superscript_y_offset,
             superscript_y_size,
+            unicode_range_bits,
+            codepage_range_bits,
             panose,
         })
     }
@@ -2651,19 +2742,21 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
         let filename = format!("{name}.glyphs");
         let pkgname = format!("{name}.glyphspackage");
-        let g2 = Font::load(&glyphs2_dir().join(filename.clone())).unwrap();
-        let g3 = Font::load(&glyphs3_dir().join(filename.clone())).unwrap();
+        let g2_file = glyphs2_dir().join(filename.clone());
+        let g3_file = glyphs3_dir().join(filename.clone());
+        let g2 = Font::load(&g2_file).unwrap();
+        let g3 = Font::load(&g3_file).unwrap();
 
         // Handy if troubleshooting
         std::fs::write("/tmp/g2.glyphs.txt", format!("{g2:#?}")).unwrap();
         std::fs::write("/tmp/g3.glyphs.txt", format!("{g3:#?}")).unwrap();
 
         // Assert fields that often don't match individually before doing the whole struct for nicer diffs
-        assert_eq!(g2.axes, g3.axes);
+        assert_eq!(g2.axes, g3.axes, "axes mismatch {g2_file:?} vs {g3_file:?}");
         for (g2m, g3m) in g2.masters.iter().zip(g3.masters.iter()) {
-            assert_eq!(g2m, g3m);
+            assert_eq!(g2m, g3m, "master mismatch {g2_file:?} vs {g3_file:?}");
         }
-        assert_eq!(g2, g3, "g2 should match g3");
+        assert_eq!(g2, g3, "g2 should match g3 {g2_file:?} vs {g3_file:?}");
 
         if has_package {
             let g2_pkg = Font::load(&glyphs2_dir().join(pkgname.clone())).unwrap();

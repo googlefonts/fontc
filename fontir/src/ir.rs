@@ -124,6 +124,12 @@ pub struct MiscMetadata {
     pub created: Option<DateTime<Utc>>,
 
     pub panose: Option<Panose>,
+
+    // Allows source to explicitly control bits. <https://github.com/googlefonts/fontc/issues/1027>
+    pub unicode_range_bits: Option<HashSet<u32>>,
+
+    // Allows source to explicitly control bits. <https://github.com/googlefonts/fontc/issues/1027>
+    pub codepage_range_bits: Option<HashSet<u32>>,
 }
 
 /// PANOSE bytes
@@ -464,6 +470,8 @@ impl StaticMetadata {
                 head_flags: 3,
                 created: None,
                 panose: None,
+                unicode_range_bits: None,
+                codepage_range_bits: None,
             },
         })
     }
@@ -2124,6 +2132,8 @@ mod tests {
                 lowest_rec_ppm: 42,
                 created: None,
                 panose: None,
+                unicode_range_bits: None,
+                codepage_range_bits: None,
             },
             number_values: Default::default(),
         }

@@ -3217,4 +3217,51 @@ mod tests {
             )
         );
     }
+
+    fn assert_expected_unicode_ranges(source: &str) {
+        let compile = TestCompile::compile_source(source);
+        let font = compile.font();
+        let os2 = font.os2().unwrap();
+
+        assert_eq!(
+            [1 | 1 << 28, 1 << 20 | 1 << 24, 0, 1 << 26],
+            [
+                os2.ul_unicode_range_1(),
+                os2.ul_unicode_range_2(),
+                os2.ul_unicode_range_3(),
+                os2.ul_unicode_range_4()
+            ]
+        );
+    }
+
+    #[test]
+    fn obeys_source_unicode_ranges_glyphs() {
+        assert_expected_unicode_ranges("glyphs3/WghtVar_OS2.glyphs");
+    }
+
+    #[test]
+    fn obeys_source_unicode_ranges_designspace() {
+        assert_expected_unicode_ranges("designspace_from_glyphs/WghtVarOS2.designspace");
+    }
+
+    fn assert_expected_codepage_ranges(source: &str) {
+        let compile = TestCompile::compile_source(source);
+        let font = compile.font();
+        let os2 = font.os2().unwrap();
+
+        assert_eq!(
+            [Some(1 | 1 << 1 | 1 << 19), Some(1 << 31)],
+            [os2.ul_code_page_range_1(), os2.ul_code_page_range_2(),]
+        );
+    }
+
+    #[test]
+    fn obeys_source_codepage_ranges_glyphs() {
+        assert_expected_codepage_ranges("glyphs3/WghtVar_OS2.glyphs");
+    }
+
+    #[test]
+    fn obeys_source_codepage_ranges_designspace() {
+        assert_expected_codepage_ranges("designspace_from_glyphs/WghtVarOS2.designspace");
+    }
 }

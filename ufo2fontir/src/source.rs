@@ -964,6 +964,15 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 .unwrap_or(1_u16 << 2),
         );
 
+        static_metadata.misc.unicode_range_bits = font_info_at_default
+            .open_type_os2_unicode_ranges
+            .as_ref()
+            .map(|bits| bits.iter().map(|b| *b as u32).collect());
+        static_metadata.misc.codepage_range_bits = font_info_at_default
+            .open_type_os2_code_page_ranges
+            .as_ref()
+            .map(|bits| bits.iter().map(|b| *b as u32).collect());
+
         if let Some(ot_panose) = &font_info_at_default.open_type_os2_panose {
             static_metadata.misc.panose = Some(Panose {
                 family_type: ot_panose.family_type as u8,

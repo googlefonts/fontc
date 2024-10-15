@@ -306,11 +306,18 @@ fn add_unicode_range_bits(add_to: &mut HashSet<u32>, codepoint: u32) {
 }
 
 /// <https://github.com/fonttools/fonttools/blob/47813b217c1f8bc343c094776020b4f32fc024b0/Lib/fontTools/ttLib/tables/O_S_2f_2.py#L317-L334>
-fn apply_unicode_range(os2: &mut Os2, codepoints: &HashSet<u32>) {
-    let mut bits = HashSet::new();
-    for codepoint in codepoints {
-        add_unicode_range_bits(&mut bits, *codepoint);
-    }
+fn apply_unicode_range(
+    os2: &mut Os2,
+    assigned_bits: Option<HashSet<u32>>,
+    codepoints: &HashSet<u32>,
+) {
+    let bits = assigned_bits.unwrap_or_else(|| {
+        let mut bits = HashSet::new();
+        for codepoint in codepoints {
+            add_unicode_range_bits(&mut bits, *codepoint);
+        }
+        bits
+    });
 
     let mut unicode_range = [0u32; 4];
     for bit in bits {
@@ -331,7 +338,7 @@ fn apply_unicode_range(os2: &mut Os2, codepoints: &HashSet<u32>) {
 /// This is a direct translation from FontTools
 ///   <https://github.com/googlefonts/ufo2ft/blob/main/Lib/ufo2ft/util.py#L357-L449>
 /// FontTools is in turn a translation of <https://github.com/fontforge/fontforge/blob/7b2c074/fontforge/tottf.c#L3158>
-fn codepage_range_bits(codepoints: &HashSet<u32>) -> HashSet<usize> {
+fn codepage_range_bits(codepoints: &HashSet<u32>) -> HashSet<u32> {
     let mut bits = HashSet::new();
 
     let chars = codepoints
@@ -459,14 +466,18 @@ fn codepage_range_bits(codepoints: &HashSet<u32>) -> HashSet<usize> {
     bits
 }
 
-fn apply_codepage_range(os2: &mut Os2, codepoints: &HashSet<u32>) {
-    let bits = codepage_range_bits(codepoints);
+fn apply_codepage_range(
+    os2: &mut Os2,
+    assigned_bits: Option<HashSet<u32>>,
+    codepoints: &HashSet<u32>,
+) {
+    let bits = assigned_bits.unwrap_or_else(|| codepage_range_bits(codepoints));
     let mut codepage_range = [0u32; 2];
     for bit in bits {
         let idx = bit / 32;
         let bit = bit - idx * 32;
         assert!(bit <= 32, "{bit}");
-        codepage_range[idx] |= 1 << bit;
+        codepage_range[idx as usize] |= 1 << bit;
     }
     os2.ul_code_page_range_1 = Some(codepage_range[0]);
     os2.ul_code_page_range_2 = Some(codepage_range[1]);
@@ -573,8 +584,16 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
         };
         apply_panose(&mut os2, static_metadata.misc.panose.as_ref());
         apply_metrics(&mut os2, &metrics);
-        apply_unicode_range(&mut os2, &codepoints);
-        apply_codepage_range(&mut os2, &codepoints);
+        apply_unicode_range(
+            &mut os2,
+            static_metadata.misc.unicode_range_bits.clone(),
+            &codepoints,
+        );
+        apply_codepage_range(
+            &mut os2,
+            static_metadata.misc.codepage_range_bits.clone(),
+            &codepoints,
+        );
         apply_min_max_char_index(&mut os2, &codepoints);
 
         apply_max_context(&mut os2, context);
