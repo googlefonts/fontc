@@ -88,6 +88,7 @@ pub struct Font {
 
     pub unicode_range_bits: Option<BTreeSet<u32>>,
     pub codepage_range_bits: Option<BTreeSet<u32>>,
+    pub panose: Option<Vec<i64>>,
 }
 
 /// master id => { (name or class, name or class) => adjustment }
@@ -433,6 +434,12 @@ impl CustomParameters {
             return None;
         };
         Some(bits)
+
+    fn panose(&self) -> Option<&Vec<i64>> {
+        let Some(CustomParameterValue::Panose(values)) = self.get("panose") else {
+            return None;
+        };
+        Some(values)
     }
 }
 
@@ -449,6 +456,7 @@ enum CustomParameterValue {
     FsType(Vec<i64>),
     UnicodeRange(Vec<i64>),
     CodepageRange(Vec<i64>),
+    Panose(Vec<i64>),
 }
 
 /// Hand-parse these because they take multiple shapes
@@ -559,6 +567,11 @@ impl FromPlist for CustomParameters {
                                 };
                                 value =
                                     Some(CustomParameterValue::CodepageRange(tokenizer.parse()?));
+                            _ if name == Some(String::from("panose")) => {
+                                let Token::OpenParen = peek else {
+                                    return Err(Error::UnexpectedChar('('));
+                                };
+                                value = Some(CustomParameterValue::Panose(tokenizer.parse()?));
                             }
                             _ => tokenizer.skip_rec()?,
                         }
@@ -2301,6 +2314,8 @@ impl TryFrom<RawFont> for Font {
             })
             .transpose()?;
 
+        let panose = from.custom_parameters.panose().cloned();
+
         let mut names = BTreeMap::new();
         for name in from.properties {
             if name.value.is_some() {
@@ -2446,6 +2461,7 @@ impl TryFrom<RawFont> for Font {
             superscript_y_size,
             unicode_range_bits,
             codepage_range_bits,
+            panose,
         })
     }
 }

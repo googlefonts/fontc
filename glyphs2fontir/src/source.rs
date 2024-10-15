@@ -129,6 +129,7 @@ impl GlyphsIrSource {
             superscript_y_size: font.superscript_y_size,
             unicode_range_bits: font.unicode_range_bits.clone(),
             codepage_range_bits: font.codepage_range_bits.clone(),
+            panose: font.panose.clone(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -180,6 +181,7 @@ impl GlyphsIrSource {
             superscript_y_size: font.superscript_y_size,
             unicode_range_bits: None,
             codepage_range_bits: None,
+            panose: None,
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -463,6 +465,15 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
             .codepage_range_bits
             .as_ref()
             .map(|bits| bits.iter().copied().collect());
+
+        if let Some(raw_panose) = font.panose.as_ref() {
+            let mut bytes = [0u8; 10];
+            bytes
+                .iter_mut()
+                .zip(raw_panose)
+                .for_each(|(dst, src)| *dst = *src as u8);
+            static_metadata.misc.panose = Some(bytes.into());
+        }
 
         static_metadata.misc.version_major = font.version_major;
         static_metadata.misc.version_minor = font.version_minor;
@@ -1123,7 +1134,7 @@ mod tests {
     };
     use glyphs_reader::{glyphdata::Category, Font};
     use indexmap::IndexSet;
-    use ir::test_helpers::Round2;
+    use ir::{test_helpers::Round2, Panose};
     use write_fonts::types::{NameId, Tag};
 
     use crate::source::names;
@@ -1950,5 +1961,12 @@ mod tests {
             (500.0, 700.0, 800.0, -200.0),
             (x_height, cap_height, ascender, descender)
         );
+    }
+
+    #[test]
+    fn captures_panose() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanose.glyphs"));
+        let expected: Panose = [2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into();
+        assert_eq!(Some(expected), context.static_metadata.get().misc.panose);
     }
 }
