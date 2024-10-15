@@ -159,8 +159,8 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             html! {
                 td.fontc_err { a href = "#fontc-failures" {  (run.stats.fontc_failed) " " (fontc_err_diff)  } }
                 td.fontmake_err { a href = "#fontmake-failures" {  (run.stats.fontmake_failed) " " (fontmake_err_diff)  } }
-                td.both_err { a href = "both-failures" {  (run.stats.both_failed) " " (both_err_diff) } }
-                td.other_err { a href = "other-failures" {  (run.stats.other_failure) " " (other_err_diff)  } }
+                td.both_err { a href = "#both-failures" {  (run.stats.both_failed) " " (both_err_diff) } }
+                td.other_err { a href = "#other-failures" {  (run.stats.other_failure) " " (other_err_diff)  } }
             }
         } else {
             html! {
