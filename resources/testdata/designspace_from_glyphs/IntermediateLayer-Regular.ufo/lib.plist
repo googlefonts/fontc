@@ -6,21 +6,19 @@
     <array>
       <dict>
         <key>class</key>
+        <string>CursFeatureWriter</string>
+      </dict>
+      <dict>
+        <key>class</key>
         <string>KernFeatureWriter</string>
       </dict>
       <dict>
         <key>class</key>
-        <string>ContextualMarkFeatureWriter</string>
-        <key>module</key>
-        <string>glyphsLib.featureWriters.markFeatureWriter</string>
+        <string>MarkFeatureWriter</string>
       </dict>
       <dict>
         <key>class</key>
         <string>GdefFeatureWriter</string>
-      </dict>
-      <dict>
-        <key>class</key>
-        <string>CursFeatureWriter</string>
       </dict>
     </array>
     <key>com.github.googlei18n.ufo2ft.filters</key>
