@@ -85,6 +85,8 @@ pub struct Font {
     pub superscript_x_size: Option<i64>,
     pub superscript_y_offset: Option<i64>,
     pub superscript_y_size: Option<i64>,
+
+    pub panose: Option<Vec<i64>>,
 }
 
 /// master id => { (name or class, name or class) => adjustment }
@@ -417,6 +419,13 @@ impl CustomParameters {
         };
         Some(bits)
     }
+
+    fn panose(&self) -> Option<&Vec<i64>> {
+        let Some(CustomParameterValue::Panose(values)) = self.get("panose") else {
+            return None;
+        };
+        Some(values)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -430,6 +439,7 @@ enum CustomParameterValue {
     GlyphOrder(Vec<SmolStr>),
     VirtualMaster(Vec<AxisLocation>),
     FsType(Vec<i64>),
+    Panose(Vec<i64>),
 }
 
 /// Hand-parse these because they take multiple shapes
@@ -526,6 +536,12 @@ impl FromPlist for CustomParameters {
                                     return Err(Error::UnexpectedChar('('));
                                 };
                                 value = Some(CustomParameterValue::FsType(tokenizer.parse()?));
+                            }
+                            _ if name == Some(String::from("panose")) => {
+                                let Token::OpenParen = peek else {
+                                    return Err(Error::UnexpectedChar('('));
+                                };
+                                value = Some(CustomParameterValue::Panose(tokenizer.parse()?));
                             }
                             _ => tokenizer.skip_rec()?,
                         }
@@ -2211,6 +2227,8 @@ impl TryFrom<RawFont> for Font {
             .fs_type()
             .map(|bits| bits.iter().map(|bit| 1 << bit).sum());
 
+        let panose = from.custom_parameters.panose().cloned();
+
         let mut names = BTreeMap::new();
         for name in from.properties {
             if name.value.is_some() {
@@ -2354,6 +2372,7 @@ impl TryFrom<RawFont> for Font {
             superscript_x_size,
             superscript_y_offset,
             superscript_y_size,
+            panose,
         })
     }
 }

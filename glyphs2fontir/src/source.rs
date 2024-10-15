@@ -127,6 +127,7 @@ impl GlyphsIrSource {
             superscript_x_size: font.superscript_x_size,
             superscript_y_offset: font.superscript_y_offset,
             superscript_y_size: font.superscript_y_size,
+            panose: font.panose.clone(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -176,6 +177,7 @@ impl GlyphsIrSource {
             superscript_x_size: font.superscript_x_size,
             superscript_y_offset: font.superscript_y_offset,
             superscript_y_size: font.superscript_y_size,
+            panose: None,
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -450,6 +452,15 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         // Default per <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
         static_metadata.misc.fs_type = font.fs_type.or(Some(1 << 3));
+
+        if let Some(raw_panose) = font.panose.as_ref() {
+            let mut bytes = [0u8; 10];
+            bytes
+                .iter_mut()
+                .zip(raw_panose)
+                .for_each(|(dst, src)| *dst = *src as u8);
+            static_metadata.misc.panose = Some(bytes.into());
+        }
 
         static_metadata.misc.version_major = font.version_major;
         static_metadata.misc.version_minor = font.version_minor;
@@ -1110,7 +1121,7 @@ mod tests {
     };
     use glyphs_reader::{glyphdata::Category, Font};
     use indexmap::IndexSet;
-    use ir::test_helpers::Round2;
+    use ir::{test_helpers::Round2, Panose};
     use write_fonts::types::{NameId, Tag};
 
     use crate::source::names;
@@ -1937,5 +1948,12 @@ mod tests {
             (500.0, 700.0, 800.0, -200.0),
             (x_height, cap_height, ascender, descender)
         );
+    }
+
+    #[test]
+    fn captures_panose() {
+        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanose.glyphs"));
+        let expected: Panose = [2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into();
+        assert_eq!(Some(expected), context.static_metadata.get().misc.panose);
     }
 }
