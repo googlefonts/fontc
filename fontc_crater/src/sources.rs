@@ -19,10 +19,7 @@ pub(crate) struct RepoList {
 }
 
 impl RepoList {
-    pub(crate) fn get_or_create(
-        cache_dir: &Path,
-        fonts_repo: Option<&Path>,
-    ) -> Result<Self, Error> {
+    pub(crate) fn get_or_create(cache_dir: &Path) -> Result<Self, Error> {
         let cache_file_path = cache_dir.join(CACHED_REPO_INFO_FILE);
         if let Some(cached_list) = Self::load(&cache_file_path)? {
             let stale = cached_list
@@ -35,8 +32,7 @@ impl RepoList {
             }
         }
 
-        let mut sources =
-            google_fonts_sources::discover_sources(fonts_repo, Some(cache_dir), false);
+        let mut sources = google_fonts_sources::discover_sources(None, Some(cache_dir), false);
 
         // only keep sources for which we have a repo + config
         sources.retain(|s| !s.config_files.is_empty());

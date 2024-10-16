@@ -44,7 +44,7 @@ fn run(args: &Args) -> Result<(), Error> {
     if !run_args.font_cache.exists() {
         try_create_dir(&run_args.font_cache)?;
     }
-    let sources = RepoList::get_or_create(&run_args.font_cache, run_args.fonts_repo.as_deref())?;
+    let sources = RepoList::get_or_create(&run_args.font_cache)?;
 
     let pruned = run_args.n_fonts.map(|n| prune_sources(&sources.sources, n));
     let inputs = pruned.as_ref().unwrap_or(&sources.sources);
