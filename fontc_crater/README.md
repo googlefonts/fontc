@@ -7,13 +7,16 @@ fonts.
 
 
 ```sh
-$ cargo run --release -p=fontc_crater -- compile FONT_CACHE --fonts-repo GOOGLE/FONTS  -o results.json
-```
+# By default font repositories and results will be written to ~/.fontc_crater_cache
 
-or, to run ttx_diff (comparing with fontmake)
+# Just see if we can compile with fontc
+$ cargo run --release -p=fontc_crater -- compile
 
-```sh
-$ cargo run --release -p=fontc_crater -- diff FONT_CACHE --fonts-repo GOOGLE/FONTS  -o results.json
+# To take it for a test-spin do a limited # of fonts
+$ cargo run --release -p=fontc_crater -- compile --limit 8
+
+# Build with fontmake and fontc and compare the results with ttx_diff
+$ cargo run --release -p=fontc_crater -- diff
 ```
 
 This is a binary for executing font compilation (and possibly other tasks) in
@@ -39,7 +42,7 @@ You can generate a report from the saved json by passing it back to
 `fontc_crater`:
 
 ```sh
-$ cargo run -p fontc_crater -- report results.json
+$ cargo run -p fontc_crater -- report
 ```
 
 ## CI
@@ -47,6 +50,17 @@ $ cargo run -p fontc_crater -- report results.json
 This binary is also run in CI. In that case, the execution is managed by a
 script in the [`fontc_crater` repo][crater-repo] and results are posted to
 [github pages][crater-results].
+
+To run in CI mode locally to play with the html output:
+
+```shell
+# clone git@github.com:googlefonts/fontc_crater.git somewhere, we'll assume at ../fontc_crater
+# CI currently has it's own format for the repo list, use the file from ^
+
+$ cargo run --release -p=fontc_crater -- ci ../fontc_crater/gf-repos-2024-08-12.json -o ../fontc_crater/results/ --html_only
+
+# Review ../fontc_crater/results/index.html (NOT ../fontc_crater/index.html)
+```
 
 [google-fonts-sources]: https://github.com/googlefonts/google-fonts-sources
 [google/fonts]: https://github.com/google/fonts

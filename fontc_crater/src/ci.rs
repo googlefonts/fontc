@@ -94,6 +94,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     }
 
     let inputs: Vec<RepoInfo> = super::try_read_json(&args.to_run)?;
+
     let out_file = result_path_for_current_date();
     let out_path = args.out_dir.join(&out_file);
     // for now we are going to be cloning each repo freshly
