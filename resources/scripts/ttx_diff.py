@@ -398,13 +398,23 @@ def remove_mark_and_kern_lookups(ttx):
     if gpos is None:
         return
     for lookup in gpos.xpath("//Lookup"):
-        lookup_type = int(lookup.find("LookupType").attrib["value"])
+        lookup_type_el = lookup.find("LookupType")
+        lookup_type = int(lookup_type_el.attrib["value"])
+        is_extension = lookup_type == 9
+        if is_extension:
+            # For extension lookups, take the lookup type of the wrapped subtables;
+            # all extension subtables share the same lookup type so checking only
+            # the first is enough.
+            ext_subtable = lookup.find("ExtensionPos")
+            lookup_type = int(ext_subtable.find("ExtensionLookupType").attrib["value"])
         if lookup_type not in LOOKUPS_TO_SKIP:
             continue
         # remove all the elements but the type:
         to_remove = [child for child in lookup if child.tag != "LookupType"]
         for child in to_remove:
             lookup.remove(child)
+        if is_extension:
+            lookup_type_el.attrib["value"] = str(lookup_type)
 
 
 def reduce_diff_noise(build_dir, fontc, fontmake):
