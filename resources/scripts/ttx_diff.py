@@ -412,7 +412,10 @@ def remove_mark_and_kern_lookups(ttx):
     gpos = ttx.find("GPOS")
     if gpos is None:
         return
-    for lookup in gpos.xpath("//Lookup"):
+    # './/Lookup' xpath selects all the 'Lookup' elements that are descendants of
+    # the current 'GPOS' node - no matter where they are under it.
+    # Most importantly, this _excludes_ GSUB lookups, which shouldn't be pruned.
+    for lookup in gpos.xpath(".//Lookup"):
         lookup_type_el = lookup.find("LookupType")
         lookup_type = int(lookup_type_el.attrib["value"])
         is_extension = lookup_type == 9
