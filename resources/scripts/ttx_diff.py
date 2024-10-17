@@ -595,7 +595,7 @@ def resolve_source(source: str) -> Path:
         source_url = urlparse(source)
         repo_path = source_url.fragment
         last_path_segment = source_url.path.split("/")[-1]
-        local_repo = (Path(__file__).parent / ".." / ".." / "font_repos" / last_path_segment).resolve()
+        local_repo = (Path.home() / ".fontc_crater_cache" / last_path_segment).resolve()
         if not local_repo.parent.is_dir():
             local_repo.parent.mkdir()
         if not local_repo.is_dir():
