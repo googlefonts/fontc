@@ -1,0 +1,56 @@
+{
+.appVersion = "3219";
+familyName = MatrixComponent;
+fontMaster = (
+{
+id = m01;
+}
+);
+glyphs = (
+{
+glyphname = infinity;
+layers = (
+{
+components = (
+{
+name = eight;
+transform = "{0.9, -0.1, -0.1, 0.9, 500, 300}";
+}
+);
+layerId = "m01";
+width = 705;
+}
+);
+note = infinity;
+unicode = 221E;
+},
+{
+glyphname = eight;
+layers = (
+{
+layerId = "m01";
+paths = (
+{
+closed = 1;
+nodes = (
+"250 -20 OFFCURVE",
+"300 0 OFFCURVE",
+"350 50 CURVE SMOOTH",
+"400 50 OFFCURVE",
+"421 127 OFFCURVE",
+"421 192 CURVE SMOOTH",
+);
+}
+);
+width = 474;
+}
+);
+note = eight;
+unicode = 0038;
+}
+);
+
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}
