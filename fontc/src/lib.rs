@@ -588,7 +588,7 @@ mod tests {
             types::F2Dot14,
             FontData, FontRead, FontReadWithArgs, FontRef, TableProvider,
         },
-        GlyphId16, MetadataProvider, Tag,
+        GlyphId, GlyphId16, MetadataProvider, Tag,
     };
     use tempfile::{tempdir, TempDir};
     use write_fonts::{
@@ -3263,5 +3263,47 @@ mod tests {
     #[test]
     fn obeys_source_codepage_ranges_designspace() {
         assert_expected_codepage_ranges("designspace_from_glyphs/WghtVarOS2.designspace");
+    }
+
+    #[test]
+    fn bbox_of_nested_components() {
+        let compile = TestCompile::compile_source("glyphs2/MatrixComponent.glyphs");
+        let font = compile.font();
+        let glyf = font.glyf().unwrap();
+        let loca = font.loca(false).unwrap();
+
+        // original glyph and transformed derivatives sketched in https://codepen.io/rs42/pen/wvVqVPL?editors=1000
+        // "correct" values taken from fontmake compilation
+
+        let expected_rot30_bbox = Rect::new(75.0, 107.0, 359.0, 300.0);
+        let expected_rot60more_bbox = Rect::new(50.0, 149.0, 150.0, 449.0);
+
+        let gids = ["rot30", "rot60more"]
+            .iter()
+            .map(|gn| {
+                compile
+                    .fe_context
+                    .glyph_order
+                    .get()
+                    .glyph_id(&GlyphName::new(gn))
+                    .map(|gid16| GlyphId::new(gid16.to_u32()))
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let boxes = gids
+            .iter()
+            .map(|gid| loca.get_glyf(*gid, &glyf).unwrap().unwrap())
+            .map(|glyf| {
+                Rect::new(
+                    glyf.x_min() as f64,
+                    glyf.y_min() as f64,
+                    glyf.x_max() as f64,
+                    glyf.y_max() as f64,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(vec![expected_rot30_bbox, expected_rot60more_bbox], boxes);
     }
 }

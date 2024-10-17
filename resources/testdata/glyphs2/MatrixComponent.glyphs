@@ -8,24 +8,40 @@ id = m01;
 );
 glyphs = (
 {
-glyphname = infinity;
+glyphname = rot60more;
 layers = (
 {
 components = (
 {
-name = eight;
-transform = "{0.9, -0.1, -0.1, 0.9, 500, 300}";
+name = rot30;
+transform = "{0.5, 0.866, -0.866, 0.5, 179.9, -11.6}";
 }
 );
 layerId = "m01";
 width = 705;
 }
 );
-note = infinity;
+unicode = 221D;
+},
+{
+glyphname = rot30;
+layers = (
+{
+components = (
+{
+name = triangle;
+
+transform = "{0.866, 0.5, -0.5, 0.866, 88.4, -29.9}";
+}
+);
+layerId = "m01";
+width = 705;
+}
+);
 unicode = 221E;
 },
 {
-glyphname = eight;
+glyphname = triangle;
 layers = (
 {
 layerId = "m01";
@@ -33,19 +49,15 @@ paths = (
 {
 closed = 1;
 nodes = (
-"250 -20 OFFCURVE",
-"300 0 OFFCURVE",
-"350 50 CURVE SMOOTH",
-"400 50 OFFCURVE",
-"421 127 OFFCURVE",
-"421 192 CURVE SMOOTH",
+"100 100 LINE",
+"400 150 LINE",
+"100 200 LINE",
 );
 }
 );
 width = 474;
 }
 );
-note = eight;
 unicode = 0038;
 }
 );
