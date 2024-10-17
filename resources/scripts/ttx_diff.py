@@ -344,9 +344,7 @@ def stat_like_fontmake(ttx):
     ver.attrib["value"] = "0x00010001"
 
 
-def allow_some_off_by_ones(
-    build_dir, fontc, fontmake, container, name_attr, coord_holder
-):
+def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
     fontmake_num_coords = len(fontmake.xpath(f"//{container}/{coord_holder}"))
     off_by_one_budget = int(FLAGS.off_by_one_budget / 100.0 * fontmake_num_coords)
     spent = 0
@@ -432,7 +430,7 @@ def remove_mark_and_kern_lookups(ttx):
             lookup_type_el.attrib["value"] = str(lookup_type)
 
 
-def reduce_diff_noise(build_dir, fontc, fontmake):
+def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
     sort_fontmake_feature_lookups(fontmake)
     for ttx in (fontc, fontmake):
         # different name ids with the same value is fine
@@ -453,10 +451,10 @@ def reduce_diff_noise(build_dir, fontc, fontmake):
         remove_mark_and_kern_lookups(ttx)
 
     allow_some_off_by_ones(
-        build_dir, fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt"
+        fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt"
     )
     allow_some_off_by_ones(
-        build_dir, fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
+        fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
     )
 
 
