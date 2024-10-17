@@ -42,6 +42,7 @@ import json
 import shutil
 import subprocess
 import sys
+import os
 from urllib.parse import urlparse
 from cdifflib import CSequenceMatcher as SequenceMatcher
 from typing import MutableSequence
@@ -106,9 +107,11 @@ def run(cmd: MutableSequence, working_dir: Path, check=False, **kwargs):
     )
 
 
-def ttx(font_file: Path, can_skip: bool):
+def run_ttx(font_file: Path):
     ttx_file = font_file.with_suffix(".ttx")
-    if can_skip and ttx_file.is_file():
+    # if this exists we're allowed to reuse it
+    if ttx_file.is_file():
+        eprint(f"reusing {ttx_file}")
         return ttx_file
 
     cmd = [
@@ -122,20 +125,25 @@ def ttx(font_file: Path, can_skip: bool):
 
 
 # generate a simple text repr for gpos for this font, with retry
-def simple_gpos_output(cargo_manifest_path: Path, font_file: Path, out_path: Path, can_skip: bool):
+def run_normalizer_gpos(cargo_manifest_path: Path, font_file: Path):
+    out_path = font_file.with_suffix(".markkern.txt")
+    if out_path.exists():
+        eprint(f"reusing {out_path}")
     NUM_RETRIES = 5
-    for i in range(NUM_RETRIES+1):
+    for i in range(NUM_RETRIES + 1):
         try:
-           return simple_gpos_output_impl(cargo_manifest_path, font_file, out_path, can_skip)
+            return try_normalizer_gpos(cargo_manifest_path, font_file, out_path)
         except subprocess.CalledProcessError as e:
             time.sleep(0.1)
             if i >= NUM_RETRIES:
                 raise e
             eprint(f"normalizer failed with code '{e.returncode}'', retrying")
 
-def simple_gpos_output_impl(cargo_manifest_path: Path, font_file: Path, out_path: Path, can_skip: bool):
-    if not (can_skip and out_path.is_file()):
-        temppath = font_file.parent / "markkern.txt"
+
+# we had a bug where this would sometimes hang in mysterious ways, so we may
+# call it multiple times if it fails
+def try_normalizer_gpos(cargo_manifest_path: Path, font_file: Path, out_path: Path):
+    if not out_path.is_file():
         cmd = [
             "timeout",
             "10m",
@@ -147,7 +155,7 @@ def simple_gpos_output_impl(cargo_manifest_path: Path, font_file: Path, out_path
             "--",
             font_file.name,
             "-o",
-            temppath.name,
+            out_path.name,
             "--table",
             "gpos",
         ]
@@ -156,7 +164,6 @@ def simple_gpos_output_impl(cargo_manifest_path: Path, font_file: Path, out_path
             font_file.parent,
             check=True,
         )
-        copy(temppath, out_path)
     with open(out_path) as f:
         return f.read()
 
@@ -170,25 +177,17 @@ class BuildFail(Exception):
 
 
 # run a font compiler
-def build(
-    cmd: MutableSequence, build_dir: Path, build_tool: str, **kwargs
-):
-    if can_skip(build_dir, build_tool):
-        eprint((f"skipping {build_tool}"))
-        return
+def build(cmd: MutableSequence, build_dir: Path, **kwargs):
     output = run(cmd, build_dir, **kwargs)
     if output.returncode != 0:
         raise BuildFail(cmd, output.stderr)
 
 
-# return `true` if we can skip this build tool
-def can_skip(build_dir: Path, build_tool: str) -> bool:
-    try_skip = FLAGS.rebuild not in [build_tool, "both"]
-    ttx_path = build_dir / (build_tool + ".ttx")
-    return try_skip and ttx_path.is_file()
-
-
 def build_fontc(source: Path, fontc_cargo_path: Path, build_dir: Path, compare: str):
+    out_file = build_dir / "fontc.ttf"
+    if out_file.exists():
+        eprint(f"reusing {out_file}")
+        return
     cmd = [
         "cargo",
         "run",
@@ -203,16 +202,20 @@ def build_fontc(source: Path, fontc_cargo_path: Path, build_dir: Path, compare: 
         "--build-dir",
         ".",
         "-o",
-        "fontc.ttf",
+        out_file.name,
         str(source),
     ]
     if compare == _COMPARE_GFTOOLS:
         cmd.append("--flatten-components")
         cmd.append("--decompose-transformed-components")
-    return build(cmd, build_dir, "fontc")
+    build(cmd, build_dir)
 
 
 def build_fontmake(source: Path, build_dir: Path, compare: str):
+    out_file = build_dir / "fontmake.ttf"
+    if out_file.exists():
+        eprint(f"reusing {out_file}")
+        return
     variable = source_is_variable(source)
     buildtype = "variable"
     if not variable:
@@ -222,7 +225,7 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         "-o",
         buildtype,
         "--output-path",
-        "fontmake.ttf",
+        out_file.name,
         "--drop-implied-oncurves",
         # "--keep-direction",
         # no longer required, still useful to get human-readable glyph names in diff
@@ -246,11 +249,7 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         ]
     cmd.append(str(source))
 
-    return build(
-        cmd,
-        build_dir,
-        "fontmake",
-    )
+    build(cmd, build_dir)
 
 def source_is_variable(path: Path) -> bool:
     if path.suffix == ".ufo":
@@ -460,15 +459,10 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
 # returns a dictionary of {"compiler_name":  {"tag": "xml_text"}}
 def generate_output(build_dir: Path, otl_norm_cargo_path: Path, fontmake_ttf: Path, fontc_ttf: Path):
     # don't run ttx or otl-normalizer if we don't have to:
-    can_skip_fontc = can_skip(build_dir, "fontc")
-    can_skip_fontmake = can_skip(build_dir, "fontmake")
-    fontc_ttx = ttx(fontc_ttf, can_skip_fontc)
-    fontmake_ttx = ttx(fontmake_ttf, can_skip_fontmake)
-    fontc_gpos = simple_gpos_output(otl_norm_cargo_path,
-        fontc_ttf, build_dir / "fontc.markkern.txt", can_skip_fontc)
-    fontmake_gpos = simple_gpos_output(otl_norm_cargo_path,
-        fontmake_ttf, build_dir / "fontmake.markkern.txt", can_skip_fontmake
-    )
+    fontc_ttx = run_ttx(fontc_ttf)
+    fontmake_ttx = run_ttx(fontmake_ttf)
+    fontc_gpos = run_normalizer_gpos(otl_norm_cargo_path, fontc_ttf)
+    fontmake_gpos = run_normalizer_gpos(otl_norm_cargo_path, fontmake_ttf)
 
     fontc = etree.parse(fontc_ttx)
     fontmake = etree.parse(fontmake_ttx)
@@ -609,6 +603,19 @@ def resolve_source(source: str) -> Path:
     return source
 
 
+def delete_things_we_must_rebuild(rebuild: str, fontmake_ttf: Path, fontc_ttf: Path):
+    for tool, ttf_path in [("fontmake", fontmake_ttf), ("fontc", fontc_ttf)]:
+        must_rebuild = rebuild in [tool, "both"]
+        if must_rebuild:
+            for path in [
+                ttf_path,
+                ttf_path.with_suffix(".ttx"),
+                ttf_path.with_suffix(".markkern.txt"),
+            ]:
+                if path.exists():
+                    os.remove(path)
+
+
 def main(argv):
     if len(argv) != 2:
         sys.exit("Only one argument, a source file, is expected")
@@ -645,6 +652,13 @@ def main(argv):
 
         failures = dict()
 
+        fontmake_ttf = build_dir / "fontmake.ttf"
+        fontc_ttf = build_dir / "fontc.ttf"
+
+        # we delete all resources that we have to rebuild. The rest of the script
+        # will assume it can reuse anything that still exists.
+        delete_things_we_must_rebuild(FLAGS.rebuild, fontmake_ttf, fontc_ttf)
+
         try:
             build_fontc(source.resolve(), fontc_manifest_path, build_dir, compare)
         except BuildFail as e:
@@ -659,8 +673,6 @@ def main(argv):
         report_errors_and_exit_if_there_were_any(failures)
 
         # if compilation completed, these exist
-        fontmake_ttf = build_dir / "fontmake.ttf"
-        fontc_ttf = build_dir / "fontc.ttf"
         assert fontmake_ttf.is_file(), fontmake_ttf
         assert fontc_ttf.is_file(), fontc_ttf
 
