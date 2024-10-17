@@ -476,7 +476,7 @@ def generate_output(build_dir: Path, otl_norm_cargo_path: Path, fontmake_ttf: Pa
 
     fontc = etree.parse(fontc_ttx)
     fontmake = etree.parse(fontmake_ttx)
-    reduce_diff_noise(build_dir, fontc, fontmake)
+    reduce_diff_noise(fontc, fontmake)
 
     fontc = extract_comparables(fontc, build_dir, "fontc")
     fontmake = extract_comparables(fontmake, build_dir, "fontmake")
