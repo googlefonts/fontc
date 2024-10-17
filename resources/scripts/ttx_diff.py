@@ -62,11 +62,9 @@ MARK_KERN_NAME = "(mark/kern)"
 MAX_ERR_LEN = 1000
 
 
-# we don't print to stdout of we're generating JSON
-def maybe_print(*objects):
-    if FLAGS.json:
-        return
-    print(*objects)
+# print to stderr
+def eprint(*objects):
+    print(*objects, file=sys.stderr)
 
 
 flags.DEFINE_enum(
@@ -97,7 +95,7 @@ flags.DEFINE_string( "outdir", default=None,  help="directory to store generated
 # the caller can check the status via the returned `CompletedProcess` object.
 def run(cmd: MutableSequence, working_dir: Path, check=False, **kwargs):
     cmd_string = " ".join(str(c) for c in cmd)
-    maybe_print(f"  (cd {working_dir} && {cmd_string})")
+    eprint(f"  (cd {working_dir} && {cmd_string})")
     return subprocess.run(
         cmd,
         text=True,
@@ -133,7 +131,7 @@ def simple_gpos_output(cargo_manifest_path: Path, font_file: Path, out_path: Pat
             time.sleep(0.1)
             if i >= NUM_RETRIES:
                 raise e
-            print(f"normalizer failed with code '{e.returncode}'', retrying", file=sys.stderr)
+            eprint(f"normalizer failed with code '{e.returncode}'', retrying")
 
 def simple_gpos_output_impl(cargo_manifest_path: Path, font_file: Path, out_path: Path, can_skip: bool):
     if not (can_skip and out_path.is_file()):
@@ -176,7 +174,7 @@ def build(
     cmd: MutableSequence, build_dir: Path, build_tool: str, **kwargs
 ):
     if can_skip(build_dir, build_tool):
-        maybe_print((f"skipping {build_tool}"))
+        eprint((f"skipping {build_tool}"))
         return
     output = run(cmd, build_dir, **kwargs)
     if output.returncode != 0:
@@ -359,7 +357,7 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
         name = fontmake_container.attrib[name_attr]
         fontc_container = fontc_items.get(name)
         if fontc_container is None:
-            maybe_print(f"no item where {name_attr}='{name}' in {container}")
+            eprint(f"no item where {name_attr}='{name}' in {container}")
             continue
 
         for (fontmake_el, fontc_el) in zip(fontmake_container.iter(), fontc_container.iter()):
@@ -378,15 +376,13 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
                     fontc_el.attrib[attr] = fontmake_el.attrib[attr]
                     spent += 1
                 if spent >= off_by_one_budget:
-                    maybe_print(
+                    eprint(
                         f"WARN: ran out of budget ({off_by_one_budget}) to fix off-by-ones in {container}"
                     )
                     return
 
     if spent > 0:
-        maybe_print(
-            f"INFO fixed {spent} off-by-ones in {container} (budget {off_by_one_budget})"
-        )
+        eprint(f"INFO fixed {spent} off-by-ones in {container} (budget {off_by_one_budget})")
 
 
 # the order of lookups in a feature's lookuplist do not matter;
@@ -584,7 +580,7 @@ def report_errors_and_exit_if_there_were_any(errors: dict):
     for error in errors.values():
         cmd = error["command"]
         stderr = error["stderr"]
-        maybe_print(f"command '{cmd}' failed: '{stderr}'")
+        eprint(f"command '{cmd}' failed: '{stderr}'")
 
     if FLAGS.json:
         print_json({"error": errors})
@@ -645,7 +641,7 @@ def main(argv):
     for compare in comparisons:
         build_dir = (out_dir / compare)
         build_dir.mkdir(parents=True, exist_ok=True)
-        maybe_print(f"Compare {compare} in {build_dir}")
+        eprint(f"Compare {compare} in {build_dir}")
 
         failures = dict()
 
@@ -670,7 +666,7 @@ def main(argv):
 
         output = generate_output(build_dir, otl_norm_manifest_path, fontmake_ttf, fontc_ttf)
         if output["fontc"] == output["fontmake"]:
-            maybe_print("output is identical")
+            eprint("output is identical")
             continue
 
         diffs = True
