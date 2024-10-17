@@ -763,72 +763,135 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
     // Simple glyphs have bbox set. Composites don't.
     // Ultimately composites are made up of simple glyphs, lets figure out the boxes
     let mut bbox_acquired: HashMap<GlyphName, Rect> = HashMap::new();
-    let mut composites = glyphs
-        .values()
-        .filter(|glyph| glyph.is_composite())
-        .collect::<Vec<_>>();
 
-    trace!("Resolve bbox for {} composites", composites.len());
-    while !composites.is_empty() {
-        let pending = composites.len();
-
-        // Hopefully we can figure out some of those bboxes!
-        for composite in composites.iter() {
-            let glyph_name = &composite.name;
-            let RawGlyph::Composite(composite) = &composite.data else {
-                unreachable!("we just checked that these are all composites");
+    // For simple scale+translate transforms, which seem to be common, we could write down control boxes
+    // Let's wait to see if that pops out in a profile and do the simple solution for now
+    // Because transforms can skew/rotate the control box computed for the simple glyph isn't always reusable
+    for (glyph_name, glyph) in glyphs.iter().filter_map(|(gn, g)| match &g.data {
+        RawGlyph::Composite(composite) => Some((*gn, composite)),
+        RawGlyph::Simple(..) | RawGlyph::Empty => None,
+    }) {
+        let mut bbox = None;
+        for component in glyph.components() {
+            // The transform we get here has changed because it got turned into F2Dot14 and i16 parts
+            // We could go get the "real" transform from IR...?
+            let affine = affine_for(component);
+            let ref_glyph_name = glyph_order
+                .glyph_name(component.glyph.to_u16() as usize)
+                .unwrap();
+            let Some(ref_glyph) = glyphs.get(ref_glyph_name) else {
+                panic!("Missing {ref_glyph_name}"); // TEMPORARY, make a nice error!!
             };
-
-            let mut missing_boxes = false;
-            let boxes: Vec<_> = composite
-                .components()
-                .iter()
-                .filter_map(|c| {
-                    if missing_boxes {
-                        return None; // can't succeed
+            match &ref_glyph.data {
+                RawGlyph::Empty => continue, // no impact on our bbox
+                RawGlyph::Simple(ref_simple) => {
+                    bbox = Some(bbox2rect(ref_simple.bbox));
+                    for pt in ref_simple.contours().iter().flat_map(|c| c.iter()) {
+                        let pt = affine * Point::new(pt.x as f64, pt.y as f64);
+                        bbox = Some(if let Some(current) = bbox {
+                            current.union_pt(pt)
+                        } else {
+                            Rect::from_points(pt, pt)
+                        });
                     }
-                    let ref_glyph_name = glyph_order.glyph_name(c.glyph.to_u16() as usize).unwrap();
-                    let bbox = bbox_acquired.get(ref_glyph_name).copied().or_else(|| {
-                        glyphs
-                            .get(ref_glyph_name)
-                            .map(|g| g.as_ref().clone())
-                            .and_then(|g| match &g.data {
-                                RawGlyph::Composite(..) => None,
-                                RawGlyph::Empty => None,
-                                RawGlyph::Simple(simple_glyph) => Some(bbox2rect(simple_glyph.bbox)),
-                            })
-                    });
-                    if bbox.is_none() {
-                        trace!("Can't compute bbox for {glyph_name} because bbox for {ref_glyph_name} isn't ready yet");
-                        missing_boxes = true;
-                        return None; // maybe next time?
-                    };
-
-                    // The transform we get here has changed because it got turned into F2Dot14 and i16 parts
-                    // We could go get the "real" transform from IR...?
-                    let affine = affine_for(c);
-                    let transformed_box = affine.transform_rect_bbox(bbox.unwrap());
-                    Some(transformed_box)
-                })
-                .collect();
-            if missing_boxes {
-                trace!("bbox for {glyph_name} not yet resolveable");
-                continue;
+                    eprintln!("bbox from transformed control points {bbox:?}");
+                }
+                RawGlyph::Composite(ref_composite) => {
+                    eprintln!("TODO: compute bbox for composite");
+                }
             }
-
-            let bbox = boxes.into_iter().reduce(|acc, e| acc.union(e)).unwrap();
-            trace!("bbox for {glyph_name} {bbox:?}");
-            bbox_acquired.insert(glyph_name.clone(), bbox);
         }
-
-        // Kerplode if we didn't make any progress this spin
-        composites.retain(|composite| !bbox_acquired.contains_key(&composite.name));
-        if pending == composites.len() {
-            return Err(Error::CompositesStalled(
-                composites.iter().map(|g| g.name.clone()).collect(),
-            ));
-        }
+        trace!("bbox for {glyph_name} {bbox:?}");
+        bbox_acquired.insert(glyph_name.clone(), bbox.unwrap_or_default());
     }
+
+    // let mut composites = glyphs
+    //     .values()
+    //     .filter(|glyph| glyph.is_composite())
+    //     .collect::<Vec<_>>();
+
+    // trace!("Resolve bbox for {} composites", composites.len());
+    // while !composites.is_empty() {
+    //     let pending = composites.len();
+
+    //     // Hopefully we can figure out some of those bboxes!
+    //     for composite in composites.iter() {
+    //         let glyph_name = &composite.name;
+    //         let RawGlyph::Composite(composite) = &composite.data else {
+    //             unreachable!("we just checked that these are all composites");
+    //         };
+
+    //         let mut missing_boxes = false;
+    //         let boxes: Vec<_> = composite
+    //             .components()
+    //             .iter()
+    //             .filter_map(|c| {
+    //                 if missing_boxes {
+    //                     return None; // can't succeed
+    //                 }
+    //                 let ref_glyph_name = glyph_order.glyph_name(c.glyph.to_u16() as usize).unwrap();
+    //                 let bbox = bbox_acquired.get(ref_glyph_name).copied().or_else(|| {
+    //                     glyphs
+    //                         .get(ref_glyph_name)
+    //                         .map(|g| g.as_ref().clone())
+    //                         .and_then(|g| match &g.data {
+    //                             RawGlyph::Composite(..) => None,
+    //                             RawGlyph::Empty => None,
+    //                             RawGlyph::Simple(simple_glyph) => Some(bbox2rect(simple_glyph.bbox)),
+    //                         })
+    //                 });
+
+    //                 if bbox.is_none() {
+    //                     trace!("Can't compute bbox for {glyph_name} because bbox for {ref_glyph_name} isn't ready yet");
+    //                     missing_boxes = true;
+    //                     return None; // maybe next time?
+    //                 };
+
+    //                 // The transform we get here has changed because it got turned into F2Dot14 and i16 parts
+    //                 // We could go get the "real" transform from IR...?
+
+    //                 // If the transform is a simple scale + move we can just scale the control
+    //                 // Simple seems to be the norm
+    //                 // If it's more interesting (some sort of rotate/skew) we need to transform points and compute a new box
+    //                 let affine = affine_for(c);
+    //                 let [_a, b, c, _d, _e, _f] = affine.as_coeffs();
+    //                 if (b, c) == (0.0, 0.0) {
+    //                     eprintln!("{affine:?} is simple!");
+    //                 } else {
+    //                     eprintln!("{affine:?} is complex!");
+    //                 }
+    //                 let transformed_box = affine.transform_rect_bbox(bbox.unwrap());
+    //                 eprintln!("{affine:?} of {bbox:?} is {transformed_box:?}");
+    //                 let a2 = Affine::new([0.9, -0.1, -0.2, 0.8, 500.0, 300.0]);
+    //                 let t2 = affine.transform_rect_bbox(bbox.unwrap());
+    //                 eprintln!("{a2:?} of {bbox:?} is {t2:?}");
+    //                 let glyph = glyphs.get(ref_glyph_name).unwrap();
+    //                 // let RawGlyph::Simple(simple) = &glyph.data else {
+    //                 //     panic!("indirect deps suck");
+    //                 // };
+    //                 // simple.contours().iter()
+    //                 //     .flat_map(|c| c.iter())
+    //                 Some(transformed_box)
+    //             })
+    //             .collect();
+    //         if missing_boxes {
+    //             trace!("bbox for {glyph_name} not yet resolveable");
+    //             continue;
+    //         }
+
+    //         let bbox = boxes.into_iter().reduce(|acc, e| acc.union(e)).unwrap();
+    //         trace!("bbox for {glyph_name} {bbox:?}");
+    //         bbox_acquired.insert(glyph_name.clone(), bbox);
+    //     }
+
+    //     // Kerplode if we didn't make any progress this spin
+    //     composites.retain(|composite| !bbox_acquired.contains_key(&composite.name));
+    //     if pending == composites.len() {
+    //         return Err(Error::CompositesStalled(
+    //             composites.iter().map(|g| g.name.clone()).collect(),
+    //         ));
+    //     }
+    // }
 
     // It'd be a shame to just throw away those nice boxes
     for (glyph_name, bbox) in bbox_acquired.into_iter() {
