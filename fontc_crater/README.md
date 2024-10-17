@@ -57,7 +57,7 @@ To run in CI mode locally to play with the html output:
 # clone git@github.com:googlefonts/fontc_crater.git somewhere, we'll assume at ../fontc_crater
 # CI currently has it's own format for the repo list, use the file from ^
 
-$ cargo run --release -p=fontc_crater -- ci ../fontc_crater/gf-repos-2024-08-12.json -o ../fontc_crater/results/ --html_only
+$ cargo run --release -p=fontc_crater -- ci ../fontc_crater/gf-repos-2024-08-12.json -o ../fontc_crater/results/ --html-only
 
 # Review ../fontc_crater/results/index.html (NOT ../fontc_crater/index.html)
 ```

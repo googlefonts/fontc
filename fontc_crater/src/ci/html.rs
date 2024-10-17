@@ -312,7 +312,10 @@ fn make_diff_report(
         }
 
         let repo_url = get_repo_url(path);
-        let repro_cmd = make_repro_cmd(repo_url, path);
+        let onclick = format!(
+            "event.preventDefault(); {};",
+            make_repro_cmd(repo_url, path)
+        );
         let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
         let details = format_diff_report_details(diff_details, prev_details);
         // avoid .9995 printing as 100%
@@ -324,7 +327,7 @@ fn make_diff_report(
                     span.font_path {
                         a href = (repo_url) { (path.display()) }
                         " ("
-                        a href = "#" onclick = (repro_cmd) { "copy repro" }
+                        a href = "" onclick = (onclick) { "copy repro" }
                         ")"
                     }
                     span.diff_result { (ratio_fmt) " " (decoration) }
