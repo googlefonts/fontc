@@ -85,9 +85,8 @@ flags.DEFINE_float(
     0.1,
     "The percentage of point (glyf) or delta (gvar) values allowed to differ by one without counting as a diff",
 )
-flags.DEFINE_bool(
-    "json", False, "print results in machine-readable JSON format")
-flags.DEFINE_string( "outdir", default=None,  help="directory to store generated files")
+flags.DEFINE_bool("json", False, "print results in machine-readable JSON format")
+flags.DEFINE_string("outdir", default=None, help="directory to store generated files")
 
 
 # execute a command after logging it to stderr.
@@ -241,6 +240,7 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
 
     build(cmd, build_dir)
 
+
 def source_is_variable(path: Path) -> bool:
     if path.suffix == ".ufo":
         return False
@@ -252,6 +252,7 @@ def source_is_variable(path: Path) -> bool:
         return len(font.masters) > 1
     # fallback to variable, the existing default, but we should never get here?
     return True
+
 
 def copy(old, new):
     shutil.copyfile(old, new)
@@ -349,7 +350,9 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
             eprint(f"no item where {name_attr}='{name}' in {container}")
             continue
 
-        for (fontmake_el, fontc_el) in zip(fontmake_container.iter(), fontc_container.iter()):
+        for fontmake_el, fontc_el in zip(
+            fontmake_container.iter(), fontc_container.iter()
+        ):
             if fontmake_el.tag != fontc_el.tag:
                 break
             if fontmake_el.tag != coord_tag:
@@ -371,7 +374,9 @@ def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
                     return
 
     if spent > 0:
-        eprint(f"INFO fixed {spent} off-by-ones in {container} (budget {off_by_one_budget})")
+        eprint(
+            f"INFO fixed {spent} off-by-ones in {container} (budget {off_by_one_budget})"
+        )
 
 
 # the order of lookups in a feature's lookuplist do not matter;
@@ -384,12 +389,14 @@ def sort_fontmake_feature_lookups(ttx):
 
     for feature in features:
         # the first item is 'Feature', the second always a comment
-        has_value = [el for el in feature.iter() if 'value' in el.attrib]
-        values = sorted(int(v.attrib['value']) for v in has_value)
-        for (i, lookup_index) in enumerate(has_value):
-            lookup_index.attrib['value'] = str(values[i])
+        has_value = [el for el in feature.iter() if "value" in el.attrib]
+        values = sorted(int(v.attrib["value"]) for v in has_value)
+        for i, lookup_index in enumerate(has_value):
+            lookup_index.attrib["value"] = str(values[i])
 
-LOOKUPS_TO_SKIP = set([2, 4, 5, 6]) # pairpos, markbase, marklig, markmark
+
+LOOKUPS_TO_SKIP = set([2, 4, 5, 6])  # pairpos, markbase, marklig, markmark
+
 
 def remove_mark_and_kern_lookups(ttx):
     gpos = ttx.find("GPOS")
@@ -438,9 +445,7 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
         stat_like_fontmake(ttx)
         remove_mark_and_kern_lookups(ttx)
 
-    allow_some_off_by_ones(
-        fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt"
-    )
+    allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
     allow_some_off_by_ones(
         fontc, fontmake, "gvar/glyphVariations", "glyph", "/tuple/delta"
     )
@@ -514,7 +519,7 @@ def jsonify_output(output: dict[str, dict[str, str]]):
                 ratio = diff_ratio(s1, s2)
                 n_lines = max(len(s1), len(s2))
                 same_lines += int(n_lines * ratio)
-                different_lines += int( n_lines * (1 - ratio))
+                different_lines += int(n_lines * (1 - ratio))
                 out[tag] = ratio
             else:
                 same_lines += len(s1)
@@ -641,12 +646,13 @@ def main(argv):
     if comparisons == ("both",):
         if FLAGS.json:
             sys.exit(
-                "JSON output does not support multiple comparisons (try --compare default|gftools)")
+                "JSON output does not support multiple comparisons (try --compare default|gftools)"
+            )
         comparisons = (_COMPARE_DEFAULTS, _COMPARE_GFTOOLS)
 
     diffs = False
     for compare in comparisons:
-        build_dir = (out_dir / compare)
+        build_dir = out_dir / compare
         build_dir.mkdir(parents=True, exist_ok=True)
         eprint(f"Compare {compare} in {build_dir}")
 
@@ -662,13 +668,17 @@ def main(argv):
         try:
             build_fontc(source.resolve(), fontc_manifest_path, build_dir, compare)
         except BuildFail as e:
-            failures["fontc"] = {"command": " ".join(
-                e.command), "stderr": e.stderr[-MAX_ERR_LEN:]}
+            failures["fontc"] = {
+                "command": " ".join(e.command),
+                "stderr": e.stderr[-MAX_ERR_LEN:],
+            }
         try:
             build_fontmake(source.resolve(), build_dir, compare)
         except BuildFail as e:
-            failures["fontmake"] = {"command": " ".join(
-                e.command), "stderr": e.stderr[-MAX_ERR_LEN:]}
+            failures["fontmake"] = {
+                "command": " ".join(e.command),
+                "stderr": e.stderr[-MAX_ERR_LEN:],
+            }
 
         report_errors_and_exit_if_there_were_any(failures)
 
