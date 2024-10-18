@@ -45,7 +45,7 @@ import sys
 import os
 from urllib.parse import urlparse
 from cdifflib import CSequenceMatcher as SequenceMatcher
-from typing import MutableSequence
+from typing import Sequence
 from glyphsLib import GSFont
 from fontTools.designspaceLib import DesignSpaceDocument
 import time
@@ -90,18 +90,18 @@ flags.DEFINE_bool(
 flags.DEFINE_string( "outdir", default=None,  help="directory to store generated files")
 
 
-# execute a command in the provided working directory.
-# The 'check' argument is passed to subprocess.run; if it is true than an
-# exception will be raised if the command does not exit successfully; otherwise
-# the caller can check the status via the returned `CompletedProcess` object.
-def run(cmd: MutableSequence, working_dir: Path, check=False, **kwargs):
+# execute a command after logging it to stderr.
+# All additional kwargs are passed to subprocess.run
+def log_and_run(cmd: Sequence, cwd=None, **kwargs):
     cmd_string = " ".join(str(c) for c in cmd)
-    eprint(f"  (cd {working_dir} && {cmd_string})")
+    if cwd is not None:
+        eprint(f"  (cd {cwd} && {cmd_string})")
+    else:
+        eprint(f"  ({cmd_string})")
     return subprocess.run(
         cmd,
         text=True,
-        check=check,
-        cwd=working_dir,
+        cwd=cwd,
         capture_output=True,
         **kwargs,
     )
@@ -120,7 +120,7 @@ def run_ttx(font_file: Path):
         ttx_file.name,
         font_file.name,
     ]
-    run(cmd, font_file.parent, check=True)
+    log_and_run(cmd, font_file.parent, check=True)
     return ttx_file
 
 
@@ -143,22 +143,17 @@ def run_normalizer_gpos(normalizer_bin: Path, font_file: Path):
 # we had a bug where this would sometimes hang in mysterious ways, so we may
 # call it multiple times if it fails
 def try_normalizer_gpos(normalizer_bin: Path, font_file: Path, out_path: Path):
+    NORMALIZER_TIMEOUT = 60 * 10  # ten minutes
     if not out_path.is_file():
         cmd = [
-            "timeout",
-            "10m",
-            str(normalizer_bin.absolute()),
+            normalizer_bin.absolute(),
             font_file.name,
             "-o",
             out_path.name,
             "--table",
             "gpos",
         ]
-        run(
-            cmd,
-            font_file.parent,
-            check=True,
-        )
+        log_and_run(cmd, font_file.parent, check=True, timeout=NORMALIZER_TIMEOUT)
     with open(out_path) as f:
         return f.read()
 
@@ -166,14 +161,14 @@ def try_normalizer_gpos(normalizer_bin: Path, font_file: Path, out_path: Path):
 class BuildFail(Exception):
     """An exception raised if a compiler fails."""
 
-    def __init__(self, cmd: MutableSequence, stderr: str):
+    def __init__(self, cmd: Sequence, stderr: str):
         self.command = list(cmd)
         self.stderr = stderr
 
 
 # run a font compiler
-def build(cmd: MutableSequence, build_dir: Path, **kwargs):
-    output = run(cmd, build_dir, **kwargs)
+def build(cmd: Sequence, build_dir: Path, **kwargs):
+    output = log_and_run(cmd, build_dir, **kwargs)
     if output.returncode != 0:
         raise BuildFail(cmd, output.stderr)
 
@@ -615,7 +610,7 @@ def delete_things_we_must_rebuild(rebuild: str, fontmake_ttf: Path, fontc_ttf: P
 # returns the path to the compiled binary
 def build_crate(manifest_path: Path):
     cmd = ["cargo", "build", "--release", "--manifest-path", str(manifest_path)]
-    run(cmd, working_dir=None, check=True)
+    log_and_run(cmd, cwd=None, check=True)
 
 
 def main(argv):
