@@ -125,14 +125,14 @@ def run_ttx(font_file: Path):
 
 
 # generate a simple text repr for gpos for this font, with retry
-def run_normalizer_gpos(cargo_manifest_path: Path, font_file: Path):
+def run_normalizer_gpos(normalizer_bin: Path, font_file: Path):
     out_path = font_file.with_suffix(".markkern.txt")
     if out_path.exists():
         eprint(f"reusing {out_path}")
     NUM_RETRIES = 5
     for i in range(NUM_RETRIES + 1):
         try:
-            return try_normalizer_gpos(cargo_manifest_path, font_file, out_path)
+            return try_normalizer_gpos(normalizer_bin, font_file, out_path)
         except subprocess.CalledProcessError as e:
             time.sleep(0.1)
             if i >= NUM_RETRIES:
@@ -142,17 +142,12 @@ def run_normalizer_gpos(cargo_manifest_path: Path, font_file: Path):
 
 # we had a bug where this would sometimes hang in mysterious ways, so we may
 # call it multiple times if it fails
-def try_normalizer_gpos(cargo_manifest_path: Path, font_file: Path, out_path: Path):
+def try_normalizer_gpos(normalizer_bin: Path, font_file: Path, out_path: Path):
     if not out_path.is_file():
         cmd = [
             "timeout",
             "10m",
-            "cargo",
-            "run",
-            "--release",
-            "--manifest-path",
-            str(cargo_manifest_path),
-            "--",
+            str(normalizer_bin.absolute()),
             font_file.name,
             "-o",
             out_path.name,
@@ -457,12 +452,13 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
 
 
 # returns a dictionary of {"compiler_name":  {"tag": "xml_text"}}
-def generate_output(build_dir: Path, otl_norm_cargo_path: Path, fontmake_ttf: Path, fontc_ttf: Path):
-    # don't run ttx or otl-normalizer if we don't have to:
+def generate_output(
+    build_dir: Path, otl_norm_bin: Path, fontmake_ttf: Path, fontc_ttf: Path
+):
     fontc_ttx = run_ttx(fontc_ttf)
     fontmake_ttx = run_ttx(fontmake_ttf)
-    fontc_gpos = run_normalizer_gpos(otl_norm_cargo_path, fontc_ttf)
-    fontmake_gpos = run_normalizer_gpos(otl_norm_cargo_path, fontmake_ttf)
+    fontc_gpos = run_normalizer_gpos(otl_norm_bin, fontc_ttf)
+    fontmake_gpos = run_normalizer_gpos(otl_norm_bin, fontmake_ttf)
 
     fontc = etree.parse(fontc_ttx)
     fontmake = etree.parse(fontmake_ttx)
@@ -616,6 +612,12 @@ def delete_things_we_must_rebuild(rebuild: str, fontmake_ttf: Path, fontc_ttf: P
                     os.remove(path)
 
 
+# returns the path to the compiled binary
+def build_crate(manifest_path: Path):
+    cmd = ["cargo", "build", "--release", "--manifest-path", str(manifest_path)]
+    run(cmd, working_dir=None, check=True)
+
+
 def main(argv):
     if len(argv) != 2:
         sys.exit("Only one argument, a source file, is expected")
@@ -627,6 +629,9 @@ def main(argv):
         sys.exit("Expected to be at the root of fontc")
     fontc_manifest_path = root / "fontc" / "Cargo.toml"
     otl_norm_manifest_path = root / "otl-normalizer" / "Cargo.toml"
+    otl_bin_path = root / "target" / "release" / "otl-normalizer"
+    build_crate(otl_norm_manifest_path)
+    assert otl_bin_path.is_file(), "failed to build otl-normalizer?"
 
     if shutil.which("fontmake") is None:
         sys.exit("No fontmake")
@@ -676,7 +681,7 @@ def main(argv):
         assert fontmake_ttf.is_file(), fontmake_ttf
         assert fontc_ttf.is_file(), fontc_ttf
 
-        output = generate_output(build_dir, otl_norm_manifest_path, fontmake_ttf, fontc_ttf)
+        output = generate_output(build_dir, otl_bin_path, fontmake_ttf, fontc_ttf)
         if output["fontc"] == output["fontmake"]:
             eprint("output is identical")
             continue
