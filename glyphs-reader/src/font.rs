@@ -1835,6 +1835,8 @@ impl TryFrom<RawShape> for Shape {
                 transform *= Affine::scale_non_uniform(from.scale[0], from.scale[1]);
             }
 
+            eprintln!("{glyph_name} transform {transform:?}");
+
             Shape::Component(Component {
                 name: glyph_name,
                 transform,
@@ -2628,7 +2630,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
 
-    use kurbo::{Affine, Point};
+    use kurbo::{Affine, BezPath, Point, Rect};
 
     use rstest::rstest;
 
@@ -3607,5 +3609,52 @@ mod tests {
         assert_eq!(Some(420), font.win_descent);
         assert_eq!(Some(OrderedFloat(42_f64)), font.underline_thickness);
         assert_eq!(Some(OrderedFloat(-300_f64)), font.underline_position);
+    }
+
+    #[test]
+    fn read_transform() {
+        let font = Font::load(&glyphs2_dir().join("MatrixComponent.glyphs")).unwrap();
+        eprintln!("{font:#?}");
+        todo!()
+    }
+
+    #[test]
+    fn transformed_contour() {
+        let pts = [
+            (425.0, 200.0),
+            (425.0, 163.0),
+            (408.0, 94.0),
+            (375.0, 50.0),
+            (350.0, 50.0),
+            (338.0, 38.0),
+            (295.0, 23.0),
+            (256.0, 22.0),
+            (238.0, 40.0),
+            (261.0, 82.0),
+            (344.0, 150.0),
+        ];
+        let mut path = BezPath::new();
+        path.move_to(pts[0]);
+        for pt in pts {
+            path.line_to(pt);
+        }
+        path.close_path();
+
+        let cbox = path.control_box();
+        eprintln!("original cbox {:?}", cbox);
+
+        let affine = Affine::new([0.25, 1.0, -1.0, 0.25, 500.0, 300.0]);
+
+        let cbox_min = affine * Point::new(cbox.min_x(), cbox.min_y());
+        let cbox_max = affine * Point::new(cbox.max_x(), cbox.max_y());
+        let cbox = Rect::from_points(cbox_min, cbox_max);
+
+        eprintln!("transformed cbox {:?}", cbox);
+
+        path.apply_affine(affine);
+
+        eprintln!("new cbox {:?}", path.control_box());
+
+        todo!()
     }
 }
