@@ -1,0 +1,68 @@
+{
+.appVersion = "3219";
+familyName = MatrixComponent;
+fontMaster = (
+{
+id = m01;
+}
+);
+glyphs = (
+{
+glyphname = rot60more;
+layers = (
+{
+components = (
+{
+name = rot30;
+transform = "{0.5, 0.866, -0.866, 0.5, 179.9, -11.6}";
+}
+);
+layerId = "m01";
+width = 705;
+}
+);
+unicode = 221D;
+},
+{
+glyphname = rot30;
+layers = (
+{
+components = (
+{
+name = triangle;
+
+transform = "{0.866, 0.5, -0.5, 0.866, 88.4, -29.9}";
+}
+);
+layerId = "m01";
+width = 705;
+}
+);
+unicode = 221E;
+},
+{
+glyphname = triangle;
+layers = (
+{
+layerId = "m01";
+paths = (
+{
+closed = 1;
+nodes = (
+"100 100 LINE",
+"400 150 LINE",
+"100 200 LINE",
+);
+}
+);
+width = 474;
+}
+);
+unicode = 0038;
+}
+);
+
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}

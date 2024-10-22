@@ -3,7 +3,10 @@
 //! Each glyph is built in isolation and then the fragments are collected
 //! and glued together to form a final table.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    sync::Arc,
+};
 
 use fontdrasil::{
     coords::NormalizedLocation,
@@ -11,7 +14,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use fontir::{
-    ir,
+    ir::{self, GlyphOrder},
     orchestration::{Flags, WorkId as FeWorkId},
     variations::{VariationModel, VariationRegion},
 };
@@ -30,6 +33,7 @@ use write_fonts::{
         },
         gvar::{iup::iup_delta_optimize, GlyphDelta},
     },
+    types::GlyphId16,
     OtRound,
 };
 
@@ -77,19 +81,10 @@ fn can_reuse_metrics(
     coeffs == Affine::IDENTITY.as_coeffs()
 }
 
-fn create_component(
-    context: &Context,
-    ref_glyph_name: &GlyphName,
+fn create_component_ref_gid(
+    gid: GlyphId16,
     transform: &Affine,
 ) -> Result<(Component, Bbox), GlyphProblem> {
-    // Obtain glyph id from static metadata
-    let gid = context
-        .ir
-        .glyph_order
-        .get()
-        .glyph_id(ref_glyph_name)
-        .ok_or(GlyphProblem::NotInGlyphOrder)?;
-
     // No known source does point anchoring so we just turn transform into a 2x2 + offset
     let [a, b, c, d, e, f] = transform.as_coeffs();
     let flags = ComponentFlags {
@@ -99,8 +94,8 @@ fn create_component(
     let component = Component::new(
         gid,
         Anchor::Offset {
-            x: e as i16,
-            y: f as i16,
+            x: e.ot_round(),
+            y: f.ot_round(),
         },
         Transform {
             xx: F2Dot14::from_f32(a as f32),
@@ -113,6 +108,22 @@ fn create_component(
 
     // Bbox computation is postponed to glyph merge to ensure all glyphs are available to query
     Ok((component, Bbox::default()))
+}
+
+fn create_component_ref_name(
+    context: &Context,
+    ref_glyph_name: &GlyphName,
+    transform: &Affine,
+) -> Result<(Component, Bbox), GlyphProblem> {
+    // Obtain glyph id from static metadata
+    let gid = context
+        .ir
+        .glyph_order
+        .get()
+        .glyph_id(ref_glyph_name)
+        .ok_or(GlyphProblem::NotInGlyphOrder)?;
+
+    create_component_ref_gid(gid, transform)
 }
 
 fn create_composite(
@@ -139,7 +150,7 @@ fn create_composite(
             }
         })
         .filter_map(|(ref_glyph_name, transform)| {
-            create_component(context, ref_glyph_name, transform)
+            create_component_ref_name(context, ref_glyph_name, transform)
                 .map_err(|problem| {
                     errors.push(Error::ComponentError {
                         glyph: glyph.name.clone(),
@@ -731,20 +742,60 @@ fn affine_for(component: &Component) -> Affine {
     ])
 }
 
-fn bbox2rect(bbox: Bbox) -> Rect {
-    Rect {
-        x0: bbox.x_min.into(),
-        y0: bbox.y_min.into(),
-        x1: bbox.x_max.into(),
-        y1: bbox.y_max.into(),
-    }
-}
-
 #[derive(Debug)]
 struct GlyfLocaWork {}
 
 pub fn create_glyf_loca_work() -> Box<BeWork> {
     Box::new(GlyfLocaWork {})
+}
+
+/// See <https://github.com/fonttools/fonttools/blob/42c1a52c5facd0edbc9c685787b084af44f6f607/Lib/fontTools/ttLib/tables/_g_l_y_f.py#L1244>
+fn bbox_of_composite(
+    glyph_order: &GlyphOrder,
+    glyphs: &HashMap<&GlyphName, Arc<Glyph>>,
+    composite: &CompositeGlyph,
+    affine: Affine,
+) -> Result<Option<Rect>, Error> {
+    // For simple scale+translate transforms, which seem to be common, we could just transform a bbox
+    // Let's wait to see if that pops out in a profile and do the simple solution for now
+    // Because transforms can skew/rotate the control box computed for the simple glyph isn't always reusable
+
+    let mut bbox: Option<Rect> = None;
+    for component in composite.components() {
+        // The transform we get here has changed because it got turned into F2Dot14 and i16 parts
+        // We could go get the "real" transform from IR but ... this seems to match fontmake so far
+        let affine = affine * affine_for(component);
+
+        let ref_glyph_name = glyph_order
+            .glyph_name(component.glyph.to_u16() as usize)
+            .unwrap();
+        let Some(ref_glyph) = glyphs.get(ref_glyph_name) else {
+            return Err(Error::MissingGlyphId(ref_glyph_name.clone()));
+        };
+        match &ref_glyph.data {
+            RawGlyph::Empty => continue, // no impact on our bbox
+            RawGlyph::Simple(ref_simple) => {
+                // Update our bbox to include the transformed points
+                for pt in ref_simple.contours().iter().flat_map(|c| c.iter()) {
+                    let pt = affine * Point::new(pt.x as f64, pt.y as f64);
+                    bbox = Some(if let Some(current) = bbox {
+                        current.union_pt(pt)
+                    } else {
+                        Rect::from_points(pt, pt)
+                    });
+                }
+            }
+            RawGlyph::Composite(ref_composite) => {
+                // Chase our components using an updated transform
+                if let Some(child_bbox) =
+                    bbox_of_composite(glyph_order, glyphs, ref_composite, affine)?
+                {
+                    bbox = bbox.map(|bbox| bbox.union(child_bbox)).or(Some(child_bbox));
+                }
+            }
+        }
+    }
+    Ok(bbox)
 }
 
 fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
@@ -763,71 +814,13 @@ fn compute_composite_bboxes(context: &Context) -> Result<(), Error> {
     // Simple glyphs have bbox set. Composites don't.
     // Ultimately composites are made up of simple glyphs, lets figure out the boxes
     let mut bbox_acquired: HashMap<GlyphName, Rect> = HashMap::new();
-    let mut composites = glyphs
-        .values()
-        .filter(|glyph| glyph.is_composite())
-        .collect::<Vec<_>>();
 
-    trace!("Resolve bbox for {} composites", composites.len());
-    while !composites.is_empty() {
-        let pending = composites.len();
-
-        // Hopefully we can figure out some of those bboxes!
-        for composite in composites.iter() {
-            let glyph_name = &composite.name;
-            let RawGlyph::Composite(composite) = &composite.data else {
-                unreachable!("we just checked that these are all composites");
-            };
-
-            let mut missing_boxes = false;
-            let boxes: Vec<_> = composite
-                .components()
-                .iter()
-                .filter_map(|c| {
-                    if missing_boxes {
-                        return None; // can't succeed
-                    }
-                    let ref_glyph_name = glyph_order.glyph_name(c.glyph.to_u16() as usize).unwrap();
-                    let bbox = bbox_acquired.get(ref_glyph_name).copied().or_else(|| {
-                        glyphs
-                            .get(ref_glyph_name)
-                            .map(|g| g.as_ref().clone())
-                            .and_then(|g| match &g.data {
-                                RawGlyph::Composite(..) => None,
-                                RawGlyph::Empty => None,
-                                RawGlyph::Simple(simple_glyph) => Some(bbox2rect(simple_glyph.bbox)),
-                            })
-                    });
-                    if bbox.is_none() {
-                        trace!("Can't compute bbox for {glyph_name} because bbox for {ref_glyph_name} isn't ready yet");
-                        missing_boxes = true;
-                        return None; // maybe next time?
-                    };
-
-                    // The transform we get here has changed because it got turned into F2Dot14 and i16 parts
-                    // We could go get the "real" transform from IR...?
-                    let affine = affine_for(c);
-                    let transformed_box = affine.transform_rect_bbox(bbox.unwrap());
-                    Some(transformed_box)
-                })
-                .collect();
-            if missing_boxes {
-                trace!("bbox for {glyph_name} not yet resolveable");
-                continue;
-            }
-
-            let bbox = boxes.into_iter().reduce(|acc, e| acc.union(e)).unwrap();
-            trace!("bbox for {glyph_name} {bbox:?}");
-            bbox_acquired.insert(glyph_name.clone(), bbox);
-        }
-
-        // Kerplode if we didn't make any progress this spin
-        composites.retain(|composite| !bbox_acquired.contains_key(&composite.name));
-        if pending == composites.len() {
-            return Err(Error::CompositesStalled(
-                composites.iter().map(|g| g.name.clone()).collect(),
-            ));
-        }
+    for (glyph_name, glyph) in glyphs.iter().filter_map(|(gn, g)| match &g.data {
+        RawGlyph::Composite(composite) => Some((*gn, composite)),
+        RawGlyph::Simple(..) | RawGlyph::Empty => None,
+    }) {
+        let bbox = bbox_of_composite(&glyph_order, &glyphs, glyph, Affine::IDENTITY)?;
+        bbox_acquired.insert(glyph_name.clone(), bbox.unwrap_or_default());
     }
 
     // It'd be a shame to just throw away those nice boxes
@@ -1026,5 +1019,19 @@ mod tests {
             paths.values().next().unwrap().segments().count(),
             expected_segments
         );
+    }
+
+    // Contributor to https://github.com/googlefonts/fontc/pull/1050
+    #[test]
+    fn component_translation_otrounds() {
+        let (c, _) = create_component_ref_gid(
+            GlyphId16::new(42),
+            &Affine::new([1.0, 0.0, 0.0, 1.0, 0.4, 0.9]),
+        )
+        .unwrap();
+        let Anchor::Offset { x, y } = c.anchor else {
+            panic!("Must be an offset");
+        };
+        assert_eq!((0, 1), (x, y));
     }
 }
