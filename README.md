@@ -165,6 +165,18 @@ $ cargo build --release && hyperfine --warmup 3 --runs 250 --prepare 'rm -rf bui
 # Report similar to ^ if claiming this as proof your branch is a win.
 ```
 
+## Running samply
+
+https://github.com/mstange/samply gives a nice call tree, flame graph, etc. Sample usage:
+
+```shell
+# Assuming current directory is the root of fontc
+$ (cd .. && git clone https://github.com/mstange/samply)
+$ (cd ../samply && cargo build --release)
+$ ../samply/target/release/samply record target/release/fontc ~/.fontc_crater_cache/Rubik-Filtered/pixels/sources/RubikPixels.glyphs
+$ ../samply/target/release/samply record target/release/fontc ../OswaldFont/sources/Oswald.glyphs
+```
+
 ## Running flamegraph
 
 [flamegraphs](https://www.brendangregg.com/flamegraphs.html) of fontc are very handy. They are most
