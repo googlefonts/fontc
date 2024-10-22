@@ -178,7 +178,7 @@ $ export RUST_LOG=error
 $ export CARGO_PROFILE_RELEASE_DEBUG=true
 
 # Build something and capture a flamegraph of it
-$ rm -rf build/ && cargo flamegraph -p fontc -- ../OswaldFont/sources/Oswald.glyphs
+$ rm -rf build/ perf.data flamegraph.svg && cargo flamegraph -p fontc -- ../OswaldFont/sources/Oswald.glyphs
 
 # TIPS
 
@@ -206,7 +206,7 @@ is very useful when you want to zoom in on a specific operation. For example, to
 ```shell
 # Generate a perf.data
 # You can also use perf record but cargo flamegraph seems to have nice capture settings for Rust rigged
-$ rm -rf build/ perf.data && cargo flamegraph -p fontc -- ../OswaldFont/sources/Oswald.glyphs
+$ rm -rf build/ perf.data flamegraph.svg && cargo flamegraph -p fontc -- ../OswaldFont/sources/Oswald.glyphs
 
 # ^ produced flamegraph.svg but it's very noisy, lets narrow our focus
 # Example assumes https://github.com/brendangregg/FlameGraph is cloned in a sibling directory to fontc
