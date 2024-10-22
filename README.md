@@ -173,7 +173,6 @@ https://github.com/mstange/samply gives a nice call tree, flame graph, etc. Samp
 # Assuming current directory is the root of fontc
 $ (cd .. && git clone https://github.com/mstange/samply)
 $ (cd ../samply && cargo build --release)
-$ ../samply/target/release/samply record target/release/fontc ~/.fontc_crater_cache/Rubik-Filtered/pixels/sources/RubikPixels.glyphs
 $ ../samply/target/release/samply record target/release/fontc ../OswaldFont/sources/Oswald.glyphs
 ```
 
