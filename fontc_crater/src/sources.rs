@@ -32,7 +32,7 @@ impl RepoList {
             }
         }
 
-        let mut sources = google_fonts_sources::discover_sources(None, Some(cache_dir), false);
+        let mut sources = google_fonts_sources::discover_sources(cache_dir)?;
 
         // only keep sources for which we have a repo + config
         sources.retain(|s| !s.config_files.is_empty());

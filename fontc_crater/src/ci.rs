@@ -5,27 +5,26 @@
 //! Unlike a normal run, this is expecting to have preexisting results, and to
 //! generate a fuller report that includes comparison with past runs.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use chrono::{DateTime, Utc};
-use google_fonts_sources::RepoInfo;
+use google_fonts_sources::{Config, RepoInfo};
 use serde::de::DeserializeOwned;
 
 use crate::{
     args::CiArgs,
     error::Error,
     ttx_diff_runner::{DiffError, DiffOutput},
-    Results,
+    Results, Target,
 };
 
 mod html;
 
 static SUMMARY_FILE: &str = "summary.json";
 static SOURCES_FILE: &str = "sources.json";
-
-// this env var can be set by the runner in order to reuse git checkouts
-// between runs.
-static GIT_CACHE_DIR_VAR: &str = "CRATER_GIT_CACHE";
 
 type DiffResults = Results<DiffOutput, DiffError>;
 
@@ -98,22 +97,15 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let out_file = result_path_for_current_date();
     let out_path = args.out_dir.join(&out_file);
     // for now we are going to be cloning each repo freshly
-    let temp_dir = tempfile::tempdir().unwrap();
-    let user_cache_dir = std::env::var_os(GIT_CACHE_DIR_VAR).map(PathBuf::from);
+    let cache_dir = args.cache_dir();
+    log::info!("using cache dir {}", cache_dir.display());
 
-    if let Some(user_cache_dir) = user_cache_dir.as_ref() {
-        if !user_cache_dir.exists() {
-            super::try_create_dir(user_cache_dir)?;
-        }
-    }
-    let cache_dir = user_cache_dir
-        .as_ref()
-        .map(Path::new)
-        .unwrap_or(temp_dir.path());
-    log::info!("using working dir {}", cache_dir.display());
-
+    let (targets, source_repos) = make_targets(&cache_dir, &inputs);
     let began = Utc::now();
-    let results = super::run_all(&inputs, cache_dir, super::ttx_diff_runner::run_ttx_diff)?;
+    let results = super::run_all(targets, &cache_dir, super::ttx_diff_runner::run_ttx_diff)?
+        .into_iter()
+        .map(|(target, result)| (target.id(), result))
+        .collect();
     let finished = Utc::now();
 
     super::try_write_json(&results, &out_path)?;
@@ -140,11 +132,54 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     // we write the map of target -> source repo to a separate file because
     // otherwise we're basically duplicating it for each run.
     let sources_file = args.out_dir.join(SOURCES_FILE);
-    super::try_write_json(&results.source_repos, &sources_file)
+    super::try_write_json(&source_repos, &sources_file)
 }
 
 fn result_path_for_current_date() -> String {
     let now = chrono::Utc::now();
     let timestamp = now.format("%Y-%m-%d-%H%M%S");
     format!("{timestamp}.json")
+}
+
+fn make_targets(cache_dir: &Path, repos: &[RepoInfo]) -> (Vec<Target>, BTreeMap<PathBuf, String>) {
+    let mut targets = Vec::new();
+    let mut repo_list = BTreeMap::new();
+    for repo in repos {
+        let Ok(iter) = repo.iter_configs(cache_dir) else {
+            log::warn!(
+                "error reading repo '{}'",
+                repo.repo_path(cache_dir).display()
+            );
+            continue;
+        };
+        for config_path in iter {
+            let config = match Config::load(&config_path) {
+                Ok(x) => x,
+                Err(e) => {
+                    log::warn!("failed to load config '{}': '{e}'", config_path.display());
+                    continue;
+                }
+            };
+            for source in &config.sources {
+                let src_path = config_path
+                    .parent()
+                    .expect("config path always in sources dir")
+                    .join(source);
+                if !src_path.exists() {
+                    log::warn!("source file '{}' is missing", src_path.display());
+                    continue;
+                }
+                let src_path = src_path
+                    .strip_prefix(cache_dir)
+                    .expect("source is always in cache dir")
+                    .to_path_buf();
+                repo_list.insert(src_path.clone(), repo.repo_url.clone());
+                targets.push(Target {
+                    _config: config_path.to_owned(),
+                    source: src_path,
+                })
+            }
+        }
+    }
+    (targets, repo_list)
 }

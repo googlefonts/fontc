@@ -10,6 +10,7 @@ use std::{
 use crate::{
     error::Error,
     ttx_diff_runner::{CompilerFailure, DiffError, DiffOutput, DiffValue},
+    TargetId,
 };
 use maud::{html, Markup, PreEscaped};
 
@@ -247,9 +248,9 @@ fn make_delta_decoration<T: PartialOrd + Copy + Sub<Output = T> + Display + Defa
     }
 }
 
-fn make_repro_cmd(repo_url: &str, repo_path: &Path) -> String {
+fn make_repro_cmd(repo_url: &str, repo_path: &TargetId) -> String {
     // the first component of the path is the repo, drop that
-    let mut repo_path = repo_path.components();
+    let mut repo_path = repo_path.path.components();
     repo_path.next();
     let repo_path = repo_path.as_path();
 
@@ -278,13 +279,13 @@ fn make_diff_report(
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
 ) -> Markup {
-    fn get_total_diff_ratios(results: &DiffResults) -> BTreeMap<&Path, f32> {
+    fn get_total_diff_ratios(results: &DiffResults) -> BTreeMap<&TargetId, f32> {
         results
             .success
             .iter()
             .map(|(k, v)| {
                 (
-                    k.as_path(),
+                    k,
                     match v {
                         DiffOutput::Identical => 100.0,
                         DiffOutput::Diffs(d) => d.get("total").unwrap().ratio().unwrap() * 100.0,
@@ -294,7 +295,7 @@ fn make_diff_report(
             .collect()
     }
 
-    let get_repo_url = |path: &Path| sources.get(path).map(String::as_str).unwrap_or("#");
+    let get_repo_url = |id: &TargetId| sources.get(&id.path).map(String::as_str).unwrap_or("#");
 
     let current_diff = get_total_diff_ratios(current);
     let prev_diff = get_total_diff_ratios(prev);
@@ -325,7 +326,7 @@ fn make_diff_report(
             details {
                 summary {
                     span.font_path {
-                        a href = (repo_url) { (path.display()) }
+                        a href = (repo_url) { (path) }
                         " ("
                         a href = "" onclick = (onclick) { "copy repro" }
                         ")"
@@ -552,8 +553,8 @@ fn format_diff_report_details(current: &DiffOutput, prev: Option<&DiffOutput>) -
 
 fn make_error_report_group<'a>(
     group_name: &str,
-    paths_and_if_is_new_error: impl Iterator<Item = (&'a Path, bool)>,
-    details: impl Fn(&Path) -> Markup,
+    paths_and_if_is_new_error: impl Iterator<Item = (&'a TargetId, bool)>,
+    details: impl Fn(&TargetId) -> Markup,
     sources: &BTreeMap<PathBuf, String>,
 ) -> Markup {
     let items = make_error_report_group_items(paths_and_if_is_new_error, details, sources);
@@ -570,16 +571,16 @@ fn make_error_report_group<'a>(
 }
 
 fn make_error_report_group_items<'a>(
-    paths_and_if_is_new_error: impl Iterator<Item = (&'a Path, bool)>,
-    details: impl Fn(&Path) -> Markup,
+    paths_and_if_is_new_error: impl Iterator<Item = (&'a TargetId, bool)>,
+    details: impl Fn(&TargetId) -> Markup,
     sources: &BTreeMap<PathBuf, String>,
 ) -> Markup {
-    let get_repo_url = |path: &Path| sources.get(path).map(String::as_str).unwrap_or("#");
+    let get_repo_url = |id: &TargetId| sources.get(&id.path).map(String::as_str).unwrap_or("#");
     html! {
             @for (path, is_new) in paths_and_if_is_new_error {
                 details.report_group_item {
                     summary {
-                        a href = ({ get_repo_url(path) }) { (path.display()) }
+                        a href = ({ get_repo_url(path) }) { (path) }
                          @if is_new { " 🆕" }
                 }
                     (details(path))
@@ -587,13 +588,13 @@ fn make_error_report_group_items<'a>(
         }
     }
 }
-fn get_other_failures(results: &DiffResults) -> BTreeMap<&Path, &str> {
+fn get_other_failures(results: &DiffResults) -> BTreeMap<&TargetId, &str> {
     results
         .failure
         .iter()
-        .filter_map(|(path, r)| match r {
+        .filter_map(|(id, r)| match r {
             DiffError::CompileFailed(_) => None,
-            DiffError::Other(err) => Some((path.as_path(), err.as_str())),
+            DiffError::Other(err) => Some((id, err.as_str())),
         })
         .collect()
 }
@@ -601,7 +602,7 @@ fn get_other_failures(results: &DiffResults) -> BTreeMap<&Path, &str> {
 fn get_compiler_failures<'a>(
     results: &'a DiffResults,
     compiler: &str,
-) -> BTreeMap<&'a Path, &'a CompilerFailure> {
+) -> BTreeMap<&'a TargetId, &'a CompilerFailure> {
     let get_err = |err: &'a DiffError| {
         let DiffError::CompileFailed(compfail) = err else {
             return None;
@@ -616,6 +617,6 @@ fn get_compiler_failures<'a>(
     results
         .failure
         .iter()
-        .flat_map(|(path, r)| get_err(r).map(|e| (path.as_path(), e)))
+        .flat_map(|(id, r)| get_err(r).map(|e| (id, e)))
         .collect()
 }
