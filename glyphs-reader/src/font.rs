@@ -205,7 +205,7 @@ pub struct Glyph {
     /// The right kerning group
     pub right_kern: Option<SmolStr>,
     pub category: Option<Category>,
-    pub sub_category: Subcategory,
+    pub sub_category: Option<Subcategory>,
 }
 
 impl Glyph {
@@ -214,7 +214,7 @@ impl Glyph {
             (self.category, self.sub_category),
             (
                 Some(Category::Mark),
-                Subcategory::Nonspacing | Subcategory::SpacingCombining
+                Some(Subcategory::Nonspacing) | Some(Subcategory::SpacingCombining)
             )
         )
     }
@@ -1898,7 +1898,7 @@ impl TryFrom<RawLayer> for Layer {
 
 impl RawGlyph {
     // we pass in the radix because it depends on the version, stored in the font struct
-    fn build(self, codepoint_radix: u32) -> Result<Glyph, Error> {
+    fn build(self, codepoint_radix: u32, glyph_data: &GlyphData) -> Result<Glyph, Error> {
         let mut instances = Vec::new();
         for layer in self.layers {
             if layer.is_draft() {
@@ -1933,12 +1933,10 @@ impl RawGlyph {
             .unwrap_or_default();
 
         if category.is_none() || sub_category.is_none() {
-            if let Some((computed_category, computed_subcategory)) =
-                get_glyph_category(&self.glyphname, &codepoints)
-            {
+            if let Some(result) = glyph_data.query(&self.glyphname, Some(&codepoints)) {
                 // if they were manually set don't change them, otherwise do
-                category = category.or(Some(computed_category));
-                sub_category = sub_category.or(Some(computed_subcategory));
+                category = category.or(Some(result.category));
+                sub_category = sub_category.or(result.subcategory);
             }
         }
 
@@ -1950,18 +1948,9 @@ impl RawGlyph {
             right_kern: self.kern_right,
             unicode: codepoints,
             category,
-            sub_category: sub_category.unwrap_or_default(),
+            sub_category,
         })
     }
-}
-
-// This will eventually need to be replaced with something that can handle
-// custom GlyphData.xml files, as well as handle overrides that are part of the
-// glyph source.
-fn get_glyph_category(name: &str, codepoints: &BTreeSet<u32>) -> Option<(Category, Subcategory)> {
-    GlyphData::bundled()
-        .get_glyph(name, Some(codepoints))
-        .map(|info| (info.category, info.subcategory))
 }
 
 // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/constants.py#L186
@@ -2239,6 +2228,9 @@ impl TryFrom<RawFont> for Font {
             from.v2_to_v3_names()?;
         }
 
+        // TODO: this should be provided in a manner that allows for overrides
+        let glyph_data = GlyphData::default();
+
         let radix = if from.is_v2() { 16 } else { 10 };
         let glyph_order = parse_glyph_order(&from);
 
@@ -2277,7 +2269,10 @@ impl TryFrom<RawFont> for Font {
 
         let mut glyphs = BTreeMap::new();
         for raw_glyph in from.glyphs.into_iter() {
-            glyphs.insert(raw_glyph.glyphname.clone(), raw_glyph.build(radix)?);
+            glyphs.insert(
+                raw_glyph.glyphname.clone(),
+                raw_glyph.build(radix, &glyph_data)?,
+            );
         }
 
         let mut features = Vec::new();
@@ -2615,7 +2610,7 @@ mod tests {
             default_master_idx, RawAxisUserToDesignMap, RawFeature, RawFont, RawFontMaster,
             RawUserToDesignMapping,
         },
-        glyphdata::{Category, Subcategory},
+        glyphdata::{Category, GlyphData},
         plist::FromPlist,
         Font, FontMaster, Node, Shape,
     };
@@ -3568,9 +3563,11 @@ mod tests {
             ..Default::default()
         };
 
-        let cooked = raw.build(16).unwrap();
-        assert_eq!(cooked.category, Some(Category::Letter));
-        assert_eq!(cooked.sub_category, Subcategory::None);
+        let cooked = raw.build(16, &GlyphData::default()).unwrap();
+        assert_eq!(
+            (cooked.category, cooked.sub_category),
+            (Some(Category::Letter), None)
+        );
     }
 
     #[test]

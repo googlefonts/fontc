@@ -548,10 +548,11 @@ fn category_for_glyph(glyph: &glyphs_reader::Glyph) -> Option<GlyphClassDef> {
         // 'attaching anchor'; see https://github.com/googlefonts/glyphsLib/issues/1024
         .any(|anchor| !anchor.name.starts_with('_'));
     match (glyph.category, glyph.sub_category) {
-        (_, Subcategory::Ligature) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
-        (Some(Category::Mark), Subcategory::Nonspacing | Subcategory::SpacingCombining) => {
-            Some(GlyphClassDef::Mark)
-        }
+        (_, Some(Subcategory::Ligature)) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
+        (
+            Some(Category::Mark),
+            Some(Subcategory::Nonspacing) | Some(Subcategory::SpacingCombining),
+        ) => Some(GlyphClassDef::Mark),
         _ if has_attaching_anchor => Some(GlyphClassDef::Base),
         _ => None,
     }

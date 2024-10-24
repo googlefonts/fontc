@@ -3,6 +3,7 @@
 pub mod error;
 mod font;
 pub mod glyphdata;
+mod glyphslib_data;
 mod plist;
 mod propagate_anchors;
 
