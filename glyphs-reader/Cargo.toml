@@ -35,10 +35,3 @@ bincode.workspace = true
 [dev-dependencies]
 pretty_assertions.workspace = true
 rstest.workspace = true
-
-[build-dependencies]
-quick-xml = "0.36"
-smol_str.workspace = true
-serde.workspace = true
-thiserror.workspace = true
-bincode.workspace = true

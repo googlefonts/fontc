@@ -3,6 +3,7 @@
 pub mod error;
 mod font;
 pub mod glyphdata;
+mod glyphslib_data;
 mod plist;
 mod propagate_anchors;
 
@@ -10,4 +11,5 @@ pub use font::{
     Axis, Component, FeatureSnippet, Font, FontMaster, Glyph, InstanceType, Layer, Node, NodeType,
     Path, Shape,
 };
+pub use glyphslib_data::{Category, Subcategory};
 pub use plist::Plist;
