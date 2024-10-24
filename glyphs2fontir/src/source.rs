@@ -25,10 +25,7 @@ use fontir::{
     source::{Input, Source},
     stateset::StateSet,
 };
-use glyphs_reader::{
-    glyphdata::{Category, Subcategory},
-    Font, InstanceType,
-};
+use glyphs_reader::{Category, Font, InstanceType, Subcategory};
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 use write_fonts::{
@@ -548,10 +545,11 @@ fn category_for_glyph(glyph: &glyphs_reader::Glyph) -> Option<GlyphClassDef> {
         // 'attaching anchor'; see https://github.com/googlefonts/glyphsLib/issues/1024
         .any(|anchor| !anchor.name.starts_with('_'));
     match (glyph.category, glyph.sub_category) {
-        (_, Subcategory::Ligature) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
-        (Some(Category::Mark), Subcategory::Nonspacing | Subcategory::SpacingCombining) => {
-            Some(GlyphClassDef::Mark)
-        }
+        (_, Some(Subcategory::Ligature)) if has_attaching_anchor => Some(GlyphClassDef::Ligature),
+        (
+            Some(Category::Mark),
+            Some(Subcategory::Nonspacing) | Some(Subcategory::SpacingCombining),
+        ) => Some(GlyphClassDef::Mark),
         _ if has_attaching_anchor => Some(GlyphClassDef::Base),
         _ => None,
     }
@@ -1132,7 +1130,7 @@ mod tests {
         source::Source,
         stateset::StateSet,
     };
-    use glyphs_reader::{glyphdata::Category, Font};
+    use glyphs_reader::{Category, Font};
     use indexmap::IndexSet;
     use ir::{test_helpers::Round2, Panose};
     use write_fonts::types::{NameId, Tag};

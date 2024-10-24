@@ -11,11 +11,7 @@ use indexmap::IndexMap;
 use kurbo::{Affine, Vec2};
 use smol_str::{format_smolstr, SmolStr};
 
-use crate::{
-    font::Anchor,
-    glyphdata::{Category, Subcategory},
-    Component, Font, Glyph, Layer, Shape,
-};
+use crate::{font::Anchor, Category, Component, Font, Glyph, Layer, Shape, Subcategory};
 
 impl Font {
     /// Copy anchors from component glyphs into their including composites
@@ -110,7 +106,7 @@ fn anchors_traversing_components<'a>(
         return origin_adjusted_anchors(&layer.anchors).collect();
     }
 
-    let is_ligature = glyph.sub_category == Subcategory::Ligature;
+    let is_ligature = glyph.sub_category == Some(Subcategory::Ligature);
     let mut has_underscore = layer
         .anchors
         .iter()
@@ -446,6 +442,8 @@ fn depth_sorted_composite_glyphs(glyphs: &BTreeMap<SmolStr, Glyph>) -> Vec<SmolS
 #[cfg(test)]
 mod tests {
 
+    use std::collections::BTreeSet;
+
     use kurbo::Point;
 
     use crate::{glyphdata::GlyphData, Layer, Shape};
@@ -477,16 +475,22 @@ mod tests {
 
     impl GlyphBuilder {
         fn new(name: &str) -> Self {
-            let info = GlyphData::bundled().get_glyph(name, None);
             let mut this = GlyphBuilder(Glyph {
                 name: name.into(),
                 export: true,
-                category: info.as_ref().map(|i| i.category),
-                sub_category: info.as_ref().map(|i| i.subcategory).unwrap_or_default(),
-
-                unicode: info.and_then(|i| i.unicode).into_iter().collect(),
                 ..Default::default()
             });
+            if let Some((category, sub_category, unicode)) =
+                GlyphData::glyphs_lib_data().query(name, None)
+            {
+                this.set_category(category);
+                if let Some(sub_category) = sub_category {
+                    this.set_subcategory(sub_category);
+                }
+                if let Some(unicode) = unicode {
+                    this.set_unicode(unicode);
+                }
+            }
             this.add_layer();
             this
         }
@@ -508,14 +512,18 @@ mod tests {
             self.0.layers.last_mut().unwrap()
         }
 
-        #[allow(dead_code)]
+        fn set_unicode(&mut self, unicode: u32) -> &mut Self {
+            self.0.unicode = BTreeSet::from([unicode]);
+            self
+        }
+
         fn set_category(&mut self, category: Category) -> &mut Self {
             self.0.category = Some(category);
             self
         }
 
         fn set_subcategory(&mut self, sub_category: Subcategory) -> &mut Self {
-            self.0.sub_category = sub_category;
+            self.0.sub_category = Some(sub_category);
             self
         }
 
