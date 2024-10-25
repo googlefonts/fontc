@@ -43,10 +43,12 @@ struct Results<T, E> {
     pub(crate) failure: BTreeMap<TargetId, E>,
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct Target {
     // will be used in gftools mode
-    pub(crate) _config: PathBuf,
+    pub(crate) config: PathBuf,
     pub(crate) source: PathBuf,
+    pub(crate) build: BuildType,
 }
 
 /// Uniquely identify a source + build type (default, gftools)
@@ -137,7 +139,7 @@ impl Target {
     pub(crate) fn id(&self) -> TargetId {
         TargetId {
             path: self.source.clone(),
-            build: crate::BuildType::Default,
+            build: self.build,
         }
     }
 }
@@ -148,12 +150,18 @@ impl Display for Target {
     }
 }
 
+impl BuildType {
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            BuildType::Default => "default",
+            BuildType::GfTools => "gftools",
+        }
+    }
+}
+
 impl Display for BuildType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BuildType::Default => f.write_str("default"),
-            BuildType::GfTools => f.write_str("gftools"),
-        }
+        f.write_str(self.name())
     }
 }
 

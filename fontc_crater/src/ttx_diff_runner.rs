@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::Path, process::Command};
 
-use crate::{Results, RunResult, Target};
+use crate::{BuildType, Results, RunResult, Target};
 
 static SCRIPT_PATH: &str = "./resources/scripts/ttx_diff.py";
 // in the format expected by timeout(1)
@@ -10,17 +10,17 @@ pub(super) fn run_ttx_diff(cache_dir: &Path, target: &Target) -> RunResult<DiffO
     let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
     let outdir = tempdir.path();
     let source_path = cache_dir.join(&target.source);
-    let output = match Command::new("timeout")
-        .arg(TTX_TIME_BUDGET)
-        .arg("python")
-        .arg(SCRIPT_PATH)
-        .args(["--compare", "default"])
-        .arg("--json")
+    let compare = target.build.name();
+    let mut cmd = Command::new("timeout");
+    cmd.arg(TTX_TIME_BUDGET)
+        .args(["python", SCRIPT_PATH, "--json", "--compare", compare])
         .arg("--outdir")
-        .arg(outdir)
-        .arg(source_path)
-        .output()
-    {
+        .arg(outdir);
+    if target.build == BuildType::GfTools {
+        cmd.arg("--config").arg(&target.config);
+    }
+    cmd.arg(source_path);
+    let output = match cmd.output() {
         Err(e) => return RunResult::Fail(DiffError::Other(e.to_string())),
         Ok(val) => val,
     };
