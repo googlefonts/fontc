@@ -172,18 +172,13 @@ def build(cmd: Sequence, build_dir: Path, **kwargs):
         raise BuildFail(cmd, output.stderr)
 
 
-def build_fontc(source: Path, fontc_cargo_path: Path, build_dir: Path, compare: str):
+def build_fontc(source: Path, fontc_bin: Path, build_dir: Path, compare: str):
     out_file = build_dir / "fontc.ttf"
     if out_file.exists():
         eprint(f"reusing {out_file}")
         return
     cmd = [
-        "cargo",
-        "run",
-        "--release",
-        "--manifest-path",
-        str(fontc_cargo_path),
-        "--",
+        fontc_bin,
         # uncomment this to compare output w/ fontmake --keep-direction
         # "--keep-direction",
         # no longer required, still useful to get human-readable glyph names in diff
@@ -192,7 +187,7 @@ def build_fontc(source: Path, fontc_cargo_path: Path, build_dir: Path, compare: 
         ".",
         "-o",
         out_file.name,
-        str(source),
+        source,
     ]
     if compare == _COMPARE_GFTOOLS:
         cmd.append("--flatten-components")
@@ -628,10 +623,13 @@ def main(argv):
     if root.name != "fontc":
         sys.exit("Expected to be at the root of fontc")
     fontc_manifest_path = root / "fontc" / "Cargo.toml"
+    fontc_bin_path = root / "target" / "release" / "fontc"
     otl_norm_manifest_path = root / "otl-normalizer" / "Cargo.toml"
     otl_bin_path = root / "target" / "release" / "otl-normalizer"
     build_crate(otl_norm_manifest_path)
+    build_crate(fontc_manifest_path)
     assert otl_bin_path.is_file(), "failed to build otl-normalizer?"
+    assert fontc_bin_path.is_file(), "failed to build fontc?"
 
     if shutil.which("fontmake") is None:
         sys.exit("No fontmake")
@@ -666,7 +664,7 @@ def main(argv):
         delete_things_we_must_rebuild(FLAGS.rebuild, fontmake_ttf, fontc_ttf)
 
         try:
-            build_fontc(source.resolve(), fontc_manifest_path, build_dir, compare)
+            build_fontc(source.resolve(), fontc_bin_path, build_dir, compare)
         except BuildFail as e:
             failures["fontc"] = {
                 "command": " ".join(e.command),
