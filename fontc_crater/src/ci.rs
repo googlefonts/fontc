@@ -81,15 +81,13 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let mut prev_runs: Vec<RunSummary> = load_json_if_exists_else_default(&summary_file)?;
     // todo: fontc_repo should be checked out by us, and have a known path
     let fontc_rev = super::get_git_rev(None).unwrap();
-    if prev_runs
-        .last()
-        .map(|prev| prev.fontc_rev == fontc_rev)
-        .unwrap_or(false)
-    {
-        // eventually we will want an argument to force rerunning, which we'll
-        // use when we update fontmake or the input data set
-        log::info!("fontc rev is unchange from last run, skipping");
-        return Ok(());
+    if let Some(last_run) = prev_runs.last() {
+        if last_run.fontc_rev == fontc_rev
+            && Some(last_run.input_file.as_os_str()) == args.to_run.file_name()
+        {
+            log::info!("fontc rev & inputs is unchanged from last run, skipping");
+            return Ok(());
+        }
     }
 
     let inputs: Vec<RepoInfo> = super::try_read_json(&args.to_run)?;
