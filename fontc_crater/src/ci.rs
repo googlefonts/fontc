@@ -108,8 +108,11 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         .collect();
     let finished = Utc::now();
 
-    super::try_write_json(&results, &out_path)?;
     let summary = super::ttx_diff_runner::Summary::new(&results);
+    if Some(&summary) == prev_runs.last().map(|run| &run.stats) {
+        log::info!("output identical to last run, skipping");
+        return Ok(());
+    }
     let input_file = args
         .to_run
         .file_name()
@@ -127,6 +130,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
 
     prev_runs.push(summary);
 
+    super::try_write_json(&results, &out_path)?;
     super::try_write_json(&prev_runs, &summary_file)?;
 
     // we write the map of target -> source repo to a separate file because

@@ -71,7 +71,7 @@ pub(super) enum DiffOutput {
 }
 
 /// Summary of one ttx_diff run
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Summary {
     pub(crate) total_targets: u32,
     pub(crate) identical: u32,
