@@ -107,8 +107,9 @@ impl Summary {
             })
             .sum::<f32>();
         let total_diff = total_diff + (identical as f32);
-        let diff_perc_including_failures = total_diff / (n_failed + success.len()) as f32 * 100.;
-        let diff_perc_excluding_failures = total_diff / success.len() as f32 * 100.;
+        let diff_perc_including_failures =
+            non_nan(total_diff / (n_failed + success.len()) as f32) * 100.;
+        let diff_perc_excluding_failures = non_nan(total_diff / success.len() as f32) * 100.;
         let (mut fontc_failed, mut fontmake_failed, mut both_failed, mut other_failure) =
             (0, 0, 0, 0);
         for fail in failure.values() {
@@ -144,6 +145,15 @@ fn assert_has_timeout_coreutil() {
         Ok(_) => eprintln!("could not find 'timeout'. You may need to install coreutils (on macos, `brew install coreutils`)"),
     }
     std::process::exit(1);
+}
+
+// replace nan with 0
+fn non_nan(val: f32) -> f32 {
+    if val.is_nan() {
+        0.0
+    } else {
+        val
+    }
 }
 
 /// make sure we can find and execute ttx_diff script
