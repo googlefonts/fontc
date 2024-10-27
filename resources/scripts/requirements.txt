@@ -8,3 +8,5 @@ fonttools
 lxml
 cdifflib
 glyphsLib
+# our custom branch of gftools
+git+https://github.com/googlefonts/gftools.git@fontc-flag-sketch
