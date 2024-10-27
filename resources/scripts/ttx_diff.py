@@ -177,7 +177,7 @@ class BuildFail(Exception):
 def build(cmd: Sequence, build_dir: Union[Path, None], **kwargs):
     output = log_and_run(cmd, build_dir, **kwargs)
     if output.returncode != 0:
-        raise BuildFail(cmd, output.stderr)
+        raise BuildFail(cmd, output.stderr or output.stdout)
 
 
 def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
