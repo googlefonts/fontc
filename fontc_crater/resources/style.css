@@ -64,13 +64,21 @@ td.rev {
   font-family: monospace;
 }
 
-.font_path .diff_result {
+.diff_result {
+  width: 10em;
   display: inline-block;
 }
 
 .font_path {
   width: 50%;
   display: inline-block;
+}
+
+.changed_tag_list {
+  /*display: inline-block;*/
+  font-family: monospace;
+  font-size: 0.8em;
+  color: #888;
 }
 
 .diff_info {
