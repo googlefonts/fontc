@@ -21,11 +21,11 @@ use write_fonts::{
 
 use crate::error::VariationModelError;
 
-/// Generic trait for rounding half-way values to the nearest even number.
+/// Trait for rounding half-way values to the nearest even number.
 ///
 /// For example, 2.5 rounds to 2.0, 3.5 rounds to 4.0, and -2.5 rounds to -2.0.
 /// This is the same rounding mode as [`f64::round_ties_even`], which was
-/// stabilized in Rust 1.77.0. The trait provides a generic way to apply this
+/// stabilized in Rust 1.77.0. The trait provides a common way to apply this
 /// to different types besides `f64` e.g. `kurbo::Vec2`.
 /// We use it below in [`VariationModel`] for rounding variation deltas.
 ///
@@ -39,25 +39,25 @@ use crate::error::VariationModelError;
 /// For more info, see:
 /// - discussion in a related FontTools PR <https://github.com/fonttools/fonttools/pull/2214>
 /// - 'Rounding half to even' section in <https://en.wikipedia.org/wiki/Rounding>.
-pub trait RoundTiesEven<U, T = Self> {
-    fn round_ties_even(self) -> U;
+pub trait RoundTiesEven {
+    fn round_ties_even(self) -> Self;
 }
 
-impl RoundTiesEven<f64> for f64 {
+impl RoundTiesEven for f64 {
     #[inline]
     fn round_ties_even(self) -> f64 {
         self.round_ties_even()
     }
 }
 
-impl RoundTiesEven<f32> for f32 {
+impl RoundTiesEven for f32 {
     #[inline]
     fn round_ties_even(self) -> f32 {
         self.round_ties_even()
     }
 }
 
-impl RoundTiesEven<kurbo::Vec2> for kurbo::Vec2 {
+impl RoundTiesEven for kurbo::Vec2 {
     #[inline]
     fn round_ties_even(self) -> kurbo::Vec2 {
         kurbo::Vec2::new(self.x.round_ties_even(), self.y.round_ties_even())
@@ -214,7 +214,7 @@ impl VariationModel {
     ) -> Result<Vec<(VariationRegion, Vec<V>)>, DeltaError>
     where
         P: Copy + Default + Sub<P, Output = V>,
-        V: Copy + Mul<f64, Output = V> + Sub<V, Output = V> + RoundTiesEven<V>,
+        V: Copy + Mul<f64, Output = V> + Sub<V, Output = V> + RoundTiesEven,
     {
         if point_seqs.is_empty() {
             return Ok(Vec::new());
@@ -1419,7 +1419,7 @@ mod tests {
     #[derive(Debug, Default, Copy, Clone, PartialEq)]
     struct NoRoundF64(f64);
 
-    impl RoundTiesEven<NoRoundF64> for NoRoundF64 {
+    impl RoundTiesEven for NoRoundF64 {
         #[inline]
         fn round_ties_even(self) -> NoRoundF64 {
             self
