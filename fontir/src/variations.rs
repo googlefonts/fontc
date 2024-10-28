@@ -21,40 +21,45 @@ use write_fonts::{
 
 use crate::error::VariationModelError;
 
-/// Trait for performing banker's rounding on a value.
+/// Generic trait for rounding half-way values to the nearest even number.
 ///
-/// Banker's rounding rounds half to even. This means that half-way values
-/// are rounded to the nearest even number. For example, 2.5 rounds to 2.0,
-/// 3.5 rounds to 4.0, and -2.5 rounds to -2.0.
-///
+/// For example, 2.5 rounds to 2.0, 3.5 rounds to 4.0, and -2.5 rounds to -2.0.
 /// This is the same rounding mode as [`f64::round_ties_even`], which was
-/// stabilized in Rust 1.77.0. It also matches Python's buit-in `round` function.
-/// It is usually preferred over alternative approaches because it reduces bias
-/// and errors in calculations.
+/// stabilized in Rust 1.77.0. The trait provides a generic way to apply this
+/// to different types besides `f64` e.g. `kurbo::Vec2`.
+/// We use it below in [`VariationModel`] for rounding variation deltas.
 ///
-/// This trait provides a generic way to apply banker's rounding to different types,
-/// such as `f64` and `kurbo::Vec2`.
-pub trait BankerRound<U, T = Self> {
-    fn banker_round(self) -> U;
+/// It also matches the Python's buit-in `round` function which is used by FontTools'
+/// VariationModel for rounding deltas.
+///
+/// In general, this is the preferred approach when doing a lot of additions or
+/// subtractions of rounded numbers, for it avoids bias both toward positive/negative
+/// values and toward/away from zero.
+///
+/// For more info, see:
+/// - discussion in a related FontTools PR <https://github.com/fonttools/fonttools/pull/2214>
+/// - 'Rounding half to even' section in <https://en.wikipedia.org/wiki/Rounding>.
+pub trait RoundTiesEven<U, T = Self> {
+    fn round_ties_even(self) -> U;
 }
 
-impl BankerRound<f64> for f64 {
+impl RoundTiesEven<f64> for f64 {
     #[inline]
-    fn banker_round(self) -> f64 {
+    fn round_ties_even(self) -> f64 {
         self.round_ties_even()
     }
 }
 
-impl BankerRound<f32> for f32 {
+impl RoundTiesEven<f32> for f32 {
     #[inline]
-    fn banker_round(self) -> f32 {
+    fn round_ties_even(self) -> f32 {
         self.round_ties_even()
     }
 }
 
-impl BankerRound<kurbo::Vec2> for kurbo::Vec2 {
+impl RoundTiesEven<kurbo::Vec2> for kurbo::Vec2 {
     #[inline]
-    fn banker_round(self) -> kurbo::Vec2 {
+    fn round_ties_even(self) -> kurbo::Vec2 {
         kurbo::Vec2::new(self.x.round_ties_even(), self.y.round_ties_even())
     }
 }
@@ -209,7 +214,7 @@ impl VariationModel {
     ) -> Result<Vec<(VariationRegion, Vec<V>)>, DeltaError>
     where
         P: Copy + Default + Sub<P, Output = V>,
-        V: Copy + Mul<f64, Output = V> + Sub<V, Output = V> + BankerRound<V>,
+        V: Copy + Mul<f64, Output = V> + Sub<V, Output = V> + RoundTiesEven<V>,
     {
         if point_seqs.is_empty() {
             return Ok(Vec::new());
@@ -276,8 +281,10 @@ impl VariationModel {
                         // deltas will be stored as integers in the VarStore hence must be rounded at
                         // some point; this is the correct place to round them, instead of at the end,
                         // otherwise rounding errors can compound especially where master influences
-                        // overlap.
-                        .banker_round(),
+                        // overlap. This also matches FontTools behavior, see:
+                        // https://github.com/fonttools/fonttools/issues/2213
+                        // https://github.com/fonttools/fonttools/pull/2214
+                        .round_ties_even(),
                 );
             }
             model_idx_to_result_idx.insert(model_idx, result.len());
@@ -1412,9 +1419,9 @@ mod tests {
     #[derive(Debug, Default, Copy, Clone, PartialEq)]
     struct NoRoundF64(f64);
 
-    impl BankerRound<NoRoundF64> for NoRoundF64 {
+    impl RoundTiesEven<NoRoundF64> for NoRoundF64 {
         #[inline]
-        fn banker_round(self) -> NoRoundF64 {
+        fn round_ties_even(self) -> NoRoundF64 {
             self
         }
     }
