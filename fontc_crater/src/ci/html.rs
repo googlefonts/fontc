@@ -318,7 +318,7 @@ fn make_diff_report(
             make_repro_cmd(repo_url, path)
         );
         let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
-        let details = format_diff_report_details(diff_details, prev_details);
+        let details = format_diff_report_details(diff_details, prev_details, onclick);
         // avoid .9995 printing as 100%
         let ratio_fmt = format!("{:.3}%", (ratio * 1000.0).floor() / 1000.0);
 
@@ -327,9 +327,6 @@ fn make_diff_report(
                 summary {
                     span.font_path {
                         a href = (repo_url) { (path) }
-                        " ("
-                        a href = "" onclick = (onclick) { "copy repro" }
-                        ")"
                     }
                     span.diff_result { (ratio_fmt) " " (decoration) }
                 }
@@ -484,7 +481,11 @@ fn format_compiler_error(err: &CompilerFailure) -> Markup {
 }
 
 /// for a given diff, the detailed information on per-table changes
-fn format_diff_report_details(current: &DiffOutput, prev: Option<&DiffOutput>) -> Markup {
+fn format_diff_report_details(
+    current: &DiffOutput,
+    prev: Option<&DiffOutput>,
+    repro_cmd: String,
+) -> Markup {
     let value_decoration = |table, value: DiffValue| -> Markup {
         let prev_value = match prev {
             None => None,
@@ -533,20 +534,31 @@ fn format_diff_report_details(current: &DiffOutput, prev: Option<&DiffOutput>) -
         })
         .collect::<Vec<_>>();
 
+    let diff_table = if all_items.is_empty() {
+        html!()
+    } else {
+        html! {
+            table {
+                thead {
+                    tr {
+                        th.diff_table scope = "col" { "table" }
+                        th.diff_value scope = "col" { "value" }
+                    }
+                }
+                @for (table, value) in all_items {
+                    tr.table_diff_row {
+                        td.table_diff_name { (table) }
+                        td.table_diff_value { (value) " " ( {value_decoration(table, value) }) }
+                    }
+                }
+            }
+        }
+    };
+
     html! {
-        table.diff_info {
-            thead {
-                tr {
-                    th.diff_table scope = "col" { "table" }
-                    th.diff_value scope = "col" { "value" }
-                }
-            }
-            @for (table, value) in all_items {
-                tr.table_diff_row {
-                    td.table_diff_name { (table) }
-                    td.table_diff_value { (value) " " ( {value_decoration(table, value) }) }
-                }
-            }
+        div.diff_info {
+            (diff_table)
+            a href = "" onclick = (repro_cmd) { "copy reproduction command" }
         }
     }
 }
