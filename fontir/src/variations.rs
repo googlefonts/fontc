@@ -297,6 +297,8 @@ impl VariationModel {
     /// Convert relative deltas to absolute values at the given location.
     ///
     /// Rust version of <https://github.com/fonttools/fonttools/blob/4ad6b0db/Lib/fontTools/varLib/models.py#L514-L545>
+    ///
+    /// TODO: document invariants and what we are returning
     pub fn interpolate_from_deltas<V>(
         &self,
         location: &NormalizedLocation,
@@ -305,28 +307,24 @@ impl VariationModel {
     where
         V: Copy + Mul<f64, Output = V> + Add<V, Output = V>,
     {
-        let mut result = None;
-        for (region, deltas) in deltasets.iter() {
-            let scalar = region.scalar_at(location).into_inner() as f64;
-            if scalar == 0.0 {
-                continue;
-            }
-            let contribution = deltas.iter().map(|d| *d * scalar).collect::<Vec<_>>();
-            if result.is_none() {
-                result = Some(contribution);
-            } else {
-                result = Some(
-                    result
-                        .unwrap()
-                        .iter()
-                        .zip(contribution.into_iter())
-                        .map(|(r, c)| *r + c)
-                        .collect(),
-                );
-            }
-        }
-
-        result.unwrap()
+        deltasets
+            .iter()
+            .map(|(region, deltas)| (region.scalar_at(location).0 as f64, deltas))
+            .filter(|(scalar, _deltas)| *scalar != 0.0)
+            .fold(None, |result, (scalar, deltas)| {
+                let contribution = deltas.iter().map(|d| *d * scalar);
+                match result {
+                    None => Some(contribution.collect::<Vec<_>>()),
+                    Some(mut existing) => {
+                        existing
+                            .iter_mut()
+                            .zip(contribution)
+                            .for_each(|(acc, val)| *acc = *acc + val);
+                        Some(existing)
+                    }
+                }
+            })
+            .unwrap_or_default()
     }
 }
 
