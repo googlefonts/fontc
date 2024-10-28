@@ -45,7 +45,7 @@ import sys
 import os
 from urllib.parse import urlparse
 from cdifflib import CSequenceMatcher as SequenceMatcher
-from typing import Sequence, Union
+from typing import Optional, Sequence
 from glyphsLib import GSFont
 from fontTools.designspaceLib import DesignSpaceDocument
 import time
@@ -174,7 +174,7 @@ class BuildFail(Exception):
 
 
 # run a font compiler
-def build(cmd: Sequence, build_dir: Union[Path, None], **kwargs):
+def build(cmd: Sequence, build_dir: Optional[Path], **kwargs):
     output = log_and_run(cmd, build_dir, **kwargs)
     if output.returncode != 0:
         raise BuildFail(cmd, output.stderr or output.stdout)
@@ -235,7 +235,7 @@ def build_fontmake(source: Path, build_dir: Path):
 
 
 def run_gftools(
-    source: Path, config: Path, build_dir: Path, fontc_bin: Union[Path, None] = None
+    source: Path, config: Path, build_dir: Path, fontc_bin: Optional[Path] = None
 ):
     tool = "fontmake" if fontc_bin is None else "fontc"
     filename = tool + ".ttf"
@@ -267,6 +267,7 @@ def run_gftools(
     if out_dir.exists():
         shutil.rmtree(out_dir)
 
+
 def source_is_variable(path: Path) -> bool:
     if path.suffix == ".ufo":
         return False
@@ -283,9 +284,6 @@ def source_is_variable(path: Path) -> bool:
 def copy(old, new):
     shutil.copyfile(old, new)
     return new
-
-
-# def find_and_copy_one_file(from_dir: Path, to_file: Path):
 
 
 def name_id_to_name(ttx, xpath, attr):

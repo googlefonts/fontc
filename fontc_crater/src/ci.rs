@@ -204,15 +204,17 @@ fn targets_for_source(
 
 fn should_build_in_gftools_mode(src_path: &Path, config: &Config) -> bool {
     // skip noto, which have an implicitly different recipe provider
+    //https://github.com/googlefonts/oxidize/blob/main/text/2024-06-26-fixes-and-nonstandard-builds.md#noto
     if src_path
         .file_stem()
-        .and_then(|stem| stem.to_str().map(|s| s.to_lowercase().contains("noto")))
+        .and_then(|stem| stem.to_str().map(|s| s.to_lowercase().starts_with("noto")))
         .unwrap_or(false)
     {
         return false;
     }
 
-    // if there is a recipe provider other than googlefonts, we skip
+    // if there is a recipe provider other than googlefonts, we skip, because
+    // it could be doing anything; see above
     config
         .recipe_provider
         .as_ref()
