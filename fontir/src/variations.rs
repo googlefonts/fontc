@@ -1323,4 +1323,56 @@ mod tests {
             model.deltas(&point_seqs).unwrap()
         );
     }
+
+    #[test]
+    fn rounding_of_deltas_matches_fonttools() {
+        // This reproduces an off-by-one diff in MVAR table's deltas for Gelasio.glyphspackage
+        // between fontc and fontmake (rather fonttools) which was caused by the former's incorrect
+        // (late) rounding of deltas:
+        // https://github.com/googlefonts/fontc/issues/1043
+        // https://github.com/googlefonts/fontc/issues/235
+        let min = UserCoord::new(400.0);
+        let default = UserCoord::new(400.0);
+        let max = UserCoord::new(700.0);
+        let model = VariationModel::new(
+            HashSet::from([
+                NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                NormalizedLocation::for_pos(&[("wght", 1.0)]),
+            ]),
+            vec![Axis {
+                name: "Weight".to_string(),
+                tag: Tag::new(b"wght"),
+                min,
+                default,
+                max,
+                hidden: false,
+                converter: CoordConverter::new(
+                    vec![
+                        (default, DesignCoord::new(default.into_inner())),
+                        (max, DesignCoord::new(max.into_inner())),
+                    ],
+                    0,
+                ),
+            }],
+        )
+        .unwrap();
+
+        let master_values = HashMap::from([
+            (NormalizedLocation::for_pos(&[("wght", 0.0)]), vec![591.6]),
+            (NormalizedLocation::for_pos(&[("wght", 1.0)]), vec![596.4]),
+        ]);
+
+        // when working with unrounded values, the delta at wght=1.0 would be 4.8. By the
+        // time this gets ot-rounded to i16, it becomes 5, i.e. an extra +1 off the
+        // expected correct value (4).
+        assert_eq!(
+            vec![vec![592.0], vec![4.0]], // not vec![5.0]
+            model
+                .deltas(&master_values.clone())
+                .unwrap()
+                .into_iter()
+                .map(|(_, ds)| ds)
+                .collect::<Vec<_>>()
+        );
+    }
 }
