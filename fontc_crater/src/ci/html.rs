@@ -318,6 +318,7 @@ fn make_diff_report(
             make_repro_cmd(repo_url, path)
         );
         let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
+        let changed_tag_list = list_different_tables(diff_details).unwrap_or_default();
         let details = format_diff_report_details(diff_details, prev_details, onclick);
         // avoid .9995 printing as 100%
         let ratio_fmt = format!("{:.3}%", (ratio * 1000.0).floor() / 1000.0);
@@ -329,6 +330,7 @@ fn make_diff_report(
                         a href = (repo_url) { (path) }
                     }
                     span.diff_result { (ratio_fmt) " " (decoration) }
+                    span.changed_tag_list { (changed_tag_list) }
                 }
                 (details)
             }
@@ -478,6 +480,18 @@ fn format_compiler_error(err: &CompilerFailure) -> Markup {
 
         }
     }
+}
+
+fn list_different_tables(current: &DiffOutput) -> Option<String> {
+    let changed = current
+        .iter_tables()
+        .filter(|x| *x != "total")
+        .collect::<Vec<_>>()
+        .join(", ");
+    if changed.is_empty() {
+        return None;
+    }
+    Some(format!("({changed})"))
 }
 
 /// for a given diff, the detailed information on per-table changes
