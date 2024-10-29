@@ -18,7 +18,7 @@ use crate::{
     args::CiArgs,
     error::Error,
     ttx_diff_runner::{DiffError, DiffOutput},
-    Results, Target,
+    BuildType, Results, Target,
 };
 
 mod html;
@@ -176,12 +176,48 @@ fn make_targets(cache_dir: &Path, repos: &[RepoInfo]) -> (Vec<Target>, BTreeMap<
                     .expect("source is always in cache dir")
                     .to_path_buf();
                 repo_list.insert(src_path.clone(), repo.repo_url.clone());
-                targets.push(Target {
-                    _config: config_path.to_owned(),
-                    source: src_path,
-                })
+                targets.extend(targets_for_source(&src_path, &config_path, &config))
             }
         }
     }
     (targets, repo_list)
+}
+
+fn targets_for_source(
+    src_path: &Path,
+    config_path: &Path,
+    config: &Config,
+) -> impl Iterator<Item = Target> {
+    let default = Some(Target {
+        config: config_path.to_owned(),
+        source: src_path.to_owned(),
+        build: BuildType::Default,
+    });
+
+    let gftools = should_build_in_gftools_mode(src_path, config).then(|| Target {
+        config: config_path.to_owned(),
+        source: src_path.to_owned(),
+        build: BuildType::GfTools,
+    });
+    [default, gftools].into_iter().flatten()
+}
+
+fn should_build_in_gftools_mode(src_path: &Path, config: &Config) -> bool {
+    // skip noto, which have an implicitly different recipe provider
+    //https://github.com/googlefonts/oxidize/blob/main/text/2024-06-26-fixes-and-nonstandard-builds.md#noto
+    if src_path
+        .file_stem()
+        .and_then(|stem| stem.to_str().map(|s| s.to_lowercase().starts_with("noto")))
+        .unwrap_or(false)
+    {
+        return false;
+    }
+
+    // if there is a recipe provider other than googlefonts, we skip, because
+    // it could be doing anything; see above
+    config
+        .recipe_provider
+        .as_ref()
+        .filter(|provider| *provider != "googlefonts")
+        .is_none()
 }

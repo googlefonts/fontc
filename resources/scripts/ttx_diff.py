@@ -45,7 +45,7 @@ import sys
 import os
 from urllib.parse import urlparse
 from cdifflib import CSequenceMatcher as SequenceMatcher
-from typing import Sequence
+from typing import Optional, Sequence
 from glyphsLib import GSFont
 from fontTools.designspaceLib import DesignSpaceDocument
 import time
@@ -53,6 +53,9 @@ import time
 
 _COMPARE_DEFAULTS = "default"
 _COMPARE_GFTOOLS = "gftools"
+
+# environment variable used by GFTOOLS
+GFTOOLS_FONTC_PATH = "GFTOOLS_FONTC_PATH"
 
 
 FLAGS = flags.FLAGS
@@ -68,11 +71,16 @@ def eprint(*objects):
     print(*objects, file=sys.stderr)
 
 
+flags.DEFINE_string(
+    "config",
+    default=None,
+    help="config.yaml to be passed to gftools in gftools mode",
+)
 flags.DEFINE_enum(
     "compare",
     "default",
-    ["both", _COMPARE_DEFAULTS, _COMPARE_GFTOOLS],
-    "Compare results with default flags, with the flags gftools uses, or both. Default both. Note that as of 5/21/2023 defaults still sets flags for fontmake to match fontc behavior.",
+    [_COMPARE_DEFAULTS, _COMPARE_GFTOOLS],
+    "Compare results using either a default build or a build managed by gftools. Note that as of 5/21/2023 defaults still sets flags for fontmake to match fontc behavior.",
 )
 flags.DEFINE_enum(
     "rebuild",
@@ -160,30 +168,25 @@ def try_normalizer_gpos(normalizer_bin: Path, font_file: Path, out_path: Path):
 class BuildFail(Exception):
     """An exception raised if a compiler fails."""
 
-    def __init__(self, cmd: Sequence, stderr: str):
-        self.command = list(cmd)
-        self.stderr = stderr
+    def __init__(self, cmd: Sequence, msg: str):
+        self.command = list(str(c) for c in cmd)
+        self.msg = msg
 
 
 # run a font compiler
-def build(cmd: Sequence, build_dir: Path, **kwargs):
+def build(cmd: Sequence, build_dir: Optional[Path], **kwargs):
     output = log_and_run(cmd, build_dir, **kwargs)
     if output.returncode != 0:
-        raise BuildFail(cmd, output.stderr)
+        raise BuildFail(cmd, output.stderr or output.stdout)
 
 
-def build_fontc(source: Path, fontc_cargo_path: Path, build_dir: Path, compare: str):
+def build_fontc(source: Path, fontc_bin: Path, build_dir: Path):
     out_file = build_dir / "fontc.ttf"
     if out_file.exists():
         eprint(f"reusing {out_file}")
         return
     cmd = [
-        "cargo",
-        "run",
-        "--release",
-        "--manifest-path",
-        str(fontc_cargo_path),
-        "--",
+        fontc_bin,
         # uncomment this to compare output w/ fontmake --keep-direction
         # "--keep-direction",
         # no longer required, still useful to get human-readable glyph names in diff
@@ -192,15 +195,12 @@ def build_fontc(source: Path, fontc_cargo_path: Path, build_dir: Path, compare: 
         ".",
         "-o",
         out_file.name,
-        str(source),
+        source,
     ]
-    if compare == _COMPARE_GFTOOLS:
-        cmd.append("--flatten-components")
-        cmd.append("--decompose-transformed-components")
     build(cmd, build_dir)
 
 
-def build_fontmake(source: Path, build_dir: Path, compare: str):
+def build_fontmake(source: Path, build_dir: Path):
     out_file = build_dir / "fontmake.ttf"
     if out_file.exists():
         eprint(f"reusing {out_file}")
@@ -229,16 +229,43 @@ def build_fontmake(source: Path, build_dir: Path, compare: str):
         # TODO(anthrotype): Remove if/when fontc gains the ability to remove overlaps.
         # https://github.com/googlefonts/fontc/issues/975
         cmd.append("--keep-overlaps")
-    if compare == _COMPARE_GFTOOLS:
-        cmd += [
-            "--filter",
-            "FlattenComponentsFilter",
-            "--filter",
-            "DecomposeTransformedComponentsFilter",
-        ]
     cmd.append(str(source))
 
     build(cmd, build_dir)
+
+
+def run_gftools(
+    source: Path, config: Path, build_dir: Path, fontc_bin: Optional[Path] = None
+):
+    tool = "fontmake" if fontc_bin is None else "fontc"
+    filename = tool + ".ttf"
+    out_file = build_dir / filename
+    out_dir = build_dir / "gftools_temp_dir"
+    cmd = [
+        "gftools",
+        "builder",
+        config,
+        "--experimental-simple-output",
+        out_dir,
+        "--experimental-single-source",
+        source.name,
+    ]
+    if fontc_bin is not None:
+        cmd += ["--experimental-fontc", fontc_bin]
+
+    build(cmd, None)
+
+    # return a concise error if gftools produces != one output
+    contents = list(out_dir.iterdir()) if out_dir.exists() else list()
+    if not contents:
+        raise BuildFail(cmd, "gftools produced no output")
+    elif len(contents) != 1:
+        contents = [p.name for p in contents]
+        raise BuildFail(cmd, f"gftools produced multiple outputs: {contents}")
+    copy(contents[0], out_file)
+
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
 
 
 def source_is_variable(path: Path) -> bool:
@@ -622,16 +649,19 @@ def main(argv):
     if len(argv) != 2:
         sys.exit("Only one argument, a source file, is expected")
 
-    source = resolve_source(argv[1])
+    source = resolve_source(argv[1]).resolve()
 
     root = Path(".").resolve()
     if root.name != "fontc":
         sys.exit("Expected to be at the root of fontc")
     fontc_manifest_path = root / "fontc" / "Cargo.toml"
+    fontc_bin_path = root / "target" / "release" / "fontc"
     otl_norm_manifest_path = root / "otl-normalizer" / "Cargo.toml"
     otl_bin_path = root / "target" / "release" / "otl-normalizer"
     build_crate(otl_norm_manifest_path)
+    build_crate(fontc_manifest_path)
     assert otl_bin_path.is_file(), "failed to build otl-normalizer?"
+    assert fontc_bin_path.is_file(), "failed to build fontc?"
 
     if shutil.which("fontmake") is None:
         sys.exit("No fontmake")
@@ -642,57 +672,56 @@ def main(argv):
     if FLAGS.outdir is not None:
         out_dir = Path(FLAGS.outdir).resolve()
         assert out_dir.exists(), f"output directory {out_dir} does not exist"
-    comparisons = (FLAGS.compare,)
-    if comparisons == ("both",):
-        if FLAGS.json:
-            sys.exit(
-                "JSON output does not support multiple comparisons (try --compare default|gftools)"
-            )
-        comparisons = (_COMPARE_DEFAULTS, _COMPARE_GFTOOLS)
 
     diffs = False
-    for compare in comparisons:
-        build_dir = out_dir / compare
-        build_dir.mkdir(parents=True, exist_ok=True)
-        eprint(f"Compare {compare} in {build_dir}")
 
-        failures = dict()
+    compare = FLAGS.compare
+    build_dir = out_dir / compare
+    build_dir.mkdir(parents=True, exist_ok=True)
+    eprint(f"Compare {compare} in {build_dir}")
 
-        fontmake_ttf = build_dir / "fontmake.ttf"
-        fontc_ttf = build_dir / "fontc.ttf"
+    failures = dict()
 
-        # we delete all resources that we have to rebuild. The rest of the script
-        # will assume it can reuse anything that still exists.
-        delete_things_we_must_rebuild(FLAGS.rebuild, fontmake_ttf, fontc_ttf)
+    fontmake_ttf = build_dir / "fontmake.ttf"
+    fontc_ttf = build_dir / "fontc.ttf"
 
-        try:
-            build_fontc(source.resolve(), fontc_manifest_path, build_dir, compare)
-        except BuildFail as e:
-            failures["fontc"] = {
-                "command": " ".join(e.command),
-                "stderr": e.stderr[-MAX_ERR_LEN:],
-            }
-        try:
-            build_fontmake(source.resolve(), build_dir, compare)
-        except BuildFail as e:
-            failures["fontmake"] = {
-                "command": " ".join(e.command),
-                "stderr": e.stderr[-MAX_ERR_LEN:],
-            }
+    # we delete all resources that we have to rebuild. The rest of the script
+    # will assume it can reuse anything that still exists.
+    delete_things_we_must_rebuild(FLAGS.rebuild, fontmake_ttf, fontc_ttf)
 
-        report_errors_and_exit_if_there_were_any(failures)
+    try:
+        if compare == _COMPARE_DEFAULTS:
+            build_fontc(source, fontc_bin_path, build_dir)
+        else:
+            run_gftools(source, FLAGS.config, build_dir, fontc_bin=fontc_bin_path)
+    except BuildFail as e:
+        failures["fontc"] = {
+            "command": " ".join(e.command),
+            "stderr": e.msg[-MAX_ERR_LEN:],
+        }
+    try:
+        if compare == _COMPARE_DEFAULTS:
+            build_fontmake(source, build_dir)
+        else:
+            run_gftools(source, FLAGS.config, build_dir)
+    except BuildFail as e:
+        failures["fontmake"] = {
+            "command": " ".join(e.command),
+            "stderr": e.msg[-MAX_ERR_LEN:],
+        }
 
-        # if compilation completed, these exist
-        assert fontmake_ttf.is_file(), fontmake_ttf
-        assert fontc_ttf.is_file(), fontc_ttf
+    report_errors_and_exit_if_there_were_any(failures)
 
-        output = generate_output(build_dir, otl_bin_path, fontmake_ttf, fontc_ttf)
-        if output["fontc"] == output["fontmake"]:
-            eprint("output is identical")
-            continue
+    # if compilation completed, these exist
+    assert fontmake_ttf.is_file(), fontmake_ttf
+    assert fontc_ttf.is_file(), fontc_ttf
+
+    output = generate_output(build_dir, otl_bin_path, fontmake_ttf, fontc_ttf)
+    if output["fontc"] == output["fontmake"]:
+        eprint("output is identical")
+    else:
 
         diffs = True
-
         if not FLAGS.json:
             print_output(build_dir, output)
         else:
