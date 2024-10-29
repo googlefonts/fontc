@@ -298,9 +298,13 @@ impl VariationModel {
     ///
     /// Rust version of <https://github.com/fonttools/fonttools/blob/4ad6b0db/Lib/fontTools/varLib/models.py#L514-L545>
     ///
-    /// TODO: document invariants and what we are returning
-    pub fn interpolate_from_deltas<V>(
-        &self,
+    /// Not `pub` yet as it's currently only used for self-tests.
+    ///
+    /// TODO: document invariants and what we are returning. Perhaps allow a different
+    /// type parameter for the return value so that e.g. absolute Points are returned
+    /// when the deltas are Vec2?
+    #[allow(dead_code)]
+    fn interpolate_from_deltas<V>(
         location: &NormalizedLocation,
         deltasets: &[(VariationRegion, Vec<V>)],
     ) -> Vec<V>
@@ -1411,7 +1415,10 @@ mod tests {
 
         let loc = NormalizedLocation::for_pos(&[("wght", -0.5)]);
         let expected = vec![7.5];
-        assert_eq!(expected, model.interpolate_from_deltas(&loc, &deltas));
+        assert_eq!(
+            expected,
+            VariationModel::interpolate_from_deltas(&loc, &deltas)
+        );
     }
 
     #[derive(Debug, Default, Copy, Clone, PartialEq)]
@@ -1499,8 +1506,8 @@ mod tests {
                 .iter()
                 .all(|(_, deltas)| { deltas.iter().all(|d| d.fract() == 0.0) }));
 
-            let expected: Vec<f64> = model.interpolate_from_deltas(&loc, &deltas_float);
-            let actual: Vec<f64> = model.interpolate_from_deltas(&loc, &deltas_round);
+            let expected: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_float);
+            let actual: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_round);
 
             let err = (actual[0] - expected[0]).abs();
             assert!(err <= 0.5, "i: {}, err: {}", i, err);
@@ -1508,7 +1515,7 @@ mod tests {
             // when the influence of many masters overlap a particular location
             // interpolating from late-rounded deltas may lead to an accummulation
             // of rounding errors that exceed the max tolerance
-            let bad = model.interpolate_from_deltas(&loc, &deltas_late_round);
+            let bad = VariationModel::interpolate_from_deltas(&loc, &deltas_late_round);
             let err_bad = (bad[0] - expected[0]).abs();
             if err_bad > 0.5 {
                 num_bad_errors += 1;
