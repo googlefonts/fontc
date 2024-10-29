@@ -35,6 +35,8 @@ struct RunSummary {
     began: DateTime<Utc>,
     finished: DateTime<Utc>,
     fontc_rev: String,
+    #[serde(default)]
+    pip_freeze_sha: String,
     results_file: PathBuf,
     // the name of the file listing targets used by this run.
     // it is intended that when this list is updated, the filename is changed.
@@ -81,11 +83,13 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let mut prev_runs: Vec<RunSummary> = load_json_if_exists_else_default(&summary_file)?;
     // todo: fontc_repo should be checked out by us, and have a known path
     let fontc_rev = super::get_git_rev(None).unwrap();
+    let pip_freeze_sha = super::pip_freeze_sha();
     if let Some(last_run) = prev_runs.last() {
         if last_run.fontc_rev == fontc_rev
             && Some(last_run.input_file.as_os_str()) == args.to_run.file_name()
+            && pip_freeze_sha == last_run.pip_freeze_sha
         {
-            log::info!("fontc rev & inputs is unchanged from last run, skipping");
+            log::info!("no changes since last run, skipping");
             return Ok(());
         }
     }
@@ -121,6 +125,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
         began,
         finished,
         fontc_rev,
+        pip_freeze_sha,
         results_file: out_file.into(),
         input_file,
         stats: summary,
