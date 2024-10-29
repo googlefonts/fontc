@@ -4,6 +4,7 @@ use std::{
     collections::BTreeMap,
     fmt::Display,
     path::{Path, PathBuf},
+    process::{Command, Stdio},
     str::FromStr,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -133,6 +134,22 @@ fn get_git_rev(repo_path: Option<&Path>) -> Option<String> {
             .trim()
             .to_owned(),
     )
+}
+
+fn pip_freeze_sha() -> String {
+    let pipfreeze = Command::new("pip")
+        .arg("freeze")
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let sha1sum = Command::new("shasum")
+        .stdin(Stdio::from(pipfreeze.stdout.unwrap()))
+        .output()
+        .expect("shasum should be preinstalled everywhere");
+    assert!(sha1sum.status.success());
+    std::str::from_utf8(sha1sum.stdout.trim_ascii())
+        .expect("shasum output always ascii")
+        .to_owned()
 }
 
 impl Target {
