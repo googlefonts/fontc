@@ -86,10 +86,10 @@ enum SkipReason {
 }
 
 #[allow(clippy::type_complexity)] // come on, it's not _that_ bad
-fn run_all<T: Send, E: Send>(
+fn run_all<T: Send, E: Send, Cx: Sync>(
     targets: Vec<Target>,
-    cache_dir: &Path,
-    runner: impl Fn(&Path, &Target) -> RunResult<T, E> + Send + Sync,
+    context: &Cx,
+    runner: impl Fn(&Cx, &Target) -> RunResult<T, E> + Send + Sync,
 ) -> Result<Vec<(Target, RunResult<T, E>)>, Error> {
     let total_targets = targets.len();
     let counter = AtomicUsize::new(0);
@@ -103,7 +103,7 @@ fn run_all<T: Send, E: Send>(
                 let i = counter.fetch_add(1, Ordering::Relaxed) + 1;
                 currently_running.fetch_add(1, Ordering::Relaxed);
                 log::debug!("starting {} ({i}/{total_targets})", target);
-                let r = runner(cache_dir, &target);
+                let r = runner(context, &target);
                 let n_running = currently_running.fetch_sub(1, Ordering::Relaxed);
                 log::debug!("finished {} ({n_running} active)", target);
                 (target, r)
