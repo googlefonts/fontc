@@ -3,7 +3,7 @@ use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap, HashSet},
     fmt::{Debug, Display},
-    ops::{Mul, Sub},
+    ops::{Add, Mul, Sub},
 };
 
 use fontdrasil::{
@@ -20,6 +20,49 @@ use write_fonts::{
 };
 
 use crate::error::VariationModelError;
+
+/// Trait for rounding half-way values to the nearest even number.
+///
+/// For example, 2.5 rounds to 2.0, 3.5 rounds to 4.0, and -2.5 rounds to -2.0.
+/// This is the same rounding mode as [`f64::round_ties_even`], which was
+/// stabilized in Rust 1.77.0. The trait provides a common way to apply this
+/// to different types besides `f64` e.g. `kurbo::Vec2`.
+/// We use it below in [`VariationModel`] for rounding variation deltas.
+///
+/// It also matches the Python's buit-in `round` function which is used by FontTools'
+/// VariationModel for rounding deltas.
+///
+/// In general, this is the preferred approach when doing a lot of additions or
+/// subtractions of rounded numbers, for it avoids bias both toward positive/negative
+/// values and toward/away from zero.
+///
+/// For more info, see:
+/// - discussion in a related FontTools PR <https://github.com/fonttools/fonttools/pull/2214>
+/// - 'Rounding half to even' section in <https://en.wikipedia.org/wiki/Rounding>.
+pub trait RoundTiesEven {
+    fn round_ties_even(self) -> Self;
+}
+
+impl RoundTiesEven for f64 {
+    #[inline]
+    fn round_ties_even(self) -> f64 {
+        self.round_ties_even()
+    }
+}
+
+impl RoundTiesEven for f32 {
+    #[inline]
+    fn round_ties_even(self) -> f32 {
+        self.round_ties_even()
+    }
+}
+
+impl RoundTiesEven for kurbo::Vec2 {
+    #[inline]
+    fn round_ties_even(self) -> kurbo::Vec2 {
+        kurbo::Vec2::new(self.x.round_ties_even(), self.y.round_ties_even())
+    }
+}
 
 const ZERO: OrderedFloat<f32> = OrderedFloat(0.0);
 const ONE: OrderedFloat<f32> = OrderedFloat(1.0);
@@ -171,7 +214,7 @@ impl VariationModel {
     ) -> Result<Vec<(VariationRegion, Vec<V>)>, DeltaError>
     where
         P: Copy + Default + Sub<P, Output = V>,
-        V: Copy + Mul<f64, Output = V> + Sub<V, Output = V>,
+        V: Copy + Mul<f64, Output = V> + Sub<V, Output = V> + RoundTiesEven,
     {
         if point_seqs.is_empty() {
             return Ok(Vec::new());
@@ -234,7 +277,14 @@ impl VariationModel {
                         })
                         .fold(initial_vector, |acc, (other, other_weight)| {
                             acc - *other * other_weight.into()
-                        }),
+                        })
+                        // deltas will be stored as integers in the VarStore hence must be rounded at
+                        // some point; this is the correct place to round them, instead of at the end,
+                        // otherwise rounding errors can compound especially where master influences
+                        // overlap. This also matches FontTools behavior, see:
+                        // https://github.com/fonttools/fonttools/issues/2213
+                        // https://github.com/fonttools/fonttools/pull/2214
+                        .round_ties_even(),
                 );
             }
             model_idx_to_result_idx.insert(model_idx, result.len());
@@ -242,6 +292,43 @@ impl VariationModel {
         }
 
         Ok(result)
+    }
+
+    /// Convert relative deltas to absolute values at the given location.
+    ///
+    /// Rust version of <https://github.com/fonttools/fonttools/blob/4ad6b0db/Lib/fontTools/varLib/models.py#L514-L545>
+    ///
+    /// Not `pub` yet as it's currently only used for self-tests.
+    ///
+    /// TODO: document invariants and what we are returning. Perhaps allow a different
+    /// type parameter for the return value so that e.g. absolute Points are returned
+    /// when the deltas are Vec2?
+    #[allow(dead_code)]
+    fn interpolate_from_deltas<V>(
+        location: &NormalizedLocation,
+        deltasets: &[(VariationRegion, Vec<V>)],
+    ) -> Vec<V>
+    where
+        V: Copy + Mul<f64, Output = V> + Add<V, Output = V>,
+    {
+        deltasets
+            .iter()
+            .map(|(region, deltas)| (region.scalar_at(location).0 as f64, deltas))
+            .filter(|(scalar, _deltas)| *scalar != 0.0)
+            .fold(None, |result, (scalar, deltas)| {
+                let contribution = deltas.iter().map(|d| *d * scalar);
+                match result {
+                    None => Some(contribution.collect::<Vec<_>>()),
+                    Some(mut existing) => {
+                        existing
+                            .iter_mut()
+                            .zip(contribution)
+                            .for_each(|(acc, val)| *acc = *acc + val);
+                        Some(existing)
+                    }
+                }
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -778,6 +865,7 @@ mod tests {
             "ital" => ("Italic", "ital", 0, 0, 1),
             "foo" => ("Foo", "foo ", -1, 0, 1),
             "bar" => ("Bar", "bar ", -1, 0, 1),
+            "axis" => ("Axis", "axis", 0, 0, 1),
             _ => panic!("No definition for {tag}, add it?"),
         };
         let min = UserCoord::new(min as f32);
@@ -1314,13 +1402,177 @@ mod tests {
             (min_wght, vec![5.0]),
         ]);
 
+        let deltas = model.deltas(&point_seqs).unwrap();
+
         assert_eq!(
             vec![
                 (region(&[("wght", 0.0, 0.0, 0.0)]), vec![10.0]),
                 (region(&[("wght", -1.0, -1.0, 0.0)]), vec![-5.0]),
                 (region(&[("wght", 0.0, 1.0, 1.0)]), vec![2.0]),
             ],
-            model.deltas(&point_seqs).unwrap()
+            deltas
+        );
+
+        let loc = NormalizedLocation::for_pos(&[("wght", -0.5)]);
+        let expected = vec![7.5];
+        assert_eq!(
+            expected,
+            VariationModel::interpolate_from_deltas(&loc, &deltas)
+        );
+    }
+
+    #[derive(Debug, Default, Copy, Clone, PartialEq)]
+    struct NoRoundF64(f64);
+
+    impl RoundTiesEven for NoRoundF64 {
+        #[inline]
+        fn round_ties_even(self) -> NoRoundF64 {
+            self
+        }
+    }
+
+    impl std::ops::Sub for NoRoundF64 {
+        type Output = Self;
+
+        fn sub(self, rhs: Self) -> Self::Output {
+            NoRoundF64(self.0 - rhs.0)
+        }
+    }
+
+    impl std::ops::Mul<f64> for NoRoundF64 {
+        type Output = Self;
+
+        fn mul(self, rhs: f64) -> Self::Output {
+            NoRoundF64(self.0 * rhs)
+        }
+    }
+
+    #[test]
+    fn modeling_error_within_tolerance() {
+        // Compare interpolating from un-rounded float deltas vs rounded deltas,
+        // and check that rounding errors don't accummulate but stay within <= 0.5.
+        // This test was ported from:
+        // https://github.com/fonttools/fonttools/blob/3b9a73ff/Tests/varLib/models_test.py#L167
+        let num_locations = 31;
+        let num_samples = 251;
+        let locations: Vec<_> = (0..num_locations + 1)
+            .map(|i| NormalizedLocation::for_pos(&[("axis", i as f32 / num_locations as f32)]))
+            .collect();
+        let master_values: HashMap<_, _> = locations
+            .iter()
+            .zip((0..num_locations + 1).map(|i| if i == 0 { 0.0 } else { 100.0 }))
+            .map(|(loc, value)| (loc.clone(), vec![value]))
+            .collect();
+        // Same as master_values, but using special f64s that won't get rounded.
+        let master_values_noround: HashMap<_, _> = master_values
+            .iter()
+            .map(|(loc, values)| (loc.clone(), values.iter().map(|v| NoRoundF64(*v)).collect()))
+            .collect();
+
+        let model =
+            VariationModel::new(locations.into_iter().collect(), vec![axis("axis")]).unwrap();
+
+        let mut num_bad_errors = 0;
+        for i in 0..num_samples {
+            let loc = NormalizedLocation::for_pos(&[("axis", i as f32 / num_samples as f32)]);
+
+            // unrounded float deltas
+            let deltas_float: Vec<_> = model
+                .deltas(&master_values_noround)
+                .unwrap()
+                .into_iter()
+                .map(|(region, deltas)| (region, deltas.iter().map(|d| d.0).collect::<Vec<_>>()))
+                .collect();
+            // deltas rounded within the delta computation loop
+            let deltas_round = model.deltas(&master_values).unwrap();
+            // float deltas only rounded at the very end. This is how NOT to round deltas.
+            let deltas_late_round: Vec<_> = deltas_float
+                .iter()
+                .map(|(region, deltas)| {
+                    (
+                        region.clone(),
+                        deltas
+                            .iter()
+                            .map(|d| d.round_ties_even())
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect();
+            // Sanity checks
+            assert_ne!(deltas_float, deltas_round);
+            assert_ne!(deltas_float, deltas_late_round);
+            assert_ne!(deltas_round, deltas_late_round);
+            assert!(deltas_round
+                .iter()
+                .all(|(_, deltas)| { deltas.iter().all(|d| d.fract() == 0.0) }));
+
+            let expected: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_float);
+            let actual: Vec<f64> = VariationModel::interpolate_from_deltas(&loc, &deltas_round);
+
+            let err = (actual[0] - expected[0]).abs();
+            assert!(err <= 0.5, "i: {}, err: {}", i, err);
+
+            // when the influence of many masters overlap a particular location
+            // interpolating from late-rounded deltas may lead to an accummulation
+            // of rounding errors that exceed the max tolerance
+            let bad = VariationModel::interpolate_from_deltas(&loc, &deltas_late_round);
+            let err_bad = (bad[0] - expected[0]).abs();
+            if err_bad > 0.5 {
+                num_bad_errors += 1;
+            }
+        }
+        assert!(num_bad_errors > 0);
+    }
+
+    #[test]
+    fn rounding_of_deltas_matches_fonttools() {
+        // This reproduces an off-by-one diff in MVAR table's deltas for Gelasio.glyphspackage
+        // between fontc and fontmake (rather fonttools) which was caused by the former's incorrect
+        // (late) rounding of deltas:
+        // https://github.com/googlefonts/fontc/issues/1043
+        // https://github.com/googlefonts/fontc/issues/235
+        let min = UserCoord::new(400.0);
+        let default = UserCoord::new(400.0);
+        let max = UserCoord::new(700.0);
+        let model = VariationModel::new(
+            HashSet::from([
+                NormalizedLocation::for_pos(&[("wght", 0.0)]),
+                NormalizedLocation::for_pos(&[("wght", 1.0)]),
+            ]),
+            vec![Axis {
+                name: "Weight".to_string(),
+                tag: Tag::new(b"wght"),
+                min,
+                default,
+                max,
+                hidden: false,
+                converter: CoordConverter::new(
+                    vec![
+                        (default, DesignCoord::new(default.into_inner())),
+                        (max, DesignCoord::new(max.into_inner())),
+                    ],
+                    0,
+                ),
+            }],
+        )
+        .unwrap();
+
+        let master_values = HashMap::from([
+            (NormalizedLocation::for_pos(&[("wght", 0.0)]), vec![591.6]),
+            (NormalizedLocation::for_pos(&[("wght", 1.0)]), vec![596.4]),
+        ]);
+
+        // when working with unrounded values, the delta at wght=1.0 would be 4.8. By the
+        // time this gets ot-rounded to i16, it becomes 5, i.e. an extra +1 off the
+        // expected correct value (4).
+        assert_eq!(
+            vec![vec![592.0], vec![4.0]], // not vec![5.0]
+            model
+                .deltas(&master_values.clone())
+                .unwrap()
+                .into_iter()
+                .map(|(_, ds)| ds)
+                .collect::<Vec<_>>()
         );
     }
 }
