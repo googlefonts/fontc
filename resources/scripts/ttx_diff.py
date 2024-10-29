@@ -65,6 +65,10 @@ MARK_KERN_NAME = "(mark/kern)"
 # too much bloat when run in CI
 MAX_ERR_LEN = 1000
 
+# fontc and fontmake's builds may be off by a second or two in the
+# head.created/modified; setting this makes them the same
+if "SOURCE_DATE_EPOCH" not in os.environ:
+   os.environ["SOURCE_DATE_EPOCH"] = str(int(time.time()))
 
 # print to stderr
 def eprint(*objects):
@@ -333,11 +337,6 @@ def drop_weird_names(ttx):
         drop.getparent().remove(drop)
 
 
-def erase_modified(ttx):
-    el = select_one(ttx, "//head/modified")
-    del el.attrib["value"]
-
-
 def erase_checksum(ttx):
     el = select_one(ttx, "//head/checkSumAdjustment")
     del el.attrib["value"]
@@ -462,9 +461,6 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
 
         # deal with https://github.com/googlefonts/fontmake/issues/1003
         drop_weird_names(ttx)
-
-        # it's not at all helpful to see modified off by a second or two in a diff
-        erase_modified(ttx)
 
         # for matching purposes checksum is just noise
         erase_checksum(ttx)
