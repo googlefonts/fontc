@@ -1,21 +1,31 @@
-use std::{collections::BTreeMap, path::Path, process::Command};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use crate::{BuildType, Results, RunResult, Target};
 
 static SCRIPT_PATH: &str = "./resources/scripts/ttx_diff.py";
-// in the format expected by timeout(1)
-static TTX_TIME_BUDGET: &str = "20m";
 
-pub(super) fn run_ttx_diff(cache_dir: &Path, target: &Target) -> RunResult<DiffOutput, DiffError> {
+pub(super) struct TtxContext {
+    pub fontc_path: PathBuf,
+    pub normalizer_path: PathBuf,
+    pub cache_dir: PathBuf,
+}
+
+pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffOutput, DiffError> {
     let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
     let outdir = tempdir.path();
-    let source_path = cache_dir.join(&target.source);
+    let source_path = ctx.cache_dir.join(&target.source);
     let compare = target.build.name();
-    let mut cmd = Command::new("timeout");
-    cmd.arg(TTX_TIME_BUDGET)
-        .args(["python", SCRIPT_PATH, "--json", "--compare", compare])
-        .arg("--outdir")
-        .arg(outdir);
+    let mut cmd = Command::new("python");
+    cmd.args([SCRIPT_PATH, "--json", "--compare", compare, "--outdir"])
+        .arg(outdir)
+        .arg("--fontc_path")
+        .arg(&ctx.fontc_path)
+        .arg("--normalizer_path")
+        .arg(&ctx.normalizer_path);
     if target.build == BuildType::GfTools {
         cmd.arg("--config").arg(&target.config);
     }
@@ -26,7 +36,7 @@ pub(super) fn run_ttx_diff(cache_dir: &Path, target: &Target) -> RunResult<DiffO
     };
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    match output.status.code() {
+    let result = match output.status.code() {
         // success, diffs are identical
         Some(0) => RunResult::Success(DiffOutput::Identical),
         // there are diffs, or one or more compilers did not finish
@@ -60,7 +70,14 @@ pub(super) fn run_ttx_diff(cache_dir: &Path, target: &Target) -> RunResult<DiffO
                 "unknown error (signal {signal}): '{stderr}'"
             )))
         }
+    };
+
+    if let RunResult::Fail(DiffError::Other(err)) = &result {
+        // these errors indicate something unexpected happening at runtime,
+        // so it is useful to see them in our logs.
+        log::warn!("error running {target} '{err}'");
     }
+    result
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

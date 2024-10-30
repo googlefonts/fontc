@@ -45,7 +45,7 @@ import sys
 import os
 from urllib.parse import urlparse
 from cdifflib import CSequenceMatcher as SequenceMatcher
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 from glyphsLib import GSFont
 from fontTools.designspaceLib import DesignSpaceDocument
 import time
@@ -79,6 +79,16 @@ flags.DEFINE_string(
     "config",
     default=None,
     help="config.yaml to be passed to gftools in gftools mode",
+)
+flags.DEFINE_string(
+    "fontc_path",
+    default=None,
+    help="Optional path to precompiled fontc binary",
+)
+flags.DEFINE_string(
+    "normalizer_path",
+    default=None,
+    help="Optional path to precompiled otl-normalizer binary",
 )
 flags.DEFINE_enum(
     "compare",
@@ -641,6 +651,39 @@ def build_crate(manifest_path: Path):
     log_and_run(cmd, cwd=None, check=True)
 
 
+def get_fontc_and_normalizer_binary_paths(root_dir: Path) -> Tuple[Path, Path]:
+    fontc_path = FLAGS.fontc_path
+    norm_path = FLAGS.normalizer_path
+    if fontc_path is None:
+        fontc_manifest_path = root_dir / "fontc" / "Cargo.toml"
+        fontc_path = root_dir / "target" / "release" / "fontc"
+        build_crate(fontc_manifest_path)
+        assert fontc_path.is_file(), "failed to build fontc?"
+    else:
+        fontc_path = Path(fontc_path)
+        assert fontc_path.is_file(), f"fontc path '{fontc_path}' does not exist"
+    if norm_path is None:
+        otl_norm_manifest_path = root_dir / "otl-normalizer" / "Cargo.toml"
+        norm_path = root_dir / "target" / "release" / "otl-normalizer"
+        build_crate(otl_norm_manifest_path)
+        assert norm_path.is_file(), "failed to build otl-normalizer?"
+    else:
+        norm_path = Path(norm_path)
+        assert norm_path.is_file(), f"normalizer path '{norm_path}' does not exist"
+
+    return (fontc_path, norm_path)
+
+def get_crate_path(cli_arg: Optional[str], root_dir: Path, crate_name: str) -> Path:
+    if cli_arg:
+        return Path(cli_arg)
+
+    manifest_path = root_dir / crate_name / "Cargo.toml"
+    bin_path = root_dir / "target" / "release" / "fontc"
+    build_crate(manifest_path)
+    return bin_path
+
+
+
 def main(argv):
     if len(argv) != 2:
         sys.exit("Only one argument, a source file, is expected")
@@ -650,14 +693,12 @@ def main(argv):
     root = Path(".").resolve()
     if root.name != "fontc":
         sys.exit("Expected to be at the root of fontc")
-    fontc_manifest_path = root / "fontc" / "Cargo.toml"
-    fontc_bin_path = root / "target" / "release" / "fontc"
-    otl_norm_manifest_path = root / "otl-normalizer" / "Cargo.toml"
-    otl_bin_path = root / "target" / "release" / "otl-normalizer"
-    build_crate(otl_norm_manifest_path)
-    build_crate(fontc_manifest_path)
-    assert otl_bin_path.is_file(), "failed to build otl-normalizer?"
-    assert fontc_bin_path.is_file(), "failed to build fontc?"
+
+    fontc_bin_path = get_crate_path(FLAGS.fontc_path, root, "fontc")
+    otl_bin_path = get_crate_path(FLAGS.normalizer_path, root, "otl-normalizer")
+
+    assert fontc_bin_path.is_file(), f"fontc path '{fontc_bin_path}' does not exist"
+    assert otl_bin_path.is_file(), f"normalizer path '{otl_bin_path}' does not exist"
 
     if shutil.which("fontmake") is None:
         sys.exit("No fontmake")

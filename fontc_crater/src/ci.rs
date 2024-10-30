@@ -9,6 +9,7 @@ use std::{
     collections::BTreeMap,
     fmt::Write,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -103,10 +104,26 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let cache_dir = args.cache_dir();
     log::info!("using cache dir {}", cache_dir.display());
 
+    // we want to build fontc & normalizer once, and then move them out of the
+    // build directory so that they aren't accidentally rebuilt or deleted
+    // while we're running
+    let temp_bin_dir = tempfile::tempdir().expect("couldn't create tempdir");
+    let (fontc_path, normalizer_path) = precompile_rust_binaries(temp_bin_dir.path());
+
+    log::info!("compiled fontc to {}", fontc_path.display());
+    log::info!("compiled otl-normalizeer to {}", normalizer_path.display());
+
     let (targets, source_repos) = make_targets(&cache_dir, &inputs);
     let n_targets = targets.len();
+
+    let context = super::ttx_diff_runner::TtxContext {
+        fontc_path,
+        normalizer_path,
+        cache_dir,
+    };
+
     let began = Utc::now();
-    let results = super::run_all(targets, &cache_dir, super::ttx_diff_runner::run_ttx_diff)?
+    let results = super::run_all(targets, &context, super::ttx_diff_runner::run_ttx_diff)?
         .into_iter()
         .map(|(target, result)| (target.id(), result))
         .collect();
@@ -245,4 +262,45 @@ fn format_elapsed_time<Tmz: TimeZone>(start: &DateTime<Tmz>, end: &DateTime<Tmz>
     write!(&mut out, "{mins}m").unwrap();
     write!(&mut out, "{secs}s").unwrap();
     out
+}
+
+fn precompile_rust_binaries(temp_dir: &Path) -> (PathBuf, PathBuf) {
+    let fontc = compile_crate_or_die("fontc");
+    let normalizer = compile_crate_or_die("otl-normalizer");
+
+    (
+        copy_file_into_dir(&fontc, temp_dir),
+        copy_file_into_dir(&normalizer, temp_dir),
+    )
+}
+
+fn copy_file_into_dir(file_path: &Path, dir_path: &Path) -> PathBuf {
+    let new_file_path = dir_path.join(file_path.file_name().unwrap());
+    std::fs::copy(file_path, &new_file_path).expect("failed to copy binary to tempdir");
+    new_file_path
+}
+
+// if we can't compile fontc / otl-normalizer there's nothing we can do?
+fn compile_crate_or_die(name: &str) -> PathBuf {
+    let status = Command::new("cargo")
+        .args(["build", "-p", name, "--release"])
+        .status()
+        .expect("failed to run cargo build");
+    if !status.success() {
+        panic!("cargo build '{name}' failed");
+    }
+
+    expect_binary_target(name)
+}
+
+fn expect_binary_target(name: &str) -> PathBuf {
+    let cwd = std::env::current_dir().expect("cwd exists and is readable");
+    let target_dir = cwd.join("target/release");
+    let target = target_dir.join(name).canonicalize().unwrap();
+    assert!(
+        target.is_file(),
+        "missing target for '{name}' ({} is not a file)",
+        target.display()
+    );
+    target
 }
