@@ -7,10 +7,11 @@
 
 use std::{
     collections::BTreeMap,
+    fmt::Write,
     path::{Path, PathBuf},
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use google_fonts_sources::{Config, RepoInfo};
 use serde::de::DeserializeOwned;
 
@@ -103,12 +104,16 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     log::info!("using cache dir {}", cache_dir.display());
 
     let (targets, source_repos) = make_targets(&cache_dir, &inputs);
+    let n_targets = targets.len();
     let began = Utc::now();
     let results = super::run_all(targets, &cache_dir, super::ttx_diff_runner::run_ttx_diff)?
         .into_iter()
         .map(|(target, result)| (target.id(), result))
         .collect();
     let finished = Utc::now();
+
+    let elapsed = format_elapsed_time(&began, &finished);
+    log::info!("completed {n_targets} targets in {elapsed}");
 
     let summary = super::ttx_diff_runner::Summary::new(&results);
     if Some(&summary) == prev_runs.last().map(|run| &run.stats) {
@@ -225,4 +230,19 @@ fn should_build_in_gftools_mode(src_path: &Path, config: &Config) -> bool {
         .as_ref()
         .filter(|provider| *provider != "googlefonts")
         .is_none()
+}
+
+fn format_elapsed_time<Tmz: TimeZone>(start: &DateTime<Tmz>, end: &DateTime<Tmz>) -> String {
+    let delta = end.clone().signed_duration_since(start);
+    let mut out = String::new();
+    let hours = delta.num_hours();
+    let mins = delta.num_minutes() - hours * 60;
+    let secs = delta.num_seconds() - (hours * 60 + mins) * 60;
+    assert!(!hours.is_negative() | mins.is_negative() | secs.is_negative());
+    if delta.num_hours() > 0 {
+        write!(&mut out, "{hours}h").unwrap();
+    }
+    write!(&mut out, "{mins}m").unwrap();
+    write!(&mut out, "{secs}s").unwrap();
+    out
 }

@@ -188,9 +188,10 @@ fn make_table_body(runs: &[RunSummary]) -> Markup {
             td.other_err {  (run.stats.other_failure) " " (other_err_diff)  }
             }
         };
+        let elapsed = super::format_elapsed_time(&run.began, &run.finished);
         html! {
             tr.run {
-                td.date { (run.began.format("%Y-%m-%d %H:%M:%S")) }
+                td.date { (run.began.format("%Y-%m-%d %H%M")) span.elapsed { " (" (elapsed) ")"} }
                 td.rev { a href=(diff_url) { (short_rev) } }
                 td.total {  ( run.stats.total_targets) " " (total_diff) }
                 td.identical {  (run.stats.identical) " " (identical_diff)  }

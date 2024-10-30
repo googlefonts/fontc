@@ -33,6 +33,11 @@ td {
   font-size: 0.8em;
 }
 
+.elapsed {
+  color: #888;
+  font-size: 0.8em;
+}
+
 td.rev {
   font-family: monospace;
 }
@@ -75,7 +80,6 @@ td.rev {
 }
 
 .changed_tag_list {
-  /*display: inline-block;*/
   font-family: monospace;
   font-size: 0.8em;
   color: #888;
