@@ -17,7 +17,7 @@ pub(super) struct TtxContext {
 pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffOutput, DiffError> {
     let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
     let outdir = tempdir.path();
-    let source_path = ctx.cache_dir.join(&target.source);
+    let source_path = target.source_path(&ctx.cache_dir);
     let compare = target.build.name();
     let mut cmd = Command::new("python");
     cmd.args([SCRIPT_PATH, "--json", "--compare", compare, "--outdir"])
@@ -27,7 +27,7 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
         .arg("--normalizer_path")
         .arg(&ctx.normalizer_path);
     if target.build == BuildType::GfTools {
-        if let Some(config) = target.config.as_ref() {
+        if let Some(config) = target.config_path(&ctx.cache_dir) {
             cmd.arg("--config").arg(config);
         }
     }

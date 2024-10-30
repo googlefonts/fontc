@@ -125,7 +125,6 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let began = Utc::now();
     let results = super::run_all(targets, &context, super::ttx_diff_runner::run_ttx_diff)?
         .into_iter()
-        .map(|(target, result)| (target, result))
         .collect();
     let finished = Utc::now();
 
@@ -189,21 +188,25 @@ fn make_targets(cache_dir: &Path, repos: &[RepoInfo]) -> (Vec<Target>, BTreeMap<
                     continue;
                 }
             };
+            let relative_config_path = config_path
+                .strip_prefix(cache_dir)
+                .expect("config always in cache dir");
+            let sources_dir = config_path
+                .parent()
+                .expect("config path always in sources dir");
+            // config is always in sources, sources is always in org/repo
+            let repo_dir = relative_config_path.parent().unwrap().parent().unwrap();
+            repo_list.insert(repo_dir.to_owned(), repo.repo_url.clone());
             for source in &config.sources {
-                let src_path = config_path
-                    .parent()
-                    .expect("config path always in sources dir")
-                    .join(source);
+                let src_path = sources_dir.join(source);
                 if !src_path.exists() {
                     log::warn!("source file '{}' is missing", src_path.display());
                     continue;
                 }
                 let src_path = src_path
                     .strip_prefix(cache_dir)
-                    .expect("source is always in cache dir")
-                    .to_path_buf();
-                repo_list.insert(src_path.clone(), repo.repo_url.clone());
-                targets.extend(targets_for_source(&src_path, &config_path, &config))
+                    .expect("source is always in cache dir");
+                targets.extend(targets_for_source(src_path, relative_config_path, &config))
             }
         }
     }
@@ -228,7 +231,15 @@ fn targets_for_source(
             BuildType::GfTools,
         )
     });
-    [default, gftools].into_iter().flatten()
+    [default, gftools]
+        .into_iter()
+        .filter_map(|t| match t.transpose() {
+            Ok(t) => t,
+            Err(e) => {
+                log::warn!("failed to generate target: {e}");
+                None
+            }
+        })
 }
 
 fn should_build_in_gftools_mode(src_path: &Path, config: &Config) -> bool {

@@ -251,7 +251,7 @@ fn make_delta_decoration<T: PartialOrd + Copy + Sub<Output = T> + Display + Defa
 
 fn make_repro_cmd(repo_url: &str, repo_path: &Target) -> String {
     // the first component of the path is the repo, drop that
-    let mut repo_path = repo_path.source.components();
+    let mut repo_path = repo_path.src_dir_path().components();
     repo_path.next();
     let repo_path = repo_path.as_path();
 
@@ -296,7 +296,12 @@ fn make_diff_report(
             .collect()
     }
 
-    let get_repo_url = |id: &Target| sources.get(&id.source).map(String::as_str).unwrap_or("#");
+    let get_repo_url = |id: &Target| {
+        sources
+            .get(id.src_dir_path())
+            .map(String::as_str)
+            .unwrap_or("#")
+    };
 
     let current_diff = get_total_diff_ratios(current);
     let prev_diff = get_total_diff_ratios(prev);
@@ -602,7 +607,12 @@ fn make_error_report_group_items<'a>(
     details: impl Fn(&Target) -> Markup,
     sources: &BTreeMap<PathBuf, String>,
 ) -> Markup {
-    let get_repo_url = |id: &Target| sources.get(&id.source).map(String::as_str).unwrap_or("#");
+    let get_repo_url = |id: &Target| {
+        sources
+            .get(id.src_dir_path())
+            .map(String::as_str)
+            .unwrap_or("#")
+    };
     html! {
             @for (path, is_new) in paths_and_if_is_new_error {
                 details.report_group_item {
