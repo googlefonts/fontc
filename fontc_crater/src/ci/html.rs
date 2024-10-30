@@ -249,18 +249,6 @@ fn make_delta_decoration<T: PartialOrd + Copy + Sub<Output = T> + Display + Defa
     }
 }
 
-fn make_repro_cmd(repo_url: &str, repo_path: &Target) -> String {
-    // the first component of the path is the repo, drop that
-    let mut repo_path = repo_path.src_dir_path().components();
-    repo_path.next();
-    let repo_path = repo_path.as_path();
-
-    format!(
-        "copyText('python resources/scripts/ttx_diff.py {repo_url}#{}');",
-        repo_path.display()
-    )
-}
-
 fn make_detailed_report(
     current: &DiffResults,
     prev: &DiffResults,
@@ -298,7 +286,7 @@ fn make_diff_report(
 
     let get_repo_url = |id: &Target| {
         sources
-            .get(id.src_dir_path())
+            .get(id.repo_path())
             .map(String::as_str)
             .unwrap_or("#")
     };
@@ -309,23 +297,32 @@ fn make_diff_report(
     current_diff.sort_by_key(|(_, r)| -(r * 1e6) as i64);
 
     let mut items = Vec::new();
-    for (path, ratio) in &current_diff {
-        let diff_details = current.success.get(*path).unwrap();
-        let prev_details = prev.success.get(*path);
-        let prev_ratio = prev_diff.get(path).copied();
+    for (target, ratio) in &current_diff {
+        let diff_details = current.success.get(*target).unwrap();
+        let prev_details = prev.success.get(*target);
+        let prev_ratio = prev_diff.get(target).copied();
         // don't include 100% matches in results unless they are new
         if *ratio == 100.0 && prev_ratio == Some(100.0) {
             continue;
         }
 
-        let repo_url = get_repo_url(path);
-        let onclick = format!(
-            "event.preventDefault(); {};",
-            make_repro_cmd(repo_url, path)
-        );
+        let repo_url = get_repo_url(target);
+        let ttx_command = target.repro_command(repo_url);
+        let onclick = format!("event.preventDefault(); copyText('{ttx_command}');",);
         let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
         let changed_tag_list = list_different_tables(diff_details).unwrap_or_default();
-        let details = format_diff_report_details(diff_details, prev_details, onclick);
+        let diff_table = format_diff_report_detail_table(diff_details, prev_details);
+        let bare_source_path = target.source_path(Path::new(""));
+
+        let details = html! {
+            div.diff_info {
+                (diff_table)
+                a href = (repo_url) { "view source repository" }
+                " "
+                a href = "" onclick = (onclick) { "copy reproduction command" }
+            }
+        };
+
         // avoid .9995 printing as 100%
         let ratio_fmt = format!("{:.3}%", (ratio * 1000.0).floor() / 1000.0);
 
@@ -333,7 +330,8 @@ fn make_diff_report(
             details {
                 summary {
                     span.font_path {
-                        a href = (repo_url) { (path) }
+                         (bare_source_path.display())
+                    " (" (target.build)")"
                     }
                     span.diff_result { (ratio_fmt) " " (decoration) }
                     span.changed_tag_list { (changed_tag_list) }
@@ -501,11 +499,7 @@ fn list_different_tables(current: &DiffOutput) -> Option<String> {
 }
 
 /// for a given diff, the detailed information on per-table changes
-fn format_diff_report_details(
-    current: &DiffOutput,
-    prev: Option<&DiffOutput>,
-    repro_cmd: String,
-) -> Markup {
+fn format_diff_report_detail_table(current: &DiffOutput, prev: Option<&DiffOutput>) -> Markup {
     let value_decoration = |table, value: DiffValue| -> Markup {
         let prev_value = match prev {
             None => None,
@@ -554,7 +548,7 @@ fn format_diff_report_details(
         })
         .collect::<Vec<_>>();
 
-    let diff_table = if all_items.is_empty() {
+    if all_items.is_empty() {
         html!()
     } else {
         html! {
@@ -572,13 +566,6 @@ fn format_diff_report_details(
                     }
                 }
             }
-        }
-    };
-
-    html! {
-        div.diff_info {
-            (diff_table)
-            a href = "" onclick = (repro_cmd) { "copy reproduction command" }
         }
     }
 }
@@ -609,7 +596,7 @@ fn make_error_report_group_items<'a>(
 ) -> Markup {
     let get_repo_url = |id: &Target| {
         sources
-            .get(id.src_dir_path())
+            .get(id.repo_path())
             .map(String::as_str)
             .unwrap_or("#")
     };
