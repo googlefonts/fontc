@@ -27,7 +27,9 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
         .arg("--normalizer_path")
         .arg(&ctx.normalizer_path);
     if target.build == BuildType::GfTools {
-        cmd.arg("--config").arg(&target.config);
+        if let Some(config) = target.config.as_ref() {
+            cmd.arg("--config").arg(config);
+        }
     }
     cmd.arg(source_path);
     let output = match cmd.output() {

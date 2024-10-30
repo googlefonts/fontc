@@ -125,7 +125,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let began = Utc::now();
     let results = super::run_all(targets, &context, super::ttx_diff_runner::run_ttx_diff)?
         .into_iter()
-        .map(|(target, result)| (target.id(), result))
+        .map(|(target, result)| (target, result))
         .collect();
     let finished = Utc::now();
 
@@ -215,16 +215,18 @@ fn targets_for_source(
     config_path: &Path,
     config: &Config,
 ) -> impl Iterator<Item = Target> {
-    let default = Some(Target {
-        config: config_path.to_owned(),
-        source: src_path.to_owned(),
-        build: BuildType::Default,
-    });
+    let default = Some(Target::new(
+        src_path.to_owned(),
+        config_path.to_owned(),
+        BuildType::Default,
+    ));
 
-    let gftools = should_build_in_gftools_mode(src_path, config).then(|| Target {
-        config: config_path.to_owned(),
-        source: src_path.to_owned(),
-        build: BuildType::GfTools,
+    let gftools = should_build_in_gftools_mode(src_path, config).then(|| {
+        Target::new(
+            src_path.to_owned(),
+            config_path.to_owned(),
+            BuildType::GfTools,
+        )
     });
     [default, gftools].into_iter().flatten()
 }

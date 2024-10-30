@@ -10,7 +10,7 @@ use std::{
 use crate::{
     error::Error,
     ttx_diff_runner::{CompilerFailure, DiffError, DiffOutput, DiffValue},
-    TargetId,
+    Target,
 };
 use maud::{html, Markup, PreEscaped};
 
@@ -249,9 +249,9 @@ fn make_delta_decoration<T: PartialOrd + Copy + Sub<Output = T> + Display + Defa
     }
 }
 
-fn make_repro_cmd(repo_url: &str, repo_path: &TargetId) -> String {
+fn make_repro_cmd(repo_url: &str, repo_path: &Target) -> String {
     // the first component of the path is the repo, drop that
-    let mut repo_path = repo_path.path.components();
+    let mut repo_path = repo_path.source.components();
     repo_path.next();
     let repo_path = repo_path.as_path();
 
@@ -280,7 +280,7 @@ fn make_diff_report(
     prev: &DiffResults,
     sources: &BTreeMap<PathBuf, String>,
 ) -> Markup {
-    fn get_total_diff_ratios(results: &DiffResults) -> BTreeMap<&TargetId, f32> {
+    fn get_total_diff_ratios(results: &DiffResults) -> BTreeMap<&Target, f32> {
         results
             .success
             .iter()
@@ -296,7 +296,7 @@ fn make_diff_report(
             .collect()
     }
 
-    let get_repo_url = |id: &TargetId| sources.get(&id.path).map(String::as_str).unwrap_or("#");
+    let get_repo_url = |id: &Target| sources.get(&id.source).map(String::as_str).unwrap_or("#");
 
     let current_diff = get_total_diff_ratios(current);
     let prev_diff = get_total_diff_ratios(prev);
@@ -580,8 +580,8 @@ fn format_diff_report_details(
 
 fn make_error_report_group<'a>(
     group_name: &str,
-    paths_and_if_is_new_error: impl Iterator<Item = (&'a TargetId, bool)>,
-    details: impl Fn(&TargetId) -> Markup,
+    paths_and_if_is_new_error: impl Iterator<Item = (&'a Target, bool)>,
+    details: impl Fn(&Target) -> Markup,
     sources: &BTreeMap<PathBuf, String>,
 ) -> Markup {
     let items = make_error_report_group_items(paths_and_if_is_new_error, details, sources);
@@ -598,11 +598,11 @@ fn make_error_report_group<'a>(
 }
 
 fn make_error_report_group_items<'a>(
-    paths_and_if_is_new_error: impl Iterator<Item = (&'a TargetId, bool)>,
-    details: impl Fn(&TargetId) -> Markup,
+    paths_and_if_is_new_error: impl Iterator<Item = (&'a Target, bool)>,
+    details: impl Fn(&Target) -> Markup,
     sources: &BTreeMap<PathBuf, String>,
 ) -> Markup {
-    let get_repo_url = |id: &TargetId| sources.get(&id.path).map(String::as_str).unwrap_or("#");
+    let get_repo_url = |id: &Target| sources.get(&id.source).map(String::as_str).unwrap_or("#");
     html! {
             @for (path, is_new) in paths_and_if_is_new_error {
                 details.report_group_item {
@@ -615,7 +615,7 @@ fn make_error_report_group_items<'a>(
         }
     }
 }
-fn get_other_failures(results: &DiffResults) -> BTreeMap<&TargetId, &str> {
+fn get_other_failures(results: &DiffResults) -> BTreeMap<&Target, &str> {
     results
         .failure
         .iter()
@@ -629,7 +629,7 @@ fn get_other_failures(results: &DiffResults) -> BTreeMap<&TargetId, &str> {
 fn get_compiler_failures<'a>(
     results: &'a DiffResults,
     compiler: &str,
-) -> BTreeMap<&'a TargetId, &'a CompilerFailure> {
+) -> BTreeMap<&'a Target, &'a CompilerFailure> {
     let get_err = |err: &'a DiffError| {
         let DiffError::CompileFailed(compfail) = err else {
             return None;
