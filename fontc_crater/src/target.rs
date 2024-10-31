@@ -1,23 +1,22 @@
 //! targets of a compilation
 
-use std::{fmt::Display, path::PathBuf, str::FromStr};
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Clone, Debug)]
-pub(crate) struct Target {
-    // will be used in gftools mode
-    pub(crate) config: PathBuf,
-    pub(crate) source: PathBuf,
-    pub(crate) build: BuildType,
-}
-
-/// Uniquely identify a source + build type (default, gftools)
-///
-/// this is separate from 'target' because it doesn't preserve the config path.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct TargetId {
-    pub(crate) path: PathBuf,
+pub(crate) struct Target {
+    /// path to the source dir for this target (relative to the git cache root)
+    source_dir: PathBuf,
+    /// Filename of config file, in the source directory.
+    config: Option<PathBuf>,
+    /// Path to source file, relative to the source_dir
+    source: PathBuf,
     pub(crate) build: BuildType,
 }
 
@@ -27,18 +26,103 @@ pub(crate) enum BuildType {
     GfTools,
 }
 
-impl Target {
-    pub(crate) fn id(&self) -> TargetId {
-        TargetId {
-            path: self.source.clone(),
-            build: self.build,
+fn get_source_dir(source_path: &Path) -> Result<PathBuf, InvalidTargetPath> {
+    let mut result = source_path.to_owned();
+    loop {
+        match result.file_name() {
+            Some(name) if name == "sources" || name == "Sources" => return Ok(result),
+            Some(_) => {
+                if !result.pop() {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    Err(InvalidTargetPath {
+        path: source_path.to_owned(),
+        reason: BadPathReason::NoSourceDir,
+    })
+}
+
+/// A source path must always be a file in side a directory named 'sources' or 'Sources'
+#[derive(Clone, Debug, Error)]
+#[error("invalid path '{path}' for target: {reason}")]
+pub(crate) struct InvalidTargetPath {
+    path: PathBuf,
+    reason: BadPathReason,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum BadPathReason {
+    NoSourceDir,
+    BadConfigPath,
+}
+
+impl Display for BadPathReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BadPathReason::NoSourceDir => f.write_str("missing sources/Sources directory"),
+            BadPathReason::BadConfigPath => f.write_str("config is not relative to source"),
         }
     }
 }
 
-impl Display for Target {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.id().fmt(f)
+impl Target {
+    pub(crate) fn new(
+        source: PathBuf,
+        config: impl Into<Option<PathBuf>>,
+        build: BuildType,
+    ) -> Result<Self, InvalidTargetPath> {
+        let source_dir = get_source_dir(&source)?;
+        let source = source
+            .strip_prefix(&source_dir)
+            .expect("must be a base")
+            .to_owned();
+        let config = match config.into() {
+            // if we're just a filename, that's fine; assume relative to source
+            Some(config)
+                if config.file_name().is_some() && config.parent() == Some(Path::new("")) =>
+            {
+                Some(config)
+            }
+            // else we have to be in the same source directory as our source
+            Some(config) => Some(
+                config
+                    .strip_prefix(&source_dir)
+                    .map(PathBuf::from)
+                    .map_err(|_| InvalidTargetPath {
+                        path: config,
+                        reason: BadPathReason::BadConfigPath,
+                    })?,
+            ),
+            None => None,
+        };
+
+        Ok(Self {
+            source_dir,
+            config,
+            source,
+            build,
+        })
+    }
+
+    /// The path to the source directory, used for looking up repo urls
+    pub(crate) fn src_dir_path(&self) -> &Path {
+        &self.source_dir
+    }
+
+    pub(crate) fn source_path(&self, git_cache: &Path) -> PathBuf {
+        let mut out = git_cache.join(&self.source_dir);
+        out.push(&self.source);
+        out
+    }
+
+    pub(crate) fn config_path(&self, git_cache: &Path) -> Option<PathBuf> {
+        let config = self.config.as_ref()?;
+        let mut out = git_cache.join(&self.source_dir);
+        out.push(config);
+        Some(out)
     }
 }
 
@@ -57,19 +141,24 @@ impl Display for BuildType {
     }
 }
 
-impl Display for TargetId {
+impl Display for Target {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ({})", self.path.display(), self.build)
+        let source = self.source_dir.join(&self.source);
+        write!(f, "{}", source.display())?;
+        if let Some(config) = self.config.as_ref() {
+            write!(f, " ({})", config.display())?
+        }
+        write!(f, " ({})", self.build)
     }
 }
 
-impl Serialize for TargetId {
+impl Serialize for Target {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for TargetId {
+impl<'de> Deserialize<'de> for Target {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -79,31 +168,46 @@ impl<'de> Deserialize<'de> for TargetId {
     }
 }
 
-impl FromStr for TargetId {
+impl FromStr for Target {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
+        // before gftools we just identified targets as paths, so let's keep that working
         if !s.ends_with(')') {
-            return Ok(Self {
-                path: PathBuf::from(s),
-                build: BuildType::Default,
-            });
+            return Self::new(s.into(), None, BuildType::Default)
+                .map_err(|e| format!("failed to parse target '{s}': {e}"));
         }
         // else expect the format,
-        // PATH (default|gftools)
-        let (path, type_) = s
+        // PATH [(config)] (default|gftools)
+        let (head, type_) = s
             .rsplit_once('(')
             .ok_or_else(|| "missing opening paren".to_string())?;
 
-        let path = PathBuf::from(path.trim());
+        let head = head.trim();
+
+        // now we may or may not have a config:
+        let (source_part, config_part) = if head.ends_with(')') {
+            let (source, config) = head
+                .rsplit_once('(')
+                .ok_or_else(|| format!("expected '(' in '{head}'"))?;
+            (source.trim(), config.trim_end_matches(')'))
+        } else {
+            (head, "")
+        };
+
+        let source = PathBuf::from(source_part.trim());
+        let config = Some(config_part)
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from);
+
         let type_ = match type_.trim_end_matches(')') {
             "default" => BuildType::Default,
             "gftools" => BuildType::GfTools,
             other => return Err(format!("unknown build type '{other}'")),
         };
 
-        Ok(TargetId { path, build: type_ })
+        Self::new(source, config, type_).map_err(|e| format!("failed to parse target '{s}': {e}"))
     }
 }
 
@@ -112,14 +216,73 @@ mod tests {
     use super::*;
 
     #[test]
-    fn serde_target_id() {
-        let id = TargetId {
-            path: PathBuf::from("../my/file.is_here"),
-            build: BuildType::GfTools,
-        };
+    fn construct_target_with_source() {
+        let source = PathBuf::from("org/repo/sources/Mysource.glyphs");
+        let target = Target::new(source, None, BuildType::Default).unwrap();
+        assert_eq!(target.source_dir.as_os_str(), "org/repo/sources");
+        assert_eq!(target.source.as_os_str(), "Mysource.glyphs");
+    }
 
-        let to_json = serde_json::to_string(&id).unwrap();
-        let from_json: TargetId = serde_json::from_str(&to_json).unwrap();
-        assert_eq!(id, from_json)
+    #[test]
+    fn invalid_source_path() {
+        let source = PathBuf::from("org/repo/not_sources/Mysource.glyphs");
+        let target = Target::new(source, None, BuildType::Default);
+        assert!(matches!(target, Err(e) if e.reason == BadPathReason::NoSourceDir));
+    }
+
+    #[test]
+    fn good_config_path() {
+        let source = PathBuf::from("org/repo/sources/Mysource.glyphs");
+        let config = PathBuf::from("org/repo/sources/my-config.yaml");
+        let target = Target::new(source, Some(config), BuildType::Default).unwrap();
+        assert_eq!(target.source_dir.as_os_str(), "org/repo/sources");
+        assert_eq!(target.source.as_os_str(), "Mysource.glyphs");
+        assert_eq!(target.config.as_deref(), Some(Path::new("my-config.yaml")));
+    }
+
+    #[test]
+    fn bare_config_path() {
+        let source = PathBuf::from("org/repo/sources/Mysource.glyphs");
+        let config = PathBuf::from("my-config.yaml");
+        let target = Target::new(source, Some(config), BuildType::Default).unwrap();
+        assert_eq!(target.source_dir.as_os_str(), "org/repo/sources");
+        assert_eq!(target.source.as_os_str(), "Mysource.glyphs");
+        assert_eq!(target.config.as_deref(), Some(Path::new("my-config.yaml")));
+    }
+
+    #[test]
+    fn bad_config_path() {
+        let source = PathBuf::from("org/repo/sources/Mysource.glyphs");
+        let config = PathBuf::from("somewhere_else/my-config.yaml");
+        let target = Target::new(source, Some(config), BuildType::Default);
+        assert!(matches!(target, Err(e) if e.reason == BadPathReason::BadConfigPath));
+    }
+
+    #[test]
+    fn serde_target_full() {
+        let source = PathBuf::from("org/repo/sources/Mysource.glyphs");
+        let config = PathBuf::from("config.yaml");
+        let target = Target::new(source, Some(config), BuildType::Default).unwrap();
+
+        let to_json = serde_json::to_string(&target).unwrap();
+        let from_json: Target = serde_json::from_str(&to_json).unwrap();
+        assert_eq!(target, from_json)
+    }
+
+    #[test]
+    fn serde_no_config() {
+        let json = "\"org/repo/sources/myfile.is_here (gftools)\"";
+        let from_json: Target = serde_json::from_str(json).unwrap();
+        assert_eq!(from_json.source.as_os_str(), "myfile.is_here");
+        assert!(from_json.config.is_none());
+        assert!(from_json.build == BuildType::GfTools);
+    }
+
+    #[test]
+    fn serde_path_only() {
+        let json = "\"repo/Sources/mypath.hello\"";
+        let from_json: Target = serde_json::from_str(json).unwrap();
+        assert_eq!(from_json.source.as_os_str(), "mypath.hello");
+        assert_eq!(from_json.build, BuildType::Default);
     }
 }

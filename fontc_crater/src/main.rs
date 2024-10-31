@@ -21,7 +21,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use args::{Args, Commands};
 use error::Error;
-use target::{BuildType, Target, TargetId};
+use target::{BuildType, Target};
 
 fn main() {
     env_logger::init();
@@ -40,8 +40,8 @@ fn run(args: &Args) -> Result<(), Error> {
 /// Results of all runs
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct Results<T, E> {
-    pub(crate) success: BTreeMap<TargetId, T>,
-    pub(crate) failure: BTreeMap<TargetId, E>,
+    pub(crate) success: BTreeMap<Target, T>,
+    pub(crate) failure: BTreeMap<Target, E>,
 }
 
 /// The output of trying to run on one font.
@@ -129,8 +129,8 @@ fn pip_freeze_sha() -> String {
         .to_owned()
 }
 
-impl<T, E> FromIterator<(TargetId, RunResult<T, E>)> for Results<T, E> {
-    fn from_iter<I: IntoIterator<Item = (TargetId, RunResult<T, E>)>>(iter: I) -> Self {
+impl<T, E> FromIterator<(Target, RunResult<T, E>)> for Results<T, E> {
+    fn from_iter<I: IntoIterator<Item = (Target, RunResult<T, E>)>>(iter: I) -> Self {
         let mut out = Results::default();
         for (path, reason) in iter.into_iter() {
             match reason {
