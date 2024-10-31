@@ -610,12 +610,17 @@ def report_errors_and_exit_if_there_were_any(errors: dict):
     sys.exit(2)
 
 
+# for reproducing crater results we have a syntax that lets you specify a
+# repo url as the source.
+# in this scheme we pass the path to the particular source (relative the repo root)
+# as a url fragment
 def resolve_source(source: str) -> Path:
     if source.startswith("git@") or source.startswith("https://"):
         source_url = urlparse(source)
         repo_path = source_url.fragment
-        last_path_segment = source_url.path.split("/")[-1]
-        local_repo = (Path.home() / ".fontc_crater_cache" / last_path_segment).resolve()
+        org_name = source_url.path.split("/")[-2]
+        repo_name = source_url.path.split("/")[-1]
+        local_repo = (Path.home() / ".fontc_crater_cache" / org_name / repo_name).resolve()
         if not local_repo.parent.is_dir():
             local_repo.parent.mkdir()
         if not local_repo.is_dir():
@@ -678,7 +683,7 @@ def get_crate_path(cli_arg: Optional[str], root_dir: Path, crate_name: str) -> P
         return Path(cli_arg)
 
     manifest_path = root_dir / crate_name / "Cargo.toml"
-    bin_path = root_dir / "target" / "release" / "fontc"
+    bin_path = root_dir / "target" / "release" / crate_name
     build_crate(manifest_path)
     return bin_path
 

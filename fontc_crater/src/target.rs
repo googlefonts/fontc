@@ -1,7 +1,7 @@
 //! targets of a compilation
 
 use std::{
-    fmt::Display,
+    fmt::{Display, Write},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -107,9 +107,9 @@ impl Target {
         })
     }
 
-    /// The path to the source directory, used for looking up repo urls
-    pub(crate) fn src_dir_path(&self) -> &Path {
-        &self.source_dir
+    /// The org/repo part of the path, used for looking up repo urls
+    pub(crate) fn repo_path(&self) -> &Path {
+        self.source_dir.parent().unwrap()
     }
 
     pub(crate) fn source_path(&self, git_cache: &Path) -> PathBuf {
@@ -123,6 +123,25 @@ impl Target {
         let mut out = git_cache.join(&self.source_dir);
         out.push(config);
         Some(out)
+    }
+
+    pub(crate) fn repro_command(&self, repo_url: &str) -> String {
+        let repo_url = repo_url.trim();
+        let just_source_dir = self.source_dir.file_name().unwrap();
+        let rel_source_path = Path::new(just_source_dir).join(&self.source);
+        let mut cmd = format!(
+            "python resources/scripts/ttx_diff.py {repo_url}#{}",
+            rel_source_path.display()
+        );
+        if self.build == BuildType::GfTools {
+            cmd.push_str(" --compare gftools");
+            // we hard code this; repro will only work if they're using default
+            // cache location
+            if let Some(config) = self.config_path(Path::new("~/.fontc_crater_cache")) {
+                write!(&mut cmd, " --config {}", config.display()).unwrap();
+            }
+        }
+        cmd
     }
 }
 
