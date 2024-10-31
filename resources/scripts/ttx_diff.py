@@ -255,6 +255,8 @@ def run_gftools(
     filename = tool + ".ttf"
     out_file = build_dir / filename
     out_dir = build_dir / "gftools_temp_dir"
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
     cmd = [
         "gftools",
         "builder",

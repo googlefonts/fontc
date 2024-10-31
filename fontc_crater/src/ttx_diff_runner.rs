@@ -4,34 +4,41 @@ use std::{
     process::Command,
 };
 
-use crate::{BuildType, Results, RunResult, Target};
+use crate::{ci::ResultsCache, BuildType, Results, RunResult, Target};
 
 static SCRIPT_PATH: &str = "./resources/scripts/ttx_diff.py";
 
 pub(super) struct TtxContext {
     pub fontc_path: PathBuf,
     pub normalizer_path: PathBuf,
-    pub cache_dir: PathBuf,
+    pub source_cache: PathBuf,
+    pub results_cache: ResultsCache,
 }
 
 pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffOutput, DiffError> {
     let tempdir = tempfile::tempdir().expect("couldn't create tempdir");
     let outdir = tempdir.path();
-    let source_path = target.source_path(&ctx.cache_dir);
+    let source_path = target.source_path(&ctx.source_cache);
     let compare = target.build.name();
+    let build_dir = outdir.join(compare);
+    ctx.results_cache
+        .copy_cached_files_to_build_dir(target, &build_dir);
     let mut cmd = Command::new("python");
     cmd.args([SCRIPT_PATH, "--json", "--compare", compare, "--outdir"])
         .arg(outdir)
         .arg("--fontc_path")
         .arg(&ctx.fontc_path)
         .arg("--normalizer_path")
-        .arg(&ctx.normalizer_path);
+        .arg(&ctx.normalizer_path)
+        .args(["--rebuild", "fontc"]);
     if target.build == BuildType::GfTools {
-        if let Some(config) = target.config_path(&ctx.cache_dir) {
+        if let Some(config) = target.config_path(&ctx.source_cache) {
             cmd.arg("--config").arg(config);
         }
     }
-    cmd.arg(source_path);
+    cmd.arg(source_path)
+        // set this flag so we have a stable 'modified date'
+        .env("SOURCE_DATE_EPOCH", "1730302089");
     let output = match cmd.output() {
         Err(e) => return RunResult::Fail(DiffError::Other(e.to_string())),
         Ok(val) => val,
@@ -79,7 +86,20 @@ pub(super) fn run_ttx_diff(ctx: &TtxContext, target: &Target) -> RunResult<DiffO
         // so it is useful to see them in our logs.
         log::warn!("error running {target} '{err}'");
     }
+
+    if fontmake_finished(&result) {
+        ctx.results_cache
+            .save_built_files_to_cache(target, &build_dir);
+    }
     result
+}
+
+fn fontmake_finished(result: &RunResult<DiffOutput, DiffError>) -> bool {
+    match result {
+        RunResult::Success(_) => true,
+        RunResult::Fail(DiffError::CompileFailed(diff)) => diff.fontmake.is_none(),
+        RunResult::Fail(DiffError::Other(_)) => false,
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

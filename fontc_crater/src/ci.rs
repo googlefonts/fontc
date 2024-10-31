@@ -24,6 +24,9 @@ use crate::{
 };
 
 mod html;
+mod results_cache;
+
+pub(crate) use results_cache::ResultsCache;
 
 static SUMMARY_FILE: &str = "summary.json";
 static SOURCES_FILE: &str = "sources.json";
@@ -31,7 +34,6 @@ static SOURCES_FILE: &str = "sources.json";
 type DiffResults = Results<DiffOutput, DiffError>;
 
 /// A summary of a single CI run
-
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct RunSummary {
     began: DateTime<Utc>,
@@ -103,6 +105,11 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     // for now we are going to be cloning each repo freshly
     let cache_dir = args.cache_dir();
     log::info!("using cache dir {}", cache_dir.display());
+    let results_cache = ResultsCache::in_dir(&cache_dir);
+    if Some(&pip_freeze_sha) != prev_runs.last().map(|run| &run.pip_freeze_sha) {
+        log::info!("pip output has changed, clearing cached results");
+        results_cache.delete_all();
+    }
 
     // we want to build fontc & normalizer once, and then move them out of the
     // build directory so that they aren't accidentally rebuilt or deleted
@@ -119,7 +126,8 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let context = super::ttx_diff_runner::TtxContext {
         fontc_path,
         normalizer_path,
-        cache_dir,
+        source_cache: cache_dir,
+        results_cache,
     };
 
     let began = Utc::now();

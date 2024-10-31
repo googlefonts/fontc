@@ -1,6 +1,7 @@
 //! targets of a compilation
 
 use std::{
+    ffi::OsStr,
     fmt::{Display, Write},
     path::{Path, PathBuf},
     str::FromStr,
@@ -123,6 +124,27 @@ impl Target {
         let mut out = git_cache.join(&self.source_dir);
         out.push(config);
         Some(out)
+    }
+
+    /// Return the path where we should cache the results of running this target.
+    ///
+    /// This is unique for each target, and is in the form,
+    ///
+    /// {BASE}{source_dir}/{config_stem}/{file_stem}/{build}
+    ///
+    /// where {source_dir} is the path to the sources/Sources directory of this
+    /// target, relative to the root git cache.
+    pub(crate) fn cache_dir(&self, in_dir: &Path) -> PathBuf {
+        let config = self
+            .config
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .unwrap_or(OsStr::new("config"));
+        let mut result = in_dir.join(&self.source_dir);
+        result.push(config);
+        result.push(self.source.file_stem().unwrap());
+        result.push(self.build.name());
+        result
     }
 
     pub(crate) fn repro_command(&self, repo_url: &str) -> String {
