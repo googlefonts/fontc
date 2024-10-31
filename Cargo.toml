@@ -23,7 +23,7 @@ icu_properties = "1.4"
 
 # fontations etc
 write-fonts = { version = "0.29.0", features = ["serde", "read"] }
-skrifa = "0.21.0"
+skrifa = "0.24.0"
 norad = "0.14.2"
 
 # dev dependencies
@@ -53,3 +53,10 @@ members = [
     "otl-normalizer",
     "fontc_crater",
 ]
+
+# TEMPORARY
+[patch.crates-io]
+font-types = { git="https://github.com/googlefonts/fontations.git" }
+read-fonts = { git="https://github.com/googlefonts/fontations.git" }
+write-fonts = { git="https://github.com/googlefonts/fontations.git" }
+skrifa = { git="https://github.com/googlefonts/fontations.git" }
