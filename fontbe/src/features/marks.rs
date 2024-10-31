@@ -20,7 +20,6 @@ use smol_str::SmolStr;
 use write_fonts::{
     tables::{gdef::GlyphClassDef, layout::LookupFlag},
     types::{GlyphId16, Tag},
-    OtRound,
 };
 
 use crate::{
@@ -677,11 +676,6 @@ fn make_caret_value(
         .iter()
         .map(|(loc, pt)| {
             let pos = if is_vertical { pt.y } else { pt.x };
-            // we round here to match fonttools, which can't express non-integer
-            // values in the variable fea that it generates.
-            // https://github.com/googlefonts/ufo2ft/blob/12b68f0c69/Lib/ufo2ft/featureWriters/baseFeatureWriter.py#L435-L436
-            let pos: i16 = pos.ot_round();
-
             (loc.clone(), OrderedFloat::from(pos as f32))
         })
         .collect::<Vec<_>>();

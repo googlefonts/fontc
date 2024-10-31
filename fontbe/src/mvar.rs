@@ -58,9 +58,11 @@ impl MvarBuilder {
     }
 
     fn add_sources(&mut self, mvar_tag: Tag, sources: &GlobalMetricValues) -> Result<(), Error> {
-        let sources: HashMap<_, _> = sources
+        let sources: HashMap<_, Vec<f64>> = sources
             .iter()
-            .map(|(loc, src)| (loc.clone(), vec![src.into_inner()]))
+            // metrics must be rounded before the computing deltas to match fontmake
+            // https://github.com/googlefonts/fontc/issues/1043
+            .map(|(loc, src)| (loc.clone(), vec![src.into_inner().ot_round()]))
             .collect();
         if sources.len() == 1 {
             assert!(sources.keys().next().unwrap().is_default());

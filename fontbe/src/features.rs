@@ -158,7 +158,15 @@ pub(crate) fn resolve_variable_metric<'a>(
 ) -> Result<(i16, Vec<(VariationRegion, i16)>), DeltaError> {
     let point_seqs: HashMap<_, _> = values
         .into_iter()
-        .map(|(pos, value)| (pos.to_owned(), vec![value.0 as f64]))
+        .map(|(pos, value)| {
+            // The master values for anchor positions or kerning adjustments are
+            // expected to be rounded before computing the deltas, because instancing
+            // a VF at the masters' location is expected to be equivalent to building
+            // individual masters as static fonts. fontmake does the same, see
+            // https://github.com/googlefonts/fontc/issues/1043
+            let value: f32 = value.into_inner().ot_round();
+            (pos.to_owned(), vec![value as f64])
+        })
         .collect();
     let locations: HashSet<_> = point_seqs.keys().collect();
     let global_locations: HashSet<_> = static_metadata.variation_model.locations().collect();
