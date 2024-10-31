@@ -12,6 +12,7 @@ use crate::{
     ttx_diff_runner::{CompilerFailure, DiffError, DiffOutput, DiffValue},
     TargetId,
 };
+use chrono::{DateTime, Utc};
 use maud::{html, Markup, PreEscaped};
 
 use super::{DiffResults, RunSummary};
@@ -27,7 +28,7 @@ pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
     let details = summary
         .iter()
         .flat_map(|run| match run.try_load_results(target_dir) {
-            Some(Ok(results)) => Some(Ok((run.fontc_rev.clone(), results))),
+            Some(Ok(results)) => Some(Ok((run.began, results))),
             None => None,
             Some(Err(e)) => Some(Err(e)),
         })
@@ -41,7 +42,7 @@ pub(super) fn generate(target_dir: &Path) -> Result<(), Error> {
 fn make_html(
     summary: &[RunSummary],
     sources: &BTreeMap<PathBuf, String>,
-    results: &HashMap<String, DiffResults>,
+    results: &HashMap<DateTime<Utc>, DiffResults>,
 ) -> Result<String, Error> {
     let table_body = make_table_body(summary);
     let css = include_str!("../../resources/style.css");
@@ -65,8 +66,8 @@ fn make_html(
     };
     let detailed_report = match summary {
         [.., prev, current] => make_detailed_report(
-            results.get(&current.fontc_rev).unwrap(),
-            results.get(&prev.fontc_rev).unwrap(),
+            results.get(&current.began).unwrap(),
+            results.get(&prev.began).unwrap(),
             sources,
         ),
         _ => html!(),
