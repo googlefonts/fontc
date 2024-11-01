@@ -20,7 +20,6 @@ use smol_str::SmolStr;
 use write_fonts::{
     tables::{gdef::GlyphClassDef, layout::LookupFlag},
     types::{GlyphId16, Tag},
-    OtRound,
 };
 
 use crate::{
@@ -677,11 +676,6 @@ fn make_caret_value(
         .iter()
         .map(|(loc, pt)| {
             let pos = if is_vertical { pt.y } else { pt.x };
-            // we round here to match fonttools, which can't express non-integer
-            // values in the variable fea that it generates.
-            // https://github.com/googlefonts/ufo2ft/blob/12b68f0c69/Lib/ufo2ft/featureWriters/baseFeatureWriter.py#L435-L436
-            let pos: i16 = pos.ot_round();
-
             (loc.clone(), OrderedFloat::from(pos as f32))
         })
         .collect::<Vec<_>>();
@@ -1336,5 +1330,37 @@ mod tests {
         values.insert(1, default);
 
         assert_eq!(values, [239, 271, 305]);
+    }
+
+    #[test]
+    fn mark_anchors_rounding() {
+        // These values are taken from Teachers-Italic.glyphs. The composite glyph
+        // 'ordfeminine' inherits a 'top' base anchor from a scaled 'a' component, so the
+        // propagated anchor ends up with float coordinates; these are expected to be
+        // rounded before deltas get computed in order to match the output of fontmake:
+        // https://github.com/googlefonts/fontc/issues/1043#issuecomment-2444388789
+        let out = MarksInput::new([&[0.0], &[0.75], &[1.0]])
+            .add_glyph("a", None, |anchors| {
+                anchors.add("top", [(377.0, 451.0), (386.0, 450.0), (389.0, 450.0)]);
+            })
+            .add_glyph("ordfeminine", None, |anchors| {
+                anchors.add("top", [(282.75, 691.25), (289.5, 689.5), (291.75, 689.5)]);
+            })
+            .add_glyph("acutecomb", None, |anchors| {
+                anchors.add("_top", [(218.0, 704.0), (265.0, 707.0), (282.0, 708.0)]);
+            })
+            .get_normalized_output();
+
+        assert_eq_ignoring_ws!(
+            out,
+            r#"
+                # mark: DFLT/dflt ## 2 MarkToBase rules
+                # lookupflag LookupFlag(0)
+                a @(x: 377 {386,389}, y: 451 {450,450})
+                @(x: 218 {265,282}, y: 704 {707,708}) acutecomb
+                ordfeminine @(x: 283 {290,292}, y: 691 {690,690})
+                @(x: 218 {265,282}, y: 704 {707,708}) acutecomb
+            "#
+        );
     }
 }

@@ -73,10 +73,12 @@ impl AdvanceWidthDeltas {
     }
 
     fn add(&mut self, glyph: &Glyph) -> Result<(), Error> {
-        let mut advance_widths: HashMap<_, _> = glyph
+        let mut advance_widths: HashMap<_, Vec<f64>> = glyph
             .sources()
             .iter()
-            .map(|(loc, src)| (loc.clone(), vec![src.width]))
+            // widths must be rounded before the computing deltas to match fontmake
+            // https://github.com/googlefonts/fontc/issues/1043
+            .map(|(loc, src)| (loc.clone(), vec![src.width.ot_round()]))
             .collect();
         let name = glyph.name.clone();
         let i = self.deltas.len();
