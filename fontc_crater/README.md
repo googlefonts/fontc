@@ -21,11 +21,21 @@ script in the [`fontc_crater` repo][crater-repo] and results are posted to
 
 To run in CI mode locally to play with the html output:
 
+When run in CI, we want to ensure that we have complete control over the set of
+python pacakges we are comparing against; to ensure this we use `constraints.txt`
+in the root `resources/scripts` directory. To update the set of python packages
+in use, you need to update this file:
+
+- `rm -rf` your existing venv
+- create a new venv and activate it
+- `pip install -r resources/scripts/requirements.txt`
+- `pip freeze > resources/scripts/constraints.txt`
+
 ```shell
 # clone git@github.com:googlefonts/fontc_crater.git somewhere, we'll assume at ../fontc_crater
 # CI currently has it's own format for the repo list, use the file from ^
 
-$ cargo run --release -p=fontc_crater -- ci ../fontc_crater/gf-repos-2024-08-12.json -o ../fontc_crater/results/ --html-only
+$ cargo run --release -p=fontc_crater -- ci ../fontc_crater/gf-repos-2024-09-23.json -o ../fontc_crater/results/ --html-only
 
 # Review ../fontc_crater/results/index.html (NOT ../fontc_crater/index.html)
 ```
