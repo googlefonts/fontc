@@ -600,14 +600,25 @@ fn make_error_report_group_items<'a>(
             .map(String::as_str)
             .unwrap_or("#")
     };
+    let make_repro_command = |target: &Target| {
+        let url = get_repo_url(target);
+        let ttx_command = target.repro_command(url);
+        format!("event.preventDefault(); copyText('{ttx_command}');",)
+    };
     html! {
-            @for (path, is_new) in paths_and_if_is_new_error {
-                details.report_group_item {
-                    summary {
-                        a href = ({ get_repo_url(path) }) { (path) }
-                         @if is_new { " 🆕" }
-                }
-                    (details(path))
+        @for (path, is_new) in paths_and_if_is_new_error {
+            details.report_group_item {
+                summary {
+                    (path)
+                     @if is_new { " 🆕" }
+            }
+                    div.diff_info {
+                        a href = (get_repo_url(path)) { "view source repository" }
+                        " "
+                        a href = "" onclick = (make_repro_command(path)) { "copy reproduction command" }
+                    }
+
+                (details(path))
             }
         }
     }
