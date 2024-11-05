@@ -59,7 +59,7 @@ pub fn create_glyf_work(glyph_name: GlyphName) -> Box<BeWork> {
 ///
 /// * The same advance width as glyph
 /// * A 2x2 transform that does nothing (basis vectors do not change)
-/// * No x-translation
+/// * No x-translation that will survive rounding
 ///    * y-translation is OK
 ///
 /// This forces the composite glyph to use the possibly hinted horizontal
@@ -75,8 +75,9 @@ fn can_reuse_metrics(
     if width != component_glyph.width.ot_round() {
         return false;
     }
-    // transform needs to be identity ignoring dy
+    // transform needs to be identity ignoring dy, and dx if it will be rounded away
     let mut coeffs = transform.as_coeffs();
+    coeffs[4] = coeffs[4].ot_round();
     coeffs[5] = 0.0;
     coeffs == Affine::IDENTITY.as_coeffs()
 }
@@ -936,6 +937,16 @@ mod tests {
             &glyph,
             &component,
             &Affine::translate((0.0, 1.0))
+        ));
+    }
+
+    #[test]
+    fn can_reuse_metrics_ignores_negligible_dx() {
+        let (glyph, component) = create_reusable_component();
+        assert!(can_reuse_metrics(
+            &glyph,
+            &component,
+            &Affine::translate((0.4, 0.0))
         ));
     }
 
