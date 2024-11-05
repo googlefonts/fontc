@@ -3,145 +3,410 @@
 //! This module provides access to glyph info extracted from bundled
 //! (and potentially user-provided) data files.
 
-// NOTE: we define the types and parsing code in a separate file, so that
-// we can borrow it in our build.rs script without causing a cycle
-mod glyphdata_impl;
+use quick_xml::{
+    events::{BytesStart, Event},
+    Reader,
+};
 use std::{
-    borrow::Cow,
-    collections::{BTreeSet, HashMap, HashSet},
-    path::Path,
-    sync::OnceLock,
+    collections::{BTreeSet, HashMap},
+    fmt::Display,
+    num::ParseIntError,
+    path::{Path, PathBuf},
+    str::FromStr,
 };
 
-pub use glyphdata_impl::*;
 use icu_properties::GeneralCategory;
 
 use smol_str::SmolStr;
 
-static BUNDLED_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/glyphdata.bin"));
+use crate::glyphslib_data;
+
+/// The primary category for a given glyph
+///
+/// These categories are not the same as the unicode character categories.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum Category {
+    Mark,
+    Space,
+    Separator,
+    Letter,
+    Number,
+    Symbol,
+    Punctuation,
+    Other,
+}
+
+/// The subcategory of a given glyph
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum Subcategory {
+    Spacing,
+    Radical,
+    Math,
+    Superscript,
+    Geometry,
+    Dash,
+    DecimalDigit,
+    Currency,
+    Fraction,
+    Halfform,
+    Small,
+    Number,
+    Quote,
+    Space,
+    Letter,
+    Jamo,
+    Format,
+    Parenthesis,
+    Matra,
+    Arrow,
+    Nonspacing,
+    Compatibility,
+    Syllable,
+    Ligature,
+    Modifier,
+    SpacingCombining,
+    Emoji,
+    Enclosing,
+}
 
 /// A queryable set of glyph data
 ///
-/// This is generally expensive to create, and is intended to be cached, or
-/// used behind a OnceCell. It is never modified after initial creation.
+/// Always includes static data from glyphsLib. Optionally includes a set of override values as well.
+///
+/// Default/no overrides instances are cheap. Instances created with overrides are more expensive.
 pub struct GlyphData {
-    // The info for all the glyphs we know of.
-    data: Vec<GlyphInfo>,
-    // the values in all maps are indices into the `data` vec. we use u32 to save space.
-    name_map: HashMap<SmolStr, u32>,
-    unicode_map: HashMap<u32, u32>,
-    alt_name_map: HashMap<SmolStr, u32>,
+    // Sorted by name, unique names, therefore safe to bsearch
+    data: &'static [(&'static str, QueryResult)],
+    // Sorted by codepoint, unique codepoints, therefore safe to bsearch
+    codepoint_to_data_index: &'static [(u32, usize)],
+
+    // override-names are preferred to names in data
+    overrides: Option<HashMap<SmolStr, QueryResult>>,
+    overrrides_by_codepoint: Option<HashMap<u32, SmolStr>>,
 }
 
 impl GlyphData {
-    /// Return the default glyph data set, derived from GlyphData.xml files
-    pub fn bundled() -> &'static GlyphData {
-        static GLYPH_DATA: OnceLock<GlyphData> = OnceLock::new();
-        GLYPH_DATA.get_or_init(|| GlyphData::new(None).unwrap())
-    }
-
-    /// Create a new data set, optionally loading user provided overrides
-    pub fn new(user_overrides: Option<&Path>) -> Result<Self, GlyphDataError> {
-        let user_overrides = user_overrides
-            .map(|path| {
-                let bytes = std::fs::read(path).map_err(|err| GlyphDataError::UserFile {
-                    path: path.to_owned(),
-                    reason: err.kind(),
-                });
-                bytes.and_then(|xml| parse_entries(&xml))
-            })
-            .transpose()?;
-        let bundled = load_bundled_data();
-        let all_entries = match user_overrides {
-            Some(user_overrides) => merge_data(bundled, user_overrides),
-            None => bundled,
-        };
-
-        Ok(Self::new_impl(all_entries))
-    }
-
-    fn new_impl(entries: Vec<GlyphInfo>) -> Self {
-        let mut name_map = HashMap::with_capacity(entries.len());
-        let mut unicode_map = HashMap::with_capacity(entries.len());
-        let mut alt_name_map = HashMap::new();
-
-        for (i, entry) in entries.iter().enumerate() {
-            name_map.insert(entry.name.clone(), i as u32);
-            if let Some(cp) = entry.unicode {
-                unicode_map.insert(cp, i as _);
-            }
-            for alt in &entry.alt_names {
-                alt_name_map.insert(alt.clone(), i as _);
-            }
-        }
-
+    /// Overrides, if provided, explicitly assign the result for a given query
+    pub(crate) fn new(overrides: Option<HashMap<SmolStr, QueryResult>>) -> Self {
+        let overrrides_by_codepoint = overrides.as_ref().map(|overrides| {
+            overrides
+                .iter()
+                .filter_map(|(k, v)| v.codepoint.map(|cp| (cp, k.clone())))
+                .collect()
+        });
         Self {
-            data: entries,
-            name_map,
-            unicode_map,
-            alt_name_map,
+            data: glyphslib_data::GLYPH_INFO,
+            codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
+            overrides,
+            overrrides_by_codepoint,
         }
     }
 
+    /// Create a new data set with user provided overrides
+    pub fn with_override_file(override_file: &Path) -> Result<Self, GlyphDataError> {
+        let bytes = std::fs::read(override_file).map_err(|err| GlyphDataError::UserFile {
+            path: override_file.to_owned(),
+            reason: err.kind(),
+        })?;
+        let overrides = parse_entries(&bytes)?;
+        Ok(GlyphData::new(Some(overrides)))
+    }
+}
+
+impl Default for GlyphData {
+    fn default() -> Self {
+        Self {
+            data: glyphslib_data::GLYPH_INFO,
+            codepoint_to_data_index: glyphslib_data::CODEPOINT_TO_INFO_IDX,
+            overrides: None,
+            overrrides_by_codepoint: None,
+        }
+    }
+}
+
+// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn qr(
+    category: Category,
+    subcategory: Option<Subcategory>,
+    codepoint: Option<u32>,
+) -> QueryResult {
+    QueryResult {
+        category,
+        subcategory,
+        codepoint,
+    }
+}
+
+/// The category and subcategory to use
+///
+/// Used for overrides and as the result of [`GlyphData::query`]
+#[derive(Debug, Copy, Clone)]
+pub struct QueryResult {
+    pub category: Category,
+    pub subcategory: Option<Subcategory>,
+    pub codepoint: Option<u32>,
+}
+
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum GlyphDataError {
+    #[error("Couldn't read user file at '{path}': '{reason}'")]
+    UserFile {
+        path: PathBuf,
+        reason: std::io::ErrorKind,
+    },
+    #[error("Error parsing XML: '{0}'")]
+    ReaderError(#[from] quick_xml::Error),
+    #[error("Error parsing XML attribute: '{0}'")]
+    XmlAttributeError(#[from] quick_xml::events::attributes::AttrError),
+    #[error("Unknown category '{0}'")]
+    InvalidCategory(SmolStr),
+    #[error("Unknown subcategory '{0}'")]
+    InvalidSubcategory(SmolStr),
+    #[error("the XML input did not start with a <glyphdata> tag")]
+    WrongFirstElement,
+    #[error("Missing required attribute '{missing}' in '{attributes}'")]
+    MissingRequiredAttribute {
+        attributes: String,
+        missing: &'static str,
+    },
+    #[error("Invalid unicode value '{raw}': '{inner}'")]
+    InvalidUnicode { raw: String, inner: ParseIntError },
+    #[error("Unexpected attribute '{0}'")]
+    UnknownAttribute(String),
+}
+
+impl GlyphDataError {
+    // a little helper here makes our parsing code cleaner
+    fn missing_attr(name: &'static str, raw_attrs: &[u8]) -> Self {
+        let attributes = String::from_utf8_lossy(raw_attrs).into_owned();
+        Self::MissingRequiredAttribute {
+            attributes,
+            missing: name,
+        }
+    }
+}
+
+/// Parse glyph info entries out of a GlyphData xml file.
+pub(crate) fn parse_entries(xml: &[u8]) -> Result<HashMap<SmolStr, QueryResult>, GlyphDataError> {
+    fn check_and_advance_past_preamble(reader: &mut Reader<&[u8]>) -> Result<(), GlyphDataError> {
+        loop {
+            let event = reader.read_event()?;
+            match event {
+                Event::Comment(_) => (),
+                Event::Decl(_) => (),
+                Event::DocType(_) => (),
+                Event::Start(start) if start.name().as_ref() == b"glyphData" => return Ok(()),
+                _other => {
+                    return Err(GlyphDataError::WrongFirstElement);
+                }
+            }
+        }
+    }
+
+    let mut reader = Reader::from_reader(xml);
+    reader.config_mut().trim_text(true);
+
+    check_and_advance_past_preamble(&mut reader)?;
+
+    let mut by_name = HashMap::new();
+    let mut alt_names = Vec::new();
+    for result in
+        iter_rows(&mut reader).map(|row| row.map_err(Into::into).and_then(parse_glyph_xml))
+    {
+        let info = result?;
+        by_name.insert(
+            info.name.clone(),
+            QueryResult {
+                category: info.category,
+                subcategory: info.subcategory,
+                codepoint: info.codepoint,
+            },
+        );
+        for alt in info.alt_names {
+            alt_names.push((
+                alt,
+                QueryResult {
+                    category: info.category,
+                    subcategory: info.subcategory,
+                    codepoint: None,
+                },
+            ));
+        }
+    }
+
+    // apply alts after to ensure they can't steal "real" names
+    for (name, value) in alt_names {
+        by_name.entry(name).or_insert(value);
+    }
+
+    Ok(by_name)
+}
+
+fn iter_rows<'a, 'b: 'a>(
+    reader: &'b mut Reader<&'a [u8]>,
+) -> impl Iterator<Item = Result<BytesStart<'a>, quick_xml::Error>> + 'a {
+    std::iter::from_fn(|| match reader.read_event() {
+        Err(e) => Some(Err(e)),
+        Ok(Event::Empty(start)) => Some(Ok(start)),
+        _ => None,
+    })
+}
+
+struct GlyphInfoFromXml {
+    name: SmolStr,
+    alt_names: Vec<SmolStr>,
+    category: Category,
+    subcategory: Option<Subcategory>,
+    codepoint: Option<u32>,
+}
+
+fn parse_glyph_xml(item: BytesStart) -> Result<GlyphInfoFromXml, GlyphDataError> {
+    let mut name = None;
+    let mut category = None;
+    let mut subcategory = None;
+    let mut unicode = None;
+    let mut alt_names = None;
+
+    for attr in item.attributes() {
+        let attr = attr?;
+        let value = attr.unescape_value()?;
+        match attr.key.as_ref() {
+            b"name" => name = Some(value),
+            b"category" => category = Some(value),
+            b"subCategory" => subcategory = Some(value),
+            b"unicode" => unicode = Some(value),
+            b"altNames" => alt_names = Some(value),
+            b"production" | b"unicodeLegacy" | b"case" | b"direction" | b"script"
+            | b"description" => (),
+            other => {
+                return Err(GlyphDataError::UnknownAttribute(
+                    String::from_utf8_lossy(other).into_owned(),
+                ))
+            }
+        }
+    }
+
+    // now we've found some values, let's finalize them
+    let name = name
+        .map(SmolStr::new)
+        .ok_or_else(|| GlyphDataError::missing_attr("name", item.attributes_raw()))?;
+    let category = category
+        .ok_or_else(|| GlyphDataError::missing_attr("category", item.attributes_raw()))
+        .and_then(|cat| {
+            Category::from_str(cat.as_ref()).map_err(GlyphDataError::InvalidCategory)
+        })?;
+    let subcategory = subcategory
+        .map(|cat| Subcategory::from_str(cat.as_ref()).map_err(GlyphDataError::InvalidSubcategory))
+        .transpose()?;
+    let codepoint = unicode
+        .map(|s| {
+            u32::from_str_radix(&s, 16).map_err(|inner| GlyphDataError::InvalidUnicode {
+                raw: s.into_owned(),
+                inner,
+            })
+        })
+        .transpose()?;
+    let alt_names = alt_names
+        .map(|names| {
+            names
+                .as_ref()
+                .split(',')
+                .map(|name| SmolStr::from(name.trim()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(GlyphInfoFromXml {
+        name,
+        alt_names,
+        category,
+        subcategory,
+        codepoint,
+    })
+}
+
+impl GlyphData {
     /// Get the info for the given name/codepoints, attempting to synthesize it if necessary
     ///
-    /// If this name or these unicode values were included in the bundled data,
-    /// that will be returned; otherwise we will attempt to compute the value
-    /// by performing various heuristics based on the name.
+    /// Returns, from most to least preferred:
+    ///
+    /// 1. The matching override value
+    /// 1. The matching value from bundled data
+    /// 1. A computed value based on name heuristics
     ///
     // See https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L94
-    pub fn get_glyph(
+    pub fn query(&self, name: &str, codepoints: Option<&BTreeSet<u32>>) -> Option<QueryResult> {
+        self.query_no_synthesis(name, codepoints)
+            // we don't have info for this glyph: can we synthesize it?
+            .or_else(|| self.construct_category(name))
+    }
+
+    /// As [`Self::query`] but without a fallback to computed values.
+    ///
+    /// Exists to enable result synthesis to query.
+    fn query_no_synthesis(
         &self,
         name: &str,
         codepoints: Option<&BTreeSet<u32>>,
-    ) -> Option<Cow<GlyphInfo>> {
-        if let Some(info) = self.get_by_name(name).or_else(|| {
-            codepoints
-                .into_iter()
-                .flat_map(|cps| cps.iter())
-                .find_map(|cp| self.get_by_codepoint(*cp))
-        }) {
-            return Some(Cow::Borrowed(info));
+    ) -> Option<QueryResult> {
+        // Override?
+        if let (Some(overrides), Some(overrides_by_codepoint)) = (
+            self.overrides.as_ref(),
+            self.overrrides_by_codepoint.as_ref(),
+        ) {
+            let override_result = overrides.get(name).or_else(|| {
+                codepoints
+                    .into_iter()
+                    .flat_map(|cps| cps.iter())
+                    .find_map(|cp: &u32| {
+                        overrides_by_codepoint
+                            .get(cp)
+                            .and_then(|n| overrides.get(n))
+                    })
+            });
+            if let Some(override_result) = override_result {
+                return Some(QueryResult {
+                    category: override_result.category,
+                    subcategory: override_result.subcategory,
+                    codepoint: override_result.codepoint,
+                });
+            }
         }
 
-        // we don't have info for this glyph: can we synthesize it?
-        // TODO: python does production name here.
-        // see https://github.com/googlefonts/fontc/issues/780
-
-        let (category, subcategory) = self.construct_category(name)?;
-        Some(Cow::Owned(GlyphInfo {
-            name: name.into(),
-            category,
-            subcategory,
-            unicode: None,
-            production: None,
-            alt_names: Default::default(),
-        }))
+        // No override, perhaps we have a direct answer?
+        self.data
+            .binary_search_by(|(n, _)| (*n).cmp(name))
+            .ok()
+            .map(|i| self.data[i])
+            .or_else(|| {
+                codepoints
+                    .into_iter()
+                    .flat_map(|cps| cps.iter())
+                    .find_map(|cp| {
+                        self.codepoint_to_data_index
+                            .binary_search_by(|(info_cp, _)| info_cp.cmp(cp))
+                            .ok()
+                            .map(|i| &self.data[self.codepoint_to_data_index[i].1])
+                    })
+                    .copied()
+            })
+            .map(|(_, r)| r)
     }
 
-    /// Look up info for a glyph by name
-    ///
-    /// This checks primary names first, and alternates afterwards.
-    ///
-    /// Note: this is only checking the loaded data, it does not handle
-    /// computing info if it is missing.
-    fn get_by_name(&self, name: impl AsRef<str>) -> Option<&GlyphInfo> {
-        let name = name.as_ref();
-        self.name_map
-            .get(name)
-            .or_else(|| self.alt_name_map.get(name))
-            .and_then(|idx| self.data.get(*idx as usize))
-    }
-
-    /// Look up info for a glyph by codepoint
-    fn get_by_codepoint(&self, codepoint: u32) -> Option<&GlyphInfo> {
-        self.unicode_map
-            .get(&codepoint)
-            .and_then(|idx| self.data.get(*idx as usize))
+    fn contains_name(&self, name: &str) -> bool {
+        if let Some(overrides) = self.overrides.as_ref() {
+            let name: SmolStr = name.into();
+            if overrides.contains_key(&name) {
+                return true;
+            }
+        }
+        self.data.binary_search_by(|(n, _)| (*n).cmp(name)).is_ok()
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L199
-    fn construct_category(&self, name: &str) -> Option<(Category, Subcategory)> {
+    fn construct_category(&self, name: &str) -> Option<QueryResult> {
         // in glyphs.app '_' prefix means "no export"
         if name.starts_with('_') {
             return None;
@@ -150,30 +415,42 @@ impl GlyphData {
             .split_glyph_suffix(name)
             .map(|(base, _)| base)
             .unwrap_or(name);
-        if let Some(info) = self.get_by_name(base_name) {
-            return Some((info.category, info.subcategory));
+        if let Some(result) = self.query_no_synthesis(base_name, None) {
+            return Some(result);
         }
 
         if let Some(base_names) = self.split_ligature_glyph_name(base_name) {
             let base_names_attributes: Vec<_> = base_names
                 .iter()
-                .map(|name| self.get_by_name(name))
+                .filter_map(|name| self.query_no_synthesis(name, None))
                 .collect();
-            if let Some(first_attr) = base_names_attributes.first().and_then(Option::as_ref) {
+            if let Some(first_attr) = base_names_attributes.first() {
                 // if first is mark, we're a mark
                 if first_attr.category == Category::Mark {
-                    return Some((Category::Mark, first_attr.subcategory));
+                    return Some(QueryResult {
+                        category: Category::Mark,
+                        subcategory: first_attr.subcategory,
+                        codepoint: None,
+                    });
                 } else if first_attr.category == Category::Letter {
                     // if first is letter and rest are marks/separators, we use info from first
                     if base_names_attributes
                         .iter()
                         .skip(1)
-                        .filter_map(|attr| attr.map(|attr| attr.category))
+                        .map(|result| result.category)
                         .all(|cat| matches!(cat, Category::Mark | Category::Separator))
                     {
-                        return Some((first_attr.category, first_attr.subcategory));
+                        return Some(QueryResult {
+                            category: first_attr.category,
+                            subcategory: first_attr.subcategory,
+                            codepoint: None,
+                        });
                     } else {
-                        return Some((Category::Letter, Subcategory::Ligature));
+                        return Some(QueryResult {
+                            category: Category::Letter,
+                            subcategory: Some(Subcategory::Ligature),
+                            codepoint: None,
+                        });
                     }
                 }
             }
@@ -185,7 +462,7 @@ impl GlyphData {
 
     // this doesn't need a &self param, but we want it locally close to the
     // code that calls it, so we'll make it a type method :shrug:
-    fn construct_category_via_agl(base_name: &str) -> Option<(Category, Subcategory)> {
+    fn construct_category_via_agl(base_name: &str) -> Option<QueryResult> {
         if let Some(first_char) = fontdrasil::agl::glyph_name_to_unicode(base_name)
             .chars()
             .next()
@@ -195,15 +472,23 @@ impl GlyphData {
             // Exception: Something like "one_two" should be a (_, Ligature),
             // "acutecomb_brevecomb" should however stay (Mark, Nonspacing).
             if base_name.contains('_') && category != Category::Mark {
-                return Some((category, Subcategory::Ligature));
+                return Some(QueryResult {
+                    category,
+                    subcategory: Some(Subcategory::Ligature),
+                    codepoint: None,
+                });
             } else {
-                return Some((category, subcategory));
+                return Some(QueryResult {
+                    category,
+                    subcategory,
+                    codepoint: None,
+                });
             }
         }
         None
     }
 
-    fn split_glyph_suffix<'a>(&self, name: &'a str) -> Option<(&'a str, &'a str)> {
+    fn split_glyph_suffix<'n>(&self, name: &'n str) -> Option<(&'n str, &'n str)> {
         let multi_suffix = name.bytes().filter(|b| *b == b'.').count() > 1;
         if multi_suffix {
             // with multiple suffixes, try adding them one at a time and seeing if
@@ -217,7 +502,7 @@ impl GlyphData {
                 .skip(1)
             {
                 let (base, suffix) = name.split_at(idx);
-                if self.get_by_name(base).is_some() {
+                if self.contains_name(base) {
                     return Some((base, suffix));
                 }
             }
@@ -260,7 +545,7 @@ impl GlyphData {
 
             let new_part = smol_str::format_smolstr!("{part}-{script}");
             // if non-suffixed exists but suffixed doesn't, keep non-suffixed
-            if self.get_by_name(part.as_ref()).is_some() && self.get_by_name(&new_part).is_none() {
+            if self.contains_name(part.as_ref()) && !self.contains_name(&new_part) {
                 continue;
             }
             *part = new_part;
@@ -270,212 +555,307 @@ impl GlyphData {
 }
 
 // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/Lib/glyphsLib/glyphdata.py#L261
-fn category_from_icu(c: char) -> (Category, Subcategory) {
+fn category_from_icu(c: char) -> (Category, Option<Subcategory>) {
     match icu_properties::maps::general_category().get(c) {
-        GeneralCategory::Unassigned | GeneralCategory::OtherSymbol => {
-            (Category::Symbol, Subcategory::None)
-        }
+        GeneralCategory::Unassigned | GeneralCategory::OtherSymbol => (Category::Symbol, None),
         GeneralCategory::UppercaseLetter
         | GeneralCategory::LowercaseLetter
         | GeneralCategory::TitlecaseLetter
-        | GeneralCategory::OtherLetter => (Category::Letter, Subcategory::None),
-        GeneralCategory::ModifierLetter => (Category::Letter, Subcategory::Modifier),
-        GeneralCategory::NonspacingMark => (Category::Mark, Subcategory::Nonspacing),
-        GeneralCategory::SpacingMark => (Category::Mark, Subcategory::SpacingCombining),
-        GeneralCategory::EnclosingMark => (Category::Mark, Subcategory::Enclosing),
+        | GeneralCategory::OtherLetter => (Category::Letter, None),
+        GeneralCategory::ModifierLetter => (Category::Letter, Some(Subcategory::Modifier)),
+        GeneralCategory::NonspacingMark => (Category::Mark, Some(Subcategory::Nonspacing)),
+        GeneralCategory::SpacingMark => (Category::Mark, Some(Subcategory::SpacingCombining)),
+        GeneralCategory::EnclosingMark => (Category::Mark, Some(Subcategory::Enclosing)),
         GeneralCategory::DecimalNumber | GeneralCategory::OtherNumber => {
-            (Category::Number, Subcategory::DecimalDigit)
+            (Category::Number, Some(Subcategory::DecimalDigit))
         }
-        GeneralCategory::LetterNumber => (Category::Number, Subcategory::None),
-        GeneralCategory::SpaceSeparator => (Category::Separator, Subcategory::Space),
+        GeneralCategory::LetterNumber => (Category::Number, None),
+        GeneralCategory::SpaceSeparator => (Category::Separator, Some(Subcategory::Space)),
         GeneralCategory::LineSeparator
         | GeneralCategory::ParagraphSeparator
-        | GeneralCategory::Control => (Category::Separator, Subcategory::None),
-        GeneralCategory::Format => (Category::Separator, Subcategory::Format),
-        GeneralCategory::PrivateUse => (Category::Letter, Subcategory::Compatibility),
-        GeneralCategory::DashPunctuation => (Category::Punctuation, Subcategory::Dash),
+        | GeneralCategory::Control => (Category::Separator, None),
+        GeneralCategory::Format => (Category::Separator, Some(Subcategory::Format)),
+        GeneralCategory::PrivateUse => (Category::Letter, Some(Subcategory::Compatibility)),
+        GeneralCategory::DashPunctuation => (Category::Punctuation, Some(Subcategory::Dash)),
         GeneralCategory::OpenPunctuation | GeneralCategory::ClosePunctuation => {
-            (Category::Punctuation, Subcategory::Parenthesis)
+            (Category::Punctuation, Some(Subcategory::Parenthesis))
         }
         GeneralCategory::ConnectorPunctuation | GeneralCategory::OtherPunctuation => {
-            (Category::Punctuation, Subcategory::None)
+            (Category::Punctuation, None)
         }
         GeneralCategory::InitialPunctuation | GeneralCategory::FinalPunctuation => {
-            (Category::Punctuation, Subcategory::Quote)
+            (Category::Punctuation, Some(Subcategory::Quote))
         }
-        GeneralCategory::MathSymbol => (Category::Symbol, Subcategory::Math),
-        GeneralCategory::CurrencySymbol => (Category::Symbol, Subcategory::Currency),
-        GeneralCategory::ModifierSymbol => (Category::Mark, Subcategory::Spacing),
+        GeneralCategory::MathSymbol => (Category::Symbol, Some(Subcategory::Math)),
+        GeneralCategory::CurrencySymbol => (Category::Symbol, Some(Subcategory::Currency)),
+        GeneralCategory::ModifierSymbol => (Category::Mark, Some(Subcategory::Spacing)),
         GeneralCategory::Surrogate => unreachable!("char cannot represent surrogate code points"),
     }
 }
 
-fn load_bundled_data() -> Vec<GlyphInfo> {
-    bincode::deserialize(BUNDLED_DATA).unwrap()
+impl FromStr for Category {
+    type Err = SmolStr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Mark" => Ok(Self::Mark),
+            "Space" => Ok(Self::Space),
+            "Separator" => Ok(Self::Separator),
+            "Letter" => Ok(Self::Letter),
+            "Number" => Ok(Self::Number),
+            "Symbol" => Ok(Self::Symbol),
+            "Punctuation" => Ok(Self::Punctuation),
+            "Other" => Ok(Self::Other),
+            _ => Err(s.into()),
+        }
+    }
 }
 
-fn merge_data(mut base: Vec<GlyphInfo>, overrides: Vec<GlyphInfo>) -> Vec<GlyphInfo> {
-    let skip_names = overrides
-        .iter()
-        .map(|info| &info.name)
-        .collect::<HashSet<_>>();
-    base.retain(|info| !skip_names.contains(&info.name));
-    base.extend(overrides);
-    base
+impl FromStr for Subcategory {
+    type Err = SmolStr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Spacing" => Ok(Self::Spacing),
+            "Radical" => Ok(Self::Radical),
+            "Math" => Ok(Self::Math),
+            "Superscript" => Ok(Self::Superscript),
+            "Geometry" => Ok(Self::Geometry),
+            "Dash" => Ok(Self::Dash),
+            "Decimal Digit" => Ok(Self::DecimalDigit),
+            "Currency" => Ok(Self::Currency),
+            "Fraction" => Ok(Self::Fraction),
+            "Halfform" => Ok(Self::Halfform),
+            "Small" => Ok(Self::Small),
+            "Number" => Ok(Self::Number),
+            "Quote" => Ok(Self::Quote),
+            "Space" => Ok(Self::Space),
+            "Letter" => Ok(Self::Letter),
+            "Jamo" => Ok(Self::Jamo),
+            "Format" => Ok(Self::Format),
+            "Parenthesis" => Ok(Self::Parenthesis),
+            "Matra" => Ok(Self::Matra),
+            "Arrow" => Ok(Self::Arrow),
+            "Nonspacing" => Ok(Self::Nonspacing),
+            "Compatibility" => Ok(Self::Compatibility),
+            "Syllable" => Ok(Self::Syllable),
+            "Ligature" => Ok(Self::Ligature),
+            "Modifier" => Ok(Self::Modifier),
+            "Spacing Combining" => Ok(Self::SpacingCombining),
+            "Emoji" => Ok(Self::Emoji),
+            "Enclosing" => Ok(Self::Enclosing),
+            _ => Err(s.into()),
+        }
+    }
+}
+
+impl Display for Category {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Mark => write!(f, "Mark"),
+            Self::Space => write!(f, "Space"),
+            Self::Separator => write!(f, "Separator"),
+            Self::Letter => write!(f, "Letter"),
+            Self::Number => write!(f, "Number"),
+            Self::Symbol => write!(f, "Symbol"),
+            Self::Punctuation => write!(f, "Punctuation"),
+            Self::Other => write!(f, "Other"),
+        }
+    }
+}
+
+impl Display for Subcategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Spacing => write!(f, "Spacing"),
+            Self::Radical => write!(f, "Radical"),
+            Self::Math => write!(f, "Math"),
+            Self::Superscript => write!(f, "Superscript"),
+            Self::Geometry => write!(f, "Geometry"),
+            Self::Dash => write!(f, "Dash"),
+            Self::DecimalDigit => write!(f, "Decimal Digit"),
+            Self::Currency => write!(f, "Currency"),
+            Self::Fraction => write!(f, "Fraction"),
+            Self::Halfform => write!(f, "Halfform"),
+            Self::Small => write!(f, "Small"),
+            Self::Number => write!(f, "Number"),
+            Self::Quote => write!(f, "Quote"),
+            Self::Space => write!(f, "Space"),
+            Self::Letter => write!(f, "Letter"),
+            Self::Jamo => write!(f, "Jamo"),
+            Self::Format => write!(f, "Format"),
+            Self::Parenthesis => write!(f, "Parenthesis"),
+            Self::Matra => write!(f, "Matra"),
+            Self::Arrow => write!(f, "Arrow"),
+            Self::Nonspacing => write!(f, "Nonspacing"),
+            Self::Compatibility => write!(f, "Compatibility"),
+            Self::Syllable => write!(f, "Syllable"),
+            Self::Ligature => write!(f, "Ligature"),
+            Self::Modifier => write!(f, "Modifier"),
+            Self::SpacingCombining => write!(f, "Spacing Combining"),
+            Self::Emoji => write!(f, "Emoji"),
+            Self::Enclosing => write!(f, "Enclosing"),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::OnceLock;
 
     use super::*;
 
     #[test]
     fn test_bundled_data() {
-        let data = load_bundled_data();
-        assert_eq!(data.len(), 73329);
+        let data = GlyphData::new(None).data;
+        assert!(data.len() > 70000, "{}", data.len());
     }
 
     #[test]
     fn simple_overrides() {
-        let overrides = vec![GlyphInfo {
-            name: "A".into(),
-            category: Category::Mark,
-            subcategory: Subcategory::SpacingCombining,
-            unicode: Some(b'A' as u32),
-            production: None,
-            alt_names: Default::default(),
-        }];
-        let bundled = load_bundled_data();
-        let merged = merge_data(bundled, overrides);
-        let data = GlyphData::new_impl(merged);
+        let overrides = HashMap::from([(
+            "A".into(),
+            QueryResult {
+                category: Category::Mark,
+                subcategory: Some(Subcategory::SpacingCombining),
+                codepoint: Some(b'A' as u32),
+            },
+        )]);
+        let data = GlyphData::new(Some(overrides));
 
-        assert_eq!(data.get_by_name("A").unwrap().category, Category::Mark);
+        assert_eq!(data.query("A", None).unwrap().category, Category::Mark);
     }
 
     #[test]
     fn overrides_from_file() {
-        let data = GlyphData::new(Some(Path::new("./data/GlyphData_override_test.xml"))).unwrap();
-        assert_eq!(data.get_by_name("zero").unwrap().category, Category::Other);
-        assert_eq!(data.get_by_name("C").unwrap().category, Category::Number);
-        assert_eq!(
-            data.get_by_name("Yogh").unwrap().production,
-            Some("Yolo".into())
-        );
+        let data =
+            GlyphData::with_override_file(Path::new("./data/GlyphData_override_test.xml")).unwrap();
+        assert_eq!(data.query("zero", None).unwrap().category, Category::Other);
+        assert_eq!(data.query("C", None).unwrap().category, Category::Number);
     }
 
-    fn get_category(name: &str, codepoints: &[u32]) -> Option<(Category, Subcategory)> {
-        static GLYPH_DATA: OnceLock<GlyphData> = OnceLock::new();
-        let data = GLYPH_DATA.get_or_init(|| GlyphData::new(None).unwrap());
+    fn get_category(name: &str, codepoints: &[u32]) -> Option<(Category, Option<Subcategory>)> {
         let codepoints = codepoints.iter().copied().collect();
-        data.get_glyph(name, Some(&codepoints))
-            .map(|info| (info.category, info.subcategory))
+        GlyphData::new(None)
+            .query(name, Some(&codepoints))
+            .map(|result| (result.category, result.subcategory))
     }
 
     // from python glyphsLib: https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d5/tests/glyphdata_test.py#L106
     #[test]
     fn py_test_category() {
         for (name, expected) in [
-            (".notdef", Some((Category::Separator, Subcategory::None))),
+            (".notdef", Some((Category::Separator, None))),
             // this test case requires AGL lookup:
-            ("uni000D", Some((Category::Separator, Subcategory::None))),
+            ("uni000D", Some((Category::Separator, None))),
             (
                 "boxHeavyUp",
-                Some((Category::Symbol, Subcategory::Geometry)),
+                Some((Category::Symbol, Some(Subcategory::Geometry))),
             ),
-            ("eacute", Some((Category::Letter, Subcategory::None))),
-            ("Abreveacute", Some((Category::Letter, Subcategory::None))),
-            ("C-fraktur", Some((Category::Letter, Subcategory::None))),
-            ("fi", Some((Category::Letter, Subcategory::Ligature))),
-            ("fi.alt", Some((Category::Letter, Subcategory::Ligature))),
-            ("hib-ko", Some((Category::Letter, Subcategory::Syllable))),
+            ("eacute", Some((Category::Letter, None))),
+            ("Abreveacute", Some((Category::Letter, None))),
+            ("C-fraktur", Some((Category::Letter, None))),
+            ("fi", Some((Category::Letter, Some(Subcategory::Ligature)))),
+            (
+                "fi.alt",
+                Some((Category::Letter, Some(Subcategory::Ligature))),
+            ),
+            (
+                "hib-ko",
+                Some((Category::Letter, Some(Subcategory::Syllable))),
+            ),
             (
                 "one.foo",
-                Some((Category::Number, Subcategory::DecimalDigit)),
+                Some((Category::Number, Some(Subcategory::DecimalDigit))),
             ),
             (
                 "one_two.foo",
-                Some((Category::Number, Subcategory::Ligature)),
+                Some((Category::Number, Some(Subcategory::Ligature))),
             ),
-            ("o_f_f_i", Some((Category::Letter, Subcategory::Ligature))),
+            (
+                "o_f_f_i",
+                Some((Category::Letter, Some(Subcategory::Ligature))),
+            ),
             (
                 "o_f_f_i.foo",
-                Some((Category::Letter, Subcategory::Ligature)),
+                Some((Category::Letter, Some(Subcategory::Ligature))),
             ),
             (
                 "ain_alefMaksura-ar.fina",
-                Some((Category::Letter, Subcategory::Ligature)),
+                Some((Category::Letter, Some(Subcategory::Ligature))),
             ),
-            ("brevecomb", Some((Category::Mark, Subcategory::Nonspacing))),
+            (
+                "brevecomb",
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
+            ),
             (
                 "brevecomb.case",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
             (
                 "brevecomb_acutecomb",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
             (
                 "brevecomb_acutecomb.case",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
             (
                 "caroncomb_dotaccentcomb",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
             (
                 "dieresiscomb_caroncomb",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
             (
                 "dieresiscomb_macroncomb",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
             (
                 "dotaccentcomb_macroncomb",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
             (
                 "macroncomb_dieresiscomb",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
             (
                 "dotaccentcomb_o",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
             (
                 "macronlowmod_O",
-                Some((Category::Mark, Subcategory::Modifier)),
+                Some((Category::Mark, Some(Subcategory::Modifier))),
             ),
-            ("O_o", Some((Category::Letter, Subcategory::Ligature))),
+            ("O_o", Some((Category::Letter, Some(Subcategory::Ligature)))),
             (
                 "O_dotaccentcomb_o",
-                Some((Category::Letter, Subcategory::Ligature)),
+                Some((Category::Letter, Some(Subcategory::Ligature))),
             ),
+            ("O_dotaccentcomb", Some((Category::Letter, None))),
             (
-                "O_dotaccentcomb",
-                Some((Category::Letter, Subcategory::None)),
+                "O_period",
+                Some((Category::Letter, Some(Subcategory::Ligature))),
             ),
-            ("O_period", Some((Category::Letter, Subcategory::Ligature))),
-            ("O_nbspace", Some((Category::Letter, Subcategory::None))),
+            ("O_nbspace", Some((Category::Letter, None))),
             ("_a", None),
             ("_aaa", None),
             (
                 "dal_alef-ar",
-                Some((Category::Letter, Subcategory::Ligature)),
+                Some((Category::Letter, Some(Subcategory::Ligature))),
             ),
             (
                 "dal_lam-ar.dlig",
-                Some((Category::Letter, Subcategory::Ligature)),
+                Some((Category::Letter, Some(Subcategory::Ligature))),
             ),
-            ("po-khmer", Some((Category::Letter, Subcategory::None))),
+            ("po-khmer", Some((Category::Letter, None))),
             (
                 "po-khmer.below",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
             (
                 "po-khmer.below.ro",
-                Some((Category::Mark, Subcategory::Nonspacing)),
+                Some((Category::Mark, Some(Subcategory::Nonspacing))),
             ),
         ] {
             let result = get_category(name, &[]);
@@ -486,9 +866,13 @@ mod tests {
     // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/tests/glyphdata_test.py#L145C5-L153C76
     #[test]
     fn py_category_by_unicode() {
-        //# "SignU.bn" is a non-standard name not defined in GlyphData.xml
+        // "SignU.bn" is a non-standard name not defined in GlyphData.xml
+        // 0x09C1 should match
         let result = get_category("SignU.bn", &[0x09C1]);
-        assert_eq!(result, Some((Category::Mark, Subcategory::Nonspacing)))
+        assert_eq!(
+            result,
+            Some((Category::Mark, Some(Subcategory::Nonspacing)))
+        )
     }
 
     // https://github.com/googlefonts/glyphsLib/blob/e2ebf5b517d/tests/glyphdata_test.py#L155C5-L162C1
@@ -496,8 +880,8 @@ mod tests {
     #[test]
     fn py_bug_232() {
         let u = get_category("uni07F0", &[]);
-        assert_eq!(u, Some((Category::Mark, Subcategory::Nonspacing)));
+        assert_eq!(u, Some((Category::Mark, Some(Subcategory::Nonspacing))));
         let g = get_category("longlowtonecomb-nko", &[]);
-        assert_eq!(g, Some((Category::Mark, Subcategory::Nonspacing)));
+        assert_eq!(g, Some((Category::Mark, Some(Subcategory::Nonspacing))));
     }
 }
