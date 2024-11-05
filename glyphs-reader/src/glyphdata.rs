@@ -18,8 +18,7 @@ use icu_properties::GeneralCategory;
 
 use smol_str::SmolStr;
 
-static BUNDLED_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/glyphdata.bin"));
-
+include!(concat!(env!("OUT_DIR"), "/glyphdata.rs"));
 /// A queryable set of glyph data
 ///
 /// This is generally expensive to create, and is intended to be cached, or
@@ -311,7 +310,12 @@ fn category_from_icu(c: char) -> (Category, Subcategory) {
 }
 
 fn load_bundled_data() -> Vec<GlyphInfo> {
-    bincode::deserialize(BUNDLED_DATA).unwrap()
+    RAW_GLYPHS
+        .iter()
+        .map(|(name, category, subcategory, unicode, production, alts)| {
+            GlyphInfo::from_codegen_data(name, *category, *subcategory, *unicode, production, alts)
+        })
+        .collect()
 }
 
 fn merge_data(mut base: Vec<GlyphInfo>, overrides: Vec<GlyphInfo>) -> Vec<GlyphInfo> {

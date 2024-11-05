@@ -24,6 +24,71 @@ pub struct GlyphInfo {
     pub alt_names: Vec<SmolStr>,
 }
 
+impl GlyphInfo {
+    #[doc(hidden)]
+    #[allow(dead_code)] // silence a warning because this isn't used in build.rs
+    pub(crate) fn from_codegen_data(
+        name: &'static str,
+        category: Category,
+        subcategory: Subcategory,
+        unicode: u32,
+        production: &'static str,
+        _alt_names: &[&'static str],
+    ) -> Self {
+        let production = if production.is_empty() {
+            None
+        } else {
+            Some(SmolStr::new_static(production))
+        };
+        let unicode = Some(unicode).filter(|x| *x != u32::MAX);
+
+        Self {
+            name: SmolStr::new_static(name),
+            category,
+            subcategory,
+            unicode,
+            production,
+            alt_names: _alt_names
+                .iter()
+                .map(|s| SmolStr::new_static(s))
+                .collect::<Vec<_>>(),
+        }
+    }
+
+    /// Called in build.rs to generate the input to the function above
+    #[doc(hidden)]
+    #[allow(dead_code)]
+    pub(crate) fn generate_tuple_literal(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+        let GlyphInfo {
+            name,
+            category,
+            subcategory,
+            unicode,
+            production,
+            alt_names,
+        } = self;
+
+        write!(
+            f,
+            "(\"{name}\", Category::{category}, Subcategory::{subcategory}, "
+        )?;
+        match unicode {
+            Some(val) => write!(f, "{val}, "),
+            None => write!(f, "u32::MAX,"),
+        }?;
+
+        let prod = production.as_ref().map(|s| s.as_str()).unwrap_or_default();
+        write!(f, "\"{prod}\", ")?;
+
+        write!(f, "&[")?;
+        for name in alt_names.iter() {
+            write!(f, "\"{name}\",")?;
+        }
+        write!(f, "]")?;
+        write!(f, ")")
+    }
+}
+
 /// The primary category for a given glyph
 ///
 /// These categories are not the same as the unicode character categories.
@@ -265,7 +330,7 @@ impl Display for Subcategory {
             Self::Superscript => write!(f, "Superscript"),
             Self::Geometry => write!(f, "Geometry"),
             Self::Dash => write!(f, "Dash"),
-            Self::DecimalDigit => write!(f, "Decimal Digit"),
+            Self::DecimalDigit => write!(f, "DecimalDigit"),
             Self::Currency => write!(f, "Currency"),
             Self::Fraction => write!(f, "Fraction"),
             Self::Halfform => write!(f, "Halfform"),
@@ -284,7 +349,7 @@ impl Display for Subcategory {
             Self::Syllable => write!(f, "Syllable"),
             Self::Ligature => write!(f, "Ligature"),
             Self::Modifier => write!(f, "Modifier"),
-            Self::SpacingCombining => write!(f, "Spacing Combining"),
+            Self::SpacingCombining => write!(f, "SpacingCombining"),
             Self::Emoji => write!(f, "Emoji"),
             Self::Enclosing => write!(f, "Enclosing"),
             Self::None => write!(f, "None"),

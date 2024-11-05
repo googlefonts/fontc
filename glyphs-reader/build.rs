@@ -25,10 +25,22 @@ fn register_dependencies() {
 
 fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("glyphdata.bin");
+    let dest_path = Path::new(&out_dir).join("glyphdata.rs");
     let parsed = parse_xml_files().expect("failed to parse GlyphData xml files");
-    let bytes = bincode::serialize(&parsed).expect("bincode failed");
-    std::fs::write(dest_path, bytes).unwrap();
+
+    let mut out = "\
+#[rustfmt::skip]
+#[allow(clippy::type_complexity)]
+static RAW_GLYPHS: &[(&str, Category, Subcategory, u32, &str, &[&str])] = &[\n"
+        .to_string();
+
+    for glyph in parsed {
+        glyph.generate_tuple_literal(&mut out).unwrap();
+        out.push_str(",\n");
+    }
+
+    out.push_str("];\n");
+    std::fs::write(dest_path, out.as_bytes()).unwrap();
 
     register_dependencies()
 }
