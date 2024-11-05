@@ -37,12 +37,12 @@ impl ResultsCache {
     pub fn copy_cached_files_to_build_dir(&self, target: &Target, build_dir: &Path) {
         let target_cache_dir = target.cache_dir(&self.base_results_cache_dir);
         if !target_cache_dir.exists() {
-            log::info!("{} does not exist, skipping", target_cache_dir.display());
+            log::trace!("no cached files for {target}");
             return;
         }
 
         if copy_cache_files(&target_cache_dir, build_dir).unwrap() {
-            log::info!("reused cached files for {target}",);
+            log::trace!("reused cached files for {target}",);
         }
     }
 
@@ -60,7 +60,7 @@ impl ResultsCache {
             return;
         }
         if copy_cache_files(build_dir, &target_cache_dir).unwrap() {
-            log::debug!("cached files to {}", target_cache_dir.display());
+            log::trace!("saved cached files for {target}");
         }
     }
 }
