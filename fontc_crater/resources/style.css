@@ -69,6 +69,12 @@ td.rev {
   font-family: monospace;
 }
 
+.matching_families {
+  font-style: italic;
+  padding-bottom: 10px;
+
+}
+
 .diff_result {
   width: 10em;
   display: inline-block;

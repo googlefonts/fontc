@@ -263,6 +263,59 @@ fn make_detailed_report(
     }
 }
 
+fn make_matching_families_info(
+    current: &DiffResults,
+    prev: &DiffResults,
+    _sources: &BTreeMap<PathBuf, String>,
+) -> Markup {
+    let (total_families, num_perfect) = n_families_and_n_identical(current);
+    let (prev_total, prev_perfect) = n_families_and_n_identical(prev);
+
+    let total_decoration = make_delta_decoration(
+        total_families as i32,
+        Some(prev_total as i32),
+        More::IsBetter,
+    );
+    let perfect_decoration = make_delta_decoration(
+        num_perfect as i32,
+        Some(prev_perfect as i32),
+        More::IsBetter,
+    );
+
+    html! {
+        (num_perfect) " " (perfect_decoration) " of " (total_families) " " (total_decoration) " total families are identical."
+
+    }
+}
+
+// return the total number of families and the number that are identical
+fn n_families_and_n_identical(run: &DiffResults) -> (usize, usize) {
+    let mut family_stats = HashMap::new();
+
+    for (target, is_perfect) in run
+        .success
+        .iter()
+        .map(|(targ, result)| (targ, matches!(result, DiffOutput::Identical)))
+        .chain(run.failure.keys().map(|targ| (targ, false)))
+    {
+        // all families share a config; if no config, consider all sources
+        // in a given repo to be a family.
+        let family = target
+            .config_path(Path::new(""))
+            .unwrap_or_else(|| target.repo_path().to_path_buf());
+        let (total, num_perfect) = family_stats.entry(family).or_insert((0, 0));
+        *total += 1;
+        *num_perfect += is_perfect as i32;
+    }
+
+    let total_families = family_stats.len();
+    let num_perfect = family_stats
+        .iter()
+        .filter(|(_, (total, perfect))| total == perfect)
+        .count();
+    (total_families, num_perfect)
+}
+
 /// make the list of fonts that were both compiled successfully.
 fn make_diff_report(
     current: &DiffResults,
@@ -342,9 +395,11 @@ fn make_diff_report(
         });
     }
 
+    let matching_familes = make_matching_families_info(current, prev, sources);
     html! {
         div.diff_report {
             h3 { "results" }
+            div.matching_families { (matching_familes) }
             @for item in items {
                 (item)
             }
