@@ -8,6 +8,7 @@ Usage:
     python glyphs-reader/data/update.py
 """
 
+from collections import defaultdict
 import dataclasses
 from dataclasses import dataclass
 import glyphsLib
@@ -16,7 +17,7 @@ from io import StringIO
 from lxml import etree
 from pathlib import Path
 from textwrap import dedent
-from typing import Optional, Tuple
+from typing import Iterable, Mapping, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,30 @@ def read_glyph_info(file: str) -> Tuple[GlyphInfo]:
     return tuple(by_name.values())
 
 
+def minimal_names(names_taken: set(), names: Iterable[str]) -> Mapping[str, str]:
+    counts = defaultdict(int)
+    for name in names:
+        counts[name] += 1
+
+    result = {}
+    # most used first so it gets the shortest name
+    for (_, name) in sorted(((v, k) for (k, v) in counts.items()), reverse=True):
+        for i in range(1, len(name) + 1):
+            candidate = name[:i].upper()
+            if candidate not in names_taken:
+                result[name] = candidate
+                names_taken.add(candidate)
+                break
+        assert name in result, f"Unable to slot {name} {sorted(names_taken)}"
+    assert len(counts) == len(result)
+    return result
+
+
+def write_enum_shorthands(f, enum_name, minimal_names):
+    for (long, short) in sorted(minimal_names.items()):
+        f.write(f'const {short}: {enum_name} = {enum_name}::{long};\n')
+
+
 def main():
     glyph_infos = sorted(
         set(read_glyph_info("GlyphData.xml"))
@@ -74,8 +99,12 @@ def main():
         key=lambda g: g.name,
     )
     names = {g.name for g in glyph_infos}
-    categories = {g.category for g in glyph_infos}
-    subcategories = {g.subcategory for g in glyph_infos if g.subcategory is not None}
+
+    # Globally unique minimized names for categories and subcategories
+    shorthand_names = set()
+    min_categories = minimal_names(shorthand_names, (g.category for g in glyph_infos))
+    min_subcategories = minimal_names(shorthand_names, (g.subcategory for g in glyph_infos if g.subcategory is not None))
+
     assert len(names) == len(glyph_infos), "Names aren't unique?"
     codepoints = {}
     for i, gi in enumerate(glyph_infos):
@@ -98,31 +127,68 @@ def main():
         f.write("//!\n")
         f.write(f"//! {len(glyph_infos)} glyph metadata records taken from glyphsLib\n")
         f.write("\n")
-        f.write("use crate::glyphdata::{qr, Category as C, QueryResult, Subcategory as S};\n")  
-        f.write("\n")      
+        f.write("use crate::glyphdata::{qr, q1, q2, q3, Category, QueryResult, Subcategory};\n")  
+        f.write("\n")
+
+        # Write constants for enum variants to shorten giant tuple array        
+        write_enum_shorthands(f, "Category", min_categories)
+        f.write("\n")
+        write_enum_shorthands(f, "Subcategory", min_subcategories)
+        f.write("\n")
+        
         f.write("// Sorted by name, has unique names, therefore safe to bsearch\n")
 
         f.write("pub(crate) const GLYPH_INFO: &[(&str, QueryResult)] = &[\n")
+        lines = [""]
         for gi in glyph_infos:
+            category = min_categories[gi.category]
+
+            # map to shorthand
+            if (None, None) == (gi.subcategory, gi.codepoint):
+                entry = f"q1({category})"
+            elif gi.subcategory is None:
+                # codepoint must not be
+                entry = f"q2({category}, 0x{gi.codepoint})"
+            elif gi.codepoint is None:
+                # subcategory must not be
+                entry = f"q3({category}, {min_subcategories[gi.subcategory]})"
+            else:
+                # We must have all the things!
+                entry = f"qr({category}, {min_subcategories[gi.subcategory]}, 0x{gi.codepoint})"
+
             codepoint = "None"
             if gi.codepoint is not None:
                 codepoint = f"Some(0x{gi.codepoint})"
+            
             subcategory = "None"
             if gi.subcategory is not None:
-                subcategory = f"Some(S::{gi.subcategory})"
-            f.write(
-                f'    ("{gi.name}", qr(C::{gi.category}, {subcategory}, {codepoint})),\n'
-            )
+                subcategory = f"Some({min_subcategories[gi.subcategory]})"            
+            fragment = f'("{gi.name}", {entry}),'
+            if (len(lines[-1]) + len(fragment)) > 100:
+                lines[-1] += "\n"
+                lines.append("")
+            lines[-1] += fragment
 
+        for line in lines:
+            f.write(line)
+        f.write("\n")
         f.write("];\n")
 
         f.write(
             "// Sorted by codepoint, has unique codepoints, therefore safe to bsearch\n"
         )
         f.write("pub(crate) const CODEPOINT_TO_INFO_IDX: &[(u32, usize)] = &[\n")
+        lines = [""]
         for codepoint, i in sorted(codepoints.items()):
-            f.write(f"    (0x{codepoint:04x}, {i}), // {glyph_infos[i].name}\n")
+            fragment = f"(0x{codepoint:04x}, {i}),"
+            if (len(lines[-1]) + len(fragment)) > 100:
+                lines[-1] += "\n"
+                lines.append("")
+            lines[-1] += fragment
 
+        for line in lines:
+            f.write(line)
+        f.write("\n")
         f.write("];\n")
 
 

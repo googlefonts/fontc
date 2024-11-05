@@ -126,16 +126,43 @@ impl Default for GlyphData {
     }
 }
 
-// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
+/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
 pub(crate) const fn qr(
     category: Category,
-    subcategory: Option<Subcategory>,
-    codepoint: Option<u32>,
+    subcategory: Subcategory,
+    codepoint: u32,
 ) -> QueryResult {
     QueryResult {
         category,
-        subcategory,
-        codepoint,
+        subcategory: Some(subcategory),
+        codepoint: Some(codepoint),
+    }
+}
+
+/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q1(category: Category) -> QueryResult {
+    QueryResult {
+        category,
+        subcategory: None,
+        codepoint: None,
+    }
+}
+
+/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q2(category: Category, codepoint: u32) -> QueryResult {
+    QueryResult {
+        category,
+        subcategory: None,
+        codepoint: Some(codepoint),
+    }
+}
+
+/// Shorthand for construction of a [`QueryResult``] to shorten length of glyphslib_data.rs
+pub(crate) const fn q3(category: Category, subcategory: Subcategory) -> QueryResult {
+    QueryResult {
+        category,
+        subcategory: Some(subcategory),
+        codepoint: None,
     }
 }
 
