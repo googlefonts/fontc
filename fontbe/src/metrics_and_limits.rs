@@ -81,6 +81,9 @@ impl GlyphLimits {
 
 impl FontLimits {
     fn update(&mut self, id: GlyphId16, advance: u16, glyph: &Glyph) {
+        // max advance width should consider every glyph that has an hmtx entry
+        self.advance_width_max = max(self.advance_width_max, advance);
+
         // min side bearings are only for non-empty glyphs
         // we will presume only simple glyphs with no contours are empty
         if let Some(bbox) = glyph.data.bbox() {
@@ -103,7 +106,6 @@ impl FontLimits {
                 .x_max_extent
                 .map(|v| max(v, bbox.x_max))
                 .or(Some(bbox.x_max));
-            self.advance_width_max = max(self.advance_width_max, advance);
             self.bbox = self.bbox.map(|b| b.union(bbox)).or(Some(bbox));
         }
 
@@ -384,5 +386,20 @@ mod tests {
                 glyph_limits.min_right_side_bearing
             )
         );
+    }
+
+    #[test]
+    fn empty_glyph_contributes_to_max() {
+        let width = 123u16;
+
+        // confirm that empty glyphs still contribute to the advance_width_max
+        // field, as they will still originate an hmtx entry
+        let mut glyph_limits = FontLimits::default();
+        glyph_limits.update(
+            GlyphId16::NOTDEF,
+            width,
+            &crate::orchestration::Glyph::new("empty".into(), RawGlyph::Empty),
+        );
+        assert_eq!(width, glyph_limits.advance_width_max);
     }
 }
