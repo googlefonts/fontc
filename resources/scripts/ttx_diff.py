@@ -45,7 +45,7 @@ import sys
 import os
 from urllib.parse import urlparse
 from cdifflib import CSequenceMatcher as SequenceMatcher
-from typing import Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 from glyphsLib import GSFont
 from fontTools.designspaceLib import DesignSpaceDocument
 import time
@@ -68,7 +68,8 @@ MAX_ERR_LEN = 1000
 # fontc and fontmake's builds may be off by a second or two in the
 # head.created/modified; setting this makes them the same
 if "SOURCE_DATE_EPOCH" not in os.environ:
-   os.environ["SOURCE_DATE_EPOCH"] = str(int(time.time()))
+    os.environ["SOURCE_DATE_EPOCH"] = str(int(time.time()))
+
 
 # print to stderr
 def eprint(*objects):
@@ -486,6 +487,42 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
     )
 
 
+# given a font file, return a dictionary of tags -> size in bytes
+def get_table_sizes(fontfile: Path) -> dict[str, int]:
+    cmd = ["ttx", "-l", str(fontfile)]
+    stdout = log_and_run(cmd, check=True).stdout
+    result = dict()
+
+    for line in stdout.strip().splitlines()[3:]:
+        split = line.split()
+        result[split[0]] = int(split[2])
+
+    return result
+
+
+# return a dict of table tag  -> size difference
+# only when size difference exceeds some threshold
+def check_sizes(fontmake_ttf: Path, fontc_ttf: Path):
+    THRESHOLD = 1 / 10
+    fontmake = get_table_sizes(fontmake_ttf)
+    fontc = get_table_sizes(fontc_ttf)
+
+    output = dict()
+    shared_keys = set(fontmake.keys() & fontc.keys())
+
+    for key in shared_keys:
+        fontmake_len = fontmake[key]
+        fontc_len = fontc[key]
+        len_ratio = min(fontc_len, fontmake_len) / max(fontc_len, fontmake_len)
+        sign = -1 if fontc_len < fontmake_len else 1
+        # invert to make this represent difference rather than similarity
+        len_ratio = (1 - len_ratio) * sign
+        if abs(len_ratio) > THRESHOLD:
+            eprint(f"{key} {fontmake_len} {fontc_len} {len_ratio}")
+            output[key] = len_ratio
+    return output
+
+
 # returns a dictionary of {"compiler_name":  {"tag": "xml_text"}}
 def generate_output(
     build_dir: Path, otl_norm_bin: Path, fontmake_ttf: Path, fontc_ttf: Path
@@ -501,12 +538,17 @@ def generate_output(
 
     fontc = extract_comparables(fontc, build_dir, "fontc")
     fontmake = extract_comparables(fontmake, build_dir, "fontmake")
+    size_diffs = check_sizes(fontmake_ttf, fontc_ttf)
     fontc[MARK_KERN_NAME] = fontc_gpos
     fontmake[MARK_KERN_NAME] = fontmake_gpos
-    return {"fontc": fontc, "fontmake": fontmake}
+    result = {"fontc": fontc, "fontmake": fontmake}
+    if len(size_diffs) > 0:
+        result["sizes"] = size_diffs
+
+    return result
 
 
-def print_output(build_dir: Path, output: dict[str, dict[str, str]]):
+def print_output(build_dir: Path, output: dict[str, dict[str, Any]]):
     fontc = output["fontc"]
     fontmake = output["fontmake"]
     print("COMPARISON")
@@ -531,11 +573,17 @@ def print_output(build_dir: Path, output: dict[str, dict[str, str]]):
             p1 = build_dir / path_for_output_item(tag, "fontc")
             p2 = build_dir / path_for_output_item(tag, "fontmake")
             print(f"  DIFF '{tag}', {p1} {p2} ({difference:.1%})")
+    if output.get("sizes"):
+        print("SIZE DIFFERENCES")
+    for tag, diff in output.get("sizes", {}).items():
+        diffperc = diff * 100.0
+        print(f"SIZE DIFFERENCE: '{tag}': {diffperc:.1%}")
 
 
-def jsonify_output(output: dict[str, dict[str, str]]):
+def jsonify_output(output: dict[str, dict[str, Any]]):
     fontc = output["fontc"]
     fontmake = output["fontmake"]
+    sizes = output.get("sizes", {})
     all_tags = set(fontc.keys()) | set(fontmake.keys())
     out = dict()
     same_lines = 0
@@ -558,6 +606,14 @@ def jsonify_output(output: dict[str, dict[str, str]]):
                 out[tag] = ratio
             else:
                 same_lines += len(s1)
+
+    # then also add in size differences, if any
+    for tag, size_diff in sizes.items():
+        out[f"sizeof({tag})"] = size_diff
+        # hacky: we don't want to be perfect if we have a size diff,
+        # so let's pretend that whatever our size diff is, it corresponds
+        # to some fictional table 100 lines liong
+        different_lines += 100
 
     overall_diff_ratio = same_lines / (same_lines + different_lines)
     out["total"] = overall_diff_ratio
@@ -622,7 +678,9 @@ def resolve_source(source: str) -> Path:
         repo_path = source_url.fragment
         org_name = source_url.path.split("/")[-2]
         repo_name = source_url.path.split("/")[-1]
-        local_repo = (Path.home() / ".fontc_crater_cache" / org_name / repo_name).resolve()
+        local_repo = (
+            Path.home() / ".fontc_crater_cache" / org_name / repo_name
+        ).resolve()
         if not local_repo.parent.is_dir():
             local_repo.parent.mkdir()
         if not local_repo.is_dir():
@@ -680,6 +738,7 @@ def get_fontc_and_normalizer_binary_paths(root_dir: Path) -> Tuple[Path, Path]:
 
     return (fontc_path, norm_path)
 
+
 def get_crate_path(cli_arg: Optional[str], root_dir: Path, crate_name: str) -> Path:
     if cli_arg:
         return Path(cli_arg)
@@ -688,7 +747,6 @@ def get_crate_path(cli_arg: Optional[str], root_dir: Path, crate_name: str) -> P
     bin_path = root_dir / "target" / "release" / crate_name
     build_crate(manifest_path)
     return bin_path
-
 
 
 def main(argv):
