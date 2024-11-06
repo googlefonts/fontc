@@ -376,7 +376,7 @@ mod tests {
                 ValueRecord,
             },
             gsub::{SingleSubstFormat1, SubstitutionLookupList},
-            layout::LookupFlag,
+            layout::{ClassDef, ClassDefFormat1, LookupFlag},
         },
         types::GlyphId16,
     };
@@ -423,7 +423,14 @@ mod tests {
         ))
     }
 
-    fn make_chain_context<const N: usize, const M: usize>(
+    fn make_class_def(start_glyph_id: GlyphId16, class_value_array: Vec<u16>) -> ClassDef {
+        ClassDef::Format1(ClassDefFormat1 {
+            start_glyph_id,
+            class_value_array,
+        })
+    }
+
+    fn make_chain_context_format1<const N: usize, const M: usize>(
         input: [u16; N],
         lookahead: [u16; M],
     ) -> SubstitutionLookup {
@@ -436,6 +443,30 @@ mod tests {
                         make_gids([5, 111, 112, 114, 115, 117]),
                         make_gids(input),
                         make_gids(lookahead),
+                        vec![],
+                    ),
+                ]))],
+            ))
+            .into(),
+        ))
+    }
+
+    fn make_chain_context_format2<const N: usize, const M: usize>(
+        input: [u16; N],
+        lookahead: [u16; M],
+    ) -> SubstitutionLookup {
+        SubstitutionLookup::ChainContextual(make_lookup(
+            ChainedSequenceContext::Format2(ChainedSequenceContextFormat2::new(
+                make_gids([31]),
+                make_class_def(1.into(), vec![2, 3]),
+                make_class_def(1.into(), vec![2, 3]),
+                make_class_def(1.into(), vec![2, 3]),
+                vec![Some(ChainedClassSequenceRuleSet::new(vec![
+                    ChainedClassSequenceRule::new(
+                        // backtrack doesn't count, this shouldn't show up
+                        vec![5, 111, 112, 114, 115, 117],
+                        input.to_vec(),
+                        lookahead.to_vec(),
                         vec![],
                     ),
                 ]))],
@@ -496,7 +527,28 @@ mod tests {
         let gsub = Gsub::new(
             Default::default(),
             Default::default(),
-            SubstitutionLookupList::new(vec![make_singlesub(), make_chain_context([1], [2, 3])]),
+            SubstitutionLookupList::new(vec![
+                make_singlesub(),
+                make_chain_context_format1([1], [2, 3]),
+            ]),
+        );
+
+        assert_eq!(compute_max_context_value(Some(&gpos), Some(&gsub)), 4);
+    }
+
+    // Ref <https://github.com/googlefonts/fontc/pull/1096>, exposes a missing +1 basically
+    #[test]
+    fn max_context_chaining_contextual_sub() {
+        let gpos = Gpos::new(
+            Default::default(),
+            Default::default(),
+            PositionLookupList::new(vec![make_pairpos()]),
+        );
+
+        let gsub = Gsub::new(
+            Default::default(),
+            Default::default(),
+            SubstitutionLookupList::new(vec![make_chain_context_format2([1], [2, 3])]),
         );
 
         assert_eq!(compute_max_context_value(Some(&gpos), Some(&gsub)), 4);
