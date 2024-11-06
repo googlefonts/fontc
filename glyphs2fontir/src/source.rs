@@ -1966,8 +1966,18 @@ mod tests {
 
     #[test]
     fn captures_panose() {
+        let expected: Option<Panose> = Some([2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into());
+
+        // short parameter name
         let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanose.glyphs"));
-        let expected: Panose = [2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into();
-        assert_eq!(Some(expected), context.static_metadata.get().misc.panose);
+        assert_eq!(expected, context.static_metadata.get().misc.panose);
+
+        // long parameter name
+        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanoseLong.glyphs"));
+        assert_eq!(expected, context.static_metadata.get().misc.panose);
+
+        // both parameters; value under short name should be preferred
+        let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanoseBoth.glyphs"));
+        assert_eq!(expected, context.static_metadata.get().misc.panose);
     }
 }

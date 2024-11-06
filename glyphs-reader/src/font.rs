@@ -437,10 +437,10 @@ impl CustomParameters {
     }
 
     fn panose(&self) -> Option<&Vec<i64>> {
-        let Some(CustomParameterValue::Panose(values)) = self.get("panose") else {
-            return None;
-        };
-        Some(values)
+        match self.get("panose").or_else(|| self.get("openTypeOS2Panose")) {
+            Some(CustomParameterValue::Panose(values)) => Some(values),
+            _ => None,
+        }
     }
 }
 
@@ -569,7 +569,9 @@ impl FromPlist for CustomParameters {
                                 value =
                                     Some(CustomParameterValue::CodepageRange(tokenizer.parse()?));
                             }
-                            _ if name == Some(String::from("panose")) => {
+                            _ if name == Some(String::from("panose"))
+                                || name == Some(String::from("openTypeOS2Panose")) =>
+                            {
                                 let Token::OpenParen = peek else {
                                     return Err(Error::UnexpectedChar('('));
                                 };
