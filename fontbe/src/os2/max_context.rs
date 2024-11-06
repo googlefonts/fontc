@@ -48,21 +48,37 @@ pub(super) fn compute_max_context_value(gpos: Option<&Gpos>, gsub: Option<&Gsub>
         .unwrap_or_default()
 }
 
+/// The "chain" in Python
+#[derive(Debug, Copy, Clone)]
+enum ContextualRuleType {
+    Contextual,
+    Chained,
+    ReverseChained,
+}
+
 pub trait MaxContext {
     fn max_context(&self) -> u16;
 }
 
-/// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L89-L96>
-fn max_context_of_rule(input_glyph_count: usize, lookahead_glyph_count: usize) -> u16 {
-    (input_glyph_count + lookahead_glyph_count) as u16
+/// <https://github.com/fonttools/fonttools/blob/e04dfaab53c54b83096222993b914dc62e483156/Lib/fontTools/otlLib/maxContextCalc.py#L89-L96>
+fn max_context_of_rule(
+    input_glyph_count: usize,
+    lookahead_glyph_count: usize,
+    rule_type: ContextualRuleType,
+) -> u16 {
+    (match rule_type {
+        ContextualRuleType::Contextual => input_glyph_count,
+        ContextualRuleType::Chained => input_glyph_count + lookahead_glyph_count,
+        ContextualRuleType::ReverseChained => 1 + lookahead_glyph_count,
+    }) as u16
 }
 
 trait Rule {
     fn sequence_len(&self) -> usize;
     fn lookahead_len(&self) -> usize;
 
-    fn context(&self) -> u16 {
-        (self.sequence_len() + self.lookahead_len()) as u16
+    fn context(&self, rule_type: ContextualRuleType) -> u16 {
+        max_context_of_rule(self.sequence_len(), self.lookahead_len(), rule_type)
     }
 }
 
@@ -170,7 +186,7 @@ impl RuleSet for ChainedClassSequenceRuleSet {
 
 impl Rule for ChainedClassSequenceRule {
     fn sequence_len(&self) -> usize {
-        self.input_sequence.len()
+        self.input_sequence.len() + 1
     }
 
     fn lookahead_len(&self) -> usize {
@@ -178,7 +194,7 @@ impl Rule for ChainedClassSequenceRule {
     }
 }
 
-fn max_context_of_contextual_subtable<C, RS, R>(subtable: &C) -> u16
+fn max_context_of_contextual_subtable<C, RS, R>(subtable: &C, rule_type: ContextualRuleType) -> u16
 where
     C: ContextualSubtable<Rule = R, RuleSet = RS>,
     RS: RuleSet<Rule = R>,
@@ -189,7 +205,7 @@ where
         .iter()
         .filter_map(|nullable| nullable.as_ref())
         .flat_map(|ruleset| ruleset.rules().iter())
-        .map(|rule| rule.context())
+        .map(|rule| rule.context(rule_type))
         .max()
         .unwrap_or_default()
 }
@@ -211,9 +227,15 @@ impl MaxContext for LigatureSubstFormat1 {
 impl MaxContext for SequenceContext {
     fn max_context(&self) -> u16 {
         match self as &SequenceContext {
-            SequenceContext::Format1(format1) => max_context_of_contextual_subtable(&format1),
-            SequenceContext::Format2(format2) => max_context_of_contextual_subtable(&format2),
-            SequenceContext::Format3(format3) => max_context_of_rule(format3.coverages.len(), 0),
+            SequenceContext::Format1(format1) => {
+                max_context_of_contextual_subtable(&format1, ContextualRuleType::Contextual)
+            }
+            SequenceContext::Format2(format2) => {
+                max_context_of_contextual_subtable(&format2, ContextualRuleType::Contextual)
+            }
+            SequenceContext::Format3(format3) => {
+                max_context_of_rule(format3.coverages.len(), 0, ContextualRuleType::Contextual)
+            }
         }
     }
 }
@@ -230,19 +252,20 @@ impl MaxContext for PositionSequenceContext {
     }
 }
 
-/// <https://github.com/fonttools/fonttools/blob/main/Lib/fontTools/otlLib/maxContextCalc.py#L45-L49>
+/// <https://github.com/fonttools/fonttools/blob/e04dfaab53c54b83096222993b914dc62e483156/Lib/fontTools/otlLib/maxContextCalc.py#L45-L49>
 impl MaxContext for ChainedSequenceContext {
     fn max_context(&self) -> u16 {
         match self {
             ChainedSequenceContext::Format1(format1) => {
-                max_context_of_contextual_subtable(&format1)
+                max_context_of_contextual_subtable(&format1, ContextualRuleType::Chained)
             }
             ChainedSequenceContext::Format2(format2) => {
-                max_context_of_contextual_subtable(&format2)
+                max_context_of_contextual_subtable(&format2, ContextualRuleType::Chained)
             }
             ChainedSequenceContext::Format3(format3) => max_context_of_rule(
                 format3.input_coverages.len(),
                 format3.lookahead_coverages.len(),
+                ContextualRuleType::Chained,
             ),
         }
     }
@@ -279,6 +302,7 @@ impl MaxContext for ReverseChainSingleSubstFormat1 {
         max_context_of_rule(
             self.backtrack_coverages.len(),
             self.lookahead_coverages.len(),
+            ContextualRuleType::ReverseChained,
         )
     }
 }
