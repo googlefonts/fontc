@@ -556,12 +556,29 @@ fn list_different_tables(current: &DiffOutput) -> Option<String> {
 
 /// for a given diff, the detailed information on per-table changes
 fn format_diff_report_detail_table(current: &DiffOutput, prev: Option<&DiffOutput>) -> Markup {
-    let value_decoration = |table, value: DiffValue| -> Markup {
+    let value_decoration = |table: &str, value: DiffValue| -> Markup {
         let prev_value = match prev {
             None => None,
             Some(DiffOutput::Identical) => Some(DiffValue::Ratio(1.0)),
             Some(DiffOutput::Diffs(tables)) => tables.get(table).cloned(),
         };
+
+        // size reporting is sort of hacked on, and doesn't really follow the same pattern
+        // as table diffs; the diff % we show in this case is the ratio between the two
+        // sizes. For instance a value of +60% means fontmake is 40% the size of fontc.
+        // negative numbers mean fontc is smaller than fontmake.
+        if table.starts_with("sizeof") {
+            if let (DiffValue::Ratio(r), Some(DiffValue::Ratio(prev))) =
+                (&value, prev_value.as_ref())
+            {
+                return make_delta_decoration(
+                    r.abs() as i32,
+                    Some(prev.abs() as i32),
+                    More::IsWorse,
+                );
+            }
+            return Default::default();
+        }
 
         match (value, prev_value) {
             (DiffValue::Ratio(r), None) | (DiffValue::Ratio(r), Some(DiffValue::Only(_))) => {
@@ -618,7 +635,14 @@ fn format_diff_report_detail_table(current: &DiffOutput, prev: Option<&DiffOutpu
                 @for (table, value) in all_items {
                     tr.table_diff_row {
                         td.table_diff_name { (table) }
-                        td.table_diff_value { (value) " " ( {value_decoration(table, value) }) }
+                        @if table.starts_with("sizeof") {
+
+                            td.table_diff_value {
+                                (value.as_n_of_bytes()) "B " ( {value_decoration(table, value) })
+                            }
+                        } @else {
+                            td.table_diff_value { (value) " " ( {value_decoration(table, value) }) }
+                        }
                     }
                 }
             }
