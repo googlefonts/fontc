@@ -152,7 +152,7 @@ impl Target {
         let just_source_dir = self.source_dir.file_name().unwrap();
         let rel_source_path = Path::new(just_source_dir).join(&self.source);
         let mut cmd = format!(
-            "python resources/scripts/ttx_diff.py {repo_url}#{}",
+            "python resources/scripts/ttx_diff.py '{repo_url}#{}'",
             rel_source_path.display()
         );
         if self.build == BuildType::GfTools {
