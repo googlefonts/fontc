@@ -514,12 +514,10 @@ def check_sizes(fontmake_ttf: Path, fontc_ttf: Path):
         fontmake_len = fontmake[key]
         fontc_len = fontc[key]
         len_ratio = min(fontc_len, fontmake_len) / max(fontc_len, fontmake_len)
-        sign = -1 if fontc_len < fontmake_len else 1
-        # invert to make this represent difference rather than similarity
-        len_ratio = (1 - len_ratio) * sign
-        if abs(len_ratio) > THRESHOLD:
-            eprint(f"{key} {fontmake_len} {fontc_len} {len_ratio}")
-            output[key] = len_ratio
+        if (1 - len_ratio) > THRESHOLD:
+            rel_len = fontc_len - fontmake_len
+            eprint(f"{key} {fontmake_len} {fontc_len} {len_ratio:.3} {rel_len}")
+            output[key] = rel_len
     return output
 
 
@@ -576,8 +574,7 @@ def print_output(build_dir: Path, output: dict[str, dict[str, Any]]):
     if output.get("sizes"):
         print("SIZE DIFFERENCES")
     for tag, diff in output.get("sizes", {}).items():
-        diffperc = diff * 100.0
-        print(f"SIZE DIFFERENCE: '{tag}': {diffperc:.1%}")
+        print(f"SIZE DIFFERENCE: '{tag}': {diff}B")
 
 
 def jsonify_output(output: dict[str, dict[str, Any]]):

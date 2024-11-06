@@ -278,6 +278,14 @@ impl DiffValue {
             DiffValue::Only(_) => None,
         }
     }
+
+    pub(crate) fn as_n_of_bytes(&self) -> i32 {
+        match self {
+            DiffValue::Ratio(r) => *r as _,
+            // this branch shouldn't be hit but let's notice if it is??
+            DiffValue::Only(_) => 123456789,
+        }
+    }
 }
 
 impl DiffOutput {
