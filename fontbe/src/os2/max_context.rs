@@ -111,6 +111,8 @@ impl RuleSet for SequenceRuleSet {
 
 impl Rule for SequenceRule {
     fn sequence_len(&self) -> usize {
+        // input sequence starts with the second glyph and has count - 1 entries
+        // <https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#sequence-context-format-1-simple-glyph-contexts>
         self.input_sequence.len() + 1
     }
 
@@ -136,6 +138,8 @@ impl RuleSet for ClassSequenceRuleSet {
 
 impl Rule for ClassSequenceRule {
     fn sequence_len(&self) -> usize {
+        // input sequence starts with the second glyph and has count - 1 entries
+        // <https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#sequence-context-format-2-class-based-glyph-contexts>
         self.input_sequence.len() + 1
     }
 
@@ -161,6 +165,8 @@ impl RuleSet for ChainedSequenceRuleSet {
 
 impl Rule for ChainedSequenceRule {
     fn sequence_len(&self) -> usize {
+        // input sequence starts with the second glyph and has count - 1 entries
+        // <https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#chained-sequence-context-format-1-simple-glyph-contexts>
         self.input_sequence.len() + 1
     }
 
@@ -186,6 +192,8 @@ impl RuleSet for ChainedClassSequenceRuleSet {
 
 impl Rule for ChainedClassSequenceRule {
     fn sequence_len(&self) -> usize {
+        // input sequence starts with the second glyph and has count - 1 entries
+        // <https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#chained-sequence-context-format-2-class-based-glyph-contexts>
         self.input_sequence.len() + 1
     }
 
