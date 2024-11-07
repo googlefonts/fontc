@@ -624,7 +624,7 @@ def resolve_source(source: str) -> Path:
         repo_name = source_url.path.split("/")[-1]
         local_repo = (Path.home() / ".fontc_crater_cache" / org_name / repo_name).resolve()
         if not local_repo.parent.is_dir():
-            local_repo.parent.mkdir()
+            local_repo.parent.mkdir(parents=True)
         if not local_repo.is_dir():
             cmd = ("git", "clone", source_url._replace(fragment="").geturl())
             print("Running", " ".join(cmd), "in", local_repo.parent)
