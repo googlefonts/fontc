@@ -1,0 +1,43 @@
+{
+.formatVersion = 3;
+customParameters = (
+{
+name = openTypeOS2Panose;
+value = (
+2,
+0,
+5,
+3,
+6,
+0,
+0,
+2,
+0,
+3
+);
+}
+);
+familyName = WghtVar;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+unicode = 32;
+}
+);
+
+unitsPerEm = 1234;
+versionMajor = 42;
+versionMinor = 42;
+}

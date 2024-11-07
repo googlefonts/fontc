@@ -1,0 +1,58 @@
+{
+.formatVersion = 3;
+customParameters = (
+{
+name = panose;
+value = (
+2,
+0,
+5,
+3,
+6,
+0,
+0,
+2,
+0,
+3
+);
+},
+{
+name = openTypeOS2Panose;
+value = (
+0,
+1,
+2,
+3,
+4,
+5,
+6,
+7,
+8,
+9
+);
+}
+);
+familyName = WghtVar;
+fontMaster = (
+{
+id = m01;
+name = Regular;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+unicode = 32;
+}
+);
+
+unitsPerEm = 1234;
+versionMajor = 42;
+versionMinor = 42;
+}
