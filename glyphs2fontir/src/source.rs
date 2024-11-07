@@ -1135,7 +1135,7 @@ mod tests {
     };
     use glyphs_reader::{glyphdata::Category, Font};
     use indexmap::IndexSet;
-    use ir::{test_helpers::Round2, Panose};
+    use ir::test_helpers::Round2;
     use write_fonts::types::{NameId, Tag};
 
     use crate::source::names;
@@ -1966,18 +1966,31 @@ mod tests {
 
     #[test]
     fn captures_panose() {
-        let expected: Option<Panose> = Some([2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into());
-
         // short parameter name
         let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanose.glyphs"));
-        assert_eq!(expected, context.static_metadata.get().misc.panose);
+        assert_eq!(
+            Some([2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into()),
+            context.static_metadata.get().misc.panose
+        );
+    }
 
+    #[test]
+    fn captures_panose_long() {
         // long parameter name
         let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanoseLong.glyphs"));
-        assert_eq!(expected, context.static_metadata.get().misc.panose);
+        assert_eq!(
+            Some([2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into()),
+            context.static_metadata.get().misc.panose
+        );
+    }
 
+    #[test]
+    fn captures_panose_precedence() {
         // both parameters; value under short name should be preferred
         let (_, context) = build_static_metadata(glyphs3_dir().join("WghtVarPanoseBoth.glyphs"));
-        assert_eq!(expected, context.static_metadata.get().misc.panose);
+        assert_eq!(
+            Some([2, 0, 5, 3, 6, 0, 0, 2, 0, 3].into()),
+            context.static_metadata.get().misc.panose
+        );
     }
 }
