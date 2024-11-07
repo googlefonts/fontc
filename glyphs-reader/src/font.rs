@@ -437,6 +437,10 @@ impl CustomParameters {
     }
 
     fn panose(&self) -> Option<&Vec<i64>> {
+        // PANOSE custom parameter is accessible under a short name and a long name:
+        //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L322-L323
+        // ...with the value under the short name taking precendence:
+        //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L258-L269
         match self.get("panose").or_else(|| self.get("openTypeOS2Panose")) {
             Some(CustomParameterValue::Panose(values)) => Some(values),
             _ => None,
