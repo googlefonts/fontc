@@ -362,7 +362,7 @@ fn make_diff_report(
 
         let repo_url = get_repo_url(target);
         let ttx_command = target.repro_command(repo_url);
-        let onclick = format!("event.preventDefault(); copyText('{ttx_command}');",);
+        let onclick = format!("event.preventDefault(); copyText(\"{ttx_command}\");",);
         let decoration = make_delta_decoration(*ratio, prev_ratio, More::IsBetter);
         let changed_tag_list = list_different_tables(diff_details).unwrap_or_default();
         let diff_table = format_diff_report_detail_table(diff_details, prev_details);
@@ -683,7 +683,7 @@ fn make_error_report_group_items<'a>(
     let make_repro_command = |target: &Target| {
         let url = get_repo_url(target);
         let ttx_command = target.repro_command(url);
-        format!("event.preventDefault(); copyText('{ttx_command}');",)
+        format!("event.preventDefault(); copyText(\"{ttx_command}\");",)
     };
     html! {
         @for (path, is_new) in paths_and_if_is_new_error {
