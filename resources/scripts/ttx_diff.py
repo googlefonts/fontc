@@ -371,6 +371,22 @@ def stat_like_fontmake(ttx):
     ver.attrib["value"] = "0x00010001"
 
 
+# https://github.com/googlefonts/fontc/issues/1107
+def normalize_glyf_contours(ttx):
+    for glyph in ttx.xpath("//glyf/TTGlyph"):
+        contours = glyph.xpath("./contour")
+        if len(contours) < 2:
+            continue
+        normalized = sorted(contours, key=lambda c: etree.tostring(c))
+        if normalized == contours:
+            continue
+        for contour in contours:
+            glyph.remove(contour)
+        for contour in normalized:
+            glyph.append(contour)
+    
+    
+
 def allow_some_off_by_ones(fontc, fontmake, container, name_attr, coord_holder):
     fontmake_num_coords = len(fontmake.xpath(f"//{container}/{coord_holder}"))
     off_by_one_budget = int(FLAGS.off_by_one_budget / 100.0 * fontmake_num_coords)
@@ -480,6 +496,8 @@ def reduce_diff_noise(fontc: etree.ElementTree, fontmake: etree.ElementTree):
 
         stat_like_fontmake(ttx)
         remove_mark_and_kern_lookups(ttx)
+
+        normalize_glyf_contours(ttx)
 
     allow_some_off_by_ones(fontc, fontmake, "glyf/TTGlyph", "name", "/contour/pt")
     allow_some_off_by_ones(
@@ -755,7 +773,7 @@ def main(argv):
     root = Path(".").resolve()
     if root.name != "fontc":
         sys.exit("Expected to be at the root of fontc")
-
+  
     fontc_bin_path = get_crate_path(FLAGS.fontc_path, root, "fontc")
     otl_bin_path = get_crate_path(FLAGS.normalizer_path, root, "otl-normalizer")
 
