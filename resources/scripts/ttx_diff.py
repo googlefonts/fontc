@@ -531,7 +531,7 @@ def check_sizes(fontmake_ttf: Path, fontc_ttf: Path):
     for key in shared_keys:
         fontmake_len = fontmake[key]
         fontc_len = fontc[key]
-        len_ratio = fontc_len / fontmake_len
+        len_ratio = min(fontc_len, fontmake_len) / max(fontc_len, fontmake_len)
         if (1 - len_ratio) > THRESHOLD:
             rel_len = fontc_len - fontmake_len
             eprint(f"{key} {fontmake_len} {fontc_len} {len_ratio:.3} {rel_len}")
