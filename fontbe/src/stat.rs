@@ -48,9 +48,6 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
         let reverse_names: HashMap<_, _> = static_metadata
             .names
             .iter()
-            // To match fontmake we should use the font-specific name range and not reuse
-            // a well-known name, even if the name matches.
-            .filter(|(key, _)| key.name_id.to_u16() > 255)
             .map(|(key, name)| (name.as_str(), key.name_id))
             .collect();
 

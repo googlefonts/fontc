@@ -1,0 +1,45 @@
+{
+.formatVersion = 3;
+axes = (
+{
+name = Regular;
+tag = wght;
+}
+);
+familyName = DuplicateNames;
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+iconName = Bold;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2022-12-01 04:58:12 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 32;
+},
+);
+unitsPerEm = 1000;
+}

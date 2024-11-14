@@ -3306,4 +3306,20 @@ mod tests {
 
         assert_eq!(vec![expected_rot30_bbox, expected_rot60more_bbox], boxes);
     }
+
+    #[test]
+    fn unique_names() {
+        // Axis name matches subfamily; they should share
+        let compile = TestCompile::compile_source("glyphs3/DuplicateNames.glyphs");
+        let axis_name_ids = compile
+            .font()
+            .fvar()
+            .unwrap()
+            .axes()
+            .unwrap()
+            .iter()
+            .map(|a| a.axis_name_id())
+            .collect::<Vec<_>>();
+        assert_eq!(vec![NameId::SUBFAMILY_NAME], axis_name_ids);
+    }
 }
