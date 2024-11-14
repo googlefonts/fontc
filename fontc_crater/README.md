@@ -33,7 +33,8 @@ To update the set of python packages in use, you need to update this file:
 $ python -m pip install pip-tools
 
 # Rebuild the file
-$ pip-compile resources/scripts/requirements.in
+# Remove it to force a complete update rather than minimal
+$ rm -rf resources/scripts/requirements.txt && pip-compile resources/scripts/requirements.in
 
 # Commit updated file
 ```
