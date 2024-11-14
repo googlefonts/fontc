@@ -24,13 +24,20 @@ To run in CI mode locally to play with the html output:
 When run in CI, we want to ensure that we have complete control over the set of
 python pacakges we are comparing against; to ensure this we use `pip-compile`
 (part of [`pip-tools`]) to generate a pinned `requirements.txt` from a
-`requirements.in` file in the root `resources/scripts` directory. To update the
-set of python packages in use, you need to update this file:
+`requirements.in` file in the root `resources/scripts` directory. 
 
-- make sure you have pip-tools installed (`python -m pip install pip-tools`)
-- delete `resources/scripts/requirements.txt`
-- run `pip-compile resources/scripts/requirements.in`
-- commit the new `requirements.txt` file.
+To update the set of python packages in use, you need to update this file:
+
+```shell
+# Make sure you have pip-tools
+$ python -m pip install pip-tools
+
+# Rebuild the file
+# Remove it to force a complete update rather than minimal
+$ rm -f resources/scripts/requirements.txt && pip-compile resources/scripts/requirements.in
+
+# Commit updated file
+```
 
 ```shell
 # clone git@github.com:googlefonts/fontc_crater.git somewhere, we'll assume at ../fontc_crater
