@@ -34,7 +34,7 @@ $ python -m pip install pip-tools
 
 # Rebuild the file
 # Remove it to force a complete update rather than minimal
-$ rm -rf resources/scripts/requirements.txt && pip-compile resources/scripts/requirements.in
+$ rm -f resources/scripts/requirements.txt && pip-compile resources/scripts/requirements.in
 
 # Commit updated file
 ```
