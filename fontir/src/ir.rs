@@ -424,14 +424,14 @@ impl StaticMetadata {
         // Claim names for axes and named instances
         let mut name_id_gen = 255;
         let mut key_to_name = names;
-        let mut visited = HashSet::new();
+        let mut visited = key_to_name.values().cloned().collect::<HashSet<_>>();
 
         variable_axes
             .iter()
             .map(|axis| axis.ui_label_name())
             .chain(named_instances.iter().map(|ni| ni.name.as_ref()))
             .for_each(|name| {
-                if !visited.insert(name) {
+                if !visited.insert(name.to_string()) {
                     return;
                 }
                 name_id_gen += 1;
