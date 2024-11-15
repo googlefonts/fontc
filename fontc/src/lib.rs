@@ -3322,4 +3322,10 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(vec![NameId::SUBFAMILY_NAME], axis_name_ids);
     }
+
+    #[test]
+    fn allow_duplicate_components() {
+        // This used to crash us, <https://github.com/googlefonts/fontc/issues/1115>
+        TestCompile::compile_source("DoubleComponentError/OuterInner.designspace");
+    }
 }
