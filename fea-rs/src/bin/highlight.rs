@@ -5,11 +5,11 @@ use std::{env, ffi::OsStr, path::PathBuf};
 fn main() {
     let args = Args::get_from_env_or_exit();
     let raw_fea = std::fs::read_to_string(args.path).unwrap();
-    let (node, _errors) = fea_rs::parse::parse_string(raw_fea);
+    let (ast, _errors) = fea_rs::parse::parse_string(raw_fea);
     let mut current_style = Style::new().fg(Colour::White);
     let mut needs_paint = String::new();
 
-    for token in node.iter_tokens() {
+    for token in ast.root().iter_tokens() {
         let style = fea_rs::util::style_for_kind(token.kind);
         // if the style has changed, draw the previous range.
         if style != current_style {

@@ -156,6 +156,11 @@ impl DiagnosticSet {
         })
     }
 
+    /// Return the underlying diagnostics, as a slice
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.messages
+    }
+
     /// Returns an opaque type that can pretty-print the diagnostics
     pub fn display(&self) -> impl std::fmt::Display + '_ {
         DiagnosticDisplayer(self)

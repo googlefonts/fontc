@@ -164,9 +164,13 @@ fn compute_offsets(text: &str) -> Vec<usize> {
 }
 
 fn parse(text: &str) -> (Vec<(Kind, Range<usize>)>, Vec<fea_rs::Diagnostic>) {
-    let (root, errors) = fea_rs::parse::parse_string(text);
-    let result = root.iter_tokens().map(|t| (t.kind, t.range())).collect();
-    (result, errors)
+    let (ast, errors) = fea_rs::parse::parse_string(text);
+    let result = ast
+        .root()
+        .iter_tokens()
+        .map(|t| (t.kind, t.range()))
+        .collect();
+    (result, errors.diagnostics().to_vec())
 }
 
 pub static STYLES: &[SemanticTokenType] = &[

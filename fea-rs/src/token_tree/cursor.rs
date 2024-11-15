@@ -197,10 +197,10 @@ mod tests {
 
     #[test]
     fn abs_positions() {
-        let (root, errs) = crate::parse::parse_string(SAMPLE_FEA);
+        let (ast, errs) = crate::parse::parse_string(SAMPLE_FEA);
         assert!(errs.is_empty());
         let mut last_end = 0;
-        for token in root.iter_tokens() {
+        for token in ast.root().iter_tokens() {
             assert_eq!(
                 token.range().start,
                 last_end,
@@ -214,8 +214,8 @@ mod tests {
 
     #[test]
     fn ascend_jump() {
-        let (root, _errs) = crate::parse::parse_string(SAMPLE_FEA);
-        let mut cursor = root.cursor();
+        let (ast, _errs) = crate::parse::parse_string(SAMPLE_FEA);
+        let mut cursor = ast.root().cursor();
         cursor.advance();
         cursor.advance();
         cursor.advance();
@@ -250,9 +250,9 @@ mod tests {
 
     #[test]
     fn advance() {
-        let (root, errs) = crate::parse::parse_string("feature kern { pos a b -20; }kern;");
+        let (ast, errs) = crate::parse::parse_string("feature kern { pos a b -20; }kern;");
         assert!(errs.is_empty());
-        let mut cursor = root.cursor();
+        let mut cursor = ast.root().cursor();
         assert!(
             at_node(&cursor, Kind::FeatureNode),
             "{:?}",
