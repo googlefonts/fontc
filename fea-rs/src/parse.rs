@@ -10,7 +10,11 @@ mod parser;
 mod source;
 mod tree;
 
-use std::{ffi::OsString, path::PathBuf, sync::Arc};
+use std::{
+    ffi::{OsStr, OsString},
+    path::PathBuf,
+    sync::Arc,
+};
 
 pub use lexer::TokenSet;
 pub use source::{FileSystemResolver, SourceLoadError, SourceResolver};
@@ -20,7 +24,7 @@ pub(crate) use context::{IncludeStatement, ParseContext};
 pub(crate) use parser::Parser;
 pub(crate) use source::{FileId, Source, SourceList, SourceMap};
 
-use crate::{Diagnostic, DiagnosticSet, GlyphMap, Node};
+use crate::{DiagnosticSet, GlyphMap};
 
 /// Attempt to parse a feature file from disk, including its imports.
 ///
@@ -76,13 +80,31 @@ pub fn parse_root(
 /// Convenience method to parse a block of FEA from memory.
 ///
 /// This is useful for things like testing or syntax highlighting of a single file,
-/// but it cannot handle imports, or handle ambiguous glyph names.
+/// but it cannot handle includes, or handle ambiguous glyph names.
 ///
 /// The input text can be any of `&str`, `String`, or `Arc<str>`.
-pub fn parse_string(text: impl Into<Arc<str>>) -> (Node, Vec<Diagnostic>) {
-    let source = source::Source::new("<parse::parse_string>", text.into());
-    let (node, errs, _) = context::parse_src(&source, None);
-    (node, errs)
+///
+/// # Panics
+///
+/// Panics if the input contains any include statements.
+pub fn parse_string(text: impl Into<Arc<str>>) -> (ParseTree, DiagnosticSet) {
+    const SRC_NAME: &str = "parse::parse_string";
+    let text = text.into();
+    parse_root(
+        SRC_NAME.into(),
+        None,
+        Box::new(move |s: &OsStr| {
+            if s == SRC_NAME {
+                Ok(text.clone())
+            } else {
+                Err(SourceLoadError::new(
+                    s.to_os_string(),
+                    "parse_string cannot handle imports",
+                ))
+            }
+        }),
+    )
+    .unwrap()
 }
 
 /// Parse an arbitrary block of FEA text with a specific parsing function.
@@ -90,7 +112,7 @@ pub fn parse_string(text: impl Into<Arc<str>>) -> (Node, Vec<Diagnostic>) {
 /// This can be used to parse any part of the grammar, including elements that
 /// are not valid at the top level.
 #[cfg(test)]
-pub(crate) fn parse_node(text: &str, parser_fn: impl FnOnce(&mut Parser)) -> Node {
+pub(crate) fn parse_node(text: &str, parser_fn: impl FnOnce(&mut Parser)) -> crate::Node {
     let mut sink = crate::token_tree::AstSink::new(text, FileId::CURRENT_FILE, None);
     let mut parser = Parser::new(text, &mut sink);
     parser_fn(&mut parser);

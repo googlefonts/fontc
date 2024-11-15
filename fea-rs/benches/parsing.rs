@@ -8,7 +8,7 @@ const DEVA: &str = include_str!("../test-data/real-files/plex_devanagari.fea");
 const LATN: &str = include_str!("../test-data/real-files/roboto-regular.fea");
 const ARAB: &str = include_str!("../test-data/real-files/tajawal-regular.fea");
 
-fn parse_source(source: Arc<str>) -> fea_rs::Node {
+fn parse_source(source: Arc<str>) -> fea_rs::ParseTree {
     fea_rs::parse::parse_string(source).0
 }
 

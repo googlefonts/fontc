@@ -631,8 +631,12 @@ mod tests {
 
     #[test]
     fn token_iter() {
-        let (root, _errs) = crate::parse::parse_string(SAMPLE_FEA);
-        let reconstruct = root.iter_tokens().map(Token::as_str).collect::<String>();
+        let (ast, _errs) = crate::parse::parse_string(SAMPLE_FEA);
+        let reconstruct = ast
+            .root()
+            .iter_tokens()
+            .map(Token::as_str)
+            .collect::<String>();
         crate::assert_eq_str!(SAMPLE_FEA, reconstruct);
     }
 }
