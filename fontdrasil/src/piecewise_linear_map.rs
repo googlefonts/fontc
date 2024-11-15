@@ -10,15 +10,28 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PiecewiseLinearMap {
     // these two mappings have identical lengths, by construction
-    from: Vec<OrderedFloat<f32>>, // sorted, ||'s to
-    to: Vec<OrderedFloat<f32>>,   // sorted, ||'s from
+    from: Vec<OrderedFloat<f64>>, // sorted, ||'s to
+    to: Vec<OrderedFloat<f64>>,   // sorted, ||'s from
+}
+
+#[inline]
+fn as_of64(value: OrderedFloat<f32>) -> OrderedFloat<f64> {
+    (value.into_inner() as f64).into()
+}
+
+#[inline]
+fn as_of32(value: OrderedFloat<f64>) -> OrderedFloat<f32> {
+    (value.into_inner() as f32).into()
 }
 
 impl PiecewiseLinearMap {
     /// Create a new map from a series of (from, to) values.
     pub fn new(mut mappings: Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>) -> PiecewiseLinearMap {
         mappings.sort();
-        let (from, to): (Vec<_>, Vec<_>) = mappings.into_iter().unzip();
+        let (from, to): (Vec<_>, Vec<_>) = mappings
+            .into_iter()
+            .map(|(k, v)| (as_of64(k), as_of64(v)))
+            .unzip();
         PiecewiseLinearMap { from, to }
     }
 
@@ -30,8 +43,8 @@ impl PiecewiseLinearMap {
         let mappings = self
             .to
             .iter()
-            .copied()
-            .zip(self.from.iter().copied())
+            .zip(self.from.iter())
+            .map(|(k, v)| (as_of32(*k), as_of32(*v)))
             .collect();
         PiecewiseLinearMap::new(mappings)
     }
@@ -41,11 +54,18 @@ impl PiecewiseLinearMap {
         self.from
             .iter()
             .zip(self.to.iter())
-            .map(|(from, to)| (from.0, to.0))
+            .map(|(from, to)| (from.into_inner() as f32, to.into_inner() as f32))
     }
 
     /// Based on <https://github.com/fonttools/fonttools/blob/5a0dc4bc8dfaa0c7da146cf902395f748b3cebe5/Lib/fontTools/varLib/models.py#L502>
     pub fn map(&self, value: OrderedFloat<f32>) -> OrderedFloat<f32> {
+        // perform internal computations in f64 to increase precision but keep
+        // the current interface in f32; avoids issues like this:
+        // https://github.com/googlefonts/fontc/issues/1117
+        as_of32(self.map_impl(as_of64(value)))
+    }
+
+    fn map_impl(&self, value: OrderedFloat<f64>) -> OrderedFloat<f64> {
         match self.from.binary_search(&value) {
             Ok(idx) => self.to[idx], // This value is just right
             Err(idx) => {
@@ -80,8 +100,8 @@ impl PiecewiseLinearMap {
     }
 }
 
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    assert!((0_f32..=1_f32).contains(&t));
+fn lerp(a: f64, b: f64, t: f64) -> f64 {
+    assert!((0_f64..=1_f64).contains(&t));
     a + t * (b - a)
 }
 
@@ -123,5 +143,22 @@ mod tests {
         assert_eq!(plm.map(OrderedFloat(0_f32)), OrderedFloat(400_f32));
         assert_eq!(plm.map(OrderedFloat(5_f32)), OrderedFloat(550_f32));
         assert_eq!(plm.map(OrderedFloat(10_f32)), OrderedFloat(700_f32));
+    }
+
+    #[test]
+    fn float_precision() {
+        // https://github.com/googlefonts/fontc/issues/1117
+        let from_to = vec![
+            (OrderedFloat(100_f32), OrderedFloat(-1_f32)),
+            (OrderedFloat(400_f32), OrderedFloat(0_f32)),
+            (OrderedFloat(900_f32), OrderedFloat(1_f32)),
+        ];
+        let plm = PiecewiseLinearMap::new(from_to);
+
+        assert_eq!(plm.map(OrderedFloat(200_f32)), OrderedFloat(-0.6666667_f32));
+        assert_eq!(
+            plm.reverse().map(OrderedFloat(-0.6666667_f32)),
+            OrderedFloat(200_f32)
+        );
     }
 }
