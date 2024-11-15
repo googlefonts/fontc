@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="outer" format="2">
+  <outline>
+    <contour>
+      <point x="30" y="10"/>
+      <point x="50" y="20"/>
+      <point x="30" y="30"/>
+    </contour>
+    <component base="inner" xOffset="100"/>
+    <component base="inner"/>
+  </outline>
+</glyph>
