@@ -500,10 +500,7 @@ impl KerningGatherWork {
         let mut lookups_by_script = BTreeMap::new();
         let mut ordered_lookups = Vec::new();
 
-        let fea_langs_by_script: BTreeMap<_, _> = get_script_language_systems(ast)
-            .into_values()
-            .flat_map(|x| x.into_iter())
-            .collect();
+        let fea_langs_by_script = get_fea_language_systems(ast);
 
         // in python this part happens earlier, as part of splitKerning.
         for (scripts, lookups) in lookups {
@@ -1017,10 +1014,9 @@ fn scripts_for_chars(glyphs: &impl CharMap) -> HashSet<UnicodeShortName> {
         .collect()
 }
 
-// <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfcf0b1c0fa4e133e/Lib/ufo2ft/featureWriters/ast.py#L23>
-/// returns a map of unicode script names to (ot_script, `[ot_lang]`)
-fn get_script_language_systems(ast: &ParseTree) -> HashMap<UnicodeShortName, Vec<(Tag, Vec<Tag>)>> {
-    let mut languages_by_script = HashMap::new();
+/// returns a map of opentype script: [opentype lang], for the languagesystems in FEA
+fn get_fea_language_systems(ast: &ParseTree) -> BTreeMap<Tag, Vec<Tag>> {
+    let mut languages_by_script = BTreeMap::new();
     for langsys in ast
         .typed_root()
         .statements()
@@ -1031,7 +1027,13 @@ fn get_script_language_systems(ast: &ParseTree) -> HashMap<UnicodeShortName, Vec
             .or_insert(Vec::new())
             .push(langsys.language().to_raw())
     }
+    languages_by_script
+}
 
+// <https://github.com/googlefonts/ufo2ft/blob/cea60d71dfcf0b1c0fa4e133e/Lib/ufo2ft/featureWriters/ast.py#L23>
+/// returns a map of unicode script names to (ot_script, `[ot_lang]`)
+fn get_script_language_systems(ast: &ParseTree) -> HashMap<UnicodeShortName, Vec<(Tag, Vec<Tag>)>> {
+    let languages_by_script = get_fea_language_systems(ast);
     let mut unic_script_to_languages = HashMap::new();
     for (ot_script, langs) in languages_by_script {
         let Some(unicode_script) = super::properties::ot_tag_to_script(ot_script) else {
@@ -1328,5 +1330,27 @@ mod tests {
             align_instance(&all_pairs, &mut kerns, &side1_glyphs, &side2_glyphs);
             assert_eq!(kerns.get(&glyph_glyph).map(|x| x.0), Some(10.0f32));
         }
+    }
+
+    #[test]
+    // https://github.com/googlefonts/fontc/issues/1121
+    fn default_language_systems() {
+        let fea = "\
+            languagesystem DFLT dflt;
+            languagesystem DFLT MAH;";
+        let (ast, errs) = fea_rs::parse::parse_string(fea);
+        assert!(errs.is_empty());
+        // make one dummy lookup
+        let script = BTreeSet::from([UnicodeShortName::from_bytes_lossy(b"Latn")]);
+        let lookup = vec![PendingLookup::new(
+            vec![PairPosBuilder::default()],
+            Default::default(),
+            None,
+        )];
+        let lookups = BTreeMap::from([(script, lookup)]);
+        let (_lookup, features) = KerningGatherWork.assign_lookups_to_scripts(lookups, &ast, KERN);
+        let dflt_mah = FeatureKey::new(KERN, Tag::new(b"MAH "), DFLT_SCRIPT);
+        // ensure that the feature was registered for the DFLT/Mah language system
+        assert!(features.contains_key(&dflt_mah));
     }
 }
