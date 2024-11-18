@@ -163,7 +163,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
         debug!("Building font");
         let font = builder.build();
         debug!("Assembled {} byte font", font.len());
-        context.font.set_unconditionally(font.into());
+        context.font.set(font.into());
         Ok(())
     }
 }

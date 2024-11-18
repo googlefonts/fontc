@@ -310,7 +310,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
                 }
             })?,
         };
-        context.hhea.set_unconditionally(hhea.into());
+        context.hhea.set(hhea);
 
         // Send hmtx out into the world
         let hmtx = Hmtx::new(long_metrics, lsbs);
@@ -320,7 +320,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
                 context: "hmtx".into(),
             })?
             .into();
-        context.hmtx.set_unconditionally(raw_hmtx);
+        context.hmtx.set(raw_hmtx);
 
         // Might as well do maxp while we're here
         let composite_limits = glyph_limits.update_composite_limits();
@@ -342,7 +342,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
             max_component_elements: Some(glyph_limits.max_component_elements),
             max_component_depth: Some(composite_limits.max_depth),
         };
-        context.maxp.set_unconditionally(maxp.into());
+        context.maxp.set(maxp);
 
         // Set x/y min/max in head
         let mut head = Arc::unwrap_or_clone(context.head.get());
@@ -351,7 +351,7 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
         head.y_min = bbox.y_min;
         head.x_max = bbox.x_max;
         head.y_max = bbox.y_max;
-        context.head.set_unconditionally(head);
+        context.head.set(head);
 
         Ok(())
     }

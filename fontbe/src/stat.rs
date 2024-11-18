@@ -51,24 +51,21 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
             .map(|(key, name)| (name.as_str(), key.name_id))
             .collect();
 
-        context.stat.set(
-            Stat {
-                design_axes: static_metadata
-                    .axes
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, a)| AxisRecord {
-                        axis_tag: a.tag,
-                        axis_name_id: *reverse_names.get(a.ui_label_name()).unwrap(),
-                        axis_ordering: idx as u16,
-                    })
-                    .collect::<Vec<_>>()
-                    .into(),
-                elided_fallback_name_id: Some(NameId::SUBFAMILY_NAME),
-                ..Default::default()
-            }
-            .into(),
-        );
+        context.stat.set(Stat {
+            design_axes: static_metadata
+                .axes
+                .iter()
+                .enumerate()
+                .map(|(idx, a)| AxisRecord {
+                    axis_tag: a.tag,
+                    axis_name_id: *reverse_names.get(a.ui_label_name()).unwrap(),
+                    axis_ordering: idx as u16,
+                })
+                .collect::<Vec<_>>()
+                .into(),
+            elided_fallback_name_id: Some(NameId::SUBFAMILY_NAME),
+            ..Default::default()
+        });
 
         Ok(())
     }

@@ -153,7 +153,7 @@ impl Work<Context, AnyWorkId, Error> for MvarWork {
             }
         }
         if let Some(mvar) = mvar_builder.build() {
-            context.mvar.set_unconditionally(mvar);
+            context.mvar.set(mvar);
         }
 
         Ok(())

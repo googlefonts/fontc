@@ -54,7 +54,7 @@ impl Work<Context, AnyWorkId, Error> for PostWork {
         post.italic_angle = Fixed::from_f64(static_metadata.italic_angle.into_inner());
         post.underline_position = FWord::new(metrics.underline_position.ot_round());
         post.underline_thickness = FWord::new(metrics.underline_thickness.ot_round());
-        context.post.set_unconditionally(post.into());
+        context.post.set(post);
         Ok(())
     }
 }

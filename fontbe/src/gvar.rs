@@ -76,7 +76,7 @@ impl Work<Context, AnyWorkId, Error> for GvarWork {
                 context: "gvar".into(),
             })?
             .into();
-        context.gvar.set_unconditionally(raw_gvar);
+        context.gvar.set(raw_gvar);
 
         Ok(())
     }

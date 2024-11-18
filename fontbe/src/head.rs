@@ -132,7 +132,7 @@ impl Work<Context, AnyWorkId, Error> for HeadWork {
         );
         apply_created_modified(&mut head, static_metadata.misc.created);
         apply_macstyle(&mut head, static_metadata.misc.selection_flags);
-        context.head.set_unconditionally(head.into());
+        context.head.set(head);
 
         // Defer x/y Min/Max to metrics and limits job
 

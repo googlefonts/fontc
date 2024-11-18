@@ -595,7 +595,7 @@ impl Work<Context, AnyWorkId, Error> for Os2Work {
 
         apply_max_context(&mut os2, context);
 
-        context.os2.set_unconditionally(os2.into());
+        context.os2.set(os2);
         Ok(())
     }
 }

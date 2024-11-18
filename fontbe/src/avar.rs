@@ -107,7 +107,7 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
             .iter()
             .any(|segmap| !segmap.is_identity())
             .then(|| Avar::new(axis_segment_maps));
-        context.avar.set_unconditionally(avar.into());
+        context.avar.set(avar.into());
         Ok(())
     }
 }

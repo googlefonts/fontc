@@ -584,13 +584,13 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
             result.gdef.is_some(),
         );
         if let Some(gpos) = result.gpos {
-            context.gpos.set_unconditionally(gpos.into());
+            context.gpos.set(gpos);
         }
         if let Some(gsub) = result.gsub {
-            context.gsub.set_unconditionally(gsub.into());
+            context.gsub.set(gsub);
         }
         if let Some(gdef) = result.gdef {
-            context.gdef.set_unconditionally(gdef.into());
+            context.gdef.set(gdef);
         }
 
         // Enables the assumption that if the file exists features were compiled

@@ -113,26 +113,6 @@ where
         self.acl.assert_read_access(&self.id);
         self.value.read().as_ref().cloned()
     }
-
-    /// Update the value of the item whether or not it has changed.
-    ///
-    /// The change will be logged and anything relying on change detection, such as
-    /// conditional execution of dependent tasks, will fire.
-    ///
-    /// [ContextItem::set] is preferable where possible.
-    ///
-    /// This exists largely because write types in fontations do not always implement PartialEq.
-    /// TODO: should they?
-    pub fn set_unconditionally(&self, value: T) {
-        self.acl.assert_write_access(&self.id);
-
-        if self.persistent_storage.active() {
-            let mut writer = self.persistent_storage.writer(&self.id);
-            value.write(&mut writer);
-        }
-
-        *self.value.write() = Some(Arc::from(value));
-    }
 }
 
 impl<I, T, P> ContextItem<I, T, P>
@@ -158,7 +138,12 @@ where
             return;
         }
 
-        self.set_unconditionally(value);
+        if self.persistent_storage.active() {
+            let mut writer = self.persistent_storage.writer(&self.id);
+            value.write(&mut writer);
+        }
+
+        *self.value.write() = Some(Arc::from(value));
     }
 }
 
