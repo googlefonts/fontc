@@ -215,10 +215,7 @@ pub fn create_os2_work() -> Box<BeWork> {
 /// <https://github.com/fonttools/fonttools/blob/115275cbf429d91b75ac5536f5f0b2d6fe9d823a/Lib/fontTools/ttLib/tables/O_S_2f_2.py#L336-L348>
 fn x_avg_char_width(context: &Context) -> Result<i16, Error> {
     let glyph_order = context.ir.glyph_order.get();
-    let arc_hhea = context.hhea.get();
-    let Some(hhea) = &arc_hhea.as_ref().0 else {
-        return Err(Error::MissingTable(Tag::new(b"hhea")));
-    };
+    let hhea = context.hhea.get();
     let raw_hmtx = context.hmtx.get();
     let num_glyphs = glyph_order.len() as u64;
     let hmtx = Hmtx::read(
@@ -497,9 +494,9 @@ fn apply_min_max_char_index(os2: &mut Os2, codepoints: &HashSet<u32>) {
 /// * <https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#gpos-header>
 fn apply_max_context(os2: &mut Os2, context: &Context) {
     let gsub = context.gsub.try_get();
-    let gsub = gsub.as_deref().and_then(|x| x.0.as_ref());
+    let gsub = gsub.as_deref();
     let gpos = context.gpos.try_get();
-    let gpos = gpos.as_deref().and_then(|x| x.0.as_ref());
+    let gpos = gpos.as_deref();
 
     os2.us_max_context = Some(max_context::compute_max_context_value(gpos, gsub));
 }

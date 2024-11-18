@@ -152,9 +152,9 @@ impl Work<Context, AnyWorkId, Error> for MvarWork {
                 mvar_builder.add_sources(mvar_tag, values)?;
             }
         }
-        let mvar = mvar_builder.build();
-
-        context.mvar.set_unconditionally(mvar.into());
+        if let Some(mvar) = mvar_builder.build() {
+            context.mvar.set_unconditionally(mvar);
+        }
 
         Ok(())
     }

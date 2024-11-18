@@ -25,7 +25,7 @@ use fontir::{
     ir::{self, GlyphOrder, KernGroup},
     orchestration::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
-        PersistentStorage, WorkId as FeWorkIdentifier,
+        PersistableOption, PersistentStorage, WorkId as FeWorkIdentifier,
     },
     variations::VariationRegion,
 };
@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use write_fonts::{
     dump_table,
-    read::{FontData, FontRead},
+    read::FontRead,
     tables::{
         avar::Avar,
         cmap::Cmap,
@@ -235,7 +235,7 @@ impl IdAware<AnyWorkId> for Glyph {
 impl Persistable for Glyph {
     fn read(from: &mut dyn Read) -> Self {
         let (name, bytes): (GlyphName, Vec<u8>) = bincode::deserialize_from(from).unwrap();
-        let glyph = RawGlyph::read(bytes.as_slice().into()).unwrap();
+        let glyph = FontRead::read(bytes.as_slice().into()).unwrap();
         Glyph { name, data: glyph }
     }
 
@@ -638,51 +638,6 @@ impl Persistable for LocaFormatWrapper {
 
 pub type BeWork = dyn Work<Context, AnyWorkId, Error> + Send;
 
-/// Allows us to implement [Persistable] w/o violating the orphan rules
-///
-/// Other than that just kind of gets in the way
-pub struct BeValue<T>(pub Option<T>);
-
-impl<T> Persistable for BeValue<T>
-where
-    for<'a> T: FontRead<'a> + FontWrite + Validate,
-{
-    fn read(from: &mut dyn Read) -> Self {
-        let mut buf = Vec::new();
-        from.read_to_end(&mut buf).unwrap();
-        (!buf.is_empty())
-            .then(|| T::read(FontData::new(&buf)).unwrap())
-            .into()
-    }
-
-    fn write(&self, to: &mut dyn io::Write) {
-        let bytes = self
-            .0
-            .as_ref()
-            .map(|t| dump_table(t).unwrap())
-            .unwrap_or_default();
-        to.write_all(&bytes).unwrap();
-    }
-}
-
-impl<T> From<T> for BeValue<T>
-where
-    T: FontWrite + Validate,
-{
-    fn from(value: T) -> Self {
-        BeValue(Some(value))
-    }
-}
-
-impl<T> From<Option<T>> for BeValue<T>
-where
-    T: FontWrite + Validate,
-{
-    fn from(value: Option<T>) -> Self {
-        BeValue(value)
-    }
-}
-
 pub struct BePersistentStorage {
     active: bool,
     pub(crate) paths: Paths,
@@ -734,31 +689,31 @@ pub struct Context {
     pub glyphs: BeContextMap<Glyph>,
 
     // Allow avar to be explicitly None to record a noop avar being generated
-    pub avar: BeContextItem<BeValue<Avar>>,
-    pub cmap: BeContextItem<BeValue<Cmap>>,
-    pub fvar: BeContextItem<BeValue<Fvar>>,
+    pub avar: BeContextItem<PersistableOption<Avar>>,
+    pub cmap: BeContextItem<Cmap>,
+    pub fvar: BeContextItem<Fvar>,
     pub glyf: BeContextItem<Bytes>,
-    pub gsub: BeContextItem<BeValue<Gsub>>,
-    pub gpos: BeContextItem<BeValue<Gpos>>,
-    pub gdef: BeContextItem<BeValue<Gdef>>,
+    pub gsub: BeContextItem<Gsub>,
+    pub gpos: BeContextItem<Gpos>,
+    pub gdef: BeContextItem<Gdef>,
     pub gvar: BeContextItem<Bytes>,
-    pub post: BeContextItem<BeValue<Post>>,
+    pub post: BeContextItem<Post>,
     pub loca: BeContextItem<Bytes>,
     pub loca_format: BeContextItem<LocaFormatWrapper>,
-    pub maxp: BeContextItem<BeValue<Maxp>>,
-    pub name: BeContextItem<BeValue<Name>>,
-    pub os2: BeContextItem<BeValue<Os2>>,
-    pub head: BeContextItem<BeValue<Head>>,
-    pub hhea: BeContextItem<BeValue<Hhea>>,
+    pub maxp: BeContextItem<Maxp>,
+    pub name: BeContextItem<Name>,
+    pub os2: BeContextItem<Os2>,
+    pub head: BeContextItem<Head>,
+    pub hhea: BeContextItem<Hhea>,
     pub hmtx: BeContextItem<Bytes>,
-    pub hvar: BeContextItem<BeValue<Hvar>>,
-    pub mvar: BeContextItem<BeValue<Mvar>>,
+    pub hvar: BeContextItem<Hvar>,
+    pub mvar: BeContextItem<Mvar>,
     pub all_kerning_pairs: BeContextItem<AllKerningPairs>,
     pub kern_fragments: BeContextMap<KernFragment>,
     pub fea_ast: BeContextItem<FeaAst>,
     pub fea_rs_kerns: BeContextItem<FeaRsKerns>,
     pub fea_rs_marks: BeContextItem<FeaRsMarks>,
-    pub stat: BeContextItem<BeValue<Stat>>,
+    pub stat: BeContextItem<Stat>,
     pub font: BeContextItem<Bytes>,
 }
 
@@ -912,11 +867,11 @@ impl Persistable for Bytes {
     }
 }
 
-pub(crate) fn to_bytes<T>(table: &BeValue<T>) -> Option<Vec<u8>>
+pub(crate) fn to_bytes<T>(table: &T) -> Option<Vec<u8>>
 where
     T: FontWrite + Validate,
 {
-    table.0.as_ref().map(|t| dump_table(t).unwrap())
+    write_fonts::dump_table(table).ok()
 }
 
 #[cfg(test)]

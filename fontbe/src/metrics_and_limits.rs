@@ -5,6 +5,7 @@
 use std::{
     cmp::{max, min},
     collections::HashMap,
+    sync::Arc,
 };
 
 use fontdrasil::orchestration::{Access, AccessBuilder, Work};
@@ -344,13 +345,13 @@ impl Work<Context, AnyWorkId, Error> for MetricAndLimitWork {
         context.maxp.set_unconditionally(maxp.into());
 
         // Set x/y min/max in head
-        let mut head = context.head.get().0.clone().unwrap();
+        let mut head = Arc::unwrap_or_clone(context.head.get());
         let bbox = glyph_limits.bbox.unwrap_or_default();
         head.x_min = bbox.x_min;
         head.y_min = bbox.y_min;
         head.x_max = bbox.x_max;
         head.y_max = bbox.y_max;
-        context.head.set_unconditionally(head.into());
+        context.head.set_unconditionally(head);
 
         Ok(())
     }

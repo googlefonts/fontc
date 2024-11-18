@@ -1355,7 +1355,7 @@ mod tests {
     fn writes_cmap() {
         let result = TestCompile::compile_source("glyphs2/Component.glyphs");
 
-        let raw_cmap = dump_table(&result.be_context.cmap.get().0).unwrap();
+        let raw_cmap = dump_table(result.be_context.cmap.get().as_ref()).unwrap();
         let font_data = FontData::new(&raw_cmap);
         let cmap = Cmap::read(font_data).unwrap();
 
@@ -1422,20 +1422,14 @@ mod tests {
     fn metrics_and_limits_of_mono() {
         let result = TestCompile::compile_source("glyphs2/Mono.glyphs");
 
-        let arc_hhea = result.be_context.hhea.get();
-        let Some(hhea) = &arc_hhea.0 else {
-            panic!("Missing hhea");
-        };
+        let hhea = result.be_context.hhea.get();
         assert_eq!(1, hhea.number_of_long_metrics);
         assert_eq!(175, hhea.min_left_side_bearing.to_i16());
         assert_eq!(50, hhea.min_right_side_bearing.to_i16());
         assert_eq!(375, hhea.x_max_extent.to_i16());
         assert_eq!(425, hhea.advance_width_max.to_u16());
 
-        let arc_maxp = result.be_context.maxp.get();
-        let Some(maxp) = &arc_maxp.0 else {
-            panic!("Missing maxp");
-        };
+        let maxp = result.be_context.maxp.get();
         assert_eq!(3, maxp.num_glyphs);
         assert_eq!(Some(4), maxp.max_points);
         assert_eq!(Some(1), maxp.max_contours);

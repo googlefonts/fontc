@@ -5,7 +5,7 @@ use std::{
     fmt::Debug,
     fs::File,
     hash::Hash,
-    io::{BufReader, BufWriter, Read, Write},
+    io::{self, BufReader, BufWriter, Read, Write},
     sync::Arc,
 };
 
@@ -17,6 +17,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use parking_lot::RwLock;
+use write_fonts::{read::FontRead, validate::Validate, FontWrite};
 
 bitflags! {
     #[derive(Clone, Copy, Debug)]
@@ -293,6 +294,15 @@ pub trait Persistable {
     fn write(&self, to: &mut dyn Write);
 }
 
+/// A persistable type that may be None.
+///
+/// We can't just use `Option` because it interferes with other blanket impls.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PersistableOption<T> {
+    Some(T),
+    None,
+}
+
 /// Reads and writes to somewhere that lives longer than processes.
 ///
 /// This enables the compiler to restore state from prior executions which is
@@ -384,6 +394,75 @@ impl PersistentStorage<WorkId> for IrPersistentStorage {
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
         Box::from(BufWriter::new(raw_file))
+    }
+}
+
+impl<T> Persistable for T
+where
+    for<'a> T: FontRead<'a> + FontWrite + Validate,
+{
+    fn read(from: &mut dyn Read) -> Self {
+        let mut buf = Vec::new();
+        from.read_to_end(&mut buf).unwrap();
+        T::read(buf.as_slice().into()).expect("if we wrote it we can read it")
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        let bytes = write_fonts::dump_table(self).unwrap();
+        to.write_all(&bytes).unwrap();
+    }
+}
+
+// To serialize option we will use a 1-byte prefix (0 or 1) to indicate
+// the presence of the value.
+//
+// We dont't just write nothing because when reading there's no simple
+// way to check the length of the io::Read object.
+impl<T: Persistable> Persistable for PersistableOption<T> {
+    fn read(from: &mut dyn Read) -> Self {
+        let mut buf = [255u8];
+        from.read_exact(&mut buf).unwrap();
+        if buf[0] == 0 {
+            return Self::None;
+        }
+        Self::Some(T::read(from))
+    }
+
+    fn write(&self, to: &mut dyn Write) {
+        match self {
+            PersistableOption::Some(obj) => {
+                to.write_all(&[1u8]).unwrap();
+                obj.write(to);
+            }
+            PersistableOption::None => to.write_all(&[0u8]).unwrap(),
+        }
+    }
+}
+
+impl<T> From<Option<T>> for PersistableOption<T> {
+    fn from(src: Option<T>) -> PersistableOption<T> {
+        match src {
+            Some(obj) => Self::Some(obj),
+            None => Self::None,
+        }
+    }
+}
+
+impl<T> From<PersistableOption<T>> for Option<T> {
+    fn from(src: PersistableOption<T>) -> Option<T> {
+        match src {
+            PersistableOption::Some(obj) => Some(obj),
+            PersistableOption::None => None,
+        }
+    }
+}
+
+impl<T> PersistableOption<T> {
+    pub fn as_ref(&self) -> Option<&T> {
+        match self {
+            PersistableOption::Some(obj) => Some(obj),
+            PersistableOption::None => None,
+        }
     }
 }
 

@@ -51,7 +51,7 @@ impl Work<Context, AnyWorkId, Error> for StatWork {
             .map(|(key, name)| (name.as_str(), key.name_id))
             .collect();
 
-        context.stat.set_unconditionally(
+        context.stat.set(
             Stat {
                 design_axes: static_metadata
                     .axes
