@@ -25,7 +25,7 @@ use fontir::{
     ir::{self, GlyphOrder, KernGroup},
     orchestration::{
         Context as FeContext, ContextItem, ContextMap, Flags, IdAware, Persistable,
-        PersistableOption, PersistentStorage, WorkId as FeWorkIdentifier,
+        PersistentStorage, WorkId as FeWorkIdentifier,
     },
     variations::VariationRegion,
 };
@@ -38,7 +38,6 @@ use write_fonts::{
     dump_table,
     read::FontRead,
     tables::{
-        avar::Avar,
         cmap::Cmap,
         fvar::Fvar,
         gdef::Gdef,
@@ -63,7 +62,7 @@ use write_fonts::{
     FontWrite,
 };
 
-use crate::{error::Error, paths::Paths};
+use crate::{avar::PossiblyEmptyAvar, error::Error, paths::Paths};
 
 type KernBlock = usize;
 
@@ -689,7 +688,7 @@ pub struct Context {
     pub glyphs: BeContextMap<Glyph>,
 
     // Allow avar to be explicitly None to record a noop avar being generated
-    pub avar: BeContextItem<PersistableOption<Avar>>,
+    pub avar: BeContextItem<PossiblyEmptyAvar>,
     pub cmap: BeContextItem<Cmap>,
     pub fvar: BeContextItem<Fvar>,
     pub glyf: BeContextItem<Bytes>,

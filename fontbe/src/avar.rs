@@ -5,9 +5,10 @@ use fontdrasil::{
     orchestration::{Access, Work},
     types::Axis,
 };
-use fontir::orchestration::WorkId as FeWorkId;
+use fontir::orchestration::{Persistable, WorkId as FeWorkId};
 use log::debug;
 use write_fonts::{
+    read::FontRead,
     tables::avar::{Avar, AxisValueMap, SegmentMaps},
     types::F2Dot14,
 };
@@ -16,6 +17,45 @@ use crate::{
     error::Error,
     orchestration::{AnyWorkId, BeWork, Context, WorkId},
 };
+
+/// Avar is a special case where sometimes we want to explicitly have an empty one.
+///
+/// We can't just store `Option` because we can't impl Persistable for it
+/// (doing so conflicts with the generic impl for write-fonts types)
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PossiblyEmptyAvar {
+    NonEmpty(Avar),
+    Empty,
+}
+
+impl Persistable for PossiblyEmptyAvar {
+    fn read(from: &mut dyn std::io::Read) -> Self {
+        let mut bytes = Vec::new();
+        from.read_to_end(&mut bytes).unwrap();
+        if bytes.is_empty() {
+            Self::Empty
+        } else {
+            let table =
+                FontRead::read(bytes.as_slice().into()).expect("we wrote it, we can write it");
+            Self::NonEmpty(table)
+        }
+    }
+
+    fn write(&self, to: &mut dyn std::io::Write) {
+        if let Self::NonEmpty(table) = self {
+            table.write(to);
+        }
+    }
+}
+
+impl PossiblyEmptyAvar {
+    pub fn as_ref(&self) -> Option<&Avar> {
+        match self {
+            PossiblyEmptyAvar::NonEmpty(avar) => Some(avar),
+            PossiblyEmptyAvar::Empty => None,
+        }
+    }
+}
 
 #[derive(Debug)]
 struct AvarWork {}
@@ -103,11 +143,12 @@ impl Work<Context, AnyWorkId, Error> for AvarWork {
         }
         let axis_segment_maps: Vec<_> = static_metadata.axes.iter().map(to_segment_map).collect();
         // only when all the segment maps are uninteresting, we can omit avar
-        let avar = axis_segment_maps
-            .iter()
-            .any(|segmap| !segmap.is_identity())
-            .then(|| Avar::new(axis_segment_maps));
-        context.avar.set(avar.into());
+        let avar = if axis_segment_maps.iter().any(|segmap| !segmap.is_identity()) {
+            PossiblyEmptyAvar::NonEmpty(Avar::new(axis_segment_maps))
+        } else {
+            PossiblyEmptyAvar::Empty
+        };
+        context.avar.set(avar);
         Ok(())
     }
 }
