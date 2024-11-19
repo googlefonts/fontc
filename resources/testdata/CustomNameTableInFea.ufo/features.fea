@@ -1,0 +1,6 @@
+languagesystem DFLT dflt;
+
+table name {
+    nameid 9 "Joachim Müller-Lancé"; # DESIGNER
+    nameid 4 "set from FEA name table"; # FULL_NAME
+} name;

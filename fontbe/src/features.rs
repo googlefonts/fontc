@@ -37,13 +37,15 @@ use fontdrasil::{
 };
 use write_fonts::{
     tables::{layout::ClassDef, variations::VariationRegion},
-    types::Tag,
+    types::{NameId, Tag},
     OtRound,
 };
 
 use crate::{
     error::Error,
-    orchestration::{AnyWorkId, BeWork, Context, FeaAst, FeaRsKerns, FeaRsMarks, WorkId},
+    orchestration::{
+        AnyWorkId, BeWork, Context, ExtraFeaTables, FeaAst, FeaRsKerns, FeaRsMarks, WorkId,
+    },
 };
 
 mod kern;
@@ -550,6 +552,7 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
             WorkId::Gpos.into(),
             WorkId::Gsub.into(),
             WorkId::Gdef.into(),
+            WorkId::ExtraFeaTables.into(),
         ]
     }
 
@@ -583,14 +586,38 @@ impl Work<Context, AnyWorkId, Error> for FeatureCompilationWork {
             result.gsub.is_some(),
             result.gdef.is_some(),
         );
-        if let Some(gpos) = result.gpos {
+
+        if result.name.is_some() {
+            let max_existing_name_id: NameId = static_metadata
+                .names
+                .keys()
+                .map(|key| key.name_id)
+                .max()
+                .unwrap_or(NameId::LAST_RESERVED_NAME_ID)
+                .max(NameId::LAST_RESERVED_NAME_ID);
+
+            if max_existing_name_id > NameId::LAST_RESERVED_NAME_ID {
+                result.remap_name_ids(max_existing_name_id.to_u16() + 1);
+            }
+        }
+        if let Some(gpos) = result.gpos.take() {
             context.gpos.set(gpos);
         }
-        if let Some(gsub) = result.gsub {
+        if let Some(gsub) = result.gsub.take() {
             context.gsub.set(gsub);
         }
-        if let Some(gdef) = result.gdef {
+        if let Some(gdef) = result.gdef.take() {
             context.gdef.set(gdef);
+        }
+
+        // if fea generated tables other than GPOS/GSUB/GDEF, stash them
+        // so we can merge later on
+        if result.has_non_layout_tables() {
+            let extras = ExtraFeaTables::from(result);
+            // we're currently only handling 'name'; if other tables are in
+            // here we probably need to do something with them too, so let's warn
+            extras.log_unhandled_extras();
+            context.extra_fea_tables.set(extras);
         }
 
         // Enables the assumption that if the file exists features were compiled

@@ -94,6 +94,7 @@ impl Paths {
             WorkId::Os2 => self.build_dir.join("os2.table"),
             WorkId::Post => self.build_dir.join("post.table"),
             WorkId::Stat => self.build_dir.join("stat.table"),
+            WorkId::ExtraFeaTables => self.build_dir.join("extra_tables.bin"),
             WorkId::Font => self
                 .output_file
                 .as_ref()

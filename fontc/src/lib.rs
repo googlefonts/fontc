@@ -583,6 +583,7 @@ mod tests {
                 cmap::{Cmap, CmapSubtable},
                 glyf::{self, CompositeGlyph, CurvePoint, Glyf},
                 hmtx::Hmtx,
+                layout::FeatureParams,
                 loca::Loca,
             },
             types::F2Dot14,
@@ -816,6 +817,7 @@ mod tests {
             BeWorkIdentifier::GatherIrKerning.into(),
             BeWorkIdentifier::KernFragment(0).into(),
             BeWorkIdentifier::GatherBeKerning.into(),
+            BeWorkIdentifier::ExtraFeaTables.into(),
             BeWorkIdentifier::Loca.into(),
             BeWorkIdentifier::LocaFormat.into(),
             BeWorkIdentifier::Marks.into(),
@@ -926,6 +928,7 @@ mod tests {
                 BeWorkIdentifier::LocaFormat.into(),
                 BeWorkIdentifier::Marks.into(),
                 BeWorkIdentifier::Maxp.into(),
+                BeWorkIdentifier::ExtraFeaTables.into(),
             ],
             completed,
             "{completed:#?}"
@@ -961,6 +964,7 @@ mod tests {
                 BeWorkIdentifier::GatherIrKerning.into(),
                 BeWorkIdentifier::KernFragment(0).into(),
                 BeWorkIdentifier::GatherBeKerning.into(),
+                BeWorkIdentifier::ExtraFeaTables.into(),
             ],
             completed
         );
@@ -1075,6 +1079,7 @@ mod tests {
                 BeWorkIdentifier::GatherIrKerning.into(),
                 BeWorkIdentifier::KernFragment(0).into(),
                 BeWorkIdentifier::GatherBeKerning.into(),
+                BeWorkIdentifier::ExtraFeaTables.into(),
             ],
             completed
         );
@@ -3321,5 +3326,78 @@ mod tests {
     fn allow_duplicate_components() {
         // This used to crash us, <https://github.com/googlefonts/fontc/issues/1115>
         TestCompile::compile_source("DoubleComponentError/OuterInner.designspace");
+    }
+
+    #[test]
+    fn merge_stylistic_set_names() {
+        let result = TestCompile::compile_source("glyphs3/WghtVarWithStylisticSet.glyphs");
+        let font = result.font();
+        let name = font.name().unwrap();
+
+        let names = name
+            .name_record()
+            .iter()
+            .map(|rec| (rec.name_id(), resolve_name(&name, rec.name_id()).unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                (NameId::COPYRIGHT_NOTICE, "Copy!".to_owned()),
+                (NameId::FAMILY_NAME, "WghtVar".to_owned()),
+                (NameId::SUBFAMILY_NAME, "Regular".to_owned()),
+                (NameId::UNIQUE_ID, "1.234;NONE;WghtVar-Regular".to_owned()),
+                (NameId::FULL_NAME, "WghtVar Regular".to_owned()),
+                (NameId::VERSION_STRING, "Version 1.234".to_owned()),
+                (NameId::POSTSCRIPT_NAME, "WghtVar-Regular".to_owned()),
+                (NameId::DESCRIPTION, "The greatest weight var".to_owned()),
+                (
+                    NameId::LICENSE_URL,
+                    "https://example.com/my/font/license".to_owned()
+                ),
+                // axis & instance names
+                (NameId::new(256), "Weight".to_owned()),
+                // from FEA, merged after names of axes and named instances
+                (NameId::new(257), "my fun feature".to_owned()),
+            ]
+        );
+
+        let gsub = font.gsub().unwrap();
+        let feature_list = gsub.feature_list().unwrap();
+        assert_eq!(feature_list.feature_records().len(), 1);
+        let feature = feature_list.feature_records()[0]
+            .feature(feature_list.offset_data())
+            .unwrap();
+        let params = feature.feature_params().unwrap().unwrap();
+        let FeatureParams::StylisticSet(params) = params else {
+            panic!("wrong feature params type");
+        };
+
+        // matches what is in the name table
+        assert_eq!(params.ui_name_id().to_u16(), 257);
+    }
+
+    #[test]
+    fn merge_name_table_from_fea() {
+        let result = TestCompile::compile_source("CustomNameTableInFea.ufo");
+        let font = result.font();
+        let name = font.name().unwrap();
+
+        let names = name
+            .name_record()
+            .iter()
+            .map(|rec| (rec.name_id(), resolve_name(&name, rec.name_id()).unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                (NameId::FAMILY_NAME, "Wght Var".to_string()),
+                (NameId::SUBFAMILY_NAME, "Regular".to_string()),
+                (NameId::UNIQUE_ID, "0.000;NONE;WghtVar-Regular".to_string()),
+                (NameId::FULL_NAME, "set from FEA name table".to_string()),
+                (NameId::VERSION_STRING, "Version 0.000".to_string()),
+                (NameId::POSTSCRIPT_NAME, "WghtVar-Regular".to_string()),
+                (NameId::DESIGNER, "Joachim Müller-Lancé".to_string()),
+            ]
+        );
     }
 }

@@ -3,8 +3,10 @@
 use std::collections::HashMap;
 
 use write_fonts::{
-    tables::{self as wtables, gdef::GlyphClassDef, maxp::Maxp},
-    types::GlyphId16,
+    tables::{
+        self as wtables, gdef::GlyphClassDef, layout::FeatureParams, maxp::Maxp, stat::AxisValue,
+    },
+    types::{GlyphId16, NameId},
     BuilderError, FontBuilder,
 };
 
@@ -53,6 +55,92 @@ pub struct Compilation {
 }
 
 impl Compilation {
+    /// Returns `true` if the FEA generated tables other than GSUB, GPOS & GDEF.
+    pub fn has_non_layout_tables(&self) -> bool {
+        self.head.is_some()
+            || self.hhea.is_some()
+            || self.vhea.is_some()
+            || self.os2.is_some()
+            || self.base.is_some()
+            || self.name.is_some()
+            || self.stat.is_some()
+    }
+
+    /// Remap any `NameId`s in the name table and anywhere they are referenced.
+    ///
+    /// This is used for merging the results of our compilation with other
+    /// compilation operations which may have occured elsewhere, and which may
+    /// have used the same `NameId`s as us for different strings.
+    ///
+    /// We will take all the name ids we have declared that are >= 256 and offset
+    /// them to start at `first_avail_id`.
+    pub fn remap_name_ids(&mut self, first_avail_id: u16) {
+        let id_offset = first_avail_id.saturating_sub(NameId::LAST_RESERVED_NAME_ID.to_u16() + 1);
+        log::info!("remapping FEA name ideas with delta {id_offset}");
+        if id_offset == 0 {
+            return;
+        }
+
+        let adjust_id = |id: NameId| {
+            if !id.is_reserved() {
+                // in the case of a degenerate name table we'll just reuse the last id?
+                // entries will be pruned later.
+                id.checked_add(id_offset)
+                    .unwrap_or(NameId::LAST_ALLOWED_NAME_ID)
+            } else {
+                id
+            }
+        };
+
+        if let Some(name) = self.name.as_mut() {
+            let records = std::mem::take(&mut name.name_record);
+            name.name_record = records
+                .into_iter()
+                .map(|mut rec| {
+                    rec.name_id = adjust_id(rec.name_id);
+                    rec
+                })
+                .collect();
+        }
+
+        if let Some(gsub) = self.gsub.as_mut() {
+            gsub.feature_list
+                .as_mut()
+                .feature_records
+                .iter_mut()
+                .for_each(|rec| match rec.feature.as_mut().feature_params.as_mut() {
+                    Some(FeatureParams::StylisticSet(params)) => {
+                        params.ui_name_id = adjust_id(params.ui_name_id);
+                    }
+                    Some(FeatureParams::CharacterVariant(params)) => {
+                        params.feat_ui_label_name_id = adjust_id(params.feat_ui_label_name_id);
+                        params.feat_ui_tooltip_text_name_id =
+                            adjust_id(params.feat_ui_tooltip_text_name_id);
+                        params.sample_text_name_id = adjust_id(params.sample_text_name_id);
+                        params.first_param_ui_label_name_id =
+                            adjust_id(params.first_param_ui_label_name_id);
+                    }
+                    _ => (),
+                });
+        }
+        if let Some(stat) = self.stat.as_mut() {
+            stat.elided_fallback_name_id = stat
+                .elided_fallback_name_id
+                .map(|id| id.to_u16().saturating_add(id_offset).into());
+            stat.design_axes.iter_mut().for_each(|axe| {
+                axe.axis_name_id = adjust_id(axe.axis_name_id);
+            });
+            if let Some(blah) = stat.offset_to_axis_values.as_mut() {
+                blah.iter_mut().for_each(|val| match val.as_mut() {
+                    AxisValue::Format1(val) => val.value_name_id = adjust_id(val.value_name_id),
+                    AxisValue::Format2(val) => val.value_name_id = adjust_id(val.value_name_id),
+                    AxisValue::Format3(val) => val.value_name_id = adjust_id(val.value_name_id),
+                    AxisValue::Format4(val) => val.value_name_id = adjust_id(val.value_name_id),
+                });
+            }
+        }
+    }
+
     /// Assemble the output tables into a `FontBuilder`.
     ///
     /// This is a convenience method. To compile a binary font you can use

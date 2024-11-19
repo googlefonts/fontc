@@ -11,8 +11,9 @@ use std::{
 
 use fea_rs::{
     compile::{
-        CaretValue, CursivePosBuilder, FeatureKey, MarkToBaseBuilder, MarkToLigBuilder,
-        MarkToMarkBuilder, PairPosBuilder, PendingLookup, ValueRecord as ValueRecordBuilder,
+        CaretValue, Compilation, CursivePosBuilder, FeatureKey, MarkToBaseBuilder,
+        MarkToLigBuilder, MarkToMarkBuilder, PairPosBuilder, PendingLookup,
+        ValueRecord as ValueRecordBuilder,
     },
     GlyphMap, GlyphSet, ParseTree,
 };
@@ -38,6 +39,7 @@ use write_fonts::{
     dump_table,
     read::FontRead,
     tables::{
+        base::Base,
         cmap::Cmap,
         fvar::Fvar,
         gdef::Gdef,
@@ -56,6 +58,7 @@ use write_fonts::{
         post::Post,
         stat::Stat,
         variations::Tuple,
+        vhea::Vhea,
     },
     types::{F2Dot14, GlyphId16, Tag},
     validate::Validate,
@@ -101,6 +104,7 @@ pub enum WorkId {
     Os2,
     Post,
     Stat,
+    ExtraFeaTables,
 }
 
 impl WorkId {
@@ -143,6 +147,7 @@ impl Identifier for WorkId {
             WorkId::Os2 => "BeOs2",
             WorkId::Post => "BePost",
             WorkId::Stat => "BeStat",
+            WorkId::ExtraFeaTables => "ExtraFeaTables",
         }
     }
 }
@@ -192,6 +197,111 @@ impl From<FeWorkIdentifier> for AnyWorkId {
 impl From<WorkId> for AnyWorkId {
     fn from(id: WorkId) -> Self {
         AnyWorkId::Be(id)
+    }
+}
+
+/// Tables other than GPOS/GSUB/GDEF generated from FEA
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct ExtraFeaTables {
+    pub name: Option<Name>,
+    // TODO: currently we only handle merging the name table
+    pub head: Option<Head>,
+    pub hhea: Option<Hhea>,
+    pub vhea: Option<Vhea>,
+    pub os2: Option<Os2>,
+    pub base: Option<Base>,
+    pub stat: Option<Stat>,
+}
+
+impl From<Compilation> for ExtraFeaTables {
+    fn from(src: Compilation) -> ExtraFeaTables {
+        let Compilation {
+            head,
+            hhea,
+            vhea,
+            os2,
+            base,
+            name,
+            stat,
+            ..
+        } = src;
+        ExtraFeaTables {
+            head,
+            hhea,
+            vhea,
+            os2,
+            base,
+            stat,
+            name,
+        }
+    }
+}
+
+impl ExtraFeaTables {
+    pub(crate) fn log_unhandled_extras(&self) {
+        for (name, unhandled) in [
+            ("head", self.head.is_some()),
+            ("hhea", self.hhea.is_some()),
+            ("vhea", self.vhea.is_some()),
+            ("os2", self.os2.is_some()),
+            ("base", self.base.is_some()),
+            ("stat", self.stat.is_some()),
+        ] {
+            if unhandled {
+                log::warn!("FEA generated unused table '{name}'");
+            }
+        }
+    }
+}
+
+// we could use serde here but it produces really big outputs; so instead
+// we can use fontwrite on each table, and then serialize an array of Option<Vec<u8>>
+impl Persistable for ExtraFeaTables {
+    fn read(from: &mut dyn Read) -> Self {
+        fn read_table<'a, T: FontRead<'a>>(bytes: Option<&'a Vec<u8>>) -> Option<T> {
+            let bytes = bytes?.as_slice();
+            Some(T::read(bytes.into()).unwrap())
+        }
+
+        let [head, hhea, vhea, os2, base, stat, name]: [Option<Vec<u8>>; 7] =
+            bincode::deserialize_from(from).unwrap();
+
+        Self {
+            head: read_table(head.as_ref()),
+            hhea: read_table(hhea.as_ref()),
+            vhea: read_table(vhea.as_ref()),
+            os2: read_table(os2.as_ref()),
+            base: read_table(base.as_ref()),
+            stat: read_table(stat.as_ref()),
+            name: read_table(name.as_ref()),
+        }
+    }
+
+    fn write(&self, to: &mut dyn Write) {
+        fn dump<T: Validate + FontWrite>(table: Option<&T>) -> Option<Vec<u8>> {
+            table.map(write_fonts::dump_table).transpose().unwrap()
+        }
+        let ExtraFeaTables {
+            head,
+            hhea,
+            vhea,
+            os2,
+            base,
+            stat,
+            name,
+        } = self;
+
+        let out = [
+            dump(head.as_ref()),
+            dump(hhea.as_ref()),
+            dump(vhea.as_ref()),
+            dump(os2.as_ref()),
+            dump(base.as_ref()),
+            dump(stat.as_ref()),
+            dump(name.as_ref()),
+        ];
+
+        bincode::serialize_into(to, &out).unwrap()
     }
 }
 
@@ -712,6 +822,7 @@ pub struct Context {
     pub fea_ast: BeContextItem<FeaAst>,
     pub fea_rs_kerns: BeContextItem<FeaRsKerns>,
     pub fea_rs_marks: BeContextItem<FeaRsMarks>,
+    pub extra_fea_tables: BeContextItem<ExtraFeaTables>,
     pub stat: BeContextItem<Stat>,
     pub font: BeContextItem<Bytes>,
 }
@@ -750,6 +861,7 @@ impl Context {
             fea_rs_marks: self.fea_rs_marks.clone_with_acl(acl.clone()),
             stat: self.stat.clone_with_acl(acl.clone()),
             fea_ast: self.fea_ast.clone_with_acl(acl.clone()),
+            extra_fea_tables: self.extra_fea_tables.clone_with_acl(acl.clone()),
             font: self.font.clone_with_acl(acl),
         }
     }
@@ -811,6 +923,11 @@ impl Context {
                 persistent_storage.clone(),
             ),
             stat: ContextItem::new(WorkId::Stat.into(), acl.clone(), persistent_storage.clone()),
+            extra_fea_tables: ContextItem::new(
+                WorkId::ExtraFeaTables.into(),
+                acl.clone(),
+                persistent_storage.clone(),
+            ),
             font: ContextItem::new(WorkId::Font.into(), acl, persistent_storage),
         }
     }
