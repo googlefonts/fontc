@@ -82,24 +82,24 @@ fn split_glyph(glyph_order: &GlyphOrder, original: &Glyph) -> Result<(Glyph, Gly
 }
 
 /// Component with full transform.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct HashableComponent {
     base: GlyphName,
     transform: [OrderedFloat<f64>; 6],
+    // <https://github.com/googlefonts/fontc/issues/1115> permit multiple identical instantiations
+    index: usize,
 }
 
 impl HashableComponent {
-    fn new(component: &Component) -> Self {
-        // by taking the first four coeffs we discard translation
-        let mut transform = [OrderedFloat(0.0f64); 6];
-        transform
-            .iter_mut()
-            .zip(component.transform.as_coeffs())
-            .for_each(|(of, f)| *of = f.into());
-        HashableComponent {
-            base: component.base.clone(),
-            transform,
-        }
+    fn affine(&self) -> Affine {
+        Affine::new([
+            self.transform[0].0,
+            self.transform[1].0,
+            self.transform[2].0,
+            self.transform[3].0,
+            self.transform[4].0,
+            self.transform[5].0,
+        ])
     }
 }
 
@@ -125,7 +125,10 @@ fn distinct_component_glyph_seqs(glyph: &Glyph) -> HashSet<Vec<GlyphName>> {
 ///
 /// Panics if the sequence of glyphs used as components (ignoring transform) is
 /// different at any point in design space.
-fn components(glyph: &Glyph, transform: Affine) -> VecDeque<(NormalizedLocation, Component)> {
+fn components(
+    glyph: &Glyph,
+    transform: Affine,
+) -> VecDeque<(NormalizedLocation, HashableComponent)> {
     if glyph.sources().is_empty() {
         return Default::default();
     }
@@ -145,12 +148,20 @@ fn components(glyph: &Glyph, transform: Affine) -> VecDeque<(NormalizedLocation,
         .sources()
         .iter()
         .flat_map(|(loc, inst)| inst.components.iter().map(|c| (loc.clone(), c)))
-        .map(|(loc, component)| {
+        .enumerate()
+        .map(|(index, (loc, component))| {
+            let coeffs = (transform * component.transform).as_coeffs();
+            let mut transform = [OrderedFloat(0f64); 6];
+            transform
+                .iter_mut()
+                .zip(coeffs)
+                .for_each(|(t, c)| *t = OrderedFloat(c));
             (
                 loc,
-                Component {
+                HashableComponent {
                     base: component.base.clone(),
-                    transform: transform * component.transform,
+                    transform,
+                    index,
                 },
             )
         })
@@ -174,13 +185,15 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
     // Note that here we care about the entire component transform
     let mut visited: HashSet<(NormalizedLocation, HashableComponent)> = HashSet::new();
     while let Some((loc, component)) = frontier.pop_front() {
-        if !visited.insert((loc.clone(), HashableComponent::new(&component))) {
+        let component_base = component.base.clone();
+        let component_affine = component.affine();
+        if !visited.insert((loc.clone(), component)) {
             continue;
         }
 
-        let referenced_glyph = context.glyphs.get(&WorkId::Glyph(component.base.clone()));
+        let referenced_glyph = context.glyphs.get(&WorkId::Glyph(component_base));
         frontier.extend(
-            components(&referenced_glyph, component.transform)
+            components(&referenced_glyph, component_affine)
                 .iter()
                 .filter(|(component_loc, _)| *component_loc == loc)
                 .cloned(),
@@ -188,7 +201,11 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
 
         // Any contours of the referenced glyph at this location should be kept
         // For now just fail if the component source locations don't match ours, don't try to interpolate
-        trace!("'{0}' retains {component:?} at {loc:?}", original.name);
+        trace!(
+            "'{}' retains {} {component_affine:?} at {loc:?}",
+            original.name,
+            referenced_glyph.name
+        );
         let Some(inst) = simple.sources.get_mut(&loc) else {
             return Err(BadGlyph::new(
                 simple.name.clone(),
@@ -204,10 +221,10 @@ fn convert_components_to_contours(context: &Context, original: &Glyph) -> Result
 
         for contour in ref_inst.contours.iter() {
             let mut contour = contour.clone();
-            contour.apply_affine(component.transform);
+            contour.apply_affine(component_affine);
 
             // See https://github.com/googlefonts/ufo2ft/blob/dd738cdcddf61cce2a744d1cafab5c9b33e92dd4/Lib/ufo2ft/util.py#L205
-            if component.transform.determinant() < 0.0 {
+            if component_affine.determinant() < 0.0 {
                 inst.contours.push(contour.reverse_subpaths());
             } else {
                 inst.contours.push(contour);
