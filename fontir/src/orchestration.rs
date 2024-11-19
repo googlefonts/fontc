@@ -5,7 +5,7 @@ use std::{
     fmt::Debug,
     fs::File,
     hash::Hash,
-    io::{BufReader, BufWriter, Read, Write},
+    io::{self, BufReader, BufWriter, Read, Write},
     sync::Arc,
 };
 
@@ -17,6 +17,7 @@ use fontdrasil::{
     types::GlyphName,
 };
 use parking_lot::RwLock;
+use write_fonts::{read::FontRead, validate::Validate, FontWrite};
 
 bitflags! {
     #[derive(Clone, Copy, Debug)]
@@ -112,26 +113,6 @@ where
         self.acl.assert_read_access(&self.id);
         self.value.read().as_ref().cloned()
     }
-
-    /// Update the value of the item whether or not it has changed.
-    ///
-    /// The change will be logged and anything relying on change detection, such as
-    /// conditional execution of dependent tasks, will fire.
-    ///
-    /// [ContextItem::set] is preferable where possible.
-    ///
-    /// This exists largely because write types in fontations do not always implement PartialEq.
-    /// TODO: should they?
-    pub fn set_unconditionally(&self, value: T) {
-        self.acl.assert_write_access(&self.id);
-
-        if self.persistent_storage.active() {
-            let mut writer = self.persistent_storage.writer(&self.id);
-            value.write(&mut writer);
-        }
-
-        *self.value.write() = Some(Arc::from(value));
-    }
 }
 
 impl<I, T, P> ContextItem<I, T, P>
@@ -157,7 +138,12 @@ where
             return;
         }
 
-        self.set_unconditionally(value);
+        if self.persistent_storage.active() {
+            let mut writer = self.persistent_storage.writer(&self.id);
+            value.write(&mut writer);
+        }
+
+        *self.value.write() = Some(Arc::from(value));
     }
 }
 
@@ -384,6 +370,22 @@ impl PersistentStorage<WorkId> for IrPersistentStorage {
             .map_err(|e| panic!("Unable to write {file:?} {e}"))
             .unwrap();
         Box::from(BufWriter::new(raw_file))
+    }
+}
+
+impl<T> Persistable for T
+where
+    for<'a> T: FontRead<'a> + FontWrite + Validate,
+{
+    fn read(from: &mut dyn Read) -> Self {
+        let mut buf = Vec::new();
+        from.read_to_end(&mut buf).unwrap();
+        T::read(buf.as_slice().into()).expect("if we wrote it we can read it")
+    }
+
+    fn write(&self, to: &mut dyn io::Write) {
+        let bytes = write_fonts::dump_table(self).unwrap();
+        to.write_all(&bytes).unwrap();
     }
 }
 

@@ -81,7 +81,7 @@ fn has(context: &Context, id: WorkId) -> bool {
 fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
     // TODO: to_vec copies :(
     let bytes = match id {
-        WorkId::Avar => to_bytes(context.avar.get().as_ref()),
+        WorkId::Avar => context.avar.get().as_ref().as_ref().and_then(to_bytes),
         WorkId::Cmap => to_bytes(context.cmap.get().as_ref()),
         WorkId::Fvar => to_bytes(context.fvar.get().as_ref()),
         WorkId::Head => to_bytes(context.head.get().as_ref()),
@@ -163,7 +163,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
         debug!("Building font");
         let font = builder.build();
         debug!("Assembled {} byte font", font.len());
-        context.font.set_unconditionally(font.into());
+        context.font.set(font.into());
         Ok(())
     }
 }

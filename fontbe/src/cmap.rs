@@ -52,7 +52,7 @@ impl Work<Context, AnyWorkId, Error> for CmapWork {
             });
 
         let cmap = Cmap::from_mappings(mappings)?;
-        context.cmap.set_unconditionally(cmap.into());
+        context.cmap.set(cmap);
         Ok(())
     }
 }

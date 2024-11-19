@@ -228,7 +228,7 @@ impl Work<Context, AnyWorkId, Error> for HvarWork {
         }
 
         let hvar = Hvar::new(MajorMinor::VERSION_1_0, varstore, varidx_map, None, None);
-        context.hvar.set_unconditionally(hvar.into());
+        context.hvar.set(hvar);
 
         Ok(())
     }

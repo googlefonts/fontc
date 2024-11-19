@@ -46,7 +46,7 @@ impl Work<Context, AnyWorkId, Error> for NameWork {
 
         context
             .name
-            .set_unconditionally(Name::new(name_records.into_iter().collect()).into());
+            .set(Name::new(name_records.into_iter().collect()));
         Ok(())
     }
 }
