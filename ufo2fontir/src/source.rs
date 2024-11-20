@@ -29,7 +29,11 @@ use norad::{
     fontinfo::StyleMapStyle,
 };
 use write_fonts::{
-    tables::{gdef::GlyphClassDef, os2::SelectionFlags},
+    tables::{
+        gdef::GlyphClassDef,
+        meta::{Metadata, ScriptLangTag, DLNG, SLNG},
+        os2::SelectionFlags,
+    },
     types::{InvalidTag, NameId, Tag},
     OtRound,
 };
@@ -664,6 +668,125 @@ fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, Ba
     Ok(postscript_names)
 }
 
+/// https://unifiedfontobject.org/versions/ufo3/lib.plist/#publicopentypemeta
+fn meta_records(lib_plist: &plist::Dictionary) -> Result<Vec<(Tag, Metadata)>, BadSource> {
+    const OPENTYPE_CATEGORIES: &str = "public.openTypeCategories";
+
+    // Registered tags that UFOv3 specifies but that are not in write-fonts
+    const APPL: Tag = Tag::new(b"appl");
+    const BILD: Tag = Tag::new(b"bild");
+
+    let property = lib_plist.get(OPENTYPE_CATEGORIES);
+
+    // TODO: Use idiomatic error handling.
+    // TODO: Simplify.
+
+    match property.map(plist::Value::as_dictionary) {
+        // Dictionary is present, interpret:
+        Some(Some(dictionary)) => dictionary
+            .iter()
+            .map(|(key, value)| {
+                // Parse each tag, and metadata as appropriate from tag.
+                let tag = Tag::new_checked(key.as_bytes()).map_err(|err| {
+                    BadSource::custom(
+                        "lib.plist",
+                        format!("meta record has an invalid tag '{}': {}", key, err),
+                    )
+                })?;
+
+                let metadata = match tag {
+                    // "If present, [...] the registered tags dlng and slng have
+                    // their values each stored as an array of ScriptLangTag
+                    // strings"
+                    DLNG | SLNG => Metadata::ScriptLangTags({
+                        // Interpret and validate as a plist array:
+                        let array = value.as_array().ok_or_else(|| {
+                            BadSource::custom(
+                                "lib.plist",
+                                format!(
+                                    "meta {} record must contain an array of ScriptLangTag strings",
+                                    tag
+                                ),
+                            )
+                        })?;
+
+                        // ...and as a plist array of strings
+                        let strings = array
+                            .iter()
+                            .map(plist::Value::as_string)
+                            .map(|value| {
+                                value.ok_or_else(|| {
+                                    BadSource::custom(
+                                        "lib.plist",
+                                        format!(
+                                            "meta {} record array must only contain <string> values",
+                                            tag
+                                        ),
+                                    )
+                                })
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        // ...and as a plist array of ScriptLangTags
+                        strings
+                            .into_iter()
+                            .map(|string| {
+                                ScriptLangTag::new(string.into()).map_err(|err| {
+                                    BadSource::custom(
+                                        "lib.plist",
+                                        format!(
+                                            "meta {} record contains an invalid \
+                                                     ScriptLangTag '{}': {}",
+                                            tag, string, err
+                                        ),
+                                    )
+                                })
+                            })
+                            .collect::<Result<_, _>>()?
+                    }),
+                    // "If present, the registered tags appl and bild have their
+                    // values stored as data"
+                    APPL | BILD => Metadata::Other(
+                        value
+                            .as_data()
+                            .ok_or_else(|| {
+                                BadSource::custom(
+                                    "lib.plist",
+                                    format!("meta table {} record must contain <data>", tag),
+                                )
+                            })?
+                            .to_vec(),
+                    ),
+                    // "Any private tag must have its value stored as data or
+                    // string"
+                    _ => {
+                        let other: Vec<u8> = match value {
+                            plist::Value::Data(vec) => Ok(vec.to_owned()),
+                            plist::Value::String(string) => Ok(string.as_bytes().to_vec()),
+                            _ => Err(BadSource::custom(
+                                "lib.plist",
+                                "Private meta table records must be <string> or <data>",
+                            )),
+                        }?;
+
+                        Metadata::Other(other)
+                    }
+                };
+
+                Ok((tag, metadata))
+            })
+            .collect(),
+
+        // Key is present but was not a dictionary, error:
+        Some(None) => Err(BadSource::custom(
+            "lib.plist",
+            "public.postscriptNames must be a dictionary",
+        )),
+        // Key was not present, use default:
+        None => Ok(Default::default()),
+    }
+}
+
 fn units_per_em<'a>(font_infos: impl Iterator<Item = &'a norad::FontInfo>) -> Result<u16, Error> {
     const MIN_UPEM: f64 = 16.0;
     const MAX_UPEM: f64 = 16384.0;
@@ -1007,6 +1130,8 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         static_metadata.misc.created =
             try_parse_date(font_info_at_default.open_type_head_created.as_ref())
                 .or(static_metadata.misc.created);
+
+        static_metadata.misc.meta = meta_records(&lib_plist)?;
 
         context.preliminary_glyph_order.set(glyph_order);
         context.static_metadata.set(static_metadata);
