@@ -32,7 +32,7 @@ impl Work<Context, AnyWorkId, Error> for NameWork {
     fn exec(&self, context: &Context) -> Result<(), Error> {
         let static_metadata = context.ir.static_metadata.get();
 
-        let name_records = static_metadata
+        let mut name_records = static_metadata
             .names
             .iter()
             .map(|(key, value)| NameRecord {
@@ -43,10 +43,9 @@ impl Work<Context, AnyWorkId, Error> for NameWork {
                 string: OffsetMarker::new(value.clone()),
             })
             .collect::<Vec<_>>();
+        name_records.sort();
 
-        context
-            .name
-            .set(Name::new(name_records.into_iter().collect()));
+        context.name.set(Name::new(name_records));
         Ok(())
     }
 }

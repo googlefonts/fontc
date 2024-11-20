@@ -54,13 +54,15 @@ impl NameBuilder {
 
     pub(crate) fn build(&self) -> Option<write_fonts::tables::name::Name> {
         (!self.records.is_empty()).then(|| {
-            write_fonts::tables::name::Name::new(
+            let mut name = write_fonts::tables::name::Name::new(
                 self.records
                     .iter()
                     .filter(|(_, spec)| spec.is_implemented_in_fontations())
                     .map(|(id, spec)| spec.build(*id))
                     .collect(),
-            )
+            );
+            name.name_record.sort();
+            name
         })
     }
 }
