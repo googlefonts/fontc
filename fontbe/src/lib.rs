@@ -9,6 +9,7 @@ pub mod glyphs;
 pub mod gvar;
 pub mod head;
 pub mod hvar;
+pub mod meta;
 pub mod metrics_and_limits;
 pub mod mvar;
 pub mod name;

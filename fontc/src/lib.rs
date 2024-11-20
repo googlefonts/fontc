@@ -29,6 +29,7 @@ use fontbe::{
     gvar::create_gvar_work,
     head::create_head_work,
     hvar::create_hvar_work,
+    meta::create_meta_work,
     metrics_and_limits::create_metric_and_limit_work,
     mvar::create_mvar_work,
     name::create_name_work,
@@ -455,6 +456,12 @@ fn add_hvar_be_job(workload: &mut Workload) -> Result<(), Error> {
     Ok(())
 }
 
+fn add_meta_be_job(workload: &mut Workload) -> Result<(), Error> {
+    let work = create_meta_work().into();
+    workload.add(work, workload.change_detector.static_metadata_ir_change());
+    Ok(())
+}
+
 fn add_mvar_be_job(workload: &mut Workload) -> Result<(), Error> {
     let work = create_mvar_work().into();
     workload.add(
@@ -516,6 +523,7 @@ pub fn create_workload(
     add_marks_be_job(&mut workload)?;
     add_metric_and_limits_job(&mut workload)?;
     add_hvar_be_job(&mut workload)?;
+    add_meta_be_job(&mut workload)?;
     add_mvar_be_job(&mut workload)?;
     add_name_be_job(&mut workload)?;
     add_os2_be_job(&mut workload)?;

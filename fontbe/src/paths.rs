@@ -89,6 +89,7 @@ impl Paths {
             WorkId::GatherBeKerning => self.build_dir.join("kern_gather.bin"),
             WorkId::Marks => self.build_dir.join("marks.bin"),
             WorkId::Maxp => self.build_dir.join("maxp.table"),
+            WorkId::Meta => self.build_dir.join("meta.table"),
             WorkId::Mvar => self.build_dir.join("mvar.table"),
             WorkId::Name => self.build_dir.join("name.table"),
             WorkId::Os2 => self.build_dir.join("os2.table"),

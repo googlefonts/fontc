@@ -14,7 +14,7 @@ use ordered_float::OrderedFloat;
 use serde::{de::Error as _, Deserialize, Serialize};
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::{gdef::GlyphClassDef, os2::SelectionFlags},
+    tables::{gdef::GlyphClassDef, meta::Metadata, os2::SelectionFlags},
     types::{GlyphId16, NameId, Tag},
     OtRound,
 };
@@ -130,6 +130,9 @@ pub struct MiscMetadata {
 
     // Allows source to explicitly control bits. <https://github.com/googlefonts/fontc/issues/1027>
     pub codepage_range_bits: Option<HashSet<u32>>,
+
+    // See <https://learn.microsoft.com/en-gb/typography/opentype/spec/meta>
+    pub meta: Vec<(Tag, Metadata)>,
 }
 
 /// PANOSE bytes
@@ -472,6 +475,7 @@ impl StaticMetadata {
                 panose: None,
                 unicode_range_bits: None,
                 codepage_range_bits: None,
+                meta: Default::default(),
             },
         })
     }
@@ -2134,6 +2138,7 @@ mod tests {
                 panose: None,
                 unicode_range_bits: None,
                 codepage_range_bits: None,
+                meta: vec![(Tag::new(b"abcd"), Metadata::Other("efghijkl".into()))],
             },
             number_values: Default::default(),
         }

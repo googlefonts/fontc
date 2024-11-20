@@ -156,6 +156,7 @@ fn short_name(id: &AnyWorkId) -> &'static str {
         AnyWorkId::Be(BeWorkIdentifier::LocaFormat) => "loca-fmt",
         AnyWorkId::Be(BeWorkIdentifier::Marks) => "Marks",
         AnyWorkId::Be(BeWorkIdentifier::Maxp) => "maxp",
+        AnyWorkId::Be(BeWorkIdentifier::Meta) => "meta",
         AnyWorkId::Be(BeWorkIdentifier::Mvar) => "MVAR",
         AnyWorkId::Be(BeWorkIdentifier::Name) => "name",
         AnyWorkId::Be(BeWorkIdentifier::Os2) => "OS/2",
