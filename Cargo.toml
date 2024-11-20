@@ -22,8 +22,8 @@ rayon = "1.6"
 icu_properties = "1.4"
 
 # fontations etc
-write-fonts = { version = "0.31.0", features = ["serde", "read"] }
-skrifa = "0.25.0"
+write-fonts = { version = "0.32.0", features = ["serde", "read"] }
+skrifa = "0.26.0"
 norad = "0.14.2"
 
 # dev dependencies
