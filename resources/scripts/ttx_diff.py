@@ -444,9 +444,9 @@ def sort_fontmake_feature_lookups(ttx):
 
     for feature in features:
         # the first item is 'Feature', the second always a comment
-        has_value = [el for el in feature.iter() if "value" in el.attrib]
-        values = sorted(int(v.attrib["value"]) for v in has_value)
-        for i, lookup_index in enumerate(has_value):
+        lookup_indices = [el for el in feature.iter() if el.tag == "LookupListIndex"]
+        values = sorted(int(v.attrib["value"]) for v in lookup_indices)
+        for i, lookup_index in enumerate(lookup_indices):
             lookup_index.attrib["value"] = str(values[i])
 
 

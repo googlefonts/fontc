@@ -10,7 +10,8 @@ use crate::compile::tags::{MAC_PLATFORM_ID, WIN_PLATFORM_ID};
 #[derive(Clone, Debug)]
 pub(crate) struct NameBuilder {
     records: Vec<(NameId, NameSpec)>,
-    last_anon_id: u16,
+    // the last used non-reserved nameid value.
+    last_nonreserved_id: NameId,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -25,14 +26,15 @@ impl Default for NameBuilder {
     fn default() -> Self {
         NameBuilder {
             records: Vec::new(),
-            last_anon_id: 255,
+            // incremented first time we call `next_name_id`
+            last_nonreserved_id: NameId::LAST_RESERVED_NAME_ID,
         }
     }
 }
 
 impl NameBuilder {
     pub(crate) fn add(&mut self, name_id: NameId, name_spec: NameSpec) {
-        self.last_anon_id = self.last_anon_id.max(name_id.to_u16());
+        self.last_nonreserved_id = self.last_nonreserved_id.max(name_id);
         self.records.push((name_id, name_spec));
     }
 
@@ -49,7 +51,9 @@ impl NameBuilder {
     }
 
     pub(crate) fn next_name_id(&self) -> NameId {
-        NameId::new(self.last_anon_id + 1)
+        self.last_nonreserved_id
+            .checked_add(1)
+            .unwrap_or(self.last_nonreserved_id)
     }
 
     pub(crate) fn build(&self) -> Option<write_fonts::tables::name::Name> {

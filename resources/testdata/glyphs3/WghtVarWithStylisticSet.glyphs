@@ -1,0 +1,418 @@
+{
+.appVersion = "3260";
+.formatVersion = 3;
+DisplayStrings = (
+"![]!"
+);
+axes = (
+{
+name = Weight;
+tag = wght;
+}
+);
+customParameters = (
+{
+name = "Use Typo Metrics";
+value = 1;
+},
+{
+name = "Has WWS Names";
+value = 1;
+}
+);
+date = "2022-12-01 04:52:20 +0000";
+familyName = WghtVar;
+features = (
+{
+code = "sub exclam by hyphen;";
+labels = (
+{
+language = dflt;
+value = "my fun feature";
+}
+);
+tag = ss01;
+}
+);
+fontMaster = (
+{
+axesValues = (
+400
+);
+id = m01;
+metricValues = (
+{
+over = 16;
+pos = 737;
+},
+{
+over = -16;
+},
+{
+over = -16;
+pos = -42;
+},
+{
+pos = 702;
+},
+{
+pos = 501;
+}
+);
+name = Regular;
+},
+{
+axesValues = (
+700
+);
+iconName = Bold;
+id = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+metricValues = (
+{
+pos = 800;
+},
+{
+},
+{
+pos = -200;
+},
+{
+pos = 700;
+},
+{
+pos = 500;
+}
+);
+name = Bold;
+}
+);
+glyphs = (
+{
+glyphname = space;
+lastChange = "2022-12-01 04:58:12 +0000";
+layers = (
+{
+layerId = m01;
+width = 200;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+width = 600;
+}
+);
+unicode = 32;
+},
+{
+glyphname = exclam;
+lastChange = "2023-06-07 22:35:08 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(354,183,l),
+(414,585,l),
+(178,585,l),
+(238,182,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(354,0,l),
+(354,107,l),
+(238,107,l),
+(238,0,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(364,176,l),
+(434,605,l),
+(159,605,l),
+(228,174,l)
+);
+},
+{
+closed = 1;
+nodes = (
+(364,-20,l),
+(364,94,l),
+(228,94,l),
+(228,-20,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 33;
+},
+{
+glyphname = hyphen;
+lastChange = "2023-06-05 23:23:03 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(131,250,l,{
+name = hr00;
+}),
+(470,250,l),
+(470,330,l),
+(131,330,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(92,224,l),
+(508,224,l),
+(508,356,l),
+(92,356,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 45;
+},
+{
+glyphname = bracketleft;
+kernLeft = bracketleft_L;
+kernRight = bracketleft_R;
+lastChange = "2023-06-07 22:37:02 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(324,637,l),
+(324,51,l),
+(454,51,l),
+(454,-10,l),
+(259,-10,l),
+(259,696,l),
+(454,696,l),
+(454,637,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(324,629,l),
+(324,58,l),
+(454,58,l),
+(454,-17,l),
+(243,-17,l),
+(243,704,l),
+(454,704,l),
+(454,629,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 91;
+},
+{
+glyphname = bracketright;
+kernLeft = bracketright_L;
+kernRight = bracketright_R;
+lastChange = "2023-06-07 22:35:47 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+closed = 1;
+nodes = (
+(259,696,l),
+(454,696,l),
+(454,-10,l),
+(259,-10,l),
+(259,51,l),
+(389,51,l),
+(389,637,l),
+(259,637,l)
+);
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+closed = 1;
+nodes = (
+(243,704,l),
+(454,704,l),
+(454,-17,l),
+(243,-17,l),
+(243,58,l),
+(373,58,l),
+(373,629,l),
+(243,629,l)
+);
+}
+);
+width = 600;
+}
+);
+unicode = 93;
+},
+{
+glyphname = "manual-component";
+lastChange = "2022-12-01 04:57:39 +0000";
+layers = (
+{
+layerId = m01;
+shapes = (
+{
+pos = (0,100);
+ref = hyphen;
+},
+{
+ref = hyphen;
+}
+);
+width = 600;
+},
+{
+layerId = "E09E0C54-128D-4FEA-B209-1B70BEFE300B";
+shapes = (
+{
+pos = (10,100);
+ref = hyphen;
+scale = (1.15,1.25);
+},
+{
+ref = hyphen;
+}
+);
+width = 600;
+}
+);
+unicode = 61;
+}
+);
+kerningLTR = {
+m01 = {
+"@MMK_L_bracketleft_R" = {
+exclam = -165;
+};
+bracketleft = {
+bracketright = -300;
+};
+exclam = {
+"@MMK_R_bracketright_L" = -160;
+exclam = -360;
+hyphen = 20;
+};
+hyphen = {
+hyphen = -150;
+};
+};
+"E09E0C54-128D-4FEA-B209-1B70BEFE300B" = {
+bracketleft = {
+bracketright = -150;
+};
+exclam = {
+exclam = -100;
+};
+hyphen = {
+hyphen = -50;
+};
+};
+};
+metrics = (
+{
+type = ascender;
+},
+{
+type = baseline;
+},
+{
+type = descender;
+},
+{
+type = "cap height";
+},
+{
+type = "x-height";
+}
+);
+properties = (
+{
+key = copyrights;
+values = (
+{
+language = dflt;
+value = "Copy!";
+}
+);
+},
+{
+key = descriptions;
+values = (
+{
+language = dflt;
+value = "The greatest weight var";
+},
+{
+language = ESP;
+value = "El mayor peso variable";
+}
+);
+},
+{
+key = familyNames;
+values = (
+{
+language = ESP;
+value = SpanishWghtVar;
+}
+);
+},
+{
+key = licenseURL;
+value = "https://example.com/my/font/license";
+},
+{
+key = versionString;
+value = "Version 1.234";
+}
+);
+unitsPerEm = 1000;
+versionMajor = 42;
+versionMinor = 42;
+}
