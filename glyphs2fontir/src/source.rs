@@ -32,7 +32,11 @@ use glyphs_reader::{
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
 use write_fonts::{
-    tables::{gdef::GlyphClassDef, os2::SelectionFlags},
+    tables::{
+        gdef::GlyphClassDef,
+        meta::{Metadata, ScriptLangTag, DLNG, SLNG},
+        os2::SelectionFlags,
+    },
     types::{NameId, Tag},
 };
 
@@ -130,6 +134,8 @@ impl GlyphsIrSource {
             unicode_range_bits: font.unicode_range_bits.clone(),
             codepage_range_bits: font.codepage_range_bits.clone(),
             panose: font.panose.clone(),
+            // TODO: Is this correct?
+            meta: font.meta.clone(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -182,6 +188,8 @@ impl GlyphsIrSource {
             unicode_range_bits: None,
             codepage_range_bits: None,
             panose: None,
+            // TODO: Is this correct?
+            meta: Default::default(),
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -490,6 +498,36 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
                 parsed.ok()
             })
             .or(static_metadata.misc.created);
+
+        // TODO: Use idiomatic error handling.
+        // TODO: This diverges from glyphsLib, which must convert a list of
+        //       records into UFO's intermediate dict representation; is this
+        //       actually an improvement, or a breaking change? What does Glyphs
+        //       do?
+        // https://github.com/googlefonts/glyphsLib/blob/74c63244fdbef1da540d646b0784ae6d2c3ca834/Lib/glyphsLib/builder/custom_params.py#L568-L584
+        static_metadata.misc.meta = font
+            .meta
+            .iter()
+            .map(|(tag, data)| {
+                let tag = Tag::new_checked(tag.as_bytes())
+                    .expect("Malformed tag in meta custom parameter");
+
+                // Glyphs expects ScriptLangTag formatting for DLNG and SLNG.
+                // https://handbook.glyphsapp.com/custom-parameter-descriptions/
+                let metadata = match tag {
+                    DLNG | SLNG => Metadata::ScriptLangTags(
+                        data.split(",")
+                            .map(Into::into)
+                            .map(ScriptLangTag::new)
+                            .collect::<Result<_, _>>()
+                            .expect("Invalid ScriptLangTag in meta custom parameter"),
+                    ),
+                    _ => Metadata::Other(data.clone().into_bytes()),
+                };
+
+                (tag, metadata)
+            })
+            .collect();
 
         context.static_metadata.set(static_metadata);
 
