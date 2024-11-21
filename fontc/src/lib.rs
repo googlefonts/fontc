@@ -830,6 +830,7 @@ mod tests {
             BeWorkIdentifier::LocaFormat.into(),
             BeWorkIdentifier::Marks.into(),
             BeWorkIdentifier::Maxp.into(),
+            BeWorkIdentifier::Meta.into(),
             BeWorkIdentifier::Mvar.into(),
             BeWorkIdentifier::Name.into(),
             BeWorkIdentifier::Os2.into(),
