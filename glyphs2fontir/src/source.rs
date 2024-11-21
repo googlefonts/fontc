@@ -27,7 +27,7 @@ use fontir::{
 };
 use glyphs_reader::{
     glyphdata::{Category, Subcategory},
-    Font, InstanceType,
+    Font, FontCustomParameters, InstanceType,
 };
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
@@ -90,46 +90,14 @@ impl GlyphsIrSource {
         // Explicitly field by field so if we add more compiler will force us to update here
         let font = Font {
             units_per_em: font.units_per_em,
-            fs_type: font.fs_type,
-            use_typo_metrics: font.use_typo_metrics,
-            has_wws_names: font.has_wws_names,
             axes: font.axes.clone(),
             masters: font.masters.clone(),
             default_master_idx: font.default_master_idx,
-            glyphs: Default::default(),
-            glyph_order: Default::default(),
             axis_mappings: font.axis_mappings.clone(),
-            virtual_masters: Default::default(),
-            features: Default::default(),
-            names: Default::default(),
             instances: font.instances.clone(),
-            version_major: Default::default(),
-            version_minor: Default::default(),
             date: None,
-            kerning_ltr: Default::default(),
-            typo_ascender: font.typo_ascender,
-            typo_descender: font.typo_descender,
-            typo_line_gap: font.typo_line_gap,
-            win_ascent: font.win_ascent,
-            win_descent: font.win_descent,
-            hhea_ascender: font.hhea_ascender,
-            hhea_descender: font.hhea_descender,
-            hhea_line_gap: font.hhea_line_gap,
-            underline_thickness: font.underline_thickness,
-            underline_position: font.underline_position,
-            strikeout_position: font.strikeout_position,
-            strikeout_size: font.strikeout_size,
-            subscript_x_offset: font.subscript_x_offset,
-            subscript_x_size: font.subscript_x_size,
-            subscript_y_offset: font.subscript_y_offset,
-            subscript_y_size: font.subscript_y_size,
-            superscript_x_offset: font.superscript_x_offset,
-            superscript_x_size: font.superscript_x_size,
-            superscript_y_offset: font.superscript_y_offset,
-            superscript_y_size: font.superscript_y_size,
-            unicode_range_bits: font.unicode_range_bits.clone(),
-            codepage_range_bits: font.codepage_range_bits.clone(),
-            panose: font.panose.clone(),
+            custom_parameters: font.custom_parameters.clone(),
+            ..Default::default()
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -142,9 +110,6 @@ impl GlyphsIrSource {
         // Explicitly field by field so if we add more compiler will force us to update here
         let font = Font {
             units_per_em: font.units_per_em,
-            fs_type: None,
-            use_typo_metrics: font.use_typo_metrics,
-            has_wws_names: None,
             axes: font.axes.clone(),
             masters: font.masters.clone(),
             default_master_idx: font.default_master_idx,
@@ -159,29 +124,14 @@ impl GlyphsIrSource {
             version_minor: Default::default(),
             date: None,
             kerning_ltr: font.kerning_ltr.clone(),
-            typo_ascender: font.typo_ascender,
-            typo_descender: font.typo_descender,
-            typo_line_gap: font.typo_line_gap,
-            win_ascent: font.win_ascent,
-            win_descent: font.win_descent,
-            hhea_ascender: font.hhea_ascender,
-            hhea_descender: font.hhea_descender,
-            hhea_line_gap: font.hhea_line_gap,
-            underline_thickness: font.underline_thickness,
-            underline_position: font.underline_position,
-            strikeout_position: font.strikeout_position,
-            strikeout_size: font.strikeout_size,
-            subscript_x_offset: font.subscript_x_offset,
-            subscript_x_size: font.subscript_x_size,
-            subscript_y_offset: font.subscript_y_offset,
-            subscript_y_size: font.subscript_y_size,
-            superscript_x_offset: font.superscript_x_offset,
-            superscript_x_size: font.superscript_x_size,
-            superscript_y_offset: font.superscript_y_offset,
-            superscript_y_size: font.superscript_y_size,
-            unicode_range_bits: None,
-            codepage_range_bits: None,
-            panose: None,
+            custom_parameters: FontCustomParameters {
+                unicode_range_bits: None,
+                codepage_range_bits: None,
+                panose: None,
+                fs_type: None,
+                has_wws_names: None,
+                ..font.custom_parameters.clone()
+            },
         };
         state.track_memory("/font_master".to_string(), &font)?;
         Ok(state)
@@ -412,10 +362,10 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
 
         let number_values = get_number_values(font_info, font);
 
-        let selection_flags = match font.use_typo_metrics.unwrap_or_default() {
+        let selection_flags = match font.custom_parameters.use_typo_metrics.unwrap_or_default() {
             true => SelectionFlags::USE_TYPO_METRICS,
             false => SelectionFlags::empty(),
-        } | match font.has_wws_names.unwrap_or_default() {
+        } | match font.custom_parameters.has_wws_names.unwrap_or_default() {
             true => SelectionFlags::WWS,
             false => SelectionFlags::empty(),
         } |
@@ -455,18 +405,20 @@ impl Work<Context, WorkId, Error> for StaticMetadataWork {
         }
 
         // Default per <https://github.com/googlefonts/glyphsLib/blob/cb8a4a914b0a33431f0a77f474bf57eec2f19bcc/Lib/glyphsLib/builder/custom_params.py#L1117-L1119>
-        static_metadata.misc.fs_type = font.fs_type.or(Some(1 << 3));
+        static_metadata.misc.fs_type = font.custom_parameters.fs_type.or(Some(1 << 3));
 
         static_metadata.misc.unicode_range_bits = font
+            .custom_parameters
             .unicode_range_bits
             .as_ref()
             .map(|bits| bits.iter().copied().collect());
         static_metadata.misc.codepage_range_bits = font
+            .custom_parameters
             .codepage_range_bits
             .as_ref()
             .map(|bits| bits.iter().copied().collect());
 
-        if let Some(raw_panose) = font.panose.as_ref() {
+        if let Some(raw_panose) = font.custom_parameters.panose.as_ref() {
             let mut bytes = [0u8; 10];
             bytes
                 .iter_mut()
@@ -598,166 +550,64 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
             metrics.set_if_some(GlobalMetric::CapHeight, pos.clone(), Some(cap_height));
             metrics.set_if_some(GlobalMetric::XHeight, pos.clone(), Some(x_height));
 
-            metrics.set_if_some(
-                GlobalMetric::Os2TypoAscender,
-                pos.clone(),
-                master
-                    .typo_ascender
-                    .or(font.typo_ascender)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::Os2TypoDescender,
-                pos.clone(),
-                master
-                    .typo_descender
-                    .or(font.typo_descender)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::Os2TypoLineGap,
-                pos.clone(),
-                master
-                    .typo_line_gap
-                    .or(font.typo_line_gap)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::Os2WinAscent,
-                pos.clone(),
-                master.win_ascent.or(font.win_ascent).map(|v| v as f64),
-            );
             // Some .glyphs files have a negative win descent so abs()
+            // we don't use the macro here because of the special abs() logic
             metrics.set_if_some(
                 GlobalMetric::Os2WinDescent,
                 pos.clone(),
                 master
                     .win_descent
-                    .or(font.win_descent)
+                    .or(font.custom_parameters.win_descent)
                     .map(|v| v.abs() as f64),
             );
-            metrics.set_if_some(
-                GlobalMetric::StrikeoutPosition,
-                pos.clone(),
-                master
-                    .strikeout_position
-                    .or(font.strikeout_position)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::StrikeoutSize,
-                pos.clone(),
-                master
-                    .strikeout_size
-                    .or(font.strikeout_size)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::SubscriptXOffset,
-                pos.clone(),
-                master
-                    .subscript_x_offset
-                    .or(font.subscript_x_offset)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::SubscriptXSize,
-                pos.clone(),
-                master
-                    .subscript_x_size
-                    .or(font.subscript_x_size)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::SubscriptYOffset,
-                pos.clone(),
-                master
-                    .subscript_y_offset
-                    .or(font.subscript_y_offset)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::SubscriptYSize,
-                pos.clone(),
-                master
-                    .subscript_y_size
-                    .or(font.subscript_y_size)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::SuperscriptXOffset,
-                pos.clone(),
-                master
-                    .superscript_x_offset
-                    .or(font.superscript_x_offset)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::SuperscriptXSize,
-                pos.clone(),
-                master
-                    .superscript_x_size
-                    .or(font.superscript_x_size)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::SuperscriptYOffset,
-                pos.clone(),
-                master
-                    .superscript_y_offset
-                    .or(font.superscript_y_offset)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::SuperscriptYSize,
-                pos.clone(),
-                master
-                    .superscript_y_size
-                    .or(font.superscript_y_size)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::HheaAscender,
-                pos.clone(),
-                master
-                    .hhea_ascender
-                    .or(font.hhea_ascender)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::HheaDescender,
-                pos.clone(),
-                master
-                    .hhea_descender
-                    .or(font.hhea_descender)
-                    .map(|v| v as f64),
-            );
-            metrics.set_if_some(
-                GlobalMetric::HheaLineGap,
-                pos.clone(),
-                master
-                    .hhea_line_gap
-                    .or(font.hhea_line_gap)
-                    .map(|v| v as f64),
-            );
+
+            macro_rules! set_metric {
+                // the most common pattern
+                ($variant:ident, $field_name:ident) => {
+                    set_metric!(
+                        $variant,
+                        master
+                            .$field_name
+                            .or(font.custom_parameters.$field_name)
+                            .map(|v| v as f64)
+                    )
+                };
+                // a few fields have a manual default though
+                ($variant:ident, $field_name:ident, $fallback:literal) => {
+                    set_metric!(
+                        $variant,
+                        master
+                            .$field_name
+                            .or(font.custom_parameters.$field_name)
+                            .or(Some($fallback.into()))
+                    )
+                };
+                // base case, both branches above resolve to this
+                ($variant:ident, $getter:expr ) => {
+                    metrics.set_if_some(GlobalMetric::$variant, pos.clone(), $getter)
+                };
+            }
+            set_metric!(Os2TypoAscender, typo_ascender);
+            set_metric!(Os2TypoDescender, typo_descender);
+            set_metric!(Os2TypoLineGap, typo_line_gap);
+            set_metric!(Os2WinAscent, win_ascent);
+            set_metric!(StrikeoutPosition, strikeout_position);
+            set_metric!(StrikeoutSize, strikeout_size);
+            set_metric!(SubscriptXOffset, subscript_x_offset);
+            set_metric!(SubscriptXSize, subscript_x_size);
+            set_metric!(SubscriptYOffset, subscript_y_offset);
+            set_metric!(SubscriptYSize, subscript_y_size);
+            set_metric!(SuperscriptXOffset, superscript_x_offset);
+            set_metric!(SuperscriptXSize, superscript_x_size);
+            set_metric!(SuperscriptYOffset, superscript_y_offset);
+            set_metric!(SuperscriptYSize, superscript_y_size);
+            set_metric!(HheaAscender, hhea_ascender);
+            set_metric!(HheaDescender, hhea_descender);
+            set_metric!(HheaLineGap, hhea_line_gap);
             // 50.0 is the Glyphs default <https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/custom_params.py#L1136-L1156>
-            metrics.set_if_some(
-                GlobalMetric::UnderlineThickness,
-                pos.clone(),
-                master
-                    .underline_thickness
-                    .or(font.underline_thickness)
-                    .or(Some(OrderedFloat(50.0))),
-            );
+            set_metric!(UnderlineThickness, underline_thickness, 50.0);
             // -100.0 is the Glyphs default <https://github.com/googlefonts/glyphsLib/blob/9d5828d874110c42dfc5f542db8eb84f88641eb5/Lib/glyphsLib/builder/custom_params.py#L1136-L1156>
-            metrics.set_if_some(
-                GlobalMetric::UnderlinePosition,
-                pos.clone(),
-                master
-                    .underline_position
-                    .or(font.underline_position)
-                    .or(Some(OrderedFloat(-100.0))),
-            );
+            set_metric!(UnderlinePosition, underline_position, -100.0);
 
             metrics.populate_defaults(
                 pos,
