@@ -668,7 +668,7 @@ fn postscript_names(lib_plist: &plist::Dictionary) -> Result<PostscriptNames, Ba
     Ok(postscript_names)
 }
 
-/// https://unifiedfontobject.org/versions/ufo3/lib.plist/#publicopentypemeta
+/// <https://unifiedfontobject.org/versions/ufo3/lib.plist/#publicopentypemeta>
 fn meta_records(lib_plist: &plist::Dictionary) -> Result<Vec<(Tag, Metadata)>, BadSource> {
     // TODO: Use idiomatic error handling.
     // TODO: Simplify.
