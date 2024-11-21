@@ -178,9 +178,11 @@ impl FromPlist for Kerning {
     }
 }
 
+/// A chunk of FEA code
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct FeatureSnippet {
     pub content: String,
+    /// If `true` the content should be ignored.
     pub disabled: bool,
 }
 
@@ -1984,21 +1986,18 @@ static GLYPHS_TO_OPENTYPE_LANGUAGE_ID: &[(&str, i32)] = &[
 
 impl RawFeature {
     // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L43
-    fn autostr(&self) -> String {
+    fn autostr(&self) -> &str {
         match self.automatic {
-            Some(1) => "# automatic\n".to_string(),
-            _ => "".to_string(),
+            Some(1) => "# automatic\n",
+            _ => "",
         }
     }
 
-    fn name(&self) -> Result<String, Error> {
-        match (&self.name, &self.tag) {
-            (Some(name), _) => Ok(name.clone()),
-            (None, Some(tag)) => Ok(tag.clone()),
-            (None, None) => Err(Error::StructuralError(format!(
-                "{self:?} missing name and tag"
-            ))),
-        }
+    fn name(&self) -> Result<&str, Error> {
+        self.name
+            .as_deref()
+            .or(self.tag.as_deref())
+            .ok_or_else(|| Error::StructuralError(format!("{self:?} missing name and tag")))
     }
 
     fn disabled(&self) -> bool {
@@ -2031,42 +2030,37 @@ impl RawFeature {
             .join("\n");
         format!("featureNames {{\n{}\n}};\n", labels)
     }
-}
 
-// https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L90
-fn prefix_to_feature(prefix: RawFeature) -> Result<FeatureSnippet, Error> {
-    let name = match &prefix.name {
-        Some(name) => name.as_str(),
-        None => "",
-    };
-    let code = format!("# Prefix: {}\n{}{}", name, prefix.autostr(), prefix.code);
-    Ok(FeatureSnippet::new(code, prefix.disabled()))
-}
+    // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L90
+    fn prefix_to_feature(&self) -> Result<FeatureSnippet, Error> {
+        let name = self.name.as_deref().unwrap_or_default();
+        let code = format!("# Prefix: {}\n{}{}", name, self.autostr(), self.code);
+        Ok(FeatureSnippet::new(code, self.disabled()))
+    }
 
-// https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L101
-fn class_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> {
-    let name = feature.name()?;
-    let code = format!(
-        "{}{}{} = [ {}\n];",
-        feature.autostr(),
-        if name.starts_with('@') { "" } else { "@" },
-        name,
-        feature.code
-    );
-    Ok(FeatureSnippet::new(code, feature.disabled()))
-}
+    // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L101
+    fn class_to_feature(&self) -> Result<FeatureSnippet, Error> {
+        let name = self.name()?;
+        let code = format!(
+            "{}{}{name} = [ {}\n];",
+            self.autostr(),
+            if name.starts_with('@') { "" } else { "@" },
+            self.code
+        );
+        Ok(FeatureSnippet::new(code, self.disabled()))
+    }
 
-// https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L113
-fn raw_feature_to_feature(feature: RawFeature) -> Result<FeatureSnippet, Error> {
-    let name = feature.name()?;
-    let code = format!(
-        "feature {0} {{\n{1}{2}{3}\n}} {0};",
-        name,
-        feature.autostr(),
-        feature.feature_names(),
-        feature.code
-    );
-    Ok(FeatureSnippet::new(code, feature.disabled()))
+    // https://github.com/googlefonts/glyphsLib/blob/24b4d340e4c82948ba121dcfe563c1450a8e69c9/Lib/glyphsLib/builder/features.py#L113
+    fn raw_feature_to_feature(&self) -> Result<FeatureSnippet, Error> {
+        let name = self.name()?;
+        let code = format!(
+            "feature {name} {{\n{}{}{}\n}} {name};",
+            self.autostr(),
+            self.feature_names(),
+            self.code
+        );
+        Ok(FeatureSnippet::new(code, self.disabled()))
+    }
 }
 
 /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/classes.py#L220-L249>
@@ -2283,13 +2277,13 @@ impl TryFrom<RawFont> for Font {
 
         let mut features = Vec::new();
         for class in from.classes {
-            features.push(class_to_feature(class)?);
+            features.push(class.class_to_feature()?);
         }
         for prefix in from.feature_prefixes {
-            features.push(prefix_to_feature(prefix)?);
+            features.push(prefix.prefix_to_feature()?);
         }
         for feature in from.features {
-            features.push(raw_feature_to_feature(feature)?);
+            features.push(feature.raw_feature_to_feature()?);
         }
 
         let Some(units_per_em) = from.units_per_em else {
