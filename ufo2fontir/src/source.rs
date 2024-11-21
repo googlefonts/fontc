@@ -673,13 +673,13 @@ fn meta_records(lib_plist: &plist::Dictionary) -> Result<Vec<(Tag, Metadata)>, B
     // TODO: Use idiomatic error handling.
     // TODO: Simplify.
 
-    const OPENTYPE_CATEGORIES: &str = "public.openTypeCategories";
+    const OPENTYPE_META: &str = "public.openTypeMeta";
 
     // Registered tags that UFOv3 specifies but that are not in write-fonts
     const APPL: Tag = Tag::new(b"appl");
     const BILD: Tag = Tag::new(b"bild");
 
-    let Some(property) = lib_plist.get(OPENTYPE_CATEGORIES) else {
+    let Some(property) = lib_plist.get(OPENTYPE_META) else {
         // Key was not present, use default:
         return Ok(Default::default());
     };
@@ -688,7 +688,7 @@ fn meta_records(lib_plist: &plist::Dictionary) -> Result<Vec<(Tag, Metadata)>, B
         // Key is present but was not a dictionary, error.
         return Err(BadSource::custom(
             "lib.plist",
-            "public.postscriptNames must be a dictionary",
+            "public.openTypeMeta must be a dictionary",
         ));
     };
 
