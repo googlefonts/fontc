@@ -89,6 +89,9 @@ pub struct Font {
     pub unicode_range_bits: Option<BTreeSet<u32>>,
     pub codepage_range_bits: Option<BTreeSet<u32>>,
     pub panose: Option<Vec<i64>>,
+
+    /// Read from "meta Table" custom parameter.
+    pub meta: Vec<(String, String)>,
 }
 
 /// master id => { (name or class, name or class) => adjustment }
@@ -415,6 +418,13 @@ impl CustomParameters {
         })
     }
 
+    fn meta(&self) -> Option<&Vec<MetaRecord>> {
+        let Some(CustomParameterValue::MetaRecords(records)) = self.get("meta Table") else {
+            return None;
+        };
+        Some(records)
+    }
+
     fn fs_type(&self) -> Option<&Vec<i64>> {
         let Some(CustomParameterValue::FsType(bits)) = self.get("fsType") else {
             return None;
@@ -462,6 +472,7 @@ enum CustomParameterValue {
     UnicodeRange(Vec<i64>),
     CodepageRange(Vec<i64>),
     Panose(Vec<i64>),
+    MetaRecords(Vec<MetaRecord>),
 }
 
 /// Hand-parse these because they take multiple shapes
@@ -581,6 +592,12 @@ impl FromPlist for CustomParameters {
                                 };
                                 value = Some(CustomParameterValue::Panose(tokenizer.parse()?));
                             }
+                            _ if name == Some(String::from("meta Table")) => {
+                                let Token::OpenParen = peek else {
+                                    return Err(Error::UnexpectedChar('('));
+                                };
+                                value = Some(CustomParameterValue::MetaRecords(tokenizer.parse()?));
+                            }
                             _ => tokenizer.skip_rec()?,
                         }
                         // once we've seen the value we're always done
@@ -627,6 +644,12 @@ pub struct AxisLocation {
 pub struct AxisMapping {
     tag: String,
     user_to_design: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
+pub struct MetaRecord {
+    tag: String,
+    data: String,
 }
 
 impl FromPlist for AxisMapping {
@@ -2423,6 +2446,15 @@ impl TryFrom<RawFont> for Font {
             })
             .collect();
 
+        // If any meta records were provided, convert to tuples for IR.
+        let meta = from
+            .custom_parameters
+            .meta()
+            .into_iter()
+            .flatten()
+            .map(|record| (record.tag.clone(), record.data.clone()))
+            .collect();
+
         Ok(Font {
             units_per_em,
             fs_type,
@@ -2465,6 +2497,7 @@ impl TryFrom<RawFont> for Font {
             unicode_range_bits,
             codepage_range_bits,
             panose,
+            meta,
         })
     }
 }

@@ -8,7 +8,7 @@ use write_fonts::{
     tables::{
         avar::Avar, cmap::Cmap, fvar::Fvar, gdef::Gdef, glyf::Glyf, gpos::Gpos, gsub::Gsub,
         gvar::Gvar, head::Head, hhea::Hhea, hmtx::Hmtx, hvar::Hvar, loca::Loca, maxp::Maxp,
-        mvar::Mvar, name::Name, os2::Os2, post::Post, stat::Stat,
+        meta::Meta, mvar::Mvar, name::Name, os2::Os2, post::Post, stat::Stat,
     },
     types::Tag,
     FontBuilder,
@@ -45,6 +45,7 @@ const TABLES_TO_MERGE: &[(WorkId, Tag, TableType)] = &[
     (WorkId::Gvar, Gvar::TAG, TableType::Variable),
     (WorkId::Loca, Loca::TAG, TableType::Static),
     (WorkId::Maxp, Maxp::TAG, TableType::Static),
+    (WorkId::Meta, Meta::TAG, TableType::Static),
     (WorkId::Name, Name::TAG, TableType::Static),
     (WorkId::Os2, Os2::TAG, TableType::Static),
     (WorkId::Post, Post::TAG, TableType::Static),
@@ -68,6 +69,7 @@ fn has(context: &Context, id: WorkId) -> bool {
         WorkId::Gvar => context.gvar.try_get().is_some(),
         WorkId::Loca => context.loca.try_get().is_some(),
         WorkId::Maxp => context.maxp.try_get().is_some(),
+        WorkId::Meta => context.meta.try_get().is_some(),
         WorkId::Name => context.name.try_get().is_some(),
         WorkId::Os2 => context.os2.try_get().is_some(),
         WorkId::Post => context.post.try_get().is_some(),
@@ -94,6 +96,7 @@ fn bytes_for(context: &Context, id: WorkId) -> Result<Option<Vec<u8>>, Error> {
         WorkId::Gvar => Some(context.gvar.get().as_ref().get().to_vec()),
         WorkId::Loca => Some(context.loca.get().as_ref().get().to_vec()),
         WorkId::Maxp => to_bytes(context.maxp.get().as_ref()),
+        WorkId::Meta => to_bytes(context.meta.get().as_ref()),
         WorkId::Name => to_bytes(context.name.get().as_ref()),
         WorkId::Os2 => to_bytes(context.os2.get().as_ref()),
         WorkId::Post => to_bytes(context.post.get().as_ref()),
@@ -125,6 +128,7 @@ impl Work<Context, AnyWorkId, Error> for FontWork {
             .variant(WorkId::Gvar)
             .variant(WorkId::Loca)
             .variant(WorkId::Maxp)
+            .variant(WorkId::Meta)
             .variant(WorkId::Name)
             .variant(WorkId::Os2)
             .variant(WorkId::Post)
