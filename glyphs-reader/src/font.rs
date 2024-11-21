@@ -1253,6 +1253,87 @@ fn v2_to_v3_name(properties: &mut Vec<RawName>, v2_prop: Option<&str>, v3_name: 
 }
 
 impl RawFont {
+    pub fn load(glyphs_file: &path::Path) -> Result<Self, Error> {
+        if glyphs_file.extension() == Some(OsStr::new("glyphspackage")) {
+            return Self::load_package(glyphs_file);
+        }
+
+        debug!("Read glyphs {glyphs_file:?}");
+        let raw_content = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
+        let raw_content = preprocess_unparsed_plist(&raw_content);
+        Self::parse_plist(&raw_content)
+            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), e.to_string()))
+    }
+
+    /// load from a .glyphspackage
+    fn load_package(glyphs_package: &path::Path) -> Result<RawFont, Error> {
+        if !glyphs_package.is_dir() {
+            return Err(Error::NotAGlyphsPackage(glyphs_package.to_path_buf()));
+        }
+        debug!("Read glyphs package {glyphs_package:?}");
+
+        let fontinfo_file = glyphs_package.join("fontinfo.plist");
+        let fontinfo_data = fs::read_to_string(&fontinfo_file).map_err(Error::IoError)?;
+        let mut raw_font = RawFont::parse_plist(&fontinfo_data)
+            .map_err(|e| Error::ParseError(fontinfo_file.to_path_buf(), format!("{e}")))?;
+
+        let mut glyphs: HashMap<SmolStr, RawGlyph> = HashMap::new();
+        let glyphs_dir = glyphs_package.join("glyphs");
+        if glyphs_dir.is_dir() {
+            for entry in fs::read_dir(glyphs_dir).map_err(Error::IoError)? {
+                let entry = entry.map_err(Error::IoError)?;
+                let path = entry.path();
+                if path.extension() == Some(OsStr::new("glyph")) {
+                    let glyph_data = fs::read_to_string(&path).map_err(Error::IoError)?;
+                    let glyph_data = preprocess_unparsed_plist(&glyph_data);
+                    let glyph = RawGlyph::parse_plist(&glyph_data)
+                        .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
+                    if glyph.glyphname.is_empty() {
+                        return Err(Error::ParseError(
+                            path.clone(),
+                            "Glyph dict must have a 'glyphname' key".to_string(),
+                        ));
+                    }
+                    glyphs.insert(glyph.glyphname.clone(), glyph);
+                }
+            }
+        }
+
+        // if order.plist file exists, read it and sort glyphs in it accordingly
+        let order_file = glyphs_package.join("order.plist");
+        let mut ordered_glyphs = Vec::new();
+        if order_file.exists() {
+            let order_data = fs::read_to_string(&order_file).map_err(Error::IoError)?;
+            let order_plist = Plist::parse(&order_data)
+                .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
+            let order = order_plist
+                .expect_array()
+                .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
+            for glyph_name in order {
+                let glyph_name = glyph_name
+                    .expect_string()
+                    .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
+                if let Some(glyph) = glyphs.remove(glyph_name.as_str()) {
+                    ordered_glyphs.push(glyph);
+                }
+            }
+        }
+        // sort the glyphs not in order.plist by their name
+        let mut glyph_names: Vec<_> = glyphs.keys().cloned().collect();
+        glyph_names.sort();
+        ordered_glyphs.extend(
+            glyph_names
+                .into_iter()
+                .map(|glyph_name| glyphs.remove(&glyph_name).unwrap()),
+        );
+        assert!(glyphs.is_empty());
+        raw_font.glyphs = ordered_glyphs;
+
+        // ignore UIState.plist which stuff like displayStrings that are not used by us
+
+        Ok(raw_font)
+    }
+
     fn is_v2(&self) -> bool {
         self.format_version < 3
     }
@@ -2480,92 +2561,14 @@ fn preprocess_unparsed_plist(s: &str) -> Cow<str> {
 
 impl Font {
     pub fn load(glyphs_file: &path::Path) -> Result<Font, Error> {
-        let mut font = Self::load_impl(glyphs_file)?;
+        let mut font = Self::load_raw(glyphs_file)?;
         font.propagate_all_anchors();
         Ok(font)
     }
 
     // load without propagating anchors
-    pub(crate) fn load_impl(glyphs_file: impl AsRef<path::Path>) -> Result<Font, Error> {
-        let glyphs_file = glyphs_file.as_ref();
-        if glyphs_file.extension() == Some(OsStr::new("glyphspackage")) {
-            return Font::load_package(glyphs_file);
-        }
-
-        debug!("Read glyphs {glyphs_file:?}");
-        let raw_content = fs::read_to_string(glyphs_file).map_err(Error::IoError)?;
-        let raw_content = preprocess_unparsed_plist(&raw_content);
-        let raw_font = RawFont::parse_plist(&raw_content)
-            .map_err(|e| Error::ParseError(glyphs_file.to_path_buf(), format!("{e}")))?;
-        raw_font.try_into()
-    }
-
-    fn load_package(glyphs_package: &path::Path) -> Result<Font, Error> {
-        if !glyphs_package.is_dir() {
-            return Err(Error::NotAGlyphsPackage(glyphs_package.to_path_buf()));
-        }
-        debug!("Read glyphs package {glyphs_package:?}");
-
-        let fontinfo_file = glyphs_package.join("fontinfo.plist");
-        let fontinfo_data = fs::read_to_string(&fontinfo_file).map_err(Error::IoError)?;
-        let mut raw_font = RawFont::parse_plist(&fontinfo_data)
-            .map_err(|e| Error::ParseError(fontinfo_file.to_path_buf(), format!("{e}")))?;
-
-        let mut glyphs: HashMap<SmolStr, RawGlyph> = HashMap::new();
-        let glyphs_dir = glyphs_package.join("glyphs");
-        if glyphs_dir.is_dir() {
-            for entry in fs::read_dir(glyphs_dir).map_err(Error::IoError)? {
-                let entry = entry.map_err(Error::IoError)?;
-                let path = entry.path();
-                if path.extension() == Some(OsStr::new("glyph")) {
-                    let glyph_data = fs::read_to_string(&path).map_err(Error::IoError)?;
-                    let glyph_data = preprocess_unparsed_plist(&glyph_data);
-                    let glyph = RawGlyph::parse_plist(&glyph_data)
-                        .map_err(|e| Error::ParseError(path.clone(), e.to_string()))?;
-                    if glyph.glyphname.is_empty() {
-                        return Err(Error::ParseError(
-                            path.clone(),
-                            "Glyph dict must have a 'glyphname' key".to_string(),
-                        ));
-                    }
-                    glyphs.insert(glyph.glyphname.clone(), glyph);
-                }
-            }
-        }
-
-        // if order.plist file exists, read it and sort glyphs in it accordingly
-        let order_file = glyphs_package.join("order.plist");
-        let mut ordered_glyphs = Vec::new();
-        if order_file.exists() {
-            let order_data = fs::read_to_string(&order_file).map_err(Error::IoError)?;
-            let order_plist = Plist::parse(&order_data)
-                .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
-            let order = order_plist
-                .expect_array()
-                .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
-            for glyph_name in order {
-                let glyph_name = glyph_name
-                    .expect_string()
-                    .map_err(|e| Error::ParseError(order_file.to_path_buf(), e.to_string()))?;
-                if let Some(glyph) = glyphs.remove(glyph_name.as_str()) {
-                    ordered_glyphs.push(glyph);
-                }
-            }
-        }
-        // sort the glyphs not in order.plist by their name
-        let mut glyph_names: Vec<_> = glyphs.keys().cloned().collect();
-        glyph_names.sort();
-        ordered_glyphs.extend(
-            glyph_names
-                .into_iter()
-                .map(|glyph_name| glyphs.remove(&glyph_name).unwrap()),
-        );
-        assert!(glyphs.is_empty());
-        raw_font.glyphs = ordered_glyphs;
-
-        // ignore UIState.plist which stuff like displayStrings that are not used by us
-
-        raw_font.try_into()
+    pub(crate) fn load_raw(glyphs_file: impl AsRef<path::Path>) -> Result<Font, Error> {
+        RawFont::load(glyphs_file.as_ref()).and_then(Font::try_from)
     }
 
     pub fn default_master(&self) -> &FontMaster {
