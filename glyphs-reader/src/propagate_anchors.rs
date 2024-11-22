@@ -963,7 +963,7 @@ mod tests {
     #[test]
     fn real_files() {
         let expected =
-            Font::load_impl("../resources/testdata/glyphs3/PropagateAnchorsTest-propagated.glyphs")
+            Font::load_raw("../resources/testdata/glyphs3/PropagateAnchorsTest-propagated.glyphs")
                 .unwrap();
         let font = Font::load(std::path::Path::new(
             "../resources/testdata/glyphs3/PropagateAnchorsTest.glyphs",
