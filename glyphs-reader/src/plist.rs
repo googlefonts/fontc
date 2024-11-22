@@ -393,6 +393,13 @@ impl FromPlist for Plist {
     }
 }
 
+impl Default for Plist {
+    fn default() -> Self {
+        // kind of arbitrary but seems okay
+        Plist::Array(Vec::new())
+    }
+}
+
 fn hex_digits_for_byte(byte: u8) -> [char; 2] {
     fn to_hex_digit(val: u8) -> char {
         match val {
@@ -808,11 +815,6 @@ impl VecDelimiters {
         start: b'{',
         end: b'}',
         sep: b',',
-    };
-    pub(crate) const SEMICOLON_SV_IN_BRACES: VecDelimiters = VecDelimiters {
-        start: b'{',
-        end: b'}',
-        sep: b';',
     };
 }
 

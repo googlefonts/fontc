@@ -347,7 +347,107 @@ struct NumberName {
 // we use a vec of tuples instead of a map because there can be multiple
 // values for the same name (e.g. 'Virtual Master')
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct RawCustomParameters(Vec<(String, CustomParameterValue)>);
+pub(crate) struct RawCustomParameters(Vec<RawCustomParameterValue>);
+
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, FromPlist)]
+struct RawCustomParameterValue {
+    name: SmolStr,
+    value: Plist,
+    disabled: Option<bool>,
+}
+
+impl FromPlist for RawCustomParameters {
+    fn parse(tokenizer: &mut Tokenizer) -> Result<Self, crate::plist::Error> {
+        Vec::parse(tokenizer).map(RawCustomParameters)
+    }
+}
+
+/// Convenience methods for converting `Plist` structs to concrete custom param types
+trait PlistParamsExt {
+    fn expect_bool(&self) -> Option<bool>;
+    fn expect_vec_of_ints(&self) -> Option<Vec<i64>>;
+    fn expect_axis_locations(&self) -> Option<Vec<AxisLocation>>;
+    fn expect_vec_of_string(&self) -> Option<Vec<SmolStr>>;
+    fn expect_axes(&self) -> Option<Vec<Axis>>;
+    fn expect_axis_mappings(&self) -> Option<Vec<AxisMapping>>;
+}
+
+impl PlistParamsExt for Plist {
+    fn expect_bool(&self) -> Option<bool> {
+        self.as_i64().map(|val| val == 1)
+    }
+    fn expect_vec_of_ints(&self) -> Option<Vec<i64>> {
+        self.as_array()?.iter().map(Plist::as_i64).collect()
+    }
+
+    fn expect_axis_locations(&self) -> Option<Vec<AxisLocation>> {
+        fn plist_to_axis_loc(plist: &Plist) -> Option<AxisLocation> {
+            let plist = plist.as_dict()?;
+            let name = plist.get("Axis").and_then(Plist::as_str)?;
+            let location = plist.get("Location").and_then(Plist::as_f64)?;
+            Some(AxisLocation {
+                axis_name: name.into(),
+                location: location.into(),
+            })
+        }
+        self.as_array()?.iter().map(plist_to_axis_loc).collect()
+    }
+
+    fn expect_vec_of_string(&self) -> Option<Vec<SmolStr>> {
+        self.as_array()?
+            .iter()
+            .map(|plist| plist.as_str().map(SmolStr::from))
+            .collect()
+    }
+
+    fn expect_axes(&self) -> Option<Vec<Axis>> {
+        fn plist_to_axis(plist: &Plist) -> Option<Axis> {
+            let plist = plist.as_dict()?;
+            let name = plist.get("Name").and_then(Plist::as_str)?;
+            let tag = plist.get("Tag").and_then(Plist::as_str)?;
+            let hidden = plist.get("hidden").and_then(Plist::expect_bool);
+            Some(Axis {
+                name: name.into(),
+                tag: tag.into(),
+                hidden,
+            })
+        }
+
+        self.as_array()?.iter().map(plist_to_axis).collect()
+    }
+
+    fn expect_axis_mappings(&self) -> Option<Vec<AxisMapping>> {
+        // our keys are strings, but we want to interpret them as floats:
+        fn plist_to_mapping_values(
+            plist: &Plist,
+        ) -> Option<Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>> {
+            let plist = plist.as_dict()?;
+            plist
+                .iter()
+                .map(|(key, value)| {
+                    let key = key
+                        .parse::<f64>()
+                        .or_else(|_| key.parse::<i64>().map(|i| i as f64))
+                        .ok()?;
+                    let val = value.as_f64()?;
+                    Some((key.into(), val.into()))
+                })
+                .collect()
+        }
+
+        fn plist_to_axis_mappings(key_value: (&SmolStr, &Plist)) -> Option<AxisMapping> {
+            let (key, mappings) = key_value;
+            let user_to_design = plist_to_mapping_values(mappings)?;
+
+            Some(AxisMapping {
+                tag: key.to_string(),
+                user_to_design,
+            })
+        }
+
+        self.as_dict()?.iter().map(plist_to_axis_mappings).collect()
+    }
+}
 
 impl RawCustomParameters {
     /// convert into the parsed params for a top-level font
@@ -369,7 +469,7 @@ impl RawCustomParameters {
             })
             .transpose()?;
 
-        let panose = self.panose().cloned();
+        let panose = self.panose();
         Ok(FontCustomParameters {
             use_typo_metrics: self.bool("Use Typo Metrics"),
             has_wws_names: self.bool("Has WWS Names"),
@@ -401,24 +501,17 @@ impl RawCustomParameters {
     }
 
     /// Get the first parameter with the given name, or `None` if not found.
-    fn get(&self, name: &str) -> Option<&CustomParameterValue> {
-        self.0.iter().find_map(|(n, v)| (n == name).then_some(v))
+    fn get(&self, name: &str) -> Option<&Plist> {
+        let item = self.0.iter().find(|val| (val.name == name))?;
+        (item.disabled != Some(true)).then_some(&item.value)
     }
 
     fn int(&self, name: &str) -> Option<i64> {
-        let Some(CustomParameterValue::Int(i)) = self.get(name) else {
-            return None;
-        };
-        Some(*i)
+        self.get(name).and_then(Plist::as_i64)
     }
 
     fn float(&self, name: &str) -> Option<OrderedFloat<f64>> {
-        let value = self.get(name)?;
-        match value {
-            CustomParameterValue::Int(i) => Some((*i as f64).into()),
-            CustomParameterValue::Float(f) => Some(*f),
-            _ => None,
-        }
+        self.get(name).and_then(Plist::as_f64).map(OrderedFloat)
     }
 
     fn bool(&self, name: &str) -> Option<bool> {
@@ -426,251 +519,92 @@ impl RawCustomParameters {
     }
 
     fn string(&self, name: &str) -> Option<&str> {
-        let Some(CustomParameterValue::String(str)) = self.get(name) else {
-            return None;
-        };
-        Some(str)
+        self.get(name).and_then(Plist::as_str)
     }
 
-    fn axes(&self) -> Option<&Vec<Axis>> {
-        let Some(CustomParameterValue::Axes(axes)) = self.get("Axes") else {
-            return None;
-        };
-        Some(axes)
+    fn axes(&self) -> Option<Vec<Axis>> {
+        self.get("Axes").and_then(Plist::expect_axes)
     }
 
-    fn axis_mappings(&self) -> Option<&Vec<AxisMapping>> {
-        let Some(CustomParameterValue::AxesMappings(mappings)) = self.get("Axis Mappings") else {
-            return None;
-        };
-        Some(mappings)
+    fn axis_mappings(&self) -> Option<Vec<AxisMapping>> {
+        self.get("Axis Mappings")
+            .and_then(Plist::expect_axis_mappings)
     }
 
-    fn axis_locations(&self) -> Option<&Vec<AxisLocation>> {
-        let Some(CustomParameterValue::AxisLocations(locations)) = self.get("Axis Location") else {
-            return None;
-        };
-        Some(locations)
+    fn axis_locations(&self) -> Option<Vec<AxisLocation>> {
+        self.get("Axis Location")
+            .and_then(Plist::expect_axis_locations)
     }
 
-    fn glyph_order(&self) -> Option<&Vec<SmolStr>> {
-        let Some(CustomParameterValue::GlyphOrder(names)) = self.get("glyphOrder") else {
-            return None;
-        };
-        Some(names)
+    fn glyph_order(&self) -> Option<Vec<SmolStr>> {
+        self.get("glyphOrder").and_then(Plist::expect_vec_of_string)
     }
 
-    fn virtual_masters(&self) -> impl Iterator<Item = &Vec<AxisLocation>> {
-        self.0.iter().filter_map(|(name, value)| {
-            if name == "Virtual Master" {
-                let CustomParameterValue::VirtualMaster(locations) = value else {
-                    panic!("Virtual Master parameter has wrong type!");
-                };
-                return Some(locations);
-            }
-            None
-        })
+    fn virtual_masters(&self) -> impl Iterator<Item = Vec<AxisLocation>> + use<'_> {
+        // this field allows multiple entries with the same key
+        self.0
+            .iter()
+            .filter_map(|item| {
+                (item.name == "Virtual Master")
+                    .then_some(item.value.as_array())
+                    .flatten()
+            })
+            // each entry is an array of dictionaries, each dict has 'Axis' and 'Location' keys
+            .filter_map(|locations| {
+                locations
+                    .iter()
+                    .map(|loc| {
+                        let loc = loc.as_dict()?;
+                        let axis = loc.get("Axis").and_then(Plist::as_str)?;
+                        let location = loc.get("Location").and_then(Plist::as_f64)?;
+                        Some(AxisLocation {
+                            axis_name: axis.to_owned(),
+                            location: location.into(),
+                        })
+                    })
+                    .collect::<Option<_>>()
+            })
     }
 
-    fn fs_type(&self) -> Option<&Vec<i64>> {
-        let Some(CustomParameterValue::FsType(bits)) = self.get("fsType") else {
-            return None;
-        };
-        Some(bits)
+    fn fs_type(&self) -> Option<Vec<i64>> {
+        self.get("fsType").and_then(Plist::expect_vec_of_ints)
     }
 
-    fn unicode_range(&self) -> Option<&Vec<i64>> {
-        let Some(CustomParameterValue::UnicodeRange(bits)) = self.get("unicodeRanges") else {
-            return None;
-        };
-        Some(bits)
+    fn unicode_range(&self) -> Option<Vec<i64>> {
+        self.get("unicodeRanges")
+            .and_then(Plist::expect_vec_of_ints)
     }
 
-    fn codepage_range(&self) -> Option<&Vec<i64>> {
-        let Some(CustomParameterValue::CodepageRange(bits)) = self.get("codePageRanges") else {
-            return None;
-        };
-        Some(bits)
+    fn codepage_range(&self) -> Option<Vec<i64>> {
+        // exciting! apparently glyphs (at least sometimes?) serializes
+        // this as a vec of strings? (this is true in WghtVar_OS2.glyphs)
+        let plist = self.get("codePageRanges")?;
+        if let Some(thing_that_makes_sense) = plist.expect_vec_of_ints() {
+            return Some(thing_that_makes_sense);
+        }
+
+        let plist = plist.as_array()?;
+        plist
+            .iter()
+            .map(|val| val.as_str().and_then(|s| s.parse::<i64>().ok()))
+            .collect()
     }
 
-    fn panose(&self) -> Option<&Vec<i64>> {
+    fn panose(&self) -> Option<Vec<i64>> {
         // PANOSE custom parameter is accessible under a short name and a long name:
         //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L322-L323
         // ...with the value under the short name taking precendence:
         //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L258-L269
-        match self.get("panose").or_else(|| self.get("openTypeOS2Panose")) {
-            Some(CustomParameterValue::Panose(values)) => Some(values),
-            _ => None,
-        }
+
+        self.get("panose")
+            .or_else(|| self.get("openTypeOS2Panose"))
+            .and_then(Plist::expect_vec_of_ints)
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum CustomParameterValue {
-    Int(i64),
-    Float(OrderedFloat<f64>),
-    String(String),
-    Axes(Vec<Axis>),
-    AxesMappings(Vec<AxisMapping>),
-    AxisLocations(Vec<AxisLocation>),
-    GlyphOrder(Vec<SmolStr>),
-    VirtualMaster(Vec<AxisLocation>),
-    FsType(Vec<i64>),
-    UnicodeRange(Vec<i64>),
-    CodepageRange(Vec<i64>),
-    Panose(Vec<i64>),
-}
-
-/// Hand-parse these because they take multiple shapes
-impl FromPlist for RawCustomParameters {
-    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
-        use crate::plist::Error;
-        let mut params = Vec::new();
-
-        tokenizer.eat(b'(')?;
-
-        loop {
-            if tokenizer.eat(b')').is_ok() {
-                break;
-            }
-
-            tokenizer.eat(b'{')?;
-
-            // these params can have an optional 'disabled' flag set; if present
-            // we just pretend they aren't there.
-            let mut disabled = false;
-            let mut name = None;
-            let mut value = None;
-            for _ in 0..3 {
-                let key: String = tokenizer.parse()?;
-                tokenizer.eat(b'=')?;
-                match key.as_str() {
-                    "disabled" => {
-                        let flag = tokenizer.parse::<i64>()?;
-                        disabled = flag != 0;
-                        tokenizer.eat(b';')?;
-                    }
-                    "name" => {
-                        let the_name: String = tokenizer.parse()?;
-                        tokenizer.eat(b';')?;
-                        name = Some(the_name);
-                    }
-                    "value" => {
-                        let peek = tokenizer.peek()?;
-                        match peek {
-                            Token::Atom(..) => {
-                                let Token::Atom(val) = tokenizer.lex()? else {
-                                    panic!("That shouldn't happen");
-                                };
-                                value = match Plist::parse(val)? {
-                                    Plist::Integer(i) => Some(CustomParameterValue::Int(i)),
-                                    Plist::Float(f) => Some(CustomParameterValue::Float(f)),
-                                    Plist::String(s) => Some(CustomParameterValue::String(s)),
-                                    _ => panic!("atom has to be int, float, or string"),
-                                };
-                            }
-                            Token::OpenBrace if name == Some(String::from("Axis Mappings")) => {
-                                let mappings: Vec<AxisMapping> = tokenizer
-                                    .parse_delimited_vec(VecDelimiters::SEMICOLON_SV_IN_BRACES)?;
-                                value = Some(CustomParameterValue::AxesMappings(mappings));
-                            }
-                            Token::String(..) => {
-                                let token = tokenizer.lex()?;
-                                let Token::String(val) = token else {
-                                    return Err(Error::UnexpectedDataType {
-                                        expected: "String",
-                                        found: token.name(),
-                                    });
-                                };
-                                value = Some(CustomParameterValue::String(val.to_string()));
-                            }
-                            _ if name == Some(String::from("Axes")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value = Some(CustomParameterValue::Axes(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("glyphOrder")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value = Some(CustomParameterValue::GlyphOrder(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("Axis Location")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value =
-                                    Some(CustomParameterValue::AxisLocations(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("Virtual Master")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value =
-                                    Some(CustomParameterValue::VirtualMaster(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("fsType")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value = Some(CustomParameterValue::FsType(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("unicodeRanges")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value =
-                                    Some(CustomParameterValue::UnicodeRange(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("codePageRanges")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value =
-                                    Some(CustomParameterValue::CodepageRange(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("panose"))
-                                || name == Some(String::from("openTypeOS2Panose")) =>
-                            {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value = Some(CustomParameterValue::Panose(tokenizer.parse()?));
-                            }
-                            _ => tokenizer.skip_rec()?,
-                        }
-                        // once we've seen the value we're always done
-                        tokenizer.eat(b';')?;
-                        break;
-                    }
-                    other => {
-                        return Err(Error::Parse(format!(
-                            "unexpected key '{other}' in CustomParams"
-                        )))
-                    }
-                }
-            }
-
-            if let Some((name, value)) = name.zip(value).filter(|_| !disabled) {
-                params.push((name, value));
-            }
-
-            tokenizer.eat(b'}')?;
-            // Optional comma
-            let _ = tokenizer.eat(b',');
-        }
-
-        // the close paren broke the loop, don't consume here
-        Ok(RawCustomParameters(params))
-    }
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AxisLocation {
-    #[fromplist(alt_name = "Axis")]
     axis_name: String,
-    #[fromplist(alt_name = "Location")]
     location: OrderedFloat<f64>,
 }
 
@@ -678,26 +612,6 @@ pub struct AxisLocation {
 pub struct AxisMapping {
     tag: String,
     user_to_design: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>,
-}
-
-impl FromPlist for AxisMapping {
-    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
-        let tag = tokenizer.parse()?;
-        tokenizer.eat(b'=')?;
-        tokenizer.eat(b'{')?;
-        let mut user_to_design = Vec::new();
-        while tokenizer.eat(b'}').is_err() {
-            let user: OrderedFloat<f64> = tokenizer.parse()?;
-            tokenizer.eat(b'=')?;
-            let design: OrderedFloat<f64> = tokenizer.parse()?;
-            tokenizer.eat(b';')?;
-            user_to_design.push((user, design));
-        }
-        Ok(AxisMapping {
-            tag,
-            user_to_design,
-        })
-    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
