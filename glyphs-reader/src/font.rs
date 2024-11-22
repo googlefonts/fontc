@@ -612,12 +612,6 @@ impl FromPlist for CustomParameters {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
-pub struct CustomParam {
-    name: String,
-    value: String,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
 pub struct AxisLocation {
     #[fromplist(alt_name = "Axis")]
     axis_name: String,
