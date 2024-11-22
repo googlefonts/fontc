@@ -41,12 +41,9 @@ pub struct AxisUserToDesignMap(Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>);
 /// A tidied up font from a plist.
 ///
 /// Normalized representation of Glyphs 2/3 content
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug, Default, PartialEq, Hash)]
 pub struct Font {
     pub units_per_em: u16,
-    pub fs_type: Option<u16>,
-    pub use_typo_metrics: Option<bool>,
-    pub has_wws_names: Option<bool>,
     pub axes: Vec<Axis>,
     pub masters: Vec<FontMaster>,
     pub default_master_idx: usize,
@@ -65,6 +62,15 @@ pub struct Font {
     // master id => { (name or class, name or class) => adjustment }
     pub kerning_ltr: Kerning,
 
+    pub custom_parameters: FontCustomParameters,
+}
+
+/// Custom parameter options that can be set on a glyphs font
+#[derive(Clone, Debug, PartialEq, Hash, Default)]
+pub struct FontCustomParameters {
+    pub use_typo_metrics: Option<bool>,
+    pub fs_type: Option<u16>,
+    pub has_wws_names: Option<bool>,
     pub typo_ascender: Option<i64>,
     pub typo_descender: Option<i64>,
     pub typo_line_gap: Option<i64>,
@@ -85,7 +91,6 @@ pub struct Font {
     pub superscript_x_size: Option<i64>,
     pub superscript_y_offset: Option<i64>,
     pub superscript_y_size: Option<i64>,
-
     pub unicode_range_bits: Option<BTreeSet<u32>>,
     pub codepage_range_bits: Option<BTreeSet<u32>>,
     pub panose: Option<Vec<i64>>,
@@ -330,7 +335,7 @@ struct RawFont {
     properties: Vec<RawName>,
     #[fromplist(alt_name = "kerning")]
     kerning_LTR: Kerning,
-    custom_parameters: CustomParameters,
+    custom_parameters: RawCustomParameters,
     numbers: Vec<NumberName>,
 }
 
@@ -342,9 +347,59 @@ struct NumberName {
 // we use a vec of tuples instead of a map because there can be multiple
 // values for the same name (e.g. 'Virtual Master')
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct CustomParameters(Vec<(String, CustomParameterValue)>);
+pub(crate) struct RawCustomParameters(Vec<(String, CustomParameterValue)>);
 
-impl CustomParameters {
+impl RawCustomParameters {
+    /// convert into the parsed params for a top-level font
+    fn to_font_params(&self) -> Result<FontCustomParameters, Error> {
+        let fs_type = self
+            .fs_type()
+            .map(|bits| bits.iter().map(|bit| 1 << bit).sum());
+
+        let unicode_range_bits = self
+            .unicode_range()
+            .map(|bits| bits.iter().map(|b| *b as u32).collect());
+
+        let codepage_range_bits = self
+            .codepage_range()
+            .map(|bits| {
+                bits.iter()
+                    .map(|b| codepage_range_bit(*b as u32))
+                    .collect::<Result<_, Error>>()
+            })
+            .transpose()?;
+
+        let panose = self.panose().cloned();
+        Ok(FontCustomParameters {
+            use_typo_metrics: self.bool("Use Typo Metrics"),
+            has_wws_names: self.bool("Has WWS Names"),
+            typo_ascender: self.int("typoAscender"),
+            typo_descender: self.int("typoDescender"),
+            typo_line_gap: self.int("typoLineGap"),
+            win_ascent: self.int("winAscent"),
+            win_descent: self.int("winDescent"),
+            hhea_ascender: self.int("hheaAscender"),
+            hhea_descender: self.int("hheaDescender"),
+            hhea_line_gap: self.int("hheaLineGap"),
+            underline_thickness: self.float("underlineThickness"),
+            underline_position: self.float("underlinePosition"),
+            strikeout_position: self.int("strikeoutPosition"),
+            strikeout_size: self.int("strikeoutSize"),
+            subscript_x_offset: self.int("subscriptXOffset"),
+            subscript_x_size: self.int("subscriptXSize"),
+            subscript_y_offset: self.int("subscriptYOffset"),
+            subscript_y_size: self.int("subscriptYSize"),
+            superscript_x_offset: self.int("superscriptXOffset"),
+            superscript_x_size: self.int("superscriptXSize"),
+            superscript_y_offset: self.int("superscriptYOffset"),
+            superscript_y_size: self.int("superscriptYSize"),
+            fs_type,
+            unicode_range_bits,
+            codepage_range_bits,
+            panose,
+        })
+    }
+
     /// Get the first parameter with the given name, or `None` if not found.
     fn get(&self, name: &str) -> Option<&CustomParameterValue> {
         self.0.iter().find_map(|(n, v)| (n == name).then_some(v))
@@ -467,7 +522,7 @@ enum CustomParameterValue {
 }
 
 /// Hand-parse these because they take multiple shapes
-impl FromPlist for CustomParameters {
+impl FromPlist for RawCustomParameters {
     fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
         use crate::plist::Error;
         let mut params = Vec::new();
@@ -607,7 +662,7 @@ impl FromPlist for CustomParameters {
         }
 
         // the close paren broke the loop, don't consume here
-        Ok(CustomParameters(params))
+        Ok(RawCustomParameters(params))
     }
 }
 
@@ -966,7 +1021,7 @@ struct RawFontMaster {
 
     alignment_zones: Vec<String>, // v2
 
-    custom_parameters: CustomParameters,
+    custom_parameters: RawCustomParameters,
     number_values: Vec<OrderedFloat<f64>>,
 
     #[fromplist(ignore)]
@@ -2309,29 +2364,7 @@ impl TryFrom<RawFont> for Font {
         let radix = if from.is_v2() { 16 } else { 10 };
         let glyph_order = parse_glyph_order(&from);
 
-        let use_typo_metrics = from.custom_parameters.bool("Use Typo Metrics");
-        let has_wws_names = from.custom_parameters.bool("Has WWS Names");
-        let typo_ascender = from.custom_parameters.int("typoAscender");
-        let typo_descender = from.custom_parameters.int("typoDescender");
-        let typo_line_gap = from.custom_parameters.int("typoLineGap");
-        let win_ascent = from.custom_parameters.int("winAscent");
-        let win_descent = from.custom_parameters.int("winDescent");
-        let hhea_ascender = from.custom_parameters.int("hheaAscender");
-        let hhea_descender = from.custom_parameters.int("hheaDescender");
-        let hhea_line_gap = from.custom_parameters.int("hheaLineGap");
-        let underline_thickness = from.custom_parameters.float("underlineThickness");
-        let underline_position = from.custom_parameters.float("underlinePosition");
-        let strikeout_position = from.custom_parameters.int("strikeoutPosition");
-        let strikeout_size = from.custom_parameters.int("strikeoutSize");
-        let subscript_x_offset = from.custom_parameters.int("subscriptXOffset");
-        let subscript_x_size = from.custom_parameters.int("subscriptXSize");
-        let subscript_y_offset = from.custom_parameters.int("subscriptYOffset");
-        let subscript_y_size = from.custom_parameters.int("subscriptYSize");
-        let superscript_x_offset = from.custom_parameters.int("superscriptXOffset");
-        let superscript_x_size = from.custom_parameters.int("superscriptXSize");
-        let superscript_y_offset = from.custom_parameters.int("superscriptYOffset");
-        let superscript_y_size = from.custom_parameters.int("superscriptYSize");
-
+        let custom_parameters = from.custom_parameters.to_font_params()?;
         let axes = from.axes.clone();
         let instances: Vec<_> = from
             .instances
@@ -2361,32 +2394,8 @@ impl TryFrom<RawFont> for Font {
             features.push(feature.raw_feature_to_feature()?);
         }
 
-        let Some(units_per_em) = from.units_per_em else {
-            return Err(Error::NoUnitsPerEm);
-        };
+        let units_per_em = from.units_per_em.ok_or(Error::NoUnitsPerEm)?;
         let units_per_em = units_per_em.try_into().map_err(Error::InvalidUpem)?;
-
-        let fs_type = from
-            .custom_parameters
-            .fs_type()
-            .map(|bits| bits.iter().map(|bit| 1 << bit).sum());
-
-        let unicode_range_bits = from
-            .custom_parameters
-            .unicode_range()
-            .map(|bits| bits.iter().map(|b| *b as u32).collect());
-
-        let codepage_range_bits = from
-            .custom_parameters
-            .codepage_range()
-            .map(|bits| {
-                bits.iter()
-                    .map(|b| codepage_range_bit(*b as u32))
-                    .collect::<Result<_, Error>>()
-            })
-            .transpose()?;
-
-        let panose = from.custom_parameters.panose().cloned();
 
         let mut names = BTreeMap::new();
         for name in from.properties {
@@ -2494,9 +2503,6 @@ impl TryFrom<RawFont> for Font {
 
         Ok(Font {
             units_per_em,
-            fs_type,
-            use_typo_metrics,
-            has_wws_names,
             axes,
             masters,
             default_master_idx,
@@ -2511,29 +2517,7 @@ impl TryFrom<RawFont> for Font {
             version_minor: from.versionMinor.unwrap_or_default() as u32,
             date: from.date,
             kerning_ltr: from.kerning_LTR,
-            typo_ascender,
-            typo_descender,
-            typo_line_gap,
-            win_ascent,
-            win_descent,
-            hhea_ascender,
-            hhea_descender,
-            hhea_line_gap,
-            underline_thickness,
-            underline_position,
-            strikeout_position,
-            strikeout_size,
-            subscript_x_offset,
-            subscript_x_size,
-            subscript_y_offset,
-            subscript_y_size,
-            superscript_x_offset,
-            superscript_x_size,
-            superscript_y_offset,
-            superscript_y_size,
-            unicode_range_bits,
-            codepage_range_bits,
-            panose,
+            custom_parameters,
         })
     }
 }
@@ -3357,16 +3341,15 @@ mod tests {
     #[test]
     fn read_os2_flags_default_set() {
         let font = Font::load(&glyphs2_dir().join("WghtVar.glyphs")).unwrap();
-        assert_eq!(
-            (Some(true), Some(true)),
-            (font.use_typo_metrics, font.has_wws_names)
-        );
+        assert_eq!(font.custom_parameters.use_typo_metrics, Some(true));
+        assert_eq!(font.custom_parameters.has_wws_names, Some(true));
     }
 
     #[test]
     fn read_os2_flags_default_unset() {
         let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
-        assert_eq!((None, None), (font.use_typo_metrics, font.has_wws_names));
+        assert_eq!(font.custom_parameters.use_typo_metrics, None);
+        assert_eq!(font.custom_parameters.has_wws_names, None);
     }
 
     #[test]
@@ -3473,19 +3456,19 @@ mod tests {
     #[test]
     fn read_fstype_none() {
         let font = Font::load(&glyphs3_dir().join("infinity.glyphs")).unwrap();
-        assert!(font.fs_type.is_none());
+        assert!(font.custom_parameters.fs_type.is_none());
     }
 
     #[test]
     fn read_fstype_zero() {
         let font = Font::load(&glyphs3_dir().join("fstype_0x0000.glyphs")).unwrap();
-        assert_eq!(Some(0), font.fs_type);
+        assert_eq!(Some(0), font.custom_parameters.fs_type);
     }
 
     #[test]
     fn read_fstype_bits() {
         let font = Font::load(&glyphs3_dir().join("fstype_0x0104.glyphs")).unwrap();
-        assert_eq!(Some(0x104), font.fs_type);
+        assert_eq!(Some(0x104), font.custom_parameters.fs_type);
     }
 
     #[test]
@@ -3571,7 +3554,7 @@ mod tests {
     fn custom_params_disable() {
         let font = Font::load(&glyphs3_dir().join("custom_param_disable.glyphs")).unwrap();
 
-        assert!(font.fs_type.is_none())
+        assert!(font.custom_parameters.fs_type.is_none())
     }
 
     #[test]
@@ -3591,15 +3574,21 @@ mod tests {
     fn read_font_metrics() {
         let font =
             Font::load(&glyphs3_dir().join("GlobalMetrics_font_customParameters.glyphs")).unwrap();
-        assert_eq!(Some(950), font.typo_ascender);
-        assert_eq!(Some(-350), font.typo_descender);
-        assert_eq!(Some(0), font.typo_line_gap);
-        assert_eq!(Some(950), font.hhea_ascender);
-        assert_eq!(Some(-350), font.hhea_descender);
-        assert_eq!(Some(0), font.hhea_line_gap);
-        assert_eq!(Some(1185), font.win_ascent);
-        assert_eq!(Some(420), font.win_descent);
-        assert_eq!(Some(OrderedFloat(42_f64)), font.underline_thickness);
-        assert_eq!(Some(OrderedFloat(-300_f64)), font.underline_position);
+        assert_eq!(Some(950), font.custom_parameters.typo_ascender);
+        assert_eq!(Some(-350), font.custom_parameters.typo_descender);
+        assert_eq!(Some(0), font.custom_parameters.typo_line_gap);
+        assert_eq!(Some(950), font.custom_parameters.hhea_ascender);
+        assert_eq!(Some(-350), font.custom_parameters.hhea_descender);
+        assert_eq!(Some(0), font.custom_parameters.hhea_line_gap);
+        assert_eq!(Some(1185), font.custom_parameters.win_ascent);
+        assert_eq!(Some(420), font.custom_parameters.win_descent);
+        assert_eq!(
+            Some(OrderedFloat(42_f64)),
+            font.custom_parameters.underline_thickness
+        );
+        assert_eq!(
+            Some(OrderedFloat(-300_f64)),
+            font.custom_parameters.underline_position
+        );
     }
 }
