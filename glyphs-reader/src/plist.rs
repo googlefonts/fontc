@@ -384,6 +384,15 @@ impl Plist {
     }
 }
 
+impl FromPlist for Plist {
+    fn parse(tokenizer: &mut Tokenizer) -> Result<Self, Error> {
+        let Tokenizer { content, idx } = tokenizer;
+        let (val, end_idx) = Self::parse_rec(content, *idx)?;
+        *idx = end_idx;
+        Ok(val)
+    }
+}
+
 fn hex_digits_for_byte(byte: u8) -> [char; 2] {
     fn to_hex_digit(val: u8) -> char {
         match val {
@@ -1028,5 +1037,42 @@ mod tests {
         assert_eq!(trailing.items, ["a", "b"]);
         let no_trailing = TestMe::parse_plist(no_trailing).unwrap();
         assert_eq!(trailing.items, no_trailing.items);
+    }
+
+    #[test]
+    fn parse_to_plist_type() {
+        let plist_str = r#"
+        {
+            name = "meta";
+            value = (
+                {
+                    data = latn;
+                    tag = dlng;
+                    num = 5;
+                },
+                {
+                    data = "latn,cyrl";
+                    tag = slng;
+                    num = -3.0;
+                }
+            );
+        }"#;
+
+        let plist = Plist::parse_plist(plist_str).unwrap();
+        let root = plist.expect_dict().unwrap();
+        assert_eq!(root.get("name").unwrap().as_str(), Some("meta"));
+        let value = root.get("value").unwrap().as_array().unwrap();
+        assert_eq!(value.len(), 2);
+        let first = value[0].as_dict().unwrap();
+        assert_eq!(first.get("data").and_then(Plist::as_str), Some("latn"));
+        assert_eq!(first.get("tag").and_then(Plist::as_str), Some("dlng"));
+        assert_eq!(first.get("num").and_then(Plist::as_i64), Some(5));
+        let second = value[1].as_dict().unwrap();
+        assert_eq!(
+            second.get("data").and_then(Plist::as_str),
+            Some("latn,cyrl")
+        );
+        assert_eq!(second.get("tag").and_then(Plist::as_str), Some("slng"));
+        assert_eq!(second.get("num").and_then(Plist::as_f64), Some(-3.0));
     }
 }
