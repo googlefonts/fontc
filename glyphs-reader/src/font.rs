@@ -94,6 +94,11 @@ pub struct FontCustomParameters {
     pub unicode_range_bits: Option<BTreeSet<u32>>,
     pub codepage_range_bits: Option<BTreeSet<u32>>,
     pub panose: Option<Vec<i64>>,
+
+    // these fields are parsed via the config, but are stored
+    // in the top-level `Font` struct
+    pub virtual_masters: Option<Vec<BTreeMap<String, OrderedFloat<f64>>>>,
+    pub glyph_order: Option<Vec<SmolStr>>,
 }
 
 /// master id => { (name or class, name or class) => adjustment }
@@ -364,140 +369,220 @@ impl FromPlist for RawCustomParameters {
 
 /// Convenience methods for converting `Plist` structs to concrete custom param types
 trait PlistParamsExt {
-    fn expect_bool(&self) -> Option<bool>;
-    fn expect_vec_of_ints(&self) -> Option<Vec<i64>>;
-    fn expect_axis_locations(&self) -> Option<Vec<AxisLocation>>;
-    fn expect_vec_of_string(&self) -> Option<Vec<SmolStr>>;
-    fn expect_axes(&self) -> Option<Vec<Axis>>;
-    fn expect_axis_mappings(&self) -> Option<Vec<AxisMapping>>;
+    fn as_codepage_bits(&self) -> Option<BTreeSet<u32>>;
+    fn as_unicode_code_ranges(&self) -> Option<BTreeSet<u32>>;
+    fn as_fs_type(&self) -> Option<u16>;
+    fn as_mapping_values(&self) -> Option<Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>>;
+    fn as_axis_location(&self) -> Option<AxisLocation>;
+    fn as_axis(&self) -> Option<Axis>;
+    fn as_bool(&self) -> Option<bool>;
+    fn as_ordered_f64(&self) -> Option<OrderedFloat<f64>>;
+    fn as_vec_of_ints(&self) -> Option<Vec<i64>>;
+    fn as_axis_locations(&self) -> Option<Vec<AxisLocation>>;
+    fn as_vec_of_string(&self) -> Option<Vec<SmolStr>>;
+    fn as_axes(&self) -> Option<Vec<Axis>>;
+    fn as_axis_mappings(&self) -> Option<Vec<AxisMapping>>;
+    fn as_virtual_master(&self) -> Option<BTreeMap<String, OrderedFloat<f64>>>;
 }
 
 impl PlistParamsExt for Plist {
-    fn expect_bool(&self) -> Option<bool> {
+    fn as_bool(&self) -> Option<bool> {
         self.as_i64().map(|val| val == 1)
     }
-    fn expect_vec_of_ints(&self) -> Option<Vec<i64>> {
-        self.as_array()?.iter().map(Plist::as_i64).collect()
+
+    fn as_ordered_f64(&self) -> Option<OrderedFloat<f64>> {
+        self.as_f64().map(OrderedFloat)
     }
 
-    fn expect_axis_locations(&self) -> Option<Vec<AxisLocation>> {
-        fn plist_to_axis_loc(plist: &Plist) -> Option<AxisLocation> {
-            let plist = plist.as_dict()?;
-            let name = plist.get("Axis").and_then(Plist::as_str)?;
-            let location = plist.get("Location").and_then(Plist::as_f64)?;
-            Some(AxisLocation {
-                axis_name: name.into(),
-                location: location.into(),
-            })
+    fn as_vec_of_ints(&self) -> Option<Vec<i64>> {
+        // exciting! apparently glyphs (at least sometimes?) serializes
+        // this as a vec of strings? (this is true in WghtVar_OS2.glyphs)
+        if let Some(thing_that_makes_sense) = self.as_array()?.iter().map(Plist::as_i64).collect() {
+            return Some(thing_that_makes_sense);
         }
-        self.as_array()?.iter().map(plist_to_axis_loc).collect()
+
+        self.as_array()?
+            .iter()
+            .map(|val| val.as_str().and_then(|s| s.parse::<i64>().ok()))
+            .collect()
     }
 
-    fn expect_vec_of_string(&self) -> Option<Vec<SmolStr>> {
+    fn as_axis_location(&self) -> Option<AxisLocation> {
+        let plist = self.as_dict()?;
+        let name = plist.get("Axis").and_then(Plist::as_str)?;
+        let location = plist.get("Location").and_then(Plist::as_f64)?;
+        Some(AxisLocation {
+            axis_name: name.into(),
+            location: location.into(),
+        })
+    }
+
+    fn as_axis_locations(&self) -> Option<Vec<AxisLocation>> {
+        let array = self.as_array()?;
+        array.iter().map(Plist::as_axis_location).collect()
+    }
+
+    fn as_vec_of_string(&self) -> Option<Vec<SmolStr>> {
         self.as_array()?
             .iter()
             .map(|plist| plist.as_str().map(SmolStr::from))
             .collect()
     }
 
-    fn expect_axes(&self) -> Option<Vec<Axis>> {
-        fn plist_to_axis(plist: &Plist) -> Option<Axis> {
-            let plist = plist.as_dict()?;
-            let name = plist.get("Name").and_then(Plist::as_str)?;
-            let tag = plist.get("Tag").and_then(Plist::as_str)?;
-            let hidden = plist.get("hidden").and_then(Plist::expect_bool);
-            Some(Axis {
-                name: name.into(),
-                tag: tag.into(),
-                hidden,
-            })
-        }
-
-        self.as_array()?.iter().map(plist_to_axis).collect()
+    fn as_axis(&self) -> Option<Axis> {
+        let plist = self.as_dict()?;
+        let name = plist.get("Name").and_then(Plist::as_str)?;
+        let tag = plist.get("Tag").and_then(Plist::as_str)?;
+        let hidden = plist.get("hidden").and_then(Plist::as_bool);
+        Some(Axis {
+            name: name.into(),
+            tag: tag.into(),
+            hidden,
+        })
     }
 
-    fn expect_axis_mappings(&self) -> Option<Vec<AxisMapping>> {
-        // our keys are strings, but we want to interpret them as floats:
-        fn plist_to_mapping_values(
-            plist: &Plist,
-        ) -> Option<Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>> {
-            let plist = plist.as_dict()?;
-            plist
-                .iter()
-                .map(|(key, value)| {
-                    let key = key
-                        .parse::<f64>()
-                        .or_else(|_| key.parse::<i64>().map(|i| i as f64))
-                        .ok()?;
-                    let val = value.as_f64()?;
-                    Some((key.into(), val.into()))
-                })
-                .collect()
-        }
+    fn as_axes(&self) -> Option<Vec<Axis>> {
+        self.as_array()?.iter().map(Plist::as_axis).collect()
+    }
 
-        fn plist_to_axis_mappings(key_value: (&SmolStr, &Plist)) -> Option<AxisMapping> {
-            let (key, mappings) = key_value;
-            let user_to_design = plist_to_mapping_values(mappings)?;
-
-            Some(AxisMapping {
-                tag: key.to_string(),
-                user_to_design,
+    fn as_mapping_values(&self) -> Option<Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>> {
+        let plist = self.as_dict()?;
+        plist
+            .iter()
+            .map(|(key, value)| {
+                // our keys are strings, but we want to interpret them as floats:
+                let key = key
+                    .parse::<f64>()
+                    .or_else(|_| key.parse::<i64>().map(|i| i as f64))
+                    .ok()?;
+                let val = value.as_f64()?;
+                Some((key.into(), val.into()))
             })
-        }
+            .collect()
+    }
 
-        self.as_dict()?.iter().map(plist_to_axis_mappings).collect()
+    fn as_axis_mappings(&self) -> Option<Vec<AxisMapping>> {
+        self.as_dict()?
+            .iter()
+            .map(|(tag, mappings)| {
+                let user_to_design = mappings.as_mapping_values()?;
+                Some(AxisMapping {
+                    tag: tag.to_string(),
+                    user_to_design,
+                })
+            })
+            .collect()
+    }
+
+    fn as_virtual_master(&self) -> Option<BTreeMap<String, OrderedFloat<f64>>> {
+        self.as_array()?
+            .iter()
+            .map(Plist::as_axis_location)
+            .map(|loc| (loc.map(|loc| (loc.axis_name, loc.location))))
+            .collect()
+    }
+
+    fn as_fs_type(&self) -> Option<u16> {
+        Some(self.as_vec_of_ints()?.iter().map(|bit| 1 << bit).sum())
+    }
+
+    fn as_unicode_code_ranges(&self) -> Option<BTreeSet<u32>> {
+        let bits = self.as_vec_of_ints()?;
+        Some(bits.iter().map(|bit| *bit as u32).collect())
+    }
+
+    fn as_codepage_bits(&self) -> Option<BTreeSet<u32>> {
+        let bits = self.as_vec_of_ints()?;
+        bits.iter()
+            .map(|b| codepage_range_bit(*b as _))
+            .collect::<Result<_, _>>()
+            .ok()
     }
 }
 
 impl RawCustomParameters {
-    /// convert into the parsed params for a top-level font
+    ////convert into the parsed params for a top-level font
     fn to_font_params(&self) -> Result<FontCustomParameters, Error> {
-        let fs_type = self
-            .fs_type()
-            .map(|bits| bits.iter().map(|bit| 1 << bit).sum());
+        let mut params = FontCustomParameters::default();
+        let mut virtual_masters = Vec::<BTreeMap<String, OrderedFloat<f64>>>::new();
+        // PANOSE custom parameter is accessible under a short name and a long name:
+        //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L322-L323
+        // ...with the value under the short name taking precendence:
+        //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L258-L269
+        let mut panose = None;
+        let mut panose_old = None;
 
-        let unicode_range_bits = self
-            .unicode_range()
-            .map(|bits| bits.iter().map(|b| *b as u32).collect());
+        for RawCustomParameterValue {
+            name,
+            value,
+            disabled,
+        } in &self.0
+        {
+            macro_rules! add_and_report_issues {
+                ($field:ident, $converter:path) => {{
+                    let value = $converter(value);
 
-        let codepage_range_bits = self
-            .codepage_range()
-            .map(|bits| {
-                bits.iter()
-                    .map(|b| codepage_range_bit(*b as u32))
-                    .collect::<Result<_, Error>>()
-            })
-            .transpose()?;
+                    if value.is_none() {
+                        log::warn!("failed to parse param for '{}'", stringify!($field));
+                    }
+                    if params.$field.is_some() {
+                        log::warn!("duplicate param value for field '{}'", stringify!($field));
+                    }
+                    params.$field = value;
+                }};
+            }
 
-        let panose = self.panose();
-        Ok(FontCustomParameters {
-            use_typo_metrics: self.bool("Use Typo Metrics"),
-            has_wws_names: self.bool("Has WWS Names"),
-            typo_ascender: self.int("typoAscender"),
-            typo_descender: self.int("typoDescender"),
-            typo_line_gap: self.int("typoLineGap"),
-            win_ascent: self.int("winAscent"),
-            win_descent: self.int("winDescent"),
-            hhea_ascender: self.int("hheaAscender"),
-            hhea_descender: self.int("hheaDescender"),
-            hhea_line_gap: self.int("hheaLineGap"),
-            underline_thickness: self.float("underlineThickness"),
-            underline_position: self.float("underlinePosition"),
-            strikeout_position: self.int("strikeoutPosition"),
-            strikeout_size: self.int("strikeoutSize"),
-            subscript_x_offset: self.int("subscriptXOffset"),
-            subscript_x_size: self.int("subscriptXSize"),
-            subscript_y_offset: self.int("subscriptYOffset"),
-            subscript_y_size: self.int("subscriptYSize"),
-            superscript_x_offset: self.int("superscriptXOffset"),
-            superscript_x_size: self.int("superscriptXSize"),
-            superscript_y_offset: self.int("superscriptYOffset"),
-            superscript_y_size: self.int("superscriptYSize"),
-            fs_type,
-            unicode_range_bits,
-            codepage_range_bits,
-            panose,
-        })
+            if *disabled == Some(true) {
+                log::debug!("skipping disabled custom param '{name}'");
+                continue;
+            }
+            match name.as_str() {
+                "Use Typo Metrics" => add_and_report_issues!(use_typo_metrics, Plist::as_bool),
+                "Has WWS Names" => add_and_report_issues!(has_wws_names, Plist::as_bool),
+                "typoAscender" => add_and_report_issues!(typo_ascender, Plist::as_i64),
+                "typoDescender" => add_and_report_issues!(typo_descender, Plist::as_i64),
+                "typoLineGap" => add_and_report_issues!(typo_line_gap, Plist::as_i64),
+                "winAscent" => add_and_report_issues!(win_ascent, Plist::as_i64),
+                "winDescent" => add_and_report_issues!(win_descent, Plist::as_i64),
+                "hheaAscender" => add_and_report_issues!(hhea_ascender, Plist::as_i64),
+                "hheaDescender" => add_and_report_issues!(hhea_descender, Plist::as_i64),
+                "hheaLineGap" => add_and_report_issues!(hhea_line_gap, Plist::as_i64),
+                "underlineThickness" => {
+                    add_and_report_issues!(underline_thickness, Plist::as_ordered_f64)
+                }
+                "underlinePosition" => {
+                    add_and_report_issues!(underline_position, Plist::as_ordered_f64)
+                }
+                "strikeoutPosition" => add_and_report_issues!(strikeout_position, Plist::as_i64),
+                "strikeoutSize" => add_and_report_issues!(strikeout_size, Plist::as_i64),
+                "subscriptXOffset" => add_and_report_issues!(subscript_x_offset, Plist::as_i64),
+                "subscriptXSize" => add_and_report_issues!(subscript_x_size, Plist::as_i64),
+                "subscriptYOffset" => add_and_report_issues!(subscript_y_offset, Plist::as_i64),
+                "subscriptYSize" => add_and_report_issues!(subscript_y_size, Plist::as_i64),
+                "superscriptXOffset" => add_and_report_issues!(superscript_x_offset, Plist::as_i64),
+                "superscriptXSize" => add_and_report_issues!(superscript_x_size, Plist::as_i64),
+                "superscriptYOffset" => add_and_report_issues!(superscript_y_offset, Plist::as_i64),
+                "superscriptYSize" => add_and_report_issues!(superscript_y_size, Plist::as_i64),
+                "fsType" => add_and_report_issues!(fs_type, Plist::as_fs_type),
+                "unicodeRanges" => {
+                    add_and_report_issues!(unicode_range_bits, Plist::as_unicode_code_ranges)
+                }
+                "codePageRanges" => {
+                    add_and_report_issues!(codepage_range_bits, Plist::as_codepage_bits)
+                }
+                "Virtual Master" => match value.as_virtual_master() {
+                    Some(val) => virtual_masters.push(val),
+                    None => log::warn!("failed to parse virtual master '{value:?}'"),
+                },
+                "panose" => panose = value.as_vec_of_ints(),
+                "openTypeOS2Panose" => panose_old = value.as_vec_of_ints(),
+                "glyphOrder" => add_and_report_issues!(glyph_order, Plist::as_vec_of_string),
+                _ => log::warn!("unhandled custom parameter '{name}'"),
+            }
+        }
+        params.panose = panose.or(panose_old);
+        params.virtual_masters = Some(virtual_masters).filter(|x| !x.is_empty());
+        Ok(params)
     }
 
     /// Get the first parameter with the given name, or `None` if not found.
@@ -514,91 +599,20 @@ impl RawCustomParameters {
         self.get(name).and_then(Plist::as_f64).map(OrderedFloat)
     }
 
-    fn bool(&self, name: &str) -> Option<bool> {
-        self.int(name).map(|v| v == 1)
-    }
-
     fn string(&self, name: &str) -> Option<&str> {
         self.get(name).and_then(Plist::as_str)
     }
 
     fn axes(&self) -> Option<Vec<Axis>> {
-        self.get("Axes").and_then(Plist::expect_axes)
+        self.get("Axes").and_then(Plist::as_axes)
     }
 
     fn axis_mappings(&self) -> Option<Vec<AxisMapping>> {
-        self.get("Axis Mappings")
-            .and_then(Plist::expect_axis_mappings)
+        self.get("Axis Mappings").and_then(Plist::as_axis_mappings)
     }
 
     fn axis_locations(&self) -> Option<Vec<AxisLocation>> {
-        self.get("Axis Location")
-            .and_then(Plist::expect_axis_locations)
-    }
-
-    fn glyph_order(&self) -> Option<Vec<SmolStr>> {
-        self.get("glyphOrder").and_then(Plist::expect_vec_of_string)
-    }
-
-    fn virtual_masters(&self) -> impl Iterator<Item = Vec<AxisLocation>> + use<'_> {
-        // this field allows multiple entries with the same key
-        self.0
-            .iter()
-            .filter_map(|item| {
-                (item.name == "Virtual Master")
-                    .then_some(item.value.as_array())
-                    .flatten()
-            })
-            // each entry is an array of dictionaries, each dict has 'Axis' and 'Location' keys
-            .filter_map(|locations| {
-                locations
-                    .iter()
-                    .map(|loc| {
-                        let loc = loc.as_dict()?;
-                        let axis = loc.get("Axis").and_then(Plist::as_str)?;
-                        let location = loc.get("Location").and_then(Plist::as_f64)?;
-                        Some(AxisLocation {
-                            axis_name: axis.to_owned(),
-                            location: location.into(),
-                        })
-                    })
-                    .collect::<Option<_>>()
-            })
-    }
-
-    fn fs_type(&self) -> Option<Vec<i64>> {
-        self.get("fsType").and_then(Plist::expect_vec_of_ints)
-    }
-
-    fn unicode_range(&self) -> Option<Vec<i64>> {
-        self.get("unicodeRanges")
-            .and_then(Plist::expect_vec_of_ints)
-    }
-
-    fn codepage_range(&self) -> Option<Vec<i64>> {
-        // exciting! apparently glyphs (at least sometimes?) serializes
-        // this as a vec of strings? (this is true in WghtVar_OS2.glyphs)
-        let plist = self.get("codePageRanges")?;
-        if let Some(thing_that_makes_sense) = plist.expect_vec_of_ints() {
-            return Some(thing_that_makes_sense);
-        }
-
-        let plist = plist.as_array()?;
-        plist
-            .iter()
-            .map(|val| val.as_str().and_then(|s| s.parse::<i64>().ok()))
-            .collect()
-    }
-
-    fn panose(&self) -> Option<Vec<i64>> {
-        // PANOSE custom parameter is accessible under a short name and a long name:
-        //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L322-L323
-        // ...with the value under the short name taking precendence:
-        //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L258-L269
-
-        self.get("panose")
-            .or_else(|| self.get("openTypeOS2Panose"))
-            .and_then(Plist::expect_vec_of_ints)
+        self.get("Axis Location").and_then(Plist::as_axis_locations)
     }
 }
 
@@ -610,6 +624,7 @@ pub struct AxisLocation {
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AxisMapping {
+    //TODO this should really be a `Tag`?
     tag: String,
     user_to_design: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>,
 }
@@ -1590,26 +1605,25 @@ fn parse_alignment_zone(zone: &str) -> Option<(OrderedFloat<f64>, OrderedFloat<f
     Some((OrderedFloat(one as f64), OrderedFloat(two as f64)))
 }
 
-fn parse_glyph_order(raw_font: &RawFont) -> Vec<SmolStr> {
-    let mut valid_names: HashSet<_> = raw_font.glyphs.iter().map(|g| &g.glyphname).collect();
+fn make_glyph_order(glyphs: &[RawGlyph], custom_order: Option<Vec<SmolStr>>) -> Vec<SmolStr> {
+    let mut valid_names: HashSet<_> = glyphs.iter().map(|g| &g.glyphname).collect();
     let mut glyph_order = Vec::new();
 
     // Add all valid glyphOrder entries in order
     // See https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044627972
-    if let Some(names) = raw_font.custom_parameters.glyph_order() {
-        names.iter().for_each(|name| {
-            if valid_names.remove(name) {
-                glyph_order.push(name.clone());
-            }
-        })
+    for name in custom_order.into_iter().flatten() {
+        if valid_names.remove(&name) {
+            glyph_order.push(name.clone());
+        }
     }
 
     // Add anything left over in file order
-    raw_font
-        .glyphs
-        .iter()
-        .filter(|g| valid_names.contains(&g.glyphname))
-        .for_each(|g| glyph_order.push(g.glyphname.clone()));
+    glyph_order.extend(
+        glyphs
+            .iter()
+            .filter(|g| valid_names.contains(&g.glyphname))
+            .map(|g| g.glyphname.clone()),
+    );
 
     glyph_order
 }
@@ -2276,9 +2290,9 @@ impl TryFrom<RawFont> for Font {
         let glyph_data = GlyphData::default();
 
         let radix = if from.is_v2() { 16 } else { 10 };
-        let glyph_order = parse_glyph_order(&from);
 
-        let custom_parameters = from.custom_parameters.to_font_params()?;
+        let mut custom_parameters = from.custom_parameters.to_font_params()?;
+        let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take());
         let axes = from.axes.clone();
         let instances: Vec<_> = from
             .instances
@@ -2400,21 +2414,7 @@ impl TryFrom<RawFont> for Font {
             })
             .collect();
 
-        let virtual_masters = from
-            .custom_parameters
-            .virtual_masters()
-            .map(|vm| {
-                vm.iter()
-                    .map(
-                        |AxisLocation {
-                             axis_name,
-                             location,
-                         }| (axis_name.clone(), *location),
-                    )
-                    .collect()
-            })
-            .collect();
-
+        let virtual_masters = custom_parameters.virtual_masters.take().unwrap_or_default();
         Ok(Font {
             units_per_em,
             axes,
@@ -2909,6 +2909,7 @@ mod tests {
 
     #[test]
     fn glyph_order_override_obeyed() {
+        let _ = env_logger::builder().is_test(true).try_init();
         let font = Font::load(&glyphs3_dir().join("WghtVar_GlyphOrder.glyphs")).unwrap();
         assert_eq!(vec!["hyphen", "space", "exclam"], font.glyph_order);
     }
@@ -2921,14 +2922,14 @@ mod tests {
         assert_eq!(
             UserToDesignMapping(BTreeMap::from([
                 (
-                    "Optical Size".to_string(),
+                    "Optical Size".into(),
                     AxisUserToDesignMap(vec![
                         (OrderedFloat(12.0), OrderedFloat(12.0)),
                         (OrderedFloat(72.0), OrderedFloat(72.0))
                     ])
                 ),
                 (
-                    "Weight".to_string(),
+                    "Weight".into(),
                     AxisUserToDesignMap(vec![
                         (OrderedFloat(100.0), OrderedFloat(40.0)),
                         (OrderedFloat(200.0), OrderedFloat(46.0)),
@@ -2951,7 +2952,7 @@ mod tests {
         // Did you load the mappings? DID YOU?!
         assert_eq!(
             UserToDesignMapping(BTreeMap::from([(
-                "Weight".to_string(),
+                "Weight".into(),
                 AxisUserToDesignMap(vec![
                     (OrderedFloat(400.0), OrderedFloat(0.0)),
                     (OrderedFloat(500.0), OrderedFloat(8.0)),
@@ -2986,7 +2987,7 @@ mod tests {
         // Did you load the mappings? DID YOU?!
         assert_eq!(
             UserToDesignMapping(BTreeMap::from([(
-                "Weight".to_string(),
+                "Weight".into(),
                 AxisUserToDesignMap(vec![
                     (OrderedFloat(300.0), OrderedFloat(60.0)),
                     // we expect a map 400:80 here, even though the 'Regular' instance's
@@ -3026,7 +3027,7 @@ mod tests {
         // Did you load the mappings? DID YOU?!
         assert_eq!(
             UserToDesignMapping(BTreeMap::from([(
-                "Width".to_string(),
+                "Width".into(),
                 AxisUserToDesignMap(vec![
                     // The "1: Ultra-condensed" instance width class corresponds to a
                     // `wdth` of 50 (user-space), in turn mapped to 22 (design-space).
