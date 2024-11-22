@@ -62,12 +62,12 @@ pub struct Font {
     // master id => { (name or class, name or class) => adjustment }
     pub kerning_ltr: Kerning,
 
-    pub custom_parameters: FontCustomParameters,
+    pub custom_parameters: CustomParameters,
 }
 
 /// Custom parameter options that can be set on a glyphs font
 #[derive(Clone, Debug, PartialEq, Hash, Default)]
-pub struct FontCustomParameters {
+pub struct CustomParameters {
     pub use_typo_metrics: Option<bool>,
     pub fs_type: Option<u16>,
     pub has_wws_names: Option<bool>,
@@ -502,8 +502,8 @@ impl PlistParamsExt for Plist {
 
 impl RawCustomParameters {
     ////convert into the parsed params for a top-level font
-    fn to_font_params(&self) -> Result<FontCustomParameters, Error> {
-        let mut params = FontCustomParameters::default();
+    fn to_custom_params(&self) -> Result<CustomParameters, Error> {
+        let mut params = CustomParameters::default();
         let mut virtual_masters = Vec::<BTreeMap<String, OrderedFloat<f64>>>::new();
         // PANOSE custom parameter is accessible under a short name and a long name:
         //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L322-L323
@@ -518,6 +518,8 @@ impl RawCustomParameters {
             disabled,
         } in &self.0
         {
+            // we need to use a macro here because you can't pass the name of a field to a
+            // function.
             macro_rules! add_and_report_issues {
                 ($field:ident, $converter:path) => {{
                     let value = $converter(value);
@@ -589,14 +591,6 @@ impl RawCustomParameters {
     fn get(&self, name: &str) -> Option<&Plist> {
         let item = self.0.iter().find(|val| (val.name == name))?;
         (item.disabled != Some(true)).then_some(&item.value)
-    }
-
-    fn int(&self, name: &str) -> Option<i64> {
-        self.get(name).and_then(Plist::as_i64)
-    }
-
-    fn float(&self, name: &str) -> Option<OrderedFloat<f64>> {
-        self.get(name).and_then(Plist::as_f64).map(OrderedFloat)
     }
 
     fn string(&self, name: &str) -> Option<&str> {
@@ -863,26 +857,7 @@ pub struct FontMaster {
     pub axes_values: Vec<OrderedFloat<f64>>,
     metric_values: BTreeMap<String, RawMetricValue>,
     pub number_values: BTreeMap<SmolStr, OrderedFloat<f64>>,
-    pub typo_ascender: Option<i64>,
-    pub typo_descender: Option<i64>,
-    pub typo_line_gap: Option<i64>,
-    pub win_ascent: Option<i64>,
-    pub win_descent: Option<i64>,
-    pub hhea_ascender: Option<i64>,
-    pub hhea_descender: Option<i64>,
-    pub hhea_line_gap: Option<i64>,
-    pub underline_thickness: Option<OrderedFloat<f64>>,
-    pub underline_position: Option<OrderedFloat<f64>>,
-    pub strikeout_position: Option<i64>,
-    pub strikeout_size: Option<i64>,
-    pub subscript_x_offset: Option<i64>,
-    pub subscript_x_size: Option<i64>,
-    pub subscript_y_offset: Option<i64>,
-    pub subscript_y_size: Option<i64>,
-    pub superscript_x_offset: Option<i64>,
-    pub superscript_x_size: Option<i64>,
-    pub superscript_y_offset: Option<i64>,
-    pub superscript_y_size: Option<i64>,
+    pub custom_parameters: CustomParameters,
 }
 
 impl FontMaster {
@@ -2291,7 +2266,7 @@ impl TryFrom<RawFont> for Font {
 
         let radix = if from.is_v2() { 16 } else { 10 };
 
-        let mut custom_parameters = from.custom_parameters.to_font_params()?;
+        let mut custom_parameters = from.custom_parameters.to_custom_params()?;
         let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take());
         let axes = from.axes.clone();
         let instances: Vec<_> = from
@@ -2372,47 +2347,31 @@ impl TryFrom<RawFont> for Font {
         let masters = from
             .font_master
             .into_iter()
-            .map(|m| FontMaster {
-                id: m.id,
-                name: m.name.unwrap_or_default(),
-                axes_values: m.axes_values,
-                metric_values: m
-                    .metric_values
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(idx, value)| {
-                        metric_names.get(&idx).map(|name| (name.clone(), value))
-                    })
-                    .filter(|(_, metric)| !metric.is_empty())
-                    .collect(),
-                number_values: from
-                    .numbers
-                    .iter()
-                    .zip(m.number_values.iter())
-                    .map(|(k, v)| (k.name.clone(), *v))
-                    .collect(),
-                typo_ascender: m.custom_parameters.int("typoAscender"),
-                typo_descender: m.custom_parameters.int("typoDescender"),
-                typo_line_gap: m.custom_parameters.int("typoLineGap"),
-                win_ascent: m.custom_parameters.int("winAscent"),
-                win_descent: m.custom_parameters.int("winDescent"),
-                hhea_ascender: m.custom_parameters.int("hheaAscender"),
-                hhea_descender: m.custom_parameters.int("hheaDescender"),
-                hhea_line_gap: m.custom_parameters.int("hheaLineGap"),
-                underline_thickness: m.custom_parameters.float("underlineThickness"),
-                underline_position: m.custom_parameters.float("underlinePosition"),
-                strikeout_position: m.custom_parameters.int("strikeoutPosition"),
-                strikeout_size: m.custom_parameters.int("strikeoutSize"),
-                subscript_x_offset: m.custom_parameters.int("subscriptXOffset"),
-                subscript_x_size: m.custom_parameters.int("subscriptXSize"),
-                subscript_y_offset: m.custom_parameters.int("subscriptYOffset"),
-                subscript_y_size: m.custom_parameters.int("subscriptYSize"),
-                superscript_x_offset: m.custom_parameters.int("superscriptXOffset"),
-                superscript_x_size: m.custom_parameters.int("superscriptXSize"),
-                superscript_y_offset: m.custom_parameters.int("superscriptYOffset"),
-                superscript_y_size: m.custom_parameters.int("superscriptYSize"),
+            .map(|m| {
+                let custom_parameters = m.custom_parameters.to_custom_params()?;
+                Ok(FontMaster {
+                    id: m.id,
+                    name: m.name.unwrap_or_default(),
+                    axes_values: m.axes_values,
+                    metric_values: m
+                        .metric_values
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(idx, value)| {
+                            metric_names.get(&idx).map(|name| (name.clone(), value))
+                        })
+                        .filter(|(_, metric)| !metric.is_empty())
+                        .collect(),
+                    number_values: from
+                        .numbers
+                        .iter()
+                        .zip(m.number_values.iter())
+                        .map(|(k, v)| (k.name.clone(), *v))
+                        .collect(),
+                    custom_parameters,
+                })
             })
-            .collect();
+            .collect::<Result<_, Error>>()?;
 
         let virtual_masters = custom_parameters.virtual_masters.take().unwrap_or_default();
         Ok(Font {
@@ -3249,8 +3208,9 @@ mod tests {
     #[test]
     fn read_typo_whatsits() {
         let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
-        assert_eq!(Some(1193), font.default_master().typo_ascender);
-        assert_eq!(Some(-289), font.default_master().typo_descender);
+        let master = font.default_master();
+        assert_eq!(Some(1193), master.custom_parameters.typo_ascender);
+        assert_eq!(Some(-289), master.custom_parameters.typo_descender);
     }
 
     #[test]
