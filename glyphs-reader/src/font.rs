@@ -33,10 +33,10 @@ const V3_METRIC_NAMES: [&str; 6] = [
 ];
 
 #[derive(Clone, Debug, Default, PartialEq, Hash)]
-pub struct RawUserToDesignMapping(BTreeMap<String, RawAxisUserToDesignMap>);
+pub struct UserToDesignMapping(BTreeMap<String, AxisUserToDesignMap>);
 
 #[derive(Clone, Debug, Default, PartialEq, Hash)]
-pub struct RawAxisUserToDesignMap(Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>);
+pub struct AxisUserToDesignMap(Vec<(OrderedFloat<f32>, OrderedFloat<f32>)>);
 
 /// A tidied up font from a plist.
 ///
@@ -53,7 +53,7 @@ pub struct Font {
     pub glyphs: BTreeMap<SmolStr, Glyph>,
     pub glyph_order: Vec<SmolStr>,
     // tag => (user:design) tuples
-    pub axis_mappings: RawUserToDesignMapping,
+    pub axis_mappings: UserToDesignMapping,
     pub virtual_masters: Vec<BTreeMap<String, OrderedFloat<f64>>>,
     pub features: Vec<FeatureSnippet>,
     pub names: BTreeMap<String, String>,
@@ -995,7 +995,7 @@ pub struct Instance {
     pub active: bool,
     // So named to let FromPlist populate it from a field called "type"
     pub type_: InstanceType,
-    pub axis_mappings: BTreeMap<String, RawAxisUserToDesignMap>,
+    pub axis_mappings: BTreeMap<String, AxisUserToDesignMap>,
     pub axes_values: Vec<OrderedFloat<f64>>,
 }
 
@@ -1654,9 +1654,9 @@ fn axis_index(from: &RawFont, pred: impl Fn(&Axis) -> bool) -> Option<usize> {
 
 fn user_to_design_from_axis_mapping(
     from: &RawFont,
-) -> Option<BTreeMap<String, RawAxisUserToDesignMap>> {
+) -> Option<BTreeMap<String, AxisUserToDesignMap>> {
     let mappings = from.custom_parameters.axis_mappings()?;
-    let mut axis_mappings: BTreeMap<String, RawAxisUserToDesignMap> = BTreeMap::new();
+    let mut axis_mappings: BTreeMap<String, AxisUserToDesignMap> = BTreeMap::new();
     for mapping in mappings {
         let Some(axis_index) = axis_index(from, |a| a.tag == mapping.tag) else {
             log::warn!(
@@ -1680,7 +1680,7 @@ fn user_to_design_from_axis_mapping(
 
 fn user_to_design_from_axis_location(
     from: &RawFont,
-) -> Option<BTreeMap<String, RawAxisUserToDesignMap>> {
+) -> Option<BTreeMap<String, AxisUserToDesignMap>> {
     // glyphsLib only trusts Axis Location when all masters have it, match that
     // https://github.com/googlefonts/fontmake-rs/pull/83#discussion_r1065814670
     let master_locations: Vec<_> = from
@@ -1699,7 +1699,7 @@ fn user_to_design_from_axis_location(
         return None;
     }
 
-    let mut axis_mappings: BTreeMap<String, RawAxisUserToDesignMap> = BTreeMap::new();
+    let mut axis_mappings: BTreeMap<String, AxisUserToDesignMap> = BTreeMap::new();
     for (master, axis_locations) in from.font_master.iter().zip(master_locations) {
         for axis_location in axis_locations {
             let Some(axis_index) = axis_index(from, |a| a.name == axis_location.axis_name) else {
@@ -1717,8 +1717,8 @@ fn user_to_design_from_axis_location(
     Some(axis_mappings)
 }
 
-impl RawAxisUserToDesignMap {
-    fn add_any_new(&mut self, incoming: &RawAxisUserToDesignMap) {
+impl AxisUserToDesignMap {
+    fn add_any_new(&mut self, incoming: &AxisUserToDesignMap) {
         for (user, design) in incoming.0.iter() {
             self.add_if_new(*user, *design);
         }
@@ -1740,7 +1740,7 @@ impl RawAxisUserToDesignMap {
     }
 }
 
-impl RawUserToDesignMapping {
+impl UserToDesignMapping {
     /// From most to least preferred: Axis Mappings, Axis Location, mappings from instances, assume user == design
     ///
     /// <https://github.com/googlefonts/glyphsLib/blob/6f243c1f732ea1092717918d0328f3b5303ffe56/Lib/glyphsLib/builder/axes.py#L155>
@@ -1768,7 +1768,7 @@ impl RawUserToDesignMapping {
         self.0.contains_key(axis_name)
     }
 
-    pub fn get(&self, axis_name: &str) -> Option<&RawAxisUserToDesignMap> {
+    pub fn get(&self, axis_name: &str) -> Option<&AxisUserToDesignMap> {
         self.0.get(axis_name)
     }
 
@@ -2106,7 +2106,7 @@ fn lookup_class_value(axis_tag: &str, user_class: &str) -> Option<u16> {
 }
 
 fn add_mapping_if_new(
-    axis_mappings: &mut BTreeMap<String, RawAxisUserToDesignMap>,
+    axis_mappings: &mut BTreeMap<String, AxisUserToDesignMap>,
     axes: &[Axis],
     axis_tag: &str,
     axes_values: &[OrderedFloat<f64>],
@@ -2271,7 +2271,7 @@ impl TryFrom<RawFont> for Font {
             .collect();
 
         let default_master_idx = default_master_idx(&from);
-        let axis_mappings = RawUserToDesignMapping::new(&from, &instances);
+        let axis_mappings = UserToDesignMapping::new(&from, &instances);
 
         let mut glyphs = BTreeMap::new();
         for raw_glyph in from.glyphs.into_iter() {
@@ -2613,8 +2613,8 @@ impl From<Affine> for AffineForEqAndHash {
 mod tests {
     use crate::{
         font::{
-            default_master_idx, RawAxisUserToDesignMap, RawFeature, RawFont, RawFontMaster,
-            RawUserToDesignMapping,
+            default_master_idx, AxisUserToDesignMap, RawFeature, RawFont, RawFontMaster,
+            UserToDesignMapping,
         },
         glyphdata::{Category, GlyphData},
         plist::FromPlist,
@@ -3030,17 +3030,17 @@ mod tests {
 
         // Did you load the mappings? DID YOU?!
         assert_eq!(
-            RawUserToDesignMapping(BTreeMap::from([
+            UserToDesignMapping(BTreeMap::from([
                 (
                     "Optical Size".to_string(),
-                    RawAxisUserToDesignMap(vec![
+                    AxisUserToDesignMap(vec![
                         (OrderedFloat(12.0), OrderedFloat(12.0)),
                         (OrderedFloat(72.0), OrderedFloat(72.0))
                     ])
                 ),
                 (
                     "Weight".to_string(),
-                    RawAxisUserToDesignMap(vec![
+                    AxisUserToDesignMap(vec![
                         (OrderedFloat(100.0), OrderedFloat(40.0)),
                         (OrderedFloat(200.0), OrderedFloat(46.0)),
                         (OrderedFloat(300.0), OrderedFloat(51.0)),
@@ -3061,9 +3061,9 @@ mod tests {
 
         // Did you load the mappings? DID YOU?!
         assert_eq!(
-            RawUserToDesignMapping(BTreeMap::from([(
+            UserToDesignMapping(BTreeMap::from([(
                 "Weight".to_string(),
-                RawAxisUserToDesignMap(vec![
+                AxisUserToDesignMap(vec![
                     (OrderedFloat(400.0), OrderedFloat(0.0)),
                     (OrderedFloat(500.0), OrderedFloat(8.0)),
                     (OrderedFloat(700.0), OrderedFloat(10.0)),
@@ -3096,9 +3096,9 @@ mod tests {
 
         // Did you load the mappings? DID YOU?!
         assert_eq!(
-            RawUserToDesignMapping(BTreeMap::from([(
+            UserToDesignMapping(BTreeMap::from([(
                 "Weight".to_string(),
-                RawAxisUserToDesignMap(vec![
+                AxisUserToDesignMap(vec![
                     (OrderedFloat(300.0), OrderedFloat(60.0)),
                     // we expect a map 400:80 here, even though the 'Regular' instance's
                     // Weight Class property is omitted in the .glyphs source because it
@@ -3136,9 +3136,9 @@ mod tests {
         );
         // Did you load the mappings? DID YOU?!
         assert_eq!(
-            RawUserToDesignMapping(BTreeMap::from([(
+            UserToDesignMapping(BTreeMap::from([(
                 "Width".to_string(),
-                RawAxisUserToDesignMap(vec![
+                AxisUserToDesignMap(vec![
                     // The "1: Ultra-condensed" instance width class corresponds to a
                     // `wdth` of 50 (user-space), in turn mapped to 22 (design-space).
                     (OrderedFloat(50.0), OrderedFloat(22.0)),
