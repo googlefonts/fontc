@@ -95,6 +95,13 @@ pub struct CustomParameters {
     pub codepage_range_bits: Option<BTreeSet<u32>>,
     pub panose: Option<Vec<i64>>,
 
+    pub lowest_rec_ppem: Option<i64>,
+    pub hhea_caret_slope_run: Option<i64>,
+    pub hhea_caret_slope_rise: Option<i64>,
+    pub hhea_caret_offset: Option<i64>,
+    pub vhea_caret_slope_run: Option<i64>,
+    pub vhea_caret_slope_rise: Option<i64>,
+    pub vhea_caret_offset: Option<i64>,
     // these fields are parsed via the config, but are stored
     // in the top-level `Font` struct
     pub virtual_masters: Option<Vec<BTreeMap<String, OrderedFloat<f64>>>>,
@@ -524,7 +531,15 @@ impl RawCustomParameters {
             // function.
             macro_rules! add_and_report_issues {
                 ($field:ident, $converter:path) => {{
-                    let value = $converter(value);
+                    add_and_report_issues!($field, $converter(value))
+                }};
+
+                ($field:ident, $converter:path, into) => {{
+                    add_and_report_issues!($field, $converter(value).map(Into::into))
+                }};
+
+                ($field:ident, $value_expr:expr) => {{
+                    let value = $value_expr;
 
                     if value.is_none() {
                         log::warn!("failed to parse param for '{}'", stringify!($field));
@@ -574,6 +589,40 @@ impl RawCustomParameters {
                 "codePageRanges" => {
                     add_and_report_issues!(codepage_range_bits, Plist::as_codepage_bits)
                 }
+                // these values are not listed in the glyphs.app UI, but exist
+                // in some fonts:
+                // https://github.com/googlefonts/fontc/pull/1144#issuecomment-2503134008
+                "openTypeHeadLowestRecPPEM" => {
+                    add_and_report_issues!(lowest_rec_ppem, Plist::as_i64)
+                }
+                "openTypeHheaCaretSlopeRun" => {
+                    add_and_report_issues!(hhea_caret_slope_run, Plist::as_i64)
+                }
+                "openTypeHheaCaretSlopeRise" => {
+                    add_and_report_issues!(hhea_caret_slope_rise, Plist::as_i64)
+                }
+                "openTypeHheaCaretOffset" => {
+                    add_and_report_issues!(hhea_caret_offset, Plist::as_i64)
+                }
+                "openTypeVheaCaretSlopeRun" => {
+                    add_and_report_issues!(vhea_caret_slope_run, Plist::as_i64)
+                }
+                "openTypeVheaCaretSlopeRise" => {
+                    add_and_report_issues!(vhea_caret_slope_rise, Plist::as_i64)
+                }
+                "openTypeVheaCaretOffset" => {
+                    add_and_report_issues!(vhea_caret_offset, Plist::as_i64)
+                }
+                // these might need to be handled? they're in the same list as
+                // the items above:
+                // https://github.com/googlefonts/glyphsLib/blob/74c63244fdb/Lib/glyphsLib/builder/custom_params.py#L429
+                "openTypeNameUniqueID"
+                | "openTypeNameVersion"
+                | "openTypeOS2FamilyClass"
+                | "openTypeHeadFlags" => {
+                    log::warn!("unhandled custom param '{name}'")
+                }
+
                 "Virtual Master" => match value.as_virtual_master() {
                     Some(val) => virtual_masters.push(val),
                     None => log::warn!("failed to parse virtual master '{value:?}'"),
@@ -581,7 +630,7 @@ impl RawCustomParameters {
                 "panose" => panose = value.as_vec_of_ints(),
                 "openTypeOS2Panose" => panose_old = value.as_vec_of_ints(),
                 "glyphOrder" => add_and_report_issues!(glyph_order, Plist::as_vec_of_string),
-                _ => log::warn!("unhandled custom parameter '{name}'"),
+                _ => log::warn!("unknown custom parameter '{name}'"),
             }
         }
         params.panose = panose.or(panose_old);
@@ -2270,6 +2319,7 @@ impl TryFrom<RawFont> for Font {
 
         let mut custom_parameters = from.custom_parameters.to_custom_params()?;
         let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take());
+
         let axes = from.axes.clone();
         let instances: Vec<_> = from
             .instances

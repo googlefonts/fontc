@@ -1,0 +1,36 @@
+{
+.appVersion = "3260";
+.formatVersion = 3;
+customParameters = (
+{
+name = openTypeHeadFlags;
+value = (
+0
+);
+},
+{
+name = openTypeHeadLowestRecPPEM;
+value = 7;
+},
+{
+name = openTypeHheaCaretOffset;
+value = 2;
+},
+{
+name = openTypeHheaCaretSlopeRise;
+value = 1;
+},
+{
+name = openTypeHheaCaretSlopeRun;
+value = 5;
+},
+);
+familyName = UnusualParams;
+fontMaster = (
+{
+id = master01;
+name = Regular;
+}
+);
+unitsPerEm = 1000;
+}
