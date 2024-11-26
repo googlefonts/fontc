@@ -1,0 +1,28 @@
+{
+.formatVersion = 3;
+familyName = KernFloats;
+fontMaster = (
+{
+id = m01;
+}
+);
+glyphs = (
+{
+glyphname = space;
+layers = (
+{
+layerId = m01;
+width = 200;
+}
+);
+}
+);
+unitsPerEm = 1000;
+kerning = {
+    "m01" = {
+        space = {
+        space = 4.2001;
+        };
+    };
+};
+}

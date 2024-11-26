@@ -98,10 +98,10 @@ pub struct FontCustomParameters {
 
 /// master id => { (name or class, name or class) => adjustment }
 #[derive(Clone, Debug, Default, PartialEq, Hash)]
-pub struct Kerning(BTreeMap<String, BTreeMap<(String, String), i32>>);
+pub struct Kerning(BTreeMap<String, BTreeMap<(String, String), OrderedFloat<f64>>>);
 
 impl Kerning {
-    pub fn get(&self, master_id: &str) -> Option<&BTreeMap<(String, String), i32>> {
+    pub fn get(&self, master_id: &str) -> Option<&BTreeMap<(String, String), OrderedFloat<f64>>> {
         self.0.get(master_id)
     }
 
@@ -109,7 +109,9 @@ impl Kerning {
         self.0.keys()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &BTreeMap<(String, String), i32>)> {
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (&String, &BTreeMap<(String, String), OrderedFloat<f64>>)> {
         self.0.iter()
     }
 
@@ -118,14 +120,14 @@ impl Kerning {
         master_id: String,
         lhs_class_or_group: String,
         rhs_class_or_group: String,
-        kern: i64,
+        kern: f64,
     ) {
         *self
             .0
             .entry(master_id)
             .or_default()
             .entry((lhs_class_or_group, rhs_class_or_group))
-            .or_default() = kern as i32;
+            .or_default() = kern.into();
     }
 }
 
@@ -163,7 +165,7 @@ impl FromPlist for Kerning {
 
                     let rhs_name_or_class: String = tokenizer.parse()?;
                     tokenizer.eat(b'=')?;
-                    let value: i64 = tokenizer.parse()?;
+                    let value: f64 = tokenizer.parse()?;
                     tokenizer.eat(b';')?;
 
                     kerning.insert(
@@ -3384,7 +3386,7 @@ mod tests {
             .get("m01")
             .unwrap()
             .iter()
-            .map(|((n1, n2), value)| (n1.as_str(), n2.as_str(), *value))
+            .map(|((n1, n2), value)| (n1.as_str(), n2.as_str(), value.0))
             .collect::<Vec<_>>();
 
         assert_eq!(
@@ -3398,18 +3400,27 @@ mod tests {
                     ),
                 ],
                 vec![
-                    ("@MMK_L_bracketleft_R", "exclam", -165),
-                    ("bracketleft", "bracketright", -300),
-                    ("exclam", "@MMK_R_bracketright_L", -160),
-                    ("exclam", "exclam", -360),
-                    ("exclam", "hyphen", 20),
-                    ("hyphen", "hyphen", -150),
+                    ("@MMK_L_bracketleft_R", "exclam", -165.),
+                    ("bracketleft", "bracketright", -300.),
+                    ("exclam", "@MMK_R_bracketright_L", -160.),
+                    ("exclam", "exclam", -360.),
+                    ("exclam", "hyphen", 20.),
+                    ("hyphen", "hyphen", -150.),
                 ],
             ),
             (actual_groups, actual_kerning),
             "{:?}",
             font.kerning_ltr
         );
+    }
+
+    #[test]
+    fn kern_floats() {
+        let font = Font::load(&glyphs3_dir().join("KernFloats.glyphs")).unwrap();
+
+        let kerns = font.kerning_ltr.get("m01").unwrap();
+        let key = ("space".to_string(), "space".to_string());
+        assert_eq!(kerns.get(&key), Some(&OrderedFloat(4.2001)));
     }
 
     #[test]
@@ -3569,7 +3580,6 @@ mod tests {
             Some(&OrderedFloat(0f64))
         );
     }
-
     #[test]
     fn read_font_metrics() {
         let font =
