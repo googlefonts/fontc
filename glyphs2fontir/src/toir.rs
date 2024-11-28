@@ -207,7 +207,10 @@ fn to_ir_axis(
 
     Ok(fontdrasil::types::Axis {
         name: axis.name.clone(),
-        tag: Tag::from_str(&axis.tag).map_err(Error::InvalidTag)?,
+        tag: Tag::from_str(&axis.tag).map_err(|cause| Error::InvalidTag {
+            raw_tag: axis.tag.clone(),
+            cause,
+        })?,
         hidden: axis.hidden.unwrap_or(false),
         min: min.to_user(&converter),
         default: default.to_user(&converter),

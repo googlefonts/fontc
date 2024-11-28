@@ -71,8 +71,8 @@ pub enum Error {
         mappings: Vec<(UserCoord, DesignCoord)>,
         value: DesignCoord,
     },
-    #[error("Invalid tag")]
-    InvalidTag(#[from] InvalidTag),
+    #[error("Invalid tag '{raw_tag}': {cause}")]
+    InvalidTag { raw_tag: String, cause: InvalidTag },
     #[error("Source file contained a construct we don't yet support: {0}")]
     UnsupportedConstruct(String),
 }
