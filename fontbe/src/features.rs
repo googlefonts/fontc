@@ -281,14 +281,14 @@ impl<'a> FeatureWriter<'a> {
     }
 }
 
-impl<'a> FeatureProvider for FeatureWriter<'a> {
+impl FeatureProvider for FeatureWriter<'_> {
     fn add_features(&self, builder: &mut FeatureBuilder) {
         self.add_kerning_features(builder);
         self.add_marks(builder);
     }
 }
 
-impl<'a> VariationInfo for FeaVariationInfo<'a> {
+impl VariationInfo for FeaVariationInfo<'_> {
     type Error = Error;
     fn axis(&self, axis_tag: Tag) -> Option<(usize, &Axis)> {
         self.axes.get(&axis_tag).map(|(i, a)| (*i, *a))

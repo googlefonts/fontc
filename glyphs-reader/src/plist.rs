@@ -660,7 +660,7 @@ pub struct Tokenizer<'a> {
     idx: usize,
 }
 
-impl<'a> Debug for Tokenizer<'a> {
+impl Debug for Tokenizer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let start = self.idx;
         let end = (start + 16).min(self.content.len());

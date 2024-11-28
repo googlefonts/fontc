@@ -87,7 +87,7 @@ fn run_crater_and_save_results(args: &CiArgs) -> Result<(), Error> {
     let mut prev_runs: Vec<RunSummary> = load_json_if_exists_else_default(&summary_file)?;
     // todo: fontc_repo should be checked out by us, and have a known path
     let fontc_rev = super::get_git_rev(None).unwrap();
-    let pip_freeze_sha = dbg!(super::pip_freeze_sha());
+    let pip_freeze_sha = super::pip_freeze_sha();
     if let Some(last_run) = prev_runs.last() {
         if last_run.fontc_rev == fontc_rev
             && Some(last_run.input_file.as_os_str()) == args.to_run.file_name()

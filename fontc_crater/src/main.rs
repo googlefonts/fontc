@@ -114,15 +114,16 @@ fn get_git_rev(repo_path: Option<&Path>) -> Option<String> {
 }
 
 fn pip_freeze_sha() -> String {
-    let pipfreeze = Command::new("pip")
+    let mut pipfreeze = Command::new("pip")
         .arg("freeze")
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
     let sha1sum = Command::new("shasum")
-        .stdin(Stdio::from(pipfreeze.stdout.unwrap()))
+        .stdin(Stdio::from(pipfreeze.stdout.take().unwrap()))
         .output()
         .expect("shasum should be preinstalled everywhere");
+    pipfreeze.wait().unwrap();
     assert!(sha1sum.status.success());
     std::str::from_utf8(sha1sum.stdout.trim_ascii())
         .expect("shasum output always ascii")

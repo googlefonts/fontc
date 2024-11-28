@@ -94,7 +94,7 @@ fn priority(id: &AnyWorkId) -> u32 {
 }
 
 impl<'a> Workload<'a> {
-    pub fn new(change_detector: &'a ChangeDetector, timer: JobTimer) -> Workload {
+    pub fn new(change_detector: &'a ChangeDetector, timer: JobTimer) -> Workload<'a> {
         Workload {
             change_detector,
             job_count: 0,
