@@ -53,7 +53,7 @@ pub(crate) fn to_ir_static_metadata(font_data: &FontraFontData) -> Result<Static
                     .iter()
                     .position(|(u, _)| *u == default)
                     .filter(|_| has_min_max)
-                    .ok_or_else(|| Error::MissingAxisMapping(a.tag))?;
+                    .ok_or(Error::MissingAxisMapping(a.tag))?;
                 CoordConverter::new(examples, default_idx)
             } else {
                 CoordConverter::unmapped(min, default, max)
