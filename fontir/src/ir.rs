@@ -1792,6 +1792,28 @@ pub struct GlyphInstance {
     pub components: Vec<Component>,
 }
 
+impl GlyphInstance {
+    /// Returns the concatenation of the element types for each outline.
+    ///
+    /// These are 'M' for moveto, 'L' for lineto, 'Q' for quadto, 'C' for
+    /// curveto and 'Z' for closepath.
+    pub fn path_elements(&self) -> String {
+        fn path_el_type(el: &PathEl) -> &'static str {
+            match el {
+                PathEl::MoveTo(..) => "M",
+                PathEl::LineTo(..) => "L",
+                PathEl::QuadTo(..) => "Q",
+                PathEl::CurveTo(..) => "C",
+                PathEl::ClosePath => "Z",
+            }
+        }
+        self.contours
+            .iter()
+            .flat_map(|c| c.elements().iter().map(path_el_type))
+            .collect()
+    }
+}
+
 /// A single glyph component, reference to another glyph.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Component {

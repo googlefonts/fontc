@@ -615,12 +615,7 @@ impl CheckedGlyph {
         let path_els: HashSet<String> = glyph
             .sources()
             .values()
-            .map(|s| {
-                s.contours
-                    .iter()
-                    .map(|c| c.elements().iter().map(path_el_type).collect::<String>())
-                    .collect()
-            })
+            .map(|g| g.path_elements())
             .collect();
         if path_els.len() > 1 {
             warn!(
@@ -716,16 +711,6 @@ impl CheckedGlyph {
                 *contour = contour.reverse_subpaths();
             }
         }
-    }
-}
-
-fn path_el_type(el: &PathEl) -> &'static str {
-    match el {
-        PathEl::MoveTo(..) => "M",
-        PathEl::LineTo(..) => "L",
-        PathEl::QuadTo(..) => "Q",
-        PathEl::CurveTo(..) => "C",
-        PathEl::ClosePath => "Z",
     }
 }
 
