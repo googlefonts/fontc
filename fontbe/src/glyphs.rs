@@ -597,6 +597,7 @@ enum CheckedGlyph {
 
 impl CheckedGlyph {
     fn new(glyph: &ir::Glyph) -> Result<Self, Error> {
+        let name = &glyph.name;
         // every instance must have consistent component glyphs
         let components: HashSet<BTreeSet<GlyphName>> = glyph
             .sources()
@@ -604,9 +605,9 @@ impl CheckedGlyph {
             .map(|s| s.components.iter().map(|c| c.base.clone()).collect())
             .collect();
         if components.len() > 1 {
-            warn!("{} has inconsistent component glyph sequences; fontir is supposed to fix that for us", glyph.name);
+            warn!("{name} has inconsistent component glyph sequences; fontir is supposed to fix that for us");
             return Err(Error::GlyphError(
-                glyph.name.clone(),
+                name.clone(),
                 GlyphProblem::InconsistentComponents,
             ));
         }
@@ -623,31 +624,20 @@ impl CheckedGlyph {
             })
             .collect();
         if path_els.len() > 1 {
-            warn!(
-                "{} has inconsistent path elements: {path_els:?}",
-                glyph.name
-            );
+            warn!("{name} has inconsistent path elements: {path_els:?}",);
             return Err(Error::GlyphError(
-                glyph.name.clone(),
+                name.clone(),
                 GlyphProblem::InconsistentPathElements,
             ));
         }
         let components = components.into_iter().next().unwrap_or_default();
         let path_els = path_els.into_iter().next().unwrap_or_default();
-        trace!(
-            "'{}' consistent: components '{:?}', paths '{}'",
-            glyph.name,
-            components,
-            path_els
-        );
+        trace!("'{name}' consistent: components '{components:?}', paths '{path_els}'",);
 
         if !components.is_empty() && !path_els.is_empty() {
-            warn!(
-                "{} has component *and* paths; fontir is supposed to fix that for us",
-                glyph.name
-            );
+            warn!("{name} has component *and* paths; fontir is supposed to fix that for us",);
             return Err(Error::GlyphError(
-                glyph.name.clone(),
+                name.clone(),
                 GlyphProblem::HasComponentsAndPath,
             ));
         }
@@ -659,13 +649,9 @@ impl CheckedGlyph {
                 .sources()
                 .iter()
                 .map(|(location, instance)| {
-                    if instance.contours.len() > 1 {
-                        trace!(
-                            "Merging {} contours to form '{}' at {:?}",
-                            instance.contours.len(),
-                            glyph.name,
-                            location
-                        );
+                    let n_contours = instance.contours.len();
+                    if n_contours > 1 {
+                        trace!("Merging {n_contours} contours to form '{name}' at {location:?}",);
                     }
                     let mut path = instance.contours.first().cloned().unwrap_or_default();
                     for contour in instance.contours.iter().skip(1) {
@@ -685,7 +671,7 @@ impl CheckedGlyph {
                 .sources()
                 .iter()
                 .flat_map(|(location, instance)| {
-                    trace!("{} {:?}", glyph.name, instance.components);
+                    trace!("{name} {:?}", instance.components);
                     instance
                         .components
                         .iter()
