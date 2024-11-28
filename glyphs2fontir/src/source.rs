@@ -27,7 +27,7 @@ use fontir::{
 };
 use glyphs_reader::{
     glyphdata::{Category, Subcategory},
-    Font, FontCustomParameters, InstanceType,
+    CustomParameters, Font, InstanceType,
 };
 use ordered_float::OrderedFloat;
 use smol_str::SmolStr;
@@ -124,7 +124,7 @@ impl GlyphsIrSource {
             version_minor: Default::default(),
             date: None,
             kerning_ltr: font.kerning_ltr.clone(),
-            custom_parameters: FontCustomParameters {
+            custom_parameters: CustomParameters {
                 unicode_range_bits: None,
                 codepage_range_bits: None,
                 panose: None,
@@ -556,6 +556,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
                 GlobalMetric::Os2WinDescent,
                 pos.clone(),
                 master
+                    .custom_parameters
                     .win_descent
                     .or(font.custom_parameters.win_descent)
                     .map(|v| v.abs() as f64),
@@ -567,6 +568,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
                     set_metric!(
                         $variant,
                         master
+                            .custom_parameters
                             .$field_name
                             .or(font.custom_parameters.$field_name)
                             .map(|v| v as f64)
@@ -577,6 +579,7 @@ impl Work<Context, WorkId, Error> for GlobalMetricWork {
                     set_metric!(
                         $variant,
                         master
+                            .custom_parameters
                             .$field_name
                             .or(font.custom_parameters.$field_name)
                             .or(Some($fallback.into()))

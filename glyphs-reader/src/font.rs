@@ -62,12 +62,12 @@ pub struct Font {
     // master id => { (name or class, name or class) => adjustment }
     pub kerning_ltr: Kerning,
 
-    pub custom_parameters: FontCustomParameters,
+    pub custom_parameters: CustomParameters,
 }
 
 /// Custom parameter options that can be set on a glyphs font
 #[derive(Clone, Debug, PartialEq, Hash, Default)]
-pub struct FontCustomParameters {
+pub struct CustomParameters {
     pub use_typo_metrics: Option<bool>,
     pub fs_type: Option<u16>,
     pub has_wws_names: Option<bool>,
@@ -94,6 +94,11 @@ pub struct FontCustomParameters {
     pub unicode_range_bits: Option<BTreeSet<u32>>,
     pub codepage_range_bits: Option<BTreeSet<u32>>,
     pub panose: Option<Vec<i64>>,
+
+    // these fields are parsed via the config, but are stored
+    // in the top-level `Font` struct
+    pub virtual_masters: Option<Vec<BTreeMap<String, OrderedFloat<f64>>>>,
+    pub glyph_order: Option<Vec<SmolStr>>,
 }
 
 /// master id => { (name or class, name or class) => adjustment }
@@ -349,357 +354,275 @@ struct NumberName {
 // we use a vec of tuples instead of a map because there can be multiple
 // values for the same name (e.g. 'Virtual Master')
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct RawCustomParameters(Vec<(String, CustomParameterValue)>);
+pub(crate) struct RawCustomParameters(Vec<RawCustomParameterValue>);
+
+#[derive(Clone, Default, Debug, PartialEq, Eq, Hash, FromPlist)]
+struct RawCustomParameterValue {
+    name: SmolStr,
+    value: Plist,
+    disabled: Option<bool>,
+}
+
+impl FromPlist for RawCustomParameters {
+    fn parse(tokenizer: &mut Tokenizer) -> Result<Self, crate::plist::Error> {
+        Vec::parse(tokenizer).map(RawCustomParameters)
+    }
+}
+
+/// Convenience methods for converting `Plist` structs to concrete custom param types
+trait PlistParamsExt {
+    fn as_codepage_bits(&self) -> Option<BTreeSet<u32>>;
+    fn as_unicode_code_ranges(&self) -> Option<BTreeSet<u32>>;
+    fn as_fs_type(&self) -> Option<u16>;
+    fn as_mapping_values(&self) -> Option<Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>>;
+    fn as_axis_location(&self) -> Option<AxisLocation>;
+    fn as_axis(&self) -> Option<Axis>;
+    fn as_bool(&self) -> Option<bool>;
+    fn as_ordered_f64(&self) -> Option<OrderedFloat<f64>>;
+    fn as_vec_of_ints(&self) -> Option<Vec<i64>>;
+    fn as_axis_locations(&self) -> Option<Vec<AxisLocation>>;
+    fn as_vec_of_string(&self) -> Option<Vec<SmolStr>>;
+    fn as_axes(&self) -> Option<Vec<Axis>>;
+    fn as_axis_mappings(&self) -> Option<Vec<AxisMapping>>;
+    fn as_virtual_master(&self) -> Option<BTreeMap<String, OrderedFloat<f64>>>;
+}
+
+impl PlistParamsExt for Plist {
+    fn as_bool(&self) -> Option<bool> {
+        self.as_i64().map(|val| val == 1)
+    }
+
+    fn as_ordered_f64(&self) -> Option<OrderedFloat<f64>> {
+        self.as_f64().map(OrderedFloat)
+    }
+
+    fn as_vec_of_ints(&self) -> Option<Vec<i64>> {
+        // exciting! apparently glyphs (at least sometimes?) serializes
+        // this as a vec of strings? (this is true in WghtVar_OS2.glyphs)
+        if let Some(thing_that_makes_sense) = self.as_array()?.iter().map(Plist::as_i64).collect() {
+            return Some(thing_that_makes_sense);
+        }
+
+        self.as_array()?
+            .iter()
+            .map(|val| val.as_str().and_then(|s| s.parse::<i64>().ok()))
+            .collect()
+    }
+
+    fn as_axis_location(&self) -> Option<AxisLocation> {
+        let plist = self.as_dict()?;
+        let name = plist.get("Axis").and_then(Plist::as_str)?;
+        let location = plist.get("Location").and_then(Plist::as_f64)?;
+        Some(AxisLocation {
+            axis_name: name.into(),
+            location: location.into(),
+        })
+    }
+
+    fn as_axis_locations(&self) -> Option<Vec<AxisLocation>> {
+        let array = self.as_array()?;
+        array.iter().map(Plist::as_axis_location).collect()
+    }
+
+    fn as_vec_of_string(&self) -> Option<Vec<SmolStr>> {
+        self.as_array()?
+            .iter()
+            .map(|plist| plist.as_str().map(SmolStr::from))
+            .collect()
+    }
+
+    fn as_axis(&self) -> Option<Axis> {
+        let plist = self.as_dict()?;
+        let name = plist.get("Name").and_then(Plist::as_str)?;
+        let tag = plist.get("Tag").and_then(Plist::as_str)?;
+        let hidden = plist.get("hidden").and_then(Plist::as_bool);
+        Some(Axis {
+            name: name.into(),
+            tag: tag.into(),
+            hidden,
+        })
+    }
+
+    fn as_axes(&self) -> Option<Vec<Axis>> {
+        self.as_array()?.iter().map(Plist::as_axis).collect()
+    }
+
+    fn as_mapping_values(&self) -> Option<Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>> {
+        let plist = self.as_dict()?;
+        plist
+            .iter()
+            .map(|(key, value)| {
+                // our keys are strings, but we want to interpret them as floats:
+                let key = key
+                    .parse::<f64>()
+                    .or_else(|_| key.parse::<i64>().map(|i| i as f64))
+                    .ok()?;
+                let val = value.as_f64()?;
+                Some((key.into(), val.into()))
+            })
+            .collect()
+    }
+
+    fn as_axis_mappings(&self) -> Option<Vec<AxisMapping>> {
+        self.as_dict()?
+            .iter()
+            .map(|(tag, mappings)| {
+                let user_to_design = mappings.as_mapping_values()?;
+                Some(AxisMapping {
+                    tag: tag.to_string(),
+                    user_to_design,
+                })
+            })
+            .collect()
+    }
+
+    fn as_virtual_master(&self) -> Option<BTreeMap<String, OrderedFloat<f64>>> {
+        self.as_array()?
+            .iter()
+            .map(Plist::as_axis_location)
+            .map(|loc| (loc.map(|loc| (loc.axis_name, loc.location))))
+            .collect()
+    }
+
+    fn as_fs_type(&self) -> Option<u16> {
+        Some(self.as_vec_of_ints()?.iter().map(|bit| 1 << bit).sum())
+    }
+
+    fn as_unicode_code_ranges(&self) -> Option<BTreeSet<u32>> {
+        let bits = self.as_vec_of_ints()?;
+        Some(bits.iter().map(|bit| *bit as u32).collect())
+    }
+
+    fn as_codepage_bits(&self) -> Option<BTreeSet<u32>> {
+        let bits = self.as_vec_of_ints()?;
+        bits.iter()
+            .map(|b| codepage_range_bit(*b as _))
+            .collect::<Result<_, _>>()
+            .ok()
+    }
+}
 
 impl RawCustomParameters {
-    /// convert into the parsed params for a top-level font
-    fn to_font_params(&self) -> Result<FontCustomParameters, Error> {
-        let fs_type = self
-            .fs_type()
-            .map(|bits| bits.iter().map(|bit| 1 << bit).sum());
-
-        let unicode_range_bits = self
-            .unicode_range()
-            .map(|bits| bits.iter().map(|b| *b as u32).collect());
-
-        let codepage_range_bits = self
-            .codepage_range()
-            .map(|bits| {
-                bits.iter()
-                    .map(|b| codepage_range_bit(*b as u32))
-                    .collect::<Result<_, Error>>()
-            })
-            .transpose()?;
-
-        let panose = self.panose().cloned();
-        Ok(FontCustomParameters {
-            use_typo_metrics: self.bool("Use Typo Metrics"),
-            has_wws_names: self.bool("Has WWS Names"),
-            typo_ascender: self.int("typoAscender"),
-            typo_descender: self.int("typoDescender"),
-            typo_line_gap: self.int("typoLineGap"),
-            win_ascent: self.int("winAscent"),
-            win_descent: self.int("winDescent"),
-            hhea_ascender: self.int("hheaAscender"),
-            hhea_descender: self.int("hheaDescender"),
-            hhea_line_gap: self.int("hheaLineGap"),
-            underline_thickness: self.float("underlineThickness"),
-            underline_position: self.float("underlinePosition"),
-            strikeout_position: self.int("strikeoutPosition"),
-            strikeout_size: self.int("strikeoutSize"),
-            subscript_x_offset: self.int("subscriptXOffset"),
-            subscript_x_size: self.int("subscriptXSize"),
-            subscript_y_offset: self.int("subscriptYOffset"),
-            subscript_y_size: self.int("subscriptYSize"),
-            superscript_x_offset: self.int("superscriptXOffset"),
-            superscript_x_size: self.int("superscriptXSize"),
-            superscript_y_offset: self.int("superscriptYOffset"),
-            superscript_y_size: self.int("superscriptYSize"),
-            fs_type,
-            unicode_range_bits,
-            codepage_range_bits,
-            panose,
-        })
-    }
-
-    /// Get the first parameter with the given name, or `None` if not found.
-    fn get(&self, name: &str) -> Option<&CustomParameterValue> {
-        self.0.iter().find_map(|(n, v)| (n == name).then_some(v))
-    }
-
-    fn int(&self, name: &str) -> Option<i64> {
-        let Some(CustomParameterValue::Int(i)) = self.get(name) else {
-            return None;
-        };
-        Some(*i)
-    }
-
-    fn float(&self, name: &str) -> Option<OrderedFloat<f64>> {
-        let value = self.get(name)?;
-        match value {
-            CustomParameterValue::Int(i) => Some((*i as f64).into()),
-            CustomParameterValue::Float(f) => Some(*f),
-            _ => None,
-        }
-    }
-
-    fn bool(&self, name: &str) -> Option<bool> {
-        self.int(name).map(|v| v == 1)
-    }
-
-    fn string(&self, name: &str) -> Option<&str> {
-        let Some(CustomParameterValue::String(str)) = self.get(name) else {
-            return None;
-        };
-        Some(str)
-    }
-
-    fn axes(&self) -> Option<&Vec<Axis>> {
-        let Some(CustomParameterValue::Axes(axes)) = self.get("Axes") else {
-            return None;
-        };
-        Some(axes)
-    }
-
-    fn axis_mappings(&self) -> Option<&Vec<AxisMapping>> {
-        let Some(CustomParameterValue::AxesMappings(mappings)) = self.get("Axis Mappings") else {
-            return None;
-        };
-        Some(mappings)
-    }
-
-    fn axis_locations(&self) -> Option<&Vec<AxisLocation>> {
-        let Some(CustomParameterValue::AxisLocations(locations)) = self.get("Axis Location") else {
-            return None;
-        };
-        Some(locations)
-    }
-
-    fn glyph_order(&self) -> Option<&Vec<SmolStr>> {
-        let Some(CustomParameterValue::GlyphOrder(names)) = self.get("glyphOrder") else {
-            return None;
-        };
-        Some(names)
-    }
-
-    fn virtual_masters(&self) -> impl Iterator<Item = &Vec<AxisLocation>> {
-        self.0.iter().filter_map(|(name, value)| {
-            if name == "Virtual Master" {
-                let CustomParameterValue::VirtualMaster(locations) = value else {
-                    panic!("Virtual Master parameter has wrong type!");
-                };
-                return Some(locations);
-            }
-            None
-        })
-    }
-
-    fn fs_type(&self) -> Option<&Vec<i64>> {
-        let Some(CustomParameterValue::FsType(bits)) = self.get("fsType") else {
-            return None;
-        };
-        Some(bits)
-    }
-
-    fn unicode_range(&self) -> Option<&Vec<i64>> {
-        let Some(CustomParameterValue::UnicodeRange(bits)) = self.get("unicodeRanges") else {
-            return None;
-        };
-        Some(bits)
-    }
-
-    fn codepage_range(&self) -> Option<&Vec<i64>> {
-        let Some(CustomParameterValue::CodepageRange(bits)) = self.get("codePageRanges") else {
-            return None;
-        };
-        Some(bits)
-    }
-
-    fn panose(&self) -> Option<&Vec<i64>> {
+    ////convert into the parsed params for a top-level font
+    fn to_custom_params(&self) -> Result<CustomParameters, Error> {
+        let mut params = CustomParameters::default();
+        let mut virtual_masters = Vec::<BTreeMap<String, OrderedFloat<f64>>>::new();
         // PANOSE custom parameter is accessible under a short name and a long name:
         //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L322-L323
         // ...with the value under the short name taking precendence:
         //     https://github.com/googlefonts/glyphsLib/blob/050ef62c/Lib/glyphsLib/builder/custom_params.py#L258-L269
-        match self.get("panose").or_else(|| self.get("openTypeOS2Panose")) {
-            Some(CustomParameterValue::Panose(values)) => Some(values),
-            _ => None,
-        }
-    }
-}
+        let mut panose = None;
+        let mut panose_old = None;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum CustomParameterValue {
-    Int(i64),
-    Float(OrderedFloat<f64>),
-    String(String),
-    Axes(Vec<Axis>),
-    AxesMappings(Vec<AxisMapping>),
-    AxisLocations(Vec<AxisLocation>),
-    GlyphOrder(Vec<SmolStr>),
-    VirtualMaster(Vec<AxisLocation>),
-    FsType(Vec<i64>),
-    UnicodeRange(Vec<i64>),
-    CodepageRange(Vec<i64>),
-    Panose(Vec<i64>),
-}
+        for RawCustomParameterValue {
+            name,
+            value,
+            disabled,
+        } in &self.0
+        {
+            // we need to use a macro here because you can't pass the name of a field to a
+            // function.
+            macro_rules! add_and_report_issues {
+                ($field:ident, $converter:path) => {{
+                    let value = $converter(value);
 
-/// Hand-parse these because they take multiple shapes
-impl FromPlist for RawCustomParameters {
-    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
-        use crate::plist::Error;
-        let mut params = Vec::new();
-
-        tokenizer.eat(b'(')?;
-
-        loop {
-            if tokenizer.eat(b')').is_ok() {
-                break;
+                    if value.is_none() {
+                        log::warn!("failed to parse param for '{}'", stringify!($field));
+                    }
+                    if params.$field.is_some() {
+                        log::warn!("duplicate param value for field '{}'", stringify!($field));
+                    }
+                    params.$field = value;
+                }};
             }
 
-            tokenizer.eat(b'{')?;
-
-            // these params can have an optional 'disabled' flag set; if present
-            // we just pretend they aren't there.
-            let mut disabled = false;
-            let mut name = None;
-            let mut value = None;
-            for _ in 0..3 {
-                let key: String = tokenizer.parse()?;
-                tokenizer.eat(b'=')?;
-                match key.as_str() {
-                    "disabled" => {
-                        let flag = tokenizer.parse::<i64>()?;
-                        disabled = flag != 0;
-                        tokenizer.eat(b';')?;
-                    }
-                    "name" => {
-                        let the_name: String = tokenizer.parse()?;
-                        tokenizer.eat(b';')?;
-                        name = Some(the_name);
-                    }
-                    "value" => {
-                        let peek = tokenizer.peek()?;
-                        match peek {
-                            Token::Atom(..) => {
-                                let Token::Atom(val) = tokenizer.lex()? else {
-                                    panic!("That shouldn't happen");
-                                };
-                                value = match Plist::parse(val)? {
-                                    Plist::Integer(i) => Some(CustomParameterValue::Int(i)),
-                                    Plist::Float(f) => Some(CustomParameterValue::Float(f)),
-                                    Plist::String(s) => Some(CustomParameterValue::String(s)),
-                                    _ => panic!("atom has to be int, float, or string"),
-                                };
-                            }
-                            Token::OpenBrace if name == Some(String::from("Axis Mappings")) => {
-                                let mappings: Vec<AxisMapping> = tokenizer
-                                    .parse_delimited_vec(VecDelimiters::SEMICOLON_SV_IN_BRACES)?;
-                                value = Some(CustomParameterValue::AxesMappings(mappings));
-                            }
-                            Token::String(..) => {
-                                let token = tokenizer.lex()?;
-                                let Token::String(val) = token else {
-                                    return Err(Error::UnexpectedDataType {
-                                        expected: "String",
-                                        found: token.name(),
-                                    });
-                                };
-                                value = Some(CustomParameterValue::String(val.to_string()));
-                            }
-                            _ if name == Some(String::from("Axes")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value = Some(CustomParameterValue::Axes(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("glyphOrder")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value = Some(CustomParameterValue::GlyphOrder(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("Axis Location")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value =
-                                    Some(CustomParameterValue::AxisLocations(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("Virtual Master")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value =
-                                    Some(CustomParameterValue::VirtualMaster(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("fsType")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value = Some(CustomParameterValue::FsType(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("unicodeRanges")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value =
-                                    Some(CustomParameterValue::UnicodeRange(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("codePageRanges")) => {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value =
-                                    Some(CustomParameterValue::CodepageRange(tokenizer.parse()?));
-                            }
-                            _ if name == Some(String::from("panose"))
-                                || name == Some(String::from("openTypeOS2Panose")) =>
-                            {
-                                let Token::OpenParen = peek else {
-                                    return Err(Error::UnexpectedChar('('));
-                                };
-                                value = Some(CustomParameterValue::Panose(tokenizer.parse()?));
-                            }
-                            _ => tokenizer.skip_rec()?,
-                        }
-                        // once we've seen the value we're always done
-                        tokenizer.eat(b';')?;
-                        break;
-                    }
-                    other => {
-                        return Err(Error::Parse(format!(
-                            "unexpected key '{other}' in CustomParams"
-                        )))
-                    }
+            if *disabled == Some(true) {
+                log::debug!("skipping disabled custom param '{name}'");
+                continue;
+            }
+            match name.as_str() {
+                "Use Typo Metrics" => add_and_report_issues!(use_typo_metrics, Plist::as_bool),
+                "Has WWS Names" => add_and_report_issues!(has_wws_names, Plist::as_bool),
+                "typoAscender" => add_and_report_issues!(typo_ascender, Plist::as_i64),
+                "typoDescender" => add_and_report_issues!(typo_descender, Plist::as_i64),
+                "typoLineGap" => add_and_report_issues!(typo_line_gap, Plist::as_i64),
+                "winAscent" => add_and_report_issues!(win_ascent, Plist::as_i64),
+                "winDescent" => add_and_report_issues!(win_descent, Plist::as_i64),
+                "hheaAscender" => add_and_report_issues!(hhea_ascender, Plist::as_i64),
+                "hheaDescender" => add_and_report_issues!(hhea_descender, Plist::as_i64),
+                "hheaLineGap" => add_and_report_issues!(hhea_line_gap, Plist::as_i64),
+                "underlineThickness" => {
+                    add_and_report_issues!(underline_thickness, Plist::as_ordered_f64)
                 }
+                "underlinePosition" => {
+                    add_and_report_issues!(underline_position, Plist::as_ordered_f64)
+                }
+                "strikeoutPosition" => add_and_report_issues!(strikeout_position, Plist::as_i64),
+                "strikeoutSize" => add_and_report_issues!(strikeout_size, Plist::as_i64),
+                "subscriptXOffset" => add_and_report_issues!(subscript_x_offset, Plist::as_i64),
+                "subscriptXSize" => add_and_report_issues!(subscript_x_size, Plist::as_i64),
+                "subscriptYOffset" => add_and_report_issues!(subscript_y_offset, Plist::as_i64),
+                "subscriptYSize" => add_and_report_issues!(subscript_y_size, Plist::as_i64),
+                "superscriptXOffset" => add_and_report_issues!(superscript_x_offset, Plist::as_i64),
+                "superscriptXSize" => add_and_report_issues!(superscript_x_size, Plist::as_i64),
+                "superscriptYOffset" => add_and_report_issues!(superscript_y_offset, Plist::as_i64),
+                "superscriptYSize" => add_and_report_issues!(superscript_y_size, Plist::as_i64),
+                "fsType" => add_and_report_issues!(fs_type, Plist::as_fs_type),
+                "unicodeRanges" => {
+                    add_and_report_issues!(unicode_range_bits, Plist::as_unicode_code_ranges)
+                }
+                "codePageRanges" => {
+                    add_and_report_issues!(codepage_range_bits, Plist::as_codepage_bits)
+                }
+                "Virtual Master" => match value.as_virtual_master() {
+                    Some(val) => virtual_masters.push(val),
+                    None => log::warn!("failed to parse virtual master '{value:?}'"),
+                },
+                "panose" => panose = value.as_vec_of_ints(),
+                "openTypeOS2Panose" => panose_old = value.as_vec_of_ints(),
+                "glyphOrder" => add_and_report_issues!(glyph_order, Plist::as_vec_of_string),
+                _ => log::warn!("unhandled custom parameter '{name}'"),
             }
-
-            if let Some((name, value)) = name.zip(value).filter(|_| !disabled) {
-                params.push((name, value));
-            }
-
-            tokenizer.eat(b'}')?;
-            // Optional comma
-            let _ = tokenizer.eat(b',');
         }
+        params.panose = panose.or(panose_old);
+        params.virtual_masters = Some(virtual_masters).filter(|x| !x.is_empty());
+        Ok(params)
+    }
 
-        // the close paren broke the loop, don't consume here
-        Ok(RawCustomParameters(params))
+    /// Get the first parameter with the given name, or `None` if not found.
+    fn get(&self, name: &str) -> Option<&Plist> {
+        let item = self.0.iter().find(|val| (val.name == name))?;
+        (item.disabled != Some(true)).then_some(&item.value)
+    }
+
+    fn string(&self, name: &str) -> Option<&str> {
+        self.get(name).and_then(Plist::as_str)
+    }
+
+    fn axes(&self) -> Option<Vec<Axis>> {
+        self.get("Axes").and_then(Plist::as_axes)
+    }
+
+    fn axis_mappings(&self) -> Option<Vec<AxisMapping>> {
+        self.get("Axis Mappings").and_then(Plist::as_axis_mappings)
+    }
+
+    fn axis_locations(&self) -> Option<Vec<AxisLocation>> {
+        self.get("Axis Location").and_then(Plist::as_axis_locations)
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AxisLocation {
-    #[fromplist(alt_name = "Axis")]
     axis_name: String,
-    #[fromplist(alt_name = "Location")]
     location: OrderedFloat<f64>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AxisMapping {
+    //TODO this should really be a `Tag`?
     tag: String,
     user_to_design: Vec<(OrderedFloat<f64>, OrderedFloat<f64>)>,
-}
-
-impl FromPlist for AxisMapping {
-    fn parse(tokenizer: &mut Tokenizer<'_>) -> Result<Self, crate::plist::Error> {
-        let tag = tokenizer.parse()?;
-        tokenizer.eat(b'=')?;
-        tokenizer.eat(b'{')?;
-        let mut user_to_design = Vec::new();
-        while tokenizer.eat(b'}').is_err() {
-            let user: OrderedFloat<f64> = tokenizer.parse()?;
-            tokenizer.eat(b'=')?;
-            let design: OrderedFloat<f64> = tokenizer.parse()?;
-            tokenizer.eat(b';')?;
-            user_to_design.push((user, design));
-        }
-        Ok(AxisMapping {
-            tag,
-            user_to_design,
-        })
-    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, FromPlist)]
@@ -936,26 +859,7 @@ pub struct FontMaster {
     pub axes_values: Vec<OrderedFloat<f64>>,
     metric_values: BTreeMap<String, RawMetricValue>,
     pub number_values: BTreeMap<SmolStr, OrderedFloat<f64>>,
-    pub typo_ascender: Option<i64>,
-    pub typo_descender: Option<i64>,
-    pub typo_line_gap: Option<i64>,
-    pub win_ascent: Option<i64>,
-    pub win_descent: Option<i64>,
-    pub hhea_ascender: Option<i64>,
-    pub hhea_descender: Option<i64>,
-    pub hhea_line_gap: Option<i64>,
-    pub underline_thickness: Option<OrderedFloat<f64>>,
-    pub underline_position: Option<OrderedFloat<f64>>,
-    pub strikeout_position: Option<i64>,
-    pub strikeout_size: Option<i64>,
-    pub subscript_x_offset: Option<i64>,
-    pub subscript_x_size: Option<i64>,
-    pub subscript_y_offset: Option<i64>,
-    pub subscript_y_size: Option<i64>,
-    pub superscript_x_offset: Option<i64>,
-    pub superscript_x_size: Option<i64>,
-    pub superscript_y_offset: Option<i64>,
-    pub superscript_y_size: Option<i64>,
+    pub custom_parameters: CustomParameters,
 }
 
 impl FontMaster {
@@ -1678,26 +1582,25 @@ fn parse_alignment_zone(zone: &str) -> Option<(OrderedFloat<f64>, OrderedFloat<f
     Some((OrderedFloat(one as f64), OrderedFloat(two as f64)))
 }
 
-fn parse_glyph_order(raw_font: &RawFont) -> Vec<SmolStr> {
-    let mut valid_names: HashSet<_> = raw_font.glyphs.iter().map(|g| &g.glyphname).collect();
+fn make_glyph_order(glyphs: &[RawGlyph], custom_order: Option<Vec<SmolStr>>) -> Vec<SmolStr> {
+    let mut valid_names: HashSet<_> = glyphs.iter().map(|g| &g.glyphname).collect();
     let mut glyph_order = Vec::new();
 
     // Add all valid glyphOrder entries in order
     // See https://github.com/googlefonts/fontmake-rs/pull/43/files#r1044627972
-    if let Some(names) = raw_font.custom_parameters.glyph_order() {
-        names.iter().for_each(|name| {
-            if valid_names.remove(name) {
-                glyph_order.push(name.clone());
-            }
-        })
+    for name in custom_order.into_iter().flatten() {
+        if valid_names.remove(&name) {
+            glyph_order.push(name.clone());
+        }
     }
 
     // Add anything left over in file order
-    raw_font
-        .glyphs
-        .iter()
-        .filter(|g| valid_names.contains(&g.glyphname))
-        .for_each(|g| glyph_order.push(g.glyphname.clone()));
+    glyph_order.extend(
+        glyphs
+            .iter()
+            .filter(|g| valid_names.contains(&g.glyphname))
+            .map(|g| g.glyphname.clone()),
+    );
 
     glyph_order
 }
@@ -2364,9 +2267,9 @@ impl TryFrom<RawFont> for Font {
         let glyph_data = GlyphData::default();
 
         let radix = if from.is_v2() { 16 } else { 10 };
-        let glyph_order = parse_glyph_order(&from);
 
-        let custom_parameters = from.custom_parameters.to_font_params()?;
+        let mut custom_parameters = from.custom_parameters.to_custom_params()?;
+        let glyph_order = make_glyph_order(&from.glyphs, custom_parameters.glyph_order.take());
         let axes = from.axes.clone();
         let instances: Vec<_> = from
             .instances
@@ -2446,63 +2349,33 @@ impl TryFrom<RawFont> for Font {
         let masters = from
             .font_master
             .into_iter()
-            .map(|m| FontMaster {
-                id: m.id,
-                name: m.name.unwrap_or_default(),
-                axes_values: m.axes_values,
-                metric_values: m
-                    .metric_values
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(idx, value)| {
-                        metric_names.get(&idx).map(|name| (name.clone(), value))
-                    })
-                    .filter(|(_, metric)| !metric.is_empty())
-                    .collect(),
-                number_values: from
-                    .numbers
-                    .iter()
-                    .zip(m.number_values.iter())
-                    .map(|(k, v)| (k.name.clone(), *v))
-                    .collect(),
-                typo_ascender: m.custom_parameters.int("typoAscender"),
-                typo_descender: m.custom_parameters.int("typoDescender"),
-                typo_line_gap: m.custom_parameters.int("typoLineGap"),
-                win_ascent: m.custom_parameters.int("winAscent"),
-                win_descent: m.custom_parameters.int("winDescent"),
-                hhea_ascender: m.custom_parameters.int("hheaAscender"),
-                hhea_descender: m.custom_parameters.int("hheaDescender"),
-                hhea_line_gap: m.custom_parameters.int("hheaLineGap"),
-                underline_thickness: m.custom_parameters.float("underlineThickness"),
-                underline_position: m.custom_parameters.float("underlinePosition"),
-                strikeout_position: m.custom_parameters.int("strikeoutPosition"),
-                strikeout_size: m.custom_parameters.int("strikeoutSize"),
-                subscript_x_offset: m.custom_parameters.int("subscriptXOffset"),
-                subscript_x_size: m.custom_parameters.int("subscriptXSize"),
-                subscript_y_offset: m.custom_parameters.int("subscriptYOffset"),
-                subscript_y_size: m.custom_parameters.int("subscriptYSize"),
-                superscript_x_offset: m.custom_parameters.int("superscriptXOffset"),
-                superscript_x_size: m.custom_parameters.int("superscriptXSize"),
-                superscript_y_offset: m.custom_parameters.int("superscriptYOffset"),
-                superscript_y_size: m.custom_parameters.int("superscriptYSize"),
+            .map(|m| {
+                let custom_parameters = m.custom_parameters.to_custom_params()?;
+                Ok(FontMaster {
+                    id: m.id,
+                    name: m.name.unwrap_or_default(),
+                    axes_values: m.axes_values,
+                    metric_values: m
+                        .metric_values
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(idx, value)| {
+                            metric_names.get(&idx).map(|name| (name.clone(), value))
+                        })
+                        .filter(|(_, metric)| !metric.is_empty())
+                        .collect(),
+                    number_values: from
+                        .numbers
+                        .iter()
+                        .zip(m.number_values.iter())
+                        .map(|(k, v)| (k.name.clone(), *v))
+                        .collect(),
+                    custom_parameters,
+                })
             })
-            .collect();
+            .collect::<Result<_, Error>>()?;
 
-        let virtual_masters = from
-            .custom_parameters
-            .virtual_masters()
-            .map(|vm| {
-                vm.iter()
-                    .map(
-                        |AxisLocation {
-                             axis_name,
-                             location,
-                         }| (axis_name.clone(), *location),
-                    )
-                    .collect()
-            })
-            .collect();
-
+        let virtual_masters = custom_parameters.virtual_masters.take().unwrap_or_default();
         Ok(Font {
             units_per_em,
             axes,
@@ -2997,6 +2870,7 @@ mod tests {
 
     #[test]
     fn glyph_order_override_obeyed() {
+        let _ = env_logger::builder().is_test(true).try_init();
         let font = Font::load(&glyphs3_dir().join("WghtVar_GlyphOrder.glyphs")).unwrap();
         assert_eq!(vec!["hyphen", "space", "exclam"], font.glyph_order);
     }
@@ -3009,14 +2883,14 @@ mod tests {
         assert_eq!(
             UserToDesignMapping(BTreeMap::from([
                 (
-                    "Optical Size".to_string(),
+                    "Optical Size".into(),
                     AxisUserToDesignMap(vec![
                         (OrderedFloat(12.0), OrderedFloat(12.0)),
                         (OrderedFloat(72.0), OrderedFloat(72.0))
                     ])
                 ),
                 (
-                    "Weight".to_string(),
+                    "Weight".into(),
                     AxisUserToDesignMap(vec![
                         (OrderedFloat(100.0), OrderedFloat(40.0)),
                         (OrderedFloat(200.0), OrderedFloat(46.0)),
@@ -3039,7 +2913,7 @@ mod tests {
         // Did you load the mappings? DID YOU?!
         assert_eq!(
             UserToDesignMapping(BTreeMap::from([(
-                "Weight".to_string(),
+                "Weight".into(),
                 AxisUserToDesignMap(vec![
                     (OrderedFloat(400.0), OrderedFloat(0.0)),
                     (OrderedFloat(500.0), OrderedFloat(8.0)),
@@ -3074,7 +2948,7 @@ mod tests {
         // Did you load the mappings? DID YOU?!
         assert_eq!(
             UserToDesignMapping(BTreeMap::from([(
-                "Weight".to_string(),
+                "Weight".into(),
                 AxisUserToDesignMap(vec![
                     (OrderedFloat(300.0), OrderedFloat(60.0)),
                     // we expect a map 400:80 here, even though the 'Regular' instance's
@@ -3114,7 +2988,7 @@ mod tests {
         // Did you load the mappings? DID YOU?!
         assert_eq!(
             UserToDesignMapping(BTreeMap::from([(
-                "Width".to_string(),
+                "Width".into(),
                 AxisUserToDesignMap(vec![
                     // The "1: Ultra-condensed" instance width class corresponds to a
                     // `wdth` of 50 (user-space), in turn mapped to 22 (design-space).
@@ -3336,8 +3210,9 @@ mod tests {
     #[test]
     fn read_typo_whatsits() {
         let font = Font::load(&glyphs2_dir().join("WghtVar_OS2.glyphs")).unwrap();
-        assert_eq!(Some(1193), font.default_master().typo_ascender);
-        assert_eq!(Some(-289), font.default_master().typo_descender);
+        let master = font.default_master();
+        assert_eq!(Some(1193), master.custom_parameters.typo_ascender);
+        assert_eq!(Some(-289), master.custom_parameters.typo_descender);
     }
 
     #[test]
